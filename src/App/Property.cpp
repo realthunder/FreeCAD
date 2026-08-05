@@ -269,7 +269,8 @@ void Property::touch()
     _StatusBits.set(Touched);
     if (getName() && father
                   && !Transaction::isApplying(this)
-                  && !Document::isRemoving(this)) {
+                  && !Document::isRemoving(this)
+                  && !Document::isRestoringDefaults()) {
         father->onEarlyChange(this);
         father->onChanged(this);
         if(!testStatus(Busy)) {

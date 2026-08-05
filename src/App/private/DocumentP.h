@@ -124,6 +124,22 @@ struct DocumentP
     };
     RestoreTiming restoreTiming;
 
+    /** What a <Defaults> block says an object class holds.
+     *
+     * Restored into an object built for the purpose, and reduced to the
+     * properties the record actually moved off what this build's constructor
+     * produces. That list is usually empty -- the file was written by a build
+     * that agrees with this one -- and then a document's objects cost nothing
+     * to default. When it is not empty, those few properties are pasted onto
+     * every object of the class before the file's own statement about that
+     * object is read.
+     */
+    struct RestoreDefaults {
+        std::unique_ptr<DocumentObject> proto;
+        std::vector<std::string> names;
+    };
+    std::map<std::string, RestoreDefaults> restoreDefaults;
+
     DocumentP();
 
     long addObject(App::DocumentObject *pcObject) {

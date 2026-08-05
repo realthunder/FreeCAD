@@ -354,6 +354,16 @@ public:
      */
     static void removePendingProperty(Property *);
 
+    /** Query whether a class's recorded defaults are being read into a stand-in.
+     *
+     * The stand-in belongs to no document and stands for a class rather than
+     * for anything in one, so a property landing in it has nobody to notify.
+     * Saying so is not an optimisation: an object's reaction to its own
+     * property changing is written for an object that is in a document, and
+     * App::Link's dereferences one unconditionally.
+     */
+    static bool isRestoringDefaults();
+
     /** Add an existing feature with sName (ASCII) to this document and set it active.
      * Unicode names are set through the Label property.
      * This is an overloaded function of the function above and can be used to create
@@ -674,6 +684,24 @@ protected:
 
     void readObject(Base::XMLReader &reader);
     void writeObject(Base::Writer &writer, App::DocumentObject *obj) const;
+
+    /** The shared default block, written once per object class.
+     *
+     * buildDefaults picks the classes worth a block and builds a stand-in for
+     * each; saveDefaults writes them; every object of the class is then
+     * pointed at its stand-in and saves only what differs from it. See
+     * App::PropertyContainer::getSaveDefaults for the mechanism, and
+     * writeObjects for what it buys.
+     */
+    void buildDefaults(Base::Writer &writer,
+            const std::vector<App::DocumentObject*>& obj,
+            std::map<std::string, std::unique_ptr<DocumentObject>> &defaults) const;
+    void saveDefaults(Base::Writer &writer,
+            const std::map<std::string, std::unique_ptr<DocumentObject>> &defaults) const;
+    /// Read the block, and work out what of it this build does not already produce.
+    void restoreDefaults(Base::XMLReader &reader, int count);
+    /// Paste that difference onto an object, before its own properties are read.
+    void applyDefaults(DocumentObject *obj);
 
     void _removeObject(DocumentObject* pcObject);
     void _addObject(DocumentObject* pcObject, const char* pObjectName);

@@ -47,6 +47,15 @@ Params = [
     ParamInt('ForceXML', 3),
     ParamBool('SplitXML', True),
     ParamBool('PreferBinary', False),
+    ParamBool('SaveObjectDefaults', True,
+        doc='Save the objects of a document as a difference from their class\n'
+            'defaults, which are written once for the whole document. Most of\n'
+            'what an object holds is what its constructor gave it -- an\n'
+            'identity placement, an empty expression engine, a flag nobody\n'
+            'touched -- so on a large assembly this makes Document.xml a\n'
+            'fraction of its size and cuts the properties a load has to\n'
+            'restore by the same share. Turn it off to write every property\n'
+            'on every object, as FreeCAD versions without this option expect.'),
     ParamBool('AutoRemoveFile', True),
     ParamBool('AutoNameDynamicProperty', False),
     ParamBool('BackupPolicy', True),

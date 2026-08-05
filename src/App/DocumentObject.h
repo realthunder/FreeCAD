@@ -27,6 +27,7 @@
 
 #include <App/TransactionalObject.h>
 #include <App/PropertyExpressionEngine.h>
+#include <App/PropertyGeo.h>
 #include <App/PropertyPythonObject.h>
 #include <App/PropertyStandard.h>
 #include <Base/Bitmask.h>
@@ -525,6 +526,29 @@ public:
 
     void Save (Base::Writer &writer) const override;
 
+    /** The per-class defaults this object may leave out of a save.
+     *
+     * Set by App::Document for the duration of one save: it writes one
+     * default block per object class and points every object of that class at
+     * it, so what lands in Document.xml is the difference. Never owned here,
+     * and cleared again as soon as the save is done.
+     */
+    void setSaveDefaults(const DocumentObject *obj) { _saveDefaults = obj; }
+    const App::PropertyContainer *getSaveDefaults() const override { return _saveDefaults; }
+
+    /** Bulk geometry is never spoken for by a class default.
+     *
+     * A shape is what makes one object different from another, so a class
+     * default for it would be read by nobody. It is also not in the XML at
+     * all: PropertyPartShape registers an archive entry and hands the content
+     * over separately -- a stand-in written into a <Defaults> block must
+     * never claim one of those -- and the matching Restore is written for a
+     * property whose owner is in a document, which a stand-in is not.
+     */
+    bool mustSave(const Property &prop) const override {
+        return prop.isDerivedFrom(PropertyComplexGeoData::getClassTypeId());
+    }
+
     /* Expression support */
 
     virtual void setExpression(const ObjectIdentifier & path, std::shared_ptr<App::Expression> expr);
@@ -782,6 +806,9 @@ private:
 
     bool _enforceRecompute = false;
     int _revision;
+
+    // Borrowed for the duration of one save, see setSaveDefaults().
+    const DocumentObject *_saveDefaults{nullptr};
 };
 
 } //namespace App

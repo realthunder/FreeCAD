@@ -1320,6 +1320,212 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
 #define FC_ATTR_DEP_ALLOW_PARTIAL "AllowPartial"
 #define FC_ELEMENT_OBJECT_DEP "Dep"
 
+namespace {
+
+// The element names of the shared default block, and the attribute on
+// <ObjectData> that says how many entries it has. A reader that finds no
+// attribute never looks for the block, which is what lets a file written
+// without one be read by the same code.
+const char *FC_ELEM_DEFAULTS = "Defaults";
+const char *FC_ELEM_DEFAULT = "Default";
+const char *FC_ATTR_DEFAULTS = "Defaults";
+
+/** Build an object of the given class outside any document.
+ *
+ * What a class treats as a default lives in its constructor and nowhere
+ * else -- there is no metadata to ask -- so the only way to find out is to
+ * build one and read its properties. Returns null for a class that cannot be
+ * instantiated, and the caller then writes everything as before.
+ */
+std::unique_ptr<DocumentObject> makeDefaultObject(const char *typeName)
+{
+    auto type = Base::Type::fromName(typeName);
+    if (type.isBad() || !type.isDerivedFrom(DocumentObject::getClassTypeId()))
+        return {};
+    std::unique_ptr<DocumentObject> res;
+    try {
+        res.reset(static_cast<DocumentObject*>(type.createInstance()));
+    }
+    catch (Base::Exception &e) {
+        e.ReportException();
+    }
+    catch (const std::exception &e) {
+        FC_ERR("Failed to build a default " << typeName << ": " << e.what());
+    }
+    if (!res)
+        FC_LOG("No default object for " << typeName);
+
+    return res;
+}
+
+// Set while a <Defaults> block is being read into a stand-in, and consulted
+// by Property::touch(). See Document::isRestoringDefaults().
+bool _RestoringDefaults;
+
+} // anonymous namespace
+
+bool Document::isRestoringDefaults()
+{
+    return _RestoringDefaults;
+}
+
+void Document::buildDefaults(Base::Writer &writer,
+        const std::vector<App::DocumentObject*>& obj,
+        std::map<std::string, std::unique_ptr<DocumentObject>> &defaults) const
+{
+    // Two gates, and they answer different questions. Schema 6 is the version
+    // that introduced this block (getWritableSchemaVersions); a document whose
+    // SaveSchemaVersion is lower has asked to come out in a shape an older
+    // FreeCAD reads in full, and that outranks any preference. The parameter
+    // is the preference, and only applies once the document has allowed it.
+    if (writer.getSchemaVersion() < 6)
+        return;
+    if (!DocumentParams::getSaveObjectDefaults())
+        return;
+
+    // A default block is one class's whole property set, so it only pays for
+    // itself once enough objects can leave that set out. Two roughly break
+    // even; below that a document would come out larger than if nothing had
+    // been shared at all.
+    const std::size_t minInstances = 3;
+
+    std::map<std::string, std::size_t> counts;
+    for (auto o : obj)
+        ++counts[o->getTypeId().getName()];
+    for (const auto &v : counts) {
+        if (v.second < minInstances)
+            continue;
+        if (auto proto = makeDefaultObject(v.first.c_str()))
+            defaults.emplace(v.first, std::move(proto));
+    }
+}
+
+void Document::saveDefaults(Base::Writer &writer,
+        const std::map<std::string, std::unique_ptr<DocumentObject>> &defaults) const
+{
+    if (defaults.empty())
+        return;
+
+    writer.Stream() << writer.ind() << '<' << FC_ELEM_DEFAULTS << " Count=\""
+                    << defaults.size() << "\">\n";
+    writer.incInd();
+    // A stand-in owns no archive entry: forcing XML keeps its list properties
+    // inline instead of registering files nothing will ever read.
+    int force = writer.isForceXML();
+    writer.setForceXML(9999);
+    for (const auto &v : defaults) {
+        writer.Stream() << writer.ind() << '<' << FC_ELEM_DEFAULT << " type=\""
+                        << v.first << "\">\n";
+        // Properties only. Extensions are saved by identity, and a stand-in's
+        // are whatever its constructor added -- the same ones the reader's
+        // stand-in will have. Its properties come along regardless: an
+        // extension's belong to the object that initialised it.
+        //
+        // ⚠️ SaveDefaults, not Save: what mustSave() names has to stay out of
+        // the block. Shape is the one that bites -- PropertyPartShape::Save
+        // would have the stand-in claim an archive entry of its own, and the
+        // Restore that reads it back dereferences an owner document a stand-in
+        // has not got.
+        v.second->App::PropertyContainer::SaveDefaults(writer);
+        writer.Stream() << writer.ind() << "</" << FC_ELEM_DEFAULT << ">\n";
+    }
+    writer.setForceXML(force);
+    writer.decInd();
+    writer.Stream() << writer.ind() << "</" << FC_ELEM_DEFAULTS << ">\n";
+}
+
+void Document::restoreDefaults(Base::XMLReader &reader, int count)
+{
+    d->restoreDefaults.clear();
+    if (count <= 0)
+        return;
+
+    // ⚠️ The stand-in is in no document, and an object's reaction to its own
+    // property changing is written for one that is: restoring an App::Link's
+    // element list into a document-less stand-in walks straight into
+    // LinkBaseExtension::update() dereferencing a null document. Nothing here
+    // is a change to anything anyway -- there is no object behind these
+    // values, only a record of what a class starts out holding.
+    Base::StateLocker guard(_RestoringDefaults);
+
+    reader.readElement(FC_ELEM_DEFAULTS);
+    for (int i=0; i<count; ++i) {
+        int guard;
+        reader.readElement(FC_ELEM_DEFAULT, &guard);
+        std::string type = reader.getAttribute("type");
+        auto proto = makeDefaultObject(type.c_str());
+        // What the record says against what this build produces. Only the
+        // difference has to be pasted onto anything, and on the build that
+        // wrote the file there is none.
+        //
+        // ⚠️ Two stand-ins, not one stand-in and a pile of Property::Copy().
+        // The comparison has to be the same one the writer made -- one live
+        // property against another live property of the same class -- and a
+        // detached copy is not that. A copy has no container, so the link
+        // properties compare by a scope they no longer know and the
+        // enumerations by a list they no longer have, and the answer comes
+        // back "differs" for a good half of an object's properties that are
+        // in fact identical.
+        auto fresh = proto ? makeDefaultObject(type.c_str()) : nullptr;
+        if (proto && fresh) {
+            std::vector<App::Property*> props;
+            proto->getPropertyList(props);
+
+            proto->App::PropertyContainer::Restore(reader);
+
+            DocumentP::RestoreDefaults entry;
+            for (auto prop : props) {
+                if (!prop->getName())
+                    continue;
+                // A property the writer was never allowed to leave out does
+                // not need a default put back, and must not get one: it is on
+                // that list precisely because the stand-in cannot speak for
+                // it, so pasting the stand-in's copy would do damage.
+                if (proto->mustSave(*prop))
+                    continue;
+                auto other = fresh->getPropertyByName(prop->getName());
+                if (other && other->getTypeId() == prop->getTypeId()
+                          && !prop->isSame(*other))
+                    entry.names.emplace_back(prop->getName());
+            }
+            if (!entry.names.empty() && FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+                // Named, not just counted. On the build that wrote the file
+                // this list is empty, so anything in it is either a genuine
+                // change of default between builds or a property that does
+                // not survive its own round trip -- and only the name says
+                // which.
+                std::ostringstream ss;
+                for (const auto &n : entry.names)
+                    ss << ' ' << n;
+                FC_LOG("Default object " << type << " differs in "
+                        << entry.names.size() << " properties:" << ss.str());
+            }
+            // Kept even when nothing differs: a property in the block may
+            // have registered an archive entry against this stand-in, and the
+            // reader will come looking for its owner later.
+            entry.proto = std::move(proto);
+            d->restoreDefaults[type] = std::move(entry);
+        }
+        reader.readEndElement(FC_ELEM_DEFAULT, &guard);
+    }
+    reader.readEndElement(FC_ELEM_DEFAULTS);
+}
+
+void Document::applyDefaults(DocumentObject *obj)
+{
+    if (d->restoreDefaults.empty())
+        return;
+    auto it = d->restoreDefaults.find(obj->getTypeId().getName());
+    if (it == d->restoreDefaults.end() || it->second.names.empty())
+        return;
+    for (const auto &name : it->second.names) {
+        auto prop = obj->getPropertyByName(name.c_str());
+        auto other = it->second.proto->getPropertyByName(name.c_str());
+        if (prop && other && prop->getTypeId() == other->getTypeId())
+            prop->Paste(*other);
+    }
+}
+
 void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
                             Base::Writer &writer) const
 {
@@ -1396,16 +1602,63 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
     writer.decInd();  // indentation for 'Object type'
     writer.Stream() << writer.ind() << "</Objects>\n";
 
+    // Objects of one class are mostly what their constructor gave them: an
+    // identity placement, an empty expression engine, a flag nobody touched.
+    // Write that constructor state once per class and let each object save
+    // only its difference from it -- on a large assembly that is most of
+    // Document.xml, and the load has that many fewer properties to restore.
+    // The defaults are written out, not implied, so a document opened by a
+    // build whose constructors differ still holds what its author saved.
+    // Nothing is shared in the split-XML layout: each object is its own file
+    // there, with no block to point at.
+    std::map<std::string, std::unique_ptr<DocumentObject>> defaults;
+    if (!writer.isSplitXML())
+        buildDefaults(writer, obj, defaults);
+
     // writing the features itself
     writer.Stream() << writer.ind() << "<ObjectData Count=\"";
     if(writer.isSplitXML())
         writer.Stream() << "0\">\n";
     else {
-        writer.Stream() << obj.size() <<"\">\n";
+        writer.Stream() << obj.size() << '"';
+        if (!defaults.empty())
+            writer.Stream() << ' ' << FC_ATTR_DEFAULTS << "=\"" << defaults.size() << '"';
+        writer.Stream() << ">\n";
 
         writer.incInd(); // indentation for 'Object name'
-        for (it = obj.begin(); it != obj.end(); ++it) 
-            writeObject(writer,*it);
+        saveDefaults(writer, defaults);
+        auto elided = PropertyContainer::savedDefaults;
+        auto unknown = PropertyContainer::savedDefaultsUnknown;
+        auto byValue = PropertyContainer::savedDefaultsValue;
+        auto byStatus = PropertyContainer::savedDefaultsStatus;
+        // Point every object at its class stand-in for the duration of the
+        // write, and at nothing again after it -- the stand-ins do not
+        // outlive this call.
+        auto pointAtDefaults = [&](bool on) {
+            for (auto o : obj) {
+                auto def = defaults.find(o->getTypeId().getName());
+                o->setSaveDefaults(
+                        on && def != defaults.end() ? def->second.get() : nullptr);
+            }
+        };
+        pointAtDefaults(true);
+        try {
+            for (it = obj.begin(); it != obj.end(); ++it)
+                writeObject(writer,*it);
+        }
+        catch (...) {
+            pointAtDefaults(false);
+            throw;
+        }
+        pointAtDefaults(false);
+        if (!defaults.empty())
+            FC_LOG("save " << getName() << ": " << obj.size() << " objects, "
+                    << defaults.size() << " class defaults, "
+                    << (PropertyContainer::savedDefaults - elided)
+                    << " properties left out, written anyway: "
+                    << (PropertyContainer::savedDefaultsValue - byValue) << " by value, "
+                    << (PropertyContainer::savedDefaultsStatus - byStatus) << " by status, "
+                    << (PropertyContainer::savedDefaultsUnknown - unknown) << " not in the block");
         writer.decInd(); // indentation for 'Object name'
     }
     writer.Stream() << writer.ind() << "</ObjectData>\n";
@@ -1461,6 +1714,10 @@ void Document::readObject(Base::XMLReader &reader) {
         pObj->setStatus(ObjectStatus::Restore, true);
         try {
             FC_TRACE("restoring " << pObj->getFullName());
+            // Whatever the shared default block moved off this build's own
+            // defaults has to be put back before the object's own properties,
+            // so that what the file states for this object still wins.
+            applyDefaults(pObj);
             pObj->Restore(reader);
         }
         // Try to continue only for certain exception types if not handled
@@ -1667,6 +1924,9 @@ Document::readObjects(Base::XMLReader& reader)
 
     reader.readElement("ObjectData");
     Cnt = reader.getAttributeAsInteger("Count");
+    // Before any element of the block is read: readElement() replaces the
+    // attributes of the element we are standing on.
+    restoreDefaults(reader, reader.getAttributeAsInteger(FC_ATTR_DEFAULTS, "0"));
     std::string objName;
     _FC_TIME_INIT(t);
     auto propStats = PropertyContainer::restoreStats;
@@ -1752,6 +2012,9 @@ Document::importObjects(Base::XMLReader& reader)
     // the time it returns and the importing properties can be served.
     signalImportObjects(objs, reader);
     getFileBlobManager().dispatchPending();
+
+    // See restore(): nothing refers to the stand-ins once the files are in.
+    d->restoreDefaults.clear();
 
     afterRestore(objs,true);
 
@@ -2474,6 +2737,11 @@ void Document::restore(Base::XMLReader &reader,
     // afterRestore() lets go.
     getFileBlobManager().dispatchPending();
 
+    // The default stand-ins have served their purpose and nothing points at
+    // them any more -- including the reader, which has just drained whatever
+    // they registered.
+    d->restoreDefaults.clear();
+
     for(auto &f : reader.getFilenames()) {
         FC_TRACE("document " << getName() << " file: " << f);
         d->files.insert(f);
@@ -2680,9 +2948,12 @@ const std::vector<long>& Document::getWritableSchemaVersions()
     // still accepts are deliberately absent: offering to write a shape we
     // cannot build would fail silently at the worst moment.
     // 4 = one archive entry per PropertyFileIncluded. 5 = one entry per
-    // distinct content, shared by every property referring to it. 6 = the
-    // view file may state a class's defaults once and write each view
-    // provider as the difference.
+    // distinct content, shared by every property referring to it. 6 = a class
+    // may state its defaults once and every container of that class be
+    // written as the difference -- view providers in the view file, objects
+    // in Document.xml. One version for both: they are the same mechanism,
+    // released together, and a reader that understands one understands the
+    // other.
     static const std::vector<long> versions {4, 5, FC_DOC_SCHEMA_VER};
     return versions;
 }
