@@ -1,8 +1,9 @@
 # Headless serving — publishing a scene with no 3D view
 
-Status: **design**. Nothing here is implemented. Stage 1 (a serving process does not
-rasterize) is done and released on `LinkVibe`; this document specifies stage 2, which is
-removing the 3D view itself.
+Status: stages 1 and 2a-2c are **implemented**; 2d (pick, control channel, work notifier) is
+still design. Stage 1 (a serving process does not rasterize) is released on `LinkVibe`; the
+rest is on the branch. A document can now be served with no 3D view, no display and no GL
+driver in the process — see §4, stage 2c.
 
 Companions: [SceneStreaming.md](./SceneStreaming.md) §2.1 (what a serving process does per
 frame, after stage 1), [ComputeBoundaries.md](./ComputeBoundaries.md) (the headless-engine
@@ -174,10 +175,28 @@ bgfx init, driven by a unit-ish test that constructs one, feeds it a hand-built 
 and asserts the snapshot serializes. This is where "no GPU in the process" is first provable —
 check with `lsof`/`ldd` that no GL driver is mapped.
 
-**2c — `SceneServeSource` with the GL-free traversal.** The load-bearing stage. Verify by
-publishing the same document two ways — through a normal viewer and through the source — and
-diffing the two snapshots. That diff is the whole correctness argument for §3.2, so the
-harness for it was built first, and is described in §4.1.
+**2c — `SceneServeSource` with the GL-free traversal. Done.** The load-bearing stage.
+Verified as specified: the same document published through a real serving viewer and through
+the source, diffed with `fcscenediff` — 120 draws, 40 objects, 8310 vertices, every object
+matched by content and every config block equal. Identical but for camera, viewport and
+overlays, which differ by design. The harness that decides this is §4.1.
+
+The seed question of §3.2 resolved to the first option, the truly headless one, and the audit
+turned out to understate the case: `SoAction::getState()` builds a state on demand from the
+action's default elements, so a plain `SoCallbackAction` supplies one with no context and no
+drawable, and *every nested separator's cache is already opened against exactly that state
+today*. The `FC_SERVE_GL_STATE=1` fallback was never needed and is not implemented.
+
+Two things the frame loop owned had to move rather than be dropped: the per-frame config push
+(§3.3), now `SoFCRenderer::pushExternalConfigs()`, run before the change check because editing
+a config moves no node id; and the section hatch, shared out of the viewer. Without them the
+scene matched but `background`, `aoconf`, `waterconf`, `preselconf`, `selconf` and `hatch` all
+sat at defaults — the diff named them one by one.
+
+⭐ **Measured with no display at all** (`DISPLAY` unset, `QT_QPA_PLATFORM=offscreen`, no
+Xvfb): publishes the same scene, at 0.0% CPU, with **no GL library mapped into the process** —
+no `libGL`, no `libEGL`, no `swrast`, no `llvmpipe`, no `dri`. That is the whole point of
+stage 2, and it is what makes the acceptance test of 2d a formality rather than a hope.
 
 **2d — handlers and the Python surface.** Pick, control, work notifier; then the entry point,
 which should be a document-level call rather than a new env var —
