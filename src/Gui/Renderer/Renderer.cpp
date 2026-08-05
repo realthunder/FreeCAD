@@ -66,7 +66,7 @@ std::vector<std::string> RendererFactory::types()
 }
 
 std::unique_ptr<Renderer> RendererFactory::create(
-        const std::string &type, QOpenGLWidget *widget)
+        const std::string &type, QOpenGLWidget *widget, bool publishOnly)
 {
     std::unique_ptr<Renderer> res;
     auto it = rendererTypes().find(type);
@@ -74,7 +74,7 @@ std::unique_ptr<Renderer> RendererFactory::create(
         if (type.size() && type != "Default")
             qWarning() << "Renderer '" << type.c_str() << "' not supported";
     } else
-        res = it->second->create(type, widget);
+        res = it->second->create(type, widget, publishOnly);
     return res;
 }
 

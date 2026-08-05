@@ -1138,6 +1138,25 @@ public:
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) = 0;
 
+    /// Serialize the feeds and hand them to the scene-stream server,
+    /// without drawing anything (docs/HeadlessServe.md §3.1). This is
+    /// what render() does on the way past on a serving process; a
+    /// publish-only renderer -- one with no GL widget and no graphics
+    /// device behind it -- can only do this. \a viewMatrix and \a
+    /// projMatrix are the camera a joining viewer adopts before it
+    /// frames the scene itself, and the viewport is what those
+    /// matrices were built for. Returns false when the backend cannot
+    /// publish (default) or the feeds have not changed.
+    virtual bool publish(const QColor &bg,
+                         const void *viewMatrix,
+                         const void *projMatrix,
+                         int width, int height)
+    {
+        (void)bg; (void)viewMatrix; (void)projMatrix;
+        (void)width; (void)height;
+        return false;
+    }
+
     /// Whether the frame just rendered contains time-animated content
     /// (e.g. water caustics): the viewer keeps scheduling redraws while
     /// this returns true, so the animation advances without user input.
@@ -1326,14 +1345,23 @@ public:
     virtual const std::string &name() const = 0;
     virtual const std::vector<std::string> &types() const = 0;
     virtual std::unique_ptr<Renderer> create(
-            const std::string &type, QOpenGLWidget *widget) const = 0;
+            const std::string &type, QOpenGLWidget *widget,
+            bool publishOnly = false) const = 0;
 };
 
 class RendererExport RendererFactory
 {
 public:
     static std::vector<std::string> types();
-    static std::unique_ptr<Renderer> create(const std::string &type, QOpenGLWidget *widget);
+    /// \a publishOnly asks for a renderer that will never draw: no
+    /// graphics device is created and none is required, so the process
+    /// needs no GPU and no display (docs/HeadlessServe.md §3.1). Such a
+    /// renderer answers publish() and nothing else. It is a mode of its
+    /// own rather than "widget == nullptr", which the standalone viewer
+    /// already passes for a renderer that very much does draw.
+    static std::unique_ptr<Renderer> create(const std::string &type,
+                                            QOpenGLWidget *widget,
+                                            bool publishOnly = false);
     static void registerLib(RendererLib *);
     static void setResourcePath(const std::string &path);
     static const std::string &resourcePath();

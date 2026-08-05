@@ -36,18 +36,23 @@ public:
     virtual const std::string &name() const override;
     virtual const std::vector<std::string> &types() const override;
     virtual std::unique_ptr<Renderer> create(
-            const std::string &type, QOpenGLWidget *widget) const override;
+            const std::string &type, QOpenGLWidget *widget,
+            bool publishOnly = false) const override;
 };
 
 class BGFXRenderer : public Renderer
 {
 public:
-    BGFXRenderer(QOpenGLWidget *widget);
+    BGFXRenderer(QOpenGLWidget *widget, bool publishOnly = false);
     ~BGFXRenderer();
     virtual const std::string &type() const override;
     virtual bool render(const QColor &bg,
                         const void *viewMatrix,
                         const void *projMatrix) override;
+    virtual bool publish(const QColor &bg,
+                         const void *viewMatrix,
+                         const void *projMatrix,
+                         int width, int height) override;
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) override;
     virtual bool animating() const override;

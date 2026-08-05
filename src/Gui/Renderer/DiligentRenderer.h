@@ -36,7 +36,8 @@ public:
     virtual const std::string &name() const override;
     virtual const std::vector<std::string> &types() const override;
     virtual std::unique_ptr<Renderer> create(
-            const std::string &type, QOpenGLWidget *widget) const override;
+            const std::string &type, QOpenGLWidget *widget,
+            bool publishOnly = false) const override;
 };
 
 class DiligentRenderer : public Renderer

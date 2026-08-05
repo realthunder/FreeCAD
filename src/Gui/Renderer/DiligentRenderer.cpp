@@ -715,9 +715,16 @@ const std::vector<std::string> &DiligentRendererLib::types() const
 }
 
 std::unique_ptr<Renderer> DiligentRendererLib::create(
-        const std::string &type, QOpenGLWidget *widget) const
+        const std::string &type, QOpenGLWidget *widget,
+        bool publishOnly) const
 {
     std::unique_ptr<Renderer> res;
+    // Publishing without drawing is a bgfx-backend feature
+    // (docs/HeadlessServe.md); this backend has no such mode, and
+    // returning a renderer that silently draws would be worse than
+    // none.
+    if (publishOnly)
+        return res;
     auto it = _DiligentLib.typeMap.find(type);
     if (it == _DiligentLib.typeMap.end()) {
         RENDER_WARN("Unsupported renderer type " << type.c_str());

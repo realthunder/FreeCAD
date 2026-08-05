@@ -8269,8 +8269,8 @@ public:
 class BGFXRenderer::Private
 {
 public:
-    Private(QOpenGLWidget *widget)
-        :widget(widget)
+    Private(QOpenGLWidget *widget, bool publishOnly = false)
+        :widget(widget), publishOnly(publishOnly)
     {
         _BGFXLib.renderers.insert(this);
     }
@@ -8284,7 +8284,11 @@ public:
     void deinit()
     {
         _deinit = true;
-        _BGFXLib.removeView(widget);
+        // A publish-only renderer never asked for a view, so there is
+        // none to remove -- and asking would be the one call that
+        // brings the graphics device into a process that has none.
+        if (!publishOnly)
+            _BGFXLib.removeView(widget);
     }
 
     /// Assemble the CPU-side snapshot of everything the feeds hold:
@@ -8525,12 +8529,55 @@ public:
             }
         }
     }
+
+    /// The whole of what a publish-only renderer does
+    /// (docs/HeadlessServe.md §3.1): consume the pending feed change
+    /// and put the snapshot on the wire. Everything render() does
+    /// besides this needs a graphics device, and this process has
+    /// none -- so unlike render(), which reaches the same publish on
+    /// its way past a live view, there is nothing here to skip.
+    bool publishNoDraw(const QColor &col,
+                       const void *viewMatrix,
+                       const void *projMatrix,
+                       uint16_t width,
+                       uint16_t height)
+    {
+        if (_deinit)
+            return false;
+
+        // Same accounting render() does, and for the same reason: the
+        // pending data is consumed by this publish, so needsRedraw()
+        // reports false until more arrives. A finished async user-shader
+        // compile counts as a change, because the snapshot carries the
+        // freshly compiled viewer binaries.
+        bool dirtyChanged = sceneDirty;
+        if (userShaderGen != _BGFXLib.userCompileGeneration)
+            dirtyChanged = true;
+        feedDirty = false;
+        sceneDirty = false;
+        userShaderGen = _BGFXLib.userCompileGeneration;
+
+        const uint32_t clearColor = (uint32_t(col.red()) << 24)
+            | (uint32_t(col.green()) << 16)
+            | (uint32_t(col.blue()) << 8)
+            | 0xff;
+        publishScene(viewMatrix, projMatrix, width, height, clearColor,
+                     dirtyChanged);
+        return true;
+    }
 #endif
 
     bool render(const QColor &col,
                 const void * viewMatrix,
                 const void * projMatrix)
     {
+        // A publish-only renderer has no view, no target and no device
+        // (docs/HeadlessServe.md §3.1). Nothing below can run, and
+        // getView() would try to create the very thing this mode
+        // exists to avoid.
+        if (publishOnly)
+            return false;
+
         // The pending scene data (whatever its age) is consumed by this
         // frame; needsRedraw() reports false until new data arrives.
         // Two distinct "dirty" signals:
@@ -12473,6 +12520,10 @@ public:
     }
 
     QOpenGLWidget *widget;
+    /// This renderer will never draw (docs/HeadlessServe.md §3.1): no
+    /// bgfx view, no graphics device, no display. render() refuses;
+    /// publishNoDraw() is the whole of what it does.
+    bool publishOnly = false;
     bool _deinit = false;
     RendererType::Enum type;
     std::string typeName;
@@ -12841,8 +12892,8 @@ public:
 #endif
 };
 
-BGFXRenderer::BGFXRenderer(QOpenGLWidget *widget)
-    :pimpl(new Private(widget))
+BGFXRenderer::BGFXRenderer(QOpenGLWidget *widget, bool publishOnly)
+    :pimpl(new Private(widget, publishOnly))
 {
 }
 
@@ -12875,6 +12926,25 @@ bool BGFXRenderer::render(const QColor &col,
     if (savedMode >= 0)
         pimpl->debugconf.viewMode = savedMode;
     return ok;
+}
+
+bool BGFXRenderer::publish(const QColor &col,
+                           const void *viewMatrix,
+                           const void *projMatrix,
+                           int width, int height)
+{
+#ifdef FC_RENDERER_STANDALONE
+    // The standalone/wasm tier consumes snapshots; it does not make
+    // them.
+    (void)col; (void)viewMatrix; (void)projMatrix;
+    (void)width; (void)height;
+    return false;
+#else
+    if (!viewMatrix || !projMatrix || width <= 0 || height <= 0)
+        return false;
+    return pimpl->publishNoDraw(col, viewMatrix, projMatrix,
+                                uint16_t(width), uint16_t(height));
+#endif
 }
 
 bool BGFXRenderer::requestFrameDump(const FrameDumpRequest &req)
@@ -13346,12 +13416,26 @@ const std::vector<std::string> &BGFXRendererLib::types() const
 }
 
 std::unique_ptr<Renderer> BGFXRendererLib::create(
-        const std::string &type, QOpenGLWidget *widget) const
+        const std::string &type, QOpenGLWidget *widget,
+        bool publishOnly) const
 {
     std::unique_ptr<Renderer> res;
     auto it = _BGFXLib.typeMap.find(type);
     if (it == _BGFXLib.typeMap.end()) {
         RENDER_WARN("Unsupported renderer type " << type.c_str());
+        return res;
+    }
+    // A publish-only renderer must not disturb the device state, and
+    // must not be what decides which backend the process will use: it
+    // never creates one (docs/HeadlessServe.md §3.1). The type it is
+    // asked for survives only as a label on the snapshot's shader
+    // variants, which viewerShaderBins() compiles offline for the
+    // viewer tiers regardless of what runs here.
+    if (publishOnly) {
+        auto renderer = new BGFXRenderer(widget, true);
+        res.reset(renderer);
+        renderer->pimpl->typeName = it->first;
+        renderer->pimpl->type = it->second;
         return res;
     }
     if (_BGFXLib.currentType != it->second) {
