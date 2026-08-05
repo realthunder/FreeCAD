@@ -324,8 +324,18 @@ void ConsoleSingleton::AttachObserver(ILogger* pcObserver)
 
 /** Detaches an Observer from Console
  *  Use this method to detach a ILogger derived class.
- *  After detaching you can destruct the Observer or reinsert it later.
+ *  After detaching you can reinsert the Observer later.
+ *
+ *  This guarantees the observer receives no *further* messages. It does NOT
+ *  wait for one already being delivered: messages are dispatched without
+ *  holding the observer lock (see notifyPrivate), so a notification that
+ *  started on another thread can still be inside SendLog when this returns.
+ *  Destroying the observer right after detaching is therefore only safe when
+ *  the caller knows no other thread is logging -- e.g. it has just joined the
+ *  threads that were. If it cannot know that, use RetireObserver(), which
+ *  takes ownership and defers destruction until no notification is in flight.
  *  @see ILogger
+ *  @see RetireObserver
  */
 void ConsoleSingleton::DetachObserver(ILogger* pcObserver)
 {
