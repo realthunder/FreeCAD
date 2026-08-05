@@ -101,6 +101,7 @@
 #include "FeaturePython.h"
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
+#include "SuppressibleExtension.h"
 #include "ImagePlane.h"
 #include "InventorObject.h"
 #include "Link.h"
@@ -2214,6 +2215,8 @@ void Application::initTypes()
     App::GroupExtensionPython          ::init();
     App::GeoFeatureGroupExtension      ::init();
     App::GeoFeatureGroupExtensionPython::init();
+    App::SuppressibleExtension         ::init();
+    App::SuppressibleExtensionPython   ::init();
     App::OriginGroupExtension          ::init();
     App::OriginGroupExtensionPython    ::init();
     App::LinkBaseExtension             ::init();
