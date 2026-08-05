@@ -8978,6 +8978,16 @@ public:
         if (!localAudience() && !dumpPending) {
             renderOk = true;
             hasScene = !scene.empty();
+#ifndef FC_RENDERER_STANDALONE
+            // The re-snapshot in the post-pass setup is unreachable
+            // from here, and without it one finished async user-shader
+            // compile leaves dirtyChanged latched: every later frame
+            // would re-serialize and republish the whole snapshot.
+            // The publish above already carried the fresh binaries, so
+            // the generation is consumed exactly as publishNoDraw()
+            // consumes it.
+            userShaderGen = _BGFXLib.userCompileGeneration;
+#endif
             return true;
         }
 
