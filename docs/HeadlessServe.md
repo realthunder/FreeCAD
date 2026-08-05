@@ -176,15 +176,51 @@ check with `lsof`/`ldd` that no GL driver is mapped.
 
 **2c — `SceneServeSource` with the GL-free traversal.** The load-bearing stage. Verify by
 publishing the same document two ways — through a normal viewer and through the source — and
-diffing the two snapshots. They should be byte-identical modulo camera, viewport and the
-overlays. That diff is the whole correctness argument for §3.2, and it is worth building the
-harness for it before the source.
+diffing the two snapshots. That diff is the whole correctness argument for §3.2, so the
+harness for it was built first, and is described in §4.1.
 
 **2d — handlers and the Python surface.** Pick, control, work notifier; then the entry point,
 which should be a document-level call rather than a new env var —
 `Gui.serveDocument(doc, port)`, with `FC_BGFX_SERVE_SCENE` on a hidden document as the
 scripted equivalent. Verify with the existing probes in `~/works/sw/fcad-probes/` against a
 backend launched with **no Xvfb at all**; that is the acceptance test for the whole stage.
+
+### 4.1 The diff harness
+
+Built before the source it exists to check. Two parts: `fcscenediff`
+(`src/Gui/Renderer/tools/scenediff.cpp`, built into the build tree, not installed) and
+`dumprun.sh` in `~/works/sw/fcad-probes/`, which produces one dump from one FreeCAD run.
+
+**Compare dumps, not the wire.** A published manifest is content-keyed and delta-encoded per
+viewer and carries a session id and a publish version, so two processes legitimately differ
+byte for byte. A dump written with no chunk sinks installed is monolithic and
+self-contained — the only comparable form of a scene. It used to be reachable only from the
+frame loop, so a publish-only renderer could never produce one; it now hangs off the snapshot
+instead.
+
+**What is compared, and how.** Not a list of fields: each draw is re-serialized alone through
+the writer the format is defined by, and hashed, so a field added later is compared without
+anyone remembering to add it. Normalized away first: `cacheId`, `textureId` and `sourceTag`
+(process-local by construction), and draw order (draws are grouped on `objectKey` and each
+group compared as a multiset). Excluded by design, and reportable with `--camera` /
+`--overlays`: the camera, the viewport, `autozoomScale` — which is camera state, being
+`getWorldToScreenScale` over the view volume — and the overlays, which are viewer furniture.
+
+⚠️ **Capture both dumps with `FC_BGFX_DUMP_SCENE_SETTLE`** (`dumprun.sh` defaults it to 10
+quiet frames). A document does not arrive all at once, and a dump taken a fixed number of
+frames in records how far the build had got: three runs of one 40-object script produced
+2159580, 2310620 and 2454636 bytes. A bundled dump carries no level information, so
+`fcscenediff` cannot warn about it — getting the capture right is the only defence. Two
+things the settle gate cannot be: "nothing is dirty" (the per-frame config push leaves
+something dirty on nearly every frame) or a large frame count (an idle viewer stops drawing,
+so it is never reached). It is a fingerprint of the draws, unchanged across frames. An
+animated scene never settles, by construction.
+
+The harness was checked four ways before being trusted: two runs of one script compare
+identical; a run with the identity counters deliberately offset (`churn_then_varied.py`)
+still compares identical, so the normalization is what is doing the work; one added object is
+reported as exactly one object and three draws; and a recolour is reported on the materials
+alone, geometry matching to the vertex.
 
 ## 5. What this does not do
 
