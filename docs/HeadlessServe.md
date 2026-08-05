@@ -226,17 +226,19 @@ process lacks is a local level plan: the planner in `BGFXRendererP::render()` is
 viewer's* camera asks. With no viewer connected, nothing ever asks and they stay coarse.
 
 Measured on the 40-object scene: a serving process publishes 8310 vertices where a desktop
-viewer settles at 25595. Forcing the level (`FC_COARSE_TESSELLATION`, a whole-process
-override that bypasses the gate entirely) moves both, and to values that agree with neither:
-21043 on the desktop at level 0, 128266 while serving at -1 — the ladder's exact rung being
-finer than the deviation-based mesh a desktop load produces. Desktop refinement is also
-tolerance-limited: it stops where the camera cannot resolve the error, so its settled vertex
-count is a property of the framing, not a constant.
+viewer settles at 25595. Desktop refinement is tolerance-limited — it stops where the camera
+cannot resolve the error — so its settled vertex count is a property of the framing, not a
+constant: at level 0 it settles at 21043, never returning all the way to 25595.
 
-(In the default desktop runs coarse-first did not engage at all — 25595 is a plain
-deviation-based mesh. The gate wants an active `View3DInventor` whose renderer exists *at
-tessellation time*, which is not yet true while a document is loading. Not separately
-verified, but it is the only branch consistent with the numbers.)
+Coarse-first **does** engage for geometry built while a document loads; an earlier guess here
+that the gate could not be open that early was wrong, and testing it is what showed the
+difference is demand. ⚠️ The test has to set the **parameter**, not `FC_COARSE_TESSELLATION`:
+the environment variable returns before the gate is ever evaluated, so no env-forced run can
+say anything about whether the gate opens. Setting the parameter to 0 and loading the
+document produced exactly the scene the env-forced level 0 produces (21043 vertices,
+structurally identical) — which it can only do by passing the gate. Note also that the
+default level 2 is a no-op on this scene, because a rung already finer than a small shape's
+exact tessellation coarsens nothing; a discriminator has to use a level that visibly bites.
 
 So the comparison is serving-against-serving, where both sides have the same (absent) demand,
 and a desktop dump is not a baseline for anything. Two independent serving processes were

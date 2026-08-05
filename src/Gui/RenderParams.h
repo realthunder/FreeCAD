@@ -85,18 +85,40 @@ public:
     //@{
     /// Accessor for parameter CoarseTessellation
     ///
-    /// Ladder level shapes are tessellated at when the scene is being
-    /// served to streaming viewers (docs/SceneStreaming.md #7,
-    /// coarse-first publish): the display mesh is built at this rung of
-    /// the fidelity ladder and the exact tessellation is declared
-    /// unbuilt, generated on demand where a viewer's camera asks. 0 is
-    /// the coarsest rung, each level halves the error; -1 always
-    /// tessellates exact up front (pre-ladder behavior). Only consulted
-    /// while a scene stream server is active - plain desktop display
-    /// keeps the exact tessellation, which is also why this engages
-    /// automatically for a headless serving process. The
-    /// FC_COARSE_TESSELLATION environment variable overrides it for a
-    /// whole process. Takes effect when a shape (re)tessellates.
+    /// Ladder level shapes are tessellated at under coarse-first
+    /// (docs/SceneStreaming.md #7): the display mesh is built at this
+    /// rung of the fidelity ladder and the exact tessellation is
+    /// declared unbuilt, generated on demand when a camera asks for it.
+    /// 0 is the coarsest rung, each level halves the error; -1 always
+    /// tessellates exact up front (pre-ladder behavior).
+    /// 
+    /// Consulted whenever something can deliver the exact rung on
+    /// demand, which is a scene stream server (its viewers ask) OR a
+    /// desktop view in render cache mode 3 whose backend drives mesh
+    /// levels (its own level plan asks when the camera settles) - see
+    /// PartGui::coarseTessellationLevel. Plain Coin display has neither
+    /// and keeps the exact tessellation, because a coarse build there
+    /// would stay coarse forever. This is not a serving-only feature,
+    /// and it does engage for geometry built while a document loads.
+    /// 
+    /// What a serving process lacks is not this setting but the local
+    /// level plan, which is disabled there - its rungs refine only where
+    /// a connected viewer's camera asks, so with no viewer attached they
+    /// stay coarse, while a desktop view refines its own. That, not the
+    /// setting, is why the two publish different geometry for one
+    /// document (measured on a 40-object scene: 8310 vertices serving,
+    /// 25595 on the desktop). Desktop refinement is tolerance-limited,
+    /// so what it settles at is a property of the framing.
+    /// 
+    /// A level whose rung is already finer than a shape's exact
+    /// tessellation coarsens nothing, so on small shapes the low levels
+    /// do nothing visible - the default 2 is a no-op on a scene of small
+    /// ellipsoids that level 0 visibly coarsens.
+    /// 
+    /// The FC_COARSE_TESSELLATION environment variable overrides this for
+    /// a whole process and returns before the gate is evaluated, so it
+    /// forces coarse-first on where the gate would have refused. Takes
+    /// effect when a shape (re)tessellates.
     static const long & getCoarseTessellation();
     static const long & defaultCoarseTessellation();
     static void removeCoarseTessellation();
