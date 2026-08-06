@@ -291,10 +291,10 @@ public:
     void resetEdit();
     /** Set whether leaving edit mode should restore the previous edit session
      *
-     * Accepted for source compatibility with upstream, where nested edit
-     * sessions can be restored. This fork has no such mechanism -- resetEdit()
-     * always leaves edit mode outright -- so only setEditRestore(false), which
-     * asks for exactly that, is honoured; true has no effect.
+     * When an edit session interrupts another one (e.g. editing a sketch from
+     * within an assembly edit), the interrupted session is re-entered when the
+     * interrupting one ends, provided it called setEditRestore(true). The flag
+     * belongs to the current edit session and is cleared when it ends.
      */
     void setEditRestore(bool askRestore);
     /// reset edit of this document

@@ -228,6 +228,9 @@ protected:
     QTimer *timer;
     
     std::vector<QWidget*> contents;
+    /// Widgets added by addContextualPanel. Kept out of \ref contents because
+    /// showDialog/removeDialog own that list and would drop the bookkeeping.
+    std::vector<QWidget*> contextualPanels;
 
     Connection connectApplicationActiveDocument;
     Connection connectApplicationDeleteDocument;

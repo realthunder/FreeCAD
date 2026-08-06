@@ -1449,7 +1449,10 @@ void StdCmdDelete::activated(int iMsg)
         ViewProviderDocumentObject *vpedit = nullptr;
         if(editDoc)
             vpedit = dynamic_cast<ViewProviderDocumentObject*>(editDoc->getInEdit());
-        if(vpedit) {
+        // A view provider in edit normally intercepts deletion (e.g. deleting a
+        // sub-element of the edited object), but it may opt in to normal
+        // document deletion while in edit (e.g. Assembly).
+        if(vpedit && !vpedit->acceptDeletionsInEdit()) {
             for(auto &sel : Selection().getSelectionEx(editDoc->getDocument()->getName())) {
                 if(sel.getObject() == vpedit->getObject()) {
                     if (!sel.getSubNames().empty()) {

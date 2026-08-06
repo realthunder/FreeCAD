@@ -3310,6 +3310,21 @@ struct ItemInfo2 {
     std::string topSubname;
 };
 
+// Ask every item along the parent chain whether it lets go of obj towards
+// target. Unlike the hover-time canDragObject check this runs at drop time, so
+// a view provider may interact with the user here (e.g. Assembly asks about
+// deleting the joints of a part dragged out of it).
+static bool canDragFromParents(DocumentObjectItem *parentItem,
+                               App::DocumentObject *obj,
+                               App::DocumentObject *target)
+{
+    for (; parentItem; parentItem = parentItem->getParentItem()) {
+        if (!parentItem->object()->canDragObjectToTarget(obj, target))
+            return false;
+    }
+    return true;
+}
+
 void TreeWidget::dropEvent(QDropEvent *event)
 {
     ToolTip::hideText();
@@ -3455,6 +3470,11 @@ void TreeWidget::dropEvent(QDropEvent *event)
             if(!dropOnly && item->myOwner == targetItemObj->myOwner) {
                 // check if items can be dragged
                 if (auto parentItem = item->getParentItem()) {
+                    if (!canDragFromParents(parentItem, obj, targetObj)) {
+                        FC_ERR("'" << obj->getFullName() << "' cannot be dragged out of '"
+                            << parentItem->object()->getObject()->getFullName() << "'");
+                        return;
+                    }
                     auto vpp = parentItem->object();
                     info.parent = vpp->getObject()->getNameInDocument();
                     info.parentDoc = vpp->getObject()->getDocument()->getName();
@@ -3828,7 +3848,8 @@ void TreeWidget::dropEvent(QDropEvent *event)
                 if(dropOnly)
                     parentItem = nullptr;
                 else if(!parentItem->object()->canDragObjects()
-                        || !parentItem->object()->canDragObject(obj)) {
+                        || !parentItem->object()->canDragObject(obj)
+                        || !canDragFromParents(parentItem, obj, nullptr)) {
                     FC_ERR("'" << obj->getFullName() << "' cannot be dragged out of '" <<
                         parentItem->object()->getObject()->getFullName() << "'");
                     return;
@@ -6301,6 +6322,7 @@ void DocumentItem::slotHighlightObject (const Gui::ViewProviderDocumentObject& o
             sobj = obj.getObject();
         _FOREACH_ITEM(item, sobj)
             if (TreeParams::getTreeActiveAutoExpand()
+                    && obj.isAutoCollapseOnDeactivation()
                     && item->highlightMode != HighlightMode::None)
                 item->setExpanded(false);
             item->setHighlight(set, high);

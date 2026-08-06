@@ -348,7 +348,7 @@ TaskView::~TaskView()
 
 bool TaskView::isEmpty(bool includeWatcher) const
 {
-    if (ActiveCtrl || ActiveDialog)
+    if (ActiveCtrl || ActiveDialog || !contextualPanels.empty())
         return false;
 
     if (includeWatcher) {
@@ -904,11 +904,12 @@ void TaskView::addContextualPanel(QWidget* panel, App::Document* doc)
 {
     // See the declaration: this fork's task view is not per-document.
     (void)doc;
-    if (!panel || std::find(contents.begin(), contents.end(), panel) != contents.end())
+    if (!panel || std::find(contextualPanels.begin(), contextualPanels.end(), panel)
+            != contextualPanels.end())
         return;
 
     taskPanel->addWidget(panel);
-    contents.push_back(panel);
+    contextualPanels.push_back(panel);
     panel->show();
     triggerMinimumSizeHint();
     Q_EMIT taskUpdate();
@@ -917,12 +918,12 @@ void TaskView::addContextualPanel(QWidget* panel, App::Document* doc)
 void TaskView::removeContextualPanel(QWidget* panel, App::Document* doc)
 {
     (void)doc;
-    auto it = std::find(contents.begin(), contents.end(), panel);
-    if (!panel || it == contents.end())
+    auto it = std::find(contextualPanels.begin(), contextualPanels.end(), panel);
+    if (!panel || it == contextualPanels.end())
         return;
 
     taskPanel->removeWidget(panel);
-    contents.erase(it);
+    contextualPanels.erase(it);
     panel->deleteLater();
     triggerMinimumSizeHint();
     Q_EMIT taskUpdate();

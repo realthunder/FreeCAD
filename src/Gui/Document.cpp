@@ -105,8 +105,12 @@ struct DocumentP
     bool       _hasExpansion;
     bool       _changeViewTouchDocument;
     int                         _editMode;
+    int                         _editModePrevious = 0;
     CoinPtr<SoNode>             _editRootNode;
     ViewProvider*               _editViewProvider;
+    ViewProvider*               _editViewProviderPrevious = nullptr;
+    bool                        _editWantsRestore = false;
+    bool                        _editWantsRestorePrevious = false;
     App::DocumentObject*        _editingObject;
     ViewProviderDocumentObject* _editViewProviderParent;
     std::string                 _editSubname;
@@ -608,14 +612,25 @@ void Document::setEditingTransform(const Base::Matrix4D &mat) {
 }
 
 void Document::resetEdit() {
+    bool vpIsNotNull = d->_editViewProvider != nullptr;
+    bool vpHasChanged = d->_editViewProvider != d->_editViewProviderPrevious;
+    int modeToRestore = d->_editModePrevious;
+    Gui::ViewProvider* vpToRestore = d->_editViewProviderPrevious;
+    bool shouldRestorePrevious = d->_editWantsRestorePrevious;
+
     Application::Instance->setEditDocument(nullptr);
+
+    // Re-enter the edit session that was interrupted by the one that just
+    // ended, if it asked for that with setEditRestore(true) -- e.g. an
+    // assembly whose edit was suspended to edit a sketch.
+    if (vpIsNotNull && vpHasChanged && shouldRestorePrevious && vpToRestore) {
+        setEdit(vpToRestore, modeToRestore);
+    }
 }
 
 void Document::setEditRestore(bool askRestore)
 {
-    // Nothing to do: this fork does not restore a previous edit session, which
-    // is what setEditRestore(false) asks for. See the declaration.
-    (void)askRestore;
+    d->_editWantsRestore = askRestore;
 }
 
 void Document::_resetEdit()
@@ -640,6 +655,10 @@ void Document::_resetEdit()
             auto vpd = static_cast<ViewProviderDocumentObject*>(d->_editViewProvider);
             vpd->getDocument()->signalResetEdit(*vpd);
         }
+        d->_editViewProviderPrevious = d->_editViewProvider;
+        d->_editModePrevious = d->_editMode;
+        d->_editWantsRestorePrevious = d->_editWantsRestore;
+        d->_editWantsRestore = false;
         d->_editViewProvider = nullptr;
 
         // The logic below is not necessary anymore, because this method is
@@ -907,6 +926,11 @@ void Document::slotDeletedObject(const App::DocumentObject& Obj)
     if(!viewProvider)
         return;
 
+    if (d->_editViewProviderPrevious == viewProvider) {
+        // never re-enter edit on a deleted object
+        d->_editViewProviderPrevious = nullptr;
+        d->_editWantsRestorePrevious = false;
+    }
     if (d->_editViewProvider==viewProvider || d->_editViewProviderParent==viewProvider)
         _resetEdit();
     else if(Application::Instance->editDocument()) {
