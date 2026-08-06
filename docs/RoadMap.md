@@ -20,6 +20,8 @@ annotations draw on: [RendererPlan.md](./RendererPlan.md) (renderer phase log),
 [SceneStreaming.md](./SceneStreaming.md) (streamed browser scenes),
 [RenderDebug.md](./RenderDebug.md) (verification harness),
 [FileBlobsManager.md](./FileBlobsManager.md) (content-addressed document files),
+[MultiDocServe.md](./MultiDocServe.md) (multi-document serving, the session/user model and
+how process-per-session scales),
 [ThinClient.md](./ThinClient.md) + [ViewerUIResearch.md](./ViewerUIResearch.md)
 (client UI — design/research only).
 
@@ -156,7 +158,9 @@ Python passthrough, so the protocol design questions below are all still open.</
   years-long effort.
 - Sync results across process boundaries **without chattiness** via DAG-edge-granular
   bulk transfer, shared-memory binary BRep, and content-hash memoization.
-- Full design: [ComputeBoundaries.md](./ComputeBoundaries.md).
+- Full design: [ComputeBoundaries.md](./ComputeBoundaries.md). The serving side's
+  session/user model and the cloud-scaling analysis of process-per-session live in
+  [MultiDocServe.md](./MultiDocServe.md) §7.
 - <span style="color:#9a6a12">**Still entirely unbuilt (as of 2026-07).**</span> None of
   this workstream has landed: no headless document server, no process-per-document split, no
   `execute()` purity contract or audit, no parallel recompute scheduler, no cross-process
@@ -333,4 +337,7 @@ team-years of work; the near-term list is deliberately small.
 - Exact shape of the GUI's low-latency local tier: which pieces run client-side (sketch
   constraint solver is the clear first candidate) and how commits reconcile with the server.
 - Collaboration/multi-user consistency model (server-authoritative + OT/CRDT) — deferred,
-  but don't design it out.
+  but don't design it out. The first half-step is designed: a serving backend is one
+  collaborative *room* (shared selection, token at the door, identity labels), with
+  isolation pushed to a process-per-session gateway — [MultiDocServe.md](./MultiDocServe.md)
+  §7.
