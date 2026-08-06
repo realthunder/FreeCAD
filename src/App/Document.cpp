@@ -1059,6 +1059,14 @@ void Document::Save (Base::Writer &writer) const
     d->hashers.clear();
     addStringHasher(d->Hasher);
 
+    // Not every caller comes through save(): the content dump streams a
+    // document through a writer nothing has resolved a schema onto, and a
+    // writer's own default is 0 -- which a reader would take for a
+    // pre-schema file and restore no objects from. Whoever asks this
+    // document to write itself gets the document's resolved answer.
+    if (writer.getSchemaVersion() <= 0)
+        writer.setSchemaVersion(resolveSchemaVersion(writer));
+
     // The writer's schema is the resolved outcome (resolveSchemaVersion),
     // and the root element states it twice: once as the attribute, and at 6
     // or later as its own name.
