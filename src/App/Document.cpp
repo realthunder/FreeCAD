@@ -1982,7 +1982,9 @@ Document::readObjects(Base::XMLReader& reader)
             // otherwise we may cause a dependency to itself
             // Example: Object 'Cut001' references object 'Cut' and removing the
             // digits we make an object 'Cut' referencing itself.
+            FC_TIME_INIT(tAdd);
             App::DocumentObject* obj = addObject(type.c_str(), obj_name, /*isNew=*/ false, viewType.c_str(), partial);
+            FC_DURATION_PLUS(d->restoreTiming.createAdd, tAdd);
             if (obj) {
                 if(lastId < obj->_Id)
                     lastId = obj->_Id;
@@ -2887,6 +2889,7 @@ void Document::restore(Base::XMLReader &reader,
             << d->files.size() << " files"
             << ", xml " << dXml.count()
             << " (create " << rt.create.count()
+            << " [addObject " << rt.createAdd.count() << "s]"
             << ", data " << rt.data.count()
             << " [" << rt.props.count << " properties, "
             << rt.props.total.count() << "s of which value "

@@ -112,6 +112,10 @@ struct DocumentP
     /// profiler: the two XML passes, the archive bulk, and the fixup after.
     struct RestoreTiming {
         std::chrono::duration<double> create {0};
+        /// Of 'create': what the addObject() calls took by themselves --
+        /// the factory, the name bookkeeping, the notifications -- against
+        /// the XML element reads that surround them in the same pass.
+        std::chrono::duration<double> createAdd {0};
         std::chrono::duration<double> data {0};
         std::chrono::duration<double> files {0};
         std::size_t objectCount = 0;
