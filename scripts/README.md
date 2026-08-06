@@ -37,6 +37,8 @@ stacks.
 | `user_shader_post.py` | In-FreeCAD suite: scene-level post activation by an empty-target `App::Appearance` — TreeRank precedence and every deactivation path (override removal, hide, re-target, delete). |
 | `user_shader_viewer.py` | Browser-tier suite (scene-graph route): post + material `SoShaderProgram` nodes reach a connected WASM viewer through the server-side compile + snapshot shader table; broken-shader fallback and removal restore. |
 | `user_shader_viewer_appearance.py` | Browser-tier suite (document-object route): an empty-target Appearance's post shader reaches the WASM viewer, parameter edits propagate, hiding restores. |
+| `ontop_edge_repro.py` | In-FreeCAD repro for **show-on-top hidden-edge dimming**: box(hidden, on-top, Edge2 selected) + cylinder, captures a bgfx and a plain-GL (`Type=Default`) window grab at the canonical 1600x837 size. The cylinder is required — an all-on-top scene makes `canSkipInternal()` false and the internal GL pass paints over the backend frame. |
+| `ontop_edge_judge.py judge\|trace …` | Standalone (PIL) judge for those captures: samples many points along every box edge with per-edge expectations (hidden→DIMMED, front→SOLID, selected→GREEN), accepting a pixel as a line only against its measured local background — a fixed-point luminance probe cannot tell a dimmed line from background. `trace` dumps detected line runs per scanline to re-derive the edge table after a scene/camera change. |
 
 ## Demo scenes
 
