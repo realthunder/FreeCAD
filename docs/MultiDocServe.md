@@ -204,30 +204,34 @@ under `Preferences/SceneShare`:
 - **The token** (`Token`). The dialog offers the last one, so a backend restart leaves the
   links already in people's browsers working; *New* mints a fresh one, which is also the
   only real way to shut every current holder out.
-- **The clients** (`Clients/<name@address>`: `Name`, `Address`, `ViewOnly`, `Banned`).
-  A client is recorded on first sight; its access is restored when it returns, and the
-  panel lists remembered-but-absent clients greyed out so access can be set — or a ban
-  lifted — before anyone arrives. The recorded address drops the source port, which is
-  different on every visit; the name comes from `?client=` in the link or the viewer
-  menu's name action, which stores it per browser.
-- **Rules.** Both fields are **patterns**, so a record can be a person
-  (`lei-phone` @ `203.0.113.7`), a family (`lei-*` @ `*`), or the house rule (`*` @ `*` —
-  anyone from anywhere). The **most specific match wins** (a literal beats a partial
-  wildcard beats `*`; the name outranks the address, since the address is only where
-  someone happens to be today), which is what lets a blanket rule coexist with its
-  exceptions — *ban `*`, then allow the names you invited* is invite-only serving, and
-  *`*` set to view-only* is a read-only room with named editors. A client covered by a
-  rule gets no record of its own, so the rule stays the one place that decides; editing a
-  connected client from its row writes a record for that client and leaves the rule alone.
-  Rules are made in the panel (*Add rule…*) — nothing connecting can create one.
-- **Ban vs kick vs forget.** *Kick* ends this session and nothing more — the link still
-  works. *Ban* also refuses every later connection matching the record, until it is lifted
-  here. *Forget* drops the record: the next visit is a stranger's, neither banned nor
-  restricted. A ban is a door policy, not a lock — someone holding the token can still
-  knock, and will be shown out each time; the lock is a new token.
+- **The grants** (`Grants/G<n>`: `Token`, `Identity`, `Name`, `Address`, `Access`,
+  `Enabled`) — the persistent list of docs/ShareAccess.md §2, which replaced the old
+  client-records model (the `Clients` group is migrated once and never read again). A
+  grant is an invitation and who may use it: the token exactly (empty = none required),
+  and identity / name / address as **patterns** (`*`, `?`; addresses matched portless).
+  A connection must match a grant to get in at all — no match, or a banned best match, is
+  **refused at the door before any scene bytes**. The **most specific match wins**
+  (a literal beats a partial wildcard beats `*`; identity outranks name outranks
+  address), so a blanket grant coexists with its exceptions — *`*` view-only with named
+  editors*, or *ban one name while the house invitation stands*. The dialog's token is
+  kept pointed at the house grant (`*` @ `*`); *Add grant…* makes the rest — nothing
+  connecting can create one.
+- **Live vs stored.** The door checks the server's **live list**, seeded from the enabled
+  stored grants when sharing starts and cleared when it stops. A client renaming itself
+  past its grant gets a **live-only easing** (same token, new name, same bounds) so a
+  reload rejoins; the panel shows easings as *this session*, with *Keep* (write it down)
+  and *Drop*. Changing the live list re-judges every connection — a ban lands as a
+  refusal pushed from the server, not a roster-poll eviction.
+- **Ban vs kick vs disable vs forget.** *Kick* ends this session and nothing more.
+  *Ban* on a roster row adds a banned grant — keyed on the verified identity when there
+  is one (it survives renames and moves), else name + address — refused from then on
+  whatever invitation they hold. *Disable* on a grant row keeps the entry but admits
+  nobody through it, re-enabled without reissuing a link; *Forget* drops it for good.
 
 The server side of the roster is `SceneStreamServer::clients()` /
-`setClientViewOnly()` / `kickClient()` / `setClientsChangedNotifier()` / `stop()`.
+`setClientViewOnly()` / `kickClient()` / `setClientsChangedNotifier()` / `stop()`,
+and of the door `setGrants()` / `grants()` / `addGrant()` / `removeGrant()`
+(Python: `Gui.serveGrants` / `Gui.serveSetGrants`).
 **View-only** means: the connection's picks are dropped (selection is shared room state,
 so changing it is an edit) and mutating control ops answer
 `{"ok":false,"code":"ViewOnly"}`; reads — the property inspector — keep working, and the

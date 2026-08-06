@@ -211,9 +211,22 @@ the free tier.
    knobs on our side (`FC_SERVE_TRUST_PROXY=1`, optional `FC_SERVE_TOKEN`).
 3. **Grants replace client records** (§2) — persistent list keyed by identity *or* token,
    the same wildcard matching, enforcement moved into the server's authorization gate so
-   refusal happens before any scene bytes.
+   refusal happens before any scene bytes. **DONE**: `SceneStreamServer::setGrants` is
+   the door (most specific match wins, identity > name > address; the token is a filter,
+   not a rank, so a ban cannot be outranked by the invitation it revokes); an empty list
+   keeps the legacy single-token door for probe rigs. Stored under
+   `SceneShare/Grants` with one-time migration of the old token + client records;
+   `Gui.serveGrants` / `Gui.serveSetGrants` for scripts. The refusal code is `Refused`
+   (viewer stops reconnecting, says the invite does not cover you), distinct from
+   `BadToken`.
 4. **Live list** (§2) — seeded from enabled grants, rename easings, ban = drop live + keep
-   disabled, panel shows live-only rules distinctly.
+   disabled, panel shows live-only rules distinctly. **DONE**: list changes re-judge
+   every connection (the eviction moved out of the roster poll into the door); a rename
+   no grant covers mints a live-only easing bounded by the invitation it eases; the
+   panel shows easings as *this session* with Keep/Drop, grants with
+   enable/disable/forget and a 3-state access; roster Ban adds a banned grant keyed on
+   verified identity when present. All probe-verified end-to-end (admission, refusal,
+   view-only by identity, 403 before bytes, easing, re-judge kick).
 5. **Front door** (§4) — Caddy + oauth2-proxy on the linode, replacing
    `scripts/scene-proxy.py`.
 

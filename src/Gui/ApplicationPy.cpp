@@ -200,6 +200,19 @@ PyMethodDef Application::Methods[] = {
    "\n"
    "Disconnect a client: it is told and closed by its own loop.\n"
    "False when it is gone."},
+  {"serveGrants",             (PyCFunction) Application::sServeGrants, METH_VARARGS,
+   "serveGrants() -> list\n"
+   "\n"
+   "The scene stream server's live grant list (the door), one dict\n"
+   "each: id, token, identity, client, address, access (0 edit,\n"
+   "1 view-only, 2 banned), liveOnly."},
+  {"serveSetGrants",          (PyCFunction) Application::sServeSetGrants, METH_VARARGS,
+   "serveSetGrants(list) -> None\n"
+   "\n"
+   "Replace the live grant list with dicts of the serveGrants() shape\n"
+   "(all keys optional). A non-empty list becomes the door on every\n"
+   "endpoint; an empty one falls back to the shared token. Every\n"
+   "connection is re-judged."},
   {"serveStop",               (PyCFunction) Application::sServeStop, METH_VARARGS,
    "serveStop() -> None\n"
    "\n"
@@ -932,6 +945,61 @@ PyObject* Application::sServeKickClient(PyObject * /*self*/, PyObject *args)
         return nullptr;
     bool ok = Render::SceneStreamServer::instance().kickClient(id);
     return Py::new_reference_to(Py::Boolean(ok));
+}
+
+PyObject* Application::sServeGrants(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    Py::List list;
+    for (const auto &g : Render::SceneStreamServer::instance().grants()) {
+        Py::Dict entry;
+        entry.setItem("id", Py::Long(static_cast<unsigned long long>(g.id)));
+        entry.setItem("token", Py::String(g.token));
+        entry.setItem("identity", Py::String(g.identity));
+        entry.setItem("client", Py::String(g.client));
+        entry.setItem("address", Py::String(g.address));
+        entry.setItem("access", Py::Long(long(g.access)));
+        entry.setItem("liveOnly", Py::Boolean(g.liveOnly));
+        list.append(entry);
+    }
+    return Py::new_reference_to(list);
+}
+
+PyObject* Application::sServeSetGrants(PyObject * /*self*/, PyObject *args)
+{
+    PyObject *seq = nullptr;
+    if (!PyArg_ParseTuple(args, "O", &seq))
+        return nullptr;
+    try {
+        Py::Sequence input(seq);
+        std::vector<Render::SceneGrant> grants;
+        for (const auto &it : input) {
+            Py::Dict entry(it);
+            Render::SceneGrant g;
+            auto str = [&entry](const char *key) -> std::string {
+                return entry.hasKey(key)
+                    ? Py::String(entry.getItem(key)).as_std_string("utf-8")
+                    : std::string();
+            };
+            g.token = str("token");
+            g.identity = str("identity");
+            g.client = str("client");
+            g.address = str("address");
+            if (entry.hasKey("access"))
+                g.access = int(Py::Long(entry.getItem("access")));
+            if (entry.hasKey("id"))
+                g.id = uint64_t(
+                    static_cast<unsigned long long>(
+                        Py::Long(entry.getItem("id"))));
+            grants.push_back(std::move(g));
+        }
+        Render::SceneStreamServer::instance().setGrants(grants);
+        Py_Return;
+    }
+    catch (Py::Exception &) {
+        return nullptr;
+    }
 }
 
 PyObject* Application::sServeStop(PyObject * /*self*/, PyObject *args)

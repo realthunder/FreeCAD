@@ -345,6 +345,8 @@ public:
     static PyObject* sServeClients             (PyObject *self,PyObject *args);
     static PyObject* sServeSetClientMode       (PyObject *self,PyObject *args);
     static PyObject* sServeKickClient          (PyObject *self,PyObject *args);
+    static PyObject* sServeGrants              (PyObject *self,PyObject *args);
+    static PyObject* sServeSetGrants           (PyObject *self,PyObject *args);
     static PyObject* sServeStop                (PyObject *self,PyObject *args);
     static PyObject* sUpdateLocale             (PyObject *self,PyObject *args);
     static PyObject* sGetLocale                (PyObject *self,PyObject *args);

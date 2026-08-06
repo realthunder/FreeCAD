@@ -43,7 +43,6 @@
 #include <QPushButton>
 #include <QRandomGenerator>
 #include <QCoreApplication>
-#include <QRegularExpression>
 #include <QSpinBox>
 #include <QTimer>
 #include <QTreeWidget>
@@ -113,43 +112,37 @@ ParameterGrp::handle shareParams()
 }
 
 /*!
- * One remembered client, kept in user.cfg under
- * Preferences/SceneShare/Clients so a backend restart does not forget
- * who anybody is.
- *
- * The link's token is remembered with them (shareParams "Token"),
- * which is the point of the whole thing: sharing again reuses it, so
- * the URL already in someone's browser still opens. Nothing here
- * starts sharing by itself — persistence is memory, not autostart.
+ * One grant, as stored in user.cfg under Preferences/SceneShare/Grants
+ * (docs/ShareAccess.md §2): an invitation, and who may use it. This is
+ * the **persistent** list — every grant ever issued, each with an
+ * enabled flag; the **live** list the door actually checks is the
+ * server's (SceneStreamServer::setGrants), seeded from the enabled
+ * entries here when sharing starts and free to grow live-only rename
+ * easings meanwhile. Nothing here starts sharing by itself —
+ * persistence is memory, not autostart.
  */
-struct ClientRecord
+struct ShareGrant
 {
-    QString name;
-    QString address;
-    bool viewOnly = false;
-    /// Refused on sight: every connection matching this record is
-    /// disconnected as it arrives. A door policy, not a lock — anyone
-    /// holding the token can still knock, and will be shown out each
-    /// time. The lock is a new token.
-    bool banned = false;
+    QString token;     ///< invitation secret, exact; empty = none required
+    QString identity;  ///< pattern on the verified identity (may be empty = `*`)
+    QString name;      ///< pattern on the self-declared name
+    QString address;   ///< pattern on the address, matched portless
+    int access = 0;    ///< 0 = edit, 1 = view-only, 2 = banned
+    /// A disabled grant admits nobody but is kept — the "ban = drop
+    /// from live, keep the entry disabled" move, re-enabled later
+    /// without reissuing a link.
+    bool enabled = true;
+    /// Server id when this row mirrors a live-only easing minted at
+    /// runtime (never stored); 0 for persistent grants.
+    uint64_t liveId = 0;
 };
 
-/// The parameter subgroup name for a record. Readable in user.cfg, so
-/// a name and address can be found by eye; the sanitizing is only what
-/// the parameter tree cannot hold. Wildcards survive it — they are
-/// what a rule is made of.
-QString recordKey(const QString &name, const QString &address)
+/// The same invitation, for finding a row's grant in the stored list —
+/// what it grants (access, enabled) may be the very thing being edited.
+bool sameGrant(const ShareGrant &a, const ShareGrant &b)
 {
-    QString key = name.isEmpty() ? address : name + QLatin1Char('@') + address;
-    QString out;
-    for (QChar c : key) {
-        out += (c.isLetterOrNumber() || c == QLatin1Char('.')
-                || c == QLatin1Char(':') || c == QLatin1Char('-')
-                || c == QLatin1Char('@') || c == QLatin1Char('_')
-                || c == QLatin1Char('*') || c == QLatin1Char('?'))
-            ? c : QLatin1Char('_');
-    }
-    return out.left(80);
+    return a.token == b.token && a.identity == b.identity
+        && a.name == b.name && a.address == b.address;
 }
 
 /*!
@@ -177,104 +170,109 @@ QString addressKey(const QString &address)
     return address.left(colon);
 }
 
-/// Whether \a value satisfies \a pattern, where the pattern may use
-/// shell wildcards — `*` alone is everyone, `lei-*` is a family of
-/// names, `192.168.1.*` a subnet.
-bool patternMatch(const QString &pattern, const QString &value)
+/// The stored grants, in order. Migrates the pre-grant model once
+/// (docs/ShareAccess.md §1): the single shared token becomes the
+/// house invitation (`*` @ `*`, can edit — exactly what that token
+/// meant), and every remembered client/rule record becomes a grant on
+/// that token with the access it had. The old `Clients` group is left
+/// in place but never read again.
+std::vector<ShareGrant> loadGrants()
 {
-    if (!pattern.contains(QLatin1Char('*'))
-            && !pattern.contains(QLatin1Char('?')))
-        return pattern == value;
-    if (pattern == QLatin1String("*"))
-        return true;
-    QRegularExpression re(
-        QRegularExpression::wildcardToRegularExpression(pattern),
-        QRegularExpression::CaseInsensitiveOption);
-    return re.match(value).hasMatch();
-}
-
-/// How specific a pattern is, for choosing between rules that both
-/// match: a literal beats a partial wildcard beats `*`.
-int specificity(const QString &pattern)
-{
-    if (pattern == QLatin1String("*"))
-        return 0;
-    int literal = 0;
-    for (QChar c : pattern) {
-        if (c != QLatin1Char('*') && c != QLatin1Char('?'))
-            ++literal;
+    auto hGrp = shareParams();
+    auto grants = hGrp->GetGroup("Grants");
+    std::vector<ShareGrant> out;
+    for (const auto &sub : grants->GetGroups()) {
+        ShareGrant g;
+        g.token = QString::fromUtf8(sub->GetASCII("Token", "").c_str());
+        g.identity = QString::fromUtf8(sub->GetASCII("Identity", "").c_str());
+        g.name = QString::fromUtf8(sub->GetASCII("Name", "*").c_str());
+        g.address = QString::fromUtf8(sub->GetASCII("Address", "*").c_str());
+        g.access = int(sub->GetInt("Access", 0));
+        g.enabled = sub->GetBool("Enabled", true);
+        out.push_back(g);
     }
-    return (pattern.contains(QLatin1Char('*'))
-            || pattern.contains(QLatin1Char('?')))
-        ? 1 + literal : 4096 + literal;
-}
+    if (!out.empty() || hGrp->GetBool("GrantsMigrated", false))
+        return out;
 
-std::vector<ClientRecord> loadRecords()
-{
-    std::vector<ClientRecord> out;
-    auto clients = shareParams()->GetGroup("Clients");
+    const QString token = QString::fromUtf8(
+        hGrp->GetASCII("Token", "").c_str());
+    ShareGrant house;
+    house.token = token;
+    house.name = QStringLiteral("*");
+    house.address = QStringLiteral("*");
+    out.push_back(house);
+    auto clients = hGrp->GetGroup("Clients");
     for (const auto &sub : clients->GetGroups()) {
-        ClientRecord rec;
-        rec.name = QString::fromUtf8(sub->GetASCII("Name", "").c_str());
-        rec.address = QString::fromUtf8(sub->GetASCII("Address", "").c_str());
-        rec.viewOnly = sub->GetBool("ViewOnly", false);
-        rec.banned = sub->GetBool("Banned", false);
-        if (!rec.name.isEmpty() || !rec.address.isEmpty())
-            out.push_back(rec);
+        ShareGrant g;
+        g.token = token;
+        g.name = QString::fromUtf8(sub->GetASCII("Name", "").c_str());
+        g.address = QString::fromUtf8(sub->GetASCII("Address", "").c_str());
+        if (g.name.isEmpty() && g.address.isEmpty())
+            continue;
+        if (g.name.isEmpty())
+            g.name = QStringLiteral("*");
+        if (g.address.isEmpty())
+            g.address = QStringLiteral("*");
+        g.access = sub->GetBool("Banned", false) ? 2
+            : sub->GetBool("ViewOnly", false) ? 1 : 0;
+        out.push_back(g);
     }
+    hGrp->SetBool("GrantsMigrated", true);
     return out;
 }
 
-void saveRecord(const ClientRecord &rec)
+/// Rewrite the stored grant list. Live-only easings (liveId) are the
+/// server's, not ours — "Keep" copies one into a stored grant first.
+void saveGrants(const std::vector<ShareGrant> &list)
 {
-    auto sub = shareParams()->GetGroup("Clients")->GetGroup(
-        recordKey(rec.name, rec.address).toUtf8().constData());
-    sub->SetASCII("Name", rec.name.toUtf8().constData());
-    sub->SetASCII("Address", rec.address.toUtf8().constData());
-    sub->SetBool("ViewOnly", rec.viewOnly);
-    sub->SetBool("Banned", rec.banned);
-}
-
-void forgetRecord(const ClientRecord &rec)
-{
-    shareParams()->GetGroup("Clients")->RemoveGrp(
-        recordKey(rec.name, rec.address).toUtf8().constData());
-}
-
-/*!
- * The record governing a client, or none.
- *
- * Every record is a pattern pair, so one entry can be a person
- * (`lei-phone` @ `203.0.113.7`), a family (`lei-*` @ `*`), or the
- * house rule (`*` @ `*` — anyone from anywhere). The most specific
- * match wins, which is what lets a blanket rule coexist with the
- * exceptions to it: ban `*`, then allow the two names you invited.
- *
- * Name and address are both patterns because neither is dependable
- * alone: an unnamed viewer has only its address, and a named one moves
- * between networks — a phone leaving wifi arrives from somewhere else
- * entirely, while the name is the part a person chose.
- */
-const ClientRecord *matchRecord(const std::vector<ClientRecord> &records,
-                                const QString &name, const QString &address)
-{
-    const ClientRecord *best = nullptr;
-    int bestScore = -1;
-    const QString addr = addressKey(address);
-    for (const auto &rec : records) {
-        if (!patternMatch(rec.name, name)
-                || !patternMatch(rec.address, addr))
+    auto hGrp = shareParams();
+    hGrp->RemoveGrp("Grants");
+    auto grants = hGrp->GetGroup("Grants");
+    int n = 0;
+    for (const auto &g : list) {
+        if (g.liveId)
             continue;
-        // The name outranks the address: it is what a person chose,
-        // and the address is where they happen to be today.
-        const int score = specificity(rec.name) * 8192
-            + specificity(rec.address);
-        if (score > bestScore) {
-            bestScore = score;
-            best = &rec;
-        }
+        auto sub = grants->GetGroup(
+            QStringLiteral("G%1").arg(n++).toUtf8().constData());
+        sub->SetASCII("Token", g.token.toUtf8().constData());
+        sub->SetASCII("Identity", g.identity.toUtf8().constData());
+        sub->SetASCII("Name", g.name.toUtf8().constData());
+        sub->SetASCII("Address", g.address.toUtf8().constData());
+        sub->SetInt("Access", g.access);
+        sub->SetBool("Enabled", g.enabled);
     }
-    return best;
+}
+
+Render::SceneGrant toSceneGrant(const ShareGrant &g)
+{
+    Render::SceneGrant out;
+    out.token = g.token.toUtf8().constData();
+    out.identity = g.identity.toUtf8().constData();
+    out.client = g.name.toUtf8().constData();
+    out.address = g.address.toUtf8().constData();
+    out.access = g.access;
+    out.id = g.liveId;
+    out.liveOnly = g.liveId != 0;
+    return out;
+}
+
+/// Rebuild the server's live list — the door — from the enabled stored
+/// grants, keeping whatever live-only easings the server minted since
+/// sharing started. The server re-judges every connection against the
+/// result, which is where a ban or downgrade actually takes effect.
+void pushGrants(const std::vector<ShareGrant> &stored)
+{
+    auto &server = Render::SceneStreamServer::instance();
+    std::vector<Render::SceneGrant> live;
+    for (const auto &g : stored) {
+        if (g.enabled && !g.liveId)
+            live.push_back(toSceneGrant(g));
+    }
+    for (const auto &g : server.grants()) {
+        if (g.liveOnly)
+            live.push_back(g);
+    }
+    server.setGrants(live);
 }
 
 /// What a rule is, said once — the tooltip every widget that offers or
@@ -283,31 +281,25 @@ const ClientRecord *matchRecord(const std::vector<ClientRecord> &records,
 QString ruleHelp()
 {
     return QCoreApplication::translate("Gui::SharePanel",
-        "<b>Rule</b> — a name and address pattern, with the access to "
-        "give everyone matching both.<br><br>"
+        "<b>Grant</b> — an invitation, and who may use it. A connection "
+        "must match one to get in at all: its token exactly (an empty "
+        "token in the grant means none is required), and its verified "
+        "identity, name and address against the patterns.<br><br>"
         "<code>*</code> matches anything and <code>?</code> one "
         "character, so <code>*</code> @ <code>*</code> is anyone from "
-        "anywhere, <code>lei-*</code> @ <code>*</code> is a family of "
-        "names, and <code>guest</code> @ <code>192.168.1.*</code> is one "
-        "name on one network. Addresses are matched without the port.<br><br>"
+        "anywhere, <code>lei-*</code> a family of names, "
+        "<code>*@example.com</code> everyone the sign-in door verified "
+        "under that domain. Addresses are matched without the port.<br><br>"
         "The <b>most specific match wins</b> — a literal beats a partial "
-        "wildcard beats <code>*</code>, and the name outranks the address. "
-        "So a blanket rule and its exceptions live together: ban "
-        "<code>*</code> and add the names you invited, or make "
-        "<code>*</code> view-only and give named people editing.<br><br>"
-        "A client a rule covers is not remembered separately, so the rule "
-        "stays the one place that decides; changing a connected client's "
-        "access records that client alone and leaves the rule alone.");
-}
-
-/// Whether this record is a rule rather than a remembered visitor —
-/// it names a set, so no single client is "it".
-bool isRule(const ClientRecord &rec)
-{
-    return rec.name.contains(QLatin1Char('*'))
-        || rec.name.contains(QLatin1Char('?'))
-        || rec.address.contains(QLatin1Char('*'))
-        || rec.address.contains(QLatin1Char('?'));
+        "wildcard beats <code>*</code>; identity outranks name outranks "
+        "address. So a blanket grant and its exceptions live together: "
+        "make <code>*</code> view-only and give named people editing, or "
+        "ban one name while the house invitation stands. No match at all "
+        "is refused at the door, before any scene bytes.<br><br>"
+        "A <b>disabled</b> grant admits nobody but is kept, so it can be "
+        "re-enabled without reissuing a link. A grant marked <i>this "
+        "session</i> was minted live for a renamed client and dies with "
+        "the process — Keep it to write it down.");
 }
 
 /// The small always-on-top pill in the corner of the 3D area while
@@ -408,9 +400,9 @@ public:
         tree->setHeaderLabels({tr("Client"), tr("Address"), tr("Document"),
                                tr("Connected"), tr("Access"), QString()});
         tree->setToolTip(tr(
-            "Clients seen while sharing are remembered in user.cfg with "
-            "their access, and greyed out here while they are away. A "
-            "returning client is restored to the access it had."));
+            "Connected clients, then the grants — the invitations the "
+            "door checks. A connection must match a grant to get in; "
+            "the most specific match decides its access."));
         tree->setRootIsDecorated(false);
         tree->setSelectionMode(QAbstractItemView::NoSelection);
         tree->header()->setStretchLastSection(false);
@@ -418,9 +410,9 @@ public:
         layout->addWidget(tree, 1);
 
         auto *bottom = new QHBoxLayout;
-        // A rule cannot be created by anyone connecting, so it needs a
-        // way in of its own.
-        auto *ruleBtn = new QPushButton(tr("Add rule…"), this);
+        // A grant cannot be created by anyone connecting, so it needs
+        // a way in of its own.
+        auto *ruleBtn = new QPushButton(tr("Add grant…"), this);
         ruleBtn->setToolTip(ruleHelp());
         connect(ruleBtn, &QPushButton::clicked, this, [this]() { addRule(); });
         auto *stopBtn = new QPushButton(tr("Stop sharing"), this);
@@ -440,19 +432,26 @@ public:
 
     void refresh(const QString &url,
                  const std::vector<Render::SceneClientInfo> &clients,
-                 const std::vector<ClientRecord> &records)
+                 const std::vector<ShareGrant> &grants)
     {
         urlEdit->setText(url);
-        // Rebuild only when membership or a mode changed — a rebuild
-        // every roster tick would yank the combo out from under the
-        // pointer. Durations update in place.
+        // Rebuild only when membership, a name, an access or the grant
+        // list changed — a rebuild every roster tick would yank the
+        // combo out from under the pointer. Durations update in place.
         std::vector<std::pair<uint64_t, bool>> sig;
-        sig.reserve(clients.size() + records.size());
-        for (const auto &c : clients)
-            sig.emplace_back(c.id, c.viewOnly);
-        for (const auto &rec : records) {
-            sig.emplace_back(qHash(rec.name + rec.address) | (1ull << 32),
-                             rec.viewOnly);
+        sig.reserve(clients.size() + grants.size());
+        for (const auto &c : clients) {
+            // The name is part of the signature: a hello lands after
+            // the row was first built, and the row must follow it.
+            sig.emplace_back(c.id
+                ^ (uint64_t(qHash(QString::fromUtf8(c.client.c_str())))
+                   << 20), c.viewOnly);
+        }
+        for (const auto &g : grants) {
+            sig.emplace_back((uint64_t(qHash(g.token + g.identity + g.name
+                                             + g.address)) | (1ull << 32))
+                                 + uint64_t(g.access) + (g.liveId << 33),
+                             g.enabled);
         }
         if (sig == lastSig) {
             for (int i = 0; i < tree->topLevelItemCount()
@@ -497,30 +496,14 @@ public:
             mode->addItem(tr("Can edit"));
             mode->addItem(tr("View only"));
             mode->setCurrentIndex(c.viewOnly ? 1 : 0);
+            mode->setToolTip(tr(
+                "This connection alone, for this session. A durable "
+                "decision is a grant — the rows below."));
             const uint64_t id = c.id;
-            // The mode is both applied and remembered: what the host
-            // decides about someone should still be true when they come
-            // back tomorrow.
-            ClientRecord rec;
-            rec.name = QString::fromUtf8(c.client.c_str());
-            rec.address = addressKey(QString::fromUtf8(c.address.c_str()));
-            if (const ClientRecord *known =
-                    matchRecord(records, rec.name, rec.address)) {
-                // Editing from a connected row writes a record for
-                // *this* client, never back into a rule the whole room
-                // shares — a rule is edited on its own row.
-                if (!isRule(*known))
-                    rec = *known;
-                else
-                    rec.viewOnly = known->viewOnly;
-            }
-            const bool isBanned = rec.banned;
             connect(mode, qOverload<int>(&QComboBox::currentIndexChanged),
-                    this, [id, saved = rec](int index) mutable {
+                    this, [id](int index) {
                         Render::SceneStreamServer::instance()
                             .setClientViewOnly(id, index == 1);
-                        saved.viewOnly = index == 1;
-                        saveRecord(saved);
                     });
             tree->setItemWidget(item, 4, mode);
 
@@ -532,20 +515,41 @@ public:
             row->setContentsMargins(0, 0, 0, 0);
             row->setSpacing(4);
             auto *kick = new QPushButton(tr("Kick"), actions);
-            kick->setToolTip(tr("Disconnect now. The link still works, so "
-                                "they can come back."));
+            kick->setToolTip(tr("Disconnect now. The invitation still "
+                                "works, so they can come back."));
             connect(kick, &QPushButton::clicked, this, [id]() {
                 Render::SceneStreamServer::instance().kickClient(id);
             });
             auto *ban = new QPushButton(tr("Ban"), actions);
-            ban->setToolTip(tr("Disconnect and refuse them from now on. "
-                               "Lift it here; a new token is what locks "
-                               "everyone else out."));
+            ban->setToolTip(tr("Add a banned grant for them — refused at "
+                               "the door from now on, whatever invitation "
+                               "they hold. Lift it on the grant's row."));
+            const QString banIdentity =
+                QString::fromUtf8(c.identity.c_str());
+            const QString banName = QString::fromUtf8(c.client.c_str());
+            const QString banAddr =
+                addressKey(QString::fromUtf8(c.address.c_str()));
             connect(ban, &QPushButton::clicked, this,
-                    [this, id, saved = rec]() mutable {
-                saved.banned = true;
-                saveRecord(saved);
-                Render::SceneStreamServer::instance().kickClient(id);
+                    [this, banIdentity, banName, banAddr]() {
+                // Ban by what is most theirs: the verified identity
+                // when the front door asserted one (it survives any
+                // rename or move), else name and address together.
+                ShareGrant g;
+                g.access = 2;
+                if (!banIdentity.isEmpty()) {
+                    g.identity = banIdentity;
+                    g.name = g.address = QStringLiteral("*");
+                }
+                else {
+                    g.name = banName.isEmpty() ? QStringLiteral("*")
+                                               : banName;
+                    g.address = banAddr.isEmpty() ? QStringLiteral("*")
+                                                  : banAddr;
+                }
+                auto list = loadGrants();
+                list.push_back(g);
+                saveGrants(list);
+                pushGrants(list);   // the door re-judges; they are out
                 lastSig.clear();
                 if (onChanged)
                     onChanged();
@@ -553,79 +557,149 @@ public:
             row->addWidget(kick);
             row->addWidget(ban);
             tree->setItemWidget(item, 5, actions);
-            if (isBanned)
-                item->setText(3, tr("banned"));
         }
 
-        // Everyone remembered but not here, and the rules: greyed,
-        // still editable — setting someone to view-only, or banning
-        // them, before they arrive is the sensible way to hand out a
-        // link, and a rule is only ever edited this way.
-        for (const auto &rec : records) {
-            bool here = false;
-            for (const auto &c : clients) {
-                if (!isRule(rec)
-                        && QString::fromUtf8(c.client.c_str()) == rec.name
-                        && addressKey(QString::fromUtf8(c.address.c_str()))
-                               == rec.address)
-                    here = true;
-            }
-            if (here)
-                continue;
-
+        // The grants: every invitation written down (greyed while it
+        // is only paperwork), plus the live-only easings the server
+        // minted this session. Editing here is editing the door.
+        for (const auto &g : grants) {
             auto *item = new QTreeWidgetItem(tree);
-            item->setText(0, rec.name.isEmpty() ? tr("(unnamed)") : rec.name);
-            item->setText(1, rec.address);
-            item->setText(3, rec.banned ? tr("banned")
-                              : (isRule(rec) ? tr("rule") : tr("away")));
-            if (isRule(rec)) {
-                // The row is the only place a rule is ever read, so it
-                // carries the whole explanation.
-                item->setToolTip(0, ruleHelp());
-                item->setToolTip(1, ruleHelp());
+            QString who = g.name.isEmpty() ? QStringLiteral("*") : g.name;
+            if (!g.identity.isEmpty()
+                    && g.identity != QLatin1String("*")) {
+                who = (g.name.isEmpty() || g.name == QLatin1String("*"))
+                    ? g.identity
+                    : g.identity + QStringLiteral(" (") + g.name
+                        + QLatin1Char(')');
             }
+            item->setText(0, who);
+            item->setText(1, g.address.isEmpty() ? QStringLiteral("*")
+                                                 : g.address);
+            item->setText(3, g.liveId ? tr("this session")
+                              : g.enabled ? tr("grant") : tr("off"));
+            item->setToolTip(0, ruleHelp());
+            item->setToolTip(1, ruleHelp());
+            item->setToolTip(3, g.token.isEmpty()
+                ? tr("No token required — matched on identity, name "
+                     "and address alone.")
+                : tr("Invite token: %1").arg(g.token));
             for (int col = 0; col < 4; ++col)
-                item->setForeground(col, QBrush(Qt::gray));
-
-            auto *mode = new QComboBox(tree);
-            mode->addItem(tr("Can edit"));
-            mode->addItem(tr("View only"));
-            mode->setCurrentIndex(rec.viewOnly ? 1 : 0);
-            connect(mode, qOverload<int>(&QComboBox::currentIndexChanged),
-                    this, [saved = rec](int index) mutable {
-                        saved.viewOnly = index == 1;
-                        saveRecord(saved);
-                    });
-            tree->setItemWidget(item, 4, mode);
+                item->setForeground(col, QBrush(g.enabled ? Qt::gray
+                                                          : Qt::darkGray));
 
             auto *actions = new QWidget(tree);
             auto *row = new QHBoxLayout(actions);
             row->setContentsMargins(0, 0, 0, 0);
             row->setSpacing(4);
-            auto *ban = new QPushButton(
-                rec.banned ? tr("Unban") : tr("Ban"), actions);
-            connect(ban, &QPushButton::clicked, this,
-                    [this, saved = rec]() mutable {
-                saved.banned = !saved.banned;
-                saveRecord(saved);
-                lastSig.clear();
-                if (onChanged)
-                    onChanged();
-            });
-            // Forgetting is not a ban: it drops what we know, so the
-            // next visit is a stranger's — with whatever access a
-            // stranger gets. Ban is the one that keeps someone out.
-            auto *forget = new QPushButton(tr("Forget"), actions);
-            forget->setToolTip(tr("Drop this record. They are neither "
-                                  "banned nor restricted afterwards."));
-            connect(forget, &QPushButton::clicked, this, [this, rec]() {
-                forgetRecord(rec);
-                lastSig.clear();   // force a rebuild on the next tick
-                if (onChanged)
-                    onChanged();
-            });
-            row->addWidget(ban);
-            row->addWidget(forget);
+            if (g.liveId) {
+                // An easing is the server's: keep it (write it down)
+                // or drop it — not edited in place.
+                item->setText(4, g.access == 1 ? tr("View only")
+                                               : tr("Can edit"));
+                auto *keep = new QPushButton(tr("Keep"), actions);
+                keep->setToolTip(tr(
+                    "Write this session-only easing into the stored "
+                    "grants, so it survives a restart."));
+                connect(keep, &QPushButton::clicked, this,
+                        [this, saved = g]() {
+                    auto list = loadGrants();
+                    ShareGrant copy = saved;
+                    copy.liveId = 0;
+                    list.push_back(copy);
+                    saveGrants(list);
+                    // Stored copy first, then retire the easing — in
+                    // this order, so the client it covers is never
+                    // between grants when the door re-judges.
+                    pushGrants(list);
+                    Render::SceneStreamServer::instance().removeGrant(
+                        saved.liveId);
+                    lastSig.clear();
+                    if (onChanged)
+                        onChanged();
+                });
+                auto *drop = new QPushButton(tr("Drop"), actions);
+                drop->setToolTip(tr(
+                    "Delete the easing now. The renamed client is "
+                    "re-judged and may be refused."));
+                connect(drop, &QPushButton::clicked, this,
+                        [this, liveId = g.liveId]() {
+                    Render::SceneStreamServer::instance().removeGrant(
+                        liveId);
+                    lastSig.clear();
+                    if (onChanged)
+                        onChanged();
+                });
+                row->addWidget(keep);
+                row->addWidget(drop);
+            }
+            else {
+                auto *mode = new QComboBox(tree);
+                mode->addItem(tr("Can edit"));
+                mode->addItem(tr("View only"));
+                mode->addItem(tr("Banned"));
+                mode->setCurrentIndex(g.access);
+                mode->setToolTip(ruleHelp());
+                connect(mode,
+                        qOverload<int>(&QComboBox::currentIndexChanged),
+                        this, [this, saved = g](int index) {
+                    auto list = loadGrants();
+                    for (auto &e : list) {
+                        if (sameGrant(e, saved)) {
+                            e.access = index;
+                            break;
+                        }
+                    }
+                    saveGrants(list);
+                    pushGrants(list);
+                    lastSig.clear();
+                    if (onChanged)
+                        onChanged();
+                });
+                tree->setItemWidget(item, 4, mode);
+
+                auto *toggle = new QPushButton(
+                    g.enabled ? tr("Disable") : tr("Enable"), actions);
+                toggle->setToolTip(tr(
+                    "A disabled grant admits nobody but is kept — "
+                    "re-enable it later without reissuing a link."));
+                connect(toggle, &QPushButton::clicked, this,
+                        [this, saved = g]() {
+                    auto list = loadGrants();
+                    for (auto &e : list) {
+                        if (sameGrant(e, saved)) {
+                            e.enabled = !e.enabled;
+                            break;
+                        }
+                    }
+                    saveGrants(list);
+                    pushGrants(list);
+                    lastSig.clear();
+                    if (onChanged)
+                        onChanged();
+                });
+                // Forgetting is not disabling: it drops the grant for
+                // good. Disable is the reversible one.
+                auto *forget = new QPushButton(tr("Forget"), actions);
+                forget->setToolTip(tr(
+                    "Drop this grant entirely. Disable is the "
+                    "reversible one."));
+                connect(forget, &QPushButton::clicked, this,
+                        [this, saved = g]() {
+                    auto list = loadGrants();
+                    list.erase(std::remove_if(list.begin(), list.end(),
+                                              [&saved](const ShareGrant &e) {
+                                                  return sameGrant(e, saved);
+                                              }),
+                               list.end());
+                    saveGrants(list);
+                    pushGrants(list);
+                    lastSig.clear();
+                    if (onChanged)
+                        onChanged();
+                });
+                row->addWidget(toggle);
+                row->addWidget(forget);
+            }
             tree->setItemWidget(item, 5, actions);
         }
     }
@@ -635,14 +709,24 @@ public:
     std::function<void()> onChanged;
 
 private:
-    /// Ask for a rule and store it. Defaults to `*` @ `*` — the
-    /// house rule — because that is the one worth reaching for: set
-    /// everyone to view-only, or ban everyone and allow by name.
+    /// Ask for a grant and store it. Defaults to the house shape —
+    /// today's token, anyone from anywhere — because that is the one
+    /// worth narrowing: set everyone to view-only, ban a name, or key
+    /// an invitation on a verified identity.
     void addRule()
     {
         QDialog dlg(this);
-        dlg.setWindowTitle(tr("Add rule"));
+        dlg.setWindowTitle(tr("Add grant"));
         auto *form = new QFormLayout(&dlg);
+        auto *tokenEdit = new QLineEdit(QString::fromUtf8(
+            shareParams()->GetASCII("Token", "").c_str()), &dlg);
+        tokenEdit->setToolTip(tr(
+            "The exact token this grant is for — the invitation itself. "
+            "Defaults to the share's current token; clear it to match "
+            "any (an identity-keyed grant behind a sign-in front door "
+            "needs no token)."));
+        auto *idEdit = new QLineEdit(QStringLiteral("*"), &dlg);
+        idEdit->setToolTip(ruleHelp());
         auto *nameEdit = new QLineEdit(QStringLiteral("*"), &dlg);
         nameEdit->setToolTip(ruleHelp());
         auto *addrEdit = new QLineEdit(QStringLiteral("*"), &dlg);
@@ -652,6 +736,8 @@ private:
         modeBox->addItem(tr("View only"));
         modeBox->addItem(tr("Banned"));
         modeBox->setToolTip(ruleHelp());
+        form->addRow(tr("Token:"), tokenEdit);
+        form->addRow(tr("Identity:"), idEdit);
         form->addRow(tr("Name:"), nameEdit);
         form->addRow(tr("Address:"), addrEdit);
         form->addRow(tr("Access:"), modeBox);
@@ -663,16 +749,22 @@ private:
         if (dlg.exec() != QDialog::Accepted)
             return;
 
-        ClientRecord rec;
-        rec.name = nameEdit->text().trimmed();
-        rec.address = addrEdit->text().trimmed();
-        if (rec.name.isEmpty())
-            rec.name = QStringLiteral("*");
-        if (rec.address.isEmpty())
-            rec.address = QStringLiteral("*");
-        rec.viewOnly = modeBox->currentIndex() == 1;
-        rec.banned = modeBox->currentIndex() == 2;
-        saveRecord(rec);
+        ShareGrant g;
+        g.token = tokenEdit->text().trimmed();
+        g.identity = idEdit->text().trimmed();
+        g.name = nameEdit->text().trimmed();
+        g.address = addrEdit->text().trimmed();
+        if (g.identity.isEmpty())
+            g.identity = QStringLiteral("*");
+        if (g.name.isEmpty())
+            g.name = QStringLiteral("*");
+        if (g.address.isEmpty())
+            g.address = QStringLiteral("*");
+        g.access = modeBox->currentIndex();
+        auto list = loadGrants();
+        list.push_back(g);
+        saveGrants(list);
+        pushGrants(list);
         lastSig.clear();
         if (onChanged)
             onChanged();
@@ -700,14 +792,6 @@ public:
     QString token;
     QPointer<ShareIndicator> indicator;
     QPointer<SharePanel> panel;
-    /// What each connection was last judged as, so the host flipping
-    /// someone back is not undone on the next roster tick. Keyed by
-    /// the *name* it was judged under, not just the id: a connection
-    /// exists before its hello arrives, so its first appearance is
-    /// nameless, and the name landing a moment later has to be judged
-    /// again — otherwise a rule naming somebody would never be
-    /// applied to them at all. Ids are never reused within a run.
-    std::map<uint64_t, QString> judged;
     QTimer timer;
     bool notifierInstalled = false;
 
@@ -905,14 +989,46 @@ void ShareDocumentManager::openShareDialog()
     // started by this — only the token survives, not the session.
     hGrp->SetASCII("Token", token.toUtf8().constData());
 
+    // The stored grants are the door (docs/ShareAccess.md §2), and the
+    // dialog's token is the house invitation — the `*` @ `*` grant a
+    // plain link mints from — so point that grant at today's token
+    // rather than grow a second one. Editing the token here is what
+    // "New" is for: the old links stop matching anything.
+    std::vector<ShareGrant> grants = loadGrants();
+    bool house = false;
+    for (auto &g : grants) {
+        const bool anyName = g.name.isEmpty()
+            || g.name == QLatin1String("*");
+        const bool anyAddr = g.address.isEmpty()
+            || g.address == QLatin1String("*");
+        const bool anyId = g.identity.isEmpty()
+            || g.identity == QLatin1String("*");
+        if (anyName && anyAddr && anyId && g.access != 2) {
+            g.token = token;
+            house = true;
+            break;
+        }
+    }
+    if (!house) {
+        ShareGrant g;
+        g.token = token;
+        g.name = g.address = QStringLiteral("*");
+        grants.insert(grants.begin(), g);
+    }
+    saveGrants(grants);
+
     auto &server = Render::SceneStreamServer::instance();
     server.setTrustProxy(proxyBox->isChecked());
-    // The door first: the token must gate the very first request the
-    // listener answers, not arrive after it is up.
+    // The door first: it must gate the very first request the
+    // listener answers, not arrive after it is up. The token is still
+    // set for the link preview and as what the hello vocabulary
+    // presents; the grants are what judge it.
     server.setToken(token.toUtf8().constData());
+    pushGrants(grants);
     SceneServeSource *source = SceneServeSource::serve(guiDoc, port);
     if (!source) {
         server.setToken(std::string());
+        server.setGrants({});
         QMessageBox::critical(getMainWindow(), QObject::tr("Share document"),
                               QObject::tr("The document could not be served. "
                                           "Sharing needs a render engine "
@@ -923,6 +1039,7 @@ void ShareDocumentManager::openShareDialog()
     if (!server.running()) {
         SceneServeSource::unserve(guiDoc);
         server.setToken(std::string());
+        server.setGrants({});
         QMessageBox::critical(getMainWindow(), QObject::tr("Share document"),
                               QObject::tr("The scene server could not "
                                           "listen on port %1.").arg(port));
@@ -991,6 +1108,9 @@ void ShareDocumentManager::stopSharing()
     pimpl->docs.clear();
     server.stop();
     server.setToken(std::string());
+    // The live list dies with the share — easings and all; the next
+    // start seeds a fresh one from what is written down.
+    server.setGrants({});
     pimpl->timer.stop();
     if (pimpl->indicator)
         pimpl->indicator->hide();
@@ -1011,51 +1131,10 @@ void ShareDocumentManager::refreshUi()
     auto &server = Render::SceneStreamServer::instance();
     std::vector<Render::SceneClientInfo> clients;
     server.clients(clients);
-
-    // Apply what is remembered about each connection, once — a ban
-    // ends it, an access mode is restored. Once per connection id, so
-    // the host overruling either afterwards is not undone on the next
-    // tick, and the record only changes when the host changes it.
-    const std::vector<ClientRecord> records = loadRecords();
-    for (const auto &c : clients) {
-        const QString name = QString::fromUtf8(c.client.c_str());
-        const QString address = QString::fromUtf8(c.address.c_str());
-        auto seen = pimpl->judged.find(c.id);
-        if (seen != pimpl->judged.end() && seen->second == name)
-            continue;
-        pimpl->judged[c.id] = name;
-
-        const ClientRecord *known = matchRecord(records, name, address);
-        if (!known) {
-            // Nobody's rule covers them. Remember them once they have
-            // said who they are — a connection with no hello yet has
-            // no name, and recording it would file a person under
-            // nothing. The address is stored without its source port,
-            // which differs on every visit.
-            if (c.viewer) {
-                ClientRecord rec;
-                rec.name = name;
-                rec.address = addressKey(address);
-                rec.viewOnly = c.viewOnly;
-                saveRecord(rec);
-            }
-            continue;
-        }
-        if (known->banned) {
-            server.kickClient(c.id);
-            continue;
-        }
-        if (known->viewOnly != c.viewOnly)
-            server.setClientViewOnly(c.id, known->viewOnly);
-    }
-    // Connections that have gone: keep the judged set from growing for
-    // the life of the process.
-    for (auto it = pimpl->judged.begin(); it != pimpl->judged.end();) {
-        bool live = false;
-        for (const auto &c : clients)
-            live = live || c.id == it->first;
-        it = live ? std::next(it) : pimpl->judged.erase(it);
-    }
+    // No enforcement here: the door judges (docs/ShareAccess.md §2).
+    // What used to be a roster-poll eviction — a banned client
+    // connecting, registering, and being shown out a tick later — is
+    // now a refusal before any scene bytes, in the server.
 
     if (pimpl->indicator) {
         pimpl->indicator->setText(
@@ -1063,6 +1142,22 @@ void ShareDocumentManager::refreshUi()
         pimpl->indicator->setToolTip(pimpl->shareUrl());
         pimpl->indicator->show();
     }
-    if (pimpl->panel && pimpl->panel->isVisible())
-        pimpl->panel->refresh(pimpl->shareUrl(), clients, records);
+    if (pimpl->panel && pimpl->panel->isVisible()) {
+        // The panel shows the stored grants plus whatever live-only
+        // easings the server minted this session, marked apart.
+        std::vector<ShareGrant> grants = loadGrants();
+        for (const auto &g : server.grants()) {
+            if (!g.liveOnly)
+                continue;
+            ShareGrant e;
+            e.token = QString::fromUtf8(g.token.c_str());
+            e.identity = QString::fromUtf8(g.identity.c_str());
+            e.name = QString::fromUtf8(g.client.c_str());
+            e.address = QString::fromUtf8(g.address.c_str());
+            e.access = g.access;
+            e.liveId = g.id;
+            grants.push_back(e);
+        }
+        pimpl->panel->refresh(pimpl->shareUrl(), clients, grants);
+    }
 }
