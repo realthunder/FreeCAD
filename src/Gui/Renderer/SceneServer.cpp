@@ -144,18 +144,8 @@ std::string base64(const uint8_t *data, size_t size)
 class SceneStreamServer::Private {
 public:
     std::mutex mutex;
-    std::vector<uint8_t> payload;
-    /// The version \a payload was built for; both change together, in
-    /// publish(). \a handedOut runs ahead of it — a version is claimed
-    /// before the payload that carries it can be serialized.
-    uint64_t version = 0;
-    uint64_t handedOut = 0;
     int listenFd = -1;
     bool started = false;
-
-    /// Where \a payload's object list sits, so it can be narrowed for a
-    /// viewer that is behind (SceneDump.h, spliceObjectDelta).
-    SceneSnapshot::RootSpans spans;
 
     /// What each of the last few publishes changed, oldest first and
     /// consecutive. A viewer that missed some is caught up by merging
@@ -167,36 +157,116 @@ public:
         std::vector<SceneSnapshot::ObjectEntry> changed;
         std::vector<uint64_t> removed;
     };
-    std::deque<Change> history;
     static const size_t kHistory = 32;
 
-    /// This run of the backend, and who is numbering its versions
-    /// (SceneServer.h, beginPublish). Both guarded by \a mutex.
-    uint64_t session = 0;
-    const void *publisher = nullptr;
+    /// Everything the server holds *per served document*
+    /// (docs/MultiDocServe.md §3). One instance today — the map below
+    /// is capped at the default group until the wire learns to name
+    /// documents — but the split is what makes a second document a new
+    /// map entry instead of a fight over singleton slots. Guarded by
+    /// \a mutex except where a member says otherwise.
+    struct DocGroup {
+        /// The document this group serves; empty for the default group
+        /// until the wire carries names (stage 3b).
+        std::string name;
 
-    /// The payload for a viewer holding \a held: the difference since
-    /// it, when the history reaches back that far, and the whole root
-    /// otherwise. Empty when there is nothing to send. Call with
-    /// \a mutex held.
+        std::vector<uint8_t> payload;
+        /// The version \a payload was built for; both change together,
+        /// in publish(). \a handedOut runs ahead of it — a version is
+        /// claimed before the payload that carries it is serialized.
+        uint64_t version = 0;
+        uint64_t handedOut = 0;
+        /// Where \a payload's object list sits, so it can be narrowed
+        /// for a viewer that is behind (SceneDump.h, spliceObjectDelta).
+        SceneSnapshot::RootSpans spans;
+        std::deque<Change> history;
+        /// This run of this document's stream, and who is numbering its
+        /// versions (SceneServer.h, beginPublish).
+        uint64_t session = 0;
+        const void *publisher = nullptr;
+
+        /// Blob keys named by this group's publish in flight, then by
+        /// its last two publishes. The store itself is global (blobs
+        /// are content-keyed and immutable, so documents share them);
+        /// which keys are *alive* is a per-document fact, and a key
+        /// retires only when no group at all names it (retireBlobs).
+        std::set<std::string> pendingKeys, currentKeys, previousKeys;
+
+        /// Level bookkeeping (docs/SceneStreaming.md §7): rung demand
+        /// is driven by the viewers of this document's scene.
+        std::set<std::pair<std::string, uint32_t>> levelAsked;
+        std::map<std::pair<std::string, uint32_t>,
+                 std::pair<std::string, uint32_t>> levelBuilt;
+        size_t levelsDone = 0;
+
+        /// This document's publisher-side consumers. Guarded by
+        /// \a handlerMutex, not \a mutex — a handler runs arbitrary
+        /// marshaling code and must not be looked up under the payload
+        /// lock.
+        std::function<void(const ScenePickRequest &)> pickHandler;
+        std::function<void(SceneControlRequest &&)> controlHandler;
+        std::function<void()> workNotifier;
+
+        uint64_t ensureSession()
+        {
+            if (!session) {
+                // Wall clock, so that two runs of this process — which
+                // is exactly the case the id exists for — cannot
+                // collide the way a counter or an address could.
+                session = uint64_t(std::chrono::duration_cast<
+                        std::chrono::nanoseconds>(
+                            std::chrono::system_clock::now()
+                                .time_since_epoch())
+                        .count());
+                if (!session)
+                    session = 1;   // 0 means "unknown" on the wire
+            }
+            return session;
+        }
+    };
+
+    /// The served documents, keyed by document name. std::map for node
+    /// stability: connections and level jobs hold DocGroup pointers.
+    /// Nothing removes an entry yet — group teardown arrives with the
+    /// wire changes (stage 3b), and must then purge the level queue and
+    /// re-home the group's connections.
+    std::map<std::string, DocGroup> groups;
+    /// The group an unadorned client means: the first one served. Null
+    /// until something publishes or a connection arrives.
+    DocGroup *defaultGrp = nullptr;
+
+    /// The default group, created on first use. Call with \a mutex
+    /// held.
+    DocGroup &defaultGroup()
+    {
+        if (!defaultGrp)
+            defaultGrp = &groups[std::string()];
+        return *defaultGrp;
+    }
+
+    /// The payload of \a g for a viewer holding \a held: the
+    /// difference since it, when the history reaches back that far,
+    /// and the whole root otherwise. Empty when there is nothing to
+    /// send. Call with \a mutex held.
     ///
     /// The merge is last-wins per objectKey, which is what makes this
     /// safe to serve: the last thing said about an object is its
     /// current state, so the result names only keys the publish in
     /// flight still names — never a chunk that has since been retired.
-    std::vector<uint8_t> payloadFor(uint64_t held)
+    std::vector<uint8_t> payloadFor(DocGroup &g, uint64_t held)
     {
-        if (payload.empty() || held == version)
+        if (g.payload.empty() || held == g.version)
             return {};
         // No manifest layout (nothing to narrow), or a viewer holding
         // nothing, or one whose version predates what we remember.
-        if (!spans.listEnd || !held || held > version || history.empty()
-                || history.front().version > held + 1)
-            return payload;
+        if (!g.spans.listEnd || !held || held > g.version
+                || g.history.empty()
+                || g.history.front().version > held + 1)
+            return g.payload;
 
         std::map<uint64_t, const SceneSnapshot::ObjectEntry *> changed;
         std::set<uint64_t> removed;
-        for (const auto &h : history) {
+        for (const auto &h : g.history) {
             if (h.version <= held)
                 continue;
             for (const auto &e : h.changed) {
@@ -221,53 +291,34 @@ public:
         // store is right here. Held under \a mutex like everything else
         // in this call.
         if (!spliceObjectDelta(
-                payload, spans, held, entries, gone, out,
+                g.payload, g.spans, held, entries, gone, out,
                 [this](const std::string &key)
                     -> const std::vector<uint8_t> * {
                     auto it = blobs.find(key);
                     return it == blobs.end() ? nullptr : &it->second;
                 }))
-            return payload;
+            return g.payload;
         return out;
-    }
-
-    uint64_t ensureSession()
-    {
-        if (!session) {
-            // Wall clock, so that two runs of this process — which is
-            // exactly the case the id exists for — cannot collide the
-            // way a counter or an address could.
-            session = uint64_t(std::chrono::duration_cast<
-                    std::chrono::nanoseconds>(
-                        std::chrono::system_clock::now().time_since_epoch())
-                    .count());
-            if (!session)
-                session = 1;   // 0 means "unknown" on the wire
-        }
-        return session;
     }
 
     /// Out-of-band texture payloads, addressed by content key and
     /// served over GET /blob?key= — the snapshot only names them
     /// (SceneDump.h, v26). Immutable by construction, so a viewer may
-    /// cache one forever.
+    /// cache one forever — and documents may share one, which is why
+    /// the store is global while the key *liveness* sets live in the
+    /// groups.
     std::map<std::string, std::vector<uint8_t>> blobs;
-    /// Keys named by the publish in flight, then by the last two
-    /// publishes. Anything older is dropped: a scene's textures are
-    /// bounded, but a session's history is not. Two generations of
-    /// grace so a viewer still fetching for the previous snapshot
-    /// while a new one is published does not race into a 404.
-    std::set<std::string> pendingKeys, currentKeys, previousKeys;
 
     /// Bounds on one POST /blobs request, which is otherwise an
     /// unauthenticated allocation the client controls.
     static const size_t kMaxBatchKeys = 512;
     static const size_t kMaxBatchBody = kMaxBatchKeys * 64;
 
-    void addBlob(const std::string &key, std::vector<uint8_t> &&data)
+    void addBlob(DocGroup &g, const std::string &key,
+                 std::vector<uint8_t> &&data)
     {
         std::lock_guard<std::mutex> guard(mutex);
-        pendingKeys.insert(key);
+        g.pendingKeys.insert(key);
         // Content addressed: an existing entry is already this payload.
         blobs.emplace(key, std::move(data));
     }
@@ -277,27 +328,38 @@ public:
     /// from its cacheId memo instead of re-serializing a mesh. Returns
     /// false when the blob is gone, which is the memo's invalidation:
     /// the caller then rebuilds and stores it.
-    bool retainBlob(const std::string &key, uint32_t *size)
+    bool retainBlob(DocGroup &g, const std::string &key, uint32_t *size)
     {
         std::lock_guard<std::mutex> guard(mutex);
         auto it = blobs.find(key);
         if (it == blobs.end())
             return false;
-        pendingKeys.insert(key);
+        g.pendingKeys.insert(key);
         if (size)
             *size = uint32_t(it->second.size());
         return true;
     }
 
-    /// Roll the generations and drop what neither of them names.
-    /// Called with \a mutex held, from publish().
-    void retireBlobs()
+    /// Roll \a g's generations and drop from the store what no group
+    /// names at all — pending, current or previous: another document's
+    /// publish in flight must not lose its blobs to this one's
+    /// retirement. Called with \a mutex held, from publish().
+    void retireBlobs(DocGroup &g)
     {
-        previousKeys = std::move(currentKeys);
-        currentKeys = std::move(pendingKeys);
-        pendingKeys.clear();
+        g.previousKeys = std::move(g.currentKeys);
+        g.currentKeys = std::move(g.pendingKeys);
+        g.pendingKeys.clear();
+        auto liveAnywhere = [this](const std::string &key) {
+            for (const auto &entry : groups) {
+                const DocGroup &grp = entry.second;
+                if (grp.pendingKeys.count(key) || grp.currentKeys.count(key)
+                        || grp.previousKeys.count(key))
+                    return true;
+            }
+            return false;
+        };
         for (auto it = blobs.begin(); it != blobs.end();) {
-            if (currentKeys.count(it->first) || previousKeys.count(it->first))
+            if (liveAnywhere(it->first))
                 ++it;
             else
                 it = blobs.erase(it);
@@ -305,14 +367,20 @@ public:
         // A built level whose chunk got rolled away is a memo pointing
         // at nothing — the mesh it was made from left the scene, and
         // no manifest retained it. Forget it entirely, so a viewer
-        // that wants it again may ask again.
-        for (auto it = levelBuilt.begin(); it != levelBuilt.end();) {
-            if (blobs.count(it->second.first)) {
-                ++it;
-            }
-            else {
-                levelAsked.erase(it->first);
-                it = levelBuilt.erase(it);
+        // that wants it again may ask again. Every group is swept: the
+        // erase above is global, so another group's memo may have just
+        // lost its chunk too.
+        for (auto &entry : groups) {
+            DocGroup &grp = entry.second;
+            for (auto it = grp.levelBuilt.begin();
+                 it != grp.levelBuilt.end();) {
+                if (blobs.count(it->second.first)) {
+                    ++it;
+                }
+                else {
+                    grp.levelAsked.erase(it->first);
+                    it = grp.levelBuilt.erase(it);
+                }
             }
         }
     }
@@ -328,20 +396,19 @@ public:
     struct LevelJob {
         std::string source;
         uint32_t level = 0;
+        /// Whose demand this is: the memo, the announcement and the
+        /// wake-up all belong to one document's stream. Stable because
+        /// groups are map nodes and nothing removes one yet; group
+        /// teardown (stage 3b) must purge its jobs from this queue.
+        DocGroup *group = nullptr;
     };
     std::deque<LevelJob> levelQueue;      ///< guarded by \a mutex
-    /// Every (source, level) ever accepted, so a repeat is free. An
-    /// entry leaves only when its answer does (retireBlobs) or its
-    /// source turns out to be gone by the time the job runs.
-    std::set<std::pair<std::string, uint32_t>> levelAsked;
-    /// (source, level) -> (key, size) of the generated chunk: what
-    /// the publisher's MeshBlobSink::built consults.
-    std::map<std::pair<std::string, uint32_t>,
-             std::pair<std::string, uint32_t>> levelBuilt;
-    /// Levels finished so far, monotonic. The publisher polls it: a
-    /// change is what turns "the worker finished" into a republish,
-    /// which is the announcement.
-    size_t levelsDone = 0;
+    /// (levelAsked: every (source, level) ever accepted per group, so
+    /// a repeat is free — an entry leaves only when its answer does
+    /// (retireBlobs) or its source turns out to be gone by the time
+    /// the job runs. levelBuilt: (source, level) -> (key, size) of the
+    /// generated chunk, what the publisher's MeshBlobSink::built
+    /// consults. Both live in DocGroup.)
     int levelThreads = 0;                 ///< spawned so far, ≤ cap
     std::condition_variable levelCv;      ///< pairs with \a mutex
 
@@ -374,9 +441,11 @@ public:
     }
 
     /// Accept a request to build \a level of the mesh whose exact
-    /// chunk is stored under \a source. False when the source is not a
-    /// chunk this server holds — nothing could be generated from it.
-    bool requestLevel(const std::string &reqSource, uint32_t level)
+    /// chunk is stored under \a source, on behalf of \a g's viewers.
+    /// False when the source is not a chunk this server holds —
+    /// nothing could be generated from it.
+    bool requestLevel(DocGroup &g, const std::string &reqSource,
+                      uint32_t level)
     {
         // The ladder never declares more than a handful of levels, and
         // the request is unauthenticated: an absurd level is a bad
@@ -395,9 +464,9 @@ public:
             return false;
         // Already queued, running, built, or refused for good: all the
         // same answer, because the announcement never was the reply.
-        if (!levelAsked.emplace(source, level).second)
+        if (!g.levelAsked.emplace(source, level).second)
             return true;
-        levelQueue.push_back({source, level});
+        levelQueue.push_back({source, level, &g});
         // One more thread per accepted job until the cap fills: a big
         // publish's burst of asks fans out immediately, and the
         // threads are process-lifetime cv-waiters afterwards, like
@@ -430,7 +499,7 @@ public:
                     // The scene moved on before the job ran. Forget
                     // the ask, so a republish naming the mesh again
                     // starts clean.
-                    levelAsked.erase({job.source, job.level});
+                    job.group->levelAsked.erase({job.source, job.level});
                     continue;
                 }
                 // Copied, so generation runs outside the lock: a
@@ -470,15 +539,15 @@ public:
                 // Straight into the pending generation: the publish
                 // this triggers is the one that names it, and until
                 // then the roll must not sweep it away.
-                pendingKeys.insert(key);
+                job.group->pendingKeys.insert(key);
                 blobs.emplace(key, std::move(chunk));
-                levelBuilt[{job.source, job.level}] = {key, size};
-                ++levelsDone;
+                job.group->levelBuilt[{job.source, job.level}] = {key, size};
+                ++job.group->levelsDone;
             }
             // The publisher's poll lives in the render path; wake it,
             // or an idle backend announces nothing until something
             // else happens to want a frame.
-            notifyWork();
+            notifyWork(*job.group);
         }
     }
 
@@ -486,49 +555,49 @@ public:
     /// nobody has built it. Retains the chunk for the publish in
     /// flight, exactly like retainBlob — being written into a manifest
     /// is what keeps it alive from here on.
-    std::string builtLevel(const std::string &source, uint32_t level,
-                           uint32_t *size)
+    std::string builtLevel(DocGroup &g, const std::string &source,
+                           uint32_t level, uint32_t *size)
     {
         std::lock_guard<std::mutex> guard(mutex);
-        auto it = levelBuilt.find({source, level});
-        if (it == levelBuilt.end())
+        auto it = g.levelBuilt.find({source, level});
+        if (it == g.levelBuilt.end())
             return {};
         if (!blobs.count(it->second.first)) {
             // Rolled away between publishes; forget it (see
             // retireBlobs) rather than announce a key a fetch would
             // 404 on.
-            levelAsked.erase(it->first);
-            levelBuilt.erase(it);
+            g.levelAsked.erase(it->first);
+            g.levelBuilt.erase(it);
             return {};
         }
-        pendingKeys.insert(it->second.first);
+        g.pendingKeys.insert(it->second.first);
         if (size)
             *size = it->second.second;
         return it->second.first;
     }
 
-    size_t levelsBuilt()
+    size_t levelsBuilt(DocGroup &g)
     {
         std::lock_guard<std::mutex> guard(mutex);
-        return levelsDone;
+        return g.levelsDone;
     }
 
 
+    /// Guards every group's handler slots (pickHandler, controlHandler,
+    /// workNotifier) — separate from \a mutex so a handler lookup never
+    /// contends with the payload lock.
     std::mutex handlerMutex;
-    std::function<void(const ScenePickRequest &)> pickHandler;
-    std::function<void(SceneControlRequest &&)> controlHandler;
-    std::function<void()> workNotifier;   ///< guarded by handlerMutex
 
-    /// Ask the owner for a frame. Everything the render path polls --
-    /// the publish trigger, and whether animated content still has an
-    /// audience -- only gets looked at when a frame happens, so a
+    /// Ask \a g's owner for a frame. Everything the render path polls
+    /// -- the publish trigger, and whether animated content still has
+    /// an audience -- only gets looked at when a frame happens, so a
     /// server thread that changes any of it has to say so.
-    void notifyWork()
+    void notifyWork(DocGroup &g)
     {
         std::function<void()> notify;
         {
             std::lock_guard<std::mutex> guard(handlerMutex);
-            notify = workNotifier;
+            notify = g.workNotifier;
         }
         if (notify)
             notify();
@@ -548,6 +617,11 @@ public:
         /// with what the client said it held on the upgrade request.
         /// Touched only by this connection's own push loop.
         uint64_t sent = 0;
+        /// The document group this connection is joined to — always
+        /// the default group until the wire carries document names
+        /// (docs/MultiDocServe.md §4). Set once at loop start; a
+        /// switch (stage 3b) reassigns it on the loop's own thread.
+        DocGroup *group = nullptr;
         std::vector<std::string> pendingText; ///< queued control JSONs
         bool viewer = false;   ///< sent a hello — answers control requests
         std::string build;     ///< bundle build stamp from the hello
@@ -753,12 +827,12 @@ public:
         std::printf("fcviewer server: viewer build stale, reload pushed\n");
     }
 
-    void dispatchPick(const ScenePickRequest &req)
+    void dispatchPick(DocGroup &g, const ScenePickRequest &req)
     {
         std::function<void(const ScenePickRequest &)> handler;
         {
             std::lock_guard<std::mutex> guard(handlerMutex);
-            handler = pickHandler;
+            handler = g.pickHandler;
         }
         if (handler)
             handler(req);
@@ -782,7 +856,7 @@ public:
         std::function<void(SceneControlRequest &&)> handler;
         {
             std::lock_guard<std::mutex> guard(handlerMutex);
-            handler = controlHandler;
+            handler = conn.group->controlHandler;
         }
         SceneControlRequest req;
         req.json = std::move(json);
@@ -1048,7 +1122,16 @@ public:
             std::string source = queryValue(query, "source");
             uint32_t level = uint32_t(std::strtoul(
                 queryValue(query, "level").c_str(), nullptr, 10));
-            bool accepted = isBlobKey(source) && requestLevel(source, level);
+            // A plain HTTP request names no connection, so no group:
+            // the demand is booked on the default document until the
+            // route carries a name (docs/MultiDocServe.md §4).
+            DocGroup *g;
+            {
+                std::lock_guard<std::mutex> guard(mutex);
+                g = &defaultGroup();
+            }
+            bool accepted = isBlobKey(source)
+                && requestLevel(*g, source, level);
             static const char acceptedReply[] =
                 "HTTP/1.1 202 Accepted\r\n"
                 "Access-Control-Allow-Origin: *\r\n"
@@ -1106,7 +1189,8 @@ public:
         std::string s = queryValue(query, "s");
         if (!s.empty() && clientVersion != ~uint64_t(0)) {
             std::lock_guard<std::mutex> guard(mutex);
-            if (std::strtoull(s.c_str(), nullptr, 10) != ensureSession())
+            if (std::strtoull(s.c_str(), nullptr, 10)
+                    != defaultGroup().ensureSession())
                 clientVersion = 0;
         }
         if (path != "/scene" && path != "/scene.fcsd") {
@@ -1129,7 +1213,8 @@ public:
         std::vector<uint8_t> body;
         {
             std::lock_guard<std::mutex> guard(mutex);
-            std::vector<uint8_t> out = payloadFor(clientVersion);
+            DocGroup &g = defaultGroup();
+            std::vector<uint8_t> out = payloadFor(g, clientVersion);
             if (out.empty()) {
                 static const char noContent[] =
                     "HTTP/1.1 204 No Content\r\n"
@@ -1139,7 +1224,7 @@ public:
                 return;
             }
             body.resize(8 + out.size());
-            uint64_t v = version;
+            uint64_t v = g.version;
             std::memcpy(body.data(), &v, 8);
             std::memcpy(body.data() + 8, out.data(), out.size());
         }
@@ -1272,6 +1357,10 @@ public:
         conn.fd = fd;
         conn.sent = held;
         {
+            std::lock_guard<std::mutex> guard(mutex);
+            conn.group = &defaultGroup();
+        }
+        {
             std::lock_guard<std::mutex> guard(connMutex);
             conn.id = ++connIdCounter;
             conns.push_back(&conn);
@@ -1307,13 +1396,14 @@ public:
                 // coalesced tick may be several publishes rather than
                 // one — the push loop sends the current scene, not
                 // every version of it.
-                std::vector<uint8_t> out = payloadFor(sent);
+                DocGroup &g = *conn.group;
+                std::vector<uint8_t> out = payloadFor(g, sent);
                 if (!out.empty()) {
                     body.resize(8 + out.size());
-                    uint64_t v = version;
+                    uint64_t v = g.version;
                     std::memcpy(body.data(), &v, 8);
                     std::memcpy(body.data() + 8, out.data(), out.size());
-                    sent = version;
+                    sent = g.version;
                 }
             }
             if (!body.empty()
@@ -1473,7 +1563,7 @@ public:
                 // the frame that publishes to this new viewer. It gets
                 // the retained payload from the push loop either way;
                 // this is what makes that payload current.
-                notifyWork();
+                notifyWork(*conn.group);
                 // Bundle build stamp check: reload pages running a
                 // superseded viewer build (any rebuild, not just
                 // snapshot-format bumps).
@@ -1533,7 +1623,7 @@ public:
             return;
         }
         std::vector<uint8_t> data(bytes, bytes + size);
-        handleEvent(data);
+        handleEvent(conn, data);
     }
 
     /// A viewer's dumpFrame answer: 'D', u32 request id, u32 metadata
@@ -1573,7 +1663,7 @@ public:
         }
     }
 
-    void handleEvent(const std::vector<uint8_t> &data)
+    void handleEvent(Conn &conn, const std::vector<uint8_t> &data)
     {
         // Pick request: 'P', flags byte, six little-endian floats
         // (world ray origin + direction).
@@ -1586,7 +1676,7 @@ public:
                 req.origin[i] = v[i];
                 req.dir[i] = v[3 + i];
             }
-            dispatchPick(req);
+            dispatchPick(*conn.group, req);
         }
         // Batched pick: 'B', count byte, then count * (modifiers byte + six
         // little-endian floats). The viewer batches a burst of client-side
@@ -1607,7 +1697,7 @@ public:
                         req.origin[k] = v[k];
                         req.dir[k] = v[3 + k];
                     }
-                    dispatchPick(req);
+                    dispatchPick(*conn.group, req);
                     off += stride;
                 }
             }
@@ -1650,26 +1740,33 @@ bool SceneStreamServer::running() const
     return pimpl && pimpl->listenFd >= 0;
 }
 
+// The public surface still speaks of one document: every entry point
+// resolves to the default group until the API grows document names
+// (docs/MultiDocServe.md, stage 3b). The resolution is written out
+// per function rather than hidden in a helper so each future re-key
+// is a visible one-line change.
+
 uint64_t SceneStreamServer::sessionId()
 {
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->mutex);
-    return p->ensureSession();
+    return p->defaultGroup().ensureSession();
 }
 
 uint64_t SceneStreamServer::beginPublish(const void *publisher)
 {
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->mutex);
-    p->ensureSession();
-    if (!p->publisher)
-        p->publisher = publisher;
-    else if (p->publisher != publisher)
+    Private::DocGroup &g = p->defaultGroup();
+    g.ensureSession();
+    if (!g.publisher)
+        g.publisher = publisher;
+    else if (g.publisher != publisher)
         return 0;
     // Handed out before the payload exists, so a serializer that fails
     // leaves a gap. Versions are monotonic, not gapless: a consumer
     // compares them, it does not count them.
-    return ++p->handedOut;
+    return ++g.handedOut;
 }
 
 void SceneStreamServer::endPublish(const void *publisher)
@@ -1677,60 +1774,92 @@ void SceneStreamServer::endPublish(const void *publisher)
     if (!pimpl)
         return;
     std::lock_guard<std::mutex> guard(pimpl->mutex);
-    if (pimpl->publisher == publisher)
-        pimpl->publisher = nullptr;
+    Private::DocGroup &g = pimpl->defaultGroup();
+    if (g.publisher == publisher)
+        g.publisher = nullptr;
 }
 
 void SceneStreamServer::publish(ScenePublish &&pub)
 {
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->mutex);
-    if (pub.version <= p->version)
+    Private::DocGroup &g = p->defaultGroup();
+    if (pub.version <= g.version)
         return;   // superseded before it was installed
     // A gap would make the history lie about what a viewer is missing:
     // merging across it would skip whatever the missing publish said.
-    if (!p->history.empty()
-            && p->history.back().version + 1 != pub.version)
-        p->history.clear();
-    p->history.push_back({pub.version, std::move(pub.changed),
-                          std::move(pub.removed)});
-    while (p->history.size() > Private::kHistory)
-        p->history.pop_front();
+    if (!g.history.empty()
+            && g.history.back().version + 1 != pub.version)
+        g.history.clear();
+    g.history.push_back({pub.version, std::move(pub.changed),
+                         std::move(pub.removed)});
+    while (g.history.size() > Private::kHistory)
+        g.history.pop_front();
 
-    p->payload = std::move(pub.payload);
-    p->spans = pub.spans;
+    g.payload = std::move(pub.payload);
+    g.spans = pub.spans;
     // Version and payload move together, and only here: what is served
     // must always be the bytes the version names.
-    p->version = pub.version;
-    p->retireBlobs();
+    g.version = pub.version;
+    p->retireBlobs(g);
 }
 
 void SceneStreamServer::publishBlob(const std::string &key,
                                     std::vector<uint8_t> &&data)
 {
-    ensure()->addBlob(key, std::move(data));
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->defaultGroup();
+    }
+    p->addBlob(*g, key, std::move(data));
 }
 
 bool SceneStreamServer::retainBlob(const std::string &key, uint32_t *size)
 {
-    return ensure()->retainBlob(key, size);
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->defaultGroup();
+    }
+    return p->retainBlob(*g, key, size);
 }
 
 bool SceneStreamServer::requestLevel(const std::string &source,
                                      uint32_t level)
 {
-    return ensure()->requestLevel(source, level);
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->defaultGroup();
+    }
+    return p->requestLevel(*g, source, level);
 }
 
 std::string SceneStreamServer::builtLevel(const std::string &source,
                                           uint32_t level, uint32_t *size)
 {
-    return ensure()->builtLevel(source, level, size);
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->defaultGroup();
+    }
+    return p->builtLevel(*g, source, level, size);
 }
 
 size_t SceneStreamServer::levelsBuilt()
 {
-    return ensure()->levelsBuilt();
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->defaultGroup();
+    }
+    return p->levelsBuilt(*g);
 }
 
 
@@ -1738,23 +1867,38 @@ void SceneStreamServer::setPickHandler(
         std::function<void(const ScenePickRequest &)> handler)
 {
     Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->defaultGroup();
+    }
     std::lock_guard<std::mutex> guard(p->handlerMutex);
-    p->pickHandler = std::move(handler);
+    g->pickHandler = std::move(handler);
 }
 
 void SceneStreamServer::setControlHandler(
         std::function<void(SceneControlRequest &&)> handler)
 {
     Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->defaultGroup();
+    }
     std::lock_guard<std::mutex> guard(p->handlerMutex);
-    p->controlHandler = std::move(handler);
+    g->controlHandler = std::move(handler);
 }
 
 void SceneStreamServer::setWorkNotifier(std::function<void()> notifier)
 {
     Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->defaultGroup();
+    }
     std::lock_guard<std::mutex> guard(p->handlerMutex);
-    p->workNotifier = std::move(notifier);
+    g->workNotifier = std::move(notifier);
 }
 
 void SceneStreamServer::broadcastControl(const std::string &json)
