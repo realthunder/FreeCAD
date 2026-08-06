@@ -36,9 +36,12 @@ namespace Gui {
 /// names the served document the request's connection is joined to
 /// (empty = unbound, windowed behavior): it resolves the "view3d"
 /// subject to that document's serving container and stands in for an
-/// unnamed document (docs/MultiDocServe.md §5).
+/// unnamed document (docs/MultiDocServe.md §5). \a viewOnly refuses
+/// every mutating op with a ViewOnly error — the per-client mode the
+/// sharing host sets (docs/MultiDocServe.md §8); reads stay answered.
 std::string handleSceneControlRequest(const std::string &json,
-                                      const std::string &boundDoc = {});
+                                      const std::string &boundDoc = {},
+                                      bool viewOnly = false);
 
 /// Route the scene stream server's control requests ("op" JSON text
 /// frames) through handleSceneControlRequest on the GUI thread.

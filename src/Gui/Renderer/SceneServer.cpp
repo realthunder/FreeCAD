@@ -147,6 +147,26 @@ public:
     int listenFd = -1;
     bool started = false;
 
+    /// The shared door secret (docs/MultiDocServe.md §4/§8). Its own
+    /// mutex, taken with no other lock held on either side, so it can
+    /// never participate in an ordering cycle.
+    std::mutex tokenMutex;
+    std::string tokenSecret;
+
+    std::string tokenNow()
+    {
+        std::lock_guard<std::mutex> guard(tokenMutex);
+        return tokenSecret;
+    }
+
+    /// Whether a request carrying \a query may pass the door: open
+    /// server, or a matching `?token=`.
+    bool tokenOk(const std::string &query)
+    {
+        std::string secret = tokenNow();
+        return secret.empty() || queryValue(query, "token") == secret;
+    }
+
     /// What each of the last few publishes changed, oldest first and
     /// consecutive. A viewer that missed some is caught up by merging
     /// the ones it missed; one that fell out of this window gets the
@@ -768,9 +788,27 @@ public:
         bool viewer = false;   ///< sent a hello — answers control requests
         std::string build;     ///< bundle build stamp from the hello
         /// Display label from the hello (docs/MultiDocServe.md §4):
-        /// names this connection in the decisions journal and later
-        /// presence. Never parsed, never trusted.
+        /// names this connection in the decisions journal and the
+        /// sharing roster. Never parsed, never trusted.
         std::string client;
+        /// Peer address, for the roster.
+        std::string addr;
+        /// The joined document's name, mirrored under connMutex for
+        /// the roster — \a group itself is owner-thread-only.
+        std::string docName;
+        /// When this connection registered.
+        std::chrono::steady_clock::time_point since;
+        /// Passed the door (docs/MultiDocServe.md §8): no token
+        /// configured, the upgrade carried it, or the hello did. Until
+        /// then no payload is pushed and no verb but the hello works.
+        /// Owner-thread-only, like group.
+        bool authorized = true;
+        /// View-only (guarded by connMutex, the host flips it from the
+        /// GUI thread): picks dropped, mutating ops refused.
+        bool viewOnly = false;
+        /// The host asked this connection closed (guarded by
+        /// connMutex); its own loop tells it and hangs up.
+        bool kicked = false;
         /// The stamp a reload was already pushed for — one push per
         /// bundle generation, no loops.
         std::string reloadPushed;
@@ -812,6 +850,78 @@ public:
         }
     }
 
+    /// The sharing UI's roster-changed cue. Guarded by handlerMutex
+    /// like the group handlers; invoked with no lock held.
+    std::function<void()> clientsChanged;
+
+    void notifyClientsChanged()
+    {
+        std::function<void()> notify;
+        {
+            std::lock_guard<std::mutex> guard(handlerMutex);
+            notify = clientsChanged;
+        }
+        if (notify)
+            notify();
+    }
+
+    int clients(std::vector<SceneClientInfo> &out)
+    {
+        auto now = std::chrono::steady_clock::now();
+        std::lock_guard<std::mutex> guard(connMutex);
+        out.clear();
+        out.reserve(conns.size());
+        for (Conn *conn : conns) {
+            SceneClientInfo info;
+            info.id = conn->id;
+            info.client = conn->client;
+            info.doc = conn->docName;
+            info.address = conn->addr;
+            info.viewer = conn->viewer;
+            info.viewOnly = conn->viewOnly;
+            info.connectedMs = uint64_t(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - conn->since).count());
+            out.push_back(std::move(info));
+        }
+        return int(out.size());
+    }
+
+    bool setClientViewOnly(uint64_t id, bool viewOnly)
+    {
+        bool found = false;
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            for (Conn *conn : conns) {
+                if (conn->id == id) {
+                    conn->viewOnly = viewOnly;
+                    // Tell the client its mode, so its UI can say so.
+                    conn->pendingText.push_back(
+                        viewOnly
+                            ? "{\"cmd\":\"config\",\"viewOnly\":true}"
+                            : "{\"cmd\":\"config\",\"viewOnly\":false}");
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (found)
+            notifyClientsChanged();
+        return found;
+    }
+
+    bool kickClient(uint64_t id)
+    {
+        std::lock_guard<std::mutex> guard(connMutex);
+        for (Conn *conn : conns) {
+            if (conn->id == id) {
+                conn->kicked = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// The one gate every join goes through — hello and switch alike
     /// (docs/MultiDocServe.md §4), and the choke point a later
     /// per-connection ACL would occupy. An empty \a name means the
@@ -822,14 +932,23 @@ public:
     /// thread, the only one allowed to touch its group.
     bool joinDocument(Conn &conn, const std::string &name)
     {
-        std::lock_guard<std::mutex> guard(mutex);
-        DocGroup *g = joinable(name);
-        if (!g)
-            return false;
-        if (g != conn.group) {
-            conn.group = g;
-            conn.sent = 0;
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+            DocGroup *g = joinable(name);
+            if (!g)
+                return false;
+            if (g != conn.group) {
+                conn.group = g;
+                conn.sent = 0;
+            }
         }
+        // Mirror the joined name for the roster — group itself is
+        // owner-thread-only, and this IS the owner thread.
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            conn.docName = conn.group->name;
+        }
+        notifyClientsChanged();
         return true;
     }
 
@@ -1027,6 +1146,12 @@ public:
         }
         SceneControlRequest req;
         req.json = std::move(json);
+        {
+            // The semantic layer refuses mutations for a view-only
+            // connection; only it knows which ops write.
+            std::lock_guard<std::mutex> guard(connMutex);
+            req.viewOnly = conn.viewOnly;
+        }
         const uint64_t connId = conn.id;
         req.reply = [this, connId](const std::string &answer) {
             replyTo(connId, answer);
@@ -1071,6 +1196,28 @@ public:
         }
         std::thread([this]() { acceptLoop(); }).detach();
         return true;
+    }
+
+    /// Close the listener and ask every connection to hang up. The
+    /// accept loop wakes on the shutdown and exits; each connection's
+    /// own loop notices the kick within a poll interval. A later
+    /// start() binds anew.
+    void stopListening()
+    {
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+            if (listenFd >= 0) {
+                // shutdown() is what actually wakes a thread blocked
+                // in accept(); close() alone may leave it parked.
+                ::shutdown(listenFd, SHUT_RDWR);
+                ::close(listenFd);
+                listenFd = -1;
+            }
+            started = false;
+        }
+        std::lock_guard<std::mutex> guard(connMutex);
+        for (Conn *conn : conns)
+            conn->kicked = true;
     }
 
     void acceptLoop()
@@ -1143,6 +1290,23 @@ public:
         if (q != std::string::npos) {
             query = path.substr(q + 1);
             path.resize(q);
+        }
+
+        // The door (docs/MultiDocServe.md §8): with a token configured
+        // every route is gated, not just the hello — the polling
+        // /scene, the blob and level fetches, the logs. A WebSocket
+        // upgrade without the token still handshakes, because the
+        // token may arrive in the hello instead; until it does the
+        // connection is unauthorized and gets nothing.
+        std::string wsKey = headerValue(req, "sec-websocket-key");
+        bool authorized = tokenOk(query);
+        if (!authorized && wsKey.empty()) {
+            static const char forbidden[] =
+                "HTTP/1.1 403 Forbidden\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            sendAll(fd, forbidden, sizeof(forbidden) - 1);
+            return;
         }
 
         // /blob?key=<content key>: one out-of-band texture payload
@@ -1368,10 +1532,15 @@ public:
         }
 
         // WebSocket upgrade: handshake, then stay in the push loop.
-        std::string wsKey = headerValue(req, "sec-websocket-key");
         if (!wsKey.empty()) {
+            char addr[64] = "";
+            sockaddr_in peer = {};
+            socklen_t plen = sizeof(peer);
+            if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
+                              &plen) == 0)
+                ::inet_ntop(AF_INET, &peer.sin_addr, addr, sizeof(addr));
             if (handshake(fd, wsKey))
-                wsLoop(fd, clientVersion, s, doc);
+                wsLoop(fd, clientVersion, s, doc, authorized, addr);
             return;
         }
 
@@ -1543,11 +1712,15 @@ public:
     /// which is what makes the held version mean anything. An unknown
     /// name joins nothing and leaves the rest to the hello.
     void wsLoop(int fd, uint64_t held, const std::string &session,
-                const std::string &doc)
+                const std::string &doc, bool authorized,
+                const char *addr)
     {
         Conn conn;
         conn.fd = fd;
         conn.sent = held;
+        conn.authorized = authorized;
+        conn.addr = addr ? addr : "";
+        conn.since = std::chrono::steady_clock::now();
         {
             std::lock_guard<std::mutex> guard(mutex);
             conn.group = joinable(doc);
@@ -1563,8 +1736,11 @@ public:
         {
             std::lock_guard<std::mutex> guard(connMutex);
             conn.id = ++connIdCounter;
+            if (conn.group)
+                conn.docName = conn.group->name;
             conns.push_back(&conn);
         }
+        notifyClientsChanged();
         wsLoopBody(fd, conn);
         {
             std::lock_guard<std::mutex> guard(connMutex);
@@ -1573,6 +1749,7 @@ public:
             // out its full timeout.
             dumpCv.notify_all();
         }
+        notifyClientsChanged();
     }
 
     void wsLoopBody(int fd, Conn &conn)
@@ -1611,8 +1788,26 @@ public:
                 if (!consumeFrames(fd, conn, inbuf))
                     return;
             }
+            // The host asked this connection closed (kickClient, or a
+            // server stop): say so — a compliant viewer stops
+            // reconnecting when told — and hang up.
+            {
+                bool kicked;
+                {
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    kicked = conn.kicked;
+                }
+                if (kicked) {
+                    static const char bye[] =
+                        "{\"cmd\":\"error\",\"code\":\"Kicked\"}";
+                    sendFrame(fd, 1, bye, sizeof(bye) - 1);
+                    sendFrame(fd, 8, nullptr, 0);
+                    return;
+                }
+            }
             std::vector<uint8_t> body;
             bool orphaned = false;
+            const DocGroup *wasGroup = conn.group;
             {
                 std::lock_guard<std::mutex> guard(mutex);
                 // A torn-down document's connections re-home to the
@@ -1630,8 +1825,10 @@ public:
                 // What this connection is missing, which after a
                 // coalesced tick may be several publishes rather than
                 // one — the push loop sends the current scene, not
-                // every version of it.
-                if (conn.group) {
+                // every version of it. An unauthorized connection
+                // (token configured, none presented yet) gets no scene
+                // bytes at all — its hello is what would open the door.
+                if (conn.group && conn.authorized) {
                     DocGroup &g = *conn.group;
                     std::vector<uint8_t> out = payloadFor(g, sent);
                     if (!out.empty()) {
@@ -1643,6 +1840,15 @@ public:
                         sent = g.version;
                     }
                 }
+            }
+            if (conn.group != wasGroup) {
+                // Re-homed: keep the roster's document mirror true.
+                {
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.docName = conn.group ? conn.group->name
+                                              : std::string();
+                }
+                notifyClientsChanged();
             }
             if (orphaned) {
                 std::lock_guard<std::mutex> guard(connMutex);
@@ -1761,6 +1967,26 @@ public:
     {
         if (text) {
             std::string json(reinterpret_cast<const char *>(bytes), size);
+            // The door, for a connection whose upgrade did not carry
+            // the token (docs/MultiDocServe.md §8): nothing but a
+            // hello works, and only one presenting the right token
+            // opens it. A wrong or missing one is refused out loud
+            // and the connection closed — no scene bytes ever move.
+            bool hello = json.find("\"cmd\":\"hello\"") != std::string::npos;
+            if (!conn.authorized) {
+                if (!hello)
+                    return;
+                std::string offered;
+                jsonStr(json, "token", offered);
+                if (offered.empty() || offered != tokenNow()) {
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.pendingText.push_back(
+                        "{\"cmd\":\"error\",\"code\":\"BadToken\"}");
+                    conn.kicked = true;
+                    return;
+                }
+                conn.authorized = true;
+            }
             // The semantic tier (docs/ThinClient.md §4.2) speaks "op";
             // the transport vocabulary below stays "cmd".
             if (json.find("\"op\":") != std::string::npos) {
@@ -1811,13 +2037,15 @@ public:
                 }
                 return;
             }
-            if (json.find("\"cmd\":\"hello\"") != std::string::npos) {
+            if (hello) {
                 {
                     std::lock_guard<std::mutex> guard(connMutex);
                     conn.viewer = true;
                     jsonStr(json, "build", conn.build);
                     jsonStr(json, "client", conn.client);
                 }
+                // The label just landed; the sharing roster shows it.
+                notifyClientsChanged();
                 // The document this viewer wants (docs/MultiDocServe.md
                 // §4). Unknown name: an error and the listing, with the
                 // connection alive but joined to nothing — the viewer
@@ -1883,6 +2111,8 @@ public:
             }
             return;
         }
+        if (!conn.authorized)
+            return;
         if (size > 0 && bytes[0] == 'D') {
             handleFrameDump(bytes, size);
             return;
@@ -1951,6 +2181,14 @@ public:
 
     void handleEvent(Conn &conn, const std::vector<uint8_t> &data)
     {
+        // A view-only connection's picks are dropped: selection is
+        // shared room state, so changing it IS an edit
+        // (docs/MultiDocServe.md §8).
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            if (conn.viewOnly)
+                return;
+        }
         // Pick request: 'P', flags byte, six little-endian floats
         // (world ray origin + direction).
         if (data.size() == 2 + 6 * sizeof(float) && data[0] == 'P') {
@@ -1993,6 +2231,7 @@ public:
     }
 #else
     bool start(int) { return false; }
+    void stopListening() {}
 #endif
 };
 
@@ -2009,8 +2248,15 @@ void SceneStreamServer::setLevelThreadCap(int n)
 
 SceneStreamServer::Private *SceneStreamServer::ensure()
 {
-    if (!pimpl)
+    if (!pimpl) {
         pimpl = new Private;
+        // The env override presets the door secret (docs/MultiDocServe.md
+        // §4) — the desktop Share dialog sets it through setToken.
+        if (const char *env = std::getenv("FC_SERVE_TOKEN")) {
+            if (*env)
+                pimpl->tokenSecret = env;
+        }
+    }
     return pimpl;
 }
 
@@ -2026,6 +2272,47 @@ bool SceneStreamServer::start(int port)
 bool SceneStreamServer::running() const
 {
     return pimpl && pimpl->listenFd >= 0;
+}
+
+void SceneStreamServer::stop()
+{
+    if (pimpl)
+        pimpl->stopListening();
+}
+
+void SceneStreamServer::setToken(const std::string &token)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    p->tokenSecret = token;
+}
+
+std::string SceneStreamServer::token()
+{
+    return ensure()->tokenNow();
+}
+
+int SceneStreamServer::clients(std::vector<SceneClientInfo> &out)
+{
+    return ensure()->clients(out);
+}
+
+bool SceneStreamServer::setClientViewOnly(uint64_t id, bool viewOnly)
+{
+    return pimpl ? pimpl->setClientViewOnly(id, viewOnly) : false;
+}
+
+bool SceneStreamServer::kickClient(uint64_t id)
+{
+    return pimpl ? pimpl->kickClient(id) : false;
+}
+
+void SceneStreamServer::setClientsChangedNotifier(
+        std::function<void()> notifier)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    p->clientsChanged = std::move(notifier);
 }
 
 // Every entry point resolves its group from the optional document

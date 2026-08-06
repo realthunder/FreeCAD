@@ -567,7 +567,8 @@ QJsonObject setProperty(const QJsonObject &req,
 } // namespace
 
 std::string Gui::handleSceneControlRequest(const std::string &json,
-                                           const std::string &boundDoc)
+                                           const std::string &boundDoc,
+                                           bool viewOnly)
 {
     QJsonParseError err;
     QJsonDocument parsed = QJsonDocument::fromJson(
@@ -579,7 +580,15 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
     else {
         const QJsonObject req = parsed.object();
         const QString op = req.value(QLatin1String("op")).toString();
-        if (op == QLatin1String("getProperties"))
+        // Only the semantic layer knows which ops write, which is why
+        // the mode rides the request rather than being enforced by the
+        // transport (docs/MultiDocServe.md §8). Reads stay answered —
+        // a view-only client's property inspector keeps working.
+        const bool mutating = op == QLatin1String("setProperty");
+        if (viewOnly && mutating)
+            reply = errorReply(req.value(QLatin1String("id")), "ViewOnly",
+                               QStringLiteral("this connection may not edit"));
+        else if (op == QLatin1String("getProperties"))
             reply = getProperties(req, boundDoc);
         else if (op == QLatin1String("setProperty"))
             reply = setProperty(req, boundDoc);
@@ -608,7 +617,8 @@ void Gui::installSceneControlHandler(const std::string &docName)
                 QMetaObject::invokeMethod(qApp, [shared, docName]() {
                     shared->reply(
                             handleSceneControlRequest(shared->json,
-                                                      docName));
+                                                      docName,
+                                                      shared->viewOnly));
                 }, Qt::QueuedConnection);
             }, docName);
 }

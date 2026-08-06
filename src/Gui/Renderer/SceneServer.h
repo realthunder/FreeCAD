@@ -67,7 +67,25 @@ struct ScenePickRequest {
 /// answer a timeout, never a mixup).
 struct SceneControlRequest {
     std::string json;
+    /// The connection is view-only (docs/MultiDocServe.md §8): the
+    /// handler must refuse anything that mutates the document. Carried
+    /// on the request rather than enforced here because only the
+    /// semantic layer knows which ops write.
+    bool viewOnly = false;
     std::function<void(const std::string &)> reply;
+};
+
+/// One connected viewer as the sharing UI sees it (docs/MultiDocServe.md
+/// §8): identity for the roster, and the per-connection mode the host
+/// may change.
+struct SceneClientInfo {
+    uint64_t id = 0;          ///< stable connection id, never reused
+    std::string client;       ///< display label from the hello, may be empty
+    std::string doc;          ///< joined document name, empty = default/none
+    std::string address;      ///< peer address
+    bool viewer = false;      ///< sent a hello (a probe may not)
+    bool viewOnly = false;    ///< picks and mutating ops refused
+    uint64_t connectedMs = 0; ///< how long this connection has been up
 };
 
 /// One viewer's answer to a dumpFrame control request
@@ -101,6 +119,42 @@ public:
     /// whether it is running).
     bool start(int port);
     bool running() const;
+
+    /// Stop the listener and disconnect every client. Served groups
+    /// keep their state — a later start() serves them again — but no
+    /// connection survives and no new one is accepted. The desktop
+    /// "stop sharing" path (docs/MultiDocServe.md §8).
+    void stop();
+
+    /// The shared door secret (docs/MultiDocServe.md §4/§8). Non-empty
+    /// = every endpoint is gated: HTTP requests and the WebSocket
+    /// upgrade must carry a matching `?token=`, and a connection whose
+    /// upgrade did not may still authorize itself with the token in
+    /// its hello — until then it gets no scene bytes and no verb
+    /// works. Empty (the default) = open, exactly today's behavior.
+    /// FC_SERVE_TOKEN presets it at first use.
+    void setToken(const std::string &token);
+    std::string token();
+
+    /// The connected clients, for the sharing roster. Returns how many.
+    int clients(std::vector<SceneClientInfo> &out);
+
+    /// Make the identified connection view-only (or full again):
+    /// view-only clients still receive every publish, but their picks
+    /// are dropped and their mutating control ops answered with a
+    /// ViewOnly error. False when the connection is gone.
+    bool setClientViewOnly(uint64_t id, bool viewOnly);
+
+    /// Disconnect the identified client: it is told
+    /// {"cmd":"error","code":"Kicked"} and closed by its own loop. Not
+    /// a ban — changing the token is — but a compliant viewer stops
+    /// reconnecting when told. False when the connection is gone.
+    bool kickClient(uint64_t id);
+
+    /// Install the sharing UI's cue that the roster changed (connect,
+    /// disconnect, hello, document switch, mode change). Called on a
+    /// server thread — the handler must marshal itself.
+    void setClientsChangedNotifier(std::function<void()> notifier);
 
     /// Which run of this backend the served versions belong to: a
     /// number minted once per process, carried in every payload
