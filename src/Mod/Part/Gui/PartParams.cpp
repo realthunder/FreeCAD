@@ -26,6 +26,7 @@
 #include <App/Document.h>
 #include <Gui/Application.h>
 #include <Gui/Document.h>
+#include <Gui/Renderer/Renderer.h>
 #include "ViewProvider.h"
 
 namespace {
@@ -1105,6 +1106,13 @@ public:
                 "User parameter:BaseApp/Preferences/View/Render");
         hView->Attach(this);
         hRender->Attach(this);
+        // The gate reads live backend state (Render::Renderer
+        // activeCount()/instancingHint()); the parameter observers alone
+        // miss a backend attached or torn down without a pref flip
+        // (per-view or scripted selection, last 3D view closing).
+        Render::Renderer::addActivityObserver([]() {
+            getTimer().start(100);
+        });
     }
     ~InstancingGateObserver() override
     {

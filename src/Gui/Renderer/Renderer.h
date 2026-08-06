@@ -34,6 +34,7 @@
 #endif
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -1150,7 +1151,8 @@ enum SelIdBits : int {
 class RendererExport Renderer
 {
 public:
-    virtual ~Renderer() {}
+    Renderer();
+    virtual ~Renderer();
     virtual const std::string &type() const = 0;
     virtual bool render(const QColor &bg,
                         const void *viewMatrix,
@@ -1198,6 +1200,19 @@ public:
     /// actual capability once initialized.
     static void setInstancingHint(bool supported);
     static bool instancingHint();
+
+    /// Number of live backend renderer instances in the process. This —
+    /// not any preference string — is the truth about whether a backend
+    /// is active: a backend can be attached with the type preference
+    /// still "Default" (per-view or scripted selection), and a
+    /// preference naming a backend yields none when creation fails
+    /// (plain-GL fallback).
+    static int activeCount();
+    /// Register a callback fired whenever activeCount() or
+    /// instancingHint() changes. Observers are never removed — register
+    /// only from static-lifetime contexts. Fires on the thread doing the
+    /// change (backend create/destroy happens on the GUI thread).
+    static void addActivityObserver(std::function<void()> observer);
 
     /// \name Scene API
     /// Mirrors SoFCRenderer's feed. Backends that don't consume scene data

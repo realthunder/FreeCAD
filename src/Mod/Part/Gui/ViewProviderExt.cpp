@@ -546,17 +546,20 @@ static void restructureInstanceVertex(ShapeInstanceRep::Instance &inst)
 }
 
 /// The environment part of the shape-instancing gate: the feature param,
-/// a backend renderer selected (plain Coin/GL always flattens — without
+/// a backend renderer live (plain Coin/GL always flattens — without
 /// GPU instancing many small shared nodes are a net loss), and the
-/// backend's published instancing capability.
+/// backend's published instancing capability. The backend question is
+/// asked of the actual renderer state, not the Render Type preference:
+/// a backend can be attached with the pref still "Default" (per-view or
+/// scripted selection), and a pref naming a backend yields none when
+/// creation fails (plain-GL fallback).
 static bool shapeInstancingActive()
 {
     if (!PartParams::getShapeInstancing())
         return false;
     if (Gui::ViewParams::getRenderCache() != 3)
         return false;
-    const std::string &type = Gui::RenderParams::getType();
-    if (type.empty() || type == "Default")
+    if (Render::Renderer::activeCount() == 0)
         return false;
     return Render::Renderer::instancingHint();
 }

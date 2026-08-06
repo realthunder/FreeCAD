@@ -79,10 +79,43 @@ std::unique_ptr<Renderer> RendererFactory::create(
 }
 
 static bool _InstancingHint = true;
+static int _ActiveCount = 0;
+static std::vector<std::function<void()>> _ActivityObservers;
+
+static void notifyActivityObservers()
+{
+    for (auto &observer : _ActivityObservers)
+        observer();
+}
+
+Renderer::Renderer()
+{
+    ++_ActiveCount;
+    notifyActivityObservers();
+}
+
+Renderer::~Renderer()
+{
+    --_ActiveCount;
+    notifyActivityObservers();
+}
+
+int Renderer::activeCount()
+{
+    return _ActiveCount;
+}
+
+void Renderer::addActivityObserver(std::function<void()> observer)
+{
+    _ActivityObservers.push_back(std::move(observer));
+}
 
 void Renderer::setInstancingHint(bool supported)
 {
+    if (_InstancingHint == supported)
+        return;
     _InstancingHint = supported;
+    notifyActivityObservers();
 }
 
 bool Renderer::instancingHint()
