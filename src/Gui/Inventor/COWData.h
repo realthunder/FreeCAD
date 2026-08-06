@@ -52,8 +52,8 @@ struct SbFCMemUnitStats {
 
 template<typename T>
 struct SoFCAllocator : std::allocator<T> {
-  typedef typename std::allocator<T>::pointer pointer;
-  typedef typename std::allocator<T>::size_type size_type;
+  typedef T* pointer;
+  typedef std::size_t size_type;
   template<typename U> struct rebind { typedef SoFCAllocator<U> other; };
 
   SoFCAllocator() {}
@@ -61,7 +61,7 @@ struct SoFCAllocator : std::allocator<T> {
   template<typename U>
   SoFCAllocator(const SoFCAllocator<U>& u) : std::allocator<T>(u) {}
 
-  pointer allocate(size_type size, std::allocator<void>::const_pointer = 0) {
+  pointer allocate(size_type size, const void* = nullptr) {
     void* p = std::malloc(size * sizeof(T));
     if(p == 0)
       throw std::bad_alloc();
