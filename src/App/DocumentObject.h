@@ -533,8 +533,8 @@ public:
      * it, so what lands in Document.xml is the difference. Never owned here,
      * and cleared again as soon as the save is done.
      */
-    void setSaveDefaults(const DocumentObject *obj) { _saveDefaults = obj; }
-    const App::PropertyContainer *getSaveDefaults() const override { return _saveDefaults; }
+    void setSaveDefaults(const SharedDefaults *defaults) { _saveDefaults = defaults; }
+    const App::SharedDefaults *getSaveDefaults() const override { return _saveDefaults; }
 
     /** Bulk geometry is never spoken for by a class default.
      *
@@ -808,7 +808,7 @@ private:
     int _revision;
 
     // Borrowed for the duration of one save, see setSaveDefaults().
-    const DocumentObject *_saveDefaults{nullptr};
+    const SharedDefaults *_saveDefaults{nullptr};
 };
 
 } //namespace App

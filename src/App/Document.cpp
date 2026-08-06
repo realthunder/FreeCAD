@@ -1371,7 +1371,7 @@ bool Document::isRestoringDefaults()
 
 void Document::buildDefaults(Base::Writer &writer,
         const std::vector<App::DocumentObject*>& obj,
-        std::map<std::string, std::unique_ptr<DocumentObject>> &defaults) const
+        std::map<std::string, SharedDefaults> &defaults) const
 {
     // Two gates, and they answer different questions. Schema 6 is the version
     // that introduced this block (getWritableSchemaVersions); a document whose
@@ -1395,13 +1395,21 @@ void Document::buildDefaults(Base::Writer &writer,
     for (const auto &v : counts) {
         if (v.second < minInstances)
             continue;
-        if (auto proto = makeDefaultObject(v.first.c_str()))
-            defaults.emplace(v.first, std::move(proto));
+        // The stand-in lives exactly as long as this recording. What the
+        // objects compare against, and what the file will carry, are the
+        // bytes SharedDefaults took down -- the object itself has nothing
+        // more to say once they are recorded.
+        if (auto proto = makeDefaultObject(v.first.c_str())) {
+            SharedDefaults record;
+            record.build(*proto, writer);
+            if (!record.empty())
+                defaults.emplace(v.first, std::move(record));
+        }
     }
 }
 
 void Document::saveDefaults(Base::Writer &writer,
-        const std::map<std::string, std::unique_ptr<DocumentObject>> &defaults) const
+        const std::map<std::string, SharedDefaults> &defaults) const
 {
     if (defaults.empty())
         return;
@@ -1409,27 +1417,15 @@ void Document::saveDefaults(Base::Writer &writer,
     writer.Stream() << writer.ind() << '<' << FC_ELEM_DEFAULTS << " Count=\""
                     << defaults.size() << "\">\n";
     writer.incInd();
-    // A stand-in owns no archive entry: forcing XML keeps its list properties
-    // inline instead of registering files nothing will ever read.
-    int force = writer.isForceXML();
-    writer.setForceXML(9999);
     for (const auto &v : defaults) {
         writer.Stream() << writer.ind() << '<' << FC_ELEM_DEFAULT << " type=\""
                         << v.first << "\">\n";
-        // Properties only. Extensions are saved by identity, and a stand-in's
-        // are whatever its constructor added -- the same ones the reader's
-        // stand-in will have. Its properties come along regardless: an
-        // extension's belong to the object that initialised it.
-        //
-        // ⚠️ SaveDefaults, not Save: what mustSave() names has to stay out of
-        // the block. Shape is the one that bites -- PropertyPartShape::Save
-        // would have the stand-in claim an archive entry of its own, and the
-        // Restore that reads it back dereferences an owner document a stand-in
-        // has not got.
-        v.second->App::PropertyContainer::SaveDefaults(writer);
+        // Properties only, and only the recorded ones: eligibility was
+        // settled when the record was built, and the bytes going out here
+        // are the same bytes every elision was decided against.
+        v.second.save(writer);
         writer.Stream() << writer.ind() << "</" << FC_ELEM_DEFAULT << ">\n";
     }
-    writer.setForceXML(force);
     writer.decInd();
     writer.Stream() << writer.ind() << "</" << FC_ELEM_DEFAULTS << ">\n";
 }
@@ -1613,7 +1609,7 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
     // build whose constructors differ still holds what its author saved.
     // Nothing is shared in the split-XML layout: each object is its own file
     // there, with no block to point at.
-    std::map<std::string, std::unique_ptr<DocumentObject>> defaults;
+    std::map<std::string, SharedDefaults> defaults;
     if (!writer.isSplitXML())
         buildDefaults(writer, obj, defaults);
 
@@ -1633,14 +1629,14 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
         auto unknown = PropertyContainer::savedDefaultsUnknown;
         auto byValue = PropertyContainer::savedDefaultsValue;
         auto byStatus = PropertyContainer::savedDefaultsStatus;
-        // Point every object at its class stand-in for the duration of the
-        // write, and at nothing again after it -- the stand-ins do not
+        // Point every object at its class record for the duration of the
+        // write, and at nothing again after it -- the records do not
         // outlive this call.
         auto pointAtDefaults = [&](bool on) {
             for (auto o : obj) {
                 auto def = defaults.find(o->getTypeId().getName());
                 o->setSaveDefaults(
-                        on && def != defaults.end() ? def->second.get() : nullptr);
+                        on && def != defaults.end() ? &def->second : nullptr);
             }
         };
         pointAtDefaults(true);

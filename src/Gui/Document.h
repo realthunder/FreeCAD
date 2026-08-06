@@ -194,13 +194,15 @@ public:
      * from it. See Gui::Document::saveDefaults for what that buys.
      */
     //@{
-    /// Build one stand-in per view provider class present in this document,
-    /// or none at all when the document is being written as an older schema.
+    /// Record one class default block (App::SharedDefaults) per view provider
+    /// class present in this document, or none at all when the document is
+    /// being written as an older schema. The stand-in each record is taken
+    /// from does not outlive the recording.
     void buildDefaults(Base::Writer &writer,
-            std::map<std::string, std::unique_ptr<ViewProvider>> &defaults) const;
-    /// Write those stand-ins' properties as the block the objects refer to.
+            std::map<std::string, App::SharedDefaults> &defaults) const;
+    /// Write those records as the block the objects refer to, byte for byte.
     void saveDefaults(Base::Writer &writer,
-            const std::map<std::string, std::unique_ptr<ViewProvider>> &defaults) const;
+            const std::map<std::string, App::SharedDefaults> &defaults) const;
     /// Read the block back and keep whatever it says that this build does not.
     void restoreDefaults(Base::XMLReader &reader, int count);
     /// Put that difference on one view provider, before its own properties.

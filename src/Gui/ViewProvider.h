@@ -580,13 +580,14 @@ public:
 
     /** The per-class defaults this view provider may leave out of a save.
      *
-     * Set by Gui::Document for the duration of one save: it writes one
+     * Set by Gui::Document for the duration of one save: it records one
      * default block per view provider class and points every view provider
-     * of that class at it, so what lands in the file is the difference.
-     * Never owned here, and cleared again as soon as the save is done.
+     * of that class at it, so what lands in the file is the byte-for-byte
+     * difference. Never owned here, and cleared again as soon as the save
+     * is done.
      */
-    void setSaveDefaults(const ViewProvider *vp) { _saveDefaults = vp; }
-    const App::PropertyContainer *getSaveDefaults() const override { return _saveDefaults; }
+    void setSaveDefaults(const App::SharedDefaults *defaults) { _saveDefaults = defaults; }
+    const App::SharedDefaults *getSaveDefaults() const override { return _saveDefaults; }
 
 
     /** @name Display mask modes
@@ -669,7 +670,7 @@ protected:
     CoinPtr<SoGroup> pcChildGroup;
 
 private:
-    const ViewProvider *_saveDefaults{nullptr};
+    const App::SharedDefaults *_saveDefaults{nullptr};
     int _iActualMode{-1};
     int _iEditMode{-1};
     int viewOverrideMode{-1};

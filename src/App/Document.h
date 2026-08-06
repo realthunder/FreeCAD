@@ -687,17 +687,19 @@ protected:
 
     /** The shared default block, written once per object class.
      *
-     * buildDefaults picks the classes worth a block and builds a stand-in for
-     * each; saveDefaults writes them; every object of the class is then
-     * pointed at its stand-in and saves only what differs from it. See
-     * App::PropertyContainer::getSaveDefaults for the mechanism, and
+     * buildDefaults picks the classes worth a block, builds a stand-in for
+     * each, and records what its eligible properties serialize to
+     * (App::SharedDefaults) -- the stand-in itself does not outlive the
+     * recording. saveDefaults writes those records; every object of the
+     * class is then pointed at its record and saves only what differs from
+     * it, byte for byte. See App::SharedDefaults for the mechanism, and
      * writeObjects for what it buys.
      */
     void buildDefaults(Base::Writer &writer,
             const std::vector<App::DocumentObject*>& obj,
-            std::map<std::string, std::unique_ptr<DocumentObject>> &defaults) const;
+            std::map<std::string, SharedDefaults> &defaults) const;
     void saveDefaults(Base::Writer &writer,
-            const std::map<std::string, std::unique_ptr<DocumentObject>> &defaults) const;
+            const std::map<std::string, SharedDefaults> &defaults) const;
     /// Read the block, and work out what of it this build does not already produce.
     void restoreDefaults(Base::XMLReader &reader, int count);
     /// Paste that difference onto an object, before its own properties are read.
