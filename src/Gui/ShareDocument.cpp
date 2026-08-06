@@ -469,6 +469,19 @@ public:
             QString name = QString::fromUtf8(c.client.c_str());
             if (name.isEmpty())
                 name = c.viewer ? tr("(unnamed)") : tr("(connection)");
+            // What the front door verified outranks what the client
+            // typed (docs/ShareAccess.md §4): the identity is who this
+            // is, the label just what they call themselves.
+            const QString identity = QString::fromUtf8(c.identity.c_str());
+            if (!identity.isEmpty()) {
+                if (c.client.empty() || identity == name)
+                    name = identity;
+                else
+                    name = identity + QStringLiteral(" (") + name
+                         + QLatin1Char(')');
+                item->setToolTip(0, tr("Signed in through the sharing "
+                                       "front door"));
+            }
             item->setText(0, name);
             item->setText(1, QString::fromUtf8(c.address.c_str()));
             // A proxied row shows where the client is; the tooltip says

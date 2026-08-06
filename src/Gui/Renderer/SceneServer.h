@@ -90,6 +90,12 @@ struct SceneClientInfo {
     std::string address;
     std::string peer;
     bool proxied = false;     ///< address came from a forwarded header
+    /// Who this is, as verified by an authenticating front door
+    /// (docs/ShareAccess.md §4): the identity header's value on the
+    /// upgrade request, believed under the same loopback rule as the
+    /// forwarded address. Empty when nothing asserted one — then the
+    /// self-declared \a client label is all there is.
+    std::string identity;
     bool viewer = false;      ///< sent a hello (a probe may not)
     bool viewOnly = false;    ///< picks and mutating ops refused
     uint64_t connectedMs = 0; ///< how long this connection has been up
@@ -156,6 +162,19 @@ public:
     /// useful with a proxy in front that sets the header.
     void setTrustProxy(bool on);
     bool trustProxy();
+
+    /// The request header carrying a verified identity from an
+    /// authenticating front door (docs/ShareAccess.md §4). Read only
+    /// under the trust rule of setTrustProxy — trust on, loopback
+    /// peer — because a header is an assertion by whoever set it.
+    /// Empty (the default) recognizes the well-known front doors:
+    /// `Cf-Access-Authenticated-User-Email` (Cloudflare Access),
+    /// `X-Auth-Request-Email` (oauth2-proxy), `X-Forwarded-Email`
+    /// (ngrok and others) — which is what keeps the front door
+    /// swappable. A configured name becomes the only one read.
+    /// FC_SERVE_IDENTITY_HEADER presets it at first use.
+    void setIdentityHeader(const std::string &name);
+    std::string identityHeader();
 
     /// The connected clients, for the sharing roster. Returns how many.
     int clients(std::vector<SceneClientInfo> &out);

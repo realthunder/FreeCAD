@@ -164,6 +164,12 @@ public:
     /// every accepted connection.
     std::atomic<bool> trustProxy{false};
 
+    /// The configured identity header name (SceneServer.h,
+    /// setIdentityHeader), stored lowercase; empty = recognize the
+    /// well-known ones. Guarded by tokenMutex, like the token — read
+    /// once per accepted connection.
+    std::string identityHeaderName;
+
     /// The client address to believe for a connection whose socket
     /// peer is \a peerIp, given the request head \a req. Empty unless
     /// trust is on, the peer is loopback, and a header named one.
@@ -204,6 +210,52 @@ public:
         for (char c : value) {
             if (!std::isxdigit(static_cast<unsigned char>(c))
                     && c != '.' && c != ':')
+                return {};
+        }
+        return value;
+    }
+
+    /// The verified identity an authenticating front door asserted on
+    /// this request (docs/ShareAccess.md §4), under the same trust
+    /// rule as forwardedFor: trust on, loopback peer, or the header
+    /// is the client's own invention. Empty when nothing asserted one.
+    std::string assertedIdentity(const std::string &req,
+                                 const std::string &peerIp)
+    {
+        if (!trustProxy.load())
+            return {};
+        if (peerIp != "127.0.0.1" && peerIp != "::1")
+            return {};
+        std::string configured;
+        {
+            std::lock_guard<std::mutex> guard(tokenMutex);
+            configured = identityHeaderName;
+        }
+        std::string value;
+        if (!configured.empty()) {
+            value = headerValue(req, configured.c_str());
+        } else {
+            // The front doors we know of (SceneServer.h,
+            // setIdentityHeader): Cloudflare Access, oauth2-proxy,
+            // and the generic spelling ngrok and others use.
+            static const char *const wellKnown[] = {
+                "cf-access-authenticated-user-email",
+                "x-auth-request-email",
+                "x-forwarded-email",
+            };
+            for (const char *name : wellKnown) {
+                value = headerValue(req, name);
+                if (!value.empty())
+                    break;
+            }
+        }
+        // Roster-bound attacker-shaped text, like the forwarded
+        // address: bounded, printable, no control characters.
+        if (value.size() > 128)
+            return {};
+        for (char c : value) {
+            unsigned char u = static_cast<unsigned char>(c);
+            if (u < 0x20 || u == 0x7f)
                 return {};
         }
         return value;
@@ -849,6 +901,11 @@ public:
         /// What a trusted proxy said the client's address is
         /// (X-Forwarded-For, setTrustProxy); empty when nothing did.
         std::string fwd;
+        /// The verified identity a trusted front door asserted on the
+        /// upgrade (assertedIdentity); empty when none did. Fixed for
+        /// the connection's life — unlike the client label, it cannot
+        /// arrive late, because it rides the upgrade request itself.
+        std::string identity;
         /// The joined document's name, mirrored under connMutex for
         /// the roster — \a group itself is owner-thread-only.
         std::string docName;
@@ -935,6 +992,7 @@ public:
             info.peer = conn->addr;
             info.proxied = !conn->fwd.empty();
             info.address = info.proxied ? conn->fwd : conn->addr;
+            info.identity = conn->identity;
             info.viewer = conn->viewer;
             info.viewOnly = conn->viewOnly;
             info.connectedMs = uint64_t(
@@ -1603,11 +1661,14 @@ public:
                 std::snprintf(addr, sizeof(addr), "%s:%u", ip,
                               unsigned(ntohs(peer.sin_port)));
             }
-            // A proxy in front states the real client address; the
-            // upgrade is an ordinary HTTP request, so it rides here.
+            // A proxy in front states the real client address, and an
+            // authenticating front door states who the client is; the
+            // upgrade is an ordinary HTTP request, so both ride here.
             std::string fwd = forwardedFor(req, peerIp);
+            std::string identity = assertedIdentity(req, peerIp);
             if (handshake(fd, wsKey))
-                wsLoop(fd, clientVersion, s, doc, authorized, addr, fwd);
+                wsLoop(fd, clientVersion, s, doc, authorized, addr, fwd,
+                       identity);
             return;
         }
 
@@ -1780,7 +1841,8 @@ public:
     /// name joins nothing and leaves the rest to the hello.
     void wsLoop(int fd, uint64_t held, const std::string &session,
                 const std::string &doc, bool authorized,
-                const char *addr, const std::string &fwd)
+                const char *addr, const std::string &fwd,
+                const std::string &identity)
     {
         Conn conn;
         conn.fd = fd;
@@ -1788,6 +1850,7 @@ public:
         conn.authorized = authorized;
         conn.addr = addr ? addr : "";
         conn.fwd = fwd;
+        conn.identity = identity;
         conn.since = std::chrono::steady_clock::now();
         {
             std::lock_guard<std::mutex> guard(mutex);
@@ -2341,6 +2404,15 @@ public:
 #endif
 };
 
+/// Header names compare case-insensitively; store and match lowercase.
+static std::string lowered(const char *s)
+{
+    std::string lower(s);
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return lower;
+}
+
 SceneStreamServer &SceneStreamServer::instance()
 {
     static SceneStreamServer server;
@@ -2364,6 +2436,8 @@ SceneStreamServer::Private *SceneStreamServer::ensure()
         }
         if (const char *env = std::getenv("FC_SERVE_TRUST_PROXY"))
             pimpl->trustProxy.store(std::atoi(env) != 0);
+        if (const char *env = std::getenv("FC_SERVE_IDENTITY_HEADER"))
+            pimpl->identityHeaderName = lowered(env);
     }
     return pimpl;
 }
@@ -2393,6 +2467,20 @@ void SceneStreamServer::setToken(const std::string &token)
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->tokenMutex);
     p->tokenSecret = token;
+}
+
+void SceneStreamServer::setIdentityHeader(const std::string &name)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    p->identityHeaderName = lowered(name.c_str());
+}
+
+std::string SceneStreamServer::identityHeader()
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    return p->identityHeaderName;
 }
 
 std::string SceneStreamServer::token()

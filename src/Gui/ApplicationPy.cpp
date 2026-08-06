@@ -188,7 +188,8 @@ PyMethodDef Application::Methods[] = {
    "serveClients() -> list\n"
    "\n"
    "The scene stream server's connected clients, one dict each: id,\n"
-   "client (label), doc, address, viewer, viewOnly, connectedMs."},
+   "client (label), identity (verified by the front door, may be\n"
+   "empty), doc, address, viewer, viewOnly, connectedMs."},
   {"serveSetClientMode",      (PyCFunction) Application::sServeSetClientMode, METH_VARARGS,
    "serveSetClientMode(id, viewOnly) -> bool\n"
    "\n"
@@ -897,6 +898,7 @@ PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
         Py::Dict entry;
         entry.setItem("id", Py::Long(static_cast<unsigned long long>(c.id)));
         entry.setItem("client", Py::String(c.client));
+        entry.setItem("identity", Py::String(c.identity));
         entry.setItem("doc", Py::String(c.doc));
         entry.setItem("address", Py::String(c.address));
         entry.setItem("peer", Py::String(c.peer));
