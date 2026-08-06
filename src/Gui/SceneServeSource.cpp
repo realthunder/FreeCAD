@@ -368,6 +368,13 @@ void SceneServeSource::installHandlers()
                 self->schedulePublish();
         }, Qt::QueuedConnection);
     }, pimpl->groupName);
+
+    // With the handlers in place the document is servable: put it on
+    // the wire — joinable by name, listed in the `docs` push every
+    // connected viewer's menu redraws from (docs/MultiDocServe.md §4).
+    const char *label = pimpl->doc && pimpl->doc->getDocument()
+        ? pimpl->doc->getDocument()->Label.getValue() : "";
+    server.setDocumentInfo(pimpl->groupName, label ? label : "");
 }
 
 void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,

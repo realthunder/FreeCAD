@@ -160,15 +160,35 @@ public:
     static const size_t kHistory = 32;
 
     /// Everything the server holds *per served document*
-    /// (docs/MultiDocServe.md §3). One instance today — the map below
-    /// is capped at the default group until the wire learns to name
-    /// documents — but the split is what makes a second document a new
-    /// map entry instead of a fight over singleton slots. Guarded by
-    /// \a mutex except where a member says otherwise.
+    /// (docs/MultiDocServe.md §3): a second document is a second map
+    /// entry, not a fight over singleton slots, and connections join
+    /// one by name on the wire (§4). Guarded by \a mutex except where
+    /// a member says otherwise.
     struct DocGroup {
-        /// The document this group serves; empty for the default group
-        /// until the wire carries names (stage 3b).
+        /// The document this group serves; empty for the anonymous
+        /// group the FC_BGFX_SERVE_SCENE viewer path publishes into,
+        /// which no name on the wire can join.
         std::string name;
+        /// The display label the `docs` listing shows for this
+        /// document (docs/MultiDocServe.md §4). Set by
+        /// setDocumentInfo; the name is the wire key, this is for
+        /// humans.
+        std::string label;
+        /// Objects in the currently served payload, from the last
+        /// publish — the listing's rough size cue.
+        size_t objects = 0;
+        /// Joinable by name on the wire: set while a source stands
+        /// behind this group (setDocumentInfo .. releaseGroup). The
+        /// anonymous group is never live — an unadorned join falls
+        /// back to it only when nothing is (defaultJoin).
+        bool live = false;
+        /// Whether this group was ever served — what tells a
+        /// connection's loop that a group it is joined to was torn
+        /// down (live dropped) rather than never named at all.
+        bool wasServed = false;
+        /// Serve order, for picking the default: the first-served
+        /// document still alive is what an unadorned hello joins.
+        uint64_t serveSeq = 0;
 
         std::vector<uint8_t> payload;
         /// The version \a payload was built for; both change together,
@@ -227,9 +247,10 @@ public:
 
     /// The served documents, keyed by document name. std::map for node
     /// stability: connections and level jobs hold DocGroup pointers.
-    /// Entries are never erased — releaseGroup() empties one instead —
-    /// so those pointers cannot dangle; re-homing a released group's
-    /// connections is the wire's job (stage 3c).
+    /// Entries are never erased — releaseGroup() takes one off the
+    /// wire instead — so those pointers cannot dangle; each released
+    /// group's connections re-home themselves on their own loop tick
+    /// (wsLoopBody).
     std::map<std::string, DocGroup> groups;
     /// The group an unadorned client means: the first one anything
     /// created — for Gui.serveDocument that is the first served
@@ -263,6 +284,105 @@ public:
             defaultGrp = &groups[std::string()];
         }
         return *defaultGrp;
+    }
+
+    /// Serve-order stamps for the live groups (setDocumentInfo).
+    uint64_t serveSeqCounter = 0;
+
+    /// The group an unadorned *join* means (docs/MultiDocServe.md §4):
+    /// the first-served document still alive, else the anonymous group
+    /// a viewer-path publisher may be feeding, else nothing. Distinct
+    /// from defaultGrp, which resolves the *publisher-side* unnamed
+    /// calls and never re-points. Call with \a mutex held.
+    DocGroup *defaultJoin()
+    {
+        DocGroup *best = nullptr;
+        for (auto &entry : groups) {
+            DocGroup &g = entry.second;
+            if (g.live && (!best || g.serveSeq < best->serveSeq))
+                best = &g;
+        }
+        if (best)
+            return best;
+        auto it = groups.find(std::string());
+        return it == groups.end() ? nullptr : &it->second;
+    }
+
+    /// The live group named \a name, or the default join for an empty
+    /// name; null when there is no such document to join. Never
+    /// creates a group: an unknown name on the wire is an error, not a
+    /// group (§4). Call with \a mutex held.
+    DocGroup *joinable(const std::string &name)
+    {
+        if (name.empty())
+            return defaultJoin();
+        auto it = groups.find(name);
+        return it != groups.end() && it->second.live ? &it->second : nullptr;
+    }
+
+    /// Escape \a in for a JSON string literal: document names are
+    /// tame, but labels are user text.
+    static std::string jsonEscape(const std::string &in)
+    {
+        std::string out;
+        out.reserve(in.size());
+        for (char c : in) {
+            if (c == '"' || c == '\\') {
+                out += '\\';
+                out += c;
+            }
+            else if (static_cast<unsigned char>(c) < 0x20) {
+                char buf[8];
+                std::snprintf(buf, sizeof(buf), "\\u%04x",
+                              static_cast<unsigned char>(c));
+                out += buf;
+            }
+            else {
+                out += c;
+            }
+        }
+        return out;
+    }
+
+    /// The document listing, `{"cmd":"docs",...}` — the reply to the
+    /// `docs` verb and the unsolicited push a serve or unserve sends
+    /// (docs/MultiDocServe.md §4). Call with \a mutex held.
+    std::string docsJsonLocked()
+    {
+        std::vector<const DocGroup *> live;
+        for (auto &entry : groups) {
+            if (entry.second.live)
+                live.push_back(&entry.second);
+        }
+        std::sort(live.begin(), live.end(),
+                  [](const DocGroup *a, const DocGroup *b) {
+                      return a->serveSeq < b->serveSeq;
+                  });
+        std::string out = "{\"cmd\":\"docs\",\"list\":[";
+        for (size_t i = 0; i < live.size(); ++i) {
+            if (i)
+                out += ',';
+            out += "{\"name\":\"" + jsonEscape(live[i]->name)
+                + "\",\"label\":\"" + jsonEscape(live[i]->label)
+                + "\",\"objects\":" + std::to_string(live[i]->objects) + "}";
+        }
+        out += "],\"default\":\"";
+        if (const DocGroup *d = defaultJoin())
+            out += jsonEscape(d->name);
+        out += "\"}";
+        return out;
+    }
+
+    /// Push the current document listing to every connected viewer —
+    /// what their document menus redraw from. Caller holds no lock.
+    void pushDocs()
+    {
+        std::string json;
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+            json = docsJsonLocked();
+        }
+        broadcastControl(json);
     }
 
     /// The payload of \a g for a viewer holding \a held: the
@@ -638,14 +758,19 @@ public:
         /// with what the client said it held on the upgrade request.
         /// Touched only by this connection's own push loop.
         uint64_t sent = 0;
-        /// The document group this connection is joined to — always
-        /// the default group until the wire carries document names
-        /// (docs/MultiDocServe.md §4). Set once at loop start; a
-        /// switch (stage 3b) reassigns it on the loop's own thread.
+        /// The document group this connection is joined to, or null
+        /// when it is joined to nothing (a hello naming an unknown
+        /// document, or the last served document going away). Touched
+        /// only on this connection's own loop thread — joins, switches
+        /// and the re-home after a teardown all happen there.
         DocGroup *group = nullptr;
         std::vector<std::string> pendingText; ///< queued control JSONs
         bool viewer = false;   ///< sent a hello — answers control requests
         std::string build;     ///< bundle build stamp from the hello
+        /// Display label from the hello (docs/MultiDocServe.md §4):
+        /// names this connection in the decisions journal and later
+        /// presence. Never parsed, never trusted.
+        std::string client;
         /// The stamp a reload was already pushed for — one push per
         /// bundle generation, no loops.
         std::string reloadPushed;
@@ -685,6 +810,27 @@ public:
             if (conn->viewer)
                 conn->pendingText.push_back(json);
         }
+    }
+
+    /// The one gate every join goes through — hello and switch alike
+    /// (docs/MultiDocServe.md §4), and the choke point a later
+    /// per-connection ACL would occupy. An empty \a name means the
+    /// default document. False when there is no such document to join,
+    /// leaving the connection where it was; on a join that changes
+    /// groups the connection's version resets, so the next push is the
+    /// new document's full snapshot. Must run on \a conn's own loop
+    /// thread, the only one allowed to touch its group.
+    bool joinDocument(Conn &conn, const std::string &name)
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        DocGroup *g = joinable(name);
+        if (!g)
+            return false;
+        if (g != conn.group) {
+            conn.group = g;
+            conn.sent = 0;
+        }
+        return true;
     }
 
     int requestFrameDumps(int mode, int timeoutMs,
@@ -875,7 +1021,7 @@ public:
     void dispatchControl(Conn &conn, std::string &&json)
     {
         std::function<void(SceneControlRequest &&)> handler;
-        {
+        if (conn.group) {
             std::lock_guard<std::mutex> guard(handlerMutex);
             handler = conn.group->controlHandler;
         }
@@ -1143,15 +1289,15 @@ public:
             std::string source = queryValue(query, "source");
             uint32_t level = uint32_t(std::strtoul(
                 queryValue(query, "level").c_str(), nullptr, 10));
-            // A plain HTTP request names no connection, so no group:
-            // the demand is booked on the default document until the
-            // route carries a name (docs/MultiDocServe.md §4).
+            // A plain HTTP request names no connection, so the demand
+            // is booked on the document the query names — absent, the
+            // default (docs/MultiDocServe.md §4).
             DocGroup *g;
             {
                 std::lock_guard<std::mutex> guard(mutex);
-                g = &defaultGroup();
+                g = joinable(queryValue(query, "doc"));
             }
-            bool accepted = isBlobKey(source)
+            bool accepted = g && isBlobKey(source)
                 && requestLevel(*g, source, level);
             static const char acceptedReply[] =
                 "HTTP/1.1 202 Accepted\r\n"
@@ -1198,22 +1344,20 @@ public:
             return;
         }
 
-        // /scene?v=<version>&s=<session>: what the client holds. 204
+        // /scene?v=<version>&s=<session>&doc=<name>: what the client
+        // holds, and of which document (absent = the default). 204
         // while it is current. A version stated without a session, or
         // with one from another run of this backend, names a publish
         // that never happened here and is worth nothing (SceneDump.h,
-        // v35) — the client is treated as holding nothing.
+        // v35) — the client is treated as holding nothing. The session
+        // is per document, so the check happens against the group the
+        // request lands on.
         uint64_t clientVersion = ~uint64_t(0);
         std::string v = queryValue(query, "v");
         if (!v.empty())
             clientVersion = std::strtoull(v.c_str(), nullptr, 10);
         std::string s = queryValue(query, "s");
-        if (!s.empty() && clientVersion != ~uint64_t(0)) {
-            std::lock_guard<std::mutex> guard(mutex);
-            if (std::strtoull(s.c_str(), nullptr, 10)
-                    != defaultGroup().ensureSession())
-                clientVersion = 0;
-        }
+        std::string doc = queryValue(query, "doc");
         if (path != "/scene" && path != "/scene.fcsd") {
             static const char notFound[] =
                 "HTTP/1.1 404 Not Found\r\n"
@@ -1227,27 +1371,49 @@ public:
         std::string wsKey = headerValue(req, "sec-websocket-key");
         if (!wsKey.empty()) {
             if (handshake(fd, wsKey))
-                wsLoop(fd, clientVersion);
+                wsLoop(fd, clientVersion, s, doc);
             return;
         }
 
         std::vector<uint8_t> body;
+        bool unknownDoc = false;
         {
             std::lock_guard<std::mutex> guard(mutex);
-            DocGroup &g = defaultGroup();
-            std::vector<uint8_t> out = payloadFor(g, clientVersion);
-            if (out.empty()) {
-                static const char noContent[] =
-                    "HTTP/1.1 204 No Content\r\n"
-                    "Access-Control-Allow-Origin: *\r\n"
-                    "Connection: close\r\n\r\n";
-                sendAll(fd, noContent, sizeof(noContent) - 1);
-                return;
+            DocGroup *g = joinable(doc);
+            if (!g && !doc.empty())
+                unknownDoc = true;
+            std::vector<uint8_t> out;
+            if (g) {
+                if (!s.empty() && clientVersion != ~uint64_t(0)
+                        && std::strtoull(s.c_str(), nullptr, 10)
+                               != g->ensureSession())
+                    clientVersion = 0;
+                out = payloadFor(*g, clientVersion);
             }
-            body.resize(8 + out.size());
-            uint64_t v = g.version;
-            std::memcpy(body.data(), &v, 8);
-            std::memcpy(body.data() + 8, out.data(), out.size());
+            if (!out.empty()) {
+                body.resize(8 + out.size());
+                uint64_t served = g->version;
+                std::memcpy(body.data(), &served, 8);
+                std::memcpy(body.data() + 8, out.data(), out.size());
+            }
+        }
+        if (unknownDoc) {
+            static const char notFound[] =
+                "HTTP/1.1 404 Not Found\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            sendAll(fd, notFound, sizeof(notFound) - 1);
+            return;
+        }
+        if (body.empty()) {
+            // Current, or nothing served at all — both are "you have
+            // everything there is".
+            static const char noContent[] =
+                "HTTP/1.1 204 No Content\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Connection: close\r\n\r\n";
+            sendAll(fd, noContent, sizeof(noContent) - 1);
+            return;
         }
         char head[256];
         int n = std::snprintf(head, sizeof(head),
@@ -1371,15 +1537,28 @@ public:
     /// `?v=&s=` on the upgrade request that the polling transport uses
     /// — read at handshake time, so a reconnecting viewer that is
     /// already current costs no payload and needs no round trip to say
-    /// so.
-    void wsLoop(int fd, uint64_t held)
+    /// so. \a session is the raw `?s=`, checked against the joined
+    /// group (sessions are per document); \a doc is the `?doc=` — a
+    /// reconnect rejoins its document before the hello even arrives,
+    /// which is what makes the held version mean anything. An unknown
+    /// name joins nothing and leaves the rest to the hello.
+    void wsLoop(int fd, uint64_t held, const std::string &session,
+                const std::string &doc)
     {
         Conn conn;
         conn.fd = fd;
         conn.sent = held;
         {
             std::lock_guard<std::mutex> guard(mutex);
-            conn.group = &defaultGroup();
+            conn.group = joinable(doc);
+            // A version stated without a session, or with one from
+            // another run (or another document's stream), names a
+            // publish that never happened on this stream.
+            if (!session.empty() && held != ~uint64_t(0)
+                    && (!conn.group
+                        || std::strtoull(session.c_str(), nullptr, 10)
+                               != conn.group->ensureSession()))
+                conn.sent = 0;
         }
         {
             std::lock_guard<std::mutex> guard(connMutex);
@@ -1410,22 +1589,65 @@ public:
                 if (conn.viewer)
                     pushReloadIfStale(conn);
             }
+            // Consume before pushing: a hello (or switch) that arrived
+            // with the connection must pick the document *before* the
+            // first payload goes out, or every named join would be
+            // preceded by one spurious default-document snapshot. A
+            // client that sends its hello on open is consumed within
+            // the first poll; one that says nothing merely waits out
+            // one interval for its first frame.
+            pollfd p = {};
+            p.fd = fd;
+            p.events = POLLIN;
+            int r = ::poll(&p, 1, 200);
+            if (r < 0)
+                return;
+            if (r > 0) {
+                char buf[65536];
+                ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+                if (n <= 0)
+                    return;
+                inbuf.append(buf, size_t(n));
+                if (!consumeFrames(fd, conn, inbuf))
+                    return;
+            }
             std::vector<uint8_t> body;
+            bool orphaned = false;
             {
                 std::lock_guard<std::mutex> guard(mutex);
+                // A torn-down document's connections re-home to the
+                // default document, here on their own loop thread —
+                // the only one allowed to touch conn.group
+                // (docs/MultiDocServe.md §5). When it was the last,
+                // the connection is joined to nothing and told so,
+                // once: group stays null, so this does not refire.
+                if (conn.group && conn.group->wasServed
+                        && !conn.group->live) {
+                    conn.group = defaultJoin();
+                    sent = 0;
+                    orphaned = !conn.group;
+                }
                 // What this connection is missing, which after a
                 // coalesced tick may be several publishes rather than
                 // one — the push loop sends the current scene, not
                 // every version of it.
-                DocGroup &g = *conn.group;
-                std::vector<uint8_t> out = payloadFor(g, sent);
-                if (!out.empty()) {
-                    body.resize(8 + out.size());
-                    uint64_t v = g.version;
-                    std::memcpy(body.data(), &v, 8);
-                    std::memcpy(body.data() + 8, out.data(), out.size());
-                    sent = g.version;
+                if (conn.group) {
+                    DocGroup &g = *conn.group;
+                    std::vector<uint8_t> out = payloadFor(g, sent);
+                    if (!out.empty()) {
+                        body.resize(8 + out.size());
+                        uint64_t v = g.version;
+                        std::memcpy(body.data(), &v, 8);
+                        std::memcpy(body.data() + 8, out.data(),
+                                    out.size());
+                        sent = g.version;
+                    }
                 }
+            }
+            if (orphaned) {
+                std::lock_guard<std::mutex> guard(connMutex);
+                conn.pendingText.push_back(
+                    "{\"cmd\":\"error\",\"code\":\"NoDocument\"}");
             }
             if (!body.empty()
                     && !sendFrame(fd, 2, body.data(), body.size()))
@@ -1440,22 +1662,6 @@ public:
             }
             for (const std::string &text : texts) {
                 if (!sendFrame(fd, 1, text.data(), text.size()))
-                    return;
-            }
-
-            pollfd p = {};
-            p.fd = fd;
-            p.events = POLLIN;
-            int r = ::poll(&p, 1, 200);
-            if (r < 0)
-                return;
-            if (r > 0) {
-                char buf[65536];
-                ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-                if (n <= 0)
-                    return;
-                inbuf.append(buf, size_t(n));
-                if (!consumeFrames(fd, conn, inbuf))
                     return;
             }
         }
@@ -1572,11 +1778,64 @@ public:
                 conn.sent = 0;
                 return;
             }
+            // The document listing, on demand — the same JSON the
+            // serve/unserve push sends (docs/MultiDocServe.md §4).
+            if (json.find("\"cmd\":\"docs\"") != std::string::npos) {
+                std::string reply;
+                {
+                    std::lock_guard<std::mutex> guard(mutex);
+                    reply = docsJsonLocked();
+                }
+                std::lock_guard<std::mutex> guard(connMutex);
+                conn.pendingText.push_back(reply);
+                return;
+            }
+            // Leave the current document, join another. Versioning-
+            // wise a fresh hello: the version resets even when the
+            // name resolves to the document already joined, because
+            // the viewer resets its model on switch and needs the full
+            // snapshot back. A failed switch leaves the connection
+            // where it was.
+            if (json.find("\"cmd\":\"switch\"") != std::string::npos) {
+                std::string name;
+                jsonStr(json, "doc", name);
+                if (joinDocument(conn, name)) {
+                    conn.sent = 0;
+                    notifyWork(*conn.group);
+                }
+                else {
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.pendingText.push_back(
+                        "{\"cmd\":\"error\",\"code\":\"UnknownDocument\""
+                        ",\"doc\":\"" + jsonEscape(name) + "\"}");
+                }
+                return;
+            }
             if (json.find("\"cmd\":\"hello\"") != std::string::npos) {
                 {
                     std::lock_guard<std::mutex> guard(connMutex);
                     conn.viewer = true;
                     jsonStr(json, "build", conn.build);
+                    jsonStr(json, "client", conn.client);
+                }
+                // The document this viewer wants (docs/MultiDocServe.md
+                // §4). Unknown name: an error and the listing, with the
+                // connection alive but joined to nothing — the viewer
+                // shows the list instead of dying.
+                std::string docName;
+                if (jsonStr(json, "doc", docName)
+                        && !joinDocument(conn, docName)) {
+                    conn.group = nullptr;
+                    std::string docs;
+                    {
+                        std::lock_guard<std::mutex> guard(mutex);
+                        docs = docsJsonLocked();
+                    }
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.pendingText.push_back(
+                        "{\"cmd\":\"error\",\"code\":\"UnknownDocument\""
+                        ",\"doc\":\"" + jsonEscape(docName) + "\"}");
+                    conn.pendingText.push_back(docs);
                 }
                 // A serving backend schedules no frames of its own
                 // (BGFXRenderer::animating / localAudience), and the
@@ -1584,7 +1843,8 @@ public:
                 // the frame that publishes to this new viewer. It gets
                 // the retained payload from the push loop either way;
                 // this is what makes that payload current.
-                notifyWork(*conn.group);
+                if (conn.group)
+                    notifyWork(*conn.group);
                 // Bundle build stamp check: reload pages running a
                 // superseded viewer build (any rebuild, not just
                 // snapshot-format bumps).
@@ -1637,8 +1897,13 @@ public:
                 return;
             std::lock_guard<std::mutex> guard(connMutex);
             if (logCollect && logCollect->id == id) {
-                logCollect->logs.emplace_back(
+                std::string log(
                     reinterpret_cast<const char *>(bytes) + 9, len);
+                // Attribution, when the hello offered a label
+                // (docs/MultiDocServe.md §4).
+                if (!conn.client.empty())
+                    log = "client: " + conn.client + "\n" + log;
+                logCollect->logs.push_back(std::move(log));
                 dumpCv.notify_all();
             }
             return;
@@ -1697,7 +1962,8 @@ public:
                 req.origin[i] = v[i];
                 req.dir[i] = v[3 + i];
             }
-            dispatchPick(*conn.group, req);
+            if (conn.group)
+                dispatchPick(*conn.group, req);
         }
         // Batched pick: 'B', count byte, then count * (modifiers byte + six
         // little-endian floats). The viewer batches a burst of client-side
@@ -1718,7 +1984,8 @@ public:
                         req.origin[k] = v[k];
                         req.dir[k] = v[3 + k];
                     }
-                    dispatchPick(*conn.group, req);
+                    if (conn.group)
+                        dispatchPick(*conn.group, req);
                     off += stride;
                 }
             }
@@ -1819,6 +2086,7 @@ void SceneStreamServer::publish(ScenePublish &&pub, const std::string &doc)
 
     g.payload = std::move(pub.payload);
     g.spans = pub.spans;
+    g.objects = pub.objects;
     // Version and payload move together, and only here: what is served
     // must always be the bytes the version names.
     g.version = pub.version;
@@ -1928,6 +2196,24 @@ void SceneStreamServer::setWorkNotifier(std::function<void()> notifier,
     g->workNotifier = std::move(notifier);
 }
 
+void SceneStreamServer::setDocumentInfo(const std::string &doc,
+                                        const std::string &label)
+{
+    Private *p = ensure();
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        Private::DocGroup &g = p->group(doc);
+        g.label = label;
+        if (!g.live && !g.name.empty()) {
+            g.live = true;
+            g.wasServed = true;
+            g.serveSeq = ++p->serveSeqCounter;
+        }
+    }
+    // Every connected viewer's document menu redraws from this push.
+    p->pushDocs();
+}
+
 void SceneStreamServer::releaseGroup(const std::string &doc)
 {
     if (!pimpl)
@@ -1940,6 +2226,10 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
             return;
         g = &it->second;
         g->publisher = nullptr;
+        // Off the wire: no longer joinable, gone from the listing,
+        // and each of its connections re-homes on its own loop's next
+        // tick (wsLoopBody).
+        g->live = false;
         // Queued jobs would book work and wake a notifier that is
         // about to be cleared; drop them. A job a worker already holds
         // finishes against the retained group node, harmlessly.
@@ -1950,10 +2240,14 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
                                }),
                 q.end());
     }
-    std::lock_guard<std::mutex> guard(pimpl->handlerMutex);
-    g->pickHandler = nullptr;
-    g->controlHandler = nullptr;
-    g->workNotifier = nullptr;
+    {
+        std::lock_guard<std::mutex> guard(pimpl->handlerMutex);
+        g->pickHandler = nullptr;
+        g->controlHandler = nullptr;
+        g->workNotifier = nullptr;
+    }
+    // The document left the listing; tell the menus.
+    pimpl->pushDocs();
 }
 
 void SceneStreamServer::broadcastControl(const std::string &json)

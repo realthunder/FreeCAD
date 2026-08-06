@@ -8665,6 +8665,7 @@ public:
                 pub.version = publishVersion;
                 if (Render::saveSceneSnapshot(pub.payload, snap)) {
                     pub.spans = spans;
+                    pub.objects = entries.size();
                     Render::diffObjectLists(publishedObjects, entries,
                                             pub.changed, pub.removed);
                     publishedObjects = std::move(entries);

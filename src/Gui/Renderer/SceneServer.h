@@ -141,6 +141,10 @@ public:
         /// caught up from a merge of these.
         std::vector<SceneSnapshot::ObjectEntry> changed;
         std::vector<uint64_t> removed;
+        /// How many objects the payload's list carries — what the
+        /// `docs` document listing reports per served document
+        /// (docs/MultiDocServe.md §4).
+        size_t objects = 0;
     };
 
     /// Replace the served payload, and remember what this publish
@@ -216,13 +220,22 @@ public:
     void setWorkNotifier(std::function<void()> notifier,
                          const std::string &doc = {});
 
+    /// Declare \a doc served: give its group the display label the
+    /// `docs` document listing shows, mark it joinable by name on the
+    /// wire (docs/MultiDocServe.md §4), and push the updated listing
+    /// to every connected viewer — the push a viewer's document menu
+    /// redraws from. Called by the document's source once it has
+    /// installed its handlers; releaseGroup() is the other half.
+    void setDocumentInfo(const std::string &doc, const std::string &label);
+
     /// A served document went away: clear the group's publisher claim
-    /// and handler slots and purge its queued level jobs, so nothing
-    /// dispatches into a torn-down source. The group itself stays — a
-    /// map node connections may still point at — and keeps its last
-    /// payload; re-serving the same document reuses it, and moving its
-    /// viewers elsewhere is the wire's job (docs/MultiDocServe.md §4,
-    /// stage 3c).
+    /// and handler slots, purge its queued level jobs, and take it off
+    /// the wire — the updated document listing is pushed, and each of
+    /// its connections re-homes to the default document (or to
+    /// nothing, with an error text, when it was the last) on its own
+    /// loop's next tick. The group node itself stays — connections may
+    /// still point at it — and keeps its last payload; re-serving the
+    /// same document reuses it.
     void releaseGroup(const std::string &doc);
 
     /// Queue a JSON control message (WebSocket text frame) to every
