@@ -7097,6 +7097,17 @@ public:
             break;
         }
 
+        // GL disables depth writes together with the depth test; bgfx does
+        // not — WRITE_Z with no depth-test bits renders as func ALWAYS with
+        // writes on (renderer_gl.cpp, DEPTH_TEST_MASK handling). The on-top
+        // machinery depends on the GL rule: a depth-off draw (the on-top
+        // fills, the dimmed hidden-line pass) must not lay down its own
+        // depth, or it stomps the scene depth and the LEQUAL solid pass
+        // that follows passes everywhere against the just-written line
+        // depth, painting every hidden edge solid.
+        if (!depthtest)
+            depthwrite = false;
+
         // Weighted-blended OIT accumulation: RT0 sums the depth-weighted
         // premultiplied color, RT1 multiplies up the revealage. Draw
         // order becomes irrelevant (commutative blending).
