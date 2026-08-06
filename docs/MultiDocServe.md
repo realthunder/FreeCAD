@@ -204,10 +204,19 @@ under `Preferences/SceneShare`:
 - **The clients** (`Clients/<name@address>`: `Name`, `Address`, `ViewOnly`, `Banned`).
   A client is recorded on first sight; its access is restored when it returns, and the
   panel lists remembered-but-absent clients greyed out so access can be set — or a ban
-  lifted — before anyone arrives. Matching prefers name **and** address together, then
-  falls back to the name alone, because a phone leaving wifi comes back from somewhere
-  else entirely while the name is the part a person chose (`?client=` in the link, or the
-  viewer menu's name action, which stores it per browser).
+  lifted — before anyone arrives. The recorded address drops the source port, which is
+  different on every visit; the name comes from `?client=` in the link or the viewer
+  menu's name action, which stores it per browser.
+- **Rules.** Both fields are **patterns**, so a record can be a person
+  (`lei-phone` @ `203.0.113.7`), a family (`lei-*` @ `*`), or the house rule (`*` @ `*` —
+  anyone from anywhere). The **most specific match wins** (a literal beats a partial
+  wildcard beats `*`; the name outranks the address, since the address is only where
+  someone happens to be today), which is what lets a blanket rule coexist with its
+  exceptions — *ban `*`, then allow the names you invited* is invite-only serving, and
+  *`*` set to view-only* is a read-only room with named editors. A client covered by a
+  rule gets no record of its own, so the rule stays the one place that decides; editing a
+  connected client from its row writes a record for that client and leaves the rule alone.
+  Rules are made in the panel (*Add rule…*) — nothing connecting can create one.
 - **Ban vs kick vs forget.** *Kick* ends this session and nothing more — the link still
   works. *Ban* also refuses every later connection matching the record, until it is lifted
   here. *Forget* drops the record: the next visit is a stranger's, neither banned nor

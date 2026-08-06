@@ -42,6 +42,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 #include <QSpinBox>
 #include <QTimer>
 #include <QTreeWidget>
@@ -133,7 +134,8 @@ struct ClientRecord
 
 /// The parameter subgroup name for a record. Readable in user.cfg, so
 /// a name and address can be found by eye; the sanitizing is only what
-/// the parameter tree cannot hold.
+/// the parameter tree cannot hold. Wildcards survive it — they are
+/// what a rule is made of.
 QString recordKey(const QString &name, const QString &address)
 {
     QString key = name.isEmpty() ? address : name + QLatin1Char('@') + address;
@@ -141,10 +143,68 @@ QString recordKey(const QString &name, const QString &address)
     for (QChar c : key) {
         out += (c.isLetterOrNumber() || c == QLatin1Char('.')
                 || c == QLatin1Char(':') || c == QLatin1Char('-')
-                || c == QLatin1Char('@') || c == QLatin1Char('_'))
+                || c == QLatin1Char('@') || c == QLatin1Char('_')
+                || c == QLatin1Char('*') || c == QLatin1Char('?'))
             ? c : QLatin1Char('_');
     }
     return out.left(80);
+}
+
+/*!
+ * The address a record is keyed by: the client's address without the
+ * ephemeral source port.
+ *
+ * A direct connection reports `ip:port`, and the port is different on
+ * every visit — recording it would mean recording something that can
+ * never match again. A proxied client already reports a bare address
+ * (the forwarded one), so this leaves it alone.
+ */
+QString addressKey(const QString &address)
+{
+    int colon = address.lastIndexOf(QLatin1Char(':'));
+    if (colon <= 0)
+        return address;
+    const QString tail = address.mid(colon + 1);
+    bool digits = !tail.isEmpty();
+    for (QChar c : tail)
+        digits = digits && c.isDigit();
+    // Only a v4 address carries its port this way; an IPv6 address is
+    // all colons and must be left whole.
+    if (!digits || address.count(QLatin1Char(':')) != 1)
+        return address;
+    return address.left(colon);
+}
+
+/// Whether \a value satisfies \a pattern, where the pattern may use
+/// shell wildcards — `*` alone is everyone, `lei-*` is a family of
+/// names, `192.168.1.*` a subnet.
+bool patternMatch(const QString &pattern, const QString &value)
+{
+    if (!pattern.contains(QLatin1Char('*'))
+            && !pattern.contains(QLatin1Char('?')))
+        return pattern == value;
+    if (pattern == QLatin1String("*"))
+        return true;
+    QRegularExpression re(
+        QRegularExpression::wildcardToRegularExpression(pattern),
+        QRegularExpression::CaseInsensitiveOption);
+    return re.match(value).hasMatch();
+}
+
+/// How specific a pattern is, for choosing between rules that both
+/// match: a literal beats a partial wildcard beats `*`.
+int specificity(const QString &pattern)
+{
+    if (pattern == QLatin1String("*"))
+        return 0;
+    int literal = 0;
+    for (QChar c : pattern) {
+        if (c != QLatin1Char('*') && c != QLatin1Char('?'))
+            ++literal;
+    }
+    return (pattern.contains(QLatin1Char('*'))
+            || pattern.contains(QLatin1Char('?')))
+        ? 1 + literal : 4096 + literal;
 }
 
 std::vector<ClientRecord> loadRecords()
@@ -180,25 +240,49 @@ void forgetRecord(const ClientRecord &rec)
 }
 
 /*!
- * The remembered entry for a connected client, or none.
+ * The record governing a client, or none.
  *
- * Name and address together identify a client, but neither is
- * dependable alone: an unnamed viewer has only its address, and a
- * named one moves between networks (a phone leaving wifi arrives from
- * somewhere else entirely). So an exact match wins, and a name match
- * is accepted after it — the name is the part a person chose.
+ * Every record is a pattern pair, so one entry can be a person
+ * (`lei-phone` @ `203.0.113.7`), a family (`lei-*` @ `*`), or the
+ * house rule (`*` @ `*` — anyone from anywhere). The most specific
+ * match wins, which is what lets a blanket rule coexist with the
+ * exceptions to it: ban `*`, then allow the two names you invited.
+ *
+ * Name and address are both patterns because neither is dependable
+ * alone: an unnamed viewer has only its address, and a named one moves
+ * between networks — a phone leaving wifi arrives from somewhere else
+ * entirely, while the name is the part a person chose.
  */
 const ClientRecord *matchRecord(const std::vector<ClientRecord> &records,
                                 const QString &name, const QString &address)
 {
-    const ClientRecord *byName = nullptr;
+    const ClientRecord *best = nullptr;
+    int bestScore = -1;
+    const QString addr = addressKey(address);
     for (const auto &rec : records) {
-        if (rec.name == name && rec.address == address)
-            return &rec;
-        if (!name.isEmpty() && rec.name == name && !byName)
-            byName = &rec;
+        if (!patternMatch(rec.name, name)
+                || !patternMatch(rec.address, addr))
+            continue;
+        // The name outranks the address: it is what a person chose,
+        // and the address is where they happen to be today.
+        const int score = specificity(rec.name) * 8192
+            + specificity(rec.address);
+        if (score > bestScore) {
+            bestScore = score;
+            best = &rec;
+        }
     }
-    return byName;
+    return best;
+}
+
+/// Whether this record is a rule rather than a remembered visitor —
+/// it names a set, so no single client is "it".
+bool isRule(const ClientRecord &rec)
+{
+    return rec.name.contains(QLatin1Char('*'))
+        || rec.name.contains(QLatin1Char('?'))
+        || rec.address.contains(QLatin1Char('*'))
+        || rec.address.contains(QLatin1Char('?'));
 }
 
 /// The small always-on-top pill in the corner of the 3D area while
@@ -309,6 +393,14 @@ public:
         layout->addWidget(tree, 1);
 
         auto *bottom = new QHBoxLayout;
+        // A rule cannot be created by anyone connecting, so it needs a
+        // way in of its own.
+        auto *ruleBtn = new QPushButton(tr("Add rule…"), this);
+        ruleBtn->setToolTip(tr(
+            "A name and address pattern (wildcards allowed) with an "
+            "access to apply to everyone matching it. * alone means "
+            "anyone from anywhere."));
+        connect(ruleBtn, &QPushButton::clicked, this, [this]() { addRule(); });
         auto *stopBtn = new QPushButton(tr("Stop sharing"), this);
         connect(stopBtn, &QPushButton::clicked, this, [this]() {
             if (onStop)
@@ -317,6 +409,7 @@ public:
         auto *closeBtn = new QPushButton(tr("Close"), this);
         connect(closeBtn, &QPushButton::clicked, this, &QDialog::hide);
         bottom->addWidget(stopBtn);
+        bottom->addWidget(ruleBtn);
         bottom->addStretch(1);
         bottom->addWidget(closeBtn);
         layout->addLayout(bottom);
@@ -375,10 +468,17 @@ public:
             // back tomorrow.
             ClientRecord rec;
             rec.name = QString::fromUtf8(c.client.c_str());
-            rec.address = QString::fromUtf8(c.address.c_str());
+            rec.address = addressKey(QString::fromUtf8(c.address.c_str()));
             if (const ClientRecord *known =
-                    matchRecord(records, rec.name, rec.address))
-                rec = *known;
+                    matchRecord(records, rec.name, rec.address)) {
+                // Editing from a connected row writes a record for
+                // *this* client, never back into a rule the whole room
+                // shares — a rule is edited on its own row.
+                if (!isRule(*known))
+                    rec = *known;
+                else
+                    rec.viewOnly = known->viewOnly;
+            }
             const bool isBanned = rec.banned;
             connect(mode, qOverload<int>(&QComboBox::currentIndexChanged),
                     this, [id, saved = rec](int index) mutable {
@@ -422,14 +522,17 @@ public:
                 item->setText(3, tr("banned"));
         }
 
-        // Everyone remembered but not here: greyed, still editable —
-        // setting someone to view-only, or banning them, before they
-        // arrive is the sensible way to hand out a link.
+        // Everyone remembered but not here, and the rules: greyed,
+        // still editable — setting someone to view-only, or banning
+        // them, before they arrive is the sensible way to hand out a
+        // link, and a rule is only ever edited this way.
         for (const auto &rec : records) {
             bool here = false;
             for (const auto &c : clients) {
-                if (QString::fromUtf8(c.client.c_str()) == rec.name
-                        && QString::fromUtf8(c.address.c_str()) == rec.address)
+                if (!isRule(rec)
+                        && QString::fromUtf8(c.client.c_str()) == rec.name
+                        && addressKey(QString::fromUtf8(c.address.c_str()))
+                               == rec.address)
                     here = true;
             }
             if (here)
@@ -438,7 +541,14 @@ public:
             auto *item = new QTreeWidgetItem(tree);
             item->setText(0, rec.name.isEmpty() ? tr("(unnamed)") : rec.name);
             item->setText(1, rec.address);
-            item->setText(3, rec.banned ? tr("banned") : tr("away"));
+            item->setText(3, rec.banned ? tr("banned")
+                              : (isRule(rec) ? tr("rule") : tr("away")));
+            if (isRule(rec)) {
+                item->setToolTip(0, tr(
+                    "A rule, not a visitor: it applies to every client "
+                    "matching both patterns, unless a more specific "
+                    "record says otherwise."));
+            }
             for (int col = 0; col < 4; ++col)
                 item->setForeground(col, QBrush(Qt::gray));
 
@@ -488,6 +598,53 @@ public:
     /// Something in the panel changed what is stored; the manager
     /// re-reads and redraws.
     std::function<void()> onChanged;
+
+private:
+    /// Ask for a rule and store it. Defaults to `*` @ `*` — the
+    /// house rule — because that is the one worth reaching for: set
+    /// everyone to view-only, or ban everyone and allow by name.
+    void addRule()
+    {
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Add rule"));
+        auto *form = new QFormLayout(&dlg);
+        auto *nameEdit = new QLineEdit(QStringLiteral("*"), &dlg);
+        nameEdit->setToolTip(tr("Client name pattern; * matches any name, "
+                                "including clients that have none."));
+        auto *addrEdit = new QLineEdit(QStringLiteral("*"), &dlg);
+        addrEdit->setToolTip(tr("Address pattern, without the port — "
+                                "for example 192.168.1.* or *."));
+        auto *modeBox = new QComboBox(&dlg);
+        modeBox->addItem(tr("Can edit"));
+        modeBox->addItem(tr("View only"));
+        modeBox->addItem(tr("Banned"));
+        form->addRow(tr("Name:"), nameEdit);
+        form->addRow(tr("Address:"), addrEdit);
+        form->addRow(tr("Access:"), modeBox);
+        auto *buttons = new QDialogButtonBox(
+            QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+        connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        form->addRow(buttons);
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+
+        ClientRecord rec;
+        rec.name = nameEdit->text().trimmed();
+        rec.address = addrEdit->text().trimmed();
+        if (rec.name.isEmpty())
+            rec.name = QStringLiteral("*");
+        if (rec.address.isEmpty())
+            rec.address = QStringLiteral("*");
+        rec.viewOnly = modeBox->currentIndex() == 1;
+        rec.banned = modeBox->currentIndex() == 2;
+        saveRecord(rec);
+        lastSig.clear();
+        if (onChanged)
+            onChanged();
+    }
+
+public:
 
 private:
     QLineEdit *urlEdit = nullptr;
@@ -829,11 +986,13 @@ void ShareDocumentManager::refreshUi()
         const QString address = QString::fromUtf8(c.address.c_str());
         const ClientRecord *known = matchRecord(records, name, address);
         if (!known) {
-            // First sight: remember them, so they can be given an
-            // access (or banned) while away.
+            // First sight, and no rule covers them: remember them, so
+            // they can be given an access (or banned) while away. The
+            // address is stored without its source port, which differs
+            // on every visit.
             ClientRecord rec;
             rec.name = name;
-            rec.address = address;
+            rec.address = addressKey(address);
             rec.viewOnly = c.viewOnly;
             saveRecord(rec);
             continue;
