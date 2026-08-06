@@ -18,6 +18,7 @@ import {
   createResource,
   createSignal,
   onCleanup,
+  untrack,
 } from 'solid-js';
 import type { JSX } from 'solid-js';
 import {
@@ -352,23 +353,32 @@ export function Inspector(props: {
     setExpanded(true);
   };
 
-  // A new selection returns to the pill and resets the navigation.
-  // It also returns the card to the object: a pick is a statement
-  // about what the user is now interested in.
+  // A new selection resets the navigation and returns the card to the
+  // object: a pick is a statement about what the user is now
+  // interested in — including while the card is showing the view or
+  // the document, where the picked object is what they just asked
+  // about. An open card therefore follows the selection; only a
+  // collapsed one stays collapsed, because expanding is a request the
+  // user has not made yet.
   let lastKey = '';
   createEffect(() => {
     const f = first();
     if (f) {
       // Track identity, not object presence: re-picking another
-      // element of the same object keeps the card if it was open.
+      // element of the same object leaves the card exactly as it is.
       const key = `${f.objectKey}`;
       if (key !== lastKey) {
         lastKey = key;
-        setExpanded(false);
+        // untrack: whether the card is open decides what a *pick*
+        // does, it must not itself re-run this. Tracking it would
+        // make opening the card on the view snap straight back to
+        // the object.
+        if (!untrack(card)) setExpanded(false);
       }
       setSubject('object');
       setClosed(false);
       setKeyword('');
+      setGroup(ALL);
     }
   });
 
