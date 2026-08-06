@@ -289,6 +289,23 @@ Conformance is verified end-to-end (initialize / tools list+call with input &
 output schema, structured content, main-thread execution, and driving the live
 GUI to build a `Part::Box` and read its OCCT volume).
 
+**`127.0.0.1:8765` is ambiguous on a box that also runs WSL2 in mirrored networking
+mode.** A FreeCAD started inside the distro serves its console on the same loopback
+address the Windows side sees, so a Windows client connects to the *Linux* process and
+everything looks normal — same tool, same API, plausible answers — until a path gives it
+away (`os.getcwd()` returning `/home/...`, or a screenshot that "saved" successfully and
+does not exist on disk). `Get-NetTCPConnection -LocalPort 8765` lists no owning Windows
+process in that case, which is the tell. Start the Windows console on its own port
+(`mcp_console.start(port=8766)`) whenever both stacks may be live, and verify with
+`App.getHomePath()` before trusting a session.
+
+**Screenshots need an unlocked desktop.** `Gui.getMainWindow().grab()` renders the widget
+tree, so menus, toolbars, panels and the report view come out fine with the session
+locked — but the 3D view's GL surface is not composited and the viewport comes back as a
+faint ghost under *both* the default GL and bgfx backends. That is a capture artifact,
+not a render defect; the discriminator is a console line like
+`bgfx: scene consumed: 3 draws, 3 meshes`, which says the backend really did draw.
+
 ## Fallback stack: system gcc + apt Qt 6.4.2
 
 Kept intact and working, but **PySide6 is impossible here** (see above) — Python
@@ -366,9 +383,24 @@ and keeps the Linux-style in-repo layout.
   two — do not conclude from that that MSVC is missing. Check
   `<VS>\VC\Tools\MSVC\<ver>\bin\Hostx64\x64\cl.exe`, and look under
   `D:\Program Files (x86)\` too, not just `Program Files`.
-- **Miniforge** (not Miniconda — see the channel note below).
+- **Miniforge** (not Miniconda — see the channel note below). Installs unattended with
+  `Miniforge3-Windows-x86_64.exe /InstallationType=JustMe /RegisterPython=0 /AddToPath=0
+  /S /D=<prefix>` (`/D` last, unquoted).
 - Git for Windows, and optionally the gh CLI (the winget MSI needs elevation; the
-  portable zip from the GitHub releases page needs none).
+  portable zip from the GitHub releases page needs none). Set `user.name`/`user.email`
+  before the first commit — a fresh box has neither, and the failure only surfaces at
+  `git commit`.
+- **`git submodule update --init --recursive` right after cloning.** A plain clone has
+  empty `src/3rdParty/bgfx` and `src/3rdParty/OndselSolver`, and configure fails on both
+  ("does not contain a CMakeLists.txt file"). bgfx pulls three nested submodules of its
+  own (bgfx, bimg, bx).
+- **If an older Miniconda is also installed**, it exports `CONDA_EXE` into the ambient
+  environment, and `conda.bat activate` honours a pre-set `CONDA_EXE`: the *old* conda
+  then generates the activation script in its old format, the new `_conda_activate.bat`
+  parses it into nothing, and activation reports errorlevel 0 while setting **no
+  variable at all** — `cmake`/`python` silently resolve to VS's copies or the Store stub.
+  `run.cmd` pins `CONDA_EXE`/`CONDA_PYTHON_EXE` to miniforge and then asserts
+  `CONDA_PREFIX`.
 
 ### conda env
 
@@ -508,12 +540,16 @@ then fails to link with ~78 unresolved externals, all of them C++ (`bgfx::init`,
 asymmetry is the fingerprint of bgfx-as-DLL; ELF default visibility hides it on
 Linux.
 
-**Do not try to fix this from the preset.** `src/3rdParty/CMakeLists.txt` sets
-`BGFX_LIBRARY_TYPE` as a *plain* variable, which shadows the cache entry a preset
-or `-D` provides. A cache override appears to work immediately after
-`cmake --preset` and then silently reverts to SHARED the next time anything
-regenerates the build — a pull touching any `CMakeLists.txt` is enough — leaving a
-`bgfx.dll` plus a small import library and the unresolved-symbol wall above.
+**Do not try to fix this from the preset**, and note that a *plain* variable does not
+work either — `src/3rdParty/CMakeLists.txt` sets it as a **FORCEd cache entry** for
+exactly that reason. bgfx's own `CMakeLists.txt` runs
+`set(BGFX_LIBRARY_TYPE "SHARED" CACHE STRING "Linking type for library")`, and creating
+a cache entry *removes any normal variable of that name from the calling scope*. So on
+a fresh cache the plain value set two lines earlier is discarded and the SHARED default
+wins; it only appears to work where a STATIC cache entry already exists from an earlier
+`-D`, which is why the second Windows box hit the unresolved-symbol wall above on its
+first build (fixed in `34f146d508`). A preset/`-D` override is separately useless: it is
+what the FORCE now overrides.
 
 ```bat
 .conda\run.cmd cmake --preset win-relwithdebinfo-local
@@ -596,7 +632,7 @@ Committed to the OCCT fork (`4af0655f9a` on `LinkVibe-801`):
   TKDESTEP), so the call crosses a DLL boundary. ELF default visibility exports it
   regardless; MSVC does not.
 
-Uncommitted in the FreeCAD tree at the time of writing:
+In the FreeCAD tree (all committed since; the list is kept for the reasoning):
 
 | File | Fix |
 |---|---|
@@ -688,9 +724,16 @@ gates it on `QtWebEngineWidgets_FOUND`, and the non-WebEngine branch of `Browser
 falls back to QtWebKit's `QWebView`, which does not exist in Qt6. So WebEngine is not
 optional here.
 
+**On a fresh env, skip all of this and install a matched set.** conda-forge now carries
+`qt6-main`, `pyside6` **and** `qt6-webengine` at 6.10.2, so asking for all three at once
+gives a consistent env with no `@EXPLICIT` spec file and no patched `*Dependencies.cmake`
+— this is the "clean 6.10.2 bump" the last paragraph of this section recommends, and it
+is what the second Windows box was built with. The rest of this subsection applies only
+to an env already pinned to 6.10.1.
+
 **Installing it.** conda-forge splits WebEngine out of `qt6-main`, and its oldest build is
-**6.10.2** while this env is pinned to 6.10.1 (`conda-meta/pinned`). Rather than bump the
-whole Qt stack — which rewrites every Qt header and forces a rebuild of all of Gui and
+**6.10.2** while a 6.10.1-pinned env cannot take it (`conda-meta/pinned`). Rather than bump
+the whole Qt stack — which rewrites every Qt header and forces a rebuild of all of Gui and
 every module's Gui lib — install the one package against the older Qt. Qt patch releases
 are binary-compatible, and this one verifiably is:
 
