@@ -2774,14 +2774,21 @@ void Document::restore (const char *filename,
         _reader.reset(new Base::FileReader(fi,di.fileName()+"/Document.xml"));
         _xmlReader.reset(new Base::XMLReader(*_reader));
     } else {
-        // file.open(fi, std::ios::in | std::ios::binary);
-        // std::streambuf* buf = file.rdbuf();
-        // std::streamoff size = buf->pubseekoff(0, std::ios::end, std::ios::in);
-        // buf->pubseekoff(0, std::ios::beg, std::ios::in);
-        // if (size < 22) // an empty zip archive has 22 bytes
-        //     throw Base::FileException("Invalid project file",filename);
-        zipstream.reset(new zipios::ZipInputStream(filename));
-        _reader.reset(new Base::ZipReader(*zipstream,filename));
+        if (DocumentParams::getArchiveRandomAccess()) {
+            try {
+                _reader.reset(new Base::ZipFileReader(filename));
+            } catch (Base::Exception &e) {
+                // An archive the central-directory index cannot digest may
+                // still open the old way (and if not, the forward walk
+                // produces the error the user should see).
+                FC_WARN("Archive random access unavailable for " << filename
+                        << " (" << e.what() << "), falling back");
+            }
+        }
+        if (!_reader) {
+            zipstream.reset(new zipios::ZipInputStream(filename));
+            _reader.reset(new Base::ZipReader(*zipstream,filename));
+        }
         _xmlReader.reset(new Base::XMLReader(*_reader));
     }
 

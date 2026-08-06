@@ -56,6 +56,13 @@ Params = [
             'the reader has always used for lists that cannot be streamed, so\n'
             'the file stays readable by FreeCAD versions without this option.\n'
             'Set to 0 to give every list an entry, as before.'),
+    ParamBool('ArchiveRandomAccess', True,
+        doc='Restore a document archive through its zip central directory\n'
+            'instead of one forward-only stream. Entries are then opened\n'
+            'independently and served in registration order whatever their\n'
+            'archive order, nothing pays for inflating entries nobody reads,\n'
+            'and an entry can be reopened after the restore. Turn off to\n'
+            'fall back to the forward-only walk.'),
     ParamBool('AutoRemoveFile', True),
     ParamBool('AutoNameDynamicProperty', False),
     ParamBool('BackupPolicy', True),

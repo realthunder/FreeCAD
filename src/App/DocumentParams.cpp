@@ -56,6 +56,7 @@ public:
         signalParamChanged("SplitXML");
         signalParamChanged("PreferBinary");
         signalParamChanged("InlineListSize");
+        signalParamChanged("ArchiveRandomAccess");
         signalParamChanged("AutoRemoveFile");
         signalParamChanged("AutoNameDynamicProperty");
         signalParamChanged("BackupPolicy");
@@ -94,6 +95,7 @@ public:
     bool SplitXML;
     bool PreferBinary;
     long InlineListSize;
+    bool ArchiveRandomAccess;
     bool AutoRemoveFile;
     bool AutoNameDynamicProperty;
     bool BackupPolicy;
@@ -146,6 +148,8 @@ public:
         funcs["PreferBinary"] = &DocumentParamsP::updatePreferBinary;
         InlineListSize = this->handle->GetInt("InlineListSize", 64);
         funcs["InlineListSize"] = &DocumentParamsP::updateInlineListSize;
+        ArchiveRandomAccess = this->handle->GetBool("ArchiveRandomAccess", true);
+        funcs["ArchiveRandomAccess"] = &DocumentParamsP::updateArchiveRandomAccess;
         AutoRemoveFile = this->handle->GetBool("AutoRemoveFile", true);
         funcs["AutoRemoveFile"] = &DocumentParamsP::updateAutoRemoveFile;
         AutoNameDynamicProperty = this->handle->GetBool("AutoNameDynamicProperty", false);
@@ -257,6 +261,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateInlineListSize(DocumentParamsP *self) {
         self->InlineListSize = self->handle->GetInt("InlineListSize", 64);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateArchiveRandomAccess(DocumentParamsP *self) {
+        self->ArchiveRandomAccess = self->handle->GetBool("ArchiveRandomAccess", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAutoRemoveFile(DocumentParamsP *self) {
@@ -683,6 +691,39 @@ void DocumentParams::setInlineListSize(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removeInlineListSize() {
     instance()->handle->RemoveInt("InlineListSize");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docArchiveRandomAccess() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Restore a document archive through its zip central directory\n"
+"instead of one forward-only stream. Entries are then opened\n"
+"independently and served in registration order whatever their\n"
+"archive order, nothing pays for inflating entries nobody reads,\n"
+"and an entry can be reopened after the restore. Turn off to\n"
+"fall back to the forward-only walk.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & DocumentParams::getArchiveRandomAccess() {
+    return instance()->ArchiveRandomAccess;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & DocumentParams::defaultArchiveRandomAccess() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setArchiveRandomAccess(const bool &v) {
+    instance()->handle->SetBool("ArchiveRandomAccess",v);
+    instance()->ArchiveRandomAccess = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeArchiveRandomAccess() {
+    instance()->handle->RemoveBool("ArchiveRandomAccess");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

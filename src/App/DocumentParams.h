@@ -192,6 +192,23 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ArchiveRandomAccess
+    ///
+    /// Restore a document archive through its zip central directory
+    /// instead of one forward-only stream. Entries are then opened
+    /// independently and served in registration order whatever their
+    /// archive order, nothing pays for inflating entries nobody reads,
+    /// and an entry can be reopened after the restore. Turn off to
+    /// fall back to the forward-only walk.
+    static const bool & getArchiveRandomAccess();
+    static const bool & defaultArchiveRandomAccess();
+    static void removeArchiveRandomAccess();
+    static void setArchiveRandomAccess(const bool &v);
+    static const char *docArchiveRandomAccess();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter AutoRemoveFile
     static const bool & getAutoRemoveFile();
     static const bool & defaultAutoRemoveFile();

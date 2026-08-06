@@ -29,6 +29,7 @@
 #include <sstream>
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <xercesc/framework/XMLPScanToken.hpp>
@@ -326,12 +327,27 @@ public:
      * true consumes the entry without disturbing the match cursor.
      */
     using ArchiveHandler = std::function<bool(const std::string &, Base::Reader &)>;
-    void setArchiveHandler(ArchiveHandler handler) { _archiveHandler = std::move(handler); }
+    /** Name-only predicate telling whether the handler wants an entry.
+     *
+     * The forward-only walk offers every entry for free -- its stream is
+     * already positioned there -- but a random-access reader has to open
+     * an entry before it can offer content, so it asks this first and
+     * skips the open for entries the handler would refuse anyway.
+     */
+    using ArchiveFilter = std::function<bool(const std::string &)>;
+    void setArchiveHandler(ArchiveHandler handler, ArchiveFilter filter = {}) {
+        _archiveHandler = std::move(handler);
+        _archiveFilter = std::move(filter);
+    }
     /// Offer an entry to the handler; true when it took it.
     bool handleArchiveEntry(const std::string &name, Base::Reader &reader) const {
-        return _archiveHandler && _archiveHandler(name, reader);
+        return wantsArchiveEntry(name) && _archiveHandler(name, reader);
     }
     bool hasArchiveHandler() const { return static_cast<bool>(_archiveHandler); }
+    /// Whether the handler exists and its filter (if any) accepts \a name.
+    bool wantsArchiveEntry(const std::string &name) const {
+        return _archiveHandler && (!_archiveFilter || _archiveFilter(name));
+    }
 
     /// Reader this parser draws from, or null. Its getDirectory() tells a
     /// consumer whether the document is an archive or an unpacked directory.
@@ -465,6 +481,7 @@ protected:
 
     std::vector<FileEntry> FileList;
     ArchiveHandler _archiveHandler;
+    ArchiveFilter _archiveFilter;
     std::vector<std::string> FileNames;
 
     std::vector<int*> Guards;
@@ -511,6 +528,44 @@ protected:
     void readFiles(XMLReader &reader) override;
 
     zipios::ZipInputStream &_stream;
+};
+
+/** Random-access archive reader over a document zip.
+ *
+ * Where ZipReader hands every consumer the one forward-only stream --
+ * which requires the archive to hold entries in registration order and
+ * pays for inflating past entries nobody reads -- this reader indexes
+ * the zip central directory once and opens each entry as an independent
+ * stream. Registered files can then be restored in any order, an entry
+ * can be reopened after the walk, and entries can in principle be read
+ * concurrently (every openEntry() owns its own file handle).
+ *
+ * The reader itself streams the first archive entry (the document's
+ * main XML), mirroring what the forward-only reader exposed.
+ */
+class BaseExport ZipFileReader : public Base::Reader
+{
+public:
+    /// Indexes the archive; throws Base::FileException when \a fileName
+    /// is not a readable zip archive with at least one entry.
+    explicit ZipFileReader(const std::string &fileName, XMLReader *parent=nullptr);
+    ~ZipFileReader() override;
+
+    bool hasEntry(const std::string &name) const;
+    /// Open an archive entry as an independent stream; null when absent.
+    std::unique_ptr<zipios::ZipInputStream> openEntry(const std::string &name) const;
+
+protected:
+    void readFiles(XMLReader &reader) override;
+
+private:
+    std::string _fileName;
+    /// entry name -> local header offset, from the central directory
+    std::unordered_map<std::string, std::streamoff> _offsets;
+    /// archive order, for walking unregistered entries
+    std::vector<std::string> _entryOrder;
+    /// the first entry, streamed through this reader's own streambuf
+    std::unique_ptr<zipios::ZipInputStream> _mainStream;
 };
 
 class BaseExport FileReader : public Base::Reader

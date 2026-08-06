@@ -27,6 +27,7 @@
 #include <map>
 #include <memory>
 #include <sstream>
+#include <unordered_set>
 #include <xercesc/sax2/XMLReaderFactory.hpp>
 #endif
 
@@ -48,6 +49,8 @@
 #ifdef _MSC_VER
 #include <zipios++/zipios-config.h>
 #endif
+#include <zipios++/zipfile.h>
+#include <zipios++/ziphead.h>
 #include <zipios++/zipinputstream.h>
 #include <boost/iostreams/filtering_stream.hpp>
 
@@ -1019,7 +1022,131 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
 
 // ----------------------------------------------------------
 
-Base::FileReader::FileReader(const Base::FileInfo &fi, 
+Base::ZipFileReader::ZipFileReader(const std::string &fileName, Base::XMLReader *parent)
+    :Base::Reader(fileName, parent)
+    ,_fileName(fileName)
+{
+    try {
+        // The ZipFile object only serves to parse the central directory:
+        // entries are opened by local-header offset afterwards, each with
+        // its own file handle, so nothing of it needs to stay around.
+        zipios::ZipFile zip(fileName);
+        for (const auto &entry : zip.entries()) {
+            auto cdir = dynamic_cast<const zipios::ZipCDirEntry*>(entry.get());
+            if (!cdir || !entry->isValid())
+                continue;
+            if (_offsets.emplace(entry->getName(),
+                        std::streamoff(cdir->getLocalHeaderOffset())).second)
+                _entryOrder.push_back(entry->getName());
+        }
+    } catch (const std::exception &e) {
+        throw Base::FileException(e.what(), fileName.c_str());
+    }
+    if (_entryOrder.empty())
+        throw Base::FileException("Empty project archive", fileName.c_str());
+    // Stream the first entry (the document's main XML) through this
+    // reader, as the forward-only reader did.
+    _mainStream = openEntry(_entryOrder.front());
+    rdbuf(_mainStream->rdbuf());
+}
+
+Base::ZipFileReader::~ZipFileReader() = default;
+
+bool Base::ZipFileReader::hasEntry(const std::string &name) const
+{
+    return _offsets.count(name) != 0;
+}
+
+std::unique_ptr<zipios::ZipInputStream>
+Base::ZipFileReader::openEntry(const std::string &name) const
+{
+    auto it = _offsets.find(name);
+    if (it == _offsets.end())
+        return nullptr;
+    return std::make_unique<zipios::ZipInputStream>(_fileName, it->second);
+}
+
+void Base::ZipFileReader::readFiles(XMLReader &xmlReader)
+{
+    const auto &FileList = xmlReader.getFileList();
+    Base::SequencerLauncher seq("Importing project files...", FileList.size());
+
+    FC_DURATION_DECL_INIT(dParse);
+    std::map<std::string, std::pair<std::size_t, FC_DURATION>> kinds;
+    FC_TIME_INIT(tParse);
+
+    // Entries nobody registered for may still have an owner -- shared
+    // included files are written once and referred to from anywhere.
+    // Serve them first: the consumers queue up while the document XML is
+    // parsed and are dispatched after this walk, so before-the-owners is
+    // as early as the content can matter. The name filter keeps this
+    // from opening the thousands of entries the handler would refuse.
+    std::unordered_set<std::string> consumed;
+    consumed.insert(_entryOrder.front());
+    if (xmlReader.hasArchiveHandler()) {
+        for (std::size_t i = 1; i < _entryOrder.size(); ++i) {
+            const std::string &name = _entryOrder[i];
+            if (!xmlReader.wantsArchiveEntry(name))
+                continue;
+            auto stream = openEntry(name);
+            Base::ZipReader zipreader(*stream, name, &xmlReader);
+            if (xmlReader.handleArchiveEntry(name, zipreader))
+                consumed.insert(name);
+        }
+    }
+
+    // Registered files, in registration order. The list grows while it
+    // is walked -- a nested document restored from one entry registers
+    // entries of its own -- so the size is re-read every iteration and
+    // the entry is copied before its consumer runs.
+    for (std::size_t i = 0; i < FileList.size(); ++i) {
+        FileEntry entry = FileList[i];
+        if (consumed.count(entry.FileName))
+            continue;
+        auto stream = openEntry(entry.FileName);
+        if (!stream) {
+            // Not an error: e.g. a document saved without GUI serves no
+            // GuiDocument.xml, matching the forward walk's silent skip.
+            continue;
+        }
+        FC_DURATION_PLUS(dParse, tParse);
+        try {
+            Base::ZipReader zipreader(*stream, entry.FileName, &xmlReader);
+            entry.Object->RestoreDocFile(zipreader);
+        } catch(Base::AbortException &e) {
+            e.ReportException();
+            FC_ERR("User abort when reading embedded file: " << entry.FileName);
+            throw;
+        } catch(Base::Exception &e) {
+            e.ReportException();
+            FC_ERR("Reading failed from embedded file: " << entry.FileName);
+        } catch(...) {
+            FC_ERR("Reading failed from embedded file: " << entry.FileName);
+        }
+        auto pos = entry.FileName.rfind('.');
+        auto &kind = kinds[pos == std::string::npos ? std::string("(none)")
+                                                    : entry.FileName.substr(pos + 1)];
+        ++kind.first;
+        kind.second += Base::GetDuration(tParse);
+        seq.next();
+    }
+
+    FC_DURATION_PLUS(dParse, tParse);
+    if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+        std::stringstream ss;
+        ss << "readFiles(random access) " << getFileName() << ": "
+           << _entryOrder.size() << " entries, "
+           << FileList.size() << " registered, other " << dParse.count() << 's';
+        for (const auto &v : kinds)
+            ss << ", " << v.first << ' ' << v.second.first << '/'
+               << v.second.second.count() << 's';
+        FC_LOG(ss.str());
+    }
+}
+
+// ----------------------------------------------------------
+
+Base::FileReader::FileReader(const Base::FileInfo &fi,
         const std::string &name, Base::XMLReader *parent)
     :Base::Reader(name.size()?name:fi.fileName(),parent)
     ,_dir(fi.dirPath())

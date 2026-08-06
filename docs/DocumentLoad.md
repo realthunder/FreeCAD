@@ -381,12 +381,17 @@ because `ForceXML` has always been able to demand it.
 
 ## 10. Non-goals and risks
 
-- **Parallel restore is not attempted here.** The archive is read through
-  a forward-only `ZipInputStream`, and switching to
-  `zipios::ZipFile`'s central-directory random access is what would let a
-  shape be restored when its object appears rather than in archive order.
-  Worth doing for that reason — but not for speed: the forward-only walk
-  costs **1.08s**, 3% of the load.
+- **Parallel restore is not attempted here.** It is however no longer
+  blocked on the archive: `Base::ZipFileReader` (the `ArchiveRandomAccess`
+  parameter, default on) indexes the zip central directory once and opens
+  every entry as an independent stream, so registered files are served in
+  registration order whatever their archive order, an entry can be
+  reopened after the walk, and entries could be read concurrently — each
+  open owns its own file handle. The forward-only `ZipReader` remains as
+  the fallback. This was never about speed (the forward-only walk cost
+  **1.08s**, 3% of the load, and the walk itself is unchanged); it is the
+  enabler for serving a shape when its object needs it rather than when
+  the archive gets around to it.
 - **A bounding box asked for during the fill is answered from what is
   built so far.** The queue drains in seconds and the scene self-heals,
   but a script that opens a document and immediately measures geometry
