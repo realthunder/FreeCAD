@@ -42,6 +42,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QRandomGenerator>
+#include <QCoreApplication>
 #include <QRegularExpression>
 #include <QSpinBox>
 #include <QTimer>
@@ -275,6 +276,29 @@ const ClientRecord *matchRecord(const std::vector<ClientRecord> &records,
     return best;
 }
 
+/// What a rule is, said once — the tooltip every widget that offers or
+/// shows one carries, because the matching order is the part that is
+/// not guessable from the fields.
+QString ruleHelp()
+{
+    return QCoreApplication::translate("Gui::SharePanel",
+        "<b>Rule</b> — a name and address pattern, with the access to "
+        "give everyone matching both.<br><br>"
+        "<code>*</code> matches anything and <code>?</code> one "
+        "character, so <code>*</code> @ <code>*</code> is anyone from "
+        "anywhere, <code>lei-*</code> @ <code>*</code> is a family of "
+        "names, and <code>guest</code> @ <code>192.168.1.*</code> is one "
+        "name on one network. Addresses are matched without the port.<br><br>"
+        "The <b>most specific match wins</b> — a literal beats a partial "
+        "wildcard beats <code>*</code>, and the name outranks the address. "
+        "So a blanket rule and its exceptions live together: ban "
+        "<code>*</code> and add the names you invited, or make "
+        "<code>*</code> view-only and give named people editing.<br><br>"
+        "A client a rule covers is not remembered separately, so the rule "
+        "stays the one place that decides; changing a connected client's "
+        "access records that client alone and leaves the rule alone.");
+}
+
 /// Whether this record is a rule rather than a remembered visitor —
 /// it names a set, so no single client is "it".
 bool isRule(const ClientRecord &rec)
@@ -396,10 +420,7 @@ public:
         // A rule cannot be created by anyone connecting, so it needs a
         // way in of its own.
         auto *ruleBtn = new QPushButton(tr("Add rule…"), this);
-        ruleBtn->setToolTip(tr(
-            "A name and address pattern (wildcards allowed) with an "
-            "access to apply to everyone matching it. * alone means "
-            "anyone from anywhere."));
+        ruleBtn->setToolTip(ruleHelp());
         connect(ruleBtn, &QPushButton::clicked, this, [this]() { addRule(); });
         auto *stopBtn = new QPushButton(tr("Stop sharing"), this);
         connect(stopBtn, &QPushButton::clicked, this, [this]() {
@@ -544,10 +565,10 @@ public:
             item->setText(3, rec.banned ? tr("banned")
                               : (isRule(rec) ? tr("rule") : tr("away")));
             if (isRule(rec)) {
-                item->setToolTip(0, tr(
-                    "A rule, not a visitor: it applies to every client "
-                    "matching both patterns, unless a more specific "
-                    "record says otherwise."));
+                // The row is the only place a rule is ever read, so it
+                // carries the whole explanation.
+                item->setToolTip(0, ruleHelp());
+                item->setToolTip(1, ruleHelp());
             }
             for (int col = 0; col < 4; ++col)
                 item->setForeground(col, QBrush(Qt::gray));
@@ -609,15 +630,14 @@ private:
         dlg.setWindowTitle(tr("Add rule"));
         auto *form = new QFormLayout(&dlg);
         auto *nameEdit = new QLineEdit(QStringLiteral("*"), &dlg);
-        nameEdit->setToolTip(tr("Client name pattern; * matches any name, "
-                                "including clients that have none."));
+        nameEdit->setToolTip(ruleHelp());
         auto *addrEdit = new QLineEdit(QStringLiteral("*"), &dlg);
-        addrEdit->setToolTip(tr("Address pattern, without the port — "
-                                "for example 192.168.1.* or *."));
+        addrEdit->setToolTip(ruleHelp());
         auto *modeBox = new QComboBox(&dlg);
         modeBox->addItem(tr("Can edit"));
         modeBox->addItem(tr("View only"));
         modeBox->addItem(tr("Banned"));
+        modeBox->setToolTip(ruleHelp());
         form->addRow(tr("Name:"), nameEdit);
         form->addRow(tr("Address:"), addrEdit);
         form->addRow(tr("Access:"), modeBox);
