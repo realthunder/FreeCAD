@@ -47,6 +47,7 @@
 
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/AttachExtension.h>
+#include <Mod/Part/App/DatumFeature.h>
 
 #include <OndselSolver/CREATE.h>
 #include <OndselSolver/ASMTSimulationParameters.h>
@@ -869,8 +870,11 @@ std::unordered_set<App::DocumentObject*> AssemblyObject::getGroundedParts()
     std::vector<App::DocumentObject*> objs = Group.getValues();
     for (auto* obj : objs) {
         if (obj->isDerivedFrom<App::Origin>()
-            || obj->isDerivedFrom<App::OriginFeature>()) {
-            auto* pcAttach = obj->getExtensionByType<PartApp::AttachExtension>();
+            || obj->isDerivedFrom<App::OriginFeature>()
+            || obj->isDerivedFrom<PartApp::Datum>()) {
+            // This fork's datums (Part::Datum) carry AttachExtension; App::Origin
+            // and its features do not, so the lookup must not throw.
+            auto* pcAttach = obj->getExtensionByType<PartApp::AttachExtension>(true);
             if (pcAttach) {
                 // If it's a Part datums, we check if it's attached. If yes then we ignore it.
                 std::string mode = pcAttach->MapMode.getValueAsString();

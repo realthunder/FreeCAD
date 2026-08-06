@@ -1528,6 +1528,14 @@ class MakeJointSelGate:
                 return True  # We accept empty links
             sel_obj = linked
 
+        if sel_obj.isDerivedFrom("Part::Datum"):
+            # This fork's attachable datums derive from Part::Feature, so this
+            # check must come before the generic Part::Feature acceptance.
+            if self.assembly.hasObject(sel_obj):
+                # accept only datum that are not attached
+                return sel_obj.MapMode == "Deactivated"
+            return True
+
         if sel_obj.isDerivedFrom("Part::Feature") or sel_obj.isDerivedFrom("App::Part"):
             return True
 
