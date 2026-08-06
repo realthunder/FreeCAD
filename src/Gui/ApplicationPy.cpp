@@ -899,6 +899,8 @@ PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
         entry.setItem("client", Py::String(c.client));
         entry.setItem("doc", Py::String(c.doc));
         entry.setItem("address", Py::String(c.address));
+        entry.setItem("peer", Py::String(c.peer));
+        entry.setItem("proxied", Py::Boolean(c.proxied));
         entry.setItem("viewer", Py::Boolean(c.viewer));
         entry.setItem("viewOnly", Py::Boolean(c.viewOnly));
         entry.setItem("connectedMs", Py::Long(

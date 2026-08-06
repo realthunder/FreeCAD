@@ -159,6 +159,52 @@ public:
         return tokenSecret;
     }
 
+    /// Whether a forwarded client address is believed (SceneServer.h,
+    /// setTrustProxy). Atomic rather than mutexed: one bool read on
+    /// every accepted connection.
+    std::atomic<bool> trustProxy{false};
+
+    /// The client address to believe for a connection whose socket
+    /// peer is \a peerIp, given the request head \a req. Empty unless
+    /// trust is on, the peer is loopback, and a header named one.
+    ///
+    /// The peer check is the whole security of this: a proxy or the
+    /// local end of a tunnel is on this machine, so anything arriving
+    /// from elsewhere is talking to us directly and its headers are
+    /// its own invention.
+    std::string forwardedFor(const std::string &req,
+                             const std::string &peerIp)
+    {
+        if (!trustProxy.load())
+            return {};
+        if (peerIp != "127.0.0.1" && peerIp != "::1")
+            return {};
+        // The list is client, proxy, proxy… — the first entry is the
+        // one that reached the outermost proxy.
+        std::string value = headerValue(req, "x-forwarded-for");
+        if (value.empty())
+            return {};
+        auto comma = value.find(',');
+        if (comma != std::string::npos)
+            value.resize(comma);
+        auto b = value.find_first_not_of(" \t");
+        auto e = value.find_last_not_of(" \t");
+        if (b == std::string::npos)
+            return {};
+        value = value.substr(b, e - b + 1);
+        // It lands in a roster the host reads and in nothing else, but
+        // it is still attacker-shaped text: keep it to what an address
+        // can be made of.
+        if (value.size() > 45)
+            return {};
+        for (char c : value) {
+            if (!std::isxdigit(static_cast<unsigned char>(c))
+                    && c != '.' && c != ':')
+                return {};
+        }
+        return value;
+    }
+
     /// Whether a request carrying \a query may pass the door: open
     /// server, or a matching `?token=`.
     bool tokenOk(const std::string &query)
@@ -796,6 +842,9 @@ public:
         /// which every tunnelled viewer does (they all arrive as the
         /// tunnel's local end).
         std::string addr;
+        /// What a trusted proxy said the client's address is
+        /// (X-Forwarded-For, setTrustProxy); empty when nothing did.
+        std::string fwd;
         /// The joined document's name, mirrored under connMutex for
         /// the roster — \a group itself is owner-thread-only.
         std::string docName;
@@ -879,7 +928,9 @@ public:
             info.id = conn->id;
             info.client = conn->client;
             info.doc = conn->docName;
-            info.address = conn->addr;
+            info.peer = conn->addr;
+            info.proxied = !conn->fwd.empty();
+            info.address = info.proxied ? conn->fwd : conn->addr;
             info.viewer = conn->viewer;
             info.viewOnly = conn->viewOnly;
             info.connectedMs = uint64_t(
@@ -1537,17 +1588,22 @@ public:
         // WebSocket upgrade: handshake, then stay in the push loop.
         if (!wsKey.empty()) {
             char addr[80] = "";
+            std::string peerIp;
             sockaddr_in peer = {};
             socklen_t plen = sizeof(peer);
             if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
                               &plen) == 0) {
                 char ip[64] = "";
                 ::inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof(ip));
+                peerIp = ip;
                 std::snprintf(addr, sizeof(addr), "%s:%u", ip,
                               unsigned(ntohs(peer.sin_port)));
             }
+            // A proxy in front states the real client address; the
+            // upgrade is an ordinary HTTP request, so it rides here.
+            std::string fwd = forwardedFor(req, peerIp);
             if (handshake(fd, wsKey))
-                wsLoop(fd, clientVersion, s, doc, authorized, addr);
+                wsLoop(fd, clientVersion, s, doc, authorized, addr, fwd);
             return;
         }
 
@@ -1720,13 +1776,14 @@ public:
     /// name joins nothing and leaves the rest to the hello.
     void wsLoop(int fd, uint64_t held, const std::string &session,
                 const std::string &doc, bool authorized,
-                const char *addr)
+                const char *addr, const std::string &fwd)
     {
         Conn conn;
         conn.fd = fd;
         conn.sent = held;
         conn.authorized = authorized;
         conn.addr = addr ? addr : "";
+        conn.fwd = fwd;
         conn.since = std::chrono::steady_clock::now();
         {
             std::lock_guard<std::mutex> guard(mutex);
@@ -2284,6 +2341,8 @@ SceneStreamServer::Private *SceneStreamServer::ensure()
             if (*env)
                 pimpl->tokenSecret = env;
         }
+        if (const char *env = std::getenv("FC_SERVE_TRUST_PROXY"))
+            pimpl->trustProxy.store(std::atoi(env) != 0);
     }
     return pimpl;
 }
@@ -2318,6 +2377,16 @@ void SceneStreamServer::setToken(const std::string &token)
 std::string SceneStreamServer::token()
 {
     return ensure()->tokenNow();
+}
+
+void SceneStreamServer::setTrustProxy(bool on)
+{
+    ensure()->trustProxy.store(on);
+}
+
+bool SceneStreamServer::trustProxy()
+{
+    return ensure()->trustProxy.load();
 }
 
 int SceneStreamServer::clients(std::vector<SceneClientInfo> &out)

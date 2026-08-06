@@ -25,6 +25,7 @@
 #ifndef _PreComp_
 #include <QApplication>
 #include <QClipboard>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -253,6 +254,12 @@ public:
                 name = c.viewer ? tr("(unnamed)") : tr("(connection)");
             item->setText(0, name);
             item->setText(1, QString::fromUtf8(c.address.c_str()));
+            // A proxied row shows where the client is; the tooltip says
+            // what it came through, so a surprising address can still
+            // be traced back to a connection.
+            if (c.proxied)
+                item->setToolTip(1, tr("via %1")
+                    .arg(QString::fromUtf8(c.peer.c_str())));
             item->setText(2, QString::fromUtf8(c.doc.c_str()));
             item->setText(3, formatDuration(c.connectedMs));
 
@@ -314,7 +321,16 @@ public:
     /// paste after one.
     QString shareUrl() const
     {
-        QString scene = QStringLiteral("http://%1:%2").arg(host).arg(port);
+        // The address may carry its own port — behind a reverse proxy
+        // the public port is the proxy's, not the one we bind — and
+        // its own scheme, for a proxy that terminates TLS. Only a bare
+        // host gets the serving port appended.
+        QString scene = host;
+        if (!scene.contains(QLatin1String("://")))
+            scene = QStringLiteral("http://") + scene;
+        QString hostPart = scene.section(QLatin1String("://"), 1);
+        if (!hostPart.contains(QLatin1Char(':')))
+            scene += QStringLiteral(":%1").arg(port);
         QString query = QStringLiteral("?scene=%1")
             .arg(QString::fromUtf8(QUrl::toPercentEncoding(scene)));
         if (!docs.empty())
@@ -391,7 +407,9 @@ void ShareDocumentManager::openShareDialog()
     hostEdit->setText(savedHost.isEmpty() ? detected : savedHost);
     hostEdit->setToolTip(QObject::tr(
         "The address viewers reach this machine at. With a tunnel or "
-        "reverse proxy this differs from the bind address."));
+        "reverse proxy this differs from the bind address — give it a "
+        "port (host:port) or a scheme (https://host) and that is used "
+        "verbatim, otherwise the serving port is appended."));
     form->addRow(QObject::tr("External address:"), hostEdit);
 
     auto *pageEdit = new QLineEdit(&dlg);
@@ -416,6 +434,16 @@ void ShareDocumentManager::openShareDialog()
     tokenRow->addWidget(tokenEdit, 1);
     tokenRow->addWidget(tokenBtn);
     form->addRow(QObject::tr("Token:"), tokenRow);
+
+    auto *proxyBox = new QCheckBox(
+        QObject::tr("Behind a reverse proxy"), &dlg);
+    proxyBox->setChecked(hGrp->GetBool("TrustProxy", false));
+    proxyBox->setToolTip(QObject::tr(
+        "Take the client address from the proxy's X-Forwarded-For "
+        "header. Only believed for connections arriving from this "
+        "machine, which is what a local proxy or tunnel looks like — "
+        "a plain ssh tunnel cannot carry the address by itself."));
+    form->addRow(QString(), proxyBox);
 
     auto *urlPreview = new QLineEdit(&dlg);
     urlPreview->setReadOnly(true);
@@ -459,8 +487,10 @@ void ShareDocumentManager::openShareDialog()
     hGrp->SetInt("Port", port);
     hGrp->SetASCII("ExternalHost", host.toUtf8().constData());
     hGrp->SetASCII("ViewerPage", viewerPage.toUtf8().constData());
+    hGrp->SetBool("TrustProxy", proxyBox->isChecked());
 
     auto &server = Render::SceneStreamServer::instance();
+    server.setTrustProxy(proxyBox->isChecked());
     // The door first: the token must gate the very first request the
     // listener answers, not arrive after it is up.
     server.setToken(token.toUtf8().constData());

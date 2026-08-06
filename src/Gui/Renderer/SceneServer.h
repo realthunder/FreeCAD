@@ -82,7 +82,14 @@ struct SceneClientInfo {
     uint64_t id = 0;          ///< stable connection id, never reused
     std::string client;       ///< display label from the hello, may be empty
     std::string doc;          ///< joined document name, empty = default/none
-    std::string address;      ///< peer address
+    /// Where this client is, as well as the server can know: the
+    /// forwarded address when a trusted proxy stated one (setTrustProxy),
+    /// else the socket peer. \a peer always carries the socket peer, so
+    /// a proxied row can still show what it came through — and every
+    /// row stays unique, since the peer carries a port.
+    std::string address;
+    std::string peer;
+    bool proxied = false;     ///< address came from a forwarded header
     bool viewer = false;      ///< sent a hello (a probe may not)
     bool viewOnly = false;    ///< picks and mutating ops refused
     uint64_t connectedMs = 0; ///< how long this connection has been up
@@ -135,6 +142,20 @@ public:
     /// FC_SERVE_TOKEN presets it at first use.
     void setToken(const std::string &token);
     std::string token();
+
+    /// Believe `X-Forwarded-For` when the connection came from a
+    /// loopback peer — which is what a reverse proxy on this machine,
+    /// or the local end of an ssh -R tunnel, looks like. Off by
+    /// default, and deliberately so: a header is only as trustworthy
+    /// as whoever set it, so a directly reachable server that honored
+    /// it would show whatever address the client cared to claim.
+    /// FC_SERVE_TRUST_PROXY=1 presets it.
+    ///
+    /// A reverse tunnel alone cannot carry the client's address (the
+    /// local ssh client opens its own connection), so this is only
+    /// useful with a proxy in front that sets the header.
+    void setTrustProxy(bool on);
+    bool trustProxy();
 
     /// The connected clients, for the sharing roster. Returns how many.
     int clients(std::vector<SceneClientInfo> &out);
