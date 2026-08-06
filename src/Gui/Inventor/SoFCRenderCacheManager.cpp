@@ -32,12 +32,17 @@
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
+#include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/annex/FXViz/nodes/SoShadowStyle.h>
 #include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoShape.h>
+#include <Inventor/nodes/SoImage.h>
+#include <Inventor/nodes/SoTexture2.h>
+#include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoResetTransform.h>
 #include <Inventor/nodes/SoBumpMap.h>
 #include <Inventor/nodes/SoShaderProgram.h>
+#include <Inventor/actions/SoGLRenderAction.h>
 #include "SoFCRenderMaterial.h"
 #include "SoFCRendererBridge.h"
 #include "../Renderer/Renderer.h"
@@ -80,6 +85,7 @@
 #include "../RenderTiming.h"
 #include "../InventorBase.h"
 #include "../SoFCUnifiedSelection.h"
+#include "../SoFCSelectionAction.h"
 #include "../SoFCSelection.h"
 
 #include "SoFCVertexCache.h"
@@ -87,6 +93,7 @@
 #include "SoFCRenderer.h"
 #include "SoFCRenderCacheManager.h"
 #include "ScenePublishDelta.h"
+#include "SoFCZoomOffsetElement.h"
 
 using namespace Gui;
 
@@ -131,6 +138,138 @@ applyUserShader(const VertexCacheMap & vcachemap,
   }
   return res;
 }
+
+// ---------------------------------------------------------------
+// Capture companion for stock SoImage shapes (Sketcher constraint icons,
+// SoFrameLabel, ...). SoImage draws in screen space (glDrawPixels at a
+// projected point, constant pixel size), but its generatePrimitives()
+// emits a quad sized in model units for the capture-time view — baked
+// into a static vertex cache, that quad then scales WITH the camera
+// (the "thickening ghost" on zoom), and the texel data set inside
+// generatePrimitives never reaches the captured material, so it renders
+// as a solid diffuse block. preShape() substitutes this companion
+// instead (same recipe as SoTextImage / SoDatumLabel's glyph): the image
+// as a REPLACE-mode texture on a quad in native pixel units under a
+// billboard SoAutoZoomTranslation with pixelScale 1, which the backend
+// re-scales to exact raw-GL pixel size every frame.
+// ---------------------------------------------------------------
+
+class SoFCImageQuad : public SoShape {
+  typedef SoShape inherited;
+  SO_NODE_HEADER(SoFCImageQuad);
+
+public:
+  static void initClass();
+  SoFCImageQuad();
+
+  // Read by SoFCVertexCache (by field name) so the explicit UVs are
+  // captured even though no texture unit is enabled on the capture
+  // traversal.
+  SoSFBool forceTexCoords;
+  // Constant screen-space quad offset in pixels — the accumulated
+  // Sketcher zoom-translation part (SoFCZoomOffsetElement), which the GL
+  // path recomputes from the view each frame and so must not be baked
+  // into the anchor matrix. Written by preImage(); a change gives the
+  // node a fresh id, retiring the stale vertex cache.
+  SoSFVec3f pixelOffset;
+  const SoImage *owner = nullptr;
+
+protected:
+  ~SoFCImageQuad() override = default;
+  // Only ever traversed by the capture action; the owning SoImage handles
+  // GL drawing and picking itself.
+  void GLRender(SoGLRenderAction *) override {}
+  void computeBBox(SoAction *, SbBox3f & box, SbVec3f & center) override;
+  void generatePrimitives(SoAction * action) override;
+};
+
+SO_NODE_SOURCE(SoFCImageQuad)
+
+void SoFCImageQuad::initClass()
+{
+  SO_NODE_INIT_CLASS(SoFCImageQuad, SoShape, "Shape");
+}
+
+SoFCImageQuad::SoFCImageQuad()
+{
+  SO_NODE_CONSTRUCTOR(SoFCImageQuad);
+  SO_NODE_ADD_FIELD(forceTexCoords, (TRUE));
+  SO_NODE_ADD_FIELD(pixelOffset, (SbVec3f(0.f, 0.f, 0.f)));
+}
+
+void
+SoFCImageQuad::computeBBox(SoAction *, SbBox3f & box, SbVec3f & center)
+{
+  // The quad is emitted at the origin in native pixels and placed
+  // screen-constant by the autozoom; contribute only a point so it
+  // neither dominates fitAll nor leaves an invalid bbox.
+  box.setBounds(SbVec3f(0.f, 0.f, 0.f), SbVec3f(0.f, 0.f, 0.f));
+  center = SbVec3f(0.f, 0.f, 0.f);
+}
+
+void
+SoFCImageQuad::generatePrimitives(SoAction * action)
+{
+  if (!this->owner || !action->isOfType(SoCallbackAction::getClassTypeId()))
+    return;
+
+  SbVec2s size;
+  int nc;
+  if (!this->owner->image.getValue(size, nc)
+      || size[0] <= 0 || size[1] <= 0)
+    return;
+  // The width/height fields override the on-screen size (SoImage::getSize).
+  if (this->owner->width.getValue() > 0)
+    size[0] = short(this->owner->width.getValue());
+  if (this->owner->height.getValue() > 0)
+    size[1] = short(this->owner->height.getValue());
+
+  const float w = float(size[0]);
+  const float h = float(size[1]);
+
+  // GL parity (SoImage::getQuad): quad centred on the projected anchor
+  // point, then shifted half a size per alignment.
+  const SbVec3f & off = this->pixelOffset.getValue();
+  float x0 = off[0] - 0.5f * w;
+  switch (this->owner->horAlignment.getValue()) {
+  case SoImage::LEFT:  x0 += 0.5f * w; break;
+  case SoImage::RIGHT: x0 -= 0.5f * w; break;
+  default: break; // CENTER
+  }
+  float y0 = off[1] - 0.5f * h;
+  switch (this->owner->vertAlignment.getValue()) {
+  case SoImage::TOP:    y0 -= 0.5f * h; break;
+  case SoImage::BOTTOM: y0 += 0.5f * h; break;
+  default: break; // HALF
+  }
+  const float x1 = x0 + w;
+  const float y1 = y0 + h;
+
+  // Coin images are stored bottom-up: v=0 is the bottom row.
+  struct Corner { float x, y, u, v; };
+  const Corner corners[4] = {
+      {x0, y0, 0.f, 0.f},
+      {x1, y0, 1.f, 0.f},
+      {x1, y1, 1.f, 1.f},
+      {x0, y1, 0.f, 1.f},
+  };
+
+  SoPrimitiveVertex pv;
+  pv.setNormal(SbVec3f(0.f, 0.f, 1.f));
+  pv.setMaterialIndex(0);
+  auto emit = [&](int i) {
+    pv.setPoint(SbVec3f(corners[i].x, corners[i].y, 0.f));
+    pv.setTextureCoords(SbVec4f(corners[i].u, corners[i].v, 0.f, 1.f));
+    shapeVertex(&pv);
+  };
+
+  this->beginShape(action, TRIANGLES);
+  emit(0); emit(1); emit(2);
+  emit(0); emit(2); emit(3);
+  this->endShape();
+}
+
+// ---------------------------------------------------------------
 
 class SelectionSensor : public SoNodeSensor {
 public:
@@ -253,6 +392,7 @@ public:
   static SoCallbackAction::Response prePathAnnotation(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postPathAnnotation(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response preShape(void *, SoCallbackAction *action, const SoNode * node);
+  static SoCallbackAction::Response preImage(SoFCRenderCacheManagerP *self, SoCallbackAction *action, const SoImage * node);
   static SoCallbackAction::Response postShape(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postClipPlane(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response preAutoZoom(void *, SoCallbackAction *action, const SoNode * node);
@@ -338,6 +478,16 @@ public:
     }
 
     SbFCVector<VertexCachePtr> caches;
+
+    // SoImage nodes only: the capture companion sub-graph
+    // [SoTexture2(REPLACE) -> SoAutoZoomTranslation(billboard, pixelScale 1)
+    //  -> SoFCImageQuad] traversed in the node's place by preShape(), and
+    // the owner node-id it was last captured against (a change retires the
+    // companion quad's vertex cache — the quad's own node-id cannot see
+    // owner edits like an icon recolour/resize).
+    CoinPtr<SoSeparator> imageroot;
+    SoFCImageQuad *imagequad = nullptr;
+    SbFCUniqueId imageid = 0;
   };
 
   class PathCacheSensor : public SoPathSensor
@@ -422,6 +572,11 @@ public:
   int shapetypeid;
   VertexCachePtr vcache;
 
+  // Last real viewport seen by render()/capture(), re-applied when
+  // initAction() recreates the action (screen-space captures read it).
+  SbViewportRegion lastvp;
+  bool lastvpset = false;
+
   std::unordered_map<std::string, SelectionPathMap> selcaches;
   // Path-keyed user-shader overrides (addShaderOverride): same sensor
   // machinery as selcaches, kept separate so selection bookkeeping
@@ -463,6 +618,14 @@ std::unordered_map<const SoNode *,
 
 static FC_COIN_THREAD_LOCAL int _shapetypeid = -1;
 
+// Marks a render-cache capture traversal for the duration of an apply():
+// Sketcher-style zoom translations divert their per-frame screen-space
+// offset into SoFCZoomOffsetElement only while this is set.
+struct CaptureFlagGuard {
+  CaptureFlagGuard() { SoFCZoomOffsetElement::setCapturing(true); }
+  ~CaptureFlagGuard() { SoFCZoomOffsetElement::setCapturing(false); }
+};
+
 static int
 getMaxShapeTypeId()
 {
@@ -487,7 +650,31 @@ SoFCRenderCacheManagerP::SoFCRenderCacheManagerP()
   this->action = nullptr;
   this->shapetypeid = 0;
 
+  if (SoFCImageQuad::getClassTypeId() == SoType::badType())
+    SoFCImageQuad::initClass();
+
   if (_shapetypeid < 0) {
+    // Raw-GL draw of screen-space images is suppressed while an external
+    // backend draws their captured companions (SoFCImageQuad), mirroring
+    // SoDatumLabel::SuppressGLRender — the flag is set per composite pass
+    // by View3DInventorViewer. Registered on SoBoxSelectionRenderAction
+    // (the viewer's render action) as well: its method table is built from
+    // SoGLRenderAction's at its own setUp and does not re-sync a parent
+    // override added afterwards.
+    auto imageMethod = [](SoAction *action, SoNode *node) {
+        static int dbg = std::getenv("FC_DEBUG_IMAGEQUAD") ? 1 : 0;
+        if (dbg)
+            fprintf(stderr, "SoImage GLRender %p suppress=%d\n",
+                    static_cast<void*>(node),
+                    int(SoFCRenderCacheManager::SuppressImageGLRender));
+        if (!SoFCRenderCacheManager::SuppressImageGLRender)
+            SoNode::GLRenderS(action, node);
+    };
+    SoGLRenderAction::addMethod(SoImage::getClassTypeId(), imageMethod);
+    if (SoBoxSelectionRenderAction::getClassTypeId() != SoType::badType())
+        SoBoxSelectionRenderAction::addMethod(
+            SoImage::getClassTypeId(), imageMethod);
+
     // In case the shape node is defined in late loaded module, we need to
     // re-init SoCallbackAction (by calling initAction()), because
     // SoCallbackAction only works for existing type ID (i.e. all existing
@@ -533,6 +720,8 @@ void SoFCRenderCacheManagerP::initAction()
   delete this->action;
   _shapetypeid = this->shapetypeid = getMaxShapeTypeId();
   this->action = new SoCallbackAction;
+  if (this->lastvpset)
+    this->action->setViewportRegion(this->lastvp);
   this->action->addPreCallback(SoFCSelectionRoot::getClassTypeId(), &preSeparator, this);
   this->action->addPostCallback(SoFCSelectionRoot::getClassTypeId(), &postSeparator, this);
   this->action->addPreCallback(SoFCLatePickGroup::getClassTypeId(), &preLatePickGroup, this);
@@ -589,6 +778,8 @@ SoFCRenderCacheManagerP::~SoFCRenderCacheManagerP()
   delete this->action;
   delete this->renderer;
 }
+
+bool SoFCRenderCacheManager::SuppressImageGLRender = false;
 
 const SbFCMap<int, CoinPtr<SoPath> > &
 SoFCRenderCacheManager::getSelectionPaths() const
@@ -702,7 +893,10 @@ SoFCRenderCacheManager::setHighlight(SoPath * path,
       SoFCSwitch::pushSwitchPath(path);
     }
     PRIVATE(this)->override_selectstyle = false;
-    PRIVATE(this)->action->apply(path);
+    {
+      CaptureFlagGuard capguard;
+      PRIVATE(this)->action->apply(path);
+    }
     if (ontop) {
       SoFCSwitch::popSwitchPath();
       SoFCSwitch::setOverrideSwitch(state, false);
@@ -774,7 +968,10 @@ SoFCRenderCacheManagerP::updateSelection(void * userdata, SoSensor * _sensor)
     }
   }
 
-  self->action->apply(path);
+  {
+    CaptureFlagGuard capguard;
+    self->action->apply(path);
+  }
   if (sensor->ontop) {
     SoFCSwitch::popSwitchPath();
     SoFCSwitch::setOverrideSwitch(state, false);
@@ -1230,6 +1427,15 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
   SoGLCacheContextElement::shouldAutoCache(state,
                                            SoGLCacheContextElement::DONT_AUTO_CACHE);
 
+  // The capture action initializes its own state, whose viewport element
+  // starts at the 100px default; screen-space captures (SoTextImage,
+  // SoFCImageQuad pixel offsets) read the real viewport, so carry it
+  // over. Sticky on the action, so the sensor-triggered selection
+  // rebuilds inherit it too (and initAction() re-applies it).
+  PRIVATE(this)->lastvp = SoViewportRegionElement::get(state);
+  PRIVATE(this)->lastvpset = true;
+  PRIVATE(this)->action->setViewportRegion(PRIVATE(this)->lastvp);
+
   const SoPath * path = action->getCurPath();
   if (!PRIVATE(this)->sceneid || PRIVATE(this)->sceneid != path->getTail()->getNodeId()) {
     SoState * state = action->getState();
@@ -1256,7 +1462,10 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
     PRIVATE(this)->override_selectstyle = false;
     PRIVATE(this)->usershaders.shaders.clear();
     PRIVATE(this)->publishdelta.begin();
-    PRIVATE(this)->action->apply(path->getTail());
+    {
+      CaptureFlagGuard capguard;
+      PRIVATE(this)->action->apply(path->getTail());
+    }
     cache->close(state);
 
     {
@@ -1287,6 +1496,11 @@ SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
   // overlay roots (foreground superimposition, corner axis cross) that
   // are captured outside their own traversal and mirrored to the backend
   // through the overlay feed (setExternalOverlay()).
+  // Real viewport for screen-space captures; see render().
+  PRIVATE(this)->lastvp = SoViewportRegionElement::get(action->getState());
+  PRIVATE(this)->lastvpset = true;
+  PRIVATE(this)->action->setViewportRegion(PRIVATE(this)->lastvp);
+
   if (PRIVATE(this)->sceneid == root->getNodeId())
     return;
   PRIVATE(this)->sceneid = root->getNodeId();
@@ -1303,7 +1517,10 @@ SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
   // scene's; reset the counters rather than let them leak into whatever
   // publish comes next.
   PRIVATE(this)->publishdelta.begin();
-  PRIVATE(this)->action->apply(root);
+  {
+    CaptureFlagGuard capguard;
+    PRIVATE(this)->action->apply(root);
+  }
   cache->close(state);
   PRIVATE(this)->renderer->setScene(cache);
   // Not routed anywhere in overlay mode (render() is a no-op there), but
@@ -1325,6 +1542,11 @@ SoFCRenderCacheManager::traverse(SoNode * root, const SbViewportRegion & viewpor
   SoCallbackAction seedaction(viewport);
   SoState * state = seedaction.getState();
 
+  // Real viewport for screen-space captures; see render().
+  PRIVATE(this)->lastvp = viewport;
+  PRIVATE(this)->lastvpset = true;
+  PRIVATE(this)->action->setViewportRegion(viewport);
+
   // Before the change check, not after: the configs describe how the
   // scene looks (AO, water, hidden line, ...) and an edit to one of them
   // moves no node id at all, so gating them on the graph having changed
@@ -1344,7 +1566,10 @@ SoFCRenderCacheManager::traverse(SoNode * root, const SbViewportRegion & viewpor
   PRIVATE(this)->initAction();
   PRIVATE(this)->override_selectstyle = false;
   PRIVATE(this)->usershaders.shaders.clear();
-  PRIVATE(this)->action->apply(root);
+  {
+    CaptureFlagGuard capguard;
+    PRIVATE(this)->action->apply(root);
+  }
   cache->close(state);
   PRIVATE(this)->renderer->setScene(cache);
   PRIVATE(this)->renderer->setUserShaders(
@@ -1930,6 +2155,10 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
   if (self->stack.empty())
       return SoCallbackAction::PRUNE;
 
+  // Screen-space image shapes get a substituted capture: see SoFCImageQuad.
+  if (node->isOfType(SoImage::getClassTypeId()))
+    return preImage(self, action, static_cast<const SoImage *>(node));
+
   SoState * state = action->getState();
   SoFCRenderCache *currentcache = self->stack.back();
 
@@ -1975,6 +2204,77 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
   currentcache->beginChildCaching(state, self->vcache);
   self->vcache->open(state);
   return SoCallbackAction::CONTINUE;
+}
+
+SoCallbackAction::Response
+SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
+                                  SoCallbackAction *action,
+                                  const SoImage * node)
+{
+  SbVec2s size;
+  int nc;
+  if (!node->image.getValue(size, nc) || size[0] <= 0 || size[1] <= 0)
+    return SoCallbackAction::PRUNE;   // empty image: nothing to draw
+
+  VCacheSensor & sensor = self->vcachetable[node];
+  sensor.attach(self, node);
+  if (!sensor.imageroot) {
+    auto *texture = new SoTexture2;
+    // The image bakes its own colours (glDrawPixels semantics): replace
+    // the fragment colour with the texel, alpha-blended, no material tint.
+    texture->model = SoTexture2::REPLACE;
+    // Track the owner's pixels live (icon recolour on selection etc.).
+    texture->image.connectFrom(&const_cast<SoImage *>(node)->image);
+
+    auto *zoom = new SoAutoZoomTranslation;
+    // SoImage is always screen-aligned; pixelScale 1 renders the
+    // native-pixel quad at exactly the raw-GL on-screen size.
+    zoom->billboard = TRUE;
+    zoom->pixelScale = 1.0f;
+
+    auto *quad = new SoFCImageQuad;
+    quad->owner = node;
+
+    sensor.imageroot = new SoSeparator;
+    // The companion reads the owner's fields back during capture; keep it
+    // out of the render/bbox caches so owner edits always re-emit.
+    sensor.imageroot->renderCaching = SoSeparator::OFF;
+    sensor.imageroot->boundingBoxCaching = SoSeparator::OFF;
+    sensor.imageroot->addChild(texture);
+    sensor.imageroot->addChild(zoom);
+    sensor.imageroot->addChild(quad);
+    sensor.imagequad = quad;
+  }
+
+  // The companion quad's vertex cache is keyed on the quad's own node id,
+  // which cannot see owner edits — retire it when the owner changed.
+  if (sensor.imageid != node->getNodeId()) {
+    sensor.imageid = node->getNodeId();
+    sensor.imagequad->touch();
+  }
+
+  // Fold the accumulated Sketcher zoom-translation offset into the quad
+  // as a constant pixel offset: one autozoom scale unit spans
+  // viewportHeight/50 pixels (SoZoomTranslation's sf times the ortho
+  // pixels-per-world factor — the camera height cancels, leaving a
+  // screen-constant offset exactly like the per-frame GL path). Setting
+  // the field only on change keeps the quad's node id — and with it the
+  // vertex cache — stable.
+  SoState * state = action->getState();
+  SbVec2f zoomoff = SoFCZoomOffsetElement::get(state);
+  float vph = float(
+      SoViewportRegionElement::get(state).getViewportSizePixels()[1]);
+  SbVec3f offpx(zoomoff[0] * 0.02f * vph, zoomoff[1] * 0.02f * vph, 0.f);
+  static int dbg = std::getenv("FC_DEBUG_IMAGEQUAD") ? 1 : 0;
+  if (dbg)
+    fprintf(stderr, "preImage %p zoomoff=(%g,%g) vph=%g offpx=(%g,%g)\n",
+            static_cast<const void*>(node), zoomoff[0], zoomoff[1],
+            vph, offpx[0], offpx[1]);
+  if (sensor.imagequad->pixelOffset.getValue() != offpx)
+    sensor.imagequad->pixelOffset = offpx;
+
+  action->traverse(sensor.imageroot);
+  return SoCallbackAction::PRUNE;   // skip the raw model-space quad capture
 }
 
 SoCallbackAction::Response

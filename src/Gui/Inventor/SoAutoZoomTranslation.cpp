@@ -83,6 +83,7 @@ SoAutoZoomTranslation::SoAutoZoomTranslation()
     SO_NODE_CONSTRUCTOR(SoAutoZoomTranslation);
     SO_NODE_ADD_FIELD(scaleFactor, (1.0f));
     SO_NODE_ADD_FIELD(billboard, (FALSE));
+    SO_NODE_ADD_FIELD(pixelScale, (0.0f));
     SO_NODE_ADD_FIELD(datumFlip, (FALSE));
     SO_NODE_ADD_FIELD(flipNormal, (SbVec3f(0.f, 0.f, 1.f)));
     //SO_NODE_ADD_FIELD(abPos, (SbVec3f(0.f,0.f,0.f)));

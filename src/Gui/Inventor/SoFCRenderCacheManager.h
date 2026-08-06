@@ -55,6 +55,12 @@ public:
   SoFCRenderCacheManager();
   virtual ~SoFCRenderCacheManager();
 
+  /// Suppress the raw-GL draw of screen-space SoImage shapes (Sketcher
+  /// constraint icons, frame labels). Set around the composite Coin pass
+  /// when an external backend already draws their captured companions, so
+  /// the icon is not doubled — mirrors SoDatumLabel::SuppressGLRender.
+  static bool SuppressImageGLRender;
+
   void render(SoGLRenderAction *action);
 
   /// Build (or refresh, keyed on \a root's node id) the render cache of an

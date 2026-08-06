@@ -1714,7 +1714,11 @@ static void setDrawTransform(const Render::DrawCall &draw,
                 const float zview = ax*V[2] + ay*V[6] + az*V[10] + V[14];
                 const float depth = -zview;  // in front of the camera => positive
                 const float p5 = std::abs(P[5]) > 1e-8f ? P[5] : 1.0f;
-                const float kBillboard = 1.35f;  // on-screen px per native glyph px
+                // On-screen px per emitted unit: the entry's own pixel scale
+                // when set (image quads in native pixels, 1:1 with raw GL),
+                // else the glyph-legibility text factor.
+                const float kBillboard =
+                    entry.pixelscale > 0.f ? entry.pixelscale : 1.35f;
                 sfb = kBillboard * 2.0f / (p5 * viewportHeight);
                 if (persp)
                     sfb *= (depth > 1e-4f ? depth : 1e-4f);

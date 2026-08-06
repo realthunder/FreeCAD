@@ -27,11 +27,14 @@
 
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoGetMatrixAction.h>
+#include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/nodes/SoCamera.h>
 #endif
+
+#include <Gui/Inventor/SoFCZoomOffsetElement.h>
 
 #include "SoZoomTranslation.h"
 
@@ -95,17 +98,31 @@ void SoZoomTranslation::doAction(SoAction* action)
         && this->abPos.getValue() == SbVec3f(0.0f, 0.0f, 0.0f)) {
         return;
     }
-    else {
-        SbVec3f absVtr = this->abPos.getValue();
-        SbVec3f relVtr = this->translation.getValue();
 
-        float sf = this->calculateScaleFactor(action);
-        // For Sketcher Keep Z value the same
-        relVtr[0] = (relVtr[0] != 0) ? sf * relVtr[0] : 0;
-        relVtr[1] = (relVtr[1] != 0) ? sf * relVtr[1] : 0;
+    SbVec3f absVtr = this->abPos.getValue();
+    SbVec3f relVtr = this->translation.getValue();
 
-        v = absVtr + relVtr;
+    // Render-cache capture (bgfx/WASM backends): the scale factor is
+    // recomputed from the view every GL frame, but a capture bakes it into
+    // static caches where the offset then scales WITH the camera zoom.
+    // Deposit the zoom-scaled part in the state instead — the SoImage
+    // capture companion folds it into its quad as a constant pixel offset
+    // — and apply only the absolute part plus the unscaled z layer here.
+    if (SoFCZoomOffsetElement::isCapturing()
+        && action->isOfType(SoCallbackAction::getClassTypeId())) {
+        SoFCZoomOffsetElement::add(action->getState(),
+                                        SbVec2f(relVtr[0], relVtr[1]));
+        v = absVtr + SbVec3f(0.f, 0.f, relVtr[2]);
+        SoModelMatrixElement::translateBy(action->getState(), this, v);
+        return;
     }
+
+    float sf = this->calculateScaleFactor(action);
+    // For Sketcher Keep Z value the same
+    relVtr[0] = (relVtr[0] != 0) ? sf * relVtr[0] : 0;
+    relVtr[1] = (relVtr[1] != 0) ? sf * relVtr[1] : 0;
+
+    v = absVtr + relVtr;
 
     SoModelMatrixElement::translateBy(action->getState(), this, v);
 }

@@ -4525,10 +4525,13 @@ void View3DInventorViewer::renderScene()
     static const bool parallelgl =
         (std::getenv("FC_RENDERER_PARALLEL_GL") != nullptr);
 
-    // When the backend already draws the editing overlay (datums), suppress the
-    // raw-GL datum draw during this Coin pass so it is not doubled.
+    // When the backend already draws the editing overlay (datums, constraint
+    // icons), suppress the raw-GL datum and screen-space image draws during
+    // this Coin pass so they are not doubled.
     SoDatumLabel::SuppressGLRender =
         externalRendered && _pimpl->editingBackendFed && !parallelgl;
+    SoFCRenderCacheManager::SuppressImageGLRender =
+        SoDatumLabel::SuppressGLRender;
     try {
         // Render normal scenegraph.
         inherited::actualRedraw();
@@ -4544,6 +4547,7 @@ void View3DInventorViewer::renderScene()
                              QObject::tr("Not enough memory available to display the data."));
     }
     SoDatumLabel::SuppressGLRender = false;
+    SoFCRenderCacheManager::SuppressImageGLRender = false;
     if (glbra) {
         glbra->checkRootNode(nullptr);
     }

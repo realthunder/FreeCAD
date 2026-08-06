@@ -68,6 +68,7 @@
 #include "SoFCVertexCache.h"
 #include "SoFCDetail.h"
 #include "SoFCDiffuseElement.h"
+#include "SoFCZoomOffsetElement.h"
 #include "SoFCDisplayModeElement.h"
 
 #include <Gui/ViewProviderLink.h>
@@ -311,6 +312,7 @@ void SoFCRenderCache::initClass()
 {
   SO_ENABLE(SoCallbackAction, SoShadowStyleElement);
   SoFCDiffuseElement::initClass();
+  SoFCZoomOffsetElement::initClass();
 }
 
 void SoFCRenderCache::resetNode()

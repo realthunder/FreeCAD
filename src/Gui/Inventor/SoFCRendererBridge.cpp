@@ -860,6 +860,7 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
             auto node = info.cast<SoAutoZoomTranslation>();
             entry.scaleFactor = node->scaleFactor.getValue();
             entry.billboard = node->billboard.getValue();
+            entry.pixelscale = node->pixelScale.getValue();
             entry.datumFlip = node->datumFlip.getValue();
             const SbVec3f & nrm = node->flipNormal.getValue();
             entry.normal[0] = nrm[0];
