@@ -958,6 +958,11 @@ public:
 
     ~PyConsoleObserver() override
     {
+        if (!Py_IsInitialized()) {
+            // Interpreter already finalized: the reference died with it, and
+            // taking the GIL now would touch a torn-down runtime.
+            return;
+        }
         PyGILStateLocker lock;
         Py_DECREF(callback);
     }
@@ -975,6 +980,13 @@ public:
     {
         static thread_local bool reentrant = false;
         if (reentrant) {
+            return;
+        }
+        // The app logs during shutdown after Py_Finalize (e.g. main()'s
+        // "completely terminated"); PyGILState_Ensure on the finalized runtime
+        // dereferences a null interpreter state. Exact for messages emitted on
+        // the finalizing thread itself, which is where shutdown logging runs.
+        if (!Py_IsInitialized()) {
             return;
         }
         reentrant = true;
