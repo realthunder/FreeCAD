@@ -957,11 +957,18 @@ Document::Document(const char* documentName)
             "Prefer binary format when saving object data.\n"
             "This can result in smaller file but bad for version control.");
     PreferBinary.setValue(DocumentParams::getPreferBinary());
-    ADD_PROPERTY_TYPE(SaveSchemaVersion,(getCurrentSchemaVersion()),"Format",Prop_None,
+    // ⚠️ 5, not getCurrentSchemaVersion(). Schema 6 is the compact format --
+    // shared default blocks under an <FCDocument> root no other FreeCAD
+    // opens -- and an incompatibility like that is chosen, never inherited
+    // from a constructor. The save dialog is where a user chooses it,
+    // per document, past a warning that stays on screen.
+    ADD_PROPERTY_TYPE(SaveSchemaVersion,(5),"Format",Prop_None,
             "Document schema version to write.\n"
-            "Lower it to keep the document readable by an older FreeCAD, at\n"
-            "the cost of what the newer versions added. Only versions this\n"
-            "build can still write are accepted.");
+            "5 is readable by every FreeCAD version. 6 is the compact\n"
+            "format: smaller and faster to load, but readable only by\n"
+            "builds of this fork that know it -- no other FreeCAD, upstream\n"
+            "included, will open the file. Only versions this build can\n"
+            "still write are accepted.");
     {
         const auto &versions = getWritableSchemaVersions();
         static App::PropertyIntegerConstraint::Constraints schemaRange;
@@ -1414,14 +1421,12 @@ void Document::buildDefaults(Base::Writer &writer,
         const std::vector<App::DocumentObject*>& obj,
         std::map<std::string, SharedDefaults> &defaults) const
 {
-    // Two gates, and they answer different questions. Schema 6 is the version
-    // that introduced this block (getWritableSchemaVersions); a document whose
-    // SaveSchemaVersion is lower has asked to come out in a shape an older
-    // FreeCAD reads in full, and that outranks any preference. The parameter
-    // is the preference, and only applies once the document has allowed it.
+    // One gate, and it is the document's own: the resolved schema. Six is
+    // the version that introduced the block (getWritableSchemaVersions),
+    // the user chooses it per document in the save dialog, and a document
+    // that resolved lower has asked to come out in a shape an older FreeCAD
+    // reads in full. No preference outranks what a document promised.
     if (writer.getSchemaVersion() < 6)
-        return;
-    if (!DocumentParams::getSaveObjectDefaults())
         return;
 
     // A default block is one class's whole property set, so it only pays for

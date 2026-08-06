@@ -27,10 +27,13 @@
 # include <mutex>
 # include <QApplication>
 # include <QFileInfo>
+# include <QLabel>
 # include <QMessageBox>
+# include <QRadioButton>
 # include <QTextStream>
 # include <QTimer>
 # include <QStatusBar>
+# include <QVBoxLayout>
 # include <Inventor/actions/SoSearchAction.h>
 # include <Inventor/nodes/SoSeparator.h>
 #endif
@@ -1447,15 +1450,91 @@ bool Document::save()
     }
 }
 
+namespace {
+/** The document-format choice a save dialog carries, warning included.
+ *
+ * The warning is a red heading that stays on screen for as long as the
+ * compact choice is selected. A message box someone clicks away once is not
+ * a warning about a file that stays incompatible; this one cannot be
+ * collapsed or dismissed, only deselected. The result lands in the caller's
+ * own bool -- the widget is reparented into the file dialog and dies with
+ * it.
+ */
+class DocumentFormatOption : public QWidget
+{
+public:
+    DocumentFormatOption(bool compact, bool *result)
+        : result(result)
+    {
+        auto layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 6, 0, 0);
+
+        warning = new QLabel(this);
+        warning->setWordWrap(true);
+        // Red, bold, a size up: a title, not a footnote. A hard colour
+        // rather than a palette role, because it must read as a warning on
+        // any theme.
+        warning->setStyleSheet(QStringLiteral(
+                    "color:#c81414; font-weight:bold; font-size:%1pt;")
+                .arg(font().pointSize() + 1));
+        warning->setText(QObject::tr(
+                    "Incompatible format: this file will NOT open in any other "
+                    "FreeCAD \xe2\x80\x94 not upstream, not an older release of "
+                    "this fork."));
+        layout->addWidget(warning);
+
+        standard = new QRadioButton(QObject::tr(
+                    "Standard format \xe2\x80\x94 readable by every FreeCAD version"), this);
+        compactBtn = new QRadioButton(QObject::tr(
+                    "Compact format \xe2\x80\x94 smaller and faster to load; "
+                    "this FreeCAD only"), this);
+        layout->addWidget(standard);
+        layout->addWidget(compactBtn);
+
+        compactBtn->setChecked(compact);
+        standard->setChecked(!compact);
+        apply();
+        QObject::connect(compactBtn, &QRadioButton::toggled,
+                         [this](bool) { apply(); });
+    }
+
+private:
+    void apply()
+    {
+        *result = compactBtn->isChecked();
+        warning->setVisible(compactBtn->isChecked());
+    }
+
+    bool *result;
+    QLabel *warning;
+    QRadioButton *standard;
+    QRadioButton *compactBtn;
+};
+} // anonymous namespace
+
 /// Save the document under a new file name
 bool Document::saveAs()
 {
     getMainWindow()->showMessage(QObject::tr("Save document under new filename..."));
 
+    // The format is the document's own promise -- SaveSchemaVersion, shown
+    // and changed here and nowhere quieter. Plain Save never touches it. A
+    // document that has never been saved starts from the last choice made
+    // in this dialog; one that has keeps its own.
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Document");
+    const char *curFile = getDocument()->FileName.getValue();
+    bool compact = (curFile && curFile[0])
+            ? getDocument()->getSaveSchemaVersion() >= 6
+            : hGrp->GetBool("PreferCompactFormat", false);
+    bool chosenCompact = compact;
+
     QString exe = qApp->applicationName();
     QString fn = FileDialog::getSaveFileName(getMainWindow(), QObject::tr("Save %1 Document").arg(exe),
         QString::fromUtf8(getDocument()->FileName.getValue()),
-        QStringLiteral("%1 %2 (*.FCStd)").arg(exe).arg(QObject::tr("Document")));
+        QStringLiteral("%1 %2 (*.FCStd)").arg(exe).arg(QObject::tr("Document")),
+        nullptr, QFileDialog::Options(), QFileDialog::AnyFile,
+        new DocumentFormatOption(compact, &chosenCompact));
 
     if (!fn.isEmpty()) {
         QFileInfo fi;
@@ -1466,6 +1545,11 @@ bool Document::saveAs()
         // save as new file name
         try {
             Gui::WaitCursor wc;
+            hGrp->SetBool("PreferCompactFormat", chosenCompact);
+            if (chosenCompact != (getDocument()->getSaveSchemaVersion() >= 6))
+                Command::doCommand(Command::Doc,
+                        "App.getDocument(\"%s\").SaveSchemaVersion = %d", DocName,
+                        chosenCompact ? (int)App::Document::getCurrentSchemaVersion() : 5);
             std::string escapedstr = Base::Tools::escapeEncodeFilename(fn).toUtf8().constData();
             Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveAs(u\"%s\")"
                                            , DocName, escapedstr.c_str());
@@ -2117,15 +2201,10 @@ void Document::slotShowHidden(const App::Document& doc)
 void Document::buildDefaults(Base::Writer &writer,
         std::map<std::string, App::SharedDefaults> &defaults) const
 {
-    // Two gates, and they answer different questions. Schema 6 is the version
-    // that introduced this block (App::Document::getWritableSchemaVersions);
-    // a document whose SaveSchemaVersion is lower has asked to come out in a
-    // shape an older FreeCAD reads in full, and that outranks any preference.
-    // The parameter is the preference, and only applies once the document has
-    // allowed it.
+    // One gate, the same one the App side answers to: the resolved schema.
+    // The user chooses the compact format per document in the save dialog;
+    // no preference of this machine outranks what that document promised.
     if (writer.getSchemaVersion() < 6)
-        return;
-    if (!ViewParams::getSaveViewProviderDefaults())
         return;
 
     // A default block is one class's whole property set, so it only pays for

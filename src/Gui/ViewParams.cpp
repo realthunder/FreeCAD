@@ -228,7 +228,6 @@ public:
     bool EnableBacklight;
     unsigned long BacklightColor;
     double BacklightIntensity;
-    bool SaveViewProviderDefaults;
     bool OverrideSelectability;
     unsigned long SelectionStackSize;
     long DefaultDrawStyle;
@@ -583,8 +582,6 @@ public:
         funcs["BacklightColor"] = &ViewParamsP::updateBacklightColor;
         BacklightIntensity = this->handle->GetFloat("BacklightIntensity", 1.0);
         funcs["BacklightIntensity"] = &ViewParamsP::updateBacklightIntensity;
-        SaveViewProviderDefaults = this->handle->GetBool("SaveViewProviderDefaults", true);
-        funcs["SaveViewProviderDefaults"] = &ViewParamsP::updateSaveViewProviderDefaults;
         OverrideSelectability = this->handle->GetBool("OverrideSelectability", false);
         funcs["OverrideSelectability"] = &ViewParamsP::updateOverrideSelectability;
         SelectionStackSize = this->handle->GetUnsigned("SelectionStackSize", 30);
@@ -1332,10 +1329,6 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateBacklightIntensity(ViewParamsP *self) {
         self->BacklightIntensity = self->handle->GetFloat("BacklightIntensity", 1.0);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateSaveViewProviderDefaults(ViewParamsP *self) {
-        self->SaveViewProviderDefaults = self->handle->GetBool("SaveViewProviderDefaults", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOverrideSelectability(ViewParamsP *self) {
@@ -6156,41 +6149,6 @@ void ViewParams::setBacklightIntensity(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void ViewParams::removeBacklightIntensity() {
     instance()->handle->RemoveFloat("BacklightIntensity");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
-const char *ViewParams::docSaveViewProviderDefaults() {
-    return QT_TRANSLATE_NOOP("ViewParams",
-"Save the view providers of a document as a difference from their\n"
-"class defaults, which are written once for the whole document.\n"
-"View providers of one class are nearly identical -- a colour here\n"
-"and a display mode there, everything else what the constructor\n"
-"gave them -- so on a large assembly this makes GuiDocument.xml a\n"
-"fraction of its size and cuts the properties a load has to restore\n"
-"by the same share. Turn it off to write every property on every\n"
-"view provider, as FreeCAD versions without this option expect.");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const bool & ViewParams::getSaveViewProviderDefaults() {
-    return instance()->SaveViewProviderDefaults;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const bool & ViewParams::defaultSaveViewProviderDefaults() {
-    const static bool def = true;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setSaveViewProviderDefaults(const bool &v) {
-    instance()->handle->SetBool("SaveViewProviderDefaults",v);
-    instance()->SaveViewProviderDefaults = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void ViewParams::removeSaveViewProviderDefaults() {
-    instance()->handle->RemoveBool("SaveViewProviderDefaults");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

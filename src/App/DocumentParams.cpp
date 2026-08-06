@@ -56,7 +56,6 @@ public:
         signalParamChanged("SplitXML");
         signalParamChanged("PreferBinary");
         signalParamChanged("InlineListSize");
-        signalParamChanged("SaveObjectDefaults");
         signalParamChanged("AutoRemoveFile");
         signalParamChanged("AutoNameDynamicProperty");
         signalParamChanged("BackupPolicy");
@@ -95,7 +94,6 @@ public:
     bool SplitXML;
     bool PreferBinary;
     long InlineListSize;
-    bool SaveObjectDefaults;
     bool AutoRemoveFile;
     bool AutoNameDynamicProperty;
     bool BackupPolicy;
@@ -148,8 +146,6 @@ public:
         funcs["PreferBinary"] = &DocumentParamsP::updatePreferBinary;
         InlineListSize = this->handle->GetInt("InlineListSize", 64);
         funcs["InlineListSize"] = &DocumentParamsP::updateInlineListSize;
-        SaveObjectDefaults = this->handle->GetBool("SaveObjectDefaults", true);
-        funcs["SaveObjectDefaults"] = &DocumentParamsP::updateSaveObjectDefaults;
         AutoRemoveFile = this->handle->GetBool("AutoRemoveFile", true);
         funcs["AutoRemoveFile"] = &DocumentParamsP::updateAutoRemoveFile;
         AutoNameDynamicProperty = this->handle->GetBool("AutoNameDynamicProperty", false);
@@ -261,10 +257,6 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateInlineListSize(DocumentParamsP *self) {
         self->InlineListSize = self->handle->GetInt("InlineListSize", 64);
-    }
-    // Auto generated code (Tools/params_utils.py:310)
-    static void updateSaveObjectDefaults(DocumentParamsP *self) {
-        self->SaveObjectDefaults = self->handle->GetBool("SaveObjectDefaults", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAutoRemoveFile(DocumentParamsP *self) {
@@ -691,41 +683,6 @@ void DocumentParams::setInlineListSize(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removeInlineListSize() {
     instance()->handle->RemoveInt("InlineListSize");
-}
-
-// Auto generated code (Tools/params_utils.py:372)
-const char *DocumentParams::docSaveObjectDefaults() {
-    return QT_TRANSLATE_NOOP("DocumentParams",
-"Save the objects of a document as a difference from their class\n"
-"defaults, which are written once for the whole document. Most of\n"
-"what an object holds is what its constructor gave it -- an\n"
-"identity placement, an empty expression engine, a flag nobody\n"
-"touched -- so on a large assembly this makes Document.xml a\n"
-"fraction of its size and cuts the properties a load has to\n"
-"restore by the same share. Turn it off to write every property\n"
-"on every object, as FreeCAD versions without this option expect.");
-}
-
-// Auto generated code (Tools/params_utils.py:380)
-const bool & DocumentParams::getSaveObjectDefaults() {
-    return instance()->SaveObjectDefaults;
-}
-
-// Auto generated code (Tools/params_utils.py:388)
-const bool & DocumentParams::defaultSaveObjectDefaults() {
-    const static bool def = true;
-    return def;
-}
-
-// Auto generated code (Tools/params_utils.py:397)
-void DocumentParams::setSaveObjectDefaults(const bool &v) {
-    instance()->handle->SetBool("SaveObjectDefaults",v);
-    instance()->SaveObjectDefaults = v;
-}
-
-// Auto generated code (Tools/params_utils.py:406)
-void DocumentParams::removeSaveObjectDefaults() {
-    instance()->handle->RemoveBool("SaveObjectDefaults");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

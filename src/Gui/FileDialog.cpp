@@ -245,12 +245,14 @@ void FileDialog::accept()
  * This is a convenience static function that will return a file name selected by the user. The file does not have to exist.
  */
 QString FileDialog::getSaveFileName (QWidget * parent, const QString & caption, const QString & dir,
-                                     QString filter, QString * selectedFilter, Options options, FileMode fileMode)
+                                     QString filter, QString * selectedFilter, Options options, FileMode fileMode,
+                                     QWidget *optionsWidget)
 {
     WaitCursorRestorer waitCursorRestore;
 
     bool noNativeDialog = (options&QFileDialog::DontUseNativeDialog)
-                          || DialogOptions::dontUseNativeFileDialog();
+                          || DialogOptions::dontUseNativeFileDialog()
+                          || optionsWidget != nullptr;
 
     checkFilter(filter);
 
@@ -324,6 +326,15 @@ QString FileDialog::getSaveFileName (QWidget * parent, const QString & caption, 
         dlg.onSelectedFilter(dlg.selectedNameFilter());
         dlg.setOption(QFileDialog::HideNameFilterDetails, false);
         dlg.setOption(QFileDialog::DontConfirmOverwrite, false);
+        if (optionsWidget) {
+            // The non-native QFileDialog lays itself out in a grid; one more
+            // full-width row at the bottom keeps the widget in sight for as
+            // long as the dialog is -- there is no toggle to hide it behind.
+            if (auto grid = qobject_cast<QGridLayout*>(dlg.layout()))
+                grid->addWidget(optionsWidget, grid->rowCount(), 0, 1, grid->columnCount());
+            else
+                optionsWidget->setParent(&dlg);
+        }
         if (dlg.exec() == QDialog::Accepted) {
             if (selectedFilter)
                 *selectedFilter = dlg.selectedNameFilter();

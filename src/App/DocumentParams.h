@@ -192,25 +192,6 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter SaveObjectDefaults
-    ///
-    /// Save the objects of a document as a difference from their class
-    /// defaults, which are written once for the whole document. Most of
-    /// what an object holds is what its constructor gave it -- an
-    /// identity placement, an empty expression engine, a flag nobody
-    /// touched -- so on a large assembly this makes Document.xml a
-    /// fraction of its size and cuts the properties a load has to
-    /// restore by the same share. Turn it off to write every property
-    /// on every object, as FreeCAD versions without this option expect.
-    static const bool & getSaveObjectDefaults();
-    static const bool & defaultSaveObjectDefaults();
-    static void removeSaveObjectDefaults();
-    static void setSaveObjectDefaults(const bool &v);
-    static const char *docSaveObjectDefaults();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
     /// Accessor for parameter AutoRemoveFile
     static const bool & getAutoRemoveFile();
     static const bool & defaultAutoRemoveFile();

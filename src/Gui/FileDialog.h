@@ -64,9 +64,16 @@ public:
     static QString getOpenFileName( QWidget * parent = nullptr, const QString & caption = QString(), const QString & dir = QString(),
                                     QString filter = QString(), QString * selectedFilter = nullptr, Options options = Options(),
                                     FileMode fileMode = ExistingFile);
+    /** optionsWidget, when given, is added as a permanently visible row at
+     * the bottom of the dialog -- unlike FileOptionsDialog's extension it
+     * cannot be collapsed, which is what a warning that must stay on screen
+     * needs. It forces the non-native dialog (a native one cannot host it)
+     * and is reparented into the dialog, so it dies with it: callers keep
+     * results in storage of their own, not in the widget.
+     */
     static QString getSaveFileName( QWidget * parent = nullptr, const QString & caption = QString(), const QString & dir = QString(),
                                     QString filter = QString(), QString * selectedFilter = nullptr, Options options = Options(),
-                                    FileMode fileMode = AnyFile);
+                                    FileMode fileMode = AnyFile, QWidget *optionsWidget = nullptr);
     static QString getExistingDirectory( QWidget * parent = nullptr, const QString & caption = QString(), const QString & dir = QString(),
                                          Options options = ShowDirsOnly );
     static QStringList getOpenFileNames( QWidget * parent = nullptr, const QString & caption = QString(), const QString & dir = QString(),

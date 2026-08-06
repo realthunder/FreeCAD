@@ -2083,25 +2083,6 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter SaveViewProviderDefaults
-    ///
-    /// Save the view providers of a document as a difference from their
-    /// class defaults, which are written once for the whole document.
-    /// View providers of one class are nearly identical -- a colour here
-    /// and a display mode there, everything else what the constructor
-    /// gave them -- so on a large assembly this makes GuiDocument.xml a
-    /// fraction of its size and cuts the properties a load has to restore
-    /// by the same share. Turn it off to write every property on every
-    /// view provider, as FreeCAD versions without this option expect.
-    static const bool & getSaveViewProviderDefaults();
-    static const bool & defaultSaveViewProviderDefaults();
-    static void removeSaveViewProviderDefaults();
-    static void setSaveViewProviderDefaults(const bool &v);
-    static const char *docSaveViewProviderDefaults();
-    //@}
-
-    // Auto generated code (Tools/params_utils.py:139)
-    //@{
     /// Accessor for parameter OverrideSelectability
     ///
     /// Override object selectability to enable selection
