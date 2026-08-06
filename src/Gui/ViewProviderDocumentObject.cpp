@@ -443,7 +443,14 @@ void ViewProviderDocumentObject::updateView()
     bool vis = ViewProvider::isShow();
     if (vis) ViewProvider::hide();
     for (const auto & it : Map) {
+        FC_TIME_INIT(t);
         updateData(it.second);
+        auto dt = Base::GetDuration(t);
+        // Self-selecting: a bulk sweep spending real time on one property
+        // names it here.
+        if (dt > FC_DURATION(0.001))
+            FC_LOG("slow updateData " << getFullName() << '.' << it.first
+                    << ": " << dt.count() << 's');
     }
     if (vis && Visibility.getValue()) ViewProvider::show();
 }

@@ -209,6 +209,18 @@ public:
     /// Put that difference on one view provider, before its own properties.
     void applyDefaults(ViewProvider *vp);
     //@}
+
+    /** @name Deferred view provider restore (progressive load) */
+    //@{
+    /// True while a progressive load's view providers are still being built
+    bool isRestoringViewProviders() const;
+    /** Build and restore whatever the load deferred, now.
+     *
+     * A save, an export, or anything else that needs every view provider to
+     * exist calls this; it is a no-op once the drain has finished.
+     */
+    void flushDeferredRestore();
+    //@}
     /// Add all root objects of the given array to a group
     void addRootObjectsToGroup(const std::vector<App::DocumentObject*>&, App::DocumentObject*);
     //@}
@@ -386,6 +398,17 @@ protected:
 private:
     //handles the scene graph nodes to correctly group child and parents
     void handleChildren3D(ViewProvider* viewProvider, bool deleting=false);
+
+    /// Build and restore one captured view provider during the load itself,
+    /// handing its archive file requests to the archive's reader
+    void restoreCapturedViewProvider(const std::string &xml,
+            Base::XMLReader &archiveReader);
+    /// Post a drain slice for the deferred view provider restore
+    void scheduleDeferredRestore(int delayMs=0);
+    /// Build and restore parked view providers for one budget's worth
+    void runDeferredRestoreSlice();
+    /// The drain has emptied: default what was never recorded, then refresh
+    void finishDeferredRestore();
 
     /// Check other documents for the same transaction ID
     bool checkTransactionID(bool undo, int iSteps);

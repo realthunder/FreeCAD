@@ -357,7 +357,7 @@ because `ForceXML` has always been able to demand it.
   objects exist, and the create pass, the property pass and the archive
   walk still all run to completion before the window is usable. The
   create pass is now the largest XML item at 3.13s and is untouched by
-  either of these.
+  either of these — §13 is what finally moves it.
 - **The reader's own overhead is now visible.** With the properties gone
   the view provider pass is 0.61s, but `Base::XMLReader` still rebuilds a
   `std::map<std::string,std::string>` of transcoded attributes per
@@ -539,3 +539,103 @@ indistinguishable from 5, zero round-trip diffs beyond the
 -t Document` back at its exact known baseline after `dumpContent`
 exposed the one regression (a writer nothing configured defaulting to
 schema 0 — fixed in `Document::Save`).
+
+## 13. Design: defer the view providers themselves
+
+§4 moved the visual build off the blocking window; the create pass and
+the Gui XML pass stayed inside it. The per-stage split (§11's
+`slotNewObject` line) put the create pass at 2.9s, of which `addObject`
+2.78s — and a console load does the same file's `addObject` in 0.26s.
+The difference is the view provider each object gets built inline:
+instantiation 1.0s, attach (with its Python binding) 0.86s, the
+`updateView` property sweep 0.42s — plus the Gui XML property pass
+(0.69s) and the per-object `finishRestoring` (0.25s) later in the load.
+None of it can show anything before the load finishes, so all of it now
+leaves the window.
+
+Under `ProgressiveLoad`, a restore builds no view providers at all:
+
+- `slotNewObject` during a restore records nothing and returns. The
+  data pass loses its per-property Gui observers with it (0.87s→0.52s).
+- `RestoreDocFile` still parses `GuiDocument.xml` inside the load —
+  tree expansion, cameras, saved views, split files and archive order
+  all keep their exact old shape — but each `<ViewProvider>` element is
+  *captured* rather than restored: `Base::XMLReader::captureElement()`
+  re-serializes the subtree, escaped as the writer escaped it, into one
+  parked buffer. A captured element that references an archive entry
+  (` file="` — exact for attributes, since the capture re-escapes
+  quotes) cannot be parked: the forward walk consumes entries in
+  registration order, so that view provider restores eagerly and hands
+  its file requests to the archive reader.
+- After the load lets go, a drain walks one progressive reader over the
+  parked buffer in `ProgressiveLoadBudgetMS` slices, **three phases,
+  because a restore's correctness lives in its macro-order**: phase one
+  creates every view provider; phase two replays every record through
+  the ordinary `readObject()`; phase three runs the held-back
+  `updateView` sweep and `finishRestoring()` over the whole set, and
+  defaults whatever the file never described (an `App::Part`'s origin
+  built in `afterRestore`, above all). Then the showable/children
+  refresh runs once. ⚠️ Both separations are load-bearing: finishing a
+  link element inside phase two settles it on the record's stale
+  visibility (the link web only corrects it once whole — measured as
+  12499 objects hidden instead of 63, and a resave then writes the
+  lie); and sweeping before a record lets the visual build once and be
+  recolored.
+- Each slice presents itself as a restore: the document's `Restoring`
+  status plus `App::Document::RestoringScopeGuard`, a scope that
+  answers `isAnyRestoring()` with true, so attach keeps its hands off
+  the restored visibility and everything keyed on the global flag
+  treats the replay as the record-reading it is. Saves, exports and
+  imports flush the drain synchronously; a closing document drops it.
+- **The rest of the Gui stays as quiet as the eager window kept it.**
+  The tree does not connect its change signals or build items while the
+  drain runs (`TreeWidget::onUpdateStatus` treats a draining document
+  as still restoring — otherwise `setupTreeRank` renumbers every object
+  the drain announces, and each item takes every per-property signal
+  the replay emits: an icon rebuild per `InvalidShape` alone cost 3.4ms
+  × 18142). The §4 visual queue waits for the drain too, so each
+  visual builds exactly once, from restored properties, on nodes the
+  sweep never has to walk populated.
+
+**What the drain flushed out** (each found by a self-selecting
+reporter that stays in the code — the slow-element and slow-property
+lines, then a slow-updateData line):
+
+- `Gui::ColorUpdater` pays `getInListEx` plus a whole-document
+  dependency sort per registered color change (~25ms × 672 here). The
+  eager path was exempt only by accident: a freshly restored object is
+  still `Touched`, which `addObject` skips — the drain runs after the
+  touch purge. It now skips during any restore on purpose.
+- `ViewProviderLink::setOverrideMode` dereferenced the linked object's
+  view provider without a null check — never survivable before only
+  because links weren't restored at create-pass time.
+- `TouchOnColorChange` objects were touched by the replay with no
+  `afterRestore` purge left to clean it, so a document opened already
+  modified and close prompted to save. The touch now skips during any
+  restore (the eager path's touch was purged — net effect identical).
+
+**Result** (MiSTer_objdefaults, RTX 3060, cache 3): open **10.6s →
+5.0s**, first paint 0.1–0.3s after open, worst stall ≤1.1s (was 2.5s
+at 10.6s open). The drain completes in 47 slices / 4.7s — instantiate
+0.97, attach 1.72, replay 0.77, finish 0.70 — and the §4 visual fill
+follows (~20s). Settled RSS unchanged. Round-trip: 0 property diffs
+on both gates, and a per-object census of App visibility, view
+provider visibility, mode switch and display mode across all 18142
+objects is identical between the source and a resaved reload — as is
+the rendered frame, to the pixel, under plain Coin (cache 0) and
+under the eager path.
+
+⛔ **Open issue, renderer-side**: with **two** of these documents open
+at once (the resave gate's shape — and an external-link assembly's),
+the *second* one rendered by the **bgfx backend** deterministically
+misses ~115 of its largest parts (39039 px). Same scene state, plain
+Coin renders it correctly, eager path renders it correctly — the
+defect is in how the renderer (most plausibly the TShape-instancing
+table) sees a second document whose view providers arrived by drain.
+Belongs to the renderer, not to this load path.
+
+**What it trades**: between the open returning and the drain
+finishing, `getViewProvider()` answers null and `obj.ViewObject` is
+not yet bound — the same window live STEP import already has. A script
+that opens a document and immediately drives view providers wants
+`ProgressiveLoad` off, which restores the old behavior exactly.

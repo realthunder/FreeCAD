@@ -95,6 +95,7 @@
 #include <Base/TimeInfo.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
+#include <Gui/Document.h>
 #include <Gui/Action.h>
 #include <Gui/Selection.h>
 #include <Gui/View3DInventorViewer.h>
@@ -3319,9 +3320,14 @@ void ViewProviderPartExt::runDeferredVisualSlice()
 
     // Still loading: everything built now would only be parked again. Ask
     // again shortly rather than spinning on the events the restore pumps.
+    // The deferred view provider drain counts as loading -- a visual built
+    // between its slices is re-touched by the property sweep that follows,
+    // and every action the sweep applies then walks a populated node.
     if (auto front = queue.pending.front().getObject()) {
-        if (front->getDocument()
-                && front->getDocument()->testStatus(App::Document::Restoring)) {
+        auto doc = front->getDocument();
+        auto guiDoc = doc ? Gui::Application::Instance->getDocument(doc) : nullptr;
+        if ((doc && doc->testStatus(App::Document::Restoring))
+                || (guiDoc && guiDoc->isRestoringViewProviders())) {
             scheduleDeferredVisualSlice(100);
             return;
         }

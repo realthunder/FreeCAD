@@ -4228,6 +4228,17 @@ void TreeWidget::onUpdateStatus()
         return;
     }
 
+    // A drain replaying a load's view providers counts as restoring: items
+    // created now would take every per-property signal the replay emits --
+    // an icon rebuild per InvalidShape alone outweighs the restore itself.
+    // The eager path's tree was exactly this quiet, for exactly this window.
+    for(auto &v : DocumentMap) {
+        if(v.first->isRestoringViewProviders()) {
+            _updateStatus();
+            return;
+        }
+    }
+
     bool clearTimer = true;
 
     for(auto &v : DocumentMap) {
@@ -4334,7 +4345,12 @@ void TreeWidget::onUpdateStatus()
         auto doc = v.first->getDocument();
 
         bool checkOnTop = false;
-        if(!docItem->connectChgObject.connected()) {
+        // A document whose view providers the progressive load is still
+        // replaying is not "just restored" yet -- connecting now would let
+        // setupTreeRank() renumber every object the drain announces. The
+        // eager path kept this disconnected for exactly that window.
+        if(!docItem->connectChgObject.connected()
+                && !v.first->isRestoringViewProviders()) {
             checkOnTop = true;
             docItem->connectChgObject = docItem->document()->signalChangedObject.connect(
                     std::bind(&TreeWidget::slotChangeObject, this, sp::_1, sp::_2));
