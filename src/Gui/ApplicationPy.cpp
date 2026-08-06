@@ -54,6 +54,7 @@
 #include "DlgPreferencesImp.h"
 #include "Document.h"
 #include "SceneServeSource.h"
+#include "Renderer/SceneServer.h"
 #include "DocumentObserverPython.h"
 #include "DownloadManager.h"
 #include "EditorView.h"
@@ -183,6 +184,26 @@ PyMethodDef Application::Methods[] = {
    "display at all. A non-zero port starts the scene stream server\n"
    "there. Returns False when the configured render engine cannot\n"
    "publish without a graphics device."},
+  {"serveClients",            (PyCFunction) Application::sServeClients, METH_VARARGS,
+   "serveClients() -> list\n"
+   "\n"
+   "The scene stream server's connected clients, one dict each: id,\n"
+   "client (label), doc, address, viewer, viewOnly, connectedMs."},
+  {"serveSetClientMode",      (PyCFunction) Application::sServeSetClientMode, METH_VARARGS,
+   "serveSetClientMode(id, viewOnly) -> bool\n"
+   "\n"
+   "Make a connected client view-only (picks dropped, mutating control\n"
+   "ops refused) or give it editing back. False when it is gone."},
+  {"serveKickClient",         (PyCFunction) Application::sServeKickClient, METH_VARARGS,
+   "serveKickClient(id) -> bool\n"
+   "\n"
+   "Disconnect a client: it is told and closed by its own loop.\n"
+   "False when it is gone."},
+  {"serveStop",               (PyCFunction) Application::sServeStop, METH_VARARGS,
+   "serveStop() -> None\n"
+   "\n"
+   "Stop the scene stream server: close the listener and disconnect\n"
+   "every client. Serving a document again restarts it."},
   {"updateLocale",            (PyCFunction) Application::sUpdateLocale, METH_VARARGS,
    "updateLocale() -> None\n"
    "\n"
@@ -862,6 +883,57 @@ PyObject* Application::sServeDocument(PyObject * /*self*/, PyObject *args)
     // device is created, so this works with no 3D view and no display.
     bool ok = Gui::SceneServeSource::serve(guiDoc, port) != nullptr;
     return Py::new_reference_to(Py::Boolean(ok));
+}
+
+PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    std::vector<Render::SceneClientInfo> clients;
+    Render::SceneStreamServer::instance().clients(clients);
+    Py::List list;
+    for (const auto &c : clients) {
+        Py::Dict entry;
+        entry.setItem("id", Py::Long(static_cast<unsigned long long>(c.id)));
+        entry.setItem("client", Py::String(c.client));
+        entry.setItem("doc", Py::String(c.doc));
+        entry.setItem("address", Py::String(c.address));
+        entry.setItem("viewer", Py::Boolean(c.viewer));
+        entry.setItem("viewOnly", Py::Boolean(c.viewOnly));
+        entry.setItem("connectedMs", Py::Long(
+            static_cast<unsigned long long>(c.connectedMs)));
+        list.append(entry);
+    }
+    return Py::new_reference_to(list);
+}
+
+PyObject* Application::sServeSetClientMode(PyObject * /*self*/, PyObject *args)
+{
+    unsigned long long id = 0;
+    int viewOnly = 0;
+    if (!PyArg_ParseTuple(args, "Kp", &id, &viewOnly))
+        return nullptr;
+    bool ok = Render::SceneStreamServer::instance().setClientViewOnly(
+        id, viewOnly != 0);
+    return Py::new_reference_to(Py::Boolean(ok));
+}
+
+PyObject* Application::sServeKickClient(PyObject * /*self*/, PyObject *args)
+{
+    unsigned long long id = 0;
+    if (!PyArg_ParseTuple(args, "K", &id))
+        return nullptr;
+    bool ok = Render::SceneStreamServer::instance().kickClient(id);
+    return Py::new_reference_to(Py::Boolean(ok));
+}
+
+PyObject* Application::sServeStop(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    Render::SceneStreamServer::instance().stop();
+    Py_Return;
 }
 
 PyObject* Application::sUpdateGui(PyObject * /*self*/, PyObject *args)
