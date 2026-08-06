@@ -459,8 +459,19 @@ SceneServeSource *SceneServeSource::serve(Document *doc, int port)
 
     auto &sources = servedDocuments();
     auto it = sources.find(doc);
-    if (it != sources.end())
+    if (it != sources.end()) {
+        // Already served — but the listener may have been stopped
+        // since (SceneStreamServer::stop, the share UI's teardown), and
+        // a re-serve with a port is how it comes back.
+        auto &server = Render::SceneStreamServer::instance();
+        if (port > 0 && !server.running() && !server.start(port)) {
+            Base::Console().Error(
+                "SceneServeSource: scene server failed to start on port %d\n",
+                port);
+            return nullptr;
+        }
         return it->second.get();
+    }
 
     // The source before the listener: constructing it claims the
     // document's group and installs its handlers, so the first-served
