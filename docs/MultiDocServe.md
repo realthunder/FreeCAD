@@ -1,10 +1,12 @@
 # Multi-document serving — one backend, several documents, one wire
 
-Status: **stages 3a–3d implemented** (§8) — the server is grouped by document, the gates
+Status: **stages 3a–3e implemented** (§8) — the server is grouped by document, the gates
 are re-keyed, the wire carries document names (hello `doc`/`client`, the `docs` listing,
 `switch`, the join gate, teardown re-homing), and the viewer speaks it: `?doc=`/`?client=`
 page parameters, a document section in the menu, switch riding the session-change reset.
-Only the token (3e) remains. Stage 2 of [HeadlessServe.md](./HeadlessServe.md) deliberately scoped
+The token gates every endpoint (§4), and the desktop grew the sharing UI around it —
+Share dialog, overlay indicator, client roster with per-client view-only/kick, stop (§6.1).
+Stage 2 of [HeadlessServe.md](./HeadlessServe.md) deliberately scoped
 serving to one source, one document, one port (its §5), and this document is the decision
 that reversed that scoping.
 
@@ -101,9 +103,19 @@ The hello grows three fields, all optional:
   viewer can show the list instead of dying.
 - `client` — a display label for this connection. Lands in `Conn`, the decisions journal,
   and later presence/attribution. Never parsed, never trusted.
-- `token` — checked against a server-side shared secret when one is configured (parameter
-  group, `FC_SERVE_TOKEN` override). When set, a hello without the matching token is
-  refused before any scene bytes move. When unset, behavior is exactly today's.
+- `token` — the door secret, checked when one is configured (set by the Share dialog
+  through `SceneStreamServer::setToken`, or preset by `FC_SERVE_TOKEN`). The scope grew
+  past the first sketch of this section, by decision: the token gates **every endpoint**,
+  not just the hello — each HTTP route (`/scene`, `/blob`, `/blobs`, `/level`,
+  `/decisions`, `/log`) answers 403 without a matching `?token=`, and the WebSocket
+  upgrade wants it in its request URL too. An upgrade that arrives without it still
+  handshakes — the token may come in the hello instead — but until a valid one is
+  presented the connection is *unauthorized*: no scene bytes are pushed and no verb but
+  the hello works; a hello with a wrong or missing token is answered
+  `{"cmd":"error","code":"BadToken"}` and the connection closed. When unset, behavior is
+  exactly today's. The viewer carries `?token=` on the upgrade, the polling `/scene`, and
+  every blob/level fetch (and the `/log` beacon), so a gated backend serves it exactly
+  like an open one.
 
 New text-channel verbs, symmetric JSON:
 
@@ -162,7 +174,36 @@ The consumers re-key from "is the server running" to "is *this* document served"
 - The viewer menu grows a document section, drawn from the `docs` push; picking an entry
   sends `switch`. The scene model, selection mirror and level state all reset exactly as on
   reconnect — the switch path reuses the reconnect machinery, it does not duplicate it.
-- `?client=` and `?token=` pass through to the hello. No UI beyond that in this pass.
+- `?client=` and `?token=` pass through to the hello — and `?token=` now also rides every
+  request the viewer makes (§4). A `Kicked` or `BadToken` error stops the reconnect loop
+  and says so in the status line; a 403 on the polling path does the same.
+
+### 6.1 The desktop sharing UI
+
+The host-side face of the token (`Gui/ShareDocument.cpp`, Tools → *Share document*):
+
+- **The Share dialog** starts serving the active document: port, external address (the
+  URL host viewers reach — with a tunnel or reverse proxy it differs from the bind
+  address), the viewer-page URL (the backend serves scenes, not pages; empty shows the
+  query tail alone), and a generated token (editable; clear it to share open). A live
+  preview shows the link; the settings persist in the `SceneShare` parameter group.
+- **The overlay indicator**: while sharing is up, a clickable "Sharing · N" pill sits on
+  the MDI area's top-right corner. N is the connection count, the tooltip is the link.
+- **The client panel** (click the pill): the share link with a copy button, and the
+  roster — client label, address, joined document, connection age, a per-client
+  *Can edit / View only* switch, and *Kick*. *Stop sharing* unserves the manager's
+  documents, stops the listener and clears the token.
+
+The server side of the roster is `SceneStreamServer::clients()` /
+`setClientViewOnly()` / `kickClient()` / `setClientsChangedNotifier()` / `stop()`.
+**View-only** means: the connection's picks are dropped (selection is shared room state,
+so changing it is an edit) and mutating control ops answer
+`{"ok":false,"code":"ViewOnly"}`; reads — the property inspector — keep working, and the
+client is told its mode with `{"cmd":"config","viewOnly":…}`. **Kick** tells the
+connection `{"cmd":"error","code":"Kicked"}` and closes it; a compliant viewer stops
+reconnecting, and the token (changed on the next share) is the actual ban. All of this is
+per-connection UI on top of the room model of §7 — it is not, and cannot be, a security
+boundary against anyone holding Python on the backend.
 
 ## 7. Users: a room, not a tenancy — and how a cloud service scales it
 
@@ -251,8 +292,11 @@ untouched at every step, since an unadorned hello must keep meaning "the default
   document, each seeing only its own manifest names; then a switch mid-connection.
 - **3d — the viewer.** `?doc=`, the menu section, switch-as-reconnect. Verified on real
   Chrome per the established recipe (headless masks gesture and reload behavior).
-- **3e — the token.** Last, because it is the only stage that can refuse a connection: a
-  wrong-token hello gets no scene bytes; an unset secret changes nothing.
+- **3e — the token, and the sharing UI.** Last, because it is the only stage that can
+  refuse a connection: a wrong-token hello gets no scene bytes; an unset secret changes
+  nothing. Grew past the sketch on decision: the token gates all endpoints (§4), and the
+  desktop got the Share dialog, the overlay indicator and the client panel (§6.1) —
+  per-client view-only, kick, stop sharing.
 
 ## 9. Non-goals
 
