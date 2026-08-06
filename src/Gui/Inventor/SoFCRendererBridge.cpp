@@ -674,9 +674,28 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     res.polygonoffsetunits = m.polygonoffsetunits;
 
     // Depth-occluded parts of on-top lines/points are dimmed to this alpha
-    // (SoFCRenderer's RenderPassLinePattern pass).
-    if (res.ontop && res.type != Render::Material::Triangle)
-        res.hiddenlinealpha = float(ViewParams::getTransparencyOnTop());
+    // (SoFCRenderer's RenderPassLinePattern pass). The selection highlight
+    // itself keeps full alpha there: GL's TransparencyOnTop dimming applies
+    // only when the pass has no RenderPassHighlight bit (applyMaterial
+    // ~564), i.e. never to the colored element draws of a partial
+    // selection nor to the whole-object lines of a full selection. The
+    // uncolored whole-on-top companions of a partial selection stay
+    // dimmed like GL's selsontop bucket — they are told apart by the
+    // FLAG_TRANSPARENCY override buildHighlightCache stamps on
+    // non-triangle whole-on-top companion materials (addWholeOnTop),
+    // which the colored highlight materials never carry.
+    if (res.ontop && res.type != Render::Material::Triangle) {
+        bool highlightline = false;
+        if (selId > 0 && !m.partialhighlight) {
+            if (selId & SoFCRenderer::SelIdPartial)
+                highlightline = !m.overrideflags.test(
+                        CoinMaterial::FLAG_TRANSPARENCY);
+            else if (selId & SoFCRenderer::SelIdFull)
+                highlightline = true;
+        }
+        if (!highlightline)
+            res.hiddenlinealpha = float(ViewParams::getTransparencyOnTop());
+    }
 
     // Selected/preselected face outline (GL: renderOutline under the
     // RenderPassSelectionOutline pass, issued for partial triangle
