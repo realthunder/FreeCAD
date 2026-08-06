@@ -739,6 +739,26 @@ def _make_serve(server, fallback, host: str, port: int):
     return uv, uv.run
 
 
+_atexit_registered = False
+
+
+def _atexit_cleanup():
+    """Detach from the interpreter before it goes away.
+
+    Runs early in interpreter shutdown, while Python is still fully alive.
+    Two things must not outlive this point: the uvicorn daemon thread (it
+    would keep calling into Python during finalization) and the C++-side
+    console observer (Base::Console messages emitted after Py_Finalize --
+    main() logs "completely terminated" after destructing the App -- would
+    call back into a torn-down runtime).
+    """
+    try:
+        stop(timeout=1.0)
+    except Exception:
+        pass
+    _detach_log_observer()
+
+
 def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT,
           log: Optional[str] = None) -> str:
     """Start the MCP console server on a background thread.
@@ -749,10 +769,15 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT,
     Console capture is attached for the life of the server; ``log`` overrides
     where it is written (default ``<UserAppData>/mcp_console.log``).
     """
-    global _executor, _server_thread, _mcp, _uvicorn, _bound
+    global _executor, _server_thread, _mcp, _uvicorn, _bound, _atexit_registered
 
     if is_running():
         return "MCP console already running at " + url()
+
+    if not _atexit_registered:
+        import atexit
+        atexit.register(_atexit_cleanup)
+        _atexit_registered = True
 
     _bound = (host, port)
     _seed_namespace()
@@ -824,6 +849,8 @@ def stop(timeout: float = 5.0) -> str:
     _uvicorn = None
     _mcp = None
     _executor = None
+    # Console capture is documented to last "for the life of the server".
+    _detach_log_observer()
     return "MCP console stopped (was " + was + ")"
 
 
