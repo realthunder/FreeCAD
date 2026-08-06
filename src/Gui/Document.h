@@ -203,8 +203,9 @@ public:
     /// Write those records as the block the objects refer to, byte for byte.
     void saveDefaults(Base::Writer &writer,
             const std::map<std::string, App::SharedDefaults> &defaults) const;
-    /// Read the block back and keep whatever it says that this build does not.
-    void restoreDefaults(Base::XMLReader &reader, int count);
+    /// Read the block back and keep whatever it says that this build does
+    /// not, comparing at the archive's schema (not this file's own).
+    void restoreDefaults(Base::XMLReader &reader, int count, int schemaVersion);
     /// Put that difference on one view provider, before its own properties.
     void applyDefaults(ViewProvider *vp);
     //@}

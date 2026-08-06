@@ -1358,15 +1358,27 @@ std::unique_ptr<DocumentObject> makeDefaultObject(const char *typeName)
     return res;
 }
 
-// Set while a <Defaults> block is being read into a stand-in, and consulted
-// by Property::touch(). See Document::isRestoringDefaults().
-bool _RestoringDefaults;
+// Raised while a <Defaults> block is being read into a stand-in, and
+// consulted by Property::touch(). A counter rather than a bool so the App
+// and Gui readers cannot un-say each other. See
+// Document::isRestoringDefaults().
+int _RestoringDefaults;
 
 } // anonymous namespace
 
 bool Document::isRestoringDefaults()
 {
-    return _RestoringDefaults;
+    return _RestoringDefaults > 0;
+}
+
+Document::RestoringDefaultsGuard::RestoringDefaultsGuard()
+{
+    ++_RestoringDefaults;
+}
+
+Document::RestoringDefaultsGuard::~RestoringDefaultsGuard()
+{
+    --_RestoringDefaults;
 }
 
 void Document::buildDefaults(Base::Writer &writer,
@@ -1442,7 +1454,7 @@ void Document::restoreDefaults(Base::XMLReader &reader, int count)
     // LinkBaseExtension::update() dereferencing a null document. Nothing here
     // is a change to anything anyway -- there is no object behind these
     // values, only a record of what a class starts out holding.
-    Base::StateLocker guard(_RestoringDefaults);
+    RestoringDefaultsGuard restoringGuard;
 
     reader.readElement(FC_ELEM_DEFAULTS);
     for (int i=0; i<count; ++i) {
@@ -1455,36 +1467,58 @@ void Document::restoreDefaults(Base::XMLReader &reader, int count)
         // wrote the file there is none.
         //
         // ⚠️ Two stand-ins, not one stand-in and a pile of Property::Copy().
-        // The comparison has to be the same one the writer made -- one live
-        // property against another live property of the same class -- and a
-        // detached copy is not that. A copy has no container, so the link
-        // properties compare by a scope they no longer know and the
-        // enumerations by a list they no longer have, and the answer comes
-        // back "differs" for a good half of an object's properties that are
-        // in fact identical.
+        // A detached copy has no container, so link properties compare by a
+        // scope they no longer know and enumerations by a list they no
+        // longer have. Two live stand-ins of the same class, both serialized
+        // the way the writer serialized, is the comparison the writer made.
         auto fresh = proto ? makeDefaultObject(type.c_str()) : nullptr;
         if (proto && fresh) {
-            std::vector<App::Property*> props;
-            proto->getPropertyList(props);
+            // Names before the restore, lookups after it. A block written by
+            // a different build may create or replace properties on the way
+            // in, so pointers collected here would not be trusted afterwards.
+            std::vector<std::string> candidates;
+            {
+                std::vector<App::Property*> props;
+                proto->getPropertyList(props);
+                for (auto prop : props)
+                    if (SharedDefaults::eligible(*proto, *prop))
+                        candidates.emplace_back(prop->getName());
+            }
 
             proto->App::PropertyContainer::Restore(reader);
 
+            // The diff is decided the same way the writer decided the
+            // elision: by the bytes each side serializes to, through
+            // SharedDefaults::serializeForCompare on both. Serializing the
+            // restored proto rather than trusting the file's literal text
+            // cancels whatever formatting a parse-and-save round trip
+            // applies, so a difference here is a difference in what was
+            // recorded, not in how a float prints. Status counts too, mod
+            // Touched -- a pasted default must carry the writer's status the
+            // way a written property carries its status attribute.
+            const unsigned long touchedMask = 1UL << Property::Touched;
             DocumentP::RestoreDefaults entry;
-            for (auto prop : props) {
-                if (!prop->getName())
+            std::string recorded, built;
+            for (const auto &name : candidates) {
+                auto prop = proto->getPropertyByName(name.c_str());
+                auto other = fresh->getPropertyByName(name.c_str());
+                if (!prop || !other || prop->getTypeId() != other->getTypeId())
                     continue;
-                // A property the writer was never allowed to leave out does
-                // not need a default put back, and must not get one: it is on
-                // that list precisely because the stand-in cannot speak for
-                // it, so pasting the stand-in's copy would do damage. Same
-                // for a type that never opted in (canShareDefault) -- no
-                // writer elided it, whatever a foreign block may claim.
-                if (proto->mustSave(*prop) || !prop->canShareDefault())
-                    continue;
-                auto other = fresh->getPropertyByName(prop->getName());
-                if (other && other->getTypeId() == prop->getTypeId()
-                          && !prop->isSame(*other))
-                    entry.names.emplace_back(prop->getName());
+                bool differs = (prop->getStatus() & ~touchedMask)
+                        != (other->getStatus() & ~touchedMask);
+                if (!differs) {
+                    // A side that will not serialize is a side that cannot
+                    // be compared, and a default nobody compared is not
+                    // pasted over anything.
+                    if (!SharedDefaults::serializeForCompare(reader.DocumentSchema,
+                                reader.FileVersion, *prop, recorded)
+                            || !SharedDefaults::serializeForCompare(reader.DocumentSchema,
+                                reader.FileVersion, *other, built))
+                        continue;
+                    differs = (recorded != built);
+                }
+                if (differs)
+                    entry.names.emplace_back(name);
             }
             if (!entry.names.empty() && FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
                 // Named, not just counted. On the build that wrote the file
@@ -1519,8 +1553,33 @@ void Document::applyDefaults(DocumentObject *obj)
     for (const auto &name : it->second.names) {
         auto prop = obj->getPropertyByName(name.c_str());
         auto other = it->second.proto->getPropertyByName(name.c_str());
-        if (prop && other && prop->getTypeId() == other->getTypeId())
+        if (!prop || !other || prop->getTypeId() != other->getTypeId())
+            continue;
+        // Status first and value second, the order Restore itself uses --
+        // and the same masking of the reserved User bits. Behind the same
+        // kind of per-property net, too: one recorded default that will not
+        // paste must cost that property, not the whole document.
+        try {
+            Property::StatusBits status(other->getStatus());
+            status.reset(Property::User1);
+            status.reset(Property::User2);
+            status.reset(Property::User3);
+            prop->setStatusValue(status.to_ulong());
             prop->Paste(*other);
+        }
+        catch (Base::Exception &e) {
+            e.ReportException();
+            FC_ERR("Failed to apply default " << obj->getFullName()
+                    << '.' << name);
+        }
+        catch (const std::exception &e) {
+            FC_ERR("Failed to apply default " << obj->getFullName()
+                    << '.' << name << ": " << e.what());
+        }
+        catch (...) {
+            FC_ERR("Failed to apply default " << obj->getFullName()
+                    << '.' << name);
+        }
     }
 }
 

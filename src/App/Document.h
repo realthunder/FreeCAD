@@ -364,6 +364,21 @@ public:
      */
     static bool isRestoringDefaults();
 
+    /** RAII for isRestoringDefaults(), shared by every block reader.
+     *
+     * The Gui document restores its view provider blocks into stand-ins of
+     * its own, and a detached view provider's reaction to a property is no
+     * more written for the occasion than a detached object's -- one guard,
+     * both readers.
+     */
+    class AppExport RestoringDefaultsGuard {
+    public:
+        RestoringDefaultsGuard();
+        ~RestoringDefaultsGuard();
+        RestoringDefaultsGuard(const RestoringDefaultsGuard &) = delete;
+        RestoringDefaultsGuard &operator=(const RestoringDefaultsGuard &) = delete;
+    };
+
     /** Add an existing feature with sName (ASCII) to this document and set it active.
      * Unicode names are set through the Label property.
      * This is an overloaded function of the function above and can be used to create

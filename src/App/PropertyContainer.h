@@ -178,6 +178,16 @@ public:
     /// version), plus forced XML and no indentation.
     void build(const PropertyContainer &standIn, const Base::Writer &fileWriter);
 
+    /** The one eligibility test, shared by writer and readers.
+     *
+     * Eligible means: named, static, owned by this container, persistent,
+     * not transient, the type opted in (Property::canShareDefault) and the
+     * container did not veto (mustSave). The writer records and elides by
+     * it, the readers diff and paste by it; a second copy of this list
+     * would be a place for the two to disagree.
+     */
+    static bool eligible(const PropertyContainer &owner, const Property &prop);
+
     /// Emit the record as the <Properties> element of a <Default> block,
     /// byte-for-byte the content build() recorded.
     void save(Base::Writer &writer) const;
@@ -192,10 +202,14 @@ public:
     /** Serialize one property the way build() does, for comparison.
      *
      * Returns false -- never throws -- when the property will not
-     * serialize; the caller then writes it out as usual. Both sides of
-     * every comparison must come from here, or the bytes stop meaning
-     * the same thing.
+     * serialize; the caller then writes it out as usual (writer side) or
+     * declines to paste (reader side). Both sides of every comparison must
+     * come from here, or the bytes stop meaning the same thing. The int
+     * overload is for the readers, which have a file's declared schema and
+     * version rather than a writer.
      */
+    static bool serializeForCompare(int schemaVersion, int fileVersion,
+                                    const Property &prop, std::string &out);
     static bool serializeForCompare(const Base::Writer &fileWriter,
                                     const Property &prop, std::string &out);
 

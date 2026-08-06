@@ -1748,11 +1748,17 @@ std::unique_ptr<ViewProvider> makeDefaultViewProvider(const char *typeName)
 
 } // anonymous namespace
 
-void Document::restoreDefaults(Base::XMLReader &xmlReader, int count)
+void Document::restoreDefaults(Base::XMLReader &xmlReader, int count, int schemaVersion)
 {
     d->_restoreDefaults.clear();
     if (count <= 0)
         return;
+
+    // The stand-ins belong to no document, and a detached view provider's
+    // reaction to a property changing is no more written for the occasion
+    // than a detached object's. Same guard as the App reader; nothing here
+    // is a change to anything, only a record being read.
+    App::Document::RestoringDefaultsGuard restoringGuard;
 
     xmlReader.readElement(FC_ELEM_DEFAULTS);
     for (int i=0; i<count; ++i) {
@@ -1760,30 +1766,53 @@ void Document::restoreDefaults(Base::XMLReader &xmlReader, int count)
         xmlReader.readElement(FC_ELEM_DEFAULT, &guard);
         std::string type = xmlReader.getAttribute("type");
         auto proto = makeDefaultViewProvider(type.c_str());
-        if (proto) {
-            // What the record says against what this build produces. Only the
-            // difference has to be pasted onto anything, and on the machine
-            // that wrote the file there is none.
-            std::vector<std::unique_ptr<App::Property>> before;
-            std::vector<App::Property*> props;
-            proto->getPropertyList(props);
-            before.reserve(props.size());
-            for (auto prop : props)
-                before.emplace_back(prop->Copy());
+        // ⚠️ Two stand-ins, not one stand-in and a pile of Property::Copy().
+        // A detached copy has no container, so enumerations compare by a
+        // list they no longer have and the diff answers "differs" for
+        // properties that are identical. Two live stand-ins, both
+        // serialized the way the writer serialized, is the comparison the
+        // writer made -- the App reader learned this first, and there is
+        // nothing view-provider-shaped about the lesson.
+        auto fresh = proto ? makeDefaultViewProvider(type.c_str()) : nullptr;
+        if (proto && fresh) {
+            // Names before the restore, lookups after it: a block written
+            // by a different build may create or replace properties on the
+            // way in.
+            std::vector<std::string> candidates;
+            {
+                std::vector<App::Property*> props;
+                proto->getPropertyList(props);
+                for (auto prop : props)
+                    if (App::SharedDefaults::eligible(*proto, *prop))
+                        candidates.emplace_back(prop->getName());
+            }
 
             proto->App::PropertyContainer::Restore(xmlReader);
 
+            // Byte-diff, exactly as the writer elided: both sides through
+            // serializeForCompare, status compared mod Touched. See the App
+            // reader for why the file's literal text is not one of the
+            // sides.
+            const unsigned long touchedMask = 1UL << App::Property::Touched;
             DocumentP::RestoreDefaults entry;
-            for (std::size_t j=0; j<props.size(); ++j) {
-                // A property the writer was never allowed to leave out does
-                // not need a default put back, and must not get one: it is on
-                // that list precisely because the stand-in cannot speak for
-                // it, so pasting the stand-in's copy would do damage.
-                if (props[j]->getName() && before[j]
-                        && !proto->mustSave(*props[j])
-                        && props[j]->canShareDefault()
-                        && !props[j]->isSame(*before[j]))
-                    entry.names.emplace_back(props[j]->getName());
+            std::string recorded, built;
+            for (const auto &name : candidates) {
+                auto prop = proto->getPropertyByName(name.c_str());
+                auto other = fresh->getPropertyByName(name.c_str());
+                if (!prop || !other || prop->getTypeId() != other->getTypeId())
+                    continue;
+                bool differs = (prop->getStatus() & ~touchedMask)
+                        != (other->getStatus() & ~touchedMask);
+                if (!differs) {
+                    if (!App::SharedDefaults::serializeForCompare(schemaVersion,
+                                xmlReader.FileVersion, *prop, recorded)
+                            || !App::SharedDefaults::serializeForCompare(schemaVersion,
+                                xmlReader.FileVersion, *other, built))
+                        continue;
+                    differs = (recorded != built);
+                }
+                if (differs)
+                    entry.names.emplace_back(name);
             }
             if (!entry.names.empty())
                 FC_LOG("Default view provider " << type << " differs in "
@@ -1809,8 +1838,32 @@ void Document::applyDefaults(ViewProvider *vp)
     for (const auto &name : it->second.names) {
         auto prop = vp->getPropertyByName(name.c_str());
         auto other = it->second.proto->getPropertyByName(name.c_str());
-        if (prop && other && prop->getTypeId() == other->getTypeId())
+        if (!prop || !other || prop->getTypeId() != other->getTypeId())
+            continue;
+        // Status first and value second, the order Restore itself uses,
+        // behind the same kind of per-property net: one recorded default
+        // that will not paste must cost that property, not the view file.
+        try {
+            App::Property::StatusBits status(other->getStatus());
+            status.reset(App::Property::User1);
+            status.reset(App::Property::User2);
+            status.reset(App::Property::User3);
+            prop->setStatusValue(status.to_ulong());
             prop->Paste(*other);
+        }
+        catch (Base::Exception &e) {
+            e.ReportException();
+            FC_ERR("Failed to apply default " << vp->getFullName()
+                    << '.' << name);
+        }
+        catch (const std::exception &e) {
+            FC_ERR("Failed to apply default " << vp->getFullName()
+                    << '.' << name << ": " << e.what());
+        }
+        catch (...) {
+            FC_ERR("Failed to apply default " << vp->getFullName()
+                    << '.' << name);
+        }
     }
 }
 
@@ -1852,7 +1905,12 @@ void Document::RestoreDocFile(Base::Reader &reader)
             int Cnt = xmlReader.getAttributeAsInteger("Count");
             FC_TIME_INIT(t);
             auto stats = App::PropertyContainer::restoreStats;
-            restoreDefaults(xmlReader, xmlReader.getAttributeAsInteger(FC_ATTR_DEFAULTS,"0"));
+            // The App document's schema, not this file's own SchemaVersion:
+            // the blocks were recorded by the writer that produced the whole
+            // archive, and the comparison has to serialize at its settings.
+            restoreDefaults(xmlReader,
+                    xmlReader.getAttributeAsInteger(FC_ATTR_DEFAULTS,"0"),
+                    reader.getDocumentSchema());
             for (int i=0; i<Cnt; i++) {
                 int guard;
                 xmlReader.readElement("ViewProvider",&guard);

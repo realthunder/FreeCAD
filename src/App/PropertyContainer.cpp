@@ -462,6 +462,28 @@ std::size_t PropertyContainer::savedDefaultsStatus;
 bool SharedDefaults::serializeForCompare(const Base::Writer &fileWriter,
                                          const Property &prop, std::string &out)
 {
+    return serializeForCompare(fileWriter.getSchemaVersion(),
+                               fileWriter.getFileVersion(), prop, out);
+}
+
+bool SharedDefaults::eligible(const PropertyContainer &owner, const Property &prop)
+{
+    if (!prop.getName() || prop.getContainer() != &owner)
+        return false;
+    if (!prop.canShareDefault()
+            || prop.testStatus(Property::PropDynamic)
+            || owner.mustSave(prop))
+        return false;
+    if (prop.testStatus(Property::PropNoPersist)
+            || prop.testStatus(Property::Transient)
+            || (prop.getType() & Prop_Transient))
+        return false;
+    return true;
+}
+
+bool SharedDefaults::serializeForCompare(int schemaVersion, int fileVersion,
+                                         const Property &prop, std::string &out)
+{
     try {
         // A writer of its own, fresh each time: the canonical settings are
         // the file's schema and version with XML forced and no indentation,
@@ -469,8 +491,8 @@ bool SharedDefaults::serializeForCompare(const Base::Writer &fileWriter,
         // the next comparison to inherit. Fresh construction is a string
         // and a stream -- cheap against what a single elision saves.
         Base::StringWriter scratch;
-        scratch.setSchemaVersion(fileWriter.getSchemaVersion());
-        scratch.setFileVersion(fileWriter.getFileVersion());
+        scratch.setSchemaVersion(schemaVersion);
+        scratch.setFileVersion(fileVersion);
         scratch.setForceXML(9999);
         prop.Save(scratch);
         out = scratch.getString();
@@ -500,15 +522,7 @@ void SharedDefaults::build(const PropertyContainer &standIn,
         // The same eligibility the writer applies, settled once at the point
         // of recording: what is not in here can never be elided, whatever a
         // container might have answered.
-        if (!prop->getName() || prop->getContainer() != &standIn)
-            continue;
-        if (!prop->canShareDefault()
-                || prop->testStatus(Property::PropDynamic)
-                || standIn.mustSave(*prop))
-            continue;
-        if (prop->testStatus(Property::PropNoPersist)
-                || prop->testStatus(Property::Transient)
-                || (prop->getType() & Prop_Transient))
+        if (!eligible(standIn, *prop))
             continue;
         Entry entry;
         entry.type = prop->getTypeId();
