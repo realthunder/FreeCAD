@@ -344,4 +344,5 @@ a different justification, and conflating them is what would drag a GPU back int
 
 Multi-document serving is out of scope: one source, one document, one port. The server is a
 singleton (`SceneStreamServer::instance()`) and `beginPublish()` already arbitrates a single
-publisher, so a second source would have to be a server change first.
+publisher, so a second source would have to be a server change first. That server change is
+now designed — see [MultiDocServe.md](./MultiDocServe.md).
