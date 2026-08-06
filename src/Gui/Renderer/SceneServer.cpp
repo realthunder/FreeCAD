@@ -179,9 +179,13 @@ public:
             return {};
         if (peerIp != "127.0.0.1" && peerIp != "::1")
             return {};
-        // The list is client, proxy, proxy… — the first entry is the
-        // one that reached the outermost proxy.
-        std::string value = headerValue(req, "x-forwarded-for");
+        // Cloudflare guarantees CF-Connecting-IP (docs/ShareAccess.md
+        // §5); X-Forwarded-For is everyone else's spelling, a list of
+        // client, proxy, proxy… whose first entry is the one that
+        // reached the outermost proxy.
+        std::string value = headerValue(req, "cf-connecting-ip");
+        if (value.empty())
+            value = headerValue(req, "x-forwarded-for");
         if (value.empty())
             return {};
         auto comma = value.find(',');
@@ -1821,6 +1825,15 @@ public:
         uint64_t &sent = conn.sent;
         std::string inbuf;
         int stampTick = 0;
+        // Keepalive (docs/ShareAccess.md §5): a parked viewer sends and
+        // receives nothing while the model is unchanged, and anything
+        // with an idle timeout in the path drops it — Cloudflare closes
+        // a quiet WebSocket at 100 s, 60 s is a common proxy default. A
+        // ping whenever 30 s pass without a send keeps the stream
+        // visibly alive in both directions (the browser answers the
+        // pong itself), and turns a silently dead connection into a
+        // send failure instead of a socket parked forever.
+        auto lastSend = std::chrono::steady_clock::now();
         for (;;) {
             // Live bundle-stamp check (~every 5s at the 200ms poll):
             // a WASM rebuild while this backend serves pushes the
@@ -1940,6 +1953,14 @@ public:
             for (const std::string &text : texts) {
                 if (!sendFrame(fd, 1, text.data(), text.size()))
                     return;
+            }
+            auto now = std::chrono::steady_clock::now();
+            if (!body.empty() || !texts.empty()) {
+                lastSend = now;
+            } else if (now - lastSend >= std::chrono::seconds(30)) {
+                if (!sendFrame(fd, 9, nullptr, 0))
+                    return;
+                lastSend = now;
             }
         }
     }
