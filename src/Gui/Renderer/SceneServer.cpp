@@ -791,7 +791,10 @@ public:
         /// names this connection in the decisions journal and the
         /// sharing roster. Never parsed, never trusted.
         std::string client;
-        /// Peer address, for the roster.
+        /// Peer address and port, for the roster. The port is what
+        /// tells two connections apart when they share an address —
+        /// which every tunnelled viewer does (they all arrive as the
+        /// tunnel's local end).
         std::string addr;
         /// The joined document's name, mirrored under connMutex for
         /// the roster — \a group itself is owner-thread-only.
@@ -1533,12 +1536,16 @@ public:
 
         // WebSocket upgrade: handshake, then stay in the push loop.
         if (!wsKey.empty()) {
-            char addr[64] = "";
+            char addr[80] = "";
             sockaddr_in peer = {};
             socklen_t plen = sizeof(peer);
             if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
-                              &plen) == 0)
-                ::inet_ntop(AF_INET, &peer.sin_addr, addr, sizeof(addr));
+                              &plen) == 0) {
+                char ip[64] = "";
+                ::inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof(ip));
+                std::snprintf(addr, sizeof(addr), "%s:%u", ip,
+                              unsigned(ntohs(peer.sin_port)));
+            }
             if (handshake(fd, wsKey))
                 wsLoop(fd, clientVersion, s, doc, authorized, addr);
             return;
@@ -2021,6 +2028,20 @@ public:
                 }
                 std::lock_guard<std::mutex> guard(connMutex);
                 conn.pendingText.push_back(reply);
+                return;
+            }
+            // Rename this connection (docs/MultiDocServe.md §4): the
+            // hello's label, changed on an open connection, so a
+            // viewer can name itself from its menu without
+            // reconnecting. Nothing but the roster reads it.
+            if (json.find("\"cmd\":\"client\"") != std::string::npos) {
+                std::string name;
+                jsonStr(json, "name", name);
+                {
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.client = name;
+                }
+                notifyClientsChanged();
                 return;
             }
             // Leave the current document, join another. Versioning-
