@@ -1788,16 +1788,23 @@ public:
                 if (!consumeFrames(fd, conn, inbuf))
                     return;
             }
-            // The host asked this connection closed (kickClient, or a
-            // server stop): say so — a compliant viewer stops
-            // reconnecting when told — and hang up.
+            // The host asked this connection closed (kickClient, a
+            // server stop, or its own bad-token hello): drain what was
+            // queued for it — a BadToken refusal rides there — then
+            // say so, so a compliant viewer stops reconnecting, and
+            // hang up.
             {
                 bool kicked;
+                std::vector<std::string> texts;
                 {
                     std::lock_guard<std::mutex> guard(connMutex);
                     kicked = conn.kicked;
+                    if (kicked)
+                        texts.swap(conn.pendingText);
                 }
                 if (kicked) {
+                    for (const std::string &text : texts)
+                        sendFrame(fd, 1, text.data(), text.size());
                     static const char bye[] =
                         "{\"cmd\":\"error\",\"code\":\"Kicked\"}";
                     sendFrame(fd, 1, bye, sizeof(bye) - 1);
