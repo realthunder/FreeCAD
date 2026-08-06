@@ -770,6 +770,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Separator"
           << "Std_DemoMode"
           << "Std_UnitsCalculator"
+          << "Std_ShareDocument"
           << "Separator"
           << "Std_DlgCustomize";
 #ifdef BUILD_ADDONMGR

@@ -49,6 +49,7 @@
 #include "MainWindow.h"
 #include "OnlineDocumentation.h"
 #include "Selection.h"
+#include "ShareDocument.h"
 #include "Splashscreen.h"
 #include "WhatsThis.h"
 #include "Widgets.h"
@@ -923,6 +924,31 @@ void StdCmdUnitsCalculator::activated(int iMsg)
 }
 
 //===========================================================================
+// Std_ShareDocument
+//===========================================================================
+
+DEF_STD_CMD(StdCmdShareDocument)
+
+StdCmdShareDocument::StdCmdShareDocument()
+  : Command("Std_ShareDocument")
+{
+    sGroup        = "Tools";
+    sMenuText     = QT_TR_NOOP("S&hare document...");
+    sToolTipText  = QT_TR_NOOP("Share the active document with streaming "
+                               "viewers over a tokened link");
+    sWhatsThis    = "Std_ShareDocument";
+    sStatusTip    = QT_TR_NOOP("Share the active document with streaming "
+                               "viewers over a tokened link");
+    eType         = 0;
+}
+
+void StdCmdShareDocument::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    ShareDocumentManager::instance().openShareDialog();
+}
+
+//===========================================================================
 // Std_CmdHistory
 //===========================================================================
 
@@ -1257,6 +1283,7 @@ void CreateStdCommands()
     rcCmdMgr.addCommand(new StdCmdReportBug());
     rcCmdMgr.addCommand(new StdCmdTextDocument());
     rcCmdMgr.addCommand(new StdCmdUnitsCalculator());
+    rcCmdMgr.addCommand(new StdCmdShareDocument());
     rcCmdMgr.addCommand(new StdCmdHistory());
     rcCmdMgr.addCommand(new StdCmdToolbarMenus());
     rcCmdMgr.addCommand(new StdCmdRestart());
