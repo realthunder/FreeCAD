@@ -528,7 +528,14 @@ void SharedDefaults::build(const PropertyContainer &standIn,
         entry.type = prop->getTypeId();
         entry.status = prop->getStatus();
         entry.memSize = prop->getMemSize();
-        if (serializeForCompare(fileWriter, *prop, entry.content))
+        // A Save can emit nothing against the stand-in and still emit
+        // something against a real owner -- PropertyXLink returns without
+        // writing when its container has no document. Such a recording can
+        // never equal any object's own bytes, so it buys no elision, and the
+        // property's Restore cannot parse emptiness when the block is read
+        // back. Not recorded means not elidable, which is the safe direction.
+        if (serializeForCompare(fileWriter, *prop, entry.content)
+                && !entry.content.empty())
             entries.emplace(prop->getName(), std::move(entry));
     }
 }
