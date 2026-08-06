@@ -1781,6 +1781,7 @@ void Document::restoreDefaults(Base::XMLReader &xmlReader, int count)
                 // it, so pasting the stand-in's copy would do damage.
                 if (props[j]->getName() && before[j]
                         && !proto->mustSave(*props[j])
+                        && props[j]->canShareDefault()
                         && !props[j]->isSame(*before[j]))
                     entry.names.emplace_back(props[j]->getName());
             }

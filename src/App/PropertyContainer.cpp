@@ -345,9 +345,15 @@ void PropertyContainer::save (Base::Writer &writer, bool asDefaults) const
     // of them writing it is not merely wasted. A property that owns an archive
     // entry would have the stand-in claim one, and a restore written for a
     // property whose owner is in a document has no owner to ask.
+    //
+    // The same goes for a property whose type never opted in to being spoken
+    // for (canShareDefault), and for a dynamic property: no reader will ever
+    // elide against either, so recording them is bytes nobody reads.
     if (asDefaults) {
         for (auto it = Map.begin(); it != Map.end();) {
-            if (mustSave(*it->second))
+            if (mustSave(*it->second)
+                    || !it->second->canShareDefault()
+                    || it->second->testStatus(Property::PropDynamic))
                 it = Map.erase(it);
             else
                 ++it;
@@ -355,20 +361,25 @@ void PropertyContainer::save (Base::Writer &writer, bool asDefaults) const
     }
 
     // Drop everything a shared default block already says. A property counts
-    // as said when the defaults hold one of the same name and type whose
-    // value and status both match; anything the defaults do not know about --
-    // a dynamic property, one an extension added -- is never dropped.
+    // as said when its type opted in (canShareDefault), the container does
+    // not veto it (mustSave), and the defaults hold one of the same name and
+    // type whose value and status both match. Anything else -- a dynamic
+    // property, one an extension added, a type that never opted in -- is
+    // never dropped, and the opt-outs are checked first so the counters
+    // below only speak about properties that were actually eligible.
     if (auto defaults = getSaveDefaults()) {
         const unsigned long touchedMask = 1UL << Property::Touched;
         for (auto it = Map.begin(); it != Map.end();) {
+            if (!it->second->canShareDefault()
+                       || it->second->testStatus(Property::PropDynamic)
+                       || mustSave(*it->second)) {
+                ++it;
+                continue;
+            }
             auto other = defaults->getPropertyByName(it->first.c_str());
             if (!other || other->getContainer() != defaults
                        || other->getTypeId() != it->second->getTypeId()) {
                 ++savedDefaultsUnknown;
-                ++it;
-            }
-            else if (it->second->testStatus(Property::PropDynamic)
-                       || mustSave(*it->second)) {
                 ++it;
             }
             else if (!it->second->isSame(*other)) {

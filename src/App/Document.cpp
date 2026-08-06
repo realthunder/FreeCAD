@@ -1480,8 +1480,10 @@ void Document::restoreDefaults(Base::XMLReader &reader, int count)
                 // A property the writer was never allowed to leave out does
                 // not need a default put back, and must not get one: it is on
                 // that list precisely because the stand-in cannot speak for
-                // it, so pasting the stand-in's copy would do damage.
-                if (proto->mustSave(*prop))
+                // it, so pasting the stand-in's copy would do damage. Same
+                // for a type that never opted in (canShareDefault) -- no
+                // writer elided it, whatever a foreign block may claim.
+                if (proto->mustSave(*prop) || !prop->canShareDefault())
                     continue;
                 auto other = fresh->getPropertyByName(prop->getName());
                 if (other && other->getTypeId() == prop->getTypeId()

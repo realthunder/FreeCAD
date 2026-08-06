@@ -74,6 +74,10 @@ class AppExport PropertyExpressionEngine : public App::PropertyExpressionContain
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 public:
+    // Opted back in past PropertyXLinkContainer's opt-out: almost every
+    // object carries an engine holding nothing, and an empty engine
+    // serializes to one line.
+    bool canShareDefault() const override { return true; }
 
     void updateElementReference(
             App::DocumentObject *feature, bool reverse=false, bool notify=false) override;

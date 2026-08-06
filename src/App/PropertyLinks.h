@@ -109,6 +109,7 @@ class AppExport PropertyLinkBase : public Property, public ScopedLink
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 public:
+    bool canShareDefault() const override { return true; }
     using ShadowSub = std::pair<std::string,std::string>;
 
     PropertyLinkBase();
@@ -1501,6 +1502,11 @@ public:
 class AppExport PropertyXLinkContainer : public PropertyLinkBase {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 public:
+    // Inherits PropertyLinkBase's opt-in, but this branch holds containers
+    // of arbitrary content (expression engines, spreadsheet cells) whose
+    // serialization is neither small nor simple by construction. Subclasses
+    // that can afford the comparison opt back in individually.
+    bool canShareDefault() const override { return false; }
     PropertyXLinkContainer();
     ~PropertyXLinkContainer() override;
 
