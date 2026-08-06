@@ -131,10 +131,17 @@ on the same machine: **trust the header only from a loopback peer**, exactly the
 `X-Forwarded-For` rule of MultiDocServe.md §6.1. Start there; add signature verification if
 the front door ever moves off-box.
 
-**The cost, stated plainly.** Cloudflare and ngrok terminate TLS, so they see the CAD data.
-The self-hosted variant keeps the bytes on our own host while still delegating *identity*
-to Google/GitHub. And any edge auth breaks headless probes unless the token path stays or
-service tokens are issued.
+**The cost, stated plainly.** Cloudflare and ngrok terminate TLS, so they see what the
+wire carries. That is **not the CAD data**: the stream is tessellated meshes at view
+tolerance, materials/textures, the object tree with names, and property values for
+selected objects (the inspector card). The `.FCStd`, feature history, sketches,
+constraints, and B-rep never cross the wire. So the exposure is roughly "an STL export
+plus a named BOM" — the design intent is unrecoverable, but for parts whose *shape* is
+the secret, view-tolerance triangles are enough to remanufacture from. Choose
+self-hosted when the shape itself is sensitive; otherwise this cost is modest. The
+self-hosted variant keeps even the triangles on our own host while still delegating
+*identity* to Google/GitHub. And any edge auth breaks headless probes unless the token
+path stays or service tokens are issued.
 
 ## 5. Relays and tunnels (the transport question, separate from auth)
 
@@ -147,8 +154,9 @@ Surveyed 2026-08-06 for exposing a share publicly:
 - **ngrok** — 1 GB/month, 3 endpoints, and a browser interstitial our viewer page would hit
   on every load.
 - **Tailscale Funnel** — HTTPS only on 443/8443/10000; aimed at internal-first.
-- **Self-hosted on the existing linode** — `frp`, `chisel`, or Caddy. Recommended: we
-  already own the box, and nothing third-party sees the model. Replacing the hand-written
+- **Self-hosted on the existing linode** — `frp`, `chisel`, or Caddy. We already own the
+  box, and nothing third-party sees even the triangles (§4 on what the wire actually
+  carries — the parametric model never crosses it either way). Replacing the hand-written
   `scripts/scene-proxy.py` with Caddy would also bring real TLS (so `wss://` and a secure
   context on phones).
 - **Managed realtime relays** (Ably, Pusher, PartyKit, Liveblocks) are the wrong category:
@@ -167,8 +175,10 @@ Surveyed 2026-08-06 for exposing a share publicly:
 
 1. **Identity key** — verified email (readable in `user.cfg`, changes when the person's
    email does) or IdP `sub` (stable, unreadable)?
-2. **First front door** — self-hosted Caddy + oauth2-proxy (our data stays ours) or
-   Cloudflare Access (working in five minutes, they see the scenes)?
+2. **First front door** — self-hosted Caddy + oauth2-proxy (even the triangles stay
+   ours) or Cloudflare Access (working in five minutes; sees the display meshes, never
+   the parametric model — see §4)? The exposure being mesh-level, not model-level,
+   weakens the confidentiality case for self-hosting.
 3. **Session token storage** if we keep one — `localStorage` (a reload rejoins as the same
    session; bans stick) or `sessionStorage` (each tab its own session)? The user's
    two-pages-from-one-browser case argues per-tab.
