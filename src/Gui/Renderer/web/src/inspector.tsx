@@ -209,6 +209,11 @@ export function Inspector(props: {
   /// Reported back so the menu button can stand aside on a narrow
   /// screen, where the card is a bottom sheet over that corner.
   onCardOpen?: (open: boolean) => void;
+  /// The host made this connection view-only (docs/MultiDocServe.md
+  /// §8). Every editor becomes a reading, because offering a field
+  /// whose commit the backend will refuse is worse than not offering
+  /// it — and a press on one says why.
+  viewOnly?: () => boolean;
 }) {
   const first = createMemo(() => {
     const sel = props.selection();
@@ -261,8 +266,26 @@ export function Inspector(props: {
   const [rowError, setRowError] = createSignal<{ row: string; code: string }
       | null>(null);
 
+  // The "you cannot edit this" flash, raised by a press on a locked
+  // row. Times out on its own: it answers a gesture, it is not state.
+  const [locked, setLocked] = createSignal(false);
+  let lockTimer = 0;
+  const flashLocked = () => {
+    setLocked(true);
+    clearTimeout(lockTimer);
+    lockTimer = window.setTimeout(() => setLocked(false), 2600);
+  };
+  onCleanup(() => clearTimeout(lockTimer));
+
   const commit = (p: PropDescriptor, value: unknown) => {
     const r = reply();
+    if (props.viewOnly?.()) {
+      // Belt and braces: the rows render read-only in this mode, so
+      // this only catches an in-flight editor when the host flips the
+      // switch mid-edit. The backend would refuse it anyway.
+      flashLocked();
+      return;
+    }
     if (!r || pendingRow()) return;
     setPendingRow(p.name);
     setRowError(null);
@@ -508,6 +531,15 @@ export function Inspector(props: {
         </div>
 
         <div class="fc-body">
+          {/* The mode, stated once at the top rather than repeated on
+              every row — and louder for a moment when a press on a
+              locked row asks why nothing happened. */}
+          <Show when={props.viewOnly?.()}>
+            <div class="fc-note fc-viewonly"
+                 classList={{ 'fc-viewonly-flash': locked() }}>
+              View only — the host has disabled editing
+            </div>
+          </Show>
           <Show when={reply.loading}>
             <div class="fc-note">Loading…</div>
           </Show>
@@ -525,8 +557,17 @@ export function Inspector(props: {
             {(p) => (
               <div
                 class="fc-row"
-                classList={{ 'fc-pending': pendingRow() === p.name }}
-                title={p.doc ?? ''}
+                classList={{ 'fc-pending': pendingRow() === p.name,
+                             'fc-locked': !!props.viewOnly?.() && !p.readonly }}
+                title={props.viewOnly?.() && !p.readonly
+                  ? 'View only — the host has disabled editing'
+                  : (p.doc ?? '')}
+                onPointerDown={() => {
+                  // A read-only property was never editable, so a press
+                  // on it says nothing about the mode; only a field
+                  // this connection would otherwise own gets the flash.
+                  if (props.viewOnly?.() && !p.readonly) flashLocked();
+                }}
               >
                 <span class="fc-name" classList={{ 'fc-ro': p.readonly }}>
                   {highlightName(p.name, keyword().trim())}
@@ -537,7 +578,8 @@ export function Inspector(props: {
                     <span class="fc-rowerr">{rowError()!.code}</span>
                   </Show>
                 </span>
-                {p.readonly ? fmtValue(p) : editValue(p, commit)}
+                {p.readonly || props.viewOnly?.()
+                  ? fmtValue(p) : editValue(p, commit)}
               </div>
             )}
           </For>

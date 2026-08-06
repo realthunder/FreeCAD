@@ -88,6 +88,29 @@ const docItems = () => {
   }));
 };
 
+// This connection's access mode (docs/MultiDocServe.md §8): the host
+// can restrict a viewer at any time. Seeded from the mirror on window,
+// so a layer that mounted after the push still starts out right.
+const [viewOnly, setViewOnly] = createSignal(!!window.fcviewerViewOnly);
+window.addEventListener('fc:viewonly', (e: Event) => {
+  setViewOnly(!!(e as CustomEvent).detail);
+});
+
+// The name the host's sharing roster shows for this connection
+// (docs/MultiDocServe.md §6). ?client= wins at load; after that this is
+// the only way to set one, and the viewer persists it per browser.
+const [clientName, setClientName] = createSignal(
+  window.fcviewerClientName?.() ?? '');
+const askName = () => {
+  const now = clientName();
+  const next = window.prompt(
+    'Name this viewer for whoever is sharing the document', now);
+  if (next === null) return;   // cancelled — not the same as cleared
+  const name = next.trim();
+  window.fcviewerSetClient?.(name);
+  setClientName(name);
+};
+
 // The menu opens the property card on a subject; the counter is what
 // makes asking twice work (see Inspector's request prop).
 const [request, setRequest] = createSignal<{ subject: Subject; n: number }
@@ -107,7 +130,7 @@ document.body.appendChild(host);
 render(() => (
   <>
     <Inspector selection={selection} request={request}
-               onCardOpen={setCardOpen} />
+               onCardOpen={setCardOpen} viewOnly={viewOnly} />
     <LoupeOverlay mark={loupe} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
     <LauncherMenu
@@ -117,6 +140,8 @@ render(() => (
         { label: 'View properties', onSelect: () => openCard('view3d') },
         { label: 'Document properties',
           onSelect: () => openCard('document') },
+        { label: clientName() ? `Name: ${clientName()}` : 'Set name…',
+          onSelect: askName },
         { label: 'HUD',
           checked: () => hud() !== null,
           onSelect: () => window.fcviewerSetHud?.(hud() === null) },

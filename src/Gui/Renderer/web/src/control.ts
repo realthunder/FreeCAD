@@ -12,6 +12,16 @@ declare global {
     /// Switch to another served document (main.cpp fcviewer_switch_doc,
     /// docs/MultiDocServe.md §6).
     fcviewerSwitchDoc?: (name: string) => void;
+    /// Name this connection for the host's sharing roster (main.cpp
+    /// fcviewer_set_client, docs/MultiDocServe.md §6); persisted in
+    /// localStorage by the viewer side.
+    fcviewerSetClient?: (name: string) => void;
+    fcviewerClientName?: () => string;
+    /// Whether the host has made this connection view-only
+    /// (docs/MultiDocServe.md §8). Mirrored here by the viewer so a
+    /// panel mounting after the push still reads the current mode;
+    /// changes arrive as 'fc:viewonly' events.
+    fcviewerViewOnly?: boolean;
     /// Set by this layer to claim the HUD feed: the viewer then reports
     /// it as 'fc:hud' events instead of drawing its own overlay box.
     fcviewerHudCard?: boolean;

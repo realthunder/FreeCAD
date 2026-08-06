@@ -270,6 +270,20 @@ EM_JS(char *, fcviewer_query_param, (const char *name), {
     return s;
 });
 
+// The client name the menu stored for this browser, or null. Written by
+// window.fcviewerSetClient (docs/MultiDocServe.md §6) — the share link
+// carries no name, so this is what makes one survive a reload.
+EM_JS(char *, fcviewer_stored_client, (), {
+    var p = null;
+    try { p = window.localStorage.getItem('fcviewer.client'); } catch (e) {}
+    if (!p)
+        return 0;
+    var len = lengthBytesUTF8(p) + 1;
+    var s = _malloc(len);
+    stringToUTF8(p, s, len);
+    return s;
+});
+
 // ?cam=<yaw,pitch,dist,cx,cy,cz,panX,panY> reproduces an exact viewport
 // (the string the 'v' key prints); null when absent.
 EM_JS(char *, fcviewer_cam_param, (), {
@@ -381,6 +395,17 @@ EM_JS(void, fcviewer_docs_event, (const char *json, const char *current), {
     } catch (e) {}
 });
 
+// This connection's access mode (docs/MultiDocServe.md §8): the host
+// can make a viewer view-only at any time, and the DOM layer has to
+// know — an inspector that still offers editable fields would collect
+// values the backend then refuses. Also mirrored on window so a panel
+// mounting after the push can read it.
+EM_JS(void, fcviewer_viewonly_event, (int viewOnly), {
+    window.fcviewerViewOnly = !!viewOnly;
+    window.dispatchEvent(new CustomEvent('fc:viewonly',
+                                         { detail: !!viewOnly }));
+});
+
 // The DOM layer's uplink, installed once at startup:
 // window.fcviewerControlSend(jsonString) -> bool (false = socket down,
 // caller shows its offline state rather than queueing).
@@ -395,6 +420,23 @@ EM_JS(void, fcviewer_install_control, (), {
         stringToUTF8(name, buf, len);
         _fcviewer_switch_doc(buf);
         _free(buf);
+    };
+    // The menu's "who am I" (docs/MultiDocServe.md §6): the label the
+    // host's sharing roster names this connection by. Kept in
+    // localStorage so the same browser keeps its name across reloads
+    // and reconnects — a name typed once should not have to be typed
+    // again, and the sharing link carries no name of its own.
+    window.fcviewerSetClient = function(name) {
+        try { window.localStorage.setItem('fcviewer.client', name); }
+        catch (e) {}
+        var len = lengthBytesUTF8(name) + 1;
+        var buf = _malloc(len);
+        stringToUTF8(name, buf, len);
+        _fcviewer_set_client(buf);
+        _free(buf);
+    };
+    window.fcviewerClientName = function() {
+        return UTF8ToString(_fcviewer_client_name());
     };
     window.fcviewerControlSend = function(s) {
         var len = lengthBytesUTF8(s) + 1;
@@ -5737,13 +5779,20 @@ static void handleControlMessage(const char *json)
                         s_reconnectLimit);
         }
         // The host flipped this connection's mode
-        // (docs/MultiDocServe.md §8). Nothing to disable here — a
-        // view-only edit is refused server-side with a ViewOnly error
-        // the property card shows — but say so in the log.
-        if (const char *vo = std::strstr(json, "\"viewOnly\""))
+        // (docs/MultiDocServe.md §8). The refusal is the backend's, but
+        // the UI must not offer what will be refused — tell the DOM
+        // layer, which greys its editors and says so.
+        if (const char *vo = std::strstr(json, "\"viewOnly\"")) {
+            bool on = std::strstr(vo, "true") != nullptr;
             std::printf("fcviewer: %s\n",
-                        std::strstr(vo, "true") ? "view-only mode"
-                                                : "editing enabled");
+                        on ? "view-only mode" : "editing enabled");
+            fcviewer_viewonly_event(on ? 1 : 0);
+            // Label only (total < 0 = no bar): the page with no DOM UI
+            // layer has nowhere else to learn this.
+            fcviewer_status(on ? "View only \xe2\x80\x94 the host has "
+                                 "disabled editing" : nullptr,
+                            0.0, on ? -1.0 : 0.0);
+        }
     }
     else if (std::strstr(json, "\"cmd\":\"dumpDecisions\"")) {
         long id = 0;
@@ -5857,6 +5906,28 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_switch_doc(const char *name)
     s_sceneVersion = 0;
     s_sessionId = 0;
     s_haveScene = false;
+}
+
+/// Name this connection, from the menu (docs/MultiDocServe.md §6): the
+/// label the host's sharing roster shows. Kept for later hellos too, so
+/// a reconnect keeps the name; sent now when the socket is up.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_client(const char *name)
+{
+    s_clientLabel = name ? name : "";
+    std::printf("fcviewer: client name '%s'\n", s_clientLabel.c_str());
+    if (s_wsOpen) {
+        std::string msg = "{\"cmd\":\"client\",\"name\":\"";
+        jsonEscapeTo(msg, s_clientLabel);
+        msg += "\"}";
+        emscripten_websocket_send_utf8_text(
+                s_ws, const_cast<char *>(msg.c_str()));
+    }
+}
+
+/// What the menu shows as the current name.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *fcviewer_client_name()
+{
+    return s_clientLabel.c_str();
 }
 
 static void schedulePoll();
@@ -6479,6 +6550,14 @@ int main()
     if (char *client = fcviewer_query_param("client")) {
         s_clientLabel = client;
         std::free(client);
+    }
+    else if (char *saved = fcviewer_stored_client()) {
+        // A name typed into the menu once (docs/MultiDocServe.md §6):
+        // the share link carries none, so without this every reload
+        // would face the host with an unnamed connection again. An
+        // explicit ?client= still wins — it names this visit.
+        s_clientLabel = saved;
+        std::free(saved);
     }
     if (char *token = fcviewer_query_param("token")) {
         s_tokenParam = token;

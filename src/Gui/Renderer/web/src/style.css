@@ -196,6 +196,25 @@
 .fc-note { padding: 12px; color: #9aa0a6; }
 .fc-err { color: #ff8a80; }
 
+/* View-only (docs/MultiDocServe.md §8): the mode stated once at the top
+ * of the card, and pressing a field that would otherwise be editable
+ * flashes it — the answer to "why did nothing happen". */
+.fc-viewonly {
+  padding: 8px 12px;
+  color: #ffcc80;
+  background: rgba(255, 204, 128, 0.09);
+  border-bottom: 1px solid rgba(255, 204, 128, 0.22);
+  transition: background 0.25s, color 0.25s;
+}
+.fc-viewonly-flash {
+  color: #1a1a1a;
+  background: #ffcc80;
+  font-weight: 600;
+}
+/* A locked row still reads its value; only the editor is gone, so the
+ * cue is the cursor and the flash rather than a greyed-out control. */
+.fc-locked { cursor: not-allowed; }
+
 /* Editors (§4.B): native inputs, sized for touch, right-aligned like
  * the static values they replace. */
 .fc-edit {
