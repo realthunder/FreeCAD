@@ -4,12 +4,14 @@
 // filtering — a non-empty keyword searches every group with the match
 // highlighted; clearing it restores the selected group.
 //
-// The same card also serves the two containers a pick cannot reach:
-// the 3D view (every Render_*/Shadow_* knob, the ones worth turning
-// while looking at the result) and the document. Nothing in the scene
-// stands for either, so they get a launcher button of their own and a
-// switcher in the header — which is also how you get back to the
-// picked object without re-picking it.
+// The same card also serves what a pick cannot reach: the 3D view
+// (every Render_*/Shadow_* knob, the ones worth turning while looking
+// at the result) and the document, read together as one 'View &
+// document' subject — from this side they are the settings of what you
+// are looking at, and which container a knob lives in is the backend's
+// business. Nothing in the scene stands for them, so they get one
+// launcher action and a switcher in the header — which is also how you
+// get back to the picked object without re-picking it.
 import {
   For,
   Show,
@@ -249,14 +251,12 @@ export function Inspector(props: {
   // other two subjects by what they are (a client sees one 3D view and
   // one document, so there is nothing to disambiguate).
   const title = () => {
-    if (subject() === 'view3d') return '3D view';
-    if (subject() === 'document')
-      return reply()?.label ?? reply()?.doc ?? 'Document';
+    if (subject() === 'viewdoc')
+      return reply()?.label ?? reply()?.doc ?? 'Properties';
     return reply()?.label ?? first()?.label ?? first()?.obj ?? '';
   };
   const subtitle = () => {
-    if (subject() === 'view3d') return 'View properties';
-    if (subject() === 'document') return reply()?.doc ?? '';
+    if (subject() === 'viewdoc') return 'View and document';
     return path();
   };
 
@@ -379,6 +379,19 @@ export function Inspector(props: {
       setClosed(false);
       setKeyword('');
       setGroup(ALL);
+    }
+    else {
+      lastKey = '';
+      // Nothing picked any more. An open card must not sit there
+      // showing an object that is no longer selected, and closing it
+      // would throw away a panel the user opened: it falls back to the
+      // container it was last on (the view, unless they had asked for
+      // the document).
+      if (untrack(card) && untrack(subject) === 'object') {
+        setSubject('viewdoc');
+        setKeyword('');
+        setGroup(ALL);
+      }
     }
   });
 
@@ -505,8 +518,7 @@ export function Inspector(props: {
         <div class="fc-subjects" role="tablist" aria-label="Inspect">
           <For each={[
             ['object', 'Object'],
-            ['view3d', 'View'],
-            ['document', 'Document'],
+            ['viewdoc', 'View & document'],
           ] as [Subject, string][]}>
             {([s, label]) => (
               <button

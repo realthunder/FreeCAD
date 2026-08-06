@@ -91,9 +91,17 @@ export interface SelectionItem {
 }
 
 /// What a card is inspecting. 'object' is a picked document object;
-/// the other two are the containers nothing in the scene stands for,
-/// so they are reachable only from the launcher, never from a pick.
-export type Subject = 'object' | 'view3d' | 'document';
+/// 'viewdoc' is the two containers nothing in the scene stands for —
+/// the 3D view and the document — read together, because from a
+/// viewer's side they are one thing ("the settings of what I am
+/// looking at") and telling them apart is the backend's business, not
+/// the user's. It is a client-side composite: the wire still speaks
+/// the two subjects, and each descriptor carries the scope its edits
+/// go back to.
+export type Subject = 'object' | 'viewdoc';
+
+/// The subjects the wire knows (docs/ThinClient.md §4.2).
+export type WireSubject = 'object' | 'view3d' | 'document';
 
 /// Which container a descriptor came out of — and, handed back
 /// verbatim as setProperty's target, how to reach it again.
@@ -116,7 +124,7 @@ export interface PropDescriptor {
 export interface PropertiesReply {
   doc: string;
   obj: string;
-  subject?: Subject;
+  subject?: WireSubject;
   label: string;
   type: string;
   props: PropDescriptor[];
@@ -127,7 +135,26 @@ export function getProperties(
   obj: string,
   subject: Subject = 'object',
 ): Promise<PropertiesReply> {
-  return sendOp('getProperties', { doc, obj, subject });
+  if (subject !== 'viewdoc')
+    return sendOp('getProperties', { doc, obj, subject });
+  // The composite: one card, two containers. Groups are namespaced so
+  // the drop-down still navigates them separately and a row says which
+  // it came from; scope rides each descriptor, so an edit goes back to
+  // the right container without the card tracking which half it is in.
+  return Promise.all([
+    sendOp('getProperties', { doc, obj, subject: 'view3d' }),
+    sendOp('getProperties', { doc, obj, subject: 'document' }),
+  ]).then(([view, document_]) => {
+    const tag = (r: PropertiesReply, prefix: string) =>
+      (r?.props ?? []).map((p) => ({ ...p, group: `${prefix} · ${p.group}` }));
+    return {
+      doc: document_?.doc ?? view?.doc ?? '',
+      obj: '',
+      label: document_?.label ?? document_?.doc ?? 'Properties',
+      type: '',
+      props: [...tag(view, 'View'), ...tag(document_, 'Document')],
+    } as PropertiesReply;
+  });
 }
 
 /// Commit one property edit. The backend wraps it in a transaction and

@@ -137,9 +137,8 @@ render(() => (
       hidden={() => cardOpen() && window.innerWidth <= NARROW}
       items={[
         ...docItems(),
-        { label: 'View properties', onSelect: () => openCard('view3d') },
-        { label: 'Document properties',
-          onSelect: () => openCard('document') },
+        { label: 'View & document properties',
+          onSelect: () => openCard('viewdoc') },
         { label: clientName() ? `Name: ${clientName()}` : 'Set name…',
           onSelect: askName },
         { label: 'HUD',
