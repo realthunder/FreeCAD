@@ -1169,6 +1169,14 @@ public:
         return false;
     }
 
+    /// Which document group this renderer's publishes belong to on the
+    /// scene-stream server (docs/MultiDocServe.md §3). Empty -- the
+    /// default -- publishes into the server's default group, which is
+    /// the single-document behavior; a view-less serve source names its
+    /// document here so a second document is a second group rather than
+    /// a fight over one. Set before the first publish.
+    virtual void setPublishGroup(const std::string &doc) { (void)doc; }
+
     /// Whether the frame just rendered contains time-animated content
     /// (e.g. water caustics): the viewer keeps scheduling redraws while
     /// this returns true, so the animation advances without user input.

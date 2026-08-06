@@ -47,6 +47,10 @@
 class SoNode;
 class TopoDS_Shape;
 
+namespace App {
+class Document;
+}
+
 namespace PartGui {
 
 /// Everything a level build needs beyond the shape and the source
@@ -109,6 +113,10 @@ bool buildMeshLevel(const TopoDS_Shape &shape, const MeshLevelJob &job,
 /// with a finer rung still resident (a downgraded source) arms its
 /// own hidden-rung demote internally, and its refine skips the
 /// worker.
+/// \a doc is the document the shape belongs to: whether *that*
+/// document is served is what arms or skips the desktop refine climb
+/// (docs/MultiDocServe.md §5) — serving one document must not disarm
+/// another's views. Null falls back to the process-wide reading.
 void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              SoNode *faceTag, SoNode *lineTag,
                              float builtError = 0.0f,
@@ -118,7 +126,8 @@ void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                                  onExactBuilt = {},
                              std::function<void()> onDemote = {},
                              float demoteError = 0.0f,
-                             std::function<void()> onDowngrade = {});
+                             std::function<void()> onDowngrade = {},
+                             App::Document *doc = nullptr);
 
 /// Drop the registration made under these tags (before the nodes die;
 /// their addresses may be reused).
@@ -134,7 +143,12 @@ void unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag);
 /// §13). Plain Coin display keeps the exact tessellation — a coarse
 /// build there would simply stay coarse. The FC_COARSE_TESSELLATION
 /// environment variable overrides everything for a whole process.
-int coarseTessellationLevel();
+/// \a doc scopes the gate to the document being tessellated: it is
+/// open when that document is served (or the whole process is, via
+/// FC_BGFX_SERVE_SCENE), and the Render_CoarseTessellation override is
+/// read from that document's serving container when it has one. Null =
+/// process-wide reading (any serve counts, active view's override).
+int coarseTessellationLevel(App::Document *doc = nullptr);
 
 /// Mesh a structure copy of \a shape at the given display parameters
 /// and return it (null on failure). Pure and thread-safe — the copy

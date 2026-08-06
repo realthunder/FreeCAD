@@ -8571,7 +8571,7 @@ public:
             // but the manifest a fresh publish writes is what carries
             // the new key to every viewer.
             const size_t levelsBuilt =
-                server.running() ? server.levelsBuilt() : 0;
+                server.running() ? server.levelsBuilt(publishGroup) : 0;
             if (server.running()
                     && (dirtyChanged || !scenePublished
                         || levelsBuilt != publishedLevelsBuilt)
@@ -8579,20 +8579,23 @@ public:
                     // Claims the stream on the first publish and states
                     // which publish this is; 0 means another renderer
                     // owns it and this one stays off the wire.
-                    && (publishVersion = server.beginPublish(this)) != 0) {
+                    && (publishVersion =
+                            server.beginPublish(this, publishGroup)) != 0) {
                 scenePublished = true;
                 Render::SceneSnapshot snap;
                 makeSnapshot(snap, viewMatrix, projMatrix, width,
                              height, clearColor);
                 snap.manifestVersion = publishVersion;
-                snap.sessionId = server.sessionId();
+                snap.sessionId = server.sessionId(publishGroup);
                 // Texture pixels leave the stream and are served out of
                 // band instead (SceneDump.h, v26): a republish fires on
                 // every feed change, down to a selection pick, and the
                 // embedded images do not change with it.
-                snap.textureBlobs = [&server](const std::string &key,
-                                              std::vector<uint8_t> &&pixels) {
-                    server.publishBlob(key, std::move(pixels));
+                snap.textureBlobs = [this, &server](
+                        const std::string &key,
+                        std::vector<uint8_t> &&pixels) {
+                    server.publishBlob(key, std::move(pixels),
+                                       publishGroup);
                 };
                 // Mesh chunks likewise (v28), but keyed through a memo
                 // on cacheId: hashing every mesh on every publish would
@@ -8612,7 +8615,8 @@ public:
                     it = meshKeysPrev.find(cacheId);
                     if (it == meshKeysPrev.end())
                         return std::string();
-                    if (!server.retainBlob(it->second.first, &size))
+                    if (!server.retainBlob(it->second.first, &size,
+                                           publishGroup))
                         return std::string();
                     meshKeys[cacheId] = {it->second.first, size};
                     return it->second.first;
@@ -8621,15 +8625,16 @@ public:
                         uint64_t cacheId, const std::string &key,
                         std::vector<uint8_t> &&chunk) {
                     meshKeys[cacheId] = {key, uint32_t(chunk.size())};
-                    server.publishBlob(key, std::move(chunk));
+                    server.publishBlob(key, std::move(chunk), publishGroup);
                 };
                 // Generated levels (§7, phase 5c): the server's work
                 // queue built them, the serializer asks per declared
                 // level, and writing the key is the announcement.
-                snap.meshBlobs.built = [&server](const std::string &source,
-                                                 uint32_t level,
-                                                 uint32_t &size) {
-                    return server.builtLevel(source, level, &size);
+                snap.meshBlobs.built = [this, &server](
+                        const std::string &source, uint32_t level,
+                        uint32_t &size) {
+                    return server.builtLevel(source, level, &size,
+                                             publishGroup);
                 };
                 // v33: the manifest layout. Setting this is what
                 // selects it — the group manifests, the materials and
@@ -8639,10 +8644,12 @@ public:
                 // publish (it has to be built to know it is
                 // unchanged), but its bytes only leave the process
                 // when the publisher does not already hold them.
-                snap.chunkBlobs = [&server](const std::string &key,
-                                            std::vector<uint8_t> &&bytes) {
-                    if (!server.retainBlob(key))
-                        server.publishBlob(key, std::move(bytes));
+                snap.chunkBlobs = [this, &server](
+                        const std::string &key,
+                        std::vector<uint8_t> &&bytes) {
+                    if (!server.retainBlob(key, nullptr, publishGroup))
+                        server.publishBlob(key, std::move(bytes),
+                                           publishGroup);
                 };
                 // The root is always written with a complete object
                 // list. What a viewer that is behind gets instead is
@@ -8661,7 +8668,7 @@ public:
                     Render::diffObjectLists(publishedObjects, entries,
                                             pub.changed, pub.removed);
                     publishedObjects = std::move(entries);
-                    server.publish(std::move(pub));
+                    server.publish(std::move(pub), publishGroup);
                     // This publish consulted builtLevel() for every
                     // ladder it wrote, so every level finished by the
                     // count taken above is now announced. A job that
@@ -12695,6 +12702,9 @@ public:
     /// bgfx view, no graphics device, no display. render() refuses;
     /// publishNoDraw() is the whole of what it does.
     bool publishOnly = false;
+    /// The server document group this renderer publishes into; empty =
+    /// the default group (Renderer::setPublishGroup).
+    std::string publishGroup;
     bool _deinit = false;
     RendererType::Enum type;
     std::string typeName;
@@ -13079,7 +13089,8 @@ BGFXRenderer::~BGFXRenderer()
     // (SceneServer.h, beginPublish); hand it back, or closing and
     // reopening a 3D view would leave it claimed by a renderer that is
     // gone and nothing would stream again.
-    Render::SceneStreamServer::instance().endPublish(pimpl.get());
+    Render::SceneStreamServer::instance().endPublish(
+            pimpl.get(), pimpl->publishGroup);
 #endif
 }
 
@@ -13120,6 +13131,11 @@ bool BGFXRenderer::publish(const QColor &col,
     return pimpl->publishNoDraw(col, viewMatrix, projMatrix,
                                 uint16_t(width), uint16_t(height));
 #endif
+}
+
+void BGFXRenderer::setPublishGroup(const std::string &doc)
+{
+    pimpl->publishGroup = doc;
 }
 
 bool BGFXRenderer::requestFrameDump(const FrameDumpRequest &req)

@@ -32,13 +32,20 @@ namespace Gui {
 /// modeling operations grow here.
 
 /// Answer one control request. GUI thread only — callers on any other
-/// thread marshal first (installSceneControlHandler does).
-std::string handleSceneControlRequest(const std::string &json);
+/// thread marshal first (installSceneControlHandler does). \a boundDoc
+/// names the served document the request's connection is joined to
+/// (empty = unbound, windowed behavior): it resolves the "view3d"
+/// subject to that document's serving container and stands in for an
+/// unnamed document (docs/MultiDocServe.md §5).
+std::string handleSceneControlRequest(const std::string &json,
+                                      const std::string &boundDoc = {});
 
 /// Route the scene stream server's control requests ("op" JSON text
 /// frames) through handleSceneControlRequest on the GUI thread.
 /// Idempotent; safe to call whenever a serving renderer comes up.
-void installSceneControlHandler();
+/// \a docName installs on that document's server group and binds the
+/// handler to it; empty installs on the default group, unbound.
+void installSceneControlHandler(const std::string &docName = {});
 
 } // namespace Gui
 

@@ -53,6 +53,7 @@ public:
                          const void *viewMatrix,
                          const void *projMatrix,
                          int width, int height) override;
+    virtual void setPublishGroup(const std::string &doc) override;
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) override;
     virtual bool animating() const override;

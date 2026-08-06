@@ -227,20 +227,41 @@ public:
 
     /// The served documents, keyed by document name. std::map for node
     /// stability: connections and level jobs hold DocGroup pointers.
-    /// Nothing removes an entry yet — group teardown arrives with the
-    /// wire changes (stage 3b), and must then purge the level queue and
-    /// re-home the group's connections.
+    /// Entries are never erased — releaseGroup() empties one instead —
+    /// so those pointers cannot dangle; re-homing a released group's
+    /// connections is the wire's job (stage 3c).
     std::map<std::string, DocGroup> groups;
-    /// The group an unadorned client means: the first one served. Null
-    /// until something publishes or a connection arrives.
+    /// The group an unadorned client means: the first one anything
+    /// created — for Gui.serveDocument that is the first served
+    /// document, because serve() builds the source (which claims its
+    /// group) before it starts the listener; for the FC_BGFX_SERVE_SCENE
+    /// path it is the anonymous group the viewer's renderer publishes
+    /// into.
     DocGroup *defaultGrp = nullptr;
 
-    /// The default group, created on first use. Call with \a mutex
-    /// held.
+    /// The group named \a name, created on first use; empty names the
+    /// default group. Call with \a mutex held.
+    DocGroup &group(const std::string &name)
+    {
+        if (name.empty())
+            return defaultGroup();
+        auto it = groups.find(name);
+        if (it == groups.end()) {
+            it = groups.emplace(name, DocGroup()).first;
+            it->second.name = name;
+            if (!defaultGrp)
+                defaultGrp = &it->second;
+        }
+        return it->second;
+    }
+
+    /// The default group, created (anonymous) on first use. Call with
+    /// \a mutex held.
     DocGroup &defaultGroup()
     {
-        if (!defaultGrp)
+        if (!defaultGrp) {
             defaultGrp = &groups[std::string()];
+        }
         return *defaultGrp;
     }
 
@@ -1740,24 +1761,23 @@ bool SceneStreamServer::running() const
     return pimpl && pimpl->listenFd >= 0;
 }
 
-// The public surface still speaks of one document: every entry point
-// resolves to the default group until the API grows document names
-// (docs/MultiDocServe.md, stage 3b). The resolution is written out
-// per function rather than hidden in a helper so each future re-key
-// is a visible one-line change.
+// Every entry point resolves its group from the optional document
+// name (docs/MultiDocServe.md §3): empty names the default group,
+// which is how the unnamed single-document callers keep working.
 
-uint64_t SceneStreamServer::sessionId()
+uint64_t SceneStreamServer::sessionId(const std::string &doc)
 {
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->mutex);
-    return p->defaultGroup().ensureSession();
+    return p->group(doc).ensureSession();
 }
 
-uint64_t SceneStreamServer::beginPublish(const void *publisher)
+uint64_t SceneStreamServer::beginPublish(const void *publisher,
+                                         const std::string &doc)
 {
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->mutex);
-    Private::DocGroup &g = p->defaultGroup();
+    Private::DocGroup &g = p->group(doc);
     g.ensureSession();
     if (!g.publisher)
         g.publisher = publisher;
@@ -1769,21 +1789,22 @@ uint64_t SceneStreamServer::beginPublish(const void *publisher)
     return ++g.handedOut;
 }
 
-void SceneStreamServer::endPublish(const void *publisher)
+void SceneStreamServer::endPublish(const void *publisher,
+                                   const std::string &doc)
 {
     if (!pimpl)
         return;
     std::lock_guard<std::mutex> guard(pimpl->mutex);
-    Private::DocGroup &g = pimpl->defaultGroup();
+    Private::DocGroup &g = pimpl->group(doc);
     if (g.publisher == publisher)
         g.publisher = nullptr;
 }
 
-void SceneStreamServer::publish(ScenePublish &&pub)
+void SceneStreamServer::publish(ScenePublish &&pub, const std::string &doc)
 {
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->mutex);
-    Private::DocGroup &g = p->defaultGroup();
+    Private::DocGroup &g = p->group(doc);
     if (pub.version <= g.version)
         return;   // superseded before it was installed
     // A gap would make the history lie about what a viewer is missing:
@@ -1805,100 +1826,134 @@ void SceneStreamServer::publish(ScenePublish &&pub)
 }
 
 void SceneStreamServer::publishBlob(const std::string &key,
-                                    std::vector<uint8_t> &&data)
+                                    std::vector<uint8_t> &&data,
+                                    const std::string &doc)
 {
     Private *p = ensure();
     Private::DocGroup *g;
     {
         std::lock_guard<std::mutex> guard(p->mutex);
-        g = &p->defaultGroup();
+        g = &p->group(doc);
     }
     p->addBlob(*g, key, std::move(data));
 }
 
-bool SceneStreamServer::retainBlob(const std::string &key, uint32_t *size)
+bool SceneStreamServer::retainBlob(const std::string &key, uint32_t *size,
+                                   const std::string &doc)
 {
     Private *p = ensure();
     Private::DocGroup *g;
     {
         std::lock_guard<std::mutex> guard(p->mutex);
-        g = &p->defaultGroup();
+        g = &p->group(doc);
     }
     return p->retainBlob(*g, key, size);
 }
 
 bool SceneStreamServer::requestLevel(const std::string &source,
-                                     uint32_t level)
+                                     uint32_t level, const std::string &doc)
 {
     Private *p = ensure();
     Private::DocGroup *g;
     {
         std::lock_guard<std::mutex> guard(p->mutex);
-        g = &p->defaultGroup();
+        g = &p->group(doc);
     }
     return p->requestLevel(*g, source, level);
 }
 
 std::string SceneStreamServer::builtLevel(const std::string &source,
-                                          uint32_t level, uint32_t *size)
+                                          uint32_t level, uint32_t *size,
+                                          const std::string &doc)
 {
     Private *p = ensure();
     Private::DocGroup *g;
     {
         std::lock_guard<std::mutex> guard(p->mutex);
-        g = &p->defaultGroup();
+        g = &p->group(doc);
     }
     return p->builtLevel(*g, source, level, size);
 }
 
-size_t SceneStreamServer::levelsBuilt()
+size_t SceneStreamServer::levelsBuilt(const std::string &doc)
 {
     Private *p = ensure();
     Private::DocGroup *g;
     {
         std::lock_guard<std::mutex> guard(p->mutex);
-        g = &p->defaultGroup();
+        g = &p->group(doc);
     }
     return p->levelsBuilt(*g);
 }
 
 
 void SceneStreamServer::setPickHandler(
-        std::function<void(const ScenePickRequest &)> handler)
+        std::function<void(const ScenePickRequest &)> handler,
+        const std::string &doc)
 {
     Private *p = ensure();
     Private::DocGroup *g;
     {
         std::lock_guard<std::mutex> guard(p->mutex);
-        g = &p->defaultGroup();
+        g = &p->group(doc);
     }
     std::lock_guard<std::mutex> guard(p->handlerMutex);
     g->pickHandler = std::move(handler);
 }
 
 void SceneStreamServer::setControlHandler(
-        std::function<void(SceneControlRequest &&)> handler)
+        std::function<void(SceneControlRequest &&)> handler,
+        const std::string &doc)
 {
     Private *p = ensure();
     Private::DocGroup *g;
     {
         std::lock_guard<std::mutex> guard(p->mutex);
-        g = &p->defaultGroup();
+        g = &p->group(doc);
     }
     std::lock_guard<std::mutex> guard(p->handlerMutex);
     g->controlHandler = std::move(handler);
 }
 
-void SceneStreamServer::setWorkNotifier(std::function<void()> notifier)
+void SceneStreamServer::setWorkNotifier(std::function<void()> notifier,
+                                        const std::string &doc)
 {
     Private *p = ensure();
     Private::DocGroup *g;
     {
         std::lock_guard<std::mutex> guard(p->mutex);
-        g = &p->defaultGroup();
+        g = &p->group(doc);
     }
     std::lock_guard<std::mutex> guard(p->handlerMutex);
     g->workNotifier = std::move(notifier);
+}
+
+void SceneStreamServer::releaseGroup(const std::string &doc)
+{
+    if (!pimpl)
+        return;
+    Private::DocGroup *g = nullptr;
+    {
+        std::lock_guard<std::mutex> guard(pimpl->mutex);
+        auto it = pimpl->groups.find(doc);
+        if (it == pimpl->groups.end())
+            return;
+        g = &it->second;
+        g->publisher = nullptr;
+        // Queued jobs would book work and wake a notifier that is
+        // about to be cleared; drop them. A job a worker already holds
+        // finishes against the retained group node, harmlessly.
+        auto &q = pimpl->levelQueue;
+        q.erase(std::remove_if(q.begin(), q.end(),
+                               [g](const Private::LevelJob &job) {
+                                   return job.group == g;
+                               }),
+                q.end());
+    }
+    std::lock_guard<std::mutex> guard(pimpl->handlerMutex);
+    g->pickHandler = nullptr;
+    g->controlHandler = nullptr;
+    g->workNotifier = nullptr;
 }
 
 void SceneStreamServer::broadcastControl(const std::string &json)

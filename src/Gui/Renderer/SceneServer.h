@@ -85,6 +85,12 @@ class RendererExport SceneStreamServer {
 public:
     static SceneStreamServer &instance();
 
+    /// Every entry point below takes an optional document name — the
+    /// group key of docs/MultiDocServe.md §3. Empty (the default) means
+    /// the *default group*: the first group anything created, which is
+    /// how the single-document callers keep working unnamed. A named
+    /// group is created on first use.
+
     /// Cap on concurrent on-demand level builds, pushed down from the
     /// LevelThreads render parameter (the renderer layer cannot read
     /// Gui parameters itself). 0 = auto-size; FC_LEVEL_THREADS still
@@ -100,7 +106,7 @@ public:
     /// number minted once per process, carried in every payload
     /// (SceneDump.h, v35) and accepted back as `?s=` so a version from
     /// a previous run is not mistaken for one of ours.
-    uint64_t sessionId();
+    uint64_t sessionId(const std::string &doc = {});
 
     /// Claim the stream and take the version of the publish about to be
     /// serialized. The version has to be known before the payload is
@@ -112,13 +118,14 @@ public:
     /// would already be serving two different scenes down one
     /// connection, and once publishes are deltas against each other it
     /// would be incoherent rather than merely confusing.
-    uint64_t beginPublish(const void *publisher);
+    uint64_t beginPublish(const void *publisher,
+                          const std::string &doc = {});
 
     /// Give the claim back when the publisher goes away, so the next
     /// renderer to come along can take the stream rather than find it
     /// held by something that no longer exists. Ignored unless
     /// \a publisher is the one holding it.
-    void endPublish(const void *publisher);
+    void endPublish(const void *publisher, const std::string &doc = {});
 
     /// One publish as the server needs to hold it.
     struct ScenePublish {
@@ -141,21 +148,23 @@ public:
     /// rather than the scene. Also rolls the out-of-band blob
     /// generations: whatever the new payload did not name (nor the one
     /// before it) is dropped.
-    void publish(ScenePublish &&pub);
+    void publish(ScenePublish &&pub, const std::string &doc = {});
 
     /// Register one out-of-band payload, addressed by content key and
     /// answered by GET /blob?key= (SceneDump.h, v26). Called by the
     /// serializer's texture sink while building the payload that the
     /// following publish() installs, so the blob is servable before any
     /// viewer can learn its key.
-    void publishBlob(const std::string &key, std::vector<uint8_t> &&data);
+    void publishBlob(const std::string &key, std::vector<uint8_t> &&data,
+                     const std::string &doc = {});
 
     /// Declare a blob still in use by the publish being built, without
     /// re-sending its bytes, and report its size. False means it is no
     /// longer stored and has to be published again — that is how a
     /// publisher-side content-key memo learns it went stale
     /// (SceneDump.h, MeshBlobSink).
-    bool retainBlob(const std::string &key, uint32_t *size = nullptr);
+    bool retainBlob(const std::string &key, uint32_t *size = nullptr,
+                    const std::string &doc = {});
 
     /// Queue the generation of a declared level (docs/SceneStreaming.md
     /// §7, phase 5c): \a source is the content key of the exact mesh
@@ -165,7 +174,8 @@ public:
     /// next publish naming its key. False when \a source is not a
     /// chunk this server holds, or the level is out of any declarable
     /// range. Also the seam a viewer's GET /level lands on.
-    bool requestLevel(const std::string &source, uint32_t level);
+    bool requestLevel(const std::string &source, uint32_t level,
+                      const std::string &doc = {});
 
     /// The content key of a generated level, or empty while unbuilt.
     /// Retains the chunk for the publish in flight, like retainBlob —
@@ -173,17 +183,19 @@ public:
     /// the manifest written from its answer is what keeps the chunk
     /// alive thereafter.
     std::string builtLevel(const std::string &source, uint32_t level,
-                           uint32_t *size = nullptr);
+                           uint32_t *size = nullptr,
+                           const std::string &doc = {});
 
     /// Levels generated so far, monotonic. The publisher polls it: a
     /// change since the last publish is a reason to publish again,
     /// which is how a finished job becomes an announcement.
-    size_t levelsBuilt();
+    size_t levelsBuilt(const std::string &doc = {});
 
     /// Install the consumer of viewer pick requests. Called on a
     /// server connection thread — the handler must marshal to the GUI
     /// thread itself before touching any scene graph.
-    void setPickHandler(std::function<void(const ScenePickRequest &)> handler);
+    void setPickHandler(std::function<void(const ScenePickRequest &)> handler,
+                        const std::string &doc = {});
 
     /// Install the consumer of semantic control requests — the `"op"`
     /// JSON vocabulary of the property/operation channel
@@ -193,14 +205,25 @@ public:
     /// reply hook. No handler installed = every op answers with a
     /// structured error.
     void setControlHandler(
-            std::function<void(SceneControlRequest &&)> handler);
+            std::function<void(SceneControlRequest &&)> handler,
+            const std::string &doc = {});
 
     /// Install the publisher's cue that queued work finished (a level
     /// was generated): without it an idle backend sits on finished
     /// work, because the publish that would announce it lives in the
     /// render path and nothing else asks for a frame. Called on the
     /// worker thread — the handler must marshal itself.
-    void setWorkNotifier(std::function<void()> notifier);
+    void setWorkNotifier(std::function<void()> notifier,
+                         const std::string &doc = {});
+
+    /// A served document went away: clear the group's publisher claim
+    /// and handler slots and purge its queued level jobs, so nothing
+    /// dispatches into a torn-down source. The group itself stays — a
+    /// map node connections may still point at — and keeps its last
+    /// payload; re-serving the same document reuses it, and moving its
+    /// viewers elsewhere is the wire's job (docs/MultiDocServe.md §4,
+    /// stage 3c).
+    void releaseGroup(const std::string &doc);
 
     /// Queue a JSON control message (WebSocket text frame) to every
     /// connected viewer — the browser side of the debug/capture

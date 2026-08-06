@@ -2589,7 +2589,8 @@ bool ViewProviderPartExt::buildInstanced()
         Standard_Real exactDefl = defl, exactAng = angDefl;
         Standard_Real useAngDefl = angDefl;
         float builtError = 0.0f;
-        const int coarseLvl = coarseTessellationLevel();
+        const int coarseLvl =
+            coarseTessellationLevel(pcObject ? pcObject->getDocument() : nullptr);
         if (coarseLvl >= 0) {
             Bnd_Box leafBounds;
             BRepBndLib::Add(leaf.Located(TopLoc_Location()), leafBounds);
@@ -3104,6 +3105,10 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
                                             lineset, nodeset);
             };
         }
+        // No document: the entry is shared by every instance of the
+        // leaf, across objects and potentially across documents, and
+        // deliberately captures no view provider -- so the gate reads
+        // process-wide here (null doc), not one sharer's document.
         registerMeshLevelSource(local, normalsFromUV, faceset, lineset,
                                 builtError, exactDefl, exactAng,
                                 std::move(onExact));
@@ -3176,7 +3181,7 @@ bool ViewProviderPartExt::buildCoarseStandIn()
     if (!doc || !doc->testStatus(App::Document::LiveImport)) {
         return false;
     }
-    const int coarseLvl = coarseTessellationLevel();
+    const int coarseLvl = coarseTessellationLevel(doc);
     if (coarseLvl < 0) {
         return false;
     }
@@ -3229,7 +3234,8 @@ bool ViewProviderPartExt::buildCoarseStandIn()
         };
         registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
                                 /*builtError*/ 0.5f, deflection, angDefl,
-                                std::move(onCoarse));
+                                std::move(onCoarse), {}, 0.0f, {},
+                                pcObject ? pcObject->getDocument() : nullptr);
     }
     catch (const Standard_Failure &e) {
         FC_ERR("Failed to build the stand-in for the shape of "
@@ -3435,7 +3441,8 @@ void ViewProviderPartExt::updateVisual()
             !cShape.IsNull() && ExactMeshTShape == cShape.TShape().get();
         if (!exactResident)
             ExactMeshTShape = nullptr;
-        const int coarseLvl = exactResident ? -1 : coarseTessellationLevel();
+        const int coarseLvl = exactResident
+            ? -1 : coarseTessellationLevel(pcObject ? pcObject->getDocument() : nullptr);
         if (coarseLvl >= 0) {
             double dx = xMax - xMin, dy = yMax - yMin, dz = zMax - zMin;
             double diag = std::sqrt(dx * dx + dy * dy + dz * dz);
@@ -3511,7 +3518,8 @@ void ViewProviderPartExt::updateVisual()
                                 std::move(onExact), std::move(onDemote),
                                 exactResident ? ExactMeshCoarseError
                                               : 0.0f,
-                                std::move(onDowngrade));
+                                std::move(onDowngrade),
+                                pcObject ? pcObject->getDocument() : nullptr);
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());

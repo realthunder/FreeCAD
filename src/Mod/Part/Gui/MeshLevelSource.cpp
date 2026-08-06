@@ -247,30 +247,42 @@ void cancelExactRefine(const void *tag)
     s_refineTokens.erase(tag);
 }
 
-/// Is this process serving a scene stream?
+/// Is \a doc's scene being served?
 ///
-/// ⚠️ Not "was FC_BGFX_SERVE_SCENE set". That variable is one of two
-/// ways to start the server — Gui.serveDocument(doc, port) is the other
-/// (docs/HeadlessServe.md §4) — and a gate that reads it directly is
-/// simply blind to the second. The env var still counts on its own
-/// because it names a port the renderer has not necessarily bound yet:
-/// it starts the listener at its first publish, and a document can be
-/// loaded, and tessellated, before any frame happens.
-bool sceneServed()
+/// ⚠️ Not "was FC_BGFX_SERVE_SCENE set", and not "is the listener up"
+/// either. The env var is one of two ways to serve — it still counts
+/// on its own, process-wide, because it names a port the renderer has
+/// not necessarily bound yet: a document can be loaded, and
+/// tessellated, before any frame happens. Gui.serveDocument is the
+/// other way, and for it the question is per document, asked of the
+/// source (docs/MultiDocServe.md §5): a listener can be running with
+/// no publisher behind it — a failed serve must not flip this gate —
+/// and serving one document says nothing about another's views. Null
+/// \a doc asks whether *any* document is served.
+bool sceneServed(App::Document *doc)
 {
     static const bool byEnv = [] {
         const char *env = std::getenv("FC_BGFX_SERVE_SCENE");
         return env && *env;
     }();
-    return byEnv || Render::SceneStreamServer::instance().running();
+    if (byEnv)
+        return true;
+    if (doc)
+        return Gui::SceneServeSource::serving(doc);
+    return Gui::SceneServeSource::renderProperties() != nullptr;
 }
 
-/// The render properties in force: a 3D view's when this process has
-/// one, and the serving source's when it does not — headless serving
-/// holds the same Render_* set with no view to hang it on
-/// (docs/HeadlessServe.md §3.3).
-App::PropertyContainer *renderOverrides()
+/// The render properties in force for \a doc: its serving source's
+/// container when the document is served — the publisher that owns the
+/// stream owns its container (docs/MultiDocServe.md §5) — else the
+/// active 3D view's, else the first-served source's (the headless
+/// process with no view at all, docs/HeadlessServe.md §3.3).
+App::PropertyContainer *renderOverrides(App::Document *doc)
 {
+    if (doc) {
+        if (auto *props = Gui::SceneServeSource::renderProperties(doc))
+            return props;
+    }
     if (auto *view = qobject_cast<Gui::View3DInventor *>(
             Gui::Application::Instance->activeView()))
         return view;
@@ -279,7 +291,7 @@ App::PropertyContainer *renderOverrides()
 
 } // anonymous namespace
 
-int PartGui::coarseTessellationLevel()
+int PartGui::coarseTessellationLevel(App::Document *doc)
 {
     // The environment variable is the whole-process override — set, it
     // decides for every view and any value outside the ladder means
@@ -303,7 +315,7 @@ int PartGui::coarseTessellationLevel()
     // Coin display and a backend that answers drivesMeshLevels()
     // false have neither, and a coarse build there would simply stay
     // coarse forever.
-    if (!sceneServed()) {
+    if (!sceneServed(doc)) {
         if (Gui::ViewParams::getRenderCache() != 3)
             return -1;
         auto *view3d = qobject_cast<Gui::View3DInventor *>(
@@ -318,7 +330,7 @@ int PartGui::coarseTessellationLevel()
     // whichever container holds this process's render settings, since
     // a headless serving process has them without a view.
     long lvl = Gui::RenderParams::getCoarseTessellation();
-    if (auto *container = renderOverrides()) {
+    if (auto *container = renderOverrides(doc)) {
         if (auto *prop = dynamic_cast<App::PropertyInteger *>(
                 container->getPropertyByName("Render_CoarseTessellation")))
             lvl = prop->getValue();
@@ -335,7 +347,8 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                                           onExactBuilt,
                                       std::function<void()> onDemote,
                                       float demoteError,
-                                      std::function<void()> onDowngrade)
+                                      std::function<void()> onDowngrade,
+                                      App::Document *doc)
 {
     if (shape.IsNull() || (!faceTag && !lineTag))
         return;
@@ -386,7 +399,7 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
     // draw of the same object share bounds and error, so a plan wants
     // or drops them together; the shared job relies on that.
     Render::MeshSourceRegistry::LevelHooks hooks;
-    if (onExactBuilt && builtError > 0.0f && !sceneServed()) {
+    if (onExactBuilt && builtError > 0.0f && !sceneServed(doc)) {
         const void *primary = faceTag ? faceTag : lineTag;
         auto fired = std::make_shared<std::atomic<bool>>(false);
         // The climb goes through the worker — unless a finer rung is

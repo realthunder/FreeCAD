@@ -103,10 +103,22 @@ public:
      * The render-property container of a serving source, for callers
      * that would otherwise reach for the 3D view's — the control
      * channel's "view3d" subject above all (docs/HeadlessServe.md §3.3).
-     * Null when nothing is being served this way, which is when a real
-     * view exists and should be used instead.
+     * With \a doc, the container of that document's source, null when
+     * it is not served; without, the first-served source's — the same
+     * document an unadorned viewer is joined to — and null when
+     * nothing is served at all.
      */
-    static App::PropertyContainer *renderProperties();
+    static App::PropertyContainer *renderProperties(
+            App::Document *doc = nullptr);
+
+    /// The source serving \a doc, or null.
+    static SceneServeSource *sourceFor(App::Document *doc);
+    /// Whether \a doc is being served by a source. This — not whether
+    /// the stream server's listener is up — is what document-scoped
+    /// gates ask (docs/MultiDocServe.md §5): a listener can be running
+    /// with no publisher behind it, and serving one document says
+    /// nothing about another.
+    static bool serving(App::Document *doc);
 
     /// This source's own render-property container.
     App::PropertyContainer *ownRenderProperties() const;

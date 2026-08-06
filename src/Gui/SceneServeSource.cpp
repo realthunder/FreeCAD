@@ -33,10 +33,12 @@
 #include <QApplication>
 #include <QColor>
 #include <QPointer>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <functional>
 #include <map>
+#include <vector>
 #endif
 
 #include <App/Application.h>
@@ -132,6 +134,10 @@ class SceneServeSource::Private
 {
 public:
     Document *doc = nullptr;
+    /// The server group this source publishes into: the document's
+    /// name (docs/MultiDocServe.md §3). Fixed at construction -- a
+    /// document rename mid-serve keeps the stream's identity.
+    std::string groupName;
     SoFCUnifiedSelection *root = nullptr;
     SoOrthographicCamera *camera = nullptr;
     /*!
@@ -242,6 +248,12 @@ SceneServeSource::SceneServeSource(Document *doc)
             "graphics device\n", type.c_str());
         return;
     }
+    // Publishes land in this document's own group on the server, so a
+    // second served document is a second group -- not a second claimant
+    // on a single stream.
+    if (doc && doc->getDocument())
+        pimpl->groupName = doc->getDocument()->getName();
+    pimpl->renderer->setPublishGroup(pimpl->groupName);
 
     pimpl->root = new SoFCUnifiedSelection();
     pimpl->root->ref();
@@ -306,7 +318,17 @@ SceneServeSource::SceneServeSource(Document *doc)
     schedulePublish();
 }
 
-SceneServeSource::~SceneServeSource() = default;
+SceneServeSource::~SceneServeSource()
+{
+    // Hand the group back before anything of this source goes away:
+    // clears its publisher claim and handler slots and purges its
+    // queued level jobs, so no server thread dispatches into a source
+    // being destroyed. The group node itself stays (SceneServer.h,
+    // releaseGroup).
+    if (isValid())
+        Render::SceneStreamServer::instance().releaseGroup(
+                pimpl->groupName);
+}
 
 void SceneServeSource::installHandlers()
 {
@@ -327,11 +349,14 @@ void SceneServeSource::installHandlers()
                                     SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
                                     r.modifiers & 1);
         }, Qt::QueuedConnection);
-    });
+    }, pimpl->groupName);
 
     // The semantic control channel (docs/ThinClient.md §4.2) needs
     // nothing from a view and never did — it works on the document.
-    installSceneControlHandler();
+    // Installed on this document's group, bound to this document: a
+    // remote edit of "view3d" must land on the container the publish
+    // reads (docs/MultiDocServe.md §5).
+    installSceneControlHandler(pimpl->groupName);
 
     // A finished level-generation job is announced by the next publish,
     // and this source publishes only when something asks it to. Without
@@ -342,7 +367,7 @@ void SceneServeSource::installHandlers()
             if (self)
                 self->schedulePublish();
         }, Qt::QueuedConnection);
-    });
+    }, pimpl->groupName);
 }
 
 void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
@@ -408,6 +433,16 @@ std::map<Document *, std::unique_ptr<SceneServeSource>> &servedDocuments()
     static std::map<Document *, std::unique_ptr<SceneServeSource>> sources;
     return sources;
 }
+
+/// Serve order, oldest first: the first-served document is the server's
+/// default group -- what an unadorned viewer is joined to -- so "the"
+/// render properties (renderProperties with no document) must be that
+/// one's, not whichever map entry has the lowest address.
+std::vector<Document *> &serveOrder()
+{
+    static std::vector<Document *> order;
+    return order;
+}
 }  // namespace
 
 SceneServeSource *SceneServeSource::serve(Document *doc, int port)
@@ -415,10 +450,23 @@ SceneServeSource *SceneServeSource::serve(Document *doc, int port)
     if (!doc)
         return nullptr;
 
-    // Start the server before the source, so the first publish already
-    // has somewhere to go. A port of 0 means the caller arranged that
-    // some other way -- FC_BGFX_SERVE_SCENE, or an already running
-    // server serving another document's publisher.
+    auto &sources = servedDocuments();
+    auto it = sources.find(doc);
+    if (it != sources.end())
+        return it->second.get();
+
+    // The source before the listener: constructing it claims the
+    // document's group and installs its handlers, so the first-served
+    // document is the default group an unadorned viewer joins -- and a
+    // source that fails to construct leaves no orphaned listener
+    // behind, which used to flip the process-wide coarse-tessellation
+    // gate with no publisher anywhere. A port of 0 means the caller
+    // arranged the server some other way -- FC_BGFX_SERVE_SCENE, or an
+    // already running server serving another document.
+    auto source = std::make_unique<SceneServeSource>(doc);
+    if (!source->isValid())
+        return nullptr;
+
     auto &server = Render::SceneStreamServer::instance();
     if (port > 0 && !server.running() && !server.start(port)) {
         Base::Console().Error(
@@ -427,21 +475,16 @@ SceneServeSource *SceneServeSource::serve(Document *doc, int port)
         return nullptr;
     }
 
-    auto &sources = servedDocuments();
-    auto it = sources.find(doc);
-    if (it != sources.end())
-        return it->second.get();
-
-    auto source = std::make_unique<SceneServeSource>(doc);
-    if (!source->isValid())
-        return nullptr;
     auto *raw = source.get();
     sources[doc] = std::move(source);
+    serveOrder().push_back(doc);
     return raw;
 }
 
 void SceneServeSource::unserve(Document *doc)
 {
+    auto &order = serveOrder();
+    order.erase(std::remove(order.begin(), order.end(), doc), order.end());
     servedDocuments().erase(doc);
 }
 
@@ -450,14 +493,38 @@ App::PropertyContainer *SceneServeSource::ownRenderProperties() const
     return &pimpl->renderProps;
 }
 
-App::PropertyContainer *SceneServeSource::renderProperties()
+App::PropertyContainer *SceneServeSource::renderProperties(
+        App::Document *doc)
 {
-    // One source, one document, one port (§5), so "the served one" is
-    // as unambiguous as "the active view" is for a windowed session.
-    auto &sources = servedDocuments();
-    if (sources.empty())
+    if (doc) {
+        auto *src = sourceFor(doc);
+        return src ? src->ownRenderProperties() : nullptr;
+    }
+    // No document named: the first-served source, which is the same
+    // document the server's default group serves to an unadorned
+    // viewer.
+    auto &order = serveOrder();
+    if (order.empty())
         return nullptr;
-    return sources.begin()->second->ownRenderProperties();
+    auto it = servedDocuments().find(order.front());
+    return it == servedDocuments().end()
+        ? nullptr : it->second->ownRenderProperties();
+}
+
+SceneServeSource *SceneServeSource::sourceFor(App::Document *doc)
+{
+    if (!doc)
+        return nullptr;
+    for (auto &entry : servedDocuments()) {
+        if (entry.first->getDocument() == doc)
+            return entry.second.get();
+    }
+    return nullptr;
+}
+
+bool SceneServeSource::serving(App::Document *doc)
+{
+    return sourceFor(doc) != nullptr;
 }
 
 bool SceneServeSource::isValid() const

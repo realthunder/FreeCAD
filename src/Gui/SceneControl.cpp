@@ -51,12 +51,24 @@ using namespace Gui;
 
 namespace {
 
-/// The 3D view whose properties the client edits: the served scene has
-/// exactly one that matters, so "the active one" is unambiguous, and
-/// falling back to the first 3D view of the active document covers the
-/// headless-served case where nothing was ever activated by a user.
-App::PropertyContainer *sceneView()
+/// The 3D view whose properties the client edits. A request bound to a
+/// served document (\a boundDoc, the group the connection is joined to)
+/// resolves that document's serving container first: the publisher that
+/// owns the stream owns its container (docs/MultiDocServe.md §5) -- an
+/// edit landing anywhere else republishes nothing, because only the
+/// source's own container notifies it. Otherwise "the active one" as a
+/// windowed session means it, then the active document's first 3D view,
+/// then the first-served source's container -- the headless case where
+/// nothing was ever activated by a user.
+App::PropertyContainer *sceneView(const std::string &boundDoc = {})
 {
+    if (!boundDoc.empty()) {
+        if (auto *doc =
+                App::GetApplication().getDocument(boundDoc.c_str())) {
+            if (auto *props = SceneServeSource::renderProperties(doc))
+                return props;
+        }
+    }
     if (auto v = dynamic_cast<View3DInventor *>(
                 Application::Instance->activeView()))
         return v;
@@ -67,12 +79,6 @@ App::PropertyContainer *sceneView()
                 return v;
         }
     }
-    // No view at all is the headless-served case (docs/HeadlessServe.md
-    // §3.3), where the publisher holds the same Render_* properties. The
-    // subject is still "the 3D view" as far as a remote viewer is
-    // concerned -- it is asking about how the scene it was sent is
-    // drawn, and that question has an answer whether or not this process
-    // has a window.
     return SceneServeSource::renderProperties();
 }
 
@@ -251,7 +257,8 @@ void describeContainer(const App::PropertyContainer *container,
     }
 }
 
-QJsonObject getProperties(const QJsonObject &req)
+QJsonObject getProperties(const QJsonObject &req,
+                          const std::string &boundDoc)
 {
     const QJsonValue id = req.value(QLatin1String("id"));
     // What is being inspected. The default is the object, which is
@@ -261,7 +268,7 @@ QJsonObject getProperties(const QJsonObject &req)
     const QString subject = req.value(QLatin1String("subject")).toString();
 
     if (subject == QLatin1String("view3d")) {
-        auto view = sceneView();
+        auto view = sceneView(boundDoc);
         if (!view)
             return errorReply(id, "UnknownObject", QStringLiteral("no 3D view"));
         QJsonObject reply;
@@ -281,10 +288,16 @@ QJsonObject getProperties(const QJsonObject &req)
 
     App::Document *doc = nullptr;
     const QString docName = req.value(QLatin1String("doc")).toString();
-    if (docName.isEmpty())
-        doc = App::GetApplication().getActiveDocument();
-    else
+    // An unnamed document means the one this connection's group serves
+    // when the handler is bound (a headless backend has no meaningful
+    // "active" document); the active document remains the windowed
+    // fallback.
+    if (!docName.isEmpty())
         doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    else if (!boundDoc.empty())
+        doc = App::GetApplication().getDocument(boundDoc.c_str());
+    else
+        doc = App::GetApplication().getActiveDocument();
     if (!doc)
         return errorReply(id, "UnknownDocument", docName);
 
@@ -449,7 +462,8 @@ const char *assignProperty(App::Property *prop, const QJsonValue &value)
     return nullptr;
 }
 
-QJsonObject setProperty(const QJsonObject &req)
+QJsonObject setProperty(const QJsonObject &req,
+                        const std::string &boundDoc)
 {
     const QJsonValue id = req.value(QLatin1String("id"));
     const QString target = req.value(QLatin1String("target")).toString();
@@ -460,7 +474,7 @@ QJsonObject setProperty(const QJsonObject &req)
     // model's, which is also why they are outside the transaction and
     // the recompute below.
     if (target == QLatin1String("view3d")) {
-        auto view = sceneView();
+        auto view = sceneView(boundDoc);
         if (!view)
             return errorReply(id, "UnknownObject", QStringLiteral("no 3D view"));
         const QByteArray vname =
@@ -484,10 +498,16 @@ QJsonObject setProperty(const QJsonObject &req)
 
     App::Document *doc = nullptr;
     const QString docName = req.value(QLatin1String("doc")).toString();
-    if (docName.isEmpty())
-        doc = App::GetApplication().getActiveDocument();
-    else
+    // An unnamed document means the one this connection's group serves
+    // when the handler is bound (a headless backend has no meaningful
+    // "active" document); the active document remains the windowed
+    // fallback.
+    if (!docName.isEmpty())
         doc = App::GetApplication().getDocument(docName.toUtf8().constData());
+    else if (!boundDoc.empty())
+        doc = App::GetApplication().getDocument(boundDoc.c_str());
+    else
+        doc = App::GetApplication().getActiveDocument();
     if (!doc)
         return errorReply(id, "UnknownDocument", docName);
 
@@ -546,7 +566,8 @@ QJsonObject setProperty(const QJsonObject &req)
 
 } // namespace
 
-std::string Gui::handleSceneControlRequest(const std::string &json)
+std::string Gui::handleSceneControlRequest(const std::string &json,
+                                           const std::string &boundDoc)
 {
     QJsonParseError err;
     QJsonDocument parsed = QJsonDocument::fromJson(
@@ -559,9 +580,9 @@ std::string Gui::handleSceneControlRequest(const std::string &json)
         const QJsonObject req = parsed.object();
         const QString op = req.value(QLatin1String("op")).toString();
         if (op == QLatin1String("getProperties"))
-            reply = getProperties(req);
+            reply = getProperties(req, boundDoc);
         else if (op == QLatin1String("setProperty"))
-            reply = setProperty(req);
+            reply = setProperty(req, boundDoc);
         else
             reply = errorReply(req.value(QLatin1String("id")), "UnknownOp", op);
     }
@@ -570,19 +591,24 @@ std::string Gui::handleSceneControlRequest(const std::string &json)
         .toStdString();
 }
 
-void Gui::installSceneControlHandler()
+void Gui::installSceneControlHandler(const std::string &docName)
 {
+    // Installed on the named document's group (empty = the default
+    // group). The document is bound by NAME and re-resolved per request
+    // on the GUI thread: a queued request must not carry a pointer
+    // across the document's deletion.
     Render::SceneStreamServer::instance().setControlHandler(
-            [](Render::SceneControlRequest &&req) {
+            [docName](Render::SceneControlRequest &&req) {
                 // Server connection thread: hop to the GUI thread (the
                 // document is main-thread only), answer from there. The
                 // reply hook is thread-safe and drops silently if the
                 // viewer left meanwhile.
                 auto shared = std::make_shared<Render::SceneControlRequest>(
                         std::move(req));
-                QMetaObject::invokeMethod(qApp, [shared]() {
+                QMetaObject::invokeMethod(qApp, [shared, docName]() {
                     shared->reply(
-                            handleSceneControlRequest(shared->json));
+                            handleSceneControlRequest(shared->json,
+                                                      docName));
                 }, Qt::QueuedConnection);
-            });
+            }, docName);
 }
