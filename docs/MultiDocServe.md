@@ -196,6 +196,40 @@ None of that is built here; the point is that this wire design is already the th
 service would proxy, and the room/tenancy split above is what keeps the two layers from
 needing to know about each other.
 
+### 7.1 Why process-per-session scales
+
+The recurring objection to one-process-per-user is process weight. The measured cost
+profile answers it:
+
+- **CPU is bursty, so it oversubscribes.** An idle serving backend measures ~0% CPU
+  (stage 1/2); cycles exist only during recompute and edits. Sessions pack onto cores at
+  ratios set by duty cycle, not session count.
+- **No rendering tier exists.** Viewers rasterize the published scene themselves, so the
+  server side scales like a document database, not like cloud gaming — no GPU fleet, and
+  no per-viewer server cost beyond a socket and a delta cursor.
+- **Density is therefore RAM-bound**, and RAM is dominated by the model (BRep,
+  tessellation, render caches), not the runtime tax of Python + OCCT + Coin. A
+  memory-dense box carries on the order of a hundred light sessions or a handful of
+  giant-assembly ones; the session manager bin-packs by memory headroom.
+- **Idle sessions need not exist.** Durable truth is the `.FCStd` plus the content-keyed
+  (re-derivable) blob store, so hibernation is a save-and-kill and resurrection is
+  spawn-and-load. The gateway can serve a rejoining viewer the cached retained payload
+  while the backend cold-starts behind it — which is also why document-load/import
+  performance is cloud economics, not just desktop comfort. A warm pool or fork zygote
+  (sharing runtime pages copy-on-write across a box's sessions) hides the spawn half.
+- **Sessions are portable**, because their state is a file: drain, move, resurrect
+  anywhere; boxes are cattle; the gateway just re-routes the proxy.
+- **This design sets the granularity**: one user's *n* documents are one process, not *n*.
+
+The ceiling of the model is that a session's recompute burst is trapped on its box and a
+big model's memory in one process. That ceiling is lifted by exactly the
+[ComputeBoundaries.md](./ComputeBoundaries.md) split this project already plans: a
+RAM-light session tier that holds documents and streams scenes, and an elastic geometry
+worker tier that absorbs recompute bursts wherever capacity is — at which point session
+count and compute scale independently. Onshape (per-session geometry servers) and
+JupyterHub (per-user kernels) are the proven precedents; the structural advantage here is
+the absent rendering tier.
+
 ## 8. Staging
 
 Each stage lands alone, with the single-document behavior as its own oracle — the stage-2c

@@ -15,7 +15,9 @@ There are two distinct process boundaries. Do not conflate them.
   One server per document/session. The whole non-GUI side (App layer, all module
   `App/` code, OCCT, Python) lives in the server. The GUI is a thin client that sends
   operations and renders streamed tessellation. Gives: browser/mobile thin client,
-  GUI-process crash isolation, and the AI interface (§6).
+  GUI-process crash isolation, and the AI interface (§6). Why this per-session process
+  model scales as a cloud service — idle ≈ 0 CPU, no rendering tier, RAM-bound density,
+  hibernate-to-`.FCStd` — is analyzed in [MultiDocServe.md](./MultiDocServe.md) §7.1.
 
   *Staging realism:* `src/Gui` today assumes direct pointers into App objects everywhere —
   ViewProviders hold `DocumentObject*`, commands poke properties, selection walks the object
