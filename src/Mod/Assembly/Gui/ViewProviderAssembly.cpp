@@ -63,7 +63,7 @@
 #include <Gui/BitmapFactory.h>
 #include <Gui/CommandT.h>
 #include <Gui/Control.h>
-#include <Gui/SoFCCSysDragger.h>
+#include <Gui/Inventor/Draggers/SoTransformDragger.h>
 #include <Gui/MDIView.h>
 #include <Gui/MainWindow.h>
 #include <Gui/View3DInventor.h>
@@ -387,17 +387,14 @@ void ViewProviderAssembly::setDragger()
 {
     // Create the dragger coin object
     assert(!asmDragger);
-    // Upstream's Gui::SoTransformDragger is a dragger subsystem this fork does not
-    // have; SoFCCSysDragger is the one it does, and it carries the same translation,
-    // rotation, draggerSize and auto-scale interface.
-    asmDragger = new Gui::SoFCCSysDragger();
+    asmDragger = new Gui::SoTransformDragger();
+    // ViewParams is a static API in this fork, not upstream's instance().
     asmDragger->setAxisColors(
         Gui::ViewParams::getAxisXColor(),
         Gui::ViewParams::getAxisYColor(),
         Gui::ViewParams::getAxisZColor()
     );
-    // There is no dragger scale parameter here; 0.05 is what the rest of the fork uses.
-    asmDragger->draggerSize.setValue(0.05F);
+    asmDragger->draggerSize.setValue(Gui::ViewParams::getDraggerScale());
 
     asmDraggerSwitch = new SoSwitch(SO_SWITCH_NONE);
     asmDraggerSwitch->addChild(asmDragger);
@@ -1406,7 +1403,7 @@ Base::Placement ViewProviderAssembly::getDraggerPlacement()
     };
 }
 
-Gui::SoFCCSysDragger* ViewProviderAssembly::getDragger()
+Gui::SoTransformDragger* ViewProviderAssembly::getDragger()
 {
     return asmDragger;
 }

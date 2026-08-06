@@ -8,7 +8,7 @@ from Base.Metadata import export
 from App.DocumentObject import DocumentObject
 from Gui.ViewProvider import ViewProvider
 
-SoFCCSysDragger: TypeAlias = Any
+SoTransformDragger: TypeAlias = Any
 
 @export(Include="Mod/Assembly/Gui/ViewProviderAssembly.h", Namespace="AssemblyGui")
 class ViewProviderAssembly(ViewProvider):
@@ -25,7 +25,7 @@ class ViewProviderAssembly(ViewProvider):
         """
         ...
 
-    def getDragger(self) -> SoFCCSysDragger:
+    def getDragger(self) -> SoTransformDragger:
         """Return the assembly dragger coin object."""
         ...
 

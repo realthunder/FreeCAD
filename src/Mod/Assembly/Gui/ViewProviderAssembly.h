@@ -41,7 +41,7 @@ class SoFieldSensor;
 
 namespace Gui
 {
-class SoFCCSysDragger;
+class SoTransformDragger;
 class View3DInventorViewer;
 }  // namespace Gui
 
@@ -210,7 +210,7 @@ public:
     bool getDraggerVisibility();
     void setDraggerPlacement(Base::Placement plc);
     Base::Placement getDraggerPlacement();
-    Gui::SoFCCSysDragger* getDragger();
+    Gui::SoTransformDragger* getDragger();
 
     static Base::Vector3d getCenterOfBoundingBox(const std::vector<MovingObject>& movingObjs);
 
@@ -246,7 +246,7 @@ public:
     std::vector<std::pair<App::DocumentObject*, double>> objectMasses;
     std::vector<MovingObject> docsToMove;
 
-    Gui::SoFCCSysDragger* asmDragger = nullptr;
+    Gui::SoTransformDragger* asmDragger = nullptr;
     SoSwitch* asmDraggerSwitch = nullptr;
     SoFieldSensor* translationSensor = nullptr;
     SoFieldSensor* rotationSensor = nullptr;
