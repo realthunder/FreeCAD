@@ -120,6 +120,7 @@ public:
     long MaxSelectionNotification;
     bool MapChildrenPlacement;
     double EditingTransparency;
+    double DraggerScale;
     double HiddenLineTransparency;
     bool HiddenLineOverrideTransparency;
     unsigned long HiddenLineFaceColor;
@@ -365,6 +366,8 @@ public:
         funcs["MapChildrenPlacement"] = &ViewParamsP::updateMapChildrenPlacement;
         EditingTransparency = this->handle->GetFloat("EditingTransparency", 0.5);
         funcs["EditingTransparency"] = &ViewParamsP::updateEditingTransparency;
+        DraggerScale = this->handle->GetFloat("DraggerScale", 0.03);
+        funcs["DraggerScale"] = &ViewParamsP::updateDraggerScale;
         HiddenLineTransparency = this->handle->GetFloat("HiddenLineTransparency", 0.4);
         funcs["HiddenLineTransparency"] = &ViewParamsP::updateHiddenLineTransparency;
         HiddenLineOverrideTransparency = this->handle->GetBool("HiddenLineOverrideTransparency", true);
@@ -874,6 +877,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateEditingTransparency(ViewParamsP *self) {
         self->EditingTransparency = self->handle->GetFloat("EditingTransparency", 0.5);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDraggerScale(ViewParamsP *self) {
+        self->DraggerScale = self->handle->GetFloat("DraggerScale", 0.03);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateHiddenLineTransparency(ViewParamsP *self) {
@@ -3078,6 +3085,34 @@ void ViewParams::setEditingTransparency(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void ViewParams::removeEditingTransparency() {
     instance()->handle->RemoveFloat("EditingTransparency");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docDraggerScale() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Size of the transform dragger relative to the viewport.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & ViewParams::getDraggerScale() {
+    return instance()->DraggerScale;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & ViewParams::defaultDraggerScale() {
+    const static double def = 0.03;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setDraggerScale(const double &v) {
+    instance()->handle->SetFloat("DraggerScale",v);
+    instance()->DraggerScale = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeDraggerScale() {
+    instance()->handle->RemoveFloat("DraggerScale");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

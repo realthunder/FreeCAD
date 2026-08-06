@@ -769,6 +769,18 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter DraggerScale
+    ///
+    /// Size of the transform dragger relative to the viewport.
+    static const double & getDraggerScale();
+    static const double & defaultDraggerScale();
+    static void removeDraggerScale();
+    static void setDraggerScale(const double &v);
+    static const char *docDraggerScale();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter HiddenLineTransparency
     ///
     /// Overridden transparency value of all objects in the scene.

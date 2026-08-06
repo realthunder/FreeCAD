@@ -73,6 +73,11 @@
 #include "SoDatumLabel.h"
 #include "Inventor/MarkerBitmaps.h"
 #include "Inventor/SmSwitchboard.h"
+#include "Inventor/So3DAnnotation.h"
+#include "Inventor/SoToggleSwitch.h"
+#include "Inventor/Draggers/SoTransformDragger.h"
+#include "Inventor/Draggers/SoLinearDraggerGeometry.h"
+#include "Inventor/Draggers/SoRotationDraggerGeometry.h"
 #include "Inventor/SoFCVertexCache.h"
 #include "Inventor/SoFCRenderCache.h"
 #include "Inventor/SoFCDisplayMode.h"
@@ -162,6 +167,20 @@ void Gui::SoFCDB::init()
     MarkerBitmaps                   ::initClass();
     SoFCCSysDragger                 ::initClass();
     ClipDragger                     ::initClass();
+    SoTransformDragger              ::initClass();
+    SoLinearGeometryKit             ::initClass();
+    SoArrowGeometry                 ::initClass();
+    SoLinearGeometryBaseKit         ::initClass();
+    SoArrowBase                     ::initClass();
+    SoRotatorGeometryKit            ::initClass();
+    SoRotatorGeometry               ::initClass();
+    SoRotatorGeometry2              ::initClass();
+    SoRotatorArrow                  ::initClass();
+    SoRotatorGeometryBaseKit        ::initClass();
+    SoRotatorBase                   ::initClass();
+    SoToggleSwitch                  ::initClass();
+    So3DAnnotation                  ::initClass();
+    SoDelayedAnnotationsElement     ::initClass();
     SmSwitchboard                   ::initClass();
     SoFCSwitch                      ::initClass();
     SoFCSeparator                   ::initClass();

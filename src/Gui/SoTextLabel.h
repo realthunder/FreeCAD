@@ -115,6 +115,9 @@ public:
     SoSFName   name;
     SoSFInt32  size;
     SoSFBool   frame;
+    SoSFBool   border;
+    SoSFBool   backgroundUseBaseColor;
+    SoSFBool   textUseBaseColor;
   //SoSFImage  image;
 
 protected:
@@ -123,7 +126,16 @@ protected:
     void GLRender(SoGLRenderAction *action) override;
 
 private:
-    void drawImage();
+    // The *UseBaseColor fields take the color from the traversal state, so the
+    // image can only be produced at render time; field changes just mark it
+    // dirty.
+    void prepareImage(SoState *state);
+    void drawImage(const SbColor &effectiveBackground, const SbColor &effectiveText);
+
+    bool imageDirty = true;
+    bool effectiveColorsValid = false;
+    SbColor cachedEffectiveBackground;
+    SbColor cachedEffectiveText;
 };
 
 class GuiExport TranslateManip : public SoTransformManip

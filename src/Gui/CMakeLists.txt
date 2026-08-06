@@ -1032,6 +1032,14 @@ SET(Inventor_CPP_SRCS
     Inventor/SoFCDisplayModeElement.cpp
     Inventor/SoFCDisplayMode.cpp
     Inventor/SoFCShapeInfo.cpp
+    Inventor/So3DAnnotation.cpp
+    Inventor/SoToggleSwitch.cpp
+    Inventor/Draggers/SoLinearDragger.cpp
+    Inventor/Draggers/SoLinearDraggerGeometry.cpp
+    Inventor/Draggers/SoPlanarDragger.cpp
+    Inventor/Draggers/SoRotationDragger.cpp
+    Inventor/Draggers/SoRotationDraggerGeometry.cpp
+    Inventor/Draggers/SoTransformDragger.cpp
     SoFCBackgroundGradient.cpp
     SoFCBoundingBox.cpp
     SoFCColorBar.cpp
@@ -1082,6 +1090,14 @@ SET(Inventor_SRCS
     Inventor/SoFCDisplayModeElement.h
     Inventor/SoFCDisplayMode.h
     Inventor/SoFCShapeInfo.h
+    Inventor/So3DAnnotation.h
+    Inventor/SoToggleSwitch.h
+    Inventor/Draggers/SoLinearDragger.h
+    Inventor/Draggers/SoLinearDraggerGeometry.h
+    Inventor/Draggers/SoPlanarDragger.h
+    Inventor/Draggers/SoRotationDragger.h
+    Inventor/Draggers/SoRotationDraggerGeometry.h
+    Inventor/Draggers/SoTransformDragger.h
     SoFCBackgroundGradient.h
     SoFCBoundingBox.h
     SoFCColorBar.h

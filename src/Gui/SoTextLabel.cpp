@@ -380,6 +380,9 @@ SoFrameLabel::SoFrameLabel()
     SO_NODE_ADD_FIELD(name, ("Helvetica"));
     SO_NODE_ADD_FIELD(size, (12));
     SO_NODE_ADD_FIELD(frame, (true));
+    SO_NODE_ADD_FIELD(border, (true));
+    SO_NODE_ADD_FIELD(backgroundUseBaseColor, (false));
+    SO_NODE_ADD_FIELD(textUseBaseColor, (false));
   //SO_NODE_ADD_FIELD(image, (SbVec2s(0,0), 0, NULL));
 }
 
@@ -392,13 +395,16 @@ void SoFrameLabel::notify(SoNotList * list)
         f == &this->justification ||
         f == &this->name ||
         f == &this->size ||
-        f == &this->frame) {
-        drawImage();
+        f == &this->frame ||
+        f == &this->border ||
+        f == &this->backgroundUseBaseColor ||
+        f == &this->textUseBaseColor) {
+        imageDirty = true;
     }
     inherited::notify(list);
 }
 
-void SoFrameLabel::drawImage()
+void SoFrameLabel::drawImage(const SbColor &effectiveBackground, const SbColor &effectiveText)
 {
     const SbString* s = string.getValues(0);
     int num = string.getNum();
@@ -411,12 +417,10 @@ void SoFrameLabel::drawImage()
     QFontMetrics fm(font);
     int w = 0;
     int h = fm.height() * num;
-    const SbColor& b = backgroundColor.getValue();
     QColor brush;
-    brush.setRgbF(b[0],b[1],b[2]);
-    const SbColor& t = textColor.getValue();
+    brush.setRgbF(effectiveBackground[0],effectiveBackground[1],effectiveBackground[2]);
     QColor front;
-    front.setRgbF(t[0],t[1],t[2]);
+    front.setRgbF(effectiveText[0],effectiveText[1],effectiveText[2]);
 
     QStringList lines;
     for (int i=0; i<num; i++) {
@@ -431,10 +435,12 @@ void SoFrameLabel::drawImage()
     painter.setRenderHint(QPainter::Antialiasing);
 
     SbBool drawFrame = frame.getValue();
-    if (drawFrame) {
-        painter.setPen(QPen(QColor(0,0,127), 2, Qt::SolidLine, Qt::RoundCap,
-                            Qt::RoundJoin));
-        painter.setBrush(QBrush(brush, Qt::SolidPattern));
+    SbBool drawBorder = border.getValue();
+    if (drawFrame || drawBorder) {
+        painter.setPen(drawBorder ? QPen(QColor(0,0,127), 2, Qt::SolidLine, Qt::RoundCap,
+                                         Qt::RoundJoin)
+                                  : QPen(Qt::transparent));
+        painter.setBrush(QBrush(drawFrame ? brush : QColor(Qt::transparent), Qt::SolidPattern));
         QRectF rectangle(0.0, 0.0, w+10, h+10);
         painter.drawRoundedRect(rectangle, 5, 5);
     }
@@ -458,11 +464,34 @@ void SoFrameLabel::drawImage()
     this->image = sfimage;
 }
 
+void SoFrameLabel::prepareImage(SoState *state)
+{
+    if (!state)
+        return;
+
+    const SbColor &diffuse = SoLazyElement::getDiffuse(state, 0);
+    const SbColor effectiveBackground = backgroundUseBaseColor.getValue()
+        ? diffuse : backgroundColor.getValue();
+    const SbColor effectiveText = textUseBaseColor.getValue()
+        ? diffuse : textColor.getValue();
+
+    if (imageDirty || !effectiveColorsValid
+            || effectiveBackground != cachedEffectiveBackground
+            || effectiveText != cachedEffectiveText) {
+        drawImage(effectiveBackground, effectiveText);
+        cachedEffectiveBackground = effectiveBackground;
+        cachedEffectiveText = effectiveText;
+        effectiveColorsValid = true;
+        imageDirty = false;
+    }
+}
+
 /**
  * Renders the open edges only.
  */
 void SoFrameLabel::GLRender(SoGLRenderAction *action)
 {
+    prepareImage(action->getState());
     inherited::GLRender(action);
 }
 
