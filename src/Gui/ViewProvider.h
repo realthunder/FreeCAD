@@ -37,6 +37,7 @@
 #include <Base/BoundBox.h>
 #include <Base/Vector3D.h>
 #include "InventorBase.h"
+#include "TreeItemMode.h"
 
 class QMouseEvent;
 class SbVec2s;
@@ -388,6 +389,8 @@ public:
     //@{
     /// signal on icon change
     boost::signals2::signal<void ()> signalChangeIcon;
+    /// signal on tree item highlight change
+    boost::signals2::signal<void (bool, Gui::HighlightMode)> signalChangeHighlight;
     //@}
 
     /** update the content of the ViewProvider

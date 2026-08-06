@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (c) 2004 Jürgen Riegel <juergen.riegel@web.de>              *
+ *   Copyright (c) 2024 Florian Foinant-Willig <ffw@2f2v.fr>               *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -20,32 +20,35 @@
  *                                                                         *
  ***************************************************************************/
 
+#ifndef GUI_VIEWPROVIDERSUPPRESSIBLEEXTENSION_H
+#define GUI_VIEWPROVIDERSUPPRESSIBLEEXTENSION_H
 
-#ifndef GUI_TREEITEMMODE_H
-#define GUI_TREEITEMMODE_H
+#include "ViewProviderExtensionPython.h"
 
-namespace Gui {
 
-    /// highlight modes for the tree items
-    enum class HighlightMode {
-        Underlined,
-        Italic,
-        Overlined,
-        StrikeOut,
-        Bold,
-        Blue,
-        LightBlue,
-        UserDefined,
-        None,
-    };
+namespace Gui
+{
 
-    /// highlight modes for the tree items
-    enum class TreeItemMode {
-        ExpandItem,
-        ExpandPath,
-        CollapseItem,
-        ToggleItem
-    };
-}
+class GuiExport ViewProviderSuppressibleExtension: public ViewProviderExtension
+{
+    EXTENSION_PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderSuppressibleExtension);
 
-#endif // GUI_TREEITEMMODE_H
+public:
+    ViewProviderSuppressibleExtension();
+    ~ViewProviderSuppressibleExtension() override;
+
+    void extensionUpdateData(const App::Property* prop) override;
+
+    void setSuppressedIcon(bool onoff);
+    void extensionMergeOverlayIcons(QIcon& icon) const override;
+
+private:
+    bool isSetSuppressedIcon {false};
+};
+
+using ViewProviderSuppressibleExtensionPython
+    = ViewProviderExtensionPythonT<Gui::ViewProviderSuppressibleExtension>;
+
+}  // namespace Gui
+
+#endif  // GUI_VIEWPROVIDERSUPPRESSIBLEEXTENSION_H

@@ -934,6 +934,7 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderExtension.cpp
     ViewProviderExtensionPyImp.cpp
     ViewProviderGroupExtension.cpp
+    ViewProviderSuppressibleExtension.cpp
     ViewProviderGeoFeatureGroupExtension.cpp
     ViewProviderOriginGroupExtension.cpp
     ViewProviderAnnotation.cpp
@@ -976,6 +977,7 @@ SET(Viewprovider_SRCS
     ViewProvider.h
     ViewProviderExtension.h
     ViewProviderGroupExtension.h
+    ViewProviderSuppressibleExtension.h
     ViewProviderGeoFeatureGroupExtension.h
     ViewProviderOriginGroupExtension.h
     ViewProviderAnnotation.h

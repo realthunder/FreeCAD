@@ -851,6 +851,7 @@ public:
     Connection connectIcon;
     Connection connectTool;
     Connection connectStat;
+    Connection connectHl;
 
     DocumentObjectData(DocumentItem *docItem, ViewProviderDocumentObject* vpd)
         : docItem(docItem), viewObject(vpd), rootItem(nullptr)
@@ -858,6 +859,9 @@ public:
         // Setup connections
         connectIcon = viewObject->signalChangeIcon.connect(
                 std::bind(&DocumentObjectData::slotChangeIcon, this));
+        connectHl = viewObject->signalChangeHighlight.connect(
+                std::bind(&DocumentObjectData::slotChangeHighlight, this,
+                          std::placeholders::_1, std::placeholders::_2));
 
         removeChildrenFromRoot = viewObject->canRemoveChildrenFromRoot();
         itemHidden = !viewObject->showInTree();
@@ -873,6 +877,11 @@ public:
         iconInfo.clear();
         for(auto item : items)
             item->testItemStatus(true);
+    }
+
+    void slotChangeHighlight(bool set, Gui::HighlightMode mode) {
+        for(auto item : items)
+            item->setHighlight(set, mode);
     }
 };
 
@@ -7335,6 +7344,9 @@ void DocumentObjectItem::setHighlight(bool set, Gui::HighlightMode high) {
     case HighlightMode::Overlined:
         f.setOverline(set);
         break;
+    case HighlightMode::StrikeOut:
+        f.setStrikeOut(set);
+        break;
     case HighlightMode::Blue:
         highlight(QColor(200,200,255));
         break;
@@ -7356,6 +7368,7 @@ void DocumentObjectItem::setHighlight(bool set, Gui::HighlightMode high) {
         f.setItalic(false);
         f.setUnderline(false);
         f.setOverline(false);
+        f.setStrikeOut(false);
         highlight(QColor());
         break;
     }

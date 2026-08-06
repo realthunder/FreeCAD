@@ -278,6 +278,7 @@
         <file>LinkElement.svg</file>
         <file>LinkGroup.svg</file>
         <file>LinkOverlay.svg</file>
+        <file>feature_suppressed.svg</file>
         <file>LinkArrayOverlay.svg</file>
         <file>LinkSubOverlay.svg</file>
         <file>LinkSubElement.svg</file>
