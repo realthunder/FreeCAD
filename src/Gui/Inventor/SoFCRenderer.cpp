@@ -865,16 +865,28 @@ SoFCRenderer::setExternalRenderer(Render::Renderer * renderer,
     return;
   // Feed the current state so a backend attached mid-session (e.g. on a
   // preference change) does not have to wait for the next scene rebuild.
-  if (PRIVATE(this)->scene)
-    renderer->setScene(RendererBridge::translate(
-          PRIVATE(this)->scene->getVertexCaches(true)));
+  // Mirror the live feed paths' translate() context exactly: setScene()
+  // resolves the object info map alongside the draws, and the selection /
+  // highlight feeds carry their id / highlight flag — without them the
+  // materials translate as plain scene draws (dimmed to TransparencyOnTop,
+  // stippled, unthickened) and the replayed selection is near-invisible.
+  if (PRIVATE(this)->scene) {
+    Render::ObjectInfoMap objinfo;
+    auto draws = RendererBridge::translate(
+          PRIVATE(this)->scene->getVertexCaches(true), 0, false, false,
+          &objinfo);
+    renderer->setObjectInfo(std::move(objinfo));
+    renderer->setScene(std::move(draws));
+  }
   for (auto & sel : PRIVATE(this)->selections)
-    renderer->addSelection(sel.first, RendererBridge::translate(*sel.second));
+    renderer->addSelection(sel.first,
+          RendererBridge::translate(*sel.second, sel.first));
   for (auto & sel : PRIVATE(this)->selectionsontop)
-    renderer->addSelection(sel.first, RendererBridge::translate(*sel.second));
+    renderer->addSelection(sel.first,
+          RendererBridge::translate(*sel.second, sel.first));
   if (!PRIVATE(this)->highlightcaches.empty())
     renderer->setHighlight(
-          RendererBridge::translate(PRIVATE(this)->highlightcaches),
+          RendererBridge::translate(PRIVATE(this)->highlightcaches, 0, true),
           PRIVATE(this)->hlwholeontop);
   if (auto hatch = PRIVATE(this)->hatchtexture)
     renderer->setHatchImage(hatch->data.data(), hatch->nc,
