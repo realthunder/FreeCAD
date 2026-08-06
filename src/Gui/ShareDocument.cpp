@@ -50,6 +50,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <functional>
+#include <map>
 #include <set>
 #include <vector>
 #endif
@@ -686,10 +687,14 @@ public:
     QString token;
     QPointer<ShareIndicator> indicator;
     QPointer<SharePanel> panel;
-    /// Connections whose remembered access has already been applied,
-    /// so the host flipping someone back is not undone on the next
-    /// roster tick. Ids are never reused within a run.
-    std::set<uint64_t> restored;
+    /// What each connection was last judged as, so the host flipping
+    /// someone back is not undone on the next roster tick. Keyed by
+    /// the *name* it was judged under, not just the id: a connection
+    /// exists before its hello arrives, so its first appearance is
+    /// nameless, and the name landing a moment later has to be judged
+    /// again — otherwise a rule naming somebody would never be
+    /// applied to them at all. Ids are never reused within a run.
+    std::map<uint64_t, QString> judged;
     QTimer timer;
     bool notifierInstalled = false;
 
@@ -1000,21 +1005,27 @@ void ShareDocumentManager::refreshUi()
     // tick, and the record only changes when the host changes it.
     const std::vector<ClientRecord> records = loadRecords();
     for (const auto &c : clients) {
-        if (!pimpl->restored.insert(c.id).second)
-            continue;
         const QString name = QString::fromUtf8(c.client.c_str());
         const QString address = QString::fromUtf8(c.address.c_str());
+        auto seen = pimpl->judged.find(c.id);
+        if (seen != pimpl->judged.end() && seen->second == name)
+            continue;
+        pimpl->judged[c.id] = name;
+
         const ClientRecord *known = matchRecord(records, name, address);
         if (!known) {
-            // First sight, and no rule covers them: remember them, so
-            // they can be given an access (or banned) while away. The
-            // address is stored without its source port, which differs
-            // on every visit.
-            ClientRecord rec;
-            rec.name = name;
-            rec.address = addressKey(address);
-            rec.viewOnly = c.viewOnly;
-            saveRecord(rec);
+            // Nobody's rule covers them. Remember them once they have
+            // said who they are — a connection with no hello yet has
+            // no name, and recording it would file a person under
+            // nothing. The address is stored without its source port,
+            // which differs on every visit.
+            if (c.viewer) {
+                ClientRecord rec;
+                rec.name = name;
+                rec.address = addressKey(address);
+                rec.viewOnly = c.viewOnly;
+                saveRecord(rec);
+            }
             continue;
         }
         if (known->banned) {
@@ -1024,13 +1035,13 @@ void ShareDocumentManager::refreshUi()
         if (known->viewOnly != c.viewOnly)
             server.setClientViewOnly(c.id, known->viewOnly);
     }
-    // Ids of connections that have gone: keep the applied set from
-    // growing for the life of the process.
-    for (auto it = pimpl->restored.begin(); it != pimpl->restored.end();) {
+    // Connections that have gone: keep the judged set from growing for
+    // the life of the process.
+    for (auto it = pimpl->judged.begin(); it != pimpl->judged.end();) {
         bool live = false;
         for (const auto &c : clients)
-            live = live || c.id == *it;
-        it = live ? std::next(it) : pimpl->restored.erase(it);
+            live = live || c.id == it->first;
+        it = live ? std::next(it) : pimpl->judged.erase(it);
     }
 
     if (pimpl->indicator) {
