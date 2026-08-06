@@ -29,6 +29,7 @@
 #include <sstream>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include <xercesc/framework/XMLPScanToken.hpp>
 #include <xercesc/sax2/Attributes.hpp>
@@ -394,8 +395,21 @@ protected:
     std::string Characters;
     std::streamsize CharacterOffset {-1};
 
-    std::map<std::string, std::string> AttrMap;
-    using AttrMapType = std::map<std::string, std::string>;
+    /** The attributes of the current element, one entry per attribute.
+     * The store is reused across elements -- entries are assigned in
+     * place so their string capacity survives the next startElement --
+     * and AttrCount says how many of them are live. Lookup is a linear
+     * scan: an element carries a handful of attributes, and this runs
+     * once per attribute access against once per element for the
+     * allocations a fresh container would cost.
+     */
+    struct Attribute {
+        std::string name;
+        std::string value;
+    };
+    std::vector<Attribute> AttrStore;
+    std::size_t AttrCount {0};
+    const std::string *findAttribute(const char *AttrName) const;
 
     enum
     {

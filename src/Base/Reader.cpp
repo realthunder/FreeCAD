@@ -169,7 +169,7 @@ const char* Base::XMLReader::localName() const
 
 unsigned int Base::XMLReader::getAttributeCount() const
 {
-    return static_cast<unsigned int>(AttrMap.size());
+    return static_cast<unsigned int>(AttrCount);
 }
 
 long Base::XMLReader::getAttributeAsInteger(const char* AttrName, const char *def) const
@@ -189,12 +189,9 @@ double Base::XMLReader::getAttributeAsFloat  (const char* AttrName, const char *
 
 const char* Base::XMLReader::getAttribute (const char* AttrName, const char *def) const
 {
-    AttrMapType::const_iterator pos = AttrMap.find(AttrName);
-
-    if (pos != AttrMap.end()) {
-        return pos->second.c_str();
-    }
-    else if(def) 
+    if (const std::string *value = findAttribute(AttrName))
+        return value->c_str();
+    else if(def)
         return def;
     else {
         _FC_READER_THROW(Base::XMLAttributeError, "XML Attribute: '" << AttrName << "' not found");
@@ -203,7 +200,16 @@ const char* Base::XMLReader::getAttribute (const char* AttrName, const char *def
 
 bool Base::XMLReader::hasAttribute(const char* AttrName) const
 {
-    return AttrMap.find(AttrName) != AttrMap.end();
+    return findAttribute(AttrName) != nullptr;
+}
+
+const std::string *Base::XMLReader::findAttribute(const char* AttrName) const
+{
+    for (std::size_t i = 0; i < AttrCount; ++i) {
+        if (AttrStore[i].name == AttrName)
+            return &AttrStore[i].value;
+    }
+    return nullptr;
 }
 
 void Base::XMLReader::read()
@@ -239,7 +245,7 @@ void Base::XMLReader::readElement(const char* ElementName, int *guard)
 {
     endCharStream();
 
-    AttrMap.clear();
+    AttrCount = 0;
 
     int currentLevel = Level;
     std::string currentName = LocalName;
@@ -252,7 +258,7 @@ void Base::XMLReader::readElement(const char* ElementName, int *guard)
                 // Missing element. Consider this as non-fatal
                 FC_ERR("Document XML element '" << (ElementName?ElementName:"") << "' not found\n"
                         << "In context: " << _ReaderContext);
-                AttrMap.clear();
+                AttrCount = 0;
             }
             break;
         }
@@ -542,6 +548,45 @@ bool Base::XMLReader::doNameMapping() const
 // ---------------------------------------------------------------------------
 //  Base::XMLReader: Implementation of the SAX DocumentHandler interface
 // ---------------------------------------------------------------------------
+
+// XMLCh is UTF-16. Convert straight into a caller-owned string: the
+// transcode helpers allocate a fresh buffer per call, and the element
+// handlers would pay that for every name and value of every element.
+static void appendUTF8(std::string &out, const XMLCh *s, std::size_t len)
+{
+    for (std::size_t i = 0; i < len; ++i) {
+        char32_t c = s[i];
+        if (c >= 0xD800 && c <= 0xDBFF && i + 1 < len
+                && s[i+1] >= 0xDC00 && s[i+1] <= 0xDFFF) {
+            c = 0x10000 + ((c - 0xD800) << 10) + (s[i+1] - 0xDC00);
+            ++i;
+        }
+        if (c < 0x80)
+            out += static_cast<char>(c);
+        else if (c < 0x800) {
+            out += static_cast<char>(0xC0 | (c >> 6));
+            out += static_cast<char>(0x80 | (c & 0x3F));
+        }
+        else if (c < 0x10000) {
+            out += static_cast<char>(0xE0 | (c >> 12));
+            out += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (c & 0x3F));
+        }
+        else {
+            out += static_cast<char>(0xF0 | (c >> 18));
+            out += static_cast<char>(0x80 | ((c >> 12) & 0x3F));
+            out += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (c & 0x3F));
+        }
+    }
+}
+
+static void assignUTF8(std::string &out, const XMLCh *s)
+{
+    out.clear();
+    appendUTF8(out, s, XMLString::stringLen(s));
+}
+
 void Base::XMLReader::startDocument()
 {
     ReadType = StartDocument;
@@ -558,12 +603,16 @@ void Base::XMLReader::startElement(const XMLCh* const /*uri*/,
                                    const XERCES_CPP_NAMESPACE_QUALIFIER Attributes& attrs)
 {
     Level++;  // new scope
-    LocalName = StrX(localname).c_str();
+    assignUTF8(LocalName, localname);
 
-    // saving attributes of the current scope, delete all previously stored ones
-    AttrMap.clear();
-    for (unsigned int i = 0; i < attrs.getLength(); i++) {
-        AttrMap[StrX(attrs.getQName(i)).c_str()] = StrXUTF8(attrs.getValue(i)).c_str();
+    // the attributes of the current scope replace the previous element's;
+    // entries beyond AttrCount are stale and never read
+    AttrCount = attrs.getLength();
+    if (AttrStore.size() < AttrCount)
+        AttrStore.resize(AttrCount);
+    for (std::size_t i = 0; i < AttrCount; ++i) {
+        assignUTF8(AttrStore[i].name, attrs.getQName(i));
+        assignUTF8(AttrStore[i].value, attrs.getValue(i));
     }
 
     ReadType = StartElement;
@@ -574,7 +623,7 @@ void Base::XMLReader::endElement(const XMLCh* const /*uri*/,
                                  const XMLCh* const /*qname*/)
 {
     Level--;  // end of scope
-    LocalName = StrX(localname).c_str();
+    assignUTF8(LocalName, localname);
 
     if (ReadType == StartElement) {
         ReadType = StartEndElement;
@@ -600,13 +649,12 @@ void Base::XMLReader::endCDATA()
 
 void Base::XMLReader::characters(const XMLCh* const chars, const XMLSize_t length)
 {
-    (void)length;
     ReadType = Chars;
 
     // We only capture characters when some one wants it
     if(CharacterOffset>=0) {
         Characters.erase(Characters.begin(), Characters.begin()+CharacterOffset);
-        Characters += StrXUTF8(chars).c_str();
+        appendUTF8(Characters, chars, length);
         CharacterOffset = 0;
     }
 }
