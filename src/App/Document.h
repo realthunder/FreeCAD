@@ -303,8 +303,14 @@ public:
     static const std::vector<long>& getWritableSchemaVersions();
     /// Newest writable schema version.
     static long getCurrentSchemaVersion();
-    /// Schema version this document will be written with.
+    /// Schema version this document asks to be written with -- the user's
+    /// cap, validated against the writable list.
     long getSaveSchemaVersion() const;
+    /// Schema version one particular save actually comes out as. The cap
+    /// answers "what may this document be?", this answers "what is this
+    /// file?" -- a split save has no block to share and comes out as 5,
+    /// old-readable, whatever the cap says.
+    long resolveSchemaVersion(const Base::Writer &writer) const;
     //@}
 
     void Save (Base::Writer &writer) const override;

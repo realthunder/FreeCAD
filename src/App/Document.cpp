@@ -1036,12 +1036,28 @@ std::string Document::getTransientDirectoryName(const std::string& uuid, const s
 // getWritableSchemaVersions() is a shape the writer can still produce.
 #define FC_DOC_SCHEMA_VER 6
 
+// Root element of a document written at schema 6 or later -- one that may
+// share class defaults. The new name is the format's incompatibility made
+// loud: no released reader, this fork's or upstream's, checks a schema
+// number before reading, but every one of them scans for <Document>, reaches
+// the end of the stream without finding it, and throws. The alternative was
+// each of them opening the file and silently reverting every elided property
+// to its own build's defaults. Keep the name stable from here on -- the
+// SchemaVersion attribute carries versioning, the name only says "not for
+// readers that predate it".
+#define FC_ELEM_FCDOCUMENT "FCDocument"
+
 void Document::Save (Base::Writer &writer) const
 {
     d->hashers.clear();
     addStringHasher(d->Hasher);
 
-    writer.Stream() << "<Document SchemaVersion=\"" << getSaveSchemaVersion() 
+    // The writer's schema is the resolved outcome (resolveSchemaVersion),
+    // and the root element states it twice: once as the attribute, and at 6
+    // or later as its own name.
+    writer.Stream() << '<'
+                    << (writer.getSchemaVersion() >= 6 ? FC_ELEM_FCDOCUMENT : "Document")
+                    << " SchemaVersion=\"" << writer.getSchemaVersion()
                     << "\" ProgramVersion=\""
                     << App::Application::Config()["BuildVersionMajor"] << "."
                     << App::Application::Config()["BuildVersionMinor"] << "R"
@@ -1095,7 +1111,14 @@ void Document::Restore(Base::XMLReader &reader)
 
     setStatus(Document::PartialDoc,false);
 
-    reader.readElement("Document");
+    // Either root: <Document> as ever, or the <FCDocument> a default-sharing
+    // file announces itself with. The new name exists to be unreadable by
+    // builds that predate it -- this build reads both in full, and anything
+    // else is not a FreeCAD document.
+    reader.readElement();
+    if (strcmp(reader.localName(), "Document") != 0
+            && strcmp(reader.localName(), FC_ELEM_FCDOCUMENT) != 0)
+        throw Base::XMLParseException("Not a FreeCAD document");
     long scheme = reader.getAttributeAsInteger("SchemaVersion");
     reader.DocumentSchema = scheme;
     if (reader.hasAttribute("ProgramVersion")) {
@@ -1194,7 +1217,9 @@ void Document::Restore(Base::XMLReader &reader)
         Tip.setValue(getObject(TipName.getValue()));
     }
 
-    reader.readEndElement("Document");
+    // Nameless on purpose: the next end element is the root's own, whichever
+    // of the two roots this file used.
+    reader.readEndElement();
 }
 
 std::pair<bool,int> Document::addStringHasher(const StringHasherRef & hasher) const {
@@ -1280,7 +1305,11 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
     }
 
     Base::ZipWriter writer(out);
-    writer.setSchemaVersion(getSaveSchemaVersion());
+    // An exported fragment never shares defaults: it is small, it travels
+    // (clipboard, merge), and a reader that merges it may be anything. Cap
+    // at 5, which also keeps buildDefaults' schema gate closed and the
+    // <Document> root a fragment has always had.
+    writer.setSchemaVersion(std::min<long>(getSaveSchemaVersion(), 5));
     // Only the exported objects' files: a clipboard buffer has no business
     // carrying content belonging to the rest of the document.
     getFileBlobManager().beginSave(writer);
@@ -1288,7 +1317,7 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
 
     writer.putNextEntry("Document.xml");
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n";
-    writer.Stream() << R"(<Document SchemaVersion=")" << getSaveSchemaVersion() 
+    writer.Stream() << R"(<Document SchemaVersion=")" << writer.getSchemaVersion()
                         << R"(" ProgramVersion=")"
                         << App::Application::Config()["BuildVersionMajor"] << "."
                         << App::Application::Config()["BuildVersionMinor"] << "R"
@@ -1720,7 +1749,10 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
     }
     writer.Stream() << writer.ind() << "</ObjectData>\n";
     writer.decInd();  // indentation for 'Objects count'
-    writer.Stream() << "</Document>\n";
+    // Close whichever root Save() (or exportObjects, always <= 5) opened.
+    writer.Stream() << "</"
+                    << (writer.getSchemaVersion() >= 6 ? FC_ELEM_FCDOCUMENT : "Document")
+                    << ">\n";
 }
 
 void Document::writeObject(Base::Writer &writer, DocumentObject *obj) const 
@@ -1742,7 +1774,7 @@ void Document::SaveDocFile(Base::Writer &writer) const {
     else {
         writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
                         << "<!-- FreeCAD DocumentObject -->\n"
-                        << "<Document SchemaVersion=\"" << getSaveSchemaVersion()
+                        << "<Document SchemaVersion=\"" << writer.getSchemaVersion()
                         << "\" FileVersion=\"" << writer.getFileVersion()
                         << "\">\n";
         writeObject(writer,obj);
@@ -2023,7 +2055,13 @@ Document::importObjects(Base::XMLReader& reader)
     Base::ObjectStatusLocker<Status, Document> restoreBit(Status::Restoring, this);
     Base::ObjectStatusLocker<Status, Document> restoreBit2(Status::Importing, this);
     ExpressionParser::ExpressionImporter expImporter(reader);
-    reader.readElement("Document");
+    // Fragments are exported capped at 5 and rooted <Document>, but accept
+    // both roots here too -- reading is cheap to keep symmetric, and a
+    // future exporter may earn the other name.
+    reader.readElement();
+    if (strcmp(reader.localName(), "Document") != 0
+            && strcmp(reader.localName(), FC_ELEM_FCDOCUMENT) != 0)
+        throw Base::XMLParseException("Not a FreeCAD document");
     long scheme = reader.getAttributeAsInteger("SchemaVersion");
     reader.DocumentSchema = scheme;
     if (reader.hasAttribute("ProgramVersion")) {
@@ -2063,7 +2101,9 @@ Document::importObjects(Base::XMLReader& reader)
         }
     }
 
-    reader.readEndElement("Document");
+    // Nameless on purpose: the next end element is the root's own, whichever
+    // of the two roots this file used.
+    reader.readEndElement();
 
     // readFiles() runs from this signal, so the content is in the store by
     // the time it returns and the importing properties can be served.
@@ -2638,7 +2678,12 @@ void Document::save(Base::Writer &writer, bool archive) const {
         writer.setSplitXML(SplitXML.getValue());
     }
 
-    writer.setSchemaVersion(getSaveSchemaVersion());
+    // The property is the cap the user chose; what the writer carries from
+    // here on is the outcome this save resolves it to, and every header
+    // below states the outcome. The two must not be conflated: a split save
+    // has no block to share and comes out as 5 -- old-readable -- whatever
+    // the cap says, without touching the cap.
+    writer.setSchemaVersion(resolveSchemaVersion(writer));
     // Collect before anything is written: the included files go into the
     // archive ahead of the objects and views that refer to them.
     getFileBlobManager().beginSave(writer);
@@ -3008,7 +3053,10 @@ const std::vector<long>& Document::getWritableSchemaVersions()
     // distinct content, shared by every property referring to it. 6 = a class
     // may state its defaults once and every container of that class be
     // written as the difference -- view providers in the view file, objects
-    // in Document.xml. One version for both: they are the same mechanism,
+    // in Document.xml -- and the root element becomes <FCDocument>, so that
+    // every reader which cannot put an elided property back refuses the file
+    // outright instead of silently reverting those properties to its own
+    // defaults. One version for both sides: they are the same mechanism,
     // released together, and a reader that understands one understands the
     // other.
     static const std::vector<long> versions {4, 5, FC_DOC_SCHEMA_VER};
@@ -3033,6 +3081,18 @@ long Document::getSaveSchemaVersion() const
     FC_WARN("Document " << getName() << ": cannot write schema version "
             << requested << ", using " << getCurrentSchemaVersion());
     return getCurrentSchemaVersion();
+}
+
+long Document::resolveSchemaVersion(const Base::Writer &writer) const
+{
+    const long cap = getSaveSchemaVersion();
+    // Split-XML has nothing to share -- every object is its own file, with
+    // no block to point at -- so a split save is written as 5 and stays
+    // readable by builds that predate the blocks. The cap is untouched: the
+    // same document saved un-split comes out as what it asked for.
+    if (cap >= 6 && writer.isSplitXML())
+        return 5;
+    return cap;
 }
 
 FileBlobManager& Document::getFileBlobManager() const
