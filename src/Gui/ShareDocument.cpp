@@ -48,6 +48,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <functional>
+#include <set>
 #include <vector>
 #endif
 
@@ -106,6 +107,98 @@ ParameterGrp::handle shareParams()
 {
     return App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/SceneShare");
+}
+
+/*!
+ * One remembered client, kept in user.cfg under
+ * Preferences/SceneShare/Clients so a backend restart does not forget
+ * who anybody is.
+ *
+ * The link's token is remembered with them (shareParams "Token"),
+ * which is the point of the whole thing: sharing again reuses it, so
+ * the URL already in someone's browser still opens. Nothing here
+ * starts sharing by itself — persistence is memory, not autostart.
+ */
+struct ClientRecord
+{
+    QString name;
+    QString address;
+    bool viewOnly = false;
+    /// Refused on sight: every connection matching this record is
+    /// disconnected as it arrives. A door policy, not a lock — anyone
+    /// holding the token can still knock, and will be shown out each
+    /// time. The lock is a new token.
+    bool banned = false;
+};
+
+/// The parameter subgroup name for a record. Readable in user.cfg, so
+/// a name and address can be found by eye; the sanitizing is only what
+/// the parameter tree cannot hold.
+QString recordKey(const QString &name, const QString &address)
+{
+    QString key = name.isEmpty() ? address : name + QLatin1Char('@') + address;
+    QString out;
+    for (QChar c : key) {
+        out += (c.isLetterOrNumber() || c == QLatin1Char('.')
+                || c == QLatin1Char(':') || c == QLatin1Char('-')
+                || c == QLatin1Char('@') || c == QLatin1Char('_'))
+            ? c : QLatin1Char('_');
+    }
+    return out.left(80);
+}
+
+std::vector<ClientRecord> loadRecords()
+{
+    std::vector<ClientRecord> out;
+    auto clients = shareParams()->GetGroup("Clients");
+    for (const auto &sub : clients->GetGroups()) {
+        ClientRecord rec;
+        rec.name = QString::fromUtf8(sub->GetASCII("Name", "").c_str());
+        rec.address = QString::fromUtf8(sub->GetASCII("Address", "").c_str());
+        rec.viewOnly = sub->GetBool("ViewOnly", false);
+        rec.banned = sub->GetBool("Banned", false);
+        if (!rec.name.isEmpty() || !rec.address.isEmpty())
+            out.push_back(rec);
+    }
+    return out;
+}
+
+void saveRecord(const ClientRecord &rec)
+{
+    auto sub = shareParams()->GetGroup("Clients")->GetGroup(
+        recordKey(rec.name, rec.address).toUtf8().constData());
+    sub->SetASCII("Name", rec.name.toUtf8().constData());
+    sub->SetASCII("Address", rec.address.toUtf8().constData());
+    sub->SetBool("ViewOnly", rec.viewOnly);
+    sub->SetBool("Banned", rec.banned);
+}
+
+void forgetRecord(const ClientRecord &rec)
+{
+    shareParams()->GetGroup("Clients")->RemoveGrp(
+        recordKey(rec.name, rec.address).toUtf8().constData());
+}
+
+/*!
+ * The remembered entry for a connected client, or none.
+ *
+ * Name and address together identify a client, but neither is
+ * dependable alone: an unnamed viewer has only its address, and a
+ * named one moves between networks (a phone leaving wifi arrives from
+ * somewhere else entirely). So an exact match wins, and a name match
+ * is accepted after it — the name is the part a person chose.
+ */
+const ClientRecord *matchRecord(const std::vector<ClientRecord> &records,
+                                const QString &name, const QString &address)
+{
+    const ClientRecord *byName = nullptr;
+    for (const auto &rec : records) {
+        if (rec.name == name && rec.address == address)
+            return &rec;
+        if (!name.isEmpty() && rec.name == name && !byName)
+            byName = &rec;
+    }
+    return byName;
 }
 
 /// The small always-on-top pill in the corner of the 3D area while
@@ -205,6 +298,10 @@ public:
         tree->setColumnCount(6);
         tree->setHeaderLabels({tr("Client"), tr("Address"), tr("Document"),
                                tr("Connected"), tr("Access"), QString()});
+        tree->setToolTip(tr(
+            "Clients seen while sharing are remembered in user.cfg with "
+            "their access, and greyed out here while they are away. A "
+            "returning client is restored to the access it had."));
         tree->setRootIsDecorated(false);
         tree->setSelectionMode(QAbstractItemView::NoSelection);
         tree->header()->setStretchLastSection(false);
@@ -227,16 +324,21 @@ public:
     }
 
     void refresh(const QString &url,
-                 const std::vector<Render::SceneClientInfo> &clients)
+                 const std::vector<Render::SceneClientInfo> &clients,
+                 const std::vector<ClientRecord> &records)
     {
         urlEdit->setText(url);
         // Rebuild only when membership or a mode changed — a rebuild
         // every roster tick would yank the combo out from under the
         // pointer. Durations update in place.
         std::vector<std::pair<uint64_t, bool>> sig;
-        sig.reserve(clients.size());
+        sig.reserve(clients.size() + records.size());
         for (const auto &c : clients)
             sig.emplace_back(c.id, c.viewOnly);
+        for (const auto &rec : records) {
+            sig.emplace_back(qHash(rec.name + rec.address) | (1ull << 32),
+                             rec.viewOnly);
+        }
         if (sig == lastSig) {
             for (int i = 0; i < tree->topLevelItemCount()
                      && i < int(clients.size()); ++i)
@@ -268,20 +370,124 @@ public:
             mode->addItem(tr("View only"));
             mode->setCurrentIndex(c.viewOnly ? 1 : 0);
             const uint64_t id = c.id;
+            // The mode is both applied and remembered: what the host
+            // decides about someone should still be true when they come
+            // back tomorrow.
+            ClientRecord rec;
+            rec.name = QString::fromUtf8(c.client.c_str());
+            rec.address = QString::fromUtf8(c.address.c_str());
+            if (const ClientRecord *known =
+                    matchRecord(records, rec.name, rec.address))
+                rec = *known;
+            const bool isBanned = rec.banned;
             connect(mode, qOverload<int>(&QComboBox::currentIndexChanged),
-                    this, [id](int index) {
+                    this, [id, saved = rec](int index) mutable {
                         Render::SceneStreamServer::instance()
                             .setClientViewOnly(id, index == 1);
+                        saved.viewOnly = index == 1;
+                        saveRecord(saved);
                     });
             tree->setItemWidget(item, 4, mode);
 
-            auto *kick = new QPushButton(tr("Kick"), tree);
+            // Two ways to end a session, because they mean different
+            // things: showing someone out of this one, and not letting
+            // them back in.
+            auto *actions = new QWidget(tree);
+            auto *row = new QHBoxLayout(actions);
+            row->setContentsMargins(0, 0, 0, 0);
+            row->setSpacing(4);
+            auto *kick = new QPushButton(tr("Kick"), actions);
+            kick->setToolTip(tr("Disconnect now. The link still works, so "
+                                "they can come back."));
             connect(kick, &QPushButton::clicked, this, [id]() {
                 Render::SceneStreamServer::instance().kickClient(id);
             });
-            tree->setItemWidget(item, 5, kick);
+            auto *ban = new QPushButton(tr("Ban"), actions);
+            ban->setToolTip(tr("Disconnect and refuse them from now on. "
+                               "Lift it here; a new token is what locks "
+                               "everyone else out."));
+            connect(ban, &QPushButton::clicked, this,
+                    [this, id, saved = rec]() mutable {
+                saved.banned = true;
+                saveRecord(saved);
+                Render::SceneStreamServer::instance().kickClient(id);
+                lastSig.clear();
+                if (onChanged)
+                    onChanged();
+            });
+            row->addWidget(kick);
+            row->addWidget(ban);
+            tree->setItemWidget(item, 5, actions);
+            if (isBanned)
+                item->setText(3, tr("banned"));
+        }
+
+        // Everyone remembered but not here: greyed, still editable —
+        // setting someone to view-only, or banning them, before they
+        // arrive is the sensible way to hand out a link.
+        for (const auto &rec : records) {
+            bool here = false;
+            for (const auto &c : clients) {
+                if (QString::fromUtf8(c.client.c_str()) == rec.name
+                        && QString::fromUtf8(c.address.c_str()) == rec.address)
+                    here = true;
+            }
+            if (here)
+                continue;
+
+            auto *item = new QTreeWidgetItem(tree);
+            item->setText(0, rec.name.isEmpty() ? tr("(unnamed)") : rec.name);
+            item->setText(1, rec.address);
+            item->setText(3, rec.banned ? tr("banned") : tr("away"));
+            for (int col = 0; col < 4; ++col)
+                item->setForeground(col, QBrush(Qt::gray));
+
+            auto *mode = new QComboBox(tree);
+            mode->addItem(tr("Can edit"));
+            mode->addItem(tr("View only"));
+            mode->setCurrentIndex(rec.viewOnly ? 1 : 0);
+            connect(mode, qOverload<int>(&QComboBox::currentIndexChanged),
+                    this, [saved = rec](int index) mutable {
+                        saved.viewOnly = index == 1;
+                        saveRecord(saved);
+                    });
+            tree->setItemWidget(item, 4, mode);
+
+            auto *actions = new QWidget(tree);
+            auto *row = new QHBoxLayout(actions);
+            row->setContentsMargins(0, 0, 0, 0);
+            row->setSpacing(4);
+            auto *ban = new QPushButton(
+                rec.banned ? tr("Unban") : tr("Ban"), actions);
+            connect(ban, &QPushButton::clicked, this,
+                    [this, saved = rec]() mutable {
+                saved.banned = !saved.banned;
+                saveRecord(saved);
+                lastSig.clear();
+                if (onChanged)
+                    onChanged();
+            });
+            // Forgetting is not a ban: it drops what we know, so the
+            // next visit is a stranger's — with whatever access a
+            // stranger gets. Ban is the one that keeps someone out.
+            auto *forget = new QPushButton(tr("Forget"), actions);
+            forget->setToolTip(tr("Drop this record. They are neither "
+                                  "banned nor restricted afterwards."));
+            connect(forget, &QPushButton::clicked, this, [this, rec]() {
+                forgetRecord(rec);
+                lastSig.clear();   // force a rebuild on the next tick
+                if (onChanged)
+                    onChanged();
+            });
+            row->addWidget(ban);
+            row->addWidget(forget);
+            tree->setItemWidget(item, 5, actions);
         }
     }
+
+    /// Something in the panel changed what is stored; the manager
+    /// re-reads and redraws.
+    std::function<void()> onChanged;
 
 private:
     QLineEdit *urlEdit = nullptr;
@@ -303,6 +509,10 @@ public:
     QString token;
     QPointer<ShareIndicator> indicator;
     QPointer<SharePanel> panel;
+    /// Connections whose remembered access has already been applied,
+    /// so the host flipping someone back is not undone on the next
+    /// roster tick. Ids are never reused within a run.
+    std::set<uint64_t> restored;
     QTimer timer;
     bool notifierInstalled = false;
 
@@ -424,10 +634,17 @@ void ShareDocumentManager::openShareDialog()
 
     auto *tokenRow = new QHBoxLayout;
     auto *tokenEdit = new QLineEdit(&dlg);
-    tokenEdit->setText(randomToken());
+    // The token this machine last shared with, so the links already in
+    // people's browsers still open after a restart. New mints a fresh
+    // one, which is also how everyone currently holding a link is shut
+    // out.
+    QString savedToken = QString::fromUtf8(
+        hGrp->GetASCII("Token", "").c_str());
+    tokenEdit->setText(savedToken.isEmpty() ? randomToken() : savedToken);
     tokenEdit->setToolTip(QObject::tr(
-        "Viewers need this token to connect; it rides in the link. "
-        "Clear it to share without one."));
+        "Viewers need this token to connect; it rides in the link. It is "
+        "remembered, so sharing again keeps existing links working — "
+        "press New to invalidate them. Clear it to share without one."));
     auto *tokenBtn = new QPushButton(QObject::tr("New"), &dlg);
     QObject::connect(tokenBtn, &QPushButton::clicked, tokenEdit,
                      [tokenEdit]() { tokenEdit->setText(randomToken()); });
@@ -488,6 +705,10 @@ void ShareDocumentManager::openShareDialog()
     hGrp->SetASCII("ExternalHost", host.toUtf8().constData());
     hGrp->SetASCII("ViewerPage", viewerPage.toUtf8().constData());
     hGrp->SetBool("TrustProxy", proxyBox->isChecked());
+    // Remembered so the next share reuses it and the links people
+    // already hold keep working across a restart. Sharing is never
+    // started by this — only the token survives, not the session.
+    hGrp->SetASCII("Token", token.toUtf8().constData());
 
     auto &server = Render::SceneStreamServer::instance();
     server.setTrustProxy(proxyBox->isChecked());
@@ -555,6 +776,9 @@ void ShareDocumentManager::showPanel()
         pimpl->panel->onStop = []() {
             ShareDocumentManager::instance().stopSharing();
         };
+        pimpl->panel->onChanged = []() {
+            ShareDocumentManager::instance().refreshUi();
+        };
     }
     refreshUi();
     pimpl->panel->show();
@@ -589,8 +813,47 @@ void ShareDocumentManager::refreshUi()
         stopSharing();
         return;
     }
+    auto &server = Render::SceneStreamServer::instance();
     std::vector<Render::SceneClientInfo> clients;
-    Render::SceneStreamServer::instance().clients(clients);
+    server.clients(clients);
+
+    // Apply what is remembered about each connection, once — a ban
+    // ends it, an access mode is restored. Once per connection id, so
+    // the host overruling either afterwards is not undone on the next
+    // tick, and the record only changes when the host changes it.
+    const std::vector<ClientRecord> records = loadRecords();
+    for (const auto &c : clients) {
+        if (!pimpl->restored.insert(c.id).second)
+            continue;
+        const QString name = QString::fromUtf8(c.client.c_str());
+        const QString address = QString::fromUtf8(c.address.c_str());
+        const ClientRecord *known = matchRecord(records, name, address);
+        if (!known) {
+            // First sight: remember them, so they can be given an
+            // access (or banned) while away.
+            ClientRecord rec;
+            rec.name = name;
+            rec.address = address;
+            rec.viewOnly = c.viewOnly;
+            saveRecord(rec);
+            continue;
+        }
+        if (known->banned) {
+            server.kickClient(c.id);
+            continue;
+        }
+        if (known->viewOnly != c.viewOnly)
+            server.setClientViewOnly(c.id, known->viewOnly);
+    }
+    // Ids of connections that have gone: keep the applied set from
+    // growing for the life of the process.
+    for (auto it = pimpl->restored.begin(); it != pimpl->restored.end();) {
+        bool live = false;
+        for (const auto &c : clients)
+            live = live || c.id == *it;
+        it = live ? std::next(it) : pimpl->restored.erase(it);
+    }
+
     if (pimpl->indicator) {
         pimpl->indicator->setText(
             QObject::tr("Sharing · %1").arg(clients.size()));
@@ -598,5 +861,5 @@ void ShareDocumentManager::refreshUi()
         pimpl->indicator->show();
     }
     if (pimpl->panel && pimpl->panel->isVisible())
-        pimpl->panel->refresh(pimpl->shareUrl(), clients);
+        pimpl->panel->refresh(pimpl->shareUrl(), clients, records);
 }

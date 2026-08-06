@@ -194,6 +194,26 @@ The host-side face of the token (`Gui/ShareDocument.cpp`, Tools → *Share docum
   *Can edit / View only* switch, and *Kick*. *Stop sharing* unserves the manager's
   documents, stops the listener and clears the token.
 
+**What persists.** Sharing never starts by itself — the persistence below is memory,
+not autostart — but once it is started, it picks up where it left off, kept in `user.cfg`
+under `Preferences/SceneShare`:
+
+- **The token** (`Token`). The dialog offers the last one, so a backend restart leaves the
+  links already in people's browsers working; *New* mints a fresh one, which is also the
+  only real way to shut every current holder out.
+- **The clients** (`Clients/<name@address>`: `Name`, `Address`, `ViewOnly`, `Banned`).
+  A client is recorded on first sight; its access is restored when it returns, and the
+  panel lists remembered-but-absent clients greyed out so access can be set — or a ban
+  lifted — before anyone arrives. Matching prefers name **and** address together, then
+  falls back to the name alone, because a phone leaving wifi comes back from somewhere
+  else entirely while the name is the part a person chose (`?client=` in the link, or the
+  viewer menu's name action, which stores it per browser).
+- **Ban vs kick vs forget.** *Kick* ends this session and nothing more — the link still
+  works. *Ban* also refuses every later connection matching the record, until it is lifted
+  here. *Forget* drops the record: the next visit is a stranger's, neither banned nor
+  restricted. A ban is a door policy, not a lock — someone holding the token can still
+  knock, and will be shown out each time; the lock is a new token.
+
 The server side of the roster is `SceneStreamServer::clients()` /
 `setClientViewOnly()` / `kickClient()` / `setClientsChangedNotifier()` / `stop()`.
 **View-only** means: the connection's picks are dropped (selection is shared room state,
