@@ -629,7 +629,17 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
                     FC_TRACE("restoring property " << prop->getFullName());
                     auto tValue = std::chrono::high_resolution_clock::now();
                     prop->Restore(reader);
-                    restoreStats.value += std::chrono::high_resolution_clock::now() - tValue;
+                    auto dValue = std::chrono::high_resolution_clock::now() - tValue;
+                    restoreStats.value += dValue;
+                    // Self-selecting: a single property worth tens of
+                    // milliseconds is never the parse, it is a reaction to
+                    // the value -- name it, so a slow restore says where
+                    // the time went.
+                    if (dValue > std::chrono::milliseconds(5))
+                        FC_LOG("slow property restore " << prop->getFullName()
+                                << " (" << prop->getTypeId().getName() << "): "
+                                << std::chrono::duration<double>(dValue).count()
+                                << 's');
                 }else
                     FC_TRACE("skip transient " << prop->getFullName());
             }
