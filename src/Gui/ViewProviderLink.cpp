@@ -3999,8 +3999,12 @@ void ViewProviderLink::setOverrideMode(const std::string &mode) {
         return;
     auto obj = ext->getTrueLinkedObject(false);
     if(obj && obj!=getObject()) {
+        // The linked object may not have its view provider yet: a link
+        // whose target the progressive load still has parked. The target
+        // inherits the override when it is built.
         auto vp = Application::Instance->getViewProvider(obj);
-        vp->setOverrideMode(mode);
+        if(vp)
+            vp->setOverrideMode(mode);
     }
     if(childVp)
         childVp->setOverrideMode(mode);
