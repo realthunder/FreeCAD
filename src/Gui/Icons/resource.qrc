@@ -54,6 +54,7 @@
         <file>style/windows_branch_closed.png</file>
         <file>style/windows_branch_open.png</file>
         <file>Std_ViewScreenShot.svg</file>
+        <file>Std_ShareDocument.svg</file>
         <file>bound-expression.svg</file>
         <file>bound-expression-unset.svg</file>
         <file>breakpoint.svg</file>

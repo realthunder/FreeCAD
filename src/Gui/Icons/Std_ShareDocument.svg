@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   width="64"
+   height="64"
+   viewBox="0 0 64 64"
+   version="1.1"
+   id="svg-share">
+  <metadata id="metadata-share">
+    <rdf:RDF>
+      <cc:Work rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title>Share document</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <defs id="defs-share">
+    <linearGradient id="shareNodeGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color:#729fcf;stop-opacity:1" />
+      <stop offset="1" style="stop-color:#3465a4;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- The common share glyph: one source node linked to two others.
+       Links first, so the nodes cap them. -->
+  <g id="share-links"
+     style="fill:none;stroke:#3465a4;stroke-width:6;stroke-linecap:round">
+    <path d="M 20,32 44,18" id="share-link-up" />
+    <path d="M 20,32 44,46" id="share-link-down" />
+  </g>
+  <g id="share-nodes"
+     style="fill:url(#shareNodeGradient);stroke:#204a87;stroke-width:3">
+    <circle cx="16" cy="32" r="9" id="share-node-source" />
+    <circle cx="47" cy="14" r="9" id="share-node-up" />
+    <circle cx="47" cy="50" r="9" id="share-node-down" />
+  </g>
+</svg>

@@ -749,6 +749,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
     *tool << "Std_DlgParameter"
           << "Std_CmdPresets"
           << "Separator"
+          << "Std_ShareDocument"
           << "Std_ViewScreenShot"
           << "Std_SaveView"
           << "Std_ViewLoadImage"
@@ -770,7 +771,6 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Separator"
           << "Std_DemoMode"
           << "Std_UnitsCalculator"
-          << "Std_ShareDocument"
           << "Separator"
           << "Std_DlgCustomize";
 #ifdef BUILD_ADDONMGR
@@ -830,7 +830,7 @@ ToolBarItem* StdWorkbench::setupToolBars() const
     auto edit = new ToolBarItem( root );
     edit->setCommand("Edit");
     *edit << "Std_Undo" << "Std_Redo"
-          << "Separator" << "Std_Refresh";
+          << "Separator" << "Std_Refresh" << "Std_ShareDocument";
     
     // Clipboard
     auto clipboard = new ToolBarItem( root , ToolBarItem::DefaultVisibility::Hidden );

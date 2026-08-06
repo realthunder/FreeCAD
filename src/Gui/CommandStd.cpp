@@ -939,6 +939,7 @@ StdCmdShareDocument::StdCmdShareDocument()
     sWhatsThis    = "Std_ShareDocument";
     sStatusTip    = QT_TR_NOOP("Share the active document with streaming "
                                "viewers over a tokened link");
+    sPixmap       = "Std_ShareDocument";
     eType         = 0;
 }
 
