@@ -191,7 +191,10 @@ The host-side face of the token (`Gui/ShareDocument.cpp`, Tools → *Share docum
   the MDI area's top-right corner. N is the connection count, the tooltip is the link.
 - **The client panel** (click the pill): the share link with a copy button, and the
   roster — client label, address, joined document, connection age, a per-client
-  *Can edit / View only* switch, and *Kick*. *Stop sharing* unserves the manager's
+  *Can edit / View only* switch, and *Kick*. When an authenticating front door asserted
+  a verified identity for the connection (docs/ShareAccess.md §4 — trust-proxy on,
+  loopback peer, `Cf-Access-Authenticated-User-Email`-style header, or the one
+  `FC_SERVE_IDENTITY_HEADER` pins), the row shows the identity ahead of the label. *Stop sharing* unserves the manager's
   documents, stops the listener and clears the token.
 
 **What persists.** Sharing never starts by itself — the persistence below is memory,

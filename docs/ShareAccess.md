@@ -163,13 +163,17 @@ Surveyed 2026-08-06 for exposing a share publicly:
   they relay pub/sub messages between clients, while our wire is a binary snapshot protocol
   plus HTTP blob/level routes. We would rewrite the transport to gain fan-out we do not need.
 
-⚠️ **Two findings that apply whatever we choose:**
+⚠️ **Two findings that apply whatever we choose — both since done (§7 item 1):**
 
 1. **We need a periodic keepalive on the stream** (~30 s). An idle viewer currently sends
    and receives nothing, so any relay with an idle timeout (Cloudflare's 100 s, the common
    60 s proxy default) drops it, and the viewer looks like it disconnects at random.
 2. **Accept `CF-Connecting-IP`** beside `X-Forwarded-For` — it is the header Cloudflare
    guarantees.
+
+**Cost of the Cloudflare path, checked 2026-08-06:** $0 at our scale — Tunnel is free and
+uncapped, Access is free to 50 users ($7/user/month past that), and service tokens are in
+the free tier.
 
 ## 6. Open decisions
 
@@ -193,9 +197,18 @@ Surveyed 2026-08-06 for exposing a share publicly:
 
 ## 7. Suggested order of work
 
-1. **Keepalive ping** (§5) — independently useful, small, unblocks any relay.
+1. **Keepalive ping** (§5) — independently useful, small, unblocks any relay. **DONE**
+   (with `CF-Connecting-IP` accepted beside `X-Forwarded-For`): the server pings any
+   connection 30 s idle on the send side; the browser pongs on its own.
 2. **The trusted-identity-header contract** (§4) — loopback-trusted header, identity on
-   `SceneClientInfo`, roster shows it.
+   `SceneClientInfo`, roster shows it. **DONE**: with trust-proxy on, the scene server
+   reads `Cf-Access-Authenticated-User-Email` / `X-Auth-Request-Email` /
+   `X-Forwarded-Email` (or the one name `FC_SERVE_IDENTITY_HEADER` /
+   `setIdentityHeader()` pins); the identity rides `SceneClientInfo`, `Gui.serveClients`,
+   and the roster, where it outranks the self-declared label. `scripts/share-edge.sh`
+   is the quick setup for each door — cloudflared quick tunnel, Cloudflare Access named
+   tunnel, or a generated Caddy + oauth2-proxy pair — all reducing to the same two env
+   knobs on our side (`FC_SERVE_TRUST_PROXY=1`, optional `FC_SERVE_TOKEN`).
 3. **Grants replace client records** (§2) — persistent list keyed by identity *or* token,
    the same wildcard matching, enforcement moved into the server's authorization gate so
    refusal happens before any scene bytes.
