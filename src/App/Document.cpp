@@ -1425,6 +1425,18 @@ Document::RestoringDefaultsGuard::~RestoringDefaultsGuard()
     --_RestoringDefaults;
 }
 
+Document::RestoringScopeGuard::RestoringScopeGuard()
+    : toggled(!globalIsRestoring)
+{
+    globalIsRestoring = true;
+}
+
+Document::RestoringScopeGuard::~RestoringScopeGuard()
+{
+    if (toggled)
+        globalIsRestoring = false;
+}
+
 void Document::buildDefaults(Base::Writer &writer,
         const std::vector<App::DocumentObject*>& obj,
         std::map<std::string, SharedDefaults> &defaults) const

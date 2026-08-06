@@ -385,6 +385,24 @@ public:
         RestoringDefaultsGuard &operator=(const RestoringDefaultsGuard &) = delete;
     };
 
+    /** RAII scope that answers isAnyRestoring() with true.
+     *
+     * For work that replays a load's record after the load itself has let
+     * go -- the Gui document's deferred view provider drain. Everything
+     * that keys off isAnyRestoring() treated the record's properties as a
+     * restore when they were read eagerly; a slice replaying them later is
+     * the same work and needs the same answer.
+     */
+    class AppExport RestoringScopeGuard {
+    public:
+        RestoringScopeGuard();
+        ~RestoringScopeGuard();
+        RestoringScopeGuard(const RestoringScopeGuard &) = delete;
+        RestoringScopeGuard &operator=(const RestoringScopeGuard &) = delete;
+    private:
+        bool toggled;
+    };
+
     /** Add an existing feature with sName (ASCII) to this document and set it active.
      * Unicode names are set through the Label property.
      * This is an overloaded function of the function above and can be used to create
