@@ -15,6 +15,10 @@ export interface MenuItem {
   /// Present for items that are a switch rather than an action; the tick
   /// shows the current state, so the menu also reports it.
   checked?: () => boolean;
+  /// For checked items that behave as a radio group (the document
+  /// section): picking one is a navigation, not a toggle to watch, so
+  /// the menu closes like it does for an action.
+  closeOnSelect?: boolean;
 }
 
 export function LauncherMenu(props: {
@@ -59,7 +63,7 @@ export function LauncherMenu(props: {
                     item.onSelect();
                     // A switch keeps the menu open — flipping it is
                     // something you watch happen, and may want to undo.
-                    if (!item.checked) setOpen(false);
+                    if (!item.checked || item.closeOnSelect) setOpen(false);
                   }}
                 >
                   <span class="fc-menu-tick">

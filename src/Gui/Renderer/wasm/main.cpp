@@ -166,6 +166,45 @@ static std::set<int> s_overlayIds;
 // re-apply the feeds on every pushed version; fall back to HTTP polling
 // where WebSocket fails.
 static std::string s_sceneUrl;
+// The served document this viewer wants (docs/MultiDocServe.md §4/§6):
+// ?doc= at load, updated by a menu switch. Empty = the backend's
+// default document. Carried in the hello, on the upgrade request (so a
+// reconnect rejoins before the first push) and on every /scene and
+// /level fetch.
+static std::string s_docName;
+// ?client= — this connection's display label; ?token= — the shared
+// secret a gated backend checks (§8 stage 3e). Both just pass through
+// to the hello.
+static std::string s_clientLabel;
+static std::string s_tokenParam;
+
+/// Percent-encode \a s for a query-string value.
+static std::string urlEncode(const std::string &s)
+{
+    std::string out;
+    for (char c : s) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '-'
+                || c == '_' || c == '.' || c == '~') {
+            out += c;
+        }
+        else {
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), "%%%02X",
+                          static_cast<unsigned char>(c));
+            out += buf;
+        }
+    }
+    return out;
+}
+
+/// The document key every scene-server URL carries, appendable to a
+/// query string that already started; empty for the default document.
+static std::string docQuery()
+{
+    return s_docName.empty() ? std::string()
+                             : "&doc=" + urlEncode(s_docName);
+}
+
 static uint64_t s_sceneVersion = 0;
 /// The backend run those versions belong to (SceneDump.h, v35). Told to
 /// the server on every request, so that a version this viewer carried
@@ -200,6 +239,18 @@ static FrameDumpReq s_dumpReq;
 
 EM_JS(char *, fcviewer_scene_param, (), {
     var p = new URLSearchParams(window.location.search).get('scene');
+    if (!p)
+        return 0;
+    var len = lengthBytesUTF8(p) + 1;
+    var s = _malloc(len);
+    stringToUTF8(p, s, len);
+    return s;
+});
+
+// One page query parameter by name (decoded), null when absent.
+EM_JS(char *, fcviewer_query_param, (const char *name), {
+    var p = new URLSearchParams(window.location.search)
+        .get(UTF8ToString(name));
     if (!p)
         return 0;
     var len = lengthBytesUTF8(p) + 1;
@@ -306,6 +357,19 @@ EM_JS(void, fcviewer_control_event, (const char *json), {
     } catch (e) {}
 });
 
+// The served-document listing (docs/MultiDocServe.md §4) for the DOM
+// layer's menu: the docs push/reply, plus which document this viewer
+// is on (what it asked for, else the backend's default).
+EM_JS(void, fcviewer_docs_event, (const char *json, const char *current), {
+    try {
+        var detail = JSON.parse(UTF8ToString(json));
+        var cur = UTF8ToString(current);
+        detail.current = cur || detail['default'] || '';
+        window.dispatchEvent(new CustomEvent('fc:docs',
+                                             { detail: detail }));
+    } catch (e) {}
+});
+
 // The DOM layer's uplink, installed once at startup:
 // window.fcviewerControlSend(jsonString) -> bool (false = socket down,
 // caller shows its offline state rather than queueing).
@@ -313,6 +377,14 @@ EM_JS(void, fcviewer_install_control, (), {
     // The menu's HUD switch. Installed beside the control uplink because
     // it is the same kind of thing: a viewer state the DOM layer drives.
     window.fcviewerSetHud = function(on) { _fcviewer_set_hud(on ? 1 : 0); };
+    // The menu's document switch (docs/MultiDocServe.md §6).
+    window.fcviewerSwitchDoc = function(name) {
+        var len = lengthBytesUTF8(name) + 1;
+        var buf = _malloc(len);
+        stringToUTF8(name, buf, len);
+        _fcviewer_switch_doc(buf);
+        _free(buf);
+    };
     window.fcviewerControlSend = function(s) {
         var len = lengthBytesUTF8(s) + 1;
         var buf = _malloc(len);
@@ -4252,7 +4324,7 @@ public:
             emscripten_fetch_close(fetch);
         };
         std::string url = s_sceneUrl + "/level?source=" + req.source
-            + "&level=" + std::to_string(req.level);
+            + "&level=" + std::to_string(req.level) + docQuery();
         emscripten_fetch(&attr, url.c_str());
         return true;
     }
@@ -5374,6 +5446,16 @@ static bool applyScenePayload(const char *data, size_t size)
             s_sceneVersion = 0;
             // Deltas held from the old session chain to nothing now.
             s_heldPayloads.clear();
+            // So does the client-side selection: its keys named the
+            // old model's objects. A backend restart made this stale
+            // only in theory; a document switch (which is a session
+            // change by construction — sessions are per stream) makes
+            // it a click on the wrong document.
+            if (!s_sel.empty()) {
+                s_sel.clear();
+                rebuildSelection();
+                emitSelectionEvent();
+            }
         }
         // The WebSocket push loop re-sends the current scene on connect;
         // skip the echo of a version already applied (the initial HTTP
@@ -5664,6 +5746,23 @@ static void handleControlMessage(const char *json)
         std::printf("fcviewer: reload requested (bust '%s')\n", bust);
         fcviewer_reload(bust);
     }
+    else if (std::strstr(json, "\"cmd\":\"docs\"")) {
+        // The served-document listing (docs/MultiDocServe.md §4):
+        // pushed on serve/unserve, or the answer to a docs request.
+        // The DOM layer's menu redraws from it.
+        fcviewer_docs_event(json, s_docName.c_str());
+    }
+    else if (std::strstr(json, "\"cmd\":\"error\"")) {
+        // Transport-level refusals. Unknown document: joined to
+        // nothing, and the docs push riding alongside fills the menu —
+        // the status line says why the canvas is empty.
+        if (std::strstr(json, "\"UnknownDocument\""))
+            fcviewer_status("Unknown document \xe2\x80\x94 "
+                            "pick one from the menu", 0.0, -1.0);
+        else if (std::strstr(json, "\"NoDocument\""))
+            fcviewer_status("No document is being served", 0.0, -1.0);
+        std::printf("fcviewer: server error %s\n", json);
+    }
     else if (std::strstr(json, "\"id\":") || std::strstr(json, "\"op\":")) {
         // A semantic-channel answer (docs/ThinClient.md §4.2) — not for
         // the viewer, for the DOM layer riding on it.
@@ -5694,6 +5793,36 @@ extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_control_send(const char *json)
         return 0;
     return emscripten_websocket_send_utf8_text(
                    s_ws, const_cast<char *>(json)) >= 0 ? 1 : 0;
+}
+
+/// Switch this viewer to another served document, from the menu's
+/// document section (docs/MultiDocServe.md §6). The wire does the
+/// heavy lifting: the switch verb resets the connection's version, so
+/// the answer is the new document's full root — and that root carries
+/// the new stream's session id, which is exactly the reconnect path:
+/// applyScenePayload drops the object model wholesale and the scene,
+/// selection mirror and level state rebuild from nothing. No machinery
+/// is duplicated here.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_switch_doc(const char *name)
+{
+    s_docName = name ? name : "";
+    std::printf("fcviewer: switching to document '%s'\n",
+                s_docName.c_str());
+    fcviewer_status("Switching document\xe2\x80\xa6", 0.0, 0.0);
+    if (s_wsOpen) {
+        std::string msg = "{\"cmd\":\"switch\",\"doc\":\"";
+        jsonEscapeTo(msg, s_docName);
+        msg += "\"}";
+        emscripten_websocket_send_utf8_text(
+                s_ws, const_cast<char *>(msg.c_str()));
+        return;
+    }
+    // Polling fallback: no switch verb without a socket — hold
+    // nothing, and the next poll fetches the named document whole
+    // (doPoll carries the doc key).
+    s_sceneVersion = 0;
+    s_sessionId = 0;
+    s_haveScene = false;
 }
 
 static void schedulePoll();
@@ -5744,10 +5873,11 @@ static void doPoll(void * = nullptr)
     attr.onsuccess = onPollResult;
     attr.onerror = onPollError;
     char url[512];
-    std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu",
+    std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu%s",
                   s_sceneUrl.c_str(),
                   (unsigned long long)s_sceneVersion,
-                  (unsigned long long)s_sessionId);
+                  (unsigned long long)s_sessionId,
+                  docQuery().c_str());
     emscripten_fetch(&attr, url);
 }
 
@@ -5777,16 +5907,29 @@ static std::string s_buildStamp;
 /// stamp arrives after the socket opened.
 static void sendHello()
 {
-    char hello[160];
+    std::string hello = "{\"cmd\":\"hello\",\"snapshot\":"
+        + std::to_string(Render::sceneDumpVersion());
     if (!s_buildStamp.empty())
-        std::snprintf(hello, sizeof(hello),
-                      "{\"cmd\":\"hello\",\"snapshot\":%u,"
-                      "\"build\":\"%s\"}",
-                      Render::sceneDumpVersion(), s_buildStamp.c_str());
-    else
-        std::snprintf(hello, sizeof(hello),
-                      "{\"cmd\":\"hello\",\"snapshot\":%u}",
-                      Render::sceneDumpVersion());
+        hello += ",\"build\":\"" + s_buildStamp + "\"";
+    // The document wire (docs/MultiDocServe.md §4): which document to
+    // join, who this connection is, and the door token when the
+    // backend has one. All optional; absent means what it always did.
+    if (!s_docName.empty()) {
+        hello += ",\"doc\":\"";
+        jsonEscapeTo(hello, s_docName);
+        hello += '"';
+    }
+    if (!s_clientLabel.empty()) {
+        hello += ",\"client\":\"";
+        jsonEscapeTo(hello, s_clientLabel);
+        hello += '"';
+    }
+    if (!s_tokenParam.empty()) {
+        hello += ",\"token\":\"";
+        jsonEscapeTo(hello, s_tokenParam);
+        hello += '"';
+    }
+    hello += '}';
     // Guard against a stale open event: when a reconnect has already
     // replaced s_ws, the superseded socket's onWsOpen still fires and
     // would send on the new, still-connecting handle — a DOM exception.
@@ -5797,7 +5940,8 @@ static void sendHello()
                 != EMSCRIPTEN_RESULT_SUCCESS
             || ready != 1 /* OPEN */)
         return;
-    emscripten_websocket_send_utf8_text(s_ws, hello);
+    emscripten_websocket_send_utf8_text(s_ws,
+                                        const_cast<char *>(hello.c_str()));
 }
 
 static EM_BOOL onWsOpen(int, const EmscriptenWebSocketOpenEvent *, void *)
@@ -5814,6 +5958,11 @@ static EM_BOOL onWsOpen(int, const EmscriptenWebSocketOpenEvent *, void *)
     s_wsEverOpen = true;
     s_reconnectAttempts = 0;
     sendHello();
+    // The document listing is pushed on every serve/unserve, but a
+    // connection made between pushes would wait forever for its first
+    // — ask once, so the menu has its document section from the start.
+    static const char docs[] = "{\"cmd\":\"docs\"}";
+    emscripten_websocket_send_utf8_text(s_ws, const_cast<char *>(docs));
     return EM_TRUE;
 }
 
@@ -5916,6 +6065,10 @@ static bool connectWs()
                   (unsigned long long)s_sceneVersion,
                   (unsigned long long)s_sessionId);
     url += held;
+    // The document too: a reconnect must rejoin it before the push
+    // loop sends anything, which is also what makes the held version
+    // mean something (sessions are per document).
+    url += docQuery();
     EmscriptenWebSocketCreateAttributes attr = {
         url.c_str(), nullptr, EM_TRUE};
     s_ws = emscripten_websocket_new(&attr);
@@ -6102,7 +6255,8 @@ static void requestFullScene()
     attr.onsuccess = onInitFetchDone;
     attr.onerror = onInitFetchError;
     char url[512];
-    std::snprintf(url, sizeof(url), "%s/scene?v=0", s_sceneUrl.c_str());
+    std::snprintf(url, sizeof(url), "%s/scene?v=0%s", s_sceneUrl.c_str(),
+                  docQuery().c_str());
     emscripten_fetch(&attr, url);
 }
 
@@ -6117,10 +6271,11 @@ static void startInitialFetch()
     attr.onerror = onInitFetchError;
     attr.onprogress = onInitFetchProgress;
     char url[512];
-    std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu",
+    std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu%s",
                   s_sceneUrl.c_str(),
                   (unsigned long long)s_sceneVersion,
-                  (unsigned long long)s_sessionId);
+                  (unsigned long long)s_sessionId,
+                  docQuery().c_str());
     emscripten_fetch(&attr, url);
 }
 
@@ -6260,6 +6415,23 @@ int main()
     if (s_noProgressive)
         std::printf("fcviewer: progressive display off, waiting for the "
                     "whole publish\n");
+
+    // The document wire's page parameters (docs/MultiDocServe.md §6),
+    // read before the first fetch so the initial scene is already the
+    // named document's.
+    if (char *doc = fcviewer_query_param("doc")) {
+        s_docName = doc;
+        std::free(doc);
+        std::printf("fcviewer: document '%s'\n", s_docName.c_str());
+    }
+    if (char *client = fcviewer_query_param("client")) {
+        s_clientLabel = client;
+        std::free(client);
+    }
+    if (char *token = fcviewer_query_param("token")) {
+        s_tokenParam = token;
+        std::free(token);
+    }
 
     if (char *sceneParam = fcviewer_scene_param()) {
         s_sceneUrl = sceneParam;

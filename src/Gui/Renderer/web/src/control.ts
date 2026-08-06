@@ -9,6 +9,9 @@ declare global {
     fcviewerControlSend?: (json: string) => boolean;
     /// Turn the renderer HUD on or off (main.cpp fcviewer_set_hud).
     fcviewerSetHud?: (on: boolean) => void;
+    /// Switch to another served document (main.cpp fcviewer_switch_doc,
+    /// docs/MultiDocServe.md §6).
+    fcviewerSwitchDoc?: (name: string) => void;
     /// Set by this layer to claim the HUD feed: the viewer then reports
     /// it as 'fc:hud' events instead of drawing its own overlay box.
     fcviewerHudCard?: boolean;

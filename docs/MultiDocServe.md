@@ -1,9 +1,10 @@
 # Multi-document serving — one backend, several documents, one wire
 
-Status: **stages 3a–3c implemented** (§8) — the server is grouped by document, the gates
-are re-keyed, and the wire carries document names: hello `doc`/`client`, the `docs`
-listing, `switch`, the join gate, teardown re-homing. The viewer (3d) and the token (3e)
-are still to come. Stage 2 of [HeadlessServe.md](./HeadlessServe.md) deliberately scoped
+Status: **stages 3a–3d implemented** (§8) — the server is grouped by document, the gates
+are re-keyed, the wire carries document names (hello `doc`/`client`, the `docs` listing,
+`switch`, the join gate, teardown re-homing), and the viewer speaks it: `?doc=`/`?client=`
+page parameters, a document section in the menu, switch riding the session-change reset.
+Only the token (3e) remains. Stage 2 of [HeadlessServe.md](./HeadlessServe.md) deliberately scoped
 serving to one source, one document, one port (its §5), and this document is the decision
 that reversed that scoping.
 

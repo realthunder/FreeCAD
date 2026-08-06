@@ -51,6 +51,43 @@ window.addEventListener('fc:loupe', (e: Event) => {
   setLoupe(d && typeof d.x === 'number' ? d as LoupeMark : null);
 });
 
+// The served-document listing (docs/MultiDocServe.md §6): pushed by the
+// backend whenever a document is served or unserved, re-dispatched by
+// the WASM side as 'fc:docs' with the viewer's current document filled
+// in. The menu's document section draws from it.
+interface DocEntry { name: string; label?: string; objects?: number }
+const [docs, setDocs] = createSignal<{ list: DocEntry[]; current: string }>(
+  { list: [], current: '' });
+window.addEventListener('fc:docs', (e: Event) => {
+  const d = (e as CustomEvent).detail;
+  if (d && Array.isArray(d.list))
+    setDocs({ list: d.list,
+              current: typeof d.current === 'string' ? d.current : '' });
+});
+// The switch itself is the viewer's (it owns the socket and the reset);
+// the current mark moves optimistically, because no docs push follows a
+// switch — the listing did not change, this viewer's place in it did.
+const switchDoc = (name: string) => {
+  window.fcviewerSwitchDoc?.(name);
+  setDocs((d) => ({ ...d, current: name }));
+};
+// One document needs no section — unless it is not the one this viewer
+// is on (an unknown ?doc= joined nothing, and the section is the way
+// back in).
+const docItems = () => {
+  const d = docs();
+  if (d.list.length < 2
+      && !(d.list.length === 1 && d.list[0].name !== d.current))
+    return [];
+  return d.list.map((doc) => ({
+    label: doc.label && doc.label !== doc.name
+      ? `${doc.label} (${doc.name})` : doc.name,
+    checked: () => docs().current === doc.name,
+    closeOnSelect: true,
+    onSelect: () => switchDoc(doc.name),
+  }));
+};
+
 // The menu opens the property card on a subject; the counter is what
 // makes asking twice work (see Inspector's request prop).
 const [request, setRequest] = createSignal<{ subject: Subject; n: number }
@@ -76,6 +113,7 @@ render(() => (
     <LauncherMenu
       hidden={() => cardOpen() && window.innerWidth <= NARROW}
       items={[
+        ...docItems(),
         { label: 'View properties', onSelect: () => openCard('view3d') },
         { label: 'Document properties',
           onSelect: () => openCard('document') },
