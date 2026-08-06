@@ -1520,7 +1520,11 @@ static bool materialsUnrepresentable(const std::vector<App::Material> &mats)
 
 void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& colors)
 {
-    if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange))
+    // Not during a restore: the eager path touched and then had the touch
+    // purged by afterRestore; the deferred drain runs after that purge, so
+    // the touch would survive and a document would open already modified.
+    if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange)
+            && !App::Document::isAnyRestoring())
         getObject()->touch(true);
 
     // Any per-face color VECTOR is representable by the instanced
