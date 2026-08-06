@@ -129,6 +129,12 @@ Time-to-window is what changed, and that is the thing a user waits on.
 
 ## 6. Design: write a view provider once per class
 
+> ⚠️ Partially superseded by §12: the comparison is now byte equality,
+> not `isSame()`; eligibility is opt-in per property type; the format is
+> chosen per document in the save dialog; and a file carrying blocks is
+> rooted `<FCDocument>`, which old readers refuse loudly. The
+> measurements and the `mustSave()` findings below still stand.
+
 §3 says the view file is twice the size of the document and §2 says it
 parses for 5.4s. The reason is that every view provider writes all 31 of
 its properties whether or not it has moved any of them off what its
@@ -230,6 +236,8 @@ and the baseline has to be re-saved before it can be re-measured. Turn it
 off with `SaveViewProviderDefaults`.
 
 ## 7. Design: the same for `Document.xml`
+
+> ⚠️ Partially superseded by §12, as §6 is.
 
 §6 left `Document.xml` as the larger half of the XML — 42.5MB, an
 `<ObjectData>` pass of 208816 properties for 2.97s — and the mechanism
@@ -440,3 +448,94 @@ rendered frame against the original).
 - **A capture taken before the deferred fill drains** photographs how far
   the fill happened to get. Settle first — and compare decoded pixels,
   not file bytes, because two encodings of one picture need not match.
+
+## 12. Redesign: the format holds its own guarantees
+
+A review of §6–§8 as first shipped found the mechanism sound only
+conditionally — correct exactly as far as every `isSame()` is exactly as
+strict as `Save()`, silently wrong in every FreeCAD that predates it,
+and elidable-by-default for every property type anyone would ever add.
+Three requirements were then fixed, and the design reworked to hold each
+one *by construction* rather than by audit:
+
+1. **A future change of a class default must not affect restore.**
+2. **A file in the new format must fail loudly in every older FreeCAD,
+   upstream included.**
+3. **Every save configuration (split, ForceXML, export, …) must stay
+   correct, and the format is opt-in — never a default.**
+
+**The equivalence is the file (req 1).** `App::SharedDefaults` records,
+per class, what each eligible property of a fresh stand-in serializes to
+at canonical settings (the file's schema and version, XML forced, no
+indentation). The block written into the file is those recorded bytes
+verbatim, and a property is elided only when its own serialization is
+byte-identical to them, status agreeing mod `Touched`. The readers
+decide the same way: block restored into one stand-in, a second built
+fresh, both sides re-serialized through
+`SharedDefaults::serializeForCompare` and byte-compared — re-serializing
+the proto (rather than trusting the file's literal text) cancels the
+formatting a parse-and-save round trip applies. What differs is pasted
+whole, status first and value second as `Restore` orders it, each paste
+behind its own try/catch, every property re-fetched by name after the
+block restore. No `isSame()` is load-bearing anywhere; restore fidelity
+reduces to XML parse fidelity, the same trust the per-object path always
+had. A changed future default is exactly a byte difference, and byte
+differences get pasted.
+
+**Elision is opt-in per type (req 1 and the audit burden).**
+`Property::canShareDefault()` defaults to **false** — every property is
+effectively must-save until its type opts in. The whitelist is the
+cheap, deterministic value types (scalars, strings, enumerations,
+colours, materials, small lists, vector/placement, the link family, the
+expression engine); `PropertyPersistentObject` and
+`PropertyXLinkContainer` opt back out of branches that would have
+inherited an opt-in. Shapes, Python objects, included files and UUIDs
+stay out by doing nothing. `mustSave()` remains the container-level veto
+for absence-sensitive properties (`Visibility`, `DisplayMode`), and
+`SharedDefaults::eligible()` is the one test all three sides share.
+
+**The root element is the compatibility statement (req 2).** A save that
+resolves to schema 6 is rooted `<FCDocument>`; everything else keeps
+`<Document>`. No released reader checks a schema number, but every one
+of them — this fork's and upstream's — scans for `<Document>` first,
+reaches the end of the stream, and throws. Verified both ways: a test
+linked against this tree's `libFreeCADBase` (identical `Reader.cpp` to
+the released builds) throws `End of document reached` at the first
+`readElement`, and upstream's `Reader.cpp` (`readElement`, main branch)
+throws `XMLParseException("End of document reached")` from the same
+loop. The old "blind reader walks past the block" argument — and the
+harness case that checked it — is retired: an old reader never gets that
+far. The failure is loud but *cryptic* in already-shipped binaries;
+that is the best reachable retroactively, and it is the accepted
+trade. The name is deliberately version-less: `SchemaVersion` keeps
+carrying versions, the root name only says "not for readers that
+predate it".
+
+**Schema is an outcome, chosen per document (req 3).** The
+`SaveSchemaVersion` property is the user's cap, **default 5** — a fresh
+document is readable everywhere until someone decides otherwise. The
+one place to decide is the save dialog: a format row (standard/compact)
+preselected from the document's own cap (or, for a never-saved document,
+the `PreferCompactFormat` parameter holding the last choice made there),
+with a red, bold, title-sized warning that stays on screen for as long
+as compact is selected — deselected, never dismissed. Plain Save keeps
+whatever the document decided. Each save then *resolves* the cap:
+
+| configuration | outcome |
+|---|---|
+| cap 5 (default) | schema 5, `<Document>`, no blocks |
+| cap 6, normal save | schema 6, `<FCDocument>`, App + Gui blocks |
+| cap 6, split XML | schema 5 — per-object files have no block to share |
+| `exportObjects` (clipboard/merge) | capped at 5 always — fragments travel |
+| `dumpContent` (no configured writer) | `Save()` resolves the document's own answer onto the writer |
+| ForceXML / InlineListSize / PreferBinary | orthogonal; comparison buffers are always forced-XML, a form mismatch merely forfeits elision |
+| `SaveObjectDefaults` / `SaveViewProviderDefaults` prefs | **removed** — no machine preference outranks what a document promised |
+
+**Checked** (2026-08-06, conda-debug): `objdefaults_check.py` PASS —
+block + `FCDocument` at 6, neither at 5, a fresh document
+indistinguishable from 5, zero round-trip diffs beyond the
+`_LinkVersion` baseline, −34.5% `Document.xml` on the 29-object toy;
+`defaults_check.py` PASS — −52.6% `GuiDocument.xml` at 6; `FreeCADCmd
+-t Document` back at its exact known baseline after `dumpContent`
+exposed the one regression (a writer nothing configured defaulting to
+schema 0 — fixed in `Document::Save`).
