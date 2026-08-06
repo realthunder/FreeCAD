@@ -625,14 +625,25 @@ objects is identical between the source and a resaved reload — as is
 the rendered frame, to the pixel, under plain Coin (cache 0) and
 under the eager path.
 
-⛔ **Open issue, renderer-side**: with **two** of these documents open
-at once (the resave gate's shape — and an external-link assembly's),
-the *second* one rendered by the **bgfx backend** deterministically
-misses ~115 of its largest parts (39039 px). Same scene state, plain
-Coin renders it correctly, eager path renders it correctly — the
-defect is in how the renderer (most plausibly the TShape-instancing
-table) sees a second document whose view providers arrived by drain.
-Belongs to the renderer, not to this load path.
+✅ **Resolved (was: "renderer-side two-document miss")**: the second
+document opened under the bgfx backend deterministically missed ~115
+parts (39039 px, stable to the pixel). The renderer was innocent, and
+so was "two documents" as such: `deferVisualForLoad()` gated only on
+`App::Document::Restoring`, which the drain clears **between its
+slices** — while the visual queue itself refuses to build in that
+same window (`runDeferredVisualSlice` also checks
+`isRestoringViewProviders()`). A direct `updateVisual` landing in a
+gap (an event on the camera-fit path) built the visual into a
+half-staged subtree, where the drain's remaining staging left it
+built Coin-side but never drawn — the very interleaving §4 serializes
+against, escaping through the one unguarded entry. It surfaced only on
+the *second* document because a resave permutes the GuiDocument.xml
+record order (writer maps iterate deterministically per input — hence
+the pixel-identical failures), and only some orders line the drain
+gaps up with the camera events. The fix makes `deferVisualForLoad()`
+apply the queue's own gate, restoring "visuals after drain"
+unconditionally; the resave gate then round-trips 0 px under cache 3
+progressive, eager, and Coin alike.
 
 **What it trades**: between the open returning and the drain
 finishing, `getViewProvider()` answers null and `obj.ViewObject` is

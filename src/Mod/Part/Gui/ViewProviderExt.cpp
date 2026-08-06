@@ -3286,8 +3286,22 @@ bool ViewProviderPartExt::deferVisualForLoad()
         return false;
     auto obj = getObject();
     auto doc = obj ? obj->getDocument() : nullptr;
-    if (!doc || !doc->testStatus(App::Document::Restoring))
+    if (!doc)
         return false;
+    if (!doc->testStatus(App::Document::Restoring)) {
+        // The deferred view-provider drain counts as loading too: its
+        // slices run with the Restoring bit clear between them, and a
+        // visual built in such a gap is walked by the staging sweep that
+        // follows — the very interleaving the queue itself refuses
+        // (runDeferredVisualSlice checks this same flag before building).
+        // Without the same gate here, a direct updateVisual — e.g. from
+        // the camera-fit path while a second document's drain is mid-way —
+        // builds into a half-staged subtree, and the content never reaches
+        // the renderer: built Coin-side, never drawn.
+        auto guiDoc = Gui::Application::Instance->getDocument(doc);
+        if (!guiDoc || !guiDoc->isRestoringViewProviders())
+            return false;
+    }
 
     VisualTouched = true;
     if (!VisualDeferred) {
