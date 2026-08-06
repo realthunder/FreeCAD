@@ -2036,6 +2036,14 @@ public:
                             // water/ground reflection shows the plume
                             // and flame, not what stands behind them
         ViewOpaque,         // opaque triangles, lines, points
+        ViewSelection,      // opaque draws of non-on-top selections
+                            // (SoFCRenderer's opaqueselections bucket):
+                            // GL renders them painter-style right after
+                            // the opaque scene, so coincident geometry
+                            // (a selected sketch edge over its own scene
+                            // line) resolves to the highlight color via
+                            // LEQUAL. A Sequential view keeps that order
+                            // where ViewOpaque's state sorting would not.
         ViewSectionCap,     // stencil section caps of clipped opaque
                             // solids (GL: _renderSection; before the
                             // outline/transparent passes like the GL
@@ -7042,6 +7050,11 @@ public:
             : transparent && mat.type == Render::Material::Triangle
                 ? ViewTransparent
                 : ViewOpaque;
+        // Non-on-top selection draws: keep transparent fills in the
+        // transparent bucket (GL: transpselections), move the opaque ones
+        // into the sequential post-scene view (GL: opaqueselections).
+        if (selPass && passView == ViewOpaque)
+            passView = ViewSelection;
         // Ground reflection pass: the same submit path renders into the
         // mirrored-scene view (the caller feeds opaque scene triangles
         // only); the mirror flips the winding, so culling flips too.
@@ -7185,9 +7198,19 @@ public:
                 ? qMax(1.0f, std::floor(mat.pointsize + 0.5f))
                 : shaded ? 1.0f : 0.0f;
         // u_params.z: mesh program = two-sided lighting; line/point
-        // programs = NDC depth bias (only the outline passes bias).
-        params[2] = mat.type == Render::Material::Triangle && twoside
-            ? 1.0f : 0.0f;
+        // programs = NDC depth bias (the outline passes bias, and the
+        // depth-tested passes of highlight lines/points get a tiny
+        // toward-viewer pull: GL's native line rasterization gives a
+        // thickened selection line exactly the depth of the object's own
+        // thinner scene line, so its LEQUAL solid pass wins the tie; the
+        // width-dependent subpixel snapping of the quad expansion breaks
+        // that tie by ulps, consistently depth-failing the highlight
+        // where it coincides with its own object's lines).
+        if (mat.type == Render::Material::Triangle)
+            params[2] = twoside ? 1.0f : 0.0f;
+        else
+            params[2] = (mat.highlightline && depthtest)
+                ? -2.0f * (2.0f * 16.0f / 16777216.0f) : 0.0f;
         // u_params.w: mesh program = NDC depth bias (polygon offset
         // approximation, no per-pixel slope term); flat program = alpha
         // ceiling used to dim depth-occluded on-top lines.
@@ -8248,6 +8271,9 @@ public:
     // 6065ad06ed dropped the interaction-triggered rebuild that masked this.)
     int warmup = 0;
     bool ontop = false;   // route submits to the highlight pass
+    bool selPass = false; // route opaque-view submits into ViewSelection
+                          // (non-on-top selection draws follow the opaque
+                          // scene in submission order, GL pass parity)
     int overlayView = -1; // >= 0: route submits into this overlay view
     // Anchor + rect pixel height of the overlay currently being submitted (set
     // alongside overlayView); billboard text sizes itself against the overlay's
@@ -11157,6 +11183,7 @@ public:
                         || i == BGFXView::ViewParticles
                     ? bgfx::ViewMode::DepthDescending
                     : i >= BGFXView::ViewOnTop
+                            || i == BGFXView::ViewSelection
                             || i == BGFXView::ViewOutline
                             || i == BGFXView::ViewSectionCap
                             || i == BGFXView::ViewSectionCapTransp
@@ -12046,6 +12073,7 @@ public:
         // selected face) triangle draws come last of all.
         for (const auto &sel : selections) {
             view->ontop = sel.first > 0;
+            view->selPass = sel.first <= 0;
             for (const auto &draw : sel.second) {
                 if (isTriangle(draw) && draw.partIndex >= 0)
                     continue;
@@ -12063,6 +12091,7 @@ public:
                             ? int(BGFXView::ViewHighlight) : -1);
             }
         }
+        view->selPass = false;
 
         // 3. Whole-object preselection fills before the depth prepass.
         view->ontop = true;
@@ -12117,12 +12146,22 @@ public:
                         view->submit(draw, viewMat, pass,
                                      sceneNoSeam(draw));
                 }
-                for (const auto &sel : selections) {
-                    if (sel.first <= 0)
-                        continue;
-                    for (const auto &draw : sel.second) {
-                        if (!isTriangle(draw) && !isDup(draw))
-                            view->submit(draw, viewMat, pass);
+                // GL bucket order within each pass: the uncolored
+                // whole-on-top companions (selsontop) draw before the
+                // colored highlight lines (selslineontop) — the
+                // highlight must paint last or a companion coincident
+                // with it (a selected sketch edge over its own object
+                // lines) covers it back with white.
+                for (int hlphase = 0; hlphase < 2; ++hlphase) {
+                    for (const auto &sel : selections) {
+                        if (sel.first <= 0)
+                            continue;
+                        for (const auto &draw : sel.second) {
+                            if (!isTriangle(draw) && !isDup(draw)
+                                    && draw.material.highlightline
+                                        == (hlphase == 1))
+                                view->submit(draw, viewMat, pass);
+                        }
                     }
                 }
                 if (hlWholeOnTop) {
@@ -12147,12 +12186,14 @@ public:
         // GL's transpselectionsfaceontop position after the line passes.
         for (const auto &sel : selections) {
             view->ontop = sel.first > 0;
+            view->selPass = sel.first <= 0;
             for (const auto &draw : sel.second) {
                 if (isTriangle(draw) && draw.partIndex >= 0
                         && !outlineOnly(draw))
                     view->submit(draw, viewMat);
             }
         }
+        view->selPass = false;
 
         // 7. Preselection highlight: whole-on-top fills/lines were handled
         // above, only its single-part lines/points remain; otherwise draw

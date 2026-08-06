@@ -861,6 +861,13 @@ struct Material {
     /// Alpha used to dim the depth-occluded part of on-top lines/points
     /// (ViewParams::TransparencyOnTop); 1 = no dimming.
     float hiddenlinealpha = 1.0f;
+    /// Line/point draw of a selection/preselection highlight (GL renders
+    /// it under RenderPassHighlight): drawn after the uncolored on-top
+    /// companion lines (GL bucket order selsontop -> selslineontop), and
+    /// its depth-tested passes get a tiny toward-viewer bias so the
+    /// thickened quad wins the depth tie against the object's own scene
+    /// line the way GL's width-independent line rasterization does.
+    bool highlightline = false;
 
     /// Stencil face outline of partial (per-face) triangle draws in the
     /// selection/highlight feeds (GL: RenderPassSelectionOutline): the

@@ -611,6 +611,8 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     // effective width. Deviation from GL: the dimmed (hidden) pass of
     // whole-on-top preselect lines thickens too, where GL leaves it thin.
     if (useHighlightPass(m, selId, highlight)) {
+        // Never true for triangles: useHighlightPass rejects them first.
+        res.highlightline = true;
         float scale = float(ViewParams::getSelectionLineThicken());
         if (scale < 1.0f)
             scale = 1.0f;
