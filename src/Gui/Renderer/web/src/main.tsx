@@ -99,8 +99,15 @@ window.addEventListener('fc:viewonly', (e: Event) => {
 // The name the host's sharing roster shows for this connection
 // (docs/MultiDocServe.md §6). ?client= wins at load; after that this is
 // the only way to set one, and the viewer persists it per browser.
+// Pushed by the viewer as 'fc:client' once it knows (?client=, the
+// stored name, or the action below) — not read at mount, which races
+// the wasm module's own startup.
 const [clientName, setClientName] = createSignal(
-  window.fcviewerClientName?.() ?? '');
+  window.fcviewerClient ?? window.fcviewerClientName?.() ?? '');
+window.addEventListener('fc:client', (e: Event) => {
+  const d = (e as CustomEvent).detail;
+  setClientName(typeof d === 'string' ? d : '');
+});
 const askName = () => {
   const now = clientName();
   const next = window.prompt(

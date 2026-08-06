@@ -395,6 +395,17 @@ EM_JS(void, fcviewer_docs_event, (const char *json, const char *current), {
     } catch (e) {}
 });
 
+// This connection's name (docs/MultiDocServe.md §6), pushed rather
+// than read: the DOM layer mounts on its own schedule — often before
+// this module runs at all — so a one-shot read at mount misses a name
+// that came from ?client= or from the store. Mirrored on window too,
+// for a panel that mounts after the push.
+EM_JS(void, fcviewer_client_event, (const char *name), {
+    window.fcviewerClient = UTF8ToString(name);
+    window.dispatchEvent(new CustomEvent('fc:client',
+                                         { detail: window.fcviewerClient }));
+});
+
 // This connection's access mode (docs/MultiDocServe.md §8): the host
 // can make a viewer view-only at any time, and the DOM layer has to
 // know — an inspector that still offers editable fields would collect
@@ -5915,6 +5926,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_client(const char *name)
 {
     s_clientLabel = name ? name : "";
     std::printf("fcviewer: client name '%s'\n", s_clientLabel.c_str());
+    fcviewer_client_event(s_clientLabel.c_str());
     if (s_wsOpen) {
         std::string msg = "{\"cmd\":\"client\",\"name\":\"";
         jsonEscapeTo(msg, s_clientLabel);
@@ -6559,6 +6571,8 @@ int main()
         s_clientLabel = saved;
         std::free(saved);
     }
+    // Whatever it ended up being, tell the menu.
+    fcviewer_client_event(s_clientLabel.c_str());
     if (char *token = fcviewer_query_param("token")) {
         s_tokenParam = token;
         std::free(token);

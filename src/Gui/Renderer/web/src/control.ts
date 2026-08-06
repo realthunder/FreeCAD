@@ -17,6 +17,9 @@ declare global {
     /// localStorage by the viewer side.
     fcviewerSetClient?: (name: string) => void;
     fcviewerClientName?: () => string;
+    /// Mirror of the current name, set by the viewer alongside the
+    /// 'fc:client' event so a late-mounting panel still reads it.
+    fcviewerClient?: string;
     /// Whether the host has made this connection view-only
     /// (docs/MultiDocServe.md §8). Mirrored here by the viewer so a
     /// panel mounting after the push still reads the current mode;
