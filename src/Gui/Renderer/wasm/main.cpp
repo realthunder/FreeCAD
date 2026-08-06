@@ -205,6 +205,17 @@ static std::string docQuery()
                              : "&doc=" + urlEncode(s_docName);
 }
 
+/// The door token every scene-server request carries when the backend
+/// is gated (docs/MultiDocServe.md §8): the hello alone is not enough
+/// once every endpoint checks it — the polling /scene, the blob and
+/// level fetches and the upgrade request all need it. Appendable to a
+/// query string that already started.
+static std::string tokenQuery()
+{
+    return s_tokenParam.empty() ? std::string()
+                                : "&token=" + urlEncode(s_tokenParam);
+}
+
 static uint64_t s_sceneVersion = 0;
 /// The backend run those versions belong to (SceneDump.h, v35). Told to
 /// the server on every request, so that a version this viewer carried
@@ -3779,7 +3790,7 @@ static void fetchBlob(const std::string &key)
         blobFailed(*key);
     };
     ++s_requestsInFlight;
-    std::string url = s_sceneUrl + "/blob?key=" + key;
+    std::string url = s_sceneUrl + "/blob?key=" + key + tokenQuery();
     emscripten_fetch(&attr, url.c_str());
 }
 
@@ -3889,6 +3900,8 @@ static void flushBatch()
                 req->keys.size(), bytes);
     ++s_requestsInFlight;
     std::string url = s_sceneUrl + "/blobs";
+    if (!s_tokenParam.empty())
+        url += "?token=" + urlEncode(s_tokenParam);
     emscripten_fetch(&attr, url.c_str());
 }
 
@@ -4324,7 +4337,8 @@ public:
             emscripten_fetch_close(fetch);
         };
         std::string url = s_sceneUrl + "/level?source=" + req.source
-            + "&level=" + std::to_string(req.level) + docQuery();
+            + "&level=" + std::to_string(req.level) + docQuery()
+            + tokenQuery();
         emscripten_fetch(&attr, url.c_str());
         return true;
     }
@@ -5722,6 +5736,14 @@ static void handleControlMessage(const char *json)
             std::printf("fcviewer: reconnect budget %ld\n",
                         s_reconnectLimit);
         }
+        // The host flipped this connection's mode
+        // (docs/MultiDocServe.md §8). Nothing to disable here — a
+        // view-only edit is refused server-side with a ViewOnly error
+        // the property card shows — but say so in the log.
+        if (const char *vo = std::strstr(json, "\"viewOnly\""))
+            std::printf("fcviewer: %s\n",
+                        std::strstr(vo, "true") ? "view-only mode"
+                                                : "editing enabled");
     }
     else if (std::strstr(json, "\"cmd\":\"dumpDecisions\"")) {
         long id = 0;
@@ -5761,6 +5783,18 @@ static void handleControlMessage(const char *json)
                             "pick one from the menu", 0.0, -1.0);
         else if (std::strstr(json, "\"NoDocument\""))
             fcviewer_status("No document is being served", 0.0, -1.0);
+        // Told to leave (docs/MultiDocServe.md §8): the host kicked
+        // this connection or stopped sharing, or the door token was
+        // wrong. Reconnecting would be knocking on a closed door.
+        else if (std::strstr(json, "\"Kicked\"")) {
+            s_reconnectLimit = 0;
+            fcviewer_status("Disconnected by host", 0.0, -1.0);
+        }
+        else if (std::strstr(json, "\"BadToken\"")) {
+            s_reconnectLimit = 0;
+            fcviewer_status("Not authorized \xe2\x80\x94 "
+                            "check the share link", 0.0, -1.0);
+        }
         std::printf("fcviewer: server error %s\n", json);
     }
     else if (std::strstr(json, "\"id\":") || std::strstr(json, "\"op\":")) {
@@ -5838,6 +5872,15 @@ static void onPollResult(emscripten_fetch_t *fetch)
 
 static void onPollError(emscripten_fetch_t *fetch)
 {
+    // A gated backend refusing the token will refuse it next time
+    // too; polling on would be a request every 500ms forever.
+    if (fetch->status == 403) {
+        emscripten_fetch_close(fetch);
+        s_polling = false;
+        fcviewer_status("Not authorized \xe2\x80\x94 check the share link",
+                        0.0, -1.0);
+        return;
+    }
     emscripten_fetch_close(fetch);
     schedulePoll();
 }
@@ -5873,11 +5916,11 @@ static void doPoll(void * = nullptr)
     attr.onsuccess = onPollResult;
     attr.onerror = onPollError;
     char url[512];
-    std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu%s",
+    std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu%s%s",
                   s_sceneUrl.c_str(),
                   (unsigned long long)s_sceneVersion,
                   (unsigned long long)s_sessionId,
-                  docQuery().c_str());
+                  docQuery().c_str(), tokenQuery().c_str());
     emscripten_fetch(&attr, url);
 }
 
@@ -6069,6 +6112,7 @@ static bool connectWs()
     // loop sends anything, which is also what makes the held version
     // mean something (sessions are per document).
     url += docQuery();
+    url += tokenQuery();
     EmscriptenWebSocketCreateAttributes attr = {
         url.c_str(), nullptr, EM_TRUE};
     s_ws = emscripten_websocket_new(&attr);
@@ -6160,6 +6204,14 @@ static void onInitFetchDone(emscripten_fetch_t *fetch)
 static void onInitFetchError(emscripten_fetch_t *fetch)
 {
     s_fullSceneInFlight = false;
+    // Refused at the door: neither the stream nor a retry can help
+    // until the page is reloaded with the right token.
+    if (fetch->status == 403) {
+        emscripten_fetch_close(fetch);
+        fcviewer_status("Not authorized \xe2\x80\x94 check the share link",
+                        0.0, -1.0);
+        return;
+    }
     emscripten_fetch_close(fetch);
     if (s_haveScene)
         fcviewer_status(nullptr, 0.0, 0.0);
@@ -6255,8 +6307,8 @@ static void requestFullScene()
     attr.onsuccess = onInitFetchDone;
     attr.onerror = onInitFetchError;
     char url[512];
-    std::snprintf(url, sizeof(url), "%s/scene?v=0%s", s_sceneUrl.c_str(),
-                  docQuery().c_str());
+    std::snprintf(url, sizeof(url), "%s/scene?v=0%s%s", s_sceneUrl.c_str(),
+                  docQuery().c_str(), tokenQuery().c_str());
     emscripten_fetch(&attr, url);
 }
 
@@ -6271,11 +6323,11 @@ static void startInitialFetch()
     attr.onerror = onInitFetchError;
     attr.onprogress = onInitFetchProgress;
     char url[512];
-    std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu%s",
+    std::snprintf(url, sizeof(url), "%s/scene?v=%llu&s=%llu%s%s",
                   s_sceneUrl.c_str(),
                   (unsigned long long)s_sceneVersion,
                   (unsigned long long)s_sessionId,
-                  docQuery().c_str());
+                  docQuery().c_str(), tokenQuery().c_str());
     emscripten_fetch(&attr, url);
 }
 

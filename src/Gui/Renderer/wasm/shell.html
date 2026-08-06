@@ -90,7 +90,11 @@
         if (!pending.length || !scene) return;
         var body = pending.join('\n');
         pending = [];
-        try { navigator.sendBeacon(scene + '/log', body); } catch (e) {}
+        // The door token, when the backend is gated — /log is an
+        // endpoint like any other (docs/MultiDocServe.md §8).
+        var tok = q.get('token');
+        var url = scene + '/log' + (tok ? '?token=' + encodeURIComponent(tok) : '');
+        try { navigator.sendBeacon(url, body); } catch (e) {}
       };
       var emit = function (kind, args) {
         var line = kind + ' ' + Array.prototype.map.call(args, function (a) {
