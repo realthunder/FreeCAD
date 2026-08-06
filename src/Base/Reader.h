@@ -207,6 +207,28 @@ public:
      * @param guard: optional level guard. @sa readElement().
      */
     void readEndElement(const char* ElementName=nullptr, int *guard=nullptr);
+
+    /** Capture the current element's content as XML text instead of parsing it
+     *
+     * To be called right after readElement() has read the element whose
+     * content is to be captured. Consumes the reader up to the element's end
+     * tag -- which is left as the current position, so a readEndElement()
+     * for the element still matches -- and appends everything in between to
+     * \a out, re-serialized with the same escaping the writer used. The
+     * captured text can later be replayed through a fresh XMLReader wrapped
+     * in any root element, which is what lets a restore park a subtree and
+     * apply it after the load has let go.
+     */
+    void captureChildren(std::string &out);
+
+    /** Capture the current element, tags included, as XML text
+     *
+     * Same contract as captureChildren(), with the element's own start and
+     * end tag re-serialized around the content -- the form a caller wants
+     * when the fragment is replayed on its own.
+     */
+    void captureElement(std::string &out);
+
     /** Read element character content and save to a file
      *
      *  @param filename: file name to save into
@@ -410,6 +432,16 @@ protected:
     std::vector<Attribute> AttrStore;
     std::size_t AttrCount {0};
     const std::string *findAttribute(const char *AttrName) const;
+
+    /** Where captureChildren() is diverting the SAX events, if anywhere.
+     * While set, the element handlers append re-serialized XML here instead
+     * of updating the element state; the end tag of the element being
+     * captured (the first one below CaptureLevel) drops the diversion and
+     * is processed normally.
+     */
+    std::string *CaptureBuf {nullptr};
+    int CaptureLevel {0};
+    std::string CaptureScratch;
 
     enum
     {

@@ -365,6 +365,51 @@ void Base::XMLReader::readEndElement(const char* ElementName, int *guard)
         Guards.pop_back();
 }
 
+static void appendEscaped(std::string &out, const std::string &s, bool attribute);
+
+void Base::XMLReader::captureChildren(std::string &out)
+{
+    endCharStream();
+    if (ReadType == StartEndElement)
+        return;  // an empty element has no content to capture
+    if (ReadType != StartElement)
+        FC_READER_THROW("captureChildren() called outside a start element");
+
+    CaptureBuf = &out;
+    CaptureLevel = Level;
+    try {
+        while (CaptureBuf)
+            read();
+    }
+    catch (...) {
+        // The buffer belongs to the caller; a dangling diversion would have
+        // the next parse writing into whatever it left behind.
+        CaptureBuf = nullptr;
+        throw;
+    }
+}
+
+void Base::XMLReader::captureElement(std::string &out)
+{
+    out += '<';
+    out += LocalName;
+    for (std::size_t i = 0; i < AttrCount; ++i) {
+        out += ' ';
+        out += AttrStore[i].name;
+        out += "=\"";
+        appendEscaped(out, AttrStore[i].value, true);
+        out += '"';
+    }
+    out += '>';
+    captureChildren(out);
+    // Both ways out of captureChildren leave LocalName on this element:
+    // an empty element never changed it, and a captured one ends on its
+    // own end tag, which is processed normally.
+    out += "</";
+    out += LocalName;
+    out += '>';
+}
+
 std::streamsize Base::XMLReader::read(char_type* s, std::streamsize n)
 {
     char_type *buf = s;
@@ -587,6 +632,28 @@ static void assignUTF8(std::string &out, const XMLCh *s)
     appendUTF8(out, s, XMLString::stringLen(s));
 }
 
+// Re-escaping for captured subtrees. The parser hands over decoded text, so
+// writing it back out must escape exactly what Persistence::encodeAttribute
+// escaped, or a replayed fragment parses to different bytes than the
+// original did -- an attribute value's newline, in particular, would be
+// normalized to a space on the second parse if written literally.
+static void appendEscaped(std::string &out, const std::string &s, bool attribute)
+{
+    for (char c : s) {
+        switch (c) {
+        case '<': out += "&lt;"; break;
+        case '>': out += "&gt;"; break;
+        case '&': out += "&amp;"; break;
+        case '"': if (attribute) { out += "&quot;"; break; } out += c; break;
+        case '\'': if (attribute) { out += "&apos;"; break; } out += c; break;
+        case '\r': out += "&#13;"; break;
+        case '\n': if (attribute) { out += "&#10;"; break; } out += c; break;
+        case '\t': if (attribute) { out += "&#9;"; break; } out += c; break;
+        default: out += c; break;
+        }
+    }
+}
+
 void Base::XMLReader::startDocument()
 {
     ReadType = StartDocument;
@@ -603,6 +670,26 @@ void Base::XMLReader::startElement(const XMLCh* const /*uri*/,
                                    const XERCES_CPP_NAMESPACE_QUALIFIER Attributes& attrs)
 {
     Level++;  // new scope
+
+    if (CaptureBuf) {
+        std::string &out = *CaptureBuf;
+        out += '<';
+        assignUTF8(CaptureScratch, localname);
+        out += CaptureScratch;
+        for (XMLSize_t i = 0; i < attrs.getLength(); ++i) {
+            out += ' ';
+            assignUTF8(CaptureScratch, attrs.getQName(i));
+            out += CaptureScratch;
+            out += "=\"";
+            assignUTF8(CaptureScratch, attrs.getValue(i));
+            appendEscaped(out, CaptureScratch, true);
+            out += '"';
+        }
+        out += '>';
+        ReadType = StartElement;
+        return;
+    }
+
     assignUTF8(LocalName, localname);
 
     // the attributes of the current scope replace the previous element's;
@@ -623,6 +710,21 @@ void Base::XMLReader::endElement(const XMLCh* const /*uri*/,
                                  const XMLCh* const /*qname*/)
 {
     Level--;  // end of scope
+
+    if (CaptureBuf) {
+        if (Level >= CaptureLevel) {
+            *CaptureBuf += "</";
+            assignUTF8(CaptureScratch, localname);
+            *CaptureBuf += CaptureScratch;
+            *CaptureBuf += '>';
+            ReadType = EndElement;
+            return;
+        }
+        // This end tag closes the element being captured; the diversion is
+        // over and the tag itself is the caller's, processed as usual.
+        CaptureBuf = nullptr;
+    }
+
     assignUTF8(LocalName, localname);
 
     if (ReadType == StartElement) {
@@ -650,6 +752,13 @@ void Base::XMLReader::endCDATA()
 void Base::XMLReader::characters(const XMLCh* const chars, const XMLSize_t length)
 {
     ReadType = Chars;
+
+    if (CaptureBuf) {
+        CaptureScratch.clear();
+        appendUTF8(CaptureScratch, chars, length);
+        appendEscaped(*CaptureBuf, CaptureScratch, false);
+        return;
+    }
 
     // We only capture characters when some one wants it
     if(CharacterOffset>=0) {
