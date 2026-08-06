@@ -358,12 +358,26 @@ protected:
     }
 
 private:
+    /// Keep out of the NaviCube's corner: it lives at the corner named
+    /// by the View group's CornerNaviCube (0 top-left, 1 top-right,
+    /// 2 bottom-left, 3 bottom-right — the NaviCube::Corner order), so
+    /// the pill takes the other side. Read on every reposition rather
+    /// than cached, so moving the cube in preferences moves the pill
+    /// on the next roster tick without a handler of its own. The pill
+    /// stays along the top whatever the cube does: a status badge
+    /// belongs there, and a cube in a bottom corner leaves both top
+    /// corners free anyway.
     void reposition()
     {
-        if (QWidget *parent = parentWidget()) {
-            move(parent->width() - width() - 12, 10);
-            raise();
-        }
+        QWidget *parent = parentWidget();
+        if (!parent)
+            return;
+        const long corner = App::GetApplication()
+            .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
+            ->GetInt("CornerNaviCube", 1);
+        const bool cubeOnRight = corner == 1 || corner == 3;
+        move(cubeOnRight ? 12 : parent->width() - width() - 12, 10);
+        raise();
     }
 
     QString label;
