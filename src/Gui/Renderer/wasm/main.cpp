@@ -5855,6 +5855,15 @@ static void handleControlMessage(const char *json)
             fcviewer_status("Not authorized \xe2\x80\x94 "
                             "check the share link", 0.0, -1.0);
         }
+        // The grant door said no (docs/ShareAccess.md §2): the link may
+        // be fine and the name or identity not covered — a different
+        // message than a bad link, because the fix is different (ask
+        // the host, not re-copy the URL).
+        else if (std::strstr(json, "\"Refused\"")) {
+            s_reconnectLimit = 0;
+            fcviewer_status("Access refused \xe2\x80\x94 "
+                            "this invite does not cover you", 0.0, -1.0);
+        }
         std::printf("fcviewer: server error %s\n", json);
     }
     else if (std::strstr(json, "\"id\":") || std::strstr(json, "\"op\":")) {

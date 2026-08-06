@@ -75,6 +75,34 @@ struct SceneControlRequest {
     std::function<void(const std::string &)> reply;
 };
 
+/// One entry of the door's grant list (docs/ShareAccess.md §2): an
+/// invitation, and who may use it. Every field but the token is a
+/// shell-wildcard pattern (`*` anything, `?` one character; empty =
+/// `*`). A connection is admitted iff some grant matches everything it
+/// presented — its token (exact; a grant with an empty token requires
+/// none), its verified identity (§4), its self-declared name, its
+/// address without the port — and the **most specific** match decides
+/// the access: identity outranks name outranks address (the verified
+/// part first, then what a person chose, then where they happen to
+/// be). No match, or a best match that is banned, is refused **before
+/// any scene bytes**.
+struct SceneGrant {
+    /// Server-assigned handle, for management and for correlating a
+    /// connection with the grant that admitted it. 0 on input;
+    /// setGrants/addGrant assign one.
+    uint64_t id = 0;
+    std::string token;     ///< invitation secret, exact; empty = none required
+    std::string identity;  ///< pattern on the verified identity
+    std::string client;    ///< pattern on the self-declared name
+    std::string address;   ///< pattern on the address, matched portless
+    int access = 0;        ///< 0 = edit, 1 = view-only, 2 = banned
+    /// Exists only in this run and is never persisted — the rename
+    /// easings of docs/ShareAccess.md §2, minted by the server itself
+    /// so a renamed client can reconnect; the panel shows them apart,
+    /// with a way to keep or drop them.
+    bool liveOnly = false;
+};
+
 /// One connected viewer as the sharing UI sees it (docs/MultiDocServe.md
 /// §8): identity for the roster, and the per-connection mode the host
 /// may change.
@@ -99,6 +127,9 @@ struct SceneClientInfo {
     bool viewer = false;      ///< sent a hello (a probe may not)
     bool viewOnly = false;    ///< picks and mutating ops refused
     uint64_t connectedMs = 0; ///< how long this connection has been up
+    /// The grant that admitted this connection (SceneGrant::id), 0
+    /// under the legacy single-token door or while unauthorized.
+    uint64_t grant = 0;
 };
 
 /// One viewer's answer to a dumpFrame control request
@@ -175,6 +206,28 @@ public:
     /// FC_SERVE_IDENTITY_HEADER presets it at first use.
     void setIdentityHeader(const std::string &name);
     std::string identityHeader();
+
+    /// Replace the live grant list (docs/ShareAccess.md §2) — the door
+    /// itself. Seeded from the enabled persistent grants when sharing
+    /// starts, free to evolve at runtime, gone with the process. A
+    /// non-empty list gates every endpoint by grant match and the
+    /// shared token of setToken() stops mattering; empty (the default)
+    /// falls back to the single-token door, which is what keeps the
+    /// env-token probe setups working unchanged. Every connection is
+    /// re-judged against the new list: one that no grant now admits is
+    /// refused and closed, one a different grant admits gets that
+    /// grant's access. Entries with id 0 are assigned one; grants()
+    /// returns the stored list including the ids and any live-only
+    /// easings the server has minted since.
+    void setGrants(const std::vector<SceneGrant> &list);
+    std::vector<SceneGrant> grants();
+    /// Add one grant to the live list (a rule made in the panel while
+    /// sharing runs). Returns its assigned id.
+    uint64_t addGrant(SceneGrant grant);
+    /// Drop one grant from the live list; connections it admitted are
+    /// re-judged — which is the "ban = drop live, disable stored" move
+    /// of docs/ShareAccess.md §2. False when the id is unknown.
+    bool removeGrant(uint64_t id);
 
     /// The connected clients, for the sharing roster. Returns how many.
     int clients(std::vector<SceneClientInfo> &out);

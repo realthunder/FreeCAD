@@ -269,6 +269,157 @@ public:
         return secret.empty() || queryValue(query, "token") == secret;
     }
 
+    /// The live grant list (SceneServer.h, setGrants) — the door when
+    /// non-empty. Guarded by tokenMutex like the rest of the door
+    /// configuration.
+    std::vector<SceneGrant> grantList;
+    uint64_t grantIdCounter = 0;
+
+    /// Case-insensitive shell-wildcard match (`*`, `?`) — the same
+    /// semantics as the sharing UI's rule patterns, without Qt.
+    static bool globMatch(const std::string &pattern,
+                          const std::string &value)
+    {
+        auto low = [](char c) {
+            return char(std::tolower(static_cast<unsigned char>(c)));
+        };
+        size_t p = 0, v = 0;
+        size_t star = std::string::npos, mark = 0;
+        while (v < value.size()) {
+            if (p < pattern.size()
+                    && (pattern[p] == '?'
+                        || low(pattern[p]) == low(value[v]))) {
+                ++p; ++v;
+            }
+            else if (p < pattern.size() && pattern[p] == '*') {
+                star = p++;
+                mark = v;
+            }
+            else if (star != std::string::npos) {
+                p = star + 1;
+                v = ++mark;
+            }
+            else {
+                return false;
+            }
+        }
+        while (p < pattern.size() && pattern[p] == '*')
+            ++p;
+        return p == pattern.size();
+    }
+
+    static bool patternMatches(const std::string &pattern,
+                               const std::string &value)
+    {
+        if (pattern.empty() || pattern == "*")
+            return true;
+        return globMatch(pattern, value);
+    }
+
+    /// How specific a pattern is, for choosing between grants that
+    /// both match: a literal beats a partial wildcard beats `*`. Kept
+    /// identical to the sharing UI's rule scoring.
+    static int specificityOf(const std::string &pattern)
+    {
+        if (pattern.empty() || pattern == "*")
+            return 0;
+        int literal = 0;
+        bool wild = false;
+        for (char c : pattern) {
+            if (c == '*' || c == '?')
+                wild = true;
+            else
+                ++literal;
+        }
+        return (wild ? 1 : 4096) + literal;
+    }
+
+    /// The address grants match against: without the ephemeral source
+    /// port, which differs on every visit. Only a v4 `ip:port` carries
+    /// one this way — an IPv6 address is all colons and stays whole.
+    static std::string portlessAddress(const std::string &address)
+    {
+        auto colon = address.rfind(':');
+        if (colon == std::string::npos || colon == 0)
+            return address;
+        bool digits = colon + 1 < address.size();
+        for (size_t i = colon + 1; i < address.size(); ++i) {
+            digits = digits
+                && std::isdigit(static_cast<unsigned char>(address[i]));
+        }
+        if (!digits
+                || std::count(address.begin(), address.end(), ':') != 1)
+            return address;
+        return address.substr(0, colon);
+    }
+
+    /// The door's answer for one presentation.
+    struct Judgement {
+        bool admitted = false;
+        bool viewOnly = false;
+        uint64_t grant = 0;   ///< admitting grant id; 0 = legacy door
+    };
+
+    /// Judge a presentation against a grant list (docs/ShareAccess.md
+    /// §2): the most specific matching grant decides, and no match —
+    /// or a banned best match — refuses.
+    static Judgement judgeWith(const std::vector<SceneGrant> &list,
+                               const std::string &token,
+                               const std::string &identity,
+                               const std::string &client,
+                               const std::string &address)
+    {
+        Judgement out;
+        const std::string addr = portlessAddress(address);
+        const SceneGrant *best = nullptr;
+        int64_t bestScore = -1;
+        for (const auto &g : list) {
+            if (!g.token.empty() && g.token != token)
+                continue;
+            if (!patternMatches(g.identity, identity)
+                    || !patternMatches(g.client, client)
+                    || !patternMatches(g.address, addr))
+                continue;
+            // Identity outranks name outranks address: the verified
+            // part first, then what a person chose, then where they
+            // happen to be. The token is a filter, not a rank — a ban
+            // must not be outranked by the invitation it revokes.
+            int64_t score = (int64_t(specificityOf(g.identity)) * 8192
+                             + specificityOf(g.client)) * 8192
+                            + specificityOf(g.address);
+            if (score > bestScore) {
+                bestScore = score;
+                best = &g;
+            }
+        }
+        if (!best || best->access == 2)
+            return out;
+        out.admitted = true;
+        out.viewOnly = best->access == 1;
+        out.grant = best->id;
+        return out;
+    }
+
+    /// The door: the grant list when one is set, else the legacy
+    /// shared token (SceneServer.h, setGrants).
+    Judgement judge(const std::string &token, const std::string &identity,
+                    const std::string &client, const std::string &address)
+    {
+        std::lock_guard<std::mutex> guard(tokenMutex);
+        if (grantList.empty()) {
+            Judgement out;
+            out.admitted = tokenSecret.empty() || token == tokenSecret;
+            return out;
+        }
+        return judgeWith(grantList, token, identity, client, address);
+    }
+
+    bool grantsActive()
+    {
+        std::lock_guard<std::mutex> guard(tokenMutex);
+        return !grantList.empty();
+    }
+
     /// What each of the last few publishes changed, oldest first and
     /// consecutive. A viewer that missed some is caught up by merging
     /// the ones it missed; one that fell out of this window gets the
@@ -906,6 +1057,25 @@ public:
         /// the connection's life — unlike the client label, it cannot
         /// arrive late, because it rides the upgrade request itself.
         std::string identity;
+        /// The address the door judges this connection by, portless:
+        /// the forwarded address when a trusted proxy stated one, else
+        /// the socket peer's ip. Fixed for the connection's life.
+        std::string matchAddr;
+        /// The invitation secret this connection presented — `?token=`
+        /// on the upgrade, replaced by the hello's if that carries
+        /// one. Guarded by connMutex: re-judging a live-list change
+        /// reads it from the GUI thread.
+        std::string presentedToken;
+        /// The grant that admitted this connection (SceneGrant::id, 0
+        /// under the legacy door). Guarded by connMutex, same reason.
+        uint64_t grant = 0;
+        /// Mirror of \a authorized under connMutex (like docName), so
+        /// the re-judge on a grant-list change can see which
+        /// connections are in. \a authorized itself stays owner-thread
+        /// -only; a re-judge never opens the door for a waiting
+        /// connection, only closes it (kicked) or changes its access —
+        /// admission happens on the connection's own hello.
+        bool admitted = false;
         /// The joined document's name, mirrored under connMutex for
         /// the roster — \a group itself is owner-thread-only.
         std::string docName;
@@ -978,6 +1148,92 @@ public:
             notify();
     }
 
+    /// Mint the live-only easing for a renamed connection
+    /// (docs/ShareAccess.md §2): accept the new name on the same
+    /// token, bounded like the invitation it eases — the admitting
+    /// grant's identity and address patterns where it still exists,
+    /// the connection's own verified identity otherwise. Never wider
+    /// than what already got in.
+    void addEasing(Conn &conn, const std::string &token,
+                   const std::string &newName, uint64_t fromGrant)
+    {
+        SceneGrant g;
+        g.token = token;
+        g.client = newName;
+        g.identity = conn.identity;
+        g.liveOnly = true;
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            g.access = conn.viewOnly ? 1 : 0;
+        }
+        {
+            std::lock_guard<std::mutex> guard(tokenMutex);
+            for (const auto &old : grantList) {
+                if (old.id == fromGrant) {
+                    g.identity = old.identity;
+                    g.address = old.address;
+                    break;
+                }
+            }
+            g.id = ++grantIdCounter;
+            grantList.push_back(g);
+        }
+        std::lock_guard<std::mutex> guard(connMutex);
+        conn.grant = g.id;
+    }
+
+    /// Re-judge every admitted connection after the live grant list
+    /// changed (SceneServer.h, setGrants): one no grant now admits is
+    /// told and closed — the enforcement that used to live in the
+    /// desktop roster poll, moved into the door — and one a different
+    /// grant admits gets that grant's access. Never *opens* the door:
+    /// an unauthorized connection is admitted only by its own hello,
+    /// which carries what this cannot know is coming.
+    void rejudgeConnections()
+    {
+        std::vector<SceneGrant> list;
+        std::string secret;
+        {
+            std::lock_guard<std::mutex> guard(tokenMutex);
+            list = grantList;
+            secret = tokenSecret;
+        }
+        bool changed = false;
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            for (Conn *conn : conns) {
+                if (!conn->admitted || conn->kicked)
+                    continue;
+                Judgement entry;
+                if (list.empty()) {
+                    entry.admitted = secret.empty()
+                        || conn->presentedToken == secret;
+                }
+                else {
+                    entry = judgeWith(list, conn->presentedToken,
+                                      conn->identity, conn->client,
+                                      conn->matchAddr);
+                }
+                if (!entry.admitted) {
+                    conn->pendingText.push_back(
+                        "{\"cmd\":\"error\",\"code\":\"Refused\"}");
+                    conn->kicked = true;
+                    changed = true;
+                }
+                else {
+                    if (!list.empty()
+                            && conn->viewOnly != entry.viewOnly) {
+                        conn->viewOnly = entry.viewOnly;
+                        changed = true;
+                    }
+                    conn->grant = entry.grant;
+                }
+            }
+        }
+        if (changed)
+            notifyClientsChanged();
+    }
+
     int clients(std::vector<SceneClientInfo> &out)
     {
         auto now = std::chrono::steady_clock::now();
@@ -993,6 +1249,7 @@ public:
             info.proxied = !conn->fwd.empty();
             info.address = info.proxied ? conn->fwd : conn->addr;
             info.identity = conn->identity;
+            info.grant = conn->grant;
             info.viewer = conn->viewer;
             info.viewOnly = conn->viewOnly;
             info.connectedMs = uint64_t(
@@ -1408,14 +1665,41 @@ public:
             path.resize(q);
         }
 
-        // The door (docs/MultiDocServe.md §8): with a token configured
+        // Who is asking, resolved before the door judges: the socket
+        // peer, what a trusted proxy said the client's address is, and
+        // the identity an authenticating front door asserted.
+        char addr[80] = "";
+        std::string peerIp;
+        {
+            sockaddr_in peer = {};
+            socklen_t plen = sizeof(peer);
+            if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
+                              &plen) == 0) {
+                char ip[64] = "";
+                ::inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof(ip));
+                peerIp = ip;
+                std::snprintf(addr, sizeof(addr), "%s:%u", ip,
+                              unsigned(ntohs(peer.sin_port)));
+            }
+        }
+        std::string fwd = forwardedFor(req, peerIp);
+        std::string identity = assertedIdentity(req, peerIp);
+
+        // The door (docs/MultiDocServe.md §8, docs/ShareAccess.md §2):
         // every route is gated, not just the hello — the polling
-        // /scene, the blob and level fetches, the logs. A WebSocket
-        // upgrade without the token still handshakes, because the
-        // token may arrive in the hello instead; until it does the
-        // connection is unauthorized and gets nothing.
+        // /scene, the blob and level fetches, the logs. With a grant
+        // list set the grants judge token, identity, name and address
+        // together; else the legacy shared token alone. A WebSocket
+        // upgrade that fails still handshakes, because the token (and
+        // the name a grant may require) may arrive in the hello
+        // instead; until they do the connection is unauthorized and
+        // gets nothing.
         std::string wsKey = headerValue(req, "sec-websocket-key");
-        bool authorized = tokenOk(query);
+        std::string presentedToken = queryValue(query, "token");
+        Judgement entry = judge(presentedToken, identity,
+                                queryValue(query, "client"),
+                                fwd.empty() ? peerIp : fwd);
+        bool authorized = entry.admitted;
         if (!authorized && wsKey.empty()) {
             static const char forbidden[] =
                 "HTTP/1.1 403 Forbidden\r\n"
@@ -1649,26 +1933,10 @@ public:
 
         // WebSocket upgrade: handshake, then stay in the push loop.
         if (!wsKey.empty()) {
-            char addr[80] = "";
-            std::string peerIp;
-            sockaddr_in peer = {};
-            socklen_t plen = sizeof(peer);
-            if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
-                              &plen) == 0) {
-                char ip[64] = "";
-                ::inet_ntop(AF_INET, &peer.sin_addr, ip, sizeof(ip));
-                peerIp = ip;
-                std::snprintf(addr, sizeof(addr), "%s:%u", ip,
-                              unsigned(ntohs(peer.sin_port)));
-            }
-            // A proxy in front states the real client address, and an
-            // authenticating front door states who the client is; the
-            // upgrade is an ordinary HTTP request, so both ride here.
-            std::string fwd = forwardedFor(req, peerIp);
-            std::string identity = assertedIdentity(req, peerIp);
             if (handshake(fd, wsKey))
-                wsLoop(fd, clientVersion, s, doc, authorized, addr, fwd,
-                       identity);
+                wsLoop(fd, clientVersion, s, doc, entry, presentedToken,
+                       addr, fwd, identity,
+                       fwd.empty() ? peerIp : fwd);
             return;
         }
 
@@ -1840,17 +2108,24 @@ public:
     /// which is what makes the held version mean anything. An unknown
     /// name joins nothing and leaves the rest to the hello.
     void wsLoop(int fd, uint64_t held, const std::string &session,
-                const std::string &doc, bool authorized,
+                const std::string &doc, const Judgement &entry,
+                const std::string &presentedToken,
                 const char *addr, const std::string &fwd,
-                const std::string &identity)
+                const std::string &identity,
+                const std::string &matchAddr)
     {
         Conn conn;
         conn.fd = fd;
         conn.sent = held;
-        conn.authorized = authorized;
+        conn.authorized = entry.admitted;
+        conn.admitted = entry.admitted;
+        conn.viewOnly = entry.viewOnly;
+        conn.grant = entry.grant;
+        conn.presentedToken = presentedToken;
         conn.addr = addr ? addr : "";
         conn.fwd = fwd;
         conn.identity = identity;
+        conn.matchAddr = portlessAddress(matchAddr);
         conn.since = std::chrono::steady_clock::now();
         {
             std::lock_guard<std::mutex> guard(mutex);
@@ -2122,25 +2397,45 @@ public:
     {
         if (text) {
             std::string json(reinterpret_cast<const char *>(bytes), size);
-            // The door, for a connection whose upgrade did not carry
-            // the token (docs/MultiDocServe.md §8): nothing but a
-            // hello works, and only one presenting the right token
-            // opens it. A wrong or missing one is refused out loud
-            // and the connection closed — no scene bytes ever move.
+            // The door, at the moment the name arrives (docs/
+            // MultiDocServe.md §8, docs/ShareAccess.md §2). Nothing
+            // but a hello works while unauthorized; and with grants
+            // set, *every* hello is judged — the self-declared name is
+            // part of what a grant matches, and it only exists now. A
+            // refusal is said out loud and the connection closed — no
+            // scene bytes ever move.
             bool hello = json.find("\"cmd\":\"hello\"") != std::string::npos;
-            if (!conn.authorized) {
-                if (!hello)
-                    return;
+            if (hello) {
                 std::string offered;
-                jsonStr(json, "token", offered);
-                if (offered.empty() || offered != tokenNow()) {
+                if (!jsonStr(json, "token", offered) || offered.empty()) {
                     std::lock_guard<std::mutex> guard(connMutex);
-                    conn.pendingText.push_back(
-                        "{\"cmd\":\"error\",\"code\":\"BadToken\"}");
-                    conn.kicked = true;
-                    return;
+                    offered = conn.presentedToken;
                 }
-                conn.authorized = true;
+                std::string name;
+                jsonStr(json, "client", name);
+                const bool grants = grantsActive();
+                if (grants || !conn.authorized) {
+                    Judgement entry = judge(offered, conn.identity, name,
+                                            conn.matchAddr);
+                    if (!entry.admitted) {
+                        std::lock_guard<std::mutex> guard(connMutex);
+                        conn.pendingText.push_back(grants
+                            ? "{\"cmd\":\"error\",\"code\":\"Refused\"}"
+                            : "{\"cmd\":\"error\",\"code\":\"BadToken\"}");
+                        conn.kicked = true;
+                        return;
+                    }
+                    conn.authorized = true;
+                    std::lock_guard<std::mutex> guard(connMutex);
+                    conn.admitted = true;
+                    conn.presentedToken = offered;
+                    conn.grant = entry.grant;
+                    if (grants)
+                        conn.viewOnly = entry.viewOnly;
+                }
+            }
+            else if (!conn.authorized) {
+                return;
             }
             // The semantic tier (docs/ThinClient.md §4.2) speaks "op";
             // the transport vocabulary below stays "cmd".
@@ -2174,10 +2469,34 @@ public:
             // Rename this connection (docs/MultiDocServe.md §4): the
             // hello's label, changed on an open connection, so a
             // viewer can name itself from its menu without
-            // reconnecting. Nothing but the roster reads it.
+            // reconnecting. Nothing but the roster reads it — a rename
+            // is free, the connection is the identity. But the door
+            // must keep working for the *next* connection: when no
+            // grant admits the new name, mint the live-only easing of
+            // docs/ShareAccess.md §2 on this connection's token, so a
+            // reload rejoins. It dies with the process; the panel
+            // shows it apart, with a way to keep or drop it.
             if (json.find("\"cmd\":\"client\"") != std::string::npos) {
                 std::string name;
                 jsonStr(json, "name", name);
+                if (conn.authorized && grantsActive()) {
+                    std::string token;
+                    uint64_t fromGrant;
+                    {
+                        std::lock_guard<std::mutex> guard(connMutex);
+                        token = conn.presentedToken;
+                        fromGrant = conn.grant;
+                    }
+                    Judgement entry = judge(token, conn.identity, name,
+                                            conn.matchAddr);
+                    if (!entry.admitted) {
+                        addEasing(conn, token, name, fromGrant);
+                    }
+                    else if (entry.grant != fromGrant) {
+                        std::lock_guard<std::mutex> guard(connMutex);
+                        conn.grant = entry.grant;
+                    }
+                }
                 {
                     std::lock_guard<std::mutex> guard(connMutex);
                     conn.client = name;
@@ -2481,6 +2800,63 @@ std::string SceneStreamServer::identityHeader()
     Private *p = ensure();
     std::lock_guard<std::mutex> guard(p->tokenMutex);
     return p->identityHeaderName;
+}
+
+void SceneStreamServer::setGrants(const std::vector<SceneGrant> &list)
+{
+    Private *p = ensure();
+    {
+        std::lock_guard<std::mutex> guard(p->tokenMutex);
+        p->grantList = list;
+        for (auto &g : p->grantList) {
+            if (!g.id)
+                g.id = ++p->grantIdCounter;
+            else if (g.id > p->grantIdCounter)
+                p->grantIdCounter = g.id;
+        }
+    }
+    p->rejudgeConnections();
+}
+
+std::vector<SceneGrant> SceneStreamServer::grants()
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->tokenMutex);
+    return p->grantList;
+}
+
+uint64_t SceneStreamServer::addGrant(SceneGrant grant)
+{
+    Private *p = ensure();
+    uint64_t id;
+    {
+        std::lock_guard<std::mutex> guard(p->tokenMutex);
+        grant.id = ++p->grantIdCounter;
+        id = grant.id;
+        p->grantList.push_back(std::move(grant));
+    }
+    p->rejudgeConnections();
+    return id;
+}
+
+bool SceneStreamServer::removeGrant(uint64_t id)
+{
+    Private *p = ensure();
+    bool removed = false;
+    {
+        std::lock_guard<std::mutex> guard(p->tokenMutex);
+        auto it = std::find_if(p->grantList.begin(), p->grantList.end(),
+                               [id](const SceneGrant &g) {
+                                   return g.id == id;
+                               });
+        if (it != p->grantList.end()) {
+            p->grantList.erase(it);
+            removed = true;
+        }
+    }
+    if (removed)
+        p->rejudgeConnections();
+    return removed;
 }
 
 std::string SceneStreamServer::token()

@@ -899,6 +899,8 @@ PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
         entry.setItem("id", Py::Long(static_cast<unsigned long long>(c.id)));
         entry.setItem("client", Py::String(c.client));
         entry.setItem("identity", Py::String(c.identity));
+        entry.setItem("grant",
+                      Py::Long(static_cast<unsigned long long>(c.grant)));
         entry.setItem("doc", Py::String(c.doc));
         entry.setItem("address", Py::String(c.address));
         entry.setItem("peer", Py::String(c.peer));
