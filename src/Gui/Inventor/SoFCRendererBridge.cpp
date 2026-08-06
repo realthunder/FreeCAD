@@ -550,6 +550,13 @@ translateRenderTexture(const SoFCRenderCache::TextureInfo & info,
 // (non-partialhighlight) whole-object selections thicken; the mixed
 // "partial highlight" whole-object lines (selsontop) do not. Non-on-top
 // selections (id < 0) and the preselection highlight always thicken.
+//
+// The uncolored whole-on-top companions a partial selection carries
+// (FLAG_TRANSPARENCY-stamped by addWholeOnTop) and the implicit
+// whole-object ids stay thin: in GL the surviving whole-object lines are
+// the thin selsontop copies, and the thin + dimmed rendering is what
+// keeps the hidden-edge depth cue of a shown-on-top object readable
+// next to the thick full-alpha element highlight.
 bool
 useHighlightPass(const CoinMaterial & m, int selId, bool highlight)
 {
@@ -558,17 +565,9 @@ useHighlightPass(const CoinMaterial & m, int selId, bool highlight)
     if (highlight || selId < 0)
         return true;
     if (selId & SoFCRenderer::SelIdPartial)
-        return true;
-    // The implicit whole-object companion of a partial selection
-    // thickens too. For flattened objects this is invisible — the
-    // partial id's own (thickened) whole-on-top copies win the
-    // backend's dedup — but a TShape-instanced partial selection
-    // scopes its id to one instance wrapper, so the companion draws
-    // are the only whole-on-top lines and must match the flattened
-    // width. (Deviation from the GL renderer's selsontop bucket, which
-    // leaves surviving implicit lines thin.)
+        return !m.overrideflags.test(CoinMaterial::FLAG_TRANSPARENCY);
     if (selId & SoFCRenderer::SelIdImplicit)
-        return true;
+        return false;
     return (selId & SoFCRenderer::SelIdFull) && !m.partialhighlight;
 }
 
