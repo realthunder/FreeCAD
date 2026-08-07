@@ -266,7 +266,17 @@ stale because a changed asset is a new URL.
    verified identity when present. All probe-verified end-to-end (admission, refusal,
    view-only by identity, 403 before bytes, easing, re-judge kick).
 5. **Front door** (§4) — Caddy + oauth2-proxy on the linode, replacing
-   `scripts/scene-proxy.py`.
+   `scripts/scene-proxy.py`. **DONE** (2026-08-07), but as the *other* door: with no
+   domain available, Caddy/Access are out and the cloudflared **quick tunnel** is the
+   front door — which is also the normal-user story (one static binary, no account,
+   real TLS and a secure context on phones; the token stays the door). This surfaced
+   a gap: the backend never actually served the viewer bundle — `FC_BGFX_VIEWER_BUILD`
+   was only read for the reload stamp — so the scene server now serves the bundle
+   files itself from the same gated origin (extension allowlist, `no-store`, §5.1),
+   and one tunnel genuinely carries page, stream and blobs. Verified end-to-end
+   through `trycloudflare.com`: 403 before bytes without the token, page + wasm with
+   it, `wss://` upgrade, scene bytes flowing. The linode proxy is legacy fallback.
+   The Caddy/Access variants stay in `share-edge.sh` for the day a domain exists.
 
 ## 8. Non-goals
 
