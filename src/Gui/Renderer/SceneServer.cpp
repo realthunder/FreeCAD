@@ -143,6 +143,50 @@ std::string base64(const uint8_t *data, size_t size)
 
 class SceneStreamServer::Private {
 public:
+    // Defined up front: these are used from nested-class member bodies
+    // (struct Conn) and from members declared above their old position,
+    // where the enclosing class is still incomplete. Both are pure string
+    // helpers -- the socket ones stay under the POSIX guard below.
+    static std::string queryValue(const std::string &query,
+                                  const char *name)
+    {
+        std::string needle = std::string(name) + "=";
+        size_t pos = 0;
+        while (pos <= query.size()) {
+            size_t end = query.find('&', pos);
+            if (end == std::string::npos)
+                end = query.size();
+            if (query.compare(pos, needle.size(), needle) == 0)
+                return query.substr(pos + needle.size(),
+                                    end - pos - needle.size());
+            pos = end + 1;
+        }
+        return {};
+    }
+
+    /// Case-insensitive lookup of one request-header value.
+    static std::string headerValue(const std::string &req,
+                                   const char *lowerName)
+    {
+        std::string lower(req);
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        std::string needle = std::string("\r\n") + lowerName + ":";
+        auto pos = lower.find(needle);
+        if (pos == std::string::npos)
+            return {};
+        pos += needle.size();
+        auto end = req.find("\r\n", pos);
+        if (end == std::string::npos)
+            return {};
+        std::string value = req.substr(pos, end - pos);
+        auto b = value.find_first_not_of(" \t");
+        auto e = value.find_last_not_of(" \t");
+        if (b == std::string::npos)
+            return {};
+        return value.substr(b, e - b + 1);
+    }
+
     std::mutex mutex;
     int listenFd = -1;
     bool started = false;
@@ -1463,6 +1507,7 @@ public:
         return stampCache;
     }
 
+#ifndef _WIN32 // serveViewerFile writes to a socket
     /// GET fallback for the viewer bundle itself: map \a pathIn onto
     /// the FC_BGFX_VIEWER_BUILD directory and send the file, so one
     /// hostname (one tunnel) carries the page, the scene stream and
@@ -1536,6 +1581,7 @@ public:
             sendAll(fd, body.data(), body.size());
         return true;
     }
+#endif // !_WIN32
 
     /// Queue a cache-busting reload for a viewer whose reported bundle
     /// build no longer matches the on-disk stamp (once per stamp; the
@@ -1623,6 +1669,19 @@ public:
     }
 
 #ifndef _WIN32
+    static bool sendAll(int fd, const void *data, size_t size)
+    {
+        const char *p = static_cast<const char *>(data);
+        while (size) {
+            ssize_t n = ::send(fd, p, size, MSG_NOSIGNAL);
+            if (n <= 0)
+                return false;
+            p += n;
+            size -= size_t(n);
+        }
+        return true;
+    }
+
     bool start(int port)
     {
         listenFd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -1681,19 +1740,6 @@ public:
                 ::close(fd);
             }).detach();
         }
-    }
-
-    static bool sendAll(int fd, const void *data, size_t size)
-    {
-        const char *p = static_cast<const char *>(data);
-        while (size) {
-            ssize_t n = ::send(fd, p, size, MSG_NOSIGNAL);
-            if (n <= 0)
-                return false;
-            p += n;
-            size -= size_t(n);
-        }
-        return true;
     }
 
     void handle(int fd)
@@ -2078,22 +2124,6 @@ public:
     /// One `name=value` out of a request-target query string. The
     /// values in play are hex keys and decimal versions, so no
     /// percent-decoding is needed.
-    static std::string queryValue(const std::string &query,
-                                  const char *name)
-    {
-        std::string needle = std::string(name) + "=";
-        size_t pos = 0;
-        while (pos <= query.size()) {
-            size_t end = query.find('&', pos);
-            if (end == std::string::npos)
-                end = query.size();
-            if (query.compare(pos, needle.size(), needle) == 0)
-                return query.substr(pos + needle.size(),
-                                    end - pos - needle.size());
-            pos = end + 1;
-        }
-        return {};
-    }
 
     /// A well-formed content key: 40 lowercase hex characters. Checked
     /// before it reaches the store so a malformed request can never be
@@ -2107,29 +2137,6 @@ public:
                 return false;
         }
         return true;
-    }
-
-    /// Case-insensitive lookup of one request-header value.
-    static std::string headerValue(const std::string &req,
-                                   const char *lowerName)
-    {
-        std::string lower(req);
-        std::transform(lower.begin(), lower.end(), lower.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        std::string needle = std::string("\r\n") + lowerName + ":";
-        auto pos = lower.find(needle);
-        if (pos == std::string::npos)
-            return {};
-        pos += needle.size();
-        auto end = req.find("\r\n", pos);
-        if (end == std::string::npos)
-            return {};
-        std::string value = req.substr(pos, end - pos);
-        auto b = value.find_first_not_of(" \t");
-        auto e = value.find_last_not_of(" \t");
-        if (b == std::string::npos)
-            return {};
-        return value.substr(b, e - b + 1);
     }
 
     static bool handshake(int fd, const std::string &key)
