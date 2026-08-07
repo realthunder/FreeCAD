@@ -48,7 +48,7 @@ need() {
 case "$MODE" in
 quick)
     PORT=${2:-8077}
-    need cloudflared "install: https://developers.cloudflare.com/cloudflared/ (or: conda install cloudflared)"
+    need cloudflared "install: static binary from https://github.com/cloudflare/cloudflared/releases (not on conda-forge)"
     echo "backend side (if not already up):"
     echo "  FC_SERVE_TRUST_PROXY=1 FC_SERVE_TOKEN=<secret> scripts/renderer-serve.sh <scene.py> $PORT"
     echo "tunnel starting; share the https://….trycloudflare.com link it prints"

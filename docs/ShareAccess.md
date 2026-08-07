@@ -175,6 +175,44 @@ Surveyed 2026-08-06 for exposing a share publicly:
 uncapped, Access is free to 50 users ($7/user/month past that), and service tokens are in
 the free tier.
 
+### 5.1 HTTP caching at the edge (surveyed 2026-08-07)
+
+The server will serve more static content over time (the viewer bundle already, SVG icons
+and similar assets next), so what a Cloudflare front door does to caching matters. The
+short version: **our origin headers are the contract; Cloudflare adds a shared edge cache
+only on a named-tunnel zone, and only where told to.**
+
+- **Quick tunnels (`trycloudflare.com`) never edge-cache.** Every response passes through
+  as `cf-cache-status: DYNAMIC`, and since the zone is Cloudflare's, there is nothing to
+  configure. Browser caching still works normally — the origin's `Cache-Control` decides.
+- **A named tunnel on our own domain gets the real edge cache, gated by path extension.**
+  Default ("Standard") caching only considers URLs whose extension is on Cloudflare's
+  static list — `.svg`, `.css`, `.js`, `.png`, `.ico` qualify; **`.html`, `.wasm`, and
+  extension-less paths do not**. TTL then honors the origin's `Cache-Control`;
+  `no-store` / `private` are respected. Cache Rules (free tier) widen this — e.g. "cache
+  `/blob`" or "cache the `.wasm` bundle".
+- **WebSockets are never cached** — the scene stream passes straight through either way.
+- **Under Access, the edge cache is shared across authenticated users** (the login check
+  runs before the cache lookup). Fine for icons and content-addressed geometry; anything
+  per-user must say `no-store`/`private` itself.
+
+How that lands on what the server already sends:
+
+- **`/blob` is content-addressed and says `public, max-age=31536000, immutable`** —
+  ideal for any cache, but the path has no extension, so a real zone still treats it as
+  DYNAMIC until a Cache Rule marks it cacheable. One rule to add the day a domain shows up.
+- **The batch-fetch route says `no-store`**, necessarily: a batch is named by the request
+  *body*, which no HTTP cache keys on. Edge caching it would serve one viewer's batch to
+  another. Cloudflare respects the header.
+- **A stale viewer bundle cannot strand anyone**: the build-stamp reload push with its
+  cache-bust parameter recovers even an aggressively cached page.
+
+**Rule for future static assets (icons included): content-hashed filename +
+`public, max-age=31536000, immutable`** — the `/blob` policy generalized. That is optimal
+everywhere with zero edge configuration: browser-cached through a quick tunnel,
+edge-cached automatically on a named zone (`.svg` is on the default list), and never
+stale because a changed asset is a new URL.
+
 ## 6. Open decisions
 
 1. **Identity key** — verified email (readable in `user.cfg`, changes when the person's
