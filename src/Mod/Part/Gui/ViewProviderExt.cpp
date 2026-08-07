@@ -3358,6 +3358,26 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                 std::chrono::high_resolution_clock::now() - start);
     };
 
+    // Deferred shape restore (docs/DocumentLoad.md §14): serve the parked
+    // archive entries in slices of their own BEFORE any visual builds.
+    // Shapes materializing inside the visual fill was the two-document
+    // lesson in reverse -- mid-drain content arriving through a path the
+    // staging never audited left link snapshots and renderer caches
+    // stale. Served here, a shape arrives through the same property
+    // change notification an ordinary edit uses, and the visual fill
+    // that follows runs with every shape present -- the exact dynamics
+    // of the non-deferred load, with the reads moved off the blocking
+    // open into these first slices.
+    if (auto front = queue.pending.front().getObject()) {
+        if (auto doc = front->getDocument()) {
+            if (doc->serveDeferredFiles(budget)) {
+                queue.spent += elapsed();
+                scheduleDeferredVisualSlice();
+                return;
+            }
+        }
+    }
+
     ++queue.slices;
     while (!queue.pending.empty()) {
         auto obj = queue.pending.front().getObject();

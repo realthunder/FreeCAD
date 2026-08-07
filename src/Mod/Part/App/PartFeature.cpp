@@ -1708,6 +1708,15 @@ void Feature::collapseShapeContents(bool removeProperty)
 }
 
 void Feature::onDocumentRestored() {
+    // A shape parked by the deferred restore is not read just to be
+    // looked at here: the content checks run when it actually arrives
+    // (PropertyPartShape::ensureRestored()).
+    if (!this->Shape.isRestorePending())
+        restoreShapeContents();
+    App::GeoFeature::onDocumentRestored();
+}
+
+void Feature::restoreShapeContents() {
     if (!this->Shape.getShape().isNull()) {
         expandShapeContents();
     }
@@ -1732,7 +1741,6 @@ void Feature::onDocumentRestored() {
             }
         }
     }
-    App::GeoFeature::onDocumentRestored();
 }
 
 void Feature::mergeShapeContents()

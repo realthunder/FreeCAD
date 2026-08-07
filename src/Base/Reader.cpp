@@ -1099,16 +1099,22 @@ void Base::ZipFileReader::readFiles(XMLReader &xmlReader)
     // is walked -- a nested document restored from one entry registers
     // entries of its own -- so the size is re-read every iteration and
     // the entry is copied before its consumer runs.
+    std::size_t deferred = 0;
     for (std::size_t i = 0; i < FileList.size(); ++i) {
         FileEntry entry = FileList[i];
         if (consumed.count(entry.FileName))
             continue;
-        auto stream = openEntry(entry.FileName);
-        if (!stream) {
+        if (!hasEntry(entry.FileName)) {
             // Not an error: e.g. a document saved without GUI serves no
             // GuiDocument.xml, matching the forward walk's silent skip.
             continue;
         }
+        if (xmlReader.deferFileEntry(entry.FileName, entry.Object)) {
+            ++deferred;
+            seq.next();
+            continue;
+        }
+        auto stream = openEntry(entry.FileName);
         FC_DURATION_PLUS(dParse, tParse);
         try {
             Base::ZipReader zipreader(*stream, entry.FileName, &xmlReader);
@@ -1136,7 +1142,8 @@ void Base::ZipFileReader::readFiles(XMLReader &xmlReader)
         std::stringstream ss;
         ss << "readFiles(random access) " << getFileName() << ": "
            << _entryOrder.size() << " entries, "
-           << FileList.size() << " registered, other " << dParse.count() << 's';
+           << FileList.size() << " registered, "
+           << deferred << " deferred, other " << dParse.count() << 's';
         for (const auto &v : kinds)
             ss << ", " << v.first << ' ' << v.second.first << '/'
                << v.second.second.count() << 's';

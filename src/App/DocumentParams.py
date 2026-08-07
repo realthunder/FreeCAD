@@ -63,6 +63,15 @@ Params = [
             'archive order, nothing pays for inflating entries nobody reads,\n'
             'and an entry can be reopened after the restore. Turn off to\n'
             'fall back to the forward-only walk.'),
+    ParamBool('DeferShapeLoad', False,
+        doc='Park shape archive entries during restore and read each one on\n'
+            'first real use instead of before the document opens, so the\n'
+            'window is up while shapes stream in with the progressive visual\n'
+            'fill. Requires ArchiveRandomAccess. An entry not yet served is\n'
+            'read when anything asks for the shape -- visual build, script,\n'
+            'save -- so the value is never observably missing; the trade is\n'
+            'that the document must not be rewritten externally while loads\n'
+            'are pending. Off by default until gated on the large references.'),
     ParamBool('AutoRemoveFile', True),
     ParamBool('AutoNameDynamicProperty', False),
     ParamBool('BackupPolicy', True),

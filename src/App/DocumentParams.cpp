@@ -57,6 +57,7 @@ public:
         signalParamChanged("PreferBinary");
         signalParamChanged("InlineListSize");
         signalParamChanged("ArchiveRandomAccess");
+        signalParamChanged("DeferShapeLoad");
         signalParamChanged("AutoRemoveFile");
         signalParamChanged("AutoNameDynamicProperty");
         signalParamChanged("BackupPolicy");
@@ -96,6 +97,7 @@ public:
     bool PreferBinary;
     long InlineListSize;
     bool ArchiveRandomAccess;
+    bool DeferShapeLoad;
     bool AutoRemoveFile;
     bool AutoNameDynamicProperty;
     bool BackupPolicy;
@@ -150,6 +152,8 @@ public:
         funcs["InlineListSize"] = &DocumentParamsP::updateInlineListSize;
         ArchiveRandomAccess = this->handle->GetBool("ArchiveRandomAccess", true);
         funcs["ArchiveRandomAccess"] = &DocumentParamsP::updateArchiveRandomAccess;
+        DeferShapeLoad = this->handle->GetBool("DeferShapeLoad", false);
+        funcs["DeferShapeLoad"] = &DocumentParamsP::updateDeferShapeLoad;
         AutoRemoveFile = this->handle->GetBool("AutoRemoveFile", true);
         funcs["AutoRemoveFile"] = &DocumentParamsP::updateAutoRemoveFile;
         AutoNameDynamicProperty = this->handle->GetBool("AutoNameDynamicProperty", false);
@@ -265,6 +269,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateArchiveRandomAccess(DocumentParamsP *self) {
         self->ArchiveRandomAccess = self->handle->GetBool("ArchiveRandomAccess", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDeferShapeLoad(DocumentParamsP *self) {
+        self->DeferShapeLoad = self->handle->GetBool("DeferShapeLoad", false);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAutoRemoveFile(DocumentParamsP *self) {
@@ -724,6 +732,41 @@ void DocumentParams::setArchiveRandomAccess(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removeArchiveRandomAccess() {
     instance()->handle->RemoveBool("ArchiveRandomAccess");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docDeferShapeLoad() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Park shape archive entries during restore and read each one on\n"
+"first real use instead of before the document opens, so the\n"
+"window is up while shapes stream in with the progressive visual\n"
+"fill. Requires ArchiveRandomAccess. An entry not yet served is\n"
+"read when anything asks for the shape -- visual build, script,\n"
+"save -- so the value is never observably missing; the trade is\n"
+"that the document must not be rewritten externally while loads\n"
+"are pending. Off by default until gated on the large references.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & DocumentParams::getDeferShapeLoad() {
+    return instance()->DeferShapeLoad;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & DocumentParams::defaultDeferShapeLoad() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setDeferShapeLoad(const bool &v) {
+    instance()->handle->SetBool("DeferShapeLoad",v);
+    instance()->DeferShapeLoad = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeDeferShapeLoad() {
+    instance()->handle->RemoveBool("DeferShapeLoad");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

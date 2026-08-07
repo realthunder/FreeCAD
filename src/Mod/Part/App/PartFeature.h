@@ -167,6 +167,10 @@ public:
     void expandShapeContents();
     void mergeShapeContents();
     void collapseShapeContents(bool removeProperty=false);
+    /// The restore-time shape-content checks: run by onDocumentRestored(),
+    /// or -- when the shape's archive entry was parked by the deferred
+    /// restore -- when the shape actually arrives.
+    void restoreShapeContents();
 
     /*[[[cog
     import PartParams

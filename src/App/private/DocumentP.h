@@ -31,6 +31,7 @@
 #include <App/DocumentObserver.h>
 #include <App/StringHasher.h>
 #include <App/FileBlobManager.h>
+#include <Base/Reader.h>
 #include <CXX/Objects.hxx>
 #include <boost/bimap.hpp>
 #include <boost/graph/adjacency_list.hpp>
@@ -143,6 +144,24 @@ struct DocumentP
         std::vector<std::string> names;
     };
     std::map<std::string, RestoreDefaults> restoreDefaults;
+
+    /** Deferred archive-entry restores (docs/DocumentLoad.md §14).
+     *
+     * While DeferShapeLoad is on, the archive walk parks entries whose
+     * consumer opted in (Property::DeferRestore) instead of serving
+     * them. The reader stays behind -- it holds no open handle, only
+     * the central-directory index -- and each consumer is served on
+     * first real use through Document::restoreDeferredFile(), or in
+     * bulk by flushDeferredFiles(). Keyed by object and property NAME,
+     * not pointer: an entry whose object got deleted (or is parked in a
+     * transaction) simply stops resolving, instead of dangling.
+     */
+    std::shared_ptr<Base::ZipFileReader> archiveReader;
+    std::map<std::pair<std::string, std::string>, std::string> deferredFiles;
+    /// Serve-time attribution for the slice log: entry opening vs the
+    /// consumer's RestoreDocFile, against the slice wall clock.
+    std::chrono::duration<double> deferOpenTime {0};
+    std::chrono::duration<double> deferRestoreTime {0};
 
     DocumentP();
 

@@ -75,9 +75,40 @@ PropertyPartShape::PropertyPartShape() = default;
 
 PropertyPartShape::~PropertyPartShape() = default;
 
+void PropertyPartShape::ensureRestored() const
+{
+    if (!_RestorePending)
+        return;
+    // Cleared before serving: whatever runs below reads the property
+    // again, and must find a settled state instead of re-entering.
+    auto self = const_cast<PropertyPartShape*>(this);
+    self->_RestorePending = false;
+    auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+    if (!owner || !owner->getDocument())
+        return;
+    owner->getDocument()->restoreDeferredFile(self);
+    // The shape-content expansion Feature::onDocumentRestored() left for
+    // the shape's arrival.
+    if (auto feat = Base::freecad_dynamic_cast<Feature>(owner))
+        feat->restoreShapeContents();
+}
+
+void PropertyPartShape::cancelRestorePending()
+{
+    if (!_RestorePending)
+        return;
+    _RestorePending = false;
+    auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+    if (owner && owner->getDocument())
+        owner->getDocument()->cancelDeferredFile(this);
+}
+
 void PropertyPartShape::validateShape(App::DocumentObject *obj)
 {
-    if (!obj || !obj->getDocument()
+    // isRestoring(): a deferred serve (docs/DocumentLoad.md §14) runs
+    // under the object's Restore status and must skip here exactly like
+    // the load-time restore it stands in for.
+    if (!obj || !obj->getDocument() || obj->isRestoring()
              || obj->getDocument()->testStatus(App::Document::Restoring))
         return;
     if (auto feat = Base::freecad_dynamic_cast<Part::Feature>(obj)) {
@@ -103,6 +134,9 @@ void PropertyPartShape::validateShape(App::DocumentObject *obj)
 
 void PropertyPartShape::setValue(const TopoShape& sh)
 {
+    // An unserved parked entry is dead: the value it would bring is
+    // being overwritten. Never serve it after this.
+    cancelRestorePending();
     aboutToSetValue();
     _Shape = sh;
     _ShapeNoName.setShape(sh.getShape(), true);
@@ -127,6 +161,7 @@ void PropertyPartShape::setValue(const TopoShape& sh)
 
 void PropertyPartShape::setValue(const TopoDS_Shape& sh, bool resetElementMap)
 {
+    cancelRestorePending();
     aboutToSetValue();
     auto obj = dynamic_cast<App::DocumentObject*>(getContainer());
     if(obj)
@@ -141,11 +176,13 @@ void PropertyPartShape::setValue(const TopoDS_Shape& sh, bool resetElementMap)
 
 const TopoDS_Shape& PropertyPartShape::getValue() const
 {
+    ensureRestored();
     return _Shape.getShape();
 }
 
 TopoShape PropertyPartShape::getShape() const
 {
+    ensureRestored();
     _Shape.initCache(-1);
     auto res = _Shape;
     if (Feature::isElementMappingDisabled(getContainer()))
@@ -159,6 +196,7 @@ TopoShape PropertyPartShape::getShape() const
 
 const Data::ComplexGeoData* PropertyPartShape::getComplexData() const
 {
+    ensureRestored();
     _Shape.initCache(-1);
     if (Feature::isElementMappingDisabled(getContainer()))
         return &_ShapeNoName;
@@ -167,6 +205,7 @@ const Data::ComplexGeoData* PropertyPartShape::getComplexData() const
 
 Base::BoundBox3d PropertyPartShape::getBoundingBox() const
 {
+    ensureRestored();
     Base::BoundBox3d box;
     if (_Shape.getShape().IsNull())
         return box;
@@ -193,16 +232,19 @@ Base::BoundBox3d PropertyPartShape::getBoundingBox() const
 
 void PropertyPartShape::setTransform(const Base::Matrix4D &rclTrf)
 {
+    ensureRestored();
     _Shape.setTransform(rclTrf);
 }
 
 Base::Matrix4D PropertyPartShape::getTransform() const
 {
+    ensureRestored();
     return _Shape.getTransform();
 }
 
 void PropertyPartShape::transformGeometry(const Base::Matrix4D &rclTrf)
 {
+    ensureRestored();
     aboutToSetValue();
     _Shape.transformGeometry(rclTrf);
     hasSetValue();
@@ -244,6 +286,7 @@ void PropertyPartShape::setPyObject(PyObject *value)
 
 App::Property *PropertyPartShape::Copy() const
 {
+    ensureRestored();
     PropertyPartShape *prop = new PropertyPartShape();
 
     if (PartParams::getShapePropertyCopy()) {
@@ -289,6 +332,7 @@ void PropertyPartShape::getPaths(std::vector<App::ObjectIdentifier> &paths) cons
 
 void PropertyPartShape::beforeSave() const
 {
+    ensureRestored();
     _HasherIndex = 0;
     _SaveHasher = false;
     auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
@@ -302,6 +346,7 @@ void PropertyPartShape::beforeSave() const
 
 void PropertyPartShape::Save (Base::Writer &writer) const
 {
+    ensureRestored();
     //See SaveDocFile(), RestoreDocFile()
     writer.Stream() << writer.ind() << "<Part";
     auto owner = dynamic_cast<App::DocumentObject*>(getContainer());
@@ -453,11 +498,25 @@ void PropertyPartShape::afterRestore()
         // this cause GeoFeature::updateElementReference() to call
         // PropertyLinkBase::updateElementReferences() with reverse = true, in
         // order to try to regenerate the element map
-        _Ver = "?"; 
+        _Ver = "?";
     }
     else if (_Shape.getElementMapSize() == 0)
         _Shape.Hasher.reset();
-    PropertyComplexGeoData::afterRestore();
+    // What PropertyComplexGeoData::afterRestore() does, against the same
+    // data getComplexData() would pick -- but without the ensureRestored()
+    // that accessor runs: the restore-failure flag comes from the XML map
+    // restore, and a shape parked by the deferred restore (§14) must not
+    // be read from the archive just to check it.
+    auto data = Feature::isElementMappingDisabled(getContainer())
+        ? static_cast<Data::ComplexGeoData*>(&_ShapeNoName) : &_Shape;
+    if (data->isRestoreFailed()) {
+        data->resetRestoreFailure();
+        auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+        if (owner && owner->getDocument()
+                  && !owner->getDocument()->testStatus(App::Document::PartialDoc))
+            owner->getDocument()->addRecomputeObject(owner);
+    }
+    App::PropertyGeometry::afterRestore();
 }
 
 // The following function is copied from OCCT BRepTools.cxx and modified
@@ -602,6 +661,7 @@ TopoDS_Shape PropertyPartShape::loadFromStream(Base::Reader &reader)
 
 void PropertyPartShape::SaveDocFile (Base::Writer &writer) const
 {
+    ensureRestored();
     // Even if the shape is null, we shall still save it, so that there is
     // some content inside the file, or else, we'll get some annoying error
     // message when restoring.
@@ -620,6 +680,15 @@ void PropertyPartShape::SaveDocFile (Base::Writer &writer) const
 
 void PropertyPartShape::RestoreDocFile(Base::Reader &reader)
 {
+    // Import-vs-setValue attribution, reported through the restore log
+    // (the deferred serve showed the same call costing 18x more in a
+    // GUI process than a console one -- this split is what names the
+    // half that grew).
+    static FC_DURATION dImport {0};
+    static FC_DURATION dSet {0};
+    static std::size_t nCalls;
+    FC_TIME_INIT(tRestore);
+
     // save the element map
     auto elementMap = _Shape.resetElementMap();
     auto hasher = _Shape.Hasher;
@@ -630,8 +699,13 @@ void PropertyPartShape::RestoreDocFile(Base::Reader &reader)
         shape.importBinary(reader);
     }
     else {
-        shape.importBrep(reader);
+        // No per-shape progress indicator: the archive walk ticks its own
+        // sequencer per file, and a deferred serve (§14) runs outside any
+        // sequencer, where the indicator's start/stop and event pumping
+        // cost ~17x the parse itself (measured 2.7ms vs 0.16ms a shape).
+        shape.importBrep(reader, 0);
     }
+    FC_DURATION_PLUS(dImport, tRestore);
 
     std::string ver = _Ver;
     // restore the element map
@@ -639,6 +713,10 @@ void PropertyPartShape::RestoreDocFile(Base::Reader &reader)
     shape.resetElementMap(elementMap);
     setValue(shape);
     _Ver = ver;
+    FC_DURATION_PLUS(dSet, tRestore);
+    if ((++nCalls % 2000) == 0)
+        FC_LOG("shape restore split after " << nCalls << ": import "
+                << dImport.count() << "s, setValue " << dSet.count() << 's');
 }
 
 // -------------------------------------------------------------------------

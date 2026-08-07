@@ -655,3 +655,90 @@ finishing, `getViewProvider()` answers null and `obj.ViewObject` is
 not yet bound — the same window live STEP import already has. A script
 that opens a document and immediately drives view providers wants
 `ProgressiveLoad` off, which restores the old behavior exactly.
+
+## 14. Design: read the archive on demand, and shapes only when asked
+
+Two pieces, one enabling the other.
+
+**`Base::ZipFileReader` (the `ArchiveRandomAccess` parameter, default
+on).** The restore used to read the archive through one forward-only
+`ZipInputStream`, which required the entries to sit in registration
+order and inflated past every entry nobody read. The new reader parses
+the zip central directory once, then opens every entry as its own
+positioned stream: registered files are served in registration order
+whatever their archive order, an entry can be reopened *after* the
+walk, and entries could be read concurrently — each open owns its own
+file handle. The included-file handler gained a name-only filter
+(`Base::XMLReader::ArchiveFilter`) so this walk does not pay an open
+for entries the handler would refuse. The forward-only reader remains
+the fallback for anything the indexer cannot digest. Not a speed
+change (§10) — an ordering change.
+
+**Deferred shape restore (the `DeferShapeLoad` parameter, default off
+until gated).** With random access in hand, the walk no longer *has*
+to read the shapes before the document opens. A property that opts in
+(`App::Property::canDeferRestore()`, so far only `PropertyPartShape`)
+has its entry **parked**: recorded by name in the document
+(`{object, property} → entry`, names not pointers, so a deleted
+object invalidates its entry instead of dangling), with the archive
+index kept alive behind it. Every accessor that touches the shape —
+`getValue`, `getShape`, `getComplexData`, bounding box, transforms,
+`Copy`, the save family — first runs `ensureRestored()`, which serves
+the parked entry through `Document::restoreDeferredFile()`: reopen the
+entry, `RestoreDocFile()` under an `ObjectStatus::Restore` guard, and
+purge the touch it would otherwise leave. `setValue` **cancels** a
+parked entry instead — the archived value lost the race and must never
+overwrite the new one, not even from `flushDeferredFiles()`.
+
+In the GUI the serve is **phase zero of the deferred view provider
+drain** (§13): `Document::serveDeferredFiles()` runs in budgeted
+slices before any view provider record is applied, so everything
+after it — the records (which read shapes for color application), the
+visual fill — runs with every shape present, byte-for-byte the eager
+load's dynamics. The per-access fault-in stays as the backstop, and is
+the *only* mechanism in a console process, which therefore never pays
+for shapes nobody asks for; a save asks for all of them
+(`beforeSave`/`Save`/`SaveDocFile` fault in), which flushes the lot
+while the original archive is still on disk.
+
+Three findings from gating this on the real GPU, kept for the next
+person who touches the order:
+
+- **Serving lazily from inside the drain works but costs minutes**:
+  each record application faulted its shape in one at a time, and a
+  per-shape `importBrep` *with the default progress indicator* costs
+  ~2.7ms outside a running sequencer (start/stop + event pumping)
+  against 0.16ms for the parse itself. The restore path now imports
+  with the indicator off; the walk's own sequencer already ticks per
+  file.
+- **A per-serve change notification is a trap**: replaying
+  `signalChangedObject` per served shape fans out to per-object GUI
+  listeners and multiplies into minutes across 17k objects. Serving
+  before the consumers exist (phase zero) needs no notification at
+  all.
+- **The converged-scene rule cannot see a silent phase**: while
+  shapes serve, nothing paints, so two consecutive frames agree and a
+  probe declares convergence with the fill still queued behind the
+  serve. Gate on the drain's own completion log line
+  (`progressive load: N visuals ...`), not on frame agreement alone.
+
+Measured on the MiSTer reference (RTX 3060, bgfx, cache 3): window at
+**2.0–2.3s** against 5.2s, all shapes served by ~4.7s (2.6s of serve
+work — equal to the eager walk's read), visual fill unchanged
+(17058 visuals / ~11.3s), converged frame **pixel-identical (0 px)**
+to the eager load, peak RSS equal at completion and ~1.1GB lower
+during the load window.
+
+What it trades:
+
+- **The file must not be rewritten externally while entries are
+  parked.** The index holds offsets, not content; our own save is safe
+  (everything faults in while writing, before the rename), but another
+  process rewriting the open file breaks pending serves — they log and
+  leave the shape empty. The old reader read everything up front and
+  did not care.
+- `Feature::onDocumentRestored()` checks shape content **when the
+  shape arrives** (`restoreShapeContents()` from `ensureRestored()`)
+  rather than at restore time.
+- `getMemSize()` deliberately does not fault in — memory accounting is
+  not a use.

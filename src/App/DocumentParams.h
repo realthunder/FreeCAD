@@ -209,6 +209,25 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter DeferShapeLoad
+    ///
+    /// Park shape archive entries during restore and read each one on
+    /// first real use instead of before the document opens, so the
+    /// window is up while shapes stream in with the progressive visual
+    /// fill. Requires ArchiveRandomAccess. An entry not yet served is
+    /// read when anything asks for the shape -- visual build, script,
+    /// save -- so the value is never observably missing; the trade is
+    /// that the document must not be rewritten externally while loads
+    /// are pending. Off by default until gated on the large references.
+    static const bool & getDeferShapeLoad();
+    static const bool & defaultDeferShapeLoad();
+    static void removeDeferShapeLoad();
+    static void setDeferShapeLoad(const bool &v);
+    static const char *docDeferShapeLoad();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter AutoRemoveFile
     static const bool & getAutoRemoveFile();
     static const bool & defaultAutoRemoveFile();

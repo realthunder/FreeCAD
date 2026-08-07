@@ -2458,6 +2458,19 @@ void Document::runDeferredRestoreSlice()
     // time per property when told otherwise.
     App::Document::RestoringScopeGuard restoringScope;
     try {
+        // Phase zero: the parked shape archive entries
+        // (docs/DocumentLoad.md §14). Serving them before any view
+        // provider work reproduces the eager load's order -- every
+        // record applied below reads a shape that is already there.
+        // Left to the per-access fault-in instead, the records below
+        // pull the shapes one at a time from inside the property
+        // applications, which turns this drain into minutes.
+        if (d->_pcDocument->serveDeferredFiles(budget)) {
+            d->_pcDocument->setStatus(App::Document::Restoring, false);
+            d->_deferSpent += elapsed();
+            scheduleDeferredRestore();
+            return;
+        }
         // Phase one: every object gets its view provider before any of
         // them gets its record.
         if (!d->_deferCreated) {

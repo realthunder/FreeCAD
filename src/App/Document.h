@@ -241,6 +241,31 @@ public:
     /// Restore the document from a pre-constructed xml reader
     void restore (Base::XMLReader &xmlReader,
             bool delaySignal=false, const std::vector<std::string> &objNames={});
+    /** @name Deferred archive-entry restores (docs/DocumentLoad.md §14)
+     *
+     * With DeferShapeLoad on, the restore parks the archive entries of
+     * properties that opted in (Property::DeferRestore) instead of
+     * reading them during the load, and each is served from the still
+     * indexed archive on first real use. The consumer's accessors call
+     * restoreDeferredFile() before touching their value.
+     */
+    //@{
+    /// Serve \a obj its parked entry; false when nothing was parked.
+    bool restoreDeferredFile(Base::Persistence *obj);
+    /// Whether \a obj still has a parked entry.
+    bool hasDeferredFile(const Base::Persistence *obj) const;
+    /// Drop \a obj's parked entry unserved -- its value was overwritten
+    /// before anything asked for the archived one.
+    void cancelDeferredFile(Base::Persistence *obj);
+    /// Serve every parked entry, e.g. before the archive is rewritten.
+    void flushDeferredFiles();
+    /// Serve parked entries for up to \a budgetSeconds; true while more
+    /// remain. The progressive-load drain calls this in slices before it
+    /// builds any visuals, so shapes arrive through the same property
+    /// change path an edit uses instead of materializing inside a
+    /// half-staged visual fill.
+    bool serveDeferredFiles(double budgetSeconds);
+    //@}
     enum ExportStatus {
         NotExporting,
         Exporting,

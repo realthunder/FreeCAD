@@ -349,6 +349,21 @@ public:
         return _archiveHandler && (!_archiveFilter || _archiveFilter(name));
     }
 
+    /** Deferred serving of registered files.
+     *
+     * A random-access archive walk consults this before serving a
+     * registered entry; true means the installer took ownership of the
+     * entry -- recorded it, and will reopen and serve it later -- so the
+     * walk skips the consumer's RestoreDocFile. Meaningless for the
+     * forward-only walk, which cannot reopen anything and ignores it.
+     */
+    using FileDeferrer = std::function<bool(const std::string &, Base::Persistence *)>;
+    void setFileDeferrer(FileDeferrer deferrer) { _fileDeferrer = std::move(deferrer); }
+    /// Offer a registered entry for deferral; true when it was taken.
+    bool deferFileEntry(const std::string &name, Base::Persistence *obj) const {
+        return _fileDeferrer && _fileDeferrer(name, obj);
+    }
+
     /// Reader this parser draws from, or null. Its getDirectory() tells a
     /// consumer whether the document is an archive or an unpacked directory.
     Base::Reader *getReader() const { return _reader; }
@@ -482,6 +497,7 @@ protected:
     std::vector<FileEntry> FileList;
     ArchiveHandler _archiveHandler;
     ArchiveFilter _archiveFilter;
+    FileDeferrer _fileDeferrer;
     std::vector<std::string> FileNames;
 
     std::vector<int*> Guards;

@@ -2765,9 +2765,15 @@ void Document::restore (const char *filename,
     }
 
     std::unique_ptr<Base::Reader> _reader;
+    std::shared_ptr<Base::ZipFileReader> zfreader;
     std::unique_ptr<Base::XMLReader> _xmlReader;
     std::unique_ptr<zipios::ZipInputStream> zipstream;
     std::string dirname;
+
+    // Whatever was parked from a previous restore of this document is
+    // gone with the objects it belonged to.
+    d->deferredFiles.clear();
+    d->archiveReader.reset();
 
     if(fi.fileNamePure() == "Document" && fi.hasExtension("xml")) {
         Base::FileInfo di(fi.dirPath());
@@ -2776,7 +2782,7 @@ void Document::restore (const char *filename,
     } else {
         if (DocumentParams::getArchiveRandomAccess()) {
             try {
-                _reader.reset(new Base::ZipFileReader(filename));
+                zfreader = std::make_shared<Base::ZipFileReader>(filename);
             } catch (Base::Exception &e) {
                 // An archive the central-directory index cannot digest may
                 // still open the old way (and if not, the forward walk
@@ -2785,14 +2791,177 @@ void Document::restore (const char *filename,
                         << " (" << e.what() << "), falling back");
             }
         }
-        if (!_reader) {
+        Base::Reader *reader;
+        if (zfreader) {
+            reader = zfreader.get();
+        } else {
             zipstream.reset(new zipios::ZipInputStream(filename));
             _reader.reset(new Base::ZipReader(*zipstream,filename));
+            reader = _reader.get();
         }
-        _xmlReader.reset(new Base::XMLReader(*_reader));
+        _xmlReader.reset(new Base::XMLReader(*reader));
+        if (zfreader && DocumentParams::getDeferShapeLoad()) {
+            // Park opted-in entries instead of serving them during the
+            // walk; the index stays behind for restoreDeferredFile().
+            d->archiveReader = zfreader;
+            _xmlReader->setFileDeferrer(
+                [this](const std::string &name, Base::Persistence *obj) {
+                    auto prop = dynamic_cast<App::Property*>(obj);
+                    if (!prop || !prop->canDeferRestore() || !prop->hasName())
+                        return false;
+                    auto owner = dynamic_cast<App::DocumentObject*>(prop->getContainer());
+                    if (!owner || !owner->getNameInDocument()
+                               || owner->getDocument() != this)
+                        return false;
+                    d->deferredFiles[std::make_pair(
+                            std::string(owner->getNameInDocument()),
+                            std::string(prop->getName()))] = name;
+                    prop->setRestorePending(true);
+                    return true;
+                });
+        }
     }
 
     restore(*_xmlReader, delaySignal, objNames);
+}
+
+bool Document::hasDeferredFile(const Base::Persistence *obj) const
+{
+    if (d->deferredFiles.empty())
+        return false;
+    auto prop = dynamic_cast<const App::Property*>(obj);
+    auto owner = prop ? dynamic_cast<const App::DocumentObject*>(prop->getContainer()) : nullptr;
+    if (!owner || !owner->getNameInDocument() || !prop->hasName())
+        return false;
+    return d->deferredFiles.count(std::make_pair(
+                std::string(owner->getNameInDocument()),
+                std::string(prop->getName()))) != 0;
+}
+
+bool Document::restoreDeferredFile(Base::Persistence *obj)
+{
+    if (d->deferredFiles.empty())
+        return false;
+    auto prop = dynamic_cast<App::Property*>(obj);
+    auto owner = prop ? dynamic_cast<App::DocumentObject*>(prop->getContainer()) : nullptr;
+    if (!owner || !owner->getNameInDocument() || !prop->hasName())
+        return false;
+    auto it = d->deferredFiles.find(std::make_pair(
+                std::string(owner->getNameInDocument()),
+                std::string(prop->getName())));
+    if (it == d->deferredFiles.end())
+        return false;
+    std::string name = std::move(it->second);
+    // Erased before serving: a reentrant ask from inside RestoreDocFile
+    // must find nothing rather than recurse.
+    d->deferredFiles.erase(it);
+    prop->setRestorePending(false);
+
+    auto archive = d->archiveReader;
+    if (!archive) {
+        FC_ERR("Deferred entry " << name << " of " << prop->getFullName()
+                << " lost: no archive index");
+        return false;
+    }
+    FC_TIME_INIT(tServe);
+    auto stream = archive->openEntry(name);
+    if (!stream) {
+        FC_ERR("Deferred entry " << name << " of " << prop->getFullName()
+                << " missing from " << archive->getFileName());
+        return false;
+    }
+    FC_DURATION_PLUS(d->deferOpenTime, tServe);
+    // Reproduce load-time conditions: observers see a restoring object,
+    // and the owner does not come out touched by being served.
+    bool wasTouched = owner->isTouched();
+    {
+        Base::ObjectStatusLocker<ObjectStatus, DocumentObject> guard(
+                ObjectStatus::Restore, owner);
+        try {
+            Base::ZipReader zipreader(*stream, name);
+            obj->RestoreDocFile(zipreader);
+        } catch (Base::Exception &e) {
+            e.ReportException();
+            FC_ERR("Reading failed from deferred embedded file: " << name);
+        } catch (...) {
+            FC_ERR("Reading failed from deferred embedded file: " << name);
+        }
+    }
+    FC_DURATION_PLUS(d->deferRestoreTime, tServe);
+    // No change notification is replayed here: the serve runs before the
+    // visual fill (runDeferredVisualSlice's pre-phase), so consumers pick
+    // the shape up when they build -- and a per-serve signal costs
+    // per-object GUI work (tree, property view) that multiplies into
+    // minutes across a large document.
+    if (!wasTouched)
+        owner->purgeTouched();
+    if (d->deferredFiles.empty())
+        d->archiveReader.reset();
+    return true;
+}
+
+void Document::cancelDeferredFile(Base::Persistence *obj)
+{
+    if (d->deferredFiles.empty())
+        return;
+    auto prop = dynamic_cast<App::Property*>(obj);
+    auto owner = prop ? dynamic_cast<App::DocumentObject*>(prop->getContainer()) : nullptr;
+    if (!owner || !owner->getNameInDocument() || !prop->hasName())
+        return;
+    if (d->deferredFiles.erase(std::make_pair(
+                std::string(owner->getNameInDocument()),
+                std::string(prop->getName())))) {
+        prop->setRestorePending(false);
+        if (d->deferredFiles.empty())
+            d->archiveReader.reset();
+    }
+}
+
+void Document::flushDeferredFiles()
+{
+    while (!d->deferredFiles.empty()) {
+        auto key = d->deferredFiles.begin()->first;
+        auto oit = d->objectMap.find(key.first);
+        App::Property *prop = oit == d->objectMap.end() ? nullptr
+            : oit->second->getPropertyByName(key.second.c_str());
+        if (!prop || !prop->canDeferRestore() || !restoreDeferredFile(prop)) {
+            // Owner gone or renamed away -- nothing left to serve it to.
+            d->deferredFiles.erase(key);
+        }
+    }
+    d->archiveReader.reset();
+}
+
+bool Document::serveDeferredFiles(double budgetSeconds)
+{
+    if (d->deferredFiles.empty())
+        return false;
+    auto start = std::chrono::steady_clock::now();
+    std::size_t served = 0;
+    while (!d->deferredFiles.empty()) {
+        auto key = d->deferredFiles.begin()->first;
+        auto oit = d->objectMap.find(key.first);
+        App::Property *prop = oit == d->objectMap.end() ? nullptr
+            : oit->second->getPropertyByName(key.second.c_str());
+        if (!prop || !prop->canDeferRestore() || !restoreDeferredFile(prop))
+            d->deferredFiles.erase(key);
+        ++served;
+        if (std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - start).count()
+                >= budgetSeconds)
+            break;
+    }
+    FC_LOG("deferred serve slice: " << served << " in "
+            << std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - start).count()
+            << "s (open " << d->deferOpenTime.count()
+            << "s, restore " << d->deferRestoreTime.count()
+            << "s cumulative), " << d->deferredFiles.size() << " pending");
+    if (d->deferredFiles.empty()) {
+        d->archiveReader.reset();
+        return false;
+    }
+    return true;
 }
 
 void Document::restore(Base::XMLReader &reader,
@@ -2803,6 +2972,10 @@ void Document::restore(Base::XMLReader &reader,
 
     clearUndos();
     d->files.clear();
+    // Stale parked entries must never resolve against the new objects
+    // (same names, different content). The archive index itself is
+    // managed by the caller that installed it.
+    d->deferredFiles.clear();
     bool signal = false;
     Document *activeDoc = GetApplication().getActiveDocument();
     if (!d->objectArray.empty()) {

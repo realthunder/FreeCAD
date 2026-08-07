@@ -219,6 +219,26 @@ public:
      */
     virtual void onContainerRestored() {}
 
+    /** @name Deferred archive-entry restore (docs/DocumentLoad.md §14)
+     *
+     * A property may opt in to having its RestoreDocFile() parked by
+     * the restore and served lazily from the still-indexed document
+     * archive. The property's own accessors are then responsible for
+     * asking Document::restoreDeferredFile() before touching the value
+     * (tracked through the pending flag below, which the document sets
+     * when it parks the entry and clears when it serves it). Neither
+     * state persists -- both describe this process, not the file.
+     */
+    //@{
+    /// Whether this property's RestoreDocFile() may be parked.
+    virtual bool canDeferRestore() const { return false; }
+    /// Whether a parked entry has yet to be served.
+    virtual bool isRestorePending() const { return false; }
+    /// Set/clear the parked state; only the document and the property
+    /// itself have business calling this.
+    virtual void setRestorePending(bool) {}
+    //@}
+
     /** Property status handling
      */
     //@{
