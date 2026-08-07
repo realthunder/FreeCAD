@@ -1463,6 +1463,80 @@ public:
         return stampCache;
     }
 
+    /// GET fallback for the viewer bundle itself: map \a pathIn onto
+    /// the FC_BGFX_VIEWER_BUILD directory and send the file, so one
+    /// hostname (one tunnel) carries the page, the scene stream and
+    /// the blobs alike (docs/ShareAccess.md §5). Returns false when
+    /// the feature is off, the path is not a plausible bundle file, or
+    /// the file does not exist — the caller then 404s as before.
+    ///
+    /// Everything is served `no-store`: the bundle files are not
+    /// content-hashed, and the stamp reload's cache-bust parameter
+    /// only renames the page URL, not the script and wasm behind it —
+    /// a cached copy of those could survive a rebuild. When assets
+    /// grow content-hashed names they can take the /blob policy
+    /// (immutable) instead.
+    bool serveViewerFile(int fd, const std::string &pathIn)
+    {
+        static const char *dir = std::getenv("FC_BGFX_VIEWER_BUILD");
+        if (!dir || !*dir)
+            return false;
+        std::string path = pathIn == "/" ? std::string("/fcviewer.html")
+                                         : pathIn;
+        if (path.empty() || path[0] != '/'
+                || path.find("..") != std::string::npos)
+            return false;
+        for (char c : path)
+            if (!std::isalnum(static_cast<unsigned char>(c))
+                    && !std::strchr("/._-", c))
+                return false;
+        auto dot = path.rfind('.');
+        if (dot == std::string::npos)
+            return false;
+        std::string ext = path.substr(dot + 1);
+        const char *type = nullptr;
+        if (ext == "html")
+            type = "text/html; charset=utf-8";
+        else if (ext == "js" || ext == "mjs")
+            type = "text/javascript";
+        else if (ext == "wasm")
+            type = "application/wasm";
+        else if (ext == "css")
+            type = "text/css";
+        else if (ext == "svg")
+            type = "image/svg+xml";
+        else if (ext == "png")
+            type = "image/png";
+        else if (ext == "ico")
+            type = "image/x-icon";
+        else if (ext == "json" || ext == "map")
+            type = "application/json";
+        else if (ext == "data" || ext == "bin")
+            type = "application/octet-stream";
+        if (!type)
+            return false;
+        std::FILE *f = std::fopen((std::string(dir) + path).c_str(), "rb");
+        if (!f)
+            return false;
+        std::vector<char> body;
+        char buf[65536];
+        size_t n;
+        while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0)
+            body.insert(body.end(), buf, buf + n);
+        std::fclose(f);
+        char head[256];
+        int h = std::snprintf(head, sizeof(head),
+            "HTTP/1.1 200 OK\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "Content-Type: %s\r\n"
+            "Cache-Control: no-store\r\n"
+            "Content-Length: %zu\r\n"
+            "Connection: close\r\n\r\n", type, body.size());
+        if (sendAll(fd, head, size_t(h)))
+            sendAll(fd, body.data(), body.size());
+        return true;
+    }
+
     /// Queue a cache-busting reload for a viewer whose reported bundle
     /// build no longer matches the on-disk stamp (once per stamp; the
     /// page-side bust-parameter guard also refuses repeats). Caller
@@ -1916,6 +1990,11 @@ public:
         // v35) — the client is treated as holding nothing. The session
         // is per document, so the check happens against the group the
         // request lands on.
+        // The viewer bundle, from the same door: a plain GET that
+        // names a file (or "/") is the page loading itself.
+        if (wsKey.empty() && serveViewerFile(fd, path))
+            return;
+
         uint64_t clientVersion = ~uint64_t(0);
         std::string v = queryValue(query, "v");
         if (!v.empty())
