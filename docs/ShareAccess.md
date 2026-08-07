@@ -301,6 +301,24 @@ stale because a changed asset is a new URL.
    fetched the page through a real `trycloudflare.com` origin and saw cloudflared die
    with the share.
 
+7. **Probe service token** — **DONE** (2026-08-07). Headless probes were locked out the
+   moment the Access app went up (the edge answers scripts with the login redirect), so
+   automation authenticates with an Access **service token**: mint under Zero Trust →
+   Access → Service credentials, add a **Service Auth** policy (not Allow) to the app
+   including it, and the probe sends `CF-Access-Client-Id` / `CF-Access-Client-Secret`
+   on every request. Diagnosis note: the login redirect's `meta` JWT carries
+   `service_token_status` — `false` with the pair presented means the *token* did not
+   validate (wrong team, expired, bad secret), distinct from a valid token that no
+   policy admits (403). The pair lives in `~/.config/fc-probe/cf-access` (mode 600),
+   never in the repo. **A service token asserts no identity to the origin** — the
+   email header is absent, so the probe reaches our door identity-less and a probe
+   grant keys on name or token, which is itself the negative test that the sign-in
+   contract holds. 11-check suite verified live through `cad.thundereal.com`:
+   anonymous 302, page 200 with the pair, `/scene.fcsd` 403 before bytes, `wss://`
+   upgrade (on `/scene` — the page path 404s upgrades), ungranted hello `Refused` with
+   zero scene bytes, name-granted hello admitted view-only with scene bytes flowing,
+   roster row proxied with the real client address, grant list restored.
+
 ## 8. Non-goals
 
 - **Authentication we invent ourselves.** Without a front door, a link is a bearer
