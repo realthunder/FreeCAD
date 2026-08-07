@@ -103,6 +103,9 @@ public:
     /** This sets the wait cursor again and grabs the keyboard. @see pause() */
     void resume() override;
     bool isBlocking() const override;
+    /** True while the aggregate poll timer owns the bar's value/range, so
+    * worker-thread ticks don't have to push into the indicator. */
+    bool updatesViaPoll() const override;
     /** Returns an instance of the progress bar. It creates one if needed. */
     QProgressBar* getProgressBar(QWidget* parent=nullptr);
 
@@ -155,6 +158,8 @@ public:
     * events are ignored to block user input.
     */
     bool eventFilter(QObject* o, QEvent* e) override;
+    /** Shows the live per-sequence detail popup on hover. */
+    bool event(QEvent* e) override;
     /** Returns the time in milliseconds that must pass before the progress bar appears.
     */
     int minimumDuration() const;
@@ -163,12 +168,17 @@ private Q_SLOTS:
     void resetEx();
     void setRangeEx(int minimum, int maximum);
     void setValueEx(int value);
-
+    /** One tick of the aggregate poll: drives the bar from the consolidated
+    * Base::SequencerManager snapshot and stops itself when nothing runs.
+    */
+    void aggregatePoll();
 
 public Q_SLOTS:
     /** Sets the time that must pass before the progress bar appears to \a ms.
     */
     void setMinimumDuration (int ms);
+    /** Starts polling Base::SequencerManager for consolidated progress. */
+    void startAggregatePoll();
 
 public:
     bool canAbort() const;
@@ -193,6 +203,9 @@ private:
     void enterControlEvents(bool);
     /** Loses the control over incoming events*/
     void leaveControlEvents(bool);
+    /** Shows/hides the live per-sequence detail popup */
+    void showDetailPopup();
+    void hideDetailPopup();
 
 
     //@}

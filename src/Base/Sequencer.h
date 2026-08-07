@@ -24,7 +24,14 @@
 #ifndef BASE_SEQUENCER_H
 #define BASE_SEQUENCER_H
 
+#include <atomic>
+#include <cstddef>
+#include <string>
+#include <vector>
+
 #include "Exception.h"
+
+class QThread;
 
 namespace Base
 {
@@ -152,6 +159,17 @@ public:
     virtual void checkAbort()
     {}
 
+    /**
+     * Returns true if this indicator is driven by polling (e.g. the GUI status
+     * bar polling SequencerManager on a timer) instead of by per-step pushes.
+     * Worker-thread ticks may then skip driving the indicator altogether and
+     * only bump their launcher's atomic counters.
+     */
+    virtual bool updatesViaPoll() const
+    {
+        return false;
+    }
+
 protected:
     /**
      * Starts a new operation, returns false if there is already a pending operation,
@@ -205,10 +223,10 @@ protected:
 protected:
     /** construction */
     SequencerBase();
-    SequencerBase(const SequencerBase&) = default;
-    SequencerBase(SequencerBase&&) = default;
-    SequencerBase& operator=(const SequencerBase&) = default;
-    SequencerBase& operator=(SequencerBase&&) = default;
+    SequencerBase(const SequencerBase&) = delete;
+    SequencerBase(SequencerBase&&) = delete;
+    SequencerBase& operator=(const SequencerBase&) = delete;
+    SequencerBase& operator=(SequencerBase&&) = delete;
     /**
      * Sets a text what the pending operation is doing. The default implementation
      * does nothing.
@@ -249,8 +267,9 @@ protected:
     // NOLINTEND
 
 private:
-    bool _bLocked {false};     /**< Lock/unlock sequencer. */
-    bool _bCanceled {false};   /**< Is set to true if the last pending operation was canceled */
+    bool _bLocked {false}; /**< Lock/unlock sequencer. */
+    std::atomic<bool> _bCanceled {
+        false};                /**< Is set to true if the last pending operation was canceled */
     int _nLastPercentage {-1}; /**< Progress in percent. */
 };
 
@@ -393,19 +412,57 @@ public:
     bool stop();
 private:
     std::string strText;
-    size_t nProgress {0};
-    size_t nTotalSteps {0};
+    std::atomic<size_t> nProgress {0};
+    std::atomic<size_t> nTotalSteps {0};
     // Allow cancel by user code
-    bool bCanceled {false};
+    std::atomic<bool> bCanceled {false};
     bool bBlocking {false};
     bool bNoException {false};
-    std::vector<SequencerLauncher*> vChildren;
-    SequencerLauncher *pParent {nullptr};
+    QThread *ownerThread {nullptr};
 
     SequencerLauncher(const SequencerLauncher&) = delete;
     SequencerLauncher(SequencerLauncher&&) = delete;
     void operator=(const SequencerLauncher&) = delete;
     void operator=(SequencerLauncher&&) = delete;
+
+    friend class SequencerManager;
+};
+
+/**
+ * \brief Thread-aware collector of all parallel running sequences.
+ *
+ * Every SequencerLauncher on any thread registers itself; this class turns
+ * that registry into a consolidated progress a UI can poll on its own cadence
+ * (poll, not push): workers only bump their launcher's atomic counters, the
+ * consolidation work happens at snapshot() time in the reader.
+ *
+ * Per thread only the outermost active launcher is reported, preserving the
+ * "nested sequences do not inflate progress" rule, while launchers running on
+ * different threads sum up. A launcher may also be shared by several worker
+ * threads (e.g. a parallel recompute with one launcher for the whole job) —
+ * next() is safe to call concurrently.
+ */
+class BaseExport SequencerManager
+{
+public:
+    struct Info
+    {
+        std::string text;       /**< what this sequence says it is doing */
+        size_t progress = 0;    /**< steps done so far */
+        size_t total = 0;       /**< 0 = unknown (busy indicator) */
+        bool mainThread = false;
+    };
+    struct Snapshot
+    {
+        std::vector<Info> sequences; /**< one entry per thread: the outermost launcher */
+        size_t progress = 0; /**< consolidated: sum of min(progress, total) over known totals */
+        size_t total = 0;    /**< consolidated: sum of known totals; 0 = indeterminate */
+    };
+
+    /** Lock-free count of live launchers (cheap "is anything running?"). */
+    static size_t activeCount();
+    /** Consolidated snapshot of all running sequences (locks briefly). */
+    static Snapshot snapshot();
 };
 
 /** Access to the only SequencerBase instance */

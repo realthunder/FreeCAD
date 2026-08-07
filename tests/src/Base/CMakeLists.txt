@@ -27,3 +27,15 @@ target_sources(
 )
 
 setup_qt_test(InventorBuilder)
+
+# The sequencer's parallel-progress manager only needs FreeCADBase and
+# threads, so it tests from an executable of its own rather than a place
+# in Tests_run, which drags in all of FreeCADApp.
+add_executable(Sequencer_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/Sequencer.cpp)
+target_include_directories(Sequencer_tests_run PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src
+    ${Python3_INCLUDE_DIRS}
+    ${XercesC_INCLUDE_DIRS})
+target_link_libraries(Sequencer_tests_run gtest_main FreeCADBase ${QtCore_LIBRARIES})
+add_test(NAME Sequencer_tests_run COMMAND Sequencer_tests_run)

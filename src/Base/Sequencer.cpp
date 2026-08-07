@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <QMutexLocker>
 # include <QThread>
 #endif
@@ -41,8 +42,17 @@ struct SequencerP {
     static QThread *_thread;
     static std::vector<SequencerBase*> _instances; /**< A vector of all created instances */
     static std::vector<SequencerLauncher*> _launchers;
-    static SequencerLauncher* _topLauncher; /**< The outermost launcher */
+    static std::atomic<SequencerLauncher*> _topLauncher; /**< The outermost launcher */
+    static std::atomic<size_t> _activeCount; /**< Lock-free count of live launchers */
     static QRecursiveMutex mutex; /**< A mutex-locker for the launcher */
+    /** True if the active indicator is poll-driven, so worker-thread ticks
+     * need not push into it. Read without the mutex: _instances only changes
+     * at application start/shutdown.
+     */
+    static bool updatesViaPoll()
+    {
+        return !_instances.empty() && _instances.back()->updatesViaPoll();
+    }
     /** Sets a global sequencer object.
         * Access to the last registered object is performed by @see Sequencer().
         */
@@ -65,7 +75,7 @@ struct SequencerP {
     }
     static void findNextLauncher(SequencerLauncher *exclude=nullptr)
     {
-        auto laucherSave = _topLauncher;
+        auto laucherSave = _topLauncher.load();
         _topLauncher = nullptr;
         for (int pass = 0; pass < 2; ++pass) {
             for (size_t i=0; i<_launchers.size(); ++i) {
@@ -94,7 +104,8 @@ struct SequencerP {
     */
 std::vector<SequencerBase*> SequencerP::_instances;
 std::vector<SequencerLauncher*> SequencerP::_launchers;
-SequencerLauncher* SequencerP::_topLauncher = nullptr;
+std::atomic<SequencerLauncher*> SequencerP::_topLauncher {nullptr};
+std::atomic<size_t> SequencerP::_activeCount {0};
 QRecursiveMutex SequencerP::mutex;
 QThread *SequencerP::_thread = nullptr;
 }  // namespace Base
@@ -135,8 +146,8 @@ bool SequencerBase::start(const char* pszStr, size_t steps)
         bool blocking = true;
         {
             QMutexLocker locker(&SequencerP::mutex);
-            if (SequencerP::_topLauncher)
-                blocking = SequencerP::_topLauncher->isBlocking();
+            if (auto top = SequencerP::_topLauncher.load())
+                blocking = top->isBlocking();
         }
         startStep(blocking);
     }
@@ -216,14 +227,12 @@ bool SequencerBase::isLocked() const
 
 bool SequencerBase::isRunning() const
 {
-    QMutexLocker locker(&SequencerP::mutex);
-    return (SequencerP::_topLauncher != nullptr);
+    return (SequencerP::_topLauncher.load(std::memory_order_relaxed) != nullptr);
 }
 
 bool SequencerBase::wasCanceled() const
 {
-    QMutexLocker locker(&SequencerP::mutex);
-    return this->_bCanceled;
+    return this->_bCanceled.load(std::memory_order_relaxed);
 }
 
 void SequencerBase::tryToCancel()
@@ -281,10 +290,12 @@ SequencerLauncher::SequencerLauncher(const char* pszStr, size_t steps)
 {
     strText = pszStr ? pszStr : "";
     nTotalSteps = steps;
+    ownerThread = QThread::currentThread();
 
     QMutexLocker locker(&SequencerP::mutex);
     // Have we already an instance of SequencerLauncher created?
     SequencerP::_launchers.push_back(this);
+    SequencerP::_activeCount.fetch_add(1, std::memory_order_relaxed);
     if (steps != 0)
         SequencerP::findNextLauncher();
 }
@@ -295,8 +306,10 @@ SequencerLauncher::~SequencerLauncher()
     auto &launchers = SequencerP::_launchers;
     auto &topLauncher = SequencerP::_topLauncher;
     auto it = std::find(launchers.begin(), launchers.end(), this);
-    if (it != launchers.end())
+    if (it != launchers.end()) {
         launchers.erase(it);
+        SequencerP::_activeCount.fetch_sub(1, std::memory_order_relaxed);
+    }
     if (topLauncher == this) {
         SequencerBase::Instance().stop();
         topLauncher = nullptr;
@@ -318,7 +331,7 @@ bool SequencerLauncher::start(size_t steps, const char* pszTxt)
     if (SequencerP::_topLauncher == this) {
         if (progress() == 0)
             bBlocking = (QThread::currentThread() == SequencerP::_thread);
-        return SequencerBase::Instance().start(strText.c_str(), steps);
+        return SequencerBase::Instance().start(strText.c_str(), nTotalSteps);
     }
     return false;
 }
@@ -338,14 +351,35 @@ void SequencerLauncher::setText(const char* pszTxt)
 {
     QMutexLocker locker(&SequencerP::mutex);
     strText = pszTxt ? pszTxt : "";
-    if (SequencerP::_topLauncher == this)
+    // When poll-driven, worker-thread text changes are picked up by the next
+    // snapshot; don't push them into the indicator (a blocking queued call).
+    if (SequencerP::_topLauncher == this
+            && (QThread::currentThread() == SequencerP::_thread
+                || !SequencerP::updatesViaPoll()))
         SequencerBase::Instance().setText(pszTxt);
 }
 
 bool SequencerLauncher::next(bool canAbort)
 {
+    this->nProgress.fetch_add(1, std::memory_order_relaxed);
+
+    // Worker-thread ticks stay lock-free whenever they don't have to drive
+    // the indicator: either another launcher is on top, or the indicator is
+    // poll-driven (SequencerManager) and reads the atomic counters itself.
+    // This also makes it safe and cheap to share one launcher between many
+    // worker threads (e.g. a parallel recompute).
+    if (QThread::currentThread() != SequencerP::_thread
+            && (SequencerP::_topLauncher.load(std::memory_order_acquire) != this
+                || SequencerP::updatesViaPoll())) {
+        if (canAbort && bCanceled.load(std::memory_order_relaxed)) {
+            if (bNoException)
+                return false;
+            throw Base::AbortException();
+        }
+        return true;
+    }
+
     QMutexLocker locker(&SequencerP::mutex);
-    this->nProgress++;
     if (SequencerP::_topLauncher != this) {
         if (canAbort) {
             if (bNoException) {
@@ -370,21 +404,34 @@ bool SequencerLauncher::next(bool canAbort)
 
 void SequencerLauncher::setProgress(size_t pos)
 {
-    QMutexLocker locker(&SequencerP::mutex);
-    if (bCanceled) {
+    if (bCanceled.load(std::memory_order_relaxed)) {
         if (bNoException)
             return;
         throw Base::AbortException();
     }
-    this->nProgress = pos;
+    this->nProgress.store(pos, std::memory_order_relaxed);
+
+    // Same lock-free rule as in next()
+    if (QThread::currentThread() != SequencerP::_thread
+            && (SequencerP::_topLauncher.load(std::memory_order_acquire) != this
+                || SequencerP::updatesViaPoll()))
+        return;
+
+    QMutexLocker locker(&SequencerP::mutex);
     if (SequencerP::_topLauncher == this)
         SequencerBase::Instance().setProgress(pos);
 }
 
 void SequencerLauncher::setTotalSteps(size_t steps)
 {
+    this->nTotalSteps.store(steps, std::memory_order_relaxed);
+
+    if (QThread::currentThread() != SequencerP::_thread
+            && (SequencerP::_topLauncher.load(std::memory_order_acquire) != this
+                || SequencerP::updatesViaPoll()))
+        return;
+
     QMutexLocker locker(&SequencerP::mutex);
-    this->nTotalSteps = steps;
     if (SequencerP::_topLauncher == this)
         SequencerBase::Instance().setTotalSteps(steps);
 }
@@ -401,18 +448,51 @@ size_t SequencerLauncher::progress() const
 
 bool SequencerLauncher::wasCanceled() const
 {
-    QMutexLocker locker(&SequencerP::mutex);
-    return bCanceled || SequencerBase::Instance().wasCanceled();
+    // Lock-free: cheap enough for worker loops to poll every iteration
+    return bCanceled.load(std::memory_order_relaxed)
+        || SequencerBase::Instance().wasCanceled();
 }
 
 void SequencerLauncher::setCanceled(bool cancel)
 {
-    QMutexLocker locker(&SequencerP::mutex);
-    bCanceled = cancel;
+    bCanceled.store(cancel, std::memory_order_relaxed);
 }
 
 void SequencerLauncher::setNoException(bool enable)
 {
     QMutexLocker locker(&SequencerP::mutex);
     bNoException = enable;
+}
+
+// ---------------------------------------------------------
+
+size_t SequencerManager::activeCount()
+{
+    return SequencerP::_activeCount.load(std::memory_order_relaxed);
+}
+
+SequencerManager::Snapshot SequencerManager::snapshot()
+{
+    Snapshot snap;
+    QMutexLocker locker(&SequencerP::mutex);
+    std::vector<QThread*> seen;
+    seen.reserve(SequencerP::_launchers.size());
+    for (auto *launcher : SequencerP::_launchers) {
+        if (std::find(seen.begin(), seen.end(), launcher->ownerThread) != seen.end())
+            continue; // nested in a thread already represented by an outer launcher
+        Info info;
+        info.progress = launcher->nProgress.load(std::memory_order_relaxed);
+        info.total = launcher->nTotalSteps.load(std::memory_order_relaxed);
+        if (info.total == 0 && info.progress == 0)
+            continue; // registered but not started: invisible, and doesn't shadow inner ones
+        seen.push_back(launcher->ownerThread);
+        info.text = launcher->strText;
+        info.mainThread = (launcher->ownerThread == SequencerP::_thread);
+        if (info.total > 0) {
+            snap.total += info.total;
+            snap.progress += std::min(info.progress, info.total);
+        }
+        snap.sequences.push_back(std::move(info));
+    }
+    return snap;
 }

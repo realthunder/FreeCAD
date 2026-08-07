@@ -22,9 +22,14 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <algorithm>
+# include <atomic>
+# include <climits>
 # include <QApplication>
 # include <QElapsedTimer>
+# include <QGridLayout>
 # include <QKeyEvent>
+# include <QLabel>
 # include <QMessageBox>
 # include <QMetaObject>
 # include <QThread>
@@ -44,6 +49,88 @@ using namespace Gui;
 
 
 namespace Gui {
+
+/** Frameless tool-tip style popup showing one live progress bar per parallel
+ * sequence (plus a consolidated total row). It is refreshed by the owning
+ * ProgressBar's aggregate poll while visible, so the bars keep ticking.
+ */
+class ProgressDetailPopup: public QWidget
+{
+public:
+    explicit ProgressDetailPopup(QWidget* anchor)
+        : QWidget(anchor->window(), Qt::ToolTip)
+        , anchor(anchor)
+    {
+        setAttribute(Qt::WA_ShowWithoutActivating);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        auto grid = new QGridLayout(this);
+        grid->setContentsMargins(10, 8, 10, 8);
+        grid->setHorizontalSpacing(10);
+        grid->setVerticalSpacing(4);
+    }
+
+    void updateSnapshot(const Base::SequencerManager::Snapshot& snap)
+    {
+        int rows = (int)snap.sequences.size();
+        bool totalRow = rows > 1 && snap.total > 0;
+        ensureRows(rows + (totalRow ? 1 : 0));
+        for (int i = 0; i < rows; ++i) {
+            const auto& info = snap.sequences[i];
+            setRow(i, QString::fromUtf8(info.text.c_str()), info.progress, info.total);
+        }
+        if (totalRow)
+            setRow(rows, ProgressBar::tr("Total"), snap.progress, snap.total);
+        adjustSize();
+        // anchored above the status-bar progress bar, right aligned
+        QPoint corner = anchor->mapToGlobal(QPoint(anchor->width(), 0));
+        move(std::max(0, corner.x() - width()), corner.y() - height() - 8);
+    }
+
+private:
+    void ensureRows(int count)
+    {
+        auto grid = static_cast<QGridLayout*>(layout());
+        while ((int)labels.size() < count) {
+            int row = (int)labels.size();
+            auto label = new QLabel(this);
+            auto bar = new QProgressBar(this);
+            bar->setFixedWidth(140);
+            bar->setAlignment(Qt::AlignHCenter);
+            grid->addWidget(label, row, 0);
+            grid->addWidget(bar, row, 1);
+            labels.push_back(label);
+            bars.push_back(bar);
+        }
+        while ((int)labels.size() > count) {
+            delete labels.back(); labels.pop_back();
+            delete bars.back(); bars.pop_back();
+        }
+    }
+
+    void setRow(int row, const QString& text, size_t progress, size_t total)
+    {
+        QLabel* label = labels[row];
+        QFontMetrics fm(label->font());
+        label->setText(fm.elidedText(text, Qt::ElideMiddle, 260));
+        QProgressBar* bar = bars[row];
+        if (total > 0) {
+            int t = (int)std::min<size_t>(total, INT_MAX);
+            int p = (int)std::min<size_t>(std::min(progress, total), INT_MAX);
+            if (bar->maximum() != t || bar->minimum() != 0)
+                bar->setRange(0, t);
+            bar->setValue(p);
+            bar->setFormat(QStringLiteral("%v / %m"));
+        }
+        else if (bar->maximum() != 0 || bar->minimum() != 0) {
+            bar->setRange(0, 0); // unknown total: busy indicator
+        }
+    }
+
+    QWidget* anchor;
+    std::vector<QLabel*> labels;
+    std::vector<QProgressBar*> bars;
+};
+
 struct SequencerBarPrivate
 {
     ProgressBar* bar;
@@ -53,11 +140,16 @@ struct SequencerBarPrivate
     QElapsedTimer checkAbortTime;
     QString text;
     bool guiThread;
+    /** true while the aggregate poll owns the bar's value/range */
+    std::atomic<bool> aggregateDriven {false};
 };
 
 struct ProgressBarPrivate
 {
     QTimer* delayShowTimer;
+    QTimer* pollTimer = nullptr;
+    ProgressDetailPopup* detailPopup = nullptr;
+    QString statusText;
     int minimumDuration;
     int observeEventFilter;
 
@@ -162,6 +254,9 @@ void SequencerBar::startStep(bool blocking)
         showRemainingTime();
         d->bar->aboutToShow();
     }
+    // From now on the aggregate poll owns the bar; it stops itself (and
+    // clears aggregateDriven) once no sequence is left running.
+    QMetaObject::invokeMethod(d->bar, "startAggregatePoll", Qt::QueuedConnection);
 }
 
 void SequencerBar::checkAbort()
@@ -239,6 +334,23 @@ void SequencerBar::setProgress(size_t step)
 
 void SequencerBar::setValue(int step)
 {
+    if (d->aggregateDriven.load(std::memory_order_relaxed)) {
+        // The aggregate poll owns the bar's value; here only keep the event
+        // pumping alive so a blocking main-thread sequence stays responsive
+        // (which is also what fires the poll timer).
+        if (QThread::currentThread() == d->bar->thread()) {
+            int elapsed = d->progressTime.elapsed();
+            if (elapsed > 200) {
+                d->progressTime.restart();
+                if (d->bar->isVisible())
+                    showRemainingTime();
+                d->bar->resetObserveEventFilter();
+                qApp->processEvents();
+            }
+        }
+        return;
+    }
+
     QThread *currentThread = QThread::currentThread();
     QThread *thr = d->bar->thread(); // this is the main thread
     // if number of total steps is unknown then increment only by one
@@ -282,6 +394,8 @@ void SequencerBar::setValue(int step)
 void SequencerBar::setTotalSteps(size_t steps)
 {
     SequencerBase::setTotalSteps(steps);
+    if (d->aggregateDriven.load(std::memory_order_relaxed))
+        return; // the aggregate poll owns the bar's range
     QThread *currentThread = QThread::currentThread();
     QThread *thr = d->bar->thread(); // this is the main thread
     if (thr != currentThread) {
@@ -389,6 +503,11 @@ bool SequencerBar::isBlocking() const
     return d->guiThread;
 }
 
+bool SequencerBar::updatesViaPoll() const
+{
+    return d->aggregateDriven.load(std::memory_order_relaxed);
+}
+
 QProgressBar* SequencerBar::getProgressBar(QWidget* parent)
 {
     if (!d->bar)
@@ -412,8 +531,12 @@ ProgressBar::ProgressBar (SequencerBar* s, QWidget * parent)
     d->delayShowTimer = new QTimer(this);
     d->delayShowTimer->setSingleShot(true);
     connect(d->delayShowTimer, &QTimer::timeout, this, &ProgressBar::delayedShow);
+    d->pollTimer = new QTimer(this);
+    d->pollTimer->setInterval(200); // matches the push path's update throttle
+    connect(d->pollTimer, &QTimer::timeout, this, &ProgressBar::aggregatePoll);
     d->observeEventFilter = 0;
 
+    setAttribute(Qt::WA_Hover);
     setFixedWidth(120);
 
     // write percentage to the center
@@ -488,6 +611,93 @@ void ProgressBar::delayedShow()
     }
 }
 
+void ProgressBar::startAggregatePoll()
+{
+    if (!d->pollTimer->isActive())
+        d->pollTimer->start();
+}
+
+void ProgressBar::aggregatePoll()
+{
+    auto snap = Base::SequencerManager::snapshot();
+    if (snap.sequences.empty()) {
+        d->pollTimer->stop();
+        sequencer->d->aggregateDriven.store(false, std::memory_order_relaxed);
+        d->statusText.clear();
+        hideDetailPopup();
+        return;
+    }
+    sequencer->d->aggregateDriven.store(true, std::memory_order_relaxed);
+
+    if (snap.total > 0) {
+        int total = (int)std::min<size_t>(snap.total, INT_MAX);
+        int progress = (int)std::min<size_t>(std::min(snap.progress, snap.total), INT_MAX);
+        if (maximum() != total || minimum() != 0)
+            setRangeEx(0, total);
+        setValueEx(progress);
+    }
+    else if (maximum() != 0 || minimum() != 0) {
+        setRangeEx(0, 0); // no sequence knows its total: busy indicator
+    }
+
+    // Keep the status message in sync: worker-thread setText() doesn't push
+    // while poll-driven, so mirror the leading sequence's text here.
+    const auto* lead = &snap.sequences.front();
+    for (const auto& info : snap.sequences) {
+        if (info.mainThread) {
+            lead = &info;
+            break;
+        }
+    }
+    QString text = QString::fromUtf8(lead->text.c_str());
+    if (snap.sequences.size() > 1)
+        text += tr(" (+%1 more)").arg(snap.sequences.size() - 1);
+    if (text != d->statusText) {
+        d->statusText = text;
+        sequencer->d->text = QString::fromUtf8(lead->text.c_str());
+        getMainWindow()->showMessage(text);
+    }
+
+    if (d->detailPopup && d->detailPopup->isVisible())
+        d->detailPopup->updateSnapshot(snap);
+}
+
+void ProgressBar::showDetailPopup()
+{
+    auto snap = Base::SequencerManager::snapshot();
+    if (snap.sequences.empty())
+        return;
+    if (!d->detailPopup)
+        d->detailPopup = new ProgressDetailPopup(this);
+    d->detailPopup->updateSnapshot(snap);
+    d->detailPopup->show();
+}
+
+void ProgressBar::hideDetailPopup()
+{
+    if (d->detailPopup)
+        d->detailPopup->hide();
+}
+
+bool ProgressBar::event(QEvent* e)
+{
+    switch (e->type()) {
+    case QEvent::HoverEnter:
+        showDetailPopup();
+        break;
+    case QEvent::HoverLeave:
+        hideDetailPopup();
+        break;
+    case QEvent::ToolTip:
+        if (d->detailPopup && d->detailPopup->isVisible())
+            return true; // the live popup replaces the plain tooltip
+        break;
+    default:
+        break;
+    }
+    return QProgressBar::event(e);
+}
+
 void ProgressBar::aboutToHide()
 {
     hide();
@@ -517,6 +727,7 @@ void ProgressBar::hideEvent(QHideEvent* e)
 {
     QProgressBar::hideEvent(e);
     d->delayShowTimer->stop();
+    hideDetailPopup();
 }
 
 void ProgressBar::resetObserveEventFilter()
@@ -587,6 +798,15 @@ bool ProgressBar::eventFilter(QObject* o, QEvent* e)
         }
 
         // main thread
+        // Hovering the bar itself shows the live detail popup. Enter/Leave
+        // events are swallowed below while a blocking sequence runs, so they
+        // must be handled here in the filter.
+        if (o == this) {
+            if (e->type() == QEvent::Enter)
+                showDetailPopup();
+            else if (e->type() == QEvent::Leave)
+                hideDetailPopup();
+        }
         switch ( e->type() )
         {
         // check for ESC
