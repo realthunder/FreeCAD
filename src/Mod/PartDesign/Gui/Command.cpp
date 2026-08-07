@@ -1118,10 +1118,10 @@ void prepareProfileBased(Gui::Command* cmd, const std::string& which, double len
 
         Part::Part2DObject* sketch = dynamic_cast<Part::Part2DObject*>(profile);
 
-        if (sketch) {
-            std::ostringstream str;
-            Gui::cmdAppObject(Feat, str << "ReferenceAxis = (" << Gui::Command::getObjectCmd(sketch) << ",['N_Axis'])");
-        }
+        // Leave ReferenceAxis empty. An empty reference axis means 'profile normal',
+        // which is exactly what pinning it to the profile sketch's N_Axis used to give,
+        // except that the explicit link goes stale when the profile is later changed
+        // (e.g. to a binder), leaving a reference that can no longer be resolved.
 
         finishProfileBased(cmd, sketch, Feat);
     };
