@@ -79,6 +79,7 @@
 #include <boost/container/flat_set.hpp>
 #include <unordered_map>
 #include <map>
+#include <set>
 
 #include <Base/Console.h>
 #include "../ViewParams.h"
@@ -324,7 +325,10 @@ public:
     if (!attachedPath)
       return;
     SoPath *path = attachedPath;
-    // rebuild path in case of any transient changes like reordered children
+    // Coin truncates an SoPath at the point where a node leaves its parent, so
+    // any structural change under us (a PartDesign tip swap re-parenting the
+    // body's children, a display mode rebuild) leaves the path a prefix of what
+    // we resolved. Rebuild the missing tail from the full copy in tmpPath.
     if (path->getLength() && path->getLength() < tmpPath.getLength()) {
       auto node = tmpPath.getNode(path->getLength()-1);
       for (int i=path->getLength(), c=tmpPath.getLength(); i<c; ++i) {
@@ -346,6 +350,15 @@ public:
       }
     }
 
+    // If the tail could not be restored the path no longer reaches the object
+    // it was resolved for. It must not be traversed: a path apply visits
+    // everything below its tail, and the on-top pass only overrides the
+    // switches *on* the path -- so a prefix ending near the scene root drags
+    // every visible object into the on-top group while leaving the intended
+    // (typically hidden) one out of it. Report it instead and let the Gui layer
+    // re-resolve from the App::SubObjectT.
+    broken = path->getLength() < tmpPath.getLength();
+
     if (this->cache) {
       this->cache.reset();
       for (auto & v : this->elements) {
@@ -360,6 +373,12 @@ public:
   std::unordered_map<std::string, ElementEntry> elements;
   RenderCachePtr cache;
   bool ontop = false;
+  // The attached path no longer reaches the object it was resolved for; see
+  // refresh(). Set here, consumed by updateSelection() and reported out
+  // through takeInvalidSelections().
+  bool broken = false;
+  // selcaches key this sensor lives under, so a broken entry can be named.
+  std::string key;
 };
 
 typedef std::unordered_map<PathPtr,
@@ -578,6 +597,9 @@ public:
   bool lastvpset = false;
 
   std::unordered_map<std::string, SelectionPathMap> selcaches;
+  // On-top selcaches keys whose Coin path went stale and could not be
+  // rebuilt (SelectionSensor::refresh). Drained by takeInvalidSelections().
+  std::set<std::string> invalidsels;
   // Path-keyed user-shader overrides (addShaderOverride): same sensor
   // machinery as selcaches, kept separate so selection bookkeeping
   // (clearSelection, isOnTop, ...) never touches them.
@@ -821,6 +843,7 @@ SoFCRenderCacheManager::clear()
   PRIVATE(this)->cachetable.clear();
   PRIVATE(this)->vcachetable.clear();
   PRIVATE(this)->selcaches.clear();
+  PRIVATE(this)->invalidsels.clear();
   PRIVATE(this)->shadercaches.clear();
   PRIVATE(this)->selpaths.clear();
   PRIVATE(this)->renderer->clear();
@@ -855,6 +878,17 @@ bool
 SoFCRenderCacheManager::hasOnTopObject() const
 {
   return !PRIVATE(this)->selcaches.empty();
+}
+
+bool
+SoFCRenderCacheManager::takeInvalidSelections(std::vector<std::string> & keys)
+{
+  if (PRIVATE(this)->invalidsels.empty())
+    return false;
+  for (auto & key : PRIVATE(this)->invalidsels)
+    keys.push_back(key);
+  PRIVATE(this)->invalidsels.clear();
+  return true;
 }
 
 SoPath *
@@ -947,6 +981,16 @@ SoFCRenderCacheManagerP::updateSelection(void * userdata, SoSensor * _sensor)
   sensor->refresh(self->renderer);
   if (!path->getLength())
     return;
+  if (sensor->broken) {
+    // refresh() has already dropped this entry's caches from the renderer, so
+    // nothing stale is drawn. Name it so refreshGroupOnTop() can resolve it
+    // again from the object path once the scene graph settles.
+    if (sensor->ontop && sensor->key.size()) {
+      FC_LOG("on top path truncated: " << sensor->key);
+      self->invalidsels.insert(sensor->key);
+    }
+    return;
+  }
 
   SoState * state = self->action->getState();
   RenderCachePtr cache = new SoFCRenderCache(state, path->getHead());
@@ -1048,6 +1092,8 @@ SoFCRenderCacheManager::addSelection(const std::string & key,
     sensor->setData(PRIVATE(this));
     update = true;
   }
+  sensor->key = key;
+  PRIVATE(this)->invalidsels.erase(key);
 
   if (sensor->ontop)
     ontop = true;

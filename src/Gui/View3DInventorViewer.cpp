@@ -3845,6 +3845,17 @@ void View3DInventorViewer::actualRedraw()
     QElapsedTimer frameTimer;
     frameTimer.start();
 
+    // An on-top entry whose Coin path went stale stops rendering and reports
+    // itself here. Re-resolving runs an SoAction, so it must not happen inside
+    // the frame: hand it to the event loop.
+    if (selectionRoot) {
+        if (auto manager = selectionRoot->getRenderManager()) {
+            std::vector<std::string> invalid;
+            if (manager->takeInvalidSelections(invalid))
+                QTimer::singleShot(0, this, [this]() { refreshGroupOnTop(); });
+        }
+    }
+
     // The stage timers live deep in the publish pipeline, which knows
     // nothing of views; the view that is drawing states whether they run.
     if (auto view = _pimpl->view) {

@@ -163,6 +163,16 @@ public:
 
   bool hasOnTopObject() const;
 
+  /** Drain the on-top keys whose Coin path went stale.
+   *
+   * A structural change under a resolved path (e.g. a PartDesign tip swap
+   * re-parenting a body's children) truncates it, and a truncated path must
+   * not be traversed as an on-top root. Such entries stop rendering and are
+   * reported here so the caller can resolve them again from the object path.
+   * Appends to \a keys and clears the pending set; returns false if empty.
+   */
+  bool takeInvalidSelections(std::vector<std::string> & keys);
+
   const SbFCMap<int, Gui::CoinPtr<SoPath> > & getSelectionPaths() const;
 
   void getBoundingBox(SbBox3f & bbox) const;

@@ -283,6 +283,24 @@ void View3DInventorSelection::refreshGroupOnTop()
     }
     for (const auto &objT : objs)
         checkGroupOnTop(SelectionChanges(SelectionChanges::RmvSelection,objT), true);
+
+    // Entries whose object is still there but whose Coin path went stale (a
+    // structural change under it) or never resolved (replayed at restore
+    // before the object's nodes were in place) are no longer registered with
+    // the renderer. They are still in objectsOnTop, so resolve them again now
+    // that the scene graph has settled -- otherwise show-on-top silently dies
+    // on the next body edit and is lost from the document on the next save.
+    if (auto manager = selectionRoot->getRenderManager()) {
+        objs.clear();
+        for (const auto &objT : objectsOnTop) {
+            if (objT.getSubObject() && !manager->isOnTop(objT.getSubNameNoElement(true)))
+                objs.push_back(objT);
+        }
+        for (const auto &objT : objs) {
+            FC_LOG("on top re-resolve " << objT.getSubObjectFullName());
+            checkGroupOnTop(SelectionChanges(SelectionChanges::AddSelection,objT), true);
+        }
+    }
 }
 
 void View3DInventorSelection::checkGroupOnTop(const SelectionChanges &Reason, bool alt)
@@ -301,16 +319,43 @@ void View3DInventorSelection::checkGroupOnTop(const SelectionChanges &Reason, bo
                 SoFullPath * nodePath = tmpPath1.get();
                 nodePath->truncate(0);
                 nodePath->append(selectionRoot);
-                vp->getDetailPath(objT.getSubNameNoElement().c_str(), nodePath, true, detail);
+                // getDetailPath() truncates back to what it was handed when the
+                // walk to the sub-object fails (ViewProviderDocumentObject.cpp),
+                // which happens while the target's nodes are not in place yet --
+                // e.g. replaying the saved on-top set at restore, where a hidden
+                // object has had no setModeSwitch(). Handing that bare
+                // selectionRoot to addSelection() would make the whole visible
+                // scene render on top, so require a path that actually descends,
+                // as the non-manager branch below already does.
+                bool ok = vp->getDetailPath(objT.getSubNameNoElement().c_str(),
+                                            nodePath, true, detail)
+                          && nodePath->getLength() > 1;
                 delete detail;
                 detail = nullptr;
 
                 SoFullPath * detailPath = nodePath;
-                if (objT.hasSubElement()) {
+                if (ok && objT.hasSubElement()) {
                     detailPath = tmpPath2.get();
                     detailPath->truncate(0);
                     detailPath->append(selectionRoot);
-                    vp->getDetailPath(objT.getSubName().c_str(), detailPath, true, detail);
+                    ok = vp->getDetailPath(objT.getSubName().c_str(), detailPath, true, detail)
+                         && detailPath->getLength() > 1;
+                }
+
+                if (!ok) {
+                    // Keep the bookkeeping entry -- it is what refreshGroupOnTop()
+                    // retries from, and what gets persisted -- but register
+                    // nothing with the renderer.
+                    FC_LOG("on top path unresolved " << objT.getSubObjectFullName());
+                    nodePath->truncate(0);
+                    detailPath->truncate(0);
+                    delete detail;
+                    if (guiDocument) {
+                        objT.setSubName(objT.getSubNameNoElement());
+                        objectsOnTop.insert(objT);
+                        guiDocument->signalOnTopObject(Reason.Type, objT);
+                    }
+                    break;
                 }
 
                 manager->addSelection(objT.getSubNameNoElement(true),
