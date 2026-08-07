@@ -1661,6 +1661,9 @@ static void applyHover(const PickHit &hit)
 // ignored while the client owns selection (see the snapshot replay).
 static const int kClientSelId = Render::SelIdSelected | 0x1;
 
+// kind == PickNone (with part == -1) means the WHOLE object is selected:
+// every pickable draw of that object highlights, and the DOM event carries
+// an empty `sub`. Sub-element items carry the element kind and part index.
 struct SelItem { uint64_t key; PickKind kind; int part; };
 static std::vector<SelItem> s_sel;
 
@@ -1679,7 +1682,10 @@ static void rebuildSelection()
         if (dcKind == PickNone)
             continue;
         for (const auto &it : s_sel) {
-            if (it.key != dc.objectKey || it.kind != dcKind)
+            if (it.key != dc.objectKey)
+                continue;
+            // A whole-object item matches every pickable draw of the object.
+            if (it.kind != PickNone && it.kind != dcKind)
                 continue;
             int partStart = 0, partCount = 0, part = it.part;
             const auto *parts = partsForKind(dc, dcKind);
@@ -1781,8 +1787,15 @@ static void emitSelectionEvent()
     fcviewer_selection_event(json.c_str());
 }
 
-/// Client-side select at canvas pixel: pick locally, update s_sel (Ctrl =
-/// toggle/extend, plain = replace), and show the highlight immediately.
+/// Client-side select at canvas pixel: pick locally, update s_sel, and show
+/// the highlight immediately.
+///
+/// Ctrl = multi-select: toggles the picked sub-element in/out of the set
+/// (adding a sub-element drops a whole-object item of the same object — the
+/// two are mutually exclusive). Plain click replaces the selection and
+/// cycles: picking an already-selected sub-element promotes to the WHOLE
+/// object; picking any sub-element of a whole-selected object narrows back
+/// to that sub-element.
 ///
 /// The selection is NOT synced to the backend here: an eager sync makes the
 /// backend re-pick and republish the whole scene, whose echo stalls right
@@ -1805,20 +1818,33 @@ static void selectAt(float px, float py, bool ctrl)
     int partStart, partCount;
     int part = partForHit(dc, hit, partStart, partCount);
     SelItem item{dc.objectKey, hit.kind, part};
+    auto same = [&](const SelItem &s) {
+        return s.key == item.key && s.kind == item.kind
+            && s.part == item.part;
+    };
+    auto wholeOfObject = [&](const SelItem &s) {
+        return s.key == item.key && s.kind == PickNone;
+    };
     if (ctrl) {
-        auto same = [&](const SelItem &s) {
-            return s.key == item.key && s.kind == item.kind
-                && s.part == item.part;
-        };
         auto it = std::find_if(s_sel.begin(), s_sel.end(), same);
         if (it != s_sel.end())
             s_sel.erase(it);
-        else
+        else {
+            s_sel.erase(std::remove_if(s_sel.begin(), s_sel.end(),
+                                       wholeOfObject),
+                        s_sel.end());
             s_sel.push_back(item);
+        }
     }
     else {
+        const bool hadSub = std::any_of(s_sel.begin(), s_sel.end(), same);
+        const bool hadWhole = std::any_of(s_sel.begin(), s_sel.end(),
+                                          wholeOfObject);
         s_sel.clear();
-        s_sel.push_back(item);
+        if (hadSub && !hadWhole)
+            s_sel.push_back(SelItem{dc.objectKey, PickNone, -1});
+        else
+            s_sel.push_back(item);
     }
     rebuildSelection();
     emitSelectionEvent();
