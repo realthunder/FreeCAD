@@ -141,10 +141,10 @@ struct FrontDoor
     bool identityDoor = false;
 };
 
-/// The stored front doors, seeded once with the two bundled presets:
-/// LAN (today's direct ip:port behavior) and thundereal (the own-door
-/// shape — public origin behind an identity door). Seeding is
-/// flag-guarded so a deliberately deleted preset stays deleted.
+/// The stored front doors, seeded once with the three bundled presets:
+/// LAN (today's direct ip:port behavior), Quick tunnel, and thundereal
+/// (the own-door shape — public origin behind an identity door). Seeding
+/// is flag-guarded so a deliberately deleted preset stays deleted.
 std::vector<FrontDoor> loadDoors()
 {
     auto hGrp = shareParams();
