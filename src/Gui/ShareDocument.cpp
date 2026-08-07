@@ -29,7 +29,9 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QEvent>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -40,8 +42,11 @@
 #include <QNetworkInterface>
 #include <QPainter>
 #include <QPointer>
+#include <QProcess>
 #include <QPushButton>
 #include <QRandomGenerator>
+#include <QRegularExpression>
+#include <QStandardPaths>
 #include <QCoreApplication>
 #include <QSpinBox>
 #include <QTimer>
@@ -109,6 +114,111 @@ ParameterGrp::handle shareParams()
 {
     return App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/SceneShare");
+}
+
+/*!
+ * A front door: how viewers reach the share (docs/ShareAccess.md §4).
+ * The dialog offers these as named presets, because the choice is not
+ * one field — it is an origin, a tunnel, and whether a sign-in door
+ * stands in front, moving together.
+ */
+struct FrontDoor
+{
+    enum Mode {
+        Lan = 0,    ///< direct: viewers hit this machine's address
+        Quick = 1,  ///< cloudflared quick tunnel, spawned with the share
+        Own = 2,    ///< own public origin (named tunnel / reverse proxy)
+    };
+    QString name;
+    int mode = Lan;
+    /// The public origin viewers open (Own mode) — scheme and host,
+    /// e.g. https://cad.thundereal.com. Quick mode discovers its
+    /// origin at runtime; Lan derives it from the external address.
+    QString publicOrigin;
+    /// An authenticating door (Cloudflare Access or the like) stands
+    /// in front: links carry no token, the grant list keyed on
+    /// verified identities is what admits people.
+    bool identityDoor = false;
+};
+
+/// The stored front doors, seeded once with the two bundled presets:
+/// LAN (today's direct ip:port behavior) and thundereal (the own-door
+/// shape — public origin behind an identity door). Seeding is
+/// flag-guarded so a deliberately deleted preset stays deleted.
+std::vector<FrontDoor> loadDoors()
+{
+    auto hGrp = shareParams();
+    auto doors = hGrp->GetGroup("Doors");
+    std::vector<FrontDoor> out;
+    for (const auto &sub : doors->GetGroups()) {
+        FrontDoor d;
+        d.name = QString::fromUtf8(sub->GetASCII("Name", "").c_str());
+        d.mode = int(sub->GetInt("Mode", FrontDoor::Lan));
+        d.publicOrigin = QString::fromUtf8(
+            sub->GetASCII("PublicOrigin", "").c_str());
+        d.identityDoor = sub->GetBool("IdentityDoor", false);
+        if (!d.name.isEmpty())
+            out.push_back(d);
+    }
+    if (!out.empty() || hGrp->GetBool("DoorsSeeded", false))
+        return out;
+    FrontDoor lan;
+    lan.name = QStringLiteral("LAN");
+    FrontDoor quick;
+    quick.name = QCoreApplication::translate("Gui::ShareDocument",
+                                             "Quick tunnel");
+    quick.mode = FrontDoor::Quick;
+    FrontDoor own;
+    own.name = QStringLiteral("thundereal");
+    own.mode = FrontDoor::Own;
+    own.publicOrigin = QStringLiteral("https://cad.thundereal.com");
+    own.identityDoor = true;
+    out = {lan, quick, own};
+    return out;
+}
+
+void saveDoors(const std::vector<FrontDoor> &list)
+{
+    auto hGrp = shareParams();
+    hGrp->RemoveGrp("Doors");
+    auto doors = hGrp->GetGroup("Doors");
+    int n = 0;
+    for (const auto &d : list) {
+        auto sub = doors->GetGroup(
+            QStringLiteral("D%1").arg(n++).toUtf8().constData());
+        sub->SetASCII("Name", d.name.toUtf8().constData());
+        sub->SetInt("Mode", d.mode);
+        sub->SetASCII("PublicOrigin", d.publicOrigin.toUtf8().constData());
+        sub->SetBool("IdentityDoor", d.identityDoor);
+    }
+    hGrp->SetBool("DoorsSeeded", true);
+}
+
+/// Whether this process can serve the viewer page itself — the scene
+/// server maps GETs onto FC_BGFX_VIEWER_BUILD (docs/ShareAccess.md §5).
+/// With it, one origin carries page, stream and blobs and the link
+/// shrinks to /fcviewer.html?…; without it, tunnel doors have no page
+/// to point at and the LAN link falls back to the pasted viewer page.
+bool servesViewerPage()
+{
+    return !qEnvironmentVariable("FC_BGFX_VIEWER_BUILD").isEmpty();
+}
+
+/// Where cloudflared is, or empty. Checked beyond PATH because the
+/// binary is a manual download (not packaged), and ~/.local/bin is
+/// where the instructions put it — a GUI session often lacks it in
+/// PATH.
+QString cloudflaredPath()
+{
+    QString path = QStandardPaths::findExecutable(
+        QStringLiteral("cloudflared"));
+    if (!path.isEmpty())
+        return path;
+    QString local = QDir::homePath()
+        + QStringLiteral("/.local/bin/cloudflared");
+    if (QFileInfo(local).isExecutable())
+        return local;
+    return QString();
 }
 
 /*!
@@ -422,6 +532,47 @@ public:
         tree->header()->setStretchLastSection(false);
         tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
         layout->addWidget(tree, 1);
+
+        // Invite by identity: the one-field shape of a grant, for the
+        // common case behind a sign-in front door — an email, an
+        // access, done. The full grant editor stays for everything
+        // narrower.
+        auto *inviteRow = new QHBoxLayout;
+        inviteEdit = new QLineEdit(this);
+        inviteEdit->setPlaceholderText(tr("name@example.com"));
+        inviteEdit->setToolTip(tr(
+            "Invite a signed-in identity: the email the front door "
+            "verifies. The grant needs no token — the sign-in is the "
+            "invitation. Behind no sign-in door an identity grant "
+            "matches nobody."));
+        auto *inviteMode = new QComboBox(this);
+        inviteMode->addItem(tr("Can edit"));
+        inviteMode->addItem(tr("View only"));
+        auto *inviteBtn = new QPushButton(tr("Invite"), this);
+        auto invite = [this, inviteMode]() {
+            const QString id = inviteEdit->text().trimmed();
+            if (id.isEmpty())
+                return;
+            ShareGrant g;
+            g.identity = id;
+            g.name = g.address = QStringLiteral("*");
+            g.access = inviteMode->currentIndex();
+            auto list = loadGrants();
+            list.push_back(g);
+            saveGrants(list);
+            pushGrants(list);
+            inviteEdit->clear();
+            lastSig.clear();
+            if (onChanged)
+                onChanged();
+        };
+        connect(inviteBtn, &QPushButton::clicked, this, invite);
+        connect(inviteEdit, &QLineEdit::returnPressed, this, invite);
+        inviteRow->addWidget(new QLabel(tr("Invite:"), this));
+        inviteRow->addWidget(inviteEdit, 1);
+        inviteRow->addWidget(inviteMode);
+        inviteRow->addWidget(inviteBtn);
+        layout->addLayout(inviteRow);
 
         auto *bottom = new QHBoxLayout;
         // A grant cannot be created by anyone connecting, so it needs
@@ -788,6 +939,7 @@ public:
 
 private:
     QLineEdit *urlEdit = nullptr;
+    QLineEdit *inviteEdit = nullptr;
     QTreeWidget *tree = nullptr;
     std::vector<std::pair<uint64_t, bool>> lastSig;
 };
@@ -804,6 +956,14 @@ public:
     QString host;
     QString viewerPage;
     QString token;
+    /// The share's front door (FrontDoor::Mode). Quick discovers its
+    /// public origin from the tunnel process after start; Own carries
+    /// it from the preset; Lan derives it from host and port.
+    int mode = FrontDoor::Lan;
+    QString publicOrigin;
+    bool identityDoor = false;
+    /// The cloudflared child of a Quick share; dies with it.
+    QPointer<QProcess> tunnel;
     QPointer<ShareIndicator> indicator;
     QPointer<SharePanel> panel;
     QTimer timer;
@@ -818,12 +978,97 @@ public:
                    docs.end());
     }
 
-    /// The link a viewer opens. The viewer page is wherever
-    /// fcviewer.html is hosted (the backend serves scenes, not pages);
-    /// with none configured the query tail is shown alone, ready to
-    /// paste after one.
+    /// Spawn the Quick door: a cloudflared quick tunnel pointed at the
+    /// serving port, child of this process — it dies with the share
+    /// (stopQuickTunnel) or with us. The public address is whatever
+    /// cloudflared prints once connected (a fresh
+    /// https://…trycloudflare.com every start); until it appears the
+    /// share has no link and the UI says so.
+    void startQuickTunnel()
+    {
+        stopQuickTunnel();
+        const QString bin = cloudflaredPath();
+        if (bin.isEmpty())
+            return;   // the dialog refuses Quick without the binary
+        tunnel = new QProcess(qApp);
+        tunnel->setProcessChannelMode(QProcess::MergedChannels);
+        QProcess *proc = tunnel.data();
+        QObject::connect(proc, &QProcess::readyReadStandardOutput, qApp,
+                         [this, proc]() {
+            if (proc != tunnel || !publicOrigin.isEmpty())
+                return;
+            // The URL is printed inside a drawn box; match it anywhere.
+            static const QRegularExpression re(QStringLiteral(
+                "https://[a-z0-9-]+\\.trycloudflare\\.com"));
+            const QString out = QString::fromUtf8(
+                proc->readAllStandardOutput());
+            auto m = re.match(out);
+            if (m.hasMatch()) {
+                publicOrigin = m.captured(0);
+                ShareDocumentManager::instance().refreshUi();
+            }
+        });
+        QObject::connect(proc,
+                         qOverload<int, QProcess::ExitStatus>(
+                             &QProcess::finished),
+                         qApp, [this, proc](int, QProcess::ExitStatus) {
+            // The tunnel died under a live share: the link is gone,
+            // say so rather than keep showing a dead address.
+            if (proc != tunnel)
+                return;
+            publicOrigin.clear();
+            ShareDocumentManager::instance().refreshUi();
+        });
+        tunnel->start(bin,
+                      {QStringLiteral("tunnel"), QStringLiteral("--url"),
+                       QStringLiteral("http://localhost:%1").arg(port)});
+    }
+
+    void stopQuickTunnel()
+    {
+        if (!tunnel)
+            return;
+        QProcess *proc = tunnel.data();
+        tunnel = nullptr;   // handlers see a retired process and bail
+        proc->disconnect();
+        proc->terminate();
+        if (!proc->waitForFinished(2000))
+            proc->kill();
+        proc->deleteLater();
+    }
+
+    /// The link a viewer opens.
+    ///
+    /// Through a door with a public origin — a tunnel, or an own
+    /// domain — the backend serves the page itself, so the link is
+    /// origin/fcviewer.html plus the query and needs no ?scene= (the
+    /// viewer streams from its own origin). A Quick door whose tunnel
+    /// has not reported its address yet returns empty; the UI says
+    /// what is being waited for.
+    ///
+    /// The LAN door keeps the older shapes: with the backend able to
+    /// serve the page, the same short link on the local address; else
+    /// the viewer page is wherever fcviewer.html is hosted, and with
+    /// none configured the query tail is shown alone, ready to paste
+    /// after one.
     QString shareUrl() const
     {
+        QString query;
+        if (!docs.empty())
+            query = QStringLiteral("doc=%1").arg(
+                QString::fromUtf8(QUrl::toPercentEncoding(
+                    QString::fromUtf8(docs.front()->getName()))));
+        if (!token.isEmpty())
+            query += (query.isEmpty() ? QStringLiteral("token=%1")
+                                      : QStringLiteral("&token=%1"))
+                .arg(token);
+
+        if (mode != FrontDoor::Lan) {
+            if (publicOrigin.isEmpty())
+                return QString();
+            return publicOrigin + QStringLiteral("/fcviewer.html?") + query;
+        }
+
         // The address may carry its own port — behind a reverse proxy
         // the public port is the proxy's, not the one we bind — and
         // its own scheme, for a proxy that terminates TLS. Only a bare
@@ -834,15 +1079,13 @@ public:
         QString hostPart = scene.section(QLatin1String("://"), 1);
         if (!hostPart.contains(QLatin1Char(':')))
             scene += QStringLiteral(":%1").arg(port);
-        QString query = QStringLiteral("?scene=%1")
+        if (viewerPage.isEmpty() && servesViewerPage())
+            return scene + QStringLiteral("/fcviewer.html?") + query;
+        QString tail = QStringLiteral("?scene=%1")
             .arg(QString::fromUtf8(QUrl::toPercentEncoding(scene)));
-        if (!docs.empty())
-            query += QStringLiteral("&doc=%1").arg(
-                QString::fromUtf8(QUrl::toPercentEncoding(
-                    QString::fromUtf8(docs.front()->getName()))));
-        if (!token.isEmpty())
-            query += QStringLiteral("&token=%1").arg(token);
-        return viewerPage.isEmpty() ? query : viewerPage + query;
+        if (!query.isEmpty())
+            tail += QLatin1Char('&') + query;
+        return viewerPage.isEmpty() ? tail : viewerPage + tail;
     }
 };
 
@@ -898,6 +1141,31 @@ void ShareDocumentManager::openShareDialog()
         QString::fromUtf8(guiDoc->getDocument()->Label.getValue()), &dlg);
     form->addRow(QObject::tr("Document:"), docLabel);
 
+    // The front door: named presets, because "how do viewers reach
+    // this" is an origin, a tunnel and an identity door moving
+    // together, not one field (docs/ShareAccess.md §4).
+    std::vector<FrontDoor> doors = loadDoors();
+    auto *doorBox = new QComboBox(&dlg);
+    for (const auto &d : doors)
+        doorBox->addItem(d.name);
+    const QString savedDoor = QString::fromUtf8(
+        hGrp->GetASCII("Door", "").c_str());
+    for (int i = 0; i < int(doors.size()); ++i) {
+        if (doors[size_t(i)].name == savedDoor)
+            doorBox->setCurrentIndex(i);
+    }
+    doorBox->setToolTip(QObject::tr(
+        "How viewers reach this share.\n\n"
+        "LAN — viewers open this machine's address directly; the link "
+        "carries the token.\n"
+        "Quick tunnel — a cloudflared tunnel is started with the share "
+        "and torn down with it; viewers get a https://…trycloudflare.com "
+        "link that works anywhere, no account needed.\n"
+        "An own door — a public origin you run (named tunnel or reverse "
+        "proxy) pointing at this machine; with a sign-in front door, "
+        "links carry no token and the grant list decides who gets in."));
+    form->addRow(QObject::tr("Front door:"), doorBox);
+
     auto *portSpin = new QSpinBox(&dlg);
     portSpin->setRange(1, 65535);
     portSpin->setValue(int(hGrp->GetInt("Port", 8210)));
@@ -913,7 +1181,8 @@ void ShareDocumentManager::openShareDialog()
         "reverse proxy this differs from the bind address — give it a "
         "port (host:port) or a scheme (https://host) and that is used "
         "verbatim, otherwise the serving port is appended."));
-    form->addRow(QObject::tr("External address:"), hostEdit);
+    auto *hostLabel = new QLabel(QObject::tr("External address:"), &dlg);
+    form->addRow(hostLabel, hostEdit);
 
     auto *pageEdit = new QLineEdit(&dlg);
     pageEdit->setText(QString::fromUtf8(
@@ -921,9 +1190,31 @@ void ShareDocumentManager::openShareDialog()
     pageEdit->setPlaceholderText(
         QStringLiteral("http://host/fcviewer.html"));
     pageEdit->setToolTip(QObject::tr(
-        "Where the viewer page is hosted. Left empty, the link shows "
-        "only the query to paste after one."));
-    form->addRow(QObject::tr("Viewer page:"), pageEdit);
+        "Where the viewer page is hosted. Left empty, the link is "
+        "served by this machine when it can serve the page, else it "
+        "shows only the query to paste after one."));
+    auto *pageLabel = new QLabel(QObject::tr("Viewer page:"), &dlg);
+    form->addRow(pageLabel, pageEdit);
+
+    auto *originEdit = new QLineEdit(&dlg);
+    originEdit->setPlaceholderText(QStringLiteral("https://cad.example.com"));
+    originEdit->setToolTip(QObject::tr(
+        "The public origin viewers open — a named tunnel or reverse "
+        "proxy you run, pointing at this machine's port. Scheme and "
+        "host only; the backend serves the page, the stream and the "
+        "blobs on that one origin."));
+    auto *originLabel = new QLabel(QObject::tr("Public origin:"), &dlg);
+    form->addRow(originLabel, originEdit);
+
+    auto *identityBox = new QCheckBox(
+        QObject::tr("Viewers sign in at this door"), &dlg);
+    identityBox->setToolTip(QObject::tr(
+        "The door authenticates (Cloudflare Access or the like) and "
+        "asserts each viewer's verified identity to this machine. "
+        "Links then carry no token — the grant list, keyed on those "
+        "identities, is what admits people. The door authenticates; "
+        "the grants authorize."));
+    form->addRow(QString(), identityBox);
 
     auto *tokenRow = new QHBoxLayout;
     auto *tokenEdit = new QLineEdit(&dlg);
@@ -952,30 +1243,21 @@ void ShareDocumentManager::openShareDialog()
         "Take the client address from the proxy's X-Forwarded-For "
         "header. Only believed for connections arriving from this "
         "machine, which is what a local proxy or tunnel looks like — "
-        "a plain ssh tunnel cannot carry the address by itself."));
+        "a plain ssh tunnel cannot carry the address by itself. "
+        "Tunnel doors are proxies by construction, so they set this "
+        "themselves."));
     form->addRow(QString(), proxyBox);
 
     auto *urlPreview = new QLineEdit(&dlg);
     urlPreview->setReadOnly(true);
     form->addRow(QObject::tr("Link:"), urlPreview);
 
-    auto updatePreview = [&]() {
-        Private preview;
-        preview.docs.push_back(guiDoc->getDocument());
-        preview.port = portSpin->value();
-        preview.host = hostEdit->text().trimmed();
-        preview.viewerPage = pageEdit->text().trimmed();
-        preview.token = tokenEdit->text().trimmed();
-        urlPreview->setText(preview.shareUrl());
-        // Not pruned on destruction: preview never served anything.
-        preview.docs.clear();
-    };
-    QObject::connect(portSpin, qOverload<int>(&QSpinBox::valueChanged),
-                     &dlg, updatePreview);
-    QObject::connect(hostEdit, &QLineEdit::textChanged, &dlg, updatePreview);
-    QObject::connect(pageEdit, &QLineEdit::textChanged, &dlg, updatePreview);
-    QObject::connect(tokenEdit, &QLineEdit::textChanged, &dlg, updatePreview);
-    updatePreview();
+    // Honesty about what the link is: a token link is a bearer
+    // capability — whoever holds it gets in as whatever they type;
+    // a sign-in door means the list below the roster decides.
+    auto *honesty = new QLabel(&dlg);
+    honesty->setWordWrap(true);
+    form->addRow(QString(), honesty);
 
     auto *buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
@@ -985,19 +1267,130 @@ void ShareDocumentManager::openShareDialog()
                      &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg,
                      &QDialog::reject);
+
+    auto currentDoor = [&]() -> FrontDoor & {
+        static FrontDoor fallback;
+        int i = doorBox->currentIndex();
+        if (i < 0 || i >= int(doors.size()))
+            return fallback;
+        return doors[size_t(i)];
+    };
+
+    auto updatePreview = [&]() {
+        const FrontDoor &door = currentDoor();
+        Private preview;
+        preview.docs.push_back(guiDoc->getDocument());
+        preview.port = portSpin->value();
+        preview.host = hostEdit->text().trimmed();
+        preview.viewerPage = pageEdit->text().trimmed();
+        preview.token = tokenEdit->text().trimmed();
+        preview.mode = door.mode;
+        preview.identityDoor = identityBox->isChecked();
+        preview.publicOrigin = door.mode == FrontDoor::Own
+            ? originEdit->text().trimmed() : QString();
+        while (preview.publicOrigin.endsWith(QLatin1Char('/')))
+            preview.publicOrigin.chop(1);
+        QString url = preview.shareUrl();
+        urlPreview->setText(door.mode == FrontDoor::Quick
+            ? QObject::tr("(the tunnel address appears when sharing "
+                          "starts)")
+            : url);
+        // Not pruned on destruction: preview never served anything.
+        preview.docs.clear();
+
+        const bool tokenless = identityBox->isChecked()
+            && preview.token.isEmpty();
+        QString note = tokenless
+            ? QObject::tr("Viewers sign in at the front door; who gets "
+                          "in, and as what, is the grant list on the "
+                          "sharing panel.")
+            : QObject::tr("Anyone holding this link can connect.");
+        bool ok = true;
+        if (door.mode == FrontDoor::Quick && cloudflaredPath().isEmpty()) {
+            note = QObject::tr(
+                "cloudflared was not found. Download the single binary "
+                "from github.com/cloudflare/cloudflared/releases and "
+                "put it on PATH or in ~/.local/bin.");
+            ok = false;
+        }
+        else if (door.mode != FrontDoor::Lan && !servesViewerPage()) {
+            note += QObject::tr(" ⚠ This build cannot serve the viewer "
+                                "page itself (FC_BGFX_VIEWER_BUILD is "
+                                "not set), so a tunnel link has no page "
+                                "to open.");
+        }
+        honesty->setText(note);
+        buttons->button(QDialogButtonBox::Ok)->setEnabled(ok);
+    };
+
+    auto applyDoor = [&]() {
+        const FrontDoor &door = currentDoor();
+        const bool lan = door.mode == FrontDoor::Lan;
+        const bool own = door.mode == FrontDoor::Own;
+        hostLabel->setVisible(lan);
+        hostEdit->setVisible(lan);
+        pageLabel->setVisible(lan);
+        pageEdit->setVisible(lan);
+        originLabel->setVisible(own);
+        originEdit->setVisible(own);
+        identityBox->setVisible(own);
+        originEdit->setText(door.publicOrigin);
+        identityBox->setChecked(own && door.identityDoor);
+        // A tunnel door is a local proxy by construction: the client
+        // address and any identity arrive in headers, from loopback.
+        proxyBox->setEnabled(lan);
+        if (!lan)
+            proxyBox->setChecked(true);
+        else
+            proxyBox->setChecked(hGrp->GetBool("TrustProxy", false));
+        updatePreview();
+        dlg.adjustSize();
+    };
+
+    QObject::connect(doorBox, qOverload<int>(&QComboBox::currentIndexChanged),
+                     &dlg, applyDoor);
+    QObject::connect(portSpin, qOverload<int>(&QSpinBox::valueChanged),
+                     &dlg, updatePreview);
+    QObject::connect(hostEdit, &QLineEdit::textChanged, &dlg, updatePreview);
+    QObject::connect(pageEdit, &QLineEdit::textChanged, &dlg, updatePreview);
+    QObject::connect(tokenEdit, &QLineEdit::textChanged, &dlg, updatePreview);
+    QObject::connect(originEdit, &QLineEdit::textChanged, &dlg,
+                     [&]() {
+                         currentDoor().publicOrigin =
+                             originEdit->text().trimmed();
+                         updatePreview();
+                     });
+    QObject::connect(identityBox, &QCheckBox::toggled, &dlg,
+                     [&](bool on) {
+                         currentDoor().identityDoor = on;
+                         updatePreview();
+                     });
+    applyDoor();
     layout->addWidget(buttons);
 
     if (dlg.exec() != QDialog::Accepted)
         return;
 
+    const FrontDoor door = currentDoor();
     const int port = portSpin->value();
     const QString host = hostEdit->text().trimmed();
     const QString viewerPage = pageEdit->text().trimmed();
     const QString token = tokenEdit->text().trimmed();
+    QString origin = door.mode == FrontDoor::Own
+        ? originEdit->text().trimmed() : QString();
+    while (origin.endsWith(QLatin1Char('/')))
+        origin.chop(1);
+    const bool identityDoor = door.mode == FrontDoor::Own
+        && identityBox->isChecked();
     hGrp->SetInt("Port", port);
     hGrp->SetASCII("ExternalHost", host.toUtf8().constData());
     hGrp->SetASCII("ViewerPage", viewerPage.toUtf8().constData());
-    hGrp->SetBool("TrustProxy", proxyBox->isChecked());
+    hGrp->SetASCII("Door", door.name.toUtf8().constData());
+    // Only the LAN checkbox is a choice to remember; tunnel doors
+    // force it on for the session without rewriting the preference.
+    if (door.mode == FrontDoor::Lan)
+        hGrp->SetBool("TrustProxy", proxyBox->isChecked());
+    saveDoors(doors);
     // Remembered so the next share reuses it and the links people
     // already hold keep working across a restart. Sharing is never
     // started by this — only the token survives, not the session.
@@ -1008,31 +1401,40 @@ void ShareDocumentManager::openShareDialog()
     // plain link mints from — so point that grant at today's token
     // rather than grow a second one. Editing the token here is what
     // "New" is for: the old links stop matching anything.
+    //
+    // Behind a sign-in door with no token there is no house
+    // invitation to point: a tokenless `*` @ `*` grant would admit
+    // everyone the door authenticates, which is exactly what the
+    // grant list is there to decide. The existing house grant keeps
+    // its old token and admits nobody tokenless.
     std::vector<ShareGrant> grants = loadGrants();
-    bool house = false;
-    for (auto &g : grants) {
-        const bool anyName = g.name.isEmpty()
-            || g.name == QLatin1String("*");
-        const bool anyAddr = g.address.isEmpty()
-            || g.address == QLatin1String("*");
-        const bool anyId = g.identity.isEmpty()
-            || g.identity == QLatin1String("*");
-        if (anyName && anyAddr && anyId && g.access != 2) {
-            g.token = token;
-            house = true;
-            break;
+    if (!identityDoor || !token.isEmpty()) {
+        bool house = false;
+        for (auto &g : grants) {
+            const bool anyName = g.name.isEmpty()
+                || g.name == QLatin1String("*");
+            const bool anyAddr = g.address.isEmpty()
+                || g.address == QLatin1String("*");
+            const bool anyId = g.identity.isEmpty()
+                || g.identity == QLatin1String("*");
+            if (anyName && anyAddr && anyId && g.access != 2) {
+                g.token = token;
+                house = true;
+                break;
+            }
         }
+        if (!house) {
+            ShareGrant g;
+            g.token = token;
+            g.name = g.address = QStringLiteral("*");
+            grants.insert(grants.begin(), g);
+        }
+        saveGrants(grants);
     }
-    if (!house) {
-        ShareGrant g;
-        g.token = token;
-        g.name = g.address = QStringLiteral("*");
-        grants.insert(grants.begin(), g);
-    }
-    saveGrants(grants);
 
     auto &server = Render::SceneStreamServer::instance();
-    server.setTrustProxy(proxyBox->isChecked());
+    server.setTrustProxy(door.mode != FrontDoor::Lan
+                         || proxyBox->isChecked());
     // The door first: it must gate the very first request the
     // listener answers, not arrive after it is up. The token is still
     // set for the link preview and as what the hello vocabulary
@@ -1065,6 +1467,12 @@ void ShareDocumentManager::openShareDialog()
     pimpl->host = host;
     pimpl->viewerPage = viewerPage;
     pimpl->token = token;
+    pimpl->mode = door.mode;
+    pimpl->publicOrigin = origin;
+    pimpl->identityDoor = identityDoor;
+
+    if (door.mode == FrontDoor::Quick)
+        pimpl->startQuickTunnel();
 
     if (!pimpl->notifierInstalled) {
         pimpl->notifierInstalled = true;
@@ -1106,10 +1514,12 @@ void ShareDocumentManager::showPanel()
             ShareDocumentManager::instance().refreshUi();
         };
     }
-    refreshUi();
+    // Show first: refreshUi only fills a visible panel, so the other
+    // order opens it with an empty link until the next roster tick.
     pimpl->panel->show();
     pimpl->panel->raise();
     pimpl->panel->activateWindow();
+    refreshUi();
 }
 
 void ShareDocumentManager::stopSharing()
@@ -1120,6 +1530,9 @@ void ShareDocumentManager::stopSharing()
             SceneServeSource::unserve(source->document());
     }
     pimpl->docs.clear();
+    pimpl->stopQuickTunnel();
+    if (pimpl->mode == FrontDoor::Quick)
+        pimpl->publicOrigin.clear();
     server.stop();
     server.setToken(std::string());
     // The live list dies with the share — easings and all; the next
@@ -1150,10 +1563,20 @@ void ShareDocumentManager::refreshUi()
     // connecting, registering, and being shown out a tick later — is
     // now a refusal before any scene bytes, in the server.
 
+    QString url = pimpl->shareUrl();
+    if (url.isEmpty() && pimpl->mode == FrontDoor::Quick) {
+        // The quick tunnel's address is not ours to invent: absent,
+        // it is either still coming up or gone.
+        url = pimpl->tunnel
+            ? QObject::tr("(starting the tunnel — the address appears "
+                          "here shortly)")
+            : QObject::tr("(the tunnel exited — stop sharing and start "
+                          "again)");
+    }
     if (pimpl->indicator) {
         pimpl->indicator->setText(
             QObject::tr("Sharing · %1").arg(clients.size()));
-        pimpl->indicator->setToolTip(pimpl->shareUrl());
+        pimpl->indicator->setToolTip(url);
         pimpl->indicator->show();
     }
     if (pimpl->panel && pimpl->panel->isVisible()) {
@@ -1172,6 +1595,6 @@ void ShareDocumentManager::refreshUi()
             e.liveId = g.id;
             grants.push_back(e);
         }
-        pimpl->panel->refresh(pimpl->shareUrl(), clients, grants);
+        pimpl->panel->refresh(url, clients, grants);
     }
 }
