@@ -320,6 +320,9 @@
 .fc-launch {
   pointer-events: auto;
   touch-action: manipulation;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 40px;
   height: 40px;
   border: 1px solid rgba(255, 255, 255, 0.12);

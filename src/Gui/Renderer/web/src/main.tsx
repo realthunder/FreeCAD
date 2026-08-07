@@ -177,7 +177,16 @@ render(() => (
     />
     <LauncherMenu
       hidden={() => cardOpen() && window.innerWidth <= NARROW}
-      glyph="◎"
+      glyph={
+        /* Cursor-arrow "select" icon, inline so every device draws the
+           same thing (a text glyph already came out as tofu once). */
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+          <path d="M13 13l6 6" />
+        </svg>
+      }
       title="Selection"
       class="fc-launcher-sel"
       items={[

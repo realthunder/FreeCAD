@@ -6,6 +6,7 @@
 // third item in the first menu, because it is a mode the user flips
 // mid-work and should not have to hunt for.
 import { For, Show, createSignal, onCleanup } from 'solid-js';
+import type { JSX } from 'solid-js';
 
 export interface MenuItem {
   label: string;
@@ -27,9 +28,10 @@ export function LauncherMenu(props: {
   /// True while something else owns the corner — the bottom sheet on a
   /// narrow screen covers it, and a button under a panel is a trap.
   hidden?: () => boolean;
-  /// Second and later buttons distinguish themselves: a glyph, a
-  /// label, and an extra class that offsets them along the corner.
-  glyph?: string;
+  /// Second and later buttons distinguish themselves: a glyph — inline
+  /// SVG preferred, a text glyph renders differently per device font —
+  /// a label, and an extra class that offsets them along the corner.
+  glyph?: JSX.Element;
   title?: string;
   class?: string;
 }) {
