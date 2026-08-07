@@ -258,6 +258,18 @@ EM_JS(char *, fcviewer_scene_param, (), {
     return s;
 });
 
+// The page's own origin, for the same-origin scene default — null off
+// http(s) (file://, about:) where there is nothing to stream from.
+EM_JS(char *, fcviewer_page_origin, (), {
+    var o = window.location.origin || '';
+    if (o.indexOf('http') != 0)
+        return 0;
+    var len = lengthBytesUTF8(o) + 1;
+    var s = _malloc(len);
+    stringToUTF8(o, s, len);
+    return s;
+});
+
 // One page query parameter by name (decoded), null when absent.
 EM_JS(char *, fcviewer_query_param, (const char *name), {
     var p = new URLSearchParams(window.location.search)
@@ -6467,7 +6479,8 @@ int main()
         std::free(camParam);
     }
 
-    if (Render::loadSceneSnapshot("/scene.fcsd", s_snap)) {
+    const bool bundledScene = Render::loadSceneSnapshot("/scene.fcsd", s_snap);
+    if (bundledScene) {
         std::printf("fcviewer: snapshot loaded, %zu draws\n",
                     s_snap.scene.size());
         applySnapshot(true);
@@ -6588,8 +6601,24 @@ int main()
     }
 
     if (char *sceneParam = fcviewer_scene_param()) {
-        s_sceneUrl = sceneParam;
+        // ?scene=off pins the old dump-only behavior explicitly.
+        if (std::strcmp(sceneParam, "off") != 0)
+            s_sceneUrl = sceneParam;
         std::free(sceneParam);
+    }
+    else if (!bundledScene) {
+        // The scene server serves this page itself now (one tunnel
+        // carries page, stream and blobs — ShareAccess.md §5.1/§7.5),
+        // so absent an explicit ?scene= the page streams from where it
+        // came from, and a share link shrinks to ?token=…&doc=….
+        // A build with a bundled snapshot keeps the dump-viewing
+        // default: its origin is a static file server, not a backend.
+        if (char *origin = fcviewer_page_origin()) {
+            s_sceneUrl = origin;
+            std::free(origin);
+        }
+    }
+    if (!s_sceneUrl.empty()) {
         std::printf("fcviewer: streaming from %s\n", s_sceneUrl.c_str());
         // First streamed scene over HTTP for the progress bar (any bundled
         // snapshot stays on screen beneath it); the WebSocket takes over
