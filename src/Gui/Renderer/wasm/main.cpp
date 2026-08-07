@@ -1792,10 +1792,13 @@ static void emitSelectionEvent()
 ///
 /// Ctrl = multi-select: toggles the picked sub-element in/out of the set
 /// (adding a sub-element drops a whole-object item of the same object — the
-/// two are mutually exclusive). Plain click replaces the selection and
-/// cycles: picking an already-selected sub-element promotes to the WHOLE
-/// object; picking any sub-element of a whole-selected object narrows back
-/// to that sub-element.
+/// two are mutually exclusive). Shift (with or without Ctrl) selects the
+/// WHOLE object outright: the picked object's element items are dropped and
+/// its whole-object item put in their place, other objects' selections kept
+/// — the explicit promotion, needed because under Ctrl a re-click means
+/// deselect. Plain click replaces the selection and cycles: picking an
+/// already-selected sub-element promotes to the whole object; picking any
+/// sub-element of a whole-selected object narrows back to that sub-element.
 ///
 /// The selection is NOT synced to the backend here: an eager sync makes the
 /// backend re-pick and republish the whole scene, whose echo stalls right
@@ -1803,11 +1806,11 @@ static void emitSelectionEvent()
 /// when a modeling operation is added it will submit the accumulated selection
 /// batched together with the operation, so the backend only re-picks once, per
 /// client, at commit time (no per-tap sync delay, no cross-client interference).
-static void selectAt(float px, float py, bool ctrl)
+static void selectAt(float px, float py, bool ctrl, bool shift = false)
 {
     PickHit hit = pickScene(px, py);
     if (hit.draw < 0) {
-        if (!ctrl && !s_sel.empty()) {
+        if (!ctrl && !shift && !s_sel.empty()) {
             s_sel.clear();
             rebuildSelection();
             emitSelectionEvent();
@@ -1825,7 +1828,13 @@ static void selectAt(float px, float py, bool ctrl)
     auto wholeOfObject = [&](const SelItem &s) {
         return s.key == item.key && s.kind == PickNone;
     };
-    if (ctrl) {
+    auto ofObject = [&](const SelItem &s) { return s.key == item.key; };
+    if (shift) {
+        s_sel.erase(std::remove_if(s_sel.begin(), s_sel.end(), ofObject),
+                    s_sel.end());
+        s_sel.push_back(SelItem{dc.objectKey, PickNone, -1});
+    }
+    else if (ctrl) {
         auto it = std::find_if(s_sel.begin(), s_sel.end(), same);
         if (it != s_sel.end())
             s_sel.erase(it);
@@ -2151,7 +2160,7 @@ static void canvasPos(const EmscriptenMouseEvent *e, float &x, float &y)
 /// Resolve a click/tap at canvas pixel (px,py): the NaviCube claims it
 /// first (local orient, then rotate button), otherwise it is a scene pick
 /// sent to the desktop. Shared by the mouse-up and touch-tap paths.
-static void doTapPick(float px, float py, bool ctrl)
+static void doTapPick(float px, float py, bool ctrl, bool shift = false)
 {
     static const bool debugPick = EM_ASM_INT({
         return new URLSearchParams(window.location.search).has('debugpick')
@@ -2176,7 +2185,7 @@ static void doTapPick(float px, float py, bool ctrl)
     else {
         // Client-side select (instant); the backend is synced in the
         // background from the queued pick.
-        selectAt(px, py, ctrl);
+        selectAt(px, py, ctrl, shift);
     }
 }
 
@@ -2189,7 +2198,8 @@ static float s_lastTapX = 0.0f, s_lastTapY = 0.0f;
 /// after and near the first is a double = zoom-to-fit; otherwise a normal
 /// pick. Detected manually (not the dblclick event) so mouse and touch behave
 /// identically and the window is tunable.
-static void tapOrDouble(float clientX, float clientY, bool ctrl)
+static void tapOrDouble(float clientX, float clientY, bool ctrl,
+                        bool shift = false)
 {
     const double now = emscripten_get_now();
     if (now - s_lastTapMs < 450.0
@@ -2202,7 +2212,7 @@ static void tapOrDouble(float clientX, float clientY, bool ctrl)
     else {
         float px, py;
         clientToCanvas(clientX, clientY, px, py);
-        doTapPick(px, py, ctrl);
+        doTapPick(px, py, ctrl, shift);
         s_lastTapMs = now;
         s_lastTapX = clientX;
         s_lastTapY = clientY;
@@ -2280,7 +2290,9 @@ static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
     s_lastY = int(e->clientY);
     s_downX = s_lastX;
     s_downY = s_lastY;
-    s_clickOk = e->button == 0 && !e->shiftKey;
+    // Shift+left is grab-pan once it moves, but a motionless shift+click
+    // is the whole-object select — the slop check on move/up arbitrates.
+    s_clickOk = e->button == 0;
     // The cube geometry is about to move under any active hover tint.
     clearCubeHover();
     clearButtonHover();
@@ -2292,7 +2304,8 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
     s_dragging = false;
     if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 6
             && std::abs(int(e->clientY) - s_downY) <= 6) {
-        tapOrDouble(float(e->clientX), float(e->clientY), e->ctrlKey);
+        tapOrDouble(float(e->clientX), float(e->clientY), e->ctrlKey,
+                    e->shiftKey);
     }
     s_clickOk = false;
     return EM_TRUE;
