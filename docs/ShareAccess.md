@@ -280,6 +280,26 @@ stale because a changed asset is a new URL.
    through `trycloudflare.com`: 403 before bytes without the token, page + wasm with
    it, `wss://` upgrade, scene bytes flowing. The linode proxy is legacy fallback.
    The Caddy/Access variants stay in `share-edge.sh` for the day a domain exists.
+6. **Front-door chooser in the Share dialog** — **DONE** (2026-08-07). The dialog offers
+   named door presets (`SceneShare/Doors`, seeded once with *LAN*, *Quick tunnel* and
+   the own-door *thundereal* shape): a preset is `{name, mode: lan|quick|own,
+   publicOrigin, identityDoor}`, because "how do viewers reach this" is an origin, a
+   tunnel and an identity door moving together. LAN keeps today's direct link (short
+   `/fcviewer.html?token=…&doc=…` form when the backend can serve the page, the pasted
+   viewer-page fallback otherwise). Quick spawns `cloudflared tunnel --url` as a child
+   QProcess of the share — the `trycloudflare.com` origin is parsed from its output and
+   the tunnel dies with the share (missing binary = download hint on a disabled Start,
+   not a broken button). Own carries a public origin (named tunnel / reverse proxy) and
+   the *viewers sign in* checkbox: with it on and the token cleared, links are tokenless
+   and the grant list decides — the door authenticates, the grants authorize, so no
+   tokenless house grant is minted. Tunnel doors force trust-proxy for the session
+   without rewriting the LAN preference. The dialog states what each link is (a bearer
+   link vs. sign-in + grant list), and the sharing panel grew an invite-by-identity
+   quick-add (email → tokenless view/edit grant). No Cloudflare API anywhere — the §4
+   identity-header contract stays the whole integration surface. GUI-smoked under xvfb
+   both ways: 21-check dialog/panel/LAN pass and a 7-check quick-tunnel pass that
+   fetched the page through a real `trycloudflare.com` origin and saw cloudflared die
+   with the share.
 
 ## 8. Non-goals
 
