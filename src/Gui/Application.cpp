@@ -3018,6 +3018,32 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
     if (!d->startingUp) {
         if (mdi->style())
             mdi->style()->unpolish(qApp);
+
+        refreshInheritedPalettes();
+    }
+}
+
+void Application::refreshInheritedPalettes()
+{
+    // Leaving a themed stylesheet does not return widgets to the current
+    // palette: Qt restores each one to the palette it held when the stylesheet
+    // polished it, which came from the *previous* color scheme. Switching Dark
+    // -> Classic therefore left docked panels and combo boxes painted dark on a
+    // light UI, with no stylesheet in play to explain it.
+    //
+    // Re-assigning a default palette makes a widget resolve against the
+    // application palette again. Only widgets that never set a palette of their
+    // own are touched -- a deliberate one (an invalid-input SpinBox, a tooltip,
+    // a notification) carries a non-zero resolve mask and must survive.
+    for (QWidget* widget : qApp->allWidgets()) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        const auto resolved = widget->palette().resolveMask();
+#else
+        const auto resolved = widget->palette().resolve();
+#endif
+        if (resolved == 0) {
+            widget->setPalette(QPalette());
+        }
     }
 }
 

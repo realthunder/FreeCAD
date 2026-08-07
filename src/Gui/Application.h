@@ -253,6 +253,13 @@ public:
     static void applyColorScheme();
     /// Whether the platform reports a dark system color scheme.
     static bool systemPrefersDarkScheme();
+    /** Make widgets resolve against the current application palette again.
+     *
+     * Needed after a theme change: Qt restores a widget to the palette it held
+     * when a stylesheet polished it, so widgets can be left holding colors from
+     * the previous scheme. Widgets that set a palette of their own are kept.
+     */
+    static void refreshInheritedPalettes();
     //@}
 
     /** @name User Commands */
