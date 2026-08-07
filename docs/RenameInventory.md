@@ -15,18 +15,33 @@ The governing principle splits it into a small "change" pile and a huge
 
 > **Rename the product identity. Keep the formats and the APIs.**
 
-## 0. The one decision that gates everything
+## 0. The name: **Thundereal** (decided 2026-08-07)
 
-The name itself. Constraints worth honoring:
+The product is **Thundereal**; where context needs the category, the
+marketed form is **"Thundereal CAD"** (website title, package
+descriptions, search phrase). Rationale: the successful pattern in this
+market is a distinctive name plus a descriptor in the tagline (Onshape,
+Rhino, Blender), not a descriptive name; it matches the domain in hand
+(`thundereal.com`, so product, share links and website reinforce each
+other); and it audibly carries the "realthunder" lineage every FreeCAD
+user already knows.
 
-- Domain in hand: `thundereal.com` — a name in that family means the product,
-  the share links (`cad.thundereal.com`), and the website reinforce each
-  other.
-- Check before announcing: trademark collisions (EUIPO/USPTO quick search),
-  conda/PyPI package-name availability, GitHub org/repo availability, and
-  that the name survives being said aloud in a bug report.
-- The `fc`/`FC_` prefixes sprinkled through code and env vars are *not* a
-  constraint — see §5.
+Collision check (2026-08-07 web survey): **clean** — no product, company
+or brand named Thundereal; nearest neighbors (ThunderSoft, Thunderobot,
+Thunderstone) are in unrelated categories. Zero SEO competition.
+
+Ruled out: **ThunderCAD** — an active Dutch commercial product
+(thundercad.nl, subscription add-on toolbox for Autodesk Inventor).
+Same industry, same spelling, EU rights through use; a textbook
+confusing-similarity case. The storm-noun+CAD pattern is generally
+mined (LIGHTNINGCAD is a registered US trademark).
+
+Still to verify before the public announcement: conda/PyPI package-name
+availability, a formal EUIPO/USPTO search on "Thundereal", and the
+GitHub repo name.
+
+The `fc`/`FC_` prefixes sprinkled through code and env vars are *not* a
+constraint — see §5.
 
 ## 1. The branding mechanism already exists
 
@@ -118,6 +133,8 @@ the ecosystem the product depends on:
 ## 6. Suggested phasing
 
 1. **Name chosen + collision-checked** (trademark, domain, GitHub, conda).
+   **DONE** for the choice and the informal web survey (§0); formal
+   registry checks remain.
 2. **Soft identity switch** — `ExeName`/vendor, About, icons/splash, viewer
    page, issue templates, README. One PR-sized change; the product stops
    introducing itself as FreeCAD. Old binary names symlinked.
@@ -136,8 +153,8 @@ would make rebases expensive is precisely what §5 declines to do.
 
 ## 7. Open questions
 
-- The name.
-- Reverse-DNS id: `com.thundereal.<name>` vs a project-owned org id.
+- Reverse-DNS id: `com.thundereal.cad` is the natural choice now the name
+  is fixed; confirm before the desktop/metainfo phase.
 - Whether the browser viewer carries the same name as the desktop product
   or its own sub-brand (one product, one name is the safer default).
 - When (if ever) `LinkMerge`/`LinkVibe` branch names should follow — cosmetic,
