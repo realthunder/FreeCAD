@@ -185,6 +185,9 @@ only on a named-tunnel zone, and only where told to.**
 - **Quick tunnels (`trycloudflare.com`) never edge-cache.** Every response passes through
   as `cf-cache-status: DYNAMIC`, and since the zone is Cloudflare's, there is nothing to
   configure. Browser caching still works normally — the origin's `Cache-Control` decides.
+- *(verified live 2026-08-07 on `cad.thundereal.com`: our `no-store` on a `.js` asset
+  yields `cf-cache-status: BYPASS` — the origin header wins even for extensions on the
+  cacheable list.)*
 - **A named tunnel on our own domain gets the real edge cache, gated by path extension.**
   Default ("Standard") caching only considers URLs whose extension is on Cloudflare's
   static list — `.svg`, `.css`, `.js`, `.png`, `.ico` qualify; **`.html`, `.wasm`, and
