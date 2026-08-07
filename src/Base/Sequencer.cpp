@@ -471,28 +471,54 @@ size_t SequencerManager::activeCount()
     return SequencerP::_activeCount.load(std::memory_order_relaxed);
 }
 
-SequencerManager::Snapshot SequencerManager::snapshot()
+SequencerManager::Snapshot SequencerManager::snapshot(size_t maxLevels)
 {
     Snapshot snap;
+    if (maxLevels == 0)
+        maxLevels = 1;
+
+    // Launchers are stack objects, so per thread their registration order in
+    // _launchers is their nesting order. Bucket them per thread (preserving
+    // the threads' first-appearance order) so each root is directly followed
+    // by its nested sequences.
+    struct ThreadEntry {
+        QThread* thread;
+        std::vector<Info> infos;
+    };
+    std::vector<ThreadEntry> threads;
+
     QMutexLocker locker(&SequencerP::mutex);
-    std::vector<QThread*> seen;
-    seen.reserve(SequencerP::_launchers.size());
     for (auto *launcher : SequencerP::_launchers) {
-        if (std::find(seen.begin(), seen.end(), launcher->ownerThread) != seen.end())
-            continue; // nested in a thread already represented by an outer launcher
         Info info;
         info.progress = launcher->nProgress.load(std::memory_order_relaxed);
         info.total = launcher->nTotalSteps.load(std::memory_order_relaxed);
         if (info.total == 0 && info.progress == 0)
-            continue; // registered but not started: invisible, and doesn't shadow inner ones
-        seen.push_back(launcher->ownerThread);
+            continue; // registered but not started: invisible, doesn't consume a level
+        auto it = std::find_if(threads.begin(), threads.end(),
+            [launcher](const ThreadEntry& entry) {
+                return entry.thread == launcher->ownerThread;
+            });
+        if (it == threads.end()) {
+            threads.push_back({launcher->ownerThread, {}});
+            it = threads.end() - 1;
+        }
+        if (it->infos.size() >= maxLevels)
+            continue;
+        info.depth = it->infos.size();
         info.text = launcher->strText;
         info.mainThread = (launcher->ownerThread == SequencerP::_thread);
-        if (info.total > 0) {
-            snap.total += info.total;
-            snap.progress += std::min(info.progress, info.total);
+        it->infos.push_back(std::move(info));
+    }
+
+    for (auto& entry : threads) {
+        const Info& root = entry.infos.front();
+        ++snap.roots;
+        if (root.total > 0) {
+            snap.total += root.total;
+            snap.progress += std::min(root.progress, root.total);
         }
-        snap.sequences.push_back(std::move(info));
+        for (auto& info : entry.infos)
+            snap.sequences.push_back(std::move(info));
     }
     return snap;
 }

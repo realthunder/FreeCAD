@@ -38,6 +38,9 @@
 # include <QWindow>
 #endif
 
+#include <App/Application.h>
+#include <Base/Parameter.h>
+
 #include "ProgressBar.h"
 #include "LiveViewInteraction.h"
 #include "MainWindow.h"
@@ -50,8 +53,18 @@ using namespace Gui;
 
 namespace Gui {
 
-/** Frameless tool-tip style popup showing one live progress bar per parallel
- * sequence (plus a consolidated total row). It is refreshed by the owning
+/** How many nesting levels per thread the detail popup shows. */
+static size_t progressDetailLevels()
+{
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/General");
+    long levels = hGrp->GetInt("ProgressDetailLevels", 5);
+    return levels < 1 ? 1 : (size_t)levels;
+}
+
+/** Frameless tool-tip style popup showing one live progress bar per running
+ * sequence — nested sequences indented under their root, one hierarchy per
+ * thread — plus a consolidated total row. It is refreshed by the owning
  * ProgressBar's aggregate poll while visible, so the bars keep ticking.
  */
 class ProgressDetailPopup: public QWidget
@@ -72,14 +85,16 @@ public:
     void updateSnapshot(const Base::SequencerManager::Snapshot& snap)
     {
         int rows = (int)snap.sequences.size();
-        bool totalRow = rows > 1 && snap.total > 0;
+        // a consolidated row only carries information with parallel roots
+        bool totalRow = snap.roots > 1 && snap.total > 0;
         ensureRows(rows + (totalRow ? 1 : 0));
         for (int i = 0; i < rows; ++i) {
             const auto& info = snap.sequences[i];
-            setRow(i, QString::fromUtf8(info.text.c_str()), info.progress, info.total);
+            setRow(i, QString::fromUtf8(info.text.c_str()), info.progress, info.total,
+                   info.depth);
         }
         if (totalRow)
-            setRow(rows, ProgressBar::tr("Total"), snap.progress, snap.total);
+            setRow(rows, ProgressBar::tr("Total"), snap.progress, snap.total, 0);
         adjustSize();
         // anchored above the status-bar progress bar, right aligned
         QPoint corner = anchor->mapToGlobal(QPoint(anchor->width(), 0));
@@ -107,9 +122,10 @@ private:
         }
     }
 
-    void setRow(int row, const QString& text, size_t progress, size_t total)
+    void setRow(int row, const QString& text, size_t progress, size_t total, size_t depth)
     {
         QLabel* label = labels[row];
+        label->setIndent((int)depth * 14);
         QFontMetrics fm(label->font());
         label->setText(fm.elidedText(text, Qt::ElideMiddle, 260));
         QProgressBar* bar = bars[row];
@@ -619,7 +635,7 @@ void ProgressBar::startAggregatePoll()
 
 void ProgressBar::aggregatePoll()
 {
-    auto snap = Base::SequencerManager::snapshot();
+    auto snap = Base::SequencerManager::snapshot(progressDetailLevels());
     if (snap.sequences.empty()) {
         d->pollTimer->stop();
         sequencer->d->aggregateDriven.store(false, std::memory_order_relaxed);
@@ -641,17 +657,17 @@ void ProgressBar::aggregatePoll()
     }
 
     // Keep the status message in sync: worker-thread setText() doesn't push
-    // while poll-driven, so mirror the leading sequence's text here.
+    // while poll-driven, so mirror the leading root sequence's text here.
     const auto* lead = &snap.sequences.front();
     for (const auto& info : snap.sequences) {
-        if (info.mainThread) {
+        if (info.depth == 0 && info.mainThread) {
             lead = &info;
             break;
         }
     }
     QString text = QString::fromUtf8(lead->text.c_str());
-    if (snap.sequences.size() > 1)
-        text += tr(" (+%1 more)").arg(snap.sequences.size() - 1);
+    if (snap.roots > 1)
+        text += tr(" (+%1 more)").arg(snap.roots - 1);
     if (text != d->statusText) {
         d->statusText = text;
         sequencer->d->text = QString::fromUtf8(lead->text.c_str());
@@ -664,7 +680,7 @@ void ProgressBar::aggregatePoll()
 
 void ProgressBar::showDetailPopup()
 {
-    auto snap = Base::SequencerManager::snapshot();
+    auto snap = Base::SequencerManager::snapshot(progressDetailLevels());
     if (snap.sequences.empty())
         return;
     if (!d->detailPopup)

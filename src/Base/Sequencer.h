@@ -436,11 +436,14 @@ private:
  * (poll, not push): workers only bump their launcher's atomic counters, the
  * consolidation work happens at snapshot() time in the reader.
  *
- * Per thread only the outermost active launcher is reported, preserving the
- * "nested sequences do not inflate progress" rule, while launchers running on
- * different threads sum up. A launcher may also be shared by several worker
- * threads (e.g. a parallel recompute with one launcher for the whole job) —
- * next() is safe to call concurrently.
+ * Sequences are reported per thread as a hierarchy: the outermost active
+ * launcher is the root (depth 0) and nested launchers follow it in nesting
+ * order with increasing depth, up to \a maxLevels. Only the roots feed the
+ * consolidated numbers, preserving the "nested sequences do not inflate
+ * progress" rule, while launchers running on different threads sum up. A
+ * launcher may also be shared by several worker threads (e.g. a parallel
+ * recompute with one launcher for the whole job) — next() is safe to call
+ * concurrently.
  */
 class BaseExport SequencerManager
 {
@@ -450,19 +453,25 @@ public:
         std::string text;       /**< what this sequence says it is doing */
         size_t progress = 0;    /**< steps done so far */
         size_t total = 0;       /**< 0 = unknown (busy indicator) */
+        size_t depth = 0;       /**< nesting level within its thread; 0 = root */
         bool mainThread = false;
     };
     struct Snapshot
     {
-        std::vector<Info> sequences; /**< one entry per thread: the outermost launcher */
-        size_t progress = 0; /**< consolidated: sum of min(progress, total) over known totals */
-        size_t total = 0;    /**< consolidated: sum of known totals; 0 = indeterminate */
+        /** grouped per thread: each root (depth 0) directly followed by its
+         * nested sequences in nesting order */
+        std::vector<Info> sequences;
+        size_t progress = 0; /**< consolidated over roots: sum of min(progress, total) */
+        size_t total = 0;    /**< consolidated over roots; 0 = indeterminate */
+        /** number of root (depth 0) sequences, i.e. parallel sequences */
+        size_t roots = 0;
     };
 
     /** Lock-free count of live launchers (cheap "is anything running?"). */
     static size_t activeCount();
-    /** Consolidated snapshot of all running sequences (locks briefly). */
-    static Snapshot snapshot();
+    /** Consolidated snapshot of all running sequences (locks briefly),
+     * reporting at most \a maxLevels nesting levels per thread. */
+    static Snapshot snapshot(size_t maxLevels = 5);
 };
 
 /** Access to the only SequencerBase instance */

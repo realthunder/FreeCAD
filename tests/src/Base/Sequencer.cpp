@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <future>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -37,7 +38,7 @@ TEST(SequencerManager, SingleSequence)
     EXPECT_TRUE(Base::SequencerManager::snapshot().sequences.empty());
 }
 
-TEST(SequencerManager, NestedSameThreadReportsOutermost)
+TEST(SequencerManager, NestedSameThreadReportsHierarchy)
 {
     ensureIndicator();
     Base::SequencerLauncher outer("outer", 10);
@@ -46,10 +47,40 @@ TEST(SequencerManager, NestedSameThreadReportsOutermost)
     for (int i = 0; i < 50; ++i)
         inner.next();
     auto snap = Base::SequencerManager::snapshot();
-    ASSERT_EQ(snap.sequences.size(), 1u);
+    ASSERT_EQ(snap.sequences.size(), 2u);
+    EXPECT_EQ(snap.roots, 1u);
     EXPECT_EQ(snap.sequences[0].text, "outer");
+    EXPECT_EQ(snap.sequences[0].depth, 0u);
     EXPECT_EQ(snap.sequences[0].progress, 1u);
+    EXPECT_EQ(snap.sequences[1].text, "inner");
+    EXPECT_EQ(snap.sequences[1].depth, 1u);
+    EXPECT_EQ(snap.sequences[1].progress, 50u);
+    EXPECT_EQ(snap.sequences[1].total, 100u);
+    // only the root feeds the consolidated numbers
     EXPECT_EQ(snap.total, 10u);
+    EXPECT_EQ(snap.progress, 1u);
+}
+
+TEST(SequencerManager, NestingDepthIsLimited)
+{
+    ensureIndicator();
+    std::vector<std::unique_ptr<Base::SequencerLauncher>> stack;
+    for (int i = 0; i < 7; ++i) {
+        auto seq = std::make_unique<Base::SequencerLauncher>("level", 10);
+        seq->next();
+        stack.push_back(std::move(seq));
+    }
+    auto snap = Base::SequencerManager::snapshot();  // default limit: 5
+    EXPECT_EQ(snap.sequences.size(), 5u);
+    EXPECT_EQ(snap.sequences.back().depth, 4u);
+    EXPECT_EQ(snap.roots, 1u);
+
+    snap = Base::SequencerManager::snapshot(2);
+    EXPECT_EQ(snap.sequences.size(), 2u);
+    EXPECT_EQ(snap.sequences.back().depth, 1u);
+
+    snap = Base::SequencerManager::snapshot(0);  // clamped to 1
+    EXPECT_EQ(snap.sequences.size(), 1u);
 }
 
 TEST(SequencerManager, IdleLauncherInvisibleAndNotShadowing)
@@ -105,6 +136,7 @@ TEST(SequencerManager, ParallelThreadsConsolidate)
 
     auto snap = Base::SequencerManager::snapshot();
     EXPECT_EQ(snap.sequences.size(), 3u);
+    EXPECT_EQ(snap.roots, 3u);
     EXPECT_EQ(snap.total, 140u);    // 100 + 20 + 20
     EXPECT_EQ(snap.progress, 20u);  // 10 + 5 + 5
     size_t mainThreads = 0;
