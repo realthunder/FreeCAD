@@ -334,6 +334,26 @@
 }
 .fc-launch:hover { background: rgba(46, 49, 55, 0.95); }
 
+/* The selection menu's button sits beside the viewer menu's, one
+ * button-width plus gap to the right, same baseline. */
+.fc-launcher-sel {
+  left: calc(60px + env(safe-area-inset-left));
+}
+
+/* Non-interactive group label inside a menu (Mode / Filter). */
+.fc-menu-header {
+  padding: 6px 12px 2px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9aa0a6;
+  user-select: none;
+}
+.fc-menu-header:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 /* Subject switcher: which container the card is showing. A segmented
  * control rather than a drop-down — three fixed choices, and the one
  * in force should be readable without opening anything. */

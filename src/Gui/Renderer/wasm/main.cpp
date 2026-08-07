@@ -436,6 +436,14 @@ EM_JS(void, fcviewer_install_control, (), {
     // The menu's HUD switch. Installed beside the control uplink because
     // it is the same kind of thing: a viewer state the DOM layer drives.
     window.fcviewerSetHud = function(on) { _fcviewer_set_hud(on ? 1 : 0); };
+    // The selection menu (docs/ThinClientUI.md): mode 0 single / 1 multi;
+    // filter 0 elements / 1 object / 2 face / 3 edge / 4 vertex.
+    window.fcviewerSetSelMode = function(m) {
+        _fcviewer_set_sel_mode(m | 0);
+    };
+    window.fcviewerSetPickFilter = function(f) {
+        _fcviewer_set_pick_filter(f | 0);
+    };
     // The menu's document switch (docs/MultiDocServe.md §6).
     window.fcviewerSwitchDoc = function(name) {
         var len = lengthBytesUTF8(name) + 1;
@@ -857,11 +865,37 @@ static float pickRadiusPx()
     return css * std::max(1.0f, s_dpr);
 }
 
+// Selection mode and pick filter, driven by the DOM layer's selection
+// menu (docs/ThinClientUI.md). Multi mode makes every plain click a
+// Ctrl-click; the filter restricts what a pick may land on (and what
+// hover preselects). Object mode picks any element but selects — and
+// preselects — the whole object.
+enum PickFilter {
+    FilterElements = 0,  ///< any sub-element (the default)
+    FilterObject   = 1,  ///< whole objects only
+    FilterFace     = 2,
+    FilterEdge     = 3,
+    FilterVertex   = 4,
+};
+static int s_selMode = 0;               // 0 = single, 1 = multi
+static int s_pickFilter = FilterElements;
+
+static bool pickFilterAllows(PickKind k)
+{
+    switch (s_pickFilter) {
+    case FilterFace:   return k == PickFace;
+    case FilterEdge:   return k == PickEdge;
+    case FilterVertex: return k == PickVertex;
+    default:           return true;
+    }
+}
+
 /// Nearest face (exact ray/triangle), edge and vertex (screen-space proximity
 /// within the pick radius) of the draw scene at canvas pixel (px, py), then
 /// resolve by the desktop's vertex > edge > face priority — a higher-priority
 /// element wins only when its hit is essentially as near the eye as the
-/// frontmost (SoFCUnifiedSelection::postProcessPickedList).
+/// frontmost (SoFCUnifiedSelection::postProcessPickedList). Draw kinds the
+/// pick filter forbids are not considered at all.
 static PickHit pickScene(float px, float py)
 {
     bx::Vec3 orig(bx::InitZero), rdir(bx::InitZero);
@@ -887,6 +921,8 @@ static PickHit pickScene(float px, float py)
 
         if (dc.material.type == Render::Material::Triangle
                 && dc.mesh->triangleIndices) {
+            if (!pickFilterAllows(PickFace))
+                continue;
             if (dc.bboxMin[0] <= dc.bboxMax[0]
                     && !rayHitsBBox(dc.bboxMin, dc.bboxMax, orig, rdir, faceRayT))
                 continue;
@@ -930,6 +966,8 @@ static PickHit pickScene(float px, float py)
         }
         else if (dc.material.type == Render::Material::Line
                 && dc.mesh->lineIndices) {
+            if (!pickFilterAllows(PickEdge))
+                continue;
             const int total = dc.mesh->numLineIndices;
             int start = dc.indexStart;
             int count = dc.indexCount ? dc.indexCount : total - start;
@@ -965,6 +1003,8 @@ static PickHit pickScene(float px, float py)
         }
         else if (dc.material.type == Render::Material::Point
                 && dc.mesh->pointIndices) {
+            if (!pickFilterAllows(PickVertex))
+                continue;
             const int total = dc.mesh->numPointIndices;
             int start = dc.indexStart;
             int count = dc.indexCount ? dc.indexCount : total - start;
@@ -1640,6 +1680,26 @@ static void applyHover(const PickHit &hit)
         return;
     }
     const auto &dc = s_snap.scene[size_t(hit.draw)];
+    if (s_pickFilter == FilterObject) {
+        // The filter says objects: preselect highlights the WHOLE object
+        // the hit belongs to — every pickable draw of it, whole range.
+        if (dc.objectKey == s_hoverKey && s_hoverPart == -1
+                && s_hoverKind == PickNone)
+            return;
+        s_hoverKey = dc.objectKey;
+        s_hoverPart = -1;
+        s_hoverKind = PickNone;
+        Render::DrawCallList draws;
+        for (const auto &odc : s_snap.scene) {
+            if (!odc.mesh || odc.objectKey != dc.objectKey
+                    || kindForDraw(odc) == PickNone)
+                continue;
+            draws.push_back(buildHiliteDraw(odc, -1, 0, 0,
+                                            s_snap.preselconf));
+        }
+        s_renderer->setHighlight(std::move(draws), false);
+        return;
+    }
     int partStart, partCount;
     int part = partForHit(dc, hit, partStart, partCount);
     if (dc.objectKey == s_hoverKey && part == s_hoverPart
@@ -1821,6 +1881,10 @@ static void selectAt(float px, float py, bool ctrl, bool shift = false)
     int partStart, partCount;
     int part = partForHit(dc, hit, partStart, partCount);
     SelItem item{dc.objectKey, hit.kind, part};
+    if (s_pickFilter == FilterObject)
+        item = SelItem{dc.objectKey, PickNone, -1};
+    // Multi mode is a sticky Ctrl: every plain click extends/toggles.
+    const bool multi = ctrl || s_selMode == 1;
     auto same = [&](const SelItem &s) {
         return s.key == item.key && s.kind == item.kind
             && s.part == item.part;
@@ -1834,14 +1898,21 @@ static void selectAt(float px, float py, bool ctrl, bool shift = false)
                     s_sel.end());
         s_sel.push_back(SelItem{dc.objectKey, PickNone, -1});
     }
-    else if (ctrl) {
+    else if (multi) {
         auto it = std::find_if(s_sel.begin(), s_sel.end(), same);
         if (it != s_sel.end())
             s_sel.erase(it);
         else {
-            s_sel.erase(std::remove_if(s_sel.begin(), s_sel.end(),
-                                       wholeOfObject),
-                        s_sel.end());
+            // A whole-object item and this object's element items are
+            // mutually exclusive, whichever way round the add goes.
+            if (item.kind == PickNone)
+                s_sel.erase(std::remove_if(s_sel.begin(), s_sel.end(),
+                                           ofObject),
+                            s_sel.end());
+            else
+                s_sel.erase(std::remove_if(s_sel.begin(), s_sel.end(),
+                                           wholeOfObject),
+                            s_sel.end());
             s_sel.push_back(item);
         }
     }
@@ -5947,6 +6018,28 @@ extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_control_send(const char *json)
         return 0;
     return emscripten_websocket_send_utf8_text(
                    s_ws, const_cast<char *>(json)) >= 0 ? 1 : 0;
+}
+
+/// Selection mode from the DOM layer's selection menu: 0 = single,
+/// 1 = multi (every click toggles/extends, the sticky Ctrl).
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_sel_mode(int mode)
+{
+    s_selMode = mode ? 1 : 0;
+}
+
+/// Pick filter from the selection menu (PickFilter values). The hover
+/// highlight may be showing something the new filter forbids — clear
+/// it; the next pointer move rebuilds it under the new rule. The
+/// selection itself is kept: a filter narrows what picks may land on
+/// from now on, it does not revoke what was already selected.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_pick_filter(int filter)
+{
+    if (filter < FilterElements || filter > FilterVertex)
+        filter = FilterElements;
+    if (filter == s_pickFilter)
+        return;
+    s_pickFilter = filter;
+    applyHover(PickHit{});
 }
 
 /// Switch this viewer to another served document, from the menu's

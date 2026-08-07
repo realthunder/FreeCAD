@@ -41,6 +41,26 @@ So a plain click cycles sub → whole → sub on the same spot. Shift is the
 *explicit* promotion — needed under Ctrl, where re-clicking a selected
 element means deselect, leaving no plain-click path to the whole object.
 
+### The selection menu
+
+The second round button (`◎`, beside the viewer menu bottom-left) opens
+the selection menu — this is also the touch story for the modifiers
+above:
+
+- **Mode** — *Single* (the default, the table above) or *Multi*: every
+  plain click behaves as Ctrl+click, the sticky Ctrl.
+- **Filter** — *All elements* (default), *Whole object*, *Faces*,
+  *Edges*, *Vertices*. A kind filter removes the other kinds from
+  picking entirely (with *Faces* on, a click near an edge lands on the
+  face behind it, or on nothing). *Whole object* picks any element but
+  selects — and **preselects** — the whole object it belongs to; the
+  kind filters likewise constrain the hover highlight, since preselect
+  runs the same filtered pick.
+- Changing the filter narrows what picks may land on from then on; it
+  does not revoke what is already selected. Mode and filter are
+  session-local by design — a filter someone forgot yesterday would
+  read as broken picking today.
+
 Selection is client-owned and instant; it is not synced per tap. A future
 modeling operation submits the accumulated selection batched with the
 operation (`ThinClient.md` on preview/commit).
