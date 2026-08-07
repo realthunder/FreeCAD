@@ -63,7 +63,7 @@ Params = [
             'archive order, nothing pays for inflating entries nobody reads,\n'
             'and an entry can be reopened after the restore. Turn off to\n'
             'fall back to the forward-only walk.'),
-    ParamBool('DeferShapeLoad', False,
+    ParamBool('DeferShapeLoad', True,
         doc='Park shape archive entries during restore and read each one on\n'
             'first real use instead of before the document opens, so the\n'
             'window is up while shapes stream in with the progressive visual\n'

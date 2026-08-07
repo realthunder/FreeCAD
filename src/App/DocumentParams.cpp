@@ -152,7 +152,7 @@ public:
         funcs["InlineListSize"] = &DocumentParamsP::updateInlineListSize;
         ArchiveRandomAccess = this->handle->GetBool("ArchiveRandomAccess", true);
         funcs["ArchiveRandomAccess"] = &DocumentParamsP::updateArchiveRandomAccess;
-        DeferShapeLoad = this->handle->GetBool("DeferShapeLoad", false);
+        DeferShapeLoad = this->handle->GetBool("DeferShapeLoad", true);
         funcs["DeferShapeLoad"] = &DocumentParamsP::updateDeferShapeLoad;
         AutoRemoveFile = this->handle->GetBool("AutoRemoveFile", true);
         funcs["AutoRemoveFile"] = &DocumentParamsP::updateAutoRemoveFile;
@@ -272,7 +272,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDeferShapeLoad(DocumentParamsP *self) {
-        self->DeferShapeLoad = self->handle->GetBool("DeferShapeLoad", false);
+        self->DeferShapeLoad = self->handle->GetBool("DeferShapeLoad", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAutoRemoveFile(DocumentParamsP *self) {
@@ -754,7 +754,7 @@ const bool & DocumentParams::getDeferShapeLoad() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const bool & DocumentParams::defaultDeferShapeLoad() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 
