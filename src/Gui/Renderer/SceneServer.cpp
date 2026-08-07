@@ -1769,6 +1769,16 @@ public:
         // instead; until they do the connection is unauthorized and
         // gets nothing.
         std::string wsKey = headerValue(req, "sec-websocket-key");
+
+        // The viewer bundle answers before the door: it is the
+        // published viewer code, not scene bytes, and the browser
+        // fetches the page's subresources without the link's ?token=
+        // tail — behind the door the page would load and its script
+        // would 403. The door still judges everything that carries
+        // scene data.
+        if (wsKey.empty() && serveViewerFile(fd, path))
+            return;
+
         std::string presentedToken = queryValue(query, "token");
         Judgement entry = judge(presentedToken, identity,
                                 queryValue(query, "client"),
@@ -1990,11 +2000,6 @@ public:
         // v35) — the client is treated as holding nothing. The session
         // is per document, so the check happens against the group the
         // request lands on.
-        // The viewer bundle, from the same door: a plain GET that
-        // names a file (or "/") is the page loading itself.
-        if (wsKey.empty() && serveViewerFile(fd, path))
-            return;
-
         uint64_t clientVersion = ~uint64_t(0);
         std::string v = queryValue(query, "v");
         if (!v.empty())
