@@ -137,6 +137,13 @@ private:
     void setValue(int step);
     /** Throws an exception to stop the pending operation. */
     void abort();
+    /** Performs the UI teardown that resetData() defers: rapid start/stop
+    * cycles (per-item indicators) reuse the engaged indicator, and the real
+    * teardown runs once nothing has been running for a grace period. With
+    * \a force it runs even while launchers are still registered (the
+    * emergency unlock path). Main thread only.
+    */
+    void finishAggregate(bool force = false);
     //@}
     SequencerBarPrivate* d;
     static SequencerBar* _pclSingleton;
@@ -179,6 +186,8 @@ public Q_SLOTS:
     void setMinimumDuration (int ms);
     /** Starts polling Base::SequencerManager for consolidated progress. */
     void startAggregatePoll();
+    /** (Re)arms the grace timer after which the deferred teardown runs. */
+    void armAggregateTeardown();
 
 public:
     bool canAbort() const;

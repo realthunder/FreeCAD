@@ -2774,6 +2774,7 @@ void Document::restore (const char *filename,
     // gone with the objects it belonged to.
     d->deferredFiles.clear();
     d->archiveReader.reset();
+    d->deferServeSeq.reset();
 
     if(fi.fileNamePure() == "Document" && fi.hasExtension("xml")) {
         Base::FileInfo di(fi.dirPath());
@@ -2912,8 +2913,10 @@ void Document::cancelDeferredFile(Base::Persistence *obj)
                 std::string(owner->getNameInDocument()),
                 std::string(prop->getName())))) {
         prop->setRestorePending(false);
-        if (d->deferredFiles.empty())
+        if (d->deferredFiles.empty()) {
             d->archiveReader.reset();
+            d->deferServeSeq.reset();
+        }
     }
 }
 
@@ -2930,12 +2933,16 @@ void Document::flushDeferredFiles()
         }
     }
     d->archiveReader.reset();
+    d->deferServeSeq.reset();
 }
 
 bool Document::serveDeferredFiles(double budgetSeconds)
 {
     if (d->deferredFiles.empty())
         return false;
+    if (!d->deferServeSeq)
+        d->deferServeSeq = std::make_unique<Base::SequencerLauncher>(
+                "Loading shapes...", d->deferredFiles.size());
     auto start = std::chrono::steady_clock::now();
     std::size_t served = 0;
     while (!d->deferredFiles.empty()) {
@@ -2946,6 +2953,7 @@ bool Document::serveDeferredFiles(double budgetSeconds)
         if (!prop || !prop->canDeferRestore() || !restoreDeferredFile(prop))
             d->deferredFiles.erase(key);
         ++served;
+        d->deferServeSeq->next();
         if (std::chrono::duration<double>(
                     std::chrono::steady_clock::now() - start).count()
                 >= budgetSeconds)
@@ -2959,6 +2967,7 @@ bool Document::serveDeferredFiles(double budgetSeconds)
             << "s cumulative), " << d->deferredFiles.size() << " pending");
     if (d->deferredFiles.empty()) {
         d->archiveReader.reset();
+        d->deferServeSeq.reset();
         return false;
     }
     return true;

@@ -158,12 +158,20 @@ struct SequencerBarPrivate
     bool guiThread;
     /** true while the aggregate poll owns the bar's value/range */
     std::atomic<bool> aggregateDriven {false};
+    /** true between the first startStep and the deferred teardown */
+    std::atomic<bool> engaged {false};
+    /** a stop happened; teardown runs when the grace period passes */
+    std::atomic<bool> teardownPending {false};
+    /** the app event filter is installed and must be removed at teardown */
+    std::atomic<bool> filterHeld {false};
 };
 
 struct ProgressBarPrivate
 {
     QTimer* delayShowTimer;
     QTimer* pollTimer = nullptr;
+    QTimer* teardownTimer = nullptr;
+    QElapsedTimer pollActive;
     ProgressDetailPopup* detailPopup = nullptr;
     QString statusText;
     int minimumDuration;
@@ -248,27 +256,44 @@ void SequencerBar::startStep(bool blocking)
 {
     QThread *currentThread = QThread::currentThread();
     QThread *thr = d->bar->thread(); // this is the main thread
+
+    // A start within the teardown grace period (or while the poll owns the
+    // bar) reuses the still-engaged indicator: no cursor / event-filter /
+    // status-bar churn. This is what makes a launcher per work item cheap.
+    bool cheap = d->engaged.load(std::memory_order_relaxed)
+        && (d->teardownPending.exchange(false, std::memory_order_relaxed)
+            || d->aggregateDriven.load(std::memory_order_relaxed));
+
     if (thr != currentThread) {
         d->guiThread = blocking;
-        QMetaObject::invokeMethod(d->bar, "setRangeEx", Qt::QueuedConnection,
-            Q_ARG(int, 0), Q_ARG(int, (int)nTotalSteps));
         d->progressTime.start();
         d->checkAbortTime.start();
         d->measureTime.start();
-        QMetaObject::invokeMethod(d->bar, "aboutToShow", Qt::QueuedConnection);
-        d->bar->enterControlEvents(d->guiThread);
+        if (!cheap) {
+            QMetaObject::invokeMethod(d->bar, "setRangeEx", Qt::QueuedConnection,
+                Q_ARG(int, 0), Q_ARG(int, (int)nTotalSteps));
+            QMetaObject::invokeMethod(d->bar, "aboutToShow", Qt::QueuedConnection);
+            d->bar->enterControlEvents(d->guiThread);
+            if (d->guiThread)
+                d->filterHeld.store(true, std::memory_order_relaxed);
+            d->engaged.store(true, std::memory_order_relaxed);
+        }
     }
     else {
         d->guiThread = true;
-        d->bar->setRangeEx(0, (int)nTotalSteps);
         d->progressTime.start();
         d->checkAbortTime.start();
         d->measureTime.start();
-        if (!d->waitCursor)
-            d->waitCursor = new Gui::WaitCursor;
-        d->bar->enterControlEvents(d->guiThread);
-        showRemainingTime();
-        d->bar->aboutToShow();
+        if (!cheap) {
+            d->bar->setRangeEx(0, (int)nTotalSteps);
+            if (!d->waitCursor)
+                d->waitCursor = new Gui::WaitCursor;
+            d->bar->enterControlEvents(d->guiThread);
+            d->filterHeld.store(true, std::memory_order_relaxed);
+            d->engaged.store(true, std::memory_order_relaxed);
+            showRemainingTime();
+            d->bar->aboutToShow();
+        }
     }
     // From now on the aggregate poll owns the bar; it stops itself (and
     // clears aggregateDriven) once no sequence is left running.
@@ -336,13 +361,18 @@ void SequencerBar::nextStep(bool canAbort)
 
 void SequencerBar::setProgress(size_t step)
 {
-    QThread* currentThread = QThread::currentThread();
-    QThread* thr = d->bar->thread(); // this is the main thread
-    if (thr != currentThread) {
-        QMetaObject::invokeMethod(d->bar, "show", Qt::QueuedConnection);
-    }
-    else {
-        d->bar->show();
+    // While the poll owns the bar, its visibility follows the poll's own
+    // minimum-duration rule instead of being forced per call (OCCT
+    // indicators call this on every Show()).
+    if (!d->aggregateDriven.load(std::memory_order_relaxed)) {
+        QThread* currentThread = QThread::currentThread();
+        QThread* thr = d->bar->thread(); // this is the main thread
+        if (thr != currentThread) {
+            QMetaObject::invokeMethod(d->bar, "show", Qt::QueuedConnection);
+        }
+        else {
+            d->bar->show();
+        }
     }
 
     setValue((int)step);
@@ -459,34 +489,41 @@ void SequencerBar::showRemainingTime()
 
 void SequencerBar::resetData()
 {
-    QThread *currentThread = QThread::currentThread();
-    QThread *thr = d->bar->thread(); // this is the main thread
-    if (thr != currentThread) {
-        QMetaObject::invokeMethod(d->bar, "resetEx", Qt::QueuedConnection);
-        QMetaObject::invokeMethod(d->bar, "aboutToHide", Qt::QueuedConnection);
-        QMetaObject::invokeMethod(getMainWindow(), "showMessage",
-            Qt::/*Blocking*/QueuedConnection,
-            Q_ARG(QString,QString()));
-        QMetaObject::invokeMethod(getMainWindow(), "setPaneText",
-            Qt::/*Blocking*/QueuedConnection,
-            Q_ARG(int,1),
-            Q_ARG(QString,QString()));
-        d->bar->leaveControlEvents(d->guiThread);
+    // The UI teardown is deferred behind a grace period so that per-item
+    // start/stop cycles (e.g. one brep-import indicator per shape) reuse
+    // the engaged indicator instead of thrashing the wait cursor, the app
+    // event filter and the status bar. finishAggregate() runs it once
+    // nothing has restarted within the grace period.
+    if (d->engaged.load(std::memory_order_relaxed)) {
+        d->teardownPending.store(true, std::memory_order_relaxed);
+        QMetaObject::invokeMethod(d->bar, "armAggregateTeardown",
+            Qt::QueuedConnection);
     }
-    else {
-        d->bar->resetEx();
-        // Note: Under Qt 4.1.4 this forces to run QWindowsStyle::eventFilter() twice
-        // handling the same event thus a warning is printed. Possibly, this is a bug
-        // in Qt. The message is QEventDispatcherUNIX::unregisterTimer: invalid argument.
-        d->bar->aboutToHide();
-        delete d->waitCursor;
-        d->waitCursor = nullptr;
-        d->bar->leaveControlEvents(d->guiThread);
+    SequencerBase::resetData();
+}
+
+void SequencerBar::finishAggregate(bool force)
+{
+    if (!d->engaged.load(std::memory_order_relaxed))
+        return;
+    if (!force) {
+        if (!d->teardownPending.load(std::memory_order_relaxed))
+            return;
+        if (Base::SequencerManager::activeCount() > 0)
+            return; // something restarted; its stop re-arms the grace timer
+    }
+    d->teardownPending.store(false, std::memory_order_relaxed);
+    d->engaged.store(false, std::memory_order_relaxed);
+    d->bar->resetEx();
+    d->bar->aboutToHide();
+    delete d->waitCursor;
+    d->waitCursor = nullptr;
+    if (d->filterHeld.exchange(false, std::memory_order_relaxed))
+        d->bar->leaveControlEvents(true);
+    if (getMainWindow()) {
         getMainWindow()->setPaneText(1, QString());
         getMainWindow()->showMessage(QString());
     }
-
-    SequencerBase::resetData();
 }
 
 void SequencerBar::abort()
@@ -504,6 +541,8 @@ void SequencerBar::setText (const char* pszTxt)
 
     // print message to the statusbar
     d->text = pszTxt ? QString::fromUtf8(pszTxt) : QStringLiteral("");
+    if (d->aggregateDriven.load(std::memory_order_relaxed))
+        return; // the aggregate poll mirrors sequence texts on change
     if (thr != currentThread) {
         QMetaObject::invokeMethod(getMainWindow(), "showMessage",
             Qt::/*Blocking*/QueuedConnection,
@@ -550,6 +589,11 @@ ProgressBar::ProgressBar (SequencerBar* s, QWidget * parent)
     d->pollTimer = new QTimer(this);
     d->pollTimer->setInterval(200); // matches the push path's update throttle
     connect(d->pollTimer, &QTimer::timeout, this, &ProgressBar::aggregatePoll);
+    d->teardownTimer = new QTimer(this);
+    d->teardownTimer->setSingleShot(true);
+    d->teardownTimer->setInterval(200); // teardown grace period
+    connect(d->teardownTimer, &QTimer::timeout, this,
+            [this]() { sequencer->finishAggregate(); });
     d->observeEventFilter = 0;
 
     setAttribute(Qt::WA_Hover);
@@ -629,8 +673,16 @@ void ProgressBar::delayedShow()
 
 void ProgressBar::startAggregatePoll()
 {
-    if (!d->pollTimer->isActive())
+    if (!d->pollTimer->isActive()) {
+        d->pollActive.start();
         d->pollTimer->start();
+    }
+}
+
+void ProgressBar::armAggregateTeardown()
+{
+    // restarting pushes the grace period out past the latest stop
+    d->teardownTimer->start();
 }
 
 void ProgressBar::aggregatePoll()
@@ -641,9 +693,17 @@ void ProgressBar::aggregatePoll()
         sequencer->d->aggregateDriven.store(false, std::memory_order_relaxed);
         d->statusText.clear();
         hideDetailPopup();
+        // the deferred UI teardown stays with the grace timer, which a
+        // quickly following sequence can still cancel
         return;
     }
     sequencer->d->aggregateDriven.store(true, std::memory_order_relaxed);
+
+    // The push path no longer forces the bar visible; apply the
+    // minimum-duration rule from here so chained short sequences
+    // (per-item indicators) still surface the bar once they add up.
+    if (isHidden() && d->pollActive.elapsed() > d->minimumDuration)
+        show();
 
     if (snap.total > 0) {
         int total = (int)std::min<size_t>(snap.total, INT_MAX);
@@ -835,6 +895,9 @@ bool ProgressBar::eventFilter(QObject* o, QEvent* e)
                         // tries to unlock the application if it hangs (probably due to incorrect usage of Base::Sequencer)
                         if (ke->modifiers() & (Qt::ControlModifier | Qt::AltModifier)) {
                             sequencer->resetData();
+                            // emergency unlock: no grace period, and ignore
+                            // launchers that may still be registered
+                            sequencer->finishAggregate(true);
                             return true;
                         }
                     }

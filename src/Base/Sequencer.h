@@ -303,6 +303,9 @@ private:
     void setText(const char* pszTxt) override;
     /** Resets the sequencer */
     void resetData() override;
+
+    std::string _lastText;   /**< last printed text, to skip repeats */
+    bool _printed {false};   /**< a progress line needs clearing */
 };
 
 /** The SequencerLauncher class is provided for convenience. It allows you to run an instance of the

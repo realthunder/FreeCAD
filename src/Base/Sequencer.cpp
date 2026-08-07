@@ -264,7 +264,14 @@ using Base::ConsoleSequencer;
 
 void ConsoleSequencer::setText(const char* pszTxt)
 {
-    printf("%s...\n", pszTxt);
+    // Per-item indicators (one launcher per shape read, say) restart the
+    // console sequencer with the same text thousands of times; only a
+    // change is worth a line.
+    std::string text = pszTxt ? pszTxt : "";
+    if (text.empty() || text == _lastText)
+        return;
+    _lastText = std::move(text);
+    printf("%s...\n", _lastText.c_str());
 }
 
 void ConsoleSequencer::startStep(bool)
@@ -275,13 +282,17 @@ void ConsoleSequencer::nextStep(bool /*canAbort*/)
 {
     if (this->nTotalSteps != 0) {
         printf("\t\t\t\t\t\t(%d %%)\t\r", progressInPercent());
+        _printed = true;
     }
 }
 
 void ConsoleSequencer::resetData()
 {
     SequencerBase::resetData();
-    printf("\t\t\t\t\t\t\t\t\r");
+    if (_printed) {
+        _printed = false;
+        printf("\t\t\t\t\t\t\t\t\r");
+    }
 }
 
 // ---------------------------------------------------------
@@ -296,8 +307,17 @@ SequencerLauncher::SequencerLauncher(const char* pszStr, size_t steps)
     // Have we already an instance of SequencerLauncher created?
     SequencerP::_launchers.push_back(this);
     SequencerP::_activeCount.fetch_add(1, std::memory_order_relaxed);
-    if (steps != 0)
-        SequencerP::findNextLauncher();
+    if (steps != 0) {
+        // Re-probing the top on every construction restarts the running
+        // indicator each time — per-item churn when code stacks a launcher
+        // per work item. Only look for a new top when this launcher could
+        // actually take over: no top yet, or a blocking (main-thread)
+        // launcher arriving over a non-blocking top.
+        auto top = SequencerP::_topLauncher.load();
+        if (!top
+                || (!top->isBlocking() && ownerThread == SequencerP::_thread))
+            SequencerP::findNextLauncher();
+    }
 }
 
 SequencerLauncher::~SequencerLauncher()

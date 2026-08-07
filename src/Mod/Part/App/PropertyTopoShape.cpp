@@ -699,11 +699,7 @@ void PropertyPartShape::RestoreDocFile(Base::Reader &reader)
         shape.importBinary(reader);
     }
     else {
-        // No per-shape progress indicator: the archive walk ticks its own
-        // sequencer per file, and a deferred serve (§14) runs outside any
-        // sequencer, where the indicator's start/stop and event pumping
-        // cost ~17x the parse itself (measured 2.7ms vs 0.16ms a shape).
-        shape.importBrep(reader, 0);
+        shape.importBrep(reader);
     }
     FC_DURATION_PLUS(dImport, tRestore);
 

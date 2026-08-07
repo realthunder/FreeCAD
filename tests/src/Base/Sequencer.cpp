@@ -195,6 +195,33 @@ TEST(SequencerLauncher, WorkerTicksBehindTopLauncher)
     EXPECT_EQ(top.progress(), 0u);
 }
 
+TEST(SequencerLauncher, NestedLaunchersDontRestartTop)
+{
+    ensureIndicator();
+    // Counts how often the indicator is (re)started: per-item nested
+    // launchers must not restart the running top indicator each time.
+    class CountingSequencer: public Base::SequencerBase
+    {
+    public:
+        int starts = 0;
+
+    protected:
+        void startStep(bool) override
+        {
+            ++starts;
+        }
+    } counter;
+
+    Base::SequencerLauncher top("top", 10);
+    EXPECT_EQ(counter.starts, 1);
+    for (int i = 0; i < 100; ++i) {
+        Base::SequencerLauncher item("item", 5);
+        item.next();
+    }
+    EXPECT_EQ(counter.starts, 1);
+    EXPECT_EQ(top.progress(), 0u);
+}
+
 TEST(SequencerLauncher, CancelSeenFromWorkerThread)
 {
     ensureIndicator();

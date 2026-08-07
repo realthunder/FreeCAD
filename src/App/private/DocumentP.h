@@ -32,6 +32,7 @@
 #include <App/StringHasher.h>
 #include <App/FileBlobManager.h>
 #include <Base/Reader.h>
+#include <Base/Sequencer.h>
 #include <CXX/Objects.hxx>
 #include <boost/bimap.hpp>
 #include <boost/graph/adjacency_list.hpp>
@@ -158,6 +159,10 @@ struct DocumentP
      */
     std::shared_ptr<Base::ZipFileReader> archiveReader;
     std::map<std::pair<std::string, std::string>, std::string> deferredFiles;
+    /// The serve phase's progress: alive across serve slices so the
+    /// indicator shows shapes-served over the whole backlog, with the
+    /// per-shape import indicators nested beneath it.
+    std::unique_ptr<Base::SequencerLauncher> deferServeSeq;
     /// Serve-time attribution for the slice log: entry opening vs the
     /// consumer's RestoreDocFile, against the slice wall clock.
     std::chrono::duration<double> deferOpenTime {0};
