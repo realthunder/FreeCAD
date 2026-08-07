@@ -61,10 +61,18 @@ A one-finger hold (~350 ms under 10 px slop) enters preselect instead of
 orbit: the highlight tracks the finger (pick lifted 20 px above the
 contact after the first movement, so the fingertip stops occluding the
 target), lifting commits the highlighted element as the selection.
-Cancelled by drag past slop before the threshold, a second finger, or
-touchcancel. The committed tap is a plain click by the table above — so
-tapping an already-selected sub-element promotes to the whole object on
-touch too, where there is no Shift.
+Cancelled — highlight cleared, nothing selected — by dragging past the
+slop before the threshold (it was an orbit), by a second finger (it was
+a pan/pinch), or by `touchcancel`.
+
+A committed tap, loupe or plain, is a **plain click** by the table
+above: a tap on empty space clears, and tapping an already-selected
+sub-element promotes to the whole object — the cycling matters most
+here, because touch has no modifiers. There is currently **no touch
+path to multi-select** (Ctrl) or the explicit promotion (Shift); a
+keyboard attached to a tablet works, and the reserved long-press
+context/radial menu (`ThinClient.md` §5) is the intended home for
+these when it lands.
 
 ## Pill and property card
 
