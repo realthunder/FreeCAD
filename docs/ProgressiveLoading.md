@@ -1,0 +1,221 @@
+# Progressive Loading
+
+This document is the map of the progressive-loading design as a whole:
+what principle every loading path follows, how the pieces divide the
+work, and where each piece's detailed design lives. The deep documents
+are [DocumentLoad.md](DocumentLoad.md) (opening an `.FCStd`),
+[IncrementalPublish.md](IncrementalPublish.md) (the render-cache delta
+that keeps a growing scene cheap), and
+[SceneStreaming.md](SceneStreaming.md) (the remote viewer). This one
+exists so that the next loading-shaped problem starts from the shared
+architecture instead of rediscovering it.
+
+## 1. The principle
+
+A load used to be a wall: nothing appeared until everything was read,
+parsed, built and drawn. The MiSTer reference document (18142 objects,
+17k shape entries, 272M triangles at full tessellation) opened in 32.7
+seconds, all of it spent before the user saw anything.
+
+Progressive loading replaces the wall with one rule applied at every
+layer:
+
+> **Do now only what is needed for the next thing the user sees;
+> park everything else where it can be found again; pay for the
+> remainder in budgeted slices behind a live window — and converge to
+> a state indistinguishable from the eager path.**
+
+Four corollaries recur in every subsystem, and are worth naming
+because they are the design:
+
+- **Parking must be findable and cancelable.** Whatever is deferred is
+  recorded by *name* (never by pointer) with enough index to serve it
+  later on demand; anything that would overwrite a parked value
+  cancels it instead of racing it.
+- **Every consumer faults in what it touches.** Deferral is invisible
+  to code that asks: accessors serve the parked value on first real
+  use. Correctness never depends on the background fill having run.
+- **Slices are budgeted by wall clock, not by count.** Background work
+  runs on the event loop in time-boxed slices
+  (`ProgressiveLoadBudgetMS`), so frame delivery and input never lose
+  to the backlog.
+- **Convergence is gated, not assumed.** The end state must be
+  byte-identical (property dumps) and pixel-identical (converged
+  frame, saved camera) to the eager load. Every stage shipped only
+  after such a gate on the real GPU.
+
+## 2. The document open, end to end
+
+Opening an `.FCStd` now runs the following pipeline. Stages 1–4 are
+the blocking part (the "window" the user waits for); stages 5–7 run
+behind the live window.
+
+```
+ 1. zip central directory  ──  Base::ZipFileReader: index once, every
+    (ArchiveRandomAccess)      entry its own positioned stream
+ 2. Document.xml           ──  object creation + property data; compact
+    (SaveSchemaVersion 6)      format elides class defaults per class
+ 3. archive walk           ──  registered entries served in registration
+                               order; shape entries PARKED, not read
+    (DeferShapeLoad)
+ 4. GuiDocument.xml        ──  captured whole, not applied; window opens
+    (deferred VP restore)      here — this is the end of the wait
+ ─────────────────────────────────────────────────────────────────────
+ 5. drain, phase zero      ──  Document::serveDeferredFiles(): parked
+                               shapes read in budgeted slices, before
+                               any consumer exists
+ 6. drain, phases 1..n     ──  view providers created (one pass), then
+                               their records applied in slices
+ 7. progressive visual fill──  visuals built coarse-first in slices,
+                               refined as the budget allows
+```
+
+Each stage's design and measurements are in
+[DocumentLoad.md](DocumentLoad.md): the format work in §6–§8 and §12,
+the deferred view providers in §13, the random-access archive and the
+deferred shapes in §14. The net effect on MiSTer: open window
+32.7s → **~2.0–2.3s**, converged frame 0 px against the eager load,
+peak RSS no higher and ~1.1GB lower during the window.
+
+Two ordering rules in this pipeline were bought with real debugging
+time and must survive refactors:
+
+- **Shapes serve before consumers exist** (stage 5 before 6). Serving
+  lazily from inside record application works but replays a
+  per-object change notification whose GUI fan-out costs minutes at
+  17k objects; served in phase zero, no notification is needed at
+  all.
+- **The drain reproduces the eager order** — every record applied in
+  stage 6 reads a shape that is already there, so the visual dynamics
+  (colors, bounding boxes, selection) are byte-for-byte those of the
+  eager load. Deferral changes *when*, never *what*.
+
+The console (`FreeCADCmd`) runs the same stages 1–3 and then relies
+purely on per-access fault-in: a headless process never pays for
+shapes nobody asks for, and a save asks for all of them while the
+source archive is still on disk.
+
+## 3. Progressive import
+
+STEP import is the same principle pointed at creation instead of
+restore: objects enter the document incrementally while the view stays
+live, stand-in boxes and pooled coarse tessellations give every object
+an immediate visual, and refinement follows behind. What makes this
+affordable is that a frame costs what the *new* object costs, not what
+the scene costs — the render-cache publish path is a delta, spliced
+per changed object. That delta design, its measurements, and the
+instancing/mesh-reuse registries it leans on are
+[IncrementalPublish.md](IncrementalPublish.md); the shared-leaf
+instancing architecture underneath is
+[TShapeRenderCache.md](TShapeRenderCache.md).
+
+## 4. The remote viewer
+
+The browser/mobile viewer receives the scene as a content-addressed
+delta stream and applies it progressively through a coarse-to-fine
+ladder with its own budgets — the same corollaries (parking by key,
+budgeted application, gated convergence) negotiated over a wire. That
+design is [SceneStreaming.md](SceneStreaming.md) and is deliberately
+not duplicated here.
+
+## 5. Progress: counters that workers bump, a UI that polls
+
+Progressive loading multiplies the number of things that are "in
+progress" at once — an archive walk, a shape serve, a visual fill,
+soon parallel recomputes — and the old indicator was built for exactly
+one. Its costs were also the wrong shape: a push per item through a
+mutex into an event-pumping GUI update, which at one point made the
+progress indicator itself **17× the cost of the work it was
+reporting** (DocumentLoad.md §14). The reporting layer was therefore
+redesigned around the opposite flow:
+
+> **Workers bump lock-free counters; the UI polls them on its own
+> cadence.**
+
+The pieces, all in `Base/Sequencer.{h,cpp}` and
+`Gui/ProgressBar.{h,cpp}`:
+
+- **`Base::SequencerLauncher` is cheap and thread-safe to tick.** Its
+  counters are atomics; a worker-thread `next()` that does not have to
+  drive the indicator (another sequence is on top, or the indicator is
+  poll-driven) is a relaxed increment and nothing else. One launcher
+  may be shared by many threads — the intended shape for a future
+  parallel recompute (one launcher for the job, every worker ticking
+  it), and for out-of-process geometry servers (a client-side proxy
+  launcher fed by protocol messages).
+- **`Base::SequencerManager` snapshots all running sequences.** One
+  entry per thread-hierarchy: the outermost launcher is the root,
+  nested launchers follow with a depth, capped at a configurable
+  number of levels (`ProgressDetailLevels`, default 5). Only roots
+  feed the consolidated total, so nesting can never inflate progress;
+  parallel roots sum. Consolidation work happens in the reader, at
+  snapshot time — workers never pay for it.
+- **The status bar polls.** A 200ms timer drives the bar's range and
+  value from the consolidated snapshot; push-path writes are
+  suppressed while it runs. Hovering the bar opens a live popup: one
+  ticking progress bar per sequence, nested rows indented under their
+  root, a Total row when roots run in parallel.
+- **Per-item sequences are free.** Code that stacks a launcher per
+  work item — one brep-import indicator per served shape — no longer
+  restarts the top indicator on construction, and the GUI teardown is
+  debounced behind a 200ms grace period, so back-to-back start/stop
+  cycles reuse the engaged indicator instead of thrashing the wait
+  cursor, event filter and status bar. This is what allowed the OCCT
+  brep-read indicator to come back on the restore path: the serve
+  phase owns a `Loading shapes...` sequence across its slices, and a
+  read long enough to matter shows its OCCT scope ("Surfaces...",
+  "Shapes") nested beneath it. Reads shorter than the abort-check
+  window (500ms) never surface — by design; their progress *is* the
+  serve counter.
+
+Two reporting facts that cost gate iterations, recorded so they are
+not rediscovered: in OCCT ≥ 7.5 an indicator's text is the *scope
+name*, not the legacy "Reading BREP file..." string; and a
+converged-scene probe cannot see a silent phase — gate on the
+pipeline's own completion lines (`progressive load: N visuals ...`,
+`deferred serve slice: ... 0 pending`), not on frame agreement.
+
+## 6. Parameters
+
+| Parameter | Group | Default | Governs |
+|---|---|---|---|
+| `ArchiveRandomAccess` | Document | on | central-directory archive reader (stage 1) |
+| `SaveSchemaVersion` | per document | 6 | compact format with default elision (stage 2) |
+| `DeferShapeLoad` | Document | **on** | park shape entries, serve on demand (stages 3, 5) |
+| `ProgressiveLoadBudgetMS` | View/Render | slice budget | drain and fill slice length (stages 5–7) |
+| `ProgressDetailLevels` | General | 5 | nesting depth shown in the progress popup |
+
+Every stage keeps a fallback: the forward-only zip reader, eager shape
+restore (`DeferShapeLoad` off), eager view-provider restore, and the
+schema-versioned format all remain selectable, and old files load
+unchanged.
+
+## 7. Invariants
+
+1. **Correctness never waits for the background.** Any code path that
+   touches a deferred value serves it first; the fill is an
+   optimization of *when*, never a precondition of *what*.
+2. **Parked state is keyed by name and cancelable**; a writer cancels
+   the parked value rather than racing it, and a deleted owner
+   invalidates its entry instead of dangling.
+3. **The archive must not be rewritten externally while entries are
+   parked** — the one durability trade of on-demand reading
+   (DocumentLoad.md §14). Our own save is safe: it faults everything
+   in before the rename.
+4. **Slices never exceed their budget by design**, only by the
+   granularity of one item; anything long inside an item (a giant
+   brep) reports through the progress layer instead of blocking
+   silently.
+5. **Every behavior change gates against the eager path** on the real
+   GPU: 0 property diffs, 0 px at convergence with the saved camera,
+   and the pipeline's own completion lines as the arbiter of "done".
+
+## 8. Where this goes next
+
+The same skeleton is expected to carry: parallel shape reads in the
+serve phase (every archive entry already owns its file handle),
+worker-thread and out-of-process recomputes reporting through shared
+launchers ([ComputeBoundaries.md](ComputeBoundaries.md)), and lazy
+blob fetch through the same parked-entry index
+([FileBlobsManager.md](FileBlobsManager.md)). Each arrives as a new
+producer for an existing stage, not a new architecture.

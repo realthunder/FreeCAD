@@ -674,8 +674,8 @@ for entries the handler would refuse. The forward-only reader remains
 the fallback for anything the indexer cannot digest. Not a speed
 change (§10) — an ordering change.
 
-**Deferred shape restore (the `DeferShapeLoad` parameter, default off
-until gated).** With random access in hand, the walk no longer *has*
+**Deferred shape restore (the `DeferShapeLoad` parameter, default on
+since the real-GPU gate passed).** With random access in hand, the walk no longer *has*
 to read the shapes before the document opens. A property that opts in
 (`App::Property::canDeferRestore()`, so far only `PropertyPartShape`)
 has its entry **parked**: recorded by name in the document
@@ -695,7 +695,11 @@ drain** (§13): `Document::serveDeferredFiles()` runs in budgeted
 slices before any view provider record is applied, so everything
 after it — the records (which read shapes for color application), the
 visual fill — runs with every shape present, byte-for-byte the eager
-load's dynamics. The per-access fault-in stays as the backstop, and is
+load's dynamics. The serve owns a `Loading shapes...` sequence that
+lives across its slices, so the status bar carries shapes-served over
+the backlog, with each shape's own read indicator nested beneath it in
+the progress popup (see
+[ProgressiveLoading.md](ProgressiveLoading.md) §5). The per-access fault-in stays as the backstop, and is
 the *only* mechanism in a console process, which therefore never pays
 for shapes nobody asks for; a save asks for all of them
 (`beforeSave`/`Save`/`SaveDocFile` fault in), which flushes the lot
@@ -706,11 +710,14 @@ person who touches the order:
 
 - **Serving lazily from inside the drain works but costs minutes**:
   each record application faulted its shape in one at a time, and a
-  per-shape `importBrep` *with the default progress indicator* costs
+  per-shape `importBrep` *with the default progress indicator* cost
   ~2.7ms outside a running sequencer (start/stop + event pumping)
-  against 0.16ms for the parse itself. The restore path now imports
-  with the indicator off; the walk's own sequencer already ticks per
-  file.
+  against 0.16ms for the parse itself. The cost class was later fixed
+  at the source — per-item sequences no longer restart the top
+  indicator, and the GUI teardown is debounced behind a grace period
+  (ProgressiveLoading.md §5) — after which the restore path got its
+  indicator back with the serve timings unchanged (console open
+  0.86s / save-all-pending 12.0s, GUI window 2.3s, re-gated).
 - **A per-serve change notification is a trap**: replaying
   `signalChangedObject` per served shape fans out to per-object GUI
   listeners and multiplies into minutes across 17k objects. Serving
