@@ -36,9 +36,19 @@ Same industry, same spelling, EU rights through use; a textbook
 confusing-similarity case. The storm-noun+CAD pattern is generally
 mined (LIGHTNINGCAD is a registered US trademark).
 
+**Ownership** (established 2026-08-07): the brand belongs to
+**Thundereal Technologies Pte. Ltd.** (Singapore) — the user's existing
+company. Company: Thundereal Technologies; product: Thundereal;
+marketed form: Thundereal CAD. The GitHub org `thundereal` is
+registered under the company (corporate ToS); domain `thundereal.com`
+in hand. An ACRA-registered company name + domain in use makes the
+name claim solid; the optional belt-and-suspenders step is an IPOS
+trademark filing (class 9/42) by the company. The LGPL code is not
+company-owned — only the brand is.
+
 Still to verify before the public announcement: conda/PyPI package-name
-availability, a formal EUIPO/USPTO search on "Thundereal", and the
-GitHub repo name.
+availability, a formal trademark search on "Thundereal" beyond the web
+survey (IPOS/EUIPO/USPTO).
 
 The `fc`/`FC_` prefixes sprinkled through code and env vars are *not* a
 constraint — see §5.
