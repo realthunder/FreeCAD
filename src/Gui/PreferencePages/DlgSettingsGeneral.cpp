@@ -550,6 +550,9 @@ namespace {
 
 void applyStyleSheet(ParameterGrp *hGrp)
 {
+    // Settle the palette first: a theme that ships no stylesheet draws straight
+    // from it, and setStyleSheet() samples the palette for the link color.
+    Application::applyColorScheme();
     auto sheet = hGrp->GetASCII("StyleSheet");
     bool tiledBG = hGrp->GetBool("TiledBackground", false);
     Application::Instance->setStyleSheet(QString::fromUtf8(sheet.c_str()), tiledBG);
@@ -638,7 +641,7 @@ void DlgSettingsGeneral::attachObserver()
     static ParamHandlers handlers;
 
     handlers.addDelayedHandler("BaseApp/Preferences/MainWindow",
-                               {"StyleSheet", "TiledBackground", "IconSet"},
+                               {"StyleSheet", "TiledBackground", "IconSet", "ColorScheme"},
                                applyStyleSheet);
 
     auto hDockWindows = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/DockWindows");

@@ -41,7 +41,7 @@ ThemeSelectorWidget::ThemeSelectorWidget(QWidget* parent)
     : QWidget(parent)
     , _titleLabel {nullptr}
     , _descriptionLabel {nullptr}
-    , _buttons {nullptr, nullptr, nullptr}
+    , _buttons {nullptr, nullptr, nullptr, nullptr}
 {
     setObjectName(QLatin1String("ThemeSelectorWidget"));
     setupUi();
@@ -55,15 +55,33 @@ void ThemeSelectorWidget::setupButtons(QBoxLayout* layout)
         return;
     }
     std::map<Theme, QString> themeMap {{Theme::Classic, tr("FreeCAD Classic")},
+                                       {Theme::Auto, tr("Match Desktop")},
                                        {Theme::Dark, tr("FreeCAD Dark")},
                                        {Theme::Light, tr("FreeCAD Light")}};
     std::map<Theme, QIcon> iconMap {
         {Theme::Classic, QIcon(QLatin1String(":/thumbnails/Theme_thumbnail_classic.png"))},
+        {Theme::Auto, QIcon(QLatin1String(":/thumbnails/Theme_thumbnail_auto.png"))},
         {Theme::Light, QIcon(QLatin1String(":/thumbnails/Theme_thumbnail_light.png"))},
         {Theme::Dark, QIcon(QLatin1String(":/thumbnails/Theme_thumbnail_dark.png"))}};
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/MainWindow");
     auto styleSheetName = QString::fromStdString(hGrp->GetASCII("StyleSheet"));
+    // Auto keeps the stylesheet of whichever theme it resolved to, so it is
+    // recognizable only by its own marker and has to be tested first. The rest
+    // are told apart by the stylesheet the pack leaves behind (Dark.qss,
+    // Light.qss, ...), which is what the parameter actually holds.
+    const Theme activeTheme = [&hGrp, &styleSheetName] {
+        if (hGrp->GetBool("ThemeAuto", false)) {
+            return Theme::Auto;
+        }
+        if (styleSheetName.contains(QLatin1String("Light"), Qt::CaseSensitivity::CaseInsensitive)) {
+            return Theme::Light;
+        }
+        if (styleSheetName.contains(QLatin1String("Dark"), Qt::CaseSensitivity::CaseInsensitive)) {
+            return Theme::Dark;
+        }
+        return Theme::Classic;  // the theme without a stylesheet of its own
+    }();
     for (const auto& theme : themeMap) {
         auto button = new QToolButton();
         button->setCheckable(true);
@@ -72,17 +90,7 @@ void ThemeSelectorWidget::setupButtons(QBoxLayout* layout)
         button->setText(theme.second);
         button->setIcon(iconMap[theme.first]);
         button->setIconSize(iconMap[theme.first].actualSize(QSize(256, 256)));
-        if (theme.first == Theme::Classic && styleSheetName.isEmpty()) {
-            button->setChecked(true);
-        }
-        else if (theme.first == Theme::Light
-                 && styleSheetName.contains(QLatin1String("FreeCAD Light"),
-                                            Qt::CaseSensitivity::CaseInsensitive)) {
-            button->setChecked(true);
-        }
-        else if (theme.first == Theme::Dark
-                 && styleSheetName.contains(QLatin1String("FreeCAD Dark"),
-                                            Qt::CaseSensitivity::CaseInsensitive)) {
+        if (theme.first == activeTheme) {
             button->setChecked(true);
         }
         connect(button, &QToolButton::clicked, this, [this, theme] {
@@ -127,19 +135,43 @@ void ThemeSelectorWidget::onLinkActivated(const QString& link)
 
 void ThemeSelectorWidget::themeChanged(Theme newTheme)
 {
-    // Run the appropriate preference pack:
+    // Run the appropriate preference pack. The names are those in
+    // Gui/PreferencePacks/package.xml, which this fork renamed away from
+    // upstream's "FreeCAD "-prefixed ones.
     auto prefPackManager = Gui::Application::Instance->prefPackManager();
+    // Auto has no pack of its own; it resolves to the one matching the desktop.
+    const bool isAuto = newTheme == Theme::Auto;
+    const bool wantDark =
+        newTheme == Theme::Dark || (isAuto && Gui::Application::systemPrefersDarkScheme());
     switch (newTheme) {
         case Theme::Classic:
-            prefPackManager->apply("FreeCAD Classic");
+            prefPackManager->apply("Classic");
             break;
         case Theme::Dark:
-            prefPackManager->apply("FreeCAD Dark");
+            prefPackManager->apply("Dark");
             break;
         case Theme::Light:
-            prefPackManager->apply("FreeCAD Light");
+            prefPackManager->apply("Light");
+            break;
+        case Theme::Auto:
+            prefPackManager->apply(wantDark ? "Dark" : "Light");
             break;
     }
+
+    auto hMainWindow = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow");
+    // The pack has already written ColorScheme, and writing it is enough to
+    // repaint: DlgSettingsGeneral observes that key and re-applies palette and
+    // stylesheet, the same way it does for a stylesheet change, so no restart is
+    // needed here either. Auto only adds a marker saying which way it resolved,
+    // so the next start can re-resolve if the desktop changed meanwhile; the
+    // palette stays pinned to the resolved scheme, keeping it consistent with
+    // the stylesheet the pack applied.
+    hMainWindow->SetBool("ThemeAuto", isAuto);
+    if (isAuto) {
+        hMainWindow->SetASCII("ThemeAutoApplied", wantDark ? "Dark" : "Light");
+    }
+
     ParameterGrp::handle hGrp =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Themes");
     const unsigned long nonExistentColor = -1434171135;
@@ -168,4 +200,5 @@ void ThemeSelectorWidget::retranslateUi()
     _buttons[static_cast<int>(Theme::Dark)]->setText(tr("FreeCAD Dark", "Visual theme name"));
     _buttons[static_cast<int>(Theme::Light)]->setText(tr("FreeCAD Light", "Visual theme name"));
     _buttons[static_cast<int>(Theme::Classic)]->setText(tr("FreeCAD Classic", "Visual theme name"));
+    _buttons[static_cast<int>(Theme::Auto)]->setText(tr("Match Desktop", "Visual theme name"));
 }

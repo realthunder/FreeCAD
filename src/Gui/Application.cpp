@@ -38,6 +38,7 @@
 # include <QRegularExpressionMatch>
 # include <QStatusBar>
 # include <QStyle>
+# include <QStyleHints>
 # include <QTextStream>
 # include <QTimer>
 # include <QWindow>
@@ -2615,6 +2616,22 @@ void postMainWindowSetup(MainWindow &mw)
 
     hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/MainWindow");
+
+    // The "Auto" theme follows the desktop, so re-apply the matching preference
+    // pack whenever the system scheme changed since the last run. This has to
+    // happen before the stylesheet is read below, because the pack sets it.
+    if (hGrp->GetBool("ThemeAuto", false)) {
+        const char* wanted = Application::systemPrefersDarkScheme() ? "Dark" : "Light";
+        if (hGrp->GetASCII("ThemeAutoApplied") != wanted) {
+            Application::Instance->prefPackManager()->apply(wanted);
+            // The pack itself has no notion of Auto; restore the marker it just
+            // overwrote so the next start still follows the system.
+            hGrp->SetBool("ThemeAuto", true);
+            hGrp->SetASCII("ThemeAutoApplied", wanted);
+        }
+    }
+    Application::applyColorScheme();
+
     std::string style = hGrp->GetASCII("StyleSheet");
     if (style.empty()) {
         // check the branding settings
@@ -2841,6 +2858,54 @@ bool Application::testStatus(Status pos) const
 void Application::setStatus(Status pos, bool on)
 {
     d->StatusBits.set((size_t)pos, on);
+}
+
+bool Application::systemPrefersDarkScheme()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    if (!qGuiApp) {
+        return false;
+    }
+    // colorScheme() reports the scheme in effect, which is our own pin whenever
+    // MainWindow/ColorScheme names one -- asking while pinned just reads the pin
+    // back. Drop it long enough to see what the desktop says (unsetColorScheme()
+    // updates the value synchronously, so nothing repaints in between), then let
+    // applyColorScheme() restore whatever the parameter asks for.
+    auto* styleHints = qGuiApp->styleHints();
+    styleHints->unsetColorScheme();
+    const bool dark = styleHints->colorScheme() == Qt::ColorScheme::Dark;
+    applyColorScheme();
+    return dark;
+#elif QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    // 6.5 reports the system scheme but cannot override it, so it is never pinned.
+    return qGuiApp && qGuiApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+#else
+    // Before 6.5 Qt does not report the system scheme at all, and its styles
+    // never followed it, so a light desktop is the only thing we can assume.
+    return false;
+#endif
+}
+
+void Application::applyColorScheme()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    if (!qGuiApp) {
+        return;
+    }
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow");
+    const std::string scheme = hGrp->GetASCII("ColorScheme");
+
+    if (scheme == "Light") {
+        qGuiApp->styleHints()->setColorScheme(Qt::ColorScheme::Light);
+    }
+    else if (scheme == "Dark") {
+        qGuiApp->styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+    }
+    else {
+        qGuiApp->styleHints()->unsetColorScheme();
+    }
+#endif
 }
 
 void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)

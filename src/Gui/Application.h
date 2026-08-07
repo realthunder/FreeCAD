@@ -242,6 +242,17 @@ public:
     /// Activate a stylesheet
     void setStyleSheet(const QString& qssFile, bool tiledBackground);
     QString replaceVariablesInQss(QString qssText);
+    /** Apply the palette named by MainWindow/ColorScheme.
+     *
+     * "Light" or "Dark" pins Qt's palette; an empty value lets Qt follow the
+     * system setting. Themes that ship no stylesheet (FreeCAD Classic) draw
+     * entirely from this palette, so without a value Qt >= 6.8 would render
+     * them dark on a dark desktop. A no-op before Qt 6.8, which has no API to
+     * override the scheme.
+     */
+    static void applyColorScheme();
+    /// Whether the platform reports a dark system color scheme.
+    static bool systemPrefersDarkScheme();
     //@}
 
     /** @name User Commands */

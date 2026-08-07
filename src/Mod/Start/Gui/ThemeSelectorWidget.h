@@ -37,6 +37,7 @@ namespace StartGui
 enum class Theme
 {
     Classic,
+    Auto,
     Light,
     Dark
 };
@@ -60,7 +61,7 @@ private:
 
     QLabel* _titleLabel;
     QLabel* _descriptionLabel;
-    std::array<QToolButton*, 3> _buttons;
+    std::array<QToolButton*, 4> _buttons;
 };
 
 }  // namespace StartGui
