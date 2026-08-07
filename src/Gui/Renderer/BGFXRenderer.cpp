@@ -2297,14 +2297,23 @@ public:
     void destroy()
     {
         destroyTargets();
+        destroySceneCaches();
         destroyPrograms();
     }
 
-    /// GPU resources whose extent follows the viewport (or the host
-    /// widget's framebuffer): the scene/OIT/AO/volumetric/medium targets
-    /// and the geometry caches keyed to them. A plain resize drops
-    /// exactly this set and nothing else.
-    void destroyTargets()
+    /// The uploaded scene: mesh and shared-geometry buffers, their
+    /// textures and the white color stream.
+    ///
+    /// Nothing here follows the viewport — a vertex buffer does not care
+    /// how big the framebuffer is — and the set manages its own residency
+    /// anyway: getMesh() uploads on demand and collectMeshes() retires
+    /// whatever no draw call has referenced for two frames. So a resize
+    /// leaves it alone; dropping it there only bought a full re-upload of
+    /// the scene on the next frame.
+    ///
+    /// meshes and geometries must be cleared together: GpuMesh::geom is a
+    /// raw pointer into the geometries map.
+    void destroySceneCaches()
     {
         for (auto &v : meshes)
             v.second.destroy();
@@ -2320,6 +2329,13 @@ public:
         for (auto &v : textures)
             v.second.destroy();
         textures.clear();
+    }
+
+    /// GPU resources whose extent follows the viewport (or the host
+    /// widget's framebuffer): the scene/OIT/AO/volumetric/medium targets.
+    /// A plain resize drops exactly this set and nothing else.
+    void destroyTargets()
+    {
         // SSAO resources: framebuffers before the textures they reference.
         for (auto fb : {&debugSceneFbo,
                         &aoPrepassFbo, &aoGenFbo, &aoBlurFbo,
@@ -2638,16 +2654,19 @@ public:
 
     /// Rebuild the view's GPU resources.
     ///
-    /// With \a keepPrograms the size-independent set (shader programs,
-    /// uniforms, stand-in textures) is left in place and only the
-    /// viewport-sized targets are recreated — the resize path. Every
-    /// creation below is guarded, so the kept handles are simply skipped.
+    /// With \a keepShared everything that does not follow the viewport is
+    /// left in place — the shader programs, uniforms and stand-in
+    /// textures, plus the uploaded scene — and only the sized targets are
+    /// recreated. That is the resize path. Every creation below is
+    /// guarded, so the kept handles are simply skipped, and the scene
+    /// caches repopulate through getMesh() as draws reference them.
+    ///
     /// Pass false whenever the programs themselves must change: a shader
     /// generation bump, or an MSAA change (which re-decides m_oit and so
     /// which program set exists at all).
-    void init(bool keepPrograms = false)
+    void init(bool keepShared = false)
     {
-        if (keepPrograms)
+        if (keepShared)
             destroyTargets();
         else
             destroy();
@@ -2674,7 +2693,7 @@ public:
 #endif
         std::printf("bgfx: view init %ux%u msaa %d (%s)\n",
                     unsigned(width), unsigned(height), msaaSamples,
-                    keepPrograms ? "targets" : "targets+programs");
+                    keepShared ? "targets" : "full");
         shaderGen = _BGFXLib.shaderGeneration;
         // Resolution of the scaled effect targets (reflection re-render, SSAO
         // resolve). effectScale clamps to [0.25, 1]; the targets and their
@@ -8596,8 +8615,9 @@ public:
             view->warmup = -1;  // fired; never again for this view
         }
         // As on the desktop path: the warmup rebuild and every size or
-        // scale change want the targets back, not a relink. Relinking on
-        // WebGL2 is just as slow as it is on a native driver.
+        // scale change want the sized targets back, not a relink and not a
+        // re-upload. Relinking on WebGL2 is just as slow as it is on a
+        // native driver, and re-streaming the scene there is worse.
         const bool progChanged =
             _BGFXLib.standaloneSamples != view->msaaSamples
             || _BGFXLib.shaderGeneration != view->shaderGen;
@@ -8620,10 +8640,12 @@ public:
 #else
         // Only a shader-generation or MSAA change actually invalidates the
         // programs (MSAA also re-decides m_oit, i.e. which programs exist).
-        // A resize or effect-scale change is targets only, and must not
-        // relink: the driver's shader compiler takes seconds to do it —
-        // Intel's GL JIT ~5 s for this program set — which is long enough
-        // to freeze the UI through a dock-splitter drag.
+        // A resize or effect-scale change rebuilds the sized targets and
+        // nothing else: it must not relink — the driver's shader compiler
+        // takes seconds to do it, Intel's GL JIT ~5 s for this program set,
+        // long enough to freeze the UI through a dock-splitter drag — and
+        // it must not drop the uploaded scene either, which only bought a
+        // full re-upload on the next frame.
         const bool progChanged =
             _BGFXLib.shaderGeneration != view->shaderGen
             || (_BGFXLib.desktopSamples >= 0
