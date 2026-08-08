@@ -14,13 +14,18 @@
 # so a running FreeCAD started with FC_BGFX_SHADER_DIR=<out-root> picks
 # the result up on view.reloadShaders() — without touching the build
 # tree or waiting for a ninja run. Default out-root is
-# <repo>/build/shaders-dev; default shaderc is the conda-debug tree's.
+# <repo>/build/shaders-dev; default shaderc is the primary preset
+# tree's (conda-debug-occt801), falling back to conda-debug.
 
 set -e
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../../../../.." && pwd)
-shaderc=${1:-$repo/build/conda-debug/src/3rdParty/bgfx/cmake/bgfx/shaderc}
+shaderc=${1:-$repo/build/conda-debug-occt801/src/3rdParty/bgfx/cmake/bgfx/shaderc}
+# Older secondary build tree, kept as a fallback when the primary
+# preset's shaderc has not been built.
+[ -x "$shaderc" ] || [ -n "$1" ] \
+    || shaderc=$repo/build/conda-debug/src/3rdParty/bgfx/cmake/bgfx/shaderc
 inc=$repo/src/3rdParty/bgfx/bgfx/src
 out=${2:-$repo/build/shaders-dev}/shaders
 
