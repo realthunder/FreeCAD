@@ -2281,33 +2281,313 @@ public:
     /// particles.
     std::map<uint64_t, ParticleState> particles;
 
+    // -----------------------------------------------------------------
+    // Handle registry. Every bgfx handle the view owns as a member
+    // appears here EXACTLY ONCE, in destruction order (a framebuffer
+    // strictly before the textures it references), tagged with its
+    // lifetime:
+    //
+    //   LifeSized -- sized by the window / created by init(): released
+    //                by destroy() and recreated by the next init().
+    //   LifeView  -- created once per view and kept across the
+    //                resize-driven destroy()/init() cycles (validity
+    //                guards in init() skip re-creation): released only
+    //                when the view ends.
+    //
+    // destroy() and the destructor both sweep this one list instead of
+    // keeping hand-maintained copies -- a handle listed here cannot be
+    // released by one of them and leaked by the other, which is the
+    // bug class the old per-method hand lists produced. Handles a
+    // framebuffer owns (created with destroyTextures=true, e.g. the
+    // sink attachments) are NOT listed; their owner's release
+    // invalidates them by hand.
+    enum HandleLife : uint8_t { LifeSized, LifeView };
+    template <typename Fn>
+    void forEachHandle(Fn &&fn)
+    {
+        fn(whiteColorVb, LifeSized);
+        // SSAO/debug-scene resources: framebuffers before the textures
+        // they reference.
+        fn(debugSceneFbo, LifeSized);
+        fn(aoPrepassFbo, LifeSized);
+        fn(aoGenFbo, LifeSized);
+        fn(aoBlurFbo, LifeSized);
+        for (auto &h : aoMipFbo)
+            fn(h, LifeSized);
+        fn(debugSceneTex, LifeSized);
+        fn(debugSceneDepth, LifeSized);
+        fn(aoNormalZ, LifeSized);
+        fn(aoDepth, LifeSized);
+        fn(aoTex, LifeSized);
+        fn(aoBlurTex, LifeSized);
+        fn(aoNoiseTex, LifeSized);
+        for (auto &h : aoMipTex)
+            fn(h, LifeSized);
+        // Volumetric / medium / bloom resources: the framebuffers
+        // before their textures.
+        fn(volFbo, LifeSized);
+        fn(volHistFbo, LifeSized);
+        fn(bloomFbo, LifeSized);
+        fn(bloomBlurFbo, LifeSized);
+        fn(bulbShadowFbo, LifeSized);
+        fn(waterFrontFbo, LifeSized);
+        fn(waterBackFbo, LifeSized);
+        fn(glassFrontFbo, LifeSized);
+        fn(glassBackFbo, LifeSized);
+        fn(cloudFrontFbo, LifeSized);
+        fn(cloudBackFbo, LifeSized);
+        fn(fireFrontFbo, LifeSized);
+        fn(fireBackFbo, LifeSized);
+        fn(sceneCopyFbo, LifeSized);
+        fn(reflFbo, LifeSized);
+        fn(volTex, LifeSized);
+        fn(volFrontTex, LifeSized);
+        fn(volHistTex, LifeSized);
+        fn(volHistFrontTex, LifeSized);
+        fn(bloomTex, LifeSized);
+        fn(bloomBlurTex, LifeSized);
+        fn(bulbShadowTex, LifeSized);
+        fn(bulbShadowDepth, LifeSized);
+        fn(waterFrontTex, LifeSized);
+        fn(waterBackTex, LifeSized);
+        fn(waterFrontDepth, LifeSized);
+        fn(waterBackDepth, LifeSized);
+        fn(glassFrontTex, LifeSized);
+        fn(glassBackTex, LifeSized);
+        fn(glassFrontDepth, LifeSized);
+        fn(glassBackDepth, LifeSized);
+        fn(cloudFrontTex, LifeSized);
+        fn(cloudBackTex, LifeSized);
+        fn(cloudFrontDepth, LifeSized);
+        fn(cloudBackDepth, LifeSized);
+        fn(fireFrontTex, LifeSized);
+        fn(fireBackTex, LifeSized);
+        fn(fireFrontDepth, LifeSized);
+        fn(fireBackDepth, LifeSized);
+        fn(sceneCopyTex, LifeSized);
+        fn(reflTex, LifeSized);
+        fn(reflDepth, LifeSized);
+        fn(s_texVol, LifeSized);
+        fn(s_texVolFront, LifeSized);
+        fn(u_volParams, LifeSized);
+        fn(u_volMedium, LifeSized);
+        fn(u_volTexel, LifeSized);
+        fn(s_texWaterFront, LifeSized);
+        fn(s_texWaterBack, LifeSized);
+        fn(u_waterSigma, LifeSized);
+        fn(u_causticParams, LifeSized);
+        fn(s_texScene, LifeSized);
+        fn(s_texRefl, LifeSized);
+        fn(u_waterSurf, LifeSized);
+        fn(u_waterAbsorb, LifeSized);
+        fn(u_waterRipple, LifeSized);
+        fn(u_reflParams, LifeSized);
+        fn(s_texGlassFront, LifeSized);
+        fn(s_texGlassBack, LifeSized);
+        fn(u_glassParams, LifeSized);
+        fn(s_texCloudFront, LifeSized);
+        fn(s_texCloudBack, LifeSized);
+        fn(u_cloudParams, LifeSized);
+        fn(s_texFireFront, LifeSized);
+        fn(s_texFireBack, LifeSized);
+        fn(u_fireParams, LifeSized);
+        fn(u_fireParams2, LifeSized);
+        fn(u_fireFrame, LifeSized);
+        fn(u_fountainParams, LifeSized);
+        fn(u_fountainFrame, LifeSized);
+        fn(u_waterSplash, LifeSized);
+        fn(u_mediumSlot, LifeSized);
+        fn(m_progPrepass, LifeSized);
+        fn(m_progPrepassClip, LifeSized);
+        fn(m_progMedDepth, LifeSized);
+        fn(m_progMedDepthClip, LifeSized);
+        fn(m_progPrepassInst, LifeSized);
+        fn(m_progSsao, LifeSized);
+        fn(m_progGtao, LifeSized);
+        fn(m_progGtaoBlur, LifeSized);
+        fn(m_progGtaoDepth, LifeSized);
+        fn(m_progSsaoBlur, LifeSized);
+        fn(m_progSsaoApply, LifeSized);
+        fn(m_progVol, LifeSized);
+        fn(m_progVolAccum, LifeSized);
+        fn(m_progReflMedia, LifeSized);
+        fn(m_progBloomBright, LifeSized);
+        fn(m_progBloomEmit, LifeSized);
+        fn(m_progBloomBlur, LifeSized);
+        fn(m_progBloomApply, LifeSized);
+        fn(m_progSun, LifeSized);
+        fn(m_progEnvBg, LifeSized);
+        fn(m_progVolApply, LifeSized);
+        fn(m_progVolExt, LifeSized);
+        fn(m_progCaustics, LifeSized);
+        fn(m_progWaterCopy, LifeSized);
+        fn(m_progWater, LifeSized);
+        fn(m_progGlass, LifeSized);
+        fn(m_progGroundRefl, LifeSized);
+        // Shadow resources: the framebuffers before their textures.
+        fn(shadowFbo, LifeSized);
+        fn(shadowBlurFbo, LifeSized);
+        fn(shadowBlurBackFbo, LifeSized);
+        fn(shadowTintFbo, LifeSized);
+        fn(shadowTintBlurFbo, LifeSized);
+        fn(shadowTintBlurBackFbo, LifeSized);
+        fn(shadowTex, LifeSized);
+        fn(shadowDepth, LifeSized);
+        fn(shadowBlurTex, LifeSized);
+        fn(shadowTintTex, LifeSized);
+        fn(shadowTintBlurTex, LifeSized);
+        fn(m_progShadow, LifeSized);
+        fn(m_progShadowClip, LifeSized);
+        fn(m_progShadowInst, LifeSized);
+        fn(m_progShadowBlur, LifeSized);
+        fn(m_progShadowTint, LifeSized);
+        fn(s_texShadow, LifeSized);
+        fn(s_texShadowTint, LifeSized);
+        fn(s_texAOScreen, LifeSized);
+        fn(u_debugParams, LifeSized);
+        fn(s_texDebugScene, LifeSized);
+        fn(u_shadowParams, LifeSized);
+        fn(u_lightDir, LifeSized);
+        fn(u_lightPos, LifeSized);
+        fn(u_lightColor, LifeSized);
+        fn(u_shadowMatrix, LifeSized);
+        fn(u_shadowBlur, LifeSized);
+        fn(u_evsm, LifeSized);
+        fn(u_localLight, LifeSized);
+        fn(u_localLightColor, LifeSized);
+        fn(s_texBloom, LifeSized);
+        fn(u_bloomParams, LifeSized);
+        fn(u_bloomTexel, LifeSized);
+        fn(u_bloomBlur, LifeSized);
+        fn(u_sunParams, LifeSized);
+        fn(s_texBulbShadow, LifeSized);
+        fn(u_bulbShadowMtx, LifeSized);
+        fn(u_bulbShadowConf, LifeSized);
+        fn(u_bulbShadowRot, LifeSized);
+        // PBR environment resources.
+        fn(m_envTex, LifeSized);
+        fn(m_dummyEnvTex, LifeSized);
+        fn(s_texNormalZ, LifeSized);
+        fn(s_texAONoise, LifeSized);
+        fn(s_texAO, LifeSized);
+        for (auto &h : s_texAOMip)
+            fn(h, LifeSized);
+        fn(u_aoParams, LifeSized);
+        fn(u_aoParams2, LifeSized);
+        fn(u_aoKernel, LifeSized);
+        fn(s_texEnv, LifeSized);
+        fn(u_pbrParams, LifeSized);
+        fn(u_envSH, LifeSized);
+        fn(s_texBump, LifeSized);
+        fn(u_bumpParams, LifeSized);
+        fn(s_texEmissive, LifeSized);
+        fn(s_texOcclusion, LifeSized);
+        fn(s_texMetallicRoughness, LifeSized);
+        // The OIT framebuffer references bgfxDepth (owned by bgfxFbo),
+        // so it goes first; the sink framebuffer owns its attachments
+        // (sinkColor/sinkDepth are invalidated by the sweep caller).
+        fn(oitFbo, LifeSized);
+        fn(oitAccum, LifeSized);
+        fn(oitReveal, LifeSized);
+        fn(bgfxFbo, LifeSized);
+        fn(sinkFbo, LifeSized);
+        fn(m_progMesh, LifeSized);
+        fn(m_progMeshInst, LifeSized);
+        fn(m_progMeshInstTex, LifeSized);
+        fn(m_progMeshInstOit, LifeSized);
+        fn(m_progMeshInstOitTex, LifeSized);
+        fn(u_instParams, LifeSized);
+        fn(m_progFlat, LifeSized);
+        fn(m_progMeshClip, LifeSized);
+        fn(m_progFlatClip, LifeSized);
+        fn(m_progLine, LifeSized);
+        fn(m_progLineClip, LifeSized);
+        fn(m_progLinePat, LifeSized);
+        fn(m_progLinePatClip, LifeSized);
+        fn(m_progPoint, LifeSized);
+        fn(m_progPointClip, LifeSized);
+        fn(m_progMeshTex, LifeSized);
+        fn(m_progMeshTexClip, LifeSized);
+        fn(m_progMeshOitTex, LifeSized);
+        fn(m_progMeshOitTexClip, LifeSized);
+        fn(s_texColor, LifeSized);
+        fn(u_texMatrix, LifeSized);
+        fn(u_texParams, LifeSized);
+        fn(u_texBlendColor, LifeSized);
+        fn(m_progMeshOit, LifeSized);
+        fn(m_progMeshOitClip, LifeSized);
+        fn(m_progComp, LifeSized);
+        fn(m_progDebug, LifeSized);
+        fn(m_progDebugScene, LifeSized);
+        fn(m_progDebugSceneClip, LifeSized);
+        fn(m_progCap, LifeSized);
+        fn(m_progCapClip, LifeSized);
+        fn(s_texHatch, LifeSized);
+        fn(m_whiteTex, LifeSized);
+        fn(m_blackTex, LifeSized);
+        fn(m_hatchTex, LifeSized);
+        fn(s_texAccum, LifeSized);
+        fn(s_texReveal, LifeSized);
+        fn(m_lineQuadVb, LifeSized);
+        fn(m_lineQuadIb, LifeSized);
+        fn(u_matColor, LifeSized);
+        fn(u_matEmissive, LifeSized);
+        fn(u_matSpecular, LifeSized);
+        fn(u_params, LifeSized);
+        fn(u_clipParams, LifeSized);
+        fn(u_clipPlanes, LifeSized);
+        fn(u_linePattern, LifeSized);
+#ifdef FC_RENDERER_STANDALONE
+        fn(m_progPresent, LifeSized);
+#endif
+        // Per-view-lifetime resources. The impact map is sized by the
+        // map resolution, not by the window; the stateful-particle
+        // programs/uniforms are created once per view and kept across
+        // the resize-driven destroy()/init() cycles (see the validity
+        // guard in init()).
+        fn(impactFbo, LifeView);
+        fn(impactTex, LifeView);
+        fn(m_progPSimInit, LifeView);
+        fn(m_progPImpact, LifeView);
+        fn(s_pstate0, LifeView);
+        fn(s_pstate1, LifeView);
+        fn(u_pgrid, LifeView);
+        fn(u_pboxMin, LifeView);
+        fn(u_pboxMax, LifeView);
+        fn(s_pimpsrc, LifeView);
+        fn(u_impactFrame, LifeView);
+        fn(u_impactNow, LifeView);
+        fn(s_texImpact, LifeView);
+        fn(u_waterImpact, LifeView);
+        fn(u_waterImpactCfg, LifeView);
+    }
+    template <typename H>
+    static void releaseHandle(H &h)
+    {
+        if (bgfx::isValid(h)) {
+            bgfx::destroy(h);
+            h = BGFX_INVALID_HANDLE;
+        }
+    }
+    /// Release every registry handle of the given lifetime, in list
+    /// (i.e. dependency) order.
+    void sweepHandles(HandleLife life)
+    {
+        forEachHandle([life](auto &h, HandleLife l) {
+            if (l == life)
+                releaseHandle(h);
+        });
+    }
+
     ~BGFXView()
     {
         destroy();
         for (auto &v : particles)
             v.second.destroy();
         particles.clear();
-        // Sized by the map resolution, not by the window, so it lives
-        // outside destroy() the same way particle state does.
-        if (bgfx::isValid(impactFbo))
-            bgfx::destroy(impactFbo);
-        if (bgfx::isValid(impactTex))
-            bgfx::destroy(impactTex);
-        // The stateful-particle programs/uniforms are created once per
-        // view and kept across the resize-driven destroy()/init()
-        // cycles (see the validity guard in init()), so the view's end
-        // is the one place they are released.
-        for (auto prog : {&m_progPSimInit, &m_progPImpact}) {
-            if (bgfx::isValid(*prog))
-                bgfx::destroy(*prog);
-        }
-        for (auto uni : {&s_pstate0, &s_pstate1, &u_pgrid,
-                         &u_pboxMin, &u_pboxMax, &s_pimpsrc,
-                         &u_impactFrame, &u_impactNow, &s_texImpact,
-                         &u_waterImpact, &u_waterImpactCfg}) {
-            if (bgfx::isValid(*uni))
-                bgfx::destroy(*uni);
-        }
+        // What destroy() leaves behind is the per-view-lifetime tail
+        // of the registry: the view's end is the one place it goes.
+        sweepHandles(LifeView);
     }
 
     void destroy()
@@ -2318,108 +2598,13 @@ public:
         for (auto &v : geometries)
             v.second.destroy();
         geometries.clear();
-        if (bgfx::isValid(whiteColorVb)) {
-            bgfx::destroy(whiteColorVb);
-            whiteColorVb = BGFX_INVALID_HANDLE;
-        }
         whiteColorCount = 0;
         for (auto &v : textures)
             v.second.destroy();
         textures.clear();
-        // SSAO resources: framebuffers before the textures they reference.
-        for (auto fb : {&debugSceneFbo,
-                        &aoPrepassFbo, &aoGenFbo, &aoBlurFbo,
-                        &aoMipFbo[0], &aoMipFbo[1], &aoMipFbo[2],
-                        &aoMipFbo[3], &aoMipFbo[4], &aoMipFbo[5]}) {
-            if (bgfx::isValid(*fb)) {
-                bgfx::destroy(*fb);
-                *fb = BGFX_INVALID_HANDLE;
-            }
-        }
-        for (auto tex : {&debugSceneTex, &debugSceneDepth,
-                         &aoNormalZ, &aoDepth, &aoTex, &aoBlurTex,
-                         &aoNoiseTex, &aoMipTex[0], &aoMipTex[1],
-                         &aoMipTex[2], &aoMipTex[3], &aoMipTex[4],
-                         &aoMipTex[5]}) {
-            if (bgfx::isValid(*tex)) {
-                bgfx::destroy(*tex);
-                *tex = BGFX_INVALID_HANDLE;
-            }
-        }
-        aoMipCount = 0;
-        // Volumetric resources: the framebuffers before their textures.
-        for (auto fb : {&volFbo, &volHistFbo,
-                        &bloomFbo, &bloomBlurFbo,
-                        &bulbShadowFbo,
-                        &waterFrontFbo, &waterBackFbo,
-                        &glassFrontFbo, &glassBackFbo,
-                        &cloudFrontFbo, &cloudBackFbo,
-                        &fireFrontFbo, &fireBackFbo,
-                        &sceneCopyFbo, &reflFbo}) {
-            if (bgfx::isValid(*fb)) {
-                bgfx::destroy(*fb);
-                *fb = BGFX_INVALID_HANDLE;
-            }
-        }
-        for (auto tex : {&volTex, &volFrontTex,
-                         &volHistTex, &volHistFrontTex,
-                         &bloomTex, &bloomBlurTex,
-                         &bulbShadowTex, &bulbShadowDepth,
-                         &waterFrontTex, &waterBackTex,
-                         &waterFrontDepth, &waterBackDepth,
-                         &glassFrontTex, &glassBackTex,
-                         &glassFrontDepth, &glassBackDepth,
-                         &cloudFrontTex, &cloudBackTex,
-                         &cloudFrontDepth, &cloudBackDepth,
-                         &fireFrontTex, &fireBackTex,
-                         &fireFrontDepth, &fireBackDepth,
-                         &sceneCopyTex, &reflTex, &reflDepth}) {
-            if (bgfx::isValid(*tex)) {
-                bgfx::destroy(*tex);
-                *tex = BGFX_INVALID_HANDLE;
-            }
-        }
-        for (auto uni : {&s_texVol, &s_texVolFront, &u_volParams,
-                         &u_volMedium,
-                         &u_volTexel, &s_texWaterFront, &s_texWaterBack,
-                         &u_waterSigma, &u_causticParams,
-                         &s_texScene, &s_texRefl, &u_waterSurf,
-                         &u_waterAbsorb, &u_waterRipple, &u_reflParams,
-                         &s_texGlassFront, &s_texGlassBack,
-                         &u_glassParams,
-                         &s_texCloudFront, &s_texCloudBack,
-                         &u_cloudParams,
-                         &s_texFireFront, &s_texFireBack,
-                         &u_fireParams, &u_fireParams2,
-                         &u_fireFrame, &u_fountainParams,
-                         &u_fountainFrame, &u_waterSplash,
-                         &u_mediumSlot}) {
-            if (bgfx::isValid(*uni)) {
-                bgfx::destroy(*uni);
-                *uni = BGFX_INVALID_HANDLE;
-            }
-        }
-        for (auto prog : {&m_progPrepass, &m_progPrepassClip,
-                          &m_progMedDepth, &m_progMedDepthClip,
-                          &m_progPrepassInst, &m_progSsao,
-                          &m_progGtao, &m_progGtaoBlur, &m_progGtaoDepth,
-                          &m_progSsaoBlur, &m_progSsaoApply,
-                          &m_progVol,
-                          &m_progVolAccum, &m_progReflMedia,
-                          &m_progBloomBright, &m_progBloomEmit,
-                          &m_progBloomBlur, &m_progBloomApply,
-                          &m_progSun, &m_progEnvBg,
-                          &m_progVolApply, &m_progVolExt,
-                          &m_progCaustics, &m_progWaterCopy, &m_progWater,
-                          &m_progGlass, &m_progGroundRefl}) {
-            if (bgfx::isValid(*prog)) {
-                bgfx::destroy(*prog);
-                *prog = BGFX_INVALID_HANDLE;
-            }
-        }
-        // Shadow resources: the framebuffers before their textures. The
-        // recreated moments texture starts empty, so the cached-map hash
-        // resets with it (same for the AO/prepass cache).
+        // The recreated moments texture starts empty, so the cached-map
+        // hash resets with it (same for the AO/prepass cache and the
+        // bulb shadow tiles).
         shadowMapHash = 0;
         aoMapHash = 0;
         camFrameHash = 0;
@@ -2427,282 +2612,15 @@ public:
             bulbShadowValid[t] = false;
             bulbShadowHash[t] = 0;
         }
-        for (auto fb : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo,
-                        &shadowTintFbo, &shadowTintBlurFbo,
-                        &shadowTintBlurBackFbo}) {
-            if (bgfx::isValid(*fb)) {
-                bgfx::destroy(*fb);
-                *fb = BGFX_INVALID_HANDLE;
-            }
-        }
-        for (auto tex : {&shadowTex, &shadowDepth, &shadowBlurTex,
-                         &shadowTintTex, &shadowTintBlurTex}) {
-            if (bgfx::isValid(*tex)) {
-                bgfx::destroy(*tex);
-                *tex = BGFX_INVALID_HANDLE;
-            }
-        }
-        for (auto prog : {&m_progShadow, &m_progShadowClip,
-                          &m_progShadowInst, &m_progShadowBlur,
-                          &m_progShadowTint}) {
-            if (bgfx::isValid(*prog)) {
-                bgfx::destroy(*prog);
-                *prog = BGFX_INVALID_HANDLE;
-            }
-        }
-        for (auto uni : {&s_texShadow, &s_texShadowTint, &s_texAOScreen,
-                         &u_debugParams, &s_texDebugScene,
-                         &u_shadowParams, &u_lightDir,
-                         &u_lightPos, &u_lightColor, &u_shadowMatrix,
-                         &u_shadowBlur, &u_evsm,
-                         &u_localLight, &u_localLightColor,
-                         &s_texBloom, &u_bloomParams,
-                         &u_bloomTexel, &u_bloomBlur, &u_sunParams,
-                         &s_texBulbShadow, &u_bulbShadowMtx,
-                         &u_bulbShadowConf, &u_bulbShadowRot}) {
-            if (bgfx::isValid(*uni)) {
-                bgfx::destroy(*uni);
-                *uni = BGFX_INVALID_HANDLE;
-            }
-        }
-        // PBR environment resources.
-        for (auto tex : {&m_envTex, &m_dummyEnvTex}) {
-            if (bgfx::isValid(*tex)) {
-                bgfx::destroy(*tex);
-                *tex = BGFX_INVALID_HANDLE;
-            }
-        }
+        aoMipCount = 0;
         m_envBuilt = false;
-        for (auto uni : {&s_texNormalZ, &s_texAONoise, &s_texAO,
-                         &s_texAOMip[0], &s_texAOMip[1], &s_texAOMip[2],
-                         &s_texAOMip[3], &s_texAOMip[4], &s_texAOMip[5],
-                         &u_aoParams, &u_aoParams2, &u_aoKernel,
-                         &s_texEnv, &u_pbrParams, &u_envSH,
-                         &s_texBump, &u_bumpParams,
-                         &s_texEmissive, &s_texOcclusion,
-                         &s_texMetallicRoughness}) {
-            if (bgfx::isValid(*uni)) {
-                bgfx::destroy(*uni);
-                *uni = BGFX_INVALID_HANDLE;
-            }
-        }
-        // The OIT framebuffer references bgfxDepth (owned by bgfxFbo),
-        // so it goes first.
-        if (bgfx::isValid(oitFbo)) {
-            bgfx::destroy(oitFbo);
-            oitFbo = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(oitAccum)) {
-            bgfx::destroy(oitAccum);
-            oitAccum = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(oitReveal)) {
-            bgfx::destroy(oitReveal);
-            oitReveal = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(bgfxFbo)) {
-            bgfx::destroy(bgfxFbo);
-            bgfxFbo = BGFX_INVALID_HANDLE;
-        }
-        // Owns its attachments (created with destroyTextures), like the
-        // scene target above.
-        if (bgfx::isValid(sinkFbo)) {
-            bgfx::destroy(sinkFbo);
-            sinkFbo = BGFX_INVALID_HANDLE;
-            sinkColor = BGFX_INVALID_HANDLE;
-            sinkDepth = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMesh)) {
-            bgfx::destroy(m_progMesh);
-            m_progMesh = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshInst)) {
-            bgfx::destroy(m_progMeshInst);
-            m_progMeshInst = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshInstTex)) {
-            bgfx::destroy(m_progMeshInstTex);
-            m_progMeshInstTex = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshInstOit)) {
-            bgfx::destroy(m_progMeshInstOit);
-            m_progMeshInstOit = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshInstOitTex)) {
-            bgfx::destroy(m_progMeshInstOitTex);
-            m_progMeshInstOitTex = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_instParams)) {
-            bgfx::destroy(u_instParams);
-            u_instParams = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progFlat)) {
-            bgfx::destroy(m_progFlat);
-            m_progFlat = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshClip)) {
-            bgfx::destroy(m_progMeshClip);
-            m_progMeshClip = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progFlatClip)) {
-            bgfx::destroy(m_progFlatClip);
-            m_progFlatClip = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progLine)) {
-            bgfx::destroy(m_progLine);
-            m_progLine = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progLineClip)) {
-            bgfx::destroy(m_progLineClip);
-            m_progLineClip = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progLinePat)) {
-            bgfx::destroy(m_progLinePat);
-            m_progLinePat = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progLinePatClip)) {
-            bgfx::destroy(m_progLinePatClip);
-            m_progLinePatClip = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progPoint)) {
-            bgfx::destroy(m_progPoint);
-            m_progPoint = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progPointClip)) {
-            bgfx::destroy(m_progPointClip);
-            m_progPointClip = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshTex)) {
-            bgfx::destroy(m_progMeshTex);
-            m_progMeshTex = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshTexClip)) {
-            bgfx::destroy(m_progMeshTexClip);
-            m_progMeshTexClip = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshOitTex)) {
-            bgfx::destroy(m_progMeshOitTex);
-            m_progMeshOitTex = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshOitTexClip)) {
-            bgfx::destroy(m_progMeshOitTexClip);
-            m_progMeshOitTexClip = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(s_texColor)) {
-            bgfx::destroy(s_texColor);
-            s_texColor = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_texMatrix)) {
-            bgfx::destroy(u_texMatrix);
-            u_texMatrix = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_texParams)) {
-            bgfx::destroy(u_texParams);
-            u_texParams = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_texBlendColor)) {
-            bgfx::destroy(u_texBlendColor);
-            u_texBlendColor = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshOit)) {
-            bgfx::destroy(m_progMeshOit);
-            m_progMeshOit = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progMeshOitClip)) {
-            bgfx::destroy(m_progMeshOitClip);
-            m_progMeshOitClip = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progComp)) {
-            bgfx::destroy(m_progComp);
-            m_progComp = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progDebug)) {
-            bgfx::destroy(m_progDebug);
-            m_progDebug = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progDebugScene)) {
-            bgfx::destroy(m_progDebugScene);
-            m_progDebugScene = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progDebugSceneClip)) {
-            bgfx::destroy(m_progDebugSceneClip);
-            m_progDebugSceneClip = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progCap)) {
-            bgfx::destroy(m_progCap);
-            m_progCap = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_progCapClip)) {
-            bgfx::destroy(m_progCapClip);
-            m_progCapClip = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(s_texHatch)) {
-            bgfx::destroy(s_texHatch);
-            s_texHatch = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_whiteTex)) {
-            bgfx::destroy(m_whiteTex);
-            m_whiteTex = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_blackTex)) {
-            bgfx::destroy(m_blackTex);
-            m_blackTex = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_hatchTex)) {
-            bgfx::destroy(m_hatchTex);
-            m_hatchTex = BGFX_INVALID_HANDLE;
-        }
         m_hatchVersion = 0;
-        if (bgfx::isValid(s_texAccum)) {
-            bgfx::destroy(s_texAccum);
-            s_texAccum = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(s_texReveal)) {
-            bgfx::destroy(s_texReveal);
-            s_texReveal = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_lineQuadVb)) {
-            bgfx::destroy(m_lineQuadVb);
-            m_lineQuadVb = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(m_lineQuadIb)) {
-            bgfx::destroy(m_lineQuadIb);
-            m_lineQuadIb = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_matColor)) {
-            bgfx::destroy(u_matColor);
-            u_matColor = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_matEmissive)) {
-            bgfx::destroy(u_matEmissive);
-            u_matEmissive = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_matSpecular)) {
-            bgfx::destroy(u_matSpecular);
-            u_matSpecular = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_params)) {
-            bgfx::destroy(u_params);
-            u_params = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_clipParams)) {
-            bgfx::destroy(u_clipParams);
-            u_clipParams = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_clipPlanes)) {
-            bgfx::destroy(u_clipPlanes);
-            u_clipPlanes = BGFX_INVALID_HANDLE;
-        }
-        if (bgfx::isValid(u_linePattern)) {
-            bgfx::destroy(u_linePattern);
-            u_linePattern = BGFX_INVALID_HANDLE;
-        }
-#ifdef FC_RENDERER_STANDALONE
-        if (bgfx::isValid(m_progPresent)) {
-            bgfx::destroy(m_progPresent);
-            m_progPresent = BGFX_INVALID_HANDLE;
-        }
-#else
+        sweepHandles(LifeSized);
+        // The sink framebuffer owned its attachments (created with
+        // destroyTextures): the sweep released them with it.
+        sinkColor = BGFX_INVALID_HANDLE;
+        sinkDepth = BGFX_INVALID_HANDLE;
+#ifndef FC_RENDERER_STANDALONE
         if (hasFBO) {
             _BGFXLib.freeFBO(fbo);
             if (fboDepth)
