@@ -1304,6 +1304,9 @@ struct GpuGeometry
             d[0] = mesh.positions[ia*3];
             d[1] = mesh.positions[ia*3 + 1];
             d[2] = mesh.positions[ia*3 + 2];
+            // No stipple run: a triangle edge stands alone, and these
+            // are never drawn patterned anyway (a zero length tells
+            // the shader to count from A).
             d[3] = 0.0f;
             d[4] = mesh.positions[ib*3];
             d[5] = mesh.positions[ib*3 + 1];
@@ -1435,17 +1438,38 @@ struct GpuMesh
         const bgfx::Memory *imem =
             bgfx::alloc(uint32_t(nseg) * 16 * sizeof(float));
         float *d = reinterpret_cast<float *>(imem->data);
+        // Stipple phase, in the endpoints' spare w slots: how far along
+        // its polyline this segment starts (model units) and how long
+        // it is. The shader turns them into the pixel distance the
+        // pattern counts. Without it the count restarts at every
+        // segment and a dashed curve — which is many segments shorter
+        // than one dash — draws solid.
+        double run = 0.0;
+        int32_t prevB = -1;
         for (int s = 0; s < nseg; ++s, d += 16) {
             int32_t ia = indices[s*2];
             int32_t ib = indices[s*2 + 1];
+            // A polyline is what the feed flattened into pairs: as
+            // long as a segment starts where the last one ended, the
+            // run continues.
+            if (ia != prevB)
+                run = 0.0;
+            prevB = ib;
+            const float dx = mesh.positions[ib*3] - mesh.positions[ia*3];
+            const float dy = mesh.positions[ib*3 + 1]
+                - mesh.positions[ia*3 + 1];
+            const float dz = mesh.positions[ib*3 + 2]
+                - mesh.positions[ia*3 + 2];
+            const float seglen = std::sqrt(dx*dx + dy*dy + dz*dz);
             d[0] = mesh.positions[ia*3];
             d[1] = mesh.positions[ia*3 + 1];
             d[2] = mesh.positions[ia*3 + 2];
-            d[3] = 0.0f;
+            d[3] = float(run);
             d[4] = mesh.positions[ib*3];
             d[5] = mesh.positions[ib*3 + 1];
             d[6] = mesh.positions[ib*3 + 2];
-            d[7] = 0.0f;
+            d[7] = seglen;
+            run += seglen;
             if (mesh.colors) {
                 for (int i = 0; i < 4; ++i) {
                     d[8 + i] = mesh.colors[ia*4 + i] / 255.0f;
