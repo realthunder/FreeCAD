@@ -343,6 +343,14 @@ void BGFXRenderer::setAOConfig(const AOConfig &config)
     }
 }
 
+void BGFXRenderer::setCavityConfig(const CavityConfig &config)
+{
+    if (pimpl->cavityconf != config) {
+        pimpl->cavityconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
 void BGFXRenderer::setPreselConfig(const PreselHighlightConfig &config)
 {
     if (pimpl->preselconf != config) {

@@ -2856,6 +2856,9 @@ static void applySnapshot(bool fit)
     if (s_degraded)
         ao.enabled = false;
     s_renderer->setAOConfig(ao);
+    // Cavity is one fullscreen multiply over targets the prepass
+    // already paid for, so it survives the degraded tier that drops AO.
+    s_renderer->setCavityConfig(s_snap.cavityconf);
     s_renderer->setPBRConfig(s_snap.pbrconf);
     s_renderer->setBumpConfig(s_snap.bumpconf);
     s_renderer->setLightConfig(s_snap.lightconf);

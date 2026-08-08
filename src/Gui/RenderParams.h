@@ -363,6 +363,57 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter Cavity
+    ///
+    /// Enable screen space cavity (curvature) shading of the
+    /// experimental render engine (render cache mode 3 with a selected
+    /// renderer type). Darkens concave creases and convex ridges found
+    /// in the geometry prepass normals, which makes surface shape and
+    /// small features read without relying on the lighting -- the
+    /// inspection shading a CAD workbench view wants. Independent of
+    /// ambient occlusion: cavity is a one-pixel curvature term (crisp
+    /// edge definition), occlusion is a radius-based visibility
+    /// integral (contact darkening). They compose.
+    static const bool & getCavity();
+    static const bool & defaultCavity();
+    static void removeCavity();
+    static void setCavity(const bool &v);
+    static const char *docCavity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CavityValley
+    ///
+    /// Cavity darkening strength in concave creases (inside corners,
+    /// fillets, pockets). Zero disables the valley term.
+    static const double & getCavityValley();
+    static const double & defaultCavityValley();
+    static void removeCavityValley();
+    static void setCavityValley(const double &v);
+    static const char *docCavityValley();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CavityRidge
+    ///
+    /// Cavity darkening strength on convex ridges (outside corners,
+    /// chamfers). Reads as a soft contour along edges. Zero disables the
+    /// ridge term.
+    /// 
+    /// Both terms darken: the pass multiplies the finished 8-bit scene
+    /// color, which cannot brighten past white, so the ridge highlight
+    /// some workbench renderers use is not available here.
+    static const double & getCavityRidge();
+    static const double & defaultCavityRidge();
+    static void removeCavityRidge();
+    static void setCavityRidge(const double &v);
+    static const char *docCavityRidge();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter PBR
     ///
     /// Enable physically based shading with image based lighting of

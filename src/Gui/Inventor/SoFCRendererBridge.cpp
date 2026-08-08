@@ -1169,6 +1169,19 @@ RendererBridge::translateAOConfig(App::PropertyContainer * view)
     return res;
 }
 
+Render::CavityConfig
+RendererBridge::translateCavityConfig(App::PropertyContainer * view)
+{
+    Render::CavityConfig res;
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "Cavity", RenderParams::getCavity());
+    res.valley = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "CavityValley", RenderParams::getCavityValley()));
+    res.ridge = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "CavityRidge", RenderParams::getCavityRidge()));
+    return res;
+}
+
 bool
 RendererBridge::translateShaderParamValues(const App::Property * prop,
                                            std::vector<float> & values)

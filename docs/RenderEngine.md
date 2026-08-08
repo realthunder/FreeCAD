@@ -219,8 +219,8 @@ order:
 6. **Reflection** — ground-reflection re-render of the opaque scene
    (mirrored camera), media composited in.
 7. **Beauty** — `ViewOpaque` (triangles, lines, points), stencil
-   section caps, hidden-line outlines, caustics splat, volumetric
-   upsample-apply.
+   section caps, cavity multiply, hidden-line outlines, caustics splat,
+   volumetric upsample-apply.
 8. **Water/glass surfaces** — scene-color copy, then the surface draws
    re-rendered with refraction/absorption/planar reflection.
 9. **Transparency** — WBOIT accumulation + fullscreen resolve (or
@@ -235,6 +235,29 @@ order:
 14. **Overlays** — up to 9 overlay feeds (NaviCube, axis cross, HUD
     text, rubberband...) via `Renderer::setOverlay`.
 15. **Present** — standalone tier only: copy to the default backbuffer.
+
+### Cavity (curvature) shading
+
+`ViewCavity` is one fullscreen multiply between the opaque passes and
+the outlines, enabled by `Render_Cavity`. It darkens concave creases
+(`Render_CavityValley`) and convex ridges (`Render_CavityRidge`) so
+surface shape reads independently of how the scene is lit — the
+inspection shading a workbench view wants. It reuses the AO block's
+geometry prepass, so it costs one extra pass, and it turns that prepass
+on by itself when ambient occlusion is off.
+
+Two things about it are deliberate:
+
+- **Curvature comes from the normal field, not from positions.** The
+  textbook estimator — each neighbour's signed distance from the centre
+  pixel's tangent plane — reads positions, which are piecewise linear
+  across a tessellation, so every facet boundary on a sphere or cylinder
+  registers as a crease and the surface ends up wearing its own triangle
+  grid. Interpolated normals stay smooth across those facets while still
+  jumping at a real edge, where the crease angle splits them.
+- **Both terms darken.** The pass multiplies the finished 8-bit scene
+  color and so cannot brighten past white; the ridge *highlight* other
+  workbench renderers add is not available without an HDR scene target.
 
 Fill-bound effect passes (AO, volumetrics, bloom, reflection…) can run
 below main resolution via the `Render_EffectResolution` view property

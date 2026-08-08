@@ -356,6 +356,29 @@ struct AOConfig {
     bool operator!=(const AOConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame screen-space cavity (curvature) shading configuration —
+/// like AOConfig there is no GL-renderer counterpart. A one-pixel
+/// curvature term read from the geometry prepass normals, multiplied
+/// onto the finished opaque scene: it states surface shape without
+/// depending on the lighting, which is what makes small features
+/// readable in an inspection view. Orthogonal to AOConfig — occlusion
+/// is a radius-based visibility integral, cavity is a local second
+/// derivative — and the two compose.
+struct CavityConfig {
+    bool enabled = false;    ///< cavity pass active
+    /// Darkening strength in concave creases (curvature > 0) and on
+    /// convex ridges (curvature < 0). Both darken: the pass multiplies
+    /// an 8-bit scene color, so it cannot brighten past white.
+    float valley = 1.0f;
+    float ridge = 0.5f;
+
+    bool operator==(const CavityConfig &o) const {
+        return enabled == o.enabled && valley == o.valley
+            && ridge == o.ridge;
+    }
+    bool operator!=(const CavityConfig &o) const { return !(*this == o); }
+};
+
 /// Per-frame render debugging configuration (docs/RenderDebug.md).
 /// Resolved by the bridge each render from the RenderDebug_* view
 /// properties / global RenderParams defaults, like AOConfig.
@@ -1238,6 +1261,9 @@ public:
     { (void)config; }
     /// Per-frame ambient occlusion configuration.
     virtual void setAOConfig(const AOConfig &config) { (void)config; }
+    /// Per-frame screen-space cavity (curvature) shading configuration.
+    virtual void setCavityConfig(const CavityConfig &config)
+    { (void)config; }
     /// Per-frame render debugging configuration (docs/RenderDebug.md).
     virtual void setRenderDebugConfig(const RenderDebugConfig &config)
     { (void)config; }

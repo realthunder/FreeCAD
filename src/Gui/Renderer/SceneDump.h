@@ -93,6 +93,7 @@ struct SceneSnapshot {
     HiddenLineConfig hlconfig;
     SectionConfig secconf;
     AOConfig aoconf;
+    CavityConfig cavityconf;    ///< v42; defaulted on older snapshots
     PBRConfig pbrconf;
     BumpConfig bumpconf;
     LightConfig lightconf;

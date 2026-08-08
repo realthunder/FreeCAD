@@ -699,6 +699,13 @@ void BGFXView::init()
                                        _BGFXLib.shaderPath().c_str());
         m_progSsaoApply = fcLoadProgram("vs_fc_comp", "fs_fc_ssao_apply",
                                         _BGFXLib.shaderPath().c_str());
+        // Cavity shares the prepass resources, so it is built with them
+        // (m_ssao gates the whole block); the pass itself is gated by
+        // its own config in render().
+        m_progCavity = fcLoadProgram("vs_fc_comp", "fs_fc_cavity",
+                                     _BGFXLib.shaderPath().c_str());
+        u_cavityParams = bgfx::createUniform("u_cavityParams",
+                                             bgfx::UniformType::Vec4);
         s_texNormalZ = bgfx::createUniform("s_texNormalZ",
                                            bgfx::UniformType::Sampler);
         s_texAONoise = bgfx::createUniform("s_texAONoise",

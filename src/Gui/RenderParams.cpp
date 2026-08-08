@@ -66,6 +66,9 @@ public:
     double AORadius;
     double AOIntensity;
     double AOResolution;
+    bool Cavity;
+    double CavityValley;
+    double CavityRidge;
     bool PBR;
     double PBRMetallic;
     double PBRRoughness;
@@ -149,6 +152,12 @@ public:
         funcs["AOIntensity"] = &RenderParamsP::updateAOIntensity;
         AOResolution = this->handle->GetFloat("AOResolution", 1.0);
         funcs["AOResolution"] = &RenderParamsP::updateAOResolution;
+        Cavity = this->handle->GetBool("Cavity", false);
+        funcs["Cavity"] = &RenderParamsP::updateCavity;
+        CavityValley = this->handle->GetFloat("CavityValley", 1.0);
+        funcs["CavityValley"] = &RenderParamsP::updateCavityValley;
+        CavityRidge = this->handle->GetFloat("CavityRidge", 0.5);
+        funcs["CavityRidge"] = &RenderParamsP::updateCavityRidge;
         PBR = this->handle->GetBool("PBR", false);
         funcs["PBR"] = &RenderParamsP::updatePBR;
         PBRMetallic = this->handle->GetFloat("PBRMetallic", 0.0);
@@ -322,6 +331,18 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAOResolution(RenderParamsP *self) {
         self->AOResolution = self->handle->GetFloat("AOResolution", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCavity(RenderParamsP *self) {
+        self->Cavity = self->handle->GetBool("Cavity", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCavityValley(RenderParamsP *self) {
+        self->CavityValley = self->handle->GetFloat("CavityValley", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCavityRidge(RenderParamsP *self) {
+        self->CavityRidge = self->handle->GetFloat("CavityRidge", 0.5);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBR(RenderParamsP *self) {
@@ -1065,6 +1086,105 @@ void RenderParams::setAOResolution(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeAOResolution() {
     instance()->handle->RemoveFloat("AOResolution");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCavity() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Enable screen space cavity (curvature) shading of the\n"
+"experimental render engine (render cache mode 3 with a selected\n"
+"renderer type). Darkens concave creases and convex ridges found\n"
+"in the geometry prepass normals, which makes surface shape and\n"
+"small features read without relying on the lighting -- the\n"
+"inspection shading a CAD workbench view wants. Independent of\n"
+"ambient occlusion: cavity is a one-pixel curvature term (crisp\n"
+"edge definition), occlusion is a radius-based visibility\n"
+"integral (contact darkening). They compose.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getCavity() {
+    return instance()->Cavity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultCavity() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCavity(const bool &v) {
+    instance()->handle->SetBool("Cavity",v);
+    instance()->Cavity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCavity() {
+    instance()->handle->RemoveBool("Cavity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCavityValley() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Cavity darkening strength in concave creases (inside corners,\n"
+"fillets, pockets). Zero disables the valley term.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getCavityValley() {
+    return instance()->CavityValley;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultCavityValley() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCavityValley(const double &v) {
+    instance()->handle->SetFloat("CavityValley",v);
+    instance()->CavityValley = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCavityValley() {
+    instance()->handle->RemoveFloat("CavityValley");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCavityRidge() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Cavity darkening strength on convex ridges (outside corners,\n"
+"chamfers). Reads as a soft contour along edges. Zero disables the\n"
+"ridge term.\n"
+"\n"
+"Both terms darken: the pass multiplies the finished 8-bit scene\n"
+"color, which cannot brighten past white, so the ridge highlight\n"
+"some workbench renderers use is not available here.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getCavityRidge() {
+    return instance()->CavityRidge;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultCavityRidge() {
+    const static double def = 0.5;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCavityRidge(const double &v) {
+    instance()->handle->SetFloat("CavityRidge",v);
+    instance()->CavityRidge = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCavityRidge() {
+    instance()->handle->RemoveFloat("CavityRidge");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

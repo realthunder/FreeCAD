@@ -149,6 +149,24 @@ void BGFXView::submitAOResolve(float radius, float intensity, int method,
     }
 }
 
+void BGFXView::submitCavity(float valley, float ridge)
+{
+    // Curvature is a one-pixel derivative, so the neighbour offsets are
+    // the *prepass* texel size (aoNormalZ is always full viewport res,
+    // unlike the AO resolve targets, which carry their own scale).
+    float params[4] = {valley, ridge,
+                       1.0f / float(width), 1.0f / float(height)};
+    bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
+    bgfx::setUniform(u_cavityParams, params);
+    // dst *= src, alpha untouched: the darkening rides on top of
+    // whatever the opaque passes left, and the background multiplies
+    // by white.
+    fullscreen(ViewCavity, m_progCavity,
+               BGFX_STATE_WRITE_RGB
+               | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ZERO,
+                                       BGFX_STATE_BLEND_SRC_COLOR));
+}
+
 void BGFXView::submitVolumetric(float density, float intensity, float maxDist,
                       const float medium[4], bool water,
                       bool surfaceSplit, float accum,

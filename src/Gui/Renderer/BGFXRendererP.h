@@ -2091,6 +2091,17 @@ public:
                             // the fullscreen AO multiply moved into the
                             // mesh shaders' ambient terms, aoMeshTex at
                             // unit 9.)
+        ViewCavity,         // fullscreen cavity (curvature) multiply over
+                            // the finished opaque scene: a one-pixel
+                            // second derivative of the prepass normals
+                            // darkening creases and ridges. After every
+                            // opaque pass (section caps included) so it
+                            // states the shape of everything solid, and
+                            // before the outlines and the transparent
+                            // bucket, which must stay crisp -- curvature
+                            // read off a silhouette edge is meaningless,
+                            // so the shader rejects depth steps rather
+                            // than haloing them.
         ViewGroundReflApply, // ground reflection overlay: the mirrored
                             // scene blended onto the shadow ground quad
                             // (depth EQUAL against the ground's own
@@ -2433,6 +2444,7 @@ public:
         fn(m_progGtaoDepth, LifeSized);
         fn(m_progSsaoBlur, LifeSized);
         fn(m_progSsaoApply, LifeSized);
+        fn(m_progCavity, LifeSized);
         fn(m_progVol, LifeSized);
         fn(m_progVolAccum, LifeSized);
         fn(m_progReflMedia, LifeSized);
@@ -2499,6 +2511,7 @@ public:
             fn(h, LifeSized);
         fn(u_aoParams, LifeSized);
         fn(u_aoParams2, LifeSized);
+        fn(u_cavityParams, LifeSized);
         fn(u_aoKernel, LifeSized);
         fn(s_texEnv, LifeSized);
         fn(u_pbrParams, LifeSized);
@@ -2987,6 +3000,13 @@ public:
     void submitAOResolve(float radius, float intensity, int method,
                          bool fast, int slices, int steps);
 
+    /// Cavity (curvature) shading: one fullscreen multiply of the
+    /// finished opaque scene by a curvature term read from the prepass
+    /// normals. Unlike the AO term above this one *is* composited here
+    /// — it darkens the final color rather than an ambient sub-term, so
+    /// it states shape independently of how the surface is lit.
+    void submitCavity(float valley, float ridge);
+
     /// Volumetric light shaft resolve: raymarch the shadow map through
     /// the media at half resolution (ray ends at the prepass depth; a
     /// water body interval carries its own per-channel extinction and
@@ -3425,6 +3445,11 @@ public:
     bgfx::UniformHandle u_aoParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_aoParams2 = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_aoKernel = BGFX_INVALID_HANDLE;
+    // Screen-space cavity (curvature) shading: one fullscreen multiply
+    // reading the same prepass the AO chain reads. u_cavityParams:
+    // x = valley strength, y = ridge strength, zw = prepass texel size.
+    bgfx::ProgramHandle m_progCavity = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_cavityParams = BGFX_INVALID_HANDLE;
     // PBR image based lighting: a fixed procedural studio environment
     // built once on demand — a GGX-prefiltered cubemap mip chain for the
     // specular part and its irradiance SH for the diffuse part.
@@ -4048,6 +4073,7 @@ public:
     Render::HiddenLineConfig hlconfig;
     Render::SectionConfig secconf;
     Render::AOConfig aoconf;
+    Render::CavityConfig cavityconf;
     Render::PBRConfig pbrconf;
     Render::BumpConfig bumpconf;
     Render::LightConfig lightconf;

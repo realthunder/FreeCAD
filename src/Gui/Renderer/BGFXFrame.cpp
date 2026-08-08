@@ -337,19 +337,32 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // for it, and there is opaque scene geometry to occlude. The
     // hidden-line draw style disables it (a technical drawing mode;
     // its faces may not draw at all).
-    bool ssaoActive = false;
-    if (view->m_ssao && aoconf.enabled && !hlconfig.show) {
+    // Cavity shading shares every part of that gate: it reads the same
+    // prepass (so it needs the same resources), it is just as wrong on a
+    // hidden-line technical view, and it needs opaque triangles to state
+    // the curvature of. Zero strengths mean the multiply would be a
+    // no-op, so the pass is not worth a target switch.
+    const bool ssaoWanted = view->m_ssao && aoconf.enabled
+        && !hlconfig.show;
+    const bool cavityWanted = view->m_ssao && cavityconf.enabled
+        && !hlconfig.show
+        && (cavityconf.valley > 0.0f || cavityconf.ridge > 0.0f)
+        && bgfx::isValid(view->m_progCavity);
+    bool hasOpaqueTri = false;
+    if (ssaoWanted || cavityWanted) {
         for (const auto &draw : scene) {
             if (!draw.material.ontop
                     && draw.material.type == Render::Material::Triangle
                     && !draw.material.transparent
                     && !(draw.material.pervertexcolor && draw.mesh
                          && draw.mesh->hasTransparency)) {
-                ssaoActive = true;
+                hasOpaqueTri = true;
                 break;
             }
         }
     }
+    bool ssaoActive = ssaoWanted && hasOpaqueTri;
+    const bool cavityActive = cavityWanted && hasOpaqueTri;
     // PBR runs when the per-frame config asks for it and the
     // environment could be built (caps). The hidden-line draw style
     // disables it like SSAO (a technical drawing mode).
@@ -1639,7 +1652,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         && !noWaterReject;
     bool glassReject = glassActive && !noWaterReject;
     bool prepassActive = ssaoActive || volActive || waterSurfReject
-        || glassReject;
+        || glassReject || cavityActive;
 
     // AO/prepass cache (same pattern as the shadow-map hash above):
     // the depth/normal prepass and the whole AO resolve chain
@@ -2493,6 +2506,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     declPass(V::ViewSelection, nonOntopSel, configScene);
     declPass(V::ViewSectionCap, true, configScene);
     declPass(V::ViewDebugScene, debugSceneRender, configDebugScene);
+    declPass(V::ViewCavity, cavityActive, configScene);
     declPass(V::ViewGroundReflApply, groundReflActive, configScene);
     declPass(V::ViewOutline, true, configScene);
     declPass(V::ViewCaustics, waterActive && volconf.caustics,
@@ -3310,6 +3324,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
                                   fireParams2, fireFrames,
                                   fountainGeom, fountainFrame);
     }
+    // Curvature darkening lands on the finished opaque scene, before
+    // the outlines and the transparent bucket draw over it.
+    if (view->passLive(V::ViewCavity))
+        view->submitCavity(cavityconf.valley, cavityconf.ridge);
     // Ground blends its (possibly cached) reflection with a quad
     // every frame; the water surface pass samples reflTex itself
     // (s_texRefl) below.

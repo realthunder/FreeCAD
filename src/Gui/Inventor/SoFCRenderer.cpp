@@ -2360,6 +2360,8 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
         RendererBridge::translateSectionConfig());
     PRIVATE(this)->external->setAOConfig(
         RendererBridge::translateAOConfig(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setCavityConfig(
+        RendererBridge::translateCavityConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setRenderDebugConfig(
         RendererBridge::translateRenderDebugConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setUserShaderConfig(PRIVATE(this)->mergedshaders);

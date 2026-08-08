@@ -178,6 +178,27 @@ Params = [
         "Effect resolution drives only the costlier reflection re-render.\n"
         "1.0 renders the occlusion at full resolution; lower trades AO\n"
         "sharpness for speed."),
+    ParamBool('Cavity',  False, title='Cavity shading',
+        doc="Enable screen space cavity (curvature) shading of the\n"
+        "experimental render engine (render cache mode 3 with a selected\n"
+        "renderer type). Darkens concave creases and convex ridges found\n"
+        "in the geometry prepass normals, which makes surface shape and\n"
+        "small features read without relying on the lighting -- the\n"
+        "inspection shading a CAD workbench view wants. Independent of\n"
+        "ambient occlusion: cavity is a one-pixel curvature term (crisp\n"
+        "edge definition), occlusion is a radius-based visibility\n"
+        "integral (contact darkening). They compose."),
+    ParamFloat('CavityValley',  1.0, title='Valley darkening',
+        doc="Cavity darkening strength in concave creases (inside corners,\n"
+        "fillets, pockets). Zero disables the valley term."),
+    ParamFloat('CavityRidge',  0.5, title='Ridge darkening',
+        doc="Cavity darkening strength on convex ridges (outside corners,\n"
+        "chamfers). Reads as a soft contour along edges. Zero disables the\n"
+        "ridge term.\n"
+        "\n"
+        "Both terms darken: the pass multiplies the finished 8-bit scene\n"
+        "color, which cannot brighten past white, so the ridge highlight\n"
+        "some workbench renderers use is not available here."),
     ParamBool('PBR',  False, title='Physically based shading',
         doc="Enable physically based shading with image based lighting of\n"
         "the experimental render engine (render cache mode 3 with a\n"

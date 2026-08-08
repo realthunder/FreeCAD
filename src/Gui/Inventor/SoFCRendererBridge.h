@@ -80,6 +80,7 @@ GuiExport Render::SectionConfig translateSectionConfig();
 /// them like the Shadow draw style's Shadow_* properties), with the
 /// global RenderParams as fallback.
 GuiExport Render::AOConfig translateAOConfig(App::PropertyContainer * view);
+GuiExport Render::CavityConfig translateCavityConfig(App::PropertyContainer * view);
 GuiExport Render::RenderDebugConfig translateRenderDebugConfig(App::PropertyContainer * view);
 
 /// Extract a property value as floats zero-padded to vec4 lanes — the

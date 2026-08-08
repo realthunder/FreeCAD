@@ -134,7 +134,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // 41: the presel/sel highlight configs carry loupeLift
 //     (ViewParams::TouchLoupeLift) — how far above the fingertip the
 //     touch loupe picks (docs/ThinClientUI.md).
-const uint32_t kVersion = 41;
+// 42: CavityConfig — screen-space cavity (curvature) shading, the
+//     prepass-normal darkening applied to the opaque scene
+//     (docs/RenderEngine.md). A viewer older than this defaults it off,
+//     which is the pre-feature look.
+const uint32_t kVersion = 42;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -176,6 +180,7 @@ static_assert(sizeof(HiddenLineConfig) == 20, "HiddenLineConfig changed: stream 
 static_assert(sizeof(PreselHighlightConfig) == 20, "PreselHighlightConfig changed: stream the new field, then update this");
 static_assert(sizeof(SectionConfig) == 12, "SectionConfig changed: stream the new field, then update this");
 static_assert(sizeof(AOConfig) == 28, "AOConfig changed: stream the new field, then update this");
+static_assert(sizeof(CavityConfig) == 12, "CavityConfig changed: stream the new field, then update this");
 static_assert(sizeof(BumpConfig) == 8, "BumpConfig changed: stream the new field, then update this");
 static_assert(sizeof(VolumetricConfig) == 28, "VolumetricConfig changed: stream the new field, then update this");
 static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new field, then update this");
@@ -2672,6 +2677,10 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.i32(snap.aoconf.slices);
     w.i32(snap.aoconf.steps);
 
+    w.b(snap.cavityconf.enabled);
+    w.f(snap.cavityconf.valley);
+    w.f(snap.cavityconf.ridge);
+
     w.b(snap.pbrconf.enabled);
     w.f(snap.pbrconf.metallic);
     w.f(snap.pbrconf.roughness);
@@ -3030,6 +3039,12 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.aoconf.method = version >= 13 ? r.i32() : 0;
     snap.aoconf.slices = version >= 14 ? r.i32() : 0;
     snap.aoconf.steps = version >= 14 ? r.i32() : 0;
+
+    if (version >= 42) {
+        snap.cavityconf.enabled = r.b();
+        snap.cavityconf.valley = r.f();
+        snap.cavityconf.ridge = r.f();
+    }
 
     snap.pbrconf.enabled = r.b();
     snap.pbrconf.metallic = r.f();
