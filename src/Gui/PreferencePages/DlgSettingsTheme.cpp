@@ -167,7 +167,7 @@ void DlgSettingsTheme::attachObserver()
                                {"StyleSheet", "TiledBackground"},
                                applyStyleSheet);
     handlers.addHandler("BaseApp/Preferences/Themes",
-                        {"ThemeAccentColor1", "ThemeAccentColor2", "ThemeAccentColor2"},
+                        {"ThemeAccentColor1", "ThemeAccentColor2", "ThemeAccentColor3"},
                         handler);
 }
 
