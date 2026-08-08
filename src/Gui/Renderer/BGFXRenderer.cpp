@@ -2292,6 +2292,21 @@ public:
             bgfx::destroy(impactFbo);
         if (bgfx::isValid(impactTex))
             bgfx::destroy(impactTex);
+        // The stateful-particle programs/uniforms are created once per
+        // view and kept across the resize-driven destroy()/init()
+        // cycles (see the validity guard in init()), so the view's end
+        // is the one place they are released.
+        for (auto prog : {&m_progPSimInit, &m_progPImpact}) {
+            if (bgfx::isValid(*prog))
+                bgfx::destroy(*prog);
+        }
+        for (auto uni : {&s_pstate0, &s_pstate1, &u_pgrid,
+                         &u_pboxMin, &u_pboxMax, &s_pimpsrc,
+                         &u_impactFrame, &u_impactNow, &s_texImpact,
+                         &u_waterImpact, &u_waterImpactCfg}) {
+            if (bgfx::isValid(*uni))
+                bgfx::destroy(*uni);
+        }
     }
 
     void destroy()
