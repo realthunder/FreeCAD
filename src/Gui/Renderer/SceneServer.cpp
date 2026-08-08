@@ -3228,6 +3228,11 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
         g->pendingKeys.clear();
         g->currentKeys.clear();
         g->previousKeys.clear();
+        // The level memos go with them: requestLevel early-returns on
+        // a recorded ask, so an entry outliving its purged job would
+        // answer 202 forever without ever building on a re-serve.
+        g->levelAsked.clear();
+        g->levelBuilt.clear();
         pimpl->sweepBlobs();
     }
     {
