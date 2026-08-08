@@ -11171,7 +11171,7 @@ public:
         const bool reflActive = groundReflActive || waterReflActive;
 
         declPasses(V::ViewParticleSim0,
-                   V::ViewParticleSim0 + V::kParticleViews - 1,
+                   int(V::ViewParticleSim0) + int(V::kParticleViews) - 1,
                    statefulParticles, nullptr);
         declPass(V::ViewParticleImpact,
                  statefulParticles && hasWaterBody && waterSurfActive,
@@ -11927,7 +11927,7 @@ public:
             if (!cullDraw)
                 submitSceneOutline(draw);
         }
-        if (shadowBlurActive)
+        if (view->passLive(V::ViewShadowBlurH))
             view->submitShadowBlur(lightconf.smoothBorder);
         if (shadowActive && lightconf.ground && bboxValid) {
             view->submitShadowGround(bboxMin, bboxMax, lightconf,
@@ -11976,7 +11976,7 @@ public:
                             sizeof(fsl.frame));
             }
         }
-        if ((groundReflActive || waterReflActive) && reflRender) {
+        if (view->passLive(V::ViewGroundRefl) && reflRender) {
             view->reflPass = true;
             // Keep only what is above the mirror plane; everything
             // under it would otherwise fold up over the reflection.
@@ -12030,7 +12030,7 @@ public:
         // Ground blends its (possibly cached) reflection with a quad
         // every frame; the water surface pass samples reflTex itself
         // (s_texRefl) below.
-        if (groundReflActive)
+        if (view->passLive(V::ViewGroundReflApply))
             view->submitGroundReflOverlay(bboxMin, bboxMax, lightconf);
         for (const auto &draw : scene) {
             if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
@@ -12077,7 +12077,7 @@ public:
         // result into their ambient terms — see aoMeshTex). A cached
         // frame (aoRender false) skips the chain outright: the targets
         // still hold this camera/scene's result.
-        if (ssaoActive && aoRender)
+        if (view->passLive(V::ViewAOGen))
             view->submitAOResolve(aoRadius, aoconf.intensity,
                                   aoconf.method, aoconf.fast,
                                   aoconf.slices, aoconf.steps);
@@ -12085,7 +12085,7 @@ public:
         // 1d. Volumetric light shafts: half-res raymarch of the shadow
         // map, bilateral-upsampled and composited onto the opaque scene
         // after the outlines, before the transparent bucket.
-        if (volActive) {
+        if (view->passLive(V::ViewVolGen)) {
             // Temporal accumulation factor: while the camera holds
             // still, successive jittered marches blend into the
             // history (k = 1/frames, floored so animated media keep
@@ -12118,7 +12118,7 @@ public:
         // 1e. Water caustics: additive light-space pattern splat over
         // the prepass surfaces inside the water interval, before the
         // extinction multiply of the volumetric apply.
-        if (waterActive && volconf.caustics) {
+        if (view->passLive(V::ViewCaustics)) {
             float causticParams[kSlots][4] = {};
             bool anyCaustics = false;
             for (int s = 0; s < waterSlotCount; ++s) {
@@ -12143,7 +12143,7 @@ public:
         // volumetric composite) into the refraction source; the
         // per-draw surface submits happened in the scene loop above
         // (their views render after the copy).
-        if (waterSurfActive || glassActive)
+        if (view->passLive(V::ViewWaterCopy))
             view->submitWaterCopy();
         if (waterSurfActive) {
             animatedFrame = animatedFrame
@@ -12153,7 +12153,7 @@ public:
         // 1g. Bloom: bright-pass + light-source emit + blur + additive
         // composite, over the finished scene (its views sit after the
         // transparent/water buckets, before the on-top/UI passes).
-        if (bloomActive)
+        if (view->passLive(V::ViewBloomBright))
             view->submitBloom(bloomconf.threshold, bloomconf.intensity,
                               bloomconf.radius, bulbDraws,
                               // Rendered this frame, or the AO cache
@@ -12165,7 +12165,7 @@ public:
         // composited color, then the user program draws fullscreen over
         // the scene reading the copy — before the debug visualization
         // and the on-top/highlight/overlay passes.
-        if (userPostActive)
+        if (view->passLive(V::ViewUserPost))
             view->submitUserPost(*userPost, userPostProg);
 
         // 1h. Render debugging buffer visualization (docs/RenderDebug.md):
@@ -12456,7 +12456,7 @@ public:
             view->overlayRectHeight = 0.f;
         }
 
-        if (oitActive)
+        if (view->passLive(V::ViewOITComposite))
             view->submitComposite();
 
         view->collectMeshes();
