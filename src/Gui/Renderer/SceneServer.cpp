@@ -1123,6 +1123,12 @@ public:
     struct DumpCollect {
         uint32_t id = 0;
         size_t expected = 0;
+        /// The connections the request actually went to, each removed
+        /// by its one answer. Without it the request id is the whole
+        /// key: one viewer could answer N times and fill the
+        /// collection with its own frames, displacing the answers the
+        /// other viewers are still rendering.
+        std::set<uint64_t> awaited;
         std::vector<ViewerFrameDump> dumps;
     };
     DumpCollect *dumpCollect = nullptr;
@@ -1135,6 +1141,7 @@ public:
     struct LogCollect {
         uint32_t id = 0;
         size_t expected = 0;
+        std::set<uint64_t> awaited;   ///< as DumpCollect::awaited
         std::vector<std::string> logs;
     };
     LogCollect *logCollect = nullptr;
@@ -1367,8 +1374,10 @@ public:
                       "{\"cmd\":\"dumpFrame\",\"id\":%u,\"mode\":%d}",
                       collect.id, mode);
         for (Conn *conn : conns) {
-            if (conn->viewer)
+            if (conn->viewer) {
                 conn->pendingText.push_back(msg);
+                collect.awaited.insert(conn->id);
+            }
         }
         dumpCv.wait_for(lock, std::chrono::milliseconds(timeoutMs),
                         [&collect]() {
@@ -1399,8 +1408,10 @@ public:
         std::snprintf(msg, sizeof(msg),
                       "{\"cmd\":\"dumpDecisions\",\"id\":%u}", collect.id);
         for (Conn *conn : conns) {
-            if (conn->viewer)
+            if (conn->viewer) {
                 conn->pendingText.push_back(msg);
+                collect.awaited.insert(conn->id);
+            }
         }
         dumpCv.wait_for(lock, std::chrono::milliseconds(timeoutMs),
                         [&collect]() {
@@ -2771,7 +2782,7 @@ public:
         if (!conn.authorized)
             return;
         if (size > 0 && bytes[0] == 'D') {
-            handleFrameDump(bytes, size);
+            handleFrameDump(conn, bytes, size);
             return;
         }
         // A viewer's decision journal: 'L', u32 request id, u32 text
@@ -2783,7 +2794,8 @@ public:
             if (size < 9 + size_t(len))
                 return;
             std::lock_guard<std::mutex> guard(connMutex);
-            if (logCollect && logCollect->id == id) {
+            if (logCollect && logCollect->id == id
+                    && logCollect->awaited.erase(conn.id)) {
                 std::string log(
                     reinterpret_cast<const char *>(bytes) + 9, len);
                 // Attribution, when the hello offered a label
@@ -2802,7 +2814,8 @@ public:
     /// A viewer's dumpFrame answer: 'D', u32 request id, u32 metadata
     /// length, the metadata JSON, u32 width, u32 height, then
     /// width*height RGBA8 pixels (bottom-up rows) — all little-endian.
-    void handleFrameDump(const uint8_t *bytes, size_t size)
+    void handleFrameDump(Conn &conn, const uint8_t *bytes,
+                         size_t size)
     {
         auto u32At = [bytes](size_t off) {
             uint32_t v;
@@ -2830,7 +2843,8 @@ public:
                          bytes + off + size_t(dump.width) * dump.height * 4);
 
         std::lock_guard<std::mutex> guard(connMutex);
-        if (dumpCollect && dumpCollect->id == id) {
+        if (dumpCollect && dumpCollect->id == id
+                && dumpCollect->awaited.erase(conn.id)) {
             dumpCollect->dumps.push_back(std::move(dump));
             dumpCv.notify_all();
         }
