@@ -2258,6 +2258,29 @@ QToolBar > QToolButton#qt_toolbutton_menubutton:open {
     border: 1px solid #333333;
 }
 
+/* Mouse-over lifts the icon a pixel and pressing pushes it a pixel down. The
+   top and bottom padding always add up to the button's own total, so no button
+   changes size and the toolbar never relayouts under the pointer. */
+QToolBar > QToolButton:hover {
+    padding-top: 1px;
+    padding-bottom: 3px;
+}
+
+QToolBar > QToolButton:pressed {
+    padding-top: 3px;
+    padding-bottom: 1px;
+}
+
+QToolBar > QToolButton#qt_toolbutton_menubutton:hover {
+    padding-top: 2px;
+    padding-bottom: 4px;
+}
+
+QToolBar > QToolButton#qt_toolbutton_menubutton:pressed {
+    padding-top: 4px;
+    padding-bottom: 2px;
+}
+
 QToolBar QToolButton::menu-button,
 QToolBar > QToolButton#qt_toolbutton_menubutton::menu-button {
     subcontrol-origin: padding;
