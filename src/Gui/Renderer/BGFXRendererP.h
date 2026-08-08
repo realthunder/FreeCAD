@@ -273,6 +273,18 @@ class BGFXView;
 bool shadercTarget(std::string &platform, std::string &profile,
                           std::string &apiDir);
 
+/// Stock shader pack loaders (BGFXRenderer.cpp). They replace
+/// bgfx_utils' loadShader/loadProgram, which assert on a missing .bin
+/// and then hand createShader a null memory block -- a truncated or
+/// stale pack would take the process down instead of degrading. These
+/// report the missing stage and return an invalid handle (and never
+/// leak the sibling shader of a half-loaded pair, which
+/// bgfx::createProgram's early-out does); init() turns an invalid core
+/// program into a Coin fallback.
+bgfx::ShaderHandle fcLoadShader(const char *name, const char *path);
+bgfx::ProgramHandle fcLoadProgram(const char *vsName, const char *fsName,
+                                  const char *path);
+
 namespace Render {
 
 /// One line a second summarising what the camera can resolve
@@ -3763,6 +3775,15 @@ public:
     int msaaSamples = 0;  // sample count the current targets were built with
     int shaderGen = 0;    // _BGFXLib.shaderGeneration the programs were
                           // loaded at; a lag re-inits the view (hot-reload)
+    // The last init() could not load a program the view cannot draw
+    // without (a missing or stale stock shader pack). The view stays
+    // torn down and every frame reports failure -- on the desktop that
+    // is the Coin fallback -- until the generation moves, so a
+    // reloadShaders() over a repaired pack recovers.
+    bool shaderFailed = false;
+    // Set with it: the abandoned init's queued bgfx commands still
+    // need one frame to execute (see the frame path's bail).
+    bool shaderFailedDrain = false;
     // Per-frame world-to-screen scale consumed by autozoom draws
     // (Renderer::setAutoZoomScale).
     float autozoomScale = 1.0f;

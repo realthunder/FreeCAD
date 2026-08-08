@@ -751,6 +751,71 @@ static bgfx::ShaderHandle loadShaderFile(const std::string &path)
     mem->data[mem->size - 1] = '\0';
     return bgfx::createShader(mem);
 }
+#endif // !FC_RENDERER_STANDALONE
+
+// The per-API subdirectory the stock pack is compiled into, mirroring
+// bgfx_utils' own mapping (BGFXShaders.cmake writes the same names).
+static const char *shaderBinDir()
+{
+    switch (bgfx::getRendererType()) {
+    case bgfx::RendererType::Direct3D11: return "dxbc";
+    case bgfx::RendererType::Direct3D12: return "dxil";
+    case bgfx::RendererType::Agc:
+    case bgfx::RendererType::Gnm:        return "pssl";
+    case bgfx::RendererType::Metal:      return "metal";
+    case bgfx::RendererType::Nvn:        return "nvn";
+    case bgfx::RendererType::OpenGLES:   return "essl";
+    case bgfx::RendererType::Vulkan:     return "spirv";
+    default:                             return "glsl";
+    }
+}
+
+bgfx::ShaderHandle fcLoadShader(const char *name, const char *path)
+{
+    std::string file(path ? path : "");
+    if (!file.empty() && file.back() != '/')
+        file += '/';
+    file += "shaders/";
+    file += shaderBinDir();
+    file += '/';
+    file += name;
+    file += ".bin";
+#ifdef FC_RENDERER_STANDALONE
+    bgfx::ShaderHandle h = loadShaderData(file);
+#else
+    bgfx::ShaderHandle h = loadShaderFile(file);
+#endif
+    if (!bgfx::isValid(h)) {
+        // Missing, unreadable, or not a shader binary this bgfx accepts
+        // (createShader rejects a bad signature by itself).
+        qWarning() << "bgfx: shader unloadable:" << file.c_str();
+        return h;
+    }
+    bgfx::setName(h, name);
+    return h;
+}
+
+bgfx::ProgramHandle fcLoadProgram(const char *vsName, const char *fsName,
+                                  const char *path)
+{
+    bgfx::ShaderHandle vsh = fcLoadShader(vsName, path);
+    bgfx::ShaderHandle fsh = BGFX_INVALID_HANDLE;
+    if (fsName && *fsName)
+        fsh = fcLoadShader(fsName, path);
+    if (!bgfx::isValid(vsh) || !bgfx::isValid(fsh)) {
+        // createProgram would return invalid here too, but its early
+        // out ignores destroyShaders and orphans whichever stage did
+        // load.
+        if (bgfx::isValid(vsh))
+            bgfx::destroy(vsh);
+        if (bgfx::isValid(fsh))
+            bgfx::destroy(fsh);
+        return BGFX_INVALID_HANDLE;
+    }
+    return bgfx::createProgram(vsh, fsh, true);
+}
+
+#ifndef FC_RENDERER_STANDALONE
 
 int
 BGFXRendererLibP::ensureUserShaderBin(const std::string &source,
@@ -1138,7 +1203,7 @@ BGFXRendererLibP::getUserProgram(const Render::UserShader &shader,
         return BGFX_INVALID_HANDLE;
     }
     bgfx::ShaderHandle vsh = vsBin.empty()
-        ? loadShader(stockVs, shaderPath().c_str())
+        ? fcLoadShader(stockVs, shaderPath().c_str())
         : shaderFromBin(vsBin);
     if (!bgfx::isValid(vsh)) {
         entry.failed = true;

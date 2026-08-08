@@ -65,6 +65,35 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (!view)
         return false;
 
+    // A shader pack that could not supply a core program keeps the
+    // view down: without this the torn-down view (no framebuffer)
+    // matches the re-init condition below and every frame would
+    // reload the whole broken pack. A reloadShaders() moves the
+    // generation and re-arms the attempt.
+    if (view->shaderFailed && view->shaderGen == _BGFXLib.shaderGeneration) {
+        if (view->shaderFailedDrain) {
+            // The failed init() queued a full view's worth of create
+            // and destroy commands that no frame has executed. Drain
+            // them once, in the context dance a normal frame uses, so
+            // the abandoned GPU resources are actually released and
+            // bgfx is left idle rather than mid-command-buffer.
+            view->shaderFailedDrain = false;
+#ifdef FC_RENDERER_STANDALONE
+            bgfx::frame();
+#else
+            widget->doneCurrent();
+            _BGFXLib.makeCurrent();
+            bgfx::frame();
+#endif
+        }
+#ifndef FC_RENDERER_STANDALONE
+        // Hand the context back the way the fb-invalid bail does, so
+        // Coin draws the frame on Qt's context.
+        widget->makeCurrent();
+#endif
+        return false;
+    }
+
 #ifdef FC_RENDERER_STANDALONE
     // Warmup rebuild: a few frames after the scene first appears,
     // force a single target re-create to clear the bad
