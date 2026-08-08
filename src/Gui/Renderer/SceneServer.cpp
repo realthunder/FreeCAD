@@ -1111,6 +1111,13 @@ public:
     std::mutex connMutex;
     std::vector<Conn *> conns;
     uint64_t connIdCounter = 0;   ///< guarded by connMutex
+    /// Pre-auth accept caps (acceptLoop): every accepted socket —
+    /// HTTP and WS alike — counts until its handler thread exits.
+    std::mutex acceptCountMutex;
+    int activeConns = 0;                       ///< guarded above
+    std::map<std::string, int> activeByIp;     ///< non-loopback only
+    static constexpr int kMaxConns = 128;
+    static constexpr int kMaxConnsPerIp = 16;
     std::condition_variable dumpCv;    ///< guarded by connMutex
     /// In-flight dumpFrame collection (one at a time).
     struct DumpCollect {
@@ -1704,12 +1711,53 @@ public:
             sndTimeout.tv_sec = 20;
             ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &sndTimeout,
                          sizeof(sndTimeout));
+            // Pre-auth flood control: each connection may legitimately
+            // buffer tens of MiB (frame + fragment caps), and the door
+            // only judges after the WS handshake — with no cap a LAN
+            // or direct-mode peer could hold unbounded threads and
+            // memory. Loopback is exempt from the per-address cap: the
+            // tunnel front door (cloudflared) funnels every remote
+            // client through it, and the global cap still bounds it.
+            std::string ip;
+            {
+                sockaddr_in peer = {};
+                socklen_t plen = sizeof(peer);
+                if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
+                                  &plen) == 0) {
+                    char buf[64] = "";
+                    ::inet_ntop(AF_INET, &peer.sin_addr, buf, sizeof(buf));
+                    ip = buf;
+                }
+            }
+            const bool loopback = ip == "127.0.0.1" || ip == "::1";
+            {
+                std::lock_guard<std::mutex> guard(acceptCountMutex);
+                int perIp = 0;
+                auto it = activeByIp.find(ip);
+                if (it != activeByIp.end())
+                    perIp = it->second;
+                if (activeConns >= kMaxConns
+                        || (!loopback && perIp >= kMaxConnsPerIp)) {
+                    ::close(fd);
+                    continue;
+                }
+                ++activeConns;
+                if (!loopback)
+                    activeByIp[ip] = perIp + 1;
+            }
             // One thread per connection: a WebSocket client keeps its
             // connection for the whole session and must not starve the
             // HTTP fallback (or a second viewer).
-            std::thread([this, fd]() {
+            std::thread([this, fd, ip, loopback]() {
                 handle(fd);
                 ::close(fd);
+                std::lock_guard<std::mutex> guard(acceptCountMutex);
+                --activeConns;
+                if (!loopback) {
+                    auto it = activeByIp.find(ip);
+                    if (it != activeByIp.end() && --it->second <= 0)
+                        activeByIp.erase(it);
+                }
             }).detach();
         }
     }
