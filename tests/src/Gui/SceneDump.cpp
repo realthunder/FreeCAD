@@ -395,6 +395,121 @@ TEST(SceneDump, manifestRoundTrip)
     expectScene(loaded);
 }
 
+/// The label a viewer shows comes from the metadata table, not from the
+/// identity the publish path resolves.
+///
+/// The publish path knows an object's document and internal name for
+/// free — they are fixed, and the cache key's origin carries them. It
+/// deliberately does NOT know the label: that is presentation, it
+/// changes only when a user renames something, and resolving it per
+/// draw per publish cost a document lookup for a table only a remote
+/// viewer reads. The writer joins the two here.
+TEST(SceneDump, aLabelComesFromTheMetaTableNotTheIdentity)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+
+    // What the publish path produces: identity, no label, no type.
+    Render::ObjectInfoMap info;
+    info[0x1111] = {"MainDoc", "Box", "", ""};
+    snap.objectInfo = &info;
+
+    // What the serving source pushes when a document is renamed.
+    Render::ObjectMetaMap meta;
+    meta["MainDoc"]["Box"] = {"Bo\"x é", "Part::Box"};
+    snap.objectMeta = &meta;
+
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.objectEntries = &entries;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    auto named = model.objects.find(0x1111);
+    ASSERT_TRUE(named != model.objects.end());
+    EXPECT_EQ(named->second.entry.info.doc, "MainDoc");
+    EXPECT_EQ(named->second.entry.info.obj, "Box");
+    EXPECT_EQ(named->second.entry.info.label, "Bo\"x é");
+    EXPECT_EQ(named->second.entry.info.type, "Part::Box");
+}
+
+/// Both halves are arbitrary UTF-8, INTERNAL NAMES INCLUDED: a name may
+/// hold anything a Python identifier may. Nothing on this path may
+/// assume ASCII — and the metadata table is keyed by document name then
+/// object name for exactly this reason, since no separator byte is
+/// unavailable to a name.
+TEST(SceneDump, identityAndLabelSurviveNonAsciiNames)
+{
+    const std::string doc = "文書";
+    const std::string obj = "Boîte_日本";
+    const std::string label = "Ma « boîte » é";
+
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    Render::ObjectInfoMap info;
+    info[0x1111] = {doc, obj, "", ""};
+    snap.objectInfo = &info;
+    Render::ObjectMetaMap meta;
+    meta[doc][obj] = {label, "Part::Box"};
+    snap.objectMeta = &meta;
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.objectEntries = &entries;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    auto named = model.objects.find(0x1111);
+    ASSERT_TRUE(named != model.objects.end());
+    // Byte for byte: the wire carries lengths, so nothing here is
+    // scanned for a terminator or cut to a character count.
+    EXPECT_EQ(named->second.entry.info.doc, doc);
+    EXPECT_EQ(named->second.entry.info.obj, obj);
+    EXPECT_EQ(named->second.entry.info.label, label);
+}
+
+/// An object with no metadata keeps its identity and goes out unlabelled
+/// — which is what the viewer's fallback expects: it shows the internal
+/// name, and that is what identifies the object anyway.
+TEST(SceneDump, anObjectWithoutMetaKeepsItsIdentity)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    Render::ObjectInfoMap info;
+    info[0x1111] = {"MainDoc", "Box", "", ""};
+    snap.objectInfo = &info;
+    Render::ObjectMetaMap meta;   // a document nobody renamed anything in
+    snap.objectMeta = &meta;
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.objectEntries = &entries;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    auto named = model.objects.find(0x1111);
+    ASSERT_TRUE(named != model.objects.end());
+    EXPECT_EQ(named->second.entry.info.obj, "Box");
+    EXPECT_TRUE(named->second.entry.info.label.empty());
+}
+
 /// v38: an object entry names its document object, the naming survives
 /// the round trip into the consumer model, and an object the producer
 /// could not name stays unnamed rather than inventing one.

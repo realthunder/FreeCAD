@@ -1051,6 +1051,7 @@ SET(Inventor_CPP_SRCS
     SoFCOffscreenRenderer.cpp
     SoQtOffscreenRendererPy.cpp
     SoFCSelection.cpp
+    ObjectMetaFeed.cpp
     SceneServeSource.cpp
     ShareDocument.cpp
     SoFCUnifiedSelection.cpp
@@ -1111,6 +1112,7 @@ SET(Inventor_SRCS
     SoFCOffscreenRenderer.h
     SoQtOffscreenRendererPy.h
     SoFCSelection.h
+    ObjectMetaFeed.h
     SceneServeSource.h
     ShareDocument.h
     SoFCUnifiedSelection.h

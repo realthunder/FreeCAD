@@ -8156,6 +8156,7 @@ public:
     {
         snap.scene = scene;
         snap.objectInfo = &objectInfo;
+        snap.objectMeta = &objectMeta;
         snap.selections.assign(selections.begin(), selections.end());
         snap.highlight = highlight;
         snap.highlightWholeOnTop = hlWholeOnTop;
@@ -12557,6 +12558,10 @@ public:
     /// Draw identity resolved by the producer (setObjectInfo); consulted
     /// by the snapshot writer for the published object entries.
     Render::ObjectInfoMap objectInfo;
+    /// The labels those identities carry to a viewer (setObjectMeta),
+    /// pushed by the serving source when a document changes them rather
+    /// than rebuilt per publish. Empty on a view nobody serves.
+    Render::ObjectMetaMap objectMeta;
     // Cross-object instance groups of the scene feed: draws sharing one
     // geometry content (by hash — a shared cache OR coincidentally
     // identical flattened caches), index range and material (diffuse
@@ -13075,7 +13080,39 @@ void BGFXRenderer::setObjectInfo(ObjectInfoMap &&info)
 {
     pimpl->objectInfo = std::move(info);
     // Identity rides the published root's object entries; a change to
-    // it alone (rename) only reaches viewers with the next publish.
+    // it alone only reaches viewers with the next publish.
+    pimpl->feedDirty = true;
+}
+
+void BGFXRenderer::setObjectMeta(ObjectMetaMap &&meta)
+{
+    pimpl->objectMeta = std::move(meta);
+    // A rename changes no geometry and no key, so nothing else marks the
+    // feed dirty for it -- without this the new label would sit here
+    // until something moved.
+    pimpl->feedDirty = true;
+}
+
+void BGFXRenderer::updateObjectMeta(
+        ObjectMetaMap &&changed,
+        const std::vector<std::pair<std::string, std::string>> &removed)
+{
+    for (auto &doc : changed) {
+        auto &byObject = pimpl->objectMeta[doc.first];
+        for (auto &obj : doc.second)
+            byObject[obj.first] = std::move(obj.second);
+    }
+    for (const auto &key : removed) {
+        auto doc = pimpl->objectMeta.find(key.first);
+        if (doc == pimpl->objectMeta.end())
+            continue;
+        doc->second.erase(key.second);
+        // A document whose last object went takes its own entry with
+        // it, so the table cannot accumulate empty documents across a
+        // session of opening and closing files.
+        if (doc->second.empty())
+            pimpl->objectMeta.erase(doc);
+    }
     pimpl->feedDirty = true;
 }
 

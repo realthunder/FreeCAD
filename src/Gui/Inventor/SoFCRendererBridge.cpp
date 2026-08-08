@@ -32,8 +32,6 @@
 #include <QImage>
 
 #include <App/Application.h>
-#include <App/Document.h>
-#include <App/DocumentObject.h>
 #include <App/PropertyFile.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyStandard.h>
@@ -1056,19 +1054,19 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             if (objectInfo && draw.objectKey
                     && !objectInfo->count(draw.objectKey)) {
                 if (const auto & org = ventry.key->getOrigin()) {
+                    // Identity only, and it costs two string copies: an
+                    // internal name is fixed, so the origin captured at
+                    // cache build still names the same object. The label
+                    // and the type are presentation, they describe no
+                    // mesh, and a viewer gets them from the serving
+                    // source's ObjectMetaMap instead
+                    // (Renderer::setObjectMeta) -- resolving them here
+                    // meant a getDocument()+getObject() per draw on
+                    // every publish, in every view, for a table only a
+                    // remote viewer ever reads.
                     Render::ObjectInfo info;
                     info.doc = org->doc;
                     info.obj = org->obj;
-                    // Label and type are read fresh: the origin was
-                    // captured at cache build, and a label can change
-                    // without touching the scene graph.
-                    if (auto doc = App::GetApplication().getDocument(
-                                org->doc.c_str())) {
-                        if (auto obj = doc->getObject(org->obj.c_str())) {
-                            info.label = obj->Label.getValue();
-                            info.type = obj->getTypeId().getName();
-                        }
-                    }
                     (*objectInfo)[draw.objectKey] = std::move(info);
                 }
             }

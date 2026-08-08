@@ -2551,6 +2551,24 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
                 if (it != snap.objectInfo->end())
                     entry.info = it->second;
             }
+            // The label a viewer shows, joined on at the one place that
+            // needs it. It is not carried by the identity map because it
+            // says nothing about geometry: it changes when a user
+            // renames something, and never with a mesh. An entry whose
+            // identity already carries a label keeps it — a caller may
+            // hand the writer a fully resolved map (the dump tests do).
+            if (snap.objectMeta && entry.info.label.empty()
+                    && !entry.info.doc.empty()) {
+                auto d = snap.objectMeta->find(entry.info.doc);
+                if (d != snap.objectMeta->end()) {
+                    auto o = d->second.find(entry.info.obj);
+                    if (o != d->second.end()) {
+                        entry.info.label = o->second.label;
+                        if (entry.info.type.empty())
+                            entry.info.type = o->second.type;
+                    }
+                }
+            }
             if (snap.baseVersion)
                 chunkCopies[entry.key] = std::move(copy);
             entries.push_back(std::move(entry));

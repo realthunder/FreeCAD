@@ -175,6 +175,7 @@
 #include <Inventor/elements/SoLightModelElement.h>
 
 #include "ViewParams.h"
+#include "ObjectMetaFeed.h"
 #include "RenderParams.h"
 #include "RenderTiming.h"
 // The render cache's entries hold references to vertex caches, and its
@@ -4116,6 +4117,7 @@ void View3DInventorViewer::setRendererType(const std::string &type)
             _pimpl->clearOverlayCaptures();
             if (selectionRoot)
                 selectionRoot->setExternalRenderer(nullptr);
+            ObjectMetaFeed::instance().forget(_pimpl->renderer.get());
             _pimpl->renderer.reset();
             getSoRenderManager()->scheduleRedraw();
         }
@@ -4124,6 +4126,8 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         _pimpl->clearOverlayCaptures();
         if (selectionRoot)
             selectionRoot->setExternalRenderer(nullptr);
+        if (_pimpl->renderer)
+            ObjectMetaFeed::instance().forget(_pimpl->renderer.get());
         _pimpl->renderer = RendererFactory::create(
                 type, qobject_cast<QOpenGLWidget*>(getGLWidget()));
         if (_pimpl->renderer && selectionRoot) {
@@ -4585,6 +4589,14 @@ void View3DInventorViewer::renderScene()
                 | (uint32_t(col.blue()) << 8) | 0xff;
         }
         _pimpl->renderer->setBackground(rbg);
+        // render() publishes on the way past when something is listening
+        // (docs/HeadlessServe.md §4), and a published object entry names
+        // its object for the viewer. The names come from here rather
+        // than from the publish path — nothing about a label describes a
+        // mesh. Costs a lookup and an integer compare per frame, and
+        // only a serving process builds the table at all.
+        if (Render::SceneStreamServer::instance().running())
+            ObjectMetaFeed::instance().feed(_pimpl->renderer.get());
         externalRendered =
             _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
         // Time-animated backend content (e.g. water caustics) keeps

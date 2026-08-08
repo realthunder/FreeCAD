@@ -60,6 +60,11 @@ public:
 
     virtual void setScene(DrawCallList &&draws) override;
     virtual void setObjectInfo(ObjectInfoMap &&info) override;
+    virtual void setObjectMeta(ObjectMetaMap &&meta) override;
+    virtual void updateObjectMeta(
+            ObjectMetaMap &&changed,
+            const std::vector<std::pair<std::string, std::string>> &removed)
+            override;
     virtual void setBackground(const Background &bg) override;
     virtual void addSelection(int id, DrawCallList &&draws) override;
     virtual void removeSelection(int id) override;
