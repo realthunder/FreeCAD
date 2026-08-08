@@ -129,6 +129,9 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
         bgfx::setUniform(u_envSH, envSH, kEnvSH);
     }
     bgfx::setUniform(u_pbrParams, pbrParams);
+    float matcapParams[4] = {matcapFrame ? 1.0f : 0.0f,
+                             float(matcapPreset), matcapTint, 0.0f};
+    bgfx::setUniform(u_matcapParams, matcapParams);
     bgfx::setTexture(1, s_texEnv, env);
 
     // Shadow draw style: the scene light replaces the headlight

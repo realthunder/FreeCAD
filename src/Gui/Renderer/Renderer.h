@@ -379,6 +379,27 @@ struct CavityConfig {
     bool operator!=(const CavityConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame matcap shading configuration — like AOConfig there is no
+/// GL-renderer counterpart. Replaces the scene lighting with a fixed
+/// studio attached to the camera, looked up by the view-space normal,
+/// so a surface's shading depends only on which way it faces the
+/// viewer. The presets are computed in the shader (no matcap images to
+/// ship, install or fetch on any tier). Overrides PBRConfig while on.
+struct MatcapConfig {
+    bool enabled = false;    ///< matcap shading active
+    /// Which procedural matcap: 0 studio, 1 clay, 2 metal, 3 pearl.
+    int preset = 0;
+    /// How much the object's own color tints the matcap, 0 to 1. Zero
+    /// shades every object as one uniform material.
+    float tint = 0.0f;
+
+    bool operator==(const MatcapConfig &o) const {
+        return enabled == o.enabled && preset == o.preset
+            && tint == o.tint;
+    }
+    bool operator!=(const MatcapConfig &o) const { return !(*this == o); }
+};
+
 /// Per-frame render debugging configuration (docs/RenderDebug.md).
 /// Resolved by the bridge each render from the RenderDebug_* view
 /// properties / global RenderParams defaults, like AOConfig.
@@ -1263,6 +1284,9 @@ public:
     virtual void setAOConfig(const AOConfig &config) { (void)config; }
     /// Per-frame screen-space cavity (curvature) shading configuration.
     virtual void setCavityConfig(const CavityConfig &config)
+    { (void)config; }
+    /// Per-frame matcap shading configuration.
+    virtual void setMatcapConfig(const MatcapConfig &config)
     { (void)config; }
     /// Per-frame render debugging configuration (docs/RenderDebug.md).
     virtual void setRenderDebugConfig(const RenderDebugConfig &config)

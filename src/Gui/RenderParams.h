@@ -414,6 +414,58 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter Matcap
+    ///
+    /// Enable matcap shading of the experimental render engine
+    /// (render cache mode 3 with a selected renderer type). Replaces
+    /// the scene's lighting with a fixed studio attached to the camera,
+    /// looked up by each fragment's view space normal: the shading of a
+    /// surface then depends only on which way it faces the viewer, so
+    /// form reads identically wherever the scene light happens to be.
+    /// The classic inspection shading -- pair it with Cavity for edge
+    /// definition. Overrides physically based shading while on.
+    static const bool & getMatcap();
+    static const bool & defaultMatcap();
+    static void removeMatcap();
+    static void setMatcap(const bool &v);
+    static const char *docMatcap();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MatcapPreset
+    ///
+    /// Which matcap to shade with. The presets are computed in the
+    /// shader rather than sampled from images, so they cost no assets
+    /// and stay sharp at any resolution. Studio = soft key light with a
+    /// rim; Clay = matte, no highlight, the most neutral read of form;
+    /// Metal = banded sweep with a hard edge, exaggerates curvature;
+    /// Pearl = warm/cool dual tone, shows shallow undulation.
+    static const long & getMatcapPreset();
+    static const long & defaultMatcapPreset();
+    static void removeMatcapPreset();
+    static void setMatcapPreset(const long &v);
+    static const char *docMatcapPreset();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MatcapTint
+    ///
+    /// How much each object's own color tints the matcap, 0 to 1.
+    /// Zero shades the whole scene as one uniform material, which is
+    /// what makes shape comparable across parts; one multiplies the
+    /// matcap by the object color, keeping the assembly's color coding
+    /// at the cost of some of that uniformity.
+    static const double & getMatcapTint();
+    static const double & defaultMatcapTint();
+    static void removeMatcapTint();
+    static void setMatcapTint(const double &v);
+    static const char *docMatcapTint();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter PBR
     ///
     /// Enable physically based shading with image based lighting of

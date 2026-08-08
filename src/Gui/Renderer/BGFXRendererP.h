@@ -2515,6 +2515,7 @@ public:
         fn(u_aoKernel, LifeSized);
         fn(s_texEnv, LifeSized);
         fn(u_pbrParams, LifeSized);
+        fn(u_matcapParams, LifeSized);
         fn(u_envSH, LifeSized);
         fn(s_texBump, LifeSized);
         fn(u_bumpParams, LifeSized);
@@ -3459,6 +3460,7 @@ public:
     bgfx::TextureHandle m_dummyEnvTex = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texEnv = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_pbrParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_matcapParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_envSH = BGFX_INVALID_HANDLE;
     float envSH[kEnvSH][4];
     /// User environment image the built cubemap came from (null = the
@@ -3467,6 +3469,11 @@ public:
     bool m_envBuilt = false;   // build attempted (m_envTex may still be
                                // invalid when the caps disallow it)
     bool pbrFrame = false;     // PBR active for the frame being submitted
+    // Matcap shading for the frame being submitted: a global shading
+    // mode, so it rides the view rather than the per-draw material.
+    bool matcapFrame = false;
+    int matcapPreset = 0;
+    float matcapTint = 0.0f;
     float pbrMetallic = 0.0f;
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
     float pbrEnvIntensity = 1.0f;
@@ -4074,6 +4081,7 @@ public:
     Render::SectionConfig secconf;
     Render::AOConfig aoconf;
     Render::CavityConfig cavityconf;
+    Render::MatcapConfig matcapconf;
     Render::PBRConfig pbrconf;
     Render::BumpConfig bumpconf;
     Render::LightConfig lightconf;

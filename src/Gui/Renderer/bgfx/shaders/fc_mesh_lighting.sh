@@ -30,6 +30,10 @@ uniform vec4 u_matEmissive;
 uniform vec4 u_matSpecular;
 uniform vec4 u_params;
 uniform vec4 u_pbrParams;
+// Matcap shading: x = enabled, y = preset (see fc_matcap.sh),
+// z = how much the object's own color tints it (0 = one uniform
+// material for the whole scene). Overrides the PBR branch while on.
+uniform vec4 u_matcapParams;
 uniform vec4 u_envSH[9];
 SAMPLERCUBE(s_texEnv, 1);
 // Shadow draw style: a directional scene light replaces the headlight
@@ -62,6 +66,7 @@ uniform vec4 u_lightColor;
 // 0 single tap, 1 Coin's 4-tap dithered kernel, N >= 3 an N x N grid.
 uniform vec4 u_evsm;
 #include "fc_shadow_tap.sh"   // the shared VSM/EVSM bound (needs both above)
+#include "fc_matcap.sh"       // procedural matcaps (needs nothing but a normal)
 uniform mat4 u_shadowMatrix;
 // Local effect lights: unshadowed point lights added on top of
 // whatever lighting model runs (the usual engine effect-light shortcut
@@ -236,7 +241,21 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 
 	if (u_params.y > 0.5)
 	{
-		if (u_pbrParams.x > 0.5)
+		if (u_matcapParams.x > 0.5)
+		{
+			// Matcap: the whole shading is a camera-fixed studio looked
+			// up by the view normal. No lights, no shadow tap -- that is
+			// the point, form reads the same wherever the scene light
+			// sits. Screen-space AO still applies: occlusion is not a
+			// light, and contact darkening is exactly the cue an
+			// inspection view wants kept.
+			if (u_params.z > 0.5 && n.z < 0.0)
+				n = -n;
+			vec3 mc = fc_matcap(u_matcapParams.y, n);
+			color = mix(mc, mc * base.rgb, u_matcapParams.z)
+				* (occ * ao);
+		}
+		else if (u_pbrParams.x > 0.5)
 		{
 			// Metallic/roughness BRDF: a white headlight down the
 			// view axis plus image based lighting from the fixed

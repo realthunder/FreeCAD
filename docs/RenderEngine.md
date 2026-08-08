@@ -259,6 +259,29 @@ Two things about it are deliberate:
   color and so cannot brighten past white; the ridge *highlight* other
   workbench renderers add is not available without an HDR scene target.
 
+### Matcap shading
+
+`Render_Matcap` replaces the lit shading with a fixed studio welded to
+the camera, looked up by the fragment's view-space normal — a third
+branch in `fcShadeFragment` beside the headlight and PBR ones, so it
+overrides PBR while on. No lights and no shadow tap take part: a
+surface's shading then depends only on which way it faces the viewer,
+which is what makes form comparable between parts anywhere in the
+scene. Screen-space AO still multiplies in, because occlusion is not a
+light and contact darkening is a cue worth keeping.
+
+The presets (`Render_MatcapPreset`: studio, clay, metal, pearl) are
+computed analytically in `fc_matcap.sh` rather than sampled from matcap
+images. That is what lets the feature ship with no image assets to
+commit, install or fetch — the browser tier gets it with no bundle
+growth, at any resolution. `Render_MatcapTint` mixes each object's own
+color back in: 0 shades the scene as one uniform material, 1 keeps the
+assembly's color coding.
+
+Pair it with cavity: matcap gives every same-facing surface the same
+value, which is exactly when curvature darkening has to supply the
+edges.
+
 Fill-bound effect passes (AO, volumetrics, bloom, reflection…) can run
 below main resolution via the `Render_EffectResolution` view property
 (`BGFXRenderer::setEffectResolution`); the scene and line passes always

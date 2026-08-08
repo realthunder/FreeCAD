@@ -351,6 +351,8 @@ void BGFXView::init()
                                    bgfx::UniformType::Sampler);
     u_pbrParams = bgfx::createUniform("u_pbrParams",
                                       bgfx::UniformType::Vec4);
+    u_matcapParams = bgfx::createUniform("u_matcapParams",
+                                         bgfx::UniformType::Vec4);
     u_envSH = bgfx::createUniform("u_envSH",
                                   bgfx::UniformType::Vec4, kEnvSH);
     // Bump mapping of the textured mesh programs (unit 2; the 1x1

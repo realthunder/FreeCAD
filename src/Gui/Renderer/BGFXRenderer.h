@@ -72,6 +72,7 @@ public:
     virtual void setSectionConfig(const SectionConfig &config) override;
     virtual void setAOConfig(const AOConfig &config) override;
     virtual void setCavityConfig(const CavityConfig &config) override;
+    virtual void setMatcapConfig(const MatcapConfig &config) override;
     virtual bool isSceneAnimated() const override;
     virtual bool isSceneDirty() const override;
     virtual void setPBRConfig(const PBRConfig &config) override;

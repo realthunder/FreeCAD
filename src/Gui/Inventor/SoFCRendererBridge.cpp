@@ -1182,6 +1182,20 @@ RendererBridge::translateCavityConfig(App::PropertyContainer * view)
     return res;
 }
 
+Render::MatcapConfig
+RendererBridge::translateMatcapConfig(App::PropertyContainer * view)
+{
+    Render::MatcapConfig res;
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "Matcap", RenderParams::getMatcap());
+    res.preset = int(viewParamOverride<App::PropertyEnumeration>(
+            view, "Render", "MatcapPreset",
+            RenderParams::getMatcapPreset()));
+    res.tint = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "MatcapTint", RenderParams::getMatcapTint()));
+    return res;
+}
+
 bool
 RendererBridge::translateShaderParamValues(const App::Property * prop,
                                            std::vector<float> & values)

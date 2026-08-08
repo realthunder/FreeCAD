@@ -69,6 +69,9 @@ public:
     bool Cavity;
     double CavityValley;
     double CavityRidge;
+    bool Matcap;
+    long MatcapPreset;
+    double MatcapTint;
     bool PBR;
     double PBRMetallic;
     double PBRRoughness;
@@ -158,6 +161,12 @@ public:
         funcs["CavityValley"] = &RenderParamsP::updateCavityValley;
         CavityRidge = this->handle->GetFloat("CavityRidge", 0.5);
         funcs["CavityRidge"] = &RenderParamsP::updateCavityRidge;
+        Matcap = this->handle->GetBool("Matcap", false);
+        funcs["Matcap"] = &RenderParamsP::updateMatcap;
+        MatcapPreset = this->handle->GetInt("MatcapPreset", 0);
+        funcs["MatcapPreset"] = &RenderParamsP::updateMatcapPreset;
+        MatcapTint = this->handle->GetFloat("MatcapTint", 0.0);
+        funcs["MatcapTint"] = &RenderParamsP::updateMatcapTint;
         PBR = this->handle->GetBool("PBR", false);
         funcs["PBR"] = &RenderParamsP::updatePBR;
         PBRMetallic = this->handle->GetFloat("PBRMetallic", 0.0);
@@ -343,6 +352,18 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCavityRidge(RenderParamsP *self) {
         self->CavityRidge = self->handle->GetFloat("CavityRidge", 0.5);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMatcap(RenderParamsP *self) {
+        self->Matcap = self->handle->GetBool("Matcap", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMatcapPreset(RenderParamsP *self) {
+        self->MatcapPreset = self->handle->GetInt("MatcapPreset", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMatcapTint(RenderParamsP *self) {
+        self->MatcapTint = self->handle->GetFloat("MatcapTint", 0.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBR(RenderParamsP *self) {
@@ -1185,6 +1206,106 @@ void RenderParams::setCavityRidge(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeCavityRidge() {
     instance()->handle->RemoveFloat("CavityRidge");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMatcap() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Enable matcap shading of the experimental render engine\n"
+"(render cache mode 3 with a selected renderer type). Replaces\n"
+"the scene's lighting with a fixed studio attached to the camera,\n"
+"looked up by each fragment's view space normal: the shading of a\n"
+"surface then depends only on which way it faces the viewer, so\n"
+"form reads identically wherever the scene light happens to be.\n"
+"The classic inspection shading -- pair it with Cavity for edge\n"
+"definition. Overrides physically based shading while on.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getMatcap() {
+    return instance()->Matcap;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultMatcap() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMatcap(const bool &v) {
+    instance()->handle->SetBool("Matcap",v);
+    instance()->Matcap = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMatcap() {
+    instance()->handle->RemoveBool("Matcap");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMatcapPreset() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Which matcap to shade with. The presets are computed in the\n"
+"shader rather than sampled from images, so they cost no assets\n"
+"and stay sharp at any resolution. Studio = soft key light with a\n"
+"rim; Clay = matte, no highlight, the most neutral read of form;\n"
+"Metal = banded sweep with a hard edge, exaggerates curvature;\n"
+"Pearl = warm/cool dual tone, shows shallow undulation.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getMatcapPreset() {
+    return instance()->MatcapPreset;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultMatcapPreset() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMatcapPreset(const long &v) {
+    instance()->handle->SetInt("MatcapPreset",v);
+    instance()->MatcapPreset = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMatcapPreset() {
+    instance()->handle->RemoveInt("MatcapPreset");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMatcapTint() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How much each object's own color tints the matcap, 0 to 1.\n"
+"Zero shades the whole scene as one uniform material, which is\n"
+"what makes shape comparable across parts; one multiplies the\n"
+"matcap by the object color, keeping the assembly's color coding\n"
+"at the cost of some of that uniformity.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getMatcapTint() {
+    return instance()->MatcapTint;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultMatcapTint() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMatcapTint(const double &v) {
+    instance()->handle->SetFloat("MatcapTint",v);
+    instance()->MatcapTint = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMatcapTint() {
+    instance()->handle->RemoveFloat("MatcapTint");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

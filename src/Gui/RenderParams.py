@@ -199,6 +199,29 @@ Params = [
         "Both terms darken: the pass multiplies the finished 8-bit scene\n"
         "color, which cannot brighten past white, so the ridge highlight\n"
         "some workbench renderers use is not available here."),
+    ParamBool('Matcap',  False, title='Matcap shading',
+        doc="Enable matcap shading of the experimental render engine\n"
+        "(render cache mode 3 with a selected renderer type). Replaces\n"
+        "the scene's lighting with a fixed studio attached to the camera,\n"
+        "looked up by each fragment's view space normal: the shading of a\n"
+        "surface then depends only on which way it faces the viewer, so\n"
+        "form reads identically wherever the scene light happens to be.\n"
+        "The classic inspection shading -- pair it with Cavity for edge\n"
+        "definition. Overrides physically based shading while on."),
+    ParamInt('MatcapPreset',  0, title='Matcap',
+        proxy=ParamComboBox(items=['Studio', 'Clay', 'Metal', 'Pearl']),
+        doc="Which matcap to shade with. The presets are computed in the\n"
+        "shader rather than sampled from images, so they cost no assets\n"
+        "and stay sharp at any resolution. Studio = soft key light with a\n"
+        "rim; Clay = matte, no highlight, the most neutral read of form;\n"
+        "Metal = banded sweep with a hard edge, exaggerates curvature;\n"
+        "Pearl = warm/cool dual tone, shows shallow undulation."),
+    ParamFloat('MatcapTint',  0.0, title='Matcap object tint',
+        doc="How much each object's own color tints the matcap, 0 to 1.\n"
+        "Zero shades the whole scene as one uniform material, which is\n"
+        "what makes shape comparable across parts; one multiplies the\n"
+        "matcap by the object color, keeping the assembly's color coding\n"
+        "at the cost of some of that uniformity."),
     ParamBool('PBR',  False, title='Physically based shading',
         doc="Enable physically based shading with image based lighting of\n"
         "the experimental render engine (render cache mode 3 with a\n"

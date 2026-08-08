@@ -402,6 +402,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->pbrMetallic = pbrconf.metallic;
     view->pbrRoughness = pbrconf.roughness;
     view->pbrEnvIntensity = pbrconf.envIntensity;
+    // Matcap replaces the lit shading outright, so it does not care
+    // whether the environment could be built the way PBR does.
+    view->matcapFrame = matcapconf.enabled && !hlconfig.show;
+    view->matcapPreset = matcapconf.preset;
+    view->matcapTint = matcapconf.tint;
     view->bumpScale = bumpconf.scale;
     view->bumpParallax = bumpconf.parallax;
 

@@ -94,6 +94,7 @@ struct SceneSnapshot {
     SectionConfig secconf;
     AOConfig aoconf;
     CavityConfig cavityconf;    ///< v42; defaulted on older snapshots
+    MatcapConfig matcapconf;    ///< v43; defaulted on older snapshots
     PBRConfig pbrconf;
     BumpConfig bumpconf;
     LightConfig lightconf;

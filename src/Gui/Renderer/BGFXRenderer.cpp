@@ -351,6 +351,14 @@ void BGFXRenderer::setCavityConfig(const CavityConfig &config)
     }
 }
 
+void BGFXRenderer::setMatcapConfig(const MatcapConfig &config)
+{
+    if (pimpl->matcapconf != config) {
+        pimpl->matcapconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
 void BGFXRenderer::setPreselConfig(const PreselHighlightConfig &config)
 {
     if (pimpl->preselconf != config) {

@@ -138,7 +138,10 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     prepass-normal darkening applied to the opaque scene
 //     (docs/RenderEngine.md). A viewer older than this defaults it off,
 //     which is the pre-feature look.
-const uint32_t kVersion = 42;
+// 43: MatcapConfig — matcap shading, the camera-fixed studio that
+//     replaces the scene lighting (docs/RenderEngine.md). A viewer
+//     older than this defaults it off, which is the pre-feature look.
+const uint32_t kVersion = 43;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -181,6 +184,7 @@ static_assert(sizeof(PreselHighlightConfig) == 20, "PreselHighlightConfig change
 static_assert(sizeof(SectionConfig) == 12, "SectionConfig changed: stream the new field, then update this");
 static_assert(sizeof(AOConfig) == 28, "AOConfig changed: stream the new field, then update this");
 static_assert(sizeof(CavityConfig) == 12, "CavityConfig changed: stream the new field, then update this");
+static_assert(sizeof(MatcapConfig) == 12, "MatcapConfig changed: stream the new field, then update this");
 static_assert(sizeof(BumpConfig) == 8, "BumpConfig changed: stream the new field, then update this");
 static_assert(sizeof(VolumetricConfig) == 28, "VolumetricConfig changed: stream the new field, then update this");
 static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new field, then update this");
@@ -2681,6 +2685,10 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.f(snap.cavityconf.valley);
     w.f(snap.cavityconf.ridge);
 
+    w.b(snap.matcapconf.enabled);
+    w.i32(snap.matcapconf.preset);
+    w.f(snap.matcapconf.tint);
+
     w.b(snap.pbrconf.enabled);
     w.f(snap.pbrconf.metallic);
     w.f(snap.pbrconf.roughness);
@@ -3044,6 +3052,11 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         snap.cavityconf.enabled = r.b();
         snap.cavityconf.valley = r.f();
         snap.cavityconf.ridge = r.f();
+    }
+    if (version >= 43) {
+        snap.matcapconf.enabled = r.b();
+        snap.matcapconf.preset = r.i32();
+        snap.matcapconf.tint = r.f();
     }
 
     snap.pbrconf.enabled = r.b();
