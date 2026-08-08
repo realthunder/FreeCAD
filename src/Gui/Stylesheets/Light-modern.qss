@@ -1312,20 +1312,8 @@ QToolButton[popupMode="1"] {
 QToolButton[popupMode="0"]::menu-button {
   border: none;
 }
-
-QToolButton[popupMode="0"]::menu-button:hover {
-  border: none;
-  border-left: 2px solid #fe0000;
-  border-radius: 0px;
-}
 QToolButton[popupMode="1"]::menu-button {
   border: none;
-}
-
-QToolButton[popupMode="1"]::menu-button:hover {
-  border: none;
-  border-left: 2px solid #e5ff00;
-  border-radius: 0px;
 }
 
 QToolButton[popupMode="2"] {
