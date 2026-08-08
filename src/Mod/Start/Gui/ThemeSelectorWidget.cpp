@@ -23,7 +23,6 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
-#include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -122,31 +121,21 @@ ThemeSelectorWidget::ThemeSelectorWidget(QWidget* parent)
     qApp->installEventFilter(this);
 }
 
-QSize ThemeSelectorWidget::themeIconSize()
-{
-    // Every button shows the same size whether its picture is a shipped
-    // thumbnail or a drawn swatch, and small enough that a grid of them fits
-    // a window rather than demanding one.
-    static const QSize size = [] {
-        QSize shipped =
-            QIcon(QStringLiteral(":/thumbnails/Theme_thumbnail_auto.png"))
-                .actualSize(QSize(256, 256));
-        shipped.scale(QSize(160, 160), Qt::KeepAspectRatio);
-        return shipped;
-    }();
-    return size;
-}
-
 QIcon ThemeSelectorWidget::iconForTheme(const QString& packName)
 {
     const QString shipped = shippedThumbnail(packName);
     if (!shipped.isEmpty()) {
         return QIcon(shipped);
     }
-    return drawSwatch(themeIconSize(), themeIsDark(packName));
+
+    // Match whatever the shipped thumbnails are, so a row of mixed buttons
+    // still lines up.
+    static const QSize size =
+        QIcon(QStringLiteral(":/thumbnails/Theme_thumbnail_auto.png")).actualSize(QSize(256, 256));
+    return drawSwatch(size, themeIsDark(packName));
 }
 
-void ThemeSelectorWidget::setupButtons(QGridLayout* layout)
+void ThemeSelectorWidget::setupButtons(QBoxLayout* layout)
 {
     if (!layout) {
         return;
@@ -186,37 +175,30 @@ void ThemeSelectorWidget::setupButtons(QGridLayout* layout)
         return QStringLiteral("Classic");  // the theme without a stylesheet of its own
     }();
 
-    // An installation can offer a dozen themes, and a dozen thumbnails in one
-    // row is a page nobody can see the end of. Lay them out in a grid instead.
-    const int columns = 4;
-    int index = 0;
     for (const auto& packName : packNames) {
         auto button = new QToolButton();
         button->setCheckable(true);
         button->setAutoExclusive(true);
         button->setToolButtonStyle(Qt::ToolButtonStyle::ToolButtonTextUnderIcon);
         button->setText(packName.isEmpty() ? tr("Match Desktop", "Visual theme name") : packName);
-        button->setIcon(iconForTheme(packName));
-        button->setIconSize(themeIconSize());
+        const QIcon icon = iconForTheme(packName);
+        button->setIcon(icon);
+        button->setIconSize(icon.actualSize(QSize(256, 256)));
         if (packName == activeTheme) {
             button->setChecked(true);
         }
         connect(button, &QToolButton::clicked, this, [this, packName] {
             themeChanged(packName);
         });
-        layout->addWidget(button, index / columns, index % columns, Qt::AlignCenter);
+        layout->addWidget(button);
         _buttons.push_back({packName, button});
-        ++index;
     }
-
-    // Keep the last row's buttons the same width as a full one's.
-    layout->setColumnStretch(columns, 1);
 }
 
 void ThemeSelectorWidget::setupUi()
 {
     auto* outerLayout = new QVBoxLayout(this);
-    auto* buttonLayout = new QGridLayout;
+    auto* buttonLayout = new QHBoxLayout;
     _titleLabel = new QLabel;
     _descriptionLabel = new QLabel;
     outerLayout->addWidget(_titleLabel);
