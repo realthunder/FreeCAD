@@ -25,12 +25,17 @@
 
 #ifndef _PreComp_
 # include <memory>
+# include <set>
 # include <string_view>
 # include <mutex>
 #endif
 
 #include <boost/filesystem.hpp>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <QTextStream>
 
 #include "PreferencePackManager.h"
 #include "App/Metadata.h"
@@ -498,6 +503,231 @@ void copyTemplateParameters(/*const*/ ParameterManager& templateParameterManager
     }
 }
 
+namespace
+{
+
+/**
+ * An appearance parameter that names a file, and the Qt search-path prefix its
+ * value is resolved through. The pack directory is registered on every one of
+ * these prefixes (see PreferencePack's constructor), which is what lets a pack
+ * carry the files it asks for.
+ */
+struct AssetKey
+{
+    const char* name;
+    const char* prefix;
+    bool isList;  ///< a ';'-separated list, read left to right
+};
+
+const std::vector<AssetKey>& assetKeys()
+{
+    static const std::vector<AssetKey> keys {
+        {"StyleSheet", "qss", false},
+        {"OverlayActiveStyleSheet", "overlay", false},
+        {"MenuStyleSheet", "qssm", false},
+        {"IconSet", "iconset", true},
+    };
+    return keys;
+}
+
+/// Where a pack keeps files named through a given prefix, relative to its root.
+QString packSubdir(const QString& prefix)
+{
+    if (prefix == QLatin1String("overlay")) {
+        return QStringLiteral("overlay");
+    }
+    if (prefix == QLatin1String("qssm")) {
+        return QStringLiteral("menu");
+    }
+    if (prefix == QLatin1String("iconset")) {
+        return QStringLiteral("iconsets");
+    }
+    return {};  // "qss" and "css" are read from the pack root
+}
+
+/// Resolve a name the way the code that consumes it does: a path that exists as
+/// given, otherwise through the prefix's search paths.
+QFileInfo resolveAsset(const QString& prefix, const QString& name)
+{
+    if (name.isEmpty()) {
+        return {};
+    }
+    if (QFile::exists(name)) {
+        return QFileInfo(name);
+    }
+    const QString prefixed = prefix + QLatin1Char(':') + name;
+    if (QFile::exists(prefixed)) {
+        return QFileInfo(prefixed);
+    }
+    return {};
+}
+
+/// A file FreeCAD ships resolves on every machine, so a pack gains nothing by
+/// carrying a copy of it.
+bool isShipped(const QFileInfo& file)
+{
+    if (file.filePath().startsWith(QLatin1Char(':'))) {
+        return true;  // compiled into the binary
+    }
+    static const QString resourceDir =
+        QDir(QString::fromUtf8(App::Application::getResourceDir().c_str())).absolutePath()
+        + QLatin1Char('/');
+    return file.absoluteFilePath().startsWith(resourceDir);
+}
+
+void copyAssetIntoPack(const fs::path& packDir,
+                       const QString& prefix,
+                       const QString& name,
+                       const QFileInfo& file,
+                       std::set<QString>& seen);
+
+/**
+ * Follow what a stylesheet or icon set refers to. Both name other files the
+ * same way the parameters do -- "qss:images/close.svg", "iconset:My/tree.svg"
+ * -- and an icon set can also "#import" another one. A pack that carried only
+ * the file it names would still be missing every image in it.
+ */
+void copyReferencedAssets(const fs::path& packDir, const QFileInfo& file, std::set<QString>& seen)
+{
+    const auto suffix = file.suffix().toLower();
+    if (suffix != QLatin1String("qss") && suffix != QLatin1String("css")
+        && suffix != QLatin1String("txt")) {
+        return;
+    }
+
+    QFile input(file.filePath());
+    if (!input.open(QFile::ReadOnly | QFile::Text)) {
+        return;
+    }
+    QTextStream stream(&input);
+    const QString content = stream.readAll();
+    input.close();
+
+    static const QRegularExpression reference(
+        QStringLiteral(R"((qss|css|overlay|qssm|iconset):([^\s"')<>;,]+))"));
+    auto references = reference.globalMatch(content);
+    while (references.hasNext()) {
+        const auto match = references.next();
+        const QString prefix = match.captured(1);
+        const QString name = match.captured(2);
+        const QFileInfo target = resolveAsset(prefix, name);
+        if (target.exists() && !isShipped(target)) {
+            copyAssetIntoPack(packDir, prefix, name, target, seen);
+        }
+    }
+
+    static const QRegularExpression import(QStringLiteral(R"(^[ \t]*#import[ \t]+(.+?)[ \t]*$)"),
+                                           QRegularExpression::MultilineOption);
+    auto imports = import.globalMatch(content);
+    while (imports.hasNext()) {
+        const QString name = imports.next().captured(1);
+        const QFileInfo target = resolveAsset(QStringLiteral("iconset"), name);
+        if (target.exists() && !isShipped(target)) {
+            copyAssetIntoPack(packDir, QStringLiteral("iconset"), name, target, seen);
+        }
+    }
+}
+
+/**
+ * Copy one file into the pack and recurse into what it refers to. \a name is
+ * the name the file is known by, and it keeps that name inside the pack: a
+ * reference to "images/close.svg" resolves only if the pack stores it under
+ * that same relative path.
+ */
+void copyAssetIntoPack(const fs::path& packDir,
+                       const QString& prefix,
+                       const QString& name,
+                       const QFileInfo& file,
+                       std::set<QString>& seen)
+{
+    const QString canonical = file.canonicalFilePath();
+    if (canonical.isEmpty() || !seen.insert(canonical).second) {
+        return;  // already carried, or an import cycle
+    }
+
+    fs::path destination = packDir;
+    const auto subdir = packSubdir(prefix);
+    if (!subdir.isEmpty()) {
+        destination /= subdir.toStdString();
+    }
+    destination /= fs::path(name.toStdString());
+
+    const fs::path source(canonical.toStdString());
+    try {
+        fs::create_directories(destination.parent_path());
+        // Re-saving a pack over itself resolves its own copy: nothing to do.
+        if (!fs::exists(destination) || !fs::equivalent(source, destination)) {
+            fs::copy_file(source, destination, fs::copy_options::overwrite_existing);
+        }
+    }
+    catch (const std::exception& e) {
+        Base::Console().Warning("Preference pack could not carry %s: %s\n",
+                                canonical.toUtf8().constData(), e.what());
+        return;
+    }
+
+    copyReferencedAssets(packDir, file, seen);
+}
+
+/**
+ * Make a saved pack self-contained. Every appearance asset it names that
+ * FreeCAD does not ship is copied in, and the parameter is rewritten to the
+ * name the pack stores it under. Without this a pack naming a stylesheet from
+ * the author's own Gui/Stylesheets directory is broken on every other machine.
+ */
+void bundlePackAssets(const fs::path& packDir, ParameterManager& parameters)
+{
+    // Walk rather than GetGroup() the whole way: the latter creates what it
+    // walks through, which would put empty groups into the saved pack.
+    Base::Reference<ParameterGrp> group(&parameters);
+    for (const char* name : {"BaseApp", "Preferences", "MainWindow"}) {
+        if (!group->HasGroup(name)) {
+            return;
+        }
+        group = group->GetGroup(name);
+    }
+
+    std::set<QString> seen;
+    for (const auto& key : assetKeys()) {
+        const QString value = QString::fromStdString(group->GetASCII(key.name));
+        if (value.isEmpty()) {
+            continue;
+        }
+
+        const QString prefix = QString::fromUtf8(key.prefix);
+        const QStringList names = key.isList
+            ? value.split(QLatin1Char(';'), Qt::SkipEmptyParts)
+            : QStringList {value};
+
+        QStringList stored;
+        for (const auto& entry : names) {
+            const QString name = entry.trimmed();
+            const QFileInfo file = resolveAsset(prefix, name);
+            if (!file.exists()) {
+                Base::Console().Warning("Preference pack names %s, which cannot be found, "
+                                        "so the pack cannot carry it\n",
+                                        name.toUtf8().constData());
+                stored << name;
+                continue;
+            }
+            if (isShipped(file)) {
+                stored << name;  // resolves anywhere FreeCAD is installed
+                continue;
+            }
+
+            // An absolute path means nothing on another machine, and nothing
+            // inside the pack either; the file keeps only its own name.
+            const QString packName = QFileInfo(name).isAbsolute() ? file.fileName() : name;
+            copyAssetIntoPack(packDir, prefix, packName, file, seen);
+            stored << packName;
+        }
+
+        group->SetASCII(key.name, stored.join(QLatin1Char(';')).toUtf8().constData());
+    }
+}
+
+}  // namespace
+
 void PreferencePackManager::save(const std::string& name,
                                  const std::vector<TemplateFile>& templates,
                                  const std::string& type)
@@ -517,7 +747,13 @@ void PreferencePackManager::save(const std::string& name,
     }
     auto savedPreferencePacksDirectory =
         fs::path(App::Application::getUserAppDataDir()) / "SavedPreferencePacks";
-    auto cfgFilename = savedPreferencePacksDirectory / name / (name + ".cfg");
+    auto packDirectory = savedPreferencePacksDirectory / name;
+
+    // A pack that only points at the author's own stylesheet is not something
+    // anyone else can install, so hand it its assets before writing the config.
+    bundlePackAssets(packDirectory, *outputParameterManager);
+
+    auto cfgFilename = packDirectory / (name + ".cfg");
     outputParameterManager->SaveDocument(cfgFilename.string().c_str());
 }
 
