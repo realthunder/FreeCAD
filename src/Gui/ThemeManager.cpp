@@ -142,7 +142,14 @@ std::string ThemeManager::currentTheme()
 
 void ThemeManager::setCurrentTheme(const std::string& name)
 {
-    setOrRemove(userMainWindow(), "Theme", name);
+    auto hMain = userMainWindow();
+    setOrRemove(hMain, "Theme", name);
+
+    // Naming a theme and following the desktop are two different answers to
+    // the same question, so the later one wins. The paths that do follow the
+    // desktop re-set these markers directly after their apply().
+    hMain->RemoveBool("ThemeAuto");
+    hMain->RemoveASCII("ThemeAutoApplied");
 }
 
 namespace

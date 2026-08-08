@@ -2620,16 +2620,19 @@ void postMainWindowSetup(MainWindow &mw)
     // The "Auto" theme follows the desktop, so re-apply the matching preference
     // pack whenever the system scheme changed since the last run. This has to
     // happen before the stylesheet is read below, because the pack sets it.
-    if (hGrp->GetBool("ThemeAuto", false)) {
-        const char* wanted = Application::systemPrefersDarkScheme() ? "Dark" : "Light";
-        if (hGrp->GetASCII("ThemeAutoApplied") != wanted) {
-            Application::Instance->prefPackManager()->apply(wanted);
-            // The pack itself has no notion of Auto; restore the marker it just
-            // overwrote so the next start still follows the system.
-            hGrp->SetBool("ThemeAuto", true);
-            hGrp->SetASCII("ThemeAutoApplied", wanted);
-        }
-    }
+    Application::resolveAutoTheme();
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    // ...and while running, so switching the desktop to dark in the evening is
+    // not something FreeCAD needs restarting to notice.
+    QObject::connect(qGuiApp->styleHints(),
+                     &QStyleHints::colorSchemeChanged,
+                     qGuiApp,
+                     [](Qt::ColorScheme) {
+                         Application::resolveAutoTheme();
+                     });
+#endif
+
     Application::applyColorScheme();
 
     std::string style = hGrp->GetASCII("StyleSheet");
@@ -2886,6 +2889,35 @@ bool Application::systemPrefersDarkScheme()
 #endif
 }
 
+void Application::resolveAutoTheme()
+{
+    // Pinning the palette emits colorSchemeChanged, and reading the desktop
+    // scheme unpins and repins it, so this is called back into while it runs.
+    static bool resolving = false;
+    if (resolving) {
+        return;
+    }
+
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow");
+    if (!hGrp->GetBool("ThemeAuto", false)) {
+        return;  // the user picked a theme outright; the desktop is not its business
+    }
+
+    Base::StateLocker lock(resolving);
+
+    const char* wanted = Application::systemPrefersDarkScheme() ? "Dark" : "Light";
+    if (hGrp->GetASCII("ThemeAutoApplied") == wanted) {
+        return;
+    }
+
+    Application::Instance->prefPackManager()->apply(wanted);
+    // The pack itself has no notion of Auto; restore the marker it just
+    // overwrote so this keeps following the desktop.
+    hGrp->SetBool("ThemeAuto", true);
+    hGrp->SetASCII("ThemeAutoApplied", wanted);
+}
+
 void Application::applyColorScheme()
 {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
@@ -2894,6 +2926,16 @@ void Application::applyColorScheme()
     }
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/MainWindow");
+
+    // "Match Desktop" means the desktop decides, so nothing is pinned: an
+    // override does not merely fix the palette, it silences
+    // colorSchemeChanged, and that signal is what tells us the desktop moved.
+    // Pinning here would be following the desktop only until it changed.
+    if (hGrp->GetBool("ThemeAuto", false)) {
+        qGuiApp->styleHints()->unsetColorScheme();
+        return;
+    }
+
     const std::string scheme = hGrp->GetASCII("ColorScheme");
 
     if (scheme == "Light") {

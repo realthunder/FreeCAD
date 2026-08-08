@@ -251,6 +251,13 @@ public:
      * override the scheme.
      */
     static void applyColorScheme();
+    /** Re-apply the theme the desktop calls for, for "Match Desktop".
+     *
+     * A no-op unless MainWindow/ThemeAuto is set. Called at startup and again
+     * whenever the desktop's scheme changes, and re-entrant: applying a theme
+     * pins the palette, which is itself a scheme change.
+     */
+    static void resolveAutoTheme();
     /// Whether the platform reports a dark system color scheme.
     static bool systemPrefersDarkScheme();
     /** Make widgets resolve against the current application palette again.
