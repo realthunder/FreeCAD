@@ -2443,7 +2443,6 @@ public:
         fn(m_progGtaoBlur, LifeSized);
         fn(m_progGtaoDepth, LifeSized);
         fn(m_progSsaoBlur, LifeSized);
-        fn(m_progSsaoApply, LifeSized);
         fn(m_progCavity, LifeSized);
         fn(m_progVol, LifeSized);
         fn(m_progVolAccum, LifeSized);
@@ -3439,7 +3438,6 @@ public:
     bgfx::ProgramHandle m_progGtao = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progGtaoBlur = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progSsaoBlur = BGFX_INVALID_HANDLE;
-    bgfx::ProgramHandle m_progSsaoApply = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texNormalZ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texAONoise = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texAO = BGFX_INVALID_HANDLE;

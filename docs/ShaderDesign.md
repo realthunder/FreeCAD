@@ -90,7 +90,6 @@ scene color before later geometry draws over them. Abbreviated:
 | `ViewGroundRefl` | mirrored-camera opaque re-render for ground reflection |
 | `ViewOpaque` | **opaque** triangles / lines / points (PBR + shadow) |
 | `ViewSectionCap` | stencil section caps of clipped opaque solids |
-| `ViewAOApply` | multiply blurred AO onto the scene color |
 | `ViewGroundReflApply` | blend the mirrored scene onto the ground plane |
 | `ViewOutline` | hidden-line stencil outlines |
 | `ViewCaustics` | additive water-caustics splat over submerged surfaces |
@@ -142,11 +141,12 @@ config struct the bridge fills. "Property" = per-view dynamic
 - **Controls**: `Render_BumpScale`, `Render_Parallax`.
 
 ### 3.3 SSAO (ambient occlusion)
-- **Passes**: `ViewAOPrepass` → `ViewAOGen` → `ViewAOBlur` → `ViewAOApply`.
-- **Shaders**: `fs_fc_ssao.sc`, `fs_fc_ssao_blur.sc`, `fs_fc_ssao_apply.sc`.
+- **Passes**: `ViewAOPrepass` → `ViewAOGen` → `ViewAOBlur`.
+- **Shaders**: `fs_fc_ssao.sc`, `fs_fc_ssao_blur.sc`.
 - **What**: hemisphere kernel rotated per pixel by a tiled 4×4 noise
-  texture; depth-compared against the prepass, blurred, multiplied onto the
-  scene ambient. Only attenuates indirect light.
+  texture; depth-compared against the prepass, blurred, then sampled by the
+  mesh shaders (`aoMeshTex`, unit 9) to attenuate their ambient term —
+  there is no fullscreen apply pass. Only attenuates indirect light.
 - **Config**: `AOConfig` (`translateAOConfig`).
 - **Controls**: `Render_SSAO` (bool), plus `Render_SSAO*` radius / intensity
   / bias; `RenderParams` `SSAO*` fallback. Live-toggle:
