@@ -1289,6 +1289,11 @@ public:
         for (Conn *conn : conns) {
             if (conn->id == id) {
                 conn->kicked = true;
+                // Same wake as stopListening: without it a connection
+                // wedged in a send (bounded by SO_SNDTIMEO) or parked
+                // in poll would outlive the kick by up to that long.
+                if (conn->fd >= 0)
+                    ::shutdown(conn->fd, SHUT_RD);
                 return true;
             }
         }
@@ -1663,8 +1668,14 @@ public:
             started = false;
         }
         std::lock_guard<std::mutex> guard(connMutex);
-        for (Conn *conn : conns)
+        for (Conn *conn : conns) {
             conn->kicked = true;
+            // Wake a loop parked in poll() so the stop takes effect
+            // now, not a poll interval later. Read side only: the
+            // goodbye frames still go out on the intact write side.
+            if (conn->fd >= 0)
+                ::shutdown(conn->fd, SHUT_RD);
+        }
     }
 
     void acceptLoop()
@@ -1673,6 +1684,15 @@ public:
             int fd = ::accept(listenFd, nullptr, nullptr);
             if (fd < 0)
                 break;
+            // A peer that stops reading must not park its thread in
+            // ::send forever — with the buffers full the send returns
+            // after this instead, the loop sees the failure and the
+            // connection closes. This is also what makes a kick or a
+            // server stop effective against such a peer.
+            timeval sndTimeout = {};
+            sndTimeout.tv_sec = 20;
+            ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &sndTimeout,
+                         sizeof(sndTimeout));
             // One thread per connection: a WebSocket client keeps its
             // connection for the whole session and must not starve the
             // HTTP fallback (or a second viewer).
@@ -2278,20 +2298,13 @@ public:
             int r = ::poll(&p, 1, 200);
             if (r < 0)
                 return;
-            if (r > 0) {
-                char buf[65536];
-                ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-                if (n <= 0)
-                    return;
-                inbuf.append(buf, size_t(n));
-                if (!consumeFrames(fd, conn, inbuf))
-                    return;
-            }
             // The host asked this connection closed (kickClient, a
             // server stop, or its own bad-token hello): drain what was
             // queued for it — a BadToken refusal rides there — then
             // say so, so a compliant viewer stops reconnecting, and
-            // hang up.
+            // hang up. Checked before the read: a kick shuts the read
+            // side down to wake the poll, so the recv below would see
+            // EOF and skip this farewell.
             {
                 bool kicked;
                 std::vector<std::string> texts;
@@ -2310,6 +2323,15 @@ public:
                     sendFrame(fd, 8, nullptr, 0);
                     return;
                 }
+            }
+            if (r > 0) {
+                char buf[65536];
+                ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+                if (n <= 0)
+                    return;
+                inbuf.append(buf, size_t(n));
+                if (!consumeFrames(fd, conn, inbuf))
+                    return;
             }
             std::vector<uint8_t> body;
             bool orphaned = false;
