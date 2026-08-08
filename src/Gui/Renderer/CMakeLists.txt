@@ -96,12 +96,19 @@ if(BUILD_BGFX)
     # wasm/CMakeLists.txt). Building the library (thus any target
     # linking it, e.g. FreeCADGui) refreshes the compiled shaders too.
     include(${CMAKE_CURRENT_SOURCE_DIR}/BGFXShaders.cmake)
+    # An Apple build adds the metal pack: bgfx picks Metal there by
+    # default, and without the pack the runtime's shaders/metal lookup
+    # (shadercTarget) finds an empty directory — black viewport.
+    set(FC_SHADER_PROFILES glsl spirv essl)
+    if(APPLE)
+        list(APPEND FC_SHADER_PROFILES metal)
+    endif()
     fc_bgfx_compile_shaders(Renderer_ShaderBins
         SHADERC   $<TARGET_FILE:shaderc>
         SHADERDIR ${CMAKE_CURRENT_SOURCE_DIR}/bgfx/shaders
         BGFXINC   ${CMAKE_SOURCE_DIR}/src/3rdParty/bgfx/bgfx/src
         OUTDIR    ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders
-        PROFILES  glsl spirv essl
+        PROFILES  ${FC_SHADER_PROFILES}
         DEPENDS   shaderc)
     # The compile inputs travel with the bins (assets/shaders/src) so the
     # runtime user-shader compile has its include root + varying def, and
