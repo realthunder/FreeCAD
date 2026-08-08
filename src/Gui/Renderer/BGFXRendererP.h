@@ -3980,24 +3980,7 @@ public:
     /// One clip-space triangle covering the viewport, submitted to a
     /// fullscreen resolve pass (uniforms/textures are set by the caller).
     void fullscreen(uint16_t pass, bgfx::ProgramHandle prog,
-                    uint64_t state, uint32_t blendFactor = 0)
-    {
-        TransientVertex::init();
-        if (bgfx::getAvailTransientVertexBuffer(
-                    3, TransientVertex::ms_layout) < 3)
-            return;
-        bgfx::TransientVertexBuffer tvb;
-        bgfx::allocTransientVertexBuffer(&tvb, 3,
-                                         TransientVertex::ms_layout);
-        auto *v = reinterpret_cast<TransientVertex *>(tvb.data);
-        v[0] = {-1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
-        v[1] = { 3.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
-        v[2] = {-1.0f,  3.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffff};
-        bgfx::setVertexBuffer(0, &tvb);
-        bgfx::setState(state, blendFactor);
-        bgfx::submit(vid(pass), prog);
-        ++drawcount;
-    }
+                    uint64_t state, uint32_t blendFactor = 0);
 
     /// Fullscreen AO resolve chain: occlusion from the prepass into the
     /// R8 target — hemisphere-kernel SSAO (method 0) or XeGTAO-style
@@ -4007,111 +3990,7 @@ public:
     /// it into their ambient/headlight/IBL terms only (aoMeshTex), so
     /// direct scene/bulb light is not AO-darkened.
     void submitAOResolve(float radius, float intensity, int method,
-                         bool fast, int slices, int steps)
-    {
-        // Fixed hemisphere kernel (unit radius, z >= 0, clustered near
-        // the origin), deterministic across frames like the noise.
-        static const float kernel[kAOSamples][4] = {
-            {-0.058091f, 0.018602f, 0.079242f, 0.0f},
-            {-0.016977f, 0.100367f, 0.018809f, 0.0f},
-            {-0.042287f, 0.079676f, 0.069813f, 0.0f},
-            {0.010341f, 0.119322f, 0.054631f, 0.0f},
-            {0.012528f, 0.147272f, 0.050676f, 0.0f},
-            {-0.131686f, -0.100976f, 0.088122f, 0.0f},
-            {0.120937f, 0.161185f, 0.103557f, 0.0f},
-            {0.024414f, -0.112444f, 0.246757f, 0.0f},
-            {-0.050206f, -0.180815f, 0.265349f, 0.0f},
-            {0.057177f, 0.368457f, 0.094947f, 0.0f},
-            {0.223564f, 0.320370f, 0.226476f, 0.0f},
-            {0.173264f, -0.484121f, 0.107897f, 0.0f},
-            {0.046909f, 0.076361f, 0.599589f, 0.0f},
-            {0.263978f, 0.433148f, 0.473845f, 0.0f},
-            {-0.768430f, 0.171215f, 0.053107f, 0.0f},
-            {0.429038f, 0.201413f, 0.754499f, 0.0f},
-        };
-        // .w for the classic pass = occlusion contrast/power: concentrates the
-        // darkening near real contacts (visible width scales with occlusion
-        // depth) so weak, distant occlusion does not wash a wide low-contrast
-        // band up open faces. GTAO's horizon integral has correct falloff by
-        // construction and only takes XeGTAO's mild FinalValuePower (~2.2).
-        const bool gtao = method == 1 && bgfx::isValid(m_progGtao);
-        const float aoPower = gtao ? 2.2f : 2.5f;
-        // GTAO depth pyramid (XeGTAO depth MIP chain): weighted 2x2
-        // downsamples of the prepass viewZ — level 1 reads the prepass,
-        // each further level the previous one. Far horizon taps of the
-        // gen pass read the coarse levels, so the fixed step count keeps
-        // long-range occlusion instead of the hard screen-radius cap.
-        const bool depthMips = gtao && aoMipCount > 0;
-        if (depthMips) {
-            uint16_t sw = width;
-            uint16_t sh = height;
-            for (int m = 0; m < aoMipCount; ++m) {
-                float dparams[4] = {m == 0 ? 0.0f : 1.0f, radius,
-                                    float(sw), float(sh)};
-                bgfx::setUniform(u_aoParams, dparams);
-                bgfx::setTexture(0, s_texNormalZ,
-                                 m == 0 ? aoNormalZ : aoMipTex[m - 1]);
-                fullscreen(uint16_t(ViewAODepthMip1 + m), m_progGtaoDepth,
-                           BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-                sw = uint16_t(std::max(1, width >> (m + 1)));
-                sh = uint16_t(std::max(1, height >> (m + 1)));
-            }
-        }
-        // .z: classic pass depth bias; for GTAO two flag bits — bit0 the
-        // interaction fast path (fewer slices/steps while the camera
-        // moves), bit1 fp16 prepass depth (widens the coplanarity guard
-        // to the fp16 quantization step).
-        const float paramZ = gtao
-            ? (fast ? 1.0f : 0.0f) + (aoNormalZFp16 ? 2.0f : 0.0f)
-            : 0.02f * radius;
-        float params[4] = {radius, intensity, paramZ, aoPower};
-        bgfx::setUniform(u_aoParams, params);
-        if (gtao) {
-            // GTAO tuning (Render_GTAOSlices/Steps; 0 = defaults). Clamped
-            // here so a wild property value cannot explode the pass.
-            // .z = depth pyramid level count (0 = none, fall back to the
-            // hard screen-radius cap); .w = AO-target-to-full-res pixel
-            // scale (the gen pass may run at Render_AOResolution, but the
-            // pyramid levels halve from FULL res, so the per-tap level
-            // pick needs full-res pixel distances).
-            float params2[4] = {
-                float(slices > 0 ? std::min(slices, 32) : 9),
-                float(steps > 0 ? std::min(steps, 16) : 6),
-                depthMips ? float(aoMipCount) : 0.0f,
-                ssaoW > 0 ? float(width) / float(ssaoW) : 1.0f};
-            bgfx::setUniform(u_aoParams2, params2);
-            for (int m = 0; m < kAOMipLevels; ++m)
-                bgfx::setTexture(uint8_t(2 + m), s_texAOMip[m],
-                                 depthMips ? aoMipTex[m] : aoNormalZ);
-        }
-        if (!gtao)
-            bgfx::setUniform(u_aoKernel, kernel, kAOSamples);
-        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
-        bgfx::setTexture(1, s_texAONoise, aoNoiseTex);
-        fullscreen(ViewAOGen, gtao ? m_progGtao : m_progSsao,
-                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-
-        // GTAO swaps the plain box blur for an edge-aware (depth+normal
-        // weighted) denoise reading the prepass beside the raw AO.
-        bgfx::setTexture(0, s_texAO, aoTex);
-        if (gtao && bgfx::isValid(m_progGtaoBlur)) {
-            bgfx::setTexture(1, s_texNormalZ, aoNormalZ);
-            fullscreen(ViewAOBlur, m_progGtaoBlur,
-                       BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-            // Second denoise pass (XeGTAO DenoisePasses > 1), ping-ponged
-            // back into aoTex: composes to an effective ~9x9 edge-aware
-            // kernel, flattening the spatial-noise grain the single 5x5
-            // leaves visible.
-            bgfx::setTexture(0, s_texAO, aoBlurTex);
-            bgfx::setTexture(1, s_texNormalZ, aoNormalZ);
-            fullscreen(ViewAOBlur2, m_progGtaoBlur,
-                       BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-        }
-        else {
-            fullscreen(ViewAOBlur, m_progSsaoBlur,
-                       BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-        }
-    }
+                         bool fast, int slices, int steps);
 
     /// Volumetric light shaft resolve: raymarch the shadow map through
     /// the media at half resolution (ray ends at the prepass depth; a
@@ -4129,142 +4008,7 @@ public:
                           const float fireParams2[][4],
                           const float fireFrames[][16],
                           const float fountainParams[][4],
-                          const float fountainFrames[][16])
-    {
-        static const float noSigma[kMediumSlots][4] = {};
-        // w: 0 = no water medium, 1 = water, 2 = water + the surface
-        // re-renders after the apply — the raymarch then splits its
-        // output at the water entry so the surface pass can composite
-        // the front segment over itself.
-        float params[4] = {density, intensity, maxDist,
-                           water ? (surfaceSplit ? 2.0f : 1.0f)
-                                 : 0.0f};
-        bgfx::setUniform(u_volParams, params);
-        bgfx::setUniform(u_volMedium, medium);
-        bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma,
-                         kMediumSlots);
-        bgfx::setUniform(u_cloudParams, cloudParams, kMediumSlots);
-        bgfx::setUniform(u_fireParams, fireParams, kMediumSlots);
-        bgfx::setUniform(u_fireParams2, fireParams2, kMediumSlots);
-        bgfx::setUniform(u_fireFrame, fireFrames, kMediumSlots);
-        bgfx::setUniform(u_fountainParams, fountainParams, kMediumSlots);
-        bgfx::setUniform(u_fountainFrame, fountainFrames, kMediumSlots);
-        bgfx::setUniform(u_lightColor, lightColorI);
-        float lightDir[4] = {lightDirView[0], lightDirView[1],
-                             lightDirView[2], 1.0f};
-        bgfx::setUniform(u_lightDir, lightDir);
-        bgfx::setUniform(u_lightPos, lightPosView);
-        float evsm[4] = {shadowWarpFrame, shadowThreshold,
-                         0.0f, 0.0f};
-        bgfx::setUniform(u_evsm, evsm);
-        // The raymarch's shadow tap (fc_volume_shadow.sh) reads the
-        // mesh receivers' epsilon/bias, so the tunables act on the
-        // shafts too.
-        float shadowParams[4] = {1.0f, shadowEpsilon, 0.003f, 0.0f};
-        bgfx::setUniform(u_shadowParams, shadowParams);
-        bgfx::setUniform(u_shadowMatrix, shadowMtx);
-        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
-        bgfx::setTexture(1, s_texShadow, shadowTex);
-        bgfx::setTexture(2, s_texWaterFront, waterFrontTex);
-        bgfx::setTexture(3, s_texWaterBack, waterBackTex);
-        bgfx::setTexture(4, s_texCloudFront, cloudFrontTex);
-        bgfx::setTexture(5, s_texCloudBack, cloudBackTex);
-        bgfx::setTexture(6, s_texFireFront, fireFrontTex);
-        bgfx::setTexture(7, s_texFireBack, fireBackTex);
-        // Per-frame jitter phase (golden-ratio sequence) so the
-        // accumulated frames sample different march offsets; the apply
-        // pass re-sets u_volTexel with its own values below.
-        float phase[4] = {0.0f, 0.0f,
-                          accum < 1.0f
-                              ? float(frame % 4096) * 0.618034f : 0.0f,
-                          0.0f};
-        bgfx::setUniform(u_volTexel, phase);
-        // User medium splice (docs/RenderEngine.md §5.11): the
-        // assembled raymarch variant replaces the stock program while
-        // its async compile is done; stock media stand in meanwhile.
-        bgfx::ProgramHandle progVol = m_progVol;
-        if (volUserVol) {
-            bgfx::ProgramHandle p = _BGFXLib.getUserProgram(
-                *volUserVol, "vs_fc_comp");
-            if (bgfx::isValid(p)) {
-                _BGFXLib.pushUserParams(*volUserVol);
-                progVol = p;
-                if (_BGFXLib.userTime[1] != 0.0f
-                        && userShaderAnimated(*volUserVol))
-                    _BGFXLib.userAnimatedDraw = true;
-            }
-        }
-        fullscreen(ViewVolGen, progVol,
-                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-
-        // Temporal accumulation: blend the fresh raymarch into the
-        // history pair (hist = cur * k + hist * (1 - k)); the apply
-        // passes read the history. k = 1 replaces it outright (camera
-        // or scene changed).
-        if (bgfx::isValid(m_progVolAccum)
-                && bgfx::isValid(volHistFbo)) {
-            uint32_t k8 = uint32_t(
-                bx::clamp(accum, 0.0f, 1.0f) * 255.0f + 0.5f);
-            uint32_t kRgba = (k8 << 24) | (k8 << 16) | (k8 << 8) | k8;
-            bgfx::setTexture(0, s_texVol, volTex);
-            bgfx::setTexture(1, s_texVolFront, volFrontTex);
-            fullscreen(ViewVolAccum, m_progVolAccum,
-                       BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-                       | BGFX_STATE_BLEND_FUNC(
-                           BGFX_STATE_BLEND_FACTOR,
-                           BGFX_STATE_BLEND_INV_FACTOR),
-                       kRgba);
-        }
-
-        // Analytic per-channel surface extinction (multiply; the
-        // sequential apply view keeps it before the inscatter add).
-        bgfx::setUniform(u_volParams, params);
-        bgfx::setUniform(u_volMedium, medium);
-        bgfx::setUniform(u_waterSigma, water ? waterSigma : noSigma,
-                         kMediumSlots);
-        bgfx::setUniform(u_cloudParams, cloudParams, kMediumSlots);
-        bgfx::setUniform(u_fireParams, fireParams, kMediumSlots);
-        bgfx::setUniform(u_fireParams2, fireParams2, kMediumSlots);
-        bgfx::setUniform(u_fireFrame, fireFrames, kMediumSlots);
-        bgfx::setUniform(u_fountainParams, fountainParams, kMediumSlots);
-        bgfx::setUniform(u_fountainFrame, fountainFrames, kMediumSlots);
-        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
-        bgfx::setTexture(1, s_texWaterFront, waterFrontTex);
-        bgfx::setTexture(2, s_texWaterBack, waterBackTex);
-        bgfx::setTexture(3, s_texCloudFront, cloudFrontTex);
-        bgfx::setTexture(4, s_texCloudBack, cloudBackTex);
-        bgfx::setTexture(5, s_texFireFront, fireFrontTex);
-        bgfx::setTexture(6, s_texFireBack, fireBackTex);
-        bgfx::ProgramHandle progExt = m_progVolExt;
-        if (volUserExt) {
-            bgfx::ProgramHandle p = _BGFXLib.getUserProgram(
-                *volUserExt, "vs_fc_comp");
-            if (bgfx::isValid(p)) {
-                _BGFXLib.pushUserParams(*volUserExt);
-                progExt = p;
-            }
-        }
-        fullscreen(ViewVolApply, progExt,
-                   BGFX_STATE_WRITE_RGB
-                   | BGFX_STATE_BLEND_FUNC_SEPARATE(
-                       BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_SRC_COLOR,
-                       BGFX_STATE_BLEND_ZERO, BGFX_STATE_BLEND_ONE));
-
-        float hw = std::max(1.0f, std::floor(width / 2.0f));
-        float hh = std::max(1.0f, std::floor(height / 2.0f));
-        float texel[4] = {1.0f / hw, 1.0f / hh, hw, hh};
-        bgfx::setUniform(u_volParams, params);
-        bgfx::setUniform(u_volMedium, medium);
-        bgfx::setUniform(u_volTexel, texel);
-        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
-        bgfx::setTexture(1, s_texVol,
-                         bgfx::isValid(volHistTex) ? volHistTex
-                                                   : volTex);
-        fullscreen(ViewVolApply, m_progVolApply,
-                   BGFX_STATE_WRITE_RGB
-                   | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
-                                           BGFX_STATE_BLEND_ONE));
-    }
+                          const float fountainFrames[][16]);
 
     /// Water caustics splat: additive fullscreen pass over the prepass
     /// surfaces inside the water body interval, in its own view before
@@ -4273,42 +4017,12 @@ public:
     /// shadow / water uniforms match the raymarch; u_volParams.w flags
     /// the water span helper active.
     void submitCaustics(const float causticParams[][4],
-                        const float waterSigma[][4])
-    {
-        float params[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-        bgfx::setUniform(u_volParams, params);
-        bgfx::setUniform(u_waterSigma, waterSigma, kMediumSlots);
-        bgfx::setUniform(u_lightColor, lightColorI);
-        float lightDir[4] = {lightDirView[0], lightDirView[1],
-                             lightDirView[2], 1.0f};
-        bgfx::setUniform(u_lightDir, lightDir);
-        bgfx::setUniform(u_lightPos, lightPosView);
-        float evsm[4] = {shadowWarpFrame, shadowThreshold, 0.0f, 0.0f};
-        bgfx::setUniform(u_evsm, evsm);
-        // Same epsilon/bias as the mesh receivers (fc_volume_shadow.sh).
-        float shadowParams[4] = {1.0f, shadowEpsilon, 0.003f, 0.0f};
-        bgfx::setUniform(u_shadowParams, shadowParams);
-        bgfx::setUniform(u_shadowMatrix, shadowMtx);
-        bgfx::setUniform(u_causticParams, causticParams, kMediumSlots);
-        bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
-        bgfx::setTexture(1, s_texShadow, shadowTex);
-        bgfx::setTexture(2, s_texWaterFront, waterFrontTex);
-        bgfx::setTexture(3, s_texWaterBack, waterBackTex);
-        fullscreen(ViewCaustics, m_progCaustics,
-                   BGFX_STATE_WRITE_RGB
-                   | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
-                                           BGFX_STATE_BLEND_ONE));
-    }
+                        const float waterSigma[][4]);
 
     /// Copy the scene color into the sampleable refraction source (its
     /// view sits after the volumetric composite; the framebuffer switch
     /// also resolves a multisampled scene attachment).
-    void submitWaterCopy()
-    {
-        bgfx::setTexture(0, s_texScene, bgfxColor);
-        fullscreen(ViewWaterCopy, m_progWaterCopy,
-                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-    }
+    void submitWaterCopy();
 
     /// User "post" stage (docs/RenderDebug.md §6): resolve the composited
     /// scene color into the water-refraction copy target (safe to share —
@@ -4318,18 +4032,7 @@ public:
     /// the RenderDebug parameters, and like there the updates must be
     /// recorded with the consuming draw (see submitDebug).
     void submitUserPost(const Render::UserShader &shader,
-                        bgfx::ProgramHandle prog)
-    {
-        bgfx::setTexture(0, s_texScene, bgfxColor);
-        fullscreen(ViewUserPostCopy, m_progWaterCopy,
-                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-        _BGFXLib.pushUserParams(shader);
-        bgfx::setTexture(0, s_texScene, sceneCopyTex);
-        fullscreen(ViewUserPost, prog,
-                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-        if (_BGFXLib.userTime[1] != 0.0f && userShaderAnimated(shader))
-            _BGFXLib.userAnimatedDraw = true;
-    }
+                        bgfx::ProgramHandle prog);
 
     /// Bloom (glow) chain: bright-pass downsample of the finished scene
     /// into the quarter-res halo source, the light-source bodies added
@@ -4337,98 +4040,7 @@ public:
     /// the additive composite back onto the scene.
     void submitBloom(float threshold, float intensity, float radius,
                      const std::vector<const Render::DrawCall *> &bulbs,
-                     bool prepassCurrent)
-    {
-        if (!bgfx::isValid(m_progBloomBright)
-                || !bgfx::isValid(bloomFbo))
-            return;
-        float qw = std::max(1.0f, std::floor(width / 4.0f));
-        float qh = std::max(1.0f, std::floor(height / 4.0f));
-        float texel[4] = {1.0f / width, 1.0f / height,
-                          1.0f / qw, 1.0f / qh};
-        // w = soft knee width as a fraction of the threshold.
-        float params[4] = {threshold, intensity, radius, 0.5f};
-        bgfx::setUniform(u_bloomParams, params);
-        bgfx::setUniform(u_bloomTexel, texel);
-        bgfx::setTexture(0, s_texScene, bgfxColor);
-        fullscreen(ViewBloomBright, m_progBloomBright,
-                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-
-        // Light-source bodies re-rendered additively at diffuse *
-        // intensity; the manual depth reject needs the prepass, without
-        // it the bodies still glow via the bright pass alone. Handle
-        // validity is not enough: with AO/volumetrics/water off the
-        // prepass never ran this frame, and aoNormalZ holds another
-        // camera's depths (or nothing at all) — skip the emit rather
-        // than reject against garbage.
-        if (prepassCurrent && bgfx::isValid(m_progBloomEmit)
-                && bgfx::isValid(aoNormalZ)) {
-            for (const auto *draw : bulbs) {
-                if (!draw->mesh || !draw->mesh->triangleIndices)
-                    continue;
-                GpuMesh *gpu = getMesh(*draw->mesh);
-                if (!bgfx::isValid(gpu->geom->vbh)
-                        || !bgfx::isValid(gpu->geom->tri))
-                    continue;
-                const Render::Material &mat = draw->material;
-                float color[4];
-                unpackColor(mat.diffuse, color);
-                float inten = mat.lightintensity > 0.0f
-                    ? mat.lightintensity : 1.0f;
-                for (int j = 0; j < 3; ++j)
-                    color[j] *= inten;
-                bgfx::setUniform(u_matColor, color);
-                bgfx::setUniform(u_bloomTexel, texel);
-                // vs_fc_mesh reads u_params.w as an NDC depth bias (see
-                // the water surface pass) — zero it explicitly.
-                float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-                bgfx::setUniform(u_params, zero);
-                bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
-                setDrawTransform(*draw, autozoomScale, viewMatrix,
-                                 projMatrix, (float)height);
-                setMeshVertexBuffers(gpu, *draw->mesh);
-                if (draw->indexCount > 0)
-                    bgfx::setIndexBuffer(gpu->geom->tri,
-                                         uint32_t(draw->indexStart),
-                                         uint32_t(draw->indexCount));
-                else
-                    bgfx::setIndexBuffer(gpu->geom->tri);
-                uint64_t state = BGFX_STATE_WRITE_RGB
-                    | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
-                                            BGFX_STATE_BLEND_ONE);
-                if (mat.culling && !mat.twoside)
-                    state |= mat.ccw ? BGFX_STATE_CULL_CW
-                                     : BGFX_STATE_CULL_CCW;
-                bgfx::setState(state);
-                bgfx::submit(vid(ViewBloomEmit), m_progBloomEmit);
-                ++drawcount;
-            }
-        }
-
-        // Separable gaussian over the halo source (dense bilinear-pair
-        // kernel, the shadow blur pattern; u_viewTexel is the quarter
-        // res of these views).
-        float sigma = 6.0f * std::max(radius, 0.01f);
-        float pairs = std::min(64.0f, std::ceil(sigma * 1.5f));
-        float blurH[4] = {1.0f, 0.0f, sigma, pairs};
-        bgfx::setUniform(u_bloomBlur, blurH);
-        bgfx::setTexture(0, s_texBloom, bloomTex);
-        fullscreen(ViewBloomBlurH, m_progBloomBlur,
-                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-        float blurV[4] = {0.0f, 1.0f, sigma, pairs};
-        bgfx::setUniform(u_bloomBlur, blurV);
-        bgfx::setTexture(0, s_texBloom, bloomBlurTex);
-        fullscreen(ViewBloomBlurV, m_progBloomBlur,
-                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-
-        // Additive composite onto the scene, scaled by the intensity.
-        bgfx::setUniform(u_bloomParams, params);
-        bgfx::setTexture(0, s_texBloom, bloomTex);
-        fullscreen(ViewBloomApply, m_progBloomApply,
-                   BGFX_STATE_WRITE_RGB
-                   | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE,
-                                           BGFX_STATE_BLEND_ONE));
-    }
+                     bool prepassCurrent);
 
     /// Re-render a water body draw as the animated water surface:
     /// screen-space refraction from the scene copy, Fresnel-blended
@@ -4443,158 +4055,7 @@ public:
                             float shadowWobble,
                             int rippleType, float rippleDensity,
                             float impactStrength, float impactLife,
-                            const float (*splash)[4], bool volFront)
-    {
-        bool planarRefl = reflMode == 3;
-        if (!draw.mesh || !draw.mesh->triangleIndices)
-            return;
-        GpuMesh *gpu = getMesh(*draw.mesh);
-        if (!bgfx::isValid(gpu->geom->vbh)
-                || !bgfx::isValid(gpu->geom->tri))
-            return;
-        if (getenv("FC_BGFX_DEBUG_SUBMIT"))
-            fprintf(stderr,
-                    "bgfx submit water surf cache=%llx start=%d num=%d\n",
-                    (unsigned long long)draw.mesh->cacheId,
-                    draw.indexStart, draw.indexCount);
-
-        const Render::Material &mat = draw.material;
-        float color[4];
-        unpackColor(mat.diffuse, color);
-        // The alpha channel flags the shader that a planar reflection is
-        // rendered into s_texRefl (mirror-camera scene) — otherwise it
-        // falls back to the environment cubemap.
-        color[3] = planarRefl ? 1.0f : 0.0f;
-        bgfx::setUniform(u_matColor, color);
-        // The mesh vertex shader reads u_params.w as an NDC depth bias;
-        // bgfx uniforms are global (commit uploads the last-set value),
-        // so an unset u_params would inherit a line draw's dim-alpha 1.0
-        // and push every fragment past the far plane.
-        float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        bgfx::setUniform(u_params, params);
-        // w encodes the prepass/absorption state: 0 = no prepass,
-        // 1 = prepass bound (refraction depth reject), 2 = prepass bound
-        // AND the water back-face depth is available (depth absorption).
-        float surf[4] = {waveStrength, waveScale, time,
-                         depthReject ? (absorb ? 2.0f : 1.0f) : 0.0f};
-        bgfx::setUniform(u_waterSurf, surf);
-        float absorbP[4] = {absorption, inscatter, float(reflMode),
-                             refraction ? 1.0f : 0.0f};
-        bgfx::setUniform(u_waterAbsorb, absorbP);
-        float ripple[4] = {float(rippleType), rippleDensity, 0.0f, 0.0f};
-        bgfx::setUniform(u_waterRipple, ripple);
-        // Particle impact map: the rings the surface raises where
-        // droplets actually landed (docs/RenderEngine.md §5.8). Config
-        // x = 0 disables the lookup — the sampler still needs a valid
-        // bind, and any texture will do since the shader skips it.
-        const bool haveImpact = impactActive && bgfx::isValid(impactTex)
-            && impactStrength > 0.0f;
-        bgfx::setUniform(u_waterImpact, impactFrame);
-        const float impactCfg[4] = {
-            haveImpact ? float(kImpactRes) : 0.0f, impactNow,
-            std::max(impactLife, 0.05f), impactStrength};
-        bgfx::setUniform(u_waterImpactCfg, impactCfg);
-        bgfx::setTexture(7, s_texImpact,
-                         haveImpact ? impactTex : sceneCopyTex);
-        // Fountain splash sources: xyz = world base center, w = impact
-        // ring radius (0 = slot inactive).
-        static const float noSplash[kMediumSlots][4] = {};
-        bgfx::setUniform(u_waterSplash, splash ? splash : noSplash,
-                         kMediumSlots);
-        float lightDir[4] = {lightDirView[0], lightDirView[1],
-                             lightDirView[2],
-                             shadowFrame ? 1.0f : 0.0f};
-        bgfx::setUniform(u_lightDir, lightDir);
-        bgfx::setUniform(u_lightColor, lightColorI);
-        bgfx::setTexture(0, s_texScene, sceneCopyTex);
-        bgfx::setTexture(1, s_texEnv, m_envBuilt ? m_envTex
-                                                 : m_dummyEnvTex);
-        // Prepass viewZ for the refraction depth reject (u_waterSurf.w
-        // flags it valid; without the prepass the stage still needs a
-        // bound texture, any will do since the shader skips the read).
-        bgfx::setTexture(2, s_texNormalZ,
-                         depthReject ? aoNormalZ : sceneCopyTex);
-        // Planar reflection source (mirror-camera scene); when off, bind
-        // the scene copy so the sampler is valid (the shader skips it).
-        bgfx::setTexture(3, s_texRefl, planarRefl ? reflTex : sceneCopyTex);
-        // Water back-face depth (pool bottom along each ray) for the
-        // Beer-Lambert depth absorption of the refraction.
-        bgfx::setTexture(4, s_texWaterBack, absorb ? waterBackTex : sceneCopyTex);
-        // Scene-light shadow received on the surface (a shadow band + a
-        // killed glint). Only when the Shadow draw style has an active
-        // shadow map and the water shadow toggle is on; otherwise
-        // u_shadowParams.x = 0 keeps the surface fully lit but the sampler
-        // still needs a valid bind (any texture will do, the shader skips).
-        bool waterShadow = shadow && shadowFrame;
-        static const bool dbgvis =
-            getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
-        float shadowParams[4] = {waterShadow ? 1.0f : 0.0f, shadowEpsilon,
-                                 0.003f, dbgvis ? 1.0f : 0.0f};
-        bgfx::setUniform(u_shadowParams, shadowParams);
-        // The water pass has no receiver spread kernel, so u_evsm.z
-        // carries the shadow wobble factor instead (the mesh receivers
-        // use .zw for the Coin spread parameters).
-        float evsm[4] = {shadowWarpFrame, shadowThreshold,
-                         shadowWobble, 0.0f};
-        bgfx::setUniform(u_evsm, evsm);
-        bgfx::setUniform(u_shadowMatrix, shadowMtx);
-        bgfx::setTexture(5, s_texShadow,
-                         waterShadow ? shadowTex : sceneCopyTex);
-        // Front-segment volumetric target (raymarch output 1, or its
-        // temporal-accumulation history): the media stretch between the
-        // eye and the water entry, composited by this pass itself so
-        // exactly the drawn pixels get it. u_volTexel.x <= 0 = off (the
-        // sampler still needs a valid bind, the shader skips the read).
-        bool haveVolFront = volFront && bgfx::isValid(volFrontTex);
-        float hw = std::max(1.0f, std::floor(width / 2.0f));
-        float hh = std::max(1.0f, std::floor(height / 2.0f));
-        float volTexel[4] = {haveVolFront ? 1.0f / hw : 0.0f,
-                             1.0f / hh, hw, hh};
-        bgfx::setUniform(u_volTexel, volTexel);
-        bgfx::setTexture(6, s_texVolFront,
-                         haveVolFront
-                             ? (bgfx::isValid(volHistFrontTex)
-                                    ? volHistFrontTex : volFrontTex)
-                             : sceneCopyTex);
-
-        setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
-        // The mesh vertex shader needs the color stream too (bgfx drops
-        // draws with unbound attributes) — bind like the normal path.
-        setMeshVertexBuffers(gpu, *draw.mesh);
-        if (draw.indexCount > 0)
-            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
-                                 uint32_t(draw.indexCount));
-        else
-            bgfx::setIndexBuffer(gpu->geom->tri);
-        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-            | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS
-            | BGFX_STATE_MSAA;
-        if (mat.culling && !mat.twoside)
-            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
-        bgfx::setState(state);
-        // User "water"-stage shader (docs/RenderEngine.md §5.11): the
-        // user fragment program replaces fs_fc_water for this body —
-        // every uniform and sampler recorded above stays available (the
-        // fc_water_surface.sh core declares them; bgfx uniforms are
-        // global by name). While the async compile is pending or failed
-        // the stock surface stands in, never a black body.
-        bgfx::ProgramHandle prog = m_progWater;
-        if (mat.usershader && !mat.usershader->fragmentSource.empty()
-                && mat.usershader->stage == "water") {
-            bgfx::ProgramHandle uprog = _BGFXLib.getUserProgram(
-                *mat.usershader, "vs_fc_mesh");
-            if (bgfx::isValid(uprog)) {
-                _BGFXLib.pushUserParams(*mat.usershader);
-                prog = uprog;
-                if (_BGFXLib.userTime[1] != 0.0f
-                        && userShaderAnimated(*mat.usershader))
-                    _BGFXLib.userAnimatedDraw = true;
-                applyUserState(*mat.usershader, state, 0, false);
-            }
-        }
-        bgfx::submit(vid(ViewWaterSurface), prog);
-        ++drawcount;
-    }
+                            const float (*splash)[4], bool volFront);
 
     /// Re-render a glass body draw as glass: screen-space refraction of
     /// the scene copy (offset from the IOR-refracted view direction and
@@ -4602,77 +4063,7 @@ public:
     /// tinted by the material diffuse, Fresnel-blended environment
     /// reflection (fs_fc_glass). Draws opaquely with depth write like
     /// the water surface.
-    void submitGlassSurface(const Render::DrawCall &draw, bool depthReject)
-    {
-        if (!draw.mesh || !draw.mesh->triangleIndices)
-            return;
-        GpuMesh *gpu = getMesh(*draw.mesh);
-        if (!bgfx::isValid(gpu->geom->vbh)
-                || !bgfx::isValid(gpu->geom->tri))
-            return;
-        if (getenv("FC_BGFX_DEBUG_SUBMIT"))
-            fprintf(stderr,
-                    "bgfx submit glass cache=%llx start=%d num=%d\n",
-                    (unsigned long long)draw.mesh->cacheId,
-                    draw.indexStart, draw.indexCount);
-
-        const Render::Material &mat = draw.material;
-        float color[4];
-        unpackColor(mat.diffuse, color);
-        bgfx::setUniform(u_matColor, color);
-        // Like every vs_fc_mesh pairing: u_params is a global uniform,
-        // an unset value would inherit a line draw's depth bias.
-        float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        bgfx::setUniform(u_params, params);
-        float ior = mat.glassior > 0.0f ? mat.glassior : 1.5f;
-        // Automatic absorption density from the body extent: about one
-        // optical depth across the diagonal (before the diffuse tint
-        // weighting), like the water medium's automatic density.
-        float density = mat.glassdensity;
-        if (density <= 0.0f) {
-            density = 0.0f;
-            float dx = draw.bboxMax[0] - draw.bboxMin[0];
-            float dy = draw.bboxMax[1] - draw.bboxMin[1];
-            float dz = draw.bboxMax[2] - draw.bboxMin[2];
-            if (dx >= 0.0f && dy >= 0.0f && dz >= 0.0f) {
-                float diag = std::sqrt(dx * dx + dy * dy + dz * dz);
-                if (diag > 0.0f)
-                    density = 3.0f / diag;
-            }
-        }
-        float rough = std::min(std::max(mat.glassroughness, 0.0f), 1.0f);
-        float glassParams[4] = {ior, density, rough,
-                                depthReject ? 1.0f : 0.0f};
-        bgfx::setUniform(u_glassParams, glassParams);
-        float lightDir[4] = {lightDirView[0], lightDirView[1],
-                             lightDirView[2],
-                             shadowFrame ? 1.0f : 0.0f};
-        bgfx::setUniform(u_lightDir, lightDir);
-        bgfx::setUniform(u_lightColor, lightColorI);
-        bgfx::setTexture(0, s_texScene, sceneCopyTex);
-        bgfx::setTexture(1, s_texEnv, m_envBuilt ? m_envTex
-                                                 : m_dummyEnvTex);
-        bgfx::setTexture(2, s_texNormalZ,
-                         depthReject ? aoNormalZ : sceneCopyTex);
-        bgfx::setTexture(3, s_texGlassFront, glassFrontTex);
-        bgfx::setTexture(4, s_texGlassBack, glassBackTex);
-
-        setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix, (float)height);
-        setMeshVertexBuffers(gpu, *draw.mesh);
-        if (draw.indexCount > 0)
-            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
-                                 uint32_t(draw.indexCount));
-        else
-            bgfx::setIndexBuffer(gpu->geom->tri);
-        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-            | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS
-            | BGFX_STATE_MSAA;
-        if (mat.culling && !mat.twoside)
-            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
-        bgfx::setState(state);
-        bgfx::submit(vid(ViewGlassSurface), m_progGlass);
-        ++drawcount;
-    }
+    void submitGlassSurface(const Render::DrawCall &draw, bool depthReject);
 
     /// Composite the fountain/fire media into the mirrored-scene
     /// reflection texture (premultiplied over): the analytic cylinder
@@ -4682,34 +4073,7 @@ public:
                          const float fireParams2[][4],
                          const float fireFrames[][16],
                          const float fountainParams[][4],
-                         const float fountainFrames[][16])
-    {
-        if (!bgfx::isValid(m_progReflMedia))
-            return;
-        bgfx::setUniform(u_cloudParams, cloudParams, kMediumSlots);
-        bgfx::setUniform(u_fireParams, fireParams, kMediumSlots);
-        bgfx::setUniform(u_fireParams2, fireParams2, kMediumSlots);
-        bgfx::setUniform(u_fireFrame, fireFrames, kMediumSlots);
-        bgfx::setUniform(u_fountainParams, fountainParams,
-                         kMediumSlots);
-        bgfx::setUniform(u_fountainFrame, fountainFrames,
-                         kMediumSlots);
-        bgfx::setUniform(u_lightColor, lightColorI);
-        bgfx::ProgramHandle progRefl = m_progReflMedia;
-        if (volUserRefl) {
-            bgfx::ProgramHandle p = _BGFXLib.getUserProgram(
-                *volUserRefl, "vs_fc_comp");
-            if (bgfx::isValid(p)) {
-                _BGFXLib.pushUserParams(*volUserRefl);
-                progRefl = p;
-            }
-        }
-        fullscreen(ViewReflMedia, progRefl,
-                   BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-                   | BGFX_STATE_BLEND_FUNC(
-                       BGFX_STATE_BLEND_ONE,
-                       BGFX_STATE_BLEND_INV_SRC_ALPHA));
-    }
+                         const float fountainFrames[][16]);
 
     /// Blend the mirrored-scene render onto the shadow ground quad:
     /// the same quad geometry and vertex shader as the ground draw, so
@@ -4717,55 +4081,7 @@ public:
     /// visible; the reflection texture's alpha (0 = nothing mirrored)
     /// scales the blend with the intensity.
     void submitGroundReflOverlay(const float bmin[3], const float bmax[3],
-                                 const Render::LightConfig &light)
-    {
-        if (light.groundTransparency >= 1.0f)
-            return;
-        float cx = (bmin[0] + bmax[0]) * 0.5f;
-        float cy = (bmin[1] + bmax[1]) * 0.5f;
-        float z = bmin[2];
-        float half = light.groundScale
-            * std::max(bmax[0] - bmin[0],
-                       std::max(bmax[1] - bmin[1], bmax[2] - bmin[2]));
-        if (half <= 0.0f)
-            return;
-        TransientVertex::init();
-        if (bgfx::getAvailTransientVertexBuffer(6, TransientVertex::ms_layout)
-                < 6)
-            return;
-        bgfx::TransientVertexBuffer tvb;
-        bgfx::allocTransientVertexBuffer(&tvb, 6, TransientVertex::ms_layout);
-        auto verts = reinterpret_cast<TransientVertex *>(tvb.data);
-        const float xs[6] = {-1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f};
-        const float ys[6] = {-1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f};
-        for (int i = 0; i < 6; ++i) {
-            verts[i].px = cx + xs[i] * half;
-            verts[i].py = cy + ys[i] * half;
-            verts[i].pz = z;
-            verts[i].nx = verts[i].ny = 0.0f;
-            verts[i].nz = 1.0f;
-            verts[i].rgba = 0xffffffffu;
-        }
-        float params[4] = {light.groundReflectionIntensity,
-                           0.0f, 0.0f, 0.0f};
-        bgfx::setUniform(u_reflParams, params);
-        // Zero the mesh VS's global u_params (its .w depth bias would
-        // otherwise carry over from the last line/point draw and break
-        // the EQUAL depth test against the ground quad).
-        float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        bgfx::setUniform(u_params, zero);
-        bgfx::setTexture(0, s_texScene, reflTex);
-        float identity[16];
-        bx::mtxIdentity(identity);
-        bgfx::setTransform(identity);
-        bgfx::setVertexBuffer(0, &tvb);
-        bgfx::setState(BGFX_STATE_WRITE_RGB
-                       | BGFX_STATE_DEPTH_TEST_EQUAL
-                       | BGFX_STATE_BLEND_ALPHA
-                       | BGFX_STATE_MSAA);
-        bgfx::submit(vid(ViewGroundReflApply), m_progGroundRefl);
-        ++drawcount;
-    }
+                                 const Render::LightConfig &light);
 
     // Submission passes mirroring SoFCRenderer's delayed render loop.
     enum SubmitPass {
