@@ -26,6 +26,8 @@
 
 #include <vector>
 
+#include <QPointer>
+
 #include <CXX/Extensions.hxx>
 #include <Base/Factory.h>
 #include "DlgCustomizeImp.h"
@@ -389,7 +391,12 @@ protected:
     void changeEvent(QEvent *e) override;
 
 private:
+    bool formIsAlive(const char* method) const;
+
     Py::Object page;
+    /** The widget the Python page handed over. Its lifetime is this page's, but a
+     * page that deletes it behind our back must not take the dialog down with it. */
+    QPointer<QWidget> form;
 };
 
 } // namespace Dialog
