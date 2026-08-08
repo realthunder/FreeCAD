@@ -27,6 +27,8 @@
 #include <string>
 #include <mutex>
 
+#include <QMetaType>
+
 #include "App/Metadata.h"
 
 namespace Gui {
@@ -63,6 +65,17 @@ namespace Gui {
          * Get the complete metadata object for this preference pack
          */
         App::Metadata metadata() const;
+
+        /**
+         * The directory this pack was loaded from, which is also where any
+         * style sheet or icon set it ships lives.
+         */
+        boost::filesystem::path path() const;
+
+        /**
+         * The pack's .cfg, whether or not it exists on disk.
+         */
+        boost::filesystem::path configFile() const;
 
     private:
 
@@ -127,6 +140,12 @@ namespace Gui {
          */
         void deleteUserPack(const std::string& name);
 
+        /**
+         * The .cfg of a named pack, or an empty path if there is no such pack or
+         * it ships no config.
+         */
+        boost::filesystem::path configFileFor(const std::string& preferencePackName) const;
+
 
         /**
          * \struct TemplateFile A file containing a set of preferences that can be saved into
@@ -175,8 +194,13 @@ namespace Gui {
          * Save current settings as a (possibly new) preferencePack
          *
          * If the named preferencePack does not exist, this creates it on disk. If it does exist, this overwrites the original.
+         * \param type the pack's metadata type. "Theme" makes it selectable as one;
+         *             anything a user saves without one is only reachable from the
+         *             Preference Packs page.
          */
-        void save(const std::string& name, const std::vector<TemplateFile>& templates);
+        void save(const std::string& name,
+                  const std::vector<TemplateFile>& templates,
+                  const std::string& type = {});
 
 
         std::vector<TemplateFile> templateFiles(bool rescan = false);
@@ -189,7 +213,9 @@ namespace Gui {
         /**
          * Import an existing config file as a preference pack with a given name.
          */
-        void importConfig(const std::string &packName, const boost::filesystem::path &path);
+        void importConfig(const std::string &packName,
+                          const boost::filesystem::path &path,
+                          const std::string& type = {});
 
     private:
 
@@ -200,7 +226,7 @@ namespace Gui {
 
         void DeleteOldBackups() const;
 
-        void AddPackToMetadata(const std::string &packName) const;
+        void AddPackToMetadata(const std::string &packName, const std::string &type) const;
 
         std::vector<boost::filesystem::path> _preferencePackPaths;
         std::vector<TemplateFile> _templateFiles;

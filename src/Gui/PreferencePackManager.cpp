@@ -134,6 +134,16 @@ App::Metadata Gui::PreferencePack::metadata() const
     return _metadata;
 }
 
+fs::path Gui::PreferencePack::path() const
+{
+    return _path;
+}
+
+fs::path Gui::PreferencePack::configFile() const
+{
+    return _path / (_metadata.name() + ".cfg");
+}
+
 void PreferencePack::applyConfigChanges() const
 {
     auto configFile = _path / (_metadata.name() + ".cfg");
@@ -195,7 +205,8 @@ void PreferencePackManager::rescan()
     }
 }
 
-void Gui::PreferencePackManager::AddPackToMetadata(const std::string &packName) const
+void Gui::PreferencePackManager::AddPackToMetadata(const std::string &packName,
+                                                  const std::string &type) const
 {
     std::lock_guard<std::mutex> lock(_mutex);
     auto savedPreferencePacksDirectory =
@@ -236,22 +247,29 @@ void Gui::PreferencePackManager::AddPackToMetadata(const std::string &packName) 
     for (const auto &item : metadata->content()) {
         if (item.first == "preferencepack") {
             if (item.second.name() == packName) {
-                // A pack with this name exists already, bail out
-                return;
+                // A pack with this name exists already. Its type may still be
+                // wrong -- saving over a plain pack with a theme has to make it
+                // one, or the theme list would never show it.
+                if (item.second.type() == type)
+                    return;
+                metadata->removeContentItem("preferencepack", packName);
+                break;
             }
         }
     }
     App::Metadata newPreferencePackMetadata;
     newPreferencePackMetadata.setName(packName);
+    if (!type.empty())
+        newPreferencePackMetadata.setType(type);
 
     metadata->addContentItem("preferencepack", newPreferencePackMetadata);
     metadata->write(savedPreferencePacksDirectory / "package.xml");
 }
 
 void Gui::PreferencePackManager::importConfig(const std::string& packName,
-    const boost::filesystem::path& path)
+    const boost::filesystem::path& path, const std::string& type)
 {
-    AddPackToMetadata(packName);
+    AddPackToMetadata(packName, type);
 
     auto savedPreferencePacksDirectory =
         fs::path(App::Application::getUserAppDataDir()) / "SavedPreferencePacks";
@@ -336,6 +354,16 @@ bool PreferencePackManager::apply(const std::string& preferencePackName) const
     else {
         throw std::runtime_error("No such Preference Pack: " + preferencePackName);
     }
+}
+
+fs::path PreferencePackManager::configFileFor(const std::string& preferencePackName) const
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+    auto pack = _preferencePacks.find(preferencePackName);
+    if (pack == _preferencePacks.end())
+        return {};
+    auto configFile = pack->second.configFile();
+    return fs::exists(configFile) ? configFile : fs::path {};
 }
 
 std::string findUnusedName(const std::string &basename, ParameterGrp::handle parent)
@@ -470,12 +498,14 @@ void copyTemplateParameters(/*const*/ ParameterManager& templateParameterManager
     }
 }
 
-void PreferencePackManager::save(const std::string& name, const std::vector<TemplateFile>& templates)
+void PreferencePackManager::save(const std::string& name,
+                                 const std::vector<TemplateFile>& templates,
+                                 const std::string& type)
 {
     if (templates.empty())
         return;
 
-    AddPackToMetadata(name);
+    AddPackToMetadata(name, type);
 
     // Create the config file
     auto outputParameterManager = ParameterManager::Create();
