@@ -586,12 +586,29 @@ Under `ProgressiveLoad`, a restore builds no view providers at all:
   12499 objects hidden instead of 63, and a resave then writes the
   lie); and sweeping before a record lets the visual build once and be
   recolored.
+- **Phases one and three walk a snapshot, not the object array**
+  (`Gui::DrainCursor`). Slices return to the event loop, so the
+  document is live between them and the user can delete or create
+  objects with half the view providers still parked. An index into
+  `getObjects()` does not survive that: a deletion shifts every later
+  element down one and the walk steps over an object, which in phase
+  three means a view provider left with `Gui::isRestoring` set and no
+  mode switch — loaded, and refusing to show. The cursor records the
+  object *names* once, when the drain starts, and resolves each on
+  arrival: a deleted object is skipped, one created afterwards is
+  deliberately absent (it got its view provider from `slotNewObject()`
+  at creation and must not be restored twice). Same by-name rule as
+  everything else the load parks.
 - Each slice presents itself as a restore: the document's `Restoring`
   status plus `App::Document::RestoringScopeGuard`, a scope that
   answers `isAnyRestoring()` with true, so attach keeps its hands off
   the restored visibility and everything keyed on the global flag
   treats the replay as the record-reading it is. Saves, exports and
   imports flush the drain synchronously; a closing document drops it.
+  A record that cannot be read gives up on the record only: the parked
+  buffer goes and phase three still runs over every object, which is
+  what "falls back to defaults" has to mean — a view provider abandoned
+  mid-drain is one that never shows.
 - **The rest of the Gui stays as quiet as the eager window kept it.**
   The tree does not connect its change signals or build items while the
   drain runs (`TreeWidget::onUpdateStatus` treats a draining document
@@ -740,10 +757,23 @@ What it trades:
 
 - **The file must not be rewritten externally while entries are
   parked.** The index holds offsets, not content; our own save is safe
-  (everything faults in while writing, before the rename), but another
-  process rewriting the open file breaks pending serves — they log and
-  leave the shape empty. The old reader read everything up front and
-  did not care.
+  because `saveToFile()` calls `flushDeferredFiles()` before it writes
+  anything, but another process rewriting the open file breaks pending
+  serves — they log and leave the shape empty. The old reader read
+  everything up front and did not care.
+
+  The flush is explicit, not a side effect of the writing: the property
+  accessors fault in only what the save actually visits, and
+  `PropertyContainer::beforeSave()` drops `Transient` and
+  `PropNoPersist` properties before calling `beforeSave()` on them, so
+  such a property would keep its parked entry across the rename that
+  moves the original archive to a backup — and then read a stale offset
+  out of the file that took its name. It also closes the index's own
+  handle on the archive, which on Windows can fail that rename outright.
+- **A serve that cannot open its entry gives up quietly.** It runs
+  inside an event-loop slice and inside arbitrary const accessors, so a
+  truncated, replaced or deleted archive is logged and the value left
+  empty, never thrown from a timer callback.
 - `Feature::onDocumentRestored()` checks shape content **when the
   shape arrives** (`restoreShapeContents()` from `ensureRestored()`)
   rather than at restore time.

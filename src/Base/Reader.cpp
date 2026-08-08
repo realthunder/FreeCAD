@@ -1114,9 +1114,13 @@ void Base::ZipFileReader::readFiles(XMLReader &xmlReader)
             seq.next();
             continue;
         }
-        auto stream = openEntry(entry.FileName);
         FC_DURATION_PLUS(dParse, tParse);
         try {
+            // Inside the guard: an entry the central directory promises but
+            // the archive cannot deliver throws from the open, and one bad
+            // entry must cost its own consumer, not the rest of the load --
+            // which is what the forward-only walk did by construction.
+            auto stream = openEntry(entry.FileName);
             Base::ZipReader zipreader(*stream, entry.FileName, &xmlReader);
             entry.Object->RestoreDocFile(zipreader);
         } catch(Base::AbortException &e) {

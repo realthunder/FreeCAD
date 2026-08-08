@@ -297,10 +297,12 @@ void ConsoleSequencer::resetData()
 
 // ---------------------------------------------------------
 
-SequencerLauncher::SequencerLauncher(const char* pszStr, size_t steps)
+SequencerLauncher::SequencerLauncher(const char* pszStr, size_t steps,
+                                    Blocking blocking)
 {
     strText = pszStr ? pszStr : "";
     nTotalSteps = steps;
+    bKeepInteractive = (blocking == KeepInteractive);
     ownerThread = QThread::currentThread();
 
     QMutexLocker locker(&SequencerP::mutex);
@@ -349,8 +351,14 @@ bool SequencerLauncher::start(size_t steps, const char* pszTxt)
     if (SequencerP::_topLauncher == nullptr)
         SequencerP::_topLauncher = this;
     if (SequencerP::_topLauncher == this) {
-        if (progress() == 0)
-            bBlocking = (QThread::currentThread() == SequencerP::_thread);
+        if (progress() == 0) {
+            // The owner's thread, not the caller's: findNextLauncher()
+            // promotes a launcher from whatever thread let the previous top
+            // go, and a worker's sequence promoted by the main thread must
+            // not come out claiming the main thread's input.
+            bBlocking = !bKeepInteractive
+                && (ownerThread == SequencerP::_thread);
+        }
         return SequencerBase::Instance().start(strText.c_str(), nTotalSteps);
     }
     return false;

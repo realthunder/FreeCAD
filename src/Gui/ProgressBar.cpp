@@ -164,6 +164,8 @@ struct SequencerBarPrivate
     std::atomic<bool> teardownPending {false};
     /** the app event filter is installed and must be removed at teardown */
     std::atomic<bool> filterHeld {false};
+    /** pause() pushed an override cursor that resume() must pop */
+    bool cursorPaused {false};
 };
 
 struct ProgressBarPrivate
@@ -234,18 +236,28 @@ void SequencerBar::pause()
     if (thr != currentThread)
         return;
 
-    // allow key handling of dialog and restore cursor
-    d->waitCursor->restoreCursor();
-    QApplication::setOverrideCursor(Qt::ArrowCursor);
+    // allow key handling of dialog and restore cursor. There is a wait
+    // cursor only if the running sequence asked the indicator to take the
+    // UI (a worker-thread sequence, or a KeepInteractive one, never does),
+    // and pause/resume must push and pop the override cursor in pairs --
+    // hence the flag rather than a second test of the pointer, which the
+    // dialog's own event pumping can invalidate in between.
+    if (d->waitCursor) {
+        d->waitCursor->restoreCursor();
+        QApplication::setOverrideCursor(Qt::ArrowCursor);
+        d->cursorPaused = true;
+    }
 }
 
 void SequencerBar::resume()
 {
     QThread *currentThread = QThread::currentThread();
     QThread *thr = d->bar->thread(); // this is the main thread
-    if (thr == currentThread) {
+    if (thr == currentThread && d->cursorPaused) {
+        d->cursorPaused = false;
         QApplication::restoreOverrideCursor();
-        d->waitCursor->setWaitCursor();
+        if (d->waitCursor)
+            d->waitCursor->setWaitCursor();
     }
 
     // must be called as last to get control before WaitCursor
@@ -280,19 +292,30 @@ void SequencerBar::startStep(bool blocking)
         }
     }
     else {
-        d->guiThread = true;
+        // Not "the main thread is running this" but "this sequence owns the
+        // main thread": a sequence sliced across event-loop turns
+        // (SequencerLauncher::KeepInteractive) reports from here without the
+        // wait cursor and without the input grab, because the UI it reports
+        // for is meant to stay usable. isBlocking() carries the same answer
+        // on to the 3D viewer's own filter.
+        d->guiThread = blocking;
         d->progressTime.start();
         d->checkAbortTime.start();
         d->measureTime.start();
         if (!cheap) {
             d->bar->setRangeEx(0, (int)nTotalSteps);
-            if (!d->waitCursor)
-                d->waitCursor = new Gui::WaitCursor;
-            d->bar->enterControlEvents(d->guiThread);
-            d->filterHeld.store(true, std::memory_order_relaxed);
             d->engaged.store(true, std::memory_order_relaxed);
             showRemainingTime();
             d->bar->aboutToShow();
+        }
+        // The engaged indicator is reusable; a claim on the input is not
+        // inheritable. A KeepInteractive sequence makes none, so a blocking
+        // sequence starting behind one has to make its own -- and one that
+        // follows another blocking sequence finds the claim already held.
+        if (blocking && !d->filterHeld.exchange(true, std::memory_order_relaxed)) {
+            if (!d->waitCursor)
+                d->waitCursor = new Gui::WaitCursor;
+            d->bar->enterControlEvents(true);
         }
     }
     // From now on the aggregate poll owns the bar; it stops itself (and

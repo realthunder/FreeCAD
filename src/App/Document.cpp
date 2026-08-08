@@ -2556,6 +2556,16 @@ bool Document::saveToFile(const char* filename) const
 {
     ExpressionBlocker::check();
 
+    // Nothing may still be parked once this returns: the source archive is
+    // renamed to a backup or deleted below, and an entry served afterwards
+    // would seek a stale offset into whatever now carries that name. The
+    // property accessors alone do not cover it -- a Transient or
+    // non-persistent property is skipped by beforeSave()/Save() and would
+    // keep its parked entry across the rename -- and on Windows the index's
+    // own open handle can fail the rename outright. Faulting everything in
+    // here costs what the save was going to read anyway.
+    const_cast<Document*>(this)->flushDeferredFiles();
+
     signalStartSave(*this, filename);
 
     int compression = DocumentParams::getCompressionLevel();
@@ -2865,7 +2875,19 @@ bool Document::restoreDeferredFile(Base::Persistence *obj)
         return false;
     }
     FC_TIME_INIT(tServe);
-    auto stream = archive->openEntry(name);
+    // Opening is as fallible as reading: an archive truncated, replaced or
+    // deleted since the load throws from here, and this runs inside a
+    // timer slice and inside arbitrary const accessors -- neither of which
+    // may be left to unwind.
+    std::unique_ptr<zipios::ZipInputStream> stream;
+    try {
+        stream = archive->openEntry(name);
+    } catch (const std::exception &e) {
+        FC_ERR("Deferred entry " << name << " of " << prop->getFullName()
+                << " unreadable from " << archive->getFileName()
+                << ": " << e.what());
+        return false;
+    }
     if (!stream) {
         FC_ERR("Deferred entry " << name << " of " << prop->getFullName()
                 << " missing from " << archive->getFileName());
@@ -2941,8 +2963,15 @@ bool Document::serveDeferredFiles(double budgetSeconds)
     if (d->deferredFiles.empty())
         return false;
     if (!d->deferServeSeq)
+        // This sequence outlives its slice: it is reported across every
+        // return to the event loop until the last entry is served. An
+        // ordinary main-thread sequence would have the indicator grab the
+        // input for all of it -- wait cursor, clicks beeping, no
+        // navigation -- which is exactly what the progressive load exists
+        // to avoid. It reports; it does not take the window away.
         d->deferServeSeq = std::make_unique<Base::SequencerLauncher>(
-                "Loading shapes...", d->deferredFiles.size());
+                "Loading shapes...", d->deferredFiles.size(),
+                Base::SequencerLauncher::KeepInteractive);
     auto start = std::chrono::steady_clock::now();
     std::size_t served = 0;
     while (!d->deferredFiles.empty()) {
@@ -2953,7 +2982,11 @@ bool Document::serveDeferredFiles(double budgetSeconds)
         if (!prop || !prop->canDeferRestore() || !restoreDeferredFile(prop))
             d->deferredFiles.erase(key);
         ++served;
-        d->deferServeSeq->next();
+        // Serving one entry can cancel another (a consumer overwriting a
+        // parked value), and the cancel that empties the map drops this
+        // sequence with it.
+        if (d->deferServeSeq)
+            d->deferServeSeq->next();
         if (std::chrono::duration<double>(
                     std::chrono::steady_clock::now() - start).count()
                 >= budgetSeconds)

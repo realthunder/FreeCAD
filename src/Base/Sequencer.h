@@ -394,7 +394,29 @@ private:
 class BaseExport SequencerLauncher
 {
 public:
-    SequencerLauncher(const char* pszStr=nullptr, size_t steps=0);
+    /** What the indicator may do to the UI on this sequence's behalf.
+     *
+     * A sequence started on the main thread has always meant "this loop
+     * owns the GUI thread until it ends", and the indicator answers it by
+     * grabbing input: a wait cursor, the application event filter that
+     * swallows clicks and keys, and the 3D viewer's own filter dropping
+     * navigation (View3DInventorViewer's eventFilter tests
+     * Sequencer().isBlocking() too). That is right for a loop that keeps
+     * the thread.
+     *
+     * It is wrong for a sequence that spans event-loop turns -- a load
+     * draining in budgeted slices (docs/ProgressiveLoading.md §2) reports
+     * one sequence across many returns to the event loop, and the whole
+     * point of the drain is that the window stays usable while it runs.
+     * KeepInteractive reports such a sequence without letting the
+     * indicator take the input away.
+     */
+    enum Blocking {
+        BlockInput,       ///< the sequence owns the GUI thread (default)
+        KeepInteractive,  ///< sliced on the event loop; leave the UI usable
+    };
+    SequencerLauncher(const char* pszStr=nullptr, size_t steps=0,
+                      Blocking blocking=BlockInput);
     virtual ~SequencerLauncher();
     size_t numberOfSteps() const;
     size_t progress() const;
@@ -420,6 +442,7 @@ private:
     // Allow cancel by user code
     std::atomic<bool> bCanceled {false};
     bool bBlocking {false};
+    bool bKeepInteractive {false};
     bool bNoException {false};
     QThread *ownerThread {nullptr};
 

@@ -167,6 +167,18 @@ The pieces, all in `Base/Sequencer.{h,cpp}` and
   "Shapes") nested beneath it. Reads shorter than the abort-check
   window (500ms) never surface — by design; their progress *is* the
   serve counter.
+- **A sliced sequence reports without taking the window.** "Started on
+  the main thread" has always meant "owns the GUI thread until it
+  ends", and the indicator answers it by grabbing input: wait cursor,
+  the application event filter swallowing clicks and keys, and the 3D
+  viewer's own filter dropping navigation. A sequence that spans
+  event-loop turns is the opposite case — the `Loading shapes...`
+  sequence lives across every slice of the drain, and the whole point
+  of the drain is that the window stays usable — so it is launched
+  `SequencerLauncher::KeepInteractive`. The blocking answer also comes
+  from the launcher's *owner* thread rather than from whoever promoted
+  it, or a worker's sequence promoted by the main thread would claim
+  the main thread's input.
 
 Two reporting facts that cost gate iterations, recorded so they are
 not rediscovered: in OCCT ≥ 7.5 an indicator's text is the *scope
@@ -200,8 +212,11 @@ unchanged.
    invalidates its entry instead of dangling.
 3. **The archive must not be rewritten externally while entries are
    parked** — the one durability trade of on-demand reading
-   (DocumentLoad.md §14). Our own save is safe: it faults everything
-   in before the rename.
+   (DocumentLoad.md §14). Our own save is safe because it says so:
+   `Document::saveToFile()` calls `flushDeferredFiles()` before writing.
+   Leaving it to the property accessors is not enough — a `Transient`
+   property is skipped by the save and would carry its parked entry
+   across the rename.
 4. **Slices never exceed their budget by design**, only by the
    granularity of one item; anything long inside an item (a giant
    brep) reports through the progress layer instead of blocking

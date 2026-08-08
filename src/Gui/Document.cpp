@@ -63,6 +63,7 @@
 #include "Application.h"
 #include "Command.h"
 #include "Control.h"
+#include "DrainCursor.h"
 #include "FileDialog.h"
 #include "MainWindow.h"
 #include "MDIView.h"
@@ -188,8 +189,11 @@ struct DocumentP
     // provider -- which is what keeps the link machinery linear.
     bool _deferCreated = false;
     bool _deferPhase1 = false;    // creating, not yet restoring
-    std::size_t _deferCreateIndex = 0;
-    std::size_t _deferFinishIndex = 0;
+    // Both phases walk the objects the document had when the drain
+    // started, by name: the document is live between slices and an index
+    // into its object array does not survive a deletion. See DrainCursor.h.
+    DrainCursor _deferCreate;
+    DrainCursor _deferFinish;
     std::size_t _deferSlices = 0;
     std::size_t _deferBuilt = 0;
     FC_DURATION _deferSpent {0};
@@ -1073,6 +1077,8 @@ void Document::beforeDelete() {
     d->_deferReader.reset();
     d->_deferStream.reset();
     d->_deferBuf.clear();
+    d->_deferCreate.clear();
+    d->_deferFinish.clear();
 
     auto editDoc = Application::Instance->editDocument();
     if(editDoc) {
@@ -2231,8 +2237,10 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
     d->_deferReader.reset();
     d->_deferStream.reset();
     d->_deferCreated = false;
-    d->_deferCreateIndex = 0;
-    d->_deferFinishIndex = 0;
+    // Not snapshotted here: the objects this load owes work to do not all
+    // exist yet. The first slice takes it, once the load has let go.
+    d->_deferCreate.clear();
+    d->_deferFinish.clear();
     d->_deferSlices = d->_deferBuilt = 0;
     d->_deferSpent = FC_DURATION(0);
     d->_deferReadTime = d->_deferFinishTime = FC_DURATION(0);
@@ -2444,6 +2452,15 @@ void Document::runDeferredRestoreSlice()
     };
     ++d->_deferSlices;
 
+    // The set of objects this drain owes work to, fixed here: everything
+    // the load created (afterRestore's additions included) exists by now,
+    // and from here on the document is live between slices -- see
+    // DrainCursor.h for why neither phase may index the object array.
+    if (!d->_deferCreate.ready()) {
+        d->_deferCreate.snapshot(d->_pcDocument);
+        d->_deferFinish.snapshot(d->_pcDocument);
+    }
+
     // Restore semantics for everything a slice builds: attach() must not
     // overwrite the visibility the object restored with, the property
     // changes are a record being read rather than edits, and a fresh
@@ -2475,9 +2492,7 @@ void Document::runDeferredRestoreSlice()
         // them gets its record.
         if (!d->_deferCreated) {
             Base::StateLocker phase1(d->_deferPhase1);
-            auto objs = d->_pcDocument->getObjects();
-            while (d->_deferCreateIndex < objs.size()) {
-                auto obj = objs[d->_deferCreateIndex++];
+            while (auto obj = d->_deferCreate.next(d->_pcDocument)) {
                 if (!getViewProvider(obj)) {
                     slotNewObject(*obj);
                     if (auto vpd = Base::freecad_dynamic_cast<
@@ -2489,7 +2504,7 @@ void Document::runDeferredRestoreSlice()
                 if (elapsed().count() >= budget)
                     break;
             }
-            if (d->_deferCreateIndex < objs.size()) {
+            if (!d->_deferCreate.done()) {
                 d->_pcDocument->setStatus(App::Document::Restoring, false);
                 d->_deferSpent += elapsed();
                 scheduleDeferredRestore();
@@ -2551,9 +2566,7 @@ void Document::runDeferredRestoreSlice()
         if (!d->_deferCount) {
             d->_deferReader.reset();
             d->_deferStream.reset();
-            auto objs = d->_pcDocument->getObjects();
-            while (d->_deferFinishIndex < objs.size()) {
-                auto obj = objs[d->_deferFinishIndex++];
+            while (auto obj = d->_deferFinish.next(d->_pcDocument)) {
                 auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
                         getViewProvider(obj));
                 bool fresh = false;
@@ -2596,13 +2609,14 @@ void Document::runDeferredRestoreSlice()
                 if (elapsed().count() >= budget)
                     break;
             }
-            if (d->_deferFinishIndex < objs.size()) {
+            if (!d->_deferFinish.done()) {
                 d->_pcDocument->setStatus(App::Document::Restoring, false);
                 d->_deferSpent += elapsed();
                 if ((d->_deferSlices % 50) == 0)
                     FC_LOG("progressive restore " << d->_pcDocument->getName()
-                            << ": finishing " << d->_deferFinishIndex << " of "
-                            << objs.size() << ", " << d->_deferSlices
+                            << ": finishing " << d->_deferFinish.position()
+                            << " of " << d->_deferFinish.size() << ", "
+                            << d->_deferSlices
                             << " slices " << d->_deferSpent.count()
                             << "s (sweep " << d->_deferSweepTime.count()
                             << "s, mode " << d->_deferModeTime.count()
@@ -2613,27 +2627,38 @@ void Document::runDeferredRestoreSlice()
             }
         }
     }
+    // A record that cannot be read is given up on -- but only the record.
+    // The parked buffer goes, and phase three still runs over every object,
+    // which is what "falls back to defaults" has to mean: a view provider
+    // abandoned mid-drain keeps Gui::isRestoring set, never gets its mode
+    // switch, and shows nothing at all.
     catch (Base::Exception &e) {
         e.ReportException();
         FC_ERR("restore " << d->_pcDocument->getName()
                 << ": deferred view provider restore aborted, "
                 << d->_deferCount << " objects fall back to defaults");
         d->_deferCount = 0;
+        d->_deferReader.reset();
+        d->_deferStream.reset();
     }
     catch (const std::exception &e) {
         FC_ERR("restore " << d->_pcDocument->getName()
                 << ": deferred view provider restore aborted (" << e.what()
                 << "), " << d->_deferCount << " objects fall back to defaults");
         d->_deferCount = 0;
+        d->_deferReader.reset();
+        d->_deferStream.reset();
     }
     d->_pcDocument->setStatus(App::Document::Restoring, false);
     d->_deferSpent += elapsed();
 
-    if (d->_deferCount) {
+    // Phase three is unfinished here only when a phase above threw out of
+    // its slice; the normal budget exit reports and reschedules in place.
+    if (d->_deferCount || !d->_deferFinish.done()) {
         // A load this size drains for a while; say how it is going, and
         // with the same split the finish line reports, so a stall in here
         // names its stage.
-        if ((d->_deferSlices % 50) == 0)
+        if (d->_deferCount && (d->_deferSlices % 50) == 0)
             FC_LOG("progressive restore " << d->_pcDocument->getName() << ": "
                     << d->_deferBuilt << " view providers, " << d->_deferCount
                     << " left, " << d->_deferSlices << " slices "
@@ -2659,6 +2684,8 @@ void Document::finishDeferredRestore()
     d->_deferStream.reset();
     d->_deferBuf.clear();
     d->_deferBuf.shrink_to_fit();
+    d->_deferCreate.clear();
+    d->_deferFinish.clear();
     d->_restoreDefaults.clear();
     d->_deferVPs = false;
 

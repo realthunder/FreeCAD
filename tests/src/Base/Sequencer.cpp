@@ -236,3 +236,108 @@ TEST(SequencerLauncher, CancelSeenFromWorkerThread)
     t.join();
     EXPECT_TRUE(seq.wasCanceled());
 }
+
+/// Records what the indicator was told about each sequence that started.
+class RecordingSequencer: public Base::SequencerBase
+{
+public:
+    std::vector<bool> starts;  ///< one entry per start, true = claims input
+
+protected:
+    void startStep(bool blocking) override
+    {
+        starts.push_back(blocking);
+    }
+};
+
+/** A sequence that runs in slices on the event loop reports without taking
+ * the window away.
+ *
+ * "Started on the main thread" has always meant "owns the GUI thread until
+ * it ends", and the indicator answers it by grabbing input. A load draining
+ * in budgeted slices reports one sequence across many returns to the event
+ * loop, and the whole point of the drain is that the window stays usable
+ * while it runs (docs/ProgressiveLoading.md §2).
+ */
+TEST(SequencerLauncher, KeepInteractiveDoesNotClaimTheInput)
+{
+    ensureIndicator();
+    RecordingSequencer rec;
+
+    {
+        Base::SequencerLauncher owns("owns the thread", 10);
+        EXPECT_TRUE(owns.isBlocking());
+        ASSERT_EQ(rec.starts.size(), 1u);
+        EXPECT_TRUE(rec.starts.back());
+    }
+    {
+        Base::SequencerLauncher sliced("sliced on the event loop", 10,
+                                       Base::SequencerLauncher::KeepInteractive);
+        EXPECT_FALSE(sliced.isBlocking());
+        ASSERT_EQ(rec.starts.size(), 2u);
+        EXPECT_FALSE(rec.starts.back());
+        // It is still a reported sequence, with everything the poll needs.
+        sliced.next();
+        auto snap = Base::SequencerManager::snapshot();
+        ASSERT_EQ(snap.sequences.size(), 1u);
+        EXPECT_EQ(snap.sequences[0].text, "sliced on the event loop");
+        EXPECT_EQ(snap.progress, 1u);
+        EXPECT_EQ(snap.total, 10u);
+        EXPECT_TRUE(snap.sequences[0].mainThread);
+    }
+}
+
+/// An interactive sequence nested under a blocking one leaves the blocking
+/// one's claim alone -- only the top launcher speaks for the indicator.
+TEST(SequencerLauncher, KeepInteractiveNestedUnderBlocking)
+{
+    ensureIndicator();
+    RecordingSequencer rec;
+    Base::SequencerLauncher top("top", 10);
+    ASSERT_EQ(rec.starts.size(), 1u);
+    EXPECT_TRUE(top.isBlocking());
+
+    Base::SequencerLauncher sliced("sliced", 10, Base::SequencerLauncher::KeepInteractive);
+    EXPECT_EQ(rec.starts.size(), 1u);  // no restart, no second claim
+    EXPECT_TRUE(top.isBlocking());
+}
+
+/** A worker's sequence promoted to the top must not come out claiming the
+ * main thread's input.
+ *
+ * findNextLauncher() promotes from whatever thread let the previous top go,
+ * so the blocking answer has to come from the launcher's owner thread, not
+ * from the caller's.
+ */
+TEST(SequencerLauncher, PromotedWorkerSequenceDoesNotClaimTheInput)
+{
+    ensureIndicator();
+    RecordingSequencer rec;
+
+    auto top = std::make_unique<Base::SequencerLauncher>("main job", 10);
+    ASSERT_TRUE(top->isBlocking());
+
+    std::promise<void> created;
+    std::promise<void> release;
+    auto createdF = created.get_future();
+    std::shared_future<void> releaseF = release.get_future().share();
+    Base::SequencerLauncher* worker = nullptr;
+
+    std::thread t([&] {
+        Base::SequencerLauncher w("worker job", 50);
+        worker = &w;
+        created.set_value();
+        releaseF.wait();
+    });
+    createdF.wait();
+    EXPECT_FALSE(worker->isBlocking());
+
+    // The main thread lets its own sequence go; the worker's is promoted.
+    top.reset();
+    EXPECT_FALSE(worker->isBlocking());
+    ASSERT_FALSE(rec.starts.empty());
+    EXPECT_FALSE(rec.starts.back());
+
+    release.set_value();
+    t.join();
+}
