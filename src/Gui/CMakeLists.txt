@@ -861,6 +861,7 @@ SET(View3D_CPP_SRCS
     TinkerCADNavigationStyle.cpp
     TouchpadNavigationStyle.cpp
     GestureNavigationStyle.cpp
+    ShadingOptions.cpp
     SplitView3DInventor.cpp
     View.cpp
     View3DInventor.cpp
@@ -887,6 +888,7 @@ SET(View3D_SRCS
     MouseSelection.h
     NavigationStyle.h
     GestureNavigationStyle.h
+    ShadingOptions.h
     SplitView3DInventor.h
     View.h
     View3DInventor.h

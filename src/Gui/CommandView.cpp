@@ -92,6 +92,7 @@
 #include "SelectionObject.h"
 #include "SelectionView.h"
 #include "SoAxisCrossKit.h"
+#include "ShadingOptions.h"
 #include "SoFCOffscreenRenderer.h"
 #include "SoFCUnifiedSelection.h"
 #include "TaskRenderSettings.h"
@@ -755,6 +756,16 @@ public:
     virtual Action * createAction() {
         Action * action = GroupCommand::createAction();
         action->setCheckable(false);
+        // The renderer's shading options ride under the style list as a
+        // popover section: they are not exclusive with each other, so
+        // they cannot be entries in it (Gui/ShadingOptions.h). The menu
+        // is built by ActionGroup::addTo -- for the tool button and for
+        // the menu bar, and again whenever the toolbar is rebuilt -- so
+        // the section is installed on first show of each one.
+        if (auto group = qobject_cast<Gui::ActionGroup*>(action)) {
+            QObject::connect(group, &Gui::ActionGroup::aboutToShow,
+                             ShadingOptionsWidget::install);
+        }
         return action;
     }
 };
