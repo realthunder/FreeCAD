@@ -64,6 +64,17 @@ public:
     static std::string currentTheme();
     static void setCurrentTheme(const std::string& name);
 
+    /**
+     * True when an appearance key no longer holds what the recorded theme
+     * declares -- the state the UI calls "modified".
+     *
+     * IconSet counts only while the policy is Reset. Under Merge and Keep it is
+     * meant to differ from the theme, so counting it would leave every theme
+     * permanently modified. Accent colors are not compared either: no pack
+     * declares them, so they belong to the user rather than the theme.
+     */
+    static bool isCustomised();
+
     /// What applying a theme does to MainWindow/IconSet.
     enum class IconSetPolicy
     {

@@ -29,6 +29,8 @@
 
 #include <App/Application.h>
 
+#include "Application.h"
+#include "PreferencePackManager.h"
 #include "ThemeManager.h"
 
 
@@ -141,6 +143,76 @@ std::string ThemeManager::currentTheme()
 void ThemeManager::setCurrentTheme(const std::string& name)
 {
     setOrRemove(userMainWindow(), "Theme", name);
+}
+
+namespace
+{
+
+ParameterGrp::ParamType typeOf(const Base::Reference<ParameterGrp>& group, const std::string& key)
+{
+    if (group.isValid()) {
+        for (const auto& entry : group->GetParameterNames()) {
+            if (entry.second == key) {
+                return entry.first;
+            }
+        }
+    }
+    return ParameterGrp::ParamType::FCInvalid;
+}
+
+/**
+ * Whether the live value of one key still matches what the pack declares. A key
+ * the pack omits reads as its coded default, which is exactly what applying the
+ * theme leaves behind, so absent compares equal to default rather than unequal.
+ */
+bool keyMatches(const ParameterGrp::handle& user,
+                const Base::Reference<ParameterGrp>& pack,
+                const std::string& key)
+{
+    auto type = typeOf(pack, key);
+    if (type == ParameterGrp::ParamType::FCInvalid) {
+        type = typeOf(user, key);
+    }
+    if (type == ParameterGrp::ParamType::FCInvalid) {
+        return true;  // neither side has an opinion
+    }
+
+    if (type == ParameterGrp::ParamType::FCBool) {
+        const bool declared = pack.isValid() && pack->GetBool(key.c_str(), false);
+        return user->GetBool(key.c_str(), false) == declared;
+    }
+
+    const std::string declared = pack.isValid() ? pack->GetASCII(key.c_str()) : std::string();
+    return user->GetASCII(key.c_str()) == declared;
+}
+
+}  // namespace
+
+bool ThemeManager::isCustomised()
+{
+    const std::string theme = currentTheme();
+    if (theme.empty()) {
+        return false;  // nothing claims to describe this, so nothing is departed from
+    }
+
+    const auto configFile = Application::Instance->prefPackManager()->configFileFor(theme);
+    if (configFile.empty()) {
+        return false;  // the theme went away; do not accuse the user of editing it
+    }
+
+    auto packParameters = ParameterManager::Create();
+    packParameters->LoadDocument(configFile.string().c_str());
+    const auto packMain = findGroup(Base::Reference<ParameterGrp>(packParameters),
+                                    {"BaseApp", "Preferences", "MainWindow"});
+
+    auto hMain = userMainWindow();
+    for (const auto& key : appearanceKeys()) {
+        if (!keyMatches(hMain, packMain, key)) {
+            return true;
+        }
+    }
+
+    return iconSetPolicy() == IconSetPolicy::Reset && !keyMatches(hMain, packMain, "IconSet");
 }
 
 ThemeManager::IconSetPolicy ThemeManager::iconSetPolicy()
