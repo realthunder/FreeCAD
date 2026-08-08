@@ -24,6 +24,7 @@
 #ifndef _PreComp_
 # include <algorithm>
 # include <limits>
+# include <QDesktopServices>
 # include <QDir>
 # include <QDoubleSpinBox>
 # include <QFileInfo>
@@ -34,6 +35,7 @@
 # include <QPushButton>
 # include <QRegularExpression>
 # include <QSpinBox>
+# include <QUrl>
 #endif
 
 #include <App/Color.h>
@@ -74,6 +76,8 @@ DlgSettingsTheme::DlgSettingsTheme(QWidget* parent)
             this, &DlgSettingsTheme::onRevertClicked);
     connect(ui->saveAsThemeButton, &QPushButton::clicked,
             this, &DlgSettingsTheme::onSaveAsThemeClicked);
+    connect(ui->themeFolderButton, &QPushButton::clicked,
+            this, &DlgSettingsTheme::onThemeFolderClicked);
 
     _Instance = this;
 }
@@ -288,6 +292,61 @@ void DlgSettingsTheme::refreshModifiedState()
 
     ui->modifiedLabel->setVisible(named && customised);
     ui->revertButton->setEnabled(named && customised);
+
+    // Nothing to open for "(Custom)", which is a state rather than a pack.
+    ui->themeFolderButton->setEnabled(!themeFolder(ThemeManager::currentTheme()).isEmpty());
+}
+
+QString DlgSettingsTheme::themeFolder(const std::string& name)
+{
+    if (name.empty()) {
+        return {};
+    }
+
+    const auto packs = Application::Instance->prefPackManager()->preferencePacks();
+    const auto pack = packs.find(name);
+    if (pack == packs.end()) {
+        return {};
+    }
+
+    const QString folder = QString::fromStdString(pack->second.path().string());
+    return QFileInfo(folder).isDir() ? folder : QString();
+}
+
+void DlgSettingsTheme::onThemeFolderClicked()
+{
+    const QString folder = themeFolder(ThemeManager::currentTheme());
+    if (!folder.isEmpty()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+    }
+}
+
+void DlgSettingsTheme::showDistributionHelp(const QString& name, const QString& folder)
+{
+    // These steps used to be generated into the saved packs' package.xml
+    // description, where the one person who needs them never looks. They belong
+    // here, in front of the author, the moment they have something to hand over.
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Information);
+    box.setWindowTitle(tr("Save as theme"));
+    box.setText(tr("Saved the current appearance as the theme \"%1\".").arg(name));
+    box.setInformativeText(tr("The theme and the files it uses are in:\n%1\n\n"
+                              "To give it to someone else, hand them that folder: it is "
+                              "complete on its own. To publish it through the Addon Manager, "
+                              "make the folder a git repository and push it to a git host, "
+                              "then turn on Developer mode in the Addon Manager, use its "
+                              "Developer tools to write the metadata file, commit and push "
+                              "that too, and add your repository to the custom repositories "
+                              "in the Addon Manager preferences.").arg(folder));
+
+    auto* open = box.addButton(tr("Open folder"), QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Close);
+    box.setDefaultButton(QMessageBox::Close);
+    box.exec();
+
+    if (box.clickedButton() == open) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+    }
 }
 
 void DlgSettingsTheme::applyTheme(const QString& name)
@@ -385,6 +444,8 @@ void DlgSettingsTheme::onSaveAsThemeClicked()
 
     loadThemes();
     refreshModifiedState();
+
+    showDistributionHelp(name, themeFolder(name.toStdString()));
 }
 
 void DlgSettingsTheme::populateStylesheets(const char *key,

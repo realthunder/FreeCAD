@@ -82,6 +82,7 @@ private Q_SLOTS:
   void onThemeActivated(int index);
   void onRevertClicked();
   void onSaveAsThemeClicked();
+  void onThemeFolderClicked();
 
 public:
   /// Re-read every widget from the parameters, without rescanning the packs.
@@ -94,6 +95,11 @@ private:
   void saveVariables();
   void refreshModifiedState();
   void applyTheme(const QString& name);
+
+  /// The directory a named theme is stored in, empty if it has none on disk.
+  static QString themeFolder(const std::string& name);
+  /// Tell the author what they just saved, and how to hand it to anyone else.
+  void showDistributionHelp(const QString& name, const QString& folder);
 
   /// One editor built for one entry of the current theme's Variables group.
   struct VariableRow

@@ -64,6 +64,16 @@
          </widget>
         </item>
         <item>
+         <widget class="QPushButton" name="themeFolderButton">
+          <property name="toolTip">
+           <string>Open the folder this theme is stored in</string>
+          </property>
+          <property name="text">
+           <string>Open theme folder</string>
+          </property>
+         </widget>
+        </item>
+        <item>
          <spacer name="themeButtonSpacer">
           <property name="orientation">
            <enum>Qt::Horizontal</enum>

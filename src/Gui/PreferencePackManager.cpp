@@ -231,22 +231,11 @@ void Gui::PreferencePackManager::AddPackToMetadata(const std::string &packName,
     else {
         metadata = std::make_unique<App::Metadata>();
         metadata->setName("User-Saved Preference Packs");
-        std::stringstream str;
-        str << "Generated automatically -- edits may be lost when saving new preference packs. To "
-            << "distribute one or more of these packs:\n"
-            << "    1) copy the entire SavedPreferencePacks directory to a convenient location,\n"
-            << "    2) rename the directory (usually to the name of the preference pack you are "
-            << "distributing),\n"
-            << "    3) delete any subfolders containing packs you don't want to distribute,\n"
-            << "    4) use git to initialize the directory as a git repository,\n"
-            << "    5) push it to a remote git host,\n"
-            << "    6) activate Developer Mode in the Addon Manager,\n"
-            << "    7) use Developer Tools in the Addon Manager to update the metadata file,\n"
-            << "    8) add, commit, and push the updated package.xml file,\n"
-            << "    9) add your remote host to the custom repositories list in the Addon Manager"
-            << " preferences,\n"
-            << "   10) use the Addon Manager to install your preference pack locally for testing.";
-        metadata->setDescription(str.str());
+        // Deliberately short. The instructions for handing a pack to someone
+        // else used to live here, ten steps of them, in a file whose author
+        // has no reason to open it; they are shown when a pack is saved now.
+        metadata->setDescription("Generated automatically -- edits may be lost when saving new "
+                                 "preference packs.");
         metadata->addLicense(App::Meta::License("All Rights Reserved", fs::path()));
     }
     for (const auto &item : metadata->content()) {
