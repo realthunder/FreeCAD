@@ -44,6 +44,14 @@ Settled in discussion:
   address must satisfy that entry — **a mismatch is denied by construction**, at the
   door, before any scene bytes. A `*` / `*` entry is the open invitation: anyone from
   anywhere.
+- **Which grant fields are boundaries.** Only two: the **token**, which is a secret,
+  and the **identity**, which the front door verified (§4). The **name** is self-declared
+  in the viewer's hello and the **address** is where the connection appears to come
+  from, so both narrow *who among the invited* a grant covers — they do not keep out
+  anyone holding the token, who can simply present another name. This is by
+  construction, not a gap to close: the name is a display label. Say so wherever a host
+  authors a grant (the panel's grant help does), and read a name-keyed ban as
+  housekeeping, not enforcement.
 - **Two lists.** The **persistent** list (`user.cfg`) is every grant ever issued, each
   with an enabled flag. The **live** list is what the door actually checks: seeded from
   the enabled persistent grants when sharing starts, and free to evolve at runtime.
