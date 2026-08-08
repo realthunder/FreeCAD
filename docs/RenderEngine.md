@@ -48,7 +48,7 @@ SoFCRenderer draw lists                    (Gui/Inventor/SoFCRenderer.*)
 Render::Renderer interface                 (Gui/Renderer/Renderer.h)
         │  RendererFactory: backends self-register by type string
         ▼
-BGFXRenderer                               (Gui/Renderer/BGFXRenderer.cpp)
+BGFXRenderer                               (Gui/Renderer/BGFXRendererP.h + BGFX*.cpp)
         │  pass sequence over shared framebuffer, per-frame configs,
         │  program/uniform/texture management, instancing
         ▼
@@ -63,7 +63,14 @@ top for everything still Coin-owned.
 
 ### Tiers
 
-The same `BGFXRenderer.cpp` compiles into three deployments:
+The engine is one private header, `BGFXRendererP.h` (class definitions,
+vertex/GPU cache structs, shared inline helpers), plus per-feature
+translation units — `BGFXRenderer.cpp` (public API, `BGFXRendererLibP`,
+shader pipeline), `BGFXFrame.cpp` (`Private::render()`: pass table, view
+config, submit loop, section caps), `BGFXScene.cpp` (scene feed,
+snapshot/publish, instance groups), and the `BGFXView*` files
+(`Lifecycle`, `Env`, `Shadow`, `Overlay`, `Particles`, `Effects`,
+`Submit`). The same sources compile into three deployments:
 
 | Tier | Definition | Scene source | Shaders |
 |---|---|---|---|
