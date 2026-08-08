@@ -1275,14 +1275,10 @@ QToolButton:selected {
   color: White;
 }
 
-QToolButton[popupMode="0"] {
-  /* Only for DelayedPopup */
-  padding-right: 20px;
-}
-
 QToolButton[popupMode="1"] {
-  /* Only for MenuButtonPopup */
-  padding-right: 20px;
+  /* Only for MenuButtonPopup: reserve the ::menu-button strip declared below
+     and nothing more. */
+  padding-right: 1.3ex;
 }
 QToolButton[popupMode="0"]::menu-button {
   border: none;
@@ -1304,16 +1300,18 @@ QToolButton[popupMode="1"]::menu-button:hover {
 }
 
 QToolButton[popupMode="2"] {
-  /* Only for InstantPopup */
-  padding-right: 20px;
+  /* Only for InstantPopup: same strip, for the menu indicator. */
+  padding-right: 1.3ex;
 }
 
 QToolButton::menu-button {
   border-bottom: 0px solid #ffffff;
   border-radius: 2px;
-  /* 16px width + 4px for border = 20px allocated above */
-  width: 1.6ex;
-  padding: 2px;
+  /* 8px at the default UI font, expressed in ex so it keeps clearing the
+     arrow (1ex, and 1.2ex on :open/:hover) if that font changes. This is
+     what popupMode 1 and 2 reserve above. */
+  width: 1.3ex;
+  padding: 0px;
   border-radius: 2px;
   border: 0px #000000;
 }
