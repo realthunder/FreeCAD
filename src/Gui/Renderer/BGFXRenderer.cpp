@@ -6082,7 +6082,8 @@ public:
     /// on top at their HDR emission color, a separable gaussian, and
     /// the additive composite back onto the scene.
     void submitBloom(float threshold, float intensity, float radius,
-                     const std::vector<const Render::DrawCall *> &bulbs)
+                     const std::vector<const Render::DrawCall *> &bulbs,
+                     bool prepassCurrent)
     {
         if (!bgfx::isValid(m_progBloomBright)
                 || !bgfx::isValid(bloomFbo))
@@ -6101,8 +6102,13 @@ public:
 
         // Light-source bodies re-rendered additively at diffuse *
         // intensity; the manual depth reject needs the prepass, without
-        // it the bodies still glow via the bright pass alone.
-        if (bgfx::isValid(m_progBloomEmit) && bgfx::isValid(aoNormalZ)) {
+        // it the bodies still glow via the bright pass alone. Handle
+        // validity is not enough: with AO/volumetrics/water off the
+        // prepass never ran this frame, and aoNormalZ holds another
+        // camera's depths (or nothing at all) — skip the emit rather
+        // than reject against garbage.
+        if (prepassCurrent && bgfx::isValid(m_progBloomEmit)
+                && bgfx::isValid(aoNormalZ)) {
             for (const auto *draw : bulbs) {
                 if (!draw->mesh || !draw->mesh->triangleIndices)
                     continue;
@@ -12076,7 +12082,11 @@ public:
         // transparent/water buckets, before the on-top/UI passes).
         if (bloomActive)
             view->submitBloom(bloomconf.threshold, bloomconf.intensity,
-                              bloomconf.radius, bulbDraws);
+                              bloomconf.radius, bulbDraws,
+                              // Rendered this frame, or the AO cache
+                              // matched — either way the prepass
+                              // targets describe the current camera.
+                              prepassActive);
 
         // 1g'. User post-stage shader (docs/RenderDebug.md §6): copy the
         // composited color, then the user program draws fullscreen over
