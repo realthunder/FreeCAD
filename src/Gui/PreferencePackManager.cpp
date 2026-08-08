@@ -38,6 +38,7 @@
 #include "Base/Interpreter.h"
 #include "Base/Console.h"
 #include "DockWindowManager.h"
+#include "ThemeManager.h"
 #include "ToolBarManager.h"
 
 #include <App/Application.h>
@@ -136,11 +137,31 @@ App::Metadata Gui::PreferencePack::metadata() const
 void PreferencePack::applyConfigChanges() const
 {
     auto configFile = _path / (_metadata.name() + ".cfg");
-    if (fs::exists(configFile)) {
-        auto newParameters = ParameterManager::Create();
-        newParameters->LoadDocument(configFile.string().c_str());
-        auto baseAppGroup = App::GetApplication().GetUserParameter().GetGroup("BaseApp");
-        newParameters->GetGroup("BaseApp")->insertTo(baseAppGroup);
+    if (!fs::exists(configFile)) {
+        return;
+    }
+
+    auto newParameters = ParameterManager::Create();
+    newParameters->LoadDocument(configFile.string().c_str());
+
+    // Inserting only writes the keys the pack contains, so on its own a theme is
+    // a partial description of the look: whatever it omits survives from the
+    // theme before it. A theme owns all of it, so clear that set first.
+    const bool isTheme = _metadata.type() == "Theme";
+    ThemeManager::Transition transition;
+    if (isTheme) {
+        transition = ThemeManager::beginThemeChange(*newParameters);
+    }
+
+    auto baseAppGroup = App::GetApplication().GetUserParameter().GetGroup("BaseApp");
+    newParameters->GetGroup("BaseApp")->insertTo(baseAppGroup);
+
+    if (isTheme) {
+        ThemeManager::endThemeChange(transition);
+        ThemeManager::setCurrentTheme(_metadata.name());
+    }
+    else {
+        ThemeManager::forgetThemeIfAppearanceChanged(*newParameters);
     }
 }
 

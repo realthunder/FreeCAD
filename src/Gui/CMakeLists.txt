@@ -1310,6 +1310,7 @@ SET(FreeCADGui_CPP_SRCS
     Control.cpp
     SpaceballEvent.cpp
     PreferencePackManager.cpp
+    ThemeManager.cpp
     Thumbnail.cpp
     Utilities.cpp
     LiveViewInteraction.cpp
@@ -1348,6 +1349,7 @@ SET(FreeCADGui_SRCS
     Control.h
     SpaceballEvent.h
     PreferencePackManager.h
+    ThemeManager.h
     Thumbnail.h
     Tools.h
     Utilities.h
