@@ -43,6 +43,13 @@ void ParamHandlers::addHandler(const ParamKey &key, const std::shared_ptr<ParamH
                 if (!Param || !Name)
                     return;
                 auto it =  handlers.find(ParamKey(Param, Name));
+                if (it == handlers.end()) {
+                    // A handler registered under the empty key takes every key
+                    // in its group. That is the only way to watch a group whose
+                    // key names are not known in advance, such as the variables
+                    // a theme's stylesheet reads.
+                    it = handlers.find(ParamKey(Param, ""));
+                }
                 if (it != handlers.end() && it->second->onChange(&it->first)) {
                     pendings.insert(it->second);
                     timer.start(100);

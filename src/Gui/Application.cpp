@@ -3049,23 +3049,52 @@ void Application::refreshInheritedPalettes()
 
 QString Application::replaceVariablesInQss(QString qssText)
 {
-    //First we fetch the colors from preferences,
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Themes");
-    unsigned long longAccentColor1 = hGrp->GetUnsigned("ThemeAccentColor1", 0);
-    unsigned long longAccentColor2 = hGrp->GetUnsigned("ThemeAccentColor2", 0);
-    unsigned long longAccentColor3 = hGrp->GetUnsigned("ThemeAccentColor3", 0);
+    // The ulong carries an alpha channel, so eight hex digits where a
+    // stylesheet wants six.
+    auto asColor = [](unsigned long packed) {
+        return QStringLiteral("#%1").arg(packed, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
+    };
 
-    //convert them to hex.
-    //Note: the ulong contains alpha channels so 8 hex characters when we need 6 here.
-    QString accentColor1 = QStringLiteral("#%1").arg(longAccentColor1, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
-    QString accentColor2 = QStringLiteral("#%1").arg(longAccentColor2, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
-    QString accentColor3 = QStringLiteral("#%1").arg(longAccentColor3, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
+    ParameterGrp::handle hGrp =
+        App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Themes");
 
-    qssText = qssText.replace(QStringLiteral("@ThemeAccentColor1"), accentColor1);
-    qssText = qssText.replace(QStringLiteral("@ThemeAccentColor2"), accentColor2);
-    qssText = qssText.replace(QStringLiteral("@ThemeAccentColor3"), accentColor3);
+    // The three accent colors predate the Variables group and shipped
+    // stylesheets name them, so they keep the place they have always had.
+    std::vector<std::pair<std::string, QString>> variables;
+    for (const char* name : {"ThemeAccentColor1", "ThemeAccentColor2", "ThemeAccentColor3"}) {
+        variables.emplace_back(name, asColor(hGrp->GetUnsigned(name, 0)));
+    }
 
-    //Base::Console().Warning("%s\n", qssText.toStdString());
+    // Everything in Themes/Variables substitutes for @<name>, typed by how it
+    // is stored. This is what lets a theme ship one parameterised stylesheet
+    // and a group of values: recoloring it is then a preference edit rather
+    // than an edit of the .qss.
+    if (hGrp->HasGroup("Variables")) {
+        auto hVars = hGrp->GetGroup("Variables");
+        for (const auto& entry : hVars->GetUnsignedMap()) {
+            variables.emplace_back(entry.first, asColor(entry.second));
+        }
+        for (const auto& entry : hVars->GetASCIIMap()) {
+            variables.emplace_back(entry.first, QString::fromStdString(entry.second));
+        }
+        for (const auto& entry : hVars->GetIntMap()) {
+            variables.emplace_back(entry.first, QString::number(entry.second));
+        }
+        for (const auto& entry : hVars->GetFloatMap()) {
+            variables.emplace_back(entry.first, QString::number(entry.second));
+        }
+    }
+
+    // Longest name first, or "@Accent" would eat the front of "@AccentDark".
+    std::sort(variables.begin(), variables.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.first.size() > rhs.first.size();
+    });
+
+    for (const auto& variable : variables) {
+        qssText.replace(QLatin1Char('@') + QString::fromStdString(variable.first),
+                        variable.second);
+    }
+
     return qssText;
 }
 

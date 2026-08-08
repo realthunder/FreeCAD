@@ -400,6 +400,11 @@ void DlgSettingsTheme::attachObserver()
     handlers.addHandler("BaseApp/Preferences/Themes",
                         {"ThemeAccentColor1", "ThemeAccentColor2", "ThemeAccentColor3"},
                         handler);
+
+    // A theme names its own variables, so there is no key list to register:
+    // the empty key takes the whole group, and editing any of them repaints
+    // through the same apply as everything else here.
+    handlers.addHandler("BaseApp/Preferences/Themes/Variables", "", handler);
 }
 
 #include "moc_DlgSettingsTheme.cpp"

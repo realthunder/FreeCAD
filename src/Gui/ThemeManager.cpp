@@ -274,6 +274,21 @@ ThemeManager::Transition ThemeManager::beginThemeChange(ParameterGrp& packParame
         }
     }
 
+    // A theme's stylesheet variables belong to it just as much as the
+    // stylesheet does, so one theme's palette cannot be left behind for the
+    // next one to read. The accent colors sitting alongside are the user's and
+    // are left alone.
+    auto hThemes = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Themes");
+    if (hThemes->HasGroup("Variables")) {
+        // Empty it rather than remove it: whoever watches the group for edits
+        // holds a handle to this one, and a replacement group would not be it.
+        auto hVariables = hThemes->GetGroup("Variables");
+        for (const auto& entry : hVariables->GetParameterNames()) {
+            hVariables->RemoveAttribute(entry.first, entry.second.c_str());
+        }
+    }
+
     return transition;
 }
 

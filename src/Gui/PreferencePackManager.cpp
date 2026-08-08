@@ -726,6 +726,31 @@ void bundlePackAssets(const fs::path& packDir, ParameterManager& parameters)
     }
 }
 
+/// Copy a parameter group whole -- every key, with its type, and every subgroup.
+void copyGroupVerbatim(const Base::Reference<ParameterGrp>& from,
+                       const Base::Reference<ParameterGrp>& to)
+{
+    for (const auto& entry : from->GetBoolMap()) {
+        to->SetBool(entry.first.c_str(), entry.second);
+    }
+    for (const auto& entry : from->GetIntMap()) {
+        to->SetInt(entry.first.c_str(), entry.second);
+    }
+    for (const auto& entry : from->GetUnsignedMap()) {
+        to->SetUnsigned(entry.first.c_str(), entry.second);
+    }
+    for (const auto& entry : from->GetFloatMap()) {
+        to->SetFloat(entry.first.c_str(), entry.second);
+    }
+    for (const auto& entry : from->GetASCIIMap()) {
+        to->SetASCII(entry.first.c_str(), entry.second.c_str());
+    }
+    for (const auto& subgroup : from->GetGroups()) {
+        const std::string name = subgroup->GetGroupName();
+        copyGroupVerbatim(subgroup, to->GetGroup(name.c_str()));
+    }
+}
+
 }  // namespace
 
 void PreferencePackManager::save(const std::string& name,
@@ -745,6 +770,21 @@ void PreferencePackManager::save(const std::string& name,
         templateParameterManager->LoadDocument(t.path.string().c_str());
         copyTemplateParameters(*templateParameterManager, *outputParameterManager);
     }
+    // A theme's stylesheet variables are its own, and a template can only name
+    // keys it knows about, so copyTemplateParameters cannot reach them. Take
+    // the group whole.
+    if (type == "Theme") {
+        auto hThemes = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Themes");
+        if (hThemes->HasGroup("Variables")) {
+            copyGroupVerbatim(hThemes->GetGroup("Variables"),
+                              outputParameterManager->GetGroup("BaseApp")
+                                  ->GetGroup("Preferences")
+                                  ->GetGroup("Themes")
+                                  ->GetGroup("Variables"));
+        }
+    }
+
     auto savedPreferencePacksDirectory =
         fs::path(App::Application::getUserAppDataDir()) / "SavedPreferencePacks";
     auto packDirectory = savedPreferencePacksDirectory / name;
