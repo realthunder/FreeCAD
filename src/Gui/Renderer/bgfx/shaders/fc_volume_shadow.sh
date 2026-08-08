@@ -11,6 +11,10 @@
  *               cutoff for a spot light, -1 for a directional one
  * u_evsm      : x = EVSM warp exponent (0 = plain VSM), y = the plain
  *               VSM light-bleed threshold
+ * u_shadowParams : y = variance epsilon (the ShadowEpsilon tunable),
+ *               z = EVSM depth bias — the mesh receivers' values
+ *               (fc_mesh_lighting.sh), so raising the tunables cures
+ *               shaft/caustics acne together with the meshes'
  */
 
 SAMPLER2D(s_texShadow, 1);
@@ -19,6 +23,7 @@ uniform vec4 u_lightColor;
 uniform vec4 u_lightDir;
 uniform vec4 u_lightPos;
 uniform vec4 u_evsm;
+uniform vec4 u_shadowParams;
 uniform mat4 u_shadowMatrix;
 
 // Variance shadow visibility of a view-space position (the mesh
@@ -48,17 +53,19 @@ float shadowVis(vec3 p)
 		// u_evsm.y carries the light-bleed threshold.
 		if (sp.z <= mo.x)
 			return vis;
-		float va = min(max(mo.y - mo.x * mo.x, 0.0) + 1.0e-5,
+		float va = min(max(mo.y - mo.x * mo.x, 0.0)
+		                   + u_shadowParams.y,
 		               1.0);
 		float dd = mo.x - sp.z;
 		float pmax = va / (va + dd * dd);
 		pmax *= smoothstep(u_evsm.y, 1.0, pmax);
 		return vis * pmax;
 	}
-	float d = exp(u_evsm.x * (sp.z - 0.003));
+	float d = exp(u_evsm.x * (sp.z - u_shadowParams.z));
 	if (d <= mo.x)
 		return vis;
-	float va = max(mo.y - mo.x * mo.x, 1.0e-5 * mo.x * mo.x);
+	float va = max(mo.y - mo.x * mo.x,
+	               u_shadowParams.y * mo.x * mo.x);
 	float dd = d - mo.x;
 	float pmax = va / (va + dd * dd);
 	return vis * clamp((pmax - 0.3) / 0.7, 0.0, 1.0);

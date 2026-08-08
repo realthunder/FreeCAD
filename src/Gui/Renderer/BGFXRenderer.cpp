@@ -5927,6 +5927,11 @@ public:
         float evsm[4] = {shadowWarpFrame, shadowThreshold,
                          0.0f, 0.0f};
         bgfx::setUniform(u_evsm, evsm);
+        // The raymarch's shadow tap (fc_volume_shadow.sh) reads the
+        // mesh receivers' epsilon/bias, so the tunables act on the
+        // shafts too.
+        float shadowParams[4] = {1.0f, shadowEpsilon, 0.003f, 0.0f};
+        bgfx::setUniform(u_shadowParams, shadowParams);
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
         bgfx::setTexture(1, s_texShadow, shadowTex);
@@ -6050,6 +6055,9 @@ public:
         bgfx::setUniform(u_lightPos, lightPosView);
         float evsm[4] = {shadowWarpFrame, shadowThreshold, 0.0f, 0.0f};
         bgfx::setUniform(u_evsm, evsm);
+        // Same epsilon/bias as the mesh receivers (fc_volume_shadow.sh).
+        float shadowParams[4] = {1.0f, shadowEpsilon, 0.003f, 0.0f};
+        bgfx::setUniform(u_shadowParams, shadowParams);
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         bgfx::setUniform(u_causticParams, causticParams, kMediumSlots);
         bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
