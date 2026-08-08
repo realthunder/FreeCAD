@@ -32,6 +32,7 @@ if(BUILD_BGFX)
         BGFXViewEffects.cpp
         BGFXViewSubmit.cpp
         BGFXViewLifecycle.cpp
+        BGFXScene.cpp
     )
     list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h)
     list(APPEND Renderer_LIBS bgfx bx bimg example-common)
