@@ -4215,6 +4215,14 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             RenderParams::docAOIntensity(), RenderParams::getAOIntensity());
     _renderParam<App::PropertyFloat>(view, "AOResolution",
             RenderParams::docAOResolution(), RenderParams::getAOResolution());
+    // Cavity composes with occlusion rather than replacing it, so it sits
+    // with the AO block.
+    _renderParam<App::PropertyBool>(view, "Cavity",
+            RenderParams::docCavity(), RenderParams::getCavity());
+    _renderParam<App::PropertyFloat>(view, "CavityValley",
+            RenderParams::docCavityValley(), RenderParams::getCavityValley());
+    _renderParam<App::PropertyFloat>(view, "CavityRidge",
+            RenderParams::docCavityRidge(), RenderParams::getCavityRidge());
     _renderParam<App::PropertyBool>(view, "PBR",
             RenderParams::docPBR(), RenderParams::getPBR());
     static const App::PropertyFloatConstraint::Constraints _unit_cstr(0.0,1.0,0.1);
@@ -4251,6 +4259,25 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyBool>(view, "PBREnvBackground",
             RenderParams::docPBREnvBackground(),
             RenderParams::getPBREnvBackground());
+    // Matcap is the other shading model: it overrides PBR while on, so it
+    // follows it here.
+    _renderParam<App::PropertyBool>(view, "Matcap",
+            RenderParams::docMatcap(), RenderParams::getMatcap());
+    // An enumeration, like Render_AOMethod above: materialized by hand so
+    // the names are installed before the value is set.
+    if (!view->getPropertyByName("Render_MatcapPreset")) {
+        static const char* _matcapPresetEnums[] =
+            {"Studio", "Clay", "Metal", "Pearl", nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_MatcapPreset", "Render",
+                                         RenderParams::docMatcapPreset()));
+        prop->setEnums(_matcapPresetEnums);
+        prop->setValue(long(RenderParams::getMatcapPreset()));
+    }
+    _renderParam<App::PropertyFloatConstraint>(view, "MatcapTint",
+            RenderParams::docMatcapTint(), RenderParams::getMatcapTint(),
+            applyUnitConstraint);
     _renderParam<App::PropertyFloat>(view, "BumpScale",
             RenderParams::docBumpScale(), RenderParams::getBumpScale());
     _renderParam<App::PropertyBool>(view, "Parallax",
