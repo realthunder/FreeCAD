@@ -61,6 +61,19 @@ calls `renderer->render(...)` first into the shared Qt GL context, then
 Coin's `SoGLRenderAction` traverses the (mostly pruned) scene graph on
 top for everything still Coin-owned.
 
+A frame the backend declines (`render()` returning false) is drawn
+entirely by Coin, and that is also what a broken stock shader pack
+falls back to. The programs load through `fcLoadProgram`
+(BGFXRenderer.cpp) rather than bgfx_utils' loader, which asserts on a
+missing `.bin` and then hands `createShader` a null block; a stage
+that will not load is reported and yields an invalid handle instead.
+Feature programs degrade individually (bgfx drops a submit with an
+invalid program), but if one of the core programs — mesh/flat, their
+clip and texture variants, the section caps, and the present pass in
+the standalone tier — is missing, `BGFXView::init()` reports the pack
+and tears the view back down, and every frame after that declines
+until `reloadShaders()` moves the shader generation.
+
 ### Tiers
 
 The engine is one private header, `BGFXRendererP.h` (class definitions,
