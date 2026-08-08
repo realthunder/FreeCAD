@@ -263,6 +263,33 @@ config struct the bridge fills. "Property" = per-view dynamic
 - **Transparency**: `ViewTransparent` + `ViewOITComposite` — weighted,
   blended order-independent transparency (WBOIT).
 
+### 3.11 Cavity (curvature) shading
+- **Passes**: `ViewCavity` — a fullscreen multiply over the finished opaque
+  scene, after the section caps and before the outlines.
+- **Shaders**: `fs_fc_cavity.sc` (reads the prepass, `fc_prepass_read.sh`).
+- **What**: screen-space divergence of the prepass *normals*, darkening
+  concave creases (valley) and convex ridges. Reading positions instead
+  would make every tessellation facet boundary read as a crease;
+  interpolated normals stay smooth across facets and jump only at real
+  edges. It darkens only — the scene target is 8-bit, so a ridge
+  *highlight* is not available.
+- **Config**: `CavityConfig` (`translateCavityConfig`).
+- **Controls**: `Render_Cavity` + `Render_CavityValley` /
+  `Render_CavityRidge`. Composes with AO rather than replacing it: cavity
+  is a one-pixel curvature term, occlusion a radius-based visibility
+  integral.
+
+### 3.12 Matcap shading
+- **Shaders**: `fc_mesh_fs.sh` (the matcap branch).
+- **What**: replaces the scene lighting with a fixed studio attached to the
+  camera, looked up by each fragment's view-space normal, so form reads the
+  same wherever the light is. The presets (Studio / Clay / Metal / Pearl)
+  are computed in the shader, not sampled from images — no assets, sharp at
+  any resolution, and free for the browser tier. Overrides PBR while on.
+- **Config**: `MatcapConfig` (`translateMatcapConfig`).
+- **Controls**: `Render_Matcap`, `Render_MatcapPreset` (an enumeration),
+  `Render_MatcapTint` (how much each object's own color tints it).
+
 ---
 
 ## 4. Property / parameter model
@@ -279,7 +306,11 @@ helpers (highest priority first):
    `View3DInventor` object. Materialized by
    `View3DInventorViewer::setRendererType` / the draw styles; read read-only
    by `viewParamOverride` in the bridge. **Live-tunable** from the Python
-   console, e.g. `Gui.activeView().Render_SSAO = False`.
+   console, e.g. `Gui.activeView().Render_SSAO = False`. A handful of them
+   — the shading model plus cavity, occlusion, shadows and bloom — also
+   have a UI: the **Shading** section of the Display style tool button's
+   drop-down (`Gui/ShadingOptions.h`), which writes these same properties
+   and disables itself when no backend is selected.
 3. **Global default** — `RenderParams` (`Preferences/View/Render`, generated
    from `RenderParams.py`) and `ViewParams` (`Preferences/View`, generated
    from `ViewParams.py`). The fallback when no view property is set.
