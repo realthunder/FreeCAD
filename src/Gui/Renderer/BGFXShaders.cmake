@@ -24,6 +24,10 @@ function(fc_bgfx_compile_shaders outvar)
                           "PROFILES;DEPENDS" ${ARGN})
     file(GLOB _srcs ${ARG_SHADERDIR}/vs_*.sc ${ARG_SHADERDIR}/fs_*.sc)
     file(GLOB _incs ${ARG_SHADERDIR}/*.sh)
+    # The bgfx headers come from BGFXINC, not SHADERDIR — the submodule
+    # is fork-patched, so an edit there must also re-trigger shaderc.
+    list(APPEND _incs ${ARG_BGFXINC}/bgfx_shader.sh
+                      ${ARG_BGFXINC}/bgfx_compute.sh)
     set(_varying ${ARG_SHADERDIR}/varying.def.sc)
     set(_bins)
     foreach(_src ${_srcs})
