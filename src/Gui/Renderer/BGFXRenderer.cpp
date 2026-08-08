@@ -2378,7 +2378,8 @@ public:
                 *tex = BGFX_INVALID_HANDLE;
             }
         }
-        for (auto uni : {&s_texVol, &u_volParams, &u_volMedium,
+        for (auto uni : {&s_texVol, &s_texVolFront, &u_volParams,
+                         &u_volMedium,
                          &u_volTexel, &s_texWaterFront, &s_texWaterBack,
                          &u_waterSigma, &u_causticParams,
                          &s_texScene, &s_texRefl, &u_waterSurf,
