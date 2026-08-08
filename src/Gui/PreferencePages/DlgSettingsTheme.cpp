@@ -22,15 +22,24 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <algorithm>
+# include <limits>
 # include <QDir>
+# include <QDoubleSpinBox>
 # include <QFileInfo>
+# include <QFormLayout>
 # include <QInputDialog>
+# include <QLineEdit>
 # include <QMessageBox>
 # include <QPushButton>
 # include <QRegularExpression>
+# include <QSpinBox>
 #endif
 
+#include <App/Color.h>
+
 #include <Gui/Application.h>
+#include <Gui/Widgets.h>
 #include <Gui/DlgPreferencesImp.h>
 #include <Gui/ParamHandler.h>
 #include <Gui/PreferencePackManager.h>
@@ -90,6 +99,7 @@ void DlgSettingsTheme::saveSettings()
     ui->ThemeAccentColor2->onSave();
     ui->ThemeAccentColor3->onSave();
     ui->tiledBackground->onSave();
+    saveVariables();
 
     refreshModifiedState();
 }
@@ -152,6 +162,108 @@ void DlgSettingsTheme::loadCustomization()
     ui->ThemeAccentColor2->onRestore();
     ui->ThemeAccentColor3->onRestore();
     ui->tiledBackground->onRestore();
+
+    loadVariables();
+}
+
+namespace
+{
+ParameterGrp::handle themeVariables()
+{
+    return App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Themes/Variables");
+}
+}  // namespace
+
+void DlgSettingsTheme::loadVariables()
+{
+    // A theme names its own variables, so there is no fixed set of widgets to
+    // put in the .ui: build a row per variable, typed by how it is stored.
+    variableRows.clear();
+    while (ui->variablesLayout->rowCount() > 0) {
+        ui->variablesLayout->removeRow(0);
+    }
+
+    auto hVariables = themeVariables();
+    auto entries = hVariables->GetParameterNames();
+    std::sort(entries.begin(), entries.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.second < rhs.second;
+    });
+
+    for (const auto& entry : entries) {
+        const auto& name = entry.second;
+        QWidget* editor = nullptr;
+
+        switch (entry.first) {
+            case ParameterGrp::ParamType::FCUInt: {
+                auto* button = new ColorButton(this);
+                button->setColor(App::Color::fromPackedRGBA<QColor>(
+                    static_cast<unsigned int>(hVariables->GetUnsigned(name.c_str(), 0))));
+                editor = button;
+                break;
+            }
+            case ParameterGrp::ParamType::FCText: {
+                auto* edit = new QLineEdit(this);
+                edit->setText(QString::fromStdString(hVariables->GetASCII(name.c_str())));
+                editor = edit;
+                break;
+            }
+            case ParameterGrp::ParamType::FCInt: {
+                auto* spin = new QSpinBox(this);
+                spin->setRange(std::numeric_limits<int>::min(),
+                               std::numeric_limits<int>::max());
+                spin->setValue(static_cast<int>(hVariables->GetInt(name.c_str(), 0)));
+                editor = spin;
+                break;
+            }
+            case ParameterGrp::ParamType::FCFloat: {
+                auto* spin = new QDoubleSpinBox(this);
+                spin->setDecimals(3);
+                spin->setRange(-1e6, 1e6);
+                spin->setValue(hVariables->GetFloat(name.c_str(), 0.0));
+                editor = spin;
+                break;
+            }
+            default:
+                // A stylesheet has no use for the remaining types, and showing
+                // an editor that cannot be substituted would only mislead.
+                continue;
+        }
+
+        ui->variablesLayout->addRow(QString::fromStdString(name), editor);
+        variableRows.push_back({name, entry.first, editor});
+    }
+
+    ui->variablesGroup->setVisible(!variableRows.empty());
+}
+
+void DlgSettingsTheme::saveVariables()
+{
+    auto hVariables = themeVariables();
+    for (const auto& row : variableRows) {
+        switch (row.type) {
+            case ParameterGrp::ParamType::FCUInt:
+                hVariables->SetUnsigned(row.name.c_str(),
+                                        App::Color::asPackedRGBA<QColor>(
+                                            static_cast<ColorButton*>(row.editor)->color()));
+                break;
+            case ParameterGrp::ParamType::FCText:
+                hVariables->SetASCII(
+                    row.name.c_str(),
+                    static_cast<QLineEdit*>(row.editor)->text().toUtf8().constData());
+                break;
+            case ParameterGrp::ParamType::FCInt:
+                hVariables->SetInt(row.name.c_str(),
+                                   static_cast<QSpinBox*>(row.editor)->value());
+                break;
+            case ParameterGrp::ParamType::FCFloat:
+                hVariables->SetFloat(row.name.c_str(),
+                                     static_cast<QDoubleSpinBox*>(row.editor)->value());
+                break;
+            default:
+                break;
+        }
+    }
 }
 
 void DlgSettingsTheme::refreshFromParameters()

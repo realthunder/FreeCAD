@@ -25,6 +25,14 @@
 
 #include <Gui/PropertyPage.h>
 #include <memory>
+#include <string>
+#include <vector>
+
+#include <Base/Parameter.h>
+
+QT_BEGIN_NAMESPACE
+class QWidget;
+QT_END_NAMESPACE
 
 namespace Gui {
 
@@ -82,10 +90,21 @@ public:
 private:
   void loadThemes();
   void loadCustomization();
+  void loadVariables();
+  void saveVariables();
   void refreshModifiedState();
   void applyTheme(const QString& name);
 
+  /// One editor built for one entry of the current theme's Variables group.
+  struct VariableRow
+  {
+    std::string name;
+    ParameterGrp::ParamType type;
+    QWidget* editor;
+  };
+
   std::unique_ptr<Ui_DlgSettingsTheme> ui;
+  std::vector<VariableRow> variableRows;
 };
 
 } // namespace Dialog

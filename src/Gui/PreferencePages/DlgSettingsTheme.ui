@@ -341,6 +341,17 @@ See the FreeCAD Wiki for details about the image.</string>
     </widget>
    </item>
    <item>
+    <widget class="QGroupBox" name="variablesGroup">
+     <property name="title">
+      <string>Theme variables</string>
+     </property>
+     <property name="toolTip">
+      <string>Values this theme's style sheet reads. They are named by the theme, so which ones appear depends on the theme in use.</string>
+     </property>
+     <layout class="QFormLayout" name="variablesLayout"/>
+    </widget>
+   </item>
+   <item>
     <widget class="QLabel" name="hintLabel">
      <property name="text">
       <string>The accent colors are offered to theme authors, so they may or may not have an effect in the theme you are using.</string>
