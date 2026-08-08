@@ -261,12 +261,29 @@ public:
         return value;
     }
 
+    /// Secret comparison that takes the same time whichever byte
+    /// first differs: `==` returns on the first mismatch, so how long
+    /// a refusal takes states how much of the token was right, and a
+    /// token can be guessed a byte at a time. The length is not part
+    /// of the secret (these are fixed-width hex), so an early out on
+    /// it is fine; the bytes are folded before anything is decided.
+    static bool secretEqual(const std::string &a, const std::string &b)
+    {
+        if (a.size() != b.size())
+            return false;
+        unsigned char diff = 0;
+        for (size_t i = 0; i < a.size(); ++i)
+            diff |= static_cast<unsigned char>(a[i] ^ b[i]);
+        return diff == 0;
+    }
+
     /// Whether a request carrying \a query may pass the door: open
     /// server, or a matching `?token=`.
     bool tokenOk(const std::string &query)
     {
         std::string secret = tokenNow();
-        return secret.empty() || queryValue(query, "token") == secret;
+        return secret.empty()
+            || secretEqual(queryValue(query, "token"), secret);
     }
 
     /// The live grant list (SceneServer.h, setGrants) — the door when
@@ -374,7 +391,7 @@ public:
         const SceneGrant *best = nullptr;
         int64_t bestScore = -1;
         for (const auto &g : list) {
-            if (!g.token.empty() && g.token != token)
+            if (!g.token.empty() && !secretEqual(g.token, token))
                 continue;
             if (!patternMatches(g.identity, identity)
                     || !patternMatches(g.client, client)
@@ -408,7 +425,8 @@ public:
         std::lock_guard<std::mutex> guard(tokenMutex);
         if (grantList.empty()) {
             Judgement out;
-            out.admitted = tokenSecret.empty() || token == tokenSecret;
+            out.admitted = tokenSecret.empty()
+                || secretEqual(token, tokenSecret);
             return out;
         }
         return judgeWith(grantList, token, identity, client, address);
