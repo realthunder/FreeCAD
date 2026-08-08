@@ -131,7 +131,10 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     droplet rings the particle impact map drives
 //     (docs/RenderEngine.md §5.8). Without them a viewer defaulted the
 //     strength to 1 and rang the water whatever the property said.
-const uint32_t kVersion = 40;
+// 41: the presel/sel highlight configs carry loupeLift
+//     (ViewParams::TouchLoupeLift) — how far above the fingertip the
+//     touch loupe picks (docs/ThinClientUI.md).
+const uint32_t kVersion = 41;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -170,7 +173,7 @@ const uint32_t kChunkVersion = 4;
 // viewer decides for itself, and RenderDebugConfig::coverage drives a
 // backend-local log rather than any pixel.
 static_assert(sizeof(HiddenLineConfig) == 20, "HiddenLineConfig changed: stream the new field, then update this");
-static_assert(sizeof(PreselHighlightConfig) == 16, "PreselHighlightConfig changed: stream the new field, then update this");
+static_assert(sizeof(PreselHighlightConfig) == 20, "PreselHighlightConfig changed: stream the new field, then update this");
 static_assert(sizeof(SectionConfig) == 12, "SectionConfig changed: stream the new field, then update this");
 static_assert(sizeof(AOConfig) == 28, "AOConfig changed: stream the new field, then update this");
 static_assert(sizeof(BumpConfig) == 8, "BumpConfig changed: stream the new field, then update this");
@@ -2754,6 +2757,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.b(c->faceOutline);
         w.b(c->outlineOnly);
         w.f(c->pickRadius);  // v11
+        w.f(c->loupeLift);   // v41
     }
 
     // v20: render debugging config (docs/RenderDebug.md).
@@ -3152,6 +3156,8 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             c->outlineOnly = r.b();
             if (version >= 11)
                 c->pickRadius = r.f();
+            if (version >= 41)
+                c->loupeLift = r.f();
         }
     }
 

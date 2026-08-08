@@ -2490,13 +2490,21 @@ static float s_tapX = 0.0f, s_tapY = 0.0f;
 // context menu then composes on top: by the time that menu opens, its target
 // is already showing.
 static const double kLoupeHoldMs = 350.0;
-// Refining lifts the pick off the fingertip so it stops covering what it is
-// aiming at. Applied at the first movement, not on engage — engaging must
-// highlight exactly what was pressed, or a hold would pick something the
-// user never touched.
-static const float kLoupeLift = 20.0f;
+// The pick sits this far above the contact point, from the moment the
+// loupe engages: the ring and its centre dot appear just past the
+// fingertip's outline, so the user watches the exact point being picked
+// instead of the finger covering it. (It used to engage at the press
+// point and lift only on the first movement; the always-visible cursor
+// won — aim is corrected by watching the ring, not by trusting the
+// press.) The distance is the streamed ViewParams::TouchLoupeLift, in
+// CSS px — zero is a deliberate "pick under the finger"; an older
+// backend's snapshot never writes the field and leaves the config's
+// default.
+static float loupeLiftPx()
+{
+    return std::max(0.0f, s_snap.preselconf.loupeLift);
+}
 static bool s_loupe = false;          // holding, with a live preselection
-static bool s_loupeLifted = false;    // refinement has started
 static float s_loupeX = 0.0f, s_loupeY = 0.0f;  // CSS px being picked
 // Which press a pending hold timer was armed for. A held finger emits no
 // events, so the threshold has to be a timer — and it is a timer rather than
@@ -2516,7 +2524,6 @@ static void cancelLoupe()
         markDirty();
     }
     s_loupe = false;
-    s_loupeLifted = false;
     ++s_loupeGen;
     fcviewer_loupe_mark(0, 0, 0, 0, 0);
 }
@@ -2547,6 +2554,8 @@ static void loupeHoldFired(void *arg)
     if (pickNaviCube(px, py, dir) || pickNaviButton(px, py) != NaviBtnNone)
         return;
     s_loupe = true;
+    // The pick point is above the fingertip from the start.
+    s_loupeY -= loupeLiftPx();
     loupePick();
 }
 
@@ -2643,12 +2652,8 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
     }
     else if (type == EMSCRIPTEN_EVENT_TOUCHMOVE && n == s_numTouch) {
         if (s_loupe && n == 1) {
-            // Refining, not orbiting: the drag moves the pick, and the first
-            // movement lifts it clear of the fingertip.
-            if (!s_loupeLifted) {
-                s_loupeLifted = true;
-                s_loupeY -= kLoupeLift;
-            }
+            // Refining, not orbiting: the drag moves the pick, which keeps
+            // its lift above the fingertip.
             s_loupeX += x[0] - s_touchX[0];
             s_loupeY += y[0] - s_touchY[0];
             // Adopt the new contact point BEFORE picking: the mark's

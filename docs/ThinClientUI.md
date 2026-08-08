@@ -78,9 +78,14 @@ operation (`ThinClient.md` on preview/commit).
 ## Touch selection: the loupe
 
 A one-finger hold (~350 ms under 10 px slop) enters preselect instead of
-orbit: the highlight tracks the finger (pick lifted 20 px above the
-contact after the first movement, so the fingertip stops occluding the
-target), lifting commits the highlighted element as the selection.
+orbit. From the moment it engages, the pick point sits **above the
+fingertip** — `ViewParams::TouchLoupeLift` CSS px (default 28, streamed
+with the preselection config; zero means pick under the finger) — and
+the overlay draws a ring with a centre dot at that point, tied to the
+fingertip by a short leader. The user aims by watching the ring, which
+peeks out just past the fingertip's outline; preselection, and the
+selection committed on lift, are exactly the ring's centre. The
+highlight tracks the finger as it drags.
 Cancelled — highlight cleared, nothing selected — by dragging past the
 slop before the threshold (it was an orbit), by a second finger (it was
 a pan/pinch), or by `touchcancel`.

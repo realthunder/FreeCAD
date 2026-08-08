@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:540)
+// Auto generated code (Gui/ViewParams.py:549)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -547,6 +547,20 @@ public:
     static void removePickRadius();
     static void setPickRadius(const double &v);
     static const char *docPickRadius();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TouchLoupeLift
+    ///
+    /// How far above the fingertip the touch loupe picks, in CSS pixels.
+    /// The pick ring and its centre dot sit this far above the contact
+    /// point so the finger never covers what it is aiming at.
+    static const double & getTouchLoupeLift();
+    static const double & defaultTouchLoupeLift();
+    static void removeTouchLoupeLift();
+    static void setTouchLoupeLift(const double &v);
+    static const char *docTouchLoupeLift();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -2171,7 +2185,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:546)
+    // Auto generated code (Gui/ViewParams.py:555)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2199,7 +2213,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:556)
+// Auto generated code (Gui/ViewParams.py:565)
 namespace Gui {
 /// Obtain all draw style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

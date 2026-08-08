@@ -1740,6 +1740,7 @@ RendererBridge::translatePreselConfig()
     res.outlineOnly = ViewParams::getNoPreSelFaceHighlightWithOutline();
     res.outlineWidth = preselOutlineWidth();
     res.pickRadius = (float)ViewParams::getPickRadius();
+    res.loupeLift = (float)ViewParams::getTouchLoupeLift();
     return res;
 }
 

@@ -294,11 +294,14 @@ struct PreselHighlightConfig {
     bool faceOutline = true;       ///< ViewParams::ShowPreSelectedFaceOutline
     bool outlineOnly = true;       ///< NoPreSelFaceHighlightWithOutline (no fill)
     float pickRadius = 5.0f;       ///< ViewParams::PickRadius, screen pixels
+    /// ViewParams::TouchLoupeLift, CSS pixels: how far above the fingertip
+    /// the touch loupe picks (the WASM viewer's hold-to-preselect gesture).
+    float loupeLift = 28.0f;
 
     bool operator==(const PreselHighlightConfig &o) const {
         return color == o.color && outlineWidth == o.outlineWidth
             && faceOutline == o.faceOutline && outlineOnly == o.outlineOnly
-            && pickRadius == o.pickRadius;
+            && pickRadius == o.pickRadius && loupeLift == o.loupeLift;
     }
     bool operator!=(const PreselHighlightConfig &o) const {
         return !(*this == o);

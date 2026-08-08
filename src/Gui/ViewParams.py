@@ -221,6 +221,12 @@ Params = [
         doc='Area for picking elements in 3D view. Larger value make it easy to pick things,\n'
             'but can also make small features impossible to select.',
         proxy=ParamSpinBox(0.5, 200.0, 1.0, 1)),
+    ParamFloat('TouchLoupeLift', 28.0,
+        title='Touch loupe lift (px)',
+        doc='How far above the fingertip the touch loupe picks, in CSS pixels.\n'
+            'The pick ring and its centre dot sit this far above the contact\n'
+            'point so the finger never covers what it is aiming at.',
+        proxy=ParamSpinBox(0.0, 200.0, 1.0, 1)),
     ParamFloat('SelectionTransparency', 0.5),
     ParamInt('SelectionLinePattern', 0, title='Selected hidden line pattern', proxy=ParamLinePattern()),
     ParamInt('SelectionLinePatternScale', 1, title='Selected line pattern scale'),
