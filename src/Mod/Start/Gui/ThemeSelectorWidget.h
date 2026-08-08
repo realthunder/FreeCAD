@@ -25,11 +25,12 @@
 #define FREECAD_START_THEMESELECTORWIDGET_H
 
 #include <QIcon>
+#include <QSize>
 #include <QString>
 #include <QWidget>
 #include <vector>
 
-class QBoxLayout;
+class QGridLayout;
 class QLabel;
 class QToolButton;
 
@@ -54,7 +55,7 @@ protected:
 private:
     void retranslateUi();
     void setupUi();
-    void setupButtons(QBoxLayout* layout);
+    void setupButtons(QGridLayout* layout);
     void onLinkActivated(const QString& link);
 
     /// One button, and the theme pack it applies. An empty name is Match Desktop.
@@ -67,6 +68,8 @@ private:
     /// The picture for a theme: a shipped thumbnail where there is one, and
     /// otherwise a swatch drawn from the light or dark scheme the theme pins.
     static QIcon iconForTheme(const QString& packName);
+    /// One size for every button's picture, whichever kind it is.
+    static QSize themeIconSize();
 
     QLabel* _titleLabel;
     QLabel* _descriptionLabel;
