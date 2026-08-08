@@ -170,6 +170,7 @@ void BGFXRenderer::Private::maybeDumpScene(const void *viewMatrix,
     }
 }
 
+#ifndef FC_RENDERER_STANDALONE
 void BGFXRenderer::Private::publishScene(const void *viewMatrix,
                   const void *projMatrix,
                   uint16_t width,
@@ -371,6 +372,8 @@ bool BGFXRenderer::Private::publishNoDraw(const QColor &col,
                  dirtyChanged);
     return true;
 }
+
+#endif // !FC_RENDERER_STANDALONE
 
 auto BGFXRenderer::Private::meshContent(const Render::MeshData &mesh)
     -> const MeshContent &
