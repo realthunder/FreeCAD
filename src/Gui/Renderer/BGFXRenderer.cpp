@@ -10583,6 +10583,17 @@ public:
                           V::ViewTransparent, V::ViewOnTop,
                           V::ViewHighlight, V::ViewDebug, V::ViewPresent})
                 view->markPass(p);
+            // Non-on-top selections reroute their opaque draws into
+            // ViewSelection (submit(), selPass) -- claim it whenever such
+            // a feed exists or those draws land in the discard view.
+            bool nonOntopSel = false;
+            for (const auto &sel : selections) {
+                if (sel.first <= 0 && !sel.second.empty()) {
+                    nonOntopSel = true;
+                    break;
+                }
+            }
+            view->markPass(V::ViewSelection, nonOntopSel);
             // Stateful particle simulation: two step ids per emitter
             // slot, claimed as a group whenever the scene carries an
             // emitter that could hold state -- stepParticles picks the
