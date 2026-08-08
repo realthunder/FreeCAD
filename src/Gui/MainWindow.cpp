@@ -2690,7 +2690,20 @@ QStringList loadIconSet(std::set<QString> &files,
 QStringList loadIconSet(QString content, bool asFileName)
 {
     std::set<QString> files;
-    return loadIconSet(files, content, asFileName);
+    if (!asFileName)
+        return loadIconSet(files, content, false);
+
+    // MainWindow/IconSet holds a ';'-separated list so a theme's icon set can
+    // layer over the user's own without either having to edit the other's file.
+    // Order is what does it: applyOverrideIcons() lets a later line win, which
+    // is the same rule "#import" already relies on.
+    QStringList lines;
+    for (const auto &entry : content.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+        auto name = entry.trimmed();
+        if (!name.isEmpty())
+            lines += loadIconSet(files, name, /*asFileName*/true);
+    }
+    return lines;
 }
 } // anonymous namespace
 
