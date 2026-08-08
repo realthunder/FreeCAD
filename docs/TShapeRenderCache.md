@@ -8,7 +8,9 @@ instanced draws by the bgfx backend.
 
 It consolidates the design agreed and implemented in 2026-07
 (`docs/RendererPlan.md` §3 "Instancing" carries the per-phase status
-notes; this document is the architectural reference). Related reading:
+notes; this document is the architectural reference). **Status: the
+workstream is complete** — leaf-level global table, color-variant
+branching and CPU array dedup all shipped. Related reading:
 `docs/RoadMap.md` (workstreams), `docs/ComputeBoundaries.md` (headless
 engine design).
 

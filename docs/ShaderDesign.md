@@ -8,6 +8,12 @@ This is a companion to `docs/TShapeRenderCache.md` (geometry caching /
 instancing) and `docs/RoadMap.md` (project direction). It documents the
 `src/Gui/Renderer/` backend, not the legacy Coin GL renderer.
 
+> **Status (2026-08)**: written 2026-07-21, before the user-shader
+> release and the effect library. For those, and for the current
+> architecture reference, see `docs/RenderEngine.md` (§5 user shaders)
+> and `docs/RenderDebug.md` (§6 design history); this file remains the
+> deep-dive on the built-in pass pipeline and effect shading math.
+
 ---
 
 ## 1. Architecture

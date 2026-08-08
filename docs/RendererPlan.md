@@ -1,8 +1,15 @@
 # Renderer Plan: bgfx-based Render Engine
 
-Status: draft, 2026-07-16; amended 2026-07-17 (Phase 2b: material/settings
-plumbing + glTF interchange). Companion to `RoadMap.md` (renderer workstream)
-and `ComputeBoundaries.md`.
+Status: **historical build log**, accurate through ~2026-07-20. The current
+architecture reference is `docs/RenderEngine.md`; this file records the
+phase-by-phase build and its verification notes. Post-July workstreams
+(user-shader framework + effect library, stateless/stateful particles, PBR
+user environment, bloom, effect-resolution scaling, planar water reflection,
+scene streaming ladder, multi-doc serving + share access) are documented in
+`RenderEngine.md`, `RenderDebug.md`, `SceneStreaming.md`, `MultiDocServe.md`
+and `ShareAccess.md`, not back-filled here. Originally: draft 2026-07-16;
+amended 2026-07-17 (Phase 2b: material/settings plumbing + glTF interchange).
+Companion to `RoadMap.md` (renderer workstream) and `ComputeBoundaries.md`.
 
 Goal: a modern render engine for FreeCAD with PBR materials + IBL, SSAO,
 shadows with volumetric lighting, order-independent transparency, capped
@@ -1193,9 +1200,12 @@ independent of each other; item 4 builds on item 3's property model.
   desktop: hover tint, click-select (Box.Face4), Ctrl-add
   (Cylinder.Face1), empty-click clear, echoes rendered green in the
   browser. Later ideas (unscheduled): camera sync from the desktop
-  view, delta/mesh-level streaming instead of full snapshots,
-  rubber-band selection, edit-mode/dragger event forwarding,
+  view, rubber-band selection, edit-mode/dragger event forwarding,
   face-level hover (needs the part table on plain materials).
+  *Since done elsewhere: delta/mesh-level streaming (SceneLadder +
+  delta snapshots, `RenderEngine.md` §2 / `SceneStreaming.md`); much of
+  the interaction story superseded by the thin-client selection UI
+  (`docs/ThinClientUI.md`).*
 - **Raw-GL overlay ports (Coin-ification, planned 2026-07)** — every
   fixed-function GL draw that today rides on top of the composited frame
   must become Coin scene-graph content (or a backend overlay feed) so it
@@ -1374,13 +1384,18 @@ independent of each other; item 4 builds on item 3's property model.
   - *D — in-scene raw-GL nodes*: `SoDatumLabel`, `SoTextLabel`,
     `SoRegPoint` — needed before Sketcher/edit-mode parity on
     backend-only frames; port bodies to cached primitives, verify
-    against GL edit-mode rendering.
+    against GL edit-mode rendering. **Done** (2026-08): phase-D routing,
+    the SoText2/label ports via the glyph-companion approach, Measure/
+    Part dimensions, `SoDatumLabel`, `SoRegPoint`.
   **Acceptance**: a backend-only readback (`FC_BGFX_DEBUG_READBACK`)
   shows axis cross, NaviCube, rubber band and fps text without the GL
   composite; the WASM viewer shows the NaviCube and responds to its
   clicks; GL-only path (no backend) renders unchanged; no `glBegin`
   remains outside `3rdParty`/Quarter/Coin-internal code.
-- SSR (optional), GTAO, TAA where compute is available.
+- SSR (optional), GTAO, TAA where compute is available. *GTAO done
+  (2026-07/08) — and it needed no compute: fragment-only horizon-based
+  generation over a depth MIP pyramid, so it runs on WebGL2 too
+  (`RenderParams` AO mode combo selects SSAO/GTAO).*
 - **Displacement mapping** (true geometric displacement, beyond Phase 2's
   parallax illusion): vertex-shader height sampling where
   vertex-texture-fetch exists (WebGL2 guarantees it) on a GPU-subdivided
@@ -1726,7 +1741,9 @@ months with SSR deferred.
   MSAA/HDR targets anyway.
 - Per-view renderer instances vs. shared engine with per-view views
   (bgfx view ids are a global 16-bit space — needs a small allocator for
-  multiple 3D views).
+  multiple 3D views). *Resolved 2026-08: 512-id table + a per-frame pass
+  map (`markPass`/`mapPasses`) — ~13 ids per plain viewer; see
+  `RenderEngine.md` §3.1.*
 - ~~Where PBR material parameters live (new `ViewProvider` properties vs.
   App-side material model) — coordinate with upstream material work.~~
   Resolved (2026-07): ViewProvider-side properties, document-saved,

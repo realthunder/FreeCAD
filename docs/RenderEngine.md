@@ -74,7 +74,9 @@ The same `BGFXRenderer.cpp` compiles into three deployments:
 `SceneDump` serializes the draw lists, materials, configs and the
 user-shader table (sources, parameters, compiled variants); the
 snapshot version gates format changes and the viewer self-reloads on a
-newer payload.
+newer payload. (Version numbers cited in this doc — v24, v26, v39, … —
+are the versions that introduced each lane; the current one is
+`kVersion` in `SceneDump.cpp`.)
 
 #### Out-of-band texture payloads (v26)
 
@@ -159,10 +161,19 @@ This is the browser-tier half of the content-addressed storage in
 lifetime follows the references) applied to the wire instead of the
 `.FCStd`.
 
-Textures are the leaf tier of a larger design: `docs/SceneStreaming.md`
-specifies the manifest tree (root → per-object → mesh/material/texture)
-and the delta sync that a thin client needs to serve big models, for
-which re-sending an unchanged scene on every publish is the wall.
+Textures are the leaf tier of a larger design, now implemented:
+`docs/SceneStreaming.md` specifies the manifest tree (root →
+per-object → mesh/material/texture) and the delta sync that a thin
+client needs to serve big models, for which re-sending an unchanged
+scene on every publish is the wall. The code lives in `SceneLadder`
+(per-object level rungs under CPU/GPU budgets), `MeshSimplify` /
+`MeshSource` (rung generation), and the snapshot's delta form
+(`manifestVersion`/`baseVersion` in `SceneDump`). The server side has
+likewise grown past a single-snapshot pipe: `SceneServer` serves
+multiple documents (`Gui.serveDocument` / `Gui.serveClients`) with
+per-endpoint access tokens, grants and a sharing roster — see
+`docs/MultiDocServe.md`, `docs/ShareAccess.md` and
+`docs/ThinClientUI.md` for that tier.
 
 ## 3. Frame anatomy
 
@@ -170,6 +181,9 @@ Each frame is a fixed sequence of bgfx views (`BGFXView::PassView`)
 sharing one framebuffer (auxiliary passes own theirs). Groups, in
 order:
 
+0. **Particle state** — stateful-particle simulation and impact-map
+   views (ping-pong FP textures, §5.8), first in id order ahead of the
+   scene groups.
 1. **Background** — clear, gradient quad (or the PBR environment
    itself, see below), optional sun disc.
 2. **Shadow block** — variance shadow map (EVSM moments) of the scene
@@ -201,6 +215,11 @@ order:
 14. **Overlays** — up to 9 overlay feeds (NaviCube, axis cross, HUD
     text, rubberband...) via `Renderer::setOverlay`.
 15. **Present** — standalone tier only: copy to the default backbuffer.
+
+Fill-bound effect passes (AO, volumetrics, bloom, reflection…) can run
+below main resolution via the `Render_EffectResolution` view property
+(`BGFXRenderer::setEffectResolution`); the scene and line passes always
+render at full resolution.
 
 Determinism: every time-animated effect (water waves, caustics, fire,
 volumetric jitter, user shaders via `u_fcTime`) reads one shared
@@ -759,9 +778,9 @@ serving backend). The golden-image harness
 freeze-frame. Policy: every framework change lands with a suite, no
 throwaway probes (`docs/RenderDebug.md` §0).
 
-### 5.11 Effect library (design settled 2026-07-26, implementation pending)
+### 5.11 Effect library (design settled 2026-07-26, implemented)
 
-The built-in water / fire / fountain effects will be re-expressed as
+The built-in water / fire / fountain effects are re-expressed as
 pre-bundled user shaders — the real-world test of the whole framework
 and the template for adding effects later. Decisions:
 
@@ -817,8 +836,9 @@ is just another folder. No bundled `.FCStd` library document.
 / `deactivate(look)`); the manifest schema is documented in that
 module. Manifest `viewProps` switch required boolean view toggles on
 at activation (e.g. `Render_WaterSurface`, which defaults off).
-Bundled so far: `water`, `fire` — both byte-identical to their stock
-`Render_*` treatments.
+Bundled: `water`, `fire`, `fountain`, `rain`, `sparks`, `waterjet` —
+the first three byte-identical to their stock `Render_*` treatments,
+the rest particle-first packages built on the same framework.
 
 **Persistence — copy on activation.** Activating an effect
 instantiates its `ShaderProgram`/`Shader` objects (and the binding
@@ -864,10 +884,10 @@ Implementation order: water stage (identity program == stock water —
 **done** for both the emissive and scattering channels), packages +
 factory + `Enabled` (**done** — water, fire and fountain ship),
 particle companions (**done** — Embers / WaterSpray / Droplets,
-target-fit emitters). Rain ships as a **particle-only** package — no
-main-stage program at all, the enabled streak emitter is the whole
-treatment, demonstrating that the particle framework carries an
-effect by itself. The browser-tier splice transport is **done**
+target-fit emitters). Rain, `sparks` and `waterjet` ship as
+**particle-only** packages — no main-stage program at all, the enabled
+emitters are the whole treatment, demonstrating that the particle
+framework carries an effect by itself. The browser-tier splice transport is **done**
 (snapshot v24: assembled variants + viewer binaries in the shader
 table, adopted by source match). Instance-scope particle emitters are
 **done** (occurrence-fit seeds, particle-only effects bind at
@@ -952,9 +972,9 @@ phone).
   the emitter actually occupies rather than its travel allowance.
 - Neighbour queries (SPH-class fluid) stay out of reach without
   compute shaders; see the §5.8 closing note.
-- Stages are currently `material` and `post`; the `water`/`volume`
-  stages and the shipped effect library are designed (§5.11) but not
-  yet implemented.
+- Stage names are fixed slots (`material`/`water`/`volume`/`particle`/
+  `post`) — there is no user-declared pass or render graph; an effect
+  cannot introduce a pass the engine does not already own.
 - WBOIT draws cannot take a user fragment program (the OIT output
   contract is not a single color).
 - Per-draw texture slots for user shaders (custom images) are not yet
