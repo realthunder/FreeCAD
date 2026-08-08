@@ -2112,9 +2112,13 @@ public:
                 unknownDoc = true;
             std::vector<uint8_t> out;
             if (g) {
-                if (!s.empty() && clientVersion != ~uint64_t(0)
-                        && std::strtoull(s.c_str(), nullptr, 10)
-                               != g->ensureSession())
+                // A version without a session, or with another run's,
+                // names a publish that never happened here (the v35
+                // contract above) — treat as holding nothing.
+                if (clientVersion != ~uint64_t(0)
+                        && (s.empty()
+                            || std::strtoull(s.c_str(), nullptr, 10)
+                                   != g->ensureSession()))
                     clientVersion = 0;
                 out = payloadFor(*g, clientVersion);
             }
@@ -2296,8 +2300,8 @@ public:
             // A version stated without a session, or with one from
             // another run (or another document's stream), names a
             // publish that never happened on this stream.
-            if (!session.empty() && held != ~uint64_t(0)
-                    && (!conn.group
+            if (held != ~uint64_t(0)
+                    && (session.empty() || !conn.group
                         || std::strtoull(session.c_str(), nullptr, 10)
                                != conn.group->ensureSession()))
                 conn.sent = 0;
