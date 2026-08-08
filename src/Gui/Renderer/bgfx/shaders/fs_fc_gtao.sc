@@ -24,6 +24,7 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_prepass_read.sh"
 
 
 SAMPLER2D(s_texNormalZ, 0);
@@ -50,32 +51,6 @@ uniform vec4 u_aoParams2;
 #define HALF_PI 1.5707963267948966
 #define GOLDEN  0.6180339887498948
 
-vec3 octDecode(vec2 e)
-{
-	vec3 n = vec3(e, 1.0 - abs(e.x) - abs(e.y));
-	if (n.z < 0.0)
-	{
-		vec2 sn = vec2(n.x >= 0.0 ? 1.0 : -1.0,
-		               n.y >= 0.0 ? 1.0 : -1.0);
-		n.xy = (vec2_splat(1.0) - abs(n.yx)) * sn;
-	}
-	return normalize(n);
-}
-
-/// View-space position of a prepass texel: shared NDC-unproject with the
-/// classic pass (perspective when u_proj[2][3] != 0, else orthographic).
-vec3 viewPos(vec2 uv, float viewZ, bool persp)
-{
-	vec2 ndc = uv * 2.0 - vec2_splat(1.0);
-	if (persp)
-		return vec3(viewZ * (ndc.x + u_proj[2][0]) / u_proj[0][0],
-		            viewZ * (ndc.y + u_proj[2][1]) / u_proj[1][1],
-		            -viewZ);
-	return vec3((ndc.x - u_proj[3][0]) / u_proj[0][0],
-	            (ndc.y - u_proj[3][1]) / u_proj[1][1],
-	            -viewZ);
-}
-
 void main()
 {
 	vec4 nz = texture2D(s_texNormalZ, v_texcoord0);
@@ -87,8 +62,8 @@ void main()
 
 	bool persp = u_proj[2][3] != 0.0;
 	float viewZ = nz.z;
-	vec3 pos = viewPos(v_texcoord0, viewZ, persp);
-	vec3 n = octDecode(nz.xy);
+	vec3 pos = fc_prepassViewPos(v_texcoord0, viewZ, persp);
+	vec3 n = fc_octDecode(nz.xy);
 	// Unit vector toward the camera; the orbit/GL camera looks down -z,
 	// so orthographic rays are all along +z.
 	vec3 V = persp ? normalize(-pos) : vec3(0.0, 0.0, 1.0);
@@ -260,7 +235,7 @@ void main()
 					if (sviewZ < -1.0e4)
 						continue;   // background sentinel
 				}
-				vec3 spos = viewPos(suv, sviewZ, persp);
+				vec3 spos = fc_prepassViewPos(suv, sviewZ, persp);
 				vec3 delta = spos - pos;
 				float dist = length(delta);
 				// Samples closer than the prepass depth quantization

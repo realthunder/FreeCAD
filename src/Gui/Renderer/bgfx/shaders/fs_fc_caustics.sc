@@ -21,6 +21,7 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_prepass_read.sh"
 #include "fc_volume.sh"
 
 SAMPLER2D(s_texNormalZ, 0);
@@ -29,18 +30,6 @@ SAMPLER2D(s_texWaterFront, 2);
 SAMPLER2D(s_texWaterBack, 3);
 
 uniform vec4 u_causticParams[MEDIUM_SLOTS];
-
-vec3 octDecode(vec2 e)
-{
-	vec3 n = vec3(e, 1.0 - abs(e.x) - abs(e.y));
-	if (n.z < 0.0)
-	{
-		vec2 sn = vec2(n.x >= 0.0 ? 1.0 : -1.0,
-		               n.y >= 0.0 ? 1.0 : -1.0);
-		n.xy = (vec2_splat(1.0) - abs(n.yx)) * sn;
-	}
-	return normalize(n);
-}
 
 // Animated caustic web: three mutually warped sine layers; each layer's
 // zero lines sharpen into thin bright filaments, and the layer sum
@@ -94,7 +83,7 @@ void main()
 
 	vec3 p = origin + dir * t;
 	float vis = shadowVis(p);
-	vec3 n = octDecode(nz.xy);
+	vec3 n = fc_octDecode(nz.xy);
 	float ndl = max(dot(n, -u_lightDir.xyz), 0.0);
 	if (vis * ndl <= 0.0)
 		discard;

@@ -36,7 +36,9 @@ SAMPLERCUBE(s_texEnv, 1);
 // (u_lightDir.w > 0.5; xyz = light direction in view space, the way the
 // light travels) and a variance shadow map attenuates its contribution.
 // u_shadowParams: x = this draw receives shadows, y = minimum variance,
-// z = depth bias, w unused. u_shadowMatrix maps view space to shadow
+// z = depth bias, w = the shadow-moment debug visualization
+// (FC_BGFX_DEBUG_SHADOW_VIS; read in fc_mesh_fs.sh).
+// u_shadowMatrix maps view space to shadow
 // map uv (xy) + light window depth (z). u_lightColor.rgb carries the
 // light color premultiplied by its intensity.
 SAMPLER2D(s_texShadow, 3);
@@ -59,6 +61,7 @@ uniform vec4 u_lightColor;
 // swidth * 0.001, the 0.1 spot factor folded in), w = kernel mode —
 // 0 single tap, 1 Coin's 4-tap dithered kernel, N >= 3 an N x N grid.
 uniform vec4 u_evsm;
+#include "fc_shadow_tap.sh"   // the shared VSM/EVSM bound (needs both above)
 uniform mat4 u_shadowMatrix;
 // Local effect lights: unshadowed point lights added on top of
 // whatever lighting model runs (the usual engine effect-light shortcut
@@ -107,36 +110,7 @@ SAMPLER2D(s_texAOScreen, 9);
 // like the caster.
 float fc_shadowTap(vec2 uv, float z)
 {
-	vec2 mo = texture2D(s_texShadow, uv).xy;
-	if (u_evsm.x < 0.5)
-	{
-		// Plain VSM, Coin SoShadowGroup parity (its VsmLookup):
-		// epsilon (u_shadowParams.y) adds to the variance outright
-		// and the threshold (u_evsm.y) smoothsteps the tail —
-		// moment interpolation across a depth gap makes the soft
-		// distance-growing penumbra of the GL Shadow style.
-		if (mo.x >= 0.9999)
-			return 1.0;
-		float lit = z <= mo.x ? 1.0 : 0.0;
-		float va = min(max(mo.y - mo.x * mo.x, 0.0)
-		                   + u_shadowParams.y,
-		               1.0);
-		float dd = mo.x - z;
-		float pmax = va / (va + dd * dd);
-		pmax *= smoothstep(u_evsm.y, 1.0, pmax);
-		return max(lit, pmax);
-	}
-	// EVSM: the variance floor scales with the warped moment.
-	float p = exp(u_evsm.x * (z - u_shadowParams.z));
-	if (p > mo.x)
-	{
-		float va = max(mo.y - mo.x * mo.x,
-		               u_shadowParams.y * mo.x * mo.x);
-		float dd = p - mo.x;
-		float pmax = va / (va + dd * dd);
-		return clamp((pmax - 0.3) / 0.7, 0.0, 1.0);
-	}
-	return 1.0;
+	return fc_vsmVisibility(texture2D(s_texShadow, uv).xy, z);
 }
 
 /* The full stock shading of one fragment: base color in, lit color +

@@ -24,6 +24,7 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_prepass_read.sh"
 #include "fc_volume_shadow.sh"
 
 SAMPLER2D(s_texNormalZ, 0);
@@ -60,19 +61,6 @@ uniform vec4 u_localLightColor[LOCAL_LIGHTS];
 uniform mat4 u_bulbShadowMtx[BULB_SHADOW_TILES];
 uniform vec4 u_bulbShadowConf[BULB_SLOTS];
 uniform mat4 u_bulbShadowRot;
-
-// Inverse of the prepass octEncode (fc_prepass_fs.sh).
-vec3 octDecode(vec2 f)
-{
-	vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
-	if (n.z < 0.0)
-	{
-		vec2 sn = vec2(n.x >= 0.0 ? 1.0 : -1.0,
-		               n.y >= 0.0 ? 1.0 : -1.0);
-		n.xy = (vec2_splat(1.0) - abs(n.yx)) * sn;
-	}
-	return normalize(n);
-}
 
 // View-space ray of a screen pixel — fc_volume.sh's volRay, duplicated
 // so this pass does not pull in the volumetric uniform block.
@@ -182,7 +170,7 @@ void main()
 			rgb = vec3_splat(
 				1.0 - clamp(nz.z * u_debugParams.y, 0.0, 1.0));
 		else if (mode < 2.5)    // view-space normal
-			rgb = octDecode(nz.xy) * 0.5 + vec3_splat(0.5);
+			rgb = fc_octDecode(nz.xy) * 0.5 + vec3_splat(0.5);
 		else if (mode < 3.5)    // ambient occlusion term
 			rgb = vec3_splat(texture2D(s_texAO, v_texcoord0).x);
 		else
