@@ -23,7 +23,10 @@ endif()
 
 if(BUILD_BGFX)
     add_definitions(-DHAVE_BGFX)
-    list(APPEND Renderer_CPP_SRCS BGFXRenderer.cpp)
+    list(APPEND Renderer_CPP_SRCS
+        BGFXRenderer.cpp
+        BGFXViewEnv.cpp
+    )
     list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h)
     list(APPEND Renderer_LIBS bgfx bx bimg example-common)
 endif(BUILD_BGFX)
