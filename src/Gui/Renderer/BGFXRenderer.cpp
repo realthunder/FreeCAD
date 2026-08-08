@@ -58,6 +58,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <vector>
 #include <tuple>
@@ -10592,96 +10593,668 @@ public:
         view->camFrameHash = camH;
         const bool mediumRender = !staticFrame;
 
-        // Which passes this frame draws (BGFXView's pass map). Nothing
-        // may submit before this: the pass -> bgfx-view-id mapping is
-        // decided here, and only the passes named get an id of their
-        // own. Everything else maps to the discard view, so an omission
-        // here costs that pass its pixels and prints the pass number --
-        // it cannot bleed into another pass.
+        // Which passes this frame draws (BGFXView's pass map) and how
+        // each one's bgfx view is configured, declared as ONE table.
+        // Every pass states its liveness predicate exactly once, next
+        // to the closure that configures its view: the mark phase and
+        // the view-config phase (after the particle step below) both
+        // iterate this table, so they cannot drift apart -- the
+        // predicate that claims a pass's id is the predicate that
+        // configures it, and a pass the table does not declare cannot
+        // render at all (it reports itself once instead).
+        //
+        // Nothing may submit before mapPasses() below: the pass ->
+        // bgfx-view-id mapping is decided there, and only the passes
+        // declared live get an id of their own. Everything else maps
+        // to the discard view, so a submit the table did not predict
+        // costs that pass its pixels and prints the pass number -- it
+        // cannot bleed into another pass.
         //
         // Passes whose use depends on the draws rather than on
         // configuration (which bucket a mesh lands in, whether anything
         // has an outline) are simply always claimed: one id each, and
         // the point of the exercise is the groups that come in sixes
         // and sixteens.
+        using V = BGFXView;
+        // Decided after the particle step (it reads the emitter
+        // liveness the step updates); the reflection entry's config
+        // closure reads it by reference at config time, which runs
+        // after the assignment.
+        bool reflRender = false;
+
+        // The shared tail of every pass that renders into the scene
+        // framebuffer (or falls back to it): viewport rect, camera
+        // transforms and submission-order mode.
+        auto configTail = [&](int i, uint16_t id) {
+            // The SSAO generate/blur passes render into aoTex/aoBlurTex
+            // at their own Render_SSAOResolution (ssaoW/ssaoH, default
+            // full-res and independent of the reflection scale); the
+            // mesh draws sample the result back at normalized uv. The
+            // reduced-resolution reflection re-render sets its own rect
+            // in its own closure.
+            bool aoResolveView = i == V::ViewAOGen
+                || i == V::ViewAOBlur
+                || i == V::ViewAOBlur2;
+            bgfx::setViewRect(id, 0, 0,
+                aoResolveView ? view->ssaoW : width,
+                aoResolveView ? view->ssaoH : height);
+            // The background quad and the OIT composite triangle are
+            // submitted in clip space; the AO generation pass keeps the
+            // scene projection for its predefined u_proj (position
+            // reconstruction).
+            // The GTAO denoise passes (AOBlur/AOBlur2) keep the scene
+            // projection like the gen pass: their plane-aware bilateral
+            // weight reconstructs view positions from u_proj (the shared
+            // fullscreen vertex shader ignores the matrices).
+            // The environment background keeps the scene matrices on
+            // the background view: its fragment shader reconstructs
+            // per-pixel world directions from u_proj/u_invView.
+            if ((i == V::ViewBackground
+                    && !(pbrActive && pbrconf.envBackground))
+                    || i == V::ViewOITComposite)
+                bgfx::setViewTransform(id, nullptr, nullptr);
+            else
+                bgfx::setViewTransform(id, viewMatrix, projMatrix);
+            // On-top and highlight draws are blended painter-style: keep
+            // submission order (GL pass order) instead of state sorting.
+            // With OIT the transparent blend is commutative, so no
+            // depth sorting is needed there either. The outline and
+            // section-cap views interleave stencil mark/fill/cleanup
+            // passes per entry, so they must keep submission order too.
+            // The volumetric apply view is sequential too: the
+            // per-channel extinction multiply must land before the
+            // inscatter add.
+            // Blended sprites are painted back to front for the same
+            // reason a non-OIT transparent bucket is: alpha blending is
+            // not commutative (additive emitters do not care).
+            bgfx::setViewMode(id,
+                (i == V::ViewTransparent && !oitActive)
+                        || i == V::ViewParticles
+                    ? bgfx::ViewMode::DepthDescending
+                    : i >= V::ViewOnTop
+                            || i == V::ViewSelection
+                            || i == V::ViewOutline
+                            || i == V::ViewSectionCap
+                            || i == V::ViewSectionCapTransp
+                            || i == V::ViewVolApply
+                        ? bgfx::ViewMode::Sequential
+                        : bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        // Passes that render into the scene framebuffer -- and the
+        // benign fallback for a claimed pass whose special target is
+        // unavailable this frame (it draws nothing there). The
+        // section-cap views clear the stencil: their parity marking
+        // (INVERT) needs a zeroed base, and earlier outline passes
+        // leave stale marks behind (relevant for the transparent cap
+        // view, which runs after ViewOutline). The frame's one clear of
+        // the scene framebuffer belongs to the first view that draws
+        // into it -- named, not index 0: the particle state views
+        // precede it.
+        auto configScene = [&](int i, uint16_t id) {
+            bgfx::setViewFrameBuffer(id, view->bgfxFbo);
+            bgfx::setViewClear(id,
+                i == V::ViewBackground
+                    ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
+                               |BGFX_CLEAR_STENCIL)
+                : (i == V::ViewSectionCap
+                   || i == V::ViewSectionCapTransp)
+                    ? uint16_t(BGFX_CLEAR_STENCIL)
+                    : uint16_t(BGFX_CLEAR_NONE),
+                clearColor, 1.0f, 0);
+            configTail(i, id);
+        };
+        auto configTransparent = [&](int i, uint16_t id) {
+            if (!oitActive) {
+                configScene(i, id);
+                return;
+            }
+            // Accumulation targets: accum clears to 0, revealage
+            // to 1; the shared depth attachment is not cleared.
+            bgfx::setViewFrameBuffer(id, view->oitFbo);
+            bgfx::setPaletteColor(0, 0.0f, 0.0f, 0.0f, 0.0f);
+            bgfx::setPaletteColor(1, 1.0f, 1.0f, 1.0f, 1.0f);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_COLOR),
+                               1.0f, 0, 0, 1);
+            configTail(i, id);
+        };
+        auto configShadow = [&](int, uint16_t id) {
+            // Moments clear to the warped far plane
+            // (exp(c), exp(2c)) through the palette (the packed
+            // clear color cannot exceed 1), own depth; the caster
+            // pass renders under the light camera at the shadow
+            // map size.
+            float evsmClear[4] = {std::exp(view->shadowWarpFrame),
+                                  std::exp(2.0f * view->shadowWarpFrame),
+                                  0.0f, 0.0f};
+            bgfx::setPaletteColor(2, evsmClear);
+            bgfx::setViewFrameBuffer(id, view->shadowFbo);
+            bgfx::setViewClear(id,
+                uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                1.0f, 0, 2);
+            bgfx::setViewRect(id, 0, 0, view->shadowSize,
+                              view->shadowSize);
+            bgfx::setViewTransform(id, lightViewMtx, lightProjMtx);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configShadowTint = [&](int i, uint16_t id) {
+            if (!bgfx::isValid(view->shadowTintFbo)) {
+                configScene(i, id);
+                return;
+            }
+            // Glass shadow tint map: cleared to white (no glass =
+            // full transmittance) under the light camera; glass
+            // casters multiply their transmittance in.
+            bgfx::setViewFrameBuffer(id, view->shadowTintFbo);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_COLOR),
+                               0xffffffffu, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0, view->shadowSize,
+                              view->shadowSize);
+            bgfx::setViewTransform(id, lightViewMtx, lightProjMtx);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configShadowBlur = [&](int i, uint16_t id) {
+            // Fullscreen blur passes over the shadow map size; the
+            // triangle overwrites every pixel, so no clear.
+            bgfx::setViewFrameBuffer(id,
+                i == V::ViewShadowBlurH
+                    ? view->shadowBlurFbo
+                : i == V::ViewShadowBlurV
+                    ? view->shadowBlurBackFbo
+                : i == V::ViewShadowTintBlurH
+                    ? view->shadowTintBlurFbo
+                    : view->shadowTintBlurBackFbo);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                               clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0, view->shadowSize,
+                              view->shadowSize);
+            bgfx::setViewTransform(id, nullptr, nullptr);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configBulb = [&](int i, uint16_t id) {
+            // Bulb shadow tile: plain VSM moments cleared to the
+            // far plane (1, 1) through the palette, tile subrect of
+            // the atlas, the bulb's light camera.
+            int t = i - V::ViewBulbShadow0;
+            float vsmClear[4] = {1.0f, 1.0f, 0.0f, 0.0f};
+            bgfx::setPaletteColor(3, vsmClear);
+            bgfx::setViewFrameBuffer(id, view->bulbShadowFbo);
+            bgfx::setViewClear(id,
+                uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                1.0f, 0, 3);
+            // The receiver crop matrix addresses tile row t/grid
+            // from the bottom of the atlas. On bottom-left-origin
+            // backends (GL) the view rect's top-left y is flipped
+            // to a GL viewport row from the bottom, so mirror the
+            // row for the sampled v to land on the tile.
+            int grid = V::kBulbShadowGrid;
+            int tileRow = bgfx::getCaps()->originBottomLeft
+                ? grid - 1 - t / grid : t / grid;
+            bgfx::setViewRect(id,
+                uint16_t((t % grid) * V::kBulbShadowTileSize),
+                uint16_t(tileRow * V::kBulbShadowTileSize),
+                V::kBulbShadowTileSize,
+                V::kBulbShadowTileSize);
+            bgfx::setViewTransform(id, view->bulbShadowViewMtx[t],
+                                   view->bulbShadowProjMtx[t]);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configAOPrepass = [&](int i, uint16_t id) {
+            // Prepass target clears to 0 (.w = 0 marks background
+            // in the AO pass), with its own depth buffer.
+            bgfx::setViewFrameBuffer(id, view->aoPrepassFbo);
+            bgfx::setViewClear(id,
+                uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                0x00000000u, 1.0f, 0);
+            configTail(i, id);
+        };
+        auto configAOMip = [&](int i, uint16_t id) {
+            // GTAO depth pyramid downsamples: each level renders a
+            // clip-space fullscreen triangle into its own half-stepped
+            // single-channel target (no-op views otherwise).
+            // Only the levels the frame claimed are here (a level
+            // past aoMipCount, or a frame with the AO chain off, is
+            // simply not mapped).
+            const int m = i - V::ViewAODepthMip1;
+            bgfx::setViewFrameBuffer(id, view->aoMipFbo[m]);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                               clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0,
+                uint16_t(std::max(1, width >> (m + 1))),
+                uint16_t(std::max(1, height >> (m + 1))));
+            bgfx::setViewTransform(id, nullptr, nullptr);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configAOChain = [&](int i, uint16_t id) {
+            // Fullscreen passes overwrite their whole target.
+            // ViewAOBlur2 ping-pongs the denoise back into aoTex.
+            bgfx::setViewFrameBuffer(id,
+                i == V::ViewAOBlur ? view->aoBlurFbo
+                                   : view->aoGenFbo);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                               clearColor, 1.0f, 0);
+            configTail(i, id);
+        };
+        auto configMedium = [&](int i, uint16_t id) {
+            // Water/glass/cloud/fire body interval depth targets:
+            // color clears to 0 (.w = 0 = no medium on this pixel);
+            // the back-face views keep the farthest depth, so their
+            // depth buffer clears to 0 and tests GREATER.
+            bool back = i == V::ViewWaterBack || i == V::ViewGlassBack
+                || i == V::ViewCloudBack || i == V::ViewFireBack;
+            bgfx::setViewFrameBuffer(id,
+                i == V::ViewWaterFront ? view->waterFrontFbo
+                : i == V::ViewWaterBack ? view->waterBackFbo
+                : i == V::ViewGlassFront ? view->glassFrontFbo
+                : i == V::ViewGlassBack ? view->glassBackFbo
+                : i == V::ViewCloudFront ? view->cloudFrontFbo
+                : i == V::ViewCloudBack ? view->cloudBackFbo
+                : i == V::ViewFireFront ? view->fireFrontFbo
+                                        : view->fireBackFbo);
+            bgfx::setViewClear(id,
+                uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                0x00000000u, back ? 0.0f : 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0, width, height);
+            bgfx::setViewTransform(id, viewMatrix, projMatrix);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configVolGen = [&](int, uint16_t id) {
+            // Half-res raymarch target; the fullscreen triangle
+            // overwrites every pixel, and the scene transforms stay
+            // bound for the predefined u_proj (ray reconstruction,
+            // like the AO generation pass).
+            bgfx::setViewFrameBuffer(id, view->volFbo);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                               clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0,
+                uint16_t(std::max(1, int(width) / 2)),
+                uint16_t(std::max(1, int(height) / 2)));
+            bgfx::setViewTransform(id, viewMatrix, projMatrix);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configVolAccum = [&](int i, uint16_t id) {
+            if (!bgfx::isValid(view->volHistFbo)) {
+                configScene(i, id);
+                return;
+            }
+            // History accumulation target, same half-res rect as
+            // the raymarch; the blended quad overwrites (or blends
+            // into) every pixel, so no clear.
+            bgfx::setViewFrameBuffer(id, view->volHistFbo);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                               clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0,
+                uint16_t(std::max(1, int(width) / 2)),
+                uint16_t(std::max(1, int(height) / 2)));
+            bgfx::setViewTransform(id, nullptr, nullptr);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configRefl = [&](int i, uint16_t id) {
+            // A cached mirror frame (reflRender false) re-renders
+            // nothing: the target keeps its content and the claimed id
+            // keeps the benign default configuration. The media
+            // composite additionally needs an analytic medium to march.
+            if (!reflRender
+                    || (i == V::ViewReflMedia
+                        && !(volActive && (cloudActive || fireActive)))) {
+                configScene(i, id);
+                return;
+            }
+            if (i == V::ViewReflMedia) {
+                // Media composite over the just-rendered mirror scene:
+                // same target/rect/transforms, no clear (premultiplied
+                // over blend).
+                bgfx::setViewFrameBuffer(id, view->reflFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+            } else {
+                // Mirrored-scene render: own color (cleared to alpha 0 =
+                // nothing reflected) + depth, the original projection
+                // over the mirrored view (ground plane or water plane).
+                bgfx::setViewFrameBuffer(id, view->reflFbo);
+                bgfx::setViewClear(id,
+                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                    0x00000000u, 1.0f, 0);
+            }
+            // Reduced-resolution reflection re-render (matches reflFbo).
+            bgfx::setViewRect(id, 0, 0, view->effW, view->effH);
+            bgfx::setViewTransform(id,
+                groundReflActive ? reflViewMtx : waterReflViewMtx,
+                projMatrix);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configWaterCopy = [&](int, uint16_t id) {
+            // Fullscreen copy of the scene color; the framebuffer
+            // switch also resolves a multisampled scene attachment
+            // before the surface pass samples the copy.
+            bgfx::setViewFrameBuffer(id, view->sceneCopyFbo);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                               clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0, width, height);
+            bgfx::setViewTransform(id, nullptr, nullptr);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configUserPostCopy = [&](int, uint16_t id) {
+            // User post input: resolve/copy of the composited (post
+            // bloom) scene color into the shared sceneCopy target;
+            // like the water copy, the framebuffer switch resolves a
+            // multisampled scene attachment before the copy samples.
+            bgfx::setViewFrameBuffer(id, view->sceneCopyFbo);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                               clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0, width, height);
+            bgfx::setViewTransform(id, nullptr, nullptr);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configUserPost = [&](int, uint16_t id) {
+            // The user post program draws fullscreen back into the
+            // scene target.
+            bgfx::setViewFrameBuffer(id, view->bgfxFbo);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                               clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0, width, height);
+            bgfx::setViewTransform(id, nullptr, nullptr);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configBloom = [&](int i, uint16_t id) {
+            if (!bgfx::isValid(view->bloomFbo)) {
+                configScene(i, id);
+                return;
+            }
+            // Quarter-res bloom chain: bright/emit into the halo
+            // source, blur ping-pongs through the second target.
+            // The fullscreen passes overwrite every pixel but the
+            // emit pass blends into the bright result, so only the
+            // source clears (via the bright overwrite) -- no view
+            // clear needed anywhere. The emit pass renders the
+            // light bodies under the scene camera.
+            bgfx::setViewFrameBuffer(id,
+                i == V::ViewBloomBlurH
+                    ? view->bloomBlurFbo : view->bloomFbo);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                               clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0,
+                uint16_t(std::max(1, int(width) / 4)),
+                uint16_t(std::max(1, int(height) / 4)));
+            if (i == V::ViewBloomEmit)
+                bgfx::setViewTransform(id, viewMatrix, projMatrix);
+            else
+                bgfx::setViewTransform(id, nullptr, nullptr);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+        auto configDebugScene = [&](int i, uint16_t id) {
+            // Fresh count/UV target every frame: the overdraw
+            // counts accumulate from zero, .w = 0 marks pixels the
+            // UV re-render did not cover.
+            bgfx::setViewFrameBuffer(id, view->debugSceneFbo);
+            bgfx::setViewClear(id,
+                uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
+                0x00000000u, 1.0f, 0);
+            configTail(i, id);
+        };
+        auto configOverlay = [&](int i, uint16_t id) {
+            // Overlay feed slot: derive the viewport rect and the
+            // camera from the declarative anchor each frame, so
+            // overlays re-anchor on resize and (orientFromScene)
+            // follow the current camera -- including the WASM
+            // viewer's own orbit camera.
+            // Only the slots the frame's overlays fill are mapped.
+            int slot = i - V::ViewOverlay0;
+            auto ovIt = overlays.begin();
+            std::advance(ovIt, slot);
+            const Render::OverlayAnchor *anchor = &ovIt->second.anchor;
+            if (anchor->sceneCamera) {
+                // In-scene overlay (editing graph, dimensions): draw over
+                // the whole viewport with the main scene camera so the
+                // world-space geometry lines up with the finished scene,
+                // on a fresh depth buffer so it sits on top but still
+                // depth-tests within itself.
+                bgfx::setViewFrameBuffer(id, view->bgfxFbo);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_DEPTH),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
+                bgfx::setViewTransform(id, viewMatrix, projMatrix);
+                bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
+                bgfx::touch(id);
+                return;
+            }
+            uint16_t rx = 0, ry = 0, rw = width, rh = height;
+            if (anchor->corner != Render::OverlayAnchor::FullViewport) {
+                uint16_t edge = uint16_t(std::max(1.0f,
+                    anchor->sizeFraction
+                        * float(std::min(width, height))));
+                rw = rh = edge;
+                bool right =
+                    anchor->corner == Render::OverlayAnchor::BottomRight
+                    || anchor->corner == Render::OverlayAnchor::TopRight;
+                bool top =
+                    anchor->corner == Render::OverlayAnchor::TopLeft
+                    || anchor->corner == Render::OverlayAnchor::TopRight;
+                // bgfx view rects are top-left anchored.
+                int mx = int(anchor->marginX);
+                int my = int(anchor->marginY);
+                rx = uint16_t(std::max(0,
+                    right ? width - edge - mx : mx));
+                ry = uint16_t(std::max(0,
+                    top ? my : height - edge - my));
+            }
+            const auto *caps = bgfx::getCaps();
+            float ovProj[16];
+            float aspect = float(rw) / float(rh);
+            // Right-handed like the GL view matrix convention the
+            // anchor camera follows (bx defaults to left-handed).
+            if (anchor->pixelSpace) {
+                // One unit == one pixel, origin top-left, y down (Qt
+                // widget coordinates); z=0 content sits mid-range.
+                bx::mtxOrtho(ovProj, 0.0f, float(rw), float(rh), 0.0f,
+                             -1.0f, 1.0f, 0.0f, caps->homogeneousDepth,
+                             bx::Handedness::Right);
+            } else if (anchor->fovDeg > 0.0f) {
+                bx::mtxProj(ovProj, anchor->fovDeg, aspect,
+                            std::max(anchor->nearPlane, 1.0e-3f),
+                            anchor->farPlane, caps->homogeneousDepth,
+                            bx::Handedness::Right);
+            } else {
+                float hh = 0.5f * anchor->orthoHeight;
+                float hw = hh * aspect;
+                bx::mtxOrtho(ovProj, -hw, hw, -hh, hh,
+                             anchor->nearPlane, anchor->farPlane,
+                             0.0f, caps->homogeneousDepth,
+                             bx::Handedness::Right);
+            }
+            float ovView[16];
+            bx::mtxIdentity(ovView);
+            if (!anchor->pixelSpace
+                && anchor->orientFromScene && viewMatrix) {
+                // Rotation part of the scene view matrix (rigid:
+                // upper-left 3x3), translation dropped -- the axis
+                // cross tracks the camera orientation only.
+                const float *v =
+                    reinterpret_cast<const float *>(viewMatrix);
+                for (int c = 0; c < 3; ++c)
+                    for (int r = 0; r < 3; ++r)
+                        ovView[c * 4 + r] = v[c * 4 + r];
+            }
+            if (!anchor->pixelSpace)
+                ovView[14] = -anchor->cameraDistance;
+            bgfx::setViewFrameBuffer(id, view->bgfxFbo);
+            // Fresh depth inside the overlay rect: overlays draw on
+            // top of the finished frame but depth-test within
+            // themselves.
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_DEPTH),
+                               clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, rx, ry, rw, rh);
+            bgfx::setViewTransform(id, ovView, ovProj);
+            bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
+            bgfx::touch(id);
+        };
+        auto configPresent = [&](int, uint16_t id) {
+            // Standalone present: the default backbuffer; the
+            // fullscreen triangle overwrites every pixel.
+            //
+            // On desktop no present is drawn, but the empty view still
+            // targets the default backbuffer ON PURPOSE: bgfx only
+            // resolves an MSAA framebuffer (multisampled renderbuffer
+            // -> resolve texture) when the frame transitions AWAY from
+            // it, and every desktop content view targets bgfxFbo -- so
+            // without this trailing view the resolve texture the
+            // composite blit reads stayed stale under MSAA (an empty
+            // viewport).
+            bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
+            bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                               clearColor, 1.0f, 0);
+            bgfx::setViewRect(id, 0, 0, width, height);
+            bgfx::setViewTransform(id, nullptr, nullptr);
+            bgfx::setViewMode(id, bgfx::ViewMode::Default);
+            bgfx::touch(id);
+        };
+
+        // The table. One entry per pass (or per contiguous group that
+        // shares a predicate and a config closure), in enum -- i.e.
+        // draw -- order. A null config is a pass that configures its
+        // own views (the particle steps).
+        using ConfigFn = std::function<void(int, uint16_t)>;
+        struct PassDecl {
+            bool live;       ///< does this frame draw the pass?
+            ConfigFn config; ///< configure the pass's bgfx view id
+        };
+        std::vector<PassDecl> passTable;
+        passTable.reserve(V::NUM_VIEWS);
+        int16_t declOf[V::NUM_VIEWS];
+        std::memset(declOf, 0xff, sizeof(declOf));
+        auto declPasses = [&](int first, int last, bool live,
+                              ConfigFn config) {
+            for (int p = first; p <= last; ++p)
+                declOf[p] = int16_t(passTable.size());
+            passTable.push_back({live, std::move(config)});
+        };
+        auto declPass = [&](int p, bool live, ConfigFn config) {
+            declPasses(p, p, live, std::move(config));
+        };
+
+        // Stateful particle simulation: two step ids per emitter
+        // slot, claimed as a group whenever the scene carries an
+        // emitter that could hold state -- stepParticles picks the
+        // slots itself, after the map is decided.
+        bool statefulParticles = false;
+        for (const auto &d : scene) {
+            const auto &sh = d.material.usershader;
+            if (sh && sh->stage == "particle"
+                    && !sh->simulateSource.empty() && d.objectKey) {
+                statefulParticles = true;
+                break;
+            }
+        }
+        // Non-on-top selections reroute their opaque draws into
+        // ViewSelection (submit(), selPass) -- claim it whenever such
+        // a feed exists or those draws land in the discard view.
+        bool nonOntopSel = false;
+        for (const auto &sel : selections) {
+            if (sel.first <= 0 && !sel.second.empty()) {
+                nonOntopSel = true;
+                break;
+            }
+        }
+        const bool reflActive = groundReflActive || waterReflActive;
+
+        declPasses(V::ViewParticleSim0,
+                   V::ViewParticleSim0 + V::kParticleViews - 1,
+                   statefulParticles, nullptr);
+        declPass(V::ViewParticleImpact,
+                 statefulParticles && hasWaterBody && waterSurfActive,
+                 nullptr);
+        declPass(V::ViewBackground, true, configScene);
+        declPass(V::ViewSunDisc, true, configScene);
+        declPass(V::ViewShadow, shadowRender, configShadow);
+        declPasses(V::ViewShadowBlurH, V::ViewShadowBlurV,
+                   shadowBlurActive, configShadowBlur);
+        declPass(V::ViewShadowTint, shadowRender, configShadowTint);
+        declPasses(V::ViewShadowTintBlurH, V::ViewShadowTintBlurV,
+                   shadowBlurActive, configShadowBlur);
+        for (int t = 0; t < V::kBulbShadowTiles; ++t)
+            declPass(V::ViewBulbShadow0 + t, bulbShadowRender[t],
+                     configBulb);
+        declPass(V::ViewAOPrepass, prepassRender, configAOPrepass);
+        for (int m = 0; m < 6; ++m)
+            declPass(V::ViewAODepthMip1 + m,
+                     ssaoActive && aoRender && m < view->aoMipCount,
+                     configAOMip);
+        declPasses(V::ViewWaterFront, V::ViewWaterBack,
+                   waterActive && mediumRender, configMedium);
+        declPasses(V::ViewGlassFront, V::ViewGlassBack,
+                   glassActive && mediumRender, configMedium);
+        declPasses(V::ViewCloudFront, V::ViewCloudBack,
+                   cloudActive && mediumRender, configMedium);
+        declPasses(V::ViewFireFront, V::ViewFireBack,
+                   fireActive && mediumRender, configMedium);
+        declPasses(V::ViewAOGen, V::ViewAOBlur2,
+                   ssaoActive && aoRender, configAOChain);
+        declPass(V::ViewVolGen, volActive, configVolGen);
+        declPass(V::ViewVolAccum, volActive, configVolAccum);
+        declPasses(V::ViewGroundRefl, V::ViewReflMedia, reflActive,
+                   configRefl);
+        declPass(V::ViewOpaque, true, configScene);
+        declPass(V::ViewSelection, nonOntopSel, configScene);
+        declPass(V::ViewSectionCap, true, configScene);
+        declPass(V::ViewDebugScene, debugSceneRender, configDebugScene);
+        declPass(V::ViewGroundReflApply, groundReflActive, configScene);
+        declPass(V::ViewOutline, true, configScene);
+        declPass(V::ViewCaustics, waterActive && volconf.caustics,
+                 configScene);
+        declPass(V::ViewVolApply, volActive, configScene);
+        declPass(V::ViewWaterCopy, waterSurfActive || glassActive,
+                 configWaterCopy);
+        declPass(V::ViewWaterSurface, waterSurfActive, configScene);
+        declPass(V::ViewGlassSurface, glassActive, configScene);
+        declPass(V::ViewParticles, true, configScene);
+        declPass(V::ViewTransparent, true, configTransparent);
+        declPass(V::ViewOITComposite, oitActive, configScene);
+        declPass(V::ViewSectionCapTransp, true, configScene);
+        declPasses(V::ViewBloomBright, V::ViewBloomBlurV, bloomActive,
+                   configBloom);
+        declPass(V::ViewBloomApply, bloomActive, configScene);
+        declPass(V::ViewUserPostCopy, userPostActive, configUserPostCopy);
+        declPass(V::ViewUserPost, userPostActive, configUserPost);
+        declPass(V::ViewDebug, true, configScene);
+        declPass(V::ViewOnTop, true, configScene);
+        declPass(V::ViewHighlight, true, configScene);
+        for (int s = 0; s < int(V::NumOverlayViews); ++s)
+            declPass(V::ViewOverlay0 + s, s < int(overlays.size()),
+                     configOverlay);
+        declPass(V::ViewPresent, true, configPresent);
+
         {
-            using V = BGFXView;
             view->beginPasses();
-            for (int p : {V::ViewBackground, V::ViewSunDisc, V::ViewOpaque,
-                          V::ViewSectionCap, V::ViewSectionCapTransp,
-                          V::ViewOutline, V::ViewParticles,
-                          V::ViewTransparent, V::ViewOnTop,
-                          V::ViewHighlight, V::ViewDebug, V::ViewPresent})
-                view->markPass(p);
-            // Non-on-top selections reroute their opaque draws into
-            // ViewSelection (submit(), selPass) -- claim it whenever such
-            // a feed exists or those draws land in the discard view.
-            bool nonOntopSel = false;
-            for (const auto &sel : selections) {
-                if (sel.first <= 0 && !sel.second.empty()) {
-                    nonOntopSel = true;
-                    break;
+            for (int p = 0; p < V::NUM_VIEWS; ++p) {
+                if (declOf[p] < 0) {
+                    // A pass missing from the table can never render:
+                    // nothing marks it, so every submit to it lands in
+                    // the discard view. Say so once -- this catches a
+                    // new PassView added without a declaration.
+                    static bool warnedUndeclared = false;
+                    if (!warnedUndeclared) {
+                        warnedUndeclared = true;
+                        RENDER_ERR("bgfx pass table: pass " << p
+                                   << " has no declaration and cannot "
+                                      "render");
+                    }
+                    continue;
                 }
+                view->markPass(p, passTable[size_t(declOf[p])].live);
             }
-            view->markPass(V::ViewSelection, nonOntopSel);
-            // Stateful particle simulation: two step ids per emitter
-            // slot, claimed as a group whenever the scene carries an
-            // emitter that could hold state -- stepParticles picks the
-            // slots itself, after this.
-            bool statefulParticles = false;
-            for (const auto &d : scene) {
-                const auto &sh = d.material.usershader;
-                if (sh && sh->stage == "particle"
-                        && !sh->simulateSource.empty() && d.objectKey) {
-                    statefulParticles = true;
-                    break;
-                }
-            }
-            view->markPasses(V::ViewParticleSim0,
-                             V::ViewParticleSim0 + V::kParticleViews - 1,
-                             statefulParticles);
-            view->markPass(V::ViewParticleImpact,
-                           statefulParticles && hasWaterBody
-                               && waterSurfActive);
-            view->markPass(V::ViewShadow, shadowRender);
-            view->markPass(V::ViewShadowTint, shadowRender);
-            view->markPasses(V::ViewShadowBlurH, V::ViewShadowBlurV,
-                             shadowBlurActive);
-            view->markPasses(V::ViewShadowTintBlurH, V::ViewShadowTintBlurV,
-                             shadowBlurActive);
-            for (int t = 0; t < BGFXView::kBulbShadowTiles; ++t)
-                view->markPass(V::ViewBulbShadow0 + t, bulbShadowRender[t]);
-            view->markPass(V::ViewAOPrepass, prepassRender);
-            for (int m = 0; m < 6; ++m)
-                view->markPass(V::ViewAODepthMip1 + m,
-                               ssaoActive && aoRender && m < view->aoMipCount);
-            view->markPasses(V::ViewAOGen, V::ViewAOBlur2,
-                             ssaoActive && aoRender);
-            view->markPasses(V::ViewWaterFront, V::ViewWaterBack,
-                             waterActive && mediumRender);
-            view->markPasses(V::ViewGlassFront, V::ViewGlassBack,
-                             glassActive && mediumRender);
-            view->markPasses(V::ViewCloudFront, V::ViewCloudBack,
-                             cloudActive && mediumRender);
-            view->markPasses(V::ViewFireFront, V::ViewFireBack,
-                             fireActive && mediumRender);
-            view->markPasses(V::ViewVolGen, V::ViewVolAccum, volActive);
-            view->markPass(V::ViewVolApply, volActive);
-            view->markPass(V::ViewCaustics, waterActive && volconf.caustics);
-            const bool reflActive = groundReflActive || waterReflActive;
-            view->markPasses(V::ViewGroundRefl, V::ViewReflMedia, reflActive);
-            view->markPass(V::ViewGroundReflApply, groundReflActive);
-            view->markPass(V::ViewWaterCopy, waterSurfActive || glassActive);
-            view->markPass(V::ViewWaterSurface, waterSurfActive);
-            view->markPass(V::ViewGlassSurface, glassActive);
-            view->markPass(V::ViewOITComposite, oitActive);
-            view->markPasses(V::ViewBloomBright, V::ViewBloomApply,
-                             bloomActive);
-            view->markPasses(V::ViewUserPostCopy, V::ViewUserPost,
-                             userPostActive);
-            view->markPass(V::ViewDebugScene, debugSceneRender);
-            for (int s = 0; s < int(V::NumOverlayViews); ++s)
-                view->markPass(V::ViewOverlay0 + s, s < int(overlays.size()));
 
             if (!_BGFXLib.reserveBlock(view, view->passesNeeded())) {
                 // The pool is full. Same answer as an unfittable viewer:
@@ -10722,544 +11295,20 @@ public:
         // it was rendered from, which for a fountain means a pool
         // reflecting everything except the jet standing in it. Same
         // escape hatch the analytic media already take.
-        const bool reflRender = !staticFrame || shadowRender || fireActive
+        reflRender = !staticFrame || shadowRender || fireActive
             || cloudActive || view->particlesLive;
 
-        // Configure the ids the pass map handed out. A pass the frame
-        // did not claim has no id to configure: it is not drawn.
-        for (uint16_t i = 0; i < BGFXView::NUM_VIEWS; ++i) {
-            if (!view->passLive(i))
+        // Configure the ids the pass map handed out, through the same
+        // table that declared them. A pass the frame did not claim has
+        // no id to configure: it is not drawn. A null config is a pass
+        // that configures its own views (the particle steps, in
+        // stepParticles/splatImpacts above).
+        for (int i = 0; i < V::NUM_VIEWS; ++i) {
+            if (!view->passLive(i) || declOf[i] < 0)
                 continue;
-            uint16_t id = view->vid(i);
-            if (i <= BGFXView::ViewParticleImpact) {
-                continue;   // the particle passes configure themselves
-            } else if (i == BGFXView::ViewTransparent && oitActive) {
-                // Accumulation targets: accum clears to 0, revealage
-                // to 1; the shared depth attachment is not cleared.
-                bgfx::setViewFrameBuffer(id, view->oitFbo);
-                bgfx::setPaletteColor(0, 0.0f, 0.0f, 0.0f, 0.0f);
-                bgfx::setPaletteColor(1, 1.0f, 1.0f, 1.0f, 1.0f);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_COLOR),
-                                   1.0f, 0, 0, 1);
-            } else if (shadowRender && i == BGFXView::ViewShadow) {
-                // Moments clear to the warped far plane
-                // (exp(c), exp(2c)) through the palette (the packed
-                // clear color cannot exceed 1), own depth; the caster
-                // pass renders under the light camera at the shadow
-                // map size.
-                float evsmClear[4] = {std::exp(view->shadowWarpFrame),
-                                      std::exp(2.0f * view->shadowWarpFrame),
-                                      0.0f, 0.0f};
-                bgfx::setPaletteColor(2, evsmClear);
-                bgfx::setViewFrameBuffer(id, view->shadowFbo);
-                bgfx::setViewClear(id,
-                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
-                    1.0f, 0, 2);
-                bgfx::setViewRect(id, 0, 0, view->shadowSize,
-                                  view->shadowSize);
-                bgfx::setViewTransform(id, lightViewMtx, lightProjMtx);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (shadowRender && i == BGFXView::ViewShadowTint
-                       && bgfx::isValid(view->shadowTintFbo)) {
-                // Glass shadow tint map: cleared to white (no glass =
-                // full transmittance) under the light camera; glass
-                // casters multiply their transmittance in.
-                bgfx::setViewFrameBuffer(id, view->shadowTintFbo);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_COLOR),
-                                   0xffffffffu, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, view->shadowSize,
-                                  view->shadowSize);
-                bgfx::setViewTransform(id, lightViewMtx, lightProjMtx);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (shadowBlurActive
-                       && (i == BGFXView::ViewShadowBlurH
-                           || i == BGFXView::ViewShadowBlurV
-                           || i == BGFXView::ViewShadowTintBlurH
-                           || i == BGFXView::ViewShadowTintBlurV)) {
-                // Fullscreen blur passes over the shadow map size; the
-                // triangle overwrites every pixel, so no clear.
-                bgfx::setViewFrameBuffer(id,
-                    i == BGFXView::ViewShadowBlurH
-                        ? view->shadowBlurFbo
-                    : i == BGFXView::ViewShadowBlurV
-                        ? view->shadowBlurBackFbo
-                    : i == BGFXView::ViewShadowTintBlurH
-                        ? view->shadowTintBlurFbo
-                        : view->shadowTintBlurBackFbo);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, view->shadowSize,
-                                  view->shadowSize);
-                bgfx::setViewTransform(id, nullptr, nullptr);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (volActive && i == BGFXView::ViewVolAccum
-                       && bgfx::isValid(view->volHistFbo)) {
-                // History accumulation target, same half-res rect as
-                // the raymarch; the blended quad overwrites (or blends
-                // into) every pixel, so no clear.
-                bgfx::setViewFrameBuffer(id, view->volHistFbo);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0,
-                    uint16_t(std::max(1, int(width) / 2)),
-                    uint16_t(std::max(1, int(height) / 2)));
-                bgfx::setViewTransform(id, nullptr, nullptr);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (volActive && i == BGFXView::ViewVolGen) {
-                // Half-res raymarch target; the fullscreen triangle
-                // overwrites every pixel, and the scene transforms stay
-                // bound for the predefined u_proj (ray reconstruction,
-                // like the AO generation pass).
-                bgfx::setViewFrameBuffer(id, view->volFbo);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0,
-                    uint16_t(std::max(1, int(width) / 2)),
-                    uint16_t(std::max(1, int(height) / 2)));
-                bgfx::setViewTransform(id, viewMatrix, projMatrix);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (i >= BGFXView::ViewBulbShadow0
-                       && i <= BGFXView::ViewBulbShadow15
-                       && bulbShadowRender[i - BGFXView::ViewBulbShadow0]) {
-                // Bulb shadow tile: plain VSM moments cleared to the
-                // far plane (1, 1) through the palette, tile subrect of
-                // the atlas, the bulb's light camera.
-                int t = i - BGFXView::ViewBulbShadow0;
-                float vsmClear[4] = {1.0f, 1.0f, 0.0f, 0.0f};
-                bgfx::setPaletteColor(3, vsmClear);
-                bgfx::setViewFrameBuffer(id, view->bulbShadowFbo);
-                bgfx::setViewClear(id,
-                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
-                    1.0f, 0, 3);
-                // The receiver crop matrix addresses tile row t/grid
-                // from the bottom of the atlas. On bottom-left-origin
-                // backends (GL) the view rect's top-left y is flipped
-                // to a GL viewport row from the bottom, so mirror the
-                // row for the sampled v to land on the tile.
-                int grid = BGFXView::kBulbShadowGrid;
-                int tileRow = bgfx::getCaps()->originBottomLeft
-                    ? grid - 1 - t / grid : t / grid;
-                bgfx::setViewRect(id,
-                    uint16_t((t % grid) * BGFXView::kBulbShadowTileSize),
-                    uint16_t(tileRow * BGFXView::kBulbShadowTileSize),
-                    BGFXView::kBulbShadowTileSize,
-                    BGFXView::kBulbShadowTileSize);
-                bgfx::setViewTransform(id, view->bulbShadowViewMtx[t],
-                                       view->bulbShadowProjMtx[t]);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (bloomActive
-                       && (i == BGFXView::ViewBloomBright
-                           || i == BGFXView::ViewBloomEmit
-                           || i == BGFXView::ViewBloomBlurH
-                           || i == BGFXView::ViewBloomBlurV)
-                       && bgfx::isValid(view->bloomFbo)) {
-                // Quarter-res bloom chain: bright/emit into the halo
-                // source, blur ping-pongs through the second target.
-                // The fullscreen passes overwrite every pixel but the
-                // emit pass blends into the bright result, so only the
-                // source clears (via the bright overwrite) — no view
-                // clear needed anywhere. The emit pass renders the
-                // light bodies under the scene camera.
-                bgfx::setViewFrameBuffer(id,
-                    i == BGFXView::ViewBloomBlurH
-                        ? view->bloomBlurFbo : view->bloomFbo);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0,
-                    uint16_t(std::max(1, int(width) / 4)),
-                    uint16_t(std::max(1, int(height) / 4)));
-                if (i == BGFXView::ViewBloomEmit)
-                    bgfx::setViewTransform(id, viewMatrix, projMatrix);
-                else
-                    bgfx::setViewTransform(id, nullptr, nullptr);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (waterActive && mediumRender
-                       && (i == BGFXView::ViewWaterFront
-                           || i == BGFXView::ViewWaterBack)) {
-                // Water body depth targets: color clears to 0 (.w = 0 =
-                // no water on this pixel); the back-face view keeps the
-                // farthest depth, so its depth buffer clears to 0 and
-                // tests GREATER.
-                bool back = i == BGFXView::ViewWaterBack;
-                bgfx::setViewFrameBuffer(id, back ? view->waterBackFbo
-                                                  : view->waterFrontFbo);
-                bgfx::setViewClear(id,
-                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
-                    0x00000000u, back ? 0.0f : 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, width, height);
-                bgfx::setViewTransform(id, viewMatrix, projMatrix);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (cloudActive && mediumRender
-                       && (i == BGFXView::ViewCloudFront
-                           || i == BGFXView::ViewCloudBack)) {
-                // Cloud body interval depth targets, the water depth
-                // target pattern.
-                bool back = i == BGFXView::ViewCloudBack;
-                bgfx::setViewFrameBuffer(id, back ? view->cloudBackFbo
-                                                  : view->cloudFrontFbo);
-                bgfx::setViewClear(id,
-                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
-                    0x00000000u, back ? 0.0f : 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, width, height);
-                bgfx::setViewTransform(id, viewMatrix, projMatrix);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (fireActive && mediumRender
-                       && (i == BGFXView::ViewFireFront
-                           || i == BGFXView::ViewFireBack)) {
-                // Fire body interval depth targets, the water depth
-                // target pattern.
-                bool back = i == BGFXView::ViewFireBack;
-                bgfx::setViewFrameBuffer(id, back ? view->fireBackFbo
-                                                  : view->fireFrontFbo);
-                bgfx::setViewClear(id,
-                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
-                    0x00000000u, back ? 0.0f : 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, width, height);
-                bgfx::setViewTransform(id, viewMatrix, projMatrix);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (glassActive && mediumRender
-                       && (i == BGFXView::ViewGlassFront
-                           || i == BGFXView::ViewGlassBack)) {
-                // Glass body absorption interval depth targets, the
-                // water depth target pattern (back keeps the farthest
-                // depth: clear to 0, test GREATER).
-                bool back = i == BGFXView::ViewGlassBack;
-                bgfx::setViewFrameBuffer(id, back ? view->glassBackFbo
-                                                  : view->glassFrontFbo);
-                bgfx::setViewClear(id,
-                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
-                    0x00000000u, back ? 0.0f : 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, width, height);
-                bgfx::setViewTransform(id, viewMatrix, projMatrix);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if ((groundReflActive || waterReflActive) && reflRender
-                       && volActive && (cloudActive || fireActive)
-                       && i == BGFXView::ViewReflMedia) {
-                // Media composite over the just-rendered mirror scene:
-                // same target/rect/transforms, no clear (premultiplied
-                // over blend).
-                bgfx::setViewFrameBuffer(id, view->reflFbo);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, view->effW, view->effH);
-                bgfx::setViewTransform(id,
-                    groundReflActive ? reflViewMtx : waterReflViewMtx,
-                    projMatrix);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if ((groundReflActive || waterReflActive) && reflRender
-                       && i == BGFXView::ViewGroundRefl) {
-                // Mirrored-scene render: own color (cleared to alpha 0 =
-                // nothing reflected) + depth, the original projection
-                // over the mirrored view (ground plane or water plane).
-                bgfx::setViewFrameBuffer(id, view->reflFbo);
-                bgfx::setViewClear(id,
-                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
-                    0x00000000u, 1.0f, 0);
-                // Reduced-resolution reflection re-render (matches reflFbo).
-                bgfx::setViewRect(id, 0, 0, view->effW, view->effH);
-                bgfx::setViewTransform(id,
-                    groundReflActive ? reflViewMtx : waterReflViewMtx,
-                    projMatrix);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if ((waterSurfActive || glassActive)
-                       && i == BGFXView::ViewWaterCopy) {
-                // Fullscreen copy of the scene color; the framebuffer
-                // switch also resolves a multisampled scene attachment
-                // before the surface pass samples the copy.
-                bgfx::setViewFrameBuffer(id, view->sceneCopyFbo);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, width, height);
-                bgfx::setViewTransform(id, nullptr, nullptr);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (userPostActive && i == BGFXView::ViewUserPostCopy) {
-                // User post input: resolve/copy of the composited (post
-                // bloom) scene color into the shared sceneCopy target;
-                // like the water copy, the framebuffer switch resolves a
-                // multisampled scene attachment before the copy samples.
-                bgfx::setViewFrameBuffer(id, view->sceneCopyFbo);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, width, height);
-                bgfx::setViewTransform(id, nullptr, nullptr);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (userPostActive && i == BGFXView::ViewUserPost) {
-                // The user post program draws fullscreen back into the
-                // scene target.
-                bgfx::setViewFrameBuffer(id, view->bgfxFbo);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, width, height);
-                bgfx::setViewTransform(id, nullptr, nullptr);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (i >= BGFXView::ViewOverlay0
-                       && i < int(BGFXView::ViewOverlay0)
-                              + int(BGFXView::NumOverlayViews)) {
-                // Overlay feed slot: derive the viewport rect and the
-                // camera from the declarative anchor each frame, so
-                // overlays re-anchor on resize and (orientFromScene)
-                // follow the current camera — including the WASM
-                // viewer's own orbit camera.
-                // Only the slots the frame's overlays fill are mapped.
-                int slot = i - BGFXView::ViewOverlay0;
-                auto ovIt = overlays.begin();
-                std::advance(ovIt, slot);
-                const Render::OverlayAnchor *anchor = &ovIt->second.anchor;
-                if (anchor->sceneCamera) {
-                    // In-scene overlay (editing graph, dimensions): draw over
-                    // the whole viewport with the main scene camera so the
-                    // world-space geometry lines up with the finished scene,
-                    // on a fresh depth buffer so it sits on top but still
-                    // depth-tests within itself.
-                    bgfx::setViewFrameBuffer(id, view->bgfxFbo);
-                    bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_DEPTH),
-                                       clearColor, 1.0f, 0);
-                    bgfx::setViewRect(id, 0, 0, width, height);
-                    bgfx::setViewTransform(id, viewMatrix, projMatrix);
-                    bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
-                    bgfx::touch(id);
-                    continue;
-                }
-                uint16_t rx = 0, ry = 0, rw = width, rh = height;
-                if (anchor->corner != Render::OverlayAnchor::FullViewport) {
-                    uint16_t edge = uint16_t(std::max(1.0f,
-                        anchor->sizeFraction
-                            * float(std::min(width, height))));
-                    rw = rh = edge;
-                    bool right =
-                        anchor->corner == Render::OverlayAnchor::BottomRight
-                        || anchor->corner == Render::OverlayAnchor::TopRight;
-                    bool top =
-                        anchor->corner == Render::OverlayAnchor::TopLeft
-                        || anchor->corner == Render::OverlayAnchor::TopRight;
-                    // bgfx view rects are top-left anchored.
-                    int mx = int(anchor->marginX);
-                    int my = int(anchor->marginY);
-                    rx = uint16_t(std::max(0,
-                        right ? width - edge - mx : mx));
-                    ry = uint16_t(std::max(0,
-                        top ? my : height - edge - my));
-                }
-                const auto *caps = bgfx::getCaps();
-                float ovProj[16];
-                float aspect = float(rw) / float(rh);
-                // Right-handed like the GL view matrix convention the
-                // anchor camera follows (bx defaults to left-handed).
-                if (anchor->pixelSpace) {
-                    // One unit == one pixel, origin top-left, y down (Qt
-                    // widget coordinates); z=0 content sits mid-range.
-                    bx::mtxOrtho(ovProj, 0.0f, float(rw), float(rh), 0.0f,
-                                 -1.0f, 1.0f, 0.0f, caps->homogeneousDepth,
-                                 bx::Handedness::Right);
-                } else if (anchor->fovDeg > 0.0f) {
-                    bx::mtxProj(ovProj, anchor->fovDeg, aspect,
-                                std::max(anchor->nearPlane, 1.0e-3f),
-                                anchor->farPlane, caps->homogeneousDepth,
-                                bx::Handedness::Right);
-                } else {
-                    float hh = 0.5f * anchor->orthoHeight;
-                    float hw = hh * aspect;
-                    bx::mtxOrtho(ovProj, -hw, hw, -hh, hh,
-                                 anchor->nearPlane, anchor->farPlane,
-                                 0.0f, caps->homogeneousDepth,
-                                 bx::Handedness::Right);
-                }
-                float ovView[16];
-                bx::mtxIdentity(ovView);
-                if (!anchor->pixelSpace
-                    && anchor->orientFromScene && viewMatrix) {
-                    // Rotation part of the scene view matrix (rigid:
-                    // upper-left 3x3), translation dropped — the axis
-                    // cross tracks the camera orientation only.
-                    const float *v =
-                        reinterpret_cast<const float *>(viewMatrix);
-                    for (int c = 0; c < 3; ++c)
-                        for (int r = 0; r < 3; ++r)
-                            ovView[c * 4 + r] = v[c * 4 + r];
-                }
-                if (!anchor->pixelSpace)
-                    ovView[14] = -anchor->cameraDistance;
-                bgfx::setViewFrameBuffer(id, view->bgfxFbo);
-                // Fresh depth inside the overlay rect: overlays draw on
-                // top of the finished frame but depth-test within
-                // themselves.
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_DEPTH),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, rx, ry, rw, rh);
-                bgfx::setViewTransform(id, ovView, ovProj);
-                bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
-                bgfx::touch(id);
-                continue;
-            } else if (i == BGFXView::ViewPresent) {
-                // Standalone present: the default backbuffer; the
-                // fullscreen triangle overwrites every pixel.
-                //
-                // On desktop no present is drawn, but the empty view still
-                // targets the default backbuffer ON PURPOSE: bgfx only
-                // resolves an MSAA framebuffer (multisampled renderbuffer
-                // -> resolve texture) when the frame transitions AWAY from
-                // it, and every desktop content view targets bgfxFbo — so
-                // without this trailing view the resolve texture the
-                // composite blit reads stayed stale under MSAA (an empty
-                // viewport).
-                bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0, width, height);
-                bgfx::setViewTransform(id, nullptr, nullptr);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (debugSceneRender && i == BGFXView::ViewDebugScene) {
-                // Fresh count/UV target every frame: the overdraw
-                // counts accumulate from zero, .w = 0 marks pixels the
-                // UV re-render did not cover.
-                bgfx::setViewFrameBuffer(id, view->debugSceneFbo);
-                bgfx::setViewClear(id,
-                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
-                    0x00000000u, 1.0f, 0);
-            } else if (prepassRender && i == BGFXView::ViewAOPrepass) {
-                // Prepass target clears to 0 (.w = 0 marks background
-                // in the AO pass), with its own depth buffer.
-                bgfx::setViewFrameBuffer(id, view->aoPrepassFbo);
-                bgfx::setViewClear(id,
-                    uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
-                    0x00000000u, 1.0f, 0);
-            } else if (i >= BGFXView::ViewAODepthMip1
-                       && i <= BGFXView::ViewAODepthMip6) {
-                // GTAO depth pyramid downsamples: each level renders a
-                // clip-space fullscreen triangle into its own half-stepped
-                // single-channel target (no-op views otherwise).
-                // Only the levels the frame claimed are here (a level
-                // past aoMipCount, or a frame with the AO chain off, is
-                // simply not mapped).
-                const int m = i - BGFXView::ViewAODepthMip1;
-                bgfx::setViewFrameBuffer(id, view->aoMipFbo[m]);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-                bgfx::setViewRect(id, 0, 0,
-                    uint16_t(std::max(1, width >> (m + 1))),
-                    uint16_t(std::max(1, height >> (m + 1))));
-                bgfx::setViewTransform(id, nullptr, nullptr);
-                bgfx::setViewMode(id, bgfx::ViewMode::Default);
-                bgfx::touch(id);
-                continue;
-            } else if (ssaoActive && aoRender
-                       && (i == BGFXView::ViewAOGen
-                           || i == BGFXView::ViewAOBlur
-                           || i == BGFXView::ViewAOBlur2)) {
-                // Fullscreen passes overwrite their whole target.
-                // ViewAOBlur2 ping-pongs the denoise back into aoTex.
-                bgfx::setViewFrameBuffer(id,
-                    i == BGFXView::ViewAOBlur ? view->aoBlurFbo
-                                              : view->aoGenFbo);
-                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                                   clearColor, 1.0f, 0);
-            } else {
-                bgfx::setViewFrameBuffer(id, view->bgfxFbo);
-                // The section-cap views clear the stencil: their parity
-                // marking (INVERT) needs a zeroed base, and earlier
-                // outline passes leave stale marks behind (relevant for
-                // the transparent cap view, which runs after ViewOutline).
-                // The frame's one clear of the scene framebuffer belongs
-                // to the first view that draws into it — named, not
-                // index 0: the particle state views precede it.
-                bgfx::setViewClear(id,
-                    i == BGFXView::ViewBackground
-                        ? uint16_t(BGFX_CLEAR_COLOR|BGFX_CLEAR_DEPTH
-                                   |BGFX_CLEAR_STENCIL)
-                    : (i == BGFXView::ViewSectionCap
-                       || i == BGFXView::ViewSectionCapTransp)
-                        ? uint16_t(BGFX_CLEAR_STENCIL)
-                        : uint16_t(BGFX_CLEAR_NONE),
-                    clearColor, 1.0f, 0);
-            }
-            // The SSAO generate/blur passes render into aoTex/aoBlurTex at
-            // their own Render_SSAOResolution (ssaoW/ssaoH, default full-res
-            // and independent of the reflection scale); the mesh draws
-            // sample the result back at normalized uv. The
-            // reduced-resolution reflection re-render sets its own rect
-            // in its own branch above.
-            bool aoResolveView = i == BGFXView::ViewAOGen
-                || i == BGFXView::ViewAOBlur
-                || i == BGFXView::ViewAOBlur2;
-            bgfx::setViewRect(id, 0, 0,
-                aoResolveView ? view->ssaoW : width,
-                aoResolveView ? view->ssaoH : height);
-            // The background quad and the OIT composite triangle are
-            // submitted in clip space; the AO generation pass keeps the
-            // scene projection for its predefined u_proj (position
-            // reconstruction).
-            // The GTAO denoise passes (AOBlur/AOBlur2) keep the scene
-            // projection like the gen pass: their plane-aware bilateral
-            // weight reconstructs view positions from u_proj (the shared
-            // fullscreen vertex shader ignores the matrices).
-            // The environment background keeps the scene matrices on
-            // the background view: its fragment shader reconstructs
-            // per-pixel world directions from u_proj/u_invView.
-            if ((i == BGFXView::ViewBackground
-                    && !(pbrActive && pbrconf.envBackground))
-                    || i == BGFXView::ViewOITComposite)
-                bgfx::setViewTransform(id, nullptr, nullptr);
-            else
-                bgfx::setViewTransform(id, viewMatrix, projMatrix);
-            // On-top and highlight draws are blended painter-style: keep
-            // submission order (GL pass order) instead of state sorting.
-            // With OIT the transparent blend is commutative, so no
-            // depth sorting is needed there either. The outline and
-            // section-cap views interleave stencil mark/fill/cleanup
-            // passes per entry, so they must keep submission order too.
-            // The volumetric apply view is sequential too: the
-            // per-channel extinction multiply must land before the
-            // inscatter add.
-            // Blended sprites are painted back to front for the same
-            // reason a non-OIT transparent bucket is: alpha blending is
-            // not commutative (additive emitters do not care).
-            bgfx::setViewMode(id,
-                (i == BGFXView::ViewTransparent && !oitActive)
-                        || i == BGFXView::ViewParticles
-                    ? bgfx::ViewMode::DepthDescending
-                    : i >= BGFXView::ViewOnTop
-                            || i == BGFXView::ViewSelection
-                            || i == BGFXView::ViewOutline
-                            || i == BGFXView::ViewSectionCap
-                            || i == BGFXView::ViewSectionCapTransp
-                            || i == BGFXView::ViewVolApply
-                        ? bgfx::ViewMode::Sequential
-                        : bgfx::ViewMode::Default);
-            bgfx::touch(id);
+            const auto &decl = passTable[size_t(declOf[i])];
+            if (decl.config)
+                decl.config(i, view->vid(i));
         }
 
         // The discard view every unclaimed pass maps to: a 1x1 scratch
