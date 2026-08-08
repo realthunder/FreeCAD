@@ -8825,6 +8825,7 @@ public:
 #else
         if (widget->width() != int(view->width)
                 || widget->height() != int(view->height)
+                || !bgfx::isValid(view->bgfxFbo)
                 || _BGFXLib.effectResolution != view->effectScale
                 || _BGFXLib.ssaoResolution != view->ssaoScale
                 || _BGFXLib.shaderGeneration != view->shaderGen
