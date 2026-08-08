@@ -1654,7 +1654,10 @@ public:
             listenFd = -1;
             return false;
         }
-        std::thread([this]() { acceptLoop(); }).detach();
+        // The fd travels by value: a fast stop()/start() may reuse the
+        // fd number for the new socket, and an old loop re-reading the
+        // member would accept on — and fight over — the new listener.
+        std::thread([this, fd = listenFd]() { acceptLoop(fd); }).detach();
         return true;
     }
 
@@ -1686,10 +1689,10 @@ public:
         }
     }
 
-    void acceptLoop()
+    void acceptLoop(int acceptFd)
     {
         for (;;) {
-            int fd = ::accept(listenFd, nullptr, nullptr);
+            int fd = ::accept(acceptFd, nullptr, nullptr);
             if (fd < 0)
                 break;
             // A peer that stops reading must not park its thread in
