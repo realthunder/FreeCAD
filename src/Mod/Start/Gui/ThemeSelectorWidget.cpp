@@ -34,6 +34,7 @@
 #include <App/Application.h>
 #include <Gui/Command.h>
 #include <Gui/PreferencePackManager.h>
+#include <Gui/ThemeManager.h>
 
 using namespace StartGui;
 
@@ -67,13 +68,24 @@ void ThemeSelectorWidget::setupButtons(QBoxLayout* layout)
         "User parameter:BaseApp/Preferences/MainWindow");
     auto styleSheetName = QString::fromStdString(hGrp->GetASCII("StyleSheet"));
     // Auto keeps the stylesheet of whichever theme it resolved to, so it is
-    // recognizable only by its own marker and has to be tested first. The rest
-    // are told apart by the stylesheet the pack leaves behind (Dark.qss,
-    // Light.qss, ...), which is what the parameter actually holds.
+    // recognizable only by its own marker and has to be tested first.
     const Theme activeTheme = [&hGrp, &styleSheetName] {
         if (hGrp->GetBool("ThemeAuto", false)) {
             return Theme::Auto;
         }
+        const std::string theme = Gui::ThemeManager::currentTheme();
+        if (theme == "Dark") {
+            return Theme::Dark;
+        }
+        if (theme == "Light") {
+            return Theme::Light;
+        }
+        if (theme == "Classic") {
+            return Theme::Classic;
+        }
+        // Either a theme with no button here, or a config written before the
+        // applied pack was recorded. Fall back to the stylesheet the pack leaves
+        // behind (Dark.qss, Light.qss, ...), which is all such a config carries.
         if (styleSheetName.contains(QLatin1String("Light"), Qt::CaseSensitivity::CaseInsensitive)) {
             return Theme::Light;
         }
