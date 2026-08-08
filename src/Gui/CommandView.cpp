@@ -774,9 +774,9 @@ StdCmdDrawStyle::StdCmdDrawStyle()
   : GroupCommand("Std_DrawStyle")
 {
     sGroup        = "Standard-View";
-    sMenuText     = QT_TR_NOOP("Draw style");
-    sToolTipText  = QT_TR_NOOP("Change the draw style of the objects");
-    sStatusTip    = QT_TR_NOOP("Change the draw style of the objects");
+    sMenuText     = QT_TR_NOOP("Display style");
+    sToolTipText  = QT_TR_NOOP("Change the display style and shading of the objects");
+    sStatusTip    = QT_TR_NOOP("Change the display style and shading of the objects");
     sWhatsThis    = "Std_DrawStyle";
     eType         = 0;
     bCanLog       = false;

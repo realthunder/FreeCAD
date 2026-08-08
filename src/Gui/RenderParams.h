@@ -259,12 +259,12 @@ public:
     //@{
     /// Accessor for parameter Shadow
     ///
-    /// Render the shadow map cast by the Shadow draw style's scene
+    /// Render the shadow map cast by the Shadow display style's scene
     /// light (and the god-ray shafts / caustic occlusion that depend on
     /// it). A convenience switch to drop shadows without leaving the
-    /// Shadow draw style; the base headlight and environment lighting
+    /// Shadow display style; the base headlight and environment lighting
     /// stay, so the scene remains lit, just flatter. Has no effect unless
-    /// the Shadow draw style provides a scene light.
+    /// the Shadow display style provides a scene light.
     static const bool & getShadow();
     static const bool & defaultShadow();
     static void removeShadow();
@@ -598,9 +598,9 @@ public:
     /// Accessor for parameter Volumetric
     ///
     /// Enable volumetric lighting (light shafts) of the experimental
-    /// render engine: raymarch the shadow map of the Shadow draw style
+    /// render engine: raymarch the shadow map of the Shadow display style
     /// through a homogeneous scattering medium. Only effective while
-    /// the Shadow draw style provides a scene light.
+    /// the Shadow display style provides a scene light.
     static const bool & getVolumetric();
     static const bool & defaultVolumetric();
     static void removeVolumetric();
@@ -640,7 +640,7 @@ public:
     /// Project an animated caustic light pattern onto surfaces
     /// below the water body (objects with the Render_Water property),
     /// modulated by the shadow map. Only effective while volumetric
-    /// lighting and the Shadow draw style are active.
+    /// lighting and the Shadow display style are active.
     static const bool & getCaustics();
     static const bool & defaultCaustics();
     static void removeCaustics();
@@ -692,7 +692,7 @@ public:
     /// Shade water bodies (objects with the Render_Water property)
     /// as an animated water surface: screen-space refraction of the
     /// scene behind it, Fresnel-blended environment reflection and a
-    /// sun glint from the Shadow draw style light.
+    /// sun glint from the Shadow display style light.
     static const bool & getWaterSurface();
     static const bool & defaultWaterSurface();
     static void removeWaterSurface();
@@ -820,7 +820,7 @@ public:
     ///
     /// Receive the scene light's shadow on the water surface: a
     /// shadow band on the water where a caster blocks the light and
-    /// the sun glint killed there. Requires the Shadow draw style
+    /// the sun glint killed there. Requires the Shadow display style
     /// with an active shadow map; off leaves the surface fully lit.
     /// The refracted scene below the surface keeps its own shadow
     /// regardless.
@@ -970,7 +970,7 @@ public:
     /// Accessor for parameter SunDisc
     ///
     /// Draw a visible sun -- a bright disc with a limb glow -- in
-    /// the sky along the Shadow draw style's directional scene light,
+    /// the sky along the Shadow display style's directional scene light,
     /// occluded by geometry and feeding the bloom glow. Perspective
     /// cameras only; spot lights have no sky direction.
     static const bool & getSunDisc();
@@ -1000,7 +1000,7 @@ public:
     /// Mirror the model in the shadow ground plane of the
     /// experimental render engine: the opaque scene is re-rendered
     /// with a reflected camera and blended onto the ground. Only
-    /// effective while the Shadow draw style shows a ground plane.
+    /// effective while the Shadow display style shows a ground plane.
     static const bool & getGroundReflection();
     static const bool & defaultGroundReflection();
     static void removeGroundReflection();

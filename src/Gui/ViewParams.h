@@ -455,7 +455,7 @@ public:
     //@{
     /// Accessor for parameter HiddenLineSync
     ///
-    /// Specifies how to sync hidden line draw style settings to opened document
+    /// Specifies how to sync hidden line display style settings to opened document
     static const long & getHiddenLineSync();
     static const long & defaultHiddenLineSync();
     static void removeHiddenLineSync();
@@ -885,7 +885,7 @@ public:
     //@{
     /// Accessor for parameter HiddenLineShaded
     ///
-    /// Whether to enable shading in hidden line draw style
+    /// Whether to enable shading in hidden line display style
     static const bool & getHiddenLineShaded();
     static const bool & defaultHiddenLineShaded();
     static void removeHiddenLineShaded();
@@ -897,7 +897,7 @@ public:
     //@{
     /// Accessor for parameter HiddenLineShowOutline
     ///
-    /// Show outline in hidden line draw style (only works in experiemental renderer),.
+    /// Show outline in hidden line display style (only works in experiemental renderer),.
     static const bool & getHiddenLineShowOutline();
     static const bool & defaultHiddenLineShowOutline();
     static void removeHiddenLineShowOutline();
@@ -909,7 +909,7 @@ public:
     //@{
     /// Accessor for parameter HiddenLinePerFaceOutline
     ///
-    /// Render per face outline in hidden line draw style (Warning! this may cause slow down),.
+    /// Render per face outline in hidden line display style (Warning! this may cause slow down),.
     static const bool & getHiddenLinePerFaceOutline();
     static const bool & defaultHiddenLinePerFaceOutline();
     static void removeHiddenLinePerFaceOutline();
@@ -963,7 +963,7 @@ public:
     //@{
     /// Accessor for parameter HiddenLineHideSeam
     ///
-    /// Hide seam edges in hidden line draw style.
+    /// Hide seam edges in hidden line display style.
     static const bool & getHiddenLineHideSeam();
     static const bool & defaultHiddenLineHideSeam();
     static void removeHiddenLineHideSeam();
@@ -975,7 +975,7 @@ public:
     //@{
     /// Accessor for parameter HiddenLineHideVertex
     ///
-    /// Hide vertex in hidden line draw style.
+    /// Hide vertex in hidden line display style.
     static const bool & getHiddenLineHideVertex();
     static const bool & defaultHiddenLineHideVertex();
     static void removeHiddenLineHideVertex();
@@ -987,7 +987,7 @@ public:
     //@{
     /// Accessor for parameter HiddenLineHideFace
     ///
-    /// Hide face in hidden line draw style.
+    /// Hide face in hidden line display style.
     static const bool & getHiddenLineHideFace();
     static const bool & defaultHiddenLineHideFace();
     static void removeHiddenLineHideFace();
@@ -1009,7 +1009,7 @@ public:
     //@{
     /// Accessor for parameter ShadowSync
     ///
-    /// Specifies how to sync shadow draw style settings to opened document
+    /// Specifies how to sync shadow display style settings to opened document
     static const long & getShadowSync();
     static const long & defaultShadowSync();
     static void removeShadowSync();
@@ -2123,7 +2123,7 @@ public:
     //@{
     /// Accessor for parameter DefaultDrawStyle
     ///
-    /// Default draw style of a new document
+    /// Default display style of a new document
     static const long & getDefaultDrawStyle();
     static const long & defaultDefaultDrawStyle();
     static void removeDefaultDrawStyle();
@@ -2215,13 +2215,13 @@ ViewParams.declare_end()
 
 // Auto generated code (Gui/ViewParams.py:565)
 namespace Gui {
-/// Obtain all draw style names, terminated by nullptr entry.
+/// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();
-/// Obtain draw style name from index. Returns nullptr if out of range.
+/// Obtain display style name from index. Returns nullptr if out of range.
 GuiExport const char *drawStyleNameFromIndex(int index);
-/// Obtain draw style index from name. Returns -1 for invalid name.
+/// Obtain display style index from name. Returns -1 for invalid name.
 GuiExport int drawStyleIndexFromName(const char *);
-/// Obtain documentation of a draw style.
+/// Obtain documentation of a display style.
 GuiExport const char *drawStyleDocumentation(int index);
 } // namespace Gui
 //[[[end]]]

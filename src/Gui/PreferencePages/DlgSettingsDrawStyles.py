@@ -19,7 +19,7 @@
 # *   USA                                                                   *
 # *                                                                         *
 # ***************************************************************************
-'''Auto code generator for preference page of Display/Draw styles
+'''Auto code generator for preference page of display styles
 '''
 import sys
 import cog
@@ -35,7 +35,7 @@ sys.path.append(path.join(path.dirname(
     path.dirname(path.dirname(path.abspath(__file__)))), 'Gui'))
 import ViewParams
 
-Title = 'Draw styles'
+Title = 'Display styles'
 NameSpace = 'Gui'
 ClassName = 'DlgSettingsDrawStyles'
 ClassDoc = 'Preference dialog for various draw styles related settings'

@@ -59,15 +59,15 @@ ParamHiddenLineOverrideTransparency = ParamBool(
         title='Override transparency')
 
 DrawStyles = (
-    ("As Is", "Draw style, normal display mode", 'V,1'),
-    ("Points", "Draw style, show points only", 'V,2'),
-    ("Wireframe", "Draw style, show wire frame only", "V,3"),
-    ("Hidden Line", "Draw style, show hidden line by display object as transparent", "V,4"),
-    ("No Shading", "Draw style, shading forced off", "V,5"),
-    ("Shaded", "Draw style, shading force on", "V,6"),
-    ("Flat Lines", "Draw style, show both wire frame and face with shading", "V,7"),
-    ("Tessellation", "Draw style, show tessellation wire frame", "V,8"),
-    ("Shadow", "Draw style, drop shadows for the scene.\\n"
+    ("As Is", "Display style, normal display mode", 'V,1'),
+    ("Points", "Display style, show points only", 'V,2'),
+    ("Wireframe", "Display style, show wire frame only", "V,3"),
+    ("Hidden Line", "Display style, show hidden line by display object as transparent", "V,4"),
+    ("No Shading", "Display style, shading forced off", "V,5"),
+    ("Shaded", "Display style, shading force on", "V,6"),
+    ("Flat Lines", "Display style, show both wire frame and face with shading", "V,7"),
+    ("Tessellation", "Display style, show tessellation wire frame", "V,8"),
+    ("Shadow", "Display style, drop shadows for the scene.\\n"
                "Click this button while in shadow mode to toggle light manipulator", "V,9"),
 )
 
@@ -197,7 +197,7 @@ Params = [
        title='Transparency',
        doc="Transparency for the selected object when being shown on top."),
     ParamInt('HiddenLineSync', 1,
-        title='Synchronize', doc="Specifies how to sync hidden line draw style settings to opened document",
+        title='Synchronize', doc="Specifies how to sync hidden line display style settings to opened document",
         proxy=ParamComboBox(items=[(item[0], item[1]) for item in DrawStyleSync])),
     ParamBool('HiddenLineSelectionOnTop', True,
        "Enable hidden line/point selection when SelectionOnTop is active."),
@@ -272,12 +272,12 @@ Params = [
     ParamHex('HiddenLineBackground', 0xffffffff, proxy=ParamColor(ParamHiddenLineOverrideBackground)),
     ParamHiddenLineOverrideBackground,
     ParamBool('HiddenLineShaded',  False, title='Shaded',
-        doc='Whether to enable shading in hidden line draw style'),
+        doc='Whether to enable shading in hidden line display style'),
     ParamBool('HiddenLineShowOutline',  True,
-        "Show outline in hidden line draw style (only works in experiemental renderer),.",
+        "Show outline in hidden line display style (only works in experiemental renderer),.",
         title='Draw outline'),
     ParamBool('HiddenLinePerFaceOutline',  False,
-        "Render per face outline in hidden line draw style (Warning! this may cause slow down),.",
+        "Render per face outline in hidden line display style (Warning! this may cause slow down),.",
         title='Draw per face outline'),
     ParamBool('HiddenLineSceneOutline',  False,
         "Render outline of the whole scene.", title='Draw scene outline'),
@@ -286,17 +286,17 @@ Params = [
     ParamFloat('HiddenLineWidth',  1.5, title='Line width'),
     ParamFloat('HiddenLinePointSize',  2, title='Point size'),
     ParamBool('HiddenLineHideSeam',  True,
-        "Hide seam edges in hidden line draw style.",
+        "Hide seam edges in hidden line display style.",
         title='Hide seam edge'),
     ParamBool('HiddenLineHideVertex',  True,
-        "Hide vertex in hidden line draw style.",
+        "Hide vertex in hidden line display style.",
         title='Hide vertex'),
     ParamBool('HiddenLineHideFace', False,
-       "Hide face in hidden line draw style.",
+       "Hide face in hidden line display style.",
        title='Hide face'),
     ParamInt('StatusMessageTimeout',  5000),
     ParamInt('ShadowSync', 1,
-       title='Synchronize', doc="Specifies how to sync shadow draw style settings to opened document",
+       title='Synchronize', doc="Specifies how to sync shadow display style settings to opened document",
         proxy=ParamComboBox(items=[(item[0], item[1]) for item in DrawStyleSync])),
     ParamBool('ShadowFlatLines',  True,
        "Draw object with 'Flat lines' style when shadow is enabled."),
@@ -529,8 +529,8 @@ Params = [
     ParamFloat('BacklightIntensity',  1.0),
     ParamBool('OverrideSelectability',  False, "Override object selectability to enable selection"),
     ParamUInt('SelectionStackSize', 30, "Maximum selection history record size"),
-    ParamInt('DefaultDrawStyle', 0, 'Default draw style of a new document',
-        title='Default draw style',
+    ParamInt('DefaultDrawStyle', 0, 'Default display style of a new document',
+        title='Default display style',
         proxy=ParamComboBox(items=[(item[0], item[1]) for item in DrawStyles])),
     ParamInt('ToolTipIconSize', 64,
         title="Tool tip icon size",
@@ -564,13 +564,13 @@ def declare_end():
     cog.out(f'''
 {auto_comment()}
 namespace {NameSpace} {{
-/// Obtain all draw style names, terminated by nullptr entry.
+/// Obtain all display style names, terminated by nullptr entry.
 {NameSpace}Export const char **drawStyleNames();
-/// Obtain draw style name from index. Returns nullptr if out of range.
+/// Obtain display style name from index. Returns nullptr if out of range.
 {NameSpace}Export const char *drawStyleNameFromIndex(int index);
-/// Obtain draw style index from name. Returns -1 for invalid name.
+/// Obtain display style index from name. Returns -1 for invalid name.
 {NameSpace}Export int drawStyleIndexFromName(const char *);
-/// Obtain documentation of a draw style.
+/// Obtain documentation of a display style.
 {NameSpace}Export const char *drawStyleDocumentation(int index);
 }} // namespace Gui
 ''')

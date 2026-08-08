@@ -894,12 +894,12 @@ void RenderParams::removeAO() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docShadow() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Render the shadow map cast by the Shadow draw style's scene\n"
+"Render the shadow map cast by the Shadow display style's scene\n"
 "light (and the god-ray shafts / caustic occlusion that depend on\n"
 "it). A convenience switch to drop shadows without leaving the\n"
-"Shadow draw style; the base headlight and environment lighting\n"
+"Shadow display style; the base headlight and environment lighting\n"
 "stay, so the scene remains lit, just flatter. Has no effect unless\n"
-"the Shadow draw style provides a scene light.");
+"the Shadow display style provides a scene light.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1585,9 +1585,9 @@ void RenderParams::removeParallax() {
 const char *RenderParams::docVolumetric() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Enable volumetric lighting (light shafts) of the experimental\n"
-"render engine: raymarch the shadow map of the Shadow draw style\n"
+"render engine: raymarch the shadow map of the Shadow display style\n"
 "through a homogeneous scattering medium. Only effective while\n"
-"the Shadow draw style provides a scene light.");
+"the Shadow display style provides a scene light.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1675,7 +1675,7 @@ const char *RenderParams::docCaustics() {
 "Project an animated caustic light pattern onto surfaces\n"
 "below the water body (objects with the Render_Water property),\n"
 "modulated by the shadow map. Only effective while volumetric\n"
-"lighting and the Shadow draw style are active.");
+"lighting and the Shadow display style are active.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1791,7 +1791,7 @@ const char *RenderParams::docWaterSurface() {
 "Shade water bodies (objects with the Render_Water property)\n"
 "as an animated water surface: screen-space refraction of the\n"
 "scene behind it, Fresnel-blended environment reflection and a\n"
-"sun glint from the Shadow draw style light.");
+"sun glint from the Shadow display style light.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -2063,7 +2063,7 @@ const char *RenderParams::docWaterShadow() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Receive the scene light's shadow on the water surface: a\n"
 "shadow band on the water where a caster blocks the light and\n"
-"the sun glint killed there. Requires the Shadow draw style\n"
+"the sun glint killed there. Requires the Shadow display style\n"
 "with an active shadow map; off leaves the surface fully lit.\n"
 "The refracted scene below the surface keeps its own shadow\n"
 "regardless.");
@@ -2373,7 +2373,7 @@ void RenderParams::removeBloomRadius() {
 const char *RenderParams::docSunDisc() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Draw a visible sun -- a bright disc with a limb glow -- in\n"
-"the sky along the Shadow draw style's directional scene light,\n"
+"the sky along the Shadow display style's directional scene light,\n"
 "occluded by geometry and feeding the bloom glow. Perspective\n"
 "cameras only; spot lights have no sky direction.");
 }
@@ -2435,7 +2435,7 @@ const char *RenderParams::docGroundReflection() {
 "Mirror the model in the shadow ground plane of the\n"
 "experimental render engine: the opaque scene is re-rendered\n"
 "with a reflected camera and blended onto the ground. Only\n"
-"effective while the Shadow draw style shows a ground plane.");
+"effective while the Shadow display style shows a ground plane.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)

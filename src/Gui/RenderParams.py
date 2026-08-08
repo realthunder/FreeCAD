@@ -142,12 +142,12 @@ Params = [
         doc="Enable screen space ambient occlusion of the experimental render\n"
         "engine (render cache mode 3 with a selected renderer type)."),
     ParamBool('Shadow',  True, title='Shadow',
-        doc="Render the shadow map cast by the Shadow draw style's scene\n"
+        doc="Render the shadow map cast by the Shadow display style's scene\n"
         "light (and the god-ray shafts / caustic occlusion that depend on\n"
         "it). A convenience switch to drop shadows without leaving the\n"
-        "Shadow draw style; the base headlight and environment lighting\n"
+        "Shadow display style; the base headlight and environment lighting\n"
         "stay, so the scene remains lit, just flatter. Has no effect unless\n"
-        "the Shadow draw style provides a scene light."),
+        "the Shadow display style provides a scene light."),
     ParamInt('AOMethod',  0, title='AO method',
         proxy=ParamComboBox(items=['SSAO (hemisphere)', 'GTAO (horizon)']),
         doc="Ambient occlusion algorithm. 0 = classic hemisphere-kernel\n"
@@ -263,9 +263,9 @@ Params = [
         "angle for a strong relief impression."),
     ParamBool('Volumetric',  False, title='Light shafts',
         doc="Enable volumetric lighting (light shafts) of the experimental\n"
-        "render engine: raymarch the shadow map of the Shadow draw style\n"
+        "render engine: raymarch the shadow map of the Shadow display style\n"
         "through a homogeneous scattering medium. Only effective while\n"
-        "the Shadow draw style provides a scene light."),
+        "the Shadow display style provides a scene light."),
     ParamFloat('VolumetricIntensity',  1.0, title='Intensity',
         doc="Brightness of the inscattered (light shaft) light."),
     ParamFloat('VolumetricDensity',  0.0, title='Medium density',
@@ -275,7 +275,7 @@ Params = [
         doc="Project an animated caustic light pattern onto surfaces\n"
         "below the water body (objects with the Render_Water property),\n"
         "modulated by the shadow map. Only effective while volumetric\n"
-        "lighting and the Shadow draw style are active."),
+        "lighting and the Shadow display style are active."),
     ParamFloat('CausticsIntensity',  1.0, title='Caustics intensity',
         doc="Brightness of the projected caustic pattern."),
     ParamFloat('CausticsScale',  0.0, title='Caustics scale',
@@ -287,7 +287,7 @@ Params = [
         doc="Shade water bodies (objects with the Render_Water property)\n"
         "as an animated water surface: screen-space refraction of the\n"
         "scene behind it, Fresnel-blended environment reflection and a\n"
-        "sun glint from the Shadow draw style light."),
+        "sun glint from the Shadow display style light."),
     ParamFloat('WaterWaveStrength',  0.3, title='Wave strength',
         doc="Amplitude of the animated wave perturbation of the water\n"
         "surface normal; zero gives a flat mirror-like surface."),
@@ -325,7 +325,7 @@ Params = [
     ParamBool('WaterShadow',  True, title='Water shadow',
         doc="Receive the scene light's shadow on the water surface: a\n"
         "shadow band on the water where a caster blocks the light and\n"
-        "the sun glint killed there. Requires the Shadow draw style\n"
+        "the sun glint killed there. Requires the Shadow display style\n"
         "with an active shadow map; off leaves the surface fully lit.\n"
         "The refracted scene below the surface keeps its own shadow\n"
         "regardless."),
@@ -377,7 +377,7 @@ Params = [
         "footprint; larger blooms wider."),
     ParamBool('SunDisc',  False, title='Sun disc',
         doc="Draw a visible sun -- a bright disc with a limb glow -- in\n"
-        "the sky along the Shadow draw style's directional scene light,\n"
+        "the sky along the Shadow display style's directional scene light,\n"
         "occluded by geometry and feeding the bloom glow. Perspective\n"
         "cameras only; spot lights have no sky direction."),
     ParamFloat('SunDiscSize',  1.5, title='Sun disc size',
@@ -387,7 +387,7 @@ Params = [
         doc="Mirror the model in the shadow ground plane of the\n"
         "experimental render engine: the opaque scene is re-rendered\n"
         "with a reflected camera and blended onto the ground. Only\n"
-        "effective while the Shadow draw style shows a ground plane."),
+        "effective while the Shadow display style shows a ground plane."),
     ParamFloat('GroundReflectionIntensity',  0.4, title='Reflection intensity',
         doc="Blend factor of the mirrored model on the ground plane."),
     ParamInt('DebugViewMode',  0, title='Debug view mode',

@@ -2321,7 +2321,7 @@ void ViewParams::removeTransparencyOnTop() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineSync() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Specifies how to sync hidden line draw style settings to opened document");
+"Specifies how to sync hidden line display style settings to opened document");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3375,7 +3375,7 @@ void ViewParams::removeHiddenLineOverrideBackground() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineShaded() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Whether to enable shading in hidden line draw style");
+"Whether to enable shading in hidden line display style");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3403,7 +3403,7 @@ void ViewParams::removeHiddenLineShaded() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineShowOutline() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Show outline in hidden line draw style (only works in experiemental renderer),.");
+"Show outline in hidden line display style (only works in experiemental renderer),.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3431,7 +3431,7 @@ void ViewParams::removeHiddenLineShowOutline() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLinePerFaceOutline() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Render per face outline in hidden line draw style (Warning! this may cause slow down),.");
+"Render per face outline in hidden line display style (Warning! this may cause slow down),.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3568,7 +3568,7 @@ void ViewParams::removeHiddenLinePointSize() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineHideSeam() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Hide seam edges in hidden line draw style.");
+"Hide seam edges in hidden line display style.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3596,7 +3596,7 @@ void ViewParams::removeHiddenLineHideSeam() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineHideVertex() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Hide vertex in hidden line draw style.");
+"Hide vertex in hidden line display style.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3624,7 +3624,7 @@ void ViewParams::removeHiddenLineHideVertex() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineHideFace() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Hide face in hidden line draw style.");
+"Hide face in hidden line display style.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3679,7 +3679,7 @@ void ViewParams::removeStatusMessageTimeout() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docShadowSync() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Specifies how to sync shadow draw style settings to opened document");
+"Specifies how to sync shadow display style settings to opened document");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -6247,7 +6247,7 @@ void ViewParams::removeSelectionStackSize() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docDefaultDrawStyle() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Default draw style of a new document");
+"Default display style of a new document");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -6471,15 +6471,15 @@ static const char *DrawStyleNames[] = {
 
 // Auto generated code (Gui/ViewParams.py:599)
 static const char *DrawStyleDocs[] = {
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show wire frame only"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show hidden line by display object as transparent"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, shading forced off"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, shading force on"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show both wire frame and face with shading"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show tessellation wire frame"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, drop shadows for the scene.\nClick this button while in shadow mode to toggle light manipulator"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, show wire frame only"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, show hidden line by display object as transparent"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, shading forced off"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, shading force on"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, show both wire frame and face with shading"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, show tessellation wire frame"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, drop shadows for the scene.\nClick this button while in shadow mode to toggle light manipulator"),
 };
 
 namespace Gui {
