@@ -20,7 +20,6 @@
  *                                                                         *
  ***************************************************************************/
 
-
 #ifndef GUI_DIALOG_DLGSETTINGSTHEME_H
 #define GUI_DIALOG_DLGSETTINGSTHEME_H
 
@@ -35,8 +34,12 @@ namespace Dialog {
 class Ui_DlgSettingsTheme;
 
 /**
- * The DlgSettingsTheme class implements a preference page to change theme settings.
- * @author Pierre-Louis Boyer
+ * The preference page that owns the application's appearance.
+ *
+ * A theme is a preference pack, and every option below the theme combo is one
+ * of the parameters that pack writes. Editing one leaves the theme "modified",
+ * which the user resolves either by reverting or by saving the result as a
+ * theme of their own.
  */
 class DlgSettingsTheme : public PreferencePage
 {
@@ -49,20 +52,39 @@ public:
   void saveSettings() override;
   void loadSettings() override;
 
-  void loadStyleSheet();
-
   static void attachObserver();
+
+  /**
+   * Fill a combo with the files reachable under a Qt search path prefix, and
+   * select the one the named parameter holds.
+   * \param key the parameter under BaseApp/Preferences/MainWindow
+   * \param path the Qt search path prefix, e.g. "qss"
+   * \param def the label for "none", which stores an empty value
+   */
+  static void populateStylesheets(const char *key,
+                                  const char *path,
+                                  PrefComboBox *combo,
+                                  const char *def,
+                                  QStringList filter = QStringList());
 
 protected:
   void changeEvent(QEvent *e) override;
 
-  void populateStylesheets(const char *key,
-                           const char *path,
-                           PrefComboBox *combo,
-                           const char *def,
-                           QStringList filter = QStringList());
+private Q_SLOTS:
+  void onThemeActivated(int index);
+  void onRevertClicked();
+  void onSaveAsThemeClicked();
+
+public:
+  /// Re-read every widget from the parameters, without rescanning the packs.
+  void refreshFromParameters();
 
 private:
+  void loadThemes();
+  void loadCustomization();
+  void refreshModifiedState();
+  void applyTheme(const QString& name);
+
   std::unique_ptr<Ui_DlgSettingsTheme> ui;
 };
 
