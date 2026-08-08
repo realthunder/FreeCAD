@@ -27,6 +27,7 @@ if(BUILD_BGFX)
         BGFXRenderer.cpp
         BGFXViewEnv.cpp
         BGFXViewShadow.cpp
+        BGFXViewOverlay.cpp
     )
     list(APPEND Renderer_HPP_SRCS BGFXRenderer.h BGFXRendererP.h)
     list(APPEND Renderer_LIBS bgfx bx bimg example-common)
