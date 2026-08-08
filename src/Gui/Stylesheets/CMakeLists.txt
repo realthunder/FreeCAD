@@ -15,6 +15,9 @@ SET(Overlay_Stylesheets_Files
     "overlay/Light.qss"
     "overlay/Dark-Outline.qss"
     "overlay/Light-Outline.qss"
+    "overlay/SplitDark.qss"
+    # "overlay/Dark-off.qss"
+    # "overlay/Light-off.qss"
     "overlay/Darker_overlay.qss"
     "overlay/Dark_overlay.qss"
     "overlay/Dark-Modern_overlay.qss"
@@ -41,25 +44,6 @@ SET(Overlay_Stylesheets_Files
     "overlay/float_light.svg"
     "overlay/transparent_lighter.svg"
     "overlay/close_red.svg"
-)
-
-SET(Overlay_Stylesheets_Files
-    "overlay/Dark.qss"
-    "overlay/Light.qss"
-    "overlay/Dark-Outline.qss"
-    "overlay/Light-Outline.qss"
-    "overlay/SplitDark.qss"
-    # "overlay/Dark-off.qss"
-    # "overlay/Light-off.qss"
-    "overlay/close.svg"
-    "overlay/overlay.svg"
-    "overlay/float.svg"
-    "overlay/autohide.svg"
-    "overlay/editshow.svg"
-    "overlay/taskshow.svg"
-    "overlay/edithide.svg"
-    "overlay/mode.svg"
-    "overlay/transparent.svg"
 )
 
 SET(Menu_Stylesheets_Files
