@@ -90,6 +90,27 @@ time and must survive refactors:
   (colors, bounding boxes, selection) are byte-for-byte those of the
   eager load. Deferral changes *when*, never *what*.
 
+**Every stage is per document.** Documents load one at a time only by
+accident: a second file opened while the first still drains, a
+reference document pulled in by a link, a reload. Each stage therefore
+keys its state by document and decides per document — the serve
+backlog is the document's own (`Document::hasDeferredFiles()`), the
+view provider drain belongs to its `Gui::Document`, and the visual
+queue is one queue per document, walked with the slice budget split
+evenly between the documents that can use it.
+
+That was not free to learn. The visual queue was originally one global
+deque, and every decision in a slice — whether to build at all,
+whether to run a serve phase — was made from whichever object happened
+to be at its head. One document still restoring therefore stalled
+every other document's fill, a document with parked shapes but nothing
+queued got no serve phase at all (its archive index stayed open and
+its entries faulted in one at a time forever), and the counters mixed
+loads so the completion line described neither. The tree had the same
+shape of bug one level up: `TreeWidget::onUpdateStatus` froze item
+updates for *all* documents while *any* one drained. Both now hold
+back exactly the draining document and let the rest proceed.
+
 The console (`FreeCADCmd`) runs the same stages 1–3 and then relies
 purely on per-access fault-in: a headless process never pays for
 shapes nobody asks for, and a save asks for all of them while the
@@ -184,8 +205,11 @@ Two reporting facts that cost gate iterations, recorded so they are
 not rediscovered: in OCCT ≥ 7.5 an indicator's text is the *scope
 name*, not the legacy "Reading BREP file..." string; and a
 converged-scene probe cannot see a silent phase — gate on the
-pipeline's own completion lines (`progressive load: N visuals ...`,
-`deferred serve slice: ... 0 pending`), not on frame agreement.
+pipeline's own completion lines (`progressive load <doc>: N visuals
+...`, `deferred serve slice <doc>: ... 0 pending`), not on frame
+agreement. Both name their document: every stage of the pipeline is
+per document, and two loads overlap often enough that an unlabelled
+line describes neither.
 
 ## 6. Parameters
 
@@ -224,6 +248,10 @@ unchanged.
 5. **Every behavior change gates against the eager path** on the real
    GPU: 0 property diffs, 0 px at convergence with the saved camera,
    and the pipeline's own completion lines as the arbiter of "done".
+6. **No stage may make one document's progress depend on another's.**
+   State is keyed by document, gates are asked of the document being
+   worked on, and a shared budget is split between the documents that
+   can use it rather than handed to whichever is first.
 
 ## 8. Where this goes next
 

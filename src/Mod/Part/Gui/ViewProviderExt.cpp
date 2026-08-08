@@ -56,6 +56,7 @@
 # include <QTimer>
 # include <QMenu>
 # include <deque>
+# include <map>
 # include <chrono>
 # include <sstream>
 
@@ -161,17 +162,44 @@ namespace {
 /// have been closed by then.
 struct DeferredVisualQueue {
     std::deque<App::DocumentObjectT> pending;
-    bool scheduled = false;
     /// Counted per drain, for the one line the queue reports itself with.
     std::size_t built = 0;
     std::size_t slices = 0;
     std::chrono::duration<double> spent {0};
 };
 
-DeferredVisualQueue &deferredVisuals()
+/// One queue per document, keyed by name (the queue outlives objects, and
+/// documents come and go between slices). Documents load independently --
+/// a second file opened while the first still drains, a reload of one of
+/// them -- and one queue for all of them made every decision the front
+/// item's document's decision: a document still restoring stalled everyone
+/// behind it, and the counts of any two loads ran together into one line
+/// that described neither.
+struct DeferredVisuals {
+    std::map<std::string, DeferredVisualQueue> docs;
+    bool scheduled = false;
+    /// A serve inside a slice reports progress, and a progress indicator
+    /// pumps events -- from which this slice's own timer can fire. The
+    /// walk is not re-entrant: it holds an iterator into the map.
+    bool running = false;
+};
+
+DeferredVisuals &deferredVisuals()
 {
-    static DeferredVisualQueue queue;
-    return queue;
+    static DeferredVisuals visuals;
+    // A closing document takes its queue with it, rather than leaving it to
+    // be swept when some later slice finds the name unresolvable: the same
+    // file reopened right away answers to the same name, and stale handles
+    // would resolve against the new document's objects.
+    static bool observing = []() {
+        App::GetApplication().signalDeleteDocument.connect(
+                [](const App::Document &doc) {
+                    visuals.docs.erase(doc.getName());
+                });
+        return true;
+    }();
+    (void)observing;
+    return visuals;
 }
 
 } // anonymous namespace
@@ -3309,7 +3337,7 @@ bool ViewProviderPartExt::deferVisualForLoad()
     VisualTouched = true;
     if (!VisualDeferred) {
         VisualDeferred = true;
-        deferredVisuals().pending.emplace_back(obj);
+        deferredVisuals().docs[doc->getName()].pending.emplace_back(obj);
     }
     // The restore pumps events through its progress sequencer, so a slice
     // can be posted now; it will find the document still restoring and put
@@ -3320,35 +3348,21 @@ bool ViewProviderPartExt::deferVisualForLoad()
 
 void ViewProviderPartExt::scheduleDeferredVisualSlice(int delayMs)
 {
-    auto &queue = deferredVisuals();
-    if (queue.scheduled || queue.pending.empty())
+    auto &visuals = deferredVisuals();
+    if (visuals.scheduled || visuals.docs.empty())
         return;
-    queue.scheduled = true;
+    visuals.scheduled = true;
     QTimer::singleShot(delayMs, QCoreApplication::instance(),
                        []() { ViewProviderPartExt::runDeferredVisualSlice(); });
 }
 
 void ViewProviderPartExt::runDeferredVisualSlice()
 {
-    auto &queue = deferredVisuals();
-    queue.scheduled = false;
-    if (queue.pending.empty())
+    auto &visuals = deferredVisuals();
+    visuals.scheduled = false;
+    if (visuals.docs.empty() || visuals.running)
         return;
-
-    // Still loading: everything built now would only be parked again. Ask
-    // again shortly rather than spinning on the events the restore pumps.
-    // The deferred view provider drain counts as loading -- a visual built
-    // between its slices is re-touched by the property sweep that follows,
-    // and every action the sweep applies then walks a populated node.
-    if (auto front = queue.pending.front().getObject()) {
-        auto doc = front->getDocument();
-        auto guiDoc = doc ? Gui::Application::Instance->getDocument(doc) : nullptr;
-        if ((doc && doc->testStatus(App::Document::Restoring))
-                || (guiDoc && guiDoc->isRestoringViewProviders())) {
-            scheduleDeferredVisualSlice(100);
-            return;
-        }
-    }
+    Base::StateLocker walking(visuals.running);
 
     const double budget =
         std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0;
@@ -3358,56 +3372,122 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                 std::chrono::high_resolution_clock::now() - start);
     };
 
-    // Deferred shape restore (docs/DocumentLoad.md §14): serve the parked
-    // archive entries in slices of their own BEFORE any visual builds.
-    // Shapes materializing inside the visual fill was the two-document
-    // lesson in reverse -- mid-drain content arriving through a path the
-    // staging never audited left link snapshots and renderer caches
-    // stale. Served here, a shape arrives through the same property
-    // change notification an ordinary edit uses, and the visual fill
-    // that follows runs with every shape present -- the exact dynamics
-    // of the non-deferred load, with the reads moved off the blocking
-    // open into these first slices.
-    if (auto front = queue.pending.front().getObject()) {
-        if (auto doc = front->getDocument()) {
-            if (doc->serveDeferredFiles(budget)) {
-                queue.spent += elapsed();
-                scheduleDeferredVisualSlice();
-                return;
-            }
-        }
+    // Which documents can be worked on at all right now. A document still
+    // loading is not one of them: everything built now would only be parked
+    // again. The deferred view provider drain counts as loading -- a visual
+    // built between its slices is re-touched by the property sweep that
+    // follows, and every action the sweep applies then walks a populated
+    // node. Per document, because another document's load says nothing
+    // about whether this one's visuals may be built.
+    auto eligible = [](const std::string &name) {
+        auto doc = App::GetApplication().getDocument(name.c_str());
+        if (!doc)
+            return static_cast<App::Document*>(nullptr);
+        auto guiDoc = Gui::Application::Instance->getDocument(doc);
+        if (doc->testStatus(App::Document::Restoring)
+                || (guiDoc && guiDoc->isRestoringViewProviders()))
+            return static_cast<App::Document*>(nullptr);
+        return doc;
+    };
+    std::size_t ready = 0;
+    for (const auto &e : visuals.docs) {
+        if (eligible(e.first))
+            ++ready;
     }
-
-    ++queue.slices;
-    while (!queue.pending.empty()) {
-        auto obj = queue.pending.front().getObject();
-        queue.pending.pop_front();
-        auto vp = obj ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
-                            Gui::Application::Instance->getViewProvider(obj))
-                      : nullptr;
-        if (vp && vp->VisualDeferred) {
-            vp->VisualDeferred = false;
-            // Something may have built it in the meantime -- counted only
-            // when this slice is what built it, or the line would report
-            // work it never did.
-            if (vp->VisualTouched) {
-                vp->updateVisual();
-                ++queue.built;
-            }
-        }
-        if (elapsed().count() >= budget)
-            break;
-    }
-    queue.spent += elapsed();
-
-    if (!queue.pending.empty()) {
-        scheduleDeferredVisualSlice();
+    if (!ready) {
+        // Everything left belongs to a document still loading. Wait rather
+        // than spin on the events its restore pumps.
+        scheduleDeferredVisualSlice(100);
         return;
     }
-    FC_LOG("progressive load: " << queue.built << " visuals in "
-            << queue.slices << " slices, " << queue.spent.count() << 's');
-    queue.built = queue.slices = 0;
-    queue.spent = std::chrono::duration<double>(0);
+
+    // One budget for the slice, split evenly between the documents that can
+    // use it: what has to stay bounded is the time before the event loop
+    // gets its turn back, and that is per slice however many documents are
+    // draining. An even split is also what keeps two loads progressing at
+    // once -- with the whole budget to the first document, a large one
+    // would hold the others up until it finished, which is the
+    // serialization the single shared queue used to impose.
+    const double share = budget / ready;
+    bool more = false;
+    for (auto it = visuals.docs.begin(); it != visuals.docs.end(); ) {
+        auto &queue = it->second;
+        auto doc = eligible(it->first);
+        if (!doc) {
+            if (!App::GetApplication().getDocument(it->first.c_str())) {
+                // Closed while its builds were queued: nothing left to build
+                // them for, and nothing of it may resolve against a document
+                // reopened under the same name.
+                it = visuals.docs.erase(it);
+                continue;
+            }
+            more = true;
+            ++it;
+            continue;
+        }
+        auto mark = elapsed();
+        auto charge = [&queue, &elapsed, &mark]() {
+            queue.spent += elapsed() - mark;
+        };
+        // This document's share, never past the slice's own end.
+        const double limit = std::min(budget, mark.count() + share);
+        const double left = std::max(0.001, limit - mark.count());
+
+        // Deferred shape restore (docs/DocumentLoad.md §14): serve this
+        // document's parked archive entries BEFORE any of its visuals is
+        // built. Shapes materializing inside the visual fill was the
+        // two-document lesson in reverse -- mid-drain content arriving
+        // through a path the staging never audited left link snapshots and
+        // renderer caches stale. Served first, a shape arrives through the
+        // same property change notification an ordinary edit uses, and the
+        // visual fill that follows runs with every shape present -- the
+        // exact dynamics of the non-deferred load, with the reads moved off
+        // the blocking open into these first slices. (The document drains
+        // these on its own timer too, for the entries no queued visual
+        // would ever ask about; whichever gets there first, the other finds
+        // nothing left to do.)
+        if (doc->serveDeferredFiles(left)) {
+            charge();
+            more = true;
+            ++it;
+            continue;
+        }
+
+        ++queue.slices;
+        while (!queue.pending.empty()) {
+            auto obj = queue.pending.front().getObject();
+            queue.pending.pop_front();
+            auto vp = obj ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
+                                Gui::Application::Instance->getViewProvider(obj))
+                          : nullptr;
+            if (vp && vp->VisualDeferred) {
+                vp->VisualDeferred = false;
+                // Something may have built it in the meantime -- counted
+                // only when this slice is what built it, or the line would
+                // report work it never did.
+                if (vp->VisualTouched) {
+                    vp->updateVisual();
+                    ++queue.built;
+                }
+            }
+            if (elapsed().count() >= limit)
+                break;
+        }
+        charge();
+
+        if (!queue.pending.empty()) {
+            more = true;
+            ++it;
+            continue;
+        }
+        FC_LOG("progressive load " << it->first << ": " << queue.built
+                << " visuals in " << queue.slices << " slices, "
+                << queue.spent.count() << 's');
+        it = visuals.docs.erase(it);
+    }
+
+    if (more)
+        scheduleDeferredVisualSlice();
 }
 
 void ViewProviderPartExt::updateVisual()

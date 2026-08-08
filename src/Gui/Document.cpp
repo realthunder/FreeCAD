@@ -2273,8 +2273,14 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
     FC_TIME_INIT(t);
     // With the view providers parked there is nothing to refresh yet; the
     // drain runs this same refresh once, after the last of them exists.
-    if (!d->_deferVPs)
+    if (!d->_deferVPs) {
         slotFinishImportObjects(doc.getObjects());
+        // No drain to carry the serve phase (shape parking and the view
+        // provider drain are separate preferences, and either can be off
+        // while the other is on), so start one for the entries alone.
+        if (doc.hasDeferredFiles())
+            scheduleDeferredRestore();
+    }
     // The two Gui costs a load carries inside App's 'after' stage: the
     // per-object finishRestoring() calls that ran as the objects were
     // signalled, and this showable/children refresh over the whole document.
@@ -2434,8 +2440,19 @@ void Document::runDeferredRestoreSlice()
     d->_deferScheduled = false;
     // A slice can run Python (a ViewProviderPythonFeature's attach), and
     // whatever that does must not re-enter the reader mid-element.
-    if (!d->_deferVPs || d->_deferApplying)
+    if (d->_deferApplying)
         return;
+    if (!d->_deferVPs) {
+        // The parked shape entries outlive the view provider drain, so the
+        // serve phase has to as well: a document whose visuals are all built
+        // -- or which never had any to build -- gets no slice from the
+        // visual queue, and would fault its entries in one at a time while
+        // holding the archive index open for as long as it stays loaded.
+        // Its own timer serves them, rather than some object of it having to
+        // reach the head of a queue shared with every other document.
+        runDeferredServeSlice();
+        return;
+    }
     // Not while this document is inside another load (a partial reload can
     // follow the open that parked these); ask again shortly.
     if (d->_pcDocument->testStatus(App::Document::Restoring)) {
@@ -2678,6 +2695,26 @@ void Document::runDeferredRestoreSlice()
     finishDeferredRestore();
 }
 
+void Document::runDeferredServeSlice()
+{
+    if (!d->_pcDocument->hasDeferredFiles())
+        return;
+    // Not while a load is writing into this document: the entries it parks
+    // are still arriving, and a partial reload may yet replace them.
+    if (d->_pcDocument->testStatus(App::Document::Restoring)) {
+        scheduleDeferredRestore(100);
+        return;
+    }
+    const double budget =
+        std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0;
+    // Deliberately without the drain's restore semantics: phase zero serves
+    // entries a parked record is about to read back, while this serves them
+    // into a document that is fully live -- an ordinary property change
+    // arriving late, which is exactly how its consumers must see it.
+    if (d->_pcDocument->serveDeferredFiles(budget))
+        scheduleDeferredRestore();
+}
+
 void Document::finishDeferredRestore()
 {
     d->_deferReader.reset();
@@ -2702,6 +2739,11 @@ void Document::finishDeferredRestore()
     // What the drain rebuilt is the file's own record, not an edit; leave
     // the document as slotFinishRestoreDocument left it.
     setModified(d->_pcDocument->testStatus(App::Document::LinkStampChanged));
+
+    // Whatever the drain's phase zero did not get through is this document's
+    // own business from here on -- see runDeferredServeSlice().
+    if (d->_pcDocument->hasDeferredFiles())
+        scheduleDeferredRestore();
 
     FC_LOG("progressive restore " << d->_pcDocument->getName() << ": "
             << d->_deferBuilt << " view providers in " << d->_deferSlices

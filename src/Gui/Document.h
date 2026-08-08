@@ -407,6 +407,9 @@ private:
     void scheduleDeferredRestore(int delayMs=0);
     /// Build and restore parked view providers for one budget's worth
     void runDeferredRestoreSlice();
+    /// Serve parked archive entries for one budget's worth, once the view
+    /// provider drain that used to carry them has finished (or never ran)
+    void runDeferredServeSlice();
     /// The drain has emptied: default what was never recorded, then refresh
     void finishDeferredRestore();
 

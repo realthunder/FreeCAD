@@ -232,7 +232,15 @@ protected:
     /// depends on preferences this suite does not fix.
     void removeArchiveAndBackups() const
     {
-        Base::FileInfo archive(_file);
+        removeArchiveAndBackups(_file);
+        if (!_file2.empty()) {
+            removeArchiveAndBackups(_file2);
+        }
+    }
+
+    static void removeArchiveAndBackups(const std::string& file)
+    {
+        Base::FileInfo archive(file);
         const std::string prefix = archive.fileNamePure();
         Base::FileInfo dir(archive.dirPath());
         for (const auto& entry : dir.getDirectoryContent()) {
@@ -258,6 +266,11 @@ protected:
     /// Payload of object i is "payload-<i>" padded so entries differ in size.
     void writeArchive(int count)
     {
+        writeArchiveTo(_file, count);
+    }
+
+    void writeArchiveTo(const std::string& file, int count)
+    {
         auto name = App::GetApplication().getUniqueDocumentName("deferwrite");
         auto doc = App::GetApplication().newDocument(name.c_str(), "test");
         for (int i = 0; i < count; ++i) {
@@ -265,8 +278,25 @@ protected:
                 doc->addObject("App::TestPayloadFeature", ("obj" + std::to_string(i)).c_str()));
             obj->Payload.assign(payloadFor(i).c_str());
         }
-        ASSERT_TRUE(doc->saveAs(_file.c_str()));
+        ASSERT_TRUE(doc->saveAs(file.c_str()));
         App::GetApplication().closeDocument(doc->getName());
+    }
+
+    /// A second archive, for the cases about two documents at once. Cleaned
+    /// up with the first.
+    std::string secondFile()
+    {
+        if (_file2.empty()) {
+            _file2 = Base::FileInfo::getTempFileName();
+            _file2 += ".FCStd";
+        }
+        return _file2;
+    }
+
+    static TestPayloadFeature* featureOf(App::Document* doc, int i)
+    {
+        return static_cast<TestPayloadFeature*>(
+            doc->getObject(("obj" + std::to_string(i)).c_str()));
     }
 
     /// Reopen it with the entries parked.
@@ -289,6 +319,7 @@ protected:
 
     App::Document* _doc {nullptr};
     std::string _file;
+    std::string _file2;
 
 private:
     bool _archiveOn {true};
@@ -534,6 +565,116 @@ TEST_F(DeferredLoadTest, ForwardOnlyArchiveServesEagerly)
         EXPECT_EQ(feature(i)->Payload.rawText(), payloadFor(i)) << "object " << i;
     }
     EXPECT_FALSE(doc->serveDeferredFiles(60.0));
+}
+
+/** The backlog answers for the whole document, not one property.
+ *
+ * The GUI drain asks this to decide whether it still owes a serve phase
+ * after the view providers are done -- a document whose visuals are all
+ * built (or which has none) gets no slice from the visual queue, and
+ * without this would hold its archive index open for as long as it stays
+ * loaded, faulting entries in one at a time.
+ */
+TEST_F(DeferredLoadTest, TheBacklogAnswersForTheDocument)
+{
+    writeArchive(3);
+    auto doc = openArchive();
+    ASSERT_NE(doc, nullptr);
+    EXPECT_TRUE(doc->hasDeferredFiles());
+
+    // One served is not all served.
+    EXPECT_EQ(feature(0)->Payload.text(), payloadFor(0));
+    EXPECT_TRUE(doc->hasDeferredFiles());
+
+    while (doc->serveDeferredFiles(0.0)) {}
+    EXPECT_FALSE(doc->hasDeferredFiles());
+
+    // And a document that never parked anything never owes a serve.
+    auto fresh = App::GetApplication().newDocument(
+        App::GetApplication().getUniqueDocumentName("nodefer").c_str(),
+        "test");
+    EXPECT_FALSE(fresh->hasDeferredFiles());
+    App::GetApplication().closeDocument(fresh->getName());
+}
+
+/** Two loaded documents own their backlogs separately.
+ *
+ * The visual queue used to decide the serve phase from whichever object
+ * happened to be at the head of one shared queue, which made one
+ * document's turn the other's wait. Both halves have to be per document
+ * for that to be fixable: this is the App half -- serving one must serve
+ * exactly that one, and leave the other's entries parked and readable.
+ */
+TEST_F(DeferredLoadTest, DocumentsServeTheirOwnBacklogs)
+{
+    writeArchive(3);
+    writeArchiveTo(secondFile(), 3);
+
+    auto docA = openArchive();
+    ASSERT_NE(docA, nullptr);
+    auto docB = App::GetApplication().openDocument(secondFile().c_str(), false);
+    ASSERT_NE(docB, nullptr);
+    ASSERT_NE(docA, docB);
+    EXPECT_TRUE(docA->hasDeferredFiles());
+    EXPECT_TRUE(docB->hasDeferredFiles());
+    EXPECT_EQ(TestPayloadProperty::restoreCount, 0);
+
+    // Draining A to the end says nothing about B.
+    while (docA->serveDeferredFiles(0.0)) {}
+    EXPECT_FALSE(docA->hasDeferredFiles());
+    EXPECT_TRUE(docB->hasDeferredFiles());
+    EXPECT_EQ(TestPayloadProperty::restoreCount, 3);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_TRUE(featureOf(docB, i)->Payload.isRestorePending()) << "object " << i;
+        EXPECT_TRUE(docB->hasDeferredFile(&featureOf(docB, i)->Payload)) << "object " << i;
+        EXPECT_TRUE(featureOf(docB, i)->Payload.rawText().empty()) << "object " << i;
+    }
+
+    // B's own entries are still whole -- the archive index it kept is its
+    // own, and A's serve neither read nor closed it.
+    while (docB->serveDeferredFiles(0.0)) {}
+    EXPECT_FALSE(docB->hasDeferredFiles());
+    EXPECT_EQ(TestPayloadProperty::restoreCount, 6);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(featureOf(docB, i)->Payload.rawText(), payloadFor(i)) << "object " << i;
+        EXPECT_FALSE(featureOf(docB, i)->isTouched()) << "object " << i;
+    }
+
+    App::GetApplication().closeDocument(docB->getName());
+}
+
+/** Closing one document mid-serve leaves the other's backlog alone.
+ *
+ * The shared queue's other consequence: entries of a document nobody will
+ * ask about again (it is gone) sat in front of a live document's, and the
+ * counters mixed the two. Closing must take exactly one backlog with it.
+ */
+TEST_F(DeferredLoadTest, ClosingOneDocumentLeavesTheOtherBacklog)
+{
+    writeArchive(4);
+    writeArchiveTo(secondFile(), 4);
+
+    auto docA = openArchive();
+    ASSERT_NE(docA, nullptr);
+    auto docB = App::GetApplication().openDocument(secondFile().c_str(), false);
+    ASSERT_NE(docB, nullptr);
+
+    // Part way through A, then A goes away.
+    EXPECT_TRUE(docA->serveDeferredFiles(0.0));
+    EXPECT_EQ(TestPayloadProperty::restoreCount, 1);
+    App::GetApplication().closeDocument(docA->getName());
+    _doc = nullptr;
+
+    EXPECT_TRUE(docB->hasDeferredFiles());
+    while (docB->serveDeferredFiles(0.0)) {}
+    EXPECT_FALSE(docB->hasDeferredFiles());
+    // Four of B's, on top of the single one A served before it closed.
+    EXPECT_EQ(TestPayloadProperty::restoreCount, 5);
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_EQ(featureOf(docB, i)->Payload.rawText(), payloadFor(i)) << "object " << i;
+    }
+
+    App::GetApplication().closeDocument(docB->getName());
 }
 
 TEST_F(DeferredLoadTest, DeferOffServesEagerly)

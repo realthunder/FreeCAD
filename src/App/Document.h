@@ -254,6 +254,9 @@ public:
     bool restoreDeferredFile(Base::Persistence *obj);
     /// Whether \a obj still has a parked entry.
     bool hasDeferredFile(const Base::Persistence *obj) const;
+    /// Whether anything at all is still parked, i.e. whether this document
+    /// still owes a serve phase (and still holds its archive index open).
+    bool hasDeferredFiles() const;
     /// Drop \a obj's parked entry unserved -- its value was overwritten
     /// before anything asked for the archived one.
     void cancelDeferredFile(Base::Persistence *obj);

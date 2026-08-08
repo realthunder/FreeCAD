@@ -2849,6 +2849,11 @@ bool Document::hasDeferredFile(const Base::Persistence *obj) const
                 std::string(prop->getName()))) != 0;
 }
 
+bool Document::hasDeferredFiles() const
+{
+    return !d->deferredFiles.empty();
+}
+
 bool Document::restoreDeferredFile(Base::Persistence *obj)
 {
     if (d->deferredFiles.empty())
@@ -2992,7 +2997,7 @@ bool Document::serveDeferredFiles(double budgetSeconds)
                 >= budgetSeconds)
             break;
     }
-    FC_LOG("deferred serve slice: " << served << " in "
+    FC_LOG("deferred serve slice " << getName() << ": " << served << " in "
             << std::chrono::duration<double>(
                     std::chrono::steady_clock::now() - start).count()
             << "s (open " << d->deferOpenTime.count()
