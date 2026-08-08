@@ -237,11 +237,19 @@ refused.
 
 A frame draws far less than the whole sequence, so each one **declares
 the passes it will use** and those are mapped onto the consecutive ids
-of a block sized to fit them (`markPass` / `mapPasses` / `vid`, from the
-same flags that configure the views). Enum order is draw order is
-bgfx's submission order, so compaction preserves the sequence. Blocks
-come from a granule pool and only grow, which keeps a viewer's ids
-still as its scene changes. A plain viewer needs 13 ids, so ~32 fit.
+of a block sized to fit them (`markPass` / `mapPasses` / `vid`). Enum
+order is draw order is bgfx's submission order, so compaction preserves
+the sequence. Blocks come from a granule pool and only grow, which
+keeps a viewer's ids still as its scene changes. A plain viewer needs
+13 ids, so ~32 fit.
+
+The declarations come from **one per-frame pass table** in `render()`:
+every pass states its liveness predicate exactly once, next to the
+closure that configures its bgfx view, and the mark phase, the
+view-config phase and the frame-level submit gates (`passLive`) all
+read the same entry — the three phases cannot drift apart, and a
+`PassView` added without a table entry reports itself once instead of
+silently discarding its draws.
 
 Two properties make this safe to be wrong about:
 
