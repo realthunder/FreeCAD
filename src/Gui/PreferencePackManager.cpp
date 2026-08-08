@@ -56,17 +56,28 @@ PreferencePack::PreferencePack(const fs::path& path, const App::Metadata& metada
         throw std::runtime_error{ "Cannot access " + path.string() };
     }
 
-    auto qssPaths = QDir::searchPaths(QString::fromUtf8("qss"));
-    auto cssPaths = QDir::searchPaths(QString::fromUtf8("css"));
-    auto overlayPaths = QDir::searchPaths(QString::fromUtf8("overlay"));
+    // Let a pack carry its own assets. Every prefix a theme can name has to be
+    // covered here, or the pack cannot ship the file it asks for: a pack that
+    // sets MenuStyleSheet or IconSet needs "qssm" and "iconset" just as much as
+    // one setting StyleSheet needs "qss".
+    //
+    // rescan() rebuilds every PreferencePack, so appending unconditionally grew
+    // the search paths without bound -- the same directory once per rescan.
+    auto addSearchPath = [](const char* prefix, const std::string& dir) {
+        const auto key = QString::fromUtf8(prefix);
+        auto paths = QDir::searchPaths(key);
+        const auto path = QString::fromStdString(dir);
+        if (!paths.contains(path)) {
+            paths.append(path);
+            QDir::setSearchPaths(key, paths);
+        }
+    };
 
-    qssPaths.append(QString::fromStdString(_path.string()));
-    cssPaths.append(QString::fromStdString(_path.string()));
-    overlayPaths.append(QString::fromStdString(_path.string() + "/overlay"));
-
-    QDir::setSearchPaths(QString::fromUtf8("qss"), qssPaths);
-    QDir::setSearchPaths(QString::fromUtf8("css"), cssPaths);
-    QDir::setSearchPaths(QString::fromUtf8("overlay"), overlayPaths);
+    addSearchPath("qss", _path.string());
+    addSearchPath("css", _path.string());
+    addSearchPath("overlay", (_path / "overlay").string());
+    addSearchPath("qssm", (_path / "menu").string());
+    addSearchPath("iconset", (_path / "iconsets").string());
 }
 
 std::string PreferencePack::name() const
