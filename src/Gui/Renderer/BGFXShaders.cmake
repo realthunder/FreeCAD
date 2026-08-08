@@ -69,6 +69,105 @@ function(fc_bgfx_compile_shaders outvar)
     set(${outvar} ${_bins} PARENT_SCOPE)
 endfunction()
 
+# Syntax-check shader sources that ship as SOURCE and are compiled at
+# runtime — the bundled effect packages (docs/RenderEngine.md §5.11).
+# Nothing built them until a user instantiated the effect, so a typo in
+# one shipped silently and surfaced as a dead effect on someone else's
+# machine. This compiles each of them the way the runtime user-shader
+# path will (same include root and varying definition) and throws the
+# output away; a failure is a build failure.
+#
+# fc_bgfx_check_shaders(<out-var>
+#     SHADERC   <shaderc executable>
+#     SRCDIR    <directory tree globbed for *.sc>
+#     SHADERDIR <the stock shader dir: fc_*.sh includes + varying.def.sc>
+#     BGFXINC   <bgfx shader include dir>
+#     OUTDIR    <where the throwaway bins + stamps land>
+#     PROFILES  <as fc_bgfx_compile_shaders>
+#     [DEPENDS  <extra dependencies>])
+#
+# The stage follows the name the manifests use: *_vs.sc is a vertex
+# stage, everything else (including the *_sim.sc state steps) is a
+# fragment one.
+#
+# A volume-stage medium source is not a program — it is the two or
+# three contract functions the engine splices into a volumetric
+# raymarch body (assembleMediumVariant, BGFXRendererP.h), so it has no
+# main() and cannot be compiled on its own. Those are checked through
+# the same wrapper the runtime builds, for slot 0.
+function(fc_bgfx_check_shaders outvar)
+    cmake_parse_arguments(ARG "" "SHADERC;SRCDIR;SHADERDIR;BGFXINC;OUTDIR"
+                          "PROFILES;DEPENDS" ${ARGN})
+    file(GLOB_RECURSE _srcs ${ARG_SRCDIR}/*.sc)
+    file(GLOB _incs ${ARG_SHADERDIR}/*.sh)
+    list(APPEND _incs ${ARG_BGFXINC}/bgfx_shader.sh
+                      ${ARG_BGFXINC}/bgfx_compute.sh)
+    set(_varying ${ARG_SHADERDIR}/varying.def.sc)
+    set(_stamps)
+    foreach(_src ${_srcs})
+        get_filename_component(_name ${_src} NAME_WE)
+        if(_name MATCHES "_vs$")
+            set(_type v)
+        else()
+            set(_type f)
+        endif()
+        # A spliced medium source: wrap it the way the engine does
+        # before handing it to shaderc.
+        set(_dep ${_src})
+        file(READ ${_src} _text)
+        if(_text MATCHES "fcMedium(Field|Scatter)" AND
+           NOT _text MATCHES "void[ \t]+main")
+            set(_wrap ${ARG_OUTDIR}/wrap/${_name}.sc)
+            set(_w "$input v_texcoord0\n\n#include <bgfx_shader.sh>\n")
+            if(_text MATCHES "fcMediumScatter")
+                string(APPEND _w "#define FC_USER_SCATTER_0\n")
+            else()
+                string(APPEND _w "#define FC_USER_FIRE_0\n")
+            endif()
+            string(APPEND _w "#include \"fc_volume_fs.sh\"\n")
+            if(_text MATCHES "fcMediumScatter")
+                string(APPEND _w "#define fcMediumScatter fcUserScatter_0\n")
+            else()
+                string(APPEND _w "#define fcMediumField fcUserField_0\n"
+                                 "#define fcMediumRamp fcUserRamp_0\n")
+            endif()
+            string(APPEND _w "#define FC_MEDIUM_SLOT 0\n"
+                             "#include \"${_src}\"\n")
+            file(WRITE ${_wrap} "${_w}")
+            set(_dep ${_src})
+            set(_src ${_wrap})
+            set(_type f)
+        endif()
+        foreach(_profile ${ARG_PROFILES})
+            if(_profile STREQUAL "glsl")
+                set(_flags --platform linux -p 140)
+            elseif(_profile STREQUAL "spirv")
+                set(_flags --platform linux -p spirv)
+            elseif(_profile STREQUAL "essl")
+                set(_flags --platform asm.js -p 300_es)
+            elseif(_profile STREQUAL "metal")
+                set(_flags --platform osx -p metal)
+            else()
+                message(FATAL_ERROR "unknown shader profile: ${_profile}")
+            endif()
+            set(_out ${ARG_OUTDIR}/${_profile}/${_name}.bin)
+            add_custom_command(OUTPUT ${_out}
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                        ${ARG_OUTDIR}/${_profile}
+                COMMAND ${ARG_SHADERC} -f ${_src} -o ${_out}
+                        --type ${_type} ${_flags}
+                        -i ${ARG_BGFXINC} -i ${ARG_SHADERDIR}
+                        --varyingdef ${_varying}
+                DEPENDS ${_src} ${_dep} ${_incs} ${_varying}
+                        ${ARG_DEPENDS}
+                COMMENT "shader check ${_profile}/${_name}"
+                VERBATIM)
+            list(APPEND _stamps ${_out})
+        endforeach()
+    endforeach()
+    set(${outvar} ${_stamps} PARENT_SCOPE)
+endfunction()
+
 # Ship the shader compile inputs next to the compiled bins, into
 # OUTDIR/src: varying.def.sc, every fc *.sh include and the bgfx shader
 # headers. The runtime user-shader compile (docs/RenderDebug.md §6.3 —

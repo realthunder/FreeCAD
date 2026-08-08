@@ -151,10 +151,22 @@ if(BUILD_BGFX)
     endforeach()
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/effects/
             DESTINATION ${CMAKE_INSTALL_DATADIR}/Renderer/effects)
+    # ...and compiled once here purely to be told when they do not
+    # compile: they ship as source, so nothing else in the build reads
+    # them, and a typo in a bundled effect would surface only when
+    # somebody instantiated it.
+    fc_bgfx_check_shaders(Renderer_EffectChecks
+        SHADERC   $<TARGET_FILE:shaderc>
+        SRCDIR    ${CMAKE_CURRENT_SOURCE_DIR}/effects
+        SHADERDIR ${CMAKE_CURRENT_SOURCE_DIR}/bgfx/shaders
+        BGFXINC   ${CMAKE_SOURCE_DIR}/src/3rdParty/bgfx/bgfx/src
+        OUTDIR    ${CMAKE_CURRENT_BINARY_DIR}/effect-checks
+        PROFILES  ${FC_SHADER_PROFILES}
+        DEPENDS   shaderc)
 
     ADD_CUSTOM_TARGET(Renderer_assets ALL
         DEPENDS ${Renderer_ShaderBins} ${Renderer_ShaderSrc}
-                ${Renderer_EffectFiles})
+                ${Renderer_EffectFiles} ${Renderer_EffectChecks})
     add_dependencies(${Library} Renderer_assets)
     install(DIRECTORY
         ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/Renderer/bgfx/assets/shaders/
