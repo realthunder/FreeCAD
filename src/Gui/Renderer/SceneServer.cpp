@@ -763,6 +763,14 @@ public:
         g.previousKeys = std::move(g.currentKeys);
         g.currentKeys = std::move(g.pendingKeys);
         g.pendingKeys.clear();
+        sweepBlobs();
+    }
+
+    /// Drop from the store what no group names at all, and with each
+    /// dropped chunk the level memos that pointed at it. Called with
+    /// \a mutex held — from retireBlobs and from a group release.
+    void sweepBlobs()
+    {
         auto liveAnywhere = [this](const std::string &key) {
             for (const auto &entry : groups) {
                 const DocGroup &grp = entry.second;
@@ -3214,6 +3222,13 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
                                    return job.group == g;
                                }),
                 q.end());
+        // A closed document's chunk references must not pin the store
+        // for the process lifetime: clear its generations — a re-serve
+        // republishes — then drop what nothing names any more.
+        g->pendingKeys.clear();
+        g->currentKeys.clear();
+        g->previousKeys.clear();
+        pimpl->sweepBlobs();
     }
     {
         std::lock_guard<std::mutex> guard(pimpl->handlerMutex);
