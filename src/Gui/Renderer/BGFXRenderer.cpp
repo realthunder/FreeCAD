@@ -12742,9 +12742,10 @@ public:
 
     /// Content identity of one mesh cache: the colorless geometry hash
     /// (computeGeomKey) plus a hash of the per-vertex color stream.
-    /// Computed once per cache id — a cache id always refers to
-    /// identical content — so scene rebuilds only hash caches they have
-    /// not seen before. Two caches with equal hashes render identically
+    /// Computed once per (cache id, refine generation) — so scene
+    /// rebuilds only hash caches they have not seen before, and an
+    /// in-place ladder refine re-hashes. Two caches with equal hashes
+    /// render identically
     /// through one prototype: the geometry table already shares their
     /// GPU buffers, and equal color hashes mean the baked color streams
     /// match byte for byte.
@@ -12753,6 +12754,7 @@ public:
         uint64_t colorHash;
         int numVertices;
         int numTri;
+        uint32_t generation;
         uint64_t stamp;
     };
     std::unordered_map<uint64_t, MeshContent> meshContents;
@@ -12762,7 +12764,10 @@ public:
     {
         auto res = meshContents.try_emplace(mesh.cacheId);
         MeshContent &c = res.first->second;
-        if (res.second) {
+        // The level ladder refines meshes in place under one cache id,
+        // bumping MeshData::generation (the same guard getMesh uses) —
+        // a memo from before the refine describes the coarse arrays.
+        if (res.second || c.generation != mesh.generation) {
             c.geomHash = computeGeomKey(mesh).hash;
             c.colorHash = mesh.colors
                 ? fnv1a64(0xcbf29ce484222325ull, mesh.colors,
@@ -12770,6 +12775,7 @@ public:
                 : 0;
             c.numVertices = mesh.numVertices;
             c.numTri = mesh.numTriangleIndices;
+            c.generation = mesh.generation;
         }
         c.stamp = meshContentStamp;
         return c;
