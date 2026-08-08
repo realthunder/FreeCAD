@@ -24,8 +24,10 @@
 #ifndef FREECAD_START_THEMESELECTORWIDGET_H
 #define FREECAD_START_THEMESELECTORWIDGET_H
 
+#include <QIcon>
+#include <QString>
 #include <QWidget>
-#include <array>
+#include <vector>
 
 class QBoxLayout;
 class QLabel;
@@ -33,14 +35,6 @@ class QToolButton;
 
 namespace StartGui
 {
-
-enum class Theme
-{
-    Classic,
-    Auto,
-    Light,
-    Dark
-};
 
 /// A widget to allow selection of the UI theme (color scheme).
 class ThemeSelectorWidget: public QWidget
@@ -51,7 +45,11 @@ public:
     bool eventFilter(QObject* object, QEvent* event) override;
 
 protected:
-    void themeChanged(Theme newTheme);
+    /** Apply a theme.
+     * \param packName the preference pack to apply, empty for Match Desktop,
+     *                 which resolves to whichever pack matches the desktop.
+     */
+    void themeChanged(const QString& packName);
 
 private:
     void retranslateUi();
@@ -59,9 +57,22 @@ private:
     void setupButtons(QBoxLayout* layout);
     void onLinkActivated(const QString& link);
 
+    /// One button, and the theme pack it applies. An empty name is Match Desktop.
+    struct ThemeButton
+    {
+        QString packName;
+        QToolButton* button;
+    };
+
+    /// The picture for a theme: a shipped thumbnail where there is one, and
+    /// otherwise a swatch drawn from the light or dark scheme the theme pins.
+    static QIcon iconForTheme(const QString& packName);
+    /// What a theme is called on this page.
+    static QString displayName(const QString& packName);
+
     QLabel* _titleLabel;
     QLabel* _descriptionLabel;
-    std::array<QToolButton*, 4> _buttons;
+    std::vector<ThemeButton> _buttons;
 };
 
 }  // namespace StartGui
