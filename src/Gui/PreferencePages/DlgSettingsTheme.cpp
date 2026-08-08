@@ -340,8 +340,14 @@ void DlgSettingsTheme::populateStylesheets(const char *key,
         index = combo->count() - 1;
     }
 
-    combo->setCurrentIndex(index < 0 ? 0 : index);
+    // onRestore() falls back to whatever the combo held when it was first
+    // restored whenever the parameter is absent -- and applying a theme removes
+    // the keys it does not name, so the widget would put the outgoing theme's
+    // value straight back and saveSettings() would write it to the config. The
+    // parameter is the authority: let the widget do its bookkeeping, then say
+    // what is selected.
     combo->onRestore();
+    combo->setCurrentIndex(index < 0 ? 0 : index);
 }
 
 /**
