@@ -35,7 +35,9 @@ the server comes back up on the next start.
 
 import ast
 import collections
+import contextlib
 import io
+import logging
 import os
 import sys
 import threading
@@ -509,6 +511,39 @@ outlives the process -- read that if FreeCAD died.
 """
 
 
+@contextlib.contextmanager
+def _preserved_logging():
+    """Undo any logging reconfiguration the wrapped code performs.
+
+    Building the MCP server calls the library's own ``configure_logging()``,
+    which runs ``logging.basicConfig`` on the **root** logger: level INFO with a
+    RichHandler writing to **stderr**.  Inside FreeCAD stderr is redirected to
+    ``Base::Console().Error``, so every routine INFO line the transport emits
+    ("StreamableHTTP session manager started", "Created new transport with
+    session ID: ...") lands in the report view coloured as an error -- and the
+    hijacked root logger then applies to all of FreeCAD's Python, not just to
+    this module.  uvicorn.Config does the same for its own loggers.
+
+    So put the root logger back exactly as it was, and clamp the two library
+    loggers to WARNING, which keeps their chatter out of the console whatever
+    handler is attached later.
+    """
+    root = logging.getLogger()
+    level, handlers = root.level, root.handlers[:]
+    try:
+        yield
+    finally:
+        for handler in root.handlers[:]:
+            if handler not in handlers:
+                root.removeHandler(handler)
+        for handler in handlers:
+            if handler not in root.handlers:
+                root.addHandler(handler)
+        root.setLevel(level)
+        for name in ("mcp", "uvicorn"):
+            logging.getLogger(name).setLevel(logging.WARNING)
+
+
 def _make_server(host: str, port: int):
     """Return ``(server, serve)`` for whichever major version of ``mcp`` is present.
 
@@ -786,7 +821,8 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT,
     except Exception:
         logfile = None  # capture is a convenience, never a reason not to serve
     _executor = _make_executor()
-    _mcp, _fallback_serve = _make_server(host, port)
+    with _preserved_logging():
+        _mcp, _fallback_serve = _make_server(host, port)
 
     @_mcp.tool(name="run_python", description=_RUN_PYTHON_DESCRIPTION)
     def run_python(code: str) -> RunResult:
@@ -809,7 +845,8 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT,
         # to be able to read the log while the main thread is busy or wedged.
         return get_log(limit=limit, level=level, contains=contains)
 
-    _uvicorn, _serve_forever = _make_serve(_mcp, _fallback_serve, host, port)
+    with _preserved_logging():
+        _uvicorn, _serve_forever = _make_serve(_mcp, _fallback_serve, host, port)
 
     _server_thread = threading.Thread(target=_serve_forever, name="mcp-console",
                                       daemon=True)
