@@ -11,8 +11,11 @@ level of detail — this is an extension of both), `docs/IncrementalPublish.md`
 sharing and instancing), `docs/ComputeBoundaries.md` (where generation
 jobs belong), `docs/RoadMap.md`.
 
-Status: design. Nothing here is implemented, and §9 states what should
-be measured before any of it is.
+Status: design, with phase 0 measured and closed. Both gates of §9 pass
+— 66.8% of a 17800-object assembly is under four pixels at its own
+fitted camera, and 87% of a 139 ms frame is per-object cost rather than
+rasterization (§9.2, §9.1). Phase 1 (§11.1) is the first piece that
+builds anything.
 
 ## 1. Problem
 
@@ -69,21 +72,105 @@ one rung serves many objects at once.
 ## 3. The mechanism
 
 Build a spatial hierarchy over the assembly's parts, and generate for
-each interior node a **proxy**: one merged, decimated representation of
-everything beneath it, with one material set and no per-part state.
+each interior node a **proxy**: a merged, decimated representation of
+everything beneath it, carrying no per-part state — one such mesh per
+material the node actually contains (§5.1).
 
 **The hierarchy is graded by extent, not taken from the document
 tree.** An assembly's tree groups by function, not by location — a
 "fasteners" group can span the whole machine — so it is useless as a
 culling structure and worse as a proxy structure, since a node that is
-spatially everywhere has no meaningful projected size. What is built
-instead is an ordinary spatial hierarchy over per-object world bounds
-(median or SAH split), subdivided until node extent falls below a
-target, so that for any camera there exists a level whose nodes project
-to roughly the size the cut wants.
+spatially everywhere has no meaningful projected size.
 
-**And it is graded *finely*, which is a requirement rather than a
-tuning choice** — see §8: the size of a node is the size of a pop.
+The failure is worse than "suboptimal", and the case that shows it is
+the common one rather than a pathology. A great many real assemblies
+are *flat*: one holder with twenty thousand children directly beneath
+it, because that is what an importer, a script or an impatient modeller
+produces. Coupled to the document tree, such an assembly has exactly
+**one** interior node, so the cut is binary — draw every part, or draw
+the whole machine as a single blob — and there is no ladder at all. A
+*well*-formed tree fails differently, by grouping things that are
+nowhere near each other. Both failures have one root: the document tree
+is an **ownership** structure (who contains what, which transform and
+material apply, what a selection path names), and a cut needs a
+**location** structure. Conflating them makes both worse.
+
+So the rule is: never *depend* on document structure, and exploit it
+only where it happens to be spatially compact and repeated (§7.1).
+
+**And the hierarchy is graded *finely*, which is a requirement rather
+than a tuning choice** — see §8.1: the size of a node is the size of a
+pop.
+
+The property being bought: **drawn primitives and draw entries become a
+function of screen coverage, not of model size.**
+
+### 3.1 What it is built from: an instance table, not a tree
+
+The input is a flat table with one row per *drawn instance*:
+
+```
+objectKey       identity of the scene-graph node path (already per-occurrence)
+bboxMin/Max     world bounds
+model[16]       world transform, baked at merge time
+materialBucket  index into the snapshot's material table
+sourceTag       content identity of the mesh (the TShape-level key)
+```
+
+Every one of those is a field of `Render::DrawCall` (`Renderer.h`)
+today. Nothing has to be plumbed, and nothing above `DrawCallList` is
+consulted — no Coin node, no `ViewProvider`, no `DocumentObject`. This
+is not a new discipline but the one the ladder already keeps:
+`coverageHistogram()`, `planMeshRefines()` and `planMeshDemotes()` all
+take a `DrawCallList` and nothing else (`SceneLadder.h`).
+
+Two things follow from the unit being an *instance* rather than an
+object. Phase 0 measured 19362 drawn instances against 17800 document
+objects and could not account for the difference; here the question
+does not arise, because instances are what pay the per-object cost and
+instances are what the hierarchy partitions. And the same table is what
+a thin client already receives over the wire, so a remote viewer builds
+the identical hierarchy without knowing the document tree at all
+(`docs/ThinClient.md`).
+
+The generalisation worth stating: what is being built is not "the LOD
+hierarchy" but **the renderer's spatial index**, with several consumers
+— frustum and occlusion culling, the proxy cut, streaming priority,
+pick acceleration. Level of detail is one of them.
+
+### 3.2 The partition
+
+A loose octree over world bounds, with two properties that matter more
+than split quality:
+
+- **Assignment by size.** An instance goes to the finest level whose
+  cell contains its whole bounding box. This is what makes a flat
+  assembly's outlier harmless: a frame member spanning the machine
+  lands at a coarse node and is drawn exactly, because its screen size
+  is at least its node's and the cut therefore never asks to proxy
+  something visually significant. A node's proxy covers its own
+  residents *and* everything below it.
+- **Positional node identity: `(level, Morton cell)`.** Not a median or
+  SAH split. A data-dependent split means one moved part reshuffles the
+  partition and invalidates proxies for geometry that did not change;
+  a quantised grid means a moved part touches exactly two cells, ids
+  are identical on every machine and across sessions (so §7's cache is
+  shareable rather than per-session), and "stable node identity" stops
+  being a design problem.
+
+Subdivide until **extent falls below a target, or the cell holds `K`
+instances or fewer**. The instance cap is not a tuning knob: it is
+simultaneously the bound on how much geometry a single switch changes
+(§8.1) and the bound on how much is drawn exactly when the cut is
+forced to descend (§8). One parameter, two correctness properties.
+
+**The grids nest.** Level `L`'s decimation grid is an exact
+subdivision of level `L−1`'s — shared origin, power-of-two — and the
+grid is global per level rather than fitted to each node's own bounds,
+so neighbouring cells at the same level snap identically. §7 draws the
+generation consequence out of this.
+
+### 3.3 The cut is per cell
 
 At runtime, choose a *cut* through the tree by projected screen-space
 error, exactly as level selection already chooses a rung per object.
@@ -91,8 +178,28 @@ Near the camera the cut is deep — individual parts at their exact
 geometry, which is what editing and picking need. Far away it is
 shallow: one proxy where two hundred parts were.
 
-The property being bought: **drawn primitives and draw entries become a
-function of screen coverage, not of model size.**
+The cut is a **frontier, decided per cell**, not a single level chosen
+globally: different branches stop at different depths, and neighbouring
+cells routinely sit one or more levels apart. That costs nothing in
+cracks, because a crack only matters within one connected surface and a
+connected surface never spans two parts — the discontinuity between
+parts was there before any merging (§6).
+
+Two consequences:
+
+- **The material split lives below the cut.** A cell's decision applies
+  to all of its per-material proxies at once (§5.1). A cut that could
+  proxy one material of a cell and not another would not be a
+  partition.
+- **Cut selection and proxy acquisition run on different clocks.** The
+  descent is `O(frontier)` — a few hundred node tests, microseconds —
+  so it runs per frame. *Acquiring* a proxy stays on `planLevels`'
+  event schedule (camera settled, publish staged, budget moved). The
+  existing ladder conflates the two only because per-object planning
+  was never cheap enough to run per frame; a cut is. Hysteresis reuses
+  the `kPlanDemoteMargin` semantics already in `SceneLadder.h` — split
+  above the tolerance, merge back at half of it — rather than
+  introducing a second constant.
 
 ## 4. What to borrow, and what not to
 
@@ -124,18 +231,45 @@ construction. A proxy built from geometry keeps all three.
 
 ## 5. The representation, cheapest first
 
-1. **Merged decimated mesh per node.** Reuse `MeshSimplify.cpp` —
-   already a grid-clustering decimator whose representatives come from
-   a shared grid, which is what keeps adjacent decimated surfaces sewn
-   together. Materials resolve per cluster from the source parts. Works
-   with the z-buffer, the depth prepass, shadows and section capping
-   unchanged, and needs no new shader. The expectation is that this is
-   most of the win.
+1. **Merged decimated mesh per (cell, material).** Reuse
+   `MeshSimplify.cpp` — already a grid-clustering decimator whose
+   representatives come from a shared grid, which is what keeps
+   adjacent decimated surfaces sewn together. Works with the z-buffer,
+   the depth prepass, shadows and section capping unchanged, and needs
+   no new shader. The expectation is that this is most of the win. See
+   §5.1 for why the unit is a pair rather than a node.
 2. **Surfel or voxel proxy with view-dependent shading.** For nodes
    where (1) produces visible mush. More build cost and its own shader;
    justified only against a real model that shows the failure.
 3. **Impostors and billboards.** Cheapest, and wrong under rotation.
    Not worth it in a renderer that can afford (1).
+
+### 5.1 The unit is (cell, material bucket), and averaging is not the answer
+
+A node's parts do not share a material, and a spatial partition makes
+that *worse* than the document tree would have: a functional group
+tends to share an appearance, a spatial cell mixes whatever happens to
+be there. The two obvious answers are both bad — fragmenting a proxy
+into one draw per part gives the win back, and averaging the materials
+produces a node that is the right shape in the wrong colour.
+
+The answer is to make the material part of the partition. A proxy is
+generated per **(cell, material bucket)**, so:
+
+- every proxy carries exactly one material and is *exact* in
+  appearance — nothing is averaged, and no new shader is needed;
+- the win is 500 draws → the number of distinct buckets present in
+  that cell, not → 1. On MiSTer Express, ~37 buckets exist across the
+  whole document, so a cell of a few hundred parts should touch a
+  handful;
+- the cut stays a partition, because the material fan-out happens
+  *below* the cut (§3.3) and never splits a cell's decision.
+
+This reframes what phase 1 has to measure. The useful number is not
+"materials per node" but **distinct material buckets per cell, per
+level** — because summed over a cut that is the post-aggregation draw
+count, which is the win itself, measurable before a single proxy has
+been generated (§11.1).
 
 ## 6. Identity, picking and the element map
 
@@ -200,7 +334,62 @@ Generation is work, not bytes, so it goes through the request path §7
 already defines for unbuilt levels, and its natural home is the
 out-of-process geometry queue of `docs/ComputeBoundaries.md`.
 
+### 7.1 Build bottom-up, from children's proxies
+
+Because the grids nest (§3.2), a node's proxy is produced by merging
+**its children's proxies** together with its own residents, rather than
+by going back to source geometry. Three things fall out, and they are
+the reason the nesting rule is stated as a rule:
+
+- **Total generation is `O(leaf triangles)`, not `O(levels × leaves)`.**
+  Each level costs a fraction of the one below it, the same geometric
+  series §9.1 uses for bytes.
+- **Error becomes monotonic up the tree for free.** §8.1 identifies
+  that property as what lets each node decide independently while the
+  cut stays globally consistent; built bottom-up it is a consequence of
+  the construction rather than something to enforce afterwards.
+- **A change costs a path, not a tree.** One edited part rebuilds its
+  leaf cell from source; every ancestor re-merges from children that
+  are already built. This is what makes §8's "a stale ancestor draws
+  its children until the new one arrives" affordable at edit rate.
+
+**The cost of partitioning in world space, stated plainly.** A
+subassembly appearing twelve times would, under a document-tree
+hierarchy, be merged once in local space and instanced twelve times.
+Partitioned spatially, each occurrence falls in different cells and is
+merged separately: generation cost and proxy bytes multiply by the
+occurrence count. Two mitigations, neither of them phase 1-3 work:
+
+- A node whose member set is exactly a repeated content group may carry
+  a local-space representation plus a transform list. This is an
+  extension point, deliberately not built until a model shows it
+  paying.
+- Merging is not free for heavily-instanced parts either: 500
+  instances of one screw share a single vertex buffer today
+  (`docs/TShapeRenderCache.md`), and a world-baked proxy holds 500
+  copies. Decimation should erase this — at four pixels a screw *is* a
+  box — but phase 2 needs an explicit gate: proxy only where the
+  decimated triangle cost beats what instancing already achieves.
+
 ## 8. Difficulties, and the decisions they need
+
+**First, a distinction that several of these turn on.** There are two
+ways to keep something out of a proxy, and they differ by orders of
+magnitude:
+
+- **Cut-level** — force the frontier to descend past a cell so its
+  members draw exactly. Costs a descent, is reversible on the next
+  frame, and may depend on anything, including state that changes at
+  interaction rate.
+- **Content-level** — remove a member from a merge. This changes the
+  node's member set, which mints a different key (§7) and cascades a
+  rebuild up the ancestor chain.
+
+From which: **a content-level exclusion may only depend on properties
+that are stable at interaction rate.** Anything that changes while the
+mouse moves — selection, preselection, edit state, a dragged section
+plane — must be handled at the cut, or not at all. §8.2 is the sharp
+case, and this rule is what generalises it.
 
 - **When to build.** Proxies must be generated off the GUI thread and
   must never stall a recompute. A rebuild triggered mid-edit would be
@@ -208,6 +397,20 @@ out-of-process geometry queue of `docs/ComputeBoundaries.md`.
   after a document settles, and to let an ancestor whose proxy is stale
   simply fall back to drawing its children until the new one arrives.
   This falls out of the ladder — a missing rung is not an error.
+- **Editing needs no special case, and should not get one.** The
+  tempting rule — exclude the object under edit — is unnecessary twice
+  over. You edit at close range, and at close range the cut is already
+  deep: a cell large enough to contain something you are looking at has
+  enormous projected error, so its members are drawn exactly by the
+  ordinary criterion. The remaining case is a far edit — from the tree,
+  a spreadsheet, an expression, an undo, a script — and that is the
+  bullet above: the changed content key makes the ancestors stale and a
+  stale ancestor draws its children. That fires once, when the key
+  changes, not per mouse move, so a drag descends the path at drag
+  start and stays there with no interactive-rate work. What the cell
+  then draws exactly is bounded by `K` (§3.2). The mechanism to force a
+  descent exists anyway for the bullet below, so nothing is lost by
+  declining to use it here.
 - **Popping — decided by the hierarchy, not by a fade.** See §8.1; it
   is the constraint that shapes §3, so it is written out rather than
   listed.
@@ -219,11 +422,15 @@ out-of-process geometry queue of `docs/ComputeBoundaries.md`.
   approximation than a bounding box, so its exclusions can be looser.
   Whether a proxy should cast shadows is the one genuinely new
   question, and it is a judgement to make against a real model.
-- **Transparency and section views.** A proxy of transparent parts is
-  wrong, and a section plane cutting a proxy caps an approximation.
-  Exclude transparent parts and section-intersecting nodes from
-  proxying and draw them exactly; the cut is per node, so this is a
-  local exclusion, not a global one.
+- **Transparency and section views**, and which kind of exclusion each
+  one is. A proxy of transparent parts is wrong, and a section plane
+  cutting a proxy caps an approximation. Transparency is a content
+  property and stable, so transparent parts are excluded at the
+  **content** level — they are never merged in, and they draw exactly.
+  A section plane is *dragged*, so section-intersecting nodes are
+  excluded at the **cut** level: the frontier descends past them while
+  the plane cuts them and returns when it does not. Getting these the
+  wrong way round would re-merge a subtree at the rate the plane moves.
 - **Memory.** Proxies are additional data, and they belong inside the
   existing byte budget (`SceneLadder.h`) rather than beside it. They
   should pay for themselves: a resident proxy is only worth its bytes
@@ -288,34 +495,54 @@ re-merges and re-decimates subtrees at hover rate.
 **Proxies are therefore immutable with respect to selection state**,
 which is also how the renderer already works: `buildHighlightCache`
 produces a *separate* cache drawn on top and never edits the base
-scene. Highlight is additive. Two regimes cover the cases:
+scene. Highlight is additive.
 
-**Few objects — hover, click, up to `MaxOnTopSelections`.** Build the
-exact highlight geometry on demand for those objects only and draw it
-on top; the proxy underneath keeps drawing its approximate version,
-unhighlighted. The cost is one object's tessellation (a fetch, on a
-thin client, so the highlight can land a frame late — "picking follows
-the rung" again). The artifact is a silhouette mismatch: the exact
-highlight does not perfectly cover the proxy's version of that part, so
-a sliver of unhighlighted surface can show. At proxy distances that is
-a pixel or two, and the existing selection outline both hides it and
-reads as deliberate.
+**The regime is chosen by which side of the cut the object is on** —
+not by how many objects are selected:
 
-**Many objects — select-all, a filter selecting thousands.** Build no
-exact geometry at all. **Tint in place**: the part table of §6 already
-tags every cluster with its source object, so the shader recolors the
-clusters belonging to selected objects. No rebuild, no exclusion, no
-exact geometry, and it scales to the whole assembly.
+- **Drawn exactly** (near side). Today's behaviour, unchanged: suppress
+  the object's scene draw and draw the exact highlight on top.
+- **Inside a proxy** (far side). **Tint in place.** The part table of
+  §6 already tags every cluster with its source object, so the shader
+  recolours the clusters belonging to selected objects. Nothing is
+  suppressed, nothing is drawn twice, no exact tessellation is fetched,
+  and it scales to the whole assembly.
 
-That second regime is the stronger argument for the part table. It is
-not only a picking mechanism — it is what lets selection state be
-expressed *inside* a proxy, which is what protects content-addressed
-identity from a hover-rate rebuild.
+A count-based split — few objects exact, thousands tinted — was the
+earlier answer here, and the cut-side rule subsumes it: select-all is
+mostly far, a hover is mostly near. It is also strictly better, because
+it removes the two costs the count-based version had to accept. There
+is no double draw, so on-top mode does not get more expensive at proxy
+distance; and there is no silhouette mismatch, which was the exact
+highlight failing to cover the proxy's coarser version of the same
+part and leaking a sliver of untinted surface.
 
-One consequence to accept rather than fix: with whole-object-on-top
-selection, a highlighted part inside a proxy is drawn twice, once
-approximately in place and once exactly on top. That is correct, but it
-does mean on-top mode costs more at proxy distance than it does today.
+**One mechanism detail to make explicit rather than leave incidental.**
+The suppression of a scene draw by its on-top highlight keys on
+`DrawCall::objectKey` equality (`Renderer.h`). A proxy carries no draw
+with a member's key, so the suppression *silently does nothing* — the
+correct outcome falls out for free today. That is accidental
+correctness, and it breaks the first time proxies gain member-keyed
+sub-draws. The rule should be written into the suppression itself: a
+proxy draw is never suppressed by a member's highlight.
+
+This is the stronger argument for the part table. It is not only a
+picking mechanism — it is what lets selection state be expressed
+*inside* a proxy, which is what protects content-addressed identity
+from a hover-rate rebuild.
+
+### 8.3 The invariant these collapse to
+
+§8's editing bullet, §8.2's selection rule and the section-plane case
+are three statements of one thing:
+
+> **A proxy is immutable with respect to all view state.** Selection,
+> preselection and edit state are expressed *on top of* or *inside* a
+> proxy — via the part table — never by changing what it contains.
+
+Everything that varies at interaction rate acts on the cut or on the
+shader; only content changes act on membership. Where a rule is needed
+for a new kind of view state, this is the one to apply.
 
 ## 9. What would justify starting
 
@@ -536,13 +763,28 @@ is worth more and this should wait.
 
 | phase | new/changed | note |
 |---|---|---|
-| 1 hierarchy | **new** `Gui/Renderer/ProxyHierarchy.{h,cpp}` | plain floats, no bgfx/Coin/OCCT — the discipline `SceneLadder.h` already keeps, so both tiers can share the policy |
-| 2 generation | `Gui/Renderer/MeshSimplify.*`, refine pool | merge N transformed meshes, then decimate |
+| 1 hierarchy | **new** `Gui/Renderer/ProxyHierarchy.{h,cpp}` | plain floats, no bgfx/Coin/OCCT — the discipline `SceneLadder.h` already keeps, so both tiers can share the policy. Input is the instance table of §3.1, projected from `DrawCallList` |
+| 2 generation | `Gui/Renderer/MeshSimplify.*`, refine pool | merge N transformed meshes per (cell, material), then decimate; bottom-up per §7.1 |
 | 3 the cut | `Gui/Renderer/SceneLadder.cpp` | beside `planMeshRefines`, sharing `PlanBoxes` |
 | 4 drawing | `Gui/Inventor/SoFCRendererBridge.cpp`, `BGFXRenderer.cpp` | needs the per-child slices of `IncrementalPublish` phase 4 |
-| 5 picking/highlight | `ProxyHierarchy`, selection path, shaders | the tint regime is the shader work |
+| 5 picking/highlight | `ProxyHierarchy`, selection path, shaders | in-proxy tint is now a phase-4 requirement, not a phase-5 nicety — see §11.4 |
 | 6 transitions | phase 3's selection | fade only for nodes actually crossing |
 | 7 streaming | wire format | bundling, per §9.1 |
+
+**Phase 1 predicts the win without generating a single proxy**, and
+that is the point of doing it first. Once the hierarchy and the descent
+exist, count `(cells on the cut × distinct material buckets present in
+each)` and compare it against the draws issued today — at the
+whole-assembly camera, at 4× and at 16×. That sum *is* the
+post-aggregation draw count (§5.1), so if it is not most of two orders
+of magnitude below 19362, phase 2 is not worth starting. It reuses the
+projection arithmetic `coverageHistogram()` already runs, and lands as
+a `RenderDebug_*` view property per `docs/RenderDebug.md` §2 rather
+than as throwaway instrumentation.
+
+The same pass yields the two distributions that pick the parameters
+`K` and the extent target: instances per cell, and material buckets per
+cell, both per level.
 
 ### 11.2 What the code already gives us
 
@@ -562,10 +804,19 @@ different key.
 ### 11.3 The invariant to write down first
 
 Two ladders now overlap. Every object today picks its own rung through
-`planMeshRefines`; with proxies, an ancestor drawing a proxy must
-*supersede* its children. The two must not both draw:
+`planMeshRefines`; with proxies, a node drawing a proxy must
+*supersede* its members. The two must not both draw:
 
-> **No object may be drawn while any ancestor node is drawing a proxy.**
+> **Every instance belongs to exactly one cell per level, and for each
+> instance exactly one of {the instance, its covering proxy} draws.**
+
+Stated over the document tree this would have been an ancestry test —
+"no object may be drawn while any ancestor node is drawing a proxy" —
+which is both more expensive and easy to express wrongly. Over a
+partition (§3.2) it is a counting argument: walk each instance's cell
+path, assert exactly one member of it is on the drawing side of the
+frontier. `O(instances × depth)`, which is a debug-only pass and
+therefore a `RenderDebug_*` property, off by default.
 
 The cut decides *who* draws; the per-object ladder decides *at what
 fidelity*, below the cut only. This is cheap to assert in phase 3 and
@@ -574,16 +825,27 @@ in the same spirit as §8.2's rule about selection.
 
 ### 11.4 Risks this plan carries
 
-- **Phase 5's tint needs renderer plumbing that does not exist.**
-  Highlighting today builds a *separate* cache drawn on top
-  (`buildHighlightCache`) and never touches the base scene. Tinting
-  inside a proxy means a per-cluster attribute plus a selection buffer
-  the shader reads. That is new, and the 2-4 day estimate of §9.1 should
-  be re-checked against `docs/ShaderDesign.md` before it is trusted.
-- **Merging across materials.** §5.1 assumes materials resolve per
-  cluster; a node whose parts carry many distinct materials either
-  fragments the proxy into many draws — losing the win — or averages
-  them and looks wrong. The material count per node is a property worth
-  measuring in phase 1, before phase 2 is designed around it.
+- **In-proxy tint needs renderer plumbing that does not exist, and
+  §8.2 promoted it.** Highlighting today builds a *separate* cache
+  drawn on top (`buildHighlightCache`) and never touches the base
+  scene. Tinting inside a proxy means a per-cluster attribute plus a
+  selection buffer the shader reads. Under the cut-side rule this is
+  how a proxied object is highlighted *at all*, so it is required by
+  phase 4 rather than by phase 5, and the 2-4 day estimate of §9.1
+  should be re-checked against `docs/ShaderDesign.md` before it is
+  trusted. The interim, if phase 4 lands first, is the double draw the
+  count-based regime used to accept: it works and merely costs more.
+- **Merging across materials — the shape of this risk changed.** §5.1
+  now makes the material part of the partition, so nothing is averaged
+  and the failure mode is no longer "wrong colour" but "too many
+  draws". That turns it from a design risk into a *measurement*: the
+  buckets-per-cell distribution of §11.1, taken in phase 1, is what
+  says whether the aggregation win survives the fan-out.
+- **`K` is load-bearing in two directions.** §3.2 makes one parameter
+  bound both the size of a pop (§8.1) and the amount drawn exactly when
+  the cut is forced down (§8). Those two want it small and the draw
+  count wants it large; if the phase-1 distributions show no value
+  satisfying both, the pop treatment of §8.1 needs revisiting before
+  phase 2, not after.
 - **Generation throughput** is a scheduler problem at the node counts
   fine grading implies (§9.1), not a loop.
