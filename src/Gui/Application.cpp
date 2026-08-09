@@ -2800,25 +2800,44 @@ public:
         // The windows11 style does mark the item under the pointer, but with a
         // near-white rounded fill that is invisible against a menu bar which is
         // already off-white -- so Classic looks like it has no hover at all
-        // while a theme, which names its own accent, looks fine. Draw the
-        // selection from the palette instead, which is what the themes do and
-        // what the styles before Qt 6 did.
+        // while a theme, which names its own accent, looks fine.
+        //
+        // Borrow the shading rather than name a colour, so it follows the style
+        // and the palette. The one to borrow is a *split* tool button's: a tool
+        // button with a menu shades light blue on hover, a plain one only gets
+        // a pale outline. Both switches matter -- the style wants
+        // QStyleOptionToolButton::Menu and State_AutoRaise together, and drops
+        // to the pale grey if either is missing.
         const auto* item = qstyleoption_cast<const QStyleOptionMenuItem*>(option);
         if (element == CE_MenuBarItem && item && (item->state & State_Selected)) {
-            painter->fillRect(item->rect, item->palette.highlight());
+            QStyleOptionToolButton panel;
+            static_cast<QStyleOption&>(panel) = *item;
+            panel.state |= State_MouseOver | State_AutoRaise | State_Raised;
+            panel.features = QStyleOptionToolButton::Menu;
+            panel.subControls = SC_ToolButton;
+            panel.activeSubControls = SC_ToolButton;
+            panel.toolButtonStyle = Qt::ToolButtonIconOnly;
+            panel.arrowType = Qt::NoArrow;
 
-            int alignment = Qt::AlignCenter | Qt::TextShowMnemonic | Qt::TextDontClip
-                | Qt::TextSingleLine;
-            if (!proxy()->styleHint(SH_UnderlineShortcut, item, widget)) {
-                alignment |= Qt::TextHideMnemonic;
-            }
-            proxy()->drawItemText(painter,
-                                  item->rect,
-                                  alignment,
-                                  item->palette,
-                                  item->state & State_Enabled,
-                                  item->text,
-                                  QPalette::HighlightedText);
+            // Only the button half is drawn, and the style takes the arrow's
+            // width off the right before drawing it. Hand it a rect that is
+            // wider by exactly that, and the half that does get drawn lands on
+            // the item, corners and all.
+            panel.rect.adjust(0, 0,
+                              proxy()->pixelMetric(PM_MenuButtonIndicator, &panel, widget), 0);
+
+            painter->save();
+            painter->setClipRect(item->rect);
+            proxy()->drawComplexControl(CC_ToolButton, &panel, painter, widget);
+            painter->restore();
+
+            // Let the style draw the label as if nothing were selected, so the
+            // text is laid out exactly as it is the rest of the time. Drawing
+            // it here instead moved it: a menu title must not resize under the
+            // pointer.
+            QStyleOptionMenuItem label(*item);
+            label.state &= ~(State_Selected | State_MouseOver | State_Sunken);
+            QProxyStyle::drawControl(element, &label, painter, widget);
             return;
         }
         QProxyStyle::drawControl(element, option, painter, widget);
