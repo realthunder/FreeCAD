@@ -179,8 +179,16 @@ void Action::setChecked(bool check, bool no_signal)
         } else {
             _action->setChecked(check);
         }
-        Q_EMIT actionChecked(check);
     }
+    // Emitted even when the action was already in that state. The
+    // buttons standing in for this action in menus (Action::addWidget)
+    // follow this signal and nothing else, and the action can reach the
+    // state without them: an exclusive QActionGroup unchecks its other
+    // members itself, so a shortcut that changes the mode leaves every
+    // one of them agreeing with the action and disagreeing with the
+    // button. A later sync would then have nothing to report and the
+    // stale tick would survive it.
+    Q_EMIT actionChecked(check);
 }
 
 bool Action::isChecked() const
