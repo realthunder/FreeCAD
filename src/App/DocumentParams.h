@@ -472,6 +472,21 @@ public:
     static const char *docMCPServerAutoStart();
     //@}
 
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MCPServerPort
+    ///
+    /// Port the MCP debug console server listens on. If it is already in
+    /// use the server takes the next free port after it, so the port it
+    /// ends up on is reported in the console and in the Tools -> MCP
+    /// Server tooltip.
+    static const long & getMCPServerPort();
+    static const long & defaultMCPServerPort();
+    static void removeMCPServerPort();
+    static void setMCPServerPort(const long &v);
+    static const char *docMCPServerPort();
+    //@}
+
 // Auto generated code (Tools/params_utils.py:179)
 }; // class DocumentParams
 } // namespace App

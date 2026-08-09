@@ -100,6 +100,11 @@ Params = [
     ParamBool('MCPServerAutoStart', False,
         doc='Start the MCP debug console server (freecad.mcp_console) when the\n'
             'application starts. Toggled by the Tools -> MCP Server menu action.'),
+    ParamInt('MCPServerPort', 8765,
+        doc='Port the MCP debug console server listens on. If it is already in\n'
+            'use the server takes the next free port after it, so the port it\n'
+            'ends up on is reported in the console and in the Tools -> MCP\n'
+            'Server tooltip.'),
 ]
 
 def declare():
