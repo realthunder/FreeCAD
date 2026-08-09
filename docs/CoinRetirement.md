@@ -270,6 +270,25 @@ The `Shadow_*` dynamic properties are a fourth thing to place: group
 ground colour and transparency and the rest. They need mapping onto
 `Render_*` equivalents or they are left orphaned on the view.
 
+Two defects found while establishing the above, both open and both
+recorded in `docs/HANDOFF_ShadingAndDrawStyle.md` §2:
+
+- `Shadow_ShowGround` is never created when a backend is active. The
+  call that materializes it sits behind `!renderer &&` at
+  `View3DInventorViewer.cpp:2389`, so the short circuit skips it. The
+  global preference still reaches the backend through the bridge's
+  fallback; only the per-view override is unreachable.
+- The backend's shadow ground is roughly twice the extent of glr's —
+  0.9927 of the frame against 0.4791 on one sphere and one cylinder,
+  glr ending at a horizon where the backend reaches every edge. The
+  bridge notes it "sizes its ground from the scene bounding box only",
+  which is where the difference most likely is.
+
+⚠️ Both were invisible for as long as the comparison leg was cache 0,
+which has no shadow support at all: its shadow frame measures identical
+to its flat one. §3.3's warning about comparing the wrong pair applies
+to shadows more sharply than to anything else in this document.
+
 There is already a migration of exactly this shape to copy:
 `activateShadow()` reads a legacy `FlatLines` property off the
 `App::Document`, converts it into `Shadow_DisplayMode`, and calls
