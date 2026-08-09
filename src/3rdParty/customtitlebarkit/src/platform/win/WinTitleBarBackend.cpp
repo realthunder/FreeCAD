@@ -4,6 +4,7 @@
 #include "WinTitleBarBackend.h"
 
 #include <QWidget>
+#include <QPointer>
 #include <QTimer>
 #include <QMargins>
 
@@ -44,14 +45,64 @@ void WinTitleBarBackend::detach()
     // destruction. Switching the title bar back to native at run time needs
     // attach() genuinely undone, or the window keeps the frameless hint and the
     // extended frame and comes back with no decoration at all.
-    if (m_window) {
-        HWND hwnd = reinterpret_cast<HWND>(m_window->winId());
+    QWidget* window = m_window;
+    // Drop the pointer FIRST. handleNativeEvent() answers WM_NCCALCSIZE with
+    // "client area == window rect", which is what hides the native frame, and
+    // the frame change setWindowFlags() below triggers is delivered
+    // synchronously. Leave this set and the very recalculation that restores
+    // the non-client area gets swallowed by the handler being undone: the hint
+    // and the styles come back, the frame does not, and nothing asks again.
+    m_window = nullptr;
+    if (window) {
+        HWND hwnd = reinterpret_cast<HWND>(window->winId());
         // Zero margins put the client area back where Windows expects it.
         const MARGINS none = {0, 0, 0, 0};
         DwmExtendFrameIntoClientArea(hwnd, &none);
-        m_window->setWindowFlags(m_window->windowFlags() & ~Qt::FramelessWindowHint);
+        window->setWindowFlags(window->windowFlags() & ~Qt::FramelessWindowHint);
+
+        // Ask for the recalculation explicitly, and ask for it late.
+        //
+        // Explicitly, because attach() does not take the frame off through the
+        // window style -- it puts WS_CAPTION and WS_THICKFRAME *back* and hides
+        // the frame purely by answering WM_NCCALCSIZE. So clearing the hint
+        // leaves Qt with no style delta to apply, and no reason to send one.
+        //
+        // Late, because setWindowFlags() above hid the window, and the show()
+        // that follows re-applies the geometry the window had while it was
+        // frameless. A frame change asked for here is undone by that show; one
+        // queued behind it is not. winId() is re-read for the same reason --
+        // the handle may not survive the flag change.
+        QPointer<QWidget> alive = window;
+        QTimer::singleShot(0, window, [alive]() {
+            if (!alive) {
+                return;
+            }
+            HWND handle = reinterpret_cast<HWND>(alive->winId());
+
+            RECT before = {0, 0, 0, 0};
+            ::GetClientRect(handle, &before);
+
+            ::SetWindowPos(handle, nullptr, 0, 0, 0, 0,
+                           SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+
+            // The frame that just came back is carved out of the client area,
+            // so the window has to grow by it. Without this every trip through
+            // custom mode costs the content one title bar and two borders, and
+            // the window visibly creeps smaller each time it is toggled.
+            RECT after = {0, 0, 0, 0};
+            RECT outer = {0, 0, 0, 0};
+            ::GetClientRect(handle, &after);
+            ::GetWindowRect(handle, &outer);
+            const int dw = (before.right - before.left) - (after.right - after.left);
+            const int dh = (before.bottom - before.top) - (after.bottom - after.top);
+            if ((dw != 0 || dh != 0) && !::IsZoomed(handle) && !::IsIconic(handle)) {
+                ::SetWindowPos(handle, nullptr, 0, 0,
+                               outer.right - outer.left + dw,
+                               outer.bottom - outer.top + dh,
+                               SWP_NOMOVE | SWP_NOZORDER);
+            }
+        });
     }
-    m_window = nullptr;
 }
 
 QSize WinTitleBarBackend::nativeControlsAreaSize()
