@@ -839,7 +839,7 @@ The phase order, then:
 6. View-dependent volumetric proxies (§5.2), only where §5.1 is shown
    to fail.
 
-### 10.1 ⛔ Open: does occlusion culling come before any of this?
+### 10.1 ⭐ Decided: occlusion culling comes first
 
 §4.1 records that massive-model practice answers aggregate detail
 mainly by **visibility-guided rendering** — finding the small subset of
@@ -858,13 +858,43 @@ and tested for it.
 
 The two compose rather than compete: culling removes what cannot be
 seen, proxies merge what can be seen but is too small to resolve. But
-they are not equally urgent, and which comes first is decidable by a
-measurement rather than by argument — **how many of the drawn instances
-contribute no pixel at all**. On a dense assembly with a closed
-enclosure that fraction is most of the model, and culling would then
-dominate; on an open frame it is small. That number does not exist yet
-and it is the same shape as the readouts of §11.1: cheap, once a
-second, reported not inferred.
+the composition has an order. **A merged proxy is a worse culling unit
+than the parts it replaced** — one blob spanning a cell is visible
+whenever any part of it is, where the parts individually might all have
+been hidden. Culling then proxying composes; proxying then culling
+weakens the culling.
+
+**Decided (2026-08-09): culling first.** The benchmark decides it as
+much as the argument does — the largest model available is an enclosed
+rack-server assembly, which is precisely the shape that hides most of
+itself, and it is the same scene phases 0-2 were measured on, so the
+numbers compose rather than needing reconciliation (§11.1b's warning
+about the STEP import and the saved document being different scenes
+applies here too: use the saved document).
+
+Two measurements open that workstream, and neither gates whether to do
+it — they size it and say what to build:
+
+- **How many drawn instances contribute no pixel at all.** The same
+  shape as §11.1's readouts: cheap, once a second, reported not
+  inferred. On an enclosed assembly this should be most of the model.
+- **Whether the per-object cost of §9.1 is CPU submission or GPU
+  per-draw state.** 6.85 µs is too large for either to be assumed, and
+  the frame-rate ablation that produced it cannot separate them. It
+  decides the mechanism: a scheme that still submits the draw saves
+  nothing if the cost is submission. `bgfx::getStats()` already reports
+  `cpuTimeFrame` against `gpuTimeBegin/End`, so this is nearly free and
+  should be read before anything is built.
+
+⚠️ **No compute shader is required, and the compute route is the one to
+avoid.** Hardware occlusion queries issued per *hierarchy node* rather
+than per object (the CHC++ shape, over the index §3 already provides)
+are supported by bgfx — `BGFX_CAPS_OCCLUSION_QUERY` — across GL, D3D11,
+Vulkan, Metal and WebGL2. A CPU-side software occlusion buffer tested
+against node bounds needs no GPU feature at all and behaves identically
+in WASM. A GPU-driven HZB with compute and indirect draws is faster and
+is unavailable in WebGL2, which would fork the desktop and browser
+paths — the one thing `CLAUDE.md` asks renderer work not to do.
 
 ## 11. Implementation plan
 
