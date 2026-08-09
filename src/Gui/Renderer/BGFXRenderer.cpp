@@ -87,6 +87,31 @@ bool BGFXRenderer::render(const QColor &col,
     return ok;
 }
 
+bool BGFXRenderer::renderOffscreen(const QColor &col,
+                                   const void *viewMatrix,
+                                   const void *projMatrix,
+                                   int width, int height)
+{
+#ifdef FC_RENDERER_STANDALONE
+    (void)col; (void)viewMatrix; (void)projMatrix;
+    (void)width; (void)height;
+    return false;
+#else
+    if (width <= 0 || height <= 0)
+        return false;
+    // The view is sized from the widget every frame; while these are
+    // set it is sized from them instead, so the capture renders at its
+    // own resolution rather than scaling the widget's. The next
+    // on-screen frame sees the mismatch and sizes the view back.
+    _BGFXLib.captureWidth = uint16_t(width);
+    _BGFXLib.captureHeight = uint16_t(height);
+    const bool ok = render(col, viewMatrix, projMatrix);
+    _BGFXLib.captureWidth = 0;
+    _BGFXLib.captureHeight = 0;
+    return ok;
+#endif
+}
+
 bool BGFXRenderer::publish(const QColor &col,
                            const void *viewMatrix,
                            const void *projMatrix,

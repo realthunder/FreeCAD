@@ -591,6 +591,12 @@ struct View3DInventorViewer::Private
         frameCostMs = frameCostMs > 0.0 ? 0.5 * frameCostMs + 0.5 * ms : ms;
     }
 
+    /// Describe the window background so the backend draws it behind
+    /// the scene: transparent geometry must blend against the real
+    /// background, not the backend's clear color. Shared by the
+    /// on-screen frame and offscreen captures.
+    Render::Background backgroundFeed(const QColor &col) const;
+
     void updateOverlayCaptures(SoGLRenderAction *glra);
     void clearOverlayCaptures();
     static void overlayCaptureCB(void *ud, SoAction *action);
@@ -738,6 +744,29 @@ void View3DInventorViewer::Private::overlayCaptureCB(void *ud, SoAction *action)
     auto *capture = static_cast<OverlayCapture *>(ud);
     capture->manager->capture(static_cast<SoGLRenderAction *>(action),
                               capture->root);
+}
+
+Render::Background
+View3DInventorViewer::Private::backgroundFeed(const QColor &col) const
+{
+    Render::Background rbg;
+    if (owner->hasGradientBackground()) {
+        SbColor fcol, tcol, mcol;
+        rbg.hasMid = owner->pcBackGround->getColorGradient(fcol, tcol, mcol);
+        rbg.type = owner->getGradientBackground() == Background::LinearGradient
+            ? Render::Background::LinearGradient
+            : Render::Background::RadialGradient;
+        rbg.fromColor = fcol.getPackedValue();
+        rbg.toColor = tcol.getPackedValue();
+        if (rbg.hasMid)
+            rbg.midColor = mcol.getPackedValue();
+    } else {
+        rbg.type = Render::Background::Flat;
+        rbg.fromColor = (uint32_t(col.red()) << 24)
+            | (uint32_t(col.green()) << 16)
+            | (uint32_t(col.blue()) << 8) | 0xff;
+    }
+    return rbg;
 }
 
 void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra)
@@ -3815,8 +3844,28 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
 
     const QColor col = this->backgroundColor();
     glViewport(0, 0, width, height);
-    glClearColor(float(col.redF()), float(col.greenF()), float(col.blueF()), float(col.alphaF()));
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // With a backend active the geometry is its to draw: the Coin
+    // traversal below skips it (SoFCRenderer::render returns early while
+    // canSkipInternal()), so without this an offscreen capture is a
+    // blank image. Same call as the on-screen frame, only rendered at
+    // the capture's size and into the framebuffer bound above.
+    bool externalRendered = false;
+    if (SoCamera* cam = _pimpl->renderer ? getSoRenderManager()->getCamera()
+                                         : nullptr) {
+        SbMatrix viewMat, projMat;
+        SbViewportRegion capvp {short(width), short(height)};
+        SbViewVolume vol = cam->getViewVolume(capvp.getViewportAspectRatio());
+        vol.getMatrices(viewMat, projMat);
+        _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
+        externalRendered = _pimpl->renderer->renderOffscreen(
+                col, &viewMat.getValue(), &projMat.getValue(), width, height);
+    }
+    if (!externalRendered) {
+        glClearColor(float(col.redF()), float(col.greenF()), float(col.blueF()),
+                     float(col.alphaF()));
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    }
 
     SoBoxSelectionRenderAction gl(SbViewportRegion(width, height));
     // When creating a new GL render action we have to copy over the cache context id
@@ -3825,16 +3874,32 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
     gl.setCacheContext(id);
     gl.setTransparencyType(SoGLRenderAction::SORTED_OBJECT_SORTED_TRIANGLE_BLEND);
 
+    // The backend's output already carries the background, and repainting
+    // the gradient would erase it — the same suppression the on-screen
+    // frame does, for the same reason.
+    pcBackGround->setSuppressed(externalRendered);
     gl.apply(this->backgroundroot);
+    pcBackGround->setSuppressed(false);
     // The render action of the render manager has set the depth function to GL_LESS
     // while creating a new render action has it set to GL_LEQUAL. So, in order to get
     // the exact same result set it explicitly to GL_LESS.
     glDepthFunc(GL_LESS);
+    SoDatumLabel::SuppressGLRender =
+        externalRendered && _pimpl->editingBackendFed;
+    SoFCRenderCacheManager::SuppressImageGLRender =
+        SoDatumLabel::SuppressGLRender;
     gl.apply(this->getSoRenderManager()->getSceneGraph());
-    gl.apply(this->foregroundroot);
+    SoDatumLabel::SuppressGLRender = false;
+    SoFCRenderCacheManager::SuppressImageGLRender = false;
 
-    if (this->axiscrossEnabled) {
-        this->drawAxisCross();
+    // Foreground superimposition and the corner axis cross come from the
+    // backend's overlay feeds on a backend frame, like on screen.
+    if (!externalRendered) {
+        gl.apply(this->foregroundroot);
+
+        if (this->axiscrossEnabled) {
+            this->drawAxisCross();
+        }
     }
 
     fbo->release();
@@ -4475,27 +4540,7 @@ void View3DInventorViewer::renderScene()
         const SbViewportRegion vp = getSoRenderManager()->getViewportRegion();
         SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
-        // Describe the background so the backend draws it behind the scene;
-        // transparent geometry must blend against the real background, not
-        // the backend's clear color.
-        Render::Background rbg;
-        if (hasGradientBackground()) {
-            SbColor fcol, tcol, mcol;
-            rbg.hasMid = pcBackGround->getColorGradient(fcol, tcol, mcol);
-            rbg.type = getGradientBackground() == Background::LinearGradient
-                ? Render::Background::LinearGradient
-                : Render::Background::RadialGradient;
-            rbg.fromColor = fcol.getPackedValue();
-            rbg.toColor = tcol.getPackedValue();
-            if (rbg.hasMid)
-                rbg.midColor = mcol.getPackedValue();
-        } else {
-            rbg.type = Render::Background::Flat;
-            rbg.fromColor = (uint32_t(col.red()) << 24)
-                | (uint32_t(col.green()) << 16)
-                | (uint32_t(col.blue()) << 8) | 0xff;
-        }
-        _pimpl->renderer->setBackground(rbg);
+        _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         externalRendered =
             _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
         // Time-animated backend content (e.g. water caustics) keeps

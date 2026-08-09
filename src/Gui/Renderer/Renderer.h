@@ -1194,6 +1194,27 @@ public:
     virtual bool render(const QColor &bg,
                         const void *viewMatrix,
                         const void *projMatrix) = 0;
+
+    /// Render one frame for an offscreen capture -- a screenshot or an
+    /// image export -- instead of the on-screen one. Two things differ
+    /// from render(): the frame is rendered at \a width x \a height
+    /// whatever the host widget's size is, and the finished image is
+    /// transferred into the framebuffer the caller has bound rather
+    /// than the widget's. Everything else is an ordinary frame with the
+    /// same feeds, and the matrices mean what they mean in render() --
+    /// build them for the capture's aspect ratio, not the widget's.
+    /// Returns false when the backend cannot capture (the default), in
+    /// which case the caller's own render path must draw the frame.
+    virtual bool renderOffscreen(const QColor &bg,
+                                 const void *viewMatrix,
+                                 const void *projMatrix,
+                                 int width, int height)
+    {
+        (void)bg; (void)viewMatrix; (void)projMatrix;
+        (void)width; (void)height;
+        return false;
+    }
+
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) = 0;
 

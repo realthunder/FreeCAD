@@ -49,6 +49,13 @@ public:
     virtual bool render(const QColor &bg,
                         const void *viewMatrix,
                         const void *projMatrix) override;
+    /// Render one capture frame at the requested size into the
+    /// framebuffer the caller bound; see Render::Renderer. Standalone
+    /// builds return false -- the host owns its backbuffer.
+    virtual bool renderOffscreen(const QColor &bg,
+                                 const void *viewMatrix,
+                                 const void *projMatrix,
+                                 int width, int height) override;
     virtual bool publish(const QColor &bg,
                          const void *viewMatrix,
                          const void *projMatrix,

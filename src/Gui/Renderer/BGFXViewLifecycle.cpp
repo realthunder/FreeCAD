@@ -112,8 +112,8 @@ void BGFXView::init()
     int samples = _BGFXLib.standaloneSamples;
     msaaSamples = samples;
 #else
-    width = uint16_t(widget->width());
-    height = uint16_t(widget->height());
+    width = uint16_t(_BGFXLib.viewWidth(widget));
+    height = uint16_t(_BGFXLib.viewHeight(widget));
 
     // bgfx owns MSAA in its own offscreen target: prefer the preference
     // override (BGFXRenderer::setMSAASamples) over the host widget's GL

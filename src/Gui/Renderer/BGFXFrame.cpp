@@ -137,8 +137,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (!bgfx::isValid(view->bgfxFbo))
         return false;
 #else
-    if (widget->width() != int(view->width)
-            || widget->height() != int(view->height)
+    if (_BGFXLib.viewWidth(widget) != int(view->width)
+            || _BGFXLib.viewHeight(widget) != int(view->height)
             || !bgfx::isValid(view->bgfxFbo)
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale
@@ -3791,10 +3791,20 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->present();
     bgfx::frame();
 #else
+    // The finished frame belongs in whatever framebuffer the caller had
+    // bound when it asked for it: the widget's own for an on-screen
+    // frame, a capture target for a screenshot (renderOffscreen).
+    // QOpenGLWidget::makeCurrent() binds its own framebuffer, so the
+    // caller's has to be remembered here and restored before the blit,
+    // which transfers into whatever is bound.
+    GLint hostFbo = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &hostFbo);
     widget->doneCurrent();
     _BGFXLib.makeCurrent();
     bgfx::frame();
     widget->makeCurrent();
+    QOpenGLContext::currentContext()->extraFunctions()
+        ->glBindFramebuffer(GL_FRAMEBUFFER, GLuint(hostFbo));
     view->blit(dumpPending ? &pendingDump : nullptr, &lastStats);
     dumpPending = false;
 #endif

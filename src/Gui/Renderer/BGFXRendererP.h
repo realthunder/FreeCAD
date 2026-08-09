@@ -807,6 +807,19 @@ public:
     // top of the next render() — bgfx renders into its own offscreen FBO and
     // resolves before the blit, so the Qt context need not be multisampled.
     int desktopSamples = -1;
+    // Offscreen capture size (BGFXRenderer::renderOffscreen): while
+    // non-zero the desktop view renders at this size instead of the
+    // host widget's. 0 = follow the widget, which is every on-screen
+    // frame -- so the frame after a capture sees the mismatch and
+    // sizes the view back on its own.
+    uint16_t captureWidth = 0;
+    uint16_t captureHeight = 0;
+    /// The size a desktop view renders at: the host widget's, unless an
+    /// offscreen capture is asking for its own.
+    int viewWidth(QOpenGLWidget *widget) const
+    { return captureWidth ? int(captureWidth) : widget->width(); }
+    int viewHeight(QOpenGLWidget *widget) const
+    { return captureHeight ? int(captureHeight) : widget->height(); }
     typedef void (*FreeResourceFunc)(QOpenGLFunctions *functions, GLuint id);
     std::vector<std::pair<GLuint, FreeResourceFunc>> pendingRemoves;
     std::unique_ptr<QOpenGLContext> context;
