@@ -60,6 +60,11 @@ public:
     long GpuMemoryBudgetMB;
     double LevelTolerance;
     double EffectResolution;
+    bool Occlusion;
+    long OcclusionVisibleTtl;
+    long OcclusionBudget;
+    long OcclusionMinSubtree;
+    long OcclusionMaxHidden;
     bool AO;
     bool Shadow;
     long AOMethod;
@@ -142,6 +147,16 @@ public:
         funcs["LevelTolerance"] = &RenderParamsP::updateLevelTolerance;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
         funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
+        Occlusion = this->handle->GetBool("Occlusion", false);
+        funcs["Occlusion"] = &RenderParamsP::updateOcclusion;
+        OcclusionVisibleTtl = this->handle->GetInt("OcclusionVisibleTtl", 6);
+        funcs["OcclusionVisibleTtl"] = &RenderParamsP::updateOcclusionVisibleTtl;
+        OcclusionBudget = this->handle->GetInt("OcclusionBudget", 128);
+        funcs["OcclusionBudget"] = &RenderParamsP::updateOcclusionBudget;
+        OcclusionMinSubtree = this->handle->GetInt("OcclusionMinSubtree", 8);
+        funcs["OcclusionMinSubtree"] = &RenderParamsP::updateOcclusionMinSubtree;
+        OcclusionMaxHidden = this->handle->GetInt("OcclusionMaxHidden", 120);
+        funcs["OcclusionMaxHidden"] = &RenderParamsP::updateOcclusionMaxHidden;
         AO = this->handle->GetBool("AO", false);
         funcs["AO"] = &RenderParamsP::updateAO;
         Shadow = this->handle->GetBool("Shadow", true);
@@ -313,6 +328,26 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateEffectResolution(RenderParamsP *self) {
         self->EffectResolution = self->handle->GetFloat("EffectResolution", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusion(RenderParamsP *self) {
+        self->Occlusion = self->handle->GetBool("Occlusion", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionVisibleTtl(RenderParamsP *self) {
+        self->OcclusionVisibleTtl = self->handle->GetInt("OcclusionVisibleTtl", 6);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionBudget(RenderParamsP *self) {
+        self->OcclusionBudget = self->handle->GetInt("OcclusionBudget", 128);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionMinSubtree(RenderParamsP *self) {
+        self->OcclusionMinSubtree = self->handle->GetInt("OcclusionMinSubtree", 8);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionMaxHidden(RenderParamsP *self) {
+        self->OcclusionMaxHidden = self->handle->GetInt("OcclusionMaxHidden", 120);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAO(RenderParamsP *self) {
@@ -921,6 +956,184 @@ void RenderParams::setEffectResolution(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeEffectResolution() {
     instance()->handle->RemoveFloat("EffectResolution");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusion() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Skip drawing what the depth buffer proves could not have\n"
+"reached the screen (docs/FarFieldProxies.md §12). Bounding boxes\n"
+"of the spatial index's nodes are tested against the finished\n"
+"opaque depth under hardware occlusion queries, and a node that\n"
+"puts no pixel through has its whole subtree skipped on the\n"
+"following frames -- one test standing for thousands of draws.\n"
+"\n"
+"Exact, not approximate: only geometry that could not have been\n"
+"seen is removed, so the image is unchanged and what is saved is\n"
+"the draw call, which measures ~1.2-1.5us of CPU submission plus\n"
+"~1.5-1.7us of GPU time whatever it contains (§10.2). It pays on\n"
+"assemblies that hide themselves -- an enclosed chassis, a\n"
+"populated rack, any interior -- and does nothing for a model\n"
+"that is mostly silhouette. Expect roughly a fifth of the draws\n"
+"from a camera inside a large assembly (§10.3); the far larger\n"
+"figure from outside a closed model is a bound, not a promise.\n"
+"\n"
+"Casters and reflections are judged separately: geometry hidden\n"
+"from the eye still casts its shadow and still appears in the\n"
+"ground reflection.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusion() {
+    return instance()->Occlusion;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusion() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusion(const bool &v) {
+    instance()->handle->SetBool("Occlusion",v);
+    instance()->Occlusion = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusion() {
+    instance()->handle->RemoveBool("Occlusion");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionVisibleTtl() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many frames a node found visible is believed before it is\n"
+"tested again. Higher spends fewer queries and keeps drawing\n"
+"geometry that has since become hidden for a little longer; lower\n"
+"tracks the camera more closely at the cost of more tests. Purely\n"
+"a cost trade -- being late here draws too much, never too\n"
+"little, so it cannot affect the image.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionVisibleTtl() {
+    return instance()->OcclusionVisibleTtl;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionVisibleTtl() {
+    const static long def = 6;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionVisibleTtl(const long &v) {
+    instance()->handle->SetInt("OcclusionVisibleTtl",v);
+    instance()->OcclusionVisibleTtl = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionVisibleTtl() {
+    instance()->handle->RemoveInt("OcclusionVisibleTtl");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionBudget() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many occlusion tests one frame may issue. The GPU offers\n"
+"256 for the whole process and the RenderDebug_Occlusion\n"
+"measurement is the other claimant, so the default leaves that\n"
+"measurement room to run alongside. Asking for more tests than\n"
+"the budget allows is not an error: hidden nodes are offered\n"
+"first, since a test is the only way one can come back, and the\n"
+"rest are offered again next frame.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionBudget() {
+    return instance()->OcclusionBudget;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionBudget() {
+    const static long def = 128;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionBudget(const long &v) {
+    instance()->handle->SetInt("OcclusionBudget",v);
+    instance()->OcclusionBudget = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionBudget() {
+    instance()->handle->RemoveInt("OcclusionBudget");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionMinSubtree() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Do not test an index node standing for fewer drawn instances\n"
+"than this. A test is itself a draw, so testing a node that could\n"
+"save one draw loses whether it answers hidden or visible.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionMinSubtree() {
+    return instance()->OcclusionMinSubtree;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionMinSubtree() {
+    const static long def = 8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionMinSubtree(const long &v) {
+    instance()->handle->SetInt("OcclusionMinSubtree",v);
+    instance()->OcclusionMinSubtree = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionMinSubtree() {
+    instance()->handle->RemoveInt("OcclusionMinSubtree");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionMaxHidden() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many frames a hidden node may go without an answer before\n"
+"it is drawn again. A hidden node is re-tested continuously and\n"
+"the answer is its only way back, so if answers stop arriving --\n"
+"no query handles left, a dropped batch -- this is what returns\n"
+"the geometry instead of leaving it missing. Answers that keep\n"
+"confirming the node is hidden keep it hidden indefinitely, so\n"
+"this never flickers a node the tests are still reaching.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionMaxHidden() {
+    return instance()->OcclusionMaxHidden;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionMaxHidden() {
+    const static long def = 120;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionMaxHidden(const long &v) {
+    instance()->handle->SetInt("OcclusionMaxHidden",v);
+    instance()->OcclusionMaxHidden = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionMaxHidden() {
+    instance()->handle->RemoveInt("OcclusionMaxHidden");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

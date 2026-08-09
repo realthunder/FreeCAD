@@ -154,6 +154,54 @@ Params = [
         "frame; the main geometry, edges, text and overlays stay full\n"
         "resolution. 1.0 renders the effects at full resolution. The\n"
         "volumetric light shafts already render at half resolution."),
+    ParamBool('Occlusion',  False, title='Occlusion culling',
+        doc="Skip drawing what the depth buffer proves could not have\n"
+        "reached the screen (docs/FarFieldProxies.md §12). Bounding boxes\n"
+        "of the spatial index's nodes are tested against the finished\n"
+        "opaque depth under hardware occlusion queries, and a node that\n"
+        "puts no pixel through has its whole subtree skipped on the\n"
+        "following frames -- one test standing for thousands of draws.\n"
+        "\n"
+        "Exact, not approximate: only geometry that could not have been\n"
+        "seen is removed, so the image is unchanged and what is saved is\n"
+        "the draw call, which measures ~1.2-1.5us of CPU submission plus\n"
+        "~1.5-1.7us of GPU time whatever it contains (§10.2). It pays on\n"
+        "assemblies that hide themselves -- an enclosed chassis, a\n"
+        "populated rack, any interior -- and does nothing for a model\n"
+        "that is mostly silhouette. Expect roughly a fifth of the draws\n"
+        "from a camera inside a large assembly (§10.3); the far larger\n"
+        "figure from outside a closed model is a bound, not a promise.\n"
+        "\n"
+        "Casters and reflections are judged separately: geometry hidden\n"
+        "from the eye still casts its shadow and still appears in the\n"
+        "ground reflection."),
+    ParamInt('OcclusionVisibleTtl',  6, title='Occlusion visible lifetime',
+        doc="How many frames a node found visible is believed before it is\n"
+        "tested again. Higher spends fewer queries and keeps drawing\n"
+        "geometry that has since become hidden for a little longer; lower\n"
+        "tracks the camera more closely at the cost of more tests. Purely\n"
+        "a cost trade -- being late here draws too much, never too\n"
+        "little, so it cannot affect the image."),
+    ParamInt('OcclusionBudget',  128, title='Occlusion query budget',
+        doc="How many occlusion tests one frame may issue. The GPU offers\n"
+        "256 for the whole process and the RenderDebug_Occlusion\n"
+        "measurement is the other claimant, so the default leaves that\n"
+        "measurement room to run alongside. Asking for more tests than\n"
+        "the budget allows is not an error: hidden nodes are offered\n"
+        "first, since a test is the only way one can come back, and the\n"
+        "rest are offered again next frame."),
+    ParamInt('OcclusionMinSubtree',  8, title='Occlusion minimum subtree',
+        doc="Do not test an index node standing for fewer drawn instances\n"
+        "than this. A test is itself a draw, so testing a node that could\n"
+        "save one draw loses whether it answers hidden or visible."),
+    ParamInt('OcclusionMaxHidden',  120, title='Occlusion hidden lifetime',
+        doc="How many frames a hidden node may go without an answer before\n"
+        "it is drawn again. A hidden node is re-tested continuously and\n"
+        "the answer is its only way back, so if answers stop arriving --\n"
+        "no query handles left, a dropped batch -- this is what returns\n"
+        "the geometry instead of leaving it missing. Answers that keep\n"
+        "confirming the node is hidden keep it hidden indefinitely, so\n"
+        "this never flickers a node the tests are still reaching."),
     ParamBool('AO',  False, title='Ambient occlusion',
         doc="Enable screen space ambient occlusion of the experimental render\n"
         "engine (render cache mode 3 with a selected renderer type)."),

@@ -26,6 +26,7 @@
 #include "MeshSource.h"
 #include "SceneLadder.h"
 #include "ProxyHierarchy.h"
+#include "OcclusionCull.h"
 #include "MeshSimplify.h"
 #ifndef FC_RENDERER_STANDALONE
 #include "SceneServer.h"
@@ -9105,6 +9106,129 @@ static void driveOcclusionProbe(
     st.lastReport = bx::getHPCounter();
 }
 
+/// Project the draw list into the table the culler partitions.
+///
+/// Not `proxyInstances()` alone, because two kinds of draw are not
+/// judgeable by the bounds they carry, and both are exactly the ones the
+/// frustum cull already exempts (BGFXRenderer.cpp, "Frustum culling"):
+///
+/// - **autozoom** draws rebuild their model matrix per frame, so the fed
+///   bounds describe where the draw *was*;
+/// - **emitters** draw outside their own bounds, which is what
+///   drawHeadroom() measures.
+///
+/// The emitter case could be padded rather than dropped, but an emitter
+/// is one draw and the padding would be a guess; dropping it costs one
+/// draw and cannot be wrong. Rows that are dropped are simply absent
+/// from the index and therefore never masked — `drawIndex` still refers
+/// to the original draw list, so the mask stays aligned.
+///
+/// ⚠️⚠️ **On-top draws are excluded, and leaving them in was measured to
+/// delete visible geometry.** An on-top draw is defined by ignoring the
+/// depth test: it is drawn over whatever is in front of it, so it is
+/// visible *however occluded its geometry is*. A depth-buffer occlusion
+/// test answers the question "is this geometry behind something", which
+/// for on-top draws is true and irrelevant — and acting on it removes
+/// something the eye can plainly see. Culling them cost 1.5% of the
+/// pixels of a whole-assembly view of the server model, concentrated in
+/// exactly the structure an engineer is looking at.
+static void cullInstances(const Render::DrawCallList &scene,
+                          std::vector<Render::ProxyInstance> &out,
+                          uint32_t *exemptOnTop = nullptr)
+{
+    Render::proxyInstances(scene, out);
+    uint32_t ontop = 0;
+    out.erase(std::remove_if(out.begin(), out.end(),
+                             [&](const Render::ProxyInstance &inst) {
+                                 if (inst.drawIndex >= scene.size())
+                                     return true;
+                                 const auto &d = scene[inst.drawIndex];
+                                 if (d.material.ontop) {
+                                     ++ontop;
+                                     return true;
+                                 }
+                                 return !d.material.autozoom.empty()
+                                     || drawHeadroom(d) > 0.0f;
+                             }),
+              out.end());
+    if (exemptOnTop)
+        *exemptOnTop = ontop;
+}
+
+/// One frame of occlusion culling: read the answers the last frame's
+/// tests have produced, walk the index against this camera, mask what
+/// cannot be seen, and issue the next round of tests.
+///
+/// The masking is *additive* into \a cullMask — the frustum's rejections
+/// are already in it — and the mask is consulted only by the eye passes.
+/// That is what keeps the culling per pass rather than per frame, which
+/// §10.4 requires: shadow casters deliberately re-submit culled draws
+/// (off-screen geometry still casts into view) and the mirrored ground
+/// reflection never consults the mask at all, so neither inherits a
+/// verdict taken from the eye.
+static void driveOcclusionCull(
+        BGFXView &view, Render::OcclusionCuller &culler,
+        Render::OcclusionTestBatch &batch,
+        std::vector<bgfx::OcclusionQueryHandle> &queries,
+        std::vector<int> &queryNode, const float *V, const float *P,
+        float viewportHeightPx, std::vector<uint8_t> &cullMask)
+{
+    const bgfx::Caps *caps = bgfx::getCaps();
+    if (!caps)
+        return;
+
+    // 1. Collect what last frame asked. Non-blocking by design: a query
+    // whose frame has not landed keeps its handle and is read next
+    // time. Stalling on it would trade the frame time this is meant to
+    // save for a pipeline bubble, and the node it belongs to simply
+    // keeps whatever it already believed.
+    for (size_t i = 0; i < queryNode.size(); ++i) {
+        if (queryNode[i] < 0 || !bgfx::isValid(queries[i]))
+            continue;
+        int32_t px = 0;
+        const auto r = bgfx::getResult(queries[i], &px);
+        if (r == bgfx::OcclusionQueryResult::NoResult)
+            continue;
+        culler.result(queryNode[i],
+                      r == bgfx::OcclusionQueryResult::Visible && px > 0, px);
+        queryNode[i] = -1;
+    }
+
+    // 2. Decide what this camera draws.
+    culler.cull(V, P, viewportHeightPx, caps->homogeneousDepth, cullMask,
+                batch);
+    if (batch.nodes.empty())
+        return;
+
+    // 3. Issue the next round into whatever handles are free.
+    std::vector<bgfx::OcclusionQueryHandle> submitQueries;
+    std::vector<int> freeSlots;
+    for (size_t i = 0; i < queryNode.size(); ++i) {
+        if (queryNode[i] < 0 && bgfx::isValid(queries[i]))
+            freeSlots.push_back(int(i));
+    }
+    const uint32_t want =
+        std::min<uint32_t>(uint32_t(batch.nodes.size()),
+                           uint32_t(freeSlots.size()));
+    submitQueries.clear();
+    for (uint32_t i = 0; i < want; ++i)
+        submitQueries.push_back(queries[size_t(freeSlots[i])]);
+    // The boxes are contiguous and the batch is offered in priority
+    // order — hidden nodes first, since a test is the only way one can
+    // come back — so submitting a prefix drops the least important.
+    const uint32_t sent = want
+        ? view.submitOcclusionBoxes(batch.mins.data(), batch.maxs.data(),
+                                    want, submitQueries)
+        : 0;
+    for (uint32_t i = 0; i < sent; ++i)
+        queryNode[size_t(freeSlots[i])] = batch.nodes[i];
+    // Everything not sent must be told, or it stays marked pending and
+    // is never offered again — for a hidden node that would mean it
+    // could only return via the starvation fail-safe.
+    for (size_t i = sent; i < batch.nodes.size(); ++i)
+        culler.abandon(batch.nodes[i]);
+}
+
 class BGFXRenderer::Private
 {
 public:
@@ -9132,6 +9256,12 @@ public:
                 bgfx::destroy(q);
         }
         occlusionQueries.clear();
+        for (auto q : cullQueries) {
+            if (bgfx::isValid(q))
+                bgfx::destroy(q);
+        }
+        cullQueries.clear();
+        cullQueryNode.clear();
         // A publish-only renderer never asked for a view, so there is
         // none to remove -- and asking would be the one call that
         // brings the graphics device into a process that has none.
@@ -11498,7 +11628,11 @@ public:
             view->markPasses(V::ViewUserPostCopy, V::ViewUserPost,
                              userPostActive);
             view->markPass(V::ViewDebugScene, debugSceneRender);
-            view->markPass(V::ViewOcclusionProbe, debugconf.occlusion);
+            // Shared by the measurement and the culling that acts on
+            // it: both rasterize boxes against the finished opaque
+            // depth, and it is the view id that places them there.
+            view->markPass(V::ViewOcclusionProbe,
+                           debugconf.occlusion || cullconf.enabled);
             for (int s = 0; s < int(V::NumOverlayViews); ++s)
                 view->markPass(V::ViewOverlay0 + s, s < int(overlays.size()));
 
@@ -12177,6 +12311,54 @@ public:
             if (getenv("FC_BGFX_DEBUG_CULL"))
                 fprintf(stderr, "bgfx cull: %zu of %zu scene draws\n",
                         nculled, scene.size());
+
+            // Occlusion culling (docs/FarFieldProxies.md §12), on top of
+            // the frustum rejections just computed and into the same
+            // mask. It runs under the same conditions for the same
+            // reasons: a hidden-line frame reworks the fill submits
+            // wholesale, so a mask over them means nothing.
+            if (cullconf.enabled) {
+                const bgfx::Caps *caps = bgfx::getCaps();
+                culler.configure(cullconf);
+                if (cullBuiltVersion != cullSceneVersion
+                        || culler.empty()) {
+                    const int64_t started = bx::getHPCounter();
+                    std::vector<Render::ProxyInstance> instances;
+                    cullInstances(scene, instances, &cullExemptOnTop);
+                    cullIndexed = uint32_t(instances.size());
+                    culler.build(instances);
+                    cullBuildMs = 1000.0
+                        * double(bx::getHPCounter() - started)
+                        / double(bx::getHPFrequency());
+                    cullBuiltVersion = cullSceneVersion;
+                }
+                // One handle per test the budget allows, created once
+                // and handed back as answers are read. A backend that
+                // refuses to create them leaves the pool short, which
+                // costs culling and not correctness -- an untested node
+                // draws.
+                if (caps && (caps->supported & BGFX_CAPS_OCCLUSION_QUERY)) {
+                    while (cullQueries.size() < cullconf.budget) {
+                        bgfx::OcclusionQueryHandle q =
+                            bgfx::createOcclusionQuery();
+                        if (!bgfx::isValid(q))
+                            break;
+                        cullQueries.push_back(q);
+                        cullQueryNode.push_back(-1);
+                    }
+                    driveOcclusionCull(*view, culler, cullBatch, cullQueries,
+                                       cullQueryNode, viewMat,
+                                       reinterpret_cast<const float *>(
+                                           projMatrix),
+                                       float(view->height), sceneCulled);
+                }
+                else if (!cullUnsupported) {
+                    cullUnsupported = true;
+                    RENDER_ERR("render culling: this backend reports no "
+                               "occlusion query support; occlusion culling "
+                               "is off and only frustum culling applies");
+                }
+            }
         }
         // Scene draws only — the argument must reference into `scene`.
         auto culled = [&](const Render::DrawCall &d) {
@@ -13295,8 +13477,32 @@ public:
         // average a frame that drew nothing into the mean.
         if (debugconf.frameTiming) {
             accumulateFrameStats(frameStats, view->width, view->height);
-            if (frameStatsDue())
+            const bool due = frameStatsDue();
+            if (due)
                 reportFrameStats(frameStats);
+            // What the culling actually did, on the same cadence and
+            // from the same switch: the frame line reports the draws
+            // that survived, and without this there is no way to tell a
+            // scene that hides nothing from a mechanism that is not
+            // working. The test boxes are themselves draws and are
+            // counted in that line, so a win has to be net of them.
+            if (due && cullconf.enabled) {
+                const auto &cs = culler.lastFrame();
+                Base::Console().Message(
+                        "render culling: instances hidden %u / drawn %u / "
+                        "offscreen %u | nodes visited %u hidden %u offscreen %u "
+                        "| tests offered %u issued %u | nearclip %u forced %u "
+                        "rootrefused %u rootpx %d | indexed %u of %u draws "
+                        "(%u on-top exempt) | index %u nodes, build %.1fms\n",
+                        cs.hiddenInstances, cs.drawnInstances,
+                        cs.offscreenInstances, cs.nodesVisited, cs.nodesHidden,
+                        cs.nodesOffscreen, cs.nodesOffered, cs.nodesTested,
+                        cs.nearExempt, cs.forcedVisible, cs.rootRefused,
+                        culler.nodePixels(culler.hierarchy().root()),
+                        cullIndexed, unsigned(scene.size()), cullExemptOnTop,
+                        unsigned(culler.hierarchy().nodes().size()),
+                        cullBuildMs);
+            }
         }
 
         if (!hasScene && !scene.empty())
@@ -13852,6 +14058,32 @@ public:
     OcclusionProbeState occlusionProbe;
     OcclusionBoxBatch occlusionBatch;
     std::vector<bgfx::OcclusionQueryHandle> occlusionQueries;
+    /// Occlusion culling (docs/FarFieldProxies.md §12) — the same
+    /// mechanism as the probe above, acting on its answers. Per view
+    /// for the same reason: the verdicts are a camera's, not a scene's.
+    Render::OcclusionCullConfig cullconf;
+    Render::OcclusionCuller culler;
+    Render::OcclusionTestBatch cullBatch;
+    /// The query pool, and which node each handle is currently
+    /// answering for (-1 = free). A fixed pool rather than one handle
+    /// per test: the GPU offers 256 for the whole process and the probe
+    /// is the other claimant, so the culler holds a bounded share and
+    /// hands back every handle as its answer is read.
+    std::vector<bgfx::OcclusionQueryHandle> cullQueries;
+    std::vector<int> cullQueryNode;
+    /// The draw list the index was built from. A rebuild costs 12-28 ms
+    /// on a large assembly, so it happens when the scene changes and
+    /// never per frame.
+    uint64_t cullSceneVersion = 0;
+    uint64_t cullBuiltVersion = 0;
+    double cullBuildMs = 0.0;
+    bool cullUnsupported = false;
+    /// Draws the index deliberately does not contain, and how many of
+    /// them were on-top. Reported, because "the index is smaller than
+    /// the scene" is the difference between exempting what cannot be
+    /// judged and quietly not culling anything.
+    uint32_t cullExemptOnTop = 0;
+    uint32_t cullIndexed = 0;
     Render::UserShaderConfig usershaderconf;
     /// Snapshot of _BGFXLib.userCompileGeneration taken by render();
     /// isSceneDirty() reports dirty while they differ (async compile).
@@ -14136,6 +14368,11 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
     dumpFeed("scene", 0, draws);
     pimpl->scene = std::move(draws);
     pimpl->buildInstanceGroups();
+    // The occlusion index is partitioned from this list, and a stale
+    // partition would mask draws by the bounds of whatever used to
+    // occupy those rows. Rebuilt on the next frame that culls, never
+    // here: a publish that no view is culling should not pay for one.
+    ++pimpl->cullSceneVersion;
     pimpl->sceneDirty = true;
     pimpl->feedDirty = true;
     pimpl->updateBBox();
@@ -14402,6 +14639,21 @@ void BGFXRenderer::setRenderDebugConfig(const RenderDebugConfig &config)
     if (pimpl->debugconf != config) {
         pimpl->debugconf = config;
         pimpl->sceneDirty = true;
+    }
+}
+
+void BGFXRenderer::setOcclusionCullConfig(const OcclusionCullConfig &config)
+{
+    if (pimpl->cullconf != config) {
+        const bool wasEnabled = pimpl->cullconf.enabled;
+        pimpl->cullconf = config;
+        pimpl->sceneDirty = true;
+        // Turning culling off has to give the masked geometry back, and
+        // the mask is rebuilt per frame — so nothing to undo. Turning it
+        // on (or changing what a verdict means) starts from no
+        // knowledge rather than from verdicts taken under other rules.
+        if (!config.enabled || !wasEnabled)
+            pimpl->culler.clear();
     }
 }
 

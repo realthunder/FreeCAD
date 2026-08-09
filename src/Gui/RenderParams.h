@@ -280,6 +280,104 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter Occlusion
+    ///
+    /// Skip drawing what the depth buffer proves could not have
+    /// reached the screen (docs/FarFieldProxies.md §12). Bounding boxes
+    /// of the spatial index's nodes are tested against the finished
+    /// opaque depth under hardware occlusion queries, and a node that
+    /// puts no pixel through has its whole subtree skipped on the
+    /// following frames -- one test standing for thousands of draws.
+    /// 
+    /// Exact, not approximate: only geometry that could not have been
+    /// seen is removed, so the image is unchanged and what is saved is
+    /// the draw call, which measures ~1.2-1.5us of CPU submission plus
+    /// ~1.5-1.7us of GPU time whatever it contains (§10.2). It pays on
+    /// assemblies that hide themselves -- an enclosed chassis, a
+    /// populated rack, any interior -- and does nothing for a model
+    /// that is mostly silhouette. Expect roughly a fifth of the draws
+    /// from a camera inside a large assembly (§10.3); the far larger
+    /// figure from outside a closed model is a bound, not a promise.
+    /// 
+    /// Casters and reflections are judged separately: geometry hidden
+    /// from the eye still casts its shadow and still appears in the
+    /// ground reflection.
+    static const bool & getOcclusion();
+    static const bool & defaultOcclusion();
+    static void removeOcclusion();
+    static void setOcclusion(const bool &v);
+    static const char *docOcclusion();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionVisibleTtl
+    ///
+    /// How many frames a node found visible is believed before it is
+    /// tested again. Higher spends fewer queries and keeps drawing
+    /// geometry that has since become hidden for a little longer; lower
+    /// tracks the camera more closely at the cost of more tests. Purely
+    /// a cost trade -- being late here draws too much, never too
+    /// little, so it cannot affect the image.
+    static const long & getOcclusionVisibleTtl();
+    static const long & defaultOcclusionVisibleTtl();
+    static void removeOcclusionVisibleTtl();
+    static void setOcclusionVisibleTtl(const long &v);
+    static const char *docOcclusionVisibleTtl();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionBudget
+    ///
+    /// How many occlusion tests one frame may issue. The GPU offers
+    /// 256 for the whole process and the RenderDebug_Occlusion
+    /// measurement is the other claimant, so the default leaves that
+    /// measurement room to run alongside. Asking for more tests than
+    /// the budget allows is not an error: hidden nodes are offered
+    /// first, since a test is the only way one can come back, and the
+    /// rest are offered again next frame.
+    static const long & getOcclusionBudget();
+    static const long & defaultOcclusionBudget();
+    static void removeOcclusionBudget();
+    static void setOcclusionBudget(const long &v);
+    static const char *docOcclusionBudget();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionMinSubtree
+    ///
+    /// Do not test an index node standing for fewer drawn instances
+    /// than this. A test is itself a draw, so testing a node that could
+    /// save one draw loses whether it answers hidden or visible.
+    static const long & getOcclusionMinSubtree();
+    static const long & defaultOcclusionMinSubtree();
+    static void removeOcclusionMinSubtree();
+    static void setOcclusionMinSubtree(const long &v);
+    static const char *docOcclusionMinSubtree();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionMaxHidden
+    ///
+    /// How many frames a hidden node may go without an answer before
+    /// it is drawn again. A hidden node is re-tested continuously and
+    /// the answer is its only way back, so if answers stop arriving --
+    /// no query handles left, a dropped batch -- this is what returns
+    /// the geometry instead of leaving it missing. Answers that keep
+    /// confirming the node is hidden keep it hidden indefinitely, so
+    /// this never flickers a node the tests are still reaching.
+    static const long & getOcclusionMaxHidden();
+    static const long & defaultOcclusionMaxHidden();
+    static void removeOcclusionMaxHidden();
+    static void setOcclusionMaxHidden(const long &v);
+    static const char *docOcclusionMaxHidden();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter AO
     ///
     /// Enable screen space ambient occlusion of the experimental render

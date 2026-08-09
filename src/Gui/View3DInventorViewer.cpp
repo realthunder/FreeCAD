@@ -4475,6 +4475,42 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     // RenderDebug_* debugging knobs (docs/RenderDebug.md): materialized
     // hidden -- not user settings; the property editor's 'Show all'
     // reveals them, and scripts/the verification harness set them.
+    // Occlusion culling (docs/FarFieldProxies.md §12). Not a debug knob
+    // — it changes what a frame costs, not what it shows — so it lands
+    // in the Render group beside the other render settings, and its
+    // tuning parameters stay hidden next to it.
+    if (!view->getPropertyByName("Render_Occlusion")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "Render_Occlusion", "Render",
+                                         RenderParams::docOcclusion()));
+        prop->setValue(RenderParams::getOcclusion());
+    }
+    {
+        static const struct { const char *name; long value;
+                              const char *(*doc)(); } _occlusionParams[] = {
+            {"Render_OcclusionVisibleTtl",
+             RenderParams::getOcclusionVisibleTtl(),
+             &RenderParams::docOcclusionVisibleTtl},
+            {"Render_OcclusionBudget", RenderParams::getOcclusionBudget(),
+             &RenderParams::docOcclusionBudget},
+            {"Render_OcclusionMinSubtree",
+             RenderParams::getOcclusionMinSubtree(),
+             &RenderParams::docOcclusionMinSubtree},
+            {"Render_OcclusionMaxHidden",
+             RenderParams::getOcclusionMaxHidden(),
+             &RenderParams::docOcclusionMaxHidden},
+        };
+        for (const auto &p : _occlusionParams) {
+            if (view->getPropertyByName(p.name))
+                continue;
+            auto prop = static_cast<App::PropertyInteger*>(
+                    view->addDynamicProperty("App::PropertyInteger", p.name,
+                                             "Render", p.doc()));
+            prop->setValue(p.value);
+            prop->setStatus(App::Property::Hidden, true);
+        }
+    }
     if (!view->getPropertyByName("RenderDebug_ViewMode")) {
         static const char* _debugViewModeEnums[] =
             {"Off", "Depth", "Normal", "AO", "Shadow", "ShadowTile",

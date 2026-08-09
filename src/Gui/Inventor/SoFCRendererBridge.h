@@ -90,6 +90,7 @@ GuiExport Render::SectionConfig translateSectionConfig();
 /// global RenderParams as fallback.
 GuiExport Render::AOConfig translateAOConfig(App::PropertyContainer * view);
 GuiExport Render::RenderDebugConfig translateRenderDebugConfig(App::PropertyContainer * view);
+GuiExport Render::OcclusionCullConfig translateOcclusionCullConfig(App::PropertyContainer * view);
 
 /// Extract a property value as floats zero-padded to vec4 lanes — the
 /// dynamic-property shader parameter protocol (docs/RenderDebug.md §2.5,

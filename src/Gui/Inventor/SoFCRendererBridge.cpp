@@ -1238,6 +1238,34 @@ RendererBridge::shaderParamUniformName(const char * propName)
     return name;
 }
 
+Render::OcclusionCullConfig
+RendererBridge::translateOcclusionCullConfig(App::PropertyContainer * view)
+{
+    Render::OcclusionCullConfig res;
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "Occlusion", RenderParams::getOcclusion());
+    // Clamped rather than trusted: these ride the same per-view property
+    // path as everything else here, so a script can set them to
+    // anything, and a zero budget or a zero hidden lifetime would turn a
+    // performance knob into missing geometry.
+    auto atLeast = [](long v, long floor) {
+        return uint32_t(v < floor ? floor : v);
+    };
+    res.visibleTtl = atLeast(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "OcclusionVisibleTtl",
+            RenderParams::getOcclusionVisibleTtl()), 1);
+    res.budget = atLeast(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "OcclusionBudget",
+            RenderParams::getOcclusionBudget()), 1);
+    res.minSubtree = atLeast(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "OcclusionMinSubtree",
+            RenderParams::getOcclusionMinSubtree()), 1);
+    res.maxHiddenFrames = atLeast(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "OcclusionMaxHidden",
+            RenderParams::getOcclusionMaxHidden()), 1);
+    return res;
+}
+
 Render::RenderDebugConfig
 RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
 {

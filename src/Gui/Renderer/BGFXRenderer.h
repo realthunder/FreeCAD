@@ -86,6 +86,8 @@ public:
     virtual void setWaterConfig(const WaterConfig &config) override;
     virtual void setBloomConfig(const BloomConfig &config) override;
     virtual void setRenderDebugConfig(const RenderDebugConfig &config) override;
+    virtual void setOcclusionCullConfig(
+            const OcclusionCullConfig &config) override;
     virtual void setUserShaderConfig(const UserShaderConfig &config) override;
     virtual void setPreselConfig(const PreselHighlightConfig &config) override;
     virtual void setSelConfig(const PreselHighlightConfig &config) override;

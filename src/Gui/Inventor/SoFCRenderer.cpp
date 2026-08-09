@@ -2433,6 +2433,9 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
         RendererBridge::translateAOConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setRenderDebugConfig(
         RendererBridge::translateRenderDebugConfig(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setOcclusionCullConfig(
+        RendererBridge::translateOcclusionCullConfig(
+            PRIVATE(this)->externalview));
     PRIVATE(this)->external->setUserShaderConfig(PRIVATE(this)->mergedshaders);
     PRIVATE(this)->external->setPBRConfig(
         RendererBridge::translatePBRConfig(PRIVATE(this)->externalview));

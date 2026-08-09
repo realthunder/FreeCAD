@@ -355,6 +355,69 @@ struct AOConfig {
     bool operator!=(const AOConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame occlusion culling configuration
+/// (docs/FarFieldProxies.md §12). Resolved by the bridge each render
+/// from the Render_Occlusion* view properties / global RenderParams
+/// defaults, like AOConfig.
+///
+/// The mechanism is described in Gui/Renderer/OcclusionCull.h; what
+/// belongs here is only what a user or a script may turn. Every default
+/// is chosen so that being wrong costs frame time rather than pixels:
+/// too small a budget or too long a lifetime draws geometry that could
+/// have been skipped, never the reverse.
+struct OcclusionCullConfig {
+    /// Skip draws whose spatial-index node the depth buffer proved
+    /// could not have contributed a pixel. Off leaves the frustum
+    /// culling the renderer already does untouched.
+    bool enabled = false;
+    /// How many frames a *visible* verdict is believed before the node
+    /// is re-tested. Purely a cost/latency trade: geometry that becomes
+    /// hidden keeps drawing until its verdict expires, which is
+    /// invisible in the image and merely wasteful.
+    uint32_t visibleTtl = 6;
+    /// Tests issued per frame. The GPU offers 256 queries at a time
+    /// (BGFX_CONFIG_MAX_OCCLUSION_QUERIES) and `RenderDebug_Occlusion`
+    /// is the other consumer of that pool, so the default leaves it
+    /// room; exceeding what the backend can hand out is not an error,
+    /// the surplus is simply offered again next frame.
+    uint32_t budget = 128;
+    /// Do not test a node standing for fewer instances than this. A
+    /// query is itself a draw, so testing a node that could save one
+    /// draw loses whether it answers hidden or visible.
+    uint32_t minSubtree = 8;
+    /// ⚠️ **The fail-safe, and the reason a bug here costs frames and
+    /// not correctness.** A hidden node is cut *and* re-tested every
+    /// frame, so its way back is the answer to that test. If the
+    /// answers stop arriving — no query handles, a backend that dropped
+    /// the batch, a walk abandoned — a node would otherwise stay hidden
+    /// forever and geometry would simply be missing. After this many
+    /// frames without an *answer* (not without an offer), a hidden node
+    /// reverts to visible. Confirmations keep it hidden indefinitely,
+    /// so this never flickers a node the tests are still answering.
+    uint32_t maxHiddenFrames = 120;
+    /// Outward padding of a test box, as a fraction of its own
+    /// diagonal — relative, so it means the same at any model scale.
+    ///
+    /// ⚠️ Not a tolerance: the measurement does not work without it. A
+    /// node's bounds are the union of its contents', so a box face
+    /// coincides *exactly* with a real surface whenever a part has a
+    /// flat face at its own extreme — in CAD the common case, not the
+    /// edge case. Rasterized at equal depth the two disagree in the
+    /// last bit, and where the box loses, LEQUAL rejects every fragment
+    /// and the node calls itself hidden while in plain view. Un-padded
+    /// this reported 99% of a 5455-part model hidden, the root
+    /// included.
+    float padFraction = 1.0e-3f;
+
+    bool operator==(const OcclusionCullConfig &o) const {
+        return enabled == o.enabled && visibleTtl == o.visibleTtl
+            && budget == o.budget && minSubtree == o.minSubtree
+            && maxHiddenFrames == o.maxHiddenFrames
+            && padFraction == o.padFraction;
+    }
+    bool operator!=(const OcclusionCullConfig &o) const { return !(*this == o); }
+};
+
 /// Per-frame render debugging configuration (docs/RenderDebug.md).
 /// Resolved by the bridge each render from the RenderDebug_* view
 /// properties / global RenderParams defaults, like AOConfig.
@@ -1371,6 +1434,10 @@ public:
     virtual void setAOConfig(const AOConfig &config) { (void)config; }
     /// Per-frame render debugging configuration (docs/RenderDebug.md).
     virtual void setRenderDebugConfig(const RenderDebugConfig &config)
+    { (void)config; }
+    /// Per-frame occlusion culling configuration
+    /// (docs/FarFieldProxies.md §12).
+    virtual void setOcclusionCullConfig(const OcclusionCullConfig &config)
     { (void)config; }
     /// User-loadable shaders captured from scene SoShaderProgram nodes
     /// (docs/RenderDebug.md §6).
