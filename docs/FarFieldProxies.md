@@ -847,6 +847,52 @@ level projects at, there is nothing left to stop on and everything
 draws exactly — which is the same observation as (2) from the other
 side.
 
+### 11.1b The measurement, on MiSTer Express
+
+`MiSTer_objdefaults.FCStd`, 18142 objects, 1920×1200, real RTX 3060
+(VirtualGL EGL over Xvfb, monitor off), whole-assembly camera after the
+progressive load converged. **42893 drawn instances**, 2728 nodes, depth
+12, 37 material buckets, partition build **28 ms**.
+
+| tolerance | draws | proxy | exact | vs 42893 |
+|---|---|---|---|---|
+| 1px | 39327 | 643 | 38684 | 1.09× |
+| 4px | 24567 | 3292 | 21275 | 1.75× |
+| 16px | 11718 | 1578 | 10140 | 3.66× |
+| 64px | 2277 | 564 | 1713 | **18.8×** |
+
+⚠️⚠️ **The tolerance axis here is node *extent*, not proxy *error*, and
+the difference is most of the answer.** §3.3 selects by "projected
+screen-space error", but no proxy exists yet to have an error, so phase
+1 stands in the node's projected extent — which asks that the whole
+merged blob be smaller than the tolerance. That is far stricter than
+what a proxy actually commits: a cell of twenty screws spanning 64px
+merges into a mesh whose *decimation* error is a pixel or two. So the
+operating point is not the 4px row; it is wherever a decimated
+(cell, material) proxy's error lands relative to its extent, and that
+ratio is unmeasured. **Phase 2's first job is to measure it**, because
+it decides whether this table reads as 3.7× or as 18.8×.
+
+⚠️ **The coverage histogram in the same run disagrees with §9.2**: about
+11-13% of on-screen objects at or under 4px, against phase 0's 66.8%,
+over 9563 drawable objects rather than 19362. Phase 0 measured a *STEP
+import*; this is a *saved document*, and the two are evidently not the
+same scene. Until that is reconciled the ratios above belong to this
+scene only — and since a scene with less sub-pixel content has less to
+aggregate, they most likely understate the case rather than flatter it.
+
+Two numbers that need no such caveat:
+
+- **Materials per cell are ~2.9**, against 37 document-wide, at the
+  depths a cut actually stops on (L5-L10). §11.4 worried that the
+  material fan-out of §5.1 might give the win back; measured, it costs
+  about 3× the node count, not 37×.
+- **28 ms to build the partition** over 42893 instances. Phase 3 cannot
+  rebuild it on the plan's schedule at that price, so the index has to
+  update incrementally — which the positional node identity of §3.2 was
+  already chosen to allow, and which is now a requirement rather than a
+  nicety.
+
 ### 11.2 What the code already gives us
 
 `simplifyMesh()` is a better starting point than §5.1 claims. It is a
