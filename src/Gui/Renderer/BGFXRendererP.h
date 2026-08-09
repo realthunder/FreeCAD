@@ -3037,7 +3037,7 @@ public:
     /// normals. Unlike the AO term above this one *is* composited here
     /// — it darkens the final color rather than an ambient sub-term, so
     /// it states shape independently of how the surface is lit.
-    void submitCavity(float valley, float ridge);
+    void submitCavity(float valley, float ridge, float radius);
 
     /// Volumetric light shaft resolve: raymarch the shadow map through
     /// the media at half resolution (ray ends at the prepass depth; a

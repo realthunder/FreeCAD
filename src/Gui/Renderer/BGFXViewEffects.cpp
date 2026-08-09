@@ -149,13 +149,24 @@ void BGFXView::submitAOResolve(float radius, float intensity, int method,
     }
 }
 
-void BGFXView::submitCavity(float valley, float ridge)
+void BGFXView::submitCavity(float valley, float ridge, float radius)
 {
-    // Curvature is a one-pixel derivative, so the neighbour offsets are
-    // the *prepass* texel size (aoNormalZ is always full viewport res,
-    // unlike the AO resolve targets, which carry their own scale).
+    // The neighbour offsets are the *prepass* texel size (aoNormalZ is
+    // always full viewport res, unlike the AO resolve targets, which
+    // carry their own scale) times the radius.
+    //
+    // The radius is what decides which features the pass can see at all.
+    // The estimator reads how far the normal turns between the two
+    // neighbours, so over a one-pixel baseline it only ever sees what
+    // turns within one pixel: a hard crease, and essentially nothing of
+    // a smooth surface, whose normal moves by a fraction of a degree per
+    // pixel. That was the whole of the effect before this was tunable,
+    // and it left broad curvature invisible -- and, on a high-DPI
+    // display, ever more so, because the feature is the same size in
+    // millimetres while the pixel gets smaller.
+    const float r = radius > 0.0f ? radius : 1.0f;
     float params[4] = {valley, ridge,
-                       1.0f / float(width), 1.0f / float(height)};
+                       r / float(width), r / float(height)};
     bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
     bgfx::setUniform(u_cavityParams, params);
     // dst *= src, alpha untouched: the darkening rides on top of

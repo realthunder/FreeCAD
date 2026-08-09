@@ -141,7 +141,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // 43: MatcapConfig — matcap shading, the camera-fixed studio that
 //     replaces the scene lighting (docs/RenderEngine.md). A viewer
 //     older than this defaults it off, which is the pre-feature look.
-const uint32_t kVersion = 43;
+// 44: CavityConfig carries its radius — the pixel baseline the
+//     curvature is measured over. A viewer older than this measures
+//     over one pixel whatever the property says, which reads as the
+//     effect barely being there on anything but a hard crease.
+const uint32_t kVersion = 44;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -183,7 +187,7 @@ static_assert(sizeof(HiddenLineConfig) == 20, "HiddenLineConfig changed: stream 
 static_assert(sizeof(PreselHighlightConfig) == 20, "PreselHighlightConfig changed: stream the new field, then update this");
 static_assert(sizeof(SectionConfig) == 12, "SectionConfig changed: stream the new field, then update this");
 static_assert(sizeof(AOConfig) == 28, "AOConfig changed: stream the new field, then update this");
-static_assert(sizeof(CavityConfig) == 12, "CavityConfig changed: stream the new field, then update this");
+static_assert(sizeof(CavityConfig) == 16, "CavityConfig changed: stream the new field, then update this");
 static_assert(sizeof(MatcapConfig) == 12, "MatcapConfig changed: stream the new field, then update this");
 static_assert(sizeof(BumpConfig) == 8, "BumpConfig changed: stream the new field, then update this");
 static_assert(sizeof(VolumetricConfig) == 28, "VolumetricConfig changed: stream the new field, then update this");
@@ -2684,6 +2688,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.b(snap.cavityconf.enabled);
     w.f(snap.cavityconf.valley);
     w.f(snap.cavityconf.ridge);
+    w.f(snap.cavityconf.radius);
 
     w.b(snap.matcapconf.enabled);
     w.i32(snap.matcapconf.preset);
@@ -3052,6 +3057,8 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
         snap.cavityconf.enabled = r.b();
         snap.cavityconf.valley = r.f();
         snap.cavityconf.ridge = r.f();
+        if (version >= 44)
+            snap.cavityconf.radius = r.f();
     }
     if (version >= 43) {
         snap.matcapconf.enabled = r.b();

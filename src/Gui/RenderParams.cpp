@@ -67,6 +67,7 @@ public:
     double AOIntensity;
     double AOResolution;
     bool Cavity;
+    double CavityRadius;
     double CavityValley;
     double CavityRidge;
     bool Matcap;
@@ -157,6 +158,8 @@ public:
         funcs["AOResolution"] = &RenderParamsP::updateAOResolution;
         Cavity = this->handle->GetBool("Cavity", false);
         funcs["Cavity"] = &RenderParamsP::updateCavity;
+        CavityRadius = this->handle->GetFloat("CavityRadius", 4.0);
+        funcs["CavityRadius"] = &RenderParamsP::updateCavityRadius;
         CavityValley = this->handle->GetFloat("CavityValley", 1.0);
         funcs["CavityValley"] = &RenderParamsP::updateCavityValley;
         CavityRidge = this->handle->GetFloat("CavityRidge", 0.5);
@@ -344,6 +347,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCavity(RenderParamsP *self) {
         self->Cavity = self->handle->GetBool("Cavity", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCavityRadius(RenderParamsP *self) {
+        self->CavityRadius = self->handle->GetFloat("CavityRadius", 4.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCavityValley(RenderParamsP *self) {
@@ -1118,9 +1125,9 @@ const char *RenderParams::docCavity() {
 "in the geometry prepass normals, which makes surface shape and\n"
 "small features read without relying on the lighting -- the\n"
 "inspection shading a CAD workbench view wants. Independent of\n"
-"ambient occlusion: cavity is a one-pixel curvature term (crisp\n"
-"edge definition), occlusion is a radius-based visibility\n"
-"integral (contact darkening). They compose.");
+"ambient occlusion: cavity is a local curvature term, occlusion\n"
+"is a visibility integral over a world-space radius (contact\n"
+"darkening). They compose.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1143,6 +1150,44 @@ void RenderParams::setCavity(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeCavity() {
     instance()->handle->RemoveBool("Cavity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCavityRadius() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Baseline the cavity curvature is measured over, in pixels.\n"
+"\n"
+"This decides which features the pass can see at all. The term\n"
+"reads how far the surface normal turns between the two\n"
+"neighbours, so at 1 it sees only what turns within a single\n"
+"pixel -- a hard crease, and almost nothing of a smooth surface,\n"
+"whose normal moves by a fraction of a degree per pixel. Widening\n"
+"it brings broad curvature (fillets, blends, a sculpted face) in,\n"
+"at the cost of spreading a hard crease into a band of this\n"
+"width. Being in pixels it is resolution-relative: the same value\n"
+"covers less of the model on a high-DPI display.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getCavityRadius() {
+    return instance()->CavityRadius;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultCavityRadius() {
+    const static double def = 4.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCavityRadius(const double &v) {
+    instance()->handle->SetFloat("CavityRadius",v);
+    instance()->CavityRadius = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCavityRadius() {
+    instance()->handle->RemoveFloat("CavityRadius");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

@@ -1179,6 +1179,8 @@ RendererBridge::translateCavityConfig(App::PropertyContainer * view)
             view, "Render", "CavityValley", RenderParams::getCavityValley()));
     res.ridge = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "CavityRidge", RenderParams::getCavityRidge()));
+    res.radius = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "CavityRadius", RenderParams::getCavityRadius()));
     return res;
 }
 

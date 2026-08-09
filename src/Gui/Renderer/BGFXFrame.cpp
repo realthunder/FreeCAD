@@ -3338,7 +3338,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // Curvature darkening lands on the finished opaque scene, before
     // the outlines and the transparent bucket draw over it.
     if (view->passLive(V::ViewCavity))
-        view->submitCavity(cavityconf.valley, cavityconf.ridge);
+        view->submitCavity(cavityconf.valley, cavityconf.ridge,
+                           cavityconf.radius);
     // Ground blends its (possibly cached) reflection with a quad
     // every frame; the water surface pass samples reflTex itself
     // (s_texRefl) below.

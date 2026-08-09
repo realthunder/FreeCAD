@@ -357,13 +357,13 @@ struct AOConfig {
 };
 
 /// Per-frame screen-space cavity (curvature) shading configuration —
-/// like AOConfig there is no GL-renderer counterpart. A one-pixel
-/// curvature term read from the geometry prepass normals, multiplied
-/// onto the finished opaque scene: it states surface shape without
-/// depending on the lighting, which is what makes small features
-/// readable in an inspection view. Orthogonal to AOConfig — occlusion
-/// is a radius-based visibility integral, cavity is a local second
-/// derivative — and the two compose.
+/// like AOConfig there is no GL-renderer counterpart. A curvature term
+/// read from the geometry prepass normals, multiplied onto the finished
+/// opaque scene: it states surface shape without depending on the
+/// lighting, which is what makes small features readable in an
+/// inspection view. Orthogonal to AOConfig — occlusion is a visibility
+/// integral over a world-space radius, cavity is a local second
+/// derivative over a screen-space one — and the two compose.
 struct CavityConfig {
     bool enabled = false;    ///< cavity pass active
     /// Darkening strength in concave creases (curvature > 0) and on
@@ -371,10 +371,16 @@ struct CavityConfig {
     /// an 8-bit scene color, so it cannot brighten past white.
     float valley = 1.0f;
     float ridge = 0.5f;
+    /// Baseline the curvature is measured over, in pixels. Decides
+    /// which features the pass can see: at 1 it reads only what turns
+    /// within one pixel — a hard crease, and next to nothing of a
+    /// smooth surface — and widening it brings broad curvature in at
+    /// the cost of softening the creases into bands of this width.
+    float radius = 4.0f;
 
     bool operator==(const CavityConfig &o) const {
         return enabled == o.enabled && valley == o.valley
-            && ridge == o.ridge;
+            && ridge == o.ridge && radius == o.radius;
     }
     bool operator!=(const CavityConfig &o) const { return !(*this == o); }
 };

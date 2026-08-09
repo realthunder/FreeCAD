@@ -371,14 +371,36 @@ public:
     /// in the geometry prepass normals, which makes surface shape and
     /// small features read without relying on the lighting -- the
     /// inspection shading a CAD workbench view wants. Independent of
-    /// ambient occlusion: cavity is a one-pixel curvature term (crisp
-    /// edge definition), occlusion is a radius-based visibility
-    /// integral (contact darkening). They compose.
+    /// ambient occlusion: cavity is a local curvature term, occlusion
+    /// is a visibility integral over a world-space radius (contact
+    /// darkening). They compose.
     static const bool & getCavity();
     static const bool & defaultCavity();
     static void removeCavity();
     static void setCavity(const bool &v);
     static const char *docCavity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CavityRadius
+    ///
+    /// Baseline the cavity curvature is measured over, in pixels.
+    /// 
+    /// This decides which features the pass can see at all. The term
+    /// reads how far the surface normal turns between the two
+    /// neighbours, so at 1 it sees only what turns within a single
+    /// pixel -- a hard crease, and almost nothing of a smooth surface,
+    /// whose normal moves by a fraction of a degree per pixel. Widening
+    /// it brings broad curvature (fillets, blends, a sculpted face) in,
+    /// at the cost of spreading a hard crease into a band of this
+    /// width. Being in pixels it is resolution-relative: the same value
+    /// covers less of the model on a high-DPI display.
+    static const double & getCavityRadius();
+    static const double & defaultCavityRadius();
+    static void removeCavityRadius();
+    static void setCavityRadius(const double &v);
+    static const char *docCavityRadius();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
