@@ -33,12 +33,15 @@
 # include <QLocale>
 # include <QMessageBox>
 # include <QMessageLogContext>
+# include <QPainter>
 # include <QProcess>
+# include <QProxyStyle>
 # include <QRegularExpression>
 # include <QRegularExpressionMatch>
 # include <QStatusBar>
 # include <QStyle>
 # include <QStyleHints>
+# include <QStyleOptionMenuItem>
 # include <QTextStream>
 # include <QTimer>
 # include <QWindow>
@@ -2754,6 +2757,80 @@ bool Application::checkRestart() {
     return true;
 }
 
+namespace {
+
+/*!
+ * Corrections to the platform style that belong to the style rather than to a
+ * theme, so that they hold for the themes and for Classic alike -- Classic
+ * ships no style sheet, and a widget style sheet would take the menu bar away
+ * from whatever theme is loaded. A theme still layers on top of this: setting
+ * an application style sheet wraps the application style in a
+ * QStyleSheetStyle, which delegates anything the sheet does not decide back
+ * here.
+ */
+class ApplicationStyle: public QProxyStyle
+{
+public:
+    explicit ApplicationStyle(QStyle* base)
+        : QProxyStyle(base)
+    {}
+
+    QSize sizeFromContents(ContentsType type,
+                           const QStyleOption* option,
+                           const QSize& contentsSize,
+                           const QWidget* widget) const override
+    {
+        // Qt 6's windows11 style spends 17px either side of a menu bar label
+        // and stands the item 32px tall, which is what makes the menu bar read
+        // as mostly empty space. Nothing between the label and the metric can
+        // be reached from a style sheet: PM_MenuBarItemSpacing, HMargin and
+        // VMargin are all 0, and the padding is inside the item's own size.
+        if (type == CT_MenuBarItem && !contentsSize.isEmpty()) {
+            return {contentsSize.width() + 2 * menuBarItemHPadding,
+                    contentsSize.height() + 2 * menuBarItemVPadding};
+        }
+        return QProxyStyle::sizeFromContents(type, option, contentsSize, widget);
+    }
+
+    void drawControl(ControlElement element,
+                     const QStyleOption* option,
+                     QPainter* painter,
+                     const QWidget* widget) const override
+    {
+        // The windows11 style does mark the item under the pointer, but with a
+        // near-white rounded fill that is invisible against a menu bar which is
+        // already off-white -- so Classic looks like it has no hover at all
+        // while a theme, which names its own accent, looks fine. Draw the
+        // selection from the palette instead, which is what the themes do and
+        // what the styles before Qt 6 did.
+        const auto* item = qstyleoption_cast<const QStyleOptionMenuItem*>(option);
+        if (element == CE_MenuBarItem && item && (item->state & State_Selected)) {
+            painter->fillRect(item->rect, item->palette.highlight());
+
+            int alignment = Qt::AlignCenter | Qt::TextShowMnemonic | Qt::TextDontClip
+                | Qt::TextSingleLine;
+            if (!proxy()->styleHint(SH_UnderlineShortcut, item, widget)) {
+                alignment |= Qt::TextHideMnemonic;
+            }
+            proxy()->drawItemText(painter,
+                                  item->rect,
+                                  alignment,
+                                  item->palette,
+                                  item->state & State_Enabled,
+                                  item->text,
+                                  QPalette::HighlightedText);
+            return;
+        }
+        QProxyStyle::drawControl(element, option, painter, widget);
+    }
+
+private:
+    static constexpr int menuBarItemHPadding = 12;
+    static constexpr int menuBarItemVPadding = 4;
+};
+
+} // anonymous namespace
+
 void Application::runApplication(void)
 {
     preAppSetup();
@@ -2794,6 +2871,9 @@ void Application::runApplication(void)
     }
 
     postAppSetup();
+
+    // Before any widget exists, so nothing has to be re-polished afterwards.
+    QApplication::setStyle(new ApplicationStyle(QApplication::style()));
 
     Application app(true);
     MainWindow mw;
