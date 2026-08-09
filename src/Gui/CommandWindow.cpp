@@ -341,6 +341,48 @@ Action * StdCmdToolBarMenu::createAction()
 }
 
 //===========================================================================
+// Std_ViewTitleBar
+//===========================================================================
+
+DEF_STD_CMD_AC(StdCmdTitleBar)
+
+StdCmdTitleBar::StdCmdTitleBar()
+  : Command("Std_ViewTitleBar")
+{
+    sGroup        = "View";
+    sMenuText     = QT_TR_NOOP("Custom title bar");
+    sToolTipText  = QT_TR_NOOP("Draws the title bar in the application rather than the "
+                               "platform's, so the menu and toolbars can share its row");
+    sWhatsThis    = "Std_ViewTitleBar";
+    sStatusTip    = sToolTipText;
+    eType         = 0;
+}
+
+Action * StdCmdTitleBar::createAction()
+{
+    Action *pcAction = Command::createAction();
+    pcAction->setCheckable(true);
+    pcAction->setChecked(getMainWindow()->isCustomTitleBar(), true);
+    return pcAction;
+}
+
+void StdCmdTitleBar::activated(int iMsg)
+{
+    getMainWindow()->setCustomTitleBar(iMsg != 0);
+
+    // The window refuses the swap if the platform backend cannot do it, so
+    // report what actually happened rather than what was asked for.
+    if (auto action = getAction()) {
+        action->setChecked(getMainWindow()->isCustomTitleBar(), true);
+    }
+}
+
+bool StdCmdTitleBar::isActive()
+{
+    return true;
+}
+
+//===========================================================================
 // Std_ViewStatusBar
 //===========================================================================
 
@@ -478,6 +520,7 @@ void CreateWindowStdCommands()
     rcCmdMgr.addCommand(new StdCmdDockViewMenu());
     rcCmdMgr.addCommand(new StdCmdToolBarMenu());
     rcCmdMgr.addCommand(new StdCmdWindowsMenu());
+    rcCmdMgr.addCommand(new StdCmdTitleBar());
     rcCmdMgr.addCommand(new StdCmdStatusBar());
     rcCmdMgr.addCommand(new StdCmdUserInterface());
 }

@@ -741,6 +741,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Std_ToggleTransparency"
           << "Std_LinkSelectActions"
           << "Std_TreeViewActions"
+          << "Std_ViewTitleBar"
           << "Std_ViewStatusBar";
 
     // Tools

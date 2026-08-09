@@ -166,6 +166,20 @@ public:
     ToolBarArea *getToolBarArea(QToolBar *);
     void setToolBarMovable(QToolBar *);
 
+    /*! Put the two menu-bar toolbar areas wherever the title bar currently is:
+     * the menu bar's corners with a native title bar, the title bar's own left
+     * and right areas with a custom one. Called once during setup and again
+     * whenever MainWindow switches between them.
+     */
+    void relocateMenuBarAreas();
+
+    /*! Park the two menu-bar toolbar areas on the main window itself. Whichever
+     * title bar is about to be torn down owns them, and a child of a deleted
+     * widget is deleted with it -- so this has to run first, with
+     * relocateMenuBarAreas() putting them back afterwards.
+     */
+    void detachMenuBarAreas();
+
 protected Q_SLOTS:
     void onToggleToolBar(bool);
     void onMovableChanged(bool);

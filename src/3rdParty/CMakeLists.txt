@@ -53,6 +53,14 @@ if (BUILD_DILIGENT)
     endif()
 endif()
 
+if (BUILD_GUI)
+    # Vendored verbatim from FreeCAD/FreeCAD#26766 (PaddleStroke:core_customtitlebar),
+    # CRLF and all, so a re-sync with that branch diffs to just what changed there.
+    # Local divergence is confined to the reversible-detach work needed for
+    # switching the title bar at run time; see HANDOFF_Todos.md.
+    add_subdirectory(customtitlebarkit)
+endif()
+
 add_subdirectory(lazy_loader)
 add_subdirectory(libE57Format)
 

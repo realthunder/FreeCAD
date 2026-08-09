@@ -401,8 +401,16 @@ protected:
 /* TRANSLATOR Gui::MainWindow */
 
 MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
-  : QMainWindow( parent, f/*WDestructiveClose*/ )
+  : CustomTitleBarWindow(
+        App::GetApplication()
+                .GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow")
+                ->GetBool("CustomTitleBar", false)
+            ? Mode::Custom
+            : Mode::Native,
+        parent)
 {
+    Q_UNUSED(f)  // CustomTitleBarWindow owns the window flags in Custom mode
+
     d = new MainWindowP;
     d->splashscreen = nullptr;
     d->activeView = nullptr;
@@ -1292,7 +1300,7 @@ bool MainWindow::event(QEvent *e)
         if(std::abs(d->currentStatusType) <= MainWindow::Wrn)
             return true;
     }
-    return QMainWindow::event(e);
+    return CustomTitleBarWindow::event(e);
 }
 
 bool MainWindow::eventFilter(QObject* o, QEvent* e)
@@ -1373,7 +1381,7 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e)
         }
     }
 
-    return QMainWindow::eventFilter(o, e);
+    return CustomTitleBarWindow::eventFilter(o, e);
 }
 
 void MainWindow::addWindow(MDIView* view)
@@ -1712,16 +1720,39 @@ void MainWindow::closeEvent (QCloseEvent * e)
     }
 }
 
+void MainWindow::setCustomTitleBar(bool enable)
+{
+    if (enable == isCustomTitleBar()) {
+        return;
+    }
+
+    // The two menu-bar toolbar areas live inside whichever title bar is in
+    // charge, and setMode() deletes the one it is replacing -- a child of a
+    // deleted widget goes with it. Park them on the window across the swap.
+    auto toolBars = ToolBarManager::getInstance();
+    if (toolBars) {
+        toolBars->detachMenuBarAreas();
+    }
+
+    setMode(enable ? Mode::Custom : Mode::Native);
+
+    if (toolBars) {
+        toolBars->relocateMenuBarAreas();
+    }
+
+    d->hGrp->SetBool("CustomTitleBar", enable);
+}
+
 void MainWindow::showEvent(QShowEvent* e)
 {
     std::clog << "Show main window" << std::endl;
-    QMainWindow::showEvent(e);
+    CustomTitleBarWindow::showEvent(e);
 }
 
 void MainWindow::hideEvent(QHideEvent* e)
 {
     std::clog << "Hide main window" << std::endl;
-    QMainWindow::hideEvent(e);
+    CustomTitleBarWindow::hideEvent(e);
 }
 
 void MainWindow::processMessages(const QList<QByteArray> & msg)
@@ -2310,7 +2341,7 @@ void MainWindow::dropEvent (QDropEvent* e)
         loadUrls(App::GetApplication().getActiveDocument(), data->urls());
     }
     else {
-        QMainWindow::dropEvent(e);
+        CustomTitleBarWindow::dropEvent(e);
     }
 }
 
@@ -2568,7 +2599,7 @@ void MainWindow::childEvent(QChildEvent *e)
         ToolBarManager::checkToolBar();
     }
 
-    QMainWindow::childEvent(e);
+    CustomTitleBarWindow::childEvent(e);
 }
 
 QString MainWindow::overrideIcons() const
@@ -2752,7 +2783,7 @@ void MainWindow::changeEvent(QEvent *e)
         }
     }
     else {
-        QMainWindow::changeEvent(e);
+        CustomTitleBarWindow::changeEvent(e);
     }
 }
 

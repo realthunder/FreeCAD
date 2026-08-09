@@ -495,12 +495,9 @@ ToolBarManager::ToolBarManager()
         mb->installEventFilter(this);
         menuBarLeftArea = new ToolBarArea(mb, hMenuBarLeft, connParam, &menuBarTimer);
         menuBarLeftArea->setObjectName(QStringLiteral("MenuBarLeftArea"));
-        mb->setCornerWidget(menuBarLeftArea, Qt::TopLeftCorner);
-        menuBarLeftArea->show();
         menuBarRightArea = new ToolBarArea(mb, hMenuBarRight, connParam, &menuBarTimer);
         menuBarRightArea->setObjectName(QStringLiteral("MenuBarRightArea"));
-        mb->setCornerWidget(menuBarRightArea, Qt::TopRightCorner);
-        menuBarRightArea->show();
+        relocateMenuBarAreas();
     }
 
     globalArea = defaultArea = Qt::TopToolBarArea;
@@ -1129,6 +1126,77 @@ void ToolBarManager::addToolBarToMainWindow(QToolBar *toolbar)
 {
     Base::StateLocker guard(adding);
     getMainWindow()->addToolBar(toolbar);
+}
+
+void ToolBarManager::detachMenuBarAreas()
+{
+    auto mw = getMainWindow();
+    if (auto mb = mw->menuBar()) {
+        if (mb->cornerWidget(Qt::TopLeftCorner) == menuBarLeftArea) {
+            mb->setCornerWidget(nullptr, Qt::TopLeftCorner);
+        }
+        if (mb->cornerWidget(Qt::TopRightCorner) == menuBarRightArea) {
+            mb->setCornerWidget(nullptr, Qt::TopRightCorner);
+        }
+    }
+    for (auto area : {menuBarLeftArea, menuBarRightArea}) {
+        if (!area) {
+            continue;
+        }
+        if (auto layout = area->parentWidget() ? area->parentWidget()->layout() : nullptr) {
+            layout->removeWidget(area);
+        }
+        area->setParent(mw);
+        area->hide();
+    }
+}
+
+void ToolBarManager::relocateMenuBarAreas()
+{
+    if (!menuBarLeftArea || !menuBarRightArea) {
+        return;
+    }
+
+    auto mw = getMainWindow();
+    auto mb = mw->menuBar();
+
+    // Always take them out of the menu bar's corners first. Leaving a corner
+    // widget behind while reparenting it elsewhere leaves QMenuBar with a
+    // dangling corner and a gap where it used to reserve space.
+    if (mb) {
+        if (mb->cornerWidget(Qt::TopLeftCorner) == menuBarLeftArea) {
+            mb->setCornerWidget(nullptr, Qt::TopLeftCorner);
+        }
+        if (mb->cornerWidget(Qt::TopRightCorner) == menuBarRightArea) {
+            mb->setCornerWidget(nullptr, Qt::TopRightCorner);
+        }
+    }
+
+    if (mw->isCustomTitleBar()) {
+        const auto place = [](QWidget *host, ToolBarArea *area) {
+            if (!host) {
+                return;
+            }
+            auto layout = qobject_cast<QHBoxLayout*>(host->layout());
+            if (!layout) {
+                layout = new QHBoxLayout(host);
+                layout->setContentsMargins(0, 0, 0, 0);
+                layout->setSpacing(0);
+            }
+            area->setParent(host);
+            layout->addWidget(area);
+            area->show();
+        };
+        place(mw->leftArea(), menuBarLeftArea);
+        place(mw->rightArea(), menuBarRightArea);
+    }
+    else if (mb) {
+        // setCornerWidget reparents for us.
+        mb->setCornerWidget(menuBarLeftArea, Qt::TopLeftCorner);
+        mb->setCornerWidget(menuBarRightArea, Qt::TopRightCorner);
+        menuBarLeftArea->show();
+        menuBarRightArea->show();
+    }
 }
 
 ToolBarArea *ToolBarManager::getToolBarArea(QToolBar *toolbar)

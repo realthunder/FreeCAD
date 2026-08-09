@@ -25,8 +25,9 @@
 #define GUI_MAINWINDOW_H
 
 #include <QEvent>
-#include <QMainWindow>
 #include <QMdiArea>
+
+#include <customtitlebarkit/CustomTitleBarWindow.h>
 
 #include "Window.h"
 
@@ -68,12 +69,25 @@ public:
  * a status bar and mainly a workspace for the MDI windows.
  * @author Werner Mayer
  */
-class GuiExport MainWindow : public QMainWindow
+class GuiExport MainWindow : public CustomTitleBarWindow
 {
     Q_OBJECT
     Q_PROPERTY(QString overrideIcons READ overrideIcons WRITE setOverrideIcons)
 
 public:
+    /// Whether the window is drawing its own title bar rather than the platform's.
+    bool isCustomTitleBar() const
+    {
+        return mode() == Mode::Custom;
+    }
+
+    /*! Switch the title bar between the platform's and our own, on the running
+     * window. Moves the menu bar and the two menu-bar toolbar areas to whichever
+     * of the two is now hosting them, and remembers the choice in
+     * MainWindow/CustomTitleBar.
+     */
+    void setCustomTitleBar(bool enable);
+
     enum ConfirmSaveResult {
         Cancel = 0,
         Save,
