@@ -21,6 +21,22 @@ the features they respond to:
   Torus/blob    smooth, crease-free curvature: what matcap does *alone*,
                 and where cavity correctly finds almost nothing.
 
+The bottom row exists for one question: now that the backend's polygon
+offset carries its slope term and an edge is legible over the face it
+bounds whatever that face's orientation, does cavity still earn its
+place? Each of the three is a case where an edge line cannot answer:
+
+  Ribs          rib-to-base blends at a large radius. The edge lines sit
+                at the tangent boundary, well up either flank; the floor
+                of the valley between them carries no edge at all, so
+                anything reading that floor is reading curvature.
+  Ripple        one BSpline face. Four boundary edges and nothing
+                inside -- the whole interior form is curvature only,
+                which is the imported-mesh case in miniature.
+  Knurl         crossing grooves, dozens of them. Dense enough that
+                drawing every edge reads as noise rather than as form:
+                the argument for shading a crease instead of stroking it.
+
 Everything is tessellated fine (small Deviation / AngularDeflection) on
 purpose: cavity reads the prepass normals, so a coarse mesh would wear
 its own triangle grid.
@@ -163,6 +179,81 @@ def blob():
     return shape.removeSplitter()
 
 
+def ribs():
+    """Ribs blended into a base at a large radius.
+
+    The blend puts its edge lines at the tangent boundary, several
+    millimetres up either flank; the floor of the valley between them
+    carries no edge. An edge-only reading of this part loses the valley
+    entirely -- which is the case cavity is for.
+    """
+    shape = Part.makeBox(70, 34, 8, V(-35, -17, 0))
+    for i in range(3):
+        shape = shape.fuse(
+            Part.makeBox(8, 34, 16, V(-22 + i * 22, -17, 8)))
+    shape = shape.removeSplitter()
+    try:
+        # The six rib-to-base junction lines: at the base's top plane,
+        # running the full depth, and inboard of the outer rim (whose
+        # edges sit at the same height and would round the part).
+        junctions = [e for e in shape.Edges
+                     if abs(e.BoundBox.ZMin - 8.0) < 1e-6
+                     and abs(e.BoundBox.ZMax - 8.0) < 1e-6
+                     and e.BoundBox.YLength > 30
+                     and e.BoundBox.XMin > -34.9
+                     and e.BoundBox.XMax < 34.9]
+        if junctions:
+            shape = shape.makeFillet(3.5, junctions)
+    except Exception:
+        note("ribs fillet skipped: " + traceback.format_exc(limit=1))
+    return shape
+
+
+def ripple():
+    """A single BSpline face with a rippled interior.
+
+    Four boundary edges and not one inside it, so every bit of form in
+    the middle is curvature and nothing else -- the same situation an
+    imported mesh is in.
+    """
+    nu = nv = 14
+    pts = []
+    for i in range(nu):
+        row = []
+        for j in range(nv):
+            x = -28 + 56.0 * i / (nu - 1)
+            y = -28 + 56.0 * j / (nv - 1)
+            d = math.hypot(x, y)
+            row.append(V(x, y, 6.5 * math.cos(d * 0.30)
+                         * math.exp(-d * 0.035)))
+        pts.append(row)
+    surf = Part.BSplineSurface()
+    surf.interpolate(pts)
+    return surf.toShape()
+
+
+def knurl():
+    """A knurled grip: two crossing families of shallow grooves.
+
+    Dense enough that stroking every edge reads as noise rather than as
+    form. If cavity is going to justify itself anywhere it is here --
+    shading the creases instead of drawing them.
+    """
+    body = Part.makeCylinder(11, 34)
+    cutters = []
+    n = 20
+    for k in range(n):
+        for sgn in (1, -1):
+            # A bar along Z, leaned over so it cuts a helical groove,
+            # carried out to the surface and around to its station.
+            c = Part.makeBox(2.4, 2.4, 70, V(-1.2, -1.2, -35))
+            c.rotate(V(0, 0, 0), V(1, 0, 0), sgn * 30)
+            c.translate(V(11, 0, 17))
+            c.rotate(V(0, 0, 0), V(0, 0, 1), 360.0 * k / n)
+            cutters.append(c)
+    return body.cut(Part.makeCompound(cutters))
+
+
 try:
     view = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
     view.SetInt("RenderCache", 3)                 # renderer (bgfx) path
@@ -202,9 +293,11 @@ try:
 
     doc = FreeCAD.newDocument("Inspect")
 
-    # A 3x2 grid rather than a row: a long thin scene fits to nothing.
-    # Ordered "pure crease" to "pure curvature" along the reading order,
-    # so one view walks the range.
+    # A 3x3 grid rather than a row: a long thin scene fits to nothing.
+    # The first two rows run "pure crease" to "pure curvature" along the
+    # reading order, so one view walks the range. The third is the row
+    # that answers whether cavity still has a job now that edges are
+    # legible over the faces they bound (see the module docstring).
     parts = (
         ("Corrugation", corrugation, V(-58, 32, 0), (0.72, 0.72, 0.74)),
         ("Staircase", staircase, V(28, 32, 0), (0.70, 0.71, 0.73)),
@@ -212,6 +305,9 @@ try:
         ("Shaft", shaft, V(-58, -34, 0), (0.76, 0.76, 0.78)),
         ("GolfBall", golfball, V(28, -34, 16), (0.75, 0.75, 0.77)),
         ("Blob", blob, V(104, -34, 8), (0.73, 0.74, 0.76)),
+        ("Ribs", ribs, V(-58, -104, 0), (0.74, 0.74, 0.76)),
+        ("Ripple", ripple, V(28, -104, 4), (0.75, 0.74, 0.72)),
+        ("Knurl", knurl, V(104, -104, 0), (0.73, 0.73, 0.75)),
     )
 
     for name, build, where, color in parts:

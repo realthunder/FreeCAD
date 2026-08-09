@@ -571,7 +571,8 @@ absorbs changes):**
 | `u_matColor` | vec4 | material diffuse rgba (used when `u_params.x == 0`) |
 | `u_matEmissive` | vec4 | emissive rgb add |
 | `u_matSpecular` | vec4 | specular rgb, `.w` shininess (Coin 0..1) |
-| `u_params` | vec4 | `.x` per-vertex color, `.y` lighting on, `.z` two-sided, `.w` NDC depth bias (polygon-offset emulation) |
+| `u_params` | vec4 | `.x` per-vertex color, `.y` lighting on, `.z` two-sided, `.w` constant NDC depth bias — glPolygonOffset's `units * r` term |
+| `u_polyOffset` | vec4 | `.x` glPolygonOffset's `factor` (0 = no slope term), `.y` ceiling on the depth gradient the slope term tracks (NDC depth per NDC screen unit) |
 | `u_pbrParams` | vec4 | `.x` PBR branch (2 = with metallic-roughness map), `.y` metallic, `.z` roughness, `.w` environment intensity |
 | `u_envSH[9]` | vec4 | irradiance SH of the environment (Ramamoorthi form, world space) |
 | `u_lightDir` | vec4 | scene light direction, view space; `.w > 0.5` = shadowed scene light active (else headlight) |
