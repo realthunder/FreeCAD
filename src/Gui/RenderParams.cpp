@@ -158,7 +158,7 @@ public:
         funcs["AOResolution"] = &RenderParamsP::updateAOResolution;
         Cavity = this->handle->GetBool("Cavity", false);
         funcs["Cavity"] = &RenderParamsP::updateCavity;
-        CavityRadius = this->handle->GetFloat("CavityRadius", 4.0);
+        CavityRadius = this->handle->GetFloat("CavityRadius", 1.0);
         funcs["CavityRadius"] = &RenderParamsP::updateCavityRadius;
         CavityValley = this->handle->GetFloat("CavityValley", 1.0);
         funcs["CavityValley"] = &RenderParamsP::updateCavityValley;
@@ -350,7 +350,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCavityRadius(RenderParamsP *self) {
-        self->CavityRadius = self->handle->GetFloat("CavityRadius", 4.0);
+        self->CavityRadius = self->handle->GetFloat("CavityRadius", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCavityValley(RenderParamsP *self) {
@@ -1123,11 +1123,18 @@ const char *RenderParams::docCavity() {
 "experimental render engine (render cache mode 3 with a selected\n"
 "renderer type). Darkens concave creases and convex ridges found\n"
 "in the geometry prepass normals, which makes surface shape and\n"
-"small features read without relying on the lighting -- the\n"
-"inspection shading a CAD workbench view wants. Independent of\n"
-"ambient occlusion: cavity is a local curvature term, occlusion\n"
-"is a visibility integral over a world-space radius (contact\n"
-"darkening). They compose.");
+"small features read without relying on the lighting.\n"
+"\n"
+"Best paired with the Shaded draw style, the one that draws no\n"
+"edges: there the darkened crease is the only thing stating where\n"
+"a face ends, so cavity does the job the edge lines do elsewhere,\n"
+"without the wireframe over every tessellated curve. In a style\n"
+"that already draws edges (Flat Lines) the two land on the same\n"
+"pixels and cavity mostly restates them.\n"
+"\n"
+"Independent of ambient occlusion: cavity is a local curvature\n"
+"term, occlusion is a visibility integral over a world-space\n"
+"radius (contact darkening). They compose.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1159,13 +1166,16 @@ const char *RenderParams::docCavityRadius() {
 "\n"
 "This decides which features the pass can see at all. The term\n"
 "reads how far the surface normal turns between the two\n"
-"neighbours, so at 1 it sees only what turns within a single\n"
-"pixel -- a hard crease, and almost nothing of a smooth surface,\n"
-"whose normal moves by a fraction of a degree per pixel. Widening\n"
-"it brings broad curvature (fillets, blends, a sculpted face) in,\n"
-"at the cost of spreading a hard crease into a band of this\n"
-"width. Being in pixels it is resolution-relative: the same value\n"
-"covers less of the model on a high-DPI display.");
+"neighbours, so at the default of 1 it sees only what turns\n"
+"within a single pixel: hard creases, crisply, which is what\n"
+"stands in for the edge lines the Shaded draw style does not\n"
+"draw. Widening it brings broad curvature (fillets, blends, a\n"
+"sculpted face) in, at the cost of spreading a hard crease into a\n"
+"band of this width.\n"
+"\n"
+"Being in pixels it is resolution-relative: the same value covers\n"
+"less of the model on a high-DPI display, so a large model on a\n"
+"dense screen may want more than 1.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1175,7 +1185,7 @@ const double & RenderParams::getCavityRadius() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const double & RenderParams::defaultCavityRadius() {
-    const static double def = 4.0;
+    const static double def = 1.0;
     return def;
 }
 

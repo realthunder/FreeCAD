@@ -373,10 +373,11 @@ struct CavityConfig {
     float ridge = 0.5f;
     /// Baseline the curvature is measured over, in pixels. Decides
     /// which features the pass can see: at 1 it reads only what turns
-    /// within one pixel — a hard crease, and next to nothing of a
-    /// smooth surface — and widening it brings broad curvature in at
-    /// the cost of softening the creases into bands of this width.
-    float radius = 4.0f;
+    /// within one pixel — hard creases, crisply, which is what stands in
+    /// for the edges the Shaded draw style does not draw — and widening
+    /// it brings broad curvature in at the cost of softening those
+    /// creases into bands of this width.
+    float radius = 1.0f;
 
     bool operator==(const CavityConfig &o) const {
         return enabled == o.enabled && valley == o.valley

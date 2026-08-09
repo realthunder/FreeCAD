@@ -774,14 +774,14 @@ public:
         Action * action = GroupCommand::createAction();
         action->setCheckable(false);
         // Each style becomes a checkable entry, which ActionGroup::addTo
-        // then renders as a checkbox in both the tool button's drop-down
-        // and the menu bar. Two reasons, and neither is decoration: the
-        // menu stays open across a click, so styles can be compared by
-        // walking the list with the 3D view visible behind it; and the
-        // active one is legible at a glance instead of being whichever
-        // entry happens to be highlighted. Gui::Action::setCheckable is
-        // what rewires the action from triggered to toggled, so it has to
-        // be that rather than QAction::setCheckable.
+        // then renders as a radio button in both the tool button's
+        // drop-down and the menu bar. Two reasons, and neither is
+        // decoration: the menu stays open across a click, so styles can
+        // be compared by walking the list with the 3D view visible behind
+        // it; and the active one is legible at a glance instead of being
+        // whichever entry happens to be highlighted. Gui::Action::
+        // setCheckable is what rewires the action from triggered to
+        // toggled, so it has to be that rather than QAction::setCheckable.
         for (auto cmd : getCommands()) {
             if (auto sub = cmd->getAction())
                 sub->setCheckable(true);
@@ -810,6 +810,10 @@ StdCmdDrawStyle::StdCmdDrawStyle()
     sWhatsThis    = "Std_DrawStyle";
     eType         = 0;
     bCanLog       = false;
+    // One override mode per viewer, so the list is a pick-one: this is
+    // what makes ActionGroup render it as radio buttons rather than as
+    // checkboxes, which would advertise combinations that do not exist.
+    setExclusive(true);
 
     int i = 0;
     while(const char *title = drawStyleNameFromIndex(i++)) {

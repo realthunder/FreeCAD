@@ -40,6 +40,7 @@
 class QLineEdit;
 class QWidgetAction;
 class QCheckBox;
+class QRadioButton;
 class QToolBar;
 class QSpinBox;
 
@@ -98,7 +99,20 @@ public:
                                 const QString &tooltip = QString(),
                                 const QIcon &icon = QIcon(),
                                 bool checked = false,
-                                QCheckBox **checkbox = nullptr);
+                                QCheckBox **checkbox = nullptr,
+                                const QString &shortcut = QString());
+
+    /// Like addCheckBox, but a radio button -- for a menu section that is
+    /// a pick-one list. Auto-exclusivity is off (each entry sits in its
+    /// own widget action, so they are not siblings); put them in a
+    /// QButtonGroup to make the choice exclusive.
+    static QAction *addRadioButton(QMenu *menu,
+                                   const QString &txt,
+                                   const QString &tooltip = QString(),
+                                   const QIcon &icon = QIcon(),
+                                   bool checked = false,
+                                   QRadioButton **radio = nullptr,
+                                   const QString &shortcut = QString());
 
     static QAction *addCheckBox(QMenu *menu,
                                 const QString &txt,
@@ -112,7 +126,10 @@ public:
                               const QString &tooltip,
                               QWidget *widget,
                               bool needLable = true,
-                              const QIcon &icon = QIcon());
+                              const QIcon &icon = QIcon(),
+                              /// Right-aligned accelerator text, as a
+                              /// plain menu item would show it.
+                              const QString &shortcut = QString());
 
     static QString createToolTip(QString helpText,
                                  const QString &title,

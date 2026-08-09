@@ -369,11 +369,18 @@ public:
     /// experimental render engine (render cache mode 3 with a selected
     /// renderer type). Darkens concave creases and convex ridges found
     /// in the geometry prepass normals, which makes surface shape and
-    /// small features read without relying on the lighting -- the
-    /// inspection shading a CAD workbench view wants. Independent of
-    /// ambient occlusion: cavity is a local curvature term, occlusion
-    /// is a visibility integral over a world-space radius (contact
-    /// darkening). They compose.
+    /// small features read without relying on the lighting.
+    /// 
+    /// Best paired with the Shaded draw style, the one that draws no
+    /// edges: there the darkened crease is the only thing stating where
+    /// a face ends, so cavity does the job the edge lines do elsewhere,
+    /// without the wireframe over every tessellated curve. In a style
+    /// that already draws edges (Flat Lines) the two land on the same
+    /// pixels and cavity mostly restates them.
+    /// 
+    /// Independent of ambient occlusion: cavity is a local curvature
+    /// term, occlusion is a visibility integral over a world-space
+    /// radius (contact darkening). They compose.
     static const bool & getCavity();
     static const bool & defaultCavity();
     static void removeCavity();
@@ -389,13 +396,16 @@ public:
     /// 
     /// This decides which features the pass can see at all. The term
     /// reads how far the surface normal turns between the two
-    /// neighbours, so at 1 it sees only what turns within a single
-    /// pixel -- a hard crease, and almost nothing of a smooth surface,
-    /// whose normal moves by a fraction of a degree per pixel. Widening
-    /// it brings broad curvature (fillets, blends, a sculpted face) in,
-    /// at the cost of spreading a hard crease into a band of this
-    /// width. Being in pixels it is resolution-relative: the same value
-    /// covers less of the model on a high-DPI display.
+    /// neighbours, so at the default of 1 it sees only what turns
+    /// within a single pixel: hard creases, crisply, which is what
+    /// stands in for the edge lines the Shaded draw style does not
+    /// draw. Widening it brings broad curvature (fillets, blends, a
+    /// sculpted face) in, at the cost of spreading a hard crease into a
+    /// band of this width.
+    /// 
+    /// Being in pixels it is resolution-relative: the same value covers
+    /// less of the model on a high-DPI display, so a large model on a
+    /// dense screen may want more than 1.
     static const double & getCavityRadius();
     static const double & defaultCavityRadius();
     static void removeCavityRadius();

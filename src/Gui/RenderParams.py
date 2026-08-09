@@ -183,23 +183,33 @@ Params = [
         "experimental render engine (render cache mode 3 with a selected\n"
         "renderer type). Darkens concave creases and convex ridges found\n"
         "in the geometry prepass normals, which makes surface shape and\n"
-        "small features read without relying on the lighting -- the\n"
-        "inspection shading a CAD workbench view wants. Independent of\n"
-        "ambient occlusion: cavity is a local curvature term, occlusion\n"
-        "is a visibility integral over a world-space radius (contact\n"
-        "darkening). They compose."),
-    ParamFloat('CavityRadius',  4.0, title='Cavity radius',
+        "small features read without relying on the lighting.\n"
+        "\n"
+        "Best paired with the Shaded draw style, the one that draws no\n"
+        "edges: there the darkened crease is the only thing stating where\n"
+        "a face ends, so cavity does the job the edge lines do elsewhere,\n"
+        "without the wireframe over every tessellated curve. In a style\n"
+        "that already draws edges (Flat Lines) the two land on the same\n"
+        "pixels and cavity mostly restates them.\n"
+        "\n"
+        "Independent of ambient occlusion: cavity is a local curvature\n"
+        "term, occlusion is a visibility integral over a world-space\n"
+        "radius (contact darkening). They compose."),
+    ParamFloat('CavityRadius',  1.0, title='Cavity radius',
         doc="Baseline the cavity curvature is measured over, in pixels.\n"
         "\n"
         "This decides which features the pass can see at all. The term\n"
         "reads how far the surface normal turns between the two\n"
-        "neighbours, so at 1 it sees only what turns within a single\n"
-        "pixel -- a hard crease, and almost nothing of a smooth surface,\n"
-        "whose normal moves by a fraction of a degree per pixel. Widening\n"
-        "it brings broad curvature (fillets, blends, a sculpted face) in,\n"
-        "at the cost of spreading a hard crease into a band of this\n"
-        "width. Being in pixels it is resolution-relative: the same value\n"
-        "covers less of the model on a high-DPI display."),
+        "neighbours, so at the default of 1 it sees only what turns\n"
+        "within a single pixel: hard creases, crisply, which is what\n"
+        "stands in for the edge lines the Shaded draw style does not\n"
+        "draw. Widening it brings broad curvature (fillets, blends, a\n"
+        "sculpted face) in, at the cost of spreading a hard crease into a\n"
+        "band of this width.\n"
+        "\n"
+        "Being in pixels it is resolution-relative: the same value covers\n"
+        "less of the model on a high-DPI display, so a large model on a\n"
+        "dense screen may want more than 1."),
     ParamFloat('CavityValley',  1.0, title='Valley darkening',
         doc="Cavity darkening strength in concave creases (inside corners,\n"
         "fillets, pockets). Zero disables the valley term."),

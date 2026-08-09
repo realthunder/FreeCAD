@@ -27,6 +27,7 @@
 # include <QActionEvent>
 # include <QActionGroup>
 # include <QApplication>
+# include <QButtonGroup>
 # include <QCheckBox>
 # include <QClipboard>
 # if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
@@ -38,6 +39,7 @@
 # include <QMenu>
 # include <QMenuBar>
 # include <QMessageBox>
+# include <QRadioButton>
 # include <QRegularExpression>
 # include <QWindow>
 # include <QScreen>
@@ -496,17 +498,44 @@ Action::addCheckBox(QMenu *menu,
                     const QString &tooltip,
                     const QIcon &icon,
                     bool checked,
-                    QCheckBox **_checkbox)
+                    QCheckBox **_checkbox,
+                    const QString &shortcut)
 {
     auto checkbox = new QCheckBox(menu);
     checkbox->setText(txt);
     checkbox->setChecked(checked);
     if (_checkbox) *_checkbox = checkbox;
-    auto action = addWidget(menu, txt, tooltip, checkbox, false, icon);
+    auto action = addWidget(menu, txt, tooltip, checkbox, false, icon, shortcut);
     action->setCheckable(true);
     action->setChecked(checked);
     QObject::connect(checkbox, &QCheckBox::toggled, action, &QAction::setChecked);
     QObject::connect(checkbox, &QCheckBox::toggled, action, &QAction::toggled);
+    return action;
+}
+
+QAction *
+Action::addRadioButton(QMenu *menu,
+                       const QString &txt,
+                       const QString &tooltip,
+                       const QIcon &icon,
+                       bool checked,
+                       QRadioButton **_radio,
+                       const QString &shortcut)
+{
+    auto radio = new QRadioButton(menu);
+    radio->setText(txt);
+    radio->setChecked(checked);
+    // Each entry is its own widget action with its own container, so the
+    // siblings Qt would auto-exclude against are not siblings. The caller
+    // puts them in a QButtonGroup instead; auto-exclusive would otherwise
+    // make each one individually un-uncheckable and collectively free.
+    radio->setAutoExclusive(false);
+    if (_radio) *_radio = radio;
+    auto action = addWidget(menu, txt, tooltip, radio, false, icon, shortcut);
+    action->setCheckable(true);
+    action->setChecked(checked);
+    QObject::connect(radio, &QRadioButton::toggled, action, &QAction::setChecked);
+    QObject::connect(radio, &QRadioButton::toggled, action, &QAction::toggled);
     return action;
 }
 
@@ -537,7 +566,8 @@ Action::addWidget(QMenu *menu,
                   const QString &tooltip,
                   QWidget *w,
                   bool needLabel,
-                  const QIcon &icon)
+                  const QIcon &icon,
+                  const QString &shortcut)
 {
     QWidgetAction *wa = new QWidgetAction(menu);
     QWidget *widget = new QWidget(menu);
@@ -563,8 +593,21 @@ Action::addWidget(QMenu *menu,
     }
     layout->addWidget(w);
     layout->setContentsMargins(4,0,4,0);
-    if (!icon.isNull() || needLabel)
+    if (!icon.isNull() || needLabel || !shortcut.isEmpty())
         layout->addStretch();
+    if (!shortcut.isEmpty()) {
+        // A widget action draws none of the furniture a plain menu item
+        // gets for free, and the shortcut column is the piece that is
+        // missed: an entry that used to advertise its accelerator on the
+        // right should keep doing so. Dimmed and spaced like the style's
+        // own, so the row still reads as a menu row.
+        auto accel = new QLabel(widget);
+        accel->setText(shortcut);
+        accel->setEnabled(false);
+        accel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        layout->addSpacing(16);
+        layout->addWidget(accel);
+    }
     widget->setFocusProxy(w);
     widget->setFocusPolicy(Qt::TabFocus);
     w->installEventFilter(new MenuFocusEventFilter(menu, wa, w));
@@ -601,37 +644,67 @@ ActionGroup::~ActionGroup()
 
 /**
  * Fill \a menu with a group's actions, rendering every checkable one as a
- * QCheckBox widget action rather than a plain checkable entry.
+ * button widget action rather than a plain checkable entry.
  *
- * Two things come out of that, both wanted wherever a group is a pick-one
- * list. A widget action handles its own mouse events, so clicking one
- * does not dismiss the menu — the user can walk the list and watch the
- * 3D view change under it instead of reopening the menu per try. And the
- * check state is visible on every entry at once, so which one is active
- * reads without hunting for a highlighted item.
+ * The point is that a widget action handles its own mouse events, so
+ * clicking one does not dismiss the menu — the list can be walked with
+ * the result visible under it instead of reopening the menu per try —
+ * and the state of every entry is visible at once rather than only the
+ * highlighted row's.
  *
- * The checkbox drives the action through its toggled signal (a signal-to
- * -signal connection, so Gui::Action::onToggled runs and the command is
- * invoked), and follows it back through Action::actionChecked, which is
- * how an exclusive set unchecks its previous member.
+ * An \a exclusive group gets radio buttons in a shared QButtonGroup,
+ * because that is what the group means: one draw style, one dock state.
+ * Checkboxes would advertise that any combination is available. A
+ * non-exclusive group keeps checkboxes.
+ *
+ * The button drives the action through its toggled signal (a
+ * signal-to-signal connection, so Gui::Action::onToggled runs and the
+ * command is invoked) and follows it back through Action::actionChecked,
+ * which is how a state set elsewhere reaches the menu.
  */
-static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions)
+static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions,
+                          bool exclusive)
 {
+    QButtonGroup *group = nullptr;
+    if (exclusive) {
+        group = menu->findChild<QButtonGroup*>();
+        if (!group) {
+            group = new QButtonGroup(menu);
+            group->setExclusive(true);
+        }
+    }
     for (auto action : actions) {
         if (!action->isCheckable()) {
             menu->addAction(action);
             continue;
         }
-        QCheckBox *checkbox = nullptr;
-        auto wa = Action::addCheckBox(menu, action->text(), action->toolTip(),
-                                      action->icon(), action->isChecked(),
-                                      &checkbox);
+        // A widget action draws none of a menu item's furniture, so the
+        // accelerator has to be passed along to be rendered.
+        const QString accel =
+            action->shortcut().toString(QKeySequence::NativeText);
+        QAbstractButton *button = nullptr;
+        QAction *wa = nullptr;
+        if (exclusive) {
+            QRadioButton *radio = nullptr;
+            wa = Action::addRadioButton(menu, action->text(), action->toolTip(),
+                                        action->icon(), action->isChecked(),
+                                        &radio, accel);
+            group->addButton(radio);
+            button = radio;
+        }
+        else {
+            QCheckBox *checkbox = nullptr;
+            wa = Action::addCheckBox(menu, action->text(), action->toolTip(),
+                                     action->icon(), action->isChecked(),
+                                     &checkbox, accel);
+            button = checkbox;
+        }
         QObject::connect(wa, &QAction::toggled, action, &QAction::toggled);
         if (auto parentAction = qobject_cast<Action*>(action->parent())) {
-            QObject::connect(parentAction, &Action::actionChecked, checkbox,
-                [checkbox](bool checked) {
-                    QSignalBlocker blocker(checkbox);
-                    checkbox->setChecked(checked);
+            QObject::connect(parentAction, &Action::actionChecked, button,
+                [button](bool checked) {
+                    QSignalBlocker blocker(button);
+                    button->setChecked(checked);
                 });
         }
     }
@@ -662,7 +735,7 @@ void ActionGroup::addTo(QWidget *widget)
             auto item = qobject_cast<QMenu*>(widget)->addMenu(menu);
             item->setMenuRole(action()->menuRole());
             menu->setTitle(action()->text());
-            fillGroupMenu(menu, actions());
+            fillGroupMenu(menu, actions(), isExclusive());
 
             QObject::connect(menu, &QMenu::aboutToShow, [this, menu]() {
                 Q_EMIT aboutToShow(menu);
@@ -676,7 +749,7 @@ void ActionGroup::addTo(QWidget *widget)
             widget->addAction(action());
             auto tb = setupMenuToolButton(widget);
             auto menu = new QMenu(widget);
-            fillGroupMenu(menu, actions());
+            fillGroupMenu(menu, actions(), isExclusive());
             tb->setMenu(menu);
             ToolBarManager::getInstance()->checkToolBarIconSize(static_cast<QToolBar*>(widget));
 
