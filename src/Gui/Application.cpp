@@ -2603,17 +2603,6 @@ void postMainWindowSetup(MainWindow &mw)
         }
     }
 
-    // Call this before showing the main window because otherwise:
-    // 1. it shows a white window for a few seconds which doesn't look nice
-    // 2. the layout of the toolbars is completely broken
-    Application::Instance->activateWorkbench(start.c_str());
-
-    // show the main window
-    if (!hidden) {
-        Base::Console().Log("Init: Showing main window\n");
-        mw.loadWindowSettings();
-    }
-
     hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/MainWindow");
 
@@ -2633,7 +2622,24 @@ void postMainWindowSetup(MainWindow &mw)
                      });
 #endif
 
+    // Pin the palette before any of the widgets below exist. Qt hands a widget
+    // the palette that is in effect when it is polished and keeps giving it
+    // back, so anything built while the desktop scheme still applies stays that
+    // colour for the rest of the session however often the application palette
+    // changes afterwards. Pinning after activateWorkbench() left the workbench
+    // tab bar drawing its tabs dark under a light theme.
     Application::applyColorScheme();
+
+    // Call this before showing the main window because otherwise:
+    // 1. it shows a white window for a few seconds which doesn't look nice
+    // 2. the layout of the toolbars is completely broken
+    Application::Instance->activateWorkbench(start.c_str());
+
+    // show the main window
+    if (!hidden) {
+        Base::Console().Log("Init: Showing main window\n");
+        mw.loadWindowSettings();
+    }
 
     std::string style = hGrp->GetASCII("StyleSheet");
     if (style.empty()) {
@@ -2686,6 +2692,14 @@ void postMainWindowSetup(MainWindow &mw)
             Application::Instance->initializeWorkbench(workbench.c_str());
 
     _ApplicationStartUp = false;
+
+    // Belt to the braces above: anything that still got built before the colour
+    // scheme was settled -- an autoloaded workbench, a plugin, a dialog created
+    // during init -- is holding the palette that was in effect at the time.
+    // setStyleSheet() does this after every theme change but skips it while
+    // starting up, so nothing had ever done it for the widgets init leaves
+    // behind.
+    Application::refreshInheritedPalettes();
 
     // gets called once we start the event loop
     QTimer::singleShot(0, &mw, SLOT(delayedStartup()));
