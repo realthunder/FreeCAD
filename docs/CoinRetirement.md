@@ -204,6 +204,77 @@ inside a `SketcherGui` item delegate under `QStyledItemDelegate::
 sizeHint` — on the cache-0 leg, so nothing to do with the render path,
 but it is why the coin leg's last two rows are missing above.
 
+### 3.4 The Shadow draw style: what it is actually holding up
+
+Stage 4 below used to read "with shadows now a Shading checkbox,
+`Shadow` in the exclusive list is redundant for renderer users". That
+premise is wrong, and in a way worth recording: `Render_Shadow` gates
+the shadow **map**; the draw style supplies the **light**.
+
+The chain:
+
+- `overrideMode == "Shadow"` dispatches to `Private::activateShadow()`
+  (`View3DInventorViewer.cpp:2225`, body at `:2398`).
+- `activateShadow()` builds an `SoShadowGroup` holding an
+  `SoFCDirectionalLight` or `SoFCSpotLight` — with their draggers —
+  reparents `pcViewProviderRoot` underneath it, adds the ground-plane
+  group, and selects a *sub* display mode from `Shadow_DisplayMode`
+  (Flat Lines / Shaded / As Is / Hidden Line).
+- The backend does not read its light from the material feed. It
+  resolves it from the traversal state:
+  `RendererBridge::translateLightConfig` walks
+  `SoLightElement::getLights(state)` and accepts **only**
+  `SoShadowDirectionalLight` or `SoSpotLight`
+  (`SoFCRendererBridge.cpp:1476`). Its own comment says why — "the
+  Shadow draw style's light lives above the render-cache traversal
+  root".
+- `Render_Shadow` is a per-view bool (`View3DInventorViewer.cpp:4263`)
+  that decides only whether the map is drawn.
+
+So with the draw style gone the backend has no scene light at all: the
+viewer headlight is a plain `SoDirectionalLight`, which that filter
+rejects by type. Everything keyed off the light — shadows, volumetric
+shafts, sun disc, ground reflection — has nothing to key off. It is not
+a redundant menu entry; it is where the light comes from.
+
+**The persistence surface, for when the removal does happen.** Three
+stores, and one hazard that turns out not to bite:
+
+1. `View3DInventor::DrawStyle`, an `App::PropertyEnumeration`
+   (`View3DInventor.cpp:101`).
+2. The camera blob. `GetCamera` appends `## overrideMode: <mode>` to the
+   serialized camera (`:461`); `SetCamera` parses it back and assigns
+   `DrawStyle` (`:716`-`723`). Not an independent store on restore — it
+   *feeds* the property — but it is what sits inside a saved document's
+   camera string, so a migration keyed on the property covers it only if
+   it runs after that parse.
+3. `App::SavedView` objects. `ViewProviderSavedView` captures and
+   re-applies a `DrawStyle` enum alongside the captured `Shadow_*`
+   properties; its `finishRestoring()` re-supplies `drawStyleNames()` to
+   the enum, which is the tell that the names are not persisted with it.
+
+⚠️ **The enum persists as an index, not a string.**
+`PropertyEnumeration::Save` writes `<Integer value="N"/>`
+(`App/PropertyStandard.cpp:406`). Dropping a name from
+`drawStyleNames()` therefore renumbers every entry after it and would
+silently change the draw style of every saved document and every
+`SavedView`. What saves us is position, not care: `Shadow` is index 8,
+the **last** entry (`ViewParams.cpp:6459`), so removing it shifts
+nothing. That is a property of the current list order — so the order
+must not be tidied before or during this work, and the migration should
+assert the index rather than trust it.
+
+The `Shadow_*` dynamic properties are a fourth thing to place: group
+`Shadow`, materialized lazily by `_shadowParam`
+(`View3DInventorViewer.cpp:376`), carrying DisplayMode, SpotLight,
+ground colour and transparency and the rest. They need mapping onto
+`Render_*` equivalents or they are left orphaned on the view.
+
+There is already a migration of exactly this shape to copy:
+`activateShadow()` reads a legacy `FlatLines` property off the
+`App::Document`, converts it into `Shadow_DisplayMode`, and calls
+`doc->removeDynamicProperty("Shadow_FlatLines")` (`:2415`-`2420`).
+
 ## 4. Plan
 
 Ordered so that nothing user-visible regresses at any step.
@@ -236,10 +307,31 @@ from the preferences UI; keep the parameters as the debug/A-B route
 The Coin path stays fully functional and fully tested — it just stops
 being something a user can wander into.
 
-**Stage 4 — the draw style list.** With shadows now a Shading checkbox,
-`Shadow` in the exclusive list is redundant for renderer users; retiring
-it needs a document-compatibility story (`DrawStyle` is persisted as a
-string).
+**Stage 4 — the scene light, then the draw style** (§3.4). Not a menu
+cleanup. `Shadow` is the only thing that puts a light in the graph the
+backend will accept, so it cannot be removed until the renderer owns
+one. In order:
+
+- **4a — the renderer owns its light.** Build `Render::LightConfig` from
+  `Render_*` view properties (direction, intensity, spot, cone) instead
+  of resolving it out of `SoLightElement`. Keep reading the Coin light
+  while the draw style still exists, so the two coexist for a release
+  rather than swapping over in one commit. This is the whole of the
+  blocker, and it is Coin-retirement work whether or not the draw style
+  ever goes.
+- **4b — the ground moves to the backend.** Partly there already
+  (`Render::LightConfig::ground`); the rest is the Coin geometry in
+  `pcShadowGroundGroup`, which today also has to carry its own
+  `SoPolygonOffset` to match the one every Part shape has.
+- **4c — decide the plain-Coin path.** `SoShadowGroup` is Coin's only
+  shadow implementation, so a cache-0 user loses shadows outright. Under
+  this document's premise that is acceptable — but it is a decision to
+  take deliberately, not a refactor to fall into.
+- **4d — map `Shadow_*` onto `Render_*` and migrate.** All three stores
+  in §3.4: the property, the camera blob, and `SavedView`. Follow the
+  `Shadow_FlatLines` precedent already in `activateShadow()`.
+- **4e — drop `Shadow` from `drawStyleNames()`.** Safe only because it
+  is the last index; assert that rather than assume it.
 
 Not in scope, and not close: Coin as scene graph, traversal and picking.
 Replacing that is a different project — the backend has no picking at all
