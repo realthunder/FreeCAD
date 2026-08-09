@@ -526,3 +526,60 @@ TEST(ProxyHierarchy, theDrawRowSurvivesTheProjection)
     EXPECT_EQ(instances[1].drawIndex, 2u);
     EXPECT_EQ(instances[2].drawIndex, 3u);
 }
+
+TEST(BoxNearPlane, aBoxWhollyInFrontOfTheCameraIsAnswerable)
+{
+    // The ordinary case: an occlusion test can rasterize this box's
+    // front faces, so nothing exempts it.
+    float V[16], P[16];
+    viewAt(V, 100.0f);
+    perspective(P, 45.0f, 1.6f, 0.1f, 1000.0f);
+    const float mn[3] = {-1.0f, -1.0f, -1.0f};
+    const float mx[3] = {1.0f, 1.0f, 1.0f};
+    EXPECT_FALSE(boxReachesNearPlane(mn, mx, V, P, true));
+    EXPECT_FALSE(boxReachesNearPlane(mn, mx, V, P, false));
+}
+
+TEST(BoxNearPlane, aBoxTheCameraStandsInsideIsNotAnswerable)
+{
+    // Its front faces are behind the eye and get clipped away, leaving
+    // only faces its own contents hide — so a query on it would report
+    // it hidden however plainly it is in view.
+    float V[16], P[16];
+    viewAt(V, 5.0f);
+    perspective(P, 45.0f, 1.6f, 0.1f, 1000.0f);
+    const float mn[3] = {-50.0f, -50.0f, -50.0f};
+    const float mx[3] = {50.0f, 50.0f, 50.0f};
+    EXPECT_TRUE(boxReachesNearPlane(mn, mx, V, P, true));
+    EXPECT_TRUE(boxReachesNearPlane(mn, mx, V, P, false));
+}
+
+TEST(BoxNearPlane, aBoxStraddlingTheNearPlaneIsNotAnswerable)
+{
+    // The camera is outside the box, so nothing about its bounds says
+    // it is a special case — only the near plane cutting through it
+    // does, which is exactly what the whole-model box of a tightly
+    // fitted camera does.
+    float V[16], P[16];
+    viewAt(V, 10.0f);
+    perspective(P, 45.0f, 1.6f, 1.0f, 1000.0f);
+    // Spans z = -2..12 in world, i.e. 9.0 down to -2.0 in front of a
+    // camera whose near plane sits at 1.0.
+    const float mn[3] = {-1.0f, -1.0f, -2.0f};
+    const float mx[3] = {1.0f, 1.0f, 12.0f};
+    EXPECT_TRUE(boxReachesNearPlane(mn, mx, V, P, true));
+}
+
+TEST(BoxNearPlane, degenerateInputIsNotAnswerable)
+{
+    // Empty bounds have no faces to rasterize; refusing to test them is
+    // the same answer as refusing a clipped box, and for the same
+    // reason.
+    float V[16], P[16];
+    viewAt(V, 100.0f);
+    perspective(P, 45.0f, 1.6f, 0.1f, 1000.0f);
+    const float mn[3] = {1.0f, 1.0f, 1.0f};
+    const float mx[3] = {-1.0f, -1.0f, -1.0f};
+    EXPECT_TRUE(boxReachesNearPlane(mn, mx, V, P, true));
+    EXPECT_TRUE(boxReachesNearPlane(nullptr, mx, V, P, true));
+}

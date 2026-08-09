@@ -1018,6 +1018,12 @@ public:
     /// backend's own bookkeeping and the draw itself. One summary line
     /// per second, so a long operation shows how each stage grows with
     /// the scene rather than one average (docs/IncrementalPublish.md).
+    /// Those stages end at submission, so a second line reports what
+    /// happens after it: the frame's cost on the CPU issuing draw
+    /// commands against its cost on the GPU drawing them, and the same
+    /// pair per draw call (docs/FarFieldProxies.md §10.1). Which of the
+    /// two a scene is bound by is what decides whether a culling scheme
+    /// has to remove the draw or may leave it to the GPU to reject.
     static const bool & getDebugTiming();
     static const bool & defaultDebugTiming();
     static void removeDebugTiming();
@@ -1079,6 +1085,29 @@ public:
     static void removeDebugProxyCut();
     static void setDebugProxyCut(const bool &v);
     static const char *docDebugProxyCut();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugOcclusion
+    ///
+    /// Measure how much of what the frame draws could not have
+    /// reached the screen (docs/FarFieldProxies.md §10.1). Bounding
+    /// boxes of the spatial index's nodes are re-rasterized against the
+    /// finished depth buffer under hardware occlusion queries, writing
+    /// neither colour nor depth, and every instance is attributed to the
+    /// highest node that rejects it -- so a hidden subtree is counted
+    /// once, not at every level it is hidden at. Boxes bound their
+    /// contents loosely and the frustum's own rejections are reported
+    /// separately, so the hidden share it prints is a floor rather than
+    /// an estimate. A GPU offers 256 queries at a time, so a large model
+    /// takes several frames to walk and a line is printed per completed
+    /// walk, never for a partial one.
+    static const bool & getDebugOcclusion();
+    static const bool & defaultDebugOcclusion();
+    static void removeDebugOcclusion();
+    static void setDebugOcclusion(const bool &v);
+    static const char *docDebugOcclusion();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

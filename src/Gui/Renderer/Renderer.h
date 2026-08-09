@@ -369,6 +369,21 @@ struct RenderDebugConfig {
     /// repeat frame renders identically — the determinism switch for
     /// golden-image comparison.
     bool freezeFrame = false;
+    /// Log what a frame costs the CPU against what it costs the GPU,
+    /// once a second (docs/FarFieldProxies.md §10.1). Shares the
+    /// RenderDebug_Timing switch with the pipeline stage timers of
+    /// Gui/RenderTiming.h, because it answers the half of the same
+    /// question they cannot: their last stage ends at submission, and
+    /// whether a per-object cost is submission or the GPU drawing it is
+    /// what decides the mechanism of any culling scheme.
+    bool frameTiming = false;
+    /// Measure how much of what the frame draws could not have reached
+    /// the screen (docs/FarFieldProxies.md §10.1): bounding boxes of
+    /// spatial-index nodes re-tested against the finished depth buffer
+    /// under hardware occlusion queries, a batch per frame, one line
+    /// per completed walk. This is the proposed culling mechanism run
+    /// without acting on its answers, not an estimate of one.
+    bool occlusion = false;
     /// Log a histogram of how many pixels each drawn object covers, once
     /// a second (docs/FarFieldProxies.md §9). Costs one projection per
     /// object on the frames it reports and nothing while off.
@@ -413,6 +428,7 @@ struct RenderDebugConfig {
 
     bool operator==(const RenderDebugConfig &o) const {
         return viewMode == o.viewMode && freezeFrame == o.freezeFrame
+            && frameTiming == o.frameTiming && occlusion == o.occlusion
             && coverage == o.coverage && proxyCut == o.proxyCut
             && proxyGen == o.proxyGen && userParams == o.userParams;
     }

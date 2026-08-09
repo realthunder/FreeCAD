@@ -114,6 +114,7 @@ public:
     bool DebugDelta;
     bool DebugCoverage;
     bool DebugProxyCut;
+    bool DebugOcclusion;
     bool DebugProxyGen;
 
     // Auto generated code (Tools/params_utils.py:253)
@@ -249,6 +250,8 @@ public:
         funcs["DebugCoverage"] = &RenderParamsP::updateDebugCoverage;
         DebugProxyCut = this->handle->GetBool("DebugProxyCut", false);
         funcs["DebugProxyCut"] = &RenderParamsP::updateDebugProxyCut;
+        DebugOcclusion = this->handle->GetBool("DebugOcclusion", false);
+        funcs["DebugOcclusion"] = &RenderParamsP::updateDebugOcclusion;
         DebugProxyGen = this->handle->GetBool("DebugProxyGen", false);
         funcs["DebugProxyGen"] = &RenderParamsP::updateDebugProxyGen;
     }
@@ -526,6 +529,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugProxyCut(RenderParamsP *self) {
         self->DebugProxyCut = self->handle->GetBool("DebugProxyCut", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugOcclusion(RenderParamsP *self) {
+        self->DebugOcclusion = self->handle->GetBool("DebugOcclusion", false);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugProxyGen(RenderParamsP *self) {
@@ -2454,7 +2461,13 @@ const char *RenderParams::docDebugTiming() {
 "the draw-entry build, the translation to the backend, the\n"
 "backend's own bookkeeping and the draw itself. One summary line\n"
 "per second, so a long operation shows how each stage grows with\n"
-"the scene rather than one average (docs/IncrementalPublish.md).");
+"the scene rather than one average (docs/IncrementalPublish.md).\n"
+"Those stages end at submission, so a second line reports what\n"
+"happens after it: the frame's cost on the CPU issuing draw\n"
+"commands against its cost on the GPU drawing them, and the same\n"
+"pair per draw call (docs/FarFieldProxies.md §10.1). Which of the\n"
+"two a scene is bound by is what decides whether a culling scheme\n"
+"has to remove the draw or may leave it to the GPU to reject.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -2581,6 +2594,45 @@ void RenderParams::setDebugProxyCut(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeDebugProxyCut() {
     instance()->handle->RemoveBool("DebugProxyCut");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugOcclusion() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Measure how much of what the frame draws could not have\n"
+"reached the screen (docs/FarFieldProxies.md §10.1). Bounding\n"
+"boxes of the spatial index's nodes are re-rasterized against the\n"
+"finished depth buffer under hardware occlusion queries, writing\n"
+"neither colour nor depth, and every instance is attributed to the\n"
+"highest node that rejects it -- so a hidden subtree is counted\n"
+"once, not at every level it is hidden at. Boxes bound their\n"
+"contents loosely and the frustum's own rejections are reported\n"
+"separately, so the hidden share it prints is a floor rather than\n"
+"an estimate. A GPU offers 256 queries at a time, so a large model\n"
+"takes several frames to walk and a line is printed per completed\n"
+"walk, never for a partial one.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugOcclusion() {
+    return instance()->DebugOcclusion;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugOcclusion() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugOcclusion(const bool &v) {
+    instance()->handle->SetBool("DebugOcclusion",v);
+    instance()->DebugOcclusion = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugOcclusion() {
+    instance()->handle->RemoveBool("DebugOcclusion");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

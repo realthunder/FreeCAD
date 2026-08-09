@@ -165,10 +165,11 @@ const uint32_t kChunkVersion = 4;
 // the offset of their last POD field instead — that still moves
 // whenever a streamed field is added ahead of it.
 //
-// Two guarded fields are deliberately *not* on the wire, and should
+// Four guarded fields are deliberately *not* on the wire, and should
 // stay that way: AOConfig::fast is a per-frame interaction hint the
-// viewer decides for itself, and RenderDebugConfig::coverage drives a
-// backend-local log rather than any pixel.
+// viewer decides for itself, and RenderDebugConfig::frameTiming,
+// ::occlusion and ::coverage drive backend-local logs rather than any
+// pixel.
 static_assert(sizeof(HiddenLineConfig) == 20, "HiddenLineConfig changed: stream the new field, then update this");
 static_assert(sizeof(PreselHighlightConfig) == 16, "PreselHighlightConfig changed: stream the new field, then update this");
 static_assert(sizeof(SectionConfig) == 12, "SectionConfig changed: stream the new field, then update this");
@@ -179,7 +180,7 @@ static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new fi
 static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new field, then update this");
 static_assert(offsetof(PBRConfig, envBackground) == 16, "PBRConfig changed: stream the new field, then update this");
 static_assert(offsetof(LightConfig, groundColor) == 76,"LightConfig changed: stream the new field, then update this");
-static_assert(offsetof(RenderDebugConfig, coverage) == 5, "RenderDebugConfig changed: stream the new field, then update this");
+static_assert(offsetof(RenderDebugConfig, coverage) == 7, "RenderDebugConfig changed: stream the new field, then update this");
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()

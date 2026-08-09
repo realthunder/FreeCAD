@@ -4528,6 +4528,14 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         prop->setValue(RenderParams::getDebugCoverage());
         prop->setStatus(App::Property::Hidden, true);
     }
+    if (!view->getPropertyByName("RenderDebug_Occlusion")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "RenderDebug_Occlusion", "RenderDebug",
+                                         RenderParams::docDebugOcclusion()));
+        prop->setValue(RenderParams::getDebugOcclusion());
+        prop->setStatus(App::Property::Hidden, true);
+    }
     if (!view->getPropertyByName("RenderDebug_ProxyCut")) {
         auto prop = static_cast<App::PropertyBool*>(
                 view->addDynamicProperty("App::PropertyBool",

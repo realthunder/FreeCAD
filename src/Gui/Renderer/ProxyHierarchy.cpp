@@ -97,6 +97,40 @@ BoxSight Render::sightBounds(const float *bmin, const float *bmax,
     return res;
 }
 
+bool Render::boxReachesNearPlane(const float *bmin, const float *bmax,
+                                 const float *V, const float *P,
+                                 bool homogeneousDepth)
+{
+    if (!bmin || !bmax || !V || !P || bmin[0] > bmax[0])
+        return true;   // nothing to rasterize: not answerable either
+    for (int i = 0; i < 8; ++i) {
+        const float x = (i & 1) ? bmax[0] : bmin[0];
+        const float y = (i & 2) ? bmax[1] : bmin[1];
+        const float z = (i & 4) ? bmax[2] : bmin[2];
+        // GL layout, as sightBounds above: column-major, points
+        // transform as M * p.
+        const float vx = V[0] * x + V[4] * y + V[8] * z + V[12];
+        const float vy = V[1] * x + V[5] * y + V[9] * z + V[13];
+        const float vz = V[2] * x + V[6] * y + V[10] * z + V[14];
+        const float vw = V[3] * x + V[7] * y + V[11] * z + V[15];
+        const float cz = P[2] * vx + P[6] * vy + P[10] * vz + P[14] * vw;
+        const float cw = P[3] * vx + P[7] * vy + P[11] * vz + P[15] * vw;
+        if (cw <= 0.0f)
+            return true;   // at or behind the eye
+        // With a margin, not on the exact plane. A camera fitted to the
+        // model puts the near plane *on* the whole-model box, so the
+        // question is decided in the last bits of a float — and the
+        // answer has to agree with the rasterizer's own clipping, which
+        // computes it differently. Half a percent of the depth range
+        // costs nothing (a box that close to the near plane is one the
+        // camera is practically inside) and removes the disagreement.
+        const float near = homogeneousDepth ? -cw : 0.0f;
+        if (cz < near + 0.005f * cw)
+            return true;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------
 // The instance table
 // ---------------------------------------------------------------------

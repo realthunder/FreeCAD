@@ -1248,6 +1248,16 @@ RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
     res.freezeFrame = viewParamOverride<App::PropertyBool>(
             view, "RenderDebug", "FreezeFrame",
             RenderParams::getDebugFreezeFrame());
+    // The same switch as the pipeline stage timers, which the viewer
+    // hands to RenderTiming directly: the backend's CPU-against-GPU
+    // line is the continuation of that readout past submission, not a
+    // separate thing to turn on (docs/FarFieldProxies.md §10.1).
+    res.frameTiming = viewParamOverride<App::PropertyBool>(
+            view, "RenderDebug", "Timing",
+            RenderParams::getDebugTiming());
+    res.occlusion = viewParamOverride<App::PropertyBool>(
+            view, "RenderDebug", "Occlusion",
+            RenderParams::getDebugOcclusion());
     res.coverage = viewParamOverride<App::PropertyBool>(
             view, "RenderDebug", "Coverage",
             RenderParams::getDebugCoverage());
@@ -1279,7 +1289,8 @@ RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
                     || name == "Timing"     // measurement switches, not
                     || name == "Delta"      // shader inputs: each would
                     || name == "Coverage"   // otherwise upload a vec4
-                    || name == "ProxyCut"   // uniform nobody declares
+                    || name == "Occlusion"  // uniform nobody declares
+                    || name == "ProxyCut"
                     || name == "ProxyGen")
                 continue;
             Render::RenderDebugConfig::UserParam param;

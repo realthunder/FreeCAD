@@ -87,6 +87,26 @@ RendererExport BoxSight sightBounds(const float *bboxMin, const float *bboxMax,
                                     const float *V, const float *P,
                                     float viewportHeightPx);
 
+/// Whether any corner of the box lies at or beyond the near plane.
+///
+/// Not a visibility question: it is what says an occlusion query
+/// *cannot answer* for this box. Rasterizing a box to test it against
+/// the depth buffer only works while the box has front faces to
+/// rasterize, and the near plane clips those away — leaving the back
+/// faces, which the box's own contents hide, so the box reports itself
+/// hidden however plainly visible it is. The whole-model box of a
+/// tightly fitted camera is the standard case.
+///
+/// Exact over the eight corners, unlike sightBounds' centre-plus-margin
+/// approximation, because a conservative *over*-estimate here would
+/// silently exempt boxes an occlusion test could have answered.
+///
+/// \a homogeneousDepth selects the clip convention: true for OpenGL's
+/// -w..w depth range, false for the 0..w of D3D, Vulkan and Metal.
+RendererExport bool boxReachesNearPlane(const float *bboxMin,
+                                        const float *bboxMax, const float *V,
+                                        const float *P, bool homogeneousDepth);
+
 // ---------------------------------------------------------------------
 // The instance table
 // ---------------------------------------------------------------------
