@@ -903,6 +903,172 @@ in WASM. A GPU-driven HZB with compute and indirect draws is faster and
 is unavailable in WebGL2, which would fork the desktop and browser
 paths — the one thing `CLAUDE.md` asks renderer work not to do.
 
+### 10.2 measured: what a draw costs, and on which side
+
+`RenderDebug_Timing` now reports the backend's half of the frame beside
+the pipeline stages: the render thread's submission time against the
+GPU's, and the same pair per draw call. Real RTX 3060, monitor off,
+1863×1064, both models converged.
+
+| | server assembly | MiSTer Express |
+|---|---|---|
+| objects / instances | 5455 / 17727 | 18142 / 42893 |
+| draws | 12849 | **41670** |
+| primitives | **40.6 M** (3158/draw) | 4.40 M (105/draw) |
+| CPU submit | 15.6 ms | 62.1 ms |
+| GPU | 21.5 ms | 62.6 ms |
+| frame | 50 ms | 137 ms |
+| **per draw** | **1.22 µs CPU + 1.68 µs GPU** | **1.49 µs CPU + 1.50 µs GPU** |
+
+**The answer to §10.1's second question is "both, in nearly equal
+measure".** Submission and drawing cost about the same, ~1.2–1.5 µs
+each per draw call, and the two together account for three quarters of
+the frame.
+
+⭐ **And the GPU's share is per-draw state, not pixels and not
+triangles.** Two ablations say so, and they are independent:
+
+- **Resolution.** The same camera at 476×255 rasterizes **16× fewer
+  pixels** and costs the GPU *nothing less* — 21.5 → 24.8 ms on the
+  server model, 62.6 → 61.8 ms on MiSTer. Fill is not where the time
+  goes, at any resolution these models are viewed at.
+- **Primitives per draw.** The two models differ **30-fold** in
+  triangles per draw (3158 against 105) and their per-draw GPU cost
+  differs by 12%. Fitting `gpu = a·draws + b·prims` over the pair gives
+  **a ≈ 1.50 µs per draw** and **b ≈ 0.06 ns per primitive**: geometry
+  is 0.4% of MiSTer's GPU time and 11% of the server's.
+
+⭐ It also explains §9.1's 6.85 µs per object, from a different
+instrument. MiSTer issues 41670 draws for 18142 objects — 2.30 draws
+each — and 2.30 × 2.99 µs = **6.87 µs per object**. A frame-rate
+ablation and a backend timer agree to within a percent, which is the
+best evidence either of them is measuring what it claims.
+
+**What it decides.** A culling scheme has to remove the *draw call*, and
+it has to do it **before submission**:
+
+- A GPU-side conditional render — issuing the draw and letting the
+  hardware reject it — leaves the CPU's 1.2–1.5 µs untouched, so it
+  cannot reach more than about half the cost.
+- Nothing is gained by simplifying geometry that stays submitted: at
+  0.06 ns per primitive, deleting *every* triangle of MiSTer's scene
+  would return 0.4% of its GPU time.
+- Both this workstream and far-field proxies (§5.1) therefore act on
+  the same axis — draw count — which is why they compose, and why
+  §10.1's ordering argument matters rather than being a preference.
+
+⚠️ **A harness trap that invalidated two earlier runs, and possibly
+older ones.** The probe reported "1920×1200" while the scene rendered
+at **400×300**: `mw.showMaximized()` under xvfb has no window manager to
+honour it, and `subWindowList()[0]` is the Start page rather than the 3D
+view, so maximizing it *shrinks* the viewer to its default. Nothing in
+the run said so. The frame line now prints the size the scene was
+actually rasterized at — taken from the view's own framebuffer, since
+`bgfx::Stats::width` is the default backbuffer, which on the desktop
+tier is a dummy nothing draws into and sits at its init size forever.
+⚠️ **§11.1b's cut numbers were taken with the same harness pattern and
+should be re-read before being relied on**: the cut's tolerance is
+scaled by the viewport height, so a 300-pixel-tall viewport makes "64px"
+mean a fifth of the screen rather than a twentieth.
+
+### 10.3 measured: how much of a frame could not have reached the screen
+
+`RenderDebug_Occlusion` is the mechanism §10.1 proposes, run without
+acting on its answers: the spatial index's node bounds rasterized
+against the opaque depth under hardware occlusion queries, 256 per
+frame until the partition has been walked, with every instance
+attributed to the **highest** node that rejects it. Same cameras and
+GPU as §10.2.
+
+| whole-assembly camera | server assembly | MiSTer Express |
+|---|---|---|
+| instances | 17727 | 42893 |
+| **hidden** | **17715 (99.9%)** | **42877 (99.96%)** |
+| still drawn | 12 | 16 |
+| nodes / walked in | 1377 / 6 batches | 2728 / 11 batches |
+| nodes doing the rejecting | **8** | **6** |
+| index build | 11.6 ms | 27.5 ms |
+
+**Both models hide essentially all of themselves**, and both do it the
+same way: the root is visible, every one of its children is not.
+
+⭐ **Why it is so extreme, and what that qualifies.** Assignment by size
+(§3.2) keeps a large instance high in the tree, so the chassis panels —
+the only things actually in view — are *root residents*, while
+everything they enclose is distributed among the children. A dozen
+parts are visible and seventeen thousand are behind them. The corollary
+is that this ceiling belongs to *this camera and this visibility state*:
+hide the case, as any workflow that wants to see the interior does, and
+the saving is gone. What the number establishes is the size of the prize
+on the whole-assembly view of an enclosed assembly, which is the view
+these models are opened in.
+
+⭐⭐ **Eight nodes decide it.** The descent stops at the highest rejecting
+node, so 99.9% of the server model's instances are removed by **eight**
+box tests. That is the argument for node-level culling over per-object
+culling stated as a measurement rather than as a preference: per-object
+testing would issue 17727 queries to learn what eight of them already
+say, and §10.2 has just established that the per-draw cost is what the
+frame is made of.
+
+**Read it as a floor.** Node bounds are loose, the boxes are padded
+outwards (§below), boxes the near plane clips are counted visible, and
+untested nodes are counted visible. Every approximation runs towards
+"visible".
+
+⚠️ **What the measurement does not answer.** The zoomed camera of phase
+E moves the ortho height without moving the camera, so it never gets
+inside the shell and returns the same 100% — the discrimination that
+shows the instrument responds to a scene rather than being stuck at its
+answer comes from `occlusion_smoke.py`, a wall with parts behind it read
+from **both** sides: 99.5% hidden from the front, 6.7% from the rear.
+An in-model camera on a real assembly is still owed.
+
+⚠️ **Three ways a box query answers confidently and wrongly**, all three
+of which produced plausible numbers before being found:
+
+1. **A test box must be padded outwards.** A node's bounds are the union
+   of its contents', so a box face coincides *exactly* with a real
+   surface whenever a part has a flat face at its own extreme — in CAD
+   the common case, not an edge case. At equal depth the two disagree in
+   the last bit, and where the box loses, LEQUAL rejects every fragment
+   and the node calls itself hidden while in plain view. Un-padded, this
+   reported 99% of the server model hidden *including its root*.
+2. **A box the near plane clips cannot be tested at all** — its front
+   faces are gone and the rest are hidden by its own contents. A camera
+   fitted to the model puts the near plane on the whole-model box, so
+   this is the normal case. Judged on the padded box, since padding is
+   what pushes it through.
+3. **The probe belongs directly after the opaque bucket.** Placed at the
+   end of the frame the root read hidden; moved before the OIT resolve,
+   the water and glass surfaces and the copies that force a multisample
+   resolve, it read visible. It is also the correct occluder set:
+   transparent draws write no depth, so nothing later adds an occluder.
+
+⭐ Hence the guard the readout now carries: **a root reported hidden is
+refused, not reported.** Its box contains every drawn thing, so it
+cannot be hidden while the frame draws anything, and the descent would
+otherwise render that as a spectacular "100% hidden". Each of the three
+bugs above was caught by it or by the two-sided smoke test, and none of
+them by looking at the number.
+
+### 10.4 what the two measurements decide together
+
+- **Cull, and cull on the CPU.** §10.2: the draw call is the unit and
+  submission is half its cost, so the draw has to be removed before it
+  is issued. §10.3: on the camera that matters there is almost nothing
+  left to issue.
+- **Per node, not per object.** Eight tests do the work of seventeen
+  thousand, and the index that supports them is already built (§3).
+- **The index build is the open cost**, 12–28 ms, unchanged from
+  §11.1b's finding: a per-frame rebuild is not viable and the
+  incremental index is now required by two workstreams rather than one.
+- ⚠️ **Hidden from this camera is not the same as removable.** Shadow
+  casters (`ViewShadow` renders from the light) and the ground/planar
+  reflection (`ViewGroundRefl` re-renders the scene mirrored) can both
+  show geometry the eye cannot see. Culling must be per *pass*, not per
+  frame — the measurement above is of the eye pass only.
+
 ## 11. Implementation plan
 
 The sequencing of §10 stands; this states what each step touches in the
