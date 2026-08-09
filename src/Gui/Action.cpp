@@ -614,6 +614,12 @@ Action::addWidget(QMenu *menu,
     w->setFocusPolicy(Qt::TabFocus);
     wa->setDefaultWidget(widget);
     wa->setToolTip(tooltip);
+    // A widget action's row is drawn by the widget, so QMenu never gets
+    // to render the action's tooltip over it: on the action alone the
+    // text is set and never seen. Put it on the container as well, which
+    // is the whole row -- children with no tooltip of their own let the
+    // help event propagate up to it.
+    widget->setToolTip(tooltip);
     // wa->setStatusTip(tooltip);
     wa->setVisible(true);
     wa->setText(txt);
