@@ -155,10 +155,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
 
     uint16_t width = view->width;
     uint16_t height = view->height;
+    // The background's own alpha, not a forced opaque: a screenshot
+    // asked for with a transparent background hands one in, and the
+    // capture is read back straight out of this target -- geometry
+    // writes its material alpha over it, the background keeps the
+    // alpha it was given. On screen the value is moot (the widget
+    // composites opaque; the plain GL path clears alpha 0 there).
     uint32_t clearColor = (uint32_t(col.red()) << 24)
         | (uint32_t(col.green()) << 16)
         | (uint32_t(col.blue()) << 8)
-        | 0xff;
+        | uint32_t(col.alpha());
     if (getenv("FC_BGFX_DEBUG_CLEAR"))
         clearColor = 0xff0000ff;
 
