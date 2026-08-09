@@ -382,6 +382,12 @@ struct RenderDebugConfig {
     /// reported number, since phase 3 has to pay it — and nothing while
     /// off.
     bool proxyCut = false;
+    /// Generate proxies for a sample of the nodes that cut stops on and
+    /// report what they commit (docs/FarFieldProxies.md §11.1c) — the
+    /// measurement that turns the cut estimate's *extent* axis into an
+    /// error axis. Unlike the others this one builds meshes, so it is
+    /// bounded by a node sample and reports what it left out.
+    bool proxyGen = false;
 
     /// A dynamically bound named shader parameter (docs/RenderDebug.md
     /// §2.5): any RenderDebug_* view property beyond the fixed knobs
@@ -408,7 +414,7 @@ struct RenderDebugConfig {
     bool operator==(const RenderDebugConfig &o) const {
         return viewMode == o.viewMode && freezeFrame == o.freezeFrame
             && coverage == o.coverage && proxyCut == o.proxyCut
-            && userParams == o.userParams;
+            && proxyGen == o.proxyGen && userParams == o.userParams;
     }
     bool operator!=(const RenderDebugConfig &o) const { return !(*this == o); }
 };

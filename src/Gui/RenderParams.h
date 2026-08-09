@@ -1080,6 +1080,30 @@ public:
     static void setDebugProxyCut(const bool &v);
     static const char *docDebugProxyCut();
     //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugProxyGen
+    ///
+    /// Generate real proxies for a sample of the nodes a far-field
+    /// cut stops on, and report what they cost and what they commit
+    /// (docs/FarFieldProxies.md §11.1c). The cut estimate above selects
+    /// by a node's projected *extent* because no proxy exists yet to
+    /// have an error; this one merges each (cell, material) group and
+    /// decimates it, so the error it commits can be measured as a
+    /// fraction of that extent -- which is the ratio that says whether
+    /// the estimate reads as its 16px row or its 64px row. Reports
+    /// alongside it the triangle cost against what instancing already
+    /// achieves (§7.1) and how much surface area survives, since
+    /// clustering deletes geometry smaller than a cell rather than
+    /// shrinking it. Expensive: it builds meshes. Samples a bounded
+    /// number of nodes and reports how many it skipped.
+    static const bool & getDebugProxyGen();
+    static const bool & defaultDebugProxyGen();
+    static void removeDebugProxyGen();
+    static void setDebugProxyGen(const bool &v);
+    static const char *docDebugProxyGen();
+    //@}
 //[[[end]]]
 
     /// Called on any parameter change: re-selects the renderer backend on

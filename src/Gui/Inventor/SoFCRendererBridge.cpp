@@ -1254,6 +1254,9 @@ RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
     res.proxyCut = viewParamOverride<App::PropertyBool>(
             view, "RenderDebug", "ProxyCut",
             RenderParams::getDebugProxyCut());
+    res.proxyGen = viewParamOverride<App::PropertyBool>(
+            view, "RenderDebug", "ProxyGen",
+            RenderParams::getDebugProxyGen());
 
     // Dynamic named shader parameters (docs/RenderDebug.md §2.5): every
     // further RenderDebug_* property becomes a like-named vec4(-array)
@@ -1276,7 +1279,8 @@ RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
                     || name == "Timing"     // measurement switches, not
                     || name == "Delta"      // shader inputs: each would
                     || name == "Coverage"   // otherwise upload a vec4
-                    || name == "ProxyCut")  // uniform nobody declares
+                    || name == "ProxyCut"   // uniform nobody declares
+                    || name == "ProxyGen")
                 continue;
             Render::RenderDebugConfig::UserParam param;
             param.name = name.compare(0, 2, "u_") == 0 ? name : "u_" + name;

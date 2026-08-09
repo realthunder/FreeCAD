@@ -114,6 +114,7 @@ public:
     bool DebugDelta;
     bool DebugCoverage;
     bool DebugProxyCut;
+    bool DebugProxyGen;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -248,6 +249,8 @@ public:
         funcs["DebugCoverage"] = &RenderParamsP::updateDebugCoverage;
         DebugProxyCut = this->handle->GetBool("DebugProxyCut", false);
         funcs["DebugProxyCut"] = &RenderParamsP::updateDebugProxyCut;
+        DebugProxyGen = this->handle->GetBool("DebugProxyGen", false);
+        funcs["DebugProxyGen"] = &RenderParamsP::updateDebugProxyGen;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -523,6 +526,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugProxyCut(RenderParamsP *self) {
         self->DebugProxyCut = self->handle->GetBool("DebugProxyCut", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugProxyGen(RenderParamsP *self) {
+        self->DebugProxyGen = self->handle->GetBool("DebugProxyGen", false);
     }
 };
 
@@ -2574,6 +2581,46 @@ void RenderParams::setDebugProxyCut(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeDebugProxyCut() {
     instance()->handle->RemoveBool("DebugProxyCut");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugProxyGen() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Generate real proxies for a sample of the nodes a far-field\n"
+"cut stops on, and report what they cost and what they commit\n"
+"(docs/FarFieldProxies.md §11.1c). The cut estimate above selects\n"
+"by a node's projected *extent* because no proxy exists yet to\n"
+"have an error; this one merges each (cell, material) group and\n"
+"decimates it, so the error it commits can be measured as a\n"
+"fraction of that extent -- which is the ratio that says whether\n"
+"the estimate reads as its 16px row or its 64px row. Reports\n"
+"alongside it the triangle cost against what instancing already\n"
+"achieves (§7.1) and how much surface area survives, since\n"
+"clustering deletes geometry smaller than a cell rather than\n"
+"shrinking it. Expensive: it builds meshes. Samples a bounded\n"
+"number of nodes and reports how many it skipped.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugProxyGen() {
+    return instance()->DebugProxyGen;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugProxyGen() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugProxyGen(const bool &v) {
+    instance()->handle->SetBool("DebugProxyGen",v);
+    instance()->DebugProxyGen = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugProxyGen() {
+    instance()->handle->RemoveBool("DebugProxyGen");
 }
 //[[[end]]]
 

@@ -423,6 +423,20 @@ Params = [
         "number that says whether generating proxies is worth building\n"
         "(§11.1). Also reports the distributions that size the partition:\n"
         "instances and material buckets per cell, per level."),
+    ParamBool('DebugProxyGen',  False, title='Far-field proxy generation',
+        doc="Generate real proxies for a sample of the nodes a far-field\n"
+        "cut stops on, and report what they cost and what they commit\n"
+        "(docs/FarFieldProxies.md §11.1c). The cut estimate above selects\n"
+        "by a node's projected *extent* because no proxy exists yet to\n"
+        "have an error; this one merges each (cell, material) group and\n"
+        "decimates it, so the error it commits can be measured as a\n"
+        "fraction of that extent -- which is the ratio that says whether\n"
+        "the estimate reads as its 16px row or its 64px row. Reports\n"
+        "alongside it the triangle cost against what instancing already\n"
+        "achieves (§7.1) and how much surface area survives, since\n"
+        "clustering deletes geometry smaller than a cell rather than\n"
+        "shrinking it. Expensive: it builds meshes. Samples a bounded\n"
+        "number of nodes and reports how many it skipped."),
 ]
 
 def declare_begin():

@@ -212,6 +212,30 @@ partition on every report rather than caching it, because a measurement
 that can go stale measures the wrong thing; the build cost is reported
 rather than hidden, since the plan pass of phase 3 has to pay it too.
 
+### 2.4d `RenderDebug_ProxyGen` — what a far-field proxy commits
+
+The switch above estimates; this one generates. For a sample of the nodes
+the 64px cut stops on it merges each (cell, material) group for real and
+decimates it at the node's cell divided by 4, 8 and 16, then reports per
+grid: the error committed as a fraction of the node's extent, the triangle
+count against both the source and what instancing already shares, the
+surface area retained, and how many members came back empty.
+
+The error against the extent is the point of it. The cut estimate descends
+by a node's projected *extent* because phase 1 had no proxy to have an
+error, and the conversion between the two decides whether its table reads
+as its 16px row or its 64px row (`docs/FarFieldProxies.md` §11.1b). The
+answer, measured, is that no single ratio converts it — §11.1c.
+
+⚠️ **Unlike every other switch here, this one builds meshes.** A report
+merges up to two million triangles and decimates them three times, and the
+frame it lands on stalls for as long as that takes. It is therefore
+bounded — a fixed number of sampled nodes and a triangle budget — and it
+reports what it skipped, since a measurement that silently drops most of
+its work reads as coverage it did not have. Its rate limiter also measures
+from when the last report *finished*, or a report costing more than the
+interval would be due again the moment it returned.
+
 Note these, `RenderDebug_Timing` and `RenderDebug_Delta` are all
 measurement switches, not shader inputs, so §2.5's dynamic-uniform binding
 skips them — otherwise each would upload a `vec4` uniform nothing

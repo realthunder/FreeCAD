@@ -26,6 +26,7 @@
 #include "MeshSource.h"
 #include "SceneLadder.h"
 #include "ProxyHierarchy.h"
+#include "MeshSimplify.h"
 #ifndef FC_RENDERER_STANDALONE
 #include "SceneServer.h"
 #endif
@@ -337,6 +338,30 @@ static bool proxyCutDue()
     return true;
 }
 
+/// The same for the generation readout, which builds meshes rather than
+/// projecting boxes and can take seconds over a large model.
+///
+/// Hence the pair: the gap is measured from when the last report
+/// *finished*. Stamped on the way in, a report costing longer than the
+/// interval would be due again the moment it returned, and the viewer
+/// would spend every frame inside the measurement.
+static int64_t proxyGenLastReport = 0;
+
+static bool proxyGenDue()
+{
+    const int64_t now = bx::getHPCounter();
+    if (proxyGenLastReport
+            && now - proxyGenLastReport < 5 * bx::getHPFrequency())
+        return false;
+    proxyGenLastReport = now;
+    return true;
+}
+
+static void proxyGenReported()
+{
+    proxyGenLastReport = bx::getHPCounter();
+}
+
 /// What a far-field cut would cost this camera, generating nothing
 /// (docs/FarFieldProxies.md §11.1) — the measurement phase 1 exists to
 /// produce, and the gate on whether phase 2 is worth building.
@@ -389,6 +414,269 @@ static void reportProxyCut(const Render::ProxyHierarchy &index,
             line.c_str(), buf);
     Base::Console().Message("render proxycut levels:%s\n", levels.c_str());
 #endif
+}
+
+/// What the cut estimate above cannot answer, because nothing it
+/// measures has been built (docs/FarFieldProxies.md §11.1c).
+///
+/// The estimate descends by a node's projected *extent*, which asks
+/// that a whole merged blob be smaller than the tolerance — far
+/// stricter than what a proxy actually commits, since a cell of twenty
+/// screws sixty pixels across decimates into a mesh erring a pixel or
+/// two. The conversion between the two is one number per node, the
+/// error against the extent, and it can only be had by generating: so
+/// this samples the nodes that cut stops on, merges each (cell,
+/// material) group for real, decimates it at several grid
+/// subdivisions, and reports the ratio.
+///
+/// Three other things fall out of generating that no estimate could
+/// have produced, and all three are reported beside it: what the
+/// triangles cost against the geometry instancing shares today (§7.1),
+/// how much surface *survives* — clustering deletes what is smaller
+/// than a cell rather than shrinking it — and how long a proxy takes to
+/// build.
+struct ProxyGenTotals {
+    uint32_t proxies = 0;      ///< generated
+    uint32_t refused = 0;      ///< nothing left to draw at this grid
+    uint32_t rated = 0;        ///< contributed an error ratio
+    uint64_t members = 0;
+    uint64_t sourceTriangles = 0;
+    uint64_t uniqueTriangles = 0;
+    uint64_t proxyTriangles = 0;
+    /// Bounds anything that would stand in for the deleted geometry
+    /// per *cell* rather than per member — a representative exists for
+    /// every occupied cell whether or not a triangle survived on it.
+    uint64_t proxyVertices = 0;
+    uint64_t collapsedMembers = 0;
+    double sourceArea = 0.0;
+    double proxyArea = 0.0;
+    double ratioSum = 0.0;
+    double rmsRatioSum = 0.0;
+    float ratioMax = 0.0f;
+    double ms = 0.0;
+};
+
+static void reportProxyGen(const Render::ProxyHierarchy &index,
+                           const Render::DrawCallList &draws, const float *V,
+                           const float *P, float viewportHeightPx)
+{
+    // The tolerance the cut estimate showed most aggregation at, so
+    // that this measures the operating point in question rather than
+    // one nothing would use.
+    static const float kTolerancePx = 64.0f;
+    // Generating for every node on the cut is generating the whole
+    // model. Both bounds exist to keep a debug readout from becoming a
+    // several-second stall, and both are reported: a measurement that
+    // silently drops most of its work reads as coverage it did not have.
+    static const uint32_t kMaxNodes = 24;
+    static const uint64_t kTriangleBudget = 2000000;
+    // Cell edges of the node's own cell divided by these — powers of
+    // two, so that every level's decimation grid remains a refinement
+    // of the level above it (§3.2, and SimplifyOptions::anchor).
+    static const uint32_t kSubdivisions[] = {4, 8, 16};
+    static const size_t kGrids = sizeof(kSubdivisions) / sizeof(*kSubdivisions);
+
+    Render::ProxyCut cut;
+    index.selectCut(V, P, viewportHeightPx, kTolerancePx, cut);
+    if (cut.proxyNodes.empty())
+        return;
+
+    ProxyGenTotals totals[kGrids];
+    const uint32_t stride = std::max<uint32_t>(
+            1, uint32_t(cut.proxyNodes.size()) / kMaxNodes);
+    uint32_t sampledNodes = 0;
+    uint32_t merges = 0;
+    uint32_t overBudget = 0;
+    uint32_t belowMinMerge = 0;
+    uint32_t nonTriangleBuckets = 0;
+    uint64_t mergedTriangles = 0;
+    double mergeMs = 0.0;
+    std::vector<uint32_t> subtree;
+    std::vector<Render::ProxyMember> members;
+
+    for (size_t i = 0;
+         i < cut.proxyNodes.size() && sampledNodes < kMaxNodes; i += stride) {
+        const int nodeIndex = cut.proxyNodes[i];
+        const Render::ProxyNode &node = index.nodes()[size_t(nodeIndex)];
+        subtree.clear();
+        index.subtreeInstances(nodeIndex, subtree);
+        ++sampledNodes;
+        // The proxy's unit is (cell, material bucket), so that nothing
+        // is ever averaged across materials (§5.1).
+        std::map<uint64_t, std::vector<uint32_t>> byBucket;
+        for (uint32_t inst : subtree)
+            byBucket[index.instances()[size_t(inst)].materialBucket]
+                .push_back(inst);
+        const float cellEdge = node.cellMax[0] - node.cellMin[0];
+        if (!(cellEdge > 0.0f))
+            continue;
+
+        for (const auto &bucket : byBucket) {
+            members.clear();
+            bool nonTriangle = false;
+            for (uint32_t inst : bucket.second) {
+                const uint32_t row = index.instances()[size_t(inst)].drawIndex;
+                if (row >= draws.size())
+                    continue;
+                const Render::DrawCall &draw = draws[row];
+                // Lines and points carry their own materials, so they
+                // are buckets of their own and stay exact; a stand-in
+                // is not geometry at all.
+                if (draw.material.type != Render::Material::Triangle) {
+                    nonTriangle = true;
+                    continue;
+                }
+                if (draw.standIn || !draw.mesh)
+                    continue;
+                Render::ProxyMember member;
+                member.mesh = draw.mesh.get();
+                member.model = draw.identity ? nullptr : draw.model;
+                member.indexStart = draw.indexStart;
+                member.indexCount = draw.indexCount;
+                member.objectKey = draw.objectKey;
+                members.push_back(member);
+            }
+            if (nonTriangle)
+                ++nonTriangleBuckets;
+            if (members.size() < index.params().minMerge) {
+                ++belowMinMerge;
+                continue;
+            }
+            // What this merge would cost, before paying it. A node high
+            // on the cut covers its whole subtree, so one group can be
+            // most of the model, and a budget checked only afterwards
+            // would already have spent it.
+            uint64_t wouldMerge = 0;
+            for (const Render::ProxyMember &member : members) {
+                wouldMerge += uint64_t(member.indexCount > 0
+                                               ? member.indexCount
+                                               : member.mesh
+                                                     ->numTriangleIndices)
+                    / 3;
+            }
+            if (mergedTriangles + wouldMerge > kTriangleBudget) {
+                ++overBudget;
+                continue;
+            }
+
+            Render::SimplifiedMesh merged;
+            Render::ProxyMeshStats mergeStats;
+            if (!Render::mergeProxyMembers(members, merged, nullptr,
+                                           &mergeStats))
+                continue;
+            ++merges;
+            mergedTriangles += mergeStats.sourceTriangles;
+            mergeMs += mergeStats.mergeMs;
+
+            for (size_t g = 0; g < kGrids; ++g) {
+                Render::ProxyMeshParams params;
+                // Anchoring at the node's own cell corner is anchoring
+                // at the level grid: a cell corner is on every grid the
+                // level subdivides into.
+                params.anchor[0] = node.cellMin[0];
+                params.anchor[1] = node.cellMin[1];
+                params.anchor[2] = node.cellMin[2];
+                params.cellSize = cellEdge / float(kSubdivisions[g]);
+                Render::SimplifiedMesh proxy;
+                Render::ProxyMeshStats stats = mergeStats;
+                const bool made =
+                    Render::decimateProxyMesh(merged, params, proxy, &stats);
+                ProxyGenTotals &t = totals[g];
+                t.members += stats.members;
+                t.sourceTriangles += stats.sourceTriangles;
+                t.uniqueTriangles += stats.uniqueTriangles;
+                t.proxyTriangles += stats.proxyTriangles;
+                t.proxyVertices += stats.proxyVertices;
+                t.collapsedMembers += stats.collapsedMembers;
+                t.sourceArea += stats.sourceArea;
+                t.proxyArea += stats.proxyArea;
+                t.ms += stats.simplifyMs;
+                if (!made) {
+                    ++t.refused;
+                    continue;
+                }
+                ++t.proxies;
+                if (stats.extent > 0.0f) {
+                    const float ratio = stats.maxError / stats.extent;
+                    t.ratioSum += ratio;
+                    t.rmsRatioSum += stats.rmsError / stats.extent;
+                    t.ratioMax = std::max(t.ratioMax, ratio);
+                    ++t.rated;
+                }
+            }
+        }
+    }
+
+    // How much geometry the scene shares at all, so that the per-proxy
+    // instancing gate below can be read. Without it, "the members of a
+    // proxy share almost nothing" cannot be told apart from "this
+    // measurement could not see sharing if there were any".
+    // Counted two ways, because they answer different questions. A
+    // cache id is what the merge dedupes by; a source tag is the
+    // geometry *node* behind it, which colour variants of one shape
+    // share. Equal counts mean the assembly really does hold that many
+    // distinct shapes; a sourceTag count well below the cacheId count
+    // would mean sharing exists and the merge is blind to it.
+    std::set<std::pair<uint64_t, const void *>> sceneMeshes;
+    std::set<const void *> sceneSources;
+    uint32_t triangleDraws = 0;
+    for (const Render::DrawCall &draw : draws) {
+        if (draw.material.type != Render::Material::Triangle || draw.standIn
+                || !draw.mesh)
+            continue;
+        ++triangleDraws;
+        sceneMeshes.emplace(draw.mesh->cacheId,
+                            draw.mesh->cacheId ? nullptr
+                                               : (const void *)draw.mesh.get());
+        if (draw.mesh->sourceTag)
+            sceneSources.insert(draw.mesh->sourceTag);
+    }
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "render proxygen: tol %gpx nodes:%u/%u merges:%u src %.2fMtri "
+             "in %.0fms | skipped budget:%u single:%u | nontri buckets:%u | "
+             "scene %u tri draws over %u meshes / %u sources\n",
+             double(kTolerancePx), sampledNodes,
+             unsigned(cut.proxyNodes.size()), merges,
+             double(mergedTriangles) / 1e6, mergeMs, overBudget,
+             belowMinMerge, nonTriangleBuckets, triangleDraws,
+             unsigned(sceneMeshes.size()), unsigned(sceneSources.size()));
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+    for (size_t g = 0; g < kGrids; ++g) {
+        const ProxyGenTotals &t = totals[g];
+        const double rated = t.rated ? double(t.rated) : 1.0;
+        snprintf(buf, sizeof(buf),
+                 "render proxygen 1/%u cell: err/extent mean %.4f worst %.4f "
+                 "rms %.4f | tri %.2fM->%.3fM %.1fx (instanced %.2fM, %.1fx) "
+                 "| area %.0f%% | lost %llu/%llu members, %llu proxy verts "
+                 "| %u proxies %u refused | %.0fms\n",
+                 kSubdivisions[g], t.ratioSum / rated, double(t.ratioMax),
+                 t.rmsRatioSum / rated,
+                 double(t.sourceTriangles) / 1e6,
+                 double(t.proxyTriangles) / 1e6,
+                 t.proxyTriangles ? double(t.sourceTriangles)
+                                        / double(t.proxyTriangles)
+                                  : 0.0,
+                 double(t.uniqueTriangles) / 1e6,
+                 t.proxyTriangles ? double(t.uniqueTriangles)
+                                        / double(t.proxyTriangles)
+                                  : 0.0,
+                 t.sourceArea > 0.0 ? 100.0 * t.proxyArea / t.sourceArea : 0.0,
+                 (unsigned long long)t.collapsedMembers,
+                 (unsigned long long)t.members,
+                 (unsigned long long)t.proxyVertices, t.proxies, t.refused,
+                 t.ms);
+#ifdef FC_RENDERER_STANDALONE
+        std::printf("%s", buf);
+#else
+        Base::Console().Message("%s", buf);
+#endif
+    }
 }
 
 /// A user shader is animated when its source references the engine
@@ -8857,7 +9145,9 @@ public:
             // a measurement that can be stale measures the wrong thing,
             // the rebuild is what phase 3 will have to pay anyway, and
             // the cost is reported rather than hidden.
-            if (debugconf.proxyCut && proxyCutDue()) {
+            const bool cutDue = debugconf.proxyCut && proxyCutDue();
+            const bool genDue = debugconf.proxyGen && proxyGenDue();
+            if (cutDue || genDue) {
                 const float h = float(widget->height()
                                       * widget->devicePixelRatioF());
                 const int64_t started = bx::getHPCounter();
@@ -8868,9 +9158,21 @@ public:
                 const double buildMs =
                     1000.0 * double(bx::getHPCounter() - started)
                     / double(bx::getHPFrequency());
-                reportProxyCut(index, reinterpret_cast<const float *>(viewMatrix),
-                               reinterpret_cast<const float *>(projMatrix), h,
-                               buildMs);
+                if (cutDue)
+                    reportProxyCut(
+                            index, reinterpret_cast<const float *>(viewMatrix),
+                            reinterpret_cast<const float *>(projMatrix), h,
+                            buildMs);
+                // §11.1c, on the same partition the cut was measured on
+                // — two readouts describing different partitions of the
+                // same frame would not compose.
+                if (genDue) {
+                    reportProxyGen(
+                            index, scene,
+                            reinterpret_cast<const float *>(viewMatrix),
+                            reinterpret_cast<const float *>(projMatrix), h);
+                    proxyGenReported();
+                }
             }
         }
 
