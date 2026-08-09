@@ -25,6 +25,7 @@
 #include "SceneDump.h"
 #include "MeshSource.h"
 #include "SceneLadder.h"
+#include "ProxyHierarchy.h"
 #ifndef FC_RENDERER_STANDALONE
 #include "SceneServer.h"
 #endif
@@ -317,6 +318,76 @@ static void reportCoverage(const CoverageHistogram &hist)
 #else
     Base::Console().Message("render coverage: objects:%d %s%s\n", hist.total,
                             line.c_str(), buf);
+#endif
+}
+
+/// Whether the once-a-second far-field readout is due. Split from the
+/// report because, unlike the coverage histogram, the measurement it
+/// gates is not free: it builds a partition over every drawn instance,
+/// and a rate limiter inside the report would pay for that on frames
+/// nothing is printed.
+static bool proxyCutDue()
+{
+    static int64_t lastReport = 0;
+    const int64_t now = bx::getHPCounter();
+    const int64_t freq = bx::getHPFrequency();
+    if (lastReport && now - lastReport < freq)
+        return false;
+    lastReport = now;
+    return true;
+}
+
+/// What a far-field cut would cost this camera, generating nothing
+/// (docs/FarFieldProxies.md §11.1) — the measurement phase 1 exists to
+/// produce, and the gate on whether phase 2 is worth building.
+///
+/// Reported at several tolerances rather than one, because the draw
+/// count against tolerance is a step function whose floor is the tree
+/// bottoming out: a single operating point cannot be told apart from
+/// having chosen a bad one. \a buildMs is reported for its own sake —
+/// phase 3 has to pay this on the plan's schedule, so its size is a
+/// design input rather than an aside.
+static void reportProxyCut(const Render::ProxyHierarchy &index,
+                           const float *V, const float *P,
+                           float viewportHeightPx, double buildMs)
+{
+    const auto stats = index.stats();
+    if (!stats.instances)
+        return;
+    std::string line;
+    char buf[256];
+    static const float kTolerances[] = {1.0f, 4.0f, 16.0f, 64.0f};
+    for (float tol : kTolerances) {
+        Render::ProxyCut cut;
+        index.selectCut(V, P, viewportHeightPx, tol, cut);
+        snprintf(buf, sizeof(buf), " %gpx:%u(%u+%u)", double(tol),
+                 cut.drawCount, cut.proxyDraws, unsigned(cut.exact.size()));
+        line += buf;
+    }
+    // The distributions that size the partition (§3.2): how many
+    // instances a cell holds decides both the size of a pop and how much
+    // draws exactly when the cut is forced down, and how many materials
+    // it holds is the fan-out below the cut (§5.1).
+    std::string levels;
+    for (size_t l = 0; l < stats.byLevel.size(); ++l) {
+        const auto &ls = stats.byLevel[l];
+        if (!ls.nodes)
+            continue;
+        snprintf(buf, sizeof(buf), " L%u:%un/%ur/max%u/mb%.1f", unsigned(l),
+                 ls.nodes, ls.residents, ls.subtreeMax, ls.bucketsMean);
+        levels += buf;
+    }
+    snprintf(buf, sizeof(buf),
+             " | nodes:%u depth:%u buckets:%u | build %.1fms",
+             stats.nodes, stats.depth, stats.distinctBuckets, buildMs);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("render proxycut: instances:%u draws@tol%s%s\n%s\n",
+                stats.instances, line.c_str(), buf, levels.c_str());
+#else
+    Base::Console().Message(
+            "render proxycut: instances:%u draws@tol%s%s\n", stats.instances,
+            line.c_str(), buf);
+    Base::Console().Message("render proxycut levels:%s\n", levels.c_str());
 #endif
 }
 
@@ -8778,6 +8849,28 @@ public:
                 reportCoverage(Render::coverageHistogram(
                         scene, reinterpret_cast<const float *>(viewMatrix),
                         reinterpret_cast<const float *>(projMatrix), h));
+            }
+
+            // docs/FarFieldProxies.md §11.1: what a cut would cost, with
+            // nothing generated. The partition is rebuilt on every
+            // report rather than cached against a scene signature —
+            // a measurement that can be stale measures the wrong thing,
+            // the rebuild is what phase 3 will have to pay anyway, and
+            // the cost is reported rather than hidden.
+            if (debugconf.proxyCut && proxyCutDue()) {
+                const float h = float(widget->height()
+                                      * widget->devicePixelRatioF());
+                const int64_t started = bx::getHPCounter();
+                std::vector<Render::ProxyInstance> instances;
+                Render::proxyInstances(scene, instances);
+                Render::ProxyHierarchy index;
+                index.build(instances);
+                const double buildMs =
+                    1000.0 * double(bx::getHPCounter() - started)
+                    / double(bx::getHPFrequency());
+                reportProxyCut(index, reinterpret_cast<const float *>(viewMatrix),
+                               reinterpret_cast<const float *>(projMatrix), h,
+                               buildMs);
             }
         }
 

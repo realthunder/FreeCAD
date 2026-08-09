@@ -373,6 +373,15 @@ struct RenderDebugConfig {
     /// a second (docs/FarFieldProxies.md §9). Costs one projection per
     /// object on the frames it reports and nothing while off.
     bool coverage = false;
+    /// Log what a far-field cut would cost this camera, once a second,
+    /// without generating a single proxy (docs/FarFieldProxies.md
+    /// §11.1). Partitions the drawn instances and descends a frontier at
+    /// several tolerances; the resulting draw count against today's is
+    /// the number that decides whether phase 2 is worth building. Costs
+    /// one partition build on the frames it reports — which is itself a
+    /// reported number, since phase 3 has to pay it — and nothing while
+    /// off.
+    bool proxyCut = false;
 
     /// A dynamically bound named shader parameter (docs/RenderDebug.md
     /// §2.5): any RenderDebug_* view property beyond the fixed knobs
@@ -398,7 +407,8 @@ struct RenderDebugConfig {
 
     bool operator==(const RenderDebugConfig &o) const {
         return viewMode == o.viewMode && freezeFrame == o.freezeFrame
-            && coverage == o.coverage && userParams == o.userParams;
+            && coverage == o.coverage && proxyCut == o.proxyCut
+            && userParams == o.userParams;
     }
     bool operator!=(const RenderDebugConfig &o) const { return !(*this == o); }
 };

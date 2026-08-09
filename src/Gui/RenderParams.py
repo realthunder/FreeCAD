@@ -413,6 +413,16 @@ Params = [
         "how much of the model is in that state, which is what decides\n"
         "whether aggregating distant parts is worth building\n"
         "(docs/FarFieldProxies.md §9)."),
+    ParamBool('DebugProxyCut',  False, title='Far-field cut estimate',
+        doc="Log what a far-field cut would cost this camera, without\n"
+        "generating anything: the drawn instances are partitioned into the\n"
+        "spatial index of docs/FarFieldProxies.md §3, a frontier is chosen\n"
+        "by projected error at several tolerances, and the draws that cut\n"
+        "would issue -- one per (cell, material) proxy plus whatever stays\n"
+        "exact -- are reported against the draws issued today. This is the\n"
+        "number that says whether generating proxies is worth building\n"
+        "(§11.1). Also reports the distributions that size the partition:\n"
+        "instances and material buckets per cell, per level."),
 ]
 
 def declare_begin():

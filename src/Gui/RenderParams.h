@@ -1060,6 +1060,26 @@ public:
     static void setDebugCoverage(const bool &v);
     static const char *docDebugCoverage();
     //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugProxyCut
+    ///
+    /// Log what a far-field cut would cost this camera, without
+    /// generating anything: the drawn instances are partitioned into the
+    /// spatial index of docs/FarFieldProxies.md §3, a frontier is chosen
+    /// by projected error at several tolerances, and the draws that cut
+    /// would issue -- one per (cell, material) proxy plus whatever stays
+    /// exact -- are reported against the draws issued today. This is the
+    /// number that says whether generating proxies is worth building
+    /// (§11.1). Also reports the distributions that size the partition:
+    /// instances and material buckets per cell, per level.
+    static const bool & getDebugProxyCut();
+    static const bool & defaultDebugProxyCut();
+    static void removeDebugProxyCut();
+    static void setDebugProxyCut(const bool &v);
+    static const char *docDebugProxyCut();
+    //@}
 //[[[end]]]
 
     /// Called on any parameter change: re-selects the renderer backend on

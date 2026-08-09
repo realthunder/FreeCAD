@@ -191,8 +191,31 @@ costs one object's worth of the overhead in question. Reported on the
 level planner's schedule rather than per frame, since it is a property of
 where the camera settled.
 
-Note both this and `RenderDebug_Timing` are measurement switches, not
-shader inputs, so §2.5's dynamic-uniform binding skips them.
+### 2.4c `RenderDebug_ProxyCut` — what a far-field cut would cost
+
+A boolean that logs, once a second, what aggregating distant parts *would*
+buy this camera — with nothing generated. The drawn instances are
+partitioned into the spatial index of `docs/FarFieldProxies.md` §3, a
+frontier is descended at 1, 4, 16 and 64 pixels, and each tolerance
+reports the draws that cut would issue: one per (cell, material) proxy
+(§5.1) plus whatever stays exact. A second line gives the per-level
+distributions — nodes, residents, largest subtree, mean material buckets —
+which are what size `K` and the extent target.
+
+It is the gate of §11.1: if that draw count is not far below the draws
+issued today, generating proxies is not worth building.
+
+Two differences from `RenderDebug_Coverage` above are deliberate. It
+counts **instances, not objects** — a part drawing three times pays three
+draw entries, and instances are what a cut partitions. And it rebuilds the
+partition on every report rather than caching it, because a measurement
+that can go stale measures the wrong thing; the build cost is reported
+rather than hidden, since the plan pass of phase 3 has to pay it too.
+
+Note these, `RenderDebug_Timing` and `RenderDebug_Delta` are all
+measurement switches, not shader inputs, so §2.5's dynamic-uniform binding
+skips them — otherwise each would upload a `vec4` uniform nothing
+declares.
 
 ### 2.5 Generic named parameters — dynamic, not pre-declared
 

@@ -4528,6 +4528,14 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         prop->setValue(RenderParams::getDebugCoverage());
         prop->setStatus(App::Property::Hidden, true);
     }
+    if (!view->getPropertyByName("RenderDebug_ProxyCut")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "RenderDebug_ProxyCut", "RenderDebug",
+                                         RenderParams::docDebugProxyCut()));
+        prop->setValue(RenderParams::getDebugProxyCut());
+        prop->setStatus(App::Property::Hidden, true);
+    }
 }
 
 // #define ENABLE_GL_DEPTH_RANGE

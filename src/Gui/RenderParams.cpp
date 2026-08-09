@@ -113,6 +113,7 @@ public:
     bool DebugTiming;
     bool DebugDelta;
     bool DebugCoverage;
+    bool DebugProxyCut;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -245,6 +246,8 @@ public:
         funcs["DebugDelta"] = &RenderParamsP::updateDebugDelta;
         DebugCoverage = this->handle->GetBool("DebugCoverage", false);
         funcs["DebugCoverage"] = &RenderParamsP::updateDebugCoverage;
+        DebugProxyCut = this->handle->GetBool("DebugProxyCut", false);
+        funcs["DebugProxyCut"] = &RenderParamsP::updateDebugProxyCut;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -516,6 +519,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugCoverage(RenderParamsP *self) {
         self->DebugCoverage = self->handle->GetBool("DebugCoverage", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugProxyCut(RenderParamsP *self) {
+        self->DebugProxyCut = self->handle->GetBool("DebugProxyCut", false);
     }
 };
 
@@ -2531,6 +2538,42 @@ void RenderParams::setDebugCoverage(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeDebugCoverage() {
     instance()->handle->RemoveBool("DebugCoverage");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugProxyCut() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Log what a far-field cut would cost this camera, without\n"
+"generating anything: the drawn instances are partitioned into the\n"
+"spatial index of docs/FarFieldProxies.md §3, a frontier is chosen\n"
+"by projected error at several tolerances, and the draws that cut\n"
+"would issue -- one per (cell, material) proxy plus whatever stays\n"
+"exact -- are reported against the draws issued today. This is the\n"
+"number that says whether generating proxies is worth building\n"
+"(§11.1). Also reports the distributions that size the partition:\n"
+"instances and material buckets per cell, per level.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugProxyCut() {
+    return instance()->DebugProxyCut;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugProxyCut() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugProxyCut(const bool &v) {
+    instance()->handle->SetBool("DebugProxyCut",v);
+    instance()->DebugProxyCut = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugProxyCut() {
+    instance()->handle->RemoveBool("DebugProxyCut");
 }
 //[[[end]]]
 
