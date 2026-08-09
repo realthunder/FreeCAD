@@ -1114,11 +1114,22 @@ void WorkbenchTabWidget::updateWorkbenches()
         if (this->styleSheet().size())
             this->setStyleSheet(QString());
     } else if (this->styleSheet().isEmpty()) {
+        // These tabs carry an icon and no text. Left to the native metric the
+        // label is laid out with PM_TabBarTabHSpace/2 of space before the icon
+        // -- 12px against a 34px tab here -- which a tab shrunk by min-width
+        // has no room for, so the icon comes out pushed right and clipped by
+        // the tab border. Declaring the padding puts it in the middle of the
+        // box instead.
+        //
+        // The horizontal value is the vertical one + 1 on purpose: the tab ends
+        // up sized as icon + 2 + twice the vertical padding, so that is the
+        // figure that splits the leftover evenly. 4/5 keeps the tab the same
+        // size it had before, whatever the icon size is.
         this->setStyleSheet(
                 QStringLiteral("::tab:top,"
-                               "::tab:bottom {min-width: -1;}"
+                               "::tab:bottom {min-width: -1; padding: 4px 5px;}"
                                "::tab:left,"
-                               "::tab:right {min-height: -1;}"));
+                               "::tab:right {min-height: -1; padding: 5px 4px;}"));
     }
     int i=0;
     for (auto action : this->group->actions()) {
