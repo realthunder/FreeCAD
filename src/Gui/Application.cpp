@@ -246,6 +246,8 @@ struct ApplicationP
     /// Handles all commands
     CommandManager commandManager;
     std::string initWorkbench;
+    /// Handlers whose Initialize() has been run, so it is run only once
+    std::set<std::string> initializedWorkbenches;
     QTimer timer;
     ViewProviderMap viewproviderMap;
     std::bitset<32> StatusBits;
@@ -1571,9 +1573,28 @@ std::string Application::initializeWorkbench(const char *name, Py::Object handle
             else
                 _ExecFile = iter->second;
 
-            // import the matching module first
-            Py::Callable activate(handler.getAttr(std::string("Initialize")));
-            activate.apply(args);
+            // Import the matching module first -- once. Neither guard above
+            // stops a C++ workbench getting here twice: __Workbench__ is set
+            // only once the workbench has actually been activated, and
+            // WorkbenchManager holds nothing under this name until then. So a
+            // module imported by Initialize() that asks whether one of its own
+            // commands exists -- InvoluteGearFeature.py does exactly that --
+            // reaches Command::get(), which resolves the name through
+            // Preferences/Commands and calls straight back in here, running the
+            // whole of Initialize() a second time and doubling every message it
+            // prints. Command.cpp's own _sPendingWorkbench guard does not cover
+            // it, because the outer call came from activateWorkbench().
+            if (d->initializedWorkbenches.insert(name).second) {
+                try {
+                    Py::Callable activate(handler.getAttr(std::string("Initialize")));
+                    activate.apply(args);
+                }
+                catch (...) {
+                    // an Initialize() that failed must stay retryable
+                    d->initializedWorkbenches.erase(name);
+                    throw;
+                }
+            }
 
             // Dependent on the implementation of a workbench handler the type
             // can be defined after the call of Initialize()
