@@ -871,7 +871,9 @@ merges into a mesh whose *decimation* error is a pixel or two. So the
 operating point is not the 4px row; it is wherever a decimated
 (cell, material) proxy's error lands relative to its extent, and that
 ratio is unmeasured. **Phase 2's first job is to measure it**, because
-it decides whether this table reads as 3.7× or as 18.8×.
+it decides whether this table reads as 3.7× or as 18.8×. It has since
+been measured, and the answer is that no single ratio converts the
+table — §11.1c.
 
 ⚠️ **The coverage histogram in the same run disagrees with §9.2**: about
 11-13% of on-screen objects at or under 4px, against phase 0's 66.8%,
@@ -892,6 +894,119 @@ Two numbers that need no such caveat:
   update incrementally — which the positional node identity of §3.2 was
   already chosen to allow, and which is now a requirement rather than a
   nicety.
+
+### 11.1c What a proxy commits, generated and measured
+
+`RenderDebug_ProxyGen`, same document, same machine and the same
+converged whole-assembly camera as §11.1b — 42893 instances, 163 nodes
+on the 64px cut. It samples 24 of those nodes, merges each (cell,
+material) group for real, and decimates the merge at three grids: the
+node's own cell divided by 4, 8 and 16. Powers of two, so that every
+level's decimation grid stays a refinement of the level above it
+(§3.2). 38 merges, 0.20 M source triangles.
+
+| grid | err/extent mean | worst | tri | area kept | members lost | proxy verts |
+|---|---|---|---|---|---|---|
+| cell/4 | 0.137 | 0.268 | 207× fewer | 46% | 1657/1870 | 591 |
+| cell/8 | 0.084 | 0.340 | 65× fewer | 58% | 1438/1870 | 1755 |
+| cell/16 | 0.050 | 0.240 | 28× fewer | 82% | 1009/1870 | 3757 |
+
+The error is per-vertex displacement against the representative each
+vertex collapsed onto, which *bounds* the surface deviation rather than
+approximating it: a triangle's three corners each move by at most that
+much and every point of the triangle is an affine combination of them.
+
+#### The conversion §11.1b asked for does not exist as a number
+
+At cell/8 the mean node commits 8.4% of its extent and the worst commits
+34%. Applied to the 64px row that is 5px of error for a typical node and
+22px for the worst one, and the two answers sit on opposite sides of any
+tolerance worth choosing. **A single ratio cannot convert the table**;
+the spread within one camera is fivefold, and it is not noise but shape
+— a node holding one long bracket and a node holding forty screws
+decimate nothing alike.
+
+What that argues for is what §3.3 said in the first place: the cut
+descends by *the node's own* projected error. Phase 1 stood the extent in
+for it because nothing had been generated yet, and the honest reading of
+§11.1b is now that its rows are neither 3.7× nor 18.8× but a
+distribution — and that phase 3 must read a measured error off each
+node rather than scaling a global constant. Generation already computes
+it (`ProxyMeshStats::maxError`), so this costs a field, not a pass.
+
+⭐ Worth noting because it was not obvious: **the ratio is a property of
+the geometry and the grid, not of the camera.** Measured at 4× zoom, on
+a cut of 512 nodes instead of 163 and a different set of members
+sampled, cell/8 gives a mean of 0.0835 against 0.0844 — a 1% difference
+where the camera moved 4×. So it can be measured once, at generation
+time, and stored on the node, which is exactly what the previous
+paragraph needs.
+
+#### ⚠️⚠️ Decimation deletes; it does not shrink
+
+The finding that changes the representation rather than the parameters.
+At cell/8, **77% of the members came back empty** — nothing in the proxy
+stands for them at all — and 42% of the surface area is gone. (Not the
+same 42%: a surviving member also loses area to its own decimation. The
+two numbers bound the effect from either side.) Clustering has no
+mechanism to keep a member smaller than a cell: every one of its
+triangles has three corners in one cell, so every one is degenerate and
+is dropped. A field of small parts therefore vanishes as a body while
+every error the run reports stays inside the tolerance — the
+displacement metric cannot see a deletion, which is why the area
+retained is reported beside it.
+
+Even at cell/16, which costs 28× rather than 65×, a fifth of the area is
+gone and half the members with it. §5(2) said a surfel or voxel proxy
+was "justified only against a real model that shows the failure"; this
+is that model, and the failure is not the mush §5 anticipated but
+absence. It also suggests something cheaper than surfels first: the
+merge already knows *exactly which* members collapsed, as the empty
+slots of its part table, and the renderer already synthesises a box for
+geometry that is not there (`DrawCall::standIn`, the bottom rung of
+docs/SceneStreaming.md §6). A box per collapsed member, appended after
+the decimation, carries the mass with no new shader and no new pass.
+
+The last column says what that would cost and which way to bound it.
+Standing in **per collapsed member** costs 12 triangles each — at cell/8,
+1438 × 12 = 17 k triangles against a proxy of 3 k, five times the proxy
+itself. Standing in **per occupied cell** is bounded by the proxy's own
+vertex count instead, because clustering already emits a representative
+for every occupied cell whether or not a triangle survived on it: 1755
+at cell/8, and 591 against 1657 collapsed members at cell/4 — the
+tighter bound exactly where the deletion is worst, and bounded by the
+grid rather than by how many parts happen to be in the cell. That is
+Far Voxels' argument arrived at from the other end, and it is the one to
+build first.
+
+#### Two numbers that were expected to be worse
+
+- **Generation is cheap.** 38 proxies over 0.20 M source triangles cost
+  8 ms to merge and 13 ms to decimate at cell/8 — about 0.5 ms per
+  proxy, on one thread, in a debug readout that was not written for
+  speed, and the merge is paid once however many rungs are cut from it.
+  Against §9.1's worry about generation throughput this is not the
+  bottleneck it was budgeted as.
+- **The instancing gate does not bind here — but this model cannot
+  test it.** §7.1 warned that merging 500 instances of one screw
+  expands what instancing shares today. Over the sampled groups it is a
+  1.05× effect, and the reason is visible in the scene-wide counts the
+  same readout prints: MiSTer Express draws its triangles from **as
+  many distinct geometries as it has draws** (8328 meshes behind 8479
+  triangle draws, and the same 8328 counted by source node rather than
+  by cache id, so the sharing is not merely hidden below the key). A
+  STEP import gives every occurrence its own shape. So the gate is
+  *untested* rather than shown not to bind, and it stays in the code —
+  a Link-heavy or fastener-heavy assembly is the model that would
+  exercise it, and there is no reason to hold phase 2 for one.
+
+#### What this measurement does not cover
+
+24 of 163 nodes, stride-sampled, and the readout reports both numbers
+along with everything it skipped for the triangle budget. Groups with a
+single member are not proxied at all (56 of them here), and lines and
+points are their own material buckets and stay exact (48 here) — a line
+proxy is a separate question this does not touch.
 
 ### 11.2 What the code already gives us
 
