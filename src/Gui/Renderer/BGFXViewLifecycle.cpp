@@ -495,6 +495,8 @@ void BGFXView::init()
     u_matEmissive = bgfx::createUniform("u_matEmissive", bgfx::UniformType::Vec4);
     u_matSpecular = bgfx::createUniform("u_matSpecular", bgfx::UniformType::Vec4);
     u_params = bgfx::createUniform("u_params", bgfx::UniformType::Vec4);
+    u_polyOffset = bgfx::createUniform("u_polyOffset",
+                                       bgfx::UniformType::Vec4);
     u_clipParams = bgfx::createUniform("u_clipParams", bgfx::UniformType::Vec4);
     u_clipPlanes = bgfx::createUniform("u_clipPlanes", bgfx::UniformType::Vec4,
                                        Render::Material::MaxClipPlanes);

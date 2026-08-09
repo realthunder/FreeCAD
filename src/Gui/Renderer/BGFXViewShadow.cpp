@@ -71,6 +71,9 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     bgfx::setUniform(u_matEmissive, zero);
     bgfx::setUniform(u_matSpecular, zero);
     bgfx::setUniform(u_params, params);
+    // Backend geometry with no polygon offset of its own; the slope
+    // term is a global uniform, so it has to be cleared here too.
+    setPolygonOffsetUniform(nullptr);
     float pbrOff[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     bgfx::setUniform(u_pbrParams, pbrOff);
     // Backend geometry, not scene geometry: the ground stays lit the

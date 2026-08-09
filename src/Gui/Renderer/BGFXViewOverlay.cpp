@@ -22,13 +22,59 @@
 
 #include "BGFXRendererP.h"
 
+// One LSB of the D24S8 depth buffer, in the NDC depth the vertex stage
+// biases. OpenGL and WebGL2 map [-1,1] of NDC z onto [0,1] of window
+// depth, so an LSB spans two NDC units there; the [0,1] backends span
+// one. The old constant assumed OpenGL and so hit Vulkan, D3D and Metal
+// at twice the intended strength.
+static float depthLsbNdc()
+{
+    const bgfx::Caps *caps = bgfx::getCaps();
+    return (caps && caps->homogeneousDepth ? 2.0f : 1.0f) / 16777216.0f;
+}
+
 float BGFXView::polygonOffsetBias(const Render::Material &mat)
 {
-    constexpr float kDepthBiasUnit = 2.0f * 16.0f / 16777216.0f;
+    // The constant half of GL's `factor * m + units * r` — the slope
+    // half m lives in the vertex stage, which needs a surface normal to
+    // compute it. GL's r is a single depth LSB; this uses sixteen, and
+    // folds factor into the constant as well as passing it on to the
+    // slope. Both are deliberate floors: the slope comes from the
+    // shading normal, which does not describe the triangle's plane on a
+    // mesh with smoothed or missing normals, and this is what those
+    // cases fall back on. It is also exactly the bias the backend
+    // applied before the slope term existed, so nothing that already
+    // resolved stops resolving.
+    constexpr float kUnitLsb = 16.0f;
     return mat.polygonoffset
         ? (mat.polygonoffsetfactor + mat.polygonoffsetunits)
-            * kDepthBiasUnit
+            * kUnitLsb * depthLsbNdc()
         : 0.0f;
+}
+
+float BGFXView::polygonOffsetMaxBias(const Render::Material &mat) const
+{
+    // What the vertex stage's slope term can reach for this material:
+    // the gradient ceiling, converted to NDC depth by the size of a
+    // pixel on the shorter viewport axis (the axis that gives the
+    // larger step, which is the one the shader's max() picks).
+    if (!mat.polygonoffset)
+        return 0.0f;
+    const float px = 2.0f
+        / float(std::max<int>(1, std::min<int>(width, height)));
+    return mat.polygonoffsetfactor * kPolyOffsetMaxSlope * px;
+}
+
+void BGFXView::setPolygonOffsetUniform(const Render::Material *mat)
+{
+    // Bound at every site that submits a program built on vs_fc_mesh:
+    // a bgfx uniform keeps its last value across draws, so a site that
+    // left it alone would inherit the previous draw's offset.
+    float po[4] = {0.0f, kPolyOffsetMaxSlope, 0.0f, 0.0f};
+    if (mat && mat->polygonoffset
+            && mat->type == Render::Material::Triangle)
+        po[0] = mat->polygonoffsetfactor;
+    bgfx::setUniform(u_polyOffset, po);
 }
 
 void BGFXView::submitOutline(const Render::DrawCall &draw, uint32_t refCounter,
@@ -155,16 +201,21 @@ void BGFXView::submitOutlineEdges(const Render::DrawCall &draw,
     float params[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
     // Shared uniforms of the edge and corner passes: flat outline
-    // color, forced opaque. When the edges write depth, they get
-    // twice the fill's polygon-offset bias so the owning fill
-    // (biased away from the viewer) still passes LEQUAL and blends
-    // over its outline like GL's ordered draw does, while fills of
-    // objects genuinely behind the outline stay depth-killed.
+    // color, forced opaque. When the edges write depth, they are biased
+    // past anything the owning fill can reach, so that fill (biased away
+    // from the viewer) still passes LEQUAL and blends over its outline
+    // like GL's ordered draw does, while fills of objects genuinely
+    // behind the outline stay depth-killed. The fill's own bias is not a
+    // single number any more — the vertex stage adds a per-vertex slope
+    // term on top of the constant — so the outline clears the ceiling on
+    // that term rather than doubling a constant that no longer bounds it.
     float color[4];
     unpackColor((spec.color & 0xffffff00) | 0xff, color);
     params[1] = qMax(1.0f, std::floor(spec.width + 0.5f));
     params[2] = spec.depthWrite
-        ? 2.0f * polygonOffsetBias(draw.material) : 0.0f;
+        ? 2.0f * polygonOffsetBias(draw.material)
+            + polygonOffsetMaxBias(draw.material)
+        : 0.0f;
     const uint64_t outlinestate = BGFX_STATE_WRITE_RGB
         | BGFX_STATE_WRITE_A | BGFX_STATE_MSAA | depthstate;
     const uint32_t outlinestencil = BGFX_STENCIL_TEST_NOTEQUAL

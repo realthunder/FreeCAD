@@ -407,9 +407,11 @@ void BGFXView::submitBloom(float threshold, float intensity, float radius,
             bgfx::setUniform(u_matColor, color);
             bgfx::setUniform(u_bloomTexel, texel);
             // vs_fc_mesh reads u_params.w as an NDC depth bias (see
-            // the water surface pass) — zero it explicitly.
+            // the water surface pass) — zero it explicitly, and the
+            // slope term beside it.
             float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
             bgfx::setUniform(u_params, zero);
+            setPolygonOffsetUniform(nullptr);
             bgfx::setTexture(0, s_texNormalZ, aoNormalZ);
             setDrawTransform(*draw, autozoomScale, viewMatrix,
                              projMatrix, (float)height);
@@ -491,9 +493,11 @@ void BGFXView::submitWaterSurface(const Render::DrawCall &draw,
     // The mesh vertex shader reads u_params.w as an NDC depth bias;
     // bgfx uniforms are global (commit uploads the last-set value),
     // so an unset u_params would inherit a line draw's dim-alpha 1.0
-    // and push every fragment past the far plane.
+    // and push every fragment past the far plane. Same for the slope
+    // term that rides beside it.
     float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     bgfx::setUniform(u_params, params);
+    setPolygonOffsetUniform(nullptr);
     // w encodes the prepass/absorption state: 0 = no prepass,
     // 1 = prepass bound (refraction depth reject), 2 = prepass bound
     // AND the water back-face depth is available (depth absorption).
@@ -640,6 +644,7 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
     // an unset value would inherit a line draw's depth bias.
     float params[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     bgfx::setUniform(u_params, params);
+    setPolygonOffsetUniform(nullptr);
     float ior = mat.glassior > 0.0f ? mat.glassior : 1.5f;
     // Automatic absorption density from the body extent: about one
     // optical depth across the diagonal (before the diffuse tint
@@ -759,9 +764,11 @@ void BGFXView::submitGroundReflOverlay(const float bmin[3], const float bmax[3],
     bgfx::setUniform(u_reflParams, params);
     // Zero the mesh VS's global u_params (its .w depth bias would
     // otherwise carry over from the last line/point draw and break
-    // the EQUAL depth test against the ground quad).
+    // the EQUAL depth test against the ground quad) and the slope
+    // term beside it.
     float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     bgfx::setUniform(u_params, zero);
+    setPolygonOffsetUniform(nullptr);
     bgfx::setTexture(0, s_texScene, reflTex);
     float identity[16];
     bx::mtxIdentity(identity);

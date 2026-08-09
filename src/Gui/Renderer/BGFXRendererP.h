@@ -2585,6 +2585,7 @@ public:
         fn(u_matEmissive, LifeSized);
         fn(u_matSpecular, LifeSized);
         fn(u_params, LifeSized);
+        fn(u_polyOffset, LifeSized);
         fn(u_clipParams, LifeSized);
         fn(u_clipPlanes, LifeSized);
         fn(u_linePattern, LifeSized);
@@ -2773,11 +2774,29 @@ public:
 
     void submitBackground(const Render::Background &bg);
 
-    /// glPolygonOffset(factor, units) approximated as a constant NDC
-    /// depth bias (no per-pixel slope term): one offset unit is 2 (NDC
-    /// range) * 16 LSB headroom for the unevaluated slope factor / 2^24
-    /// depth bits. Positive pushes away from the viewer.
+    /// The constant `units * r` half of glPolygonOffset(factor, units),
+    /// as an NDC depth bias (u_params.w). Positive pushes away from the
+    /// viewer. The `factor * m` slope half is per-vertex and lives in
+    /// fc_mesh_vs.sh, fed by setPolygonOffsetUniform().
     static float polygonOffsetBias(const Render::Material &mat);
+
+    /// Ceiling on the depth gradient the vertex stage's slope term
+    /// tracks, in NDC depth per NDC screen unit: 1 would be a surface
+    /// crossing the entire depth range within one screen width, so this
+    /// only ever engages on a face within a few degrees of edge-on,
+    /// where the true gradient runs to infinity and GL is saved by such
+    /// a polygon covering no pixels.
+    static constexpr float kPolyOffsetMaxSlope = 4.0f;
+
+    /// The largest NDC depth bias the slope term can produce for this
+    /// material at the current viewport size — what the stencil
+    /// outline has to clear to stay behind the fill that owns it.
+    float polygonOffsetMaxBias(const Render::Material &mat) const;
+
+    /// Bind u_polyOffset for one draw: the slope factor and its
+    /// ceiling. Call at every site submitting a vs_fc_mesh program;
+    /// pass null (or a non-triangle material) to disable the term.
+    void setPolygonOffsetUniform(const Render::Material *mat);
 
     /// Appearance/placement of one stencil outline.
     struct OutlineSpec {
@@ -3363,6 +3382,7 @@ public:
     bgfx::UniformHandle u_matEmissive = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matSpecular = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_params = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_polyOffset = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_instParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_clipParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_clipPlanes = BGFX_INVALID_HANDLE;

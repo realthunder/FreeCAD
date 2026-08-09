@@ -280,6 +280,7 @@ bool BGFXView::submitInstanced(const Render::DrawCall &draw, const float *data,
     bgfx::setUniform(u_matEmissive, emissive);
     bgfx::setUniform(u_matSpecular, specular);
     bgfx::setUniform(u_params, params);
+    setPolygonOffsetUniform(&mat);
     float instParams[4] = {mat.pervertexcolor ? 1.0f : 0.0f,
                            0.0f, 0.0f, 0.0f};
     bgfx::setUniform(u_instParams, instParams);
@@ -701,6 +702,7 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     bgfx::setUniform(u_matEmissive, emissive);
     bgfx::setUniform(u_matSpecular, specular);
     bgfx::setUniform(u_params, params);
+    setPolygonOffsetUniform(&mat);
 
     // PBR branch of the mesh programs: every one of them carries the
     // environment sampler (the branch is uniform-selected), so bind
