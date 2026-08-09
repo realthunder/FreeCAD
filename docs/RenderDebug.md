@@ -439,6 +439,23 @@ shape of everything above, so its contract is stated here:
   `/run/user/$(id -u)` (agent sessions), set
   `XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir` or Qt finds no platform plugin and the
   capture aborts.
+- ⚠️ **Set the camera, never ask for it.** `viewIsometric()` and friends
+  *animate*. A grab a few `updateGui()` calls later catches the camera
+  mid-flight, and the failure does not look like a camera fault: a
+  near-horizontal orthographic camera cuts a hard horizon across the
+  frame, because a horizontal plane seen edge-on covers exactly the
+  lower half of an orthographic view. That reads as a half-sized ground
+  plane, and it cost a session's worth of suspicion of the backend's
+  shadow ground before the two legs were shown to agree to within 0.2%.
+  Assign `cam.orientation` the literal rotation, and re-pin immediately
+  before the grab — entering a draw style can move the camera again.
+- ⚠️ **Set a draw style by property, not by `runCommand`.**
+  `Gui.runCommand("Std_DrawStyleShadow", 0)` on a viewer *already* in
+  shadow mode is the light-manipulator toggle, not a no-op, so the
+  second leg of an A/B raises the dragger — which draws, and which
+  `View3DInventorViewer::Private::getBoundingBox` folds into the scene
+  bounds, moving everything sized from them. `view.DrawStyle = "Shadow"`
+  is idempotent.
 
 This closes the "no reliable way to verify rendering" gap: the SwiftShader
 blindspot is covered by the desktop leg being a *real-GPU readback* of the
