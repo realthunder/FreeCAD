@@ -41,6 +41,11 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(SceneLadder_tests_run gtest_main FreeCADRenderer)
     add_test(NAME SceneLadder_tests_run COMMAND SceneLadder_tests_run)
 
+    add_executable(ProxyHierarchy_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/ProxyHierarchy.cpp)
+    target_link_libraries(ProxyHierarchy_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME ProxyHierarchy_tests_run COMMAND ProxyHierarchy_tests_run)
+
     # Publishing without drawing (docs/HeadlessServe.md §3.1). Same
     # reasoning as above, and then some: the whole claim of the mode is
     # that the process needs no GPU and no display, which only a test

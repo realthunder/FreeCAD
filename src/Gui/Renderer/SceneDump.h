@@ -659,6 +659,15 @@ RendererExport uint32_t sceneDumpVersion();
 /// browser's IndexedDB store) actually is the bytes that key names.
 RendererExport std::string sha1Hex(const void *data, size_t size);
 
+/// A material's identity as one value — the bucket a far-field proxy is
+/// generated per (docs/FarFieldProxies.md §5.1, ProxyHierarchy.h).
+///
+/// Equality is the serialized bytes, the same rule the snapshot's own
+/// material table dedups by, so a field added to the format cannot
+/// silently drop out of the bucket and merge two materials that render
+/// differently. Textures and shaders enter by pointer identity.
+RendererExport uint64_t materialIdentity(const Material &m);
+
 /// Build the bytes of a declared level from the bytes of the exact
 /// mesh chunk it was declared on (§7, phase 5c): parse, decimate on
 /// the level's grid (MeshSimplify), re-serialize. The output is an

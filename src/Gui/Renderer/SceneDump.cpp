@@ -3818,3 +3818,44 @@ bool Render::loadSceneSnapshot(const void *data, size_t size,
 }
 
 #endif // _WIN32
+
+//////////////////////////////////////////////////////////////////////
+// Material identity
+
+/// A material as one value, for ProxyInstance::materialBucket
+/// (docs/FarFieldProxies.md §5.1: a proxy is generated per (cell,
+/// material bucket), so that every proxy carries exactly one material
+/// and nothing is ever averaged).
+///
+/// It lives here, next to the serializer, for the reason collectMaterials
+/// already states about its own table: **equality is the serialized
+/// bytes, which is exact by construction** — two materials that write
+/// the same bytes restore identically — and needs no hand-written
+/// comparison over some sixty fields to stay in step with the format. A
+/// field added to writeMaterial is therefore covered here on the same
+/// commit, where a separate hash would have silently merged two
+/// materials into one bucket and *overstated* what aggregation buys.
+///
+/// Textures and shaders enter by pointer identity rather than by table
+/// index: the bucket asks whether two draws can share one merged mesh,
+/// and sharing a texture object is exactly that question.
+uint64_t Render::materialIdentity(const Material &m)
+{
+    std::vector<uint8_t> bytes;
+    Writer w;
+    w.vec = &bytes;
+    RefWriter refs;
+    refs.tex = [](Writer &cw, const std::shared_ptr<const TextureImage> &t) {
+        cw.u64(uint64_t(reinterpret_cast<uintptr_t>(t.get())));
+    };
+    refs.shader = [](Writer &cw, const UserShader *s) {
+        cw.u64(uint64_t(reinterpret_cast<uintptr_t>(s)));
+    };
+    writeMaterial(w, m, refs);
+    uint64_t h = 1469598103934665603ULL;  // FNV-1a
+    for (uint8_t byte : bytes) {
+        h ^= uint64_t(byte);
+        h *= 1099511628211ULL;
+    }
+    return h;
+}

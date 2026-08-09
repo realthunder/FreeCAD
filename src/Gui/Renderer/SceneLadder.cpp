@@ -20,6 +20,7 @@
  ****************************************************************************/
 
 #include "SceneLadder.h"
+#include "ProxyHierarchy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1000,76 +1001,15 @@ namespace {
 /// One draw's bounding box against one camera — the shared math of the
 /// desktop plan passes (refine and demote read the same projection,
 /// they just act on opposite sides of the tolerance).
-struct BoxSight {
-    enum What {
-        Empty,      ///< no bounds, degenerate, or not judgeable
-        Offscreen,  ///< outside the frustum (or wholly behind)
-        Inside,     ///< the camera is inside the box span: maximal
-        Visible,    ///< on screen at diagPx
-    } what = Empty;
-    /// Projected size of the box diagonal in pixels (Visible only).
-    float diagPx = 0.0f;
-};
-
+///
+/// The arithmetic itself moved to ProxyHierarchy.h, where the far-field
+/// cut is its third consumer: the cut and the coverage histogram have
+/// to agree about "small on screen" by construction rather than by two
+/// copies of one formula staying in step (docs/FarFieldProxies.md §3.3).
 BoxSight sightBox(const Render::DrawCall &draw, const float *V,
                   const float *P, float viewportHeightPx)
 {
-    BoxSight res;
-    if (draw.bboxMin[0] > draw.bboxMax[0])
-        return res;
-    const float dx = draw.bboxMax[0] - draw.bboxMin[0];
-    const float dy = draw.bboxMax[1] - draw.bboxMin[1];
-    const float dz = draw.bboxMax[2] - draw.bboxMin[2];
-    const float diag = std::sqrt(dx * dx + dy * dy + dz * dz);
-    if (!(diag > 0.0f))
-        return res;
-    // GL layout: column-major, points transform as M * p. proj[15] == 1
-    // is orthographic (w does not depend on z), 0 is perspective.
-    const bool ortho = P[15] != 0.0f;
-    const float p11 = P[5];
-    const float cx = 0.5f * (draw.bboxMin[0] + draw.bboxMax[0]);
-    const float cy = 0.5f * (draw.bboxMin[1] + draw.bboxMax[1]);
-    const float cz = 0.5f * (draw.bboxMin[2] + draw.bboxMax[2]);
-    // View space; the camera looks down -z.
-    const float vx = V[0] * cx + V[4] * cy + V[8] * cz + V[12];
-    const float vy = V[1] * cx + V[5] * cy + V[9] * cz + V[13];
-    const float vz = V[2] * cx + V[6] * cy + V[10] * cz + V[14];
-    // Projected size of the diagonal in pixels: NDC height of a
-    // length d is d * P11 (orthographic) or d * P11 / depth
-    // (perspective), and one NDC unit is half the viewport.
-    if (ortho) {
-        res.diagPx = diag * p11 * 0.5f * viewportHeightPx;
-    }
-    else {
-        // Depth of the box's near side. A box wholly behind the camera
-        // is off-screen; a camera *inside* the box span sees it as
-        // large as anything gets.
-        if (-vz + 0.5f * diag <= 0.0f) {
-            res.what = BoxSight::Offscreen;
-            return res;
-        }
-        const float depth = -vz - 0.5f * diag;
-        if (depth <= 0.0f) {
-            res.what = BoxSight::Inside;
-            return res;
-        }
-        res.diagPx = diag * p11 / depth * 0.5f * viewportHeightPx;
-    }
-    // Clip-space test at the box centre, inflated by the projected
-    // half diagonal (in NDC units of the viewport height; the width
-    // margin is approximated with the same value, conservatively).
-    const float ndcMargin = res.diagPx / (0.5f * viewportHeightPx);
-    const float cxc = P[0] * vx + P[4] * vy + P[8] * vz + P[12];
-    const float cyc = P[1] * vx + P[5] * vy + P[9] * vz + P[13];
-    const float w = ortho
-        ? 1.0f : P[3] * vx + P[7] * vy + P[11] * vz + P[15];
-    if (w <= 0.0f || std::fabs(cxc) > w * (1.0f + ndcMargin)
-        || std::fabs(cyc) > w * (1.0f + ndcMargin)) {
-        res.what = BoxSight::Offscreen;
-        return res;
-    }
-    res.what = BoxSight::Visible;
-    return res;
+    return sightBounds(draw.bboxMin, draw.bboxMax, V, P, viewportHeightPx);
 }
 
 }  // namespace

@@ -143,13 +143,26 @@ pick acceleration. Level of detail is one of them.
 A loose octree over world bounds, with two properties that matter more
 than split quality:
 
-- **Assignment by size.** An instance goes to the finest level whose
-  cell contains its whole bounding box. This is what makes a flat
-  assembly's outlier harmless: a frame member spanning the machine
-  lands at a coarse node and is drawn exactly, because its screen size
-  is at least its node's and the cut therefore never asks to proxy
-  something visually significant. A node's proxy covers its own
-  residents *and* everything below it.
+- **Assignment by size, and by size alone.** An instance's level is the
+  finest whose cell edge is still at least its extent; its cell is then
+  chosen by its *centre*, and the cell is **loose** — it owns whatever
+  is centred in it, which may reach half a cell beyond its nominal
+  bounds. Since an instance placed at level `L` is no larger than a
+  level-`L` cell, that half-cell skirt always contains it.
+
+  This is what makes a flat assembly's outlier harmless: a frame member
+  spanning the machine lands at a coarse node and is drawn exactly,
+  because its screen size is at least its node's and the cut therefore
+  never asks to proxy something visually significant. A node's proxy
+  covers its own residents *and* everything below it.
+
+  ⚠️ **Position must never decide fidelity.** The natural-sounding
+  alternative — assign to the finest cell that contains the box *whole*
+  — was written first and measured wrong: on a uniform lattice it
+  stranded **28% of the parts** at coarse levels purely for straddling
+  a grid line, where nothing ever aggregated them and they drew exactly
+  at every tolerance. Fixing it cut the draw count at one tolerance
+  from 2784 to 928 (§11.1a).
 - **Positional node identity: `(level, Morton cell)`.** Not a median or
   SAH split. A data-dependent split means one moved part reshuffles the
   partition and invalidates proxies for geometry that did not change;
@@ -162,7 +175,9 @@ Subdivide until **extent falls below a target, or the cell holds `K`
 instances or fewer**. The instance cap is not a tuning knob: it is
 simultaneously the bound on how much geometry a single switch changes
 (§8.1) and the bound on how much is drawn exactly when the cut is
-forced to descend (§8). One parameter, two correctness properties.
+forced to descend (§8). One parameter, two correctness properties —
+and, measured, a third pulling the same way rather than against it
+(§11.1a).
 
 **The grids nest.** Level `L`'s decimation grid is an exact
 subdivision of level `L−1`'s — shared origin, power-of-two — and the
@@ -786,6 +801,52 @@ The same pass yields the two distributions that pick the parameters
 `K` and the extent target: instances per cell, and material buckets per
 cell, both per level.
 
+### 11.1a Phase 1 as built, and what it corrected
+
+`Gui/Renderer/ProxyHierarchy.{h,cpp}` with tests in
+`tests/src/Gui/ProxyHierarchy.cpp`. `BoxSight`/`sightBounds` moved out
+of `SceneLadder.cpp` into the new header so that the cut and the
+coverage histogram share one projection rather than two copies of it,
+and `materialIdentity()` was added beside `writeMaterial` in
+`SceneDump.cpp` — equality by serialized bytes, so a field added to the
+material format cannot silently merge two buckets and overstate the
+win.
+
+⚠️ **The numbers below are a synthetic 20×20×20 lattice of 8000 equal
+parts, not a real assembly.** They are the right shape to reason about
+the partition and useless for sizing the win — that is what the
+`RenderDebug_*` readout on MiSTer Express is for, and it has not been
+taken yet. Phase 0's own lesson applies: only assembly scale exhibits
+the effect, and a model that does not have the shape cannot show it.
+
+Two things the measurement corrected, both of which had been written
+down as reasoning and were wrong:
+
+1. **Strict containment stranded a quarter of the model** (§3.2, now
+   fixed). Assigning each instance to the finest cell containing its box
+   whole meant a part's *position* decided its level: 28% of an
+   otherwise uniform lattice sat at coarse levels because they crossed a
+   grid line, and nothing ever aggregated them. Draws at a fixed
+   tolerance: **2784 → 928**. Size-only assignment with loose,
+   centre-placed cells is the fix, and the general rule it stands for is
+   that position must not decide fidelity.
+2. **`K` does not trade against the draw count** — §11.4 had claimed the
+   pop wants it small and the draw count wants it large. Measured at a
+   fixed tolerance: `K` = 4, 8, 16 → **624** draws; 32, 64 → **928**;
+   128 → **8000**. Smaller is better or equal throughout, because a leaf
+   that misses the tolerance dumps *all* its residents as exact draws,
+   where a deeper tree offers a finer level to stop on. So `K` may be
+   chosen for the size of a pop and the cost of a forced descent alone.
+   Its real counter-pressure is the one §9.1 already names: node count
+   becomes generation throughput and chunk count.
+
+One property worth knowing before phase 3 tunes anything: the draw
+count against tolerance is a **step function**, and its floor is not a
+property of the cut but of the tree. Below the tolerance the deepest
+level projects at, there is nothing left to stop on and everything
+draws exactly — which is the same observation as (2) from the other
+side.
+
 ### 11.2 What the code already gives us
 
 `simplifyMesh()` is a better starting point than §5.1 claims. It is a
@@ -841,11 +902,14 @@ in the same spirit as §8.2's rule about selection.
   draws". That turns it from a design risk into a *measurement*: the
   buckets-per-cell distribution of §11.1, taken in phase 1, is what
   says whether the aggregation win survives the fan-out.
-- **`K` is load-bearing in two directions.** §3.2 makes one parameter
-  bound both the size of a pop (§8.1) and the amount drawn exactly when
-  the cut is forced down (§8). Those two want it small and the draw
-  count wants it large; if the phase-1 distributions show no value
-  satisfying both, the pop treatment of §8.1 needs revisiting before
-  phase 2, not after.
+- ~~**`K` is load-bearing in two directions.**~~ **Retired by
+  measurement** (§11.1a). This had said the pop wants `K` small and the
+  draw count wants it large, so the two might not be satisfiable
+  together. The draw count also wants it small — a leaf that misses the
+  tolerance dumps every one of its residents as an exact draw — so `K`
+  may be chosen for the size of a pop and the cost of a forced descent
+  alone. What is left of the risk is §9.1's, and it was already written
+  there: small leaves mean many nodes, and many nodes are a generation
+  and chunk-count problem.
 - **Generation throughput** is a scheduler problem at the node counts
   fine grading implies (§9.1), not a loop.
