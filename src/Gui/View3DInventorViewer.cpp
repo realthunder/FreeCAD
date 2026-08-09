@@ -2386,10 +2386,18 @@ void View3DInventorViewer::Private::updateShadowGroundSwitch()
     // too would composite the two grounds on top of each other -
     // z-fighting bands where Coin's (differently blurred) shadow wins
     // the depth test.
-    if (!renderer
-            && _shadowParam<App::PropertyBool>(view, "ShowGround",
-                ViewParams::docShadowShowGround(),
-                ViewParams::getShadowShowGround()))
+    //
+    // Read first, decide after: _shadowParam is what creates the
+    // property, and && would short-circuit past it whenever a backend is
+    // active. The view would then carry every other Shadow_* property
+    // and not this one, so the per-view override could not be set at all
+    // -- assigning it from Python fails rather than creating it -- while
+    // the global preference still reached the backend through the bridge
+    // and hid the hole.
+    const bool showGround = _shadowParam<App::PropertyBool>(view,
+            "ShowGround", ViewParams::docShadowShowGround(),
+            ViewParams::getShadowShowGround());
+    if (!renderer && showGround)
         pcShadowGroundSwitch->whichChild = 0;
     else
         pcShadowGroundSwitch->whichChild = -1;
