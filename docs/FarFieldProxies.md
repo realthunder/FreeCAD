@@ -244,6 +244,100 @@ silhouettes, imposes a global depth sort that opaque CAD geometry does
 not currently pay, and has no notion of a face boundary by
 construction. A proxy built from geometry keeps all three.
 
+⚠️ That ruling is about **3D gaussian splatting**, and it does not
+extend to a surfel or a voxel. A gaussian cloud is a global, sorted,
+semi-transparent representation fitted to images; an opaque voxel with
+a normal distribution is a depth-writing primitive derived from the
+geometry, keeps its silhouette, and needs no sort. §4.1 is why the
+difference matters.
+
+### 4.1 The aggregate-detail literature, and what it settles
+
+Phase 2 measured that decimation *deletes* members smaller than a cell
+(§11.1c). That is not a property of the decimator this code happens to
+use — it is a named problem with a settled diagnosis, and the
+literature answers several questions this document had left open.
+
+**It has a name.** Cook et al. (SIGGRAPH 2007) separate **element
+detail** — complexity within one object — from **aggregate detail** —
+complexity arising from the *number* of objects, and observe that
+simplification handles the first well and the second badly. Epic states
+it for Nanite without hedging: aggregate geometry "breaks Nanite's
+level of detail", because the method relies on merging small triangles
+into larger ones, which works "for continuous surfaces… but not for
+aggregate geometry that from a distance appears more like a partially
+opaque cloud than a solid surface".
+
+That sentence is the diagnosis. Below a pixel, a field of disjoint
+parts stops behaving like a surface and starts behaving like a
+partially transparent volume. Simplification preserves surfaces; what
+has to be preserved is **coverage and the distribution of normals**. No
+choice of decimator and no grid resolution changes that, which is why
+§11.1c's deletion cannot be tuned away.
+
+**Four families of answer, and where each lands for us.**
+
+1. *Compensate statistically and keep the mesh.* Cook's stochastic
+   simplification removes a random subset of elements and alters the
+   survivors — chiefly enlarging them — so the aggregate appearance
+   survives. Epic confirms this was Nanite's pre-voxel approach,
+   "artificially adding surface area to surviving triangles", and now
+   calls it "a workaround rather than a solution". Cheap for us, keeps
+   the part table, and ⚠️ validated for *stochastic* detail. A CAD
+   assembly is regular — bolt circles, fin arrays, connector banks —
+   where deleting a random half and fattening the rest is far more
+   visible than it is in foliage.
+2. *Switch representation to voxels carrying directional appearance.*
+   Far Voxels (§4) is the massive-model original: leaves hold triangle
+   chunks, **inner nodes are discretised into cubical voxels**, each
+   holding a view-dependent appearance fitted by ray-casting the full
+   resolution model. Nanite Voxels (UE 5.8, experimental) is the modern
+   restatement — disconnected geometry voxelised into clusters of at
+   most 128 4×4×4 bricks, rasterised by a separate path, depth-bucketed
+   front to back.
+3. *Point and surfel hierarchies.* The CRS4 massive-model survey lists
+   these precisely because they avoid maintaining topology across
+   disconnected components, and recommends **hybrids** — meshes for
+   prominent parts, points or voxels for small ones — switching by
+   screen-space coverage rather than by uniform simplification.
+4. *Better representatives inside the cluster.* Lindstrom (SIGGRAPH
+   2000) extends Rossignac-Borrel clustering by accumulating an **error
+   quadric** per cell and solving for the representative's position
+   instead of averaging it. It does not address deletion — a closed
+   sub-cell body still collapses — but it improves everything that
+   survives, in one pass, and it is a local change to code we already
+   have.
+
+**⭐ The switch criterion is the one §11.1c said we lack.** Nanite's
+build chooses voxels over triangles "if doing so would result in lower
+error than using triangles". That comparison is only meaningful with an
+error metric that can score a representation which *dropped* geometry —
+which vertex displacement cannot, since it is silent on what is no
+longer there. So the literature independently requires what §11.1c
+concluded from measurement: the stored per-node error has to see
+deletion.
+
+**⭐ The normal problem has a specific answer.** §11.1c notes that a
+closed part inside one cell contributes vertex normals summing to zero,
+and that the decimator then substitutes an arbitrary unit vector. The
+right object is not an average normal but a **normal distribution**:
+SGGX (Heitz et al. 2015) parameterises one by projected area as an
+ellipsoid, specifically so that it can be linearly filtered and
+prefiltered — exactly the operation aggregation needs and averaging
+fails at. Nanite Voxels likewise store a normal distribution per voxel,
+at the cost of extra per-voxel data. This is needed by *any* of
+options 2-4 above, so it is not a cost that distinguishes them.
+
+**What the CAD industry ships, for contrast.** JT (ISO 14306) stores an
+arbitrary number of tessellated LODs **per part**, selected by Range
+LOD nodes — element detail only, no aggregation across parts. And
+massive-model practice at aircraft scale is **visibility-guided
+rendering**: identify the small subset of part occurrences that can
+affect the image, rather than approximate the rest. So the shipped
+answer to aggregate detail is largely *culling*, and the research
+answer is *voxels*. Both are relevant here, and they are not
+alternatives — see §10 on ordering.
+
 ## 5. The representation, cheapest first
 
 1. **Merged decimated mesh per (cell, material).** Reuse
@@ -745,6 +839,33 @@ The phase order, then:
 6. View-dependent volumetric proxies (§5.2), only where §5.1 is shown
    to fail.
 
+### 10.1 ⛔ Open: does occlusion culling come before any of this?
+
+§4.1 records that massive-model practice answers aggregate detail
+mainly by **visibility-guided rendering** — finding the small subset of
+parts that can affect the image — rather than by approximating the
+rest. That is a different workstream with an attractive property this
+one does not have: it is *exact*. Nothing about the image changes, so
+there is no representation to choose, no deletion to compensate, no
+identity to preserve and no invalidation to design.
+
+It would also reuse phase 1 unchanged. §3 already says the hierarchy is
+"better described as the renderer's spatial index than as the LOD
+hierarchy: level of detail is one consumer, and frustum culling,
+streaming priority and pick acceleration are others" — occlusion
+culling is that third consumer, and `ProxyHierarchy` is already built
+and tested for it.
+
+The two compose rather than compete: culling removes what cannot be
+seen, proxies merge what can be seen but is too small to resolve. But
+they are not equally urgent, and which comes first is decidable by a
+measurement rather than by argument — **how many of the drawn instances
+contribute no pixel at all**. On a dense assembly with a closed
+enclosure that fraction is most of the model, and culling would then
+dominate; on an open frame it is small. That number does not exist yet
+and it is the same shape as the readouts of §11.1: cheap, once a
+second, reported not inferred.
+
 ## 11. Implementation plan
 
 The sequencing of §10 stands; this states what each step touches in the
@@ -931,8 +1052,20 @@ descends by *the node's own* projected error. Phase 1 stood the extent in
 for it because nothing had been generated yet, and the honest reading of
 §11.1b is now that its rows are neither 3.7× nor 18.8× but a
 distribution — and that phase 3 must read a measured error off each
-node rather than scaling a global constant. Generation already computes
-it (`ProxyMeshStats::maxError`), so this costs a field, not a pass.
+node rather than scaling a global constant.
+
+⚠️ **But not `ProxyMeshStats::maxError` on its own.** An earlier draft
+of this section said generation already computes the number and it
+costs a field rather than a pass. It does not: displacement is bounded
+by one cell whether the proxy is faithful or *empty*, so a cut steering
+by it would rank a hole as well as — sometimes better than — a good
+proxy, and would preferentially stop on exactly the nodes it should
+descend past. The stored error has to account for what is missing, as a
+one-sided Hausdorff distance from the source surface to the proxy
+(unbounded where the proxy has nothing) or as displacement plus an
+area-loss term. §4.1 arrives at the same requirement from the
+literature: Nanite's build compares voxel error against triangle error,
+which is not a comparison displacement can express.
 
 ⭐ Worth noting because it was not obvious: **the ratio is a property of
 the geometry and the grid, not of the camera.** Measured at 4× zoom, on
@@ -955,6 +1088,16 @@ is dropped. A field of small parts therefore vanishes as a body while
 every error the run reports stays inside the tolerance — the
 displacement metric cannot see a deletion, which is why the area
 retained is reported beside it.
+
+The sharpest form of it is the refusal count: a group that produces no
+triangles at all yields **no proxy**, and that is not rare at a coarse
+grid. **9 of 38 groups at cell/4**, 2 of 38 at cell/8, none at cell/16.
+A refusal is a proxy-sized hole where a subassembly should be, not a
+cell-sized one — the displacement bound applies to surfaces that
+survive and says nothing about a region where none did. (The readout
+does not distinguish the three reasons `simplifyMesh` can refuse; at a
+coarse grid it is total collapse, but that is inference rather than
+measurement.)
 
 Even at cell/16, which costs 28× rather than 65×, a fifth of the area is
 gone and half the members with it. §5(2) said a surfel or voxel proxy
