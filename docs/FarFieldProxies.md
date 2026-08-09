@@ -865,12 +865,19 @@ been hidden. Culling then proxying composes; proxying then culling
 weakens the culling.
 
 **Decided (2026-08-09): culling first.** The benchmark decides it as
-much as the argument does — the largest model available is an enclosed
-rack-server assembly, which is precisely the shape that hides most of
-itself, and it is the same scene phases 0-2 were measured on, so the
-numbers compose rather than needing reconciliation (§11.1b's warning
-about the STEP import and the saved document being different scenes
-applies here too: use the saved document).
+much as the argument does: a **2U rack server assembly** (964 MB STEP,
+3.5× the MiSTer Express model of §11.1b) is precisely the shape that
+hides most of itself — an enclosed chassis whose interior is invisible
+from any outside view.
+
+⚠️ **It is a different scene from everything measured so far.** Phase
+0's 66.8% sub-pixel coverage and 6.85 µs per object, and phase 1's
+42893 instances, all belong to MiSTer Express; none of them transfer,
+and the occluded fraction has no prior to compare against. That is a
+feature for a culling measurement — a model that hides most of itself
+is the one worth measuring — but it means MiSTer should be run beside
+it rather than replaced by it, so that a difference between the two can
+be attributed to the model rather than to the change.
 
 Two measurements open that workstream, and neither gates whether to do
 it — they size it and say what to build:
