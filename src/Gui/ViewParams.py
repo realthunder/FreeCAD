@@ -68,7 +68,9 @@ DrawStyles = (
     ("Flat Lines", "Display style, show both wire frame and face with shading", "V,7"),
     ("Tessellation", "Display style, show tessellation wire frame", "V,8"),
     ("Shadow", "Display style, drop shadows for the scene.\\n"
-               "Click this button while in shadow mode to toggle light manipulator", "V,9"),
+               "Press the shortcut again while in shadow mode to toggle the\\n"
+               "light manipulator. The menu entry cannot do it: it is a radio\\n"
+               "button, and one already ticked emits nothing when clicked.", "V,9"),
 )
 
 PreSelectionToolTipCorners = (

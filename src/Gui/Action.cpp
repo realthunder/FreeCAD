@@ -822,6 +822,13 @@ bool ActionGroup::isExclusive() const
     return groupAction()->isExclusive();
 }
 
+void ActionGroup::setExclusiveOptional(bool check)
+{
+    groupAction()->setExclusionPolicy(
+            check ? QActionGroup::ExclusionPolicy::ExclusiveOptional
+                  : QActionGroup::ExclusionPolicy::Exclusive);
+}
+
 void ActionGroup::setVisible( bool check )
 {
     Action::setVisible(check);

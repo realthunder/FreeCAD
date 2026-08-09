@@ -683,13 +683,24 @@ public:
         return _cache.back().c_str();
     }
 
-protected: 
+protected:
     bool isActive();
     virtual void activated(int iMsg);
+    virtual Gui::Action *createAction();
+
+private:
+    /// Flip the shadow light manipulator on every view this command
+    /// would apply a style to.
+    void toggleShadowManip();
+
+    /// Whether this is the Shadow entry, the one style that carries a
+    /// second action on a repeat press.
+    bool isShadow = false;
 };
 
 StdCmdDrawStyleBase::StdCmdDrawStyleBase(int idx, const char *title, const char *doc)
     :Command(cacheString("Std_DrawStyle", title))
+    ,isShadow(Base::streq(title, "Shadow"))
 {
     sGroup        = "Standard-View";
     sMenuText     = title;
@@ -755,6 +766,53 @@ void StdCmdDrawStyleBase::activated(int iMsg)
     });
 }
 
+void StdCmdDrawStyleBase::toggleShadowManip()
+{
+    Gui::Document *doc = this->getActiveGuiDocument();
+    if (!doc) return;
+    auto activeView = doc->getActiveView();
+    bool applyAll = !activeView || QApplication::queryKeyboardModifiers() == Qt::ControlModifier;
+
+    doc->foreachView<View3DInventor>( [=](View3DInventor *view) {
+        if (!applyAll && view != activeView)
+            return;
+        View3DInventorViewer *viewer = view->getViewer();
+        if (viewer && viewer->getOverrideMode() == "Shadow")
+            viewer->toggleShadowLightManip();
+    });
+}
+
+Gui::Action *StdCmdDrawStyleBase::createAction()
+{
+    Gui::Action *action = Command::createAction();
+    if (!action)
+        return action;
+
+    // A repeat press of the shortcut -- the style the viewer is already
+    // in. A checkable QAction unchecks itself on the way in and then
+    // emits triggered, and activated() ignores the uncheck because a
+    // viewer is always in exactly one mode. So the tick has to be put
+    // back here, or the entry would sit unticked in a style it is in.
+    //
+    // For Shadow that repeat means more: it toggles the light
+    // manipulator, which used to be a second click on the entry until
+    // the entries became radio buttons -- one already ticked emits
+    // nothing when clicked (docs/HANDOFF_ShadingAndDrawStyle.md §4), so
+    // the shortcut is the affordance now and the tooltip says so.
+    //
+    // Menu entries never arrive here: each carries its own widget action
+    // (Gui::Action::addWidget) and only forwards toggled.
+    QObject::connect(action->action(), &QAction::triggered, action, [this]() {
+        auto act = getAction();
+        if (!act || !act->action()->isCheckable() || act->isChecked())
+            return;
+        act->setChecked(true, true);
+        if (isShadow)
+            toggleShadowManip();
+    });
+    return action;
+}
+
 //===========================================================================
 // StdCmdDrawStyle
 //===========================================================================
@@ -786,6 +844,12 @@ public:
             if (auto sub = cmd->getAction())
                 sub->setCheckable(true);
         }
+        // Pressing the active style's shortcut has to reach the command.
+        // Under the strict policy QAction::activate() drops that press
+        // before any signal, so Shadow's manipulator toggle -- and the
+        // tick repair after it -- would never run.
+        if (auto group = qobject_cast<Gui::ActionGroup*>(action))
+            group->setExclusiveOptional(true);
         // The renderer's shading options ride under the style list as a
         // popover section: they are not exclusive with each other, so
         // they cannot be entries in it (Gui/ShadingOptions.h). The menu

@@ -200,6 +200,17 @@ public:
     void setDisabled (bool);
     void setExclusive (bool);
     bool isExclusive() const;
+    /** Let the checked action be activated again.
+     *
+     * QAction::activate() drops a trigger on the checked member of a
+     * strictly exclusive group before emitting anything -- no toggled,
+     * no triggered -- so a repeat press of that entry's shortcut is
+     * silently nothing. With the optional policy the action unchecks
+     * itself instead, which the command can hear and act on (and put the
+     * tick back). The group stays exclusive either way: isExclusive()
+     * remains true, so menus still render it as radio buttons.
+     */
+    void setExclusiveOptional (bool);
     void setVisible (bool) override;
     void setIsMode(bool check) { _isMode = check; }
 
