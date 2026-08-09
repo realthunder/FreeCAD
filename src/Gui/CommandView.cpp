@@ -713,7 +713,19 @@ bool StdCmdDrawStyleBase::isActive()
 
 void StdCmdDrawStyleBase::activated(int iMsg)
 {
-    (void)iMsg;
+    // The style entries are checkable (StdCmdDrawStyle::createAction), so
+    // a click arrives as a toggle: iMsg is the new check state, not a
+    // sub-command index. Unchecking is not a state a viewer can be in —
+    // there is always exactly one override mode — so it is ignored, and
+    // the sync in updateIcon() puts the tick back.
+    //
+    // Only when the toggle is what invoked us, though. A script calling
+    // Gui.runCommand("Std_DrawStyleShaded", 0) passes the same 0 with no
+    // trigger source, and that has always meant "apply this style";
+    // treating it as an untick would silently break every macro that
+    // sets a draw style.
+    if (iMsg == 0 && triggerSource() != TriggerNone)
+        return;
 
     Gui::Document *doc = this->getActiveGuiDocument();
     if (!doc) return;
@@ -753,9 +765,27 @@ public:
     StdCmdDrawStyle();
     virtual const char* className() const {return "StdCmdDrawStyle";}
     void updateIcon(const MDIView *);
+    /// Tick the entry for \a mode and clear the rest. Drives the menus
+    /// through Action::actionChecked, and passes no_signal so restoring
+    /// the tick does not invoke the command back.
+    void syncChecked(const char *mode);
+
     virtual Action * createAction() {
         Action * action = GroupCommand::createAction();
         action->setCheckable(false);
+        // Each style becomes a checkable entry, which ActionGroup::addTo
+        // then renders as a checkbox in both the tool button's drop-down
+        // and the menu bar. Two reasons, and neither is decoration: the
+        // menu stays open across a click, so styles can be compared by
+        // walking the list with the 3D view visible behind it; and the
+        // active one is legible at a glance instead of being whichever
+        // entry happens to be highlighted. Gui::Action::setCheckable is
+        // what rewires the action from triggered to toggled, so it has to
+        // be that rather than QAction::setCheckable.
+        for (auto cmd : getCommands()) {
+            if (auto sub = cmd->getAction())
+                sub->setCheckable(true);
+        }
         // The renderer's shading options ride under the style list as a
         // popover section: they are not exclusive with each other, so
         // they cannot be entries in it (Gui/ShadingOptions.h). The menu
@@ -794,6 +824,17 @@ StdCmdDrawStyle::StdCmdDrawStyle()
         });
 }
 
+void StdCmdDrawStyle::syncChecked(const char *mode)
+{
+    const int active = drawStyleIndexFromName(mode);
+    int i = -1;
+    for (auto cmd : getCommands()) {
+        ++i;
+        if (auto sub = cmd->getAction())
+            sub->setChecked(i == active, true);
+    }
+}
+
 void StdCmdDrawStyle::updateIcon(const MDIView *view)
 {
     if (!_pcAction)
@@ -810,6 +851,10 @@ void StdCmdDrawStyle::updateIcon(const MDIView *view)
                 setup(_pcAction);
             }
         }
+        // The tick follows the viewer, not the click: the style also
+        // changes from the Shading section's shadow switch, from a
+        // restored document and from the console.
+        syncChecked(mode.c_str());
     }
 }
 

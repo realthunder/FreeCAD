@@ -31,6 +31,7 @@
 # include <QLabel>
 # include <QMenu>
 # include <QRadioButton>
+# include <QSlider>
 # include <QWidgetAction>
 #endif
 
@@ -166,11 +167,35 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     flags->addWidget(bloomCheck, 1, 1);
     layout->addLayout(flags, 3, 0, 1, 2);
 
+    // Cavity is the one modifier here whose usefulness depends on a
+    // number rather than on being on: the radius decides which features
+    // it can see at all, and the useful value moves with the model and
+    // with the display's pixel density. A slider beside the switch, so
+    // it can be found and dragged with the 3D view in sight -- the menu
+    // stays open under a widget action.
+    cavityRadiusLabel = new QLabel(tr("Cavity radius:"), this);
+    cavityRadiusSlider = new QSlider(Qt::Horizontal, this);
+    cavityRadiusSlider->setRange(1, 32);
+    cavityRadiusSlider->setPageStep(2);
+    cavityRadiusSlider->setToolTip(doc(RenderParams::docCavityRadius()));
+    cavityRadiusLabel->setToolTip(cavityRadiusSlider->toolTip());
+    cavityRadiusValue = new QLabel(this);
+    // Wide enough for the longest reading, so the row does not shuffle
+    // sideways as the number changes under the drag.
+    cavityRadiusValue->setMinimumWidth(
+        cavityRadiusValue->fontMetrics().horizontalAdvance(tr("00 px")));
+    auto radiusRow = new QHBoxLayout;
+    radiusRow->setContentsMargins(0, 0, 0, 0);
+    radiusRow->addWidget(cavityRadiusSlider, 1);
+    radiusRow->addWidget(cavityRadiusValue);
+    layout->addWidget(cavityRadiusLabel, 4, 0);
+    layout->addLayout(radiusRow, 4, 1);
+
     hint = new QLabel(tr("Needs the render engine: set the render cache "
                          "to the renderer mode\nand pick a renderer type "
                          "in the 3D view preferences."), this);
     hint->setEnabled(false);
-    layout->addWidget(hint, 4, 0, 1, 2);
+    layout->addWidget(hint, 5, 0, 1, 2);
 
     connect(defaultRadio, &QRadioButton::toggled, this, [this](bool on) {
         if (on && !loading)
@@ -194,6 +219,15 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     });
     connect(cavityCheck, &QCheckBox::toggled, this, [this](bool on) {
         setFlag("Cavity", on);
+        updateCavityRadiusEnabled();
+    });
+    connect(cavityRadiusSlider, &QSlider::valueChanged, this, [this](int value) {
+        cavityRadiusValue->setText(tr("%1 px").arg(value));
+        if (loading)
+            return;
+        if (auto prop = renderProp<App::PropertyFloat>(activeView(),
+                                                       "CavityRadius"))
+            prop->setValue(double(value));
     });
     connect(aoCheck, &QCheckBox::toggled, this, [this](bool on) {
         setFlag("AO", on);
@@ -272,6 +306,16 @@ void ShadingOptionsWidget::setShadow(bool on)
     }
 }
 
+void ShadingOptionsWidget::updateCavityRadiusEnabled()
+{
+    // A radius with the pass switched off is a control that does
+    // nothing; grey it rather than let it read as broken.
+    const bool on = cavityCheck->isEnabled() && cavityCheck->isChecked();
+    cavityRadiusLabel->setEnabled(on);
+    cavityRadiusSlider->setEnabled(on);
+    cavityRadiusValue->setEnabled(on);
+}
+
 void ShadingOptionsWidget::setModel(bool pbr, bool matcap)
 {
     auto view = activeView();
@@ -310,6 +354,13 @@ void ShadingOptionsWidget::refresh()
     if (auto prop = renderProp<App::PropertyEnumeration>(view, "MatcapPreset"))
         matcapCombo->setCurrentIndex(int(prop->getValue()));
     cavityCheck->setChecked(renderFlag(view, "Cavity", false));
+    if (auto prop = renderProp<App::PropertyFloat>(view, "CavityRadius"))
+        cavityRadiusSlider->setValue(int(prop->getValue() + 0.5));
+    else
+        cavityRadiusSlider->setValue(int(RenderParams::getCavityRadius() + 0.5));
+    // valueChanged does not fire when the value is already what it was,
+    // so the readout is set here rather than left to the signal.
+    cavityRadiusValue->setText(tr("%1 px").arg(cavityRadiusSlider->value()));
     aoCheck->setChecked(renderFlag(view, "AO", false));
     // Shadows follow the draw style, not Render_Shadow: without the style
     // there is no scene light to cast one, and Render_Shadow only drops
@@ -324,6 +375,7 @@ void ShadingOptionsWidget::refresh()
     matcapLabel->setEnabled(available && matcap);
     matcapCombo->setEnabled(available && matcap);
     cavityCheck->setEnabled(available);
+    updateCavityRadiusEnabled();
     aoCheck->setEnabled(available);
     // The one control here that is not renderer-only: the Shadow draw
     // style predates the backend and works on the plain Coin path too.

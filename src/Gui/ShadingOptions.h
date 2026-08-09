@@ -31,6 +31,7 @@ class QComboBox;
 class QLabel;
 class QMenu;
 class QRadioButton;
+class QSlider;
 
 namespace App { class PropertyContainer; }
 
@@ -75,6 +76,8 @@ private:
     App::PropertyContainer *activeView() const;
     View3DInventorViewer *activeViewer() const;
     void setModel(bool pbr, bool matcap);
+    /// Grey the radius row unless the cavity pass is on and available.
+    void updateCavityRadiusEnabled();
     void setFlag(const char *name, bool value);
     /// Enter or leave the Shadow draw style, carrying the current style
     /// in and handing it back on the way out. The draw style is what puts
@@ -89,6 +92,9 @@ private:
     QLabel *matcapLabel;
     QComboBox *matcapCombo;
     QCheckBox *cavityCheck;
+    QLabel *cavityRadiusLabel;
+    QSlider *cavityRadiusSlider;
+    QLabel *cavityRadiusValue;
     QCheckBox *aoCheck;
     QCheckBox *shadowCheck;
     QCheckBox *bloomCheck;

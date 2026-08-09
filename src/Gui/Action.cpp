@@ -599,6 +599,44 @@ ActionGroup::~ActionGroup()
     delete _group;
 }
 
+/**
+ * Fill \a menu with a group's actions, rendering every checkable one as a
+ * QCheckBox widget action rather than a plain checkable entry.
+ *
+ * Two things come out of that, both wanted wherever a group is a pick-one
+ * list. A widget action handles its own mouse events, so clicking one
+ * does not dismiss the menu — the user can walk the list and watch the
+ * 3D view change under it instead of reopening the menu per try. And the
+ * check state is visible on every entry at once, so which one is active
+ * reads without hunting for a highlighted item.
+ *
+ * The checkbox drives the action through its toggled signal (a signal-to
+ * -signal connection, so Gui::Action::onToggled runs and the command is
+ * invoked), and follows it back through Action::actionChecked, which is
+ * how an exclusive set unchecks its previous member.
+ */
+static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions)
+{
+    for (auto action : actions) {
+        if (!action->isCheckable()) {
+            menu->addAction(action);
+            continue;
+        }
+        QCheckBox *checkbox = nullptr;
+        auto wa = Action::addCheckBox(menu, action->text(), action->toolTip(),
+                                      action->icon(), action->isChecked(),
+                                      &checkbox);
+        QObject::connect(wa, &QAction::toggled, action, &QAction::toggled);
+        if (auto parentAction = qobject_cast<Action*>(action->parent())) {
+            QObject::connect(parentAction, &Action::actionChecked, checkbox,
+                [checkbox](bool checked) {
+                    QSignalBlocker blocker(checkbox);
+                    checkbox->setChecked(checked);
+                });
+        }
+    }
+}
+
 static inline QToolButton *setupMenuToolButton(QWidget *w)
 {
     QToolButton* tb = w->findChildren<QToolButton*>().last();
@@ -624,7 +662,7 @@ void ActionGroup::addTo(QWidget *widget)
             auto item = qobject_cast<QMenu*>(widget)->addMenu(menu);
             item->setMenuRole(action()->menuRole());
             menu->setTitle(action()->text());
-            menu->addActions(actions());
+            fillGroupMenu(menu, actions());
 
             QObject::connect(menu, &QMenu::aboutToShow, [this, menu]() {
                 Q_EMIT aboutToShow(menu);
@@ -638,23 +676,7 @@ void ActionGroup::addTo(QWidget *widget)
             widget->addAction(action());
             auto tb = setupMenuToolButton(widget);
             auto menu = new QMenu(widget);
-            for (auto action : actions()) {
-                if (!action->isCheckable()) {
-                    menu->addAction(action);
-                } else {
-                    QCheckBox *checkbox = nullptr;
-                    auto wa = addCheckBox(menu, action->text(), action->toolTip(),
-                            action->icon(), action->isChecked(), &checkbox);
-                    QObject::connect(wa, &QAction::toggled, action, &QAction::toggled);
-                    if (auto parentAction = qobject_cast<Action*>(action->parent())) {
-                        QObject::connect(parentAction, &Action::actionChecked, checkbox,
-                            [checkbox](bool checked) {
-                                QSignalBlocker blocker(checkbox);
-                                checkbox->setChecked(checked);
-                            });
-                    }
-                }
-            }
+            fillGroupMenu(menu, actions());
             tb->setMenu(menu);
             ToolBarManager::getInstance()->checkToolBarIconSize(static_cast<QToolBar*>(widget));
 
