@@ -36,6 +36,8 @@ namespace App { class PropertyContainer; }
 
 namespace Gui {
 
+class View3DInventorViewer;
+
 /**
  * The render engine's shading options, shown as a section of the Display
  * style tool button's drop-down.
@@ -71,8 +73,14 @@ public:
 
 private:
     App::PropertyContainer *activeView() const;
+    View3DInventorViewer *activeViewer() const;
     void setModel(bool pbr, bool matcap);
     void setFlag(const char *name, bool value);
+    /// Enter or leave the Shadow draw style, carrying the current style
+    /// in and handing it back on the way out. The draw style is what puts
+    /// a scene light in the graph at all, so it -- not Render_Shadow
+    /// alone -- is what a shadow toggle has to drive.
+    void setShadow(bool on);
 
 private:
     QRadioButton *defaultRadio;

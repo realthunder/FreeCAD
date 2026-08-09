@@ -42,26 +42,43 @@
 #include "Application.h"
 #include "RenderParams.h"
 #include "View3DInventor.h"
+#include "View3DInventorViewer.h"
 
 using namespace Gui;
 
 namespace {
 
-/// The Render_* property of \a view named \a name, if it is there and of
-/// the expected type. Absent means no renderer backend is selected on
-/// this view -- the properties are materialized by
-/// View3DInventorViewer::setRendererType, not by the config feed.
+/// The <group>_<name> property of \a view, if it is there and of the
+/// expected type.
 template<class PropT>
-PropT *renderProp(App::PropertyContainer *view, const char *name)
+PropT *viewProp(App::PropertyContainer *view, const char *group,
+                const char *name)
 {
     if (!view)
         return nullptr;
-    std::string propname("Render_");
+    std::string propname(group);
+    propname += '_';
     propname += name;
     auto prop = view->getPropertyByName(propname.c_str());
     if (!prop || !prop->isDerivedFrom(PropT::getClassTypeId()))
         return nullptr;
     return static_cast<PropT*>(prop);
+}
+
+/// A Render_* property. Absent means no renderer backend is selected on
+/// this view -- they are materialized by
+/// View3DInventorViewer::setRendererType, not by the config feed.
+template<class PropT>
+PropT *renderProp(App::PropertyContainer *view, const char *name)
+{
+    return viewProp<PropT>(view, "Render", name);
+}
+
+/// Shadow_DisplayMode: which draw style the Shadow mode hosts. Absent
+/// until the Shadow draw style has been entered once.
+App::PropertyEnumeration *shadowStyleProp(App::PropertyContainer *view)
+{
+    return viewProp<App::PropertyEnumeration>(view, "Shadow", "DisplayMode");
 }
 
 bool renderFlag(App::PropertyContainer *view, const char *name, bool def)
@@ -133,7 +150,14 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     aoCheck = new QCheckBox(tr("Ambient occlusion"), this);
     aoCheck->setToolTip(doc(RenderParams::docAO()));
     shadowCheck = new QCheckBox(tr("Shadows"), this);
-    shadowCheck->setToolTip(doc(RenderParams::docShadow()));
+    shadowCheck->setToolTip(
+        tr("Light the scene with a directional light that casts shadows.\n"
+           "\n"
+           "This is the Shadow draw style: it is what puts a scene light in "
+           "the graph at all,\nso it is a shading switch rather than a style, "
+           "and it hosts the style you\nare in rather than replacing it. "
+           "Its light, ground plane and shadow quality\nare the Shadow_* "
+           "properties of the view."));
     bloomCheck = new QCheckBox(tr("Bloom"), this);
     bloomCheck->setToolTip(doc(RenderParams::docBloom()));
     flags->addWidget(cavityCheck, 0, 0);
@@ -175,7 +199,8 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
         setFlag("AO", on);
     });
     connect(shadowCheck, &QCheckBox::toggled, this, [this](bool on) {
-        setFlag("Shadow", on);
+        if (!loading)
+            setShadow(on);
     });
     connect(bloomCheck, &QCheckBox::toggled, this, [this](bool on) {
         setFlag("Bloom", on);
@@ -185,6 +210,66 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
 App::PropertyContainer *ShadingOptionsWidget::activeView() const
 {
     return qobject_cast<View3DInventor*>(Application::Instance->activeView());
+}
+
+View3DInventorViewer *ShadingOptionsWidget::activeViewer() const
+{
+    auto view = qobject_cast<View3DInventor*>(Application::Instance->activeView());
+    return view ? view->getViewer() : nullptr;
+}
+
+namespace {
+
+// The four styles the Shadow draw style can host, in Shadow_DisplayMode
+// order (View3DInventorViewer::Private::activateShadow).
+const char * const _shadowStyles[] = {"Flat Lines", "Shaded", "As Is",
+                                      "Hidden Line"};
+constexpr int kShadowStyleAsIs = 2;
+
+int shadowStyleIndex(const std::string &mode)
+{
+    for (int i = 0; i < 4; ++i) {
+        if (mode == _shadowStyles[i])
+            return i;
+    }
+    // Points, Wireframe, No Shading and Tessellation have no shadow-mode
+    // equivalent; they come back as As Is.
+    return kShadowStyleAsIs;
+}
+
+} // namespace
+
+void ShadingOptionsWidget::setShadow(bool on)
+{
+    auto viewer = activeViewer();
+    if (!viewer)
+        return;
+    const bool active = viewer->getOverrideMode() == "Shadow";
+    if (on == active)
+        return;
+
+    if (on) {
+        // Carry the style the user is looking at into shadow mode, so the
+        // scene keeps its appearance and only gains the light.
+        const int index = shadowStyleIndex(viewer->getOverrideMode());
+        viewer->setOverrideMode("Shadow");
+        // Shadow_DisplayMode is materialized by entering the mode, so it
+        // can only be set afterwards; the property change re-applies the
+        // override (View3DInventorViewer::onViewPropertyChanged).
+        if (auto prop = shadowStyleProp(activeView()))
+            prop->setValue(long(index));
+        if (auto prop = renderProp<App::PropertyBool>(activeView(), "Shadow"))
+            prop->setValue(true);
+    }
+    else {
+        // Hand the hosted style back as the plain draw style.
+        int index = kShadowStyleAsIs;
+        if (auto prop = shadowStyleProp(activeView()))
+            index = int(prop->getValue());
+        if (index < 0 || index > 3)
+            index = kShadowStyleAsIs;
+        viewer->setOverrideMode(_shadowStyles[index]);
+    }
 }
 
 void ShadingOptionsWidget::setModel(bool pbr, bool matcap)
@@ -226,7 +311,11 @@ void ShadingOptionsWidget::refresh()
         matcapCombo->setCurrentIndex(int(prop->getValue()));
     cavityCheck->setChecked(renderFlag(view, "Cavity", false));
     aoCheck->setChecked(renderFlag(view, "AO", false));
-    shadowCheck->setChecked(renderFlag(view, "Shadow", true));
+    // Shadows follow the draw style, not Render_Shadow: without the style
+    // there is no scene light to cast one, and Render_Shadow only drops
+    // the map of a light the style already provides.
+    auto viewer = activeViewer();
+    shadowCheck->setChecked(viewer && viewer->getOverrideMode() == "Shadow");
     bloomCheck->setChecked(renderFlag(view, "Bloom", false));
 
     defaultRadio->setEnabled(available);
@@ -236,7 +325,9 @@ void ShadingOptionsWidget::refresh()
     matcapCombo->setEnabled(available && matcap);
     cavityCheck->setEnabled(available);
     aoCheck->setEnabled(available);
-    shadowCheck->setEnabled(available);
+    // The one control here that is not renderer-only: the Shadow draw
+    // style predates the backend and works on the plain Coin path too.
+    shadowCheck->setEnabled(viewer != nullptr);
     bloomCheck->setEnabled(available);
     hint->setVisible(!available);
 }
