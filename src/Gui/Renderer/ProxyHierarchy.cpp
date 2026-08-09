@@ -106,10 +106,12 @@ void Render::proxyInstances(const DrawCallList &draws,
 {
     out.clear();
     out.reserve(draws.size());
-    for (const auto &d : draws) {
+    for (size_t i = 0; i < draws.size(); ++i) {
+        const auto &d = draws[i];
         if (d.bboxMin[0] > d.bboxMax[0])
             continue;
         ProxyInstance inst;
+        inst.drawIndex = uint32_t(i);
         inst.objectKey = d.objectKey;
         std::memcpy(inst.bboxMin, d.bboxMin, sizeof(inst.bboxMin));
         std::memcpy(inst.bboxMax, d.bboxMax, sizeof(inst.bboxMax));
@@ -210,6 +212,18 @@ const std::vector<uint32_t> &ProxyHierarchy::residents() const
 const std::vector<uint64_t> &ProxyHierarchy::buckets() const
 {
     return bucketdata;
+}
+
+void ProxyHierarchy::subtreeInstances(int node,
+                                      std::vector<uint32_t> &out) const
+{
+    if (node == kNoProxyNode || node < 0 || size_t(node) >= nodedata.size())
+        return;
+    const ProxyNode &n = nodedata[size_t(node)];
+    out.insert(out.end(), residentdata.begin() + n.residentFirst,
+               residentdata.begin() + n.residentFirst + n.residentCount);
+    for (int c : n.child)
+        subtreeInstances(c, out);
 }
 
 void ProxyHierarchy::clear()

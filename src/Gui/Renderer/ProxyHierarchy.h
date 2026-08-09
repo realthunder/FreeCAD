@@ -111,6 +111,12 @@ struct ProxyInstance {
     /// one screw expands what instancing shares) and unused by the
     /// partition itself.
     const void *sourceTag = nullptr;
+    /// Which row of the table this was projected from. The partition
+    /// never follows it — it is the join back to whatever the caller
+    /// holds the geometry in, which generation needs and selection will
+    /// too. Rows the projection skipped shift the numbering, so it
+    /// cannot be reconstructed by counting afterwards.
+    uint32_t drawIndex = 0;
 };
 
 /// Project a draw list into the instance table (§3.1). Draws without
@@ -245,6 +251,11 @@ public:
     const std::vector<uint32_t> &residents() const;
     /// Material buckets, indexed by ProxyNode::bucketFirst/Count.
     const std::vector<uint64_t> &buckets() const;
+
+    /// Every instance at or below \a node, appended to \a out — what a
+    /// proxy for that node has to stand for, and therefore what
+    /// generation merges (§7.1). Yields ProxyNode::subtreeCount indices.
+    void subtreeInstances(int node, std::vector<uint32_t> &out) const;
 
     /// Descend the frontier by projected error (§3.3): a node draws a
     /// proxy once its content bounds project to no more than

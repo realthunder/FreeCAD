@@ -479,3 +479,50 @@ TEST(ProxyHierarchy, coincidentInstancesDoNotRecurseForever)
     std::string why;
     EXPECT_TRUE(h.verifyCut(cut, &why)) << why;
 }
+
+TEST(ProxyHierarchy, theSubtreeWalkYieldsExactlyWhatAProxyWouldStandFor)
+{
+    // Generation merges everything a node covers (§7.1), so the walk
+    // has to agree with the count the node advertises -- and with the
+    // draw rows the instances came from, since the geometry is fetched
+    // through those and a partition that renumbered them would merge
+    // the wrong meshes.
+    ProxyHierarchy h;
+    h.build(flatAssembly(12, 3));
+
+    std::vector<uint32_t> all;
+    h.subtreeInstances(h.root(), all);
+    EXPECT_EQ(all.size(), h.instances().size());
+    std::set<uint32_t> distinct(all.begin(), all.end());
+    EXPECT_EQ(distinct.size(), all.size()) << "an instance covered twice";
+
+    for (size_t i = 0; i < h.nodes().size(); ++i) {
+        std::vector<uint32_t> subtree;
+        h.subtreeInstances(int(i), subtree);
+        ASSERT_EQ(subtree.size(), h.nodes()[i].subtreeCount) << "node " << i;
+    }
+
+    // The join back to the caller's table survives the projection.
+    for (uint32_t inst : all)
+        EXPECT_LT(h.instances()[inst].drawIndex, h.instances().size());
+    h.subtreeInstances(kNoProxyNode, all);  // harmless on an empty child
+}
+
+TEST(ProxyHierarchy, theDrawRowSurvivesTheProjection)
+{
+    // proxyInstances() skips draws it cannot locate, so the row a
+    // ProxyInstance came from is not its position in the table.
+    DrawCallList draws(4);
+    for (auto &d : draws) {
+        d.bboxMin[0] = d.bboxMin[1] = d.bboxMin[2] = 0.0f;
+        d.bboxMax[0] = d.bboxMax[1] = d.bboxMax[2] = 1.0f;
+    }
+    draws[1].bboxMin[0] = 1.0f;  // empty bounds: not judgeable, skipped
+    draws[1].bboxMax[0] = 0.0f;
+    std::vector<ProxyInstance> instances;
+    proxyInstances(draws, instances);
+    ASSERT_EQ(instances.size(), 3u);
+    EXPECT_EQ(instances[0].drawIndex, 0u);
+    EXPECT_EQ(instances[1].drawIndex, 2u);
+    EXPECT_EQ(instances[2].drawIndex, 3u);
+}
