@@ -597,10 +597,11 @@ int ToolBarManager::toolBarIconSize(QWidget *widget) const
     int s = _toolBarIconSize;
     if (widget) {
         if (qobject_cast<WorkbenchTabWidget*>(widget)) {
+            // The tabs live in a toolbar, side by side with real tool buttons,
+            // so their icons match those by default rather than being shrunk to
+            // 0.8 of them. WorkbenchTabIconSize still overrides it.
             if (_workbenchTabIconSize > 0)
                 s = _workbenchTabIconSize;
-            else
-                s *= 0.8;
             widget = widget->parentWidget();
         }
         else if (qobject_cast<WorkbenchComboBox*>(widget)) {
