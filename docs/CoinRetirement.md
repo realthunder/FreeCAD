@@ -134,16 +134,75 @@ does — a stereo run leaves one spinning — so drive them through
 Stated so the table is not read as more than it is. All of it ran
 headless under llvmpipe on one small two-solid scene:
 
-- workbench-specific scene graphs — Sketcher edit mode, TechDraw, FEM
-  result meshes, Draft working plane, Assembly
-- draggers / manipulators, the shadow light manipulator
-- clipping planes and section views, selection and preselection
-  highlight, dimension and annotation text
+- workbench-specific scene graphs — TechDraw, FEM result meshes, Draft
+  working plane, Assembly (Sketcher edit mode: **now covered**, §3.3)
+- the shadow light manipulator (the transform dragger: §3.3)
+- dimension and annotation text (clipping planes, selection and
+  preselection highlight: §3.3)
 - large models (the case the backend exists for), and real-GPU
   behaviour — llvmpipe hides device-precision problems both ways
 - VR (`View3DInventorRiftViewer`), quad-buffer stereo
 - the "Coin still draws it on top" set: whether anything the cache does
   not claim looks right composited over backend output
+
+### 3.3 Stage 1: the edit paths
+
+`edit_audit_probe.py` — selection highlight, preselection highlight,
+Sketcher edit mode, the transform dragger, a global clipping plane.
+
+**First, a correction to the method.** There are *three* render paths
+here, not two, and §3's table compared the wrong pair:
+
+| leg | setting | who draws the geometry |
+| --- | --- | --- |
+| `bgfx` | cache 3 + a backend type | the backend |
+| `glr` | cache 3 + type `Default` | `SoFCRenderer`, the render cache's own GL renderer |
+| `coin` | cache 0 | plain Coin traversal, no render cache at all |
+
+The backend replaces **glr**, not **coin**: they share the render cache
+feed and the ViewParams resolved off it. Measuring against cache 0
+charges the backend for everything the *cache* does differently.
+
+Method: within each leg, grab the viewport before and after switching
+the feature on and report the fraction of pixels that changed. Cross-leg
+histograms cannot answer "did the highlight appear" — the paths
+antialias differently — but a within-leg delta can.
+
+| case | bgfx | glr | coin | reading |
+| --- | --- | --- | --- | --- |
+| selection highlight | 0.159 | 0.144 | 0.133 | all three draw it; bgfx and glr images agree to 0.0035 when both legs are in the same state |
+| preselection highlight | 0.0055 | 0.0055 | 0.092 | bgfx **identical to glr**. Both outline the face without filling it, which is what `ShowPreSelectedFaceOutline` + `NoPreSelFaceHighlightWithOutline` (both default true) ask for; cache 0 fills it instead. A cache-vs-no-cache difference, not a backend one. |
+| Sketcher edit mode | 0.251 | 0.331 | — | both draw the edit-mode scene |
+| transform dragger | 0.088 | 0.055 | 0.279 | bgfx and glr agree to 0.0078 in matched state |
+| clipping plane | 0.005 | 0.097 | — | **the one difference that indicts the backend** — see below |
+
+**The clipping plane.** glr draws a hatched section cap where the plane
+cuts; the backend draws nothing at all. Worth qualifying before it is
+called a gap: in this probe *no leg actually clipped the solid* — the
+box stayed whole on all three while `hasClippingPlane()` reported true —
+so the probe's use of `toggleClippingPlane` is not exercising what a
+user's section view does. What is solid is the difference: given the
+same scene state, one path drew a cap and the other did not.
+
+**A bug found along the way, and it is not the backend's.** Entering and
+leaving Transform edit mode (`Std_TransformManip`) leaves the object
+drawn **see-through** on *both* render-cache legs — bgfx 0.117, glr
+0.131 change against the frame before, while cache 0 is unaffected at
+0.027. `ViewObject.Transparency` reads 0 throughout, and setting it 1
+then 0 again does not heal the picture: the document says opaque and the
+cache keeps drawing transparent. `dragger_stale_probe.py` reproduces it
+with a fresh document per leg.
+
+⚠️ Harness notes, all of which cost a run: cases leak into each other
+(Sketcher leaves the camera on the sketch plane, Transform leaves the
+object see-through) and legs run in sequence, so a leak crosses legs and
+reads as a render-path difference — build a **fresh document per leg**
+and close it at the end, or the next leg's MDI view makes the grab pick
+a different widget entirely (a 99% image difference). And closing a
+document that has been in Sketcher edit mode segfaulted the run once,
+inside a `SketcherGui` item delegate under `QStyledItemDelegate::
+sizeHint` — on the cache-0 leg, so nothing to do with the render path,
+but it is why the coin leg's last two rows are missing above.
 
 ## 4. Plan
 
@@ -157,9 +216,14 @@ redirected to that path. Left open, and small: the `sample` argument
 still builds a multisampled Qt FBO the backend's own resolve then
 blits into, which is a pass nobody needs.
 
-**Stage 1 — extend the audit to §3.2.** Especially Sketcher edit mode
-and draggers, which are the paths most likely to be drawing through Coin
-GL on top and to look wrong when they do.
+**Stage 1 — extend the audit to §3.2. First pass done** (§3.3): Sketcher
+edit mode, the draggers, and the selection/preselection highlights all
+match the GL renderer. Two things are open out of it — the backend draws
+no section cap for a clipping plane, and Transform edit mode leaves both
+render-cache paths drawing the object see-through (that one predates the
+backend and is the cache's, not the backend's). Still unvisited from
+§3.2: TechDraw, FEM, Draft, Assembly, annotation text, large models and
+real-GPU behaviour.
 
 **Stage 2 — flip the defaults.** `RenderCache` 3 and a real `Type` as
 shipped defaults, with a one-time migration for existing user configs.
