@@ -508,8 +508,12 @@ Action::addCheckBox(QMenu *menu,
     auto action = addWidget(menu, txt, tooltip, checkbox, false, icon, shortcut);
     action->setCheckable(true);
     action->setChecked(checked);
+    // setChecked emits toggled itself, so forwarding toggled as well
+    // would deliver the state change twice -- and a command invoked
+    // twice per click is not always idempotent (Std_DrawStyleShadow
+    // reads its second call as "already in shadow mode" and toggles the
+    // light manipulator on entry).
     QObject::connect(checkbox, &QCheckBox::toggled, action, &QAction::setChecked);
-    QObject::connect(checkbox, &QCheckBox::toggled, action, &QAction::toggled);
     return action;
 }
 
@@ -534,8 +538,8 @@ Action::addRadioButton(QMenu *menu,
     auto action = addWidget(menu, txt, tooltip, radio, false, icon, shortcut);
     action->setCheckable(true);
     action->setChecked(checked);
+    // One connection, not two: see addCheckBox.
     QObject::connect(radio, &QRadioButton::toggled, action, &QAction::setChecked);
-    QObject::connect(radio, &QRadioButton::toggled, action, &QAction::toggled);
     return action;
 }
 
