@@ -145,7 +145,10 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     curvature is measured over. A viewer older than this measures
 //     over one pixel whatever the property says, which reads as the
 //     effect barely being there on anything but a hard crease.
-const uint32_t kVersion = 44;
+// 45: Material carries its SoDrawStyleElement style, which is how the
+//     Tessellation draw style reaches the backend at all. A viewer
+//     older than this fills the faces, i.e. shows Shaded instead.
+const uint32_t kVersion = 45;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -1256,6 +1259,9 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
         w.floats(m.clipplanes[i], 4);
     // v23: the user "material"-stage shader.
     refs.shader(w, m.usershader.get());
+    // v45: SoDrawStyleElement, which is how the Tessellation draw style
+    // arrives. Older viewers draw the faces filled, i.e. as Shaded.
+    w.u8(m.drawstyle);
 }
 
 void readMaterial(Reader &r, Material &m, const RefReader &refs,
@@ -1384,6 +1390,10 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
         std::memset(m.clipplanes[i], 0, sizeof(m.clipplanes[i]));
     if (version >= 23)
         refs.shader(r, m.usershader);
+    // v45: the draw style. Absent means filled, which is what every
+    // style but Tessellation asks for anyway.
+    if (version >= 45)
+        m.drawstyle = r.u8();
 }
 
 //////////////////////////////////////////////////////////////////////

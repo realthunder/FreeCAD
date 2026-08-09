@@ -891,6 +891,16 @@ struct Material {
     bool transparent = false;    ///< uniform-color / texture transparency
     bool ontop = false;          ///< render after (over) the normal scene
     bool polygonoffset = false;  ///< glPolygonOffset on filled triangles
+    /// SoDrawStyleElement::Style as the render cache captured it. The GL
+    /// renderer hands LINES/POINTS to glPolygonMode; no modern API has
+    /// that state, so the backend draws the primitives instead — see
+    /// BGFXView::submitTessellation. This is how the Tessellation draw
+    /// style arrives (SoFCUnifiedSelection overrides the element to
+    /// LINES for it), which is the only thing that sets it today.
+    enum DrawStyle : uint8_t {
+        DrawFilled = 0, DrawLines = 1, DrawPoints = 2, DrawInvisible = 3
+    };
+    uint8_t drawstyle = DrawFilled;
     uint32_t diffuse = 0xCCCCCCFF;
     uint32_t emissive = 0;
     uint32_t specular = 0;

@@ -423,6 +423,16 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     // it would be fatal, skipping the draw is not.
     if (!bgfx::isValid(mesh->geom->vbh))
         return;
+    // Tessellation draw style: filled triangles carrying
+    // SoDrawStyleElement::LINES draw as their edges instead. Only in the
+    // ordinary scene pass — the depth prepass wants the solid, and an
+    // on-top or selection draw is not what the style is about.
+    if (mat.type == Render::Material::Triangle
+            && mat.drawstyle == Render::Material::DrawLines
+            && pass == PassNormal && !ontop && !mat.ontop && !selPass) {
+        submitTessellation(draw, viewMatrix, ViewOpaque);
+        return;
+    }
     // Hidden-line hideSeam: whole-cache line draws switch to the
     // seam-filtered index set (GL: renderLines' noseam argument).
     if (noseam && mat.type == Render::Material::Line)

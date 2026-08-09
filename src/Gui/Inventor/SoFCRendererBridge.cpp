@@ -673,6 +673,10 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         && (m.polygonoffsetfactor != 0.0f || m.polygonoffsetunits != 0.0f);
     res.polygonoffsetfactor = m.polygonoffsetfactor;
     res.polygonoffsetunits = m.polygonoffsetunits;
+    // The Tessellation draw style rides in on this: SoFCUnifiedSelection
+    // overrides SoDrawStyleElement to LINES and lets the shapes draw
+    // their faces, which GL turns into a wireframe with glPolygonMode.
+    res.drawstyle = uint8_t(m.drawstyle);
 
     // Depth-occluded parts of on-top lines/points are dimmed to this alpha
     // (SoFCRenderer's RenderPassLinePattern pass). The selection highlight

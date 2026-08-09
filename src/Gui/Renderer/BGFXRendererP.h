@@ -2837,6 +2837,13 @@ public:
     void submitOutline(const Render::DrawCall &draw, uint32_t refCounter,
                        const OutlineSpec &spec);
 
+    /// Tessellation draw style: the triangle edges as geometry, over a
+    /// background-coloured fill that occludes what is behind. Stands in
+    /// for glPolygonMode(GL_LINE) plus SoRenderManager::HIDDEN_LINE,
+    /// neither of which a modern API has.
+    void submitTessellation(const Render::DrawCall &draw,
+                            const float *viewMatrix, uint16_t viewId);
+
     /// Does this draw need a discard-clipping shader variant: its own
     /// section planes, or the mirror pass's water/ground plane.
     bool clipActiveFor(const Render::Material &mat) const;
@@ -3503,6 +3510,10 @@ public:
     // Matcap shading for the frame being submitted: a global shading
     // mode, so it rides the view rather than the per-draw material.
     bool matcapFrame = false;
+    /// Background colour of the frame being submitted, packed RGBA.
+    /// The Tessellation draw style fills its faces with it, the way
+    /// Coin's SoRenderManager::HIDDEN_LINE pass does.
+    uint32_t bgFillColor = 0x00000000;
     int matcapPreset = 0;
     float matcapTint = 0.0f;
     float pbrMetallic = 0.0f;

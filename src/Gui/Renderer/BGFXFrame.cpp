@@ -411,6 +411,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // Matcap replaces the lit shading outright, so it does not care
     // whether the environment could be built the way PBR does.
     view->matcapFrame = matcapconf.enabled && !hlconfig.show;
+    // What the Tessellation draw style fills its faces with, so they
+    // occlude without being seen (Coin gets this from the render
+    // manager's hidden-line pass, not from the draw style).
+    view->bgFillColor = background.type == Render::Background::Flat
+        ? background.fromColor : background.toColor;
     view->matcapPreset = matcapconf.preset;
     view->matcapTint = matcapconf.tint;
     view->bumpScale = bumpconf.scale;

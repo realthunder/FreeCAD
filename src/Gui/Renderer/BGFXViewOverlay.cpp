@@ -77,6 +77,97 @@ void BGFXView::setPolygonOffsetUniform(const Render::Material *mat)
     bgfx::setUniform(u_polyOffset, po);
 }
 
+void BGFXView::submitTessellation(const Render::DrawCall &draw,
+                                  const float *viewMatrix, uint16_t viewId)
+{
+    // The Tessellation draw style: SoFCUnifiedSelection overrides
+    // SoDrawStyleElement to LINES and lets the shapes draw their faces,
+    // which the GL renderer turns into a wireframe with glPolygonMode.
+    // No modern API has that state, so the triangle edges are drawn as
+    // geometry instead — the same per-triangle instance buffer the
+    // stencil outline passes use, over its whole range rather than where
+    // a stencil differs.
+    //
+    // Coin does not get hidden-line removal from the draw style either:
+    // it comes from SoRenderManager::HIDDEN_LINE, a second pass that
+    // fills the scene in the background colour first. That pass is
+    // reproduced here rather than left out, because a tessellation
+    // wireframe with every back face showing through is unreadable on
+    // anything with more than one closed solid in it.
+    if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
+        return;
+    GpuMesh *gpu = getMesh(*draw.mesh);
+    if (!bgfx::isValid(gpu->geom->vbh) || !bgfx::isValid(gpu->geom->tri))
+        return;
+    gpu->geom->ensureOutline(*draw.mesh);
+    if (!bgfx::isValid(gpu->geom->triEdgeInst))
+        return;
+
+    const Render::Material &mat = draw.material;
+    const bool clipped = clipActiveFor(mat);
+    float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    // Pass 1: the faces, in the background colour, depth only as far as
+    // the eye is concerned — they exist to occlude, not to be seen.
+    // Unlit and untextured for the same reason.
+    float fill[4];
+    unpackColor(bgFillColor, fill);
+    fill[3] = 1.0f;
+    float fillParams[4] = {0.0f, 0.0f, 1.0f, polygonOffsetBias(mat)};
+    bgfx::setUniform(u_matColor, fill);
+    bgfx::setUniform(u_matEmissive, zero);
+    bgfx::setUniform(u_matSpecular, zero);
+    bgfx::setUniform(u_params, fillParams);
+    setPolygonOffsetUniform(&mat);
+    setTriangleFrameState(mat, PassNormal, false, false);
+    if (clipped)
+        setClipUniforms(mat);
+    setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
+                     (float)height);
+    setMeshVertexBuffers(gpu, *draw.mesh);
+    if (draw.indexCount > 0)
+        bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
+                             uint32_t(draw.indexCount));
+    else
+        bgfx::setIndexBuffer(gpu->geom->tri);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                   | BGFX_STATE_WRITE_Z | BGFX_STATE_MSAA
+                   | BGFX_STATE_DEPTH_TEST_LESS);
+    bgfx::submit(vid(viewId), clipped ? m_progMeshClip : m_progMesh);
+    ++drawcount;
+
+    // Pass 2: every triangle edge, in the material's own colour. The
+    // instance range is the index range: the buffer holds one segment
+    // per triangle index position.
+    float color[4];
+    unpackColor(mat.linecolor ? mat.linecolor : mat.diffuse, color);
+    color[3] = 1.0f;
+    float lineParams[4] = {0.0f,
+                           qMax(1.0f, std::floor(mat.linewidth + 0.5f)),
+                           0.0f, 1.0f};
+    bgfx::setUniform(u_matColor, color);
+    bgfx::setUniform(u_matEmissive, zero);
+    bgfx::setUniform(u_matSpecular, zero);
+    bgfx::setUniform(u_params, lineParams);
+    if (clipped)
+        setClipUniforms(mat);
+    setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
+                     (float)height);
+    LineQuadVertex::init();
+    bgfx::setVertexBuffer(0, m_lineQuadVb);
+    bgfx::setIndexBuffer(m_lineQuadIb);
+    const uint32_t start = draw.indexCount > 0 ? uint32_t(draw.indexStart) : 0;
+    const uint32_t count = draw.indexCount > 0
+        ? uint32_t(draw.indexCount)
+        : uint32_t(draw.mesh->numTriangleIndices);
+    bgfx::setInstanceDataBuffer(gpu->geom->triEdgeInst, start, count);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                   | BGFX_STATE_WRITE_Z | BGFX_STATE_MSAA
+                   | BGFX_STATE_DEPTH_TEST_LEQUAL);
+    bgfx::submit(vid(viewId), clipped ? m_progLineClip : m_progLine);
+    ++drawcount;
+}
+
 void BGFXView::submitOutline(const Render::DrawCall &draw, uint32_t refCounter,
                    const OutlineSpec &spec)
 {
