@@ -710,6 +710,18 @@ static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions,
             button = checkbox;
         }
         QObject::connect(wa, &QAction::toggled, action, &QAction::toggled);
+        // The row is a widget action now, so the command's own action is
+        // no longer in any menu -- and an action that belongs to no
+        // widget never receives QEvent::Shortcut, which would leave the
+        // accelerator advertised in the row dead. Associate it with the
+        // main window, which shows nothing for it and is where a
+        // window-context shortcut wants to live anyway. Once only: the
+        // menu is refilled on every toolbar rebuild, and a second
+        // association makes Qt call the shortcut ambiguous and drop it.
+        if (auto mainWindow = getMainWindow()) {
+            if (!action->associatedObjects().contains(mainWindow))
+                mainWindow->addAction(action);
+        }
         if (auto parentAction = qobject_cast<Action*>(action->parent())) {
             QObject::connect(parentAction, &Action::actionChecked, button,
                 [button](bool checked) {
