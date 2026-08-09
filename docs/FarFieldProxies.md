@@ -1016,13 +1016,32 @@ outwards (§below), boxes the near plane clips are counted visible, and
 untested nodes are counted visible. Every approximation runs towards
 "visible".
 
-⚠️ **What the measurement does not answer.** The zoomed camera of phase
-E moves the ortho height without moving the camera, so it never gets
-inside the shell and returns the same 100% — the discrimination that
-shows the instrument responds to a scene rather than being stuck at its
-answer comes from `occlusion_smoke.py`, a wall with parts behind it read
-from **both** sides: 99.5% hidden from the front, 6.7% from the rear.
-An in-model camera on a real assembly is still owed.
+**And it is not stuck at that answer.** A perspective camera placed at
+the model's centre — inside the chassis, which an orthographic zoom
+never achieves, since it shrinks the view height without moving the
+camera — reports something entirely different on the same document:
+
+| server assembly | whole-assembly camera | camera inside |
+|---|---|---|
+| hidden (occluded) | 17715 (**99.9%**) | 5931 (**33.5%**) |
+| off screen | 0 | 8562 (48.3%) |
+| **still drawn** | **12 (0.1%)** | **3234 (18.2%)** |
+| nodes tested | 1377 | 483 |
+| nodes doing the rejecting | 8 | 57 |
+| nodes the near plane exempts | 1 | 115 |
+
+⭐ This is the reading to plan against, not the 99.9%. Inside the model
+occlusion still removes a third of the instances and the frustum removes
+half again, leaving **18%** to draw — a 5.5× reduction rather than a
+1500× one, won by 57 node tests instead of 8, with 115 nodes exempted
+because the camera stands inside their bounds. Both numbers are real;
+they are the two ends of the range a viewer moves through, and a design
+that only pays off at one end is not worth building.
+
+The same shape appears in the synthetic check
+(`occlusion_smoke.py`, a wall with parts behind it): **99.5% hidden from
+the front, 6.7% from the rear**. One camera cannot tell a working depth
+test from a probe stuck at "everything is hidden"; two can.
 
 ⚠️ **Three ways a box query answers confidently and wrongly**, all three
 of which produced plausible numbers before being found:
@@ -1068,6 +1087,12 @@ them by looking at the number.
   reflection (`ViewGroundRefl` re-renders the scene mirrored) can both
   show geometry the eye cannot see. Culling must be per *pass*, not per
   frame — the measurement above is of the eye pass only.
+- **Design for 5×, not for 1500×.** The whole-assembly reading is the
+  advertisement; the in-model reading (18% still drawn, 57 rejecting
+  nodes, 115 nodes the near plane exempts) is the working case. It is
+  the one that decides whether the per-frame cost of maintaining
+  visibility is affordable, and the one where nodes the camera stands
+  inside stop being answerable at all.
 
 ## 11. Implementation plan
 
@@ -1173,17 +1198,53 @@ side.
 
 ### 11.1b The measurement, on MiSTer Express
 
-`MiSTer_objdefaults.FCStd`, 18142 objects, 1920×1200, real RTX 3060
-(VirtualGL EGL over Xvfb, monitor off), whole-assembly camera after the
-progressive load converged. **42893 drawn instances**, 2728 nodes, depth
-12, 37 material buckets, partition build **28 ms**.
+`MiSTer_objdefaults.FCStd`, 18142 objects, real RTX 3060 (VirtualGL EGL
+over Xvfb, monitor off), whole-assembly camera after the progressive
+load converged. **42893 drawn instances**, 2728 nodes, depth 12, 37
+material buckets, partition build **28-30 ms**.
 
-| tolerance | draws | proxy | exact | vs 42893 |
+⚠⚠ **Re-measured, and the first table was wrong.** It was taken at a
+viewport of **400×300**, not the 1920×1200 it recorded: the probe called
+`mw.showMaximized()`, which under Xvfb has no window manager to honour
+it, and nothing in the run said so (§10.2 has the full trap). The cut
+scales its tolerance by the viewport height, so every row was labelled
+with a tolerance ~3.5× too small. Corrected, at **1863×1064**:
+
+| tolerance | draws | proxy | exact | vs 42893 | as first published |
+|---|---|---|---|---|---|
+| 1px | 41975 | 48 | 41927 | 1.02× | — |
+| 4px | 38667 | 643 | 38024 | 1.11× | 24567 (1.75×) |
+| 16px | 23907 | 3286 | 20621 | 1.79× | 11718 (3.66×) |
+| 64px | **11240** | 1532 | 9708 | **3.8×** | 2277 (**18.8×**) |
+
+⭐ **The old numbers are not noise; they are the same curve shifted
+along the tolerance axis by the viewport ratio.** The corrected 4px row
+reproduces the old 1px row, the corrected 16px row the old 4px row, and
+so on: the old "64px" was really a tolerance of about **227 px** — a
+blob a fifth of the screen high.
+
+**The rack server says the same, more so.** Same correction, same
+camera discipline, 17727 instances over 1377 nodes and only 4 material
+buckets (build 20 ms):
+
+| tolerance | 1px | 4px | 16px | 64px |
 |---|---|---|---|---|
-| 1px | 39327 | 643 | 38684 | 1.09× |
-| 4px | 24567 | 3292 | 21275 | 1.75× |
-| 16px | 11718 | 1578 | 10140 | 3.66× |
-| 64px | 2277 | 564 | 1713 | **18.8×** |
+| draws | 16755 | 16680 | 15035 | **7831** |
+| vs 17727 | 1.06× | 1.06× | 1.18× | **2.26×** |
+
+Its first look, taken at the same broken 400×300, read 813 draws at 64px
+— **21.8×**. Two models, two scenes, the same order-of-magnitude
+overstatement, and the same explanation.
+
+⚠⚠ **That changes the case this document was arguing.** The 18.8× that
+motivated phase 2 is available only at a coarseness no viewer would
+accept. At tolerances a user would not notice the cut aggregates
+**1.1× at 4px and 3.8× at 64px** — real, but a different proposition
+from an order of magnitude, and one that has to be weighed against
+§11.1c's finding that a proxy also *deletes* sub-cell geometry. Set
+beside §10.3, where eight occlusion tests remove 99.9% of the same
+model exactly, the ordering decision of §10.1 looks better than it did
+when it was made on argument alone.
 
 ⚠️⚠️ **The tolerance axis here is node *extent*, not proxy *error*, and
 the difference is most of the answer.** §3.3 selects by "projected
@@ -1195,7 +1256,7 @@ merges into a mesh whose *decimation* error is a pixel or two. So the
 operating point is not the 4px row; it is wherever a decimated
 (cell, material) proxy's error lands relative to its extent, and that
 ratio is unmeasured. **Phase 2's first job is to measure it**, because
-it decides whether this table reads as 3.7× or as 18.8×. It has since
+it decides which row of this table is the operating point. It has since
 been measured, and the answer is that no single ratio converts the
 table — §11.1c.
 
