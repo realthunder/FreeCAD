@@ -52,8 +52,9 @@ on the old backend.
 ## 3. Audit results
 
 Probes: `~/works/sw/fcad-probes/` (`audit_probe.py`, `audit2_probe.py`,
-`stereo_probe.py`), each running both legs in one process — backend on
-(cache 3) and off (cache 0) — so only the render path differs.
+`stereo_probe.py`, `capture_bg_probe.py`; runner `audit_run.sh`), each
+running both legs in one process — backend on (cache 3) and off
+(cache 0) — so only the render path differs.
 
 | capability | Coin | bgfx | evidence |
 | --- | --- | --- | --- |
@@ -61,16 +62,17 @@ Probes: `~/works/sw/fcad-probes/` (`audit_probe.py`, `audit2_probe.py`,
 | picking (`getObjectInfo`) | ok | **ok** | same object/face/point both legs |
 | vector export / print | ok | **ok** | 452457 vs 452254 bytes |
 | screenshot — `GrabFramebuffer` | ok | **ok** | ink 14400 |
-| screenshot — `FramebufferObject` | ok | **BLANK** | ink 0.2519 → **0.0000** |
-| screenshot — `CoinOffscreenRenderer` | ok | **BLANK** | ink 0 |
+| screenshot — `FramebufferObject` | ok | **ok** (was blank) | ink 0.2544 vs 0.2572, §3.1 |
+| screenshot — `CoinOffscreenRenderer` | ok | **ok** (was blank) | identical ink to the FBO path, §3.1 |
 | anaglyph stereo | blank | blank | blank on **both** legs — not attributable to the backend |
 | missing/broken shader pack | n/a | falls back to Coin | `shaderFailed` → `destroy()` |
 | backend init failure | n/a | falls back to Coin | `RendererFactory::create()` returns null |
 
-### 3.1 The one blocking gap: screenshots
+### 3.1 The one blocking gap: screenshots — closed
 
-With the backend active, `Std_ViewScreenShot` produces a **blank image**.
-The chain:
+With the backend active, `Std_ViewScreenShot` produced a **blank image**
+(fixed by "Gui: screenshots render through the backend"). The chain
+was:
 
 1. `savePicture()` forces `saveMethod = "FramebufferObject"` whenever
    `selectionRoot->getRenderManager()` is non-null — which is exactly
@@ -83,14 +85,49 @@ The chain:
    `canSkipInternal() == true` (left true by the last on-screen frame)
    and returns without drawing.
 
-So nobody draws the geometry. `GrabFramebuffer` works only because it
+So nobody drew the geometry. `GrabFramebuffer` worked only because it
 reads back the on-screen buffer the backend already drew into.
 
-The fix is small and the mechanism is already there: `BGFXView::blit()`
-reads the current `GL_FRAMEBUFFER_BINDING` and blits into it, so
-`renderToFramebuffer()` can invoke the backend after binding the FBO, the
-way `renderScene()` does. Rendering at a size other than the widget's
-needs the backend targets resized for the shot, otherwise the blit scales.
+`renderToFramebuffer()` now asks the backend for the frame first, the
+way `renderScene()` does, and composites the Coin traversal over it —
+background suppressed, foreground and axis cross left to the backend's
+overlay feeds, exactly as on screen. Two things separate a capture from
+an on-screen frame, and `Render::Renderer::renderOffscreen()` exists for
+them:
+
+- **Size.** The backend sizes its view from the host widget every frame;
+  while a capture asks for its own size it sizes from that instead, so
+  the shot is *rendered* at its resolution rather than a widget-sized
+  frame scaled into it. The next on-screen frame sees the mismatch and
+  sizes the view back on its own — no reset call to forget.
+- **Target.** `BGFXView::blit()` transfers into whatever framebuffer is
+  bound, but `QOpenGLWidget::makeCurrent()` — which the frame's context
+  dance calls — binds the widget's. The frame now remembers the binding
+  it was asked under and restores it before the blit. On screen that is
+  the widget's framebuffer either way, which is why on-screen frames are
+  pixel-identical across the change (`render-verify` demo-lights, 15/15).
+
+`CoinOffscreenRenderer` needed no decision of its own: `savePicture()`
+already redirects everything but `GrabFramebuffer` to the FBO path
+whenever the render manager exists, so under render cache 3 that method
+never runs — it now measures identically to `FramebufferObject` because
+it *is* that path.
+
+The background comes from the same feed the on-screen frame builds, so
+all three of `saveImage`'s background choices work: a flat colour, the
+viewer's current gradient, and transparency — the last needed the
+frame's clear colour to stop forcing alpha opaque, which only a capture
+ever reads.
+
+Verified with `~/works/sw/fcad-probes/audit_probe.py`, `audit2_probe.py`
+and `capture_bg_probe.py` (runner: `audit_run.sh`): a 400x300 shot of
+the two-solid scene gives ink 0.2572 against Coin's 0.2544, with the ink
+bounding boxes within three pixels of each other; `FramebufferObject`
+and `CoinOffscreenRenderer` both read 5615 where they read 0 before; and
+the flat / gradient / transparent / native-size rows match the Coin leg
+within measurement. ⚠️ the probe *body* finishes long before the process
+does — a stereo run leaves one spinning — so drive them through
+`audit_run.sh`, which caps both the wall clock and the log.
 
 ### 3.2 What this audit did **not** cover
 
@@ -112,11 +149,13 @@ headless under llvmpipe on one small two-solid scene:
 
 Ordered so that nothing user-visible regresses at any step.
 
-**Stage 0 — close the screenshot gap.** Invoke the backend from
-`renderToFramebuffer()`; resize its targets for off-size captures. Also
-decide what `CoinOffscreenRenderer` should do — probably refuse and fall
-back rather than silently return blank. Blocking: cannot default the
-backend on while screenshots are blank.
+**Stage 0 — close the screenshot gap. DONE** (§3.1): the backend draws
+the capture, at the capture's own resolution, into the caller's
+framebuffer, for a flat, gradient or transparent background alike.
+`CoinOffscreenRenderer` turned out to need nothing — it is already
+redirected to that path. Left open, and small: the `sample` argument
+still builds a multisampled Qt FBO the backend's own resolve then
+blits into, which is a pass nobody needs.
 
 **Stage 1 — extend the audit to §3.2.** Especially Sketcher edit mode
 and draggers, which are the paths most likely to be drawing through Coin
