@@ -1481,3 +1481,192 @@ in the same spirit as §8.2's rule about selection.
   and chunk-count problem.
 - **Generation throughput** is a scheduler problem at the node counts
   fine grading implies (§9.1), not a loop.
+
+## 12. Occlusion culling, as built
+
+§10.4 decided this workstream and said what it had to be: cull on the
+**CPU before submission**, **per index node** rather than per object,
+and **per pass** rather than per frame. This section is what was built
+against that, and what it measures.
+
+Code: `Gui/Renderer/OcclusionCull.{h,cpp}` (the policy, plain float, no
+backend), its wiring in `BGFXRenderer.cpp`, tests in
+`tests/src/Gui/OcclusionCull.cpp`. Knobs: `Render_Occlusion` and the
+four `Render_Occlusion*` tuning parameters, per `docs/RenderDebug.md`
+§1 — a runtime property, not a recompile.
+
+### 12.1 The mechanism
+
+CHC++'s shape over the `ProxyHierarchy` of §3, with one deliberate
+simplification. Per frame:
+
+1. Read the answers the previous frame's tests produced. **Never
+   blocking**: a query whose frame has not landed keeps its handle and
+   is read next time, because stalling for it would trade the frame
+   time this exists to save for a pipeline bubble.
+2. Walk the index against the camera. A node the frustum rejects is
+   skipped and left to the per-draw frustum mask that already exists. A
+   node believed hidden has its **whole subtree masked and is not
+   descended** — that is the entire economy of testing per node. A node
+   believed visible draws its own residents and its children are asked
+   in turn.
+3. Offer tests: every hidden node (a test is its only way back) and
+   visible nodes whose verdict has aged past `visibleTtl`.
+4. Submit the offered boxes into `ViewOcclusionProbe`, the view that
+   sits immediately after `ViewOpaque`.
+
+The simplification is that queries are **not** interleaved with the
+traversal to test against a partially filled depth buffer. Every test is
+asked once, of the finished opaque depth. That is both simpler and the
+only placement that answers correctly — asked at the end of the frame
+the root itself reads hidden, because everything after the opaque
+bucket rebinds or resolves the scene framebuffer (§10.2, and the
+history of `RenderDebug_Occlusion`).
+
+The mask is **additive into the frustum mask the renderer already
+computes**, and only the eye passes consult it. That is what makes the
+culling per pass without any new plumbing: shadow casters deliberately
+re-submit culled draws (off-screen geometry still casts into view) and
+the mirrored ground reflection never reads the mask at all.
+
+### 12.2 What the design is defending against
+
+Being wrong here is asymmetric. A node drawn when it could have been
+skipped costs frame time; a node skipped when it should have drawn is
+**missing geometry**, and the resulting frame is fast — which is
+exactly how this failure disguises itself as a result. Three guards
+follow from that, and each is a test in
+`tests/src/Gui/OcclusionCull.cpp`:
+
+- ⭐ **A hidden root is refused.** The root's box contains every drawn
+  thing, so a frame that put one pixel on screen has a visible root.
+  Acted on, it blanks the model. It is counted (`rootrefused`) rather
+  than silently corrected, because a non-zero count means the box test
+  is not answering, not that the scene is hidden.
+- ⚠️ **Starvation reverts to visible.** A hidden node is re-tested every
+  frame and the answer is its only way back, so if answers stop arriving
+  — no query handles, a dropped batch — `maxHiddenFrames` returns the
+  geometry. Ageing is measured from the last *answer*, never from the
+  last offer, so answers that keep confirming a node is hidden keep it
+  hidden indefinitely and nothing flickers.
+- ⚠️ **Re-tests may not consume the whole budget.** They would otherwise
+  starve discovery completely: the moment the number of hidden nodes
+  reaches the budget, every slot goes to confirming what is already
+  known and the culling freezes at exactly `budget` nodes however much
+  of the model is in fact hidden. A quarter of the slots is reserved,
+  and a cursor rotates the re-tests.
+
+Verdicts never survive a rebuild of the index: node identity is
+positional and stable, but node *indices* are not, and a verdict applied
+to the wrong node hides geometry that was never tested. One frame of
+drawing everything is the correct price.
+
+Two kinds of draw are excluded from the index entirely, both already
+exempt from frustum culling for the same reason: **autozoom** draws
+rebuild their model matrix per frame, so their fed bounds describe where
+they were, and **emitters** draw outside their own bounds.
+
+### 12.3 The index build
+
+The open cost §10.4 named. The index is partitioned from the draw list
+and rebuilt **when that list changes**, never per frame — a scene
+version stamped in `setScene`. On the measured assemblies the build is
+12–28 ms, which is affordable per publish and would not be per frame.
+The incremental index that §10.4 asks for is still owed; what this
+change does is make its absence cost a publish rather than a frame.
+
+### 12.4 measured (real GPU, monitor off, 1863x1064, both models)
+
+Harness `~/works/sw/models/cull_probe.py`, medians over ~14 reported
+seconds per phase. Phases A/B and C/D are the *same camera* with culling
+off and on. The test boxes are draws too and are counted in the draw
+column, so every figure below is net of them.
+
+**Server assembly** (5455 objects, 17952 instances):
+
+| | draws | submit | gpu | frame |
+|---|---|---|---|---|
+| whole assembly, off | 12849 | 15.9 ms | 21.7 ms | 204.2 ms |
+| whole assembly, **on** | **630** | **3.0 ms** | **5.0 ms** | **53.4 ms** |
+| camera inside, off | 1959 | 3.8 ms | 5.2 ms | 30.7 ms |
+| camera inside, **on** | **284** | **2.5 ms** | **4.5 ms** | **29.8 ms** |
+
+**MiSTer Express** (18142 objects):
+
+| | draws | submit | gpu | frame |
+|---|---|---|---|---|
+| whole assembly, off | 41670 | 62.0 ms | 62.0 ms | 138.5 ms |
+| whole assembly, **on** | **797** | **3.2 ms** | **3.3 ms** | **46.1 ms** |
+| camera inside, off | 2441 | 6.0 ms | 6.2 ms | 38.0 ms |
+| camera inside, **on** | **179** | **2.4 ms** | **3.1 ms** | **32.4 ms** |
+
+Three things worth reading off these, before §12.5 takes most of it
+back:
+
+- ⭐ **The off rows reproduce §10.2 exactly** — 12849 draws at
+  15.9/21.7 ms, and 41670 at 62.0/62.0 ms — which is what says the two
+  runs are measuring the same thing that measurement did.
+- ⭐ **Submit and GPU fall together**, by 5× and 4× on the server, 19×
+  and 19× on MiSTer. That is §10.2's finding confirmed from the other
+  direction: the draw call is the unit on *both* sides, so removing it
+  removes both halves.
+- ⚠️ **The frame does not follow the draws.** Draws fall 20× and 52×,
+  frame time only 3.8× and 3.0×, and at the in-model camera the frame
+  barely moves at all (30.7 → 29.8 ms) though the draws fall 7×. A
+  floor of roughly 25-45 ms remains that is neither submission nor GPU
+  — on the in-model rows, submit + gpu is under 8 ms of a 30 ms frame.
+  **Culling ends the draw-bound regime and exposes a different
+  bottleneck**, and that floor, not the draw count, is now the thing to
+  measure. Note this also means the in-model camera — §10.3's working
+  case — gets almost nothing from culling *today*, because it was
+  already off the draw-bound part of the curve.
+
+### 12.5 ⛔ measured: it deletes visible geometry, and the probe never said so
+
+**The mechanism over-culls.** Rendering the server assembly twice from
+one fixed converged camera, culling off then on, and comparing the two
+images (`~/works/sw/models/cull_image.py`):
+
+| | pixels differing | > 64 levels | worst |
+|---|---|---|---|
+| whole assembly | 22205 of 1.44 M (**1.54%**) | 8400 (0.58%) | 142 |
+
+That is not antialiasing on a silhouette. Magnified, the two frames
+show what it is: the large side panel survives, and the vertical rails,
+the front brackets and the whole bottom row of modules — geometry
+plainly *in front of* and beside the panel, not behind it — are gone.
+Culling is currently fast **and wrong**, so `Render_Occlusion` stays
+default off.
+
+⭐⭐ **The important part is where the fault is not.** Exempting on-top
+draws — the one candidate that was certain to be a real bug, since an
+on-top draw ignores the depth test and is visible however occluded its
+geometry is — moved the figure only from 1.5420% to 1.5165%. And the
+partition is sound: a node's content bounds do contain its whole
+subtree (asserted now in `tests/src/Gui/OcclusionCull.cpp`, and it is
+the one assumption a box test cannot survive losing). What is left is
+the box test itself, which the culler shares with
+`RenderDebug_Occlusion` — `submitOcclusionBoxes` plus `sightBounds` and
+`boxReachesNearPlane`.
+
+⚠️⚠️ **So §10.3's headline is not trustworthy either.** The probe
+measured 99.9% of the server's instances hidden at the whole-assembly
+camera; acting on those same verdicts removes structure the eye can
+plainly see. The probe was believed because it was internally
+consistent, two-sided against a synthetic wall scene, and guarded
+against the impossible-root case — and none of that could catch an
+over-confident verdict, **because a measurement that does not act
+cannot be checked against the picture.** The image comparison is the
+check that was missing, and it should have existed in §10.3.
+
+Where to look next, in order:
+1. **What the depth buffer holds when the boxes rasterize.** The
+   verdicts are over-confident in one direction only, which is the
+   signature of testing against depth that contains more than the
+   opaque scene the eye sees.
+2. **The near-plane exemption's reach.** `rootpx` was measured at 0 on
+   the wall smoke scene while the root was plainly visible — the
+   impossible-root guard caught it, but a *non*-root node failing the
+   same way is culled silently, and would look exactly like this.
+3. Only then the policy in `OcclusionCull.cpp`, which the unit tests
+   already cover and which the on-top result suggests is not at fault.
