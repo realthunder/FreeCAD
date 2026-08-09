@@ -13079,8 +13079,22 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
 void BGFXRenderer::setObjectInfo(ObjectInfoMap &&info)
 {
     pimpl->objectInfo = std::move(info);
+    noteObjectInfoStated();
     // Identity rides the published root's object entries; a change to
     // it alone only reaches viewers with the next publish.
+    pimpl->feedDirty = true;
+}
+
+void BGFXRenderer::updateObjectInfo(ObjectInfoMap &&added)
+{
+    if (added.empty())
+        return;
+    if (pimpl->objectInfo.empty())
+        pimpl->objectInfo = std::move(added);
+    else {
+        for (auto &entry : added)
+            pimpl->objectInfo.insert(std::move(entry));
+    }
     pimpl->feedDirty = true;
 }
 

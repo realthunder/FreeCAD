@@ -60,6 +60,7 @@ public:
 
     virtual void setScene(DrawCallList &&draws) override;
     virtual void setObjectInfo(ObjectInfoMap &&info) override;
+    virtual void updateObjectInfo(ObjectInfoMap &&added) override;
     virtual void setObjectMeta(ObjectMetaMap &&meta) override;
     virtual void updateObjectMeta(
             ObjectMetaMap &&changed,

@@ -907,7 +907,8 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
 Render::DrawCallList
 RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                           int selId, bool highlight, bool sequentialOrder,
-                          Render::ObjectInfoMap * objectInfo)
+                          Render::ObjectInfoMap * objectInfo,
+                          Render::ObjectInfoMap * addedInfo)
 {
     Render::DrawCallList res;
 
@@ -1051,6 +1052,24 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             draw.material = rmat;
             draw.mesh = mesh;
             draw.objectKey = ventry.key ? ventry.key->hash() : 0;
+            // A key already in the map is already right, so the lookup is
+            // the whole cost of a draw whose object has been seen before,
+            // and the two string copies happen once per object rather
+            // than once per object per publish
+            // (docs/IncrementalPublish.md §4d-iv).
+            //
+            // ⚠️ That leans on a key never being recycled onto a
+            // different object, and an internal name *is* reused: delete
+            // Box001 and the next object added can be given that name
+            // back. It holds because a key is a chain of
+            // SoFCSelectionRoot selnodeids and that counter only
+            // increments, so the deleted object's key is retired for the
+            // life of the process and the new Box001 composes one of its
+            // own. But the origin is deliberately not part of
+            // NodeKey::hash() or operator==, so nothing here enforces
+            // this: pushing anything recyclable — a pointer — into a key
+            // would make a stale entry reachable, and this guard would
+            // never correct it.
             if (objectInfo && draw.objectKey
                     && !objectInfo->count(draw.objectKey)) {
                 if (const auto & org = ventry.key->getOrigin()) {
@@ -1067,6 +1086,8 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                     Render::ObjectInfo info;
                     info.doc = org->doc;
                     info.obj = org->obj;
+                    if (addedInfo)
+                        (*addedInfo)[draw.objectKey] = info;
                     (*objectInfo)[draw.objectKey] = std::move(info);
                 }
             }

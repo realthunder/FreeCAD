@@ -319,6 +319,41 @@ public:
   // Owning 3D view of the external backend, for per-view dynamic property
   // overrides (Render_*/Shadow_*) in the per-frame config feed.
   App::PropertyContainer *externalview = nullptr;
+  // The identities the external backend has been told, kept across
+  // publishes because an identity is fixed: a publish adds the keys that
+  // are new to it and says nothing about the rest
+  // (docs/IncrementalPublish.md §4d-iv). Dropped whenever the backend
+  // stops being the one this describes -- a new backend, or a cleared
+  // scene -- so it can never claim a key the backend does not hold.
+  Render::ObjectInfoMap objinfo;
+  // Draws the last publish produced, which is what the resident map's
+  // size is judged against.
+  std::size_t objinfodraws = 0;
+  // Which renderer, and which statement of its table, the map above is a
+  // claim about. A renderer's address is not enough: a backend rebuilt on
+  // a preference change can be allocated where the last one was, and
+  // sending deltas to it against the dead one's table would leave every
+  // object already in the scene permanently nameless to a viewer.
+  uint64_t objinfoinstance = 0;
+  uint32_t objinfoversion = 0;
+
+  /// Whether the external backend still holds the table objinfo claims.
+  /// False means the map describes something else and has to be stated
+  /// whole rather than added to.
+  bool objinfoInSync() const
+  {
+    return external && external->instanceId() == objinfoinstance
+        && external->objectInfoVersion() == objinfoversion;
+  }
+
+  /// Record the backend's token after stating or updating the table.
+  void objinfoSynced()
+  {
+    if (!external)
+      return;
+    objinfoinstance = external->instanceId();
+    objinfoversion = external->objectInfoVersion();
+  }
   // Overlay-capture mode (setExternalOverlay): the scene feed routes to
   // external->setOverlay(overlayid, ..., overlayanchor) and render() is a
   // no-op.
@@ -861,6 +896,10 @@ SoFCRenderer::setExternalRenderer(Render::Renderer * renderer,
   if (PRIVATE(this)->external == renderer)
     return;
   PRIVATE(this)->external = renderer;
+  // A different backend holds none of the identities the last one was
+  // told, so the resident map describes nothing until this re-feed
+  // restates it.
+  PRIVATE(this)->objinfo.clear();
   if (!renderer)
     return;
   // Feed the current state so a backend attached mid-session (e.g. on a
@@ -871,11 +910,13 @@ SoFCRenderer::setExternalRenderer(Render::Renderer * renderer,
   // materials translate as plain scene draws (dimmed to TransparencyOnTop,
   // stippled, unthickened) and the replayed selection is near-invisible.
   if (PRIVATE(this)->scene) {
-    Render::ObjectInfoMap objinfo;
+    auto & objinfo = PRIVATE(this)->objinfo;
     auto draws = RendererBridge::translate(
           PRIVATE(this)->scene->getVertexCaches(true), 0, false, false,
           &objinfo);
-    renderer->setObjectInfo(std::move(objinfo));
+    renderer->setObjectInfo(Render::ObjectInfoMap(objinfo));
+    PRIVATE(this)->objinfodraws = draws.size();
+    PRIVATE(this)->objinfoSynced();
     renderer->setScene(std::move(draws));
   }
   for (auto & sel : PRIVATE(this)->selections)
@@ -943,8 +984,12 @@ SoFCRenderer::clear()
     for (auto & sel : PRIVATE(this)->selectionsontop)
       PRIVATE(this)->external->removeSelection(sel.first);
     PRIVATE(this)->external->setScene({});
+    // Drop both copies together: the resident map is only ever a claim
+    // about what the backend holds.
+    PRIVATE(this)->external->setObjectInfo({});
     PRIVATE(this)->external->clearHighlight();
   }
+  PRIVATE(this)->objinfo.clear();
 
   PRIVATE(this)->prevplane = SbPlane();
   PRIVATE(this)->opaquevcache.clear();
@@ -1159,15 +1204,41 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
           RendererBridge::translate(caches, 0, false, true),
           PRIVATE(this)->overlayanchor);
     else {
-      // Resolve draw identities alongside the draws: the info map rides
-      // the same replace-wholesale cadence as the scene itself.
-      Render::ObjectInfoMap objinfo;
+      // Collect draw identities alongside the draws, against the map the
+      // backend already holds: what an objectKey renders cannot change,
+      // so a publish only ever has new keys to announce, and a scene that
+      // gained nothing announces nothing.
+      //
+      // The resident map is dropped and restated whole once it has grown
+      // well past the scene it describes. Keys leave the scene without
+      // saying so -- an objectKey is a content hash, so a deletion is
+      // simply a key never mentioned again -- and this is what stops that
+      // residue accumulating for the life of a session.
+      auto & resident = PRIVATE(this)->objinfo;
+      // Restate whenever the map is not a claim about the table this
+      // backend actually holds, or when the residue has outgrown the
+      // scene. The size test is judged against the previous publish, so
+      // the decision is made before the work rather than after it:
+      // restating costs a copy of the map, not a second translate.
+      const bool restate =
+          !PRIVATE(this)->objinfoInSync()
+          || resident.size() > 4 * PRIVATE(this)->objinfodraws + 4096;
+      if (restate)
+        resident.clear();
+      Render::ObjectInfoMap added;
       Gui::RenderTiming::Scope xlate(Gui::RenderTiming::Translate);
       auto draws = RendererBridge::translate(caches, 0, false, false,
-                                             &objinfo);
+                                             &resident,
+                                             restate ? nullptr : &added);
+      PRIVATE(this)->objinfodraws = draws.size();
       xlate.stop();
       Gui::RenderTiming::Scope backend(Gui::RenderTiming::Backend);
-      PRIVATE(this)->external->setObjectInfo(std::move(objinfo));
+      if (restate)
+        PRIVATE(this)->external->setObjectInfo(Render::ObjectInfoMap(resident));
+      else
+        PRIVATE(this)->external->updateObjectInfo(std::move(added));
+      PRIVATE(this)->objinfoSynced();
+
       PRIVATE(this)->external->setScene(std::move(draws));
     }
   }

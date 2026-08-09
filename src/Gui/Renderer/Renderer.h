@@ -35,6 +35,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -1181,6 +1182,23 @@ class RendererExport Renderer
 public:
     Renderer();
     virtual ~Renderer();
+
+    /// Unique for the lifetime of the process, and never reused. A
+    /// producer that keeps state about what a renderer has already been
+    /// told has to store this next to it: a renderer's *address* is
+    /// reused freely — a backend torn down and rebuilt on a preference
+    /// change can land where the last one was — and a producer comparing
+    /// pointers would go on sending deltas against a table the new
+    /// renderer never received.
+    uint64_t instanceId() const { return instanceid; }
+
+    /// How many times this renderer's identity table has been stated
+    /// whole (setObjectInfo). Together with instanceId() this is the
+    /// token a producer stores beside its resident copy, so that anything
+    /// replacing the table behind the producer's back is a mismatch on
+    /// the next publish rather than a silently incomplete table.
+    uint32_t objectInfoVersion() const { return infoversion; }
+
     virtual const std::string &type() const = 0;
     virtual bool render(const QColor &bg,
                         const void *viewMatrix,
@@ -1256,6 +1274,17 @@ public:
     /// the scene-serving snapshot so a remote viewer can name what it
     /// picks (docs/ThinClient.md §4.1).
     virtual void setObjectInfo(ObjectInfoMap &&info) { (void)info; }
+    /// Add identities the renderer does not have yet, leaving the rest of
+    /// the table alone. What an objectKey renders is *fixed* -- a document
+    /// and an object internal name, neither of which can change -- so a
+    /// publish has nothing to correct here, only new keys to announce.
+    /// Rebuilding the whole map to hand it over cost an insert and two
+    /// string copies per object on every publish for a table that was
+    /// already right (docs/IncrementalPublish.md §4d-iv).
+    /// setObjectInfo() remains the way to state the whole table: the first
+    /// publish, a renderer that has just been attached, and whenever the
+    /// producer drops its resident copy rather than let it grow.
+    virtual void updateObjectInfo(ObjectInfoMap &&added) { (void)added; }
     /// Presentation metadata (label, type) for the objects this renderer
     /// publishes, by document and object internal name. Pushed by the
     /// serving source when a document changes it — a rename, an object
@@ -1429,6 +1458,23 @@ public:
     /// internal fixed-function GL pass can be skipped.
     virtual bool canSkipInternal() const { return false; }
     //@}
+
+protected:
+    /// Record that the identity table has just been stated whole, so a
+    /// producer holding a resident copy of it can tell. Every override of
+    /// setObjectInfo() owes this call; updateObjectInfo() must not make
+    /// it, because a delta leaves the producer's copy still describing
+    /// what the renderer holds.
+    void noteObjectInfoStated() { ++infoversion; }
+
+private:
+    static uint64_t nextInstanceId()
+    {
+        static std::atomic<uint64_t> counter{0};
+        return ++counter;
+    }
+    const uint64_t instanceid = nextInstanceId();
+    uint32_t infoversion = 0;
 };
 
 class RendererLib

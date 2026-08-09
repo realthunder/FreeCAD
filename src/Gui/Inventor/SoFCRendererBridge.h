@@ -56,15 +56,24 @@ namespace RendererBridge {
 /// submission order is blending order (the material-keyed cache map
 /// itself has no traversal order).
 /// \a objectInfo, when given, collects the document identity of every
-/// named draw (docs/ThinClient.md §4.1): the cache key's captured origin
-/// (doc + object internal name) resolved against the live document for
-/// label and type. One entry per distinct objectKey; keys whose chain
-/// never crossed a ViewProvider stay absent.
+/// named draw (docs/ThinClient.md §4.1): the cache key's captured origin,
+/// which carries the document and object internal names and is read
+/// straight off the key -- nothing here resolves a document. One entry
+/// per distinct objectKey; keys whose chain never crossed a ViewProvider
+/// stay absent. The label and type a viewer shows are presentation, and
+/// come from the ObjectMetaMap instead (Render::Renderer::setObjectMeta).
+///
+/// \a objectInfo may be a map kept across publishes: an identity is
+/// fixed, so an entry that is already there is already right and is left
+/// untouched. \a addedInfo, when given as well, collects just the keys
+/// this call had to add, which is what a resident renderer needs told
+/// (Render::Renderer::updateObjectInfo) instead of the whole table.
 GuiExport Render::DrawCallList translate(
         const SoFCRenderCache::VertexCacheMap & vcachemap,
         int selId = 0, bool highlight = false,
         bool sequentialOrder = false,
-        Render::ObjectInfoMap * objectInfo = nullptr);
+        Render::ObjectInfoMap * objectInfo = nullptr,
+        Render::ObjectInfoMap * addedInfo = nullptr);
 
 /// Resolve the hidden-line draw style state from the traversal state
 /// (SoFCDisplayModeElement) into the backend-neutral per-frame config.
