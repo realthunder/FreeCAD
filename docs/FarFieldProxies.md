@@ -2423,23 +2423,111 @@ constant — SIMD128 is 4 lanes, so at absolute best ~6.5 ms — while
 leaving both ratios exactly as they are. It is the wrong lever to pull
 first.
 
+#### ⭐⭐ measured again: parallel, and what the cost actually is
+
+The 26 ms above was one thread and a rasterizer that paid full setup for
+every triangle. Both were wrong to leave, and fixing them moved it a
+long way — same model, same camera, same 1863×1064, ~30 samples a row:
+
+| | workers | raster | hidden | over-cull |
+|---|---|---|---|---|
+| as first measured | 1 | 26 ms | 7974 | 0 px |
+| reject-first, serial | 1 | 21.5 ms | 7974 | 0 px |
+| + 14 workers, whole draws | 14 | 14.0 ms | 7974 | 0 px |
+| + chunked draws | 14 | **9.73 ms** | 7974 | 0 px |
+
+⭐ **Every configuration is still pixel-exact.** Reject reordering,
+reciprocals, fourteen-way parallelism and a lossy shard merge, and the
+audit still says 0 over-culled rows and 0 px over ~30 samples in each.
+
+#### ⛔ Two predictions, both wrong, both corrected by the clock
+
+Worth recording as method rather than as result, because this section
+has now made the same class of mistake three times:
+
+1. **"Removing 7974 draws saves 10–12 ms."** Estimated from §10.2's
+   1.2–1.5 µs per draw. The frame log had the real answer: submit
+   30.9 → 26.0 ms, i.e. **4.9 ms**, with the GPU essentially unmoved
+   (38.5 → 38.0). Out by 2×. ⇒ *Never price a saving from a per-draw
+   constant when the frame timer is already running.*
+2. **"The serial merge is the bottleneck."** Parallelizing it bought
+   1.7 ms of 15.7. The real cause was granularity — 37 draws over 14
+   workers, differing in triangle count by an order of magnitude, so the
+   frame waited on the largest single mesh. Chunking the index range
+   took it to 9.73 ms. ⇒ *Amdahl's residual names a quantity, not a
+   culprit; it took splitting the counter to find which.*
+
+#### ⭐⭐ Where the time goes, now that the counter says
+
+`offbuf 0, subpx 170684, degen 0` — of 249998 triangles rasterized,
+79314 are drawn and **every single discarded one is sub-pixel**. None
+are off the buffer, which in hindsight is forced: occluders are selected
+*by projected size*, so they are all on screen by construction. The
+clip-space outcode reject added for them therefore buys nothing here and
+is kept only for cameras that do put an occluder off screen.
+
+So two thirds of the pass is transform, project and reject on triangles
+smaller than a pixel — a uniform, branch-free workload. That is the
+shape SIMD is for, and it is also exactly what coarser occluder geometry
+would delete outright rather than merely speed up.
+
 #### The order to try things in
 
-1. ⭐⭐ **Coarse occluder geometry.** The waste and the incompleteness are
-   one problem, and a decimated occluder mesh fixes both: fewer triangles
-   per draw admits far more draws within the same budget. ⚠️ It must be an
-   *inner* hull — a decimation that moves a surface **towards** the camera
-   invents occlusion and breaks the invariant of §12.12, which ordinary
-   error-minimising decimation (`MeshSimplify.cpp`) does not promise. This
-   is the one that has to be got right rather than merely built.
-2. **Reuse the buffer across frames whose camera has not moved.** Exact
-   while the camera is static, which is most of the time an engineer
-   spends looking at a model, and it does *not* reintroduce §12.6: that
-   failure was about ordering inside a frame, not about a buffer whose
-   camera is unchanged. It does nothing for the case that matters for
-   interaction, though.
-3. **Then SIMD**, when the ratios above have been fixed and the remaining
-   cost is genuinely per-triangle work that is being done usefully.
+1. ⭐⭐ **Coarser occluder geometry.** Deletes the sub-pixel work instead
+   of accelerating it, and admits far more occluders inside the same
+   budget. ⚠️ Must be an *inner* hull: a decimation that moves a surface
+   **towards** the camera invents occlusion and breaks §12.12's
+   invariant, which error-minimising decimation (`MeshSimplify.cpp`)
+   does not promise. ⚠️ And note §12.12's ablation — 40× the budget
+   bought 8.5 points of culling — so this is about *cost*, not about
+   closing the 45%-vs-95.4% gap.
+2. ⭐ **SIMD the transform and projection.** Now well targeted rather
+   than speculative: it is 68% of the work, branch-free, and the block
+   layout was built for it (8×4 blocks, coverage exactly one 32-bit
+   word, four to a 128-bit lane). ⚠️ **The blocker is precision, and it
+   is self-inflicted**: this file is `double` throughout because a
+   near-plane-clipped triangle projects to screen coordinates in the
+   millions and float cancellation there sets coverage bits the triangle
+   never reached. SIMD128 holds 2 doubles but 4 floats, so the 4× needs
+   a float fast path with a guard band and a double fallback for clipped
+   geometry. The measurement supports it: **clipped 0** on this camera.
+3. **Reuse the buffer while the camera is static.** Exact, and does not
+   reintroduce §12.6 (that was intra-frame ordering, not a fixed camera).
 
-`Render_Occlusion` stays default off, and `Render_OcclusionSoftware` with
-it.
+`Render_Occlusion` stays default off, and `Render_OcclusionSoftware`
+with it.
+
+### 12.13 built: deciding by experiment whether to cull at all
+
+Everything above prices one camera on one model. Nothing about it
+transfers: what a draw costs to submit depends on its mesh, how much a
+frame occludes depends on whether the eye is inside a chassis or looking
+at a silhouette, and what the occluder pass costs depends on how many
+triangles the occluders carry. §12.12 measured the same mechanism saving
+4.9 ms while costing 26 ms to decide, and then 9.7 ms after two rounds
+of work — the *sign* of that trade changed under optimisation, on a
+fixed scene.
+
+`CullBenefitEstimator` therefore decides it at runtime, per scene, and
+re-decides as the scene changes. Guthe et al. (2006) reached the same
+conclusion for hardware queries and answered it the same way: measure
+the machine rather than assume it, because occlusion queries "may still
+reduce efficiency compared to simple view frustum culling, especially in
+cases of low depth complexity".
+
+⭐⭐ **It models nothing.** There is no microseconds-per-draw constant,
+no occlusion-probability estimate and no calibration table — reasoning
+from a per-draw constant is exactly how the saving got estimated at
+10–12 ms when the clock said 4.9. It runs an A/B experiment on real
+frames: alternate arms, discard the warm-up after each switch (the
+switch itself perturbs the frames that follow it), compare **medians**
+over 24 frames, re-probe every 20 s.
+
+⚠️ **Two thresholds, not one.** Turning culling on demands a 5% gain;
+leaving it on needs only 1%. A single threshold at the noise floor flips
+every probe, and a mechanism that rebuilds the draw set every twenty
+seconds is worse than one that never culls — §12.7 measured what
+oscillation costs here. Having established nothing, it does not cull:
+the untested direction has to be the one that draws too much.
+
+11 tests, timings fed in directly — no GL context, no scene, no clock.
