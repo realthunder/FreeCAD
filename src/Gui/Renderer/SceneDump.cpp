@@ -148,7 +148,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 // 45: Material carries its SoDrawStyleElement style, which is how the
 //     Tessellation draw style reaches the backend at all. A viewer
 //     older than this fills the faces, i.e. shows Shaded instead.
-const uint32_t kVersion = 45;
+// 46: LightConfig carries the ground's sizing and placement --
+//     explicit half extents, an explicit position, and the placement
+//     matrix -- which the Coin quad has always honoured and the backend
+//     sized from the scene bounding box alone. A viewer older than this
+//     keeps doing that, i.e. ignores an explicitly sized or moved
+//     ground rather than misplacing one.
+const uint32_t kVersion = 46;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -197,7 +203,7 @@ static_assert(sizeof(VolumetricConfig) == 28, "VolumetricConfig changed: stream 
 static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new field, then update this");
 static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new field, then update this");
 static_assert(offsetof(PBRConfig, envBackground) == 16, "PBRConfig changed: stream the new field, then update this");
-static_assert(offsetof(LightConfig, groundColor) == 76,"LightConfig changed: stream the new field, then update this");
+static_assert(offsetof(LightConfig, groundColor) == 168,"LightConfig changed: stream the new field, then update this");
 static_assert(offsetof(RenderDebugConfig, coverage) == 5, "RenderDebugConfig changed: stream the new field, then update this");
 
 //////////////////////////////////////////////////////////////////////
@@ -1429,6 +1435,12 @@ void writeLight(Writer &w, const LightConfig &l, const RefWriter &refs)
     w.f(l.groundReflectionIntensity);
     w.b(l.sunDisc);   // v18
     w.f(l.sunDiscSize);
+    w.b(l.groundAuto);   // v46
+    w.f(l.groundSizeX);
+    w.f(l.groundSizeY);
+    w.b(l.groundAutoPos);
+    w.floats(l.groundPos, 3);
+    w.floats(l.groundMatrix, 16);
 }
 
 void readLight(Reader &r, LightConfig &l, const RefReader &refs,
@@ -1464,6 +1476,16 @@ void readLight(Reader &r, LightConfig &l, const RefReader &refs,
         l.sunDisc = r.b();
         l.sunDiscSize = r.f();
     }
+    if (version >= 46) {
+        l.groundAuto = r.b();
+        l.groundSizeX = r.f();
+        l.groundSizeY = r.f();
+        l.groundAutoPos = r.b();
+        r.floats(l.groundPos, 3);
+        r.floats(l.groundMatrix, 16);
+    }
+    // Older streams leave the struct's defaults: auto sizing from the
+    // scene bounds, which is what those builds did.
 }
 
 //////////////////////////////////////////////////////////////////////

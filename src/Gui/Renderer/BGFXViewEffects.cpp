@@ -743,15 +743,12 @@ void BGFXView::submitReflMedia(const float cloudParams[][4],
 void BGFXView::submitGroundReflOverlay(const float bmin[3], const float bmax[3],
                              const Render::LightConfig &light)
 {
-    if (light.groundTransparency >= 1.0f)
-        return;
-    float cx = (bmin[0] + bmax[0]) * 0.5f;
-    float cy = (bmin[1] + bmax[1]) * 0.5f;
-    float z = bmin[2];
-    float half = light.groundScale
-        * std::max(bmax[0] - bmin[0],
-                   std::max(bmax[1] - bmin[1], bmax[2] - bmin[2]));
-    if (half <= 0.0f)
+    // The same quad as submitShadowGround, and it has to be exactly the
+    // same: this overlay depth-tests EQUAL against it, so a corner that
+    // disagreed by a float would drop the reflection. Hence one shared
+    // generator rather than a repeated formula.
+    float corners[4][3];
+    if (!light.groundQuad(bmin, bmax, corners))
         return;
     TransientVertex::init();
     if (bgfx::getAvailTransientVertexBuffer(6, TransientVertex::ms_layout)
@@ -760,12 +757,12 @@ void BGFXView::submitGroundReflOverlay(const float bmin[3], const float bmax[3],
     bgfx::TransientVertexBuffer tvb;
     bgfx::allocTransientVertexBuffer(&tvb, 6, TransientVertex::ms_layout);
     auto verts = reinterpret_cast<TransientVertex *>(tvb.data);
-    const float xs[6] = {-1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f};
-    const float ys[6] = {-1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f};
+    static const int order[6] = {0, 1, 2, 0, 2, 3};
     for (int i = 0; i < 6; ++i) {
-        verts[i].px = cx + xs[i] * half;
-        verts[i].py = cy + ys[i] * half;
-        verts[i].pz = z;
+        const float *p = corners[order[i]];
+        verts[i].px = p[0];
+        verts[i].py = p[1];
+        verts[i].pz = p[2];
         verts[i].nx = verts[i].ny = 0.0f;
         verts[i].nz = 1.0f;
         verts[i].rgba = 0xffffffffu;

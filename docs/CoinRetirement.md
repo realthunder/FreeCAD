@@ -315,6 +315,36 @@ backend and is the cache's, not the backend's). Still unvisited from
 §3.2: TechDraw, FEM, Draft, Assembly, annotation text, large models and
 real-GPU behaviour.
 
+**Stage 1c — auto clipping does not account for what the backend draws
+outside the scene graph.** Found while bringing the shadow ground to
+parity, and it is the *only* difference left between the two grounds
+once sizing and placement match. Measured on one 20mm cube, same camera:
+
+| ground | bgfx near/far | glr near/far | quads agree |
+| --- | --- | --- | --- |
+| small (scale 0.6) | 240.73 / 277.00 | 238.34 / 279.97 | yes, 0 px |
+| auto (scale 2.0) | **240.73 / 277.00** | 205.68 / 312.70 | no, 49 px |
+| explicit 60 x 25 | **240.73 / 277.00** | 202.79 / 315.59 | no, 56 px |
+| explicit position | 191.26 / 310.38 | 191.26 / 310.38 | yes, 0 px |
+| tilted | 206.30 / 317.11 | 206.30 / 317.11 | yes, 0 px |
+
+`240.73 / 277.00` is the cube's own bounds — so in those legs the
+backend's ground contributed *nothing* to the fit, and its far and near
+corners were clipped away. The Coin quad is a scene-graph node and is
+counted; the backend's is drawn outside the graph and reaches the bounds
+only through `View3DInventorViewer::onGetBoundingBox`, which
+`SoFCUnifiedSelection::getBoundingBox` calls during the
+`SoGetBoundingBoxAction` that `SoRenderManagerP::setClippingPlanes`
+applies. That path exists, so the question is why it does not take
+effect here — a frame-ordering suspicion (the light config a frame is
+clipped against is the previous frame's) is the place to start, not a
+conclusion.
+
+Related, and probably the same defect from the other side: an
+**"invisible" show-on-top object is clipped by auto clipping** — it does
+not contribute to the bounds it is then judged against. Reported
+2026-08-10, not investigated.
+
 **Stage 1b — the draggers, and Coin reaching into the backend's
 framebuffer.** Draggers are the largest thing still drawn by Coin GL on
 top of the backend's frame, and the Tessellation defect showed what that

@@ -26,21 +26,14 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
                         const Render::LightConfig &light,
                         bool prepass)
 {
-    // Fully transparent = invisible ground (Coin then switches to a
-    // shadow-only ground rendering, not ported).
-    if (light.groundTransparency >= 1.0f)
+    // Sizing, placement and the fully-transparent case (Coin then
+    // switches to a shadow-only ground rendering, not ported) all live
+    // in LightConfig::groundQuad, which is what the Coin quad does.
+    float corners[4][3];
+    float halfExtent[2];
+    if (!light.groundQuad(bmin, bmax, corners, halfExtent))
         return;
     uint32_t colorPacked = light.groundColor;
-    float cx = (bmin[0] + bmax[0]) * 0.5f;
-    float cy = (bmin[1] + bmax[1]) * 0.5f;
-    float z = bmin[2];
-    // Coin parity (updateShadowGround): the ground half-extent is
-    // GroundSizeScale times the largest scene dimension (z included).
-    float half = light.groundScale
-        * std::max(bmax[0] - bmin[0],
-                   std::max(bmax[1] - bmin[1], bmax[2] - bmin[2]));
-    if (half <= 0.0f)
-        return;
 
     TransientVertex::init();
     if (bgfx::getAvailTransientVertexBuffer(6, TransientVertex::ms_layout)
@@ -49,12 +42,13 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     bgfx::TransientVertexBuffer tvb;
     bgfx::allocTransientVertexBuffer(&tvb, 6, TransientVertex::ms_layout);
     auto verts = reinterpret_cast<TransientVertex *>(tvb.data);
-    const float xs[6] = {-1.0f, 1.0f, 1.0f, -1.0f, 1.0f, -1.0f};
-    const float ys[6] = {-1.0f, -1.0f, 1.0f, -1.0f, 1.0f, 1.0f};
+    // Two triangles over the four corners, wound as they come.
+    static const int order[6] = {0, 1, 2, 0, 2, 3};
     for (int i = 0; i < 6; ++i) {
-        verts[i].px = cx + xs[i] * half;
-        verts[i].py = cy + ys[i] * half;
-        verts[i].pz = z;
+        const float *p = corners[order[i]];
+        verts[i].px = p[0];
+        verts[i].py = p[1];
+        verts[i].pz = p[2];
         verts[i].nx = verts[i].ny = 0.0f;
         verts[i].nz = 1.0f;
         verts[i].rgba = 0xffffffffu;
@@ -127,11 +121,21 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
             bgfx::allocTransientVertexBuffer(
                 &uvb, 6, TexCoordVertex::ms_layout);
             auto *uv = reinterpret_cast<TexCoordVertex *>(uvb.data);
-            float span = light.groundTextureSize > 1.0e-5f
-                ? 2.0f * half / light.groundTextureSize : 1.0f;
+            // One span per axis, as Coin does (w = width*2/textureSize,
+            // l = length*2/textureSize): they are equal only while the
+            // ground is sized automatically, and an explicitly sized one
+            // would otherwise stretch its texture along the longer side.
+            const float spanU = light.groundTextureSize > 1.0e-5f
+                ? 2.0f * halfExtent[0] / light.groundTextureSize : 1.0f;
+            const float spanV = light.groundTextureSize > 1.0e-5f
+                ? 2.0f * halfExtent[1] / light.groundTextureSize : 1.0f;
+            // Unit-square coordinates of the four corners, in the
+            // winding groundQuad returns them.
+            static const float un[4] = {0.0f, 1.0f, 1.0f, 0.0f};
+            static const float vn[4] = {0.0f, 0.0f, 1.0f, 1.0f};
             for (int i = 0; i < 6; ++i) {
-                uv[i].u = (xs[i] + 1.0f) * 0.5f * span;
-                uv[i].v = (ys[i] + 1.0f) * 0.5f * span;
+                uv[i].u = un[order[i]] * spanU;
+                uv[i].v = vn[order[i]] * spanV;
             }
         }
     }

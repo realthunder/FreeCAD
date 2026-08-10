@@ -33,6 +33,7 @@
 #   define RendererExport   FREECAD_DECL_IMPORT
 #endif
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -647,6 +648,30 @@ struct LightConfig {
     /// own — a receiving quad under the scene bounds.
     bool ground = false;
     float groundScale = 2.0f;    ///< times the scene extent
+    /// Ground sizing and placement, matching what the Coin quad does
+    /// (View3DInventorViewer::Private::updateShadowGround):
+    ///
+    /// - `groundAuto` (ShadowGroundSizeAuto) picks `groundScale` times
+    ///   the largest scene dimension over the explicit half extents
+    ///   `groundSizeX` / `groundSizeY` (ShadowGroundSizeX/Y).
+    /// - `groundAutoPos` (ShadowGroundAutoPosition) puts the quad under
+    ///   the scene, **one unit below** the bounding box — Coin's
+    ///   `z = center.z - size.z/2 - 1`, a gap that keeps a model resting
+    ///   on z=0 from z-fighting its own shadow receiver. Otherwise the
+    ///   quad centre is `groundPos` outright.
+    /// - `groundMatrix` is ShadowGroundPlacement, applied to the four
+    ///   corners so the ground can be tilted. Coin applies it only in
+    ///   auto-position mode (where the placement reads as an offset);
+    ///   with an explicit position the placement *is* the position and
+    ///   the matrix is identity. Column-major, as the rest of the
+    ///   renderer's matrices.
+    bool groundAuto = true;
+    float groundSizeX = 100.0f;  ///< half extent when !groundAuto
+    float groundSizeY = 100.0f;
+    bool groundAutoPos = true;
+    float groundPos[3] = {0.0f, 0.0f, 0.0f};
+    float groundMatrix[16] = {1, 0, 0, 0, 0, 1, 0, 0,
+                              0, 0, 1, 0, 0, 0, 0, 1};
     uint32_t groundColor = 0x7d7d7dff;
     /// Ground texture (ShadowGroundTexture), modulated by the ground
     /// color and tiled every groundTextureSize world units
@@ -675,6 +700,70 @@ struct LightConfig {
     bool sunDisc = false;
     float sunDiscSize = 1.5f;  ///< angular radius in degrees
 
+    /// The ground quad's four corners in world space, wound as Coin
+    /// builds them (-x-y, +x-y, +x+y, -x+y). False when there is no
+    /// ground to draw, so a caller can use it as its own gate.
+    ///
+    /// One place, because there were three: the shadow pass, the
+    /// reflection pass and the scene bounds each recomputed the extent
+    /// from groundScale, and only one of them would have been updated
+    /// when the sizing gained cases.
+    /// \a halfOut, when given, receives the two half extents — the
+    /// texture spans need them separately, and they stop being equal as
+    /// soon as the size is set explicitly.
+    bool groundQuad(const float *bmin, const float *bmax,
+                    float corners[4][3], float *halfOut = nullptr) const
+    {
+        if (!valid || !ground || groundTransparency >= 1.0f)
+            return false;
+        float hx, hy;
+        if (groundAuto) {
+            const float scale = groundScale > 0.0f ? groundScale : 1.0f;
+            hx = hy = scale * std::max(bmax[0] - bmin[0],
+                                       std::max(bmax[1] - bmin[1],
+                                                bmax[2] - bmin[2]));
+        }
+        else {
+            hx = groundSizeX;
+            hy = groundSizeY;
+        }
+        if (hx <= 0.0f || hy <= 0.0f)
+            return false;
+        if (halfOut) {
+            halfOut[0] = hx;
+            halfOut[1] = hy;
+        }
+
+        float cx, cy, z;
+        if (groundAutoPos) {
+            cx = (bmin[0] + bmax[0]) * 0.5f;
+            cy = (bmin[1] + bmax[1]) * 0.5f;
+            // Coin's z = center.z - size.z/2 - 1: one unit *below* the
+            // box, not level with its floor. The gap is what keeps a
+            // model resting on z=0 out of a z-fight with the quad
+            // receiving its shadow.
+            z = bmin[2] - 1.0f;
+        }
+        else {
+            cx = groundPos[0];
+            cy = groundPos[1];
+            z = groundPos[2];
+        }
+
+        static const float xs[4] = {-1.0f, 1.0f, 1.0f, -1.0f};
+        static const float ys[4] = {-1.0f, -1.0f, 1.0f, 1.0f};
+        for (int i = 0; i < 4; ++i) {
+            const float p[3] = {cx + xs[i] * hx, cy + ys[i] * hy, z};
+            for (int r = 0; r < 3; ++r) {
+                corners[i][r] = groundMatrix[r] * p[0]
+                              + groundMatrix[4 + r] * p[1]
+                              + groundMatrix[8 + r] * p[2]
+                              + groundMatrix[12 + r];
+            }
+        }
+        return true;
+    }
+
     bool operator==(const LightConfig &o) const {
         return valid == o.valid && shadow == o.shadow && spot == o.spot
             && direction[0] == o.direction[0]
@@ -699,7 +788,12 @@ struct LightConfig {
             && groundBumpMap == o.groundBumpMap
             && groundReflection == o.groundReflection
             && groundReflectionIntensity == o.groundReflectionIntensity
-            && sunDisc == o.sunDisc && sunDiscSize == o.sunDiscSize;
+            && sunDisc == o.sunDisc && sunDiscSize == o.sunDiscSize
+            && groundAuto == o.groundAuto
+            && groundSizeX == o.groundSizeX && groundSizeY == o.groundSizeY
+            && groundAutoPos == o.groundAutoPos
+            && std::equal(groundPos, groundPos + 3, o.groundPos)
+            && std::equal(groundMatrix, groundMatrix + 16, o.groundMatrix);
     }
     bool operator!=(const LightConfig &o) const { return !(*this == o); }
 };

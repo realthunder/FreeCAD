@@ -37,6 +37,9 @@
 #include <App/PropertyFile.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyStandard.h>
+// PropertyLength: the ground's explicit extents are lengths, as the
+// Coin quad reads them.
+#include <App/PropertyUnits.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Stream.h>
@@ -1639,13 +1642,52 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         // the only way a shadow light gets here) with ViewParams
         // fallback. The light itself is per-view already: it comes from
         // the Shadow style's Coin light node built from the same
-        // properties. Not honored: Shadow_GroundSizeAuto=false explicit
-        // ground extents (the backend sizes its ground from the scene
-        // bounding box only).
+        // properties.
         res.ground = viewParamOverride<App::PropertyBool>(
                 view, "Shadow", "ShowGround", ViewParams::getShadowShowGround());
         res.groundScale = float(viewParamOverride<App::PropertyFloat>(
                 view, "Shadow", "GroundSizeScale", ViewParams::getShadowGroundScale()));
+        // Sizing and placement, the same four properties the Coin quad
+        // reads (View3DInventorViewer::Private::updateShadowGround). The
+        // defaults here have to match the ones _shadowParam materializes
+        // there, because a view that has never shown the Coin ground
+        // carries none of these properties yet.
+        res.groundAuto = viewParamOverride<App::PropertyBool>(
+                view, "Shadow", "GroundSizeAuto", true);
+        res.groundSizeX = float(viewParamOverride<App::PropertyLength>(
+                view, "Shadow", "GroundSizeX", 100.0));
+        res.groundSizeY = float(viewParamOverride<App::PropertyLength>(
+                view, "Shadow", "GroundSizeY", 100.0));
+        res.groundAutoPos = viewParamOverride<App::PropertyBool>(
+                view, "Shadow", "GroundAutoPosition", true);
+        // Coin reads one placement and uses it two ways: as the outright
+        // position when GroundAutoPosition is off (and then applies no
+        // transform), and as an additional offset -- rotation included --
+        // when it is on. Split here so the backend does not have to know
+        // the rule.
+        Base::Placement pla;
+        if (auto prop = viewPropOverride<App::PropertyPlacement>(
+                    view, "Shadow", "GroundPlacement"))
+            pla = prop->getValue();
+        if (res.groundAutoPos) {
+            res.groundPos[0] = res.groundPos[1] = res.groundPos[2] = 0.0f;
+            Base::Matrix4D m = pla.toMatrix();
+            // Base::Matrix4D is row-major; LightConfig::groundMatrix is
+            // column-major like the renderer's other matrices.
+            for (int c = 0; c < 4; ++c) {
+                for (int r = 0; r < 4; ++r)
+                    res.groundMatrix[c * 4 + r] = float(m[r][c]);
+            }
+        }
+        else {
+            const Base::Vector3d &p = pla.getPosition();
+            res.groundPos[0] = float(p.x);
+            res.groundPos[1] = float(p.y);
+            res.groundPos[2] = float(p.z);
+            static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0,
+                                               0, 0, 1, 0, 0, 0, 0, 1};
+            std::copy(identity, identity + 16, res.groundMatrix);
+        }
         if (auto prop = viewPropOverride<App::PropertyColor>(view, "Shadow", "GroundColor"))
             res.groundColor = prop->getValue().getPackedValue();
         else

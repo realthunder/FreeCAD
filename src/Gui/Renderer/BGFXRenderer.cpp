@@ -195,16 +195,21 @@ bool BGFXRenderer::boundBox(float &xmin, float &ymin, float &zmin,
     // draws; include it so the viewer's camera auto-clipping covers it
     // (the Coin GL ground used to do this through the scene graph).
     const Render::LightConfig &light = pimpl->lightconf;
-    if (light.valid && light.ground && light.groundTransparency < 1.0f) {
-        float half = light.groundScale
-            * std::max(xmax - xmin,
-                       std::max(ymax - ymin, zmax - zmin));
-        float cx = (xmin + xmax) * 0.5f;
-        float cy = (ymin + ymax) * 0.5f;
-        xmin = std::min(xmin, cx - half);
-        xmax = std::max(xmax, cx + half);
-        ymin = std::min(ymin, cy - half);
-        ymax = std::max(ymax, cy + half);
+    const float bmin[3] = {xmin, ymin, zmin};
+    const float bmax[3] = {xmax, ymax, zmax};
+    float corners[4][3];
+    if (light.groundQuad(bmin, bmax, corners)) {
+        // Whatever the quad actually is -- explicitly sized, moved or
+        // tilted -- rather than a second copy of the auto formula, which
+        // would under-report the moment either differed.
+        for (const auto &c : corners) {
+            xmin = std::min(xmin, c[0]);
+            xmax = std::max(xmax, c[0]);
+            ymin = std::min(ymin, c[1]);
+            ymax = std::max(ymax, c[1]);
+            zmin = std::min(zmin, c[2]);
+            zmax = std::max(zmax, c[2]);
+        }
     }
     return true;
 }
