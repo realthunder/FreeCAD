@@ -911,5 +911,40 @@ std::vector<boost::filesystem::path> Gui::PreferencePackManager::configBackups()
             results.push_back(backup);
         }
     }
+    // Newest first, which is the one an undo wants: apply() writes a backup
+    // immediately before it changes anything. Sort by the timestamp rather than
+    // the name -- the name carries one, but directory order guarantees nothing.
+    std::sort(results.begin(), results.end(), [](const fs::path& a, const fs::path& b) {
+        return fs::last_write_time(a) > fs::last_write_time(b);
+    });
     return results;
+}
+
+fs::path Gui::PreferencePackManager::revertToBackup(const fs::path& backup) const
+{
+    fs::path chosen = backup;
+    if (chosen.empty()) {
+        auto backups = configBackups();
+        if (backups.empty()) {
+            return {};
+        }
+        chosen = backups.front();
+    }
+    if (!fs::exists(chosen)) {
+        throw std::runtime_error("No such config backup: " + chosen.string());
+    }
+
+    auto newParameters = ParameterManager::Create();
+    newParameters->LoadDocument(chosen.string().c_str());
+    auto baseAppGroup = App::GetApplication().GetUserParameter().GetGroup("BaseApp");
+    // copyTo, not insertTo: the backup is the whole state, so a key the user has
+    // gained since then has to go, not survive underneath.
+    newParameters->GetGroup("BaseApp")->copyTo(baseAppGroup);
+
+    // The same two that apply() reloads by hand, for the same reason: their
+    // state lives in parameters that have just been rewritten under them.
+    DockWindowManager::instance()->loadState();
+    ToolBarManager::getInstance()->restoreState();
+
+    return chosen;
 }

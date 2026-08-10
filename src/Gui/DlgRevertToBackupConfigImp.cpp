@@ -94,13 +94,10 @@ void DlgRevertToBackupConfigImp::accept()
     }
     auto item = items[0];
     auto path = item->data(Qt::UserRole).toString().toStdString();
-    if (fs::exists(path)) {
-        auto newParameters = ParameterManager::Create();
-        newParameters->LoadDocument(path.c_str());
-        auto baseAppGroup = App::GetApplication().GetUserParameter().GetGroup("BaseApp");
-        newParameters->GetGroup("BaseApp")->copyTo(baseAppGroup);
+    try {
+        Application::Instance->prefPackManager()->revertToBackup(path);
     }
-    else {
+    catch (const std::exception&) {
         Base::Console().Error("Preference Pack Internal Error: Invalid backup file location");
     }
 

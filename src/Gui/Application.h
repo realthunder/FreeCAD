@@ -411,6 +411,11 @@ public:
     static PyObject* sShowDownloads            (PyObject *self,PyObject *args);
     static PyObject* sShowPreferences          (PyObject *self,PyObject *args);
 
+    static PyObject* sListThemes               (PyObject *self,PyObject *args);
+    static PyObject* sApplyTheme               (PyObject *self,PyObject *args);
+    static PyObject* sListConfigBackups        (PyObject *self,PyObject *args);
+    static PyObject* sRevertConfig             (PyObject *self,PyObject *args);
+
     static PyObject* sCreateViewer             (PyObject *self,PyObject *args);
     static PyObject* sGetMarkerIndex           (PyObject *self,PyObject *args);
 

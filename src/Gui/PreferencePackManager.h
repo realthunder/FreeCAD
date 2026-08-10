@@ -211,6 +211,16 @@ namespace Gui {
         std::vector<boost::filesystem::path> configBackups() const;
 
         /**
+         * Undo an apply() by restoring the whole BaseApp parameter tree from one
+         * of the backups apply() writes before it touches anything.
+         * \param backup which backup to restore; empty takes the most recent,
+         *               i.e. the state before the last pack was applied.
+         * \return the backup that was restored, or an empty path if there was
+         *         none to restore.
+         */
+        boost::filesystem::path revertToBackup(const boost::filesystem::path& backup = {}) const;
+
+        /**
          * Import an existing config file as a preference pack with a given name.
          */
         void importConfig(const std::string &packName,

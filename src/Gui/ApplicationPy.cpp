@@ -63,6 +63,7 @@
 #include "Macro.h"
 #include "MainWindow.h"
 #include "MainWindowPy.h"
+#include "PreferencePackManager.h"
 #include "PythonEditor.h"
 #include "PythonWrapper.h"
 #include "SoFCDB.h"
@@ -396,6 +397,37 @@ PyMethodDef Application::Methods[] = {
    "\n"
    "grp: str\n    Group to show.\n"
    "index : int\n    Page index."},
+  {"listThemes",                  (PyCFunction) Application::sListThemes, METH_VARARGS,
+   "listThemes() -> list of str\n"
+   "\n"
+   "The themes that can be applied, in the order the Theme preferences page\n"
+   "shows them. A theme is a preference pack whose metadata type is Theme."},
+  {"applyTheme",                  (PyCFunction) Application::sApplyTheme, METH_VARARGS,
+   "applyTheme(name) -> bool\n"
+   "\n"
+   "Apply a theme, as picking it on the Theme preferences page would. This\n"
+   "rewrites a large part of the user's configuration, so the state before it\n"
+   "is saved first -- revertConfig() puts it back.\n"
+   "\n"
+   "name: str\n    Name of the theme, or of any preference pack.\n"
+   "\n"
+   "Returns True if it was applied, False if the pack's own pre.FCMacro or\n"
+   "post.FCMacro refused it."},
+  {"listConfigBackups",           (PyCFunction) Application::sListConfigBackups, METH_VARARGS,
+   "listConfigBackups() -> list of str\n"
+   "\n"
+   "The configuration backups written before each applyTheme(), newest first.\n"
+   "They are kept for a week."},
+  {"revertConfig",                (PyCFunction) Application::sRevertConfig, METH_VARARGS,
+   "revertConfig(backup=None) -> str\n"
+   "\n"
+   "Undo an applyTheme() by restoring the whole BaseApp configuration from one\n"
+   "of the backups it writes.\n"
+   "\n"
+   "backup: str\n    A path from listConfigBackups(); the newest by default,\n"
+   "    which is the state before the last theme was applied.\n"
+   "\n"
+   "Returns the backup that was restored, or an empty string if there was none."},
   {"createViewer",               (PyCFunction) Application::sCreateViewer, METH_VARARGS,
    "createViewer(views=1, name) -> View3DInventorPy or AbstractSplitViewPy\n"
    "\n"
@@ -1797,6 +1829,63 @@ PyObject* Application::sShowPreferences(PyObject * /*self*/, PyObject *args)
     wc.setWaitCursor();
 
     Py_Return;
+}
+
+PyObject* Application::sListThemes(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    PY_TRY {
+        auto manager = Instance->prefPackManager();
+        manager->rescan();
+        Py::List names;
+        for (const auto& pack : manager->preferencePacks()) {
+            if (pack.second.metadata().type() == "Theme") {
+                names.append(Py::String(pack.first));
+            }
+        }
+        return Py::new_reference_to(names);
+    } PY_CATCH;
+}
+
+PyObject* Application::sApplyTheme(PyObject * /*self*/, PyObject *args)
+{
+    char *name = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return nullptr;
+
+    PY_TRY {
+        auto manager = Instance->prefPackManager();
+        manager->rescan();
+        return Py::new_reference_to(Py::Boolean(manager->apply(name)));
+    } PY_CATCH;
+}
+
+PyObject* Application::sListConfigBackups(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    PY_TRY {
+        Py::List paths;
+        for (const auto& backup : Instance->prefPackManager()->configBackups()) {
+            paths.append(Py::String(backup.string()));
+        }
+        return Py::new_reference_to(paths);
+    } PY_CATCH;
+}
+
+PyObject* Application::sRevertConfig(PyObject * /*self*/, PyObject *args)
+{
+    char *backup = nullptr;
+    if (!PyArg_ParseTuple(args, "|z", &backup))
+        return nullptr;
+
+    PY_TRY {
+        auto restored = Instance->prefPackManager()->revertToBackup(backup ? backup : "");
+        return Py::new_reference_to(Py::String(restored.string()));
+    } PY_CATCH;
 }
 
 PyObject* Application::sCreateViewer(PyObject * /*self*/, PyObject *args)
