@@ -263,6 +263,8 @@ public:
     }
     void setupVisibility();
 
+    QSize sizeHint() const override;
+
 protected:
     bool eventFilter(QObject *, QEvent *ev) override;
 

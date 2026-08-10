@@ -925,6 +925,13 @@ public:
         handle->SetBool("ShowTabBar", enable);
     }
 
+    /*! How much room the tab bar may ask for along the direction the tabs run,
+     * in pixels. 0 asks for as much as the tabs it holds actually need.
+     */
+    int tabBarMaxLength() {
+        return handle->GetInt("TabBarMaxLength", 0);
+    }
+
     void OnChange(Base::Subject<const char*> &, const char *reason)
     {
         if (!reason)
@@ -1005,7 +1012,8 @@ WorkbenchTabWidget::WorkbenchTabWidget(WorkbenchGroup* wb, QWidget* parent)
             if (!Name)
                 return;
             if (Param == this->group->_pimpl->handle) {
-                if (boost::equals(Name, "TabBarShowText") || boost::equals(Name, "ShowTabBar"))
+                if (boost::equals(Name, "TabBarShowText") || boost::equals(Name, "ShowTabBar")
+                        || boost::equals(Name, "TabBarMaxLength"))
                     timer.start(100);
             } else if (Param == this->group->_pimpl->hGeneral) {
                 if (boost::equals(Name, "ToolbarIconSize")
@@ -1018,6 +1026,11 @@ WorkbenchTabWidget::WorkbenchTabWidget(WorkbenchGroup* wb, QWidget* parent)
     connect(&timer, &QTimer::timeout, [this]() {
         group->workbenchListUpdated();
         setupVisibility();
+        // TabBarMaxLength changes nothing about the tabs themselves, only how
+        // much room they may ask for, so nothing above invalidates the layout.
+        updateGeometry();
+        if (auto toolbar = getToolBar())
+            toolbar->adjustSize();
     });
 
     timerCurrentChange.setSingleShot(true);
@@ -1028,6 +1041,35 @@ WorkbenchTabWidget::WorkbenchTabWidget(WorkbenchGroup* wb, QWidget* parent)
 
 WorkbenchTabWidget::~WorkbenchTabWidget()
 {
+}
+
+QSize WorkbenchTabWidget::sizeHint() const
+{
+    QSize size = QTabWidget::sizeHint();
+    if (!usesScrollButtons())
+        return size;
+
+    // QTabWidget bounds the tab bar's contribution to its size hint at 200px
+    // in each direction as soon as scroll buttons are in use, on the reasoning
+    // that the pages behind the tabs are what should decide how big the widget
+    // wants to be. There are no pages here -- the widget *is* the tab bar --
+    // so that cap is all there is, and it asks for room for about five
+    // workbenches however much the row has to give. Ask for the tabs we
+    // actually hold instead, up to Workbenches/TabBarMaxLength.
+    const QSize bar = tabBar()->sizeHint();
+    const bool vertical = tabPosition() == West || tabPosition() == East;
+    int wanted = vertical ? bar.height() : bar.width();
+    if (int limit = group->_pimpl->tabBarMaxLength())
+        wanted = std::min(wanted, limit);
+
+    const int grown = wanted - std::min(vertical ? bar.height() : bar.width(), 200);
+    if (grown > 0) {
+        if (vertical)
+            size.rheight() += grown;
+        else
+            size.rwidth() += grown;
+    }
+    return size;
 }
 
 QToolBar *WorkbenchTabWidget::getToolBar()
