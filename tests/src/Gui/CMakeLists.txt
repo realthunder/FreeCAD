@@ -51,6 +51,16 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(OcclusionCull_tests_run gtest_main FreeCADRenderer)
     add_test(NAME OcclusionCull_tests_run COMMAND OcclusionCull_tests_run)
 
+    # The software occlusion rasterizer (docs/FarFieldProxies.md §12.12).
+    # Its central claim is a one-directional one -- it may under-cull and
+    # may never over-cull -- so the tests carry a reference
+    # full-resolution depth buffer to compare against, and the comparison
+    # is an inequality rather than an image.
+    add_executable(MaskedOcclusion_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/MaskedOcclusion.cpp)
+    target_link_libraries(MaskedOcclusion_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME MaskedOcclusion_tests_run COMMAND MaskedOcclusion_tests_run)
+
     # Publishing without drawing (docs/HeadlessServe.md §3.1). Same
     # reasoning as above, and then some: the whole claim of the mode is
     # that the process needs no GPU and no display, which only a test
