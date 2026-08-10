@@ -2473,16 +2473,15 @@ would delete outright rather than merely speed up.
 
 #### The order to try things in
 
-1. ⭐⭐ **Coarser occluder geometry.** Deletes the sub-pixel work instead
-   of accelerating it, and admits far more occluders inside the same
-   budget. ⚠️ Must be an *inner* hull: a decimation that moves a surface
-   **towards** the camera invents occlusion and breaks §12.12's
-   invariant, which error-minimising decimation (`MeshSimplify.cpp`)
-   does not promise. ⚠️ And note §12.12's ablation — 40× the budget
-   bought 8.5 points of culling — so this is about *cost*, not about
-   closing the 45%-vs-95.4% gap.
-2. ⭐ **SIMD the transform and projection.** Now well targeted rather
-   than speculative: it is 68% of the work, branch-free, and the block
+⭐ **Decided (2026-08-10): SIMD first.** The ordering below had coarse
+occluders ahead of it, on the argument that deleting the sub-pixel work
+beats accelerating it. That still holds as an argument; the decision
+went the other way, and the counter split is what makes it defensible —
+the 68% is now a *measured*, branch-free, uniformly-shaped workload
+rather than a guess about where the time goes.
+
+1. ⭐ **SIMD the transform and projection.** Well targeted rather than
+   speculative: it is 68% of the work, branch-free, and the block
    layout was built for it (8×4 blocks, coverage exactly one 32-bit
    word, four to a 128-bit lane). ⚠️ **The blocker is precision, and it
    is self-inflicted**: this file is `double` throughout because a
@@ -2491,7 +2490,20 @@ would delete outright rather than merely speed up.
    never reached. SIMD128 holds 2 doubles but 4 floats, so the 4× needs
    a float fast path with a guard band and a double fallback for clipped
    geometry. The measurement supports it: **clipped 0** on this camera.
-3. **Reuse the buffer while the camera is static.** Exact, and does not
+   ⚠️ The gate is not speed: over-cull must stay at **0 px**. Every
+   configuration measured so far is exact, and a float path that costs
+   even a few pixels is a regression rather than a trade.
+2. ⭐⭐ **Coarser occluder geometry.** Deletes the sub-pixel work instead
+   of accelerating it, and admits far more occluders inside the same
+   budget. ⚠️ Must be an *inner* hull: a decimation that moves a surface
+   **towards** the camera invents occlusion and breaks §12.12's
+   invariant, which error-minimising decimation (`MeshSimplify.cpp`)
+   does not promise. ⚠️ And note the ablation above — 40× the budget
+   bought 8.5 points of culling — so this is about *cost*, not about
+   closing the 45%-vs-95.4% gap.
+3. **Wire §12.13's estimator into the renderer.** Built and tested, not
+   yet connected: it needs the per-frame CPU time and to gate the mask.
+4. **Reuse the buffer while the camera is static.** Exact, and does not
    reintroduce §12.6 (that was intra-frame ordering, not a fixed camera).
 
 `Render_Occlusion` stays default off, and `Render_OcclusionSoftware`
