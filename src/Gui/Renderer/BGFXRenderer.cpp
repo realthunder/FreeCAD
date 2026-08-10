@@ -14410,7 +14410,8 @@ public:
                         "offscreen %u | nodes visited %u hidden %u offscreen %u "
                         "tested %u | occluders %u of %u draws, %u tris, "
                         "dropped %u, %u threads | buffer %dx%d, tris drawn %u clipped %u "
-                        "culled %u, blocks %u | nearclip %u rootrefused %u "
+                        "culled %u (offbuf %u subpx %u degen %u), blocks %u "
+                        "| nearclip %u rootrefused %u "
                         "| raster %.2fms walk %.2fms | indexed %u of %u draws "
                         "(%u on-top exempt) | index %u nodes, build %.1fms\n",
                         ms.hiddenInstances, ms.drawnInstances,
@@ -14421,6 +14422,8 @@ public:
                         maskedCull.depth().width(),
                         maskedCull.depth().height(), bs.trianglesDrawn,
                         bs.trianglesClipped, bs.trianglesCulled(),
+                        bs.trianglesOffBuffer, bs.trianglesSubPixel,
+                        bs.trianglesDegenerate,
                         bs.blocksUpdated, ms.nearExempt, ms.rootRefused,
                         ms.rasterMs, ms.walkMs,
                         cullIndexed, unsigned(scene.size()), cullExemptOnTop,

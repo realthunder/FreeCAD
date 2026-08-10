@@ -870,6 +870,15 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
                   return a.first > b.first;
               });
 
+    uint32_t workers = conf.threads;
+    if (workers == 0) {
+        const unsigned hw = std::thread::hardware_concurrency();
+        // Leave the submitting thread and one other alone: this runs in
+        // the middle of a frame, not on an idle machine.
+        workers = hw > 3 ? hw - 2 : 1;
+    }
+    workers = std::max<uint32_t>(1, std::min<uint32_t>(workers, 32));
+
     // Decide the whole admitted set before rasterizing any of it, so
     // that the budget is spent identically however many workers run.
     uint32_t budget = conf.triangleBudget;
@@ -896,7 +905,26 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
             ++framestats.occludersDropped;
             continue;
         }
-        jobs.push_back({ranking[r].second, uint32_t(first), uint32_t(count)});
+        // KEY: A draw is split into chunks rather than handed out whole.
+        // The unit of work has to be smaller than the imbalance it is
+        // meant to hide: measured, 37 admitted draws over 14 workers is
+        // two or three each, the draws differ in triangle count by more
+        // than an order of magnitude, and the frame then waits on
+        // whichever worker drew the largest single mesh. Triangles are
+        // independent, so a chunk of one draw's index range rasterizes
+        // exactly as that draw's own triangles would.
+        //
+        // Aimed at roughly eight chunks per worker, which is enough to
+        // absorb the variance without making the per-chunk setup matter.
+        const uint32_t perChunk = std::max<uint32_t>(
+                256u, std::min<uint32_t>(16384u,
+                                         conf.triangleBudget
+                                                 / std::max(1u, workers * 8)));
+        for (size_t off = 0; off < count; off += size_t(perChunk) * 3) {
+            const size_t n = std::min<size_t>(size_t(perChunk) * 3, count - off);
+            jobs.push_back({ranking[r].second, uint32_t(first + off),
+                            uint32_t(n)});
+        }
         budget -= tris;
         ++framestats.occluderDraws;
         framestats.occluderTriangles += tris;
@@ -909,14 +937,6 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
                        d.identity ? nullptr : d.model);
     };
 
-    uint32_t workers = conf.threads;
-    if (workers == 0) {
-        const unsigned hw = std::thread::hardware_concurrency();
-        // Leave the submitting thread and one other alone: this runs in
-        // the middle of a frame, not on an idle machine.
-        workers = hw > 3 ? hw - 2 : 1;
-    }
-    workers = std::max<uint32_t>(1, std::min<uint32_t>(workers, 32));
     // Below this there is nothing to share out and the merge would cost
     // more than the split saves.
     if (jobs.size() < 8)
