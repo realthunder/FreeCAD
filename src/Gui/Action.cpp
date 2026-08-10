@@ -680,6 +680,24 @@ ActionGroup::~ActionGroup()
  * command is invoked) and follows it back through Action::actionChecked,
  * which is how a state set elsewhere reaches the menu.
  */
+/** Dismiss the popup chain a menu row belongs to.
+ *
+ * Clicking a menu item closes the menu. A QWidgetAction's widget handles
+ * its own mouse events, so QMenu never activates an action and never
+ * hides -- the row runs its command and the popup just stands there.
+ * Qt's own way out of this (QMenuPrivate::hideUpToMenuBar) is private,
+ * so walk the parent chain and hide every menu in it: a submenu is
+ * created with its parent menu as its parent, and a top-level popup with
+ * the menu bar or the toolbar, so the chain ends by itself.
+ */
+static void closeMenuChain(QWidget *widget)
+{
+    for (QWidget *w = widget; w; w = w->parentWidget()) {
+        if (auto menu = qobject_cast<QMenu*>(w))
+            menu->hide();
+    }
+}
+
 static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions,
                           bool exclusive)
 {
@@ -718,6 +736,13 @@ static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions,
             button = checkbox;
         }
         QObject::connect(wa, &QAction::toggled, action, &QAction::toggled);
+        // clicked, not toggled: only a real click should dismiss the
+        // popup, and it is emitted after toggled, so the command has
+        // already run by the time the menu goes. Re-clicking the row
+        // that is already checked emits no toggled at all and still
+        // dismisses, which is what a menu item does.
+        QObject::connect(button, &QAbstractButton::clicked, menu,
+                         [button]() { closeMenuChain(button); });
         // The row is a widget action now, so the command's own action is
         // no longer in any menu -- and an action that belongs to no
         // widget never receives QEvent::Shortcut, which would leave the
