@@ -26,6 +26,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <thread>
 
 using namespace Render;
 
@@ -102,6 +103,30 @@ int clipAgainst(const CVert *in, int n, CVert *out, double pa, double pb,
 /// plane at all.
 const double kMinW = 1e-7;
 
+// WARNING: There is deliberately no inward epsilon on the edges here, and
+// the reason is worth recording because it looks like free safety and is
+// not.
+//
+// The row solve below multiplies by a reciprocal computed once per
+// triangle rather than dividing per row. That is not bit-identical to the
+// division, so a pixel centre lying exactly on an edge can fall either
+// way, and the tempting fix is to shrink every span by a hair first so
+// that any rounding loses coverage rather than inventing it.
+//
+// It breaks the buffer. An occluder is a *mesh*, and its triangles meet
+// along shared edges; shrinking every triangle opens a crack along every
+// one of those seams. Measured: a two-triangle wall filling the viewport
+// stopped occluding anything on the diagonal where its halves join, and
+// six tests that had a box on that seam went from hidden to visible.
+// Watertightness between adjacent triangles is not a detail of this
+// rasterizer, it is the thing that makes a mesh a surface.
+//
+// The reciprocal is safe without it. A pixel centre on a *shared* edge is
+// genuinely covered -- the surface is there -- so including it is right;
+// on a *silhouette* edge the error is about 1e-9 pixels, far below the
+// block granularity any query is answered at, and the block's stored
+// depth is already a conservative under-estimate of the triangle's.
+
 }  // namespace
 
 // ---------------------------------------------------------------------
@@ -177,7 +202,46 @@ float MaskedDepth::blockFloor(int x, int y) const
 
 void MaskedDepth::updateBlock(int bx, int by, uint32_t cov, float ztri)
 {
-    Block &b = blocks[size_t(by) * size_t(bw) + size_t(bx)];
+    updateBlockAt(size_t(by) * size_t(bw) + size_t(bx), cov, ztri);
+}
+
+void MaskedDepth::merge(const MaskedDepth &other)
+{
+    if (blocks.size() != other.blocks.size())
+        return;
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        const Block &b = other.blocks[i];
+        // Order matters, and this is the one that keeps the most: the
+        // other buffer's floor first, then its nearer layer. Reversed,
+        // a full-coverage floor update would promote and discard the
+        // layer just merged. Both orders are safe -- every step is an
+        // ordinary block update, and those can only ever move the stored
+        // depth away from the viewer -- so what is at stake is culling,
+        // not correctness.
+        if (b.z0 > -FLT_MAX)
+            updateBlockAt(i, 0xFFFFFFFFu, b.z0);
+        if (b.mask != 0)
+            updateBlockAt(i, b.mask, b.z1);
+    }
+    // The rasterization counters belong to the frame, not to the worker
+    // that happened to do the work. The query counters deliberately do
+    // not merge: queries are asked of the merged buffer, never of a
+    // worker's.
+    framestats.trianglesIn += other.framestats.trianglesIn;
+    framestats.trianglesClipped += other.framestats.trianglesClipped;
+    framestats.trianglesDrawn += other.framestats.trianglesDrawn;
+    framestats.trianglesOffBuffer += other.framestats.trianglesOffBuffer;
+    framestats.trianglesSubPixel += other.framestats.trianglesSubPixel;
+    framestats.trianglesBackFacing += other.framestats.trianglesBackFacing;
+    framestats.trianglesDegenerate += other.framestats.trianglesDegenerate;
+    framestats.trianglesBehind += other.framestats.trianglesBehind;
+    framestats.blocksTouched += other.framestats.blocksTouched;
+    framestats.blocksUpdated += other.framestats.blocksUpdated;
+}
+
+void MaskedDepth::updateBlockAt(size_t index, uint32_t cov, float ztri)
+{
+    Block &b = blocks[index];
     ++framestats.blocksTouched;
 
     // The floor already stands in front of the incoming surface
@@ -234,6 +298,39 @@ void MaskedDepth::updateBlock(int bx, int by, uint32_t cov, float ztri)
 
 void MaskedDepth::rasterTri(const double *X, const double *Y, const double *D)
 {
+    // KEY: The rejects come first, and that ordering is the measurement of
+    // section 12.12 rather than a style preference. On the benchmark scene
+    // 170684 of 249998 rasterized triangles never touch a pixel -- a
+    // full-detail CAD tessellation is mostly triangles smaller than the
+    // pixel grid -- so everything computed before this test is computed
+    // for the two thirds that are about to be discarded. Nothing below
+    // needs the winding, the depth gradients or the edge equations.
+    double minx = std::min(X[0], std::min(X[1], X[2]));
+    double maxx = std::max(X[0], std::max(X[1], X[2]));
+    double miny = std::min(Y[0], std::min(Y[1], Y[2]));
+    double maxy = std::max(Y[0], std::max(Y[1], Y[2]));
+    if (!(maxx >= 0.0 && minx <= double(bufw) && maxy >= 0.0
+          && miny <= double(bufh))) {
+        ++framestats.trianglesOffBuffer;  // also catches NaN
+        return;
+    }
+    // Clamp before the cast: a triangle clipped at the near plane
+    // projects to coordinates a long way outside int range.
+    minx = std::max(minx, -1.0);
+    maxx = std::min(maxx, double(bufw) + 1.0);
+    miny = std::max(miny, -1.0);
+    maxy = std::min(maxy, double(bufh) + 1.0);
+
+    const int px0 = std::max(0, int(std::ceil(minx - 0.5)));
+    const int px1 = std::min(bufw - 1, int(std::floor(maxx - 0.5)));
+    const int py0 = std::max(0, int(std::ceil(miny - 0.5)));
+    const int py1 = std::min(bufh - 1, int(std::floor(maxy - 0.5)));
+    if (px0 > px1 || py0 > py1) {
+        // On the buffer, but not over any pixel centre.
+        ++framestats.trianglesSubPixel;
+        return;
+    }
+
     double ax = X[1] - X[0], ay = Y[1] - Y[0];
     double bx = X[2] - X[0], by = Y[2] - Y[0];
     double det = ax * by - ay * bx;
@@ -245,7 +342,7 @@ void MaskedDepth::rasterTri(const double *X, const double *Y, const double *D)
         // winding is not to be trusted, and a wrongly discarded occluder
         // is a hole nothing reports.
         if (!twosided) {
-            ++framestats.trianglesCulled;
+            ++framestats.trianglesBackFacing;
             return;
         }
         i1 = 2;
@@ -255,9 +352,10 @@ void MaskedDepth::rasterTri(const double *X, const double *Y, const double *D)
         det = -det;
     }
     if (!(det > 0.0)) {
-        ++framestats.trianglesCulled;  // degenerate, or NaN
+        ++framestats.trianglesDegenerate;  // zero area, or NaN
         return;
     }
+    ++framestats.trianglesDrawn;
 
     const double x0 = X[0], y0 = Y[0], d0 = D[0];
     const double x[3] = {X[0], X[i1], X[i2]};
@@ -266,6 +364,13 @@ void MaskedDepth::rasterTri(const double *X, const double *Y, const double *D)
 
     // Depth is affine in screen space by construction (see projection
     // below), so three samples fix it exactly.
+    //
+    // Still a division and deliberately so, unlike the edge reciprocals
+    // below: there are two of these per *drawn* triangle against three
+    // per pixel row for the edges, so reciprocating them would save
+    // nothing measurable while making the stored depth differ from the
+    // divided form by an ulp. In the one file whose whole claim is a
+    // one-sided bound on stored depth, that is a bad trade at any speed.
     const double dzdx = ((d1 - d0) * by - (d2 - d0) * ay) / det;
     const double dzdy = ((d2 - d0) * ax - (d1 - d0) * bx) / det;
     const double dmax = std::max(d0, std::max(d1, d2));
@@ -273,34 +378,21 @@ void MaskedDepth::rasterTri(const double *X, const double *Y, const double *D)
     // Edge half spaces, inside positive: for the counter-clockwise
     // winding established above, a point is inside when it is left of
     // every directed edge.
-    double eA[3], eB[3], eC[3];
+    //
+    // KEY: `eInvA` is why this loop exists separately from the row solve
+    // below. Solving an edge for x on a row is a division, and doing it
+    // in the row loop costs three per pixel row -- for a large occluder,
+    // thousands per triangle. Reciprocated once here it is three per
+    // triangle and a multiply per row. See the note beside kMinW for why
+    // the substitution carries no inward epsilon to make it safe.
+    double eA[3], eB[3], eC[3], eInvA[3];
     for (int k = 0; k < 3; ++k) {
         const int j = (k + 1) % 3;
         eA[k] = -(y[j] - y[k]);
         eB[k] = x[j] - x[k];
         eC[k] = -eA[k] * x[k] - eB[k] * y[k];
+        eInvA[k] = eA[k] != 0.0 ? 1.0 / eA[k] : 0.0;
     }
-
-    double minx = std::min(x[0], std::min(x[1], x[2]));
-    double maxx = std::max(x[0], std::max(x[1], x[2]));
-    double miny = std::min(y[0], std::min(y[1], y[2]));
-    double maxy = std::max(y[0], std::max(y[1], y[2]));
-    // Clamp before the cast: a triangle clipped at the near plane
-    // projects to coordinates a long way outside int range.
-    minx = std::max(minx, -1.0);
-    maxx = std::min(maxx, double(bufw) + 1.0);
-    miny = std::max(miny, -1.0);
-    maxy = std::min(maxy, double(bufh) + 1.0);
-
-    int px0 = std::max(0, int(std::ceil(minx - 0.5)));
-    int px1 = std::min(bufw - 1, int(std::floor(maxx - 0.5)));
-    int py0 = std::max(0, int(std::ceil(miny - 0.5)));
-    int py1 = std::min(bufh - 1, int(std::floor(maxy - 0.5)));
-    if (px0 > px1 || py0 > py1) {
-        ++framestats.trianglesCulled;
-        return;
-    }
-    ++framestats.trianglesDrawn;
 
     const int by0 = py0 / BlockH;
     const int by1 = py1 / BlockH;
@@ -322,12 +414,12 @@ void MaskedDepth::rasterTri(const double *X, const double *Y, const double *D)
             for (int k = 0; k < 3; ++k) {
                 const double rhs = -(eB[k] * yc + eC[k]);
                 if (eA[k] > 0.0) {
-                    const double v = rhs / eA[k];
+                    const double v = rhs * eInvA[k];
                     if (v > lo)
                         lo = v;
                 }
                 else if (eA[k] < 0.0) {
-                    const double v = rhs / eA[k];
+                    const double v = rhs * eInvA[k];
                     if (v < hi)
                         hi = v;
                 }
@@ -408,7 +500,7 @@ void MaskedDepth::rasterize(const float *positions, size_t stride,
         const uint32_t ic = indices[t * 3 + 2];
         if (ia >= vertexCount || ib >= vertexCount || ic >= vertexCount) {
             ++framestats.trianglesIn;
-            ++framestats.trianglesCulled;
+            ++framestats.trianglesDegenerate;
             continue;
         }
         const float *pa = reinterpret_cast<const float *>(base + ia * stride);
@@ -480,11 +572,36 @@ void MaskedDepth::emitTriangle(const float *pa, const float *pb,
         else
             n = clipAgainst(poly, n, tmp, 0.0, 0.0, 1.0, 0.0);
         if (n < 3) {
-            ++framestats.trianglesCulled;
+            ++framestats.trianglesBehind;
             return;
         }
         std::memcpy(poly, tmp, size_t(n) * sizeof(CVert));
         ++framestats.trianglesClipped;
+    }
+
+    // KEY: Reject off-screen geometry before the perspective divide, not
+    // after it. Everything in front of the near plane has w > 0, so
+    // `x > w` for all three vertices means all three are right of the
+    // viewport -- the standard homogeneous outcode test, and it is
+    // exactly the geometry that would otherwise pay three divisions to
+    // land outside the buffer and be thrown away by rasterTri. Only a
+    // *unanimous* verdict rejects: a triangle with one vertex on each
+    // side of the screen fails every plane individually and still covers
+    // it.
+    {
+        int out[4] = {0, 0, 0, 0};
+        for (int i = 0; i < n; ++i) {
+            out[0] += poly[i].x > poly[i].w;
+            out[1] += poly[i].x < -poly[i].w;
+            out[2] += poly[i].y > poly[i].w;
+            out[3] += poly[i].y < -poly[i].w;
+        }
+        for (int p = 0; p < 4; ++p) {
+            if (out[p] == n) {
+                ++framestats.trianglesOffBuffer;
+                return;
+            }
+        }
     }
     // Keep the divide finite whatever the projection. Orthographic w is
     // 1, so this only ever fires on a perspective matrix with no usable
@@ -498,7 +615,7 @@ void MaskedDepth::emitTriangle(const float *pa, const float *pb,
             // clipAgainst's plane is w >= 0; nudge the survivors instead
             // of solving for w >= kMinW, which would move vertices.
             if (n < 3) {
-                ++framestats.trianglesCulled;
+                ++framestats.trianglesBehind;
                 return;
             }
             std::memcpy(poly, tmp, size_t(n) * sizeof(CVert));
@@ -738,8 +855,11 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
                   return a.first > b.first;
               });
 
+    // Decide the whole admitted set before rasterizing any of it, so
+    // that the budget is spent identically however many workers run.
     uint32_t budget = conf.triangleBudget;
     const size_t limit = std::min<size_t>(ranking.size(), conf.maxOccluders);
+    jobs.clear();
     for (size_t r = 0; r < ranking.size(); ++r) {
         if (r >= limit || budget == 0) {
             ++framestats.occludersDropped;
@@ -761,13 +881,66 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
             ++framestats.occludersDropped;
             continue;
         }
-        buffer.rasterize(d.mesh->positions, 0, size_t(d.mesh->numVertices),
-                         d.mesh->triangleIndices + first, count,
-                         d.identity ? nullptr : d.model);
+        jobs.push_back({ranking[r].second, uint32_t(first), uint32_t(count)});
         budget -= tris;
         ++framestats.occluderDraws;
         framestats.occluderTriangles += tris;
     }
+
+    auto runJob = [&draws](MaskedDepth &into, const OccluderJob &j) {
+        const DrawCall &d = draws[j.draw];
+        into.rasterize(d.mesh->positions, 0, size_t(d.mesh->numVertices),
+                       d.mesh->triangleIndices + j.first, j.count,
+                       d.identity ? nullptr : d.model);
+    };
+
+    uint32_t workers = conf.threads;
+    if (workers == 0) {
+        const unsigned hw = std::thread::hardware_concurrency();
+        // Leave the submitting thread and one other alone: this runs in
+        // the middle of a frame, not on an idle machine.
+        workers = hw > 3 ? hw - 2 : 1;
+    }
+    workers = std::max<uint32_t>(1, std::min<uint32_t>(workers, 32));
+    // Below this there is nothing to share out and the merge would cost
+    // more than the split saves.
+    if (jobs.size() < 8)
+        workers = 1;
+    framestats.occluderThreads = workers;
+
+    if (workers == 1) {
+        for (const OccluderJob &j : jobs)
+            runJob(buffer, j);
+        framestats.rasterMs = millisSince(t0);
+        return;
+    }
+
+    // Greedy longest-first assignment. The ranking is already
+    // largest-on-screen first, which correlates with triangle count, so
+    // handing out round-robin from the front balances well enough
+    // without a bin-packing pass.
+    shards.resize(workers);
+    std::vector<std::thread> pool;
+    pool.reserve(workers - 1);
+    for (uint32_t w = 0; w < workers; ++w) {
+        MaskedDepth &shard = shards[w];
+        shard.resize(buffer.width(), buffer.height());
+        shard.clear();
+        shard.resetStats();
+        shard.setCamera(view, proj, homogeneousDepth);
+        shard.setTwoSided(buffer.twoSided());
+    }
+    auto work = [&](uint32_t w) {
+        for (size_t i = w; i < jobs.size(); i += workers)
+            runJob(shards[w], jobs[i]);
+    };
+    for (uint32_t w = 1; w < workers; ++w)
+        pool.emplace_back(work, w);
+    work(0);
+    for (std::thread &t : pool)
+        t.join();
+    for (uint32_t w = 0; w < workers; ++w)
+        buffer.merge(shards[w]);
     framestats.rasterMs = millisSince(t0);
 }
 

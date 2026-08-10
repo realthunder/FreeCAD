@@ -467,6 +467,44 @@ TEST(MaskedOcclusion, InterleavingChangesTheAnswerWithinTheFrame)
     EXPECT_EQ(OccludeAnswer::Occluded, md.testBox(bmin, bmax));
 }
 
+TEST(MaskedOcclusion, AdjacentTrianglesLeaveNoCrackAlongTheirSharedEdge)
+{
+    // KEY: An occluder is a mesh, not a bag of triangles, and the seams
+    // where its triangles meet must not leak. This was not hypothetical:
+    // pulling every edge inwards by 1e-5 px -- which looks like free
+    // safety, since it makes any rounding lose coverage rather than
+    // invent it -- opened a one-pixel crack along every shared edge, and
+    // a two-triangle wall filling the viewport stopped occluding a box
+    // sitting on its diagonal.
+    //
+    // The seam is placed exactly on the query: a symmetric quad's
+    // diagonal runs through the centre of the buffer, and the box is
+    // centred there too.
+    MaskedDepth md;
+    md.resize(128, 128);
+    float V[16], P[16];
+    viewAt(V, 20.0f);
+    perspective(P, 60.0f, 1.0f, 0.5f, 200.0f);
+    md.setCamera(V, P, true);
+
+    const std::vector<float> wall = quad(0.0f, 20.0f);
+    md.rasterize(wall.data(), 0, wall.size() / 3);
+
+    // Every pixel along the diagonal must hold the wall's depth.
+    int uncovered = 0;
+    for (int i = 0; i < md.width() && i < md.height(); ++i)
+        if (md.pixelDepth(i, i) == -FLT_MAX)
+            ++uncovered;
+    EXPECT_EQ(0, uncovered)
+            << uncovered << " pixels of the shared diagonal hold no surface";
+
+    float bmin[3], bmax[3];
+    boxAt(bmin, bmax, 0.0f, 0.0f, -10.0f, 1.0f);
+    EXPECT_EQ(OccludeAnswer::Occluded, md.testBox(bmin, bmax))
+            << "a box on the seam between two occluder triangles showed "
+               "through it";
+}
+
 TEST(MaskedOcclusion, WindingDoesNotDecideWhetherASurfaceOccludes)
 {
     // Two-sided by design: a CAD tessellation's winding is not to be
@@ -1026,6 +1064,69 @@ TEST(MaskedOcclusionPass, TheCameraInsideTheModelStillDrawsIt)
     EXPECT_EQ(0u, pass.lastFrame().rootRefused);
 }
 
+TEST(MaskedOcclusionPass, WorkersNeverCullMoreThanOneThreadWould)
+{
+    // KEY: The occluder pass splits its work across workers that each
+    // rasterize into their own buffer, and the buffers are merged. Two
+    // two-layer blocks cannot merge without loss -- four layers do not
+    // fit in two -- so the merged buffer may occlude slightly less. The
+    // claim under test is the direction: never more. A worker count that
+    // could cull *more* would be culling something no single-threaded
+    // run justified, which is the one failure this mechanism exists to
+    // remove.
+    float V[16], P[16];
+    viewAt(V, 40.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    auto buildScene = [](SceneBuilder &scene) {
+        // Enough occluders that the pass actually splits the work: below
+        // its minimum it falls back to one worker, and then this test
+        // would compare a single-threaded run against itself.
+        for (int i = 0; i < 16; ++i) {
+            const float x = -24.0f + 3.0f * i;
+            scene.addWall(x, -25.0f, x + 3.0f, 25.0f, -0.1f * i, uint64_t(i));
+        }
+        for (int i = 0; i < 40; ++i)
+            scene.addBox(-18.0f + 0.9f * i, 0.0f, -20.0f, 0.4f,
+                         100 + uint64_t(i));
+    };
+
+    SceneBuilder one;
+    buildScene(one);
+    MaskedOccluderPass passOne;
+    MaskedCullConfig c1;
+    c1.threads = 1;
+    passOne.configure(c1);
+    ProxyHierarchy indexOne;
+    const auto maskOne = runPass(passOne, one, V, P, 512, 512, indexOne);
+
+    int hiddenOne = 0;
+    for (uint8_t m : maskOne)
+        hiddenOne += m ? 1 : 0;
+    EXPECT_GT(hiddenOne, 0) << "the single-threaded run culled nothing, so "
+                               "the comparison proves nothing";
+
+    for (uint32_t threads : {2u, 3u, 4u, 8u}) {
+        SceneBuilder many;
+        buildScene(many);
+        MaskedOccluderPass passMany;
+        MaskedCullConfig cm;
+        cm.threads = threads;
+        passMany.configure(cm);
+        ProxyHierarchy indexMany;
+        const auto maskMany = runPass(passMany, many, V, P, 512, 512, indexMany);
+
+        ASSERT_EQ(maskOne.size(), maskMany.size());
+        for (size_t i = 0; i < maskOne.size(); ++i) {
+            if (maskMany[i])
+                EXPECT_TRUE(maskOne[i])
+                        << threads << " workers culled row " << i
+                        << " that one worker kept";
+        }
+        EXPECT_EQ(threads, passMany.lastFrame().occluderThreads);
+    }
+}
+
 TEST(MaskedOcclusionPass, TheMaskIsAdditiveAndTheOwnerIsNot)
 {
     // The mask composes with the frustum's rejections, so it is only
@@ -1070,5 +1171,5 @@ TEST(MaskedOcclusion, OutOfRangeIndicesAreCulledNotDereferenced)
     const uint32_t idx[6] = {0, 1, 2, 0, 1, 99};
     md.rasterize(verts, 0, 3, idx, 6);
     EXPECT_EQ(2u, md.stats().trianglesIn);
-    EXPECT_GE(md.stats().trianglesCulled, 1u);
+    EXPECT_GE(md.stats().trianglesCulled(), 1u);
 }

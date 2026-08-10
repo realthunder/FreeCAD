@@ -70,6 +70,7 @@ public:
     bool OcclusionSoftware;
     long OcclusionOccluderTris;
     long OcclusionMinOccluder;
+    long OcclusionThreads;
     long OcclusionResolution;
     bool AO;
     bool Shadow;
@@ -174,6 +175,8 @@ public:
         funcs["OcclusionOccluderTris"] = &RenderParamsP::updateOcclusionOccluderTris;
         OcclusionMinOccluder = this->handle->GetInt("OcclusionMinOccluder", 24);
         funcs["OcclusionMinOccluder"] = &RenderParamsP::updateOcclusionMinOccluder;
+        OcclusionThreads = this->handle->GetInt("OcclusionThreads", 0);
+        funcs["OcclusionThreads"] = &RenderParamsP::updateOcclusionThreads;
         OcclusionResolution = this->handle->GetInt("OcclusionResolution", 1);
         funcs["OcclusionResolution"] = &RenderParamsP::updateOcclusionResolution;
         AO = this->handle->GetBool("AO", false);
@@ -389,6 +392,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionMinOccluder(RenderParamsP *self) {
         self->OcclusionMinOccluder = self->handle->GetInt("OcclusionMinOccluder", 24);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionThreads(RenderParamsP *self) {
+        self->OcclusionThreads = self->handle->GetInt("OcclusionThreads", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionResolution(RenderParamsP *self) {
@@ -1375,6 +1382,43 @@ void RenderParams::setOcclusionMinOccluder(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeOcclusionMinOccluder() {
     instance()->handle->RemoveInt("OcclusionMinOccluder");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionThreads() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many worker threads the CPU occlusion buffer may rasterize\n"
+"its occluders on. 0 picks automatically, leaving the submitting\n"
+"thread and one other alone -- this runs in the middle of a\n"
+"frame, not on an idle machine.\n"
+"\n"
+"Each worker rasterizes its own slice of the occluder list into\n"
+"its own buffer and the buffers are merged afterwards, so there\n"
+"is no locking. The merge is slightly lossy -- two two-layer\n"
+"blocks cannot combine into one without loss -- so a higher\n"
+"worker count can hide marginally less. Never more.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionThreads() {
+    return instance()->OcclusionThreads;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionThreads() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionThreads(const long &v) {
+    instance()->handle->SetInt("OcclusionThreads",v);
+    instance()->OcclusionThreads = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionThreads() {
+    instance()->handle->RemoveInt("OcclusionThreads");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

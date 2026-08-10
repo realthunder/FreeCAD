@@ -264,6 +264,17 @@ Params = [
         "bounding box diagonal, before it is worth rasterizing into the\n"
         "CPU occlusion buffer. Smaller draws can hide almost nothing and\n"
         "spend budget that a larger one could use."),
+    ParamInt('OcclusionThreads',  0, title='Occlusion occluder threads',
+        doc="How many worker threads the CPU occlusion buffer may rasterize\n"
+        "its occluders on. 0 picks automatically, leaving the submitting\n"
+        "thread and one other alone -- this runs in the middle of a\n"
+        "frame, not on an idle machine.\n"
+        "\n"
+        "Each worker rasterizes its own slice of the occluder list into\n"
+        "its own buffer and the buffers are merged afterwards, so there\n"
+        "is no locking. The merge is slightly lossy -- two two-layer\n"
+        "blocks cannot combine into one without loss -- so a higher\n"
+        "worker count can hide marginally less. Never more."),
     ParamInt('OcclusionResolution',  1, title='Occlusion buffer divisor',
         doc="Resolution of the CPU occlusion buffer, as a divisor of the\n"
         "viewport. 1 matches the viewport.\n"

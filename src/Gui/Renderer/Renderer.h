@@ -460,6 +460,8 @@ struct OcclusionCullConfig {
     /// Software buffer resolution as a divisor of the viewport.
     /// WARNING: Above 1 this can over-cull -- see MaskedCullConfig.
     uint32_t softwareDivisor = 1;
+    /// Worker threads for the software occluder pass, 0 = automatic.
+    uint32_t softwareThreads = 0;
 
     bool operator==(const OcclusionCullConfig &o) const {
         return enabled == o.enabled && visibleTtl == o.visibleTtl
@@ -471,7 +473,8 @@ struct OcclusionCullConfig {
             && software == o.software
             && occluderTriangles == o.occluderTriangles
             && minOccluderPx == o.minOccluderPx
-            && softwareDivisor == o.softwareDivisor;
+            && softwareDivisor == o.softwareDivisor
+            && softwareThreads == o.softwareThreads;
     }
     bool operator!=(const OcclusionCullConfig &o) const { return !(*this == o); }
 };

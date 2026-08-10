@@ -101,9 +101,26 @@ enum class OccludeAnswer : uint8_t {
 /// (docs/RenderDebug.md section 1).
 struct MaskedOcclusionStats {
     uint32_t trianglesIn = 0;        ///< offered by the caller
-    uint32_t trianglesCulled = 0;    ///< degenerate, backfacing or off-buffer
     uint32_t trianglesClipped = 0;   ///< crossed the near plane and were cut
     uint32_t trianglesDrawn = 0;     ///< reached block traversal
+    /// KEY: Why a triangle contributed nothing, split four ways rather
+    /// than counted once. On the benchmark scene two thirds of the
+    /// rasterized triangles land in these buckets, and which bucket
+    /// decides what is worth optimizing: geometry that is off the buffer
+    /// wants a cheaper reject before the perspective divide, geometry
+    /// that is merely too small wants coarser occluders, and the two
+    /// look identical under one counter.
+    uint32_t trianglesOffBuffer = 0;   ///< outside the viewport entirely
+    uint32_t trianglesSubPixel = 0;    ///< on the buffer, over no pixel centre
+    uint32_t trianglesBackFacing = 0;  ///< only when two-sided is off
+    uint32_t trianglesDegenerate = 0;  ///< zero screen area
+    uint32_t trianglesBehind = 0;      ///< wholly behind the near plane
+    /// Every triangle that did not reach block traversal.
+    uint32_t trianglesCulled() const
+    {
+        return trianglesOffBuffer + trianglesSubPixel + trianglesBackFacing
+                + trianglesDegenerate + trianglesBehind;
+    }
     uint32_t blocksTouched = 0;      ///< block updates attempted
     uint32_t blocksUpdated = 0;      ///< block updates that changed something
     uint32_t queries = 0;
@@ -243,6 +260,22 @@ public:
     /// surface in that block is farther than this. For tests.
     float blockFloor(int x, int y) const;
 
+    /// Fold \a other's occluders into this buffer. Both must have the
+    /// same size and camera.
+    ///
+    /// KEY: This is what lets the occluder pass run on several threads
+    /// without any shared state: each worker rasterizes its own slice of
+    /// the occluder list into its own buffer, and the slices are merged
+    /// afterwards. Every step of the merge is an ordinary block update,
+    /// so the one-sided invariant survives it by construction rather
+    /// than by a separate argument.
+    ///
+    /// WARNING: Two two-layer blocks cannot merge into one without loss --
+    /// four layers do not fit in two -- so a merged buffer may occlude
+    /// slightly less than a single-threaded one. Less, never more, and
+    /// the result is deterministic for a fixed worker count.
+    void merge(const MaskedDepth &other);
+
 private:
     /// One 8x4 block: two depth layers and the mask saying which pixels
     /// belong to layer 1. A pixel with its bit clear is at `z0`.
@@ -261,6 +294,7 @@ private:
                       const float *mvp);
     void rasterTri(const double *sx, const double *sy, const double *sd);
     void updateBlock(int bx, int by, uint32_t coverage, float ztri);
+    void updateBlockAt(size_t index, uint32_t coverage, float ztri);
     static float floorOf(const Block &b);
 
     std::vector<Block> blocks;
@@ -306,13 +340,26 @@ struct MaskedCullConfig {
     float minOccluderPx = 24.0f;
     /// How many draws may be considered at all, after sorting.
     uint32_t maxOccluders = 8192;
+    /// Workers the occluder pass may use, 0 for automatic.
+    ///
+    /// KEY: Each worker rasterizes its own slice of the occluder list
+    /// into its own buffer and the buffers are merged afterwards, so
+    /// there is no shared state and no locking. Intel's implementation
+    /// added exactly this in 2018 as an alternative to binning
+    /// ("MergeBuffer... an alternative method for parallelizing buffer
+    /// creation"), and reports ~3x on four threads for the binned form.
+    ///
+    /// WARNING: The merge is lossy -- see MaskedDepth::merge -- so a
+    /// different worker count can cull slightly differently. Never more,
+    /// only less, and deterministically for a fixed count.
+    uint32_t threads = 0;
 
     bool operator==(const MaskedCullConfig &o) const
     {
         return resolutionDivisor == o.resolutionDivisor
                 && triangleBudget == o.triangleBudget
                 && minOccluderPx == o.minOccluderPx
-                && maxOccluders == o.maxOccluders;
+                && maxOccluders == o.maxOccluders && threads == o.threads;
     }
     bool operator!=(const MaskedCullConfig &o) const { return !(*this == o); }
 };
@@ -327,6 +374,8 @@ struct MaskedCullStats {
     /// is the difference between "the scene does not occlude" and "we
     /// did not look".
     uint32_t occludersDropped = 0;
+    /// Workers the occluder pass actually used.
+    uint32_t occluderThreads = 1;
 
     uint32_t nodesVisited = 0;
     uint32_t nodesOffscreen = 0;
@@ -393,11 +442,23 @@ public:
     const MaskedCullStats &lastFrame() const { return framestats; }
 
 private:
+    /// One occluder admitted by the budget: the draw row and the index
+    /// range of it to rasterize.
+    struct OccluderJob {
+        uint32_t draw;
+        uint32_t first;
+        uint32_t count;
+    };
+
     MaskedDepth buffer;
     MaskedCullConfig conf;
     MaskedCullStats framestats;
     /// Scratch kept across frames so that a frame allocates nothing.
     std::vector<std::pair<float, uint32_t>> ranking;
+    std::vector<OccluderJob> jobs;
+    /// One buffer per worker, kept across frames: a 744 KB allocation
+    /// per worker per frame would cost more than the rasterization.
+    std::vector<MaskedDepth> shards;
     std::vector<int> walkstack;
     std::vector<int> descendstack;
 };

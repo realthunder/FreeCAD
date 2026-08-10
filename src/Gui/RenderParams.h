@@ -490,6 +490,27 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter OcclusionThreads
+    ///
+    /// How many worker threads the CPU occlusion buffer may rasterize
+    /// its occluders on. 0 picks automatically, leaving the submitting
+    /// thread and one other alone -- this runs in the middle of a
+    /// frame, not on an idle machine.
+    /// 
+    /// Each worker rasterizes its own slice of the occluder list into
+    /// its own buffer and the buffers are merged afterwards, so there
+    /// is no locking. The merge is slightly lossy -- two two-layer
+    /// blocks cannot combine into one without loss -- so a higher
+    /// worker count can hide marginally less. Never more.
+    static const long & getOcclusionThreads();
+    static const long & defaultOcclusionThreads();
+    static void removeOcclusionThreads();
+    static void setOcclusionThreads(const long &v);
+    static const char *docOcclusionThreads();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter OcclusionResolution
     ///
     /// Resolution of the CPU occlusion buffer, as a divisor of the

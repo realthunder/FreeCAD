@@ -4529,6 +4529,9 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             {"Render_OcclusionResolution",
              RenderParams::getOcclusionResolution(),
              &RenderParams::docOcclusionResolution},
+            {"Render_OcclusionThreads",
+             RenderParams::getOcclusionThreads(),
+             &RenderParams::docOcclusionThreads},
         };
         for (const auto &p : _occlusionParams) {
             if (view->getPropertyByName(p.name))

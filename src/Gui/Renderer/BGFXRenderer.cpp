@@ -13177,6 +13177,7 @@ public:
                     mc.resolutionDivisor = int(cullconf.softwareDivisor);
                     mc.triangleBudget = cullconf.occluderTriangles;
                     mc.minOccluderPx = cullconf.minOccluderPx;
+                    mc.threads = cullconf.softwareThreads;
                     maskedCull.configure(mc);
                     maskedCull.build(scene, viewMat, projf,
                                      caps ? caps->homogeneousDepth : true,
@@ -14408,7 +14409,7 @@ public:
                         "render culling: instances hidden %u / drawn %u / "
                         "offscreen %u | nodes visited %u hidden %u offscreen %u "
                         "tested %u | occluders %u of %u draws, %u tris, "
-                        "dropped %u | buffer %dx%d, tris drawn %u clipped %u "
+                        "dropped %u, %u threads | buffer %dx%d, tris drawn %u clipped %u "
                         "culled %u, blocks %u | nearclip %u rootrefused %u "
                         "| raster %.2fms walk %.2fms | indexed %u of %u draws "
                         "(%u on-top exempt) | index %u nodes, build %.1fms\n",
@@ -14416,9 +14417,10 @@ public:
                         ms.offscreenInstances, ms.nodesVisited, ms.nodesHidden,
                         ms.nodesOffscreen, ms.nodesTested, ms.occluderDraws,
                         ms.occluderCandidates, ms.occluderTriangles,
-                        ms.occludersDropped, maskedCull.depth().width(),
+                        ms.occludersDropped, ms.occluderThreads,
+                        maskedCull.depth().width(),
                         maskedCull.depth().height(), bs.trianglesDrawn,
-                        bs.trianglesClipped, bs.trianglesCulled,
+                        bs.trianglesClipped, bs.trianglesCulled(),
                         bs.blocksUpdated, ms.nearExempt, ms.rootRefused,
                         ms.rasterMs, ms.walkMs,
                         cullIndexed, unsigned(scene.size()), cullExemptOnTop,

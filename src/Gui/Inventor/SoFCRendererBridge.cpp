@@ -1295,6 +1295,11 @@ RendererBridge::translateOcclusionCullConfig(App::PropertyContainer * view)
     res.softwareDivisor = atLeast(viewParamOverride<App::PropertyInteger>(
             view, "Render", "OcclusionResolution",
             RenderParams::getOcclusionResolution()), 1);
+    // Zero is the automatic pick, so the floor is zero and not one.
+    res.softwareThreads = uint32_t(std::max<long>(0,
+            viewParamOverride<App::PropertyInteger>(
+                    view, "Render", "OcclusionThreads",
+                    RenderParams::getOcclusionThreads())));
     return res;
 }
 
