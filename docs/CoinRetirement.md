@@ -622,15 +622,32 @@ zero in every case on both paths. Three findings are worth keeping:
   three decimals, on llvmpipe and on the real GPU alike**. The depth
   `glBlitFramebuffer` in `BGFXView::blit` therefore delivers Coin the
   same depth Coin would have computed itself, MSAA resolve included.
-- **The composite surface is smaller than it looks.** `SoFCRenderer::
-  render` returns early whenever the backend reports
-  `canSkipInternal()`, so everything the render cache captures is drawn
-  by the backend, dragger geometry included. What Coin still draws is
-  what sits *outside* the capture: the shadow light's manipulator (above
-  the traversal root, 3.4), the NaviCube, the axis cross, dimension text,
-  the rubber band -- overlays that ignore depth by design, plus the
-  NaviCube's own `glClear(GL_DEPTH_BUFFER_BIT)`, which is last in the
-  frame and takes nothing with it.
+- **The composite surface is smaller than it looks, and the backend
+  draws most of the draggers itself.** `SoFCRenderer::render` returns
+  early whenever the backend reports `canSkipInternal()`, so everything
+  the render cache captures is drawn by the backend, dragger geometry
+  included. Measured rather than inferred, with
+  `fcad-probes/dragger_owner_probe.py`: `saveRenderDump(source=
+  "renderer")` reads the bgfx framebuffer back *before* Coin composites,
+  so what is in the window and not in that readback is Coin's.
+
+  | overlay | window | backend framebuffer | drawn by |
+  | --- | --- | --- | --- |
+  | Transform manipulator | 0.0120 | 0.0116 | the backend |
+  | Sketcher edit geometry | present | present | the backend |
+  | shadow light manipulator | 0.0015 | **0.0000** | Coin, on top |
+
+  The Transform dragger's arrows, rings and handles are backend
+  geometry, and so is the whole Sketcher edit scene -- edit lines, point
+  markers and the plane cross-hairs are all in the pre-composite
+  readback. The shadow light manipulator is the exception, and for the
+  reason 3.4 already gives: its light node sits *above* the render-cache
+  traversal root, so neither the light nor its dragger is in the
+  backend's feed. What is left for Coin, then, is that manipulator, the
+  NaviCube, the axis cross, dimension text and the rubber band --
+  overlays that ignore depth by design, plus the NaviCube's own
+  `glClear(GL_DEPTH_BUFFER_BIT)`, which is last in the frame and takes
+  nothing with it.
 - WARNING: **the Transform-edit transparency defect is worse than 3.3
   recorded, and worse on glr.** Leaving edit mode does not heal it, and on the real
   GPU the glr path loses the faces *outright* (0.904 of the scene reads
