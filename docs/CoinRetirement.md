@@ -494,11 +494,36 @@ behind.
 
 Still open, and the same shape from the other side: an **"invisible"
 show-on-top object is clipped by auto clipping** — it does not contribute
-to the bounds it is then judged against. Reported 2026-08-10, not
-investigated; untouched by the above, which only moved where the
-*backend's* bounds are reported. That one is drawn by Coin from a node
-that is in the graph, so it is a question of which traversals count it,
-not of whether anything asks.
+to the bounds it is then judged against. Reported 2026-08-10; untouched
+by the above, which only moved where the *backend's* bounds are reported.
+
+⚠️ **Not reproduced**, and the negative result is worth as much as the
+report until the missing condition is found.
+`fcad-probes/ontop_clip_probe.py` builds two 20mm cubes 300mm apart along
+the view direction, hides the far one, and reads the clip planes, the
+bounding box the render manager is given, and a per-half framebuffer
+difference. With the far cube hidden and nothing on top the far plane
+sits at 510.9 — the near cube alone — so its absence is measurable. Four
+ways of putting it on top all move the plane to 811.8 and draw it, on all
+three render paths (30/30):
+
+| on top by | bgfx | glr | coin |
+| --- | --- | --- | --- |
+| visible, unselected (control) | 811.8 | 811.8 | 811.8 |
+| hidden, whole object selected | 811.8 | 811.8 | 811.8 |
+| hidden, one face selected | 811.8 | 811.8 | 811.8 |
+| hidden, `Std_ToggleShowOnTop`, selection then cleared | 811.8 | 811.8 | 811.8 |
+
+The last row is the one that exercises `checkGroupOnTop`'s `alt` branch —
+under a render cache the ordinary selection route returns before it,
+so that command is the *only* caller of
+`SoFCRenderCacheManager::addSelection` for on-top. Whatever the reported
+case is, it is none of these four, and it is not backend-specific.
+So the missing condition is in the scene rather than the mechanism: a
+hidden **parent** (Link, group, assembly) rather than a hidden leaf, or a
+perspective camera, where `setClippingPlanes` clamps the near plane to
+`farval / 2^bits` and can cut an on-top object near the eye *after*
+counting it — a different defect wearing the same description.
 
 **Stage 1b — the draggers, and Coin reaching into the backend's
 framebuffer.** Draggers are the largest thing still drawn by Coin GL on
