@@ -136,16 +136,77 @@ is the "view mode" dropdown every production engine ships.
 | 8 | UV | UV / texcoord of the visible surface (depth-tested re-render) | mapping bugs |
 | 9 | Reflection | the planar reflection target, tinted dark red where the mirror covered nothing | mirror pass not running/stale, mirrored camera framing, what does and does not reach the mirror |
 | 10 | ImpactMap | the particle impact map (docs/RenderEngine.md §5.8) stretched over the screen: green where a hit is recorded, brightness its age against the ring lifetime, blue its strength, dark red where nothing has ever struck | impact-driven water rings — separates "the step program reported nothing" from "reported in the wrong place" from "the surface fails to show what is there" |
+| 11 | InstanceId | the identity of the draw that owns each pixel — every scene draw re-rasterized with the cull mask **ignored**, writing `drawIndex + 1` as an exact 24-bit integer (screen shows a hashed palette; the target holds the exact id) | which draws actually reach the screen — the ground truth behind `RenderDebug_CullAudit` (§2.4e), and the answer to "is this draw contributing anything at all" |
 
 Implementation shape: the mode rides `u_debugParams.x`; the final composite
 shader (`fs_fc_debug.sc`) ends in a mode `switch` that samples the relevant
 intermediate target. Modes 1–5/7 are pure routing over targets that already
 exist for the effect passes (modes 4/5/7 reconstruct the view-space position
-from the prepass depth, so they force the prepass on like 1–3). Modes 6/8
+from the prepass depth, so they force the prepass on like 1–3). Modes 6/8/11
 share a dedicated *debug scene re-render* pass (`ViewDebugScene`, repurposing
 the retired AO-apply view slot): every main-pass triangle fill re-rasterizes
 into a full-res RGBA16F target — additive with the depth test off for the
-fragment count, depth-tested texcoord output for UV. The enum is append-only.
+fragment count, depth-tested texcoord output for UV, the draw's own identity
+for the id mode. The enum is append-only.
+
+#### 2.3b Mode 11 in detail — the id image is a measuring instrument
+
+It is not a visualization that happens to be readable; it is ground truth,
+and three of its properties are load-bearing:
+
+- **Per instance, not per mesh.** The id is the `DrawCall` row, which is
+  exactly what the occlusion cull mask is indexed by
+  (`ProxyInstance::drawIndex`). Any coarser and a disagreement would name
+  something that cannot be masked.
+- ⭐⭐ **Exact integers, never a hash or a palette.** Two draws sharing a
+  value is precisely the failure the instrument exists to detect. The
+  target is RGBA16F, which carries 0..255 per channel exactly; the id is
+  split into three raw byte lanes. What the *screen* shows is a hashed
+  palette (consecutive ids differ by one and would otherwise be an
+  invisible gradient) — the screen is never what the audit reads.
+- **Every geometry kind, and the cull mask ignored.** Lines and points go
+  through the same screen-space quad expansion the beauty pass uses, so
+  the coverage is the coverage; the residual damage of occlusion culling
+  shows up on edges, and an audit that skipped them would come back clean
+  while missing exactly the draws that were wrong. Ignoring the mask is
+  the whole point: the image has to be what the frame *would* have drawn
+  had nothing been skipped.
+
+⚠️ Coincident geometry is resolved by draw order (the view is Sequential,
+on-top draws submitted last), where the beauty pass would state-sort. Two
+draws at identical depth may therefore swap owners. This has not been
+observed to matter — see §12.9's validation row, where 818 masked
+instances produced zero false reports — but it is the first thing to
+suspect if the audit ever names something the picture cannot corroborate.
+
+### 2.4e `RenderDebug_CullAudit` — what the culling actually deleted
+
+Turns the id image into a check on the occlusion culling
+(docs/FarFieldProxies.md §12.9): the image is read back once a second and
+intersected with the cull mask *as it was when that image was rendered*.
+
+- `visible(id) ∩ masked` is a set of **proven over-culls** — named draws,
+  each with a pixel count, ranked. Not "N pixels differ between two
+  pictures", which is a symptom that names nothing.
+- The same histogram gives the converse for free: rows that were drawn and
+  own **no pixel at all**, which is the headroom the culling has not taken.
+
+Independent of `ViewMode` — measuring what a frame skipped and looking at a
+false-colour id image are different jobs, and the audit must not require
+the screen to show something nobody can navigate by.
+
+⛔ **The instrument validates itself before it is believed.** An id pass
+that drew nothing reports a flawless culling and a colossal amount of
+wasted work — the most convincing possible output, and entirely a report
+that the instrument is broken. So a frame whose id image covers no pixel
+at all refuses to compute and says so, the same shape as
+`OcclusionFrameStats::rootRefused`. The snapshots are load-bearing for the
+same reason: a readback lands a frame or two late, and checking it against
+the *then-current* mask would reintroduce, inside the instrument, the very
+one-frame skew it was built to find.
+
+Needs a backend with texture readback, which WebGL2 is not; it says so once
+rather than reporting zeros. The id image itself still renders there.
 
 Mode-specific tuning rides the `u_userParams[0]` bootstrap lane: `.z`
 overrides the overdraw full-red count (default 8) and the mode-7 probe

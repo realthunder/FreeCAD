@@ -1920,3 +1920,86 @@ Given that this workstream's pain has been latency and feedback rather
 than culling accuracy, the software rasterizer is the stronger long-term
 bet and the ID buffer is both the near-term auditor and the thing that
 proves whichever oracle wins.
+
+### 12.9 measured: the audit, and what it corrects
+
+Step 1 of the plan above is built: `RenderDebug_ViewMode = 11` renders the
+per-instance id image (docs/RenderDebug.md §2.3b) and
+`RenderDebug_CullAudit` reads it back and intersects it with the cull mask.
+Harness `~/works/sw/models/cull_audit.py`; server assembly, real GPU with
+the monitor off, 1863x1064, one fixed converged camera, each row reporting
+**both** measurements of the same frames.
+
+⚠️ The harness re-runs `ViewFit` *after* convergence. The first fit frames
+whatever geometry had arrived, and a smoke run left the finished model
+covering 3% of the viewport — which silently divides every coverage number
+by thirty. Same family as the 400x300-reporting-1920x1200 trap of §10.2.
+
+| visible ttl | confirmations | instances hidden | **audit: over-cull** | picture: differing px |
+|---|---|---|---|---|
+| 10^6 | **1** | 818 of 17727 | **0 px, 0 rows** | **0** |
+| 10^6 | 2 | **0** | 0 px | 0 |
+| 60 | 2 | 5202 | 36629 px, 161 rows | 4555 |
+| 6 | 2 | 15012 | 44415 px, 404 rows | 23514 |
+
+#### ⭐⭐ The first row is the validation, and it is the point
+
+818 instances masked, and *both* instruments independently report exactly
+zero. An audit that inflated whenever anything was masked — the failure
+mode that would make every other row worthless — would have shown it here
+across 818 opportunities. It did not. Together with the culling-off control
+(nothing masked ⇒ nothing reported) and the empty-image guard, that is what
+licenses reading the rows below.
+
+#### ⭐⭐ The correction: §12.7's last row hides nothing
+
+That table's "any confirmations / ttl 10^6 / 0 px" row is 0 px **because
+the culler removes nothing there**, not because it removes 89% of the model
+exactly. With `visibleTtl` out of reach a node is never asked a second
+time, and `hiddenConfirm` requires consecutive hidden answers — so at
+confirm ≥ 2 no node can ever accumulate two, and the mechanism is
+structurally incapable of culling. Measured: `instances hidden 0`, `tests
+offered 0`. At confirm 1 the same lifetime hides 818 instances (4.6%),
+still pixel-exact.
+
+⇒ **The "pixel-exact while hiding 89% of instances" claim pairs a pixel
+count from one configuration with a hidden count from another.** The
+honest statement is the first row: a first-test-only policy is exact, and
+it hides 4.6%.
+
+#### ⭐ The audit is a strictly stronger claim than a picture diff
+
+It reads 8x the picture at ttl 60 and 1.9x at ttl 6, always larger, always
+moving the same direction. That is expected rather than contradictory: a
+draw removed from in front of *another* draw of similar colour is a proven
+violation of the invariant culling claims — that it removes only geometry
+which could not have contributed a pixel — while barely moving a pixel. A
+dense assembly of nested and coincident parts is mostly that case. The
+picture measures how much the image changed; the audit measures how much
+of what reached the screen was deleted, which is the thing being promised.
+
+#### ⭐ The damage is a few large draws, and they now have names
+
+At ttl 60 one draw (`Compound016`, 12845 px) is 35% of the total over-cull,
+and the top five are 65% of it. Every earlier measurement could only say
+"4555 pixels differ somewhere". This is the difference the instrument was
+built for: the next question is answerable — why does *that* node's box
+report no pixels while that draw is on screen — where "0.32% of the frame
+changed" led nowhere.
+
+#### ⭐ The headroom, free from the same histogram
+
+With culling off, **16913 of 17727 drawn rows own no pixel at all (95.4%)**
+— submitted, rasterized, and contributing nothing to the final image. At
+~1.2-1.5 µs of CPU submission plus ~1.5-1.7 µs of GPU time per draw
+(§10.2), that is the size of the prize, measured directly rather than
+inferred from box tests. Even the most aggressive row above (ttl 6) still
+leaves 2305 of 2715 surviving draws invisible.
+
+#### What this does not settle
+
+The per-test failure of §12.7 is still unexplained — the audit localizes it
+to named draws but does not say why their nodes' boxes answer wrongly.
+Steps 2 and 3 of §12.8 (the priming pass, then choosing between ID feedback
+and masked software occlusion) are unchanged, and now have something to be
+verified against. `Render_Occlusion` stays default off.
