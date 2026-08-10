@@ -84,6 +84,8 @@
 #include <DAGView/DAGView.h>
 #include <TaskView/TaskView.h>
 
+#include <customtitlebarkit/MenuIntegration.h>
+
 #include "MainWindow.h"
 #include "Action.h"
 #include "Assistant.h"
@@ -307,6 +309,10 @@ struct MainWindowP
     bool _closingAll = false;
     QTime _showNormal;
 
+    /// The button the title bar's menu folds behind. Outlives every switch
+    /// between the two title bars, so it is built once and handed back.
+    QPointer<QPushButton> titleBarLogo;
+
     QString overrideIcons;
     bool hasOverrideIcons = false;
     QString overrideExtraIcons;
@@ -416,6 +422,8 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     d->activeView = nullptr;
     d->whatsthis = false;
     d->assistant = new Assistant();
+
+    setupTitleBarMenu();
 
     // global access
     instance = this;
@@ -1748,6 +1756,41 @@ void MainWindow::closeEvent (QCloseEvent * e)
     }
 }
 
+void MainWindow::setupTitleBarMenu()
+{
+    // Let the stylesheets tell the backends apart -- the generic one draws its
+    // own close button and wants the red hover, the others do not. The kit
+    // itself never sets this, so the selector upstream's stylesheet uses would
+    // match nothing without it.
+    setProperty("backend", isCustomTitleBar() ? backendName() : QString());
+
+    if (!isCustomTitleBar()) {
+        return;
+    }
+    if (backendName().startsWith(QLatin1String("mac"))) {
+        // The mac backend keeps the system menu bar at the top of the screen,
+        // so there is nothing in the title bar to fold.
+        return;
+    }
+
+    if (!d->titleBarLogo) {
+        auto logo = new QPushButton(this);
+        logo->setObjectName(QStringLiteral("titleBarLogo"));
+        logo->setIcon(BitmapFactory().iconFromTheme("freecad"));
+        logo->setIconSize(QSize(24, 24));
+        logo->setFixedSize(35, 35);
+        logo->setFlat(true);
+        logo->setCursor(Qt::PointingHandCursor);
+        logo->setToolTip(tr("Show the menu"));
+        d->titleBarLogo = logo;
+    }
+    // FoldableMenuIntegration::uninstall() hands the brand widget back with no
+    // parent at all, so take ownership again before passing it on.
+    d->titleBarLogo->setParent(this);
+
+    setMenuIntegration(new FoldableMenuIntegration(d->titleBarLogo, this));
+}
+
 void MainWindow::setCustomTitleBar(bool enable)
 {
     if (enable == isCustomTitleBar()) {
@@ -1763,6 +1806,9 @@ void MainWindow::setCustomTitleBar(bool enable)
     }
 
     setMode(enable ? Mode::Custom : Mode::Native);
+
+    // setMode() installs the kit's own inline integration; swap in ours.
+    setupTitleBarMenu();
 
     if (toolBars) {
         toolBars->relocateMenuBarAreas();

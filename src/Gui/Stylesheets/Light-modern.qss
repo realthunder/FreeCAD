@@ -2699,3 +2699,56 @@ QTreeView::branch#groupsTreeView:has-children:!has-siblings:closed  {
 QTreeView::branch#groupsTreeView:has-siblings:!adjoins-item  {
   border-image: none 0;
 }
+
+/*==================================================================================================
+CustomTitleBarWindow
+==================================================================================================*/
+
+/* The logo the menu bar folds behind. The icon comes from the theme in C++,
+   so only the chrome belongs here. */
+#titleBarLogo {
+  border: none;
+  background: transparent;
+  padding: 0px;
+  margin-left: 4px;
+  margin-right: 4px;
+}
+
+#titleBarLogo:hover {
+  background-color: @ThemeAccentColor1;
+}
+
+#titleBarLogo:pressed {
+  background-color: @ThemeAccentColor2;
+}
+
+/* Folded, the menu bar is an overlay drawn over the title bar rather than a
+   strip of its own, so it must not paint its own background. */
+QMenuBar[foldable="true"] {
+  background-color: transparent;
+}
+
+WindowDecorationButton {
+  background: transparent;
+  border: none;
+}
+
+WindowDecorationButton:hover {
+  background-color: @ThemeAccentColor1;
+}
+
+WindowDecorationButton:pressed {
+  background-color: @ThemeAccentColor2;
+}
+
+/* Only the generic backend draws its own close button, and the platform
+   convention it is imitating is a red one. */
+CustomTitleBarWindow[backend="generic"] WindowDecorationButton#closeButton:hover {
+  background-color: #E81123;
+  color: White;
+}
+
+CustomTitleBarWindow[backend="generic"] WindowDecorationButton#closeButton:pressed {
+  background-color: #C50F1F;
+  color: White;
+}
