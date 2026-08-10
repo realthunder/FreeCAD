@@ -13,6 +13,22 @@
 #include <windowsx.h>
 #include <dwmapi.h>
 
+namespace
+{
+// LOCAL DIVERGENCE: how thick the frame Windows expects to be there is, at this
+// window's DPI. GetSystemMetrics reports the primary monitor's, which is the
+// wrong answer on a second monitor scaled differently.
+QMargins resizeBorder(HWND handle)
+{
+    const UINT dpi = ::GetDpiForWindow(handle);
+    const int cx = ::GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi)
+        + ::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+    const int cy = ::GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi)
+        + ::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+    return {cx, cy, cx, cy};
+}
+}  // namespace
+
 // Initialize height to 35 to ensure WM_NCHITTEST works before the first resize event
 WinTitleBarBackend::WinTitleBarBackend()
     : m_titleBarHeight(minimumTitleBarHeight())
@@ -155,8 +171,22 @@ bool WinTitleBarBackend::handleNativeEvent(const QByteArray& eventType, void* me
             if (msg->wParam == TRUE) {
                 NCCALCSIZE_PARAMS& params = *reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam);
 
+                // LOCAL DIVERGENCE: maximized, a client area that fills the
+                // window rect hangs off the screen. Windows sizes a maximized
+                // window to the work area grown by the resize border on every
+                // side -- it expects the frame to swallow that -- so with the
+                // frame gone the top border's worth of title bar is off the top
+                // of the monitor, taking the logo and the window buttons with
+                // it. Give the border back on all four sides.
+                if (::IsZoomed(msg->hwnd)) {
+                    const QMargins border = resizeBorder(msg->hwnd);
+                    params.rgrc[0].left += border.left();
+                    params.rgrc[0].top += border.top();
+                    params.rgrc[0].right -= border.right();
+                    params.rgrc[0].bottom -= border.bottom();
+                }
                 // Fix a visual bug when resizing: without this, ugly white bands appear
-                if (params.rgrc[0].top != 0) {
+                else if (params.rgrc[0].top != 0) {
                     params.rgrc[0].top -= 1;
                 }
 
@@ -253,23 +283,14 @@ bool WinTitleBarBackend::handleNativeEvent(const QByteArray& eventType, void* me
         }
 
         case WM_GETMINMAXINFO: {
-            if (::IsZoomed(msg->hwnd)) {
-                RECT frame = {0, 0, 0, 0};
-                AdjustWindowRectEx(&frame, WS_OVERLAPPEDWINDOW, FALSE, 0);
-
-                double dpr = m_window->devicePixelRatioF();
-
-                QMargins margins;
-                margins.setLeft(static_cast<int>(abs(frame.left) / dpr + 0.5));
-                margins.setTop(static_cast<int>(abs(frame.bottom) / dpr + 0.5));
-                margins.setRight(static_cast<int>(abs(frame.right) / dpr + 0.5));
-                margins.setBottom(static_cast<int>(abs(frame.bottom) / dpr + 0.5));
-
-                m_window->setContentsMargins(margins);
-            }
-            else {
-                m_window->setContentsMargins(QMargins());
-            }
+            // LOCAL DIVERGENCE: upstream insets the window's *contents* by the
+            // frame here, to keep a maximized window's content out of the part
+            // that hangs off the screen. WM_NCCALCSIZE above now keeps the
+            // client area itself inside the work area, which is the same
+            // correction one level down -- and the one the title bar is subject
+            // to as well, where a contents margin is not. Doing both left an
+            // empty border all round a maximized window.
+            m_window->setContentsMargins(QMargins());
             return false;
         }
 
