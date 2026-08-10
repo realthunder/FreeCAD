@@ -399,10 +399,53 @@ counted; the backend's is drawn outside the graph and reaches the bounds
 only through `View3DInventorViewer::onGetBoundingBox`, which
 `SoFCUnifiedSelection::getBoundingBox` calls during the
 `SoGetBoundingBoxAction` that `SoRenderManagerP::setClippingPlanes`
-applies. That path exists, so the question is why it does not take
-effect here — a frame-ordering suspicion (the light config a frame is
-clipped against is the previous frame's) is the place to start, not a
-conclusion.
+applies.
+
+**Diagnosed 2026-08-10.** The frame-ordering suspicion was right, and it
+is only half of it. `clip_bounds_probe.py` applies the same action to
+the same root the render manager holds and prints the box beside the
+planes, so the two halves separate: the backend's box is the model
+outright, `((-10,-10,0),(10,10,20))`, while glr's is the quad,
+`((-40,-40,-1),(40,40,20))`. Running it under a gdb breakpoint on each
+link of the chain, with the probe marking its legs on fd 2 so the counts
+can be attributed, gives the mechanism:
+
+1. `setClippingPlanes` applies its `SoGetBoundingBoxAction` on **every**
+   render — Coin does not gate that.
+2. But the traversal is served by an ancestor `SoSeparator`'s bounding
+   box cache and never descends, so `SoFCUnifiedSelection::getBoundingBox`
+   — the only route to `onGetBoundingBox`, and so the only route by
+   which the backend's ground can reach the bounds — is reached just
+   **once per leg**.
+3. That one time is the frame straight after `setRendererType`, when the
+   renderer has been built but no traversal has run yet, so
+   `lightconf` is still default: `valid` false, `ground` false.
+   `LightConfig::groundQuad` refuses on the first test and the ground is
+   not added. The light config is pushed by the render-cache traversal,
+   i.e. *during* the frame — after auto clipping has already asked.
+4. Nothing the backend draws can invalidate a Coin cache, so nothing
+   ever asks again. Four rounds of moving the camera and 48
+   `updateGui()`s later the planes have not moved (240.75 / 277.01) and
+   not one further bounding-box traversal has occurred.
+
+So it is not that the auto-sized ground is handled worse than an
+explicit one. **The backend's ground never reaches auto clipping at
+all.** ⚠️ Which means §3.4's reading of the parity table needs
+qualifying: the explicit-position and tilted rows agree with glr *to the
+last decimal*, which is not what a second, independent computation of
+the same quad looks like — those legs are almost certainly measuring
+Coin's own quad still in the graph from the preceding glr shot, not the
+backend's contribution. Do not take them as evidence that the path works
+in those cases.
+
+The fix therefore has two halves, and the second is the one with teeth:
+the single query must see a populated light config, **and** a change in
+what the backend draws outside the graph has to invalidate the Coin
+bounding-box cache, or the answer is computed once and kept forever.
+⚠️ The obvious hook — touch the selection root when the renderer's
+reported bounds change — feeds a redraw from inside the redraw, so it
+has to be guarded on an actual change rather than on the config being
+re-pushed, which happens every traversal.
 
 Related, and probably the same defect from the other side: an
 **"invisible" show-on-top object is clipped by auto clipping** — it does
