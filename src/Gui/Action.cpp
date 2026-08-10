@@ -680,52 +680,6 @@ ActionGroup::~ActionGroup()
  * command is invoked) and follows it back through Action::actionChecked,
  * which is how a state set elsewhere reaches the menu.
  */
-/** Dismiss the popup chain a menu row belongs to, the way Qt does it.
- *
- * Clicking a menu item closes the menu. A QWidgetAction's widget handles
- * its own mouse events, so QMenu never activates an action and never
- * hides -- the row runs its command and the popup just stands there.
- *
- * ⚠️ Hiding the menus by hand is not enough, and what it misses is the
- * rest of QMenuPrivate::hideUpToMenuBar: besides hiding the chain, that
- * clears the menu bar's current action and leaves keyboard mode. Hide
- * them by hand and the menu bar still believes its popup is up, so the
- * next click on it is spent closing a menu that is already gone, and
- * only the one after that opens anything. That was this function's
- * first version, and it is the defect it was reported for.
- *
- * hideUpToMenuBar is private, but QMenu calls it itself for a press that
- * lands on no action of its own -- so hand the popup one, out beyond its
- * rect, and Qt runs its own teardown. The release follows so the menu's
- * mouseDown is not left set. Should a future Qt stop answering that
- * press, the hide is kept as a fallback: a menu that does not close is a
- * worse failure than a menu bar that eats one click.
- */
-static void closeMenuChain(QWidget *widget)
-{
-    QMenu *menu = nullptr;
-    for (QWidget *w = widget; w && !menu; w = w->parentWidget())
-        menu = qobject_cast<QMenu*>(w);
-    if (!menu)
-        return;
-
-    const QPointF local(-100, -100);
-    const QPointF global(menu->mapToGlobal(local.toPoint()));
-    QMouseEvent press(QEvent::MouseButtonPress, local, global,
-                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QMouseEvent release(QEvent::MouseButtonRelease, local, global,
-                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-    QApplication::sendEvent(menu, &press);
-    QApplication::sendEvent(menu, &release);
-
-    for (QWidget *w = menu; w; w = w->parentWidget()) {
-        if (auto m = qobject_cast<QMenu*>(w)) {
-            if (m->isVisible())
-                m->hide();
-        }
-    }
-}
-
 static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions,
                           bool exclusive)
 {
@@ -764,23 +718,21 @@ static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions,
             button = checkbox;
         }
         QObject::connect(wa, &QAction::toggled, action, &QAction::toggled);
-        // clicked, not toggled: only a real click should dismiss the
-        // popup, and it is emitted after toggled, so the command has
-        // already run by the time the menu goes. Re-clicking the row
-        // that is already checked emits no toggled at all and still
-        // dismisses, which is what a menu item does.
+        // ⚠️ No dismissal here, deliberately. A row built as a widget
+        // action leaves the menu standing -- that is the point of the
+        // list being a menu of radio buttons at all: comparing Shaded
+        // against Flat Lines means trying them, and reopening the menu
+        // between attempts is what made them hard to compare. Normal
+        // menu items keep Qt's own behaviour and dismiss.
         //
-        // ⚠️ And deferred to the next turn of the event loop, not done
-        // here. A popup holds a mouse grab, and hiding it from inside
-        // the click it is still delivering unwinds that grab halfway:
-        // the press/release pair never completes, and afterwards the
-        // menu misbehaves -- the radio rows stopped responding at all,
-        // while the checkbox and slider rows, which nothing hid, were
-        // fine. Invisible to QTest, which posts events straight to the
-        // widget and never takes the grab; it wants a real pointer.
-        QObject::connect(button, &QAbstractButton::clicked, menu, [button]() {
-            QTimer::singleShot(0, button, [button]() { closeMenuChain(button); });
-        });
+        // A version of this closed the popup by hand and had to be
+        // taken out again: hiding the menus is only half of
+        // QMenuPrivate::hideUpToMenuBar, which also clears the menu
+        // bar's current action and leaves keyboard mode, so the menu bar
+        // went on believing its popup was up and swallowed the next
+        // click on it. If a row ever does need to dismiss, hand the
+        // popup a synthetic press beyond its own rect -- QMenu answers
+        // that with hideUpToMenuBar itself -- rather than hiding it.
         // The row is a widget action now, so the command's own action is
         // no longer in any menu -- and an action that belongs to no
         // widget never receives QEvent::Shortcut, which would leave the
