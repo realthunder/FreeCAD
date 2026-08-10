@@ -1926,7 +1926,8 @@ proves whichever oracle wins.
 Step 1 of the plan above is built: `RenderDebug_ViewMode = 11` renders the
 per-instance id image (docs/RenderDebug.md §2.3b) and
 `RenderDebug_CullAudit` reads it back and intersects it with the cull mask.
-Harness `~/works/sw/models/cull_audit.py`; server assembly, real GPU with
+Harness `scripts/cull_audit.py` (it lived outside the repository
+until section 12.15 promoted it); server assembly, real GPU with
 the monitor off, 1863x1064, one fixed converged camera, each row reporting
 **both** measurements of the same frames.
 
@@ -2220,7 +2221,7 @@ taken with that defect present and have not been re-taken.
 #### ⛔ measured: the medians do not collapse
 
 Same harness, same model, same camera, same two rows, medians over a ~30
-sample window (`~/works/sw/models/cull_audit.py`, `FC_ROWS="60/2,6/2"`):
+sample window (`scripts/cull_audit.py`, `FC_ROWS="60/2,6/2"`):
 
 | visible ttl | over-cull px, §12.10 | over-cull px, with leases |
 |---|---|---|
@@ -2724,6 +2725,17 @@ in code.
 
 Against the physical ceiling the pass is doing well: the rasterization
 phase goes 17.99 -> 2.96 ms, **6.1x on 8 cores**.
+
+#### The harness is now in the repository
+
+`scripts/cull_audit.py`, with a recipe in `scripts/README.md`. It had
+been sitting outside the tree for six sections, which is why the
+single-sample readout above survived as long as it did: an instrument
+nobody can review is an instrument nobody reviews. The two traps that
+cost the most are written into its header rather than left to be
+rediscovered -- give every field of a software row explicitly, because
+nothing resets the view properties between rows; and read the spread,
+never the last line.
 
 #### Still owed, in the order this section leaves it
 

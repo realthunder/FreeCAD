@@ -1,0 +1,390 @@
+# What did occlusion culling actually delete? (docs/FarFieldProxies.md §12.9)
+#
+# Every earlier measurement of the culling compared two PICTURES and reported
+# how many pixels differ -- which says something is wrong without saying what,
+# and cannot separate "culled less" from "got luckier". This drives the cull
+# audit instead: the scene is re-rasterized with the cull mask ignored and each
+# draw writing its own identity, so the ids owning a pixel are an exact answer
+# to which draws reach the screen, and their intersection with the mask is a
+# list of proven over-culls -- each a named draw with a pixel count.
+#
+# /!\ THE INSTRUMENT IS VALIDATED BEFORE ITS VERDICT IS READ. An audit that
+# reports "0 over-culls" is also exactly what a BROKEN id pass reports, and
+# that failure mode has already cost this workstream two sessions (a box test
+# that answered "hidden" for everything looked like a spectacular result). So:
+#
+#   1. culling OFF must report over-cull 0 -- nothing is masked, so anything
+#      else means the mask snapshot or the id decode is wrong;
+#   2. covered pixels must be a large fraction of the viewport in every row,
+#      or the id image is empty and no row below it means anything;
+#   3. the acid test: the audit is run at the same visibleTtl values whose
+#      PIXEL differences are already known (§12.7 measured 0 px at ttl 10^6,
+#      1666 at 60, 13714 at 6). The audit must move the same way. If it says
+#      "clean" where the picture says 13714 pixels differ, the audit is lying
+#      and nothing it reports is usable.
+#
+# Run on the real GPU with the monitor OFF (gpu-tests-monitor-off recipe):
+#
+#   export LD_LIBRARY_PATH=~/opt/virtualgl/usr/lib:$LD_LIBRARY_PATH
+#   cd ~/works/sw/fcad && env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb \
+#     xvfb-run -a --server-args='-screen 0 1920x1200x24' \
+#     ~/opt/virtualgl/opt/VirtualGL/bin/vglrun -d egl0 \
+#     .conda/run.sh build/conda-relwithdebinfo-801/bin/FreeCAD \
+#     --log-file ~/cull_audit.log scripts/cull_audit.py
+#
+# FC_MODEL selects the document (default ~/works/sw/models/server_imported.FCStd,
+# 5455 objects -- it is not in this repository); FC_ROWS the settings to
+# measure, FC_SETTLE the seconds per row, FC_OUT/FC_LOG/FC_SHOTS where the
+# results go. A row is `<ttl>/<confirm>` for the hardware oracle or
+# `sw/<divisor>/<tris>/<threads>/<simd>` for the software one (#12.12).
+#
+# /!\ GIVE EVERY FIELD OF A SOFTWARE ROW EXPLICITLY. The rows set view
+# properties and nothing resets them, so an omitted field silently
+# inherits the previous row's value -- `sw//0` after `sw///1` is one
+# thread AND no triangles, which is not a row anybody asked for.
+#
+# /!\ TIMINGS ARE READ FROM THE SPREAD, NEVER FROM THE LAST LINE. Two runs
+# of an identical configuration reported raster 9.00ms and 4.31ms; a 5%
+# effect was once published off single samples of that quantity
+# (docs/FarFieldProxies.md #12.14, corrected in #12.15). Every timing
+# field is reported min/med/max over the window, like the over-cull
+# pixels above it.
+import re
+import os
+import time
+import traceback
+
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtCore
+
+MODEL = os.path.expanduser(
+    os.environ.get("FC_MODEL", "~/works/sw/models/server_imported.FCStd"))
+OUT = os.path.expanduser(os.environ.get("FC_OUT", "~/cull_audit.txt"))
+LOG = os.path.expanduser(os.environ.get("FC_LOG", "~/cull_audit.log"))
+DIR = os.path.expanduser(os.environ.get("FC_SHOTS", "~/cullshots"))
+
+lines = []
+
+
+def emit(s):
+    lines.append(s)
+    App.Console.PrintMessage("CULLAUDIT %s\n" % s)
+    with open(OUT, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def spin(seconds, v=None):
+    end = time.time() + seconds
+    while time.time() < end:
+        if v is not None:
+            try:
+                v.redraw()
+            except Exception:
+                pass
+        QtCore.QCoreApplication.processEvents()
+        time.sleep(0.005)
+
+
+def compare(a, b):
+    """Differing pixels between two PNGs, and the worst channel delta."""
+    from PySide6.QtGui import QImage
+
+    ia, ib = QImage(a), QImage(b)
+    if ia.isNull() or ib.isNull() or ia.size() != ib.size():
+        return None
+    import numpy as np
+
+    ia = ia.convertToFormat(QImage.Format_RGB888)
+    ib = ib.convertToFormat(QImage.Format_RGB888)
+    w, h = ia.width(), ia.height()
+
+    def arr(img):
+        # /!\ PySide6's constBits() is a memoryview with no asstring();
+        # bytesPerLine may pad the rows.
+        bpl = img.bytesPerLine()
+        raw = np.frombuffer(bytes(img.constBits()), dtype=np.uint8)[: bpl * h]
+        return raw.reshape(h, bpl)[:, : w * 3].reshape(h, w, 3).astype(np.int16)
+
+    d = np.abs(arr(ia) - arr(ib)).max(axis=2)
+    return (int((d > 0).sum()), int((d > 64).sum()), w * h)
+
+
+def subwindow():
+    from PySide6.QtWidgets import QMdiSubWindow
+    from PySide6.QtOpenGLWidgets import QOpenGLWidget
+
+    gl = Gui.getMainWindow().findChildren(QOpenGLWidget)
+    w = gl[0] if gl else None
+    while w is not None and not isinstance(w, QMdiSubWindow):
+        w = w.parentWidget()
+    return w
+
+
+def tail_lines(marker, since):
+    """Log lines carrying `marker` that were written after byte offset
+    `since`, plus the new offset. Reading by offset rather than taking the
+    last match is what keeps a row from quoting the PREVIOUS row's report
+    when its own never arrived -- a silent way to attribute one setting's
+    numbers to another."""
+    try:
+        with open(LOG, errors="replace") as f:
+            f.seek(since)
+            body = f.read()
+            return ([ln.strip() for ln in body.splitlines() if marker in ln],
+                    since + len(body.encode("utf-8", "replace")))
+    except Exception as exc:
+        return (["(log unreadable: %s)" % exc], since)
+
+
+def log_size():
+    try:
+        return os.path.getsize(LOG)
+    except Exception:
+        return 0
+
+
+def run():
+    try:
+        os.makedirs(DIR, exist_ok=True)
+        App.ParamGet("User parameter:BaseApp/Preferences/Document").SetBool(
+            "AutoSaveEnabled", False)
+        App.ParamGet("User parameter:BaseApp/Preferences/View").SetInt(
+            "RenderCache", 3)
+        App.ParamGet("User parameter:BaseApp/Preferences/View/Render").SetString(
+            "Type", "bgfx - OpenGL")
+        App.ParamGet("User parameter:BaseApp/Preferences/View").SetBool(
+            "ShowNaviCube", False)
+        Gui.getMainWindow().resize(1920, 1200)
+        QtCore.QCoreApplication.processEvents()
+
+        doc = App.openDocument(MODEL)
+        App.setActiveDocument(doc.Name)
+        v = Gui.ActiveDocument.ActiveView
+        emit("model %s (%d objects)" % (MODEL, len(doc.Objects)))
+
+        sub = subwindow()
+        if sub:
+            sub.showMaximized()
+        QtCore.QCoreApplication.processEvents()
+        v.viewIsometric()
+        Gui.SendMsgToActiveView("ViewFit")
+        converge = float(os.environ.get("FC_CONVERGE", "150"))
+        spin(converge, v)
+        # /!\ FIT AGAIN. The first fit runs while the geometry is still
+        # arriving, so it frames whatever had loaded -- one smoke run fitted
+        # a partial model and left the finished one covering 3% of the
+        # viewport, which silently divides every coverage number here by
+        # thirty. Same family as the 400x300-reporting-1920x1200 trap.
+        Gui.SendMsgToActiveView("ViewFit")
+        spin(converge * 0.25, v)
+        emit("re-fitted after convergence; camera fixed from here on")
+
+        settle = float(os.environ.get("FC_SETTLE", "30"))
+        v.RenderDebug_CullAudit = True
+        # The culler's own account of the same frames, on the same cadence.
+        # Without it, "0 masked rows" cannot be told apart from "the mask
+        # snapshot is broken" -- and one of those is a clean bill of health
+        # while the other invalidates the entire run.
+        v.RenderDebug_Timing = True
+
+        def audit_row(label):
+            """One audit reading, taken only from log written after this
+            point."""
+            mark = log_size()
+            spin(settle, v)
+            got, _ = tail_lines("render cull audit:", mark)
+            err, _ = tail_lines("id image is empty", mark)
+            if err:
+                emit("ROW %-22s INSTRUMENT BROKEN: %s" % (label, err[-1]))
+                return None
+            if not got:
+                emit("ROW %-22s no audit line in %.0fs -- the readback never "
+                     "landed; this row measures NOTHING" % (label, settle))
+                return None
+            emit("ROW %-22s %s"
+                 % (label, got[-1].split("render cull audit:")[-1].strip()))
+            # /!\ AND THE WHOLE WINDOW, not just that last line. The culled
+            # frame is an OSCILLATOR (§12.6: two captures of the same static
+            # scene 30 s apart differed as much as culling-on differed from
+            # culling-off), so one audit sample is one draw from a wide
+            # distribution -- which is exactly how the previous session's
+            # table came to quote 36629 px for a row that also produces 13.
+            # The spread IS the finding; the last sample is not.
+            px = [int(m.group(1))
+                  for m in (re.search(r"masked rows, (\d+) px", ln)
+                            for ln in got) if m]
+            if px:
+                px.sort()
+                emit("    over-cull px across %d samples: min %d med %d max %d"
+                     % (len(px), px[0], px[len(px) // 2], px[-1]))
+            # Which VERDICT deleted those rows, and what kind of test
+            # produced it (§12.10). The audit line says a named draw was
+            # wrongly removed; this one says whether the test that removed
+            # it was taken while the draw's own geometry was in the depth
+            # buffer -- the only observable that separates §12.6's
+            # own-contents tie from every other account of the failure.
+            attr, _ = tail_lines("render cull attribution:", mark)
+            if attr:
+                emit("    attribution: %s"
+                     % attr[-1].split("render cull attribution:")[-1].strip())
+                # Summed over the window, for the same reason. These are
+                # RATIOS taken inside each sample, so they are far steadier
+                # than the magnitude -- but summing removes the last doubt
+                # that one lucky frame carried them.
+                #
+                # /!\ There is deliberately no "was the node being drawn
+                # when it was tested" number here. Only an already-hidden
+                # node is re-offered from the hidden set, so the answer that
+                # FIRST hides a node is always of the drawn kind; asking
+                # would return 100% for every scene, including the ones
+                # where the explanation is wrong.
+                def total(pat):
+                    return sum(int(m.group(1)) for m in
+                               (re.search(pat, ln) for ln in attr) if m)
+                fresh = total(r"fresh \(<=\d+f\) (\d+) px")
+                old_ = total(r"older (\d+) px")
+                flip = total(r"flipped >=\d+ times: (\d+) px")
+                fr = total(r"not occlusion: \d+ rows (\d+) px")
+                tot = fresh + old_
+                emit("    attribution over %d samples: fresh verdict %d px "
+                     "(%.1f%%), older %d px, from flipping nodes %d px "
+                     "(%.1f%%), frustum %d px"
+                     % (len(attr), fresh, 100.0 * fresh / tot if tot else 0.0,
+                        old_, flip, 100.0 * flip / tot if tot else 0.0, fr))
+            cull, _ = tail_lines("render culling:", mark)
+            emit("    culler: %s"
+                 % (cull[-1].split("render culling:")[-1].strip() if cull
+                    else "(no culling line -- the mechanism did not run)"))
+            # /!\ AND THE SAME TREATMENT FOR THE CLOCK, for the same reason
+            # the over-cull pixels get it. The line above is ONE sample:
+            # two runs of an identical configuration reported raster 9.00ms
+            # and 4.31ms, a spread wider than any effect that has been
+            # measured against it (§12.14 quoted a 5% SIMD saving off two
+            # such samples and it was not distinguishable from this). A
+            # timing here is a median over the window or it is not a
+            # measurement.
+            def dist(name, pat):
+                vals = [float(m.group(1)) for m in
+                        (re.search(pat, ln) for ln in cull) if m]
+                if not vals:
+                    return None
+                vals.sort()
+                return "%s %.2f/%.2f/%.2f" % (name, vals[0],
+                                              vals[len(vals) // 2], vals[-1])
+            parts = [dist("raster", r"raster ([\d.]+)ms"),
+                     dist("select", r"select ([\d.]+)"),
+                     dist("shard", r"shard ([\d.]+)"),
+                     dist("merge", r"shard [\d.]+ merge ([\d.]+)"),
+                     dist("wclear", r"worst clear ([\d.]+)"),
+                     dist("wraster", r"worst clear [\d.]+ raster ([\d.]+)"),
+                     dist("wmerge",
+                          r"worst clear [\d.]+ raster [\d.]+ merge ([\d.]+)"),
+                     dist("sumraster", r"sum raster ([\d.]+)"),
+                     dist("walk", r"walk ([\d.]+)ms")]
+            parts = [p for p in parts if p]
+            if parts:
+                emit("    timing ms over %d samples, min/med/max: %s"
+                     % (len(cull), " | ".join(parts)))
+            return got[-1]
+
+        # 1. Instrument validation: nothing masked, so over-cull must be 0.
+        emit("--- validation: culling OFF, nothing may be reported over-culled")
+        v.Render_Occlusion = False
+        audit_row("culling off")
+
+        # 2. A picture of the id image itself, for the eye. Saved once; a
+        # screen of flat black here means the id pass drew nothing, which is
+        # the same disease the guard above catches numerically.
+        try:
+            v.RenderDebug_ViewMode = "InstanceId"
+            spin(min(settle, 10.0), v)
+            shot = os.path.join(DIR, "id_image.png")
+            v.saveImage(shot, 1600, 900, "Current")
+            emit("id image written to %s" % shot)
+            v.RenderDebug_ViewMode = "Off"
+            spin(3, v)
+        except Exception as exc:
+            emit("id image capture failed: %s" % exc)
+
+        # 3. Each setting measured BOTH ways in the same row, same framing,
+        # same settle: what the picture says (the old measurement) and what
+        # the audit says (the new one). Reported side by side because they
+        # are not the same claim -- a draw removed from in front of another
+        # draw of similar colour is a proven over-cull that barely moves a
+        # pixel -- and the ratio between them is itself a finding.
+        #
+        # /!\ The (ttl 10^6, confirm 1) row exists to test a specific
+        # suspicion: hiddenConfirm needs N CONSECUTIVE hidden answers, and
+        # an unreachable visibleTtl means a node is never asked twice, so
+        # confirm >= 2 there may make culling structurally impossible.
+        # If that is so, the "pixel-exact at ttl 10^6" result is pixel-exact
+        # because it culls NOTHING, and the hidden count it was quoted with
+        # came from a different configuration.
+        emit("--- per setting: picture difference AND audit, same frames")
+        #
+        # A row of the form "sw" (or "sw/<divisor>", or "sw/<divisor>/<tris>")
+        # selects the CPU masked software oracle of §12.12 instead. It reads
+        # none of ttl/confirm -- those exist to contain a latency it does not
+        # have -- so the two row kinds are not two settings of one mechanism
+        # and only the left half of the readout compares between them.
+        rows = os.environ.get("FC_ROWS", "1000000/1,1000000/2,60/2,6/2")
+        for spec in [r.strip() for r in rows.split(",") if r.strip()]:
+            software = spec.split("/")[0] in ("sw", "soft", "software")
+            if software:
+                parts = spec.split("/")
+                div = parts[1] if len(parts) > 1 and parts[1] else ""
+                tris = parts[2] if len(parts) > 2 and parts[2] else ""
+                thr = parts[3] if len(parts) > 3 and parts[3] else ""
+                # The vector pre-pass of §12.14, as an explicit 0/1 arm.
+                # It can only discard triangles that cover no pixel, so
+                # the two arms are meant to differ in raster ms and in
+                # nothing else -- which is exactly why it is worth having
+                # both in one run, at one framing, on one camera.
+                simd = parts[4] if len(parts) > 4 and parts[4] else ""
+                label = "software%s%s%s%s" % (
+                    " div %s" % div if div else "",
+                    " tris %s" % tris if tris else "",
+                    " thr %s" % thr if thr else "",
+                    " simd %s" % simd if simd else "")
+            else:
+                ttl, _, confirm = spec.partition("/")
+                label = "ttl %s confirm %s" % (ttl, confirm or "-")
+            v.Render_Occlusion = False
+            spin(settle, v)
+            a = os.path.join(DIR, "a_%s.png" % spec.replace("/", "_"))
+            v.saveImage(a, 1600, 900, "Current")
+            v.Render_OcclusionSoftware = software
+            if software:
+                if div:
+                    v.Render_OcclusionResolution = int(div)
+                if tris:
+                    v.Render_OcclusionOccluderTris = int(tris)
+                if thr:
+                    v.Render_OcclusionThreads = int(thr)
+                if simd:
+                    v.Render_OcclusionSimd = bool(int(simd))
+            else:
+                v.Render_OcclusionVisibleTtl = int(ttl)
+                if confirm:
+                    v.Render_OcclusionConfirm = int(confirm)
+            v.Render_Occlusion = True
+            audit_row(label)
+            b = os.path.join(DIR, "b_%s.png" % spec.replace("/", "_"))
+            v.saveImage(b, 1600, 900, "Current")
+            r = compare(a, b)
+            if r is None:
+                emit("    picture: captures unreadable")
+            else:
+                diff, big, total = r
+                emit("    picture: %d of %d px differ (%.4f%%), %d by >64"
+                     % (diff, total, 100.0 * diff / total, big))
+        v.Render_Occlusion = False
+        emit("DONE")
+    except Exception:
+        emit("FAIL")
+        emit(traceback.format_exc())
+    os._exit(0)
+
+
+QtCore.QTimer.singleShot(2000, run)
