@@ -41,6 +41,7 @@
 # include <QTextStream>
 # include <QTimer>
 # include <QWindow>
+# include <QOpenGLWidget>
 #endif
 
 // Qt6 removed the QtPlatformHeaders module; see the use site below for why the
@@ -94,6 +95,7 @@
 #include "PythonConsolePy.h"
 #include "PythonDebugger.h"
 #include "RenderParams.h"
+#include "ViewParams.h"
 #include "MainWindowPy.h"
 #include "SoFCDB.h"
 #include "Selection.h"
@@ -2769,6 +2771,38 @@ void Application::runApplication(void)
 
     //initialize spaceball.
     mainApp.initSpaceball(&mw);
+
+    // Bring the render backend up before a document asks for it.
+    //
+    // Backend startup -- a GL context, its offscreen surface, and the
+    // device -- is one-time and per process, but it used to be paid by
+    // whoever created the first 3D view: the first New Document of a
+    // session cost about a second against a fifth for every one after,
+    // while the plain GL path is flat at a tenth. Measured with
+    // fcad-probes/newdoc_delay_probe.py.
+    //
+    // On a zero timer rather than inline, so the window is up and
+    // painted first: it is a second of work either way, better spent
+    // while the user is looking at an empty application than while they
+    // wait for their document. Only when a backend is actually
+    // configured -- render cache 3 with a real type -- so a session that
+    // will never use one pays nothing.
+    QTimer::singleShot(0, &mw, []() {
+        if (ViewParams::getRenderCache() != 3)
+            return;
+        const std::string type = RenderParams::getType();
+        if (type.empty() || type == "Default")
+            return;
+        // The widget MainWindow keeps to fix the surface type is
+        // exactly what this needs: a QOpenGLWidget whose format the
+        // backend's own context can be built from.
+        if (auto w = getMainWindow()->findChild<QOpenGLWidget*>(
+                    QStringLiteral("GLSurfaceWarmup"))) {
+            if (Render::RendererFactory::warmup(type, w))
+                Base::Console().Log("Init: render backend '%s' warmed up\n",
+                                    type.c_str());
+        }
+    });
 
     // run the Application event loop
     Base::Console().Log("Init: Entering event loop\n");

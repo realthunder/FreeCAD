@@ -625,6 +625,27 @@ const std::vector<std::string> &BGFXRendererLib::types() const
     return _BGFXLib.types;
 }
 
+bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type)
+{
+    auto it = _BGFXLib.typeMap.find(type);
+    if (it == _BGFXLib.typeMap.end() || !widget)
+        return false;
+    // Everything one-time lives in prepare(): the GL context bgfx draws
+    // through, its offscreen surface, and bgfx::init itself. The view
+    // that getView() adds on top is per widget and cheap, and the
+    // shader programs are built on demand by whatever first draws with
+    // them -- so this is the share of the first 3D view that can be
+    // paid in advance, not all of it.
+    //
+    // ⚠️ Main thread only, and not by accident: prepare() calls
+    // bgfx::renderFrame() before bgfx::init(), which is bgfx's
+    // documented way of asking for single-threaded mode, and the GL
+    // context it hands over belongs to the thread that made it current.
+    // There is no worker thread to move this to without changing that
+    // decision.
+    return _BGFXLib.prepare(widget, it->second);
+}
+
 std::unique_ptr<Renderer> BGFXRendererLib::create(
         const std::string &type, QOpenGLWidget *widget,
         bool publishOnly) const

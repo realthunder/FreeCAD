@@ -38,6 +38,8 @@ public:
     virtual std::unique_ptr<Renderer> create(
             const std::string &type, QOpenGLWidget *widget,
             bool publishOnly = false) const override;
+    virtual bool warmup(QOpenGLWidget *widget,
+                        const std::string &type) override;
 };
 
 class BGFXRenderer : public Renderer

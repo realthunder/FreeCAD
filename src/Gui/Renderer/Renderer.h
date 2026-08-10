@@ -1552,6 +1552,21 @@ public:
     virtual std::unique_ptr<Renderer> create(
             const std::string &type, QOpenGLWidget *widget,
             bool publishOnly = false) const = 0;
+
+    /// Bring the backend up before anything asks it to draw.
+    ///
+    /// Backend startup is one-time and per process -- a GL context and
+    /// the device -- but it was paid by whoever created the first 3D
+    /// view, which made the first New Document of a session visibly
+    /// slower than every later one. A host that knows a backend will be
+    /// wanted can call this early instead; create() then finds the
+    /// device already up.
+    ///
+    /// \a widget supplies the pixel format to build the context from,
+    /// and need not be the widget that will eventually draw.
+    /// Returns false if the backend does not warm up, or could not --
+    /// in which case nothing is broken and create() will try again.
+    virtual bool warmup(QOpenGLWidget *, const std::string &) { return false; }
 };
 
 class RendererExport RendererFactory
@@ -1567,6 +1582,10 @@ public:
     static std::unique_ptr<Renderer> create(const std::string &type,
                                             QOpenGLWidget *widget,
                                             bool publishOnly = false);
+    /// Bring \a type's backend up ahead of the first create(), so that
+    /// the first 3D view of a session does not pay for it. See
+    /// RendererLib::warmup.
+    static bool warmup(const std::string &type, QOpenGLWidget *widget);
     static void registerLib(RendererLib *);
     static void setResourcePath(const std::string &path);
     static const std::string &resourcePath();
