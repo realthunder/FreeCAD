@@ -2270,3 +2270,117 @@ its own geometry joins the depth buffer. The ID-feedback alternative is not
 a candidate — it answers the same question at the same moment in the frame.
 
 `Render_Occlusion` stays default off.
+
+### 12.12 built: the oracle moved to the CPU
+
+§12.11 settled the choice and this builds it: Intel's masked software
+occlusion structure, as `Gui/Renderer/MaskedOcclusion.h`, driving the
+same `ProxyHierarchy` index the hardware path walks.
+`Render_OcclusionSoftware` selects it; `Render_Occlusion` still gates
+both and is still default off.
+
+#### What the structure is
+
+Per 8×4 block of pixels: **two depth values and a 32-bit coverage mask**
+saying which of the two each pixel belongs to. 12 bytes per 32 pixels, so
+a full 1863×1064 buffer is ~744 KB rather than the 8 MB of a real depth
+buffer. The second layer is what makes it beat a plain hierarchical-Z
+minimum — a single conservative minimum per block is destroyed by one
+distant fragment, where a partially covered block can hold the incoming
+surface separately until its coverage completes and it is promoted to the
+block's floor.
+
+Depth is stored as a quantity that is **affine in screen space and larger
+when nearer**: 1/w under a perspective projection, −z_ndc under an
+orthographic one. Both are affine, which is what lets a triangle's depth
+over a block be a plane equation rather than a per-pixel divide, and
+having both means nothing downstream asks which projection it is looking
+at.
+
+#### ⭐⭐ The one invariant, and why it is one-sided
+
+> For every pixel, the depth stored is **no nearer** than the true
+> nearest surface there.
+
+Every heuristic in the merge may throw occlusion away and each of them
+does; none may invent it. Kept, the mechanism can only fail by *drawing
+something it could have skipped* — and over-culling is the entire failure
+history of §12.5 through §12.11. So the tests assert an inequality
+against an independently written full-resolution depth buffer rather than
+comparing an image: 27 cases, including random scenes checked pixel by
+pixel, and the query-level form of the same claim (a box reported hidden
+must have every pixel of its rect already covered by something nearer in
+the reference).
+
+⚠️ Two of them exist only because a passing one-sided test is also what a
+buffer that rasterized *nothing* produces. `expectConservative` returns
+the pixel count it checked and every caller asserts on it, and the pass
+has a control row — the same scene with the occluder removed must cull
+**nothing at all**. That is the control §12.5's image comparisons lacked
+and §12.9 had to correct after the fact.
+
+#### ⭐⭐ What disappears, which is most of the value
+
+The software walk keeps **no state between frames** and has **no policy
+layer**:
+
+| the hardware path needs | why | software path |
+|---|---|---|
+| `hiddenConfirm` streaks | verdicts arrive stale | — |
+| `visibleTtl` | re-test frequency vs. cost | — |
+| `maxHiddenFrames` fail-safe | answers may stop arriving | — |
+| query pool, leases, expiry | handles are object identity | — |
+| `padFraction` + `depthPadLsb` | box must beat its own surface | — |
+| `budget`, `offercursor` | tests are a scarce resource | — |
+
+Every one of those exists to survive an answer that arrives one to two
+frames after the question. The answer here is used where it is computed.
+The padding goes for a different reason worth stating separately: a tie
+answers **visible** by construction (`testRect` compares strictly), and
+the block floor is already a conservative under-estimate — so a node
+whose own geometry is the only thing in the buffer *cannot* hide itself,
+which is exactly the failure §12.6 diagnosed and §12.11 measured.
+
+#### Occluders are real triangles, chosen by screen size
+
+Only draws that write the depth the eye sees: opaque triangle draws, not
+transparent surfaces, not on-top overlays, not lines, and **not
+stand-ins** (a stand-in does write depth, so it genuinely occludes the
+frame it appears in — but it is larger than the mesh it replaces, and
+under-culling for the few frames it is up is the cheaper mistake). They
+are ranked by projected bounding-box diagonal and rasterized largest
+first until `Render_OcclusionOccluderTris` runs out, so what the budget
+drops is what would have hidden least — and the drops are **counted**,
+because a silent cap reads as "this scene does not occlude" when what
+happened is "we did not look".
+
+⚠️ **`Render_OcclusionResolution` defaults to 1 and reducing it can
+over-cull.** A coarse pixel is marked covered when an occluder reaches
+its centre, but it stands for several real pixels and the ones the
+occluder missed are claimed with it. The literature runs reduced and
+accepts this; given three sections spent on deleted geometry, here it is
+a measurement and not a setting. Correct reduction needs coverage sampled
+over the coarse pixel's whole footprint, which is not built.
+
+#### ⛔ Not yet measured
+
+Everything above is a property, not a number. **No frame of either
+benchmark model has been through this yet**, so the two questions the
+whole change turns on are open:
+
+1. **What does the occluder pass cost?** It is scalar — the layout is the
+   SIMD one (8×4 blocks whose coverage is one 32-bit word, four to a
+   128-bit lane) but nothing is vectorized, deliberately, because this
+   workstream has been wrong twice about where its time goes (§12.10).
+   Against a saving of ~12000 draws at ~1.2–1.5 µs, the budget is real
+   but not generous.
+2. **Does it cull as much?** MSOC's published figure is 98% of what a
+   full-resolution depth buffer achieves, but that is against *its* choice
+   of occluders. Here the occluder set is a screen-size ranking under a
+   triangle budget, and whether a CAD chassis's panels survive that
+   ranking is a property of this scene, not of the paper.
+
+`cull_audit.py` takes `sw`, `sw/<divisor>` and `sw/<divisor>/<tris>` row
+specs for exactly this. ⚠️ The rows are not two settings of one
+mechanism, so only the left half of the readout — instances and nodes
+hidden — compares across them.
