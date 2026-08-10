@@ -61,6 +61,14 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(MaskedOcclusion_tests_run gtest_main FreeCADRenderer)
     add_test(NAME MaskedOcclusion_tests_run COMMAND MaskedOcclusion_tests_run)
 
+    # The runtime cost/benefit decision (docs/FarFieldProxies.md 12.13).
+    # It decides from timings alone, so it tests from timings alone -- no
+    # GL context, no scene, no clock.
+    add_executable(CullBenefit_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/CullBenefit.cpp)
+    target_link_libraries(CullBenefit_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME CullBenefit_tests_run COMMAND CullBenefit_tests_run)
+
     # Publishing without drawing (docs/HeadlessServe.md §3.1). Same
     # reasoning as above, and then some: the whole claim of the mode is
     # that the process needs no GPU and no display, which only a test

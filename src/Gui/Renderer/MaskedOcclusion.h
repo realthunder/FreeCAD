@@ -276,6 +276,25 @@ public:
     /// the result is deterministic for a fixed worker count.
     void merge(const MaskedDepth &other);
 
+    /// Blocks in the buffer, so a caller can split a merge across
+    /// workers.
+    size_t blockCount() const { return blocks.size(); }
+
+    /// Merge only blocks [\a lo, \a hi) of \a other, touching no
+    /// counters.
+    ///
+    /// KEY: The merge is per block and the blocks are independent, so
+    /// this is what lets the merge run on the same workers the
+    /// rasterization did. Measured, a serial merge of fourteen shards
+    /// was most of what parallelizing the rasterization had saved. It
+    /// deliberately updates no statistics: two workers incrementing one
+    /// counter is a data race, and the counters are folded in afterwards
+    /// by mergeStats() on one thread.
+    void mergeBlocks(const MaskedDepth &other, size_t lo, size_t hi);
+    /// Fold \a other's rasterization counters in. Not thread safe, and
+    /// not needed to be.
+    void mergeStats(const MaskedDepth &other);
+
 private:
     /// One 8x4 block: two depth layers and the mask saying which pixels
     /// belong to layer 1. A pixel with its bit clear is at `z0`.
@@ -295,6 +314,9 @@ private:
     void rasterTri(const double *sx, const double *sy, const double *sd);
     void updateBlock(int bx, int by, uint32_t coverage, float ztri);
     void updateBlockAt(size_t index, uint32_t coverage, float ztri);
+    /// The block update itself, free of any counter so that it can run
+    /// on a worker. True when it changed something.
+    static bool applyBlock(Block &b, uint32_t coverage, float ztri);
     static float floorOf(const Block &b);
 
     std::vector<Block> blocks;
