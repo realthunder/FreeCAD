@@ -95,7 +95,7 @@ public:
     bool foldTitleBarMenu() const;
     void setFoldTitleBarMenu(bool enable);
 
-    /*! Whether the first row of toolbars belongs in the custom title bar rather
+    /*! Whether the workbench toolbar belongs in the custom title bar rather
      * than under the menu bar. MainWindow/TitleBarToolBars, on by default, and
      * meaningless while the platform's title bar is in charge.
      */

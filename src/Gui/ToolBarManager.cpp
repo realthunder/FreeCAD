@@ -1251,116 +1251,98 @@ void ToolBarManager::relocateMenuBarAreas()
     }
 }
 
-std::vector<QToolBar*> ToolBarManager::firstToolBarRow()
+QToolBar *ToolBarManager::nextTopDockToolBar(QToolBar *toolbar)
 {
-    // QMainWindow does not hand out its dock rows, but it has laid them out by
-    // the time anyone asks: the first row is the smallest y, left to right.
+    // QMainWindow does not hand out its dock order, but it has laid the
+    // toolbars out by the time anyone asks: row-major is y then x. Read for one
+    // toolbar only, and only while \a toolbar is still docked, so the layout is
+    // the one on screen.
     auto mw = getMainWindow();
-    std::vector<QToolBar*> docked;
+    std::map<std::pair<int, int>, QToolBar*> docked;
     for (auto &v : toolBars()) {
-        QToolBar *toolbar = v.second;
-        if (toolbar && toolbar->isVisible() && toolbar->parentWidget() == mw
-                && mw->toolBarArea(toolbar) == Qt::TopToolBarArea) {
-            docked.push_back(toolbar);
+        QToolBar *tb = v.second;
+        if (tb && !tb->isHidden() && tb->parentWidget() == mw
+                && mw->toolBarArea(tb) == Qt::TopToolBarArea) {
+            docked.emplace(std::make_pair(tb->geometry().y(), tb->geometry().x()), tb);
         }
     }
-    if (docked.empty()) {
-        return {};
+    auto it = docked.find(std::make_pair(toolbar->geometry().y(), toolbar->geometry().x()));
+    if (it == docked.end() || ++it == docked.end()) {
+        return nullptr;
     }
-
-    int top = docked.front()->geometry().y();
-    for (auto toolbar : docked) {
-        top = std::min(top, toolbar->geometry().y());
-    }
-
-    std::map<int, QToolBar*> byX;
-    for (auto toolbar : docked) {
-        if (toolbar->geometry().y() == top) {
-            byX[toolbar->geometry().x()] = toolbar;
-        }
-    }
-
-    std::vector<QToolBar*> row;
-    for (auto &v : byX) {
-        row.push_back(v.second);
-    }
-    return row;
+    return it->second;
 }
 
-void ToolBarManager::setTitleBarToolBars(bool enable, const std::vector<QToolBar*> &row)
+void ToolBarManager::setTitleBarToolBars(bool enable)
 {
     auto mw = getMainWindow();
     if (!mw || !menuBarLeftArea || !menuBarRightArea) {
         return;
     }
 
+    // One named toolbar, not a measured row. The workbench selector is the same
+    // toolbar in every workbench and the one the title bar has room for; taking
+    // whatever happened to be laid out on the first row moved a different set
+    // per workbench, and moved toolbars the user had put there themselves.
+    // Asked of toolBars() rather than findChild(): recorded toolbars are
+    // pre-created empty so Qt can restore their position, so the window can
+    // hold two of this name and only that map knows which one is the real one.
+    auto bars = toolBars();
+    auto it = bars.find(QStringLiteral("Workbench"));
+    QToolBar *toolbar = it == bars.end() ? nullptr : it->second.data();
+    if (!toolbar) {
+        return;
+    }
+
+    auto area = getToolBarArea(toolbar);
+    if (enable ? (area != nullptr) : (area != menuBarLeftArea && area != menuBarRightArea)) {
+        // Already where it is being asked to go, or somewhere this did not put
+        // it -- the status bar, or an area the user dragged it into.
+        return;
+    }
+
+    // Nothing below is the user's doing. Every move here hides the toolbar on
+    // the way -- removeToolBar() and reparenting both do -- and onToggleToolBar
+    // would otherwise write that into the toolbar's visibility preference,
+    // where it outlives the session.
     Base::StateLocker guard(relocating);
 
-    if (!enable) {
-        // Put them back at the front of the top area, not on the end of it:
-        // addToolBar() appends, which drops the returning row below whichever
-        // rows stayed behind, and a Dark -> Classic -> Dark round trip would
-        // then rotate the rows one place every time.
-        auto stayed = firstToolBarRow();
-        QToolBar *before = stayed.empty() ? nullptr : stayed.front();
-        bool returned = false;
+    // isHidden(), not isVisible(): the latter is false whenever an ancestor is
+    // hidden, and the area above this one is hidden for part of a title bar
+    // swap. What has to be kept is whether the toolbar was hidden in its own
+    // right.
+    const bool visible = !toolbar->isHidden();
 
-        for (auto area : {menuBarLeftArea, menuBarRightArea}) {
-            std::vector<QToolBar*> parked;
-            area->foreachToolBar([&parked](QToolBar *toolbar, int, ToolBarArea*) {
-                parked.push_back(toolbar);
-            });
-            for (auto toolbar : parked) {
-                // isHidden(), not isVisible(): the latter is false whenever an
-                // ancestor is hidden, and the area above one of these is hidden
-                // for part of a title bar swap. What has to be remembered is
-                // whether the toolbar was hidden in its own right.
-                const bool visible = !toolbar->isHidden();
-
-                // removeWidget() is the one that takes the grip off and drops
-                // the area's parameter entry; without it the toolbar re-docks
-                // wearing a grip it has no area to be dragged around by.
-                area->removeWidget(toolbar);
-                if (before) {
-                    Base::StateLocker guard(adding);
-                    mw->insertToolBar(before, toolbar);
-                }
-                else {
-                    addToolBarToMainWindow(toolbar);
-                }
-                setToolBarVisible(toolbar, visible);
-                returned = true;
-            }
+    if (enable) {
+        // Whatever sits next to it right now, so it can go back between the
+        // same two neighbours. addToolBar() appends to the last row instead,
+        // which turns every trip into the title bar and out again into a move
+        // to the bottom of the dock.
+        workbenchNeighbour = nextTopDockToolBar(toolbar);
+        mw->removeToolBar(toolbar);
+        toolbar->setOrientation(Qt::Horizontal);
+        // addWidget() gives it the grip to be dragged back out by, and records
+        // the area in MainWindow/MenuBarLeft so the next start puts it here.
+        menuBarLeftArea->addWidget(toolbar);
+    }
+    else {
+        // removeWidget() is the one that takes the grip off and drops the
+        // area's parameter entry; without it the toolbar re-docks wearing a
+        // grip it has no area to be dragged around by, and the parameter would
+        // send it back to the area on the next start.
+        area->removeWidget(toolbar);
+        // Gone, or never recorded because the move in happened in an earlier
+        // session -- then the end of the dock is as good an answer as any.
+        if (workbenchNeighbour && workbenchNeighbour->parentWidget() == mw) {
+            Base::StateLocker adder(adding);
+            mw->insertToolBar(workbenchNeighbour, toolbar);
         }
-
-        // The row that stayed behind was a second row while these were away,
-        // and inserting into it would leave one crowded row where there were
-        // two. `before` is only set when something did stay, which is exactly
-        // when there was a break to put back.
-        if (returned && before && !mw->toolBarBreak(before)) {
-            Base::StateLocker guard(adding);
-            mw->insertToolBarBreak(before);
+        else {
+            addToolBarToMainWindow(toolbar);
         }
-        return;
+        workbenchNeighbour = nullptr;
     }
-
-    if (menuBarLeftArea->count() || menuBarRightArea->count()) {
-        return;
-    }
-
-    // Left to right as they sit now, renumbered from zero -- restoreState()
-    // reads the map key as the position in the area, not as a coordinate.
-    std::map<int, QToolBar*> wanted;
-    for (auto toolbar : (row.empty() ? firstToolBarRow() : row)) {
-        if (toolbar) {
-            wanted[(int)wanted.size()] = toolbar;
-        }
-    }
-    if (wanted.empty()) {
-        return;
-    }
-
-    menuBarLeftArea->restoreState(wanted);
+    setToolBarVisible(toolbar, visible);
 }
 
 ToolBarArea *ToolBarManager::getToolBarArea(QToolBar *toolbar)

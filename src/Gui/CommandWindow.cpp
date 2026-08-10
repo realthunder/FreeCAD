@@ -434,10 +434,10 @@ StdCmdTitleBarToolBars::StdCmdTitleBarToolBars()
   : Command("Std_ViewTitleBarToolBars")
 {
     sGroup        = "View";
-    sMenuText     = QT_TR_NOOP("Toolbars in the title bar");
-    sToolTipText  = QT_TR_NOOP("Moves the first row of toolbars into the custom title bar, "
-                               "giving their row back to the model. Turning it off puts "
-                               "them back under the menu bar");
+    sMenuText     = QT_TR_NOOP("Workbench toolbar in the title bar");
+    sToolTipText  = QT_TR_NOOP("Moves the workbench toolbar into the custom title bar, "
+                               "giving its row back to the model. Turning it off puts "
+                               "it back under the menu bar");
     sWhatsThis    = "Std_ViewTitleBarToolBars";
     sStatusTip    = sToolTipText;
     eType         = 0;

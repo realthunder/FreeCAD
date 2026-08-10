@@ -188,27 +188,14 @@ public:
      */
     void detachMenuBarAreas();
 
-    /*! The visible toolbars in the top dock area's first row, left to right,
-     * i.e. the row directly under the menu bar. Empty when there are none.
+    /*! Move the workbench toolbar into the title bar's left area, or, with
+     * \a enable false, move it back to the top dock, between the neighbours it
+     * left.
      *
-     * Which toolbars those are is asked of the layout rather than named: the
-     * set differs per workbench, so a fixed list would be right in the one
-     * workbench it was written for and wrong in the rest.
+     * Only that one toolbar, and only when it is where this left it: a toolbar
+     * the user dragged into an area is theirs, and so is one they dragged out.
      */
-    std::vector<QToolBar*> firstToolBarRow();
-
-    /*! Move \a row into the title bar's left area, or, with \a enable false,
-     * move whatever is parked in the two areas back to the top dock. An empty
-     * \a row asks firstToolBarRow() for one.
-     *
-     * Pass the row when the caller is about to disturb the layout -- the
-     * geometry this reads is meaningless until Qt has laid the toolbars out
-     * again, and a title bar swap hides and re-shows the whole window.
-     *
-     * Filling only happens when both areas are empty: a row the user arranged
-     * is theirs.
-     */
-    void setTitleBarToolBars(bool enable, const std::vector<QToolBar*> &row = {});
+    void setTitleBarToolBars(bool enable);
 
 protected Q_SLOTS:
     void onToggleToolBar(bool);
@@ -235,6 +222,11 @@ protected:
      * drop it.
      */
     QRect menuBarDropRect() const;
+
+    /*! The toolbar that follows \a toolbar in the top dock area, reading the
+     * laid-out geometry row-major. Null when it is the last one there.
+     */
+    QToolBar *nextTopDockToolBar(QToolBar *toolbar);
 
     bool addToolBarToArea(QObject *, QMouseEvent*);
     bool showContextMenu(QObject *);
@@ -271,6 +263,12 @@ private:
      * switches were enough to record every toolbar as off and empty the window.
      */
     bool relocating = false;
+    /*! What the workbench toolbar was docked in front of before the title bar
+     * took it, so it can go back there. Only meaningful within the session that
+     * moved it; across a restart the parameters put it in the title bar
+     * directly and there is nothing to undo.
+     */
+    QPointer<QToolBar> workbenchNeighbour;
     Qt::ToolBarArea defaultArea;
     Qt::ToolBarArea globalArea;
     std::set<QString> globalToolBarNames;

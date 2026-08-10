@@ -1935,8 +1935,8 @@ void MainWindow::applyTitleBarParams()
 {
     const bool custom = d->hGrp->GetBool("CustomTitleBar", false);
     // Only ever asked of the title bar that exists: with the platform's there
-    // is nowhere to put a row, and false is also what empties one back out.
-    const bool row = custom && titleBarToolBars();
+    // is nowhere to put the toolbar, and false is also what puts it back.
+    const bool inTitleBar = custom && titleBarToolBars();
     auto toolBars = ToolBarManager::getInstance();
 
     // Nothing that happens below is the user's doing, and it has to be said so
@@ -1952,25 +1952,14 @@ void MainWindow::applyTitleBarParams()
     // Emptying happens before the swap and filling after it, both for the same
     // reason: the two areas are only intact while the title bar hosting them
     // is. setCustomTitleBar() reparents and hides them on the way through, so
-    // a row emptied afterwards is read mid-teardown.
-    //
-    // Which row to fill with is settled before the swap as well, and that is
-    // not symmetry: setMode() hides and re-shows the window, and until Qt has
-    // laid the toolbars out again their geometry is the un-laid-out default
-    // and they are not yet visible -- so asking afterwards found no first row
-    // at all, and the first switch into a custom title bar moved nothing.
-    std::vector<QToolBar*> wanted;
-    if (toolBars) {
-        if (row) {
-            wanted = toolBars->firstToolBarRow();
-        }
-        else {
-            toolBars->setTitleBarToolBars(false);
-        }
+    // a toolbar taken out afterwards is read mid-teardown -- it comes back
+    // hidden, because everything looks hidden at that point.
+    if (toolBars && !inTitleBar) {
+        toolBars->setTitleBarToolBars(false);
     }
     setCustomTitleBar(custom);
-    if (row && toolBars) {
-        toolBars->setTitleBarToolBars(true, wanted);
+    if (toolBars && inTitleBar) {
+        toolBars->setTitleBarToolBars(true);
     }
 }
 
