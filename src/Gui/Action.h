@@ -33,6 +33,7 @@
 #include <QComboBox>
 #include <QCompleter>
 #include <QKeySequence>
+#include <QStringList>
 #include <QTimer>
 
 #include <boost_signals2.hpp>
@@ -704,7 +705,15 @@ public:
     virtual ~PresetsAction();
     void addTo(QWidget * w);
     void popup(const QPoint &pt);
+    /// Remember the configuration as it is now, so that undo() can put it back
     void push(const QString &name);
+    /// What push() has remembered, newest first
+    QStringList undoTitles() const;
+    /** Restore the configuration as it was before the index'th entry of
+     * undoTitles(), dropping that entry and everything applied after it.
+     * Returns what was undone, or an empty string if there was nothing.
+     */
+    QString undo(int index = 0);
     static PresetsAction *instance();
 
 protected Q_SLOTS:
@@ -712,8 +721,12 @@ protected Q_SLOTS:
     void onAction(QAction *action);
 
 private:
+    void applyPreset(const QByteArray &name, const QString &title, bool revert);
+    void applyPreferencePack(const QString &name, bool revert);
+
     QMenu* _menu {nullptr};
     QMenu* _undoMenu {nullptr};
+    QMenu* _packMenu {nullptr};
     std::deque<std::pair<QString, ParameterGrp::handle>> _undos;
 };
 

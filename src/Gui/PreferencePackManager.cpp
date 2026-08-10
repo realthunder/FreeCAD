@@ -38,6 +38,7 @@
 #include <QTextStream>
 
 #include "PreferencePackManager.h"
+#include "Action.h"
 #include "App/Metadata.h"
 #include "Base/Parameter.h"
 #include "Base/Interpreter.h"
@@ -330,6 +331,13 @@ bool PreferencePackManager::apply(const std::string& preferencePackName) const
 {
     std::lock_guard<std::mutex> lock(_mutex);
     if (auto preferencePack = _preferencePacks.find(preferencePackName); preferencePack != _preferencePacks.end()) {
+        // The presets menu's in-session undo. A pack is applied from three
+        // places -- that menu, the Theme preferences page and Python -- and
+        // all three should be undoable in one step, so it is pushed here
+        // rather than by whoever asked. Null when the command is not
+        // registered, which is every session without a main window.
+        if (auto presets = PresetsAction::instance())
+            presets->push(QString::fromUtf8(preferencePackName.c_str()));
         BackupCurrentConfig();
         bool wasApplied = preferencePack->second.apply();
         if (wasApplied) {

@@ -69,6 +69,8 @@
 #include "Command.h"
 #include "CommandCompleter.h"
 #include "DlgUndoRedo.h"
+#include "DockWindowManager.h"
+#include "PreferencePackManager.h"
 #include "PreferencePages/DlgSettingsWorkbenchesImp.h"
 #include "Document.h"
 #include "EditorView.h"
@@ -3133,6 +3135,18 @@ PresetsAction::~PresetsAction()
 {
     delete _menu;
     delete _undoMenu;
+    // _packMenu is a child of _menu, and went with it
+}
+
+namespace {
+// Both of these keep state that lives in parameters which have just been
+// rewritten underneath them, so they have to be told. PreferencePackManager
+// reloads the same two after applying a pack, for the same reason.
+void reloadWindowState()
+{
+    DockWindowManager::instance()->loadState();
+    ToolBarManager::getInstance()->restoreState();
+}
 }
 
 void PresetsAction::addTo ( QWidget * w )
@@ -3151,14 +3165,19 @@ void PresetsAction::addTo ( QWidget * w )
 }
 
 void PresetsAction::onAction(QAction *action) {
-    auto param = App::GetApplication().GetParameterSet(
-            action->data().toByteArray().constData());
+    bool revert = (QApplication::queryKeyboardModifiers() == Qt::ControlModifier);
+    auto pack = action->property("PreferencePack");
+    if (pack.isValid())
+        applyPreferencePack(pack.toString(), revert);
+    else
+        applyPreset(action->data().toByteArray(), action->text(), revert);
+}
+
+void PresetsAction::applyPreset(const QByteArray &name, const QString &title, bool revert)
+{
+    auto param = App::GetApplication().GetParameterSet(name.constData());
     if (param) {
-        bool revert = (QApplication::queryKeyboardModifiers() == Qt::ControlModifier);
-        QString title = action->text();
-        if (revert)
-            title = tr("Revert ") + title;
-        push(title);
+        push(revert ? tr("Revert %1").arg(title) : title);
         if (revert)
             App::GetApplication().GetUserParameter().revert(param.get());
         else {
@@ -3172,12 +3191,58 @@ void PresetsAction::onAction(QAction *action) {
     }
 }
 
+void PresetsAction::applyPreferencePack(const QString &name, bool revert)
+{
+    auto manager = Application::Instance->prefPackManager();
+    if (!revert) {
+        // No push() here: apply() does it, so that a theme picked on the Theme
+        // preferences page lands on this same stack rather than only in the
+        // backup files it writes beside it.
+        manager->apply(name.toStdString());
+        return;
+    }
+    // A pack has no un-apply of its own, but its .cfg is exactly the file
+    // ParameterGrp::revert() wants: it drops the keys still equal to the
+    // pack's, so they fall back to the coded defaults and anything the user
+    // changed since survives.
+    auto configFile = manager->configFileFor(name.toStdString());
+    if (configFile.empty())
+        return;
+    push(tr("Revert %1").arg(name));
+    App::GetApplication().GetUserParameter().revert(configFile.string().c_str());
+    reloadWindowState();
+}
+
 PresetsAction *PresetsAction::instance()
 {
+    // Called from PreferencePackManager, which is reachable before the command
+    // is registered and in a session with no command manager at all
+    if (!Application::Instance)
+        return nullptr;
     auto cmd = Application::Instance->commandManager().getCommandByName("Std_CmdPresets");
     if (cmd)
         return static_cast<PresetsAction*>(cmd->getAction());
     return nullptr;
+}
+
+QStringList PresetsAction::undoTitles() const
+{
+    QStringList titles;
+    for (auto it = _undos.rbegin(); it != _undos.rend(); ++it)
+        titles.append(it->first);
+    return titles;
+}
+
+QString PresetsAction::undo(int index)
+{
+    int i = (int)_undos.size() - 1 - index;
+    if (index < 0 || i < 0)
+        return QString();
+    QString title = _undos[i].first;
+    _undos[i].second->copyTo(&App::GetApplication().GetUserParameter());
+    _undos.resize(i);
+    reloadWindowState();
+    return title;
 }
 
 void PresetsAction::push(const QString &title)
@@ -3220,19 +3285,62 @@ void PresetsAction::onShowMenu()
         action->setData(QByteArray(v.first.c_str()));
     }
 
+    // Preference packs are the same idea as a preset -- a set of parameters
+    // laid over the user's -- kept in a different place, with their metadata
+    // in a package.xml instead of inside the file. Listing them here gives
+    // them the undo and the Ctrl + Click un-apply they have nowhere else.
+    QString packTip = tr("Click to apply the preference pack.\n"
+                         "Ctrl + Click to drop the settings it applied.");
+    if (!_packMenu) {
+        // Parented, unlike the undo menu below, and it matters: a submenu's
+        // action reaches onAction() through QMenu::triggered of its parent
+        // menu, and off the mouse path Qt finds that parent by walking
+        // parentWidget(). clear() does not take the submenu with it -- the
+        // action it is added by belongs to the submenu, not to _menu.
+        _packMenu = new QMenu(tr("Themes"), _menu);
+        _packMenu->setToolTipsVisible(true);
+    }
+    _packMenu->clear();
+    bool separated = false;
+    for (const auto &v : Application::Instance->prefPackManager()->preferencePacks()) {
+        auto name = QString::fromUtf8(v.first.c_str());
+        auto metadata = v.second.metadata();
+        // A theme is a pack too, but there are more of them than of everything
+        // else in this menu put together, and they have a preferences page of
+        // their own to be picked from. One entry for all of them, not nine.
+        QMenu *target = _packMenu;
+        if (metadata.type() != "Theme") {
+            target = _menu;
+            if (!separated) {
+                separated = true;
+                _menu->addSeparator();
+            }
+        }
+        auto action = new QAction(name, target);
+        QString t = QString::fromUtf8(metadata.description().c_str());
+        if (t.size())
+            t += QStringLiteral("\n\n");
+        t += packTip;
+        action->setToolTip(t);
+        action->setProperty("PreferencePack", name);
+        target->addAction(action);
+    }
+    if (!_packMenu->isEmpty()) {
+        _menu->addSeparator();
+        _menu->addMenu(_packMenu);
+    }
+
     if (_undos.size()) {
         _menu->addSeparator();
         if (!_undoMenu) {
             _undoMenu = new QMenu(tr("Undo"));
+            _undoMenu->setToolTipsVisible(true);
             QObject::connect(_undoMenu, &QMenu::aboutToShow, [this]() {
                 _undoMenu->clear();
-                for (int i=(int)_undos.size()-1; i>=0; --i) {
-                    _undoMenu->addAction(_undos[i].first, [this, i]() {
-                        if (i < (int)_undos.size()) {
-                            _undos[i].second->copyTo(&App::GetApplication().GetUserParameter());
-                            _undos.resize(i);
-                        }
-                    });
+                int index = 0;
+                for (const auto &title : undoTitles()) {
+                    _undoMenu->addAction(title, [this, index]() { undo(index); });
+                    ++index;
                 }
             });
         }

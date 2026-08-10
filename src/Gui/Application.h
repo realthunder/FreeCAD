@@ -415,6 +415,8 @@ public:
     static PyObject* sApplyTheme               (PyObject *self,PyObject *args);
     static PyObject* sListConfigBackups        (PyObject *self,PyObject *args);
     static PyObject* sRevertConfig             (PyObject *self,PyObject *args);
+    static PyObject* sListConfigUndos          (PyObject *self,PyObject *args);
+    static PyObject* sUndoConfig               (PyObject *self,PyObject *args);
 
     static PyObject* sCreateViewer             (PyObject *self,PyObject *args);
     static PyObject* sGetMarkerIndex           (PyObject *self,PyObject *args);

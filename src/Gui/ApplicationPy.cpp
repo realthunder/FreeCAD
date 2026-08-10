@@ -428,6 +428,23 @@ PyMethodDef Application::Methods[] = {
    "    which is the state before the last theme was applied.\n"
    "\n"
    "Returns the backup that was restored, or an empty string if there was none."},
+  {"listConfigUndos",             (PyCFunction) Application::sListConfigUndos, METH_VARARGS,
+   "listConfigUndos() -> list of str\n"
+   "\n"
+   "What undoConfig() can undo: the presets and preference packs applied so far\n"
+   "in this session, newest first. This is the Undo entry of the presets menu,\n"
+   "and unlike listConfigBackups() it is held in memory only -- it goes when\n"
+   "FreeCAD does, and it is empty in a session with no main window."},
+  {"undoConfig",                  (PyCFunction) Application::sUndoConfig, METH_VARARGS,
+   "undoConfig(index=0) -> str\n"
+   "\n"
+   "Undo applying a preset or a preference pack, restoring the configuration as\n"
+   "it was immediately before it.\n"
+   "\n"
+   "index: int\n    A position in listConfigUndos(); the newest by default.\n"
+   "    Undoing an older one drops everything applied after it as well.\n"
+   "\n"
+   "Returns what was undone, or an empty string if there was nothing to undo."},
   {"createViewer",               (PyCFunction) Application::sCreateViewer, METH_VARARGS,
    "createViewer(views=1, name) -> View3DInventorPy or AbstractSplitViewPy\n"
    "\n"
@@ -1885,6 +1902,35 @@ PyObject* Application::sRevertConfig(PyObject * /*self*/, PyObject *args)
     PY_TRY {
         auto restored = Instance->prefPackManager()->revertToBackup(backup ? backup : "");
         return Py::new_reference_to(Py::String(restored.string()));
+    } PY_CATCH;
+}
+
+PyObject* Application::sListConfigUndos(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+
+    PY_TRY {
+        Py::List titles;
+        if (auto presets = PresetsAction::instance()) {
+            for (const auto& title : presets->undoTitles())
+                titles.append(Py::String(title.toStdString()));
+        }
+        return Py::new_reference_to(titles);
+    } PY_CATCH;
+}
+
+PyObject* Application::sUndoConfig(PyObject * /*self*/, PyObject *args)
+{
+    int index = 0;
+    if (!PyArg_ParseTuple(args, "|i", &index))
+        return nullptr;
+
+    PY_TRY {
+        QString undone;
+        if (auto presets = PresetsAction::instance())
+            undone = presets->undo(index);
+        return Py::new_reference_to(Py::String(undone.toStdString()));
     } PY_CATCH;
 }
 
