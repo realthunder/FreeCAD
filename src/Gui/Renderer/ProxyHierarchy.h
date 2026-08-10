@@ -107,6 +107,62 @@ RendererExport bool boxReachesNearPlane(const float *bboxMin,
                                         const float *bboxMax, const float *V,
                                         const float *P, bool homogeneousDepth);
 
+/// The corner order every occlusion test box is built in: corner `i`
+/// takes its x from bit 0, y from bit 1 and z from bit 2 — bit set means
+/// the box maximum, clear the minimum.
+///
+/// ⚠️⚠️ **The cyclic order of a face is therefore 0,1,3,2 and not
+/// 0,1,2,3**, because bit 1 and bit 2 of a face's four corners count in
+/// binary, not around its rim. Written the natural-looking way, four of
+/// the twelve triangles come out as *diagonal cross-sections through the
+/// box interior* rather than faces, two faces are missing outright, and
+/// two more are missing a quarter each — a box that rasterizes 3.5 of
+/// its 6 faces. It still draws something from every angle, so it
+/// answers plausibly; what it answers with is an interior surface,
+/// which is deeper than the front face it stands in for, so LEQUAL
+/// rejects it and the node reports itself hidden while in plain view.
+/// That deleted visible geometry no amount of padding could restore
+/// (§12.6). `occlusionBoxIndices` is shared and tested rather than
+/// written out at the call site for exactly that reason.
+///
+/// 36 indices, 12 triangles, all six faces closed, wound consistently
+/// outward — though winding does not matter to the caller, which
+/// disables back-face culling so a camera inside a box still sees it.
+RendererExport const unsigned short *occlusionBoxIndices();
+
+/// World-space outward padding a test box needs before the depth buffer
+/// can tell its front face from the surface it bounds — \a lsb depth
+/// steps, converted to a distance at the box's nearest depth.
+///
+/// ⚠️⚠️ **The relative pad cannot do this job, and believing it could
+/// deleted visible geometry** (§12.6). Padding by a fraction of the
+/// box's own diagonal answers "the two surfaces are coincident in
+/// world space"; it says nothing about whether the depth *buffer* can
+/// resolve the gap. A small part lying flush on a large panel is a box
+/// whose diagonal is small — so its relative pad is small — sitting at
+/// a distance where one depth step is much larger than that pad. Both
+/// surfaces then quantize to the same stored value, the tie is decided
+/// by which way the rasterizer rounds, and where the box loses, LEQUAL
+/// rejects every fragment and the node calls itself hidden while in
+/// plain view. Bigger parts survive it, which is exactly the pattern
+/// the image comparison showed: panels kept, the components on them
+/// gone.
+///
+/// The correct unit is therefore the depth buffer's own, not the
+/// model's: \a lsb steps of a 24-bit depth buffer (the scene target is
+/// D24S8), converted through the projection's depth derivative at the
+/// nearest corner — z^2/|P[14]| for a perspective projection, constant
+/// for an orthographic one. Returns 0 for a box at or behind the eye,
+/// which is the near-plane exemption's case rather than this one.
+///
+/// Conservative in the only direction that matters: too much padding
+/// makes a box test *visible* and costs frame time; too little deletes
+/// geometry.
+RendererExport float depthQuantumPad(const float *bboxMin,
+                                     const float *bboxMax, const float *V,
+                                     const float *P, bool homogeneousDepth,
+                                     float lsb);
+
 // ---------------------------------------------------------------------
 // The instance table
 // ---------------------------------------------------------------------

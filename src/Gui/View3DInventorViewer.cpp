@@ -4500,6 +4500,12 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             {"Render_OcclusionMaxHidden",
              RenderParams::getOcclusionMaxHidden(),
              &RenderParams::docOcclusionMaxHidden},
+            {"Render_OcclusionDepthPad",
+             RenderParams::getOcclusionDepthPad(),
+             &RenderParams::docOcclusionDepthPad},
+            {"Render_OcclusionConfirm",
+             RenderParams::getOcclusionConfirm(),
+             &RenderParams::docOcclusionConfirm},
         };
         for (const auto &p : _occlusionParams) {
             if (view->getPropertyByName(p.name))

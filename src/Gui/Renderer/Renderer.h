@@ -408,12 +408,45 @@ struct OcclusionCullConfig {
     /// this reported 99% of a 5455-part model hidden, the root
     /// included.
     float padFraction = 1.0e-3f;
+    /// Additional outward padding of a test box, in depth-buffer steps
+    /// (24-bit; the scene target is D24S8) converted to a world
+    /// distance at the box's nearest corner.
+    ///
+    /// ⚠️ The other half of the padding, and the half `padFraction`
+    /// cannot supply. A pad measured in the box's own diagonal says
+    /// nothing about whether the *depth buffer* can separate the box
+    /// from the surface it bounds: a small part lying flush on a large
+    /// panel has a small diagonal and therefore a small pad, at a
+    /// distance where one depth step is far larger. The two quantize to
+    /// the same value, LEQUAL loses the tie half the time, and the node
+    /// reports itself hidden in plain view — measured as the whole
+    /// component detail of a board disappearing while the board stayed
+    /// (§12.6). Costs frame time when too large and pixels when too
+    /// small, so the default is generous.
+    float depthPadLsb = 16.0f;
+    /// How many consecutive answers of "no pixels" a node must give
+    /// before its subtree is actually skipped. 1 acts on every answer.
+    ///
+    /// ⚠️ The stability term, and the difference between a mechanism
+    /// that is right on average and one whose picture holds still. A
+    /// test is issued against one frame's depth and read against a
+    /// later one — non-blocking on purpose — so the occluders move
+    /// underneath the answer while it is in flight. Acted on singly, a
+    /// node tested while an occluder was still drawn gets culled after
+    /// that occluder has gone; the hole tests visible; it returns; and
+    /// it oscillates. Measured at 1, two captures of the same static
+    /// scene 30 s apart differed in 14101 pixels (§12.6). Costs a few
+    /// frames of drawing geometry that could have been skipped, which
+    /// is the direction every default here errs in.
+    uint32_t hiddenConfirm = 2;
 
     bool operator==(const OcclusionCullConfig &o) const {
         return enabled == o.enabled && visibleTtl == o.visibleTtl
             && budget == o.budget && minSubtree == o.minSubtree
             && maxHiddenFrames == o.maxHiddenFrames
-            && padFraction == o.padFraction;
+            && padFraction == o.padFraction
+            && depthPadLsb == o.depthPadLsb
+            && hiddenConfirm == o.hiddenConfirm;
     }
     bool operator!=(const OcclusionCullConfig &o) const { return !(*this == o); }
 };

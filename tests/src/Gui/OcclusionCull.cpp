@@ -127,6 +127,15 @@ void answerByLevel(OcclusionCuller &c, const OcclusionTestBatch &batch,
 /// holding the last one. Several frames because a verdict is a frame
 /// old by construction and the descent only reaches a node once its
 /// parent has answered visible — depth costs rounds.
+///
+/// ⚠️ And more of them than that suggests: a hidden answer is not acted
+/// on until `hiddenConfirm` of them have arrived in a row, and a node
+/// part-way through that streak is an ordinary visible node, so its
+/// next test waits out `visibleTtl`. Culling therefore engages in
+/// roughly visibleTtl * hiddenConfirm frames, not in one. Callers that
+/// want a settled mask must budget for it; the alternative — settling
+/// with the confirmations turned off — would leave the default
+/// configuration untested by everything below.
 void settle(OcclusionCuller &c, const float *V, const float *P, float height,
             std::vector<uint8_t> &mask, OcclusionTestBatch &batch,
             int frames, uint32_t hideFromLevel = 1)
@@ -178,7 +187,7 @@ TEST(OcclusionCull, aHiddenNodeMasksItsWholeSubtree)
     Camera cam;
     std::vector<uint8_t> mask(1000, 0);
     OcclusionTestBatch batch;
-    settle(c, cam.V, cam.P, cam.height, mask, batch, 4);
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 24);
     EXPECT_GT(countSet(mask), 0u);
     EXPECT_GT(c.lastFrame().hiddenInstances, c.lastFrame().nodesHidden)
         << "a hidden node stood for no more than itself";
@@ -206,7 +215,7 @@ TEST(OcclusionCull, aVisibleAnswerGivesTheSubtreeBack)
     Camera cam;
     std::vector<uint8_t> mask(1000, 0);
     OcclusionTestBatch batch;
-    settle(c, cam.V, cam.P, cam.height, mask, batch, 4);
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 24);
     ASSERT_GT(countSet(mask), 0u);
 
     // The enclosure opens: every test now answers visible.
@@ -234,7 +243,7 @@ TEST(OcclusionCull, aHiddenNodeIsAlwaysOfferedATestBack)
     Camera cam;
     std::vector<uint8_t> mask(1000, 0);
     OcclusionTestBatch batch;
-    settle(c, cam.V, cam.P, cam.height, mask, batch, 4);
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 24);
     ASSERT_GT(c.lastFrame().nodesHidden, 0u);
 
     for (int frame = 0; frame < 5; ++frame) {
@@ -261,7 +270,7 @@ TEST(OcclusionCull, answersThatNeverArriveRevertToVisible)
     Camera cam;
     std::vector<uint8_t> mask(1000, 0);
     OcclusionTestBatch batch;
-    settle(c, cam.V, cam.P, cam.height, mask, batch, 4);
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 24);
     ASSERT_GT(countSet(mask), 0u);
 
     bool everHidden = false;
@@ -295,7 +304,7 @@ TEST(OcclusionCull, confirmationsDoNotFlickerTheGeometryBack)
     Camera cam;
     std::vector<uint8_t> mask(1000, 0);
     OcclusionTestBatch batch;
-    settle(c, cam.V, cam.P, cam.height, mask, batch, 4);
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 24);
     ASSERT_GT(countSet(mask), 0u);
 
     for (int frame = 0; frame < 20; ++frame) {
@@ -356,7 +365,7 @@ TEST(OcclusionCull, aRebuildForgetsEveryVerdict)
     Camera cam;
     std::vector<uint8_t> mask(1000, 0);
     OcclusionTestBatch batch;
-    settle(c, cam.V, cam.P, cam.height, mask, batch, 4);
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 24);
     ASSERT_GT(countSet(mask), 0u);
 
     c.build(lattice());
@@ -484,4 +493,245 @@ TEST(OcclusionCull, aNodesBoxContainsEverythingBelowIt)
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------
+// The box the test rasterizes has to be a box
+// ---------------------------------------------------------------------
+
+TEST(OcclusionCull, theTestBoxIsClosedAndAllOfItIsSurface)
+{
+    // ⭐⭐ The second assumption the box test cannot survive losing, and
+    // the one that was silently false. The verdict "no fragment of this
+    // box passed the depth test" only stands for the node if what
+    // rasterized was the box's *surface*: an interior surface lies
+    // deeper than the front face it stands in for, so LEQUAL rejects it
+    // and the node reports itself hidden while in plain view.
+    //
+    // The table this checks was once written with a face's corners in
+    // the order 0,1,2,3, which reads naturally and is wrong -- the
+    // corners are bit-encoded, so a face's rim order is 0,1,3,2. Four of
+    // the twelve triangles came out as diagonal cross-sections through
+    // the interior, two faces were missing entirely and two more were a
+    // quarter short. It drew something from every angle, so nothing
+    // failed; it merely deleted geometry.
+    //
+    // Checked as properties rather than by comparing against a second
+    // copy of the table, which would only assert that two transcriptions
+    // agree.
+    const unsigned short *idx = Render::occlusionBoxIndices();
+    // Corner i takes x from bit 0, y from bit 1, z from bit 2.
+    auto corner = [](unsigned short i, int axis) {
+        return float((i >> axis) & 1);
+    };
+
+    double total = 0.0;
+    int perFace[3][2] = {};
+    for (int t = 0; t < 12; ++t) {
+        const unsigned short a = idx[t * 3], b = idx[t * 3 + 1],
+                             c = idx[t * 3 + 2];
+        ASSERT_LT(a, 8); ASSERT_LT(b, 8); ASSERT_LT(c, 8);
+        EXPECT_TRUE(a != b && b != c && a != c)
+            << "triangle " << t << " is degenerate";
+        // Every triangle must lie in a face plane: all three corners
+        // agreeing on one axis, at that axis' minimum or maximum.
+        int planes = 0;
+        for (int axis = 0; axis < 3; ++axis) {
+            const float v = corner(a, axis);
+            if (corner(b, axis) == v && corner(c, axis) == v) {
+                ++planes;
+                ++perFace[axis][int(v)];
+            }
+        }
+        EXPECT_EQ(planes, 1)
+            << "triangle " << t << " is not a face of the box -- a "
+               "diagonal cross-section answers with the interior";
+        // Area of the unit-cube triangle, to sum against the surface.
+        float u[3], w[3];
+        for (int k = 0; k < 3; ++k) {
+            u[k] = corner(b, k) - corner(a, k);
+            w[k] = corner(c, k) - corner(a, k);
+        }
+        const float cx = u[1] * w[2] - u[2] * w[1];
+        const float cy = u[2] * w[0] - u[0] * w[2];
+        const float cz = u[0] * w[1] - u[1] * w[0];
+        total += 0.5 * std::sqrt(double(cx * cx + cy * cy + cz * cz));
+    }
+    // Two triangles per face, six faces, and the total area exactly the
+    // unit cube's surface: enough triangles to close it, no overlap to
+    // hide a hole behind. A quarter-covered face fails this even though
+    // its two triangles are both genuinely on the face plane.
+    for (int axis = 0; axis < 3; ++axis) {
+        for (int side = 0; side < 2; ++side) {
+            EXPECT_EQ(perFace[axis][side], 2)
+                << "axis " << axis << " side " << side
+                << " is not closed by exactly two triangles";
+        }
+    }
+    EXPECT_NEAR(total, 6.0, 1e-5)
+        << "the twelve triangles do not add up to the box's surface: "
+           "either a face is uncovered or two triangles overlap and "
+           "leave a hole elsewhere";
+}
+
+// ---------------------------------------------------------------------
+// Padding in the depth buffer's units, not the model's
+// ---------------------------------------------------------------------
+
+TEST(OcclusionCull, depthPaddingGrowsWithDistanceAndIgnoresBoxSize)
+{
+    // The pad exists to beat the depth buffer's own resolution, which
+    // depends on where the box is and not at all on how big it is --
+    // the opposite of padFraction, and the reason both terms are
+    // needed. A small part flush on a large panel has a small diagonal
+    // and therefore a small relative pad, at a distance where one depth
+    // step is far larger.
+    const float V[16] = {1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1};
+    // Perspective, GL layout: P[14] = -2fn/(f-n), P[15] = 0.
+    const float n = 0.1f, f = 1000.0f;
+    float P[16] = {};
+    P[0] = P[5] = 1.0f;
+    P[10] = -(f + n) / (f - n);
+    P[11] = -1.0f;
+    P[14] = -2.0f * f * n / (f - n);
+
+    // The near face is held at `depth` and only the lateral extent
+    // varies: growing the box towards the camera instead would move the
+    // very corner the pad is computed at, which is a different question
+    // and the reason a first draft of this test failed.
+    auto padAt = [&](float depth, float lateral) {
+        const float lo[3] = {-lateral, -lateral, -depth - 1.0f};
+        const float hi[3] = {lateral, lateral, -depth};
+        return Render::depthQuantumPad(lo, hi, V, P, true, 16.0f);
+    };
+
+    // Same box, four times the distance: the depth step goes with the
+    // square of it, so the pad must too.
+    const float near_ = padAt(10.0f, 0.5f);
+    const float far_ = padAt(40.0f, 0.5f);
+    EXPECT_GT(near_, 0.0f);
+    EXPECT_NEAR(far_ / near_, 16.0f, 0.5f);
+
+    // Same nearest depth, a box a hundred times wider: unchanged. This
+    // is the whole point -- it is not a tolerance on the geometry, so
+    // the term padFraction supplies cannot stand in for it.
+    EXPECT_NEAR(padAt(10.0f, 0.5f), padAt(10.0f, 50.0f), 1e-6f);
+
+    // A box behind the eye has no answerable depth; the near-plane
+    // exemption is that case, not this one.
+    const float behind[3] = {-1.0f, -1.0f, 1.0f};
+    const float behindMax[3] = {1.0f, 1.0f, 3.0f};
+    EXPECT_EQ(Render::depthQuantumPad(behind, behindMax, V, P, true, 16.0f),
+              0.0f);
+    // Asking for no padding is allowed: it is the un-padded box test,
+    // and being able to ask for it back is what let the padding be
+    // measured against the picture rather than asserted.
+    const float lo[3] = {-1, -1, -11}, hi[3] = {1, 1, -9};
+    EXPECT_EQ(Render::depthQuantumPad(lo, hi, V, P, true, 0.0f), 0.0f);
+}
+
+// ---------------------------------------------------------------------
+// Stability: the difference between right on average and holding still
+// ---------------------------------------------------------------------
+
+TEST(OcclusionCull, anAnswerThatFlipsBackIsNeverActedOn)
+{
+    // ⭐⭐ The oscillator, and the reason a hidden verdict is confirmed
+    // rather than obeyed. A test is issued against one frame's depth
+    // and read against a later one -- non-blocking by design -- so
+    // while it is in flight other nodes are culled and the occluders
+    // move underneath the answer. Obeyed singly, a node tested while an
+    // occluder was still drawn is skipped after that occluder has gone;
+    // the hole it leaves tests visible; it returns; and it alternates.
+    // Measured on the server assembly that swung the drawn set between
+    // 12 and 8424 instances of 17727, and two captures of the same
+    // static scene 30 s apart differed in 14101 pixels (§12.6).
+    //
+    // Whatever produces it, the signature is this: answers that do not
+    // agree with each other. Nothing here may act on them.
+    OcclusionCullConfig conf;
+    ASSERT_GT(conf.hiddenConfirm, 1u)
+        << "the default acts on a single answer; there is no hysteresis "
+           "left to test";
+    OcclusionCuller c;
+    c.configure(conf);
+    c.build(lattice());
+    Camera cam;
+    std::vector<uint8_t> mask(1000, 0);
+    OcclusionTestBatch batch;
+    c.cull(cam.V, cam.P, cam.height, true, mask, batch);
+    ASSERT_FALSE(batch.nodes.empty());
+
+    // Not the root: a hidden root is refused outright by a different
+    // guard, which would pass this test for the wrong reason.
+    int node = kNoProxyNode;
+    for (int n : batch.nodes) {
+        if (n != c.hierarchy().root()) {
+            node = n;
+            break;
+        }
+    }
+    ASSERT_NE(node, kNoProxyNode);
+
+    for (int i = 0; i < 20; ++i) {
+        c.result(node, (i % 2) == 0);
+        std::fill(mask.begin(), mask.end(), 0);
+        c.cull(cam.V, cam.P, cam.height, true, mask, batch);
+        ASSERT_EQ(c.lastFrame().nodesHidden, 0u)
+            << "frame " << i << ": acted on an answer that the next test "
+               "contradicted";
+    }
+    EXPECT_EQ(countSet(mask), 0u);
+
+    // ...and the hysteresis must not be a refusal to ever cull: the
+    // same node, answering consistently, is skipped once the streak is
+    // reached. The loop above ended on a hidden answer, so the streak
+    // stands at one.
+    for (uint32_t i = 1; i < conf.hiddenConfirm; ++i) {
+        c.result(node, false);
+        std::fill(mask.begin(), mask.end(), 0);
+        c.cull(cam.V, cam.P, cam.height, true, mask, batch);
+    }
+    EXPECT_GT(c.lastFrame().nodesHidden, 0u)
+        << "answers that all agreed were never acted on";
+    EXPECT_GT(countSet(mask), 0u);
+}
+
+TEST(OcclusionCull, oneVisibleAnswerOutweighsAnyRunOfHiddenOnes)
+{
+    // The asymmetry the whole file is built on, applied to the streak:
+    // evidence for skipping accumulates, evidence for drawing never
+    // has to. A node that has answered hidden a hundred times and then
+    // sees a single pixel draws again immediately, and must re-earn the
+    // whole streak before it can be skipped once more.
+    OcclusionCullConfig conf;
+    OcclusionCuller c;
+    c.configure(conf);
+    c.build(lattice());
+    Camera cam;
+    std::vector<uint8_t> mask(1000, 0);
+    OcclusionTestBatch batch;
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 24);
+    ASSERT_GT(countSet(mask), 0u);
+
+    // The enclosure opens. Several rounds, not one: a hidden node is
+    // not descended, so each frame only offers the frontier of them and
+    // the level below is not even reached until the level above has
+    // answered visible.
+    for (int i = 0; i < 8; ++i) {
+        std::fill(mask.begin(), mask.end(), 0);
+        c.cull(cam.V, cam.P, cam.height, true, mask, batch);
+        answerAll(c, batch, true);
+    }
+    std::fill(mask.begin(), mask.end(), 0);
+    c.cull(cam.V, cam.P, cam.height, true, mask, batch);
+    ASSERT_EQ(c.lastFrame().nodesHidden, 0u)
+        << "a node stayed skipped after an answer saw pixels in it";
+
+    // And a single hidden answer does not put it straight back.
+    answerAll(c, batch, false);
+    std::fill(mask.begin(), mask.end(), 0);
+    c.cull(cam.V, cam.P, cam.height, true, mask, batch);
+    EXPECT_EQ(c.lastFrame().nodesHidden, 0u)
+        << "the streak resumed where it left off instead of restarting";
 }

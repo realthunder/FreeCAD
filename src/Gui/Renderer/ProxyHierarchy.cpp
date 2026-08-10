@@ -131,6 +131,65 @@ bool Render::boxReachesNearPlane(const float *bmin, const float *bmax,
     return false;
 }
 
+const unsigned short *Render::occlusionBoxIndices()
+{
+    // Each face as its four corners in rim order (0,1,3,2 for the low-z
+    // face and so on), split on a diagonal of that rim. See the header
+    // on why the obvious 0,1,2,3 spelling is wrong.
+    static const unsigned short kIndices[36] = {
+        0, 1, 3,  3, 2, 0,   // z = min
+        4, 5, 7,  7, 6, 4,   // z = max
+        0, 1, 5,  5, 4, 0,   // y = min
+        2, 3, 7,  7, 6, 2,   // y = max
+        0, 2, 6,  6, 4, 0,   // x = min
+        1, 3, 7,  7, 5, 1,   // x = max
+    };
+    return kIndices;
+}
+
+float Render::depthQuantumPad(const float *bmin, const float *bmax,
+                              const float *V, const float *P,
+                              bool homogeneousDepth, float lsb)
+{
+    if (!bmin || !bmax || !V || !P || bmin[0] > bmax[0] || !(lsb > 0.0f))
+        return 0.0f;
+    // The nearest corner decides: LEQUAL needs one fragment to pass, and
+    // the front of the box is where that happens.
+    float nearest = 0.0f;
+    bool any = false;
+    for (int i = 0; i < 8; ++i) {
+        const float x = (i & 1) ? bmax[0] : bmin[0];
+        const float y = (i & 2) ? bmax[1] : bmin[1];
+        const float z = (i & 4) ? bmax[2] : bmin[2];
+        // GL layout, as sightBounds: column-major, points as M * p, and
+        // the camera looks down -z, so eye distance is -vz.
+        const float e = -(V[2] * x + V[6] * y + V[10] * z + V[14]);
+        if (!(e > 0.0f))
+            continue;
+        if (!any || e < nearest) {
+            nearest = e;
+            any = true;
+        }
+    }
+    if (!any)
+        return 0.0f;
+    // One depth step in NDC. The 24 bits are the scene target's
+    // (D24S8); the -1..1 range of OpenGL's clip convention spends them
+    // over twice the interval D3D/Vulkan/Metal's 0..1 does.
+    const float step = lsb * (homogeneousDepth ? 2.0f : 1.0f) / 16777216.0f;
+    const bool ortho = P[15] != 0.0f;
+    // Invert the projection's depth derivative at that corner. For a
+    // perspective projection ndc_z = -P[10] + P[14]/e, so d(ndc)/de is
+    // -P[14]/e^2; for an orthographic one ndc_z = -P[10]*e + P[14] and
+    // the derivative is constant. A degenerate projection (either term
+    // zero) has no usable derivative — pad nothing rather than divide.
+    const float denom = ortho ? std::fabs(P[10])
+                              : std::fabs(P[14]) / (nearest * nearest);
+    if (!(denom > 0.0f))
+        return 0.0f;
+    return step / denom;
+}
+
 // ---------------------------------------------------------------------
 // The instance table
 // ---------------------------------------------------------------------

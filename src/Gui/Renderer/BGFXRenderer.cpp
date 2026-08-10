@@ -4420,14 +4420,15 @@ public:
         bgfx::allocTransientIndexBuffer(&tib, indices);
         auto *v = reinterpret_cast<SceneVertex *>(tvb.data);
         auto *idx = reinterpret_cast<uint16_t *>(tib.data);
-        // Corner order is the usual unit-cube one; the index list below
-        // is written against it. Normals are never read (the fragment
-        // stage writes nothing) but the layout carries them, so they
-        // are filled rather than left as whatever the buffer held.
-        static const uint16_t kBoxIndices[36] = {
-            0, 1, 2, 2, 3, 0,  4, 6, 5, 6, 4, 7,
-            0, 4, 5, 5, 1, 0,  3, 2, 6, 6, 7, 3,
-            0, 3, 7, 7, 4, 0,  1, 5, 6, 6, 2, 1};
+        // Corner order is the bit-encoded one Render::occlusionBoxIndices
+        // is written against — and the index list comes from there, not
+        // from here, because the version written out at this call site
+        // closed only 3.5 of the box's 6 faces and answered occlusion
+        // questions with the box's own interior (§12.6). Normals are
+        // never read (nothing is written) but the layout carries them,
+        // so they are filled rather than left as whatever the buffer
+        // held.
+        const uint16_t *kBoxIndices = Render::occlusionBoxIndices();
         for (uint32_t b = 0; b < count; ++b) {
             const float *lo = boxMin + b * 3;
             const float *hi = boxMax + b * 3;
@@ -4458,8 +4459,31 @@ public:
 
         float identity[16];
         bx::mtxIdentity(identity);
+        // ⚠️⚠️ The flat program, and u_params zeroed for every box. Both
+        // matter, and either one wrong silently deletes geometry.
+        //
+        // A bgfx uniform keeps whatever the last draw that set it left
+        // in it, and vs_fc_mesh — which these boxes used to be drawn
+        // with — reads u_params.w as an NDC depth bias. The last scene
+        // draw before this view is routinely a *line* draw, whose
+        // u_params.w is not a bias at all but the on-top dim alpha,
+        // normally 1.0. Inherited, it pushes every test box a whole NDC
+        // unit away from the viewer — past the far plane — so the box
+        // rasterizes nothing, the query counts no samples, and the node
+        // reports itself hidden however plainly it is in view. That is
+        // what deleted visible geometry in §12.5, and it is why the
+        // synthetic wall smoke scene never reproduced it: triangles
+        // only, no line draw, so the inherited bias there was 0.
+        //
+        // vs_fc_flat transforms the position and does nothing else, so
+        // the box lands where the box is; the explicit zero keeps that
+        // true if either shader body ever grows a term of its own. Three
+        // other mesh-program pairings in this file zero u_params for the
+        // same reason — see the water surface and AO normal passes.
+        const float zeroParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         for (uint32_t b = 0; b < count; ++b) {
             bgfx::setTransform(identity);
+            bgfx::setUniform(u_params, zeroParams);
             bgfx::setVertexBuffer(0, &tvb, b * 8, 8);
             bgfx::setIndexBuffer(&tib, b * 36, 36);
             // LEQUAL, not LESS: a box face coplanar with the surface it
@@ -4469,7 +4493,7 @@ public:
             // and a back-face-culled box would then vanish and read as
             // fully occluded.
             bgfx::setState(BGFX_STATE_DEPTH_TEST_LEQUAL);
-            bgfx::submit(vid(ViewOcclusionProbe), m_progMesh, queries[b]);
+            bgfx::submit(vid(ViewOcclusionProbe), m_progFlat, queries[b]);
             ++drawcount;
         }
         return count;
@@ -8933,11 +8957,25 @@ static void driveOcclusionProbe(
         //
         // Relative to the box's own diagonal, so it means the same at
         // any model scale.
+        //
+        // ⚠️⚠️ And padded by the depth buffer's own resolution as well,
+        // which the relative term cannot supply: a small part flush on
+        // a large panel has a small diagonal, so a small pad, at a
+        // distance where one depth step dwarfs it. Both quantize to the
+        // same stored value and LEQUAL loses the tie. The probe shares
+        // this with the culler on purpose — a measurement that answers
+        // a different question than the mechanism it justifies is worth
+        // nothing (§12.6).
         float pmin[3], pmax[3];
         const float dx = n.contentMax[0] - n.contentMin[0];
         const float dy = n.contentMax[1] - n.contentMin[1];
         const float dz = n.contentMax[2] - n.contentMin[2];
-        const float pad = 1.0e-3f * std::sqrt(dx * dx + dy * dy + dz * dz);
+        const Render::OcclusionCullConfig defaults;
+        const float pad = defaults.padFraction
+                * std::sqrt(dx * dx + dy * dy + dz * dz)
+            + Render::depthQuantumPad(n.contentMin, n.contentMax, V, P,
+                                      caps->homogeneousDepth,
+                                      defaults.depthPadLsb);
         for (int k = 0; k < 3; ++k) {
             pmin[k] = n.contentMin[k] - pad;
             pmax[k] = n.contentMax[k] + pad;

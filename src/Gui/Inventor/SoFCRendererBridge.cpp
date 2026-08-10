@@ -1263,6 +1263,18 @@ RendererBridge::translateOcclusionCullConfig(App::PropertyContainer * view)
     res.maxHiddenFrames = atLeast(viewParamOverride<App::PropertyInteger>(
             view, "Render", "OcclusionMaxHidden",
             RenderParams::getOcclusionMaxHidden()), 1);
+    // Zero is allowed here, unlike the others: it is the un-padded box
+    // test, which is what the failure of §12.6 was, and being able to
+    // ask for it back is what lets the padding be measured rather than
+    // asserted.
+    res.depthPadLsb = float(atLeast(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "OcclusionDepthPad",
+            RenderParams::getOcclusionDepthPad()), 0));
+    // At least one: zero confirmations would mean a node is skipped
+    // without any answer having said so.
+    res.hiddenConfirm = atLeast(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "OcclusionConfirm",
+            RenderParams::getOcclusionConfirm()), 1);
     return res;
 }
 

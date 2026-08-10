@@ -66,9 +66,28 @@ namespace Render {
 /// Deliberately tiny: there is one per node and a large assembly
 /// partitions into thousands, walked every frame.
 struct OcclusionNodeState {
-    /// The last answer was "no pixels". While set, the node's whole
-    /// subtree is masked out and not descended.
+    /// Enough consecutive answers of "no pixels" have arrived to act.
+    /// While set, the node's whole subtree is masked out and not
+    /// descended.
     uint8_t hidden = 0;
+    /// ⭐⭐ Consecutive "no pixels" answers, reset by any answer that
+    /// saw one. The verdict is only acted on at
+    /// `OcclusionCullConfig::hiddenConfirm`, and that hysteresis is
+    /// what makes the mechanism stable rather than merely correct on
+    /// average (§12.6).
+    ///
+    /// A query is issued against one frame's depth and read against a
+    /// later one — deliberately, since blocking for it would cost the
+    /// frame time this exists to save — so between the two, other
+    /// nodes are culled and the occluders move underneath the answer.
+    /// Acted on singly, a node tested while an occluder was still drawn
+    /// is culled after that occluder has gone; the hole it leaves tests
+    /// visible; it comes back; and it oscillates with a period of two.
+    /// Measured, that swung the drawn set between 12 and 8424 instances
+    /// of 17727 and made the picture flicker. A node that is genuinely
+    /// hidden answers so every time and loses only the confirmations;
+    /// an oscillator never gets two in a row.
+    uint8_t hiddenStreak = 0;
     /// A query is in flight and this node must not be offered again
     /// until it is answered or abandoned.
     uint8_t pending = 0;

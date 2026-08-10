@@ -27,7 +27,30 @@ using namespace Render;
 
 void OcclusionCuller::configure(const OcclusionCullConfig &config)
 {
+    // ⚠️ A verdict taken with a different test box is not evidence about
+    // this one. The padding terms change the box that was rasterized, so
+    // changing either has to drop what the old box answered -- otherwise
+    // a node stays culled on the strength of a test the current settings
+    // would never have made, and the culling that is running is a blend
+    // of two configurations. Being switched off and on again is the same
+    // case: nothing was tested in between, so every verdict has aged by
+    // an unknown amount against a camera that was free to move.
+    //
+    // Only the hidden bits go. The index is untouched: it is a partition
+    // of the draw list, which none of these knobs affect.
+    const bool verdictsVoid = conf.padFraction != config.padFraction
+        || conf.depthPadLsb != config.depthPadLsb
+        || conf.hiddenConfirm != config.hiddenConfirm
+        || (config.enabled && !conf.enabled);
     conf = config;
+    if (!verdictsVoid)
+        return;
+    for (auto &st : state) {
+        st.hidden = 0;
+        st.hiddenStreak = 0;
+        st.answered = 0;
+        st.lastPx = -1;
+    }
 }
 
 void OcclusionCuller::build(const std::vector<ProxyInstance> &instances,
@@ -65,7 +88,22 @@ void OcclusionCuller::result(int node, bool visible, int32_t px)
     st.answered = 1;
     st.lastAnswer = framecounter;
     st.lastPx = px;
-    st.hidden = visible ? 0 : 1;
+    if (visible) {
+        // ⭐ One answer that saw a pixel is enough to draw again, and it
+        // resets the streak outright. The asymmetry is the whole point:
+        // being slow to cull costs frame time, being quick to cull
+        // costs geometry, so evidence for hiding has to accumulate
+        // while evidence for drawing never does.
+        st.hiddenStreak = 0;
+        st.hidden = 0;
+        return;
+    }
+    if (st.hiddenStreak < 255)
+        ++st.hiddenStreak;
+    // A node already hidden stays hidden on a single confirmation: the
+    // streak only has to be *reached*, not re-earned every frame.
+    if (st.hiddenStreak >= (conf.hiddenConfirm ? conf.hiddenConfirm : 1))
+        st.hidden = 1;
 }
 
 int32_t OcclusionCuller::nodePixels(int node) const
@@ -134,6 +172,32 @@ void OcclusionCuller::cull(const float *view, const float *proj,
 
     const auto &nodes = index.nodes();
 
+    // ⚠️ The padded box, in one place because the box that is *judged*
+    // and the box that is *tested* have to be the same one. Two copies
+    // of this drifted apart once already: the near-plane exemption is
+    // decided on the padded box precisely because padding is what
+    // pushes a box through the near plane, so a box offered to the
+    // backend with a different pad is a box nobody checked.
+    //
+    // Two terms, and neither substitutes for the other: a fraction of
+    // the box's own diagonal for surfaces that coincide in world space
+    // (relative, so it means the same at any model scale), plus the
+    // depth buffer's own resolution at this distance for surfaces the
+    // buffer cannot separate however far apart they are in model units.
+    auto paddedBox = [&](const ProxyNode &n, float *pmin, float *pmax) {
+        const float dx = n.contentMax[0] - n.contentMin[0];
+        const float dy = n.contentMax[1] - n.contentMin[1];
+        const float dz = n.contentMax[2] - n.contentMin[2];
+        const float pad =
+            conf.padFraction * std::sqrt(dx * dx + dy * dy + dz * dz)
+            + depthQuantumPad(n.contentMin, n.contentMax, view, proj,
+                              homogeneousDepth, conf.depthPadLsb);
+        for (int k = 0; k < 3; ++k) {
+            pmin[k] = n.contentMin[k] - pad;
+            pmax[k] = n.contentMax[k] + pad;
+        }
+    };
+
     // The walk. A hidden node's subtree is cut whole and not descended:
     // that is the entire economy of testing per node rather than per
     // object, and it is also why the verdict has to be conservative —
@@ -160,18 +224,11 @@ void OcclusionCuller::cull(const float *view, const float *proj,
         }
 
         // ⚠️ Padded outwards, and judged in that padded form — see
-        // OcclusionCullConfig::padFraction. A test box must be a
-        // conservative bound, and float equality is not conservative.
-        const float dx = n.contentMax[0] - n.contentMin[0];
-        const float dy = n.contentMax[1] - n.contentMin[1];
-        const float dz = n.contentMax[2] - n.contentMin[2];
-        const float pad =
-            conf.padFraction * std::sqrt(dx * dx + dy * dy + dz * dz);
+        // OcclusionCullConfig::padFraction and ::depthPadLsb. A test box
+        // must be a conservative bound, and neither float equality nor
+        // the depth buffer's last bit is conservative.
         float pmin[3], pmax[3];
-        for (int k = 0; k < 3; ++k) {
-            pmin[k] = n.contentMin[k] - pad;
-            pmax[k] = n.contentMax[k] + pad;
-        }
+        paddedBox(n, pmin, pmax);
 
         // A box the near plane clips cannot be tested at all: the faces
         // that would prove it visible are gone, and the ones left are
@@ -212,6 +269,10 @@ void OcclusionCuller::cull(const float *view, const float *proj,
             // this costing frame time and it costing geometry.
             if (framecounter - st.lastAnswer >= conf.maxHiddenFrames) {
                 st.hidden = 0;
+                // Re-entering the visible set on no evidence at all, so
+                // the streak has to be earned again from zero rather
+                // than resumed where the unanswered tests left it.
+                st.hiddenStreak = 0;
                 ++framestats.forcedVisible;
             }
             else {
@@ -251,14 +312,11 @@ void OcclusionCuller::cull(const float *view, const float *proj,
     // would be left to the fail-safe, which is a much blunter way back.
     auto offer = [&](int node) {
         const ProxyNode &n = nodes[size_t(node)];
-        const float dx = n.contentMax[0] - n.contentMin[0];
-        const float dy = n.contentMax[1] - n.contentMin[1];
-        const float dz = n.contentMax[2] - n.contentMin[2];
-        const float pad =
-            conf.padFraction * std::sqrt(dx * dx + dy * dy + dz * dz);
+        float pmin[3], pmax[3];
+        paddedBox(n, pmin, pmax);
         for (int k = 0; k < 3; ++k) {
-            batch.mins.push_back(n.contentMin[k] - pad);
-            batch.maxs.push_back(n.contentMax[k] + pad);
+            batch.mins.push_back(pmin[k]);
+            batch.maxs.push_back(pmax[k]);
         }
         batch.nodes.push_back(node);
         state[size_t(node)].pending = 1;

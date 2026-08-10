@@ -65,6 +65,8 @@ public:
     long OcclusionBudget;
     long OcclusionMinSubtree;
     long OcclusionMaxHidden;
+    long OcclusionDepthPad;
+    long OcclusionConfirm;
     bool AO;
     bool Shadow;
     long AOMethod;
@@ -157,6 +159,10 @@ public:
         funcs["OcclusionMinSubtree"] = &RenderParamsP::updateOcclusionMinSubtree;
         OcclusionMaxHidden = this->handle->GetInt("OcclusionMaxHidden", 120);
         funcs["OcclusionMaxHidden"] = &RenderParamsP::updateOcclusionMaxHidden;
+        OcclusionDepthPad = this->handle->GetInt("OcclusionDepthPad", 16);
+        funcs["OcclusionDepthPad"] = &RenderParamsP::updateOcclusionDepthPad;
+        OcclusionConfirm = this->handle->GetInt("OcclusionConfirm", 2);
+        funcs["OcclusionConfirm"] = &RenderParamsP::updateOcclusionConfirm;
         AO = this->handle->GetBool("AO", false);
         funcs["AO"] = &RenderParamsP::updateAO;
         Shadow = this->handle->GetBool("Shadow", true);
@@ -348,6 +354,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionMaxHidden(RenderParamsP *self) {
         self->OcclusionMaxHidden = self->handle->GetInt("OcclusionMaxHidden", 120);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionDepthPad(RenderParamsP *self) {
+        self->OcclusionDepthPad = self->handle->GetInt("OcclusionDepthPad", 16);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionConfirm(RenderParamsP *self) {
+        self->OcclusionConfirm = self->handle->GetInt("OcclusionConfirm", 2);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAO(RenderParamsP *self) {
@@ -1134,6 +1148,85 @@ void RenderParams::setOcclusionMaxHidden(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeOcclusionMaxHidden() {
     instance()->handle->RemoveInt("OcclusionMaxHidden");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionDepthPad() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How far a test box is pushed towards the viewer before it is\n"
+"tested, in steps of the 24-bit depth buffer. A test box has to\n"
+"be a conservative bound, and at the last bit of the depth buffer\n"
+"it is not: a small part lying flush on a large panel quantizes\n"
+"to the same stored depth as the panel, LEQUAL loses the tie\n"
+"whichever way the rasterizer rounds, and the node reports itself\n"
+"hidden while in plain view. Measured that way, the components on\n"
+"a board disappeared while the board stayed. Too large costs\n"
+"frame time by testing visible what could have been skipped; too\n"
+"small deletes geometry, so err high.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionDepthPad() {
+    return instance()->OcclusionDepthPad;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionDepthPad() {
+    const static long def = 16;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionDepthPad(const long &v) {
+    instance()->handle->SetInt("OcclusionDepthPad",v);
+    instance()->OcclusionDepthPad = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionDepthPad() {
+    instance()->handle->RemoveInt("OcclusionDepthPad");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionConfirm() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many consecutive answers of 'no pixels' a node must give\n"
+"before its geometry is actually skipped. 1 acts on every\n"
+"answer, and is what an occlusion test naively does.\n"
+"\n"
+"This is the stability control. A test is issued against one\n"
+"frame's depth and read against a later one -- it does not\n"
+"block, because stalling for it would cost the frame time the\n"
+"culling exists to save -- so while an answer is in flight, other\n"
+"geometry is culled and the occluders move underneath it. Acted\n"
+"on singly, a node tested while an occluder was still drawn gets\n"
+"skipped after that occluder has gone; the hole it leaves tests\n"
+"visible; it comes back; and it oscillates, which is a picture\n"
+"that flickers rather than one that is merely wrong. Geometry\n"
+"that really is hidden answers so every time and costs only the\n"
+"extra confirmations.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionConfirm() {
+    return instance()->OcclusionConfirm;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionConfirm() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionConfirm(const long &v) {
+    instance()->handle->SetInt("OcclusionConfirm",v);
+    instance()->OcclusionConfirm = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionConfirm() {
+    instance()->handle->RemoveInt("OcclusionConfirm");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

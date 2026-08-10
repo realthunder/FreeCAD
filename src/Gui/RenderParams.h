@@ -378,6 +378,53 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter OcclusionDepthPad
+    ///
+    /// How far a test box is pushed towards the viewer before it is
+    /// tested, in steps of the 24-bit depth buffer. A test box has to
+    /// be a conservative bound, and at the last bit of the depth buffer
+    /// it is not: a small part lying flush on a large panel quantizes
+    /// to the same stored depth as the panel, LEQUAL loses the tie
+    /// whichever way the rasterizer rounds, and the node reports itself
+    /// hidden while in plain view. Measured that way, the components on
+    /// a board disappeared while the board stayed. Too large costs
+    /// frame time by testing visible what could have been skipped; too
+    /// small deletes geometry, so err high.
+    static const long & getOcclusionDepthPad();
+    static const long & defaultOcclusionDepthPad();
+    static void removeOcclusionDepthPad();
+    static void setOcclusionDepthPad(const long &v);
+    static const char *docOcclusionDepthPad();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionConfirm
+    ///
+    /// How many consecutive answers of 'no pixels' a node must give
+    /// before its geometry is actually skipped. 1 acts on every
+    /// answer, and is what an occlusion test naively does.
+    /// 
+    /// This is the stability control. A test is issued against one
+    /// frame's depth and read against a later one -- it does not
+    /// block, because stalling for it would cost the frame time the
+    /// culling exists to save -- so while an answer is in flight, other
+    /// geometry is culled and the occluders move underneath it. Acted
+    /// on singly, a node tested while an occluder was still drawn gets
+    /// skipped after that occluder has gone; the hole it leaves tests
+    /// visible; it comes back; and it oscillates, which is a picture
+    /// that flickers rather than one that is merely wrong. Geometry
+    /// that really is hidden answers so every time and costs only the
+    /// extra confirmations.
+    static const long & getOcclusionConfirm();
+    static const long & defaultOcclusionConfirm();
+    static void removeOcclusionConfirm();
+    static void setOcclusionConfirm(const long &v);
+    static const char *docOcclusionConfirm();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter AO
     ///
     /// Enable screen space ambient occlusion of the experimental render
