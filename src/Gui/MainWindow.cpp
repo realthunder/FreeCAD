@@ -821,6 +821,30 @@ void populateMenu(QMenu *menu, MenuType type, bool popup,
             lockAction->setCheckable(true);
             lockAction->setChecked(!ToolBarManager::getInstance()->isDefaultMovable());
         }
+
+        // The toolbars parked in the menu bar and status bar, as a group. They
+        // are the ones a stray drag pulls out of place most easily, and with a
+        // custom title bar they share a row with the window drag area.
+        auto titleCb = [](bool checked) {
+            ToolBarManager::getInstance()->setTitleToolBarsLocked(checked);
+        };
+        const QString titleTitle = QObject::tr("Menu bar and status bar");
+        const QString titleTip = QObject::tr("Lock the toolbars docked in the menu bar and the status bar");
+        const bool titleLocked = ToolBarManager::getInstance()->areTitleToolBarsLocked();
+        if (popup) {
+            QCheckBox *checkbox;
+            auto wa = Action::addCheckBox(lockMenu, titleTitle, titleTip, QIcon(),
+                    titleLocked, &checkbox);
+            QObject::connect(wa, &QWidgetAction::toggled, titleCb);
+            QObject::connect(checkbox, &QCheckBox::toggled, titleCb);
+        } else {
+            auto act = lockMenu->addAction(titleTitle);
+            act->setToolTip(titleTip);
+            act->setCheckable(true);
+            act->setChecked(titleLocked);
+            QObject::connect(act, &QAction::toggled, titleCb);
+        }
+
         lockMenu->addSeparator();
 
         bool relocate = false;
@@ -833,10 +857,14 @@ void populateMenu(QMenu *menu, MenuType type, bool popup,
             relocate = relocate || (toolbar->isFloating()
                     && !rectMain.contains(toolbar->mapToGlobal(QPoint(0,0))));
 
-            if (parent == mw 
+            // A toolbar parked in one of the three toolbar areas belongs here
+            // too, and asking the manager which area owns it is the only test
+            // that survives a custom title bar -- the two menu-bar areas then
+            // sit in the title bar, not in the menu bar.
+            if (parent == mw
                     || parent == mw->statusBar()
-                    || (parent && (parent->parentWidget() == mw->statusBar()
-                                   || parent->parentWidget() == mw->menuBar()))) {
+                    || ToolBarManager::getInstance()->getToolBarArea(toolbar)
+                    || (parent && parent->parentWidget() == mw->statusBar())) {
                 // Some misbehaved code may force the toolbar to be visible
                 // while hiding its action, which causes the user to be unable
                 // to switch it off. We'll just include those actions anyway.

@@ -142,6 +142,14 @@ public:
     void restoreState();
     void setDefaultMovable(bool enable);
     bool isDefaultMovable() const;
+
+    /*! Whether the toolbars parked in the menu bar and status bar areas are
+     * locked as a group, independently of the per-toolbar locks. They are the
+     * ones a stray drag is most likely to pull out of place, and with a custom
+     * title bar they share a row with the window drag area.
+     */
+    bool areTitleToolBarsLocked() const;
+    void setTitleToolBarsLocked(bool locked);
     void retranslate();
     static void checkToolBar();
 
@@ -197,6 +205,14 @@ protected:
     void connectToolBar(QToolBar *);
     void getGlobalToolBarNames();
     bool eventFilter(QObject *, QEvent *);
+
+    void setTitleToolBarsMovable(bool movable);
+
+    /*! Where a floating toolbar has to be dropped to land in one of the two
+     * menu-bar areas, in global coordinates. Empty when there is nowhere to
+     * drop it.
+     */
+    QRect menuBarDropRect() const;
 
     bool addToolBarToArea(QObject *, QMouseEvent*);
     bool showContextMenu(QObject *);
