@@ -193,6 +193,12 @@ then 0 again does not heal the picture: the document says opaque and the
 cache keeps drawing transparent. `dragger_stale_probe.py` reproduces it
 with a fresh document per leg.
 
+Stage 1b measured it again on the real GPU and it is worse there than
+these llvmpipe numbers suggest, in a way that also separates the paths:
+glr loses the faces **outright** (0.904 of the scene reads as background
+after leaving edit mode) while the backend keeps them at 0.758. Leaving
+edit mode heals neither.
+
 ⚠️ Harness notes, all of which cost a run: cases leak into each other
 (Sketcher leaves the camera on the sketch plane, Transform leaves the
 object see-through) and legs run in sequence, so a leak crosses legs and
@@ -577,16 +583,64 @@ perspective camera, where `setClippingPlanes` clamps the near plane to
 counting it — a different defect wearing the same description.
 
 **Stage 1b — the draggers, and Coin reaching into the backend's
-framebuffer.** Draggers are the largest thing still drawn by Coin GL on
-top of the backend's frame, and the Tessellation defect showed what that
-exposes them to: Coin's `HIDDEN_LINE` mode cleared colour and depth
-under a frame the backend had already rendered, ignoring the
-`clearwindow`/`clearzbuffer` arguments it was passed. That one is fixed
-where the mode is chosen, but the general shape — a Coin path that can
-stomp a buffer the backend owns — is worth closing rather than meeting
-again. Check the shadow light manipulator, the Transform manipulator and
-a Sketcher drag, ⚠️ **on screen via `grabFramebuffer`**: `saveImage`
-renders offscreen, never composites, and is blind to the entire class.
+framebuffer. DONE, nothing found.** Draggers are the largest thing still
+drawn by Coin GL on top of the backend's frame, and the Tessellation
+defect showed what that exposes them to: Coin's `HIDDEN_LINE` mode
+cleared colour and depth under a frame the backend had already rendered,
+ignoring the `clearwindow`/`clearzbuffer` arguments it was passed. That
+one is fixed where the mode is chosen; this stage asked whether anything
+else of that shape is left.
+
+`fcad-probes/dragger_composite_probe.py`, 25/25 on both legs -- xvfb
+/ llvmpipe and the real GPU (`renderer-desktop.sh`, Mesa d3d12 / RTX
+3070 Ti). Everything is `grabFramebuffer()`: `saveImage` renders
+offscreen, never composites, and is blind to the entire class. The
+numbers below are the real-GPU leg.
+
+| case | what is measured | bgfx | glr |
+| --- | --- | --- | --- |
+| Transform manipulator | dragger pixels, against the post-edit frame | 0.0079 | 0.0067 |
+| ... with an occluder in front | occluded / free | 1.000 | 0.978 |
+| shadow light manipulator | dragger pixels | 0.0010 | 0.0010 |
+| ... with an occluder in front | occluded / free | 0.829 | 0.782 |
+| Sketcher edit mode | ink in the window, in edit mode | 0.0133 | 0.0070 |
+| injected Coin bar | occluded / free | **0.620** | **0.620** |
+| frame cleared under the overlay | share of the scene lost | 0.0000 | 0.0000 |
+
+Nothing clears or overwrites what the backend drew: the "lost" column is
+zero in every case on both paths. Three findings are worth keeping:
+
+- **The draggers cannot answer the depth question at all.** Both of them
+  draw over everything, on *both* paths -- the glr leg proves it is by
+  design and not a backend gap, since there the occluder is certainly in
+  the depth buffer and the manipulator still shows through it. So the
+  probe injects a shape that does take part in the depth test: a bar
+  through the middle of the box, added to the **superscene**, which the
+  render cache does not capture, so Coin draws it itself. With the
+  backend's frame underneath, Coin hides the middle of the bar and draws
+  the two ends -- and the occluded fraction is **0.620 on both paths, to
+  three decimals, on llvmpipe and on the real GPU alike**. The depth
+  `glBlitFramebuffer` in `BGFXView::blit` therefore delivers Coin the
+  same depth Coin would have computed itself, MSAA resolve included.
+- **The composite surface is smaller than it looks.** `SoFCRenderer::
+  render` returns early whenever the backend reports
+  `canSkipInternal()`, so everything the render cache captures is drawn
+  by the backend, dragger geometry included. What Coin still draws is
+  what sits *outside* the capture: the shadow light's manipulator (above
+  the traversal root, 3.4), the NaviCube, the axis cross, dimension text,
+  the rubber band -- overlays that ignore depth by design, plus the
+  NaviCube's own `glClear(GL_DEPTH_BUFFER_BIT)`, which is last in the
+  frame and takes nothing with it.
+- WARNING: **the Transform-edit transparency defect is worse than 3.3
+  recorded, and worse on glr.** Leaving edit mode does not heal it, and on the real
+  GPU the glr path loses the faces *outright* (0.904 of the scene reads
+  as background afterwards) while the backend keeps them at 0.758. On
+  llvmpipe the two paths do not separate at all (0.667 and 0.636), which
+  is why this needed the real-GPU leg. It is still the render cache's, not
+  the backend's -- but it is the reason this probe takes its Transform
+  baseline *after* leaving edit mode: measured against the pre-edit
+  frame, the defect is three quarters of the difference and the dragger
+  is lost inside it.
 
 **Stage 2 — flip the defaults.** `RenderCache` 3 and a real `Type` as
 shipped defaults, with a one-time migration for existing user configs.
