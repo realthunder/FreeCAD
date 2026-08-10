@@ -27,6 +27,7 @@
 #include "SceneLadder.h"
 #include "ProxyHierarchy.h"
 #include "MaskedOcclusion.h"
+#include "Simd4.h"
 #include "OcclusionCull.h"
 #include "MeshSimplify.h"
 #ifndef FC_RENDERER_STANDALONE
@@ -13178,6 +13179,7 @@ public:
                     mc.triangleBudget = cullconf.occluderTriangles;
                     mc.minOccluderPx = cullconf.minOccluderPx;
                     mc.threads = cullconf.softwareThreads;
+                    mc.simdFilter = cullconf.softwareSimd;
                     maskedCull.configure(mc);
                     maskedCull.build(scene, viewMat, projf,
                                      caps ? caps->homogeneousDepth : true,
@@ -14411,6 +14413,7 @@ public:
                         "tested %u | occluders %u of %u draws, %u tris, "
                         "dropped %u, %u threads | buffer %dx%d, tris drawn %u clipped %u "
                         "culled %u (offbuf %u subpx %u degen %u), blocks %u "
+                        "| %s filtered %u guarded %u "
                         "| nearclip %u rootrefused %u "
                         "| raster %.2fms walk %.2fms | indexed %u of %u draws "
                         "(%u on-top exempt) | index %u nodes, build %.1fms\n",
@@ -14424,7 +14427,15 @@ public:
                         bs.trianglesClipped, bs.trianglesCulled(),
                         bs.trianglesOffBuffer, bs.trianglesSubPixel,
                         bs.trianglesDegenerate,
-                        bs.blocksUpdated, ms.nearExempt, ms.rootRefused,
+                        bs.blocksUpdated,
+                        // Which of the four backends in Simd4.h was
+                        // compiled in: "scalar" here means the pre-pass
+                        // is running four lanes one at a time, and a
+                        // timing taken against it is not a timing of
+                        // SIMD.
+                        cullconf.softwareSimd ? Render::simd4Name() : "off",
+                        bs.trianglesFiltered, bs.trianglesGuarded,
+                        ms.nearExempt, ms.rootRefused,
                         ms.rasterMs, ms.walkMs,
                         cullIndexed, unsigned(scene.size()), cullExemptOnTop,
                         unsigned(culler.hierarchy().nodes().size()),

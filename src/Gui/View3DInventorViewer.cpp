@@ -4498,6 +4498,17 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         prop->setValue(RenderParams::getOcclusionSoftware());
         prop->setStatus(App::Property::Hidden, true);
     }
+    // The software oracle's vector pre-pass (section 12.14). Hidden for the
+    // same reason: it changes what the pass costs, and is meant to leave
+    // the image alone.
+    if (!view->getPropertyByName("Render_OcclusionSimd")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "Render_OcclusionSimd", "Render",
+                                         RenderParams::docOcclusionSimd()));
+        prop->setValue(RenderParams::getOcclusionSimd());
+        prop->setStatus(App::Property::Hidden, true);
+    }
     {
         static const struct { const char *name; long value;
                               const char *(*doc)(); } _occlusionParams[] = {

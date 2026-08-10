@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "Gui/Renderer/MaskedOcclusion.h"
+#include "Gui/Renderer/Simd4.h"
 
 using namespace Render;
 
@@ -726,6 +727,296 @@ TEST(MaskedOcclusion, AnOccludedVerdictSurvivesTheReference)
     // configuration that measured zero over-cull because it was
     // structurally incapable of culling at all.
     EXPECT_GT(occluded, 20) << "the scene did not exercise occlusion";
+}
+
+// -----------------------------------------------------------------
+// The vector pre-pass (section 12.14)
+// -----------------------------------------------------------------
+//
+// **What has to be proved about it, and what does not.** The pre-pass is
+// float and the rasterizer is double, which in this file is normally the
+// beginning of an argument about over-culling -- and here it is not one,
+// because the pre-pass cannot write to the buffer. It either discards a
+// triangle or hands it to the same double path as before, unchanged and
+// recomputed from the original vertices. So the claim to test is not
+// "the float arithmetic is accurate enough to rasterize with"; it is
+// **"it discards only what the exact path would have discarded anyway"**,
+// and the sharpest form of that is that the two buffers come out
+// identical pixel for pixel.
+//
+// The direction that is *not* tested is deliberate too: a pre-pass that
+// discarded too much would show up as lost occlusion, which this
+// mechanism is always allowed to do.
+
+namespace
+{
+
+/// The scene the two arms are compared on: triangles at every scale from
+/// far below a pixel to filling the view, which is what a CAD
+/// tessellation looks like to this buffer.
+std::vector<float> mixedScaleScene(unsigned seed, int count)
+{
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> xy(-25.0f, 25.0f);
+    std::uniform_real_distribution<float> z(-60.0f, -3.0f);
+    // Log-uniform, not uniform: a tessellation's triangle sizes span
+    // orders of magnitude, and drawing them uniformly would make almost
+    // every triangle a large one and the sub-pixel population -- the
+    // whole point of the filter -- a rounding error in the scene.
+    std::uniform_real_distribution<float> logscale(std::log(0.002f),
+                                                   std::log(6.0f));
+    std::vector<float> verts;
+    for (int t = 0; t < count; ++t) {
+        const float cx = xy(rng), cy = xy(rng), cz = z(rng);
+        const float s = std::exp(logscale(rng));
+        std::uniform_real_distribution<float> off(-s, s);
+        for (int i = 0; i < 3; ++i) {
+            verts.push_back(cx + off(rng));
+            verts.push_back(cy + off(rng));
+            verts.push_back(cz + off(rng));
+        }
+    }
+    return verts;
+}
+
+/// Both arms of the same scene, so a test can only compare like with
+/// like.
+void bothArms(MaskedDepth &on, MaskedDepth &off, const float *V,
+              const float *P, const std::vector<float> &verts, int w, int h)
+{
+    for (int arm = 0; arm < 2; ++arm) {
+        MaskedDepth &md = arm ? on : off;
+        md.resize(w, h);
+        md.setCamera(V, P, true);
+        md.setSimdFilter(arm != 0);
+        md.rasterize(verts.data(), 0, verts.size() / 3);
+    }
+}
+
+}  // namespace
+
+TEST(MaskedOcclusion, VectorPrePassIsOnByDefault)
+{
+    // It is an optimization, so it is the default; the switch exists to
+    // measure against, not to be found off in the field. Stated as a
+    // test because "the default changed" is otherwise a silent way for a
+    // measurement to stop meaning what it said.
+    MaskedDepth md;
+    EXPECT_TRUE(md.simdFilter());
+    MaskedCullConfig conf;
+    EXPECT_TRUE(conf.simdFilter);
+}
+
+TEST(MaskedOcclusion, VectorPrePassLeavesTheBufferIdentical)
+{
+    // KEY: The central claim. Same scene, same camera, pre-pass on and off:
+    // every pixel of the two buffers agrees exactly -- not within a
+    // tolerance, exactly -- because every triangle that survives the
+    // filter goes through the identical double-precision code in the
+    // identical order. A difference here is the filter discarding
+    // something the rasterizer would have drawn.
+    float V[16], P[16];
+    viewAt(V, 12.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 200.0f);
+
+    for (unsigned seed = 0; seed < 8; ++seed) {
+        const std::vector<float> verts = mixedScaleScene(1000u + seed, 400);
+        MaskedDepth on, off;
+        bothArms(on, off, V, P, verts, 120, 88);
+
+        int differing = 0;
+        for (int y = 0; y < off.height(); ++y)
+            for (int x = 0; x < off.width(); ++x)
+                if (on.pixelDepth(x, y) != off.pixelDepth(x, y))
+                    ++differing;
+        EXPECT_EQ(0, differing) << "seed " << seed << ": the pre-pass changed "
+                               << differing << " pixels";
+
+        // The same statement in the counters: what reached the
+        // rasterizer, and what it made of it.
+        EXPECT_EQ(off.stats().trianglesDrawn, on.stats().trianglesDrawn);
+        EXPECT_EQ(off.stats().trianglesSubPixel, on.stats().trianglesSubPixel);
+        EXPECT_EQ(off.stats().trianglesOffBuffer, on.stats().trianglesOffBuffer);
+        EXPECT_EQ(off.stats().blocksUpdated, on.stats().blocksUpdated);
+        EXPECT_EQ(0u, off.stats().trianglesFiltered)
+                << "the reference arm ran the filter";
+    }
+}
+
+TEST(MaskedOcclusion, VectorPrePassDiscardsMostOfWhatIsOffered)
+{
+    // The cost side: a filter that is correct and never fires is a
+    // slower rasterizer. On the benchmark scene 170684 of 249998
+    // triangles cover no pixel; this asserts the mechanism reaches that
+    // population at all, and that everything it dropped is accounted for
+    // in the same two buckets the exact path uses.
+    float V[16], P[16];
+    viewAt(V, 12.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 200.0f);
+
+    const std::vector<float> verts = mixedScaleScene(4242u, 800);
+    MaskedDepth on, off;
+    bothArms(on, off, V, P, verts, 120, 88);
+
+    const auto &s = on.stats();
+    EXPECT_GT(s.trianglesSubPixel, 100u) << "the scene has nothing to filter";
+    EXPECT_GT(s.trianglesFiltered, s.trianglesSubPixel / 2)
+            << "the pre-pass judged far less than it was given";
+    EXPECT_LE(s.trianglesFiltered, s.trianglesSubPixel + s.trianglesOffBuffer)
+            << "the pre-pass discarded more than it classified";
+    // Nothing in this scene comes near the near plane or the guard band.
+    EXPECT_EQ(0u, s.trianglesGuarded);
+}
+
+TEST(MaskedOcclusion, VectorPrePassDeclinesTheNearPlaneRatherThanGuessing)
+{
+    // A triangle crossing the near plane is the case the exact path is
+    // double *for*: it projects to coordinates in the millions where
+    // float cancellation is worth whole pixels. The pre-pass does not
+    // try to be clever about it -- it hands the lane over and says so.
+    MaskedDepth md;
+    md.resize(128, 128);
+    float V[16], P[16];
+    viewAt(V, 10.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 200.0f);
+    md.setCamera(V, P, true);
+
+    // The same floor as OccluderCrossingTheNearPlaneIsClippedNotDropped,
+    // padded to a full batch of four triangles with two more that do not
+    // cross, so the lanes are genuinely mixed.
+    const float floorQuad[36] = {
+            -50.0f, -2.0f, 40.0f,  50.0f,  -2.0f, 40.0f,
+            50.0f,  -2.0f, -60.0f, -50.0f, -2.0f, 40.0f,
+            50.0f,  -2.0f, -60.0f, -50.0f, -2.0f, -60.0f,
+            -20.0f, 5.0f,  -30.0f, 20.0f,  5.0f,  -30.0f,
+            20.0f,  15.0f, -30.0f, -20.0f, 5.0f,  -30.0f,
+            20.0f,  15.0f, -30.0f, -20.0f, 15.0f, -30.0f};
+    md.rasterize(floorQuad, 0, 12);
+
+    EXPECT_EQ(2u, md.stats().trianglesClipped) << "the cut still happens";
+    EXPECT_GE(md.stats().trianglesGuarded, 2u)
+            << "the crossing triangles were judged rather than handed over";
+    EXPECT_EQ(0u, md.stats().trianglesFiltered)
+            << "nothing here covers no pixel";
+
+    // And the picture is the one the exact path alone produces.
+    MaskedDepth ref;
+    ref.resize(128, 128);
+    ref.setCamera(V, P, true);
+    ref.setSimdFilter(false);
+    ref.rasterize(floorQuad, 0, 12);
+    for (int y = 0; y < ref.height(); ++y)
+        for (int x = 0; x < ref.width(); ++x)
+            ASSERT_EQ(ref.pixelDepth(x, y), md.pixelDepth(x, y))
+                    << "at (" << x << "," << y << ")";
+}
+
+TEST(MaskedOcclusion, PartialBatchesAreRasterizedToo)
+{
+    // The lanes are filled four at a time and a mesh is not a multiple
+    // of four. The tail takes the exact path, and the bug this guards
+    // against is the tail being dropped instead -- which would be
+    // invisible in every test above, since they all have hundreds of
+    // triangles and would lose at most three.
+    float V[16], P[16];
+    viewAt(V, 12.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 200.0f);
+
+    const std::vector<float> full = mixedScaleScene(99u, 16);
+    for (int tris = 1; tris <= 9; ++tris) {
+        const std::vector<float> verts(full.begin(),
+                                       full.begin() + size_t(tris) * 9);
+        MaskedDepth on, off;
+        bothArms(on, off, V, P, verts, 120, 88);
+        EXPECT_EQ(uint32_t(tris), on.stats().trianglesIn)
+                << tris << " triangles in, some lost in the tail";
+        EXPECT_EQ(off.stats().trianglesDrawn, on.stats().trianglesDrawn)
+                << "at " << tris << " triangles";
+        for (int y = 0; y < off.height(); ++y)
+            for (int x = 0; x < off.width(); ++x)
+                ASSERT_EQ(off.pixelDepth(x, y), on.pixelDepth(x, y))
+                        << tris << " triangles, at (" << x << "," << y << ")";
+    }
+}
+
+TEST(MaskedOcclusion, VectorPrePassStillNeverClaimsMoreThanTheTruth)
+{
+    // The file's one inequality, asked again with the pre-pass in the
+    // way. It cannot fail while the test above passes -- the buffers are
+    // identical -- and it is here because that is an argument and this
+    // is a measurement.
+    std::mt19937 rng(31337u);
+    std::uniform_real_distribution<float> xy(-25.0f, 25.0f);
+    std::uniform_real_distribution<float> z(-60.0f, -2.0f);
+
+    float V[16], P[16], VP[16];
+    viewAt(V, 10.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 200.0f);
+    mat4Mul(VP, P, V);
+
+    for (int scene = 0; scene < 6; ++scene) {
+        MaskedDepth md;
+        md.resize(56, 40);
+        md.setCamera(V, P, true);
+        ASSERT_TRUE(md.simdFilter());
+
+        std::vector<float> verts;
+        for (int t = 0; t < 24; ++t) {
+            const float zc = z(rng);
+            for (int i = 0; i < 3; ++i) {
+                verts.push_back(xy(rng));
+                verts.push_back(xy(rng));
+                verts.push_back((t % 2) ? zc : z(rng));
+            }
+        }
+        md.rasterize(verts.data(), 0, verts.size() / 3);
+
+        RefDepth ref;
+        ref.reset(md.width(), md.height(), false);
+        ref.addTriangles(VP, verts);
+        EXPECT_GT(expectConservative(md, ref), 200)
+                << "scene " << scene << " rasterized almost nothing";
+    }
+}
+
+// -----------------------------------------------------------------
+// The four lanes themselves
+// -----------------------------------------------------------------
+
+TEST(Simd4, FloorRoundsTowardsMinusInfinity)
+{
+    // The one operation with no single instruction behind it on SSE2 or
+    // ARMv7, so the one worth testing directly: truncation and floor
+    // differ exactly where the pre-pass cares, on negative coordinates
+    // just off the left of the buffer.
+    const float in[4] = {-0.5f, 0.5f, -3.0f, 7.75f};
+    alignas(16) float src[4] = {in[0], in[1], in[2], in[3]};
+    alignas(16) float got[4];
+    Render::floor(Render::F4::load(src)).store(got);
+    for (int i = 0; i < 4; ++i)
+        EXPECT_FLOAT_EQ(std::floor(in[i]), got[i]) << "lane " << i;
+    Render::ceil(Render::F4::load(src)).store(got);
+    for (int i = 0; i < 4; ++i)
+        EXPECT_FLOAT_EQ(std::ceil(in[i]), got[i]) << "lane " << i;
+}
+
+TEST(Simd4, LaneMaskPutsLaneZeroInBitZero)
+{
+    // The pre-pass reads its four verdicts out of this ordering, so
+    // getting it backwards would judge the wrong triangles -- and would
+    // do it silently, since the verdicts are all plausible.
+    alignas(16) float a[4] = {1.0f, 5.0f, 2.0f, 9.0f};
+    alignas(16) float b[4] = {3.0f, 3.0f, 3.0f, 3.0f};
+    const Render::M4 m = Render::cmpLt(Render::F4::load(a),
+                                       Render::F4::load(b));
+    EXPECT_EQ(0b0101, m.bits());
+    EXPECT_EQ(0b1111, (Render::cmpGe(Render::F4::load(a),
+                                     Render::F4::load(a))).bits());
+    // NaN compares false against everything, which is what makes the
+    // pre-pass's trust mask safe -- see filterBatch.
+    alignas(16) float n[4] = {std::nanf(""), 1.0f, 1.0f, 1.0f};
+    EXPECT_EQ(0b1110, (Render::cmpGe(Render::F4::load(n),
+                                     Render::F4::load(n))).bits());
 }
 
 // -----------------------------------------------------------------

@@ -462,6 +462,14 @@ struct OcclusionCullConfig {
     uint32_t softwareDivisor = 1;
     /// Worker threads for the software occluder pass, 0 = automatic.
     uint32_t softwareThreads = 0;
+    /// KEY: Run the software pass's four-wide vector pre-pass, which
+    /// discards triangles that cover no pixel before the exact
+    /// rasterizer looks at them (Gui/Renderer/MaskedOcclusion.h,
+    /// `setSimdFilter`). It can only discard, so turning it off changes
+    /// how long the pass takes and -- at the margin, for triangles a
+    /// hundredth of a pixel from covering nothing -- how much it hides.
+    /// It cannot change what the buffer claims is there.
+    bool softwareSimd = true;
 
     bool operator==(const OcclusionCullConfig &o) const {
         return enabled == o.enabled && visibleTtl == o.visibleTtl
@@ -474,7 +482,8 @@ struct OcclusionCullConfig {
             && occluderTriangles == o.occluderTriangles
             && minOccluderPx == o.minOccluderPx
             && softwareDivisor == o.softwareDivisor
-            && softwareThreads == o.softwareThreads;
+            && softwareThreads == o.softwareThreads
+            && softwareSimd == o.softwareSimd;
     }
     bool operator!=(const OcclusionCullConfig &o) const { return !(*this == o); }
 };

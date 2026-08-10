@@ -511,6 +511,34 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter OcclusionSimd
+    ///
+    /// Let the CPU occlusion buffer discard triangles four at a time
+    /// with SIMD before its exact rasterizer looks at them
+    /// (docs/FarFieldProxies.md #12.14).
+    /// 
+    /// Two thirds of the triangles offered to the buffer cover no pixel
+    /// at all -- a full-detail CAD tessellation is mostly triangles
+    /// smaller than the pixel grid -- and every one of them is paid for
+    /// in full before being thrown away. The pre-pass transforms and
+    /// projects four at once in single precision and drops the ones that
+    /// land on no pixel centre.
+    /// 
+    /// It cannot make the buffer claim a surface that is not there:
+    /// everything it does not discard is handed to the same exact path
+    /// as before, recomputed from the original vertices, and a triangle
+    /// it drops in error is occlusion lost rather than geometry deleted.
+    /// Turn it off to measure what it saves, not to work around a
+    /// suspected fault.
+    static const bool & getOcclusionSimd();
+    static const bool & defaultOcclusionSimd();
+    static void removeOcclusionSimd();
+    static void setOcclusionSimd(const bool &v);
+    static const char *docOcclusionSimd();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter OcclusionResolution
     ///
     /// Resolution of the CPU occlusion buffer, as a divisor of the

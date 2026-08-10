@@ -275,6 +275,24 @@ Params = [
         "is no locking. The merge is slightly lossy -- two two-layer\n"
         "blocks cannot combine into one without loss -- so a higher\n"
         "worker count can hide marginally less. Never more."),
+    ParamBool('OcclusionSimd',  True, title='Occlusion vector pre-pass',
+        doc="Let the CPU occlusion buffer discard triangles four at a time\n"
+        "with SIMD before its exact rasterizer looks at them\n"
+        "(docs/FarFieldProxies.md #12.14).\n"
+        "\n"
+        "Two thirds of the triangles offered to the buffer cover no pixel\n"
+        "at all -- a full-detail CAD tessellation is mostly triangles\n"
+        "smaller than the pixel grid -- and every one of them is paid for\n"
+        "in full before being thrown away. The pre-pass transforms and\n"
+        "projects four at once in single precision and drops the ones that\n"
+        "land on no pixel centre.\n"
+        "\n"
+        "It cannot make the buffer claim a surface that is not there:\n"
+        "everything it does not discard is handed to the same exact path\n"
+        "as before, recomputed from the original vertices, and a triangle\n"
+        "it drops in error is occlusion lost rather than geometry deleted.\n"
+        "Turn it off to measure what it saves, not to work around a\n"
+        "suspected fault."),
     ParamInt('OcclusionResolution',  1, title='Occlusion buffer divisor',
         doc="Resolution of the CPU occlusion buffer, as a divisor of the\n"
         "viewport. 1 matches the viewport.\n"

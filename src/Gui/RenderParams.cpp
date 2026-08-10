@@ -71,6 +71,7 @@ public:
     long OcclusionOccluderTris;
     long OcclusionMinOccluder;
     long OcclusionThreads;
+    bool OcclusionSimd;
     long OcclusionResolution;
     bool AO;
     bool Shadow;
@@ -177,6 +178,8 @@ public:
         funcs["OcclusionMinOccluder"] = &RenderParamsP::updateOcclusionMinOccluder;
         OcclusionThreads = this->handle->GetInt("OcclusionThreads", 0);
         funcs["OcclusionThreads"] = &RenderParamsP::updateOcclusionThreads;
+        OcclusionSimd = this->handle->GetBool("OcclusionSimd", true);
+        funcs["OcclusionSimd"] = &RenderParamsP::updateOcclusionSimd;
         OcclusionResolution = this->handle->GetInt("OcclusionResolution", 1);
         funcs["OcclusionResolution"] = &RenderParamsP::updateOcclusionResolution;
         AO = this->handle->GetBool("AO", false);
@@ -396,6 +399,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionThreads(RenderParamsP *self) {
         self->OcclusionThreads = self->handle->GetInt("OcclusionThreads", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionSimd(RenderParamsP *self) {
+        self->OcclusionSimd = self->handle->GetBool("OcclusionSimd", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionResolution(RenderParamsP *self) {
@@ -1419,6 +1426,50 @@ void RenderParams::setOcclusionThreads(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeOcclusionThreads() {
     instance()->handle->RemoveInt("OcclusionThreads");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionSimd() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Let the CPU occlusion buffer discard triangles four at a time\n"
+"with SIMD before its exact rasterizer looks at them\n"
+"(docs/FarFieldProxies.md #12.14).\n"
+"\n"
+"Two thirds of the triangles offered to the buffer cover no pixel\n"
+"at all -- a full-detail CAD tessellation is mostly triangles\n"
+"smaller than the pixel grid -- and every one of them is paid for\n"
+"in full before being thrown away. The pre-pass transforms and\n"
+"projects four at once in single precision and drops the ones that\n"
+"land on no pixel centre.\n"
+"\n"
+"It cannot make the buffer claim a surface that is not there:\n"
+"everything it does not discard is handed to the same exact path\n"
+"as before, recomputed from the original vertices, and a triangle\n"
+"it drops in error is occlusion lost rather than geometry deleted.\n"
+"Turn it off to measure what it saves, not to work around a\n"
+"suspected fault.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusionSimd() {
+    return instance()->OcclusionSimd;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusionSimd() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionSimd(const bool &v) {
+    instance()->handle->SetBool("OcclusionSimd",v);
+    instance()->OcclusionSimd = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionSimd() {
+    instance()->handle->RemoveBool("OcclusionSimd");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

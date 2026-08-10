@@ -4,7 +4,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 file(GLOB CMakeCache RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}/CMakeCache.txt)
 
-set(Renderer_Headers Renderer.h SceneDump.h SceneLadder.h ProxyHierarchy.h OcclusionCull.h MaskedOcclusion.h CullBenefit.h MeshSimplify.h MeshSource.h SceneServer.h)
+set(Renderer_Headers Renderer.h SceneDump.h SceneLadder.h ProxyHierarchy.h OcclusionCull.h MaskedOcclusion.h Simd4.h CullBenefit.h MeshSimplify.h MeshSource.h SceneServer.h)
 set(Renderer_HPP_SRCS ${Renderer_Headers})
 set(Renderer_CPP_SRCS Renderer.cpp SceneDump.cpp SceneLadder.cpp ProxyHierarchy.cpp OcclusionCull.cpp MaskedOcclusion.cpp CullBenefit.cpp MeshSimplify.cpp MeshSource.cpp SceneServer.cpp)
 set(Renderer_LIBS FreeCADBase

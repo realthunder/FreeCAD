@@ -1300,6 +1300,9 @@ RendererBridge::translateOcclusionCullConfig(App::PropertyContainer * view)
             viewParamOverride<App::PropertyInteger>(
                     view, "Render", "OcclusionThreads",
                     RenderParams::getOcclusionThreads())));
+    res.softwareSimd = viewParamOverride<App::PropertyBool>(
+            view, "Render", "OcclusionSimd",
+            RenderParams::getOcclusionSimd());
     return res;
 }
 

@@ -28,6 +28,8 @@
 #include <cstring>
 #include <thread>
 
+#include "Simd4.h"
+
 using namespace Render;
 
 namespace
@@ -43,8 +45,12 @@ namespace
 /// cancellation puts the error at whole pixels, which shows up as
 /// coverage bits set in blocks the triangle never reached: a surface
 /// claimed where there is none, which is the one direction this file may
-/// not be wrong in. The rasterizer is scalar for now anyway (see the
-/// note at the end of the file), so the cost is not what decides this.
+/// not be wrong in.
+///
+/// KEY: The vector pre-pass below is float and does not weaken that, because
+/// it never writes to the buffer. It only decides which triangles this
+/// path does not have to look at, and the triangles it drops are the ones
+/// it computed to cover no pixel at all. See `filterBatch`.
 struct CVert {
     double x, y, z, w;
 };
@@ -126,6 +132,42 @@ const double kMinW = 1e-7;
 // on a *silhouette* edge the error is about 1e-9 pixels, far below the
 // block granularity any query is answered at, and the block's stored
 // depth is already a conservative under-estimate of the triangle's.
+
+/// The same near-plane guard as kMinW, in the pre-pass's precision.
+const float kMinWf = 1e-7f;
+
+/// Screen coordinates beyond this are handed to the exact path.
+///
+/// KEY: This is what makes the float pre-pass tractable. The whole reason
+/// the exact path is double is that a triangle clipped at the near plane
+/// projects to coordinates in the millions, where float cancellation is
+/// worth whole pixels; the pre-pass simply refuses those. It also keeps
+/// every value inside the range where the floor in Simd4.h is exact
+/// (2^23), and inside the range where the epsilon below is a believable
+/// error bound. Measured on the benchmark scene, nothing reaches it:
+/// `clipped 0` for the camera the audit runs at, which is what makes
+/// refusing affordable.
+const float kGuardPx = 1.0e6f;
+
+/// How far a projected coordinate is assumed to be able to move between
+/// the float pre-pass and the double path.
+///
+/// KEY: This is a *culling-quality* number and not a correctness one, and
+/// the difference is the whole design. Too small and a triangle the
+/// exact path would have drawn gets dropped -- which loses occlusion,
+/// the safe direction, and only ever for triangles within a hundredth of
+/// a pixel of covering nothing. Too large and sub-pixel triangles stop
+/// being rejected and the pre-pass buys nothing, since a bbox grown by a
+/// whole pixel almost always contains a pixel centre. Neither can put a
+/// surface in the buffer where there is none, because the pre-pass does
+/// not write to the buffer.
+///
+/// The relative term is scaled by the larger of the coordinate and the
+/// buffer, so a model far from the world origin -- where the transform's
+/// terms are large and cancel -- gets proportionally more room, and a
+/// small test buffer still gets a sane floor.
+const float kFilterEpsRel = 1.0e-5f;
+const float kFilterEpsAbs = 1.0e-3f;
 
 }  // namespace
 
@@ -246,6 +288,8 @@ void MaskedDepth::mergeStats(const MaskedDepth &other)
     framestats.trianglesBackFacing += other.framestats.trianglesBackFacing;
     framestats.trianglesDegenerate += other.framestats.trianglesDegenerate;
     framestats.trianglesBehind += other.framestats.trianglesBehind;
+    framestats.trianglesFiltered += other.framestats.trianglesFiltered;
+    framestats.trianglesGuarded += other.framestats.trianglesGuarded;
     framestats.blocksTouched += other.framestats.blocksTouched;
     framestats.blocksUpdated += other.framestats.blocksUpdated;
 }
@@ -509,6 +553,8 @@ void MaskedDepth::rasterize(const float *positions, size_t stride,
 
     const char *base = reinterpret_cast<const char *>(positions);
     const size_t tris = indexCount / 3;
+    const float *batch[3 * Batch];
+    int nb = 0;
     for (size_t t = 0; t < tris; ++t) {
         const uint32_t ia = indices[t * 3 + 0];
         const uint32_t ib = indices[t * 3 + 1];
@@ -518,11 +564,16 @@ void MaskedDepth::rasterize(const float *positions, size_t stride,
             ++framestats.trianglesDegenerate;
             continue;
         }
-        const float *pa = reinterpret_cast<const float *>(base + ia * stride);
-        const float *pb = reinterpret_cast<const float *>(base + ib * stride);
-        const float *pc = reinterpret_cast<const float *>(base + ic * stride);
-        emitTriangle(pa, pb, pc, mvp);
+        batch[nb * 3 + 0] = reinterpret_cast<const float *>(base + ia * stride);
+        batch[nb * 3 + 1] = reinterpret_cast<const float *>(base + ib * stride);
+        batch[nb * 3 + 2] = reinterpret_cast<const float *>(base + ic * stride);
+        if (++nb == Batch) {
+            emitBatch(batch, nb, mvp);
+            nb = 0;
+        }
     }
+    if (nb)
+        emitBatch(batch, nb, mvp);
 }
 
 void MaskedDepth::rasterize(const float *positions, size_t stride,
@@ -554,11 +605,154 @@ void MaskedDepth::rasterize(const float *positions, size_t stride,
 
     const char *base = reinterpret_cast<const char *>(positions);
     const size_t tris = vertexCount / 3;
+    const float *batch[3 * Batch];
+    int nb = 0;
     for (size_t t = 0; t < tris; ++t) {
-        const float *pa = reinterpret_cast<const float *>(base + (t * 3 + 0) * stride);
-        const float *pb = reinterpret_cast<const float *>(base + (t * 3 + 1) * stride);
-        const float *pc = reinterpret_cast<const float *>(base + (t * 3 + 2) * stride);
-        emitTriangle(pa, pb, pc, mvp);
+        for (int k = 0; k < 3; ++k)
+            batch[nb * 3 + k] = reinterpret_cast<const float *>(
+                    base + (t * 3 + size_t(k)) * stride);
+        if (++nb == Batch) {
+            emitBatch(batch, nb, mvp);
+            nb = 0;
+        }
+    }
+    if (nb)
+        emitBatch(batch, nb, mvp);
+}
+
+// ---------------------------------------------------------------------
+// The vector pre-pass
+// ---------------------------------------------------------------------
+
+void MaskedDepth::filterBatch(const float *const *v, const float *mvp,
+                              uint8_t *verdict) const
+{
+    // Transposed into lanes: one array per component per vertex, four
+    // triangles wide. The gather is scalar and there is no way around
+    // it -- the vertices come from an index buffer -- but it buys the
+    // whole of the rest of this function in one instruction per step.
+    alignas(16) float vx[3][Batch], vy[3][Batch], vz[3][Batch];
+    for (int i = 0; i < Batch; ++i) {
+        for (int k = 0; k < 3; ++k) {
+            const float *p = v[i * 3 + k];
+            vx[k][i] = p[0];
+            vy[k][i] = p[1];
+            vz[k][i] = p[2];
+        }
+    }
+
+    const F4 zero(0.0f);
+    const F4 half(0.5f);
+    const F4 one(1.0f);
+    const F4 guard(kGuardPx);
+    const F4 minw(kMinWf);
+    // Written as an assignment and not `F4 fw(float(bufw))`, which the
+    // grammar reads as a function declaration.
+    const F4 fw = F4(float(bufw));
+    const F4 fh = F4(float(bufh));
+
+    // KEY: Everything is accumulated as a *reason to trust the lane*, never
+    // as a reason to reject it, and that is what makes NaN safe here. A
+    // NaN coordinate fails every comparison below, so it fails to be
+    // trusted and goes to the exact path, which classifies it the way it
+    // always did. Written the other way round -- as an OR of failures --
+    // a NaN would pass every test and be silently judged.
+    M4 trust = cmpGe(zero, zero);  // all lanes, to be narrowed
+    F4 sx[3], sy[3];
+    for (int k = 0; k < 3; ++k) {
+        const F4 x = F4::load(vx[k]);
+        const F4 y = F4::load(vy[k]);
+        const F4 z = F4::load(vz[k]);
+        const F4 cx = F4(mvp[0]) * x + F4(mvp[4]) * y + F4(mvp[8]) * z
+                + F4(mvp[12]);
+        const F4 cy = F4(mvp[1]) * x + F4(mvp[5]) * y + F4(mvp[9]) * z
+                + F4(mvp[13]);
+        const F4 cz = F4(mvp[2]) * x + F4(mvp[6]) * y + F4(mvp[10]) * z
+                + F4(mvp[14]);
+        const F4 cw = F4(mvp[3]) * x + F4(mvp[7]) * y + F4(mvp[11]) * z
+                + F4(mvp[15]);
+
+        // In front of the near plane, and far enough from w == 0 to
+        // divide. A triangle with any vertex behind the near plane has
+        // to be *clipped*, and clipping is the exact path's job: it is
+        // also precisely the case whose projected coordinates explode.
+        trust = trust & cmpGe(homogeneous ? cz + cw : cz, zero)
+                & cmpGe(cw, minw);
+
+        const F4 iw = one / cw;
+        sx[k] = (cx * iw * half + half) * fw;
+        sy[k] = (cy * iw * half + half) * fh;
+        trust = trust & cmpLe(abs(sx[k]), guard) & cmpLe(abs(sy[k]), guard);
+    }
+    // No depth is computed. The pre-pass answers "does this cover any
+    // pixel", and depth has no bearing on that.
+
+    const F4 minx = min(sx[0], min(sx[1], sx[2]));
+    const F4 maxx = max(sx[0], max(sx[1], sx[2]));
+    const F4 miny = min(sy[0], min(sy[1], sy[2]));
+    const F4 maxy = max(sy[0], max(sy[1], sy[2]));
+
+    const F4 eps = max(F4(kFilterEpsAbs),
+                       F4(kFilterEpsRel)
+                               * max(max(abs(minx), abs(maxx)), max(fw, fh)));
+    // Grown, always outwards: the exact path's triangle is somewhere
+    // inside this box, so a box that reaches no pixel proves the
+    // triangle reaches none either.
+    const F4 lox = minx - eps;
+    const F4 hix = maxx + eps;
+    const F4 loy = miny - eps;
+    const F4 hiy = maxy + eps;
+
+    // The same two tests rasterTri opens with, in the same order, so the
+    // counters mean the same thing whichever path did the judging.
+    const M4 onbuffer = cmpGe(hix, zero) & cmpLe(lox, fw) & cmpGe(hiy, zero)
+            & cmpLe(loy, fh);
+    const F4 px0 = max(ceil(lox - half), zero);
+    const F4 px1 = min(floor(hix - half), fw - one);
+    const F4 py0 = max(ceil(loy - half), zero);
+    const F4 py1 = min(floor(hiy - half), fh - one);
+    const M4 haspixel = cmpLe(px0, px1) & cmpLe(py0, py1);
+
+    const int tb = trust.bits();
+    const int ob = onbuffer.bits();
+    const int pb = haspixel.bits();
+    for (int i = 0; i < Batch; ++i) {
+        const int bit = 1 << i;
+        if (!(tb & bit))
+            verdict[i] = VerdictExact;
+        else if (!(ob & bit))
+            verdict[i] = VerdictOffBuffer;
+        else if (!(pb & bit))
+            verdict[i] = VerdictSubPixel;
+        else
+            verdict[i] = VerdictKeep;
+    }
+}
+
+void MaskedDepth::emitBatch(const float *const *v, int n, const float *mvp)
+{
+    uint8_t verdict[Batch];
+    if (simdfilter && n == Batch)
+        filterBatch(v, mvp, verdict);
+    else
+        std::fill(verdict, verdict + Batch, uint8_t(VerdictKeep));
+
+    for (int i = 0; i < n; ++i) {
+        if (verdict[i] == VerdictOffBuffer || verdict[i] == VerdictSubPixel) {
+            // The exact path would have counted these itself; it never
+            // sees them, so the tally is kept here instead of being
+            // lost.
+            ++framestats.trianglesIn;
+            ++framestats.trianglesFiltered;
+            if (verdict[i] == VerdictOffBuffer)
+                ++framestats.trianglesOffBuffer;
+            else
+                ++framestats.trianglesSubPixel;
+            continue;
+        }
+        if (verdict[i] == VerdictExact)
+            ++framestats.trianglesGuarded;
+        emitTriangle(v[i * 3 + 0], v[i * 3 + 1], v[i * 3 + 2], mvp);
     }
 }
 
@@ -839,6 +1033,7 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
     buffer.clear();
     buffer.resetStats();
     buffer.setCamera(view, proj, homogeneousDepth);
+    buffer.setSimdFilter(conf.simdFilter);
 
     // Rank by how much of the screen the draw's bounds cover. Cheap, and
     // it is the right order for a budget: a triangle in a large near
@@ -966,6 +1161,7 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
             shard.resize(buffer.width(), buffer.height());
         shard.setCamera(view, proj, homogeneousDepth);
         shard.setTwoSided(buffer.twoSided());
+        shard.setSimdFilter(buffer.simdFilter());
     }
 
     // KEY: Both phases run on the workers, and the second one is why. A
@@ -1115,12 +1311,22 @@ void MaskedOccluderPass::cull(const ProxyHierarchy &index, const float *view,
     framestats.walkMs = millisSince(t0);
 }
 
-// WARNING: Deliberately scalar. The layout is the SIMD one -- 8x4 blocks whose
-// coverage is exactly one 32-bit word, four of which fit a 128-bit lane
-// -- so vectorizing is a rewrite of rasterTri's inner loops and of
-// updateBlock across four blocks at once, not a change of structure or
-// of results. It is not done yet because nothing has measured what this
-// costs on the benchmark scene, and this workstream has been wrong twice
-// about where its time goes (docs/FarFieldProxies.md section 12.10). The
-// measurement comes first; SIMD128 is available on every tier including
-// WASM when it says so.
+// WARNING: The *rasterizer* is still deliberately scalar and double. Only the
+// pre-pass is vectorized, and the reason is the one thing this file is
+// for: filterBatch cannot write to the buffer, so its float arithmetic
+// can lose culling and can waste time and can do nothing else, while a
+// float rasterTri would decide coverage bits -- and a coverage bit set
+// where no triangle reached is a surface claimed where there is none,
+// which is the failure the whole of docs/FarFieldProxies.md section 12
+// has been chasing. The pre-pass was worth doing first because it is
+// where the triangles are: 170684 of 249998 rasterized triangles never
+// touch a pixel on the benchmark scene, so two thirds of the pass is
+// transform, project and reject, and that is exactly the part a filter
+// can take over.
+//
+// What is left for SIMD after that is rasterTri's row solve and
+// updateBlock across four blocks at once, which is a rewrite rather than
+// a filter and has to answer the precision question honestly rather than
+// side-step it. It is not obviously the next thing to do either: coarse
+// occluder geometry would *delete* the sub-pixel two thirds rather than
+// accelerate them (section 12.12).

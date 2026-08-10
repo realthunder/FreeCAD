@@ -71,13 +71,19 @@
 /// is therefore safe to be wrong and the tests beside it assert that
 /// direction rather than an exact image.
 ///
-/// WARNING: Nothing here knows about bgfx, Coin, Qt or OCCT and the arithmetic
-/// is plain float, for the reason SceneLadder.h and ProxyHierarchy.h
-/// keep the same discipline: this is the tier that has to behave
-/// *identically* in the browser. A GPU query is a different mechanism on
-/// WebGL2 with a different latency; a software rasterizer is the same
-/// code, and WASM has SIMD128 for the day the scalar version below is
-/// measured to be the bottleneck.
+/// WARNING: Nothing here knows about bgfx, Coin, Qt or OCCT, for the reason
+/// SceneLadder.h and ProxyHierarchy.h keep the same discipline: this is
+/// the tier that has to behave *identically* in the browser. A GPU query
+/// is a different mechanism on WebGL2 with a different latency; a
+/// software rasterizer is the same code.
+///
+/// That is also why the vector pre-pass added in section 12.14 is 128 bits
+/// wide and not 256: SIMD128 is what WebAssembly has, so the desktop
+/// runs the width the browser runs (Gui/Renderer/Simd4.h). It sits in
+/// front of the exact path rather than replacing it -- see
+/// `setSimdFilter` for why that is not a compromise but the reason a
+/// float pre-pass is admissible at all in a file whose entire claim is a
+/// one-sided bound on stored depth.
 
 #include <cstdint>
 #include <utility>
@@ -115,6 +121,18 @@ struct MaskedOcclusionStats {
     uint32_t trianglesBackFacing = 0;  ///< only when two-sided is off
     uint32_t trianglesDegenerate = 0;  ///< zero screen area
     uint32_t trianglesBehind = 0;      ///< wholly behind the near plane
+    /// Of the culled triangles, those the four-wide vector pre-pass
+    /// discarded on its own, so the exact path never saw them. This is
+    /// the counter that says whether the vector path is doing anything:
+    /// it is bounded above by `trianglesOffBuffer + trianglesSubPixel`,
+    /// and if it is far below that sum the batches are being declined
+    /// rather than judged.
+    uint32_t trianglesFiltered = 0;
+    /// Triangles the vector pre-pass refused to judge -- near the near
+    /// plane, or projected outside its guard band -- and handed to the
+    /// exact path unclassified. Every one of these pays for both paths,
+    /// so it is the cost side of the same measurement.
+    uint32_t trianglesGuarded = 0;
     /// Every triangle that did not reach block traversal.
     uint32_t trianglesCulled() const
     {
@@ -248,6 +266,27 @@ public:
     void setTwoSided(bool on) { twosided = on; }
     bool twoSided() const { return twosided; }
 
+    /// Whether the four-wide vector pre-pass runs (default on).
+    ///
+    /// KEY: **It can only discard, never draw.** Four triangles are
+    /// transformed and projected in float; a triangle the vector code
+    /// finds off the buffer or over no pixel centre is dropped there,
+    /// and *everything else is handed to the same double-precision path
+    /// that ran before this existed*, which recomputes it from the
+    /// original vertices. So the float arithmetic decides how much work
+    /// is skipped and nothing else: a lane it gets wrong either wastes
+    /// the exact path's time or loses one sub-pixel triangle's
+    /// occlusion, and neither direction can store a depth nearer than
+    /// the truth. That is the whole reason the pre-pass is allowed to be
+    /// float at all, given the near-plane cancellation argued beside
+    /// `kMinW` in the .cpp.
+    ///
+    /// Off is the reference arm: same buffer, same camera, every
+    /// triangle through the exact path. It exists to be measured
+    /// against, not as a fallback for a suspected bug.
+    void setSimdFilter(bool on) { simdfilter = on; }
+    bool simdFilter() const { return simdfilter; }
+
     const MaskedOcclusionStats &stats() const { return framestats; }
     void resetStats() { framestats = MaskedOcclusionStats(); }
 
@@ -308,6 +347,29 @@ private:
         uint32_t mask;  ///< bit (row * 8 + column), row 0 lowest
     };
 
+    /// Triangles the vector pre-pass judges in one go. Fixed at the
+    /// lane count of the only SIMD width that exists everywhere
+    /// (Gui/Renderer/Simd4.h); a partial batch at the end of a mesh
+    /// simply takes the exact path.
+    static const int Batch = 4;
+
+    /// What the vector pre-pass concluded about one lane.
+    enum Verdict : uint8_t {
+        VerdictKeep,       ///< judged, and it may cover pixels
+        VerdictOffBuffer,  ///< judged: outside the buffer
+        VerdictSubPixel,   ///< judged: over no pixel centre
+        VerdictExact,      ///< declined to judge; the exact path decides
+    };
+
+    /// Judge \a Batch triangles at once, writing one Verdict per lane.
+    /// Reads nothing but the camera and the buffer size, writes nothing
+    /// but \a verdict -- it is a filter, not a rasterizer.
+    void filterBatch(const float *const *v, const float *mvp,
+                     uint8_t *verdict) const;
+    /// Run \a n <= Batch triangles through the filter and hand the
+    /// survivors to `emitTriangle`.
+    void emitBatch(const float *const *v, int n, const float *mvp);
+
     /// One source triangle: transform, near-clip, project, fan out.
     void emitTriangle(const float *pa, const float *pb, const float *pc,
                       const float *mvp);
@@ -325,6 +387,7 @@ private:
     int bw = 0;            ///< blocks across
     int bh = 0;
     bool twosided = true;
+    bool simdfilter = true;
     bool homogeneous = true;
     bool orthographic = false;
     float viewproj[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -375,13 +438,18 @@ struct MaskedCullConfig {
     /// different worker count can cull slightly differently. Never more,
     /// only less, and deterministically for a fixed count.
     uint32_t threads = 0;
+    /// Whether the four-wide vector pre-pass runs -- see
+    /// MaskedDepth::setSimdFilter. Off is the reference arm of the
+    /// measurement, not a fallback.
+    bool simdFilter = true;
 
     bool operator==(const MaskedCullConfig &o) const
     {
         return resolutionDivisor == o.resolutionDivisor
                 && triangleBudget == o.triangleBudget
                 && minOccluderPx == o.minOccluderPx
-                && maxOccluders == o.maxOccluders && threads == o.threads;
+                && maxOccluders == o.maxOccluders && threads == o.threads
+                && simdFilter == o.simdFilter;
     }
     bool operator!=(const MaskedCullConfig &o) const { return !(*this == o); }
 };
