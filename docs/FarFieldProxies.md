@@ -2151,3 +2151,122 @@ kind §12.7 already measured and rejected — hysteresis dilutes a failure that
 comes in runs; it does not remove it.
 
 `Render_Occlusion` stays default off.
+
+### 12.11 measured: the query handles were misused, and that was not the fault
+
+§12.10 left one hypothesis ahead of every other, and it was an API misuse
+rather than anything about boxes or depth. It has now been fixed and
+measured. ⛔ **It is not the fault.** The fix is worth keeping — it is a real
+defect, and it is what makes the rest of this section provable — but the
+over-cull it was supposed to explain is still there.
+
+#### The misuse, which was real
+
+**A bgfx occlusion query handle is an object's identity, not a slot to
+rent.** In the vendored source, `m_occlusion[idx] = INT32_MIN` — the value
+`getResult()` reports as `NoResult` — is written in exactly one place:
+`createOcclusionQuery()`. Nothing resets it on submit, not the frame swap
+and not the backend's own `begin`. So **after a handle's first result lands,
+`getResult()` never returns `NoResult` again**; it returns whatever is in
+the slot. bgfx's own guidance says the same thing — *"you should always keep
+the same occlusion handle for the same mesh/object"* (bkaradzic,
+[discussion #2498](https://github.com/bkaradzic/bgfx/discussions/2498)) —
+and `examples/26-occlusion` allocates one handle per cube at init and
+indexes it by object forever.
+
+The culler did the opposite: 128 anonymous handles, reassigned per frame as
+answers were consumed. A handle whose new query had not yet resolved
+therefore still held the **previous occupant's** verdict, and the standard
+"if `NoResult`, keep the slot and read it next frame" guard could never fire
+to catch it. Silently, too — `BGFX_CONFIG_DEBUG_OCCLUSION` asserts only that
+a handle is not used twice within a *single* frame; cross-frame reuse trips
+nothing.
+
+⭐ It also fitted the evidence better than anything else on the list:
+pixel-exact at ttl 10⁶ (the pool cycles slowly), damage rising with the
+re-test rate (= the recycle rate), false answers arriving in runs, verdicts
+fresh against a camera that never moved, and the damage weighted by what the
+*receiving* node deletes rather than by anything about the node that was
+tested.
+
+#### What was built
+
+One handle created per test and destroyed when its answer is read, for the
+culler and for the §10.1 probe both. `NoResult` now means precisely "this
+query has not landed", and nothing else can have written the slot, because
+creating a handle also invalidates any in-flight query still holding that
+index. Three consequences of making the guard work, none of them optional:
+
+- **Leases have to expire.** A query that never lands would now hold its
+  handle forever and leave its node `pending`, the one state the walk never
+  re-offers. While handles were pooled, nothing ever *looked* stuck, because
+  a lost query still read as answered — with somebody else's answer.
+- **Leases have to be dropped on an index rebuild.** A lease names a node by
+  index and a rebuild renumbers them; the culler's own rule is that verdicts
+  never survive a rebuild, and the questions in flight are no different.
+- **The handle budget has to grow.** bgfx defers the free to the end of the
+  frame, so the live count is the tests in flight plus a frame's worth of
+  released ones. `BGFX_CONFIG_MAX_OCCLUSION_QUERIES` goes 256 → 2048, and
+  both consumers now size their appetite from
+  `caps->limits.maxOcclusionQueries` (culler ≤ ½, probe ≤ ¼) so that a
+  backend built without it culls *less* instead of answering wrongly.
+
+The probe's wait was a no-op for the same reason and got the same fix: after
+its first cycle none of its reused handles ever reported `NoResult` again,
+so it read each batch before the batch had answered. ⚠️ Not exercised by the
+run below, which drives only the culler — the §10.1/§12.4 probe numbers were
+taken with that defect present and have not been re-taken.
+
+#### ⛔ measured: the medians do not collapse
+
+Same harness, same model, same camera, same two rows, medians over a ~30
+sample window (`~/works/sw/models/cull_audit.py`, `FC_ROWS="60/2,6/2"`):
+
+| visible ttl | over-cull px, §12.10 | over-cull px, with leases |
+|---|---|---|
+| 60 | min 0 · med **572** · max 64712 | min 0 · med **237** · max 49279 |
+| 6 | min 0 · med **17525** · max 46056 | min 0 · med **16924** · max 79530 |
+
+The gate §12.10 set was the medians, and **ttl 6 is flat**: 17525 → 16924, a
+3.4% move on the row with thirty times the damage and by far the steadier
+signal. ttl 60's median falls 2.4×, but it is a median of a 0–49279 spread
+in one window, and its maximum stays the same order — the exact quantity
+§12.10's Correction 2 warned cannot be read from one window. ⇒ **No material
+change.** The control is unchanged to the pixel (`163364 covered px`,
+`16913 of 17727 drawn-but-invisible`, over-cull 0 across 29 samples), so
+this is not a framing difference.
+
+The attribution is also unchanged in character: **97.2%** of the ttl 6
+over-cull comes from verdicts ≤2 frames old (§12.10: 94.1%), 92.1% from
+nodes that have flipped ≥3× (85.5%), and **0 px** from the frustum.
+
+Handle accounting across both rows: `expired 0 refused 0`, with the culler
+sitting at `inflight 128 held 128` once ttl 6 saturates its budget. So the
+new machinery is not itself losing tests, and the pool is not short.
+
+#### ⭐⭐ What this buys, which is not nothing
+
+The negative result is worth more than the hypothesis was, because it
+removes the last way to explain the central observation away:
+
+> Every worst node reports `lastpx0 age1f` — a box that rasterized **zero
+> samples**, answered **one frame ago**, for a node whose contents are on
+> screen in the id image.
+
+Before the leases, that zero could always have been somebody else's zero,
+read out of a recycled slot. It cannot be now: the handle was created for
+that box and destroyed after that read, and no other query can have written
+it. **The box genuinely returns no samples against the depth buffer while
+what it bounds is visible.** That is §12.6's account — a node re-tested
+after the pass that wrote its own contents loses the depth comparison
+against itself — now standing on a measurement instead of an inference, and
+it is a property of *when the question can be asked*, which no amount of
+padding, hysteresis or freshness policy reaches.
+
+⇒ §12.8's step 3 is no longer deferred, and the choice it offered is
+settled: **Intel's masked software occlusion rasterizer**, whose whole point
+is that occluders and queries interleave, so a node can be asked *before*
+its own geometry joins the depth buffer. The ID-feedback alternative is not
+a candidate — it answers the same question at the same moment in the frame.
+
+`Render_Occlusion` stays default off.

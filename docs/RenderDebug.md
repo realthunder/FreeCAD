@@ -249,6 +249,32 @@ where the explanation it appears to support is false. See
 The node states are snapshotted with the image, like the mask, for the
 reason given above.
 
+#### The companion `render culling:` line — and its query accounting
+
+Printed on the `RenderDebug_Timing` cadence whenever occlusion culling is
+on, because "the audit found nothing" and "the mechanism never ran" are
+otherwise the same output. Three of its fields exist to keep the *tests*
+honest, separately from the verdicts:
+
+```
+| tests offered N budgeted M sent S | queries inflight I held H expired E refused R |
+```
+
+- **offered / budgeted / sent** are three different numbers and the gap
+  between them is diagnostic: the walk *offers* every node it wants tested,
+  `budget` caps what one frame may ask, and `sent` is what the backend
+  actually drew boxes for. A transient buffer that ran short shows up only
+  in the last one.
+- ⚠️⚠️ **`inflight` / `held` / `expired` / `refused`** are the occlusion
+  query leases (docs/FarFieldProxies.md §12.11). A bgfx query handle is an
+  object's identity, not a slot to rent — reuse it and the next test reads
+  the previous one's verdict, with no assert and no `NoResult` to catch it —
+  so each test gets a handle of its own. `held` runs ahead of `inflight`
+  because bgfx does not free a released handle until the frame ends;
+  `refused` counts tests dropped for want of a handle (costs culling, never
+  correctness) and `expired` counts queries that never answered at all.
+  Non-zero `refused` means the backend's pool is too small for the budget.
+
 Mode-specific tuning rides the `u_userParams[0]` bootstrap lane: `.z`
 overrides the overdraw full-red count (default 8) and the mode-7 probe
 amplification (default 4096); `.x/.y` stay the generic output scale/bias.
