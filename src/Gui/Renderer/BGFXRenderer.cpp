@@ -9027,6 +9027,75 @@ public:
 #endif
 };
 
+/// Occlusion query handles, leased one per test, for the two things
+/// that ask the depth buffer questions: the measurement probe below and
+/// the culler that acts on the same answers.
+///
+/// ⚠️⚠️ **A bgfx query handle is an object's identity, not a slot to
+/// rent** (docs/FarFieldProxies.md §12.11). `createOcclusionQuery()` is
+/// the only place bgfx ever writes `NoResult` into a handle's slot —
+/// nothing resets it on submit, not the frame swap and not the
+/// backend's own begin — so once a handle has answered, `getResult()`
+/// returns that same answer for as long as the handle lives. A pool of
+/// anonymous handles reassigned per frame therefore serves each test
+/// the *previous occupant's* verdict, and the "not answered yet, read
+/// it again next frame" guard that would catch a mismatch can never
+/// fire. Silently, too: `BGFX_CONFIG_DEBUG_OCCLUSION` asserts only that
+/// a handle is not used twice within a single frame, and cross-frame
+/// reuse trips nothing.
+///
+/// So a handle here is created for exactly one test and destroyed when
+/// its answer is read. `NoResult` then means what every reader in this
+/// file takes it to mean — *this* query has not landed — and nothing
+/// else can have written the slot, because creating a handle also
+/// invalidates any in-flight query still holding that index.
+///
+/// The price is a create/destroy pair per test rather than per node,
+/// and a transient second handle per lease: bgfx defers the free to the
+/// end of the frame, so a released handle cannot be re-allocated until
+/// then. src/3rdParty/CMakeLists.txt raises
+/// `BGFX_CONFIG_MAX_OCCLUSION_QUERIES` to cover both consumers at that
+/// width, and both of them size their appetite from
+/// `caps->limits.maxOcclusionQueries` rather than from that number, so
+/// a backend built without it culls less instead of answering wrongly.
+class OcclusionLeases
+{
+public:
+    /// A handle that reads `NoResult` until the query submitted against
+    /// it lands. Invalid when the backend has none left to give, which
+    /// costs culling and never correctness: the caller drops that test
+    /// and the node keeps whatever it already believed.
+    bgfx::OcclusionQueryHandle acquire()
+    {
+        bgfx::OcclusionQueryHandle q = bgfx::createOcclusionQuery();
+        if (bgfx::isValid(q))
+            ++leased;
+        else
+            ++refused;
+        return q;
+    }
+
+    /// Hand a handle back, once its answer has been read or once the
+    /// test it was created for has been given up on.
+    void release(bgfx::OcclusionQueryHandle q)
+    {
+        if (!bgfx::isValid(q))
+            return;
+        bgfx::destroy(q);
+        --leased;
+    }
+
+    /// Handles currently out. Not the same as tests in flight: a handle
+    /// released this frame is still allocated until the frame ends.
+    uint32_t held() const { return leased; }
+    /// Tests dropped for want of a handle, since the view opened.
+    uint32_t refusals() const { return refused; }
+
+private:
+    uint32_t leased = 0;
+    uint32_t refused = 0;
+};
+
 /// docs/FarFieldProxies.md §10.1 measurement 1: how many of the
 /// instances a frame draws could not have reached the screen.
 ///
@@ -9050,9 +9119,20 @@ struct OcclusionProbeState {
     Render::ProxyHierarchy index;
     enum Verdict : uint8_t { Unknown, Offscreen, Occluded, Visible };
     std::vector<uint8_t> verdict;
-    /// Nodes submitted last frame, awaiting their results; parallel to
-    /// the query pool's first entries.
+    /// Nodes submitted last frame, awaiting their results.
     std::vector<int> pending;
+    /// The handle each of those boxes was drawn under, created for that
+    /// one test and destroyed when its answer is read. Parallel to
+    /// `pending`. ⚠️ Held here rather than in a pool the walk reuses:
+    /// reusing them is what made the wait below a no-op, since a handle
+    /// that has answered once never reports `NoResult` again (see
+    /// OcclusionLeases).
+    std::vector<bgfx::OcclusionQueryHandle> handles;
+    /// Frames spent waiting for the current batch. A query that never
+    /// lands — a box the backend dropped, a device lost between submit
+    /// and read — would otherwise stall the walk forever, and the walk
+    /// is the only thing that ever prints the line.
+    uint32_t waited = 0;
     /// Next node of the walk. Nodes the frustum already rejects never
     /// enter a batch — conflating them with occluded ones would credit
     /// occlusion culling with what frustum culling does today.
@@ -9104,21 +9184,24 @@ struct OcclusionBoxBatch {
 /// Walk the partition once and report. Returns true while a cycle is in
 /// progress, so the caller can leave the pass claimed.
 ///
-/// \a queries is grown to the batch size on first use and reused; the
-/// GPU's pool is small and shared, so it is never freed and refilled.
+/// \a leases hands out the query handles: one per box, destroyed as its
+/// answer is read, because a reused handle answers with the previous
+/// test's verdict and the wait below would never notice.
 static void driveOcclusionProbe(
         BGFXView &view, OcclusionProbeState &st, OcclusionBoxBatch &batch,
-        std::vector<bgfx::OcclusionQueryHandle> &queries,
+        OcclusionLeases &leases,
         const Render::DrawCallList &scene, const float *V, const float *P,
         float viewportHeightPx)
 {
-    // The GPU pool is 256 (BGFX_CONFIG_MAX_OCCLUSION_QUERIES) and this
-    // is its only consumer.
-    static const uint32_t kBatch = 256;
     // How long to leave the picture alone between cycles. The walk
     // itself costs a handful of frames of box rasterization; running it
     // back to back would make the readout a load rather than a probe.
     static const int64_t kQuietFrames = 3;
+    // How long to wait for a batch before declaring it lost. Answers
+    // land two frames after they are submitted; a batch that has not
+    // answered in this many has not been drawn at all, and waiting for
+    // it forever would stop the walk that prints the line.
+    static const uint32_t kWaitFrames = 60;
 
     const bgfx::Caps *caps = bgfx::getCaps();
     if (!caps || !(caps->supported & BGFX_CAPS_OCCLUSION_QUERY)) {
@@ -9130,19 +9213,49 @@ static void driveOcclusionProbe(
         return;
     }
 
-    // Collect the previous batch before anything else: the query pool
-    // is the resource, and a handle whose result has not been read is
-    // still in use. Draining first — ahead of the camera check that may
-    // abandon this walk — is what lets an abandoned walk hand its
-    // handles back instead of orphaning them.
+    // A quarter of the backend's handles, so that the culler — which
+    // runs on the same pool and is the mechanism this measures — is not
+    // starved by the measurement. Taking fewer per batch costs the walk
+    // frames, never accuracy: a cycle is complete when every node has
+    // been asked, however many batches that took.
+    const uint32_t kBatch =
+        std::max<uint32_t>(16, std::min<uint32_t>(
+                256, caps->limits.maxOcclusionQueries / 4));
+
+    // Collect the previous batch before anything else: the handles are
+    // the resource, and one whose result has not been read is still
+    // out. Draining first — ahead of the camera check that may abandon
+    // this walk — is what lets an abandoned walk hand its handles back
+    // instead of orphaning them.
     if (!st.pending.empty()) {
         for (size_t i = 0; i < st.pending.size(); ++i) {
-            if (bgfx::getResult(queries[i]) == bgfx::OcclusionQueryResult::NoResult)
-                return;   // the frame that answers it has not landed yet
+            if (bgfx::getResult(st.handles[i])
+                    != bgfx::OcclusionQueryResult::NoResult)
+                continue;
+            // Still in flight. ⭐ This wait is only real because the
+            // handle was created for this one box: read on a reused
+            // handle, `NoResult` never comes back after the first
+            // cycle and the walk helps itself to the previous batch's
+            // answers.
+            if (++st.waited <= kWaitFrames)
+                return;
+            RENDER_ERR("render occlusion: a batch of " << st.pending.size()
+                       << " boxes went unanswered for " << kWaitFrames
+                       << " frames and was abandoned; no hidden share is "
+                          "reported for this walk");
+            for (auto q : st.handles)
+                leases.release(q);
+            st.handles.clear();
+            st.pending.clear();
+            st.active = false;
+            st.waited = 0;
+            st.lastReport = bx::getHPCounter();
+            return;
         }
         for (size_t i = 0; i < st.pending.size(); ++i) {
             int32_t px = 0;
-            const auto r = bgfx::getResult(queries[i], &px);
+            const auto r = bgfx::getResult(st.handles[i], &px);
+            leases.release(st.handles[i]);
             if (!st.active)
                 continue;   // results of a walk that has been abandoned
             const int node = st.pending[i];
@@ -9156,7 +9269,9 @@ static void driveOcclusionProbe(
                                   : px <= 1024 ? 3 : 4;
             ++st.pxHist[bucket];
         }
+        st.handles.clear();
         st.pending.clear();
+        st.waited = 0;
     }
 
     // A camera that moved abandons the walk rather than finishing it
@@ -9270,22 +9385,30 @@ static void driveOcclusionProbe(
     }
 
     if (!batch.nodes.empty()) {
-        while (queries.size() < batch.nodes.size()) {
-            bgfx::OcclusionQueryHandle q = bgfx::createOcclusionQuery();
+        st.handles.clear();
+        while (st.handles.size() < batch.nodes.size()) {
+            bgfx::OcclusionQueryHandle q = leases.acquire();
             if (!bgfx::isValid(q))
                 break;
-            queries.push_back(q);
+            st.handles.push_back(q);
         }
-        const uint32_t n = std::min<uint32_t>(uint32_t(batch.nodes.size()),
-                                              uint32_t(queries.size()));
-        const uint32_t sent = view.submitOcclusionBoxes(
-                batch.mins.data(), batch.maxs.data(), n, queries);
+        const uint32_t n = uint32_t(st.handles.size());
+        const uint32_t sent = n
+            ? view.submitOcclusionBoxes(batch.mins.data(), batch.maxs.data(),
+                                        n, st.handles)
+            : 0;
         // Boxes the batch could not send keep the Unknown verdict; the
         // report names them rather than counting them as either side.
         st.skippedBoxes += uint32_t(batch.nodes.size()) - sent;
         ++st.batches;
         for (uint32_t i = 0; i < sent; ++i)
             st.pending.push_back(batch.nodes[i]);
+        // A handle whose box was not drawn will never be answered, and
+        // holding it would leak one out of the pool per cycle.
+        for (size_t i = sent; i < st.handles.size(); ++i)
+            leases.release(st.handles[i]);
+        st.handles.resize(sent);
+        st.waited = 0;
         return;
     }
 
@@ -9459,6 +9582,54 @@ static void cullInstances(const Render::DrawCallList &scene,
         *exemptOnTop = ontop;
 }
 
+/// One occlusion test in flight: the node it asks about, the handle
+/// created for it, and the frame it was issued on.
+struct OcclusionTestLease {
+    bgfx::OcclusionQueryHandle handle = BGFX_INVALID_HANDLE;
+    int node = -1;
+    uint32_t issued = 0;
+};
+
+/// The culler's occlusion queries: the handles it holds and the tests
+/// they stand for.
+struct OcclusionCullQueries {
+    OcclusionLeases leases;
+    /// Tests submitted and not yet answered, in issue order.
+    std::vector<OcclusionTestLease> inflight;
+    /// Scratch for one round's handles, kept across frames so that
+    /// issuing a round allocates nothing.
+    std::vector<bgfx::OcclusionQueryHandle> scratch;
+    /// Tests whose answer never arrived, since the view opened.
+    uint32_t expired = 0;
+    /// Boxes actually submitted last frame. Distinct from the tests the
+    /// walk offered and from the ones it had budget for: a handle the
+    /// backend would not give out, or a transient buffer that ran short,
+    /// shows up only here.
+    uint32_t lastSent = 0;
+
+    void releaseAll()
+    {
+        for (const auto &test : inflight)
+            leases.release(test.handle);
+        inflight.clear();
+    }
+};
+
+/// How long a test may go unanswered before its lease is torn up.
+///
+/// An answer lands two frames after its box is submitted. One that never
+/// lands — a box the backend dropped, a device lost between submit and
+/// read — would otherwise hold its handle forever and leave its node
+/// marked pending, which is the one state the walk never re-offers. The
+/// node would then be left to `maxHiddenFrames`, the fail-safe for
+/// answers that stop arriving, and would sit hidden until it fired.
+/// Expiring the lease first turns a lost query back into an ordinary
+/// un-answered node, re-offered on the next walk. ⚠️ This became
+/// necessary with the leases: while handles were pooled and reused, a
+/// query that never landed still read as answered — with somebody
+/// else's answer — so nothing ever looked stuck.
+static const uint32_t kCullLeaseFrames = 16;
+
 /// One frame of occlusion culling: read the answers the last frame's
 /// tests have produced, walk the index against this camera, mask what
 /// cannot be seen, and issue the next round of tests.
@@ -9472,9 +9643,8 @@ static void cullInstances(const Render::DrawCallList &scene,
 /// verdict taken from the eye.
 static void driveOcclusionCull(
         BGFXView &view, Render::OcclusionCuller &culler,
-        Render::OcclusionTestBatch &batch,
-        std::vector<bgfx::OcclusionQueryHandle> &queries,
-        std::vector<int> &queryNode, const float *V, const float *P,
+        Render::OcclusionTestBatch &batch, OcclusionCullQueries &queries,
+        const float *V, const float *P,
         float viewportHeightPx, std::vector<uint8_t> &cullMask,
         std::vector<int32_t> *cullOwner)
 {
@@ -9482,51 +9652,78 @@ static void driveOcclusionCull(
     if (!caps)
         return;
 
-    // 1. Collect what last frame asked. Non-blocking by design: a query
-    // whose frame has not landed keeps its handle and is read next
+    // 1. Collect what the last rounds asked. Non-blocking by design: a
+    // query whose frame has not landed keeps its lease and is read next
     // time. Stalling on it would trade the frame time this is meant to
     // save for a pipeline bubble, and the node it belongs to simply
     // keeps whatever it already believed.
-    for (size_t i = 0; i < queryNode.size(); ++i) {
-        if (queryNode[i] < 0 || !bgfx::isValid(queries[i]))
-            continue;
+    //
+    // ⭐ `NoResult` carries the whole distinction between "not answered
+    // yet" and "answered", and it only tells the truth because the
+    // handle was created for this one test — see OcclusionLeases.
+    const uint32_t now = culler.frame();
+    size_t kept = 0;
+    for (size_t i = 0; i < queries.inflight.size(); ++i) {
+        const OcclusionTestLease test = queries.inflight[i];
         int32_t px = 0;
-        const auto r = bgfx::getResult(queries[i], &px);
-        if (r == bgfx::OcclusionQueryResult::NoResult)
+        const auto r = bgfx::getResult(test.handle, &px);
+        if (r == bgfx::OcclusionQueryResult::NoResult) {
+            if (now - test.issued < kCullLeaseFrames) {
+                queries.inflight[kept++] = test;
+                continue;
+            }
+            ++queries.expired;
+            queries.leases.release(test.handle);
+            culler.abandon(test.node);
             continue;
-        culler.result(queryNode[i],
+        }
+        culler.result(test.node,
                       r == bgfx::OcclusionQueryResult::Visible && px > 0, px);
-        queryNode[i] = -1;
+        queries.leases.release(test.handle);
     }
+    queries.inflight.resize(kept);
 
     // 2. Decide what this camera draws.
     culler.cull(V, P, viewportHeightPx, caps->homogeneousDepth, cullMask,
                 batch, cullOwner);
+    queries.lastSent = 0;
     if (batch.nodes.empty())
         return;
 
-    // 3. Issue the next round into whatever handles are free.
-    std::vector<bgfx::OcclusionQueryHandle> submitQueries;
-    std::vector<int> freeSlots;
-    for (size_t i = 0; i < queryNode.size(); ++i) {
-        if (queryNode[i] < 0 && bgfx::isValid(queries[i]))
-            freeSlots.push_back(int(i));
+    // 3. Issue the next round, one handle created for each test.
+    //
+    // Never taking more than half the backend's pool leaves room for the
+    // measurement probe, which runs on the same handles, and for the
+    // frame's released ones, which bgfx does not free until the frame
+    // ends. The walk already caps the batch at `budget` per frame; this
+    // bounds the *accumulation*, for the case where answers stop coming
+    // and every eligible node ends up in flight at once.
+    const uint32_t ceiling = std::max<uint32_t>(
+            1, caps->limits.maxOcclusionQueries / 2);
+    auto &handles = queries.scratch;
+    handles.clear();
+    while (handles.size() < batch.nodes.size()
+            && queries.leases.held() < ceiling) {
+        bgfx::OcclusionQueryHandle q = queries.leases.acquire();
+        if (!bgfx::isValid(q))
+            break;
+        handles.push_back(q);
     }
-    const uint32_t want =
-        std::min<uint32_t>(uint32_t(batch.nodes.size()),
-                           uint32_t(freeSlots.size()));
-    submitQueries.clear();
-    for (uint32_t i = 0; i < want; ++i)
-        submitQueries.push_back(queries[size_t(freeSlots[i])]);
     // The boxes are contiguous and the batch is offered in priority
     // order — hidden nodes first, since a test is the only way one can
     // come back — so submitting a prefix drops the least important.
-    const uint32_t sent = want
-        ? view.submitOcclusionBoxes(batch.mins.data(), batch.maxs.data(),
-                                    want, submitQueries)
-        : 0;
+    const uint32_t sent = handles.empty()
+        ? 0
+        : view.submitOcclusionBoxes(batch.mins.data(), batch.maxs.data(),
+                                    uint32_t(handles.size()), handles);
+    queries.lastSent = sent;
+    const uint32_t issued = culler.frame();
     for (uint32_t i = 0; i < sent; ++i)
-        queryNode[size_t(freeSlots[i])] = batch.nodes[i];
+        queries.inflight.push_back({handles[i], batch.nodes[i], issued});
+    // A handle whose box was not drawn will never be answered; holding
+    // it would take one out of the pool per frame.
+    for (size_t i = sent; i < handles.size(); ++i)
+        queries.leases.release(handles[i]);
     // Everything not sent must be told, or it stays marked pending and
     // is never offered again — for a hidden node that would mean it
     // could only return via the starvation fail-safe.
@@ -9796,21 +9993,15 @@ public:
     void deinit()
     {
         _deinit = true;
-        // The GPU offers 256 occlusion queries for the whole process
-        // (docs/FarFieldProxies.md §10.1 holds all of them while the
-        // measurement runs), so a closed view that kept its share would
-        // starve the next one that measured.
-        for (auto q : occlusionQueries) {
-            if (bgfx::isValid(q))
-                bgfx::destroy(q);
-        }
-        occlusionQueries.clear();
-        for (auto q : cullQueries) {
-            if (bgfx::isValid(q))
-                bgfx::destroy(q);
-        }
-        cullQueries.clear();
-        cullQueryNode.clear();
+        // The occlusion queries are a process-wide pool shared by every
+        // view (docs/FarFieldProxies.md §10.1, §12), so a closed view
+        // that kept its leases would starve the next one that measured
+        // or culled.
+        for (auto q : occlusionProbe.handles)
+            occlusionLeases.release(q);
+        occlusionProbe.handles.clear();
+        occlusionProbe.pending.clear();
+        cullQueries.releaseAll();
         // A publish-only renderer never asked for a view, so there is
         // none to remove -- and asking would be the one call that
         // brings the graphics device into a process that has none.
@@ -12939,32 +13130,34 @@ public:
                     cullInstances(scene, instances, &cullExemptOnTop);
                     cullIndexed = uint32_t(instances.size());
                     culler.build(instances);
+                    // ⚠️ And drop every test in flight with the index it
+                    // was asked about. A lease names a node by *index*,
+                    // and a rebuild renumbers them — OcclusionCuller's
+                    // own rule is that verdicts never survive a rebuild,
+                    // for exactly this reason: an answer applied to the
+                    // wrong node hides geometry that was never tested.
+                    // The answers are already gone with the state; these
+                    // are the questions.
+                    cullQueries.releaseAll();
                     cullBuildMs = 1000.0
                         * double(bx::getHPCounter() - started)
                         / double(bx::getHPFrequency());
                     cullBuiltVersion = cullSceneVersion;
                 }
-                // One handle per test the budget allows, created once
-                // and handed back as answers are read. A backend that
-                // refuses to create them leaves the pool short, which
-                // costs culling and not correctness -- an untested node
-                // draws.
+                // Handles are created per test inside, not pooled here:
+                // a bgfx query handle is an object's identity, and one
+                // reassigned to a second node answers with the first
+                // one's verdict (OcclusionLeases). A backend that
+                // refuses to create them costs culling and not
+                // correctness -- an untested node draws.
                 if (caps && (caps->supported & BGFX_CAPS_OCCLUSION_QUERY)) {
-                    while (cullQueries.size() < cullconf.budget) {
-                        bgfx::OcclusionQueryHandle q =
-                            bgfx::createOcclusionQuery();
-                        if (!bgfx::isValid(q))
-                            break;
-                        cullQueries.push_back(q);
-                        cullQueryNode.push_back(-1);
-                    }
                     // The attribution is only maintained while the
                     // audit is on: it is a second vector the width of
                     // the draw list, written on every masked row of
                     // every frame, and nothing but the readout reads
                     // it.
                     driveOcclusionCull(*view, culler, cullBatch, cullQueries,
-                                       cullQueryNode, viewMat,
+                                       viewMat,
                                        reinterpret_cast<const float *>(
                                            projMatrix),
                                        float(view->height), sceneCulled,
@@ -14100,7 +14293,7 @@ public:
         if (debugconf.occlusion) {
             const float h = float(view->height);
             driveOcclusionProbe(*view, occlusionProbe, occlusionBatch,
-                                occlusionQueries, scene,
+                                occlusionLeases, scene,
                                 reinterpret_cast<const float *>(viewMatrix),
                                 reinterpret_cast<const float *>(projMatrix), h);
         }
@@ -14181,12 +14374,17 @@ public:
                 Base::Console().Message(
                         "render culling: instances hidden %u / drawn %u / "
                         "offscreen %u | nodes visited %u hidden %u offscreen %u "
-                        "| tests offered %u issued %u | nearclip %u forced %u "
+                        "| tests offered %u budgeted %u sent %u | queries "
+                        "inflight %zu held %u expired %u refused %u "
+                        "| nearclip %u forced %u "
                         "rootrefused %u rootpx %d | indexed %u of %u draws "
                         "(%u on-top exempt) | index %u nodes, build %.1fms\n",
                         cs.hiddenInstances, cs.drawnInstances,
                         cs.offscreenInstances, cs.nodesVisited, cs.nodesHidden,
                         cs.nodesOffscreen, cs.nodesOffered, cs.nodesTested,
+                        cullQueries.lastSent, cullQueries.inflight.size(),
+                        cullQueries.leases.held(), cullQueries.expired,
+                        cullQueries.leases.refusals(),
                         cs.nearExempt, cs.forcedVisible, cs.rootRefused,
                         culler.nodePixels(culler.hierarchy().root()),
                         cullIndexed, unsigned(scene.size()), cullExemptOnTop,
@@ -14747,20 +14945,18 @@ public:
     /// views see different scenes from different cameras.
     OcclusionProbeState occlusionProbe;
     OcclusionBoxBatch occlusionBatch;
-    std::vector<bgfx::OcclusionQueryHandle> occlusionQueries;
+    OcclusionLeases occlusionLeases;
     /// Occlusion culling (docs/FarFieldProxies.md §12) — the same
     /// mechanism as the probe above, acting on its answers. Per view
     /// for the same reason: the verdicts are a camera's, not a scene's.
     Render::OcclusionCullConfig cullconf;
     Render::OcclusionCuller culler;
     Render::OcclusionTestBatch cullBatch;
-    /// The query pool, and which node each handle is currently
-    /// answering for (-1 = free). A fixed pool rather than one handle
-    /// per test: the GPU offers 256 for the whole process and the probe
-    /// is the other claimant, so the culler holds a bounded share and
-    /// hands back every handle as its answer is read.
-    std::vector<bgfx::OcclusionQueryHandle> cullQueries;
-    std::vector<int> cullQueryNode;
+    /// The tests in flight and the handles created for them. ⚠️ One
+    /// handle per test, not a pool of handles reassigned per frame: a
+    /// bgfx query handle is an object's identity and a reassigned one
+    /// answers with the previous occupant's verdict (OcclusionLeases).
+    OcclusionCullQueries cullQueries;
     /// ⭐ The cull audit (docs/FarFieldProxies.md §12.9): one id image in
     /// flight, plus the verdict it is an answer about.
     ///
