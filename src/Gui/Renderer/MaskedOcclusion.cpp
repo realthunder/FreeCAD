@@ -1019,6 +1019,27 @@ float millisSince(const std::chrono::steady_clock::time_point &t0)
 
 }  // namespace
 
+void Render::occluderRecede(const float *view, const float *proj, float *out)
+{
+    out[0] = out[1] = out[2] = 0.0f;
+    if (!view || !proj)
+        return;
+    // Orthographic (proj[15] != 0) has no w to read the convention off,
+    // so its depth gradient answers instead.
+    const float along = proj[15] != 0.0f ? proj[10] : proj[11];
+    // The world direction whose view-space image is +z: row 2 of the
+    // view matrix. A unit vector for a rigid camera, and normalized
+    // anyway because nothing here promises one.
+    const float ax = view[2], ay = view[6], az = view[10];
+    const float len = std::sqrt(ax * ax + ay * ay + az * az);
+    if (!(len > 0.0f) || along == 0.0f)
+        return;
+    const float step = (along < 0.0f ? -1.0f : 1.0f) / len;
+    out[0] = ax * step;
+    out[1] = ay * step;
+    out[2] = az * step;
+}
+
 void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
                                const float *proj, bool homogeneousDepth,
                                int viewportW, int viewportH)
@@ -1093,11 +1114,43 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
     }
     workers = std::max<uint32_t>(1, std::min<uint32_t>(workers, 32));
 
+    const size_t limit = std::min<size_t>(ranking.size(), conf.maxOccluders);
+
+    // The hulls, built before the budget is cut rather than after,
+    // because which candidates fit depends on which geometry each of
+    // them is going to be rasterized from. Offered in ranking order, so
+    // a frame that can only afford a few builds spends them on the
+    // occluders that cover the most screen.
+    coarse.configure(conf.coarse);
+    hullWanted.clear();
+    if (conf.coarse.enabled) {
+        hullWanted.reserve(limit);
+        for (size_t r = 0; r < limit; ++r)
+            hullWanted.push_back(draws[ranking[r].second].mesh.get());
+    }
+    coarse.build(hullWanted, workers);
+    {
+        const CoarseOccluderStats &cs = coarse.stats();
+        framestats.coarseEntries = cs.entries;
+        framestats.coarseBuilt = cs.built;
+        framestats.coarsePending = cs.pending;
+        framestats.coarseBytes = cs.bytes;
+        framestats.coarseBuildMs = cs.buildMs;
+    }
+
+    // Which way is *away from the camera* -- see occluderRecede, which
+    // is where the derivation and its warning live.
+    const float bias = conf.coarseBias > 0.0f ? conf.coarseBias : 0.0f;
+    float recede[3] = {0.0f, 0.0f, 0.0f};
+    if (bias > 0.0f)
+        occluderRecede(view, proj, recede);
+
     // Decide the whole admitted set before rasterizing any of it, so
     // that the budget is spent identically however many workers run.
     uint32_t budget = conf.triangleBudget;
-    const size_t limit = std::min<size_t>(ranking.size(), conf.maxOccluders);
     jobs.clear();
+    models.clear();
+    models.reserve(limit);
     for (size_t r = 0; r < ranking.size(); ++r) {
         if (r >= limit || budget == 0) {
             ++framestats.occludersDropped;
@@ -1106,6 +1159,39 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
         const DrawCall &d = draws[ranking[r].second];
         size_t first = 0, count = 0;
         indexRange(d, first, count);
+        const uint32_t exactTris = uint32_t(count / 3);
+
+        // The hull stands in for the draw only where it can cover the
+        // same surface. A whole-mesh draw takes the whole hull; a draw
+        // of one face takes that face's range, which survives decimation
+        // index for index; and a face that collapsed to nothing falls
+        // back to the mesh, because an occluder that vanished is
+        // occlusion given away for no saving.
+        const CoarseOccluder *hull = coarse.find(*d.mesh);
+        if (hull) {
+            size_t hfirst = 0, hcount = 0;
+            if (d.partIndex < 0 && d.indexStart <= 0
+                && (d.indexCount <= 0
+                    || d.indexCount >= d.mesh->numTriangleIndices)) {
+                hcount = hull->triangleIndices.size();
+            }
+            else if (d.partIndex >= 0
+                     && size_t(d.partIndex) < hull->triangleParts.size()) {
+                const auto &part = hull->triangleParts[size_t(d.partIndex)];
+                hfirst = size_t(part.first);
+                hcount = size_t(part.second);
+            }
+            // Nothing to stand in with: a sub-range that is not a part,
+            // or a face that collapsed to nothing. The mesh's own range
+            // is still sitting in first/count, untouched.
+            if (hcount == 0)
+                hull = nullptr;
+            else {
+                first = hfirst;
+                count = hcount;
+            }
+        }
+
         const uint32_t tris = uint32_t(count / 3);
         if (tris == 0)
             continue;
@@ -1134,14 +1220,62 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
                 256u, std::min<uint32_t>(16384u,
                                          conf.triangleBudget
                                                  / std::max(1u, workers * 8)));
+
+        // Where the hull's surface is allowed to claim to be. Every
+        // point of it lies within `displacement` of a point of the mesh
+        // (CoarseOccluder), so a hull moved that far from the camera
+        // cannot be nearer than the surface it stands for -- which is
+        // the whole of what makes an approximate occluder admissible.
+        // Measured in the mesh's own units, so an instanced draw scales
+        // it by its transform; the largest axis, because the bound is a
+        // distance and not a component.
+        const float *model = d.identity ? nullptr : d.model;
+        if (hull && bias > 0.0f && hull->displacement > 0.0f) {
+            float scale = 1.0f;
+            if (!d.identity) {
+                scale = 0.0f;
+                for (int c = 0; c < 3; ++c) {
+                    const float *col = d.model + c * 4;
+                    scale = std::max(scale,
+                                     std::sqrt(col[0] * col[0]
+                                               + col[1] * col[1]
+                                               + col[2] * col[2]));
+                }
+            }
+            const float delta = hull->displacement * scale * bias;
+            std::array<float, 16> biased = {1, 0, 0, 0, 0, 1, 0, 0,
+                                            0, 0, 1, 0, 0, 0, 0, 1};
+            if (!d.identity)
+                std::memcpy(biased.data(), d.model, sizeof(biased));
+            biased[12] += delta * recede[0];
+            biased[13] += delta * recede[1];
+            biased[14] += delta * recede[2];
+            models.push_back(biased);
+            model = models.back().data();
+        }
+
         for (size_t off = 0; off < count; off += size_t(perChunk) * 3) {
             const size_t n = std::min<size_t>(size_t(perChunk) * 3, count - off);
-            jobs.push_back({ranking[r].second, uint32_t(first + off),
-                            uint32_t(n)});
+            OccluderJob job;
+            job.positions = hull ? hull->positions.data()
+                                 : d.mesh->positions;
+            job.vertexCount = hull ? hull->positions.size() / 3
+                                   : size_t(d.mesh->numVertices);
+            job.indices = hull ? hull->triangleIndices.data()
+                               : d.mesh->triangleIndices;
+            job.first = uint32_t(first + off);
+            job.count = uint32_t(n);
+            job.model = model;
+            jobs.push_back(job);
         }
         budget -= tris;
         ++framestats.occluderDraws;
         framestats.occluderTriangles += tris;
+        if (hull) {
+            ++framestats.coarseDraws;
+            framestats.coarseTrianglesSaved +=
+                    exactTris > tris ? exactTris - tris : 0;
+        }
     }
 
     // Everything above is the same work whatever the triangles do: sizing
@@ -1150,11 +1284,9 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
     // the one term that a change to the rasterizer cannot move.
     framestats.selectMs = millisSince(t0);
 
-    auto runJob = [&draws](MaskedDepth &into, const OccluderJob &j) {
-        const DrawCall &d = draws[j.draw];
-        into.rasterize(d.mesh->positions, 0, size_t(d.mesh->numVertices),
-                       d.mesh->triangleIndices + j.first, j.count,
-                       d.identity ? nullptr : d.model);
+    auto runJob = [](MaskedDepth &into, const OccluderJob &j) {
+        into.rasterize(j.positions, 0, j.vertexCount, j.indices + j.first,
+                       j.count, j.model);
     };
 
     // Below this there is nothing to share out and the merge would cost

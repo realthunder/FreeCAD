@@ -471,6 +471,28 @@ struct OcclusionCullConfig {
     /// It cannot change what the buffer claims is there.
     bool softwareSimd = true;
 
+    /// KEY: Rasterize the software pass's occluders from coarse hulls
+    /// rather than from their meshes (Gui/Renderer/OccluderMesh.h). The
+    /// budget above says what the pass may spend; this says what it
+    /// buys with it -- a hull is a fraction of the triangles, so the
+    /// same allowance admits far more of the candidates, and it was the
+    /// candidates that never got in rather than the buffer's speed that
+    /// left the pass hiding 45% of a 95.4% ceiling.
+    bool coarseOccluders = false;
+    /// Decimation rung a hull is built at, coarsest first.
+    uint32_t coarseLevel = 2;
+    /// Triangles a draw must carry before it is worth a hull.
+    uint32_t coarseMinTriangles = 512;
+    /// Hulls that may be built in one frame; 0 freezes the cache.
+    uint32_t coarseBuilds = 8;
+    /// How far a hull recedes from the camera before it is rasterized,
+    /// as a multiple of its own measured displacement bound. 1 is the
+    /// value at which it cannot claim to be nearer than the surface it
+    /// stands for; 0 is the unbiased measurement.
+    float coarseBias = 1.0f;
+    /// What the hull cache may hold, in bytes.
+    size_t coarseMemory = size_t(64) << 20;
+
     bool operator==(const OcclusionCullConfig &o) const {
         return enabled == o.enabled && visibleTtl == o.visibleTtl
             && budget == o.budget && minSubtree == o.minSubtree
@@ -483,7 +505,13 @@ struct OcclusionCullConfig {
             && minOccluderPx == o.minOccluderPx
             && softwareDivisor == o.softwareDivisor
             && softwareThreads == o.softwareThreads
-            && softwareSimd == o.softwareSimd;
+            && softwareSimd == o.softwareSimd
+            && coarseOccluders == o.coarseOccluders
+            && coarseLevel == o.coarseLevel
+            && coarseMinTriangles == o.coarseMinTriangles
+            && coarseBuilds == o.coarseBuilds
+            && coarseBias == o.coarseBias
+            && coarseMemory == o.coarseMemory;
     }
     bool operator!=(const OcclusionCullConfig &o) const { return !(*this == o); }
 };

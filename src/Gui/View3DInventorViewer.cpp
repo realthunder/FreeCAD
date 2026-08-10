@@ -4509,6 +4509,17 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         prop->setValue(RenderParams::getOcclusionSimd());
         prop->setStatus(App::Property::Hidden, true);
     }
+    // Coarse occluder hulls (section 12.16). Hidden with the rest of the
+    // software oracle's knobs: it changes what the pass rasterizes, and
+    // is meant to leave the image alone.
+    if (!view->getPropertyByName("Render_OcclusionCoarse")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "Render_OcclusionCoarse", "Render",
+                                         RenderParams::docOcclusionCoarse()));
+        prop->setValue(RenderParams::getOcclusionCoarse());
+        prop->setStatus(App::Property::Hidden, true);
+    }
     {
         static const struct { const char *name; long value;
                               const char *(*doc)(); } _occlusionParams[] = {
@@ -4543,6 +4554,23 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             {"Render_OcclusionThreads",
              RenderParams::getOcclusionThreads(),
              &RenderParams::docOcclusionThreads},
+            // What the coarse hulls are made of and how far they recede
+            // (section 12.16).
+            {"Render_OcclusionCoarseLevel",
+             RenderParams::getOcclusionCoarseLevel(),
+             &RenderParams::docOcclusionCoarseLevel},
+            {"Render_OcclusionCoarseMinTris",
+             RenderParams::getOcclusionCoarseMinTris(),
+             &RenderParams::docOcclusionCoarseMinTris},
+            {"Render_OcclusionCoarseBuilds",
+             RenderParams::getOcclusionCoarseBuilds(),
+             &RenderParams::docOcclusionCoarseBuilds},
+            {"Render_OcclusionCoarseBias",
+             RenderParams::getOcclusionCoarseBias(),
+             &RenderParams::docOcclusionCoarseBias},
+            {"Render_OcclusionCoarseMemory",
+             RenderParams::getOcclusionCoarseMemory(),
+             &RenderParams::docOcclusionCoarseMemory},
         };
         for (const auto &p : _occlusionParams) {
             if (view->getPropertyByName(p.name))

@@ -13180,6 +13180,12 @@ public:
                     mc.minOccluderPx = cullconf.minOccluderPx;
                     mc.threads = cullconf.softwareThreads;
                     mc.simdFilter = cullconf.softwareSimd;
+                    mc.coarse.enabled = cullconf.coarseOccluders;
+                    mc.coarse.level = cullconf.coarseLevel;
+                    mc.coarse.minTriangles = cullconf.coarseMinTriangles;
+                    mc.coarse.buildsPerFrame = cullconf.coarseBuilds;
+                    mc.coarse.memoryCap = cullconf.coarseMemory;
+                    mc.coarseBias = cullconf.coarseBias;
                     maskedCull.configure(mc);
                     maskedCull.build(scene, viewMat, projf,
                                      caps ? caps->homogeneousDepth : true,
@@ -14415,6 +14421,8 @@ public:
                         "culled %u (offbuf %u subpx %u degen %u), blocks %u "
                         "| %s filtered %u guarded %u "
                         "| nearclip %u rootrefused %u "
+                        "| hulls %u of %u draws, saved %llu tris "
+                        "(held %u, built %u, pending %u, %.1fMB, %.2fms) "
                         "| raster %.2fms (select %.2f shard %.2f merge %.2f "
                         "| worst clear %.2f raster %.2f merge %.2f "
                         "| sum raster %.2f) walk %.2fms | indexed %u of %u draws "
@@ -14438,6 +14446,15 @@ public:
                         cullconf.softwareSimd ? Render::simd4Name() : "off",
                         bs.trianglesFiltered, bs.trianglesGuarded,
                         ms.nearExempt, ms.rootRefused,
+                        // What the coarse path did, beside what it cost.
+                        // "saved" is the budget the hulls did not spend,
+                        // which is the budget that went to a candidate
+                        // that would otherwise have been dropped.
+                        ms.coarseDraws, ms.occluderDraws,
+                        (unsigned long long)ms.coarseTrianglesSaved,
+                        ms.coarseEntries, ms.coarseBuilt, ms.coarsePending,
+                        double(ms.coarseBytes) / (1024.0 * 1024.0),
+                        ms.coarseBuildMs,
                         ms.rasterMs, ms.selectMs, ms.shardMs, ms.mergeMs,
                         ms.worstClearMs, ms.worstRasterMs, ms.worstMergeMs,
                         ms.sumRasterMs, ms.walkMs,

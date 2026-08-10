@@ -85,10 +85,12 @@
 /// float pre-pass is admissible at all in a file whose entire claim is a
 /// one-sided bound on stored depth.
 
+#include <array>
 #include <cstdint>
 #include <utility>
 #include <vector>
 
+#include "OccluderMesh.h"
 #include "ProxyHierarchy.h"
 #include "Renderer.h"
 
@@ -443,16 +445,62 @@ struct MaskedCullConfig {
     /// measurement, not a fallback.
     bool simdFilter = true;
 
+    /// Rasterize occluders from coarse hulls rather than from their
+    /// meshes (OccluderMesh.h). What the budget above buys, rather than
+    /// what it costs: a hull is a fraction of the triangles, so the same
+    /// allowance admits far more of the candidates -- and it was the
+    /// candidates that never got in, not the buffer's speed, that left
+    /// section 12.15's pass hiding 45% of a 95.4% ceiling.
+    CoarseOccluderConfig coarse;
+
+    /// How far a hull recedes before it is rasterized, as a multiple of
+    /// its own measured displacement bound (CoarseOccluder).
+    ///
+    /// KEY: 1 is the geometrically safe value and 0 is the unbiased
+    /// measurement, which is the one that says whether the bias is
+    /// needed at all. The bias is applied along the view direction, so
+    /// it moves the hull *away* from the camera and can only make it
+    /// hide less; above 1 it hides progressively less for nothing.
+    /// WARNING: A negative value would pull occluders towards the camera,
+    /// which invents occlusion. Clamped at zero where it is read.
+    float coarseBias = 1.0f;
+
     bool operator==(const MaskedCullConfig &o) const
     {
         return resolutionDivisor == o.resolutionDivisor
                 && triangleBudget == o.triangleBudget
                 && minOccluderPx == o.minOccluderPx
                 && maxOccluders == o.maxOccluders && threads == o.threads
-                && simdFilter == o.simdFilter;
+                && simdFilter == o.simdFilter && coarse == o.coarse
+                && coarseBias == o.coarseBias;
     }
     bool operator!=(const MaskedCullConfig &o) const { return !(*this == o); }
 };
+
+/// The world-space unit vector that moves a point *away* from the
+/// camera, given GL-layout view and projection matrices. Zero when the
+/// matrices do not determine one.
+///
+/// KEY: Derived, not assumed, and exposed so the derivation can be tested
+/// against both conventions rather than against the one that happens to
+/// be wired up. A coarse occluder recedes along this vector by its own
+/// error bound (OccluderMesh.h); the opposite sign would pull every hull
+/// towards the camera and invent occlusion everywhere.
+///
+/// The clip w of a point in front of the camera is positive and grows
+/// with distance, and w = proj[11] * z_view, so the view-space step that
+/// increases distance has the sign of proj[11]. An orthographic
+/// projection has no such w -- proj[15] != 0 is exactly that case -- and
+/// its depth grows with proj[10] * z_view instead. The world direction
+/// whose view-space image is +z is row 2 of the view matrix.
+///
+/// WARNING: This function is convention-agnostic; the pass around it is
+/// not. `sightBounds` reads a box's depth as `-vz`, so an occluder pass
+/// handed a left-handed view matrix finds no candidates at all rather
+/// than culling wrongly. That is a real limit of the culling path and
+/// not of this derivation.
+RendererExport void occluderRecede(const float *view, const float *proj,
+                                   float *out);
 
 /// What one frame did, reported rather than inferred.
 struct MaskedCullStats {
@@ -509,6 +557,27 @@ struct MaskedCullStats {
     /// this is the load balance; against `shardMs` times the worker
     /// count it is how much of the machine the phase actually used.
     float sumRasterMs = 0.0f;
+
+    /// The coarse occluders (OccluderMesh.h), reported so the mechanism
+    /// can be read rather than believed. `coarseDraws` against
+    /// `occluderDraws` says how much of the pass ran on hulls at all,
+    /// and `coarseTrianglesSaved` is what those draws did *not* cost --
+    /// the budget that went to a candidate which would otherwise have
+    /// been dropped.
+    uint32_t coarseDraws = 0;
+    uint64_t coarseTrianglesSaved = 0;
+    /// Hulls held, built this frame, and wanted but not built yet. A
+    /// scene that has just come into view spends several frames here,
+    /// and `coarsePending` is what says so rather than leaving a warm-up
+    /// to look like a ceiling.
+    uint32_t coarseEntries = 0;
+    uint32_t coarseBuilt = 0;
+    uint32_t coarsePending = 0;
+    size_t coarseBytes = 0;
+    /// Part of `rasterMs`, like every other term here, and reported
+    /// separately for the same reason: a build is work the frame did,
+    /// not overhead somewhere else.
+    float coarseBuildMs = 0.0f;
 };
 
 /// The occluder pass and the walk that spends it.
@@ -555,13 +624,28 @@ public:
     MaskedDepth &depth() { return buffer; }
     const MaskedCullStats &lastFrame() const { return framestats; }
 
+    /// The hulls the coarse path is drawing from. Exposed so a readout
+    /// can show what is held without the pass having to mirror it.
+    const CoarseOccluderCache &hulls() const { return coarse; }
+
 private:
-    /// One occluder admitted by the budget: the draw row and the index
-    /// range of it to rasterize.
+    /// One occluder admitted by the budget: which geometry, which range
+    /// of it, and under which transform.
+    ///
+    /// KEY: The geometry is named here rather than looked up from the draw
+    /// row when the job runs. An occluder is now either a draw's own
+    /// mesh or the hull standing in for it, the choice is made once
+    /// while the budget is being cut, and a worker that re-derived it
+    /// would be re-deciding policy inside the rasterization loop.
     struct OccluderJob {
-        uint32_t draw;
-        uint32_t first;
-        uint32_t count;
+        const float *positions = nullptr;
+        size_t vertexCount = 0;
+        const int32_t *indices = nullptr;
+        uint32_t first = 0;
+        uint32_t count = 0;
+        /// The draw's own matrix, a biased one out of `models`, or null
+        /// for identity.
+        const float *model = nullptr;
     };
 
     MaskedDepth buffer;
@@ -570,6 +654,16 @@ private:
     /// Scratch kept across frames so that a frame allocates nothing.
     std::vector<std::pair<float, uint32_t>> ranking;
     std::vector<OccluderJob> jobs;
+    /// The hulls, and the receded transforms their jobs point at.
+    ///
+    /// WARNING: `jobs` holds bare pointers into `models`, so it must not
+    /// reallocate once a job names it. Reserved to the candidate count
+    /// before any job is built, and at most one row is added per
+    /// admitted candidate -- keep those two facts together if either
+    /// changes.
+    CoarseOccluderCache coarse;
+    std::vector<std::array<float, 16>> models;
+    std::vector<const MeshData *> hullWanted;
     /// One buffer per worker, kept across frames: a 744 KB allocation
     /// per worker per frame would cost more than the rasterization.
     std::vector<MaskedDepth> shards;

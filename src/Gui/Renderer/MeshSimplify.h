@@ -127,6 +127,25 @@ struct SimplifyOptions {
     /// deletion is clustering's, not the grouping's. How much of an
     /// assembly that removes is what ProxyMeshStats::proxyArea is for.
     bool weldAcrossParts = false;
+
+    /// Emit the surface and nothing else: positions and triangles, no
+    /// normals, no colors, no lines, no points, and none of the
+    /// flat/solid subsets. The triangle part table is still filled, so
+    /// a draw of one face can still find its range.
+    ///
+    /// For a caller that will never shade the result. The occluder
+    /// hulls of MaskedOcclusion.h are the case this exists for: the
+    /// depth rasterizer reads three positions per triangle and looks at
+    /// nothing else, so every attribute carried would be built, stored
+    /// and evicted without ever being read — and a CAD tessellation's
+    /// edge set is comparable in size to its surface.
+    ///
+    /// ⚠️ Not a fidelity knob. It changes what the rung *contains*, not
+    /// where its surface sits: positions and triangles come out
+    /// identical either way, so a hull built with this on may be
+    /// compared byte for byte against the triangles of one built with
+    /// it off.
+    bool trianglesOnly = false;
 };
 
 /// What the decimation actually committed, for the caller that has to

@@ -61,6 +61,15 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(MaskedOcclusion_tests_run gtest_main FreeCADRenderer)
     add_test(NAME MaskedOcclusion_tests_run COMMAND MaskedOcclusion_tests_run)
 
+    # The coarse occluder hulls (docs/FarFieldProxies.md 12.16). Same
+    # one-directional claim as the buffer they feed -- a hull may make
+    # the pass hide less and never more -- so the central test runs the
+    # real pass twice and compares the two masks as an inequality.
+    add_executable(OccluderMesh_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/OccluderMesh.cpp)
+    target_link_libraries(OccluderMesh_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME OccluderMesh_tests_run COMMAND OccluderMesh_tests_run)
+
     # The runtime cost/benefit decision (docs/FarFieldProxies.md 12.13).
     # It decides from timings alone, so it tests from timings alone -- no
     # GL context, no scene, no clock.

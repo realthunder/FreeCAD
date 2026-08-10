@@ -559,6 +559,117 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter OcclusionCoarse
+    ///
+    /// Rasterize the CPU occlusion buffer's occluders from coarse
+    /// hulls instead of from their meshes
+    /// (docs/FarFieldProxies.md #12.16). Only used when occlusion runs
+    /// on the CPU.
+    /// 
+    /// An occluder does not need the mesh, it needs the surface, and a
+    /// hull carries that at a fraction of the triangles. What the
+    /// triangle budget above buys is what this changes: measured, 1285
+    /// of 1322 candidate occluders never entered the buffer because 37
+    /// full-detail draws spent the whole allowance, and the buffer then
+    /// hid 45% of what was there to hide.
+    /// 
+    /// The hulls are built by vertex clustering from the meshes the
+    /// renderer already holds -- no shape, no tessellator -- a few per
+    /// frame, and cached. A hull recedes by its own measured error
+    /// before it is rasterized, so it cannot claim to be nearer than
+    /// the surface it stands for.
+    static const bool & getOcclusionCoarse();
+    static const bool & defaultOcclusionCoarse();
+    static void removeOcclusionCoarse();
+    static void setOcclusionCoarse(const bool &v);
+    static const char *docOcclusionCoarse();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarseLevel
+    ///
+    /// Which rung of the decimation ladder an occluder hull is built
+    /// at, coarsest first: the clustering grid is an eighth of the
+    /// mesh's diagonal at 0 and halves per level, so 2 is a
+    /// thirty-second of it. Lower is cheaper to rasterize and further
+    /// from the surface; higher approaches the mesh itself.
+    static const long & getOcclusionCoarseLevel();
+    static const long & defaultOcclusionCoarseLevel();
+    static void removeOcclusionCoarseLevel();
+    static void setOcclusionCoarseLevel(const long &v);
+    static const char *docOcclusionCoarseLevel();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarseMinTris
+    ///
+    /// How many triangles a draw must carry before it is worth a
+    /// hull. Below this it is rasterized from its mesh: a hull of a
+    /// small mesh saves triangles that were never what spent the
+    /// budget.
+    static const long & getOcclusionCoarseMinTris();
+    static const long & defaultOcclusionCoarseMinTris();
+    static void removeOcclusionCoarseMinTris();
+    static void setOcclusionCoarseMinTris(const long &v);
+    static const char *docOcclusionCoarseMinTris();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarseBuilds
+    ///
+    /// How many occluder hulls may be built in one frame. Building is
+    /// parallel but not free, so a scene that has just come into view
+    /// acquires its hulls over several frames rather than stalling one.
+    /// 0 freezes the cache at what it already holds.
+    static const long & getOcclusionCoarseBuilds();
+    static const long & defaultOcclusionCoarseBuilds();
+    static void removeOcclusionCoarseBuilds();
+    static void setOcclusionCoarseBuilds(const long &v);
+    static const char *docOcclusionCoarseBuilds();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarseBias
+    ///
+    /// How far an occluder hull recedes from the camera before it is
+    /// rasterized, as a percentage of its own measured displacement.
+    /// 
+    /// Every point of a hull lies within that displacement of a point of
+    /// the mesh it was built from, so at 100 the hull cannot be nearer
+    /// than the surface it stands for -- which is what makes an
+    /// approximate occluder admissible at all. Below 100 it hides more
+    /// and may hide geometry that was visible; above 100 it hides
+    /// progressively less for nothing. 0 rasterizes the hull where it
+    /// sits, which is the measurement that says whether the bias is
+    /// needed.
+    static const long & getOcclusionCoarseBias();
+    static const long & defaultOcclusionCoarseBias();
+    static void removeOcclusionCoarseBias();
+    static void setOcclusionCoarseBias(const long &v);
+    static const char *docOcclusionCoarseBias();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarseMemory
+    ///
+    /// What the occluder hull cache may hold, in megabytes, before
+    /// the least recently used hulls are dropped. A dropped hull costs a
+    /// rebuild when its occluder comes back into view, never
+    /// correctness.
+    static const long & getOcclusionCoarseMemory();
+    static const long & defaultOcclusionCoarseMemory();
+    static void removeOcclusionCoarseMemory();
+    static void setOcclusionCoarseMemory(const long &v);
+    static const char *docOcclusionCoarseMemory();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter AO
     ///
     /// Enable screen space ambient occlusion of the experimental render

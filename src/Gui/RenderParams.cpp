@@ -73,6 +73,12 @@ public:
     long OcclusionThreads;
     bool OcclusionSimd;
     long OcclusionResolution;
+    bool OcclusionCoarse;
+    long OcclusionCoarseLevel;
+    long OcclusionCoarseMinTris;
+    long OcclusionCoarseBuilds;
+    long OcclusionCoarseBias;
+    long OcclusionCoarseMemory;
     bool AO;
     bool Shadow;
     long AOMethod;
@@ -182,6 +188,18 @@ public:
         funcs["OcclusionSimd"] = &RenderParamsP::updateOcclusionSimd;
         OcclusionResolution = this->handle->GetInt("OcclusionResolution", 1);
         funcs["OcclusionResolution"] = &RenderParamsP::updateOcclusionResolution;
+        OcclusionCoarse = this->handle->GetBool("OcclusionCoarse", false);
+        funcs["OcclusionCoarse"] = &RenderParamsP::updateOcclusionCoarse;
+        OcclusionCoarseLevel = this->handle->GetInt("OcclusionCoarseLevel", 2);
+        funcs["OcclusionCoarseLevel"] = &RenderParamsP::updateOcclusionCoarseLevel;
+        OcclusionCoarseMinTris = this->handle->GetInt("OcclusionCoarseMinTris", 512);
+        funcs["OcclusionCoarseMinTris"] = &RenderParamsP::updateOcclusionCoarseMinTris;
+        OcclusionCoarseBuilds = this->handle->GetInt("OcclusionCoarseBuilds", 8);
+        funcs["OcclusionCoarseBuilds"] = &RenderParamsP::updateOcclusionCoarseBuilds;
+        OcclusionCoarseBias = this->handle->GetInt("OcclusionCoarseBias", 100);
+        funcs["OcclusionCoarseBias"] = &RenderParamsP::updateOcclusionCoarseBias;
+        OcclusionCoarseMemory = this->handle->GetInt("OcclusionCoarseMemory", 64);
+        funcs["OcclusionCoarseMemory"] = &RenderParamsP::updateOcclusionCoarseMemory;
         AO = this->handle->GetBool("AO", false);
         funcs["AO"] = &RenderParamsP::updateAO;
         Shadow = this->handle->GetBool("Shadow", true);
@@ -407,6 +425,30 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionResolution(RenderParamsP *self) {
         self->OcclusionResolution = self->handle->GetInt("OcclusionResolution", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarse(RenderParamsP *self) {
+        self->OcclusionCoarse = self->handle->GetBool("OcclusionCoarse", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarseLevel(RenderParamsP *self) {
+        self->OcclusionCoarseLevel = self->handle->GetInt("OcclusionCoarseLevel", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarseMinTris(RenderParamsP *self) {
+        self->OcclusionCoarseMinTris = self->handle->GetInt("OcclusionCoarseMinTris", 512);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarseBuilds(RenderParamsP *self) {
+        self->OcclusionCoarseBuilds = self->handle->GetInt("OcclusionCoarseBuilds", 8);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarseBias(RenderParamsP *self) {
+        self->OcclusionCoarseBias = self->handle->GetInt("OcclusionCoarseBias", 100);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarseMemory(RenderParamsP *self) {
+        self->OcclusionCoarseMemory = self->handle->GetInt("OcclusionCoarseMemory", 64);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAO(RenderParamsP *self) {
@@ -1506,6 +1548,213 @@ void RenderParams::setOcclusionResolution(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeOcclusionResolution() {
     instance()->handle->RemoveInt("OcclusionResolution");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarse() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Rasterize the CPU occlusion buffer's occluders from coarse\n"
+"hulls instead of from their meshes\n"
+"(docs/FarFieldProxies.md #12.16). Only used when occlusion runs\n"
+"on the CPU.\n"
+"\n"
+"An occluder does not need the mesh, it needs the surface, and a\n"
+"hull carries that at a fraction of the triangles. What the\n"
+"triangle budget above buys is what this changes: measured, 1285\n"
+"of 1322 candidate occluders never entered the buffer because 37\n"
+"full-detail draws spent the whole allowance, and the buffer then\n"
+"hid 45% of what was there to hide.\n"
+"\n"
+"The hulls are built by vertex clustering from the meshes the\n"
+"renderer already holds -- no shape, no tessellator -- a few per\n"
+"frame, and cached. A hull recedes by its own measured error\n"
+"before it is rasterized, so it cannot claim to be nearer than\n"
+"the surface it stands for.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusionCoarse() {
+    return instance()->OcclusionCoarse;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusionCoarse() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarse(const bool &v) {
+    instance()->handle->SetBool("OcclusionCoarse",v);
+    instance()->OcclusionCoarse = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarse() {
+    instance()->handle->RemoveBool("OcclusionCoarse");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarseLevel() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Which rung of the decimation ladder an occluder hull is built\n"
+"at, coarsest first: the clustering grid is an eighth of the\n"
+"mesh's diagonal at 0 and halves per level, so 2 is a\n"
+"thirty-second of it. Lower is cheaper to rasterize and further\n"
+"from the surface; higher approaches the mesh itself.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionCoarseLevel() {
+    return instance()->OcclusionCoarseLevel;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionCoarseLevel() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarseLevel(const long &v) {
+    instance()->handle->SetInt("OcclusionCoarseLevel",v);
+    instance()->OcclusionCoarseLevel = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarseLevel() {
+    instance()->handle->RemoveInt("OcclusionCoarseLevel");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarseMinTris() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many triangles a draw must carry before it is worth a\n"
+"hull. Below this it is rasterized from its mesh: a hull of a\n"
+"small mesh saves triangles that were never what spent the\n"
+"budget.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionCoarseMinTris() {
+    return instance()->OcclusionCoarseMinTris;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionCoarseMinTris() {
+    const static long def = 512;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarseMinTris(const long &v) {
+    instance()->handle->SetInt("OcclusionCoarseMinTris",v);
+    instance()->OcclusionCoarseMinTris = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarseMinTris() {
+    instance()->handle->RemoveInt("OcclusionCoarseMinTris");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarseBuilds() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many occluder hulls may be built in one frame. Building is\n"
+"parallel but not free, so a scene that has just come into view\n"
+"acquires its hulls over several frames rather than stalling one.\n"
+"0 freezes the cache at what it already holds.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionCoarseBuilds() {
+    return instance()->OcclusionCoarseBuilds;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionCoarseBuilds() {
+    const static long def = 8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarseBuilds(const long &v) {
+    instance()->handle->SetInt("OcclusionCoarseBuilds",v);
+    instance()->OcclusionCoarseBuilds = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarseBuilds() {
+    instance()->handle->RemoveInt("OcclusionCoarseBuilds");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarseBias() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How far an occluder hull recedes from the camera before it is\n"
+"rasterized, as a percentage of its own measured displacement.\n"
+"\n"
+"Every point of a hull lies within that displacement of a point of\n"
+"the mesh it was built from, so at 100 the hull cannot be nearer\n"
+"than the surface it stands for -- which is what makes an\n"
+"approximate occluder admissible at all. Below 100 it hides more\n"
+"and may hide geometry that was visible; above 100 it hides\n"
+"progressively less for nothing. 0 rasterizes the hull where it\n"
+"sits, which is the measurement that says whether the bias is\n"
+"needed.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionCoarseBias() {
+    return instance()->OcclusionCoarseBias;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionCoarseBias() {
+    const static long def = 100;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarseBias(const long &v) {
+    instance()->handle->SetInt("OcclusionCoarseBias",v);
+    instance()->OcclusionCoarseBias = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarseBias() {
+    instance()->handle->RemoveInt("OcclusionCoarseBias");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarseMemory() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"What the occluder hull cache may hold, in megabytes, before\n"
+"the least recently used hulls are dropped. A dropped hull costs a\n"
+"rebuild when its occluder comes back into view, never\n"
+"correctness.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionCoarseMemory() {
+    return instance()->OcclusionCoarseMemory;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionCoarseMemory() {
+    const static long def = 64;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarseMemory(const long &v) {
+    instance()->handle->SetInt("OcclusionCoarseMemory",v);
+    instance()->OcclusionCoarseMemory = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarseMemory() {
+    instance()->handle->RemoveInt("OcclusionCoarseMemory");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

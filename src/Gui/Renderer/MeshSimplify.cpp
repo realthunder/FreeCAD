@@ -285,6 +285,15 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
     int32_t token = 0;
     int32_t next = 0;
 
+    // What the caller will actually read. An occluder hull wants the
+    // surface and nothing else (SimplifyOptions::trianglesOnly), and the
+    // cheapest way to honor that is to treat the source as if it carried
+    // no attributes at all -- the clustering, the representatives and
+    // the triangles are then computed by exactly the same code, so the
+    // positions it emits are the ones the full path would have emitted.
+    const bool wantNormals = src.normals && !opts.trianglesOnly;
+    const bool wantColors = src.colors && !opts.trianglesOnly;
+
     const auto emitVertices = [&](std::map<Cell, AttrCluster> &local) {
         for (auto &entry : local) {
             AttrCluster &cl = entry.second;
@@ -292,7 +301,7 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
             const float *rep = cells.find(entry.first)->second.rep;
             out.positions.insert(out.positions.end(),
                                  {rep[0], rep[1], rep[2]});
-            if (src.normals) {
+            if (wantNormals) {
                 double nx = cl.nx, ny = cl.ny, nz = cl.nz;
                 const double len = std::sqrt(nx * nx + ny * ny + nz * nz);
                 if (len > 1e-12) {
@@ -312,7 +321,7 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
                 out.normals.insert(out.normals.end(),
                                    {float(nx), float(ny), float(nz)});
             }
-            if (src.colors) {
+            if (wantColors) {
                 const double inv = cl.count ? 1.0 / double(cl.count) : 0.0;
                 out.colors.insert(out.colors.end(),
                                   {uint8_t(cl.cr * inv + 0.5),
@@ -334,13 +343,13 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
                 continue;
             stamp[size_t(v)] = token;
             AttrCluster &cl = local[vertexCell[size_t(v)]];
-            if (src.normals) {
+            if (wantNormals) {
                 const float *n = src.normals + size_t(v) * 3;
                 cl.nx += n[0];
                 cl.ny += n[1];
                 cl.nz += n[2];
             }
-            if (src.colors) {
+            if (wantColors) {
                 const uint8_t *c = src.colors + size_t(v) * 4;
                 cl.cr += c[0];
                 cl.cg += c[1];
@@ -451,22 +460,26 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
         }
     };
     std::vector<uint8_t> flags;
-    if (!src.nonFlatParts.empty() && markTriangles(src.nonFlatParts, flags))
-        emitRuns(flags, out.nonFlatParts);
-    if (src.hasSolid == 2) {
-        // The whole triangle set is solid; there is no subset to remap.
-        out.hasSolid = 2;
-    }
-    else if (src.hasSolid == 1 && markTriangles(src.solidParts, flags)) {
-        emitRuns(flags, out.solidParts);
-        out.hasSolid = out.solidParts.empty() ? 0 : 1;
+    if (!opts.trianglesOnly) {
+        if (!src.nonFlatParts.empty()
+            && markTriangles(src.nonFlatParts, flags))
+            emitRuns(flags, out.nonFlatParts);
+        if (src.hasSolid == 2) {
+            // The whole triangle set is solid; there is no subset to
+            // remap.
+            out.hasSolid = 2;
+        }
+        else if (src.hasSolid == 1 && markTriangles(src.solidParts, flags)) {
+            emitRuns(flags, out.solidParts);
+            out.hasSolid = out.solidParts.empty() ? 0 : 1;
+        }
     }
 
     // The edges, one group per edge part, deduplicated within their
     // element: clustering maps many original edges onto the same pair,
     // and a coarse rung that drew each of them would spend more on lines
     // than on the surface it is standing in for.
-    if (src.lineIndices && src.numLineIndices > 0) {
+    if (src.lineIndices && src.numLineIndices > 0 && !opts.trianglesOnly) {
         // Which source edges the seam filter kept, so the filter can be
         // carried through the weld. A merged edge may fold a seam edge
         // and a non-seam edge together, and there is no faithful answer
@@ -547,7 +560,7 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
     // The points, one group per vertex part: each element keeps one
     // point per cell its members fell in -- for the usual one-point
     // element, its position moved to the representative.
-    if (src.pointIndices && src.numPointIndices > 0) {
+    if (src.pointIndices && src.numPointIndices > 0 && !opts.trianglesOnly) {
         const bool pointTable =
             buildGroups(src.pointParts, src.numPointIndices, 1, groups);
         if (!pointTable)

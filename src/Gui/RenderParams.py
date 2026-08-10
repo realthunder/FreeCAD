@@ -303,6 +303,57 @@ Params = [
         "stands for several real pixels, and the ones the occluder missed\n"
         "are claimed with it. Reduce it only to measure what it costs, not\n"
         "as a setting."),
+    ParamBool('OcclusionCoarse',  False, title='Occlusion coarse occluders',
+        doc="Rasterize the CPU occlusion buffer's occluders from coarse\n"
+        "hulls instead of from their meshes\n"
+        "(docs/FarFieldProxies.md #12.16). Only used when occlusion runs\n"
+        "on the CPU.\n"
+        "\n"
+        "An occluder does not need the mesh, it needs the surface, and a\n"
+        "hull carries that at a fraction of the triangles. What the\n"
+        "triangle budget above buys is what this changes: measured, 1285\n"
+        "of 1322 candidate occluders never entered the buffer because 37\n"
+        "full-detail draws spent the whole allowance, and the buffer then\n"
+        "hid 45% of what was there to hide.\n"
+        "\n"
+        "The hulls are built by vertex clustering from the meshes the\n"
+        "renderer already holds -- no shape, no tessellator -- a few per\n"
+        "frame, and cached. A hull recedes by its own measured error\n"
+        "before it is rasterized, so it cannot claim to be nearer than\n"
+        "the surface it stands for."),
+    ParamInt('OcclusionCoarseLevel',  2, title='Occlusion hull level',
+        doc="Which rung of the decimation ladder an occluder hull is built\n"
+        "at, coarsest first: the clustering grid is an eighth of the\n"
+        "mesh's diagonal at 0 and halves per level, so 2 is a\n"
+        "thirty-second of it. Lower is cheaper to rasterize and further\n"
+        "from the surface; higher approaches the mesh itself."),
+    ParamInt('OcclusionCoarseMinTris',  512, title='Occlusion hull minimum',
+        doc="How many triangles a draw must carry before it is worth a\n"
+        "hull. Below this it is rasterized from its mesh: a hull of a\n"
+        "small mesh saves triangles that were never what spent the\n"
+        "budget."),
+    ParamInt('OcclusionCoarseBuilds',  8, title='Occlusion hull builds',
+        doc="How many occluder hulls may be built in one frame. Building is\n"
+        "parallel but not free, so a scene that has just come into view\n"
+        "acquires its hulls over several frames rather than stalling one.\n"
+        "0 freezes the cache at what it already holds."),
+    ParamInt('OcclusionCoarseBias',  100, title='Occlusion hull bias',
+        doc="How far an occluder hull recedes from the camera before it is\n"
+        "rasterized, as a percentage of its own measured displacement.\n"
+        "\n"
+        "Every point of a hull lies within that displacement of a point of\n"
+        "the mesh it was built from, so at 100 the hull cannot be nearer\n"
+        "than the surface it stands for -- which is what makes an\n"
+        "approximate occluder admissible at all. Below 100 it hides more\n"
+        "and may hide geometry that was visible; above 100 it hides\n"
+        "progressively less for nothing. 0 rasterizes the hull where it\n"
+        "sits, which is the measurement that says whether the bias is\n"
+        "needed."),
+    ParamInt('OcclusionCoarseMemory',  64, title='Occlusion hull memory',
+        doc="What the occluder hull cache may hold, in megabytes, before\n"
+        "the least recently used hulls are dropped. A dropped hull costs a\n"
+        "rebuild when its occluder comes back into view, never\n"
+        "correctness."),
     ParamBool('AO',  False, title='Ambient occlusion',
         doc="Enable screen space ambient occlusion of the experimental render\n"
         "engine (render cache mode 3 with a selected renderer type)."),

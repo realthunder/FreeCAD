@@ -1303,6 +1303,37 @@ RendererBridge::translateOcclusionCullConfig(App::PropertyContainer * view)
     res.softwareSimd = viewParamOverride<App::PropertyBool>(
             view, "Render", "OcclusionSimd",
             RenderParams::getOcclusionSimd());
+    // The coarse occluder hulls (section 12.16), which belong to the
+    // software oracle as well.
+    res.coarseOccluders = viewParamOverride<App::PropertyBool>(
+            view, "Render", "OcclusionCoarse",
+            RenderParams::getOcclusionCoarse());
+    res.coarseLevel = uint32_t(std::max<long>(0,
+            viewParamOverride<App::PropertyInteger>(
+                    view, "Render", "OcclusionCoarseLevel",
+                    RenderParams::getOcclusionCoarseLevel())));
+    res.coarseMinTriangles = uint32_t(std::max<long>(0,
+            viewParamOverride<App::PropertyInteger>(
+                    view, "Render", "OcclusionCoarseMinTris",
+                    RenderParams::getOcclusionCoarseMinTris())));
+    // Zero is allowed: it is the cache frozen at what it holds, which is
+    // how a measurement separates what the hulls do from what building
+    // them costs.
+    res.coarseBuilds = uint32_t(std::max<long>(0,
+            viewParamOverride<App::PropertyInteger>(
+                    view, "Render", "OcclusionCoarseBuilds",
+                    RenderParams::getOcclusionCoarseBuilds())));
+    // WARNING: Floored at zero rather than trusted. A negative bias would
+    // pull every hull *towards* the camera, which invents occlusion --
+    // the one failure this mechanism may not have.
+    res.coarseBias = float(std::max<long>(0,
+            viewParamOverride<App::PropertyInteger>(
+                    view, "Render", "OcclusionCoarseBias",
+                    RenderParams::getOcclusionCoarseBias()))) / 100.0f;
+    res.coarseMemory = size_t(std::max<long>(0,
+            viewParamOverride<App::PropertyInteger>(
+                    view, "Render", "OcclusionCoarseMemory",
+                    RenderParams::getOcclusionCoarseMemory()))) << 20;
     return res;
 }
 
