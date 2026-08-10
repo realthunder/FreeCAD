@@ -2608,45 +2608,36 @@ milliseconds. Sizing a speedup by a population count is the same error as
 pricing a saving by a per-draw constant (section 12.12, twice), in a
 different currency.
 
-#### measured: on the real model, and it is smaller again
+#### measured: on the real model
 
-`server_imported.FCStd`, 5455 objects, 1863x1064, the cull audit's own
-rows so that the picture and the audit are read from the same frames:
+`server_imported.FCStd`, 5455 objects, 1863x1064. WARNING: **Read from the
+distribution over the window, not from the last line.** The first
+version of this section quoted -5.4%, off one sample per arm, and one
+sample of this quantity is worthless: two runs of an *identical*
+configuration reported 9.00 ms and 4.31 ms. The audit now reports
+min/med/max of every timing field over its ~30 frames, for the same
+reason it already did for the over-cull pixels.
 
-| row | raster | over-cull |
-|---|---|---|
-| 0 triangles -- buffer clear and setup alone | 0.66 ms | -- |
-| 1 worker, scalar | 22.94 ms | **0 px** |
-| 1 worker, vector | **21.36 ms** (-6.9%) | **0 px** |
-| 14 workers, scalar | 9.51 ms | **0 px** |
-| 14 workers, vector | **9.00 ms** (-5.4%) | **0 px** |
+| row | raster min | raster med | over-cull |
+|---|---|---|---|
+| 1 worker, scalar | 22.77 ms | 27.35 ms | **0 px** |
+| 1 worker, vector | **18.25 ms** | **23.50 ms** | **0 px** |
+| | **-19.8%** | **-14.1%** | |
+| 14 workers, scalar | 5.03 ms | 7.73 ms | **0 px** |
+| 14 workers, vector | **4.27 ms** | **6.19 ms** | **0 px** |
+| | **-15.1%** | **-19.9%** | |
 
 Composition identical to section 12.12's: 249998 triangles offered, 79314
 drawn, `offbuf 0 subpx 170684 degen 0`, `clipped 0`. Of the 170684
 discards the pre-pass judged **164568** and declined **none**
 (`guarded 0`).
 
-WARNING: **The isolated stage speeds up 4x and the real pass speeds up
-5-7%, and that discrepancy is not explained.** The two candidates the
-data admits, neither established:
-
-- The real figure is a **median over 30 live frames** with the GPU
-  submitting 17727 draws underneath it, while the synthetic is a best-of-7
-  on an idle box. Anything added equally to both arms compresses the
-  percentage.
-- The real occluder pass reads **indexed, strided** vertices out of 37
-  meshes; the synthetic streams one packed array. If the pass is bound by
-  the vertex fetch rather than by the transform, SIMD has nothing to
-  take -- the gather is scalar in both arms by construction.
-
-KEY: What *is* established is that per-triangle arithmetic is not what the
-wall clock is made of. 14 workers turn 21.36 ms into 9.00 ms -- **2.4x
-out of 14** -- and the buffer clear that does not parallelize accounts
-for only 0.66 ms of the remainder. The pass has a large component that
-is neither the transform nor the clear, and until it is named, further
-work on triangle throughput is work on the wrong term. Discriminating
-experiment for next time: rasterize the captured occluder meshes offline,
-with no frame and no GPU around them.
+KEY: So the real model agrees with the synthetic scene after all --
+15-20% against 16% -- and the "unexplained discrepancy" this section
+was first written around was the instrument, not the mechanism. It is
+left in the record because the mistake is the reusable part: **a
+measurement whose spread is 2x cannot report a 5% effect**, and nothing
+about the readout said so until the spread was printed beside it.
 
 #### KEY: what the counters prove, and it is stronger than a tolerance
 
@@ -2673,21 +2664,81 @@ than guessed at, the lane-mask bit order, and floor rounding towards
 minus infinity on the two backends that have no instruction for it.
 37 tests.
 
-#### Still owed, and this section reorders it
+### 12.15 measured: what the occluder pass is actually made of
 
-KEY: **Find out what the 9 ms is made of, before optimising any part of it
-again.** That is new, and it displaces coarse occluders from the top of
-the list: two sessions have now improved a component of this pass and
-been surprised by how little the wall clock moved (4.9 ms where 10-12 was
-priced, section 12.12; 0.5 ms where a 4x stage speedup was measured, here).
-The pass scales 2.4x on 14 workers and clears its buffer in 0.66 ms, so
-the missing term is large and unnamed. An offline rasterization of the
-captured occluder meshes would answer it without a frame in the way.
+Two sessions running had improved a component of this pass and found the
+frame barely moved, so the pass got timed by phase instead of by
+argument. `MaskedCullStats` now carries `selectMs`, `shardMs`, `mergeMs`,
+the *slowest worker's* share of each, and the sum of every worker's
+rasterization -- reported, so that no term has to be attributed by
+subtraction.
 
-1. **What the occluder pass actually spends 9 ms on** -- see above.
-2. **Coarse occluder geometry.** It deletes the sub-pixel population
-   rather than accelerating it. WARNING: Must be an *inner* hull. Note
-   that this section lowers the expected return: if the pass is not bound
-   by triangle work, deleting triangles will not free 9 ms either.
-3. **Wire `CullBenefitEstimator` into the renderer** (section 12.13).
-4. **Reuse the buffer while the camera is static.**
+#### The decomposition, 14 workers, vector pre-pass on (min over 30 frames)
+
+| term | ms | share |
+|---|---|---|
+| **raster, total** | **4.27** | |
+| select -- size, clear, project every candidate's bounds, sort, cut budget | 0.22 | 5% |
+| phase 1 wall -- shard clear + rasterize | 3.56 | 83% |
+| ... of which the slowest worker's rasterization | 2.96 | 69% |
+| ... of which the slowest worker's shard clear | 0.05 | 1% |
+| ... leaving spawn, join and scheduling | ~0.55 | 13% |
+| phase 2 wall -- merging 14 shards | 0.43 | 10% |
+| ... of which the slowest worker's merge range | 0.12 | 3% |
+
+KEY: **There is no missing term.** The pass is the rasterization, plus
+about 0.9 ms of thread spawn/join across two phases and 0.4 ms of merge.
+The buffer clear that section 12.12 worried about is 0.05 ms; the candidate
+selection that projects 1322 bounding boxes is 0.22 ms. The earlier
+"2.4x out of 14 workers, where did the rest go" was arithmetic on two
+single samples and did not survive the median.
+
+#### KEY: what actually limits the scaling -- 8 cores, not 16
+
+| workers | raster | slowest worker's raster | sum of all workers | per-worker throughput |
+|---|---|---|---|---|
+| 1 | 18.25 | 17.99 | 17.99 | 1.00 |
+| 2 | 9.75 | 9.28 | 18.52 | 0.97 |
+| 4 | 8.69 | 8.08 | 24.70 | 0.73 |
+| 6 | 5.83 | 5.10 | 22.56 | 0.80 |
+| 8 | 4.42 | 3.60 | 23.85 | 0.75 |
+| 14 | 4.27 | 2.96 | 32.81 | 0.55 |
+
+The last column is the finding. The same 250000 triangles cost 17.99 ms
+of CPU on one thread and **32.81 ms spread over fourteen**: each worker
+runs at little over half the speed it runs at alone. This box is a Ryzen
+7 5700G -- **8 physical cores, 16 logical** -- and the pass asks for
+`hardware_concurrency() - 2` = 14, so six cores are running two workers
+each. 8 physical cores under 14 threads predicts 0.57; measured 0.55.
+The rest of the degradation (0.97 at two workers, 0.75 at eight) is the
+private shards: 744 KB each, so eight of them are 6 MB and fourteen are
+10.4 MB against a 16 MB L3, on top of streaming the vertices.
+
+WARNING: **Past eight workers the wall clock is flat and the CPU bill is
+not.** 8 -> 14 workers moves the raster from 4.42 ms to 4.27 ms while
+burning 37% more CPU, in the middle of a frame that also has 17727 draws
+to submit. `hardware_concurrency() - 2` counts SMT siblings as cores and
+is the wrong shape of default; the right one needs a physical core count,
+which is not portable, so it is written down here rather than guessed at
+in code.
+
+Against the physical ceiling the pass is doing well: the rasterization
+phase goes 17.99 -> 2.96 ms, **6.1x on 8 cores**.
+
+#### Still owed, in the order this section leaves it
+
+1. **Coarse occluder geometry.** Now the clearly-largest lever, and the
+   only one that attacks the 69%: the pass *is* its rasterization, and
+   97% of candidate occluders never got into the buffer at all (1285 of
+   1322 dropped by the budget, section 12.12). WARNING: Must be an *inner*
+   hull -- a decimation that moves a surface towards the camera invents
+   occlusion.
+2. **Screen-space binning instead of private shards.** Would delete the
+   merge (0.43 ms), one of the two spawn rounds, and most of the
+   per-worker throughput loss, since a worker owning a band of the screen
+   touches 1/N of the buffer rather than all of a private copy. Intel
+   ships both modes for exactly this trade.
+3. **A worker count that counts cores.** See above -- worth roughly a
+   third of the pass's CPU at no wall-clock cost.
+4. **Wire `CullBenefitEstimator` into the renderer** (section 12.13).
+5. **Reuse the buffer while the camera is static.**
