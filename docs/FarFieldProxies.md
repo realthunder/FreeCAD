@@ -2745,6 +2745,10 @@ never the last line.
    1322 dropped by the budget, section 12.12). WARNING: Must be an *inner*
    hull -- a decimation that moves a surface towards the camera invents
    occlusion.
+   ⛔ **Built and measured in section 12.16, and this reading of it was
+   wrong.** The dropped candidates were dropped in ranking order and the
+   ranking is right: admitting ten times as many occluders moved the
+   culling by 3%. The budget was never the binding constraint.
 2. **Screen-space binning instead of private shards.** Would delete the
    merge (0.43 ms), one of the two spawn rounds, and most of the
    per-worker throughput loss, since a worker owning a band of the screen
@@ -2754,3 +2758,164 @@ never the last line.
    third of the pass's CPU at no wall-clock cost.
 4. **Wire `CullBenefitEstimator` into the renderer** (section 12.13).
 5. **Reuse the buffer while the camera is static.**
+
+### 12.16 built: coarse occluders, and how an approximate one is made safe
+
+Item 1 above, built. `Gui/Renderer/OccluderMesh.h` holds a cache of
+decimated **hulls** keyed by mesh content id, and the occluder pass
+rasterizes a draw's hull in place of its mesh wherever it has one.
+`Render_OcclusionCoarse` and four tuning knobs beside it; off by default
+until the numbers below say otherwise.
+
+#### The construction, and what makes it admissible
+
+The hulls are built by the vertex clustering already in the tree
+(`MeshSimplify.h`) from the meshes the renderer is already holding -- no
+OCCT, no Part, no shape. That is what makes this the cheap first step:
+if it works, no new geometry machinery is needed anywhere.
+
+WARNING: **Clustering is not an inner hull and does not claim to be.** It
+minimizes displacement and says nothing about its sign: a chord across a
+convex surface lies inside it, and the same chord across a concave one
+bulges *out*, towards the camera, inventing occlusion. Three sections of
+this workstream were spent removing exactly that failure.
+
+KEY: **What rescues it is that the error is bounded, and the bound is
+reported.** Every vertex moves onto the average of its cell, and every
+point of a triangle is an affine combination of its corners, so no point
+of the hull is further than `maxDisplacement` from a point of the
+surface. A hull that then **recedes** by that distance along the view
+direction cannot be nearer than the surface it stands for.
+
+The recede is applied as a translation on the occluder's model matrix,
+which also shrinks its silhouette slightly -- every point moves radially
+towards the principal point, so a receded hull covers a subset of what it
+covered before. What the bound does *not* cover is a lateral bulge at a
+silhouette: a hull point displaced sideways can cover a pixel the surface
+misses. Its magnitude is one displacement, and whether that costs pixels
+is a question for the audit's 0-pixel gate rather than for an argument.
+
+WARNING: `occluderRecede()` derives the direction from the matrices
+instead of assuming a handedness -- the clip w of a point in front of the
+camera is positive and grows with distance, and `w = proj[11] * z_view`,
+so the step that increases distance has the sign of `proj[11]` (and of
+`proj[10]` for an orthographic projection, which has no such w). The
+opposite sign would pull every hull towards the camera. Tested against
+both conventions and both projection kinds.
+
+An unprompted finding from writing that test: **the occluder pass as a
+whole is right-handed only.** `sightBounds` reads a box's depth as
+`-vz`, so a left-handed view matrix makes every candidate report
+`Offscreen` and the pass rasterizes nothing -- it fails safe, and
+silently. Written down rather than fixed: nothing in the pipeline
+currently hands it one.
+
+#### What it costs to hold
+
+`SimplifyOptions::trianglesOnly` was added for this caller: positions and
+triangles, no normals, no colours, no edges, no points. The depth
+rasterizer reads three positions per triangle and nothing else, and a CAD
+tessellation's edge set is comparable in size to its surface. The flag
+changes what the rung *contains*, not where it sits -- the triangles it
+emits are identical to the full path's, which a test asserts, so a hull
+stays comparable with the level the same code publishes for display.
+
+Hulls are built a few per frame on the pass's own workers, in ranking
+order, so the largest occluders get theirs first; the cache is LRU under
+a byte cap and keyed by content id *with the generation in the entry*, so
+a ladder rung landing in an existing mesh replaces its hull rather than
+accumulating one per rung.
+
+WARNING: A coarse row is not readable until its hulls are built. The
+readout carries `pending` for exactly this reason, and `cull_audit.py`
+prints it beside every coarse row: non-zero means the row measured a
+warm-up.
+
+#### measured: the gate passes, and the lever is not where it was thought
+
+Rack model, 5455 objects, 17727 draws, one fixed camera, 1863x1064,
+28-29 audit samples per row, hulls warm (`pending 0`). Every row:
+**over-cull 0 px** at min, median and max, and **0 of 1440000 pixels
+differ** from the same frames un-culled. The hulls are admissible.
+
+| budget | occluders | hidden | nodes hidden | raster med | sum raster med |
+|---|---|---|---|---|---|
+| meshes 250k | 37 of 1322 | 7974 | 203 | 7.38 | 57.9 |
+| hulls 250k | **373** | 8220 (+3.1%) | 230 | 11.60 | 109.2 |
+| hulls 100k | 297 | 8139 (+2.1%) | 228 | 7.02 | 57.9 |
+| hulls 50k | 142 | 7986 (+0.2%) | 229 | 7.38 | 47.1 |
+| hulls 250k, bias 0 | 373 | 8733 (+9.5%) | 248 | 11.61 | 114.3 |
+
+⭐ **The hidden counts have no spread at all** -- 7974/7974/7974 across 28
+samples, and the same for every other row. The CPU oracle is
+frame-to-frame deterministic on a static camera, which the hardware-query
+path never was (§12.6 measured two captures of one static scene differing
+in 14101 pixels). So these comparisons are exact, and unusually for this
+workstream the timings beside them are the *only* part needing the
+spread treatment. They get it: raster's min-to-max is roughly 2x within
+every row, so the 100k row being "faster than baseline" is **not** a
+claim this measurement can carry -- those two distributions overlap
+almost entirely. Doubling, at 250k, is.
+
+KEY: **The mechanism does exactly what it was built to do.** Ten times the
+occluders enter the buffer (37 -> 373), 6.35 million triangles per frame
+are not rasterized because a hull stood in for a mesh, and the triangles
+that *are* rasterized are far more useful: 87% of a hull's cover a pixel
+against 32% of a mesh's, so the buffer receives 2.75x the drawn triangles
+(218125 against 79314) and 2.1x the block writes for one 250000-triangle
+budget.
+
+⛔ **And it barely hides more.** +3.1% against a ceiling that would need
++112%, for roughly double the rasterization. The pass was already
+break-even (§12.12: culling saves 4.9 ms of submission), so at equal
+budget the feature costs more than it buys. It ships **off**.
+
+The budget rows say what it *is* good for, which is not what it was
+built for: at 100k the hulls keep the whole culling gain and the timing
+becomes indistinguishable from the 250k mesh baseline, and at 50k they
+match the baseline's culling for 19% less CPU across the workers. A hull
+is a cheaper way to buy the occlusion the pass already had -- not a way
+to buy more of it.
+
+KEY: **Which refutes the premise §12.15 left this on.** "1285 of 1322
+candidate occluders never got in" read like a mechanism starved of
+occluders. It was not: the dropped candidates were dropped in *ranking
+order*, and the ranking is right -- the first 37 draws were already doing
+substantially all of the hiding, and admitting 336 more moved the result
+by 3%. The budget was never the binding constraint. What made the budget
+*look* binding was that a full-detail mesh spends 68% of its triangles on
+sub-pixel geometry -- but discarding those is cheap, which is what §12.14's
+vector pre-pass is for, so the waste was never costing what it appeared to.
+
+#### KEY: where the headroom actually is
+
+The number that survives every arm: after culling, **8180 to 8939 of the
+still-submitted draws reach no pixel** -- 91% of what is drawn -- and that
+figure barely moves as the occluders improve tenfold. The depth buffer is
+not what is limiting the culling.
+
+The suspect the same readout names is **granularity**: the walk tests
+*nodes*, and a node is skipped only if its whole box is hidden. 738-772
+nodes are tested and 203-248 come back hidden; the hierarchy holds 1377
+nodes for 17727 draws, so a node averages thirteen. A better occluder
+cannot help a node holding one visible draw and forty invisible ones --
+only a finer test can. Note that the occluders improving tenfold moved
+nodes-hidden by 27 (203 -> 230) while the draws behind those nodes moved
+by 246: the node is the unit that is failing to resolve.
+
+`ProxyParams::maxPerCell` is 32 and is **not** a runtime parameter -- the
+renderer builds the hierarchy with the defaults. Exposing it and
+measuring hidden-against-node-size is the next step, and it is a far
+cheaper one than this was. §8.1 warns in the opposite direction (a node
+is also the size of a pop), so the two want different values and the
+measurement is what says whether one number can serve both.
+
+#### What the bias costs
+
+Unbiased hulls hide 8733 against the receded 8220 -- the safety margin
+gives up about 6% of the culling -- and on this camera they too over-cull
+0 px. WARNING: That is not a licence to default the bias off. The bound is
+what makes the hull *provably* unable to claim to be nearer than its
+surface; a camera that finds a concave bulge would over-cull without it,
+and this workstream has already spent three sections on geometry deleted
+by an occlusion test that was right on the cameras it was tried on.

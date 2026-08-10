@@ -167,9 +167,14 @@ env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb \
 ```
 
 Each row is a setting: `<ttl>/<confirm>` for the hardware-query oracle,
-`sw/<divisor>/<tris>/<threads>/<simd>` for the CPU masked buffer.
+`sw/<divisor>/<tris>/<threads>/<simd>/<coarse>/<level>/<bias>` for the CPU
+masked buffer (the last three are the coarse occluder hulls of §12.16).
 **Give every field of a software row** — the rows set view properties and
 nothing resets them, so an omitted field inherits the previous row's value.
+
+⚠️ A coarse row prints `pending` beside its hull counts, and it must be 0.
+Hulls are built a few per frame, so a row read while the cache is still
+filling measures the warm-up and reads as a weak version of the mechanism.
 
 **The instrument is validated before its verdict is read**, and the script
 does it for you: the first row runs with culling *off*, where nothing is

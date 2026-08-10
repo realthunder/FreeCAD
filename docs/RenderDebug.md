@@ -275,6 +275,25 @@ honest, separately from the verdicts:
   correctness) and `expired` counts queries that never answered at all.
   Non-zero `refused` means the backend's pool is too small for the budget.
 
+The software oracle prints a different right-hand half — it has no
+queries to account for — ending in the coarse occluder hulls
+(docs/FarFieldProxies.md §12.16):
+
+```
+| hulls C of D draws, saved T tris (held H, built B, pending P, X MB, Y ms)
+```
+
+- **C of D** is how much of the pass ran on hulls rather than on meshes,
+  and **saved** is the budget those draws did not spend — which is the
+  budget that went instead to a candidate the triangle cap would
+  otherwise have dropped.
+- ⚠️ **`pending`** is the one to read before anything else in a coarse
+  row. Hulls are built a few per frame, so a scene that has just come
+  into view rasterizes meshes for its first frames; a measurement taken
+  while `pending` is non-zero is a measurement of the warm-up, and it
+  reads as a weak version of the mechanism rather than as an unfinished
+  one. `cull_audit.py` prints it beside every coarse row for that reason.
+
 Mode-specific tuning rides the `u_userParams[0]` bootstrap lane: `.z`
 overrides the overdraw full-red count (default 8) and the mode-7 probe
 amplification (default 4096); `.x/.y` stay the generic output scale/bias.

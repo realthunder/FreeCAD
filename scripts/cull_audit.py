@@ -36,12 +36,19 @@
 # 5455 objects -- it is not in this repository); FC_ROWS the settings to
 # measure, FC_SETTLE the seconds per row, FC_OUT/FC_LOG/FC_SHOTS where the
 # results go. A row is `<ttl>/<confirm>` for the hardware oracle or
-# `sw/<divisor>/<tris>/<threads>/<simd>` for the software one (#12.12).
+# `sw/<divisor>/<tris>/<threads>/<simd>/<coarse>/<level>/<bias>` for the
+# software one (#12.12, coarse hulls #12.16).
 #
 # /!\ GIVE EVERY FIELD OF A SOFTWARE ROW EXPLICITLY. The rows set view
 # properties and nothing resets them, so an omitted field silently
 # inherits the previous row's value -- `sw//0` after `sw///1` is one
 # thread AND no triangles, which is not a row anybody asked for.
+#
+# /!\ A COARSE ROW IS NOT READABLE UNTIL ITS HULLS ARE BUILT. They are
+# built a few per frame and cached, so the first frames of such a row
+# rasterize the meshes the earlier rows did. The row prints `hulls` with
+# a pending count beside it: pending must be 0, or the row is measuring
+# the warm-up and not the mechanism.
 #
 # /!\ TIMINGS ARE READ FROM THE SPREAD, NEVER FROM THE LAST LINE. Two runs
 # of an identical configuration reported raster 9.00ms and 4.31ms; a 5%
@@ -281,11 +288,60 @@ def run():
                      dist("wmerge",
                           r"worst clear [\d.]+ raster [\d.]+ merge ([\d.]+)"),
                      dist("sumraster", r"sum raster ([\d.]+)"),
+                     dist("hullbuild", r"MB, ([\d.]+)ms\)"),
                      dist("walk", r"walk ([\d.]+)ms")]
             parts = [p for p in parts if p]
             if parts:
                 emit("    timing ms over %d samples, min/med/max: %s"
                      % (len(cull), " | ".join(parts)))
+            # What the coarse path was doing while that was measured
+            # (#12.16). /!\ `pending` is the reason this is printed at
+            # all: hulls are built a few per frame, so a row read while
+            # the cache is still filling measures a mixture of the two
+            # arms and reads as a weak version of the mechanism. Any
+            # non-zero pending here invalidates the row, exactly like a
+            # non-zero over-cull invalidates the culling.
+            def total(pat, over=cull):
+                vals = [int(m.group(1)) for m in
+                        (re.search(pat, ln) for ln in over) if m]
+                return vals
+            # /!\ WHAT THE ROW IS FOR, over the window rather than from the
+            # last line. The over-cull pixels and every timing get this
+            # treatment already; the hidden counts did not, and they are
+            # the benefit half of every comparison made here -- a change
+            # is only worth reporting against the spread of the quantity
+            # it moved. (§12.16 nearly published a 3% culling gain off
+            # one sample of each arm.)
+            def spread(name, pat):
+                vals = [int(m.group(1)) for m in
+                        (re.search(pat, ln) for ln in cull) if m]
+                if not vals:
+                    return None
+                vals.sort()
+                return "%s %d/%d/%d" % (name, vals[0], vals[len(vals) // 2],
+                                        vals[-1])
+            got_parts = [spread("hidden", r"instances hidden (\d+)"),
+                         spread("drawn", r"instances hidden \d+ / drawn (\d+)"),
+                         spread("nodeshidden", r"nodes visited \d+ hidden (\d+)"),
+                         spread("occluders", r"occluders (\d+) of \d+ draws")]
+            got_parts = [p for p in got_parts if p]
+            if got_parts:
+                emit("    culled over %d samples, min/med/max: %s"
+                     % (len(cull), " | ".join(got_parts)))
+            hulls = total(r"hulls (\d+) of \d+ draws")
+            pend = total(r"pending (\d+),")
+            held = total(r"held (\d+),")
+            saved = total(r"saved (\d+) tris")
+            if hulls:
+                hulls.sort()
+                saved.sort()
+                emit("    hulls used per frame min/med/max: %d/%d/%d "
+                     "| tris saved med %d | held %d | pending max %d "
+                     "(must be 0, else the row is a warm-up)"
+                     % (hulls[0], hulls[len(hulls) // 2], hulls[-1],
+                        saved[len(saved) // 2] if saved else -1,
+                        held[-1] if held else -1,
+                        max(pend) if pend else -1))
             return got[-1]
 
         # 1. Instrument validation: nothing masked, so over-cull must be 0.
@@ -342,11 +398,22 @@ def run():
                 # nothing else -- which is exactly why it is worth having
                 # both in one run, at one framing, on one camera.
                 simd = parts[4] if len(parts) > 4 and parts[4] else ""
-                label = "software%s%s%s%s" % (
+                # The coarse occluder hulls of #12.16, as their own arm.
+                # A hull may only make the buffer claim LESS than the mesh
+                # it stands for, so the pair (coarse 0, coarse 1) at one
+                # camera is the whole gate: the over-cull px of the second
+                # must be no worse than the first, and 0 in both.
+                coarse = parts[5] if len(parts) > 5 and parts[5] else ""
+                level = parts[6] if len(parts) > 6 and parts[6] else ""
+                bias = parts[7] if len(parts) > 7 and parts[7] else ""
+                label = "software%s%s%s%s%s%s%s" % (
                     " div %s" % div if div else "",
                     " tris %s" % tris if tris else "",
                     " thr %s" % thr if thr else "",
-                    " simd %s" % simd if simd else "")
+                    " simd %s" % simd if simd else "",
+                    " coarse %s" % coarse if coarse else "",
+                    " lvl %s" % level if level else "",
+                    " bias %s" % bias if bias else "")
             else:
                 ttl, _, confirm = spec.partition("/")
                 label = "ttl %s confirm %s" % (ttl, confirm or "-")
@@ -364,6 +431,12 @@ def run():
                     v.Render_OcclusionThreads = int(thr)
                 if simd:
                     v.Render_OcclusionSimd = bool(int(simd))
+                if coarse:
+                    v.Render_OcclusionCoarse = bool(int(coarse))
+                if level:
+                    v.Render_OcclusionCoarseLevel = int(level)
+                if bias:
+                    v.Render_OcclusionCoarseBias = int(bias)
             else:
                 v.Render_OcclusionVisibleTtl = int(ttl)
                 if confirm:
