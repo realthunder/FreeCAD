@@ -2543,3 +2543,151 @@ oscillation costs here. Having established nothing, it does not cull:
 the untested direction has to be the one that draws too much.
 
 11 tests, timings fed in directly -- no GL context, no scene, no clock.
+
+### 12.14 built: the vector pre-pass, and why a float path is admissible
+
+Section 12.12 ended with a decision -- SIMD before coarse occluders -- and a
+blocker: `MaskedOcclusion.cpp` is `double` throughout because a
+near-plane-clipped triangle projects to screen coordinates in the
+millions, where float cancellation in the edge equations sets coverage
+bits the triangle never reached. SIMD128 holds four floats but only two
+doubles, so the 4x needs float, and float is the one thing that file had
+argued it could not have.
+
+KEY: **The way out is structural, not numerical.** The vector code does not
+rasterize. It transforms and projects four triangles at a time in float,
+and its only output is a verdict per lane: *this triangle covers no
+pixel* -- discarded there -- or *anything else*, in which case the
+triangle is handed to the identical double path as before, recomputed
+from the original vertices. So the float arithmetic decides **how much
+work is skipped and nothing else**:
+
+- a lane it gets wrong in one direction wastes the exact path's time;
+- a lane it gets wrong in the other loses one sub-pixel triangle's
+  occlusion, which is under-culling, which this mechanism is always
+  allowed to do;
+- and there is no third direction, because the float path never writes
+  to the buffer.
+
+That is why the precision question that blocked SIMD does not arise: the
+guard band, the epsilon and the backend's rounding are all *culling
+quality* parameters. Near-plane crossings and anything projecting beyond
+the guard band are handed over unjudged and counted (`guarded`).
+
+WARNING: **128 bits, and no runtime dispatch** (`Gui/Renderer/Simd4.h`). AVX2
+would double the desktop throughput and split the browser tier onto a
+different code path, and a software occlusion buffer that behaves
+differently in Chrome is not the mechanism measured here. SSE2, NEON,
+WASM SIMD128, and a scalar fallback that gives the same answers.
+
+#### measured: the stage, isolated (synthetic, one thread)
+
+250000 triangles into a 1863x1064 buffer, best of 7 runs on an idle box,
+composition varied deliberately to separate the two effects. Run-to-run
+spread is about 3%, and the whole table was taken twice:
+
+| scene | scalar | vector | |
+|---|---|---|---|
+| all sub-pixel -- the reject stage alone | 13.49 ms | **3.35 ms** | **4.03x** |
+| none sub-pixel -- survivors only | 81.41 ms | 84.09 ms | **+3.3%** |
+| 68/32, the benchmark's composition | 36.71 ms | 30.97 ms | **-16%** |
+
+KEY: Read the three rows together, because the middle one is the price of
+the top one. The pre-pass hits its theoretical ceiling exactly -- four
+lanes, 4.03x -- on the work it was built for. Survivors pay for it
+twice, being transformed once in float to be judged and once in double to
+be drawn, and that costs 3.3% (about 11 ns per surviving triangle). The
+mixed row is what the machine does on this synthetic scene.
+
+WARNING: **-16%, not -75%, and that much of the gap is not a
+disappointment -- it is the answer to a different question than the one
+section 12.12 asked.** The 68% figure is a share of *triangles*, and the
+pre-pass makes that share nearly free; but a drawn triangle costs far
+more than a rejected one, so 68% of the triangles were never 68% of the
+milliseconds. Sizing a speedup by a population count is the same error as
+pricing a saving by a per-draw constant (section 12.12, twice), in a
+different currency.
+
+#### measured: on the real model, and it is smaller again
+
+`server_imported.FCStd`, 5455 objects, 1863x1064, the cull audit's own
+rows so that the picture and the audit are read from the same frames:
+
+| row | raster | over-cull |
+|---|---|---|
+| 0 triangles -- buffer clear and setup alone | 0.66 ms | -- |
+| 1 worker, scalar | 22.94 ms | **0 px** |
+| 1 worker, vector | **21.36 ms** (-6.9%) | **0 px** |
+| 14 workers, scalar | 9.51 ms | **0 px** |
+| 14 workers, vector | **9.00 ms** (-5.4%) | **0 px** |
+
+Composition identical to section 12.12's: 249998 triangles offered, 79314
+drawn, `offbuf 0 subpx 170684 degen 0`, `clipped 0`. Of the 170684
+discards the pre-pass judged **164568** and declined **none**
+(`guarded 0`).
+
+WARNING: **The isolated stage speeds up 4x and the real pass speeds up
+5-7%, and that discrepancy is not explained.** The two candidates the
+data admits, neither established:
+
+- The real figure is a **median over 30 live frames** with the GPU
+  submitting 17727 draws underneath it, while the synthetic is a best-of-7
+  on an idle box. Anything added equally to both arms compresses the
+  percentage.
+- The real occluder pass reads **indexed, strided** vertices out of 37
+  meshes; the synthetic streams one packed array. If the pass is bound by
+  the vertex fetch rather than by the transform, SIMD has nothing to
+  take -- the gather is scalar in both arms by construction.
+
+KEY: What *is* established is that per-triangle arithmetic is not what the
+wall clock is made of. 14 workers turn 21.36 ms into 9.00 ms -- **2.4x
+out of 14** -- and the buffer clear that does not parallelize accounts
+for only 0.66 ms of the remainder. The pass has a large component that
+is neither the transform nor the clear, and until it is named, further
+work on triangle throughput is work on the wrong term. Discriminating
+experiment for next time: rasterize the captured occluder meshes offline,
+with no frame and no GPU around them.
+
+#### KEY: what the counters prove, and it is stronger than a tolerance
+
+Across the synthetic runs -- 750000 triangles -- and again on the real
+model, `trianglesDrawn` and `blocksUpdated` are **identical** in both
+arms. Not close: equal. On `server_imported.FCStd` that is 79314 drawn
+and 154134 blocks with the pre-pass on and off, the same 7974 instances
+hidden by the same 203 nodes, **0 px over-culled** by the audit and
+**0 of 1440000 pixels** different in the picture. Every triangle the
+rasterizer would have drawn reached it, and the buffer it produced is
+the same buffer.
+
+The only movement anywhere is three synthetic triangles that the exact
+path classified `offbuf` and the pre-pass classified `subpx`, which is
+the epsilon-grown bounding box landing just inside the buffer edge; both
+buckets are discards and neither reaches a pixel.
+
+That is also the shape of the unit tests. The central one is not a
+tolerance but an equality: same scene, pre-pass on and off, every pixel
+of the two buffers compared exactly, over eight random scenes of mixed
+scale. Plus: partial batches (a mesh is not a multiple of four -- the tail
+must be rasterized, not dropped), near-plane crossings handed over rather
+than guessed at, the lane-mask bit order, and floor rounding towards
+minus infinity on the two backends that have no instruction for it.
+37 tests.
+
+#### Still owed, and this section reorders it
+
+KEY: **Find out what the 9 ms is made of, before optimising any part of it
+again.** That is new, and it displaces coarse occluders from the top of
+the list: two sessions have now improved a component of this pass and
+been surprised by how little the wall clock moved (4.9 ms where 10-12 was
+priced, section 12.12; 0.5 ms where a 4x stage speedup was measured, here).
+The pass scales 2.4x on 14 workers and clears its buffer in 0.66 ms, so
+the missing term is large and unnamed. An offline rasterization of the
+captured occluder meshes would answer it without a frame in the way.
+
+1. **What the occluder pass actually spends 9 ms on** -- see above.
+2. **Coarse occluder geometry.** It deletes the sub-pixel population
+   rather than accelerating it. WARNING: Must be an *inner* hull. Note
+   that this section lowers the expected return: if the pass is not bound
+   by triangle work, deleting triangles will not free 9 ms either.
+3. **Wire `CullBenefitEstimator` into the renderer** (section 12.13).
+4. **Reuse the buffer while the camera is static.**
