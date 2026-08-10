@@ -36,6 +36,7 @@
 #include "ThemeSelectorWidget.h"
 #include <App/Application.h>
 #include <Base/Parameter.h>
+#include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/PreferencePackManager.h>
 #include <Gui/ThemeManager.h>
@@ -294,13 +295,15 @@ void ThemeSelectorWidget::themeChanged(const QString& packName)
 
     ParameterGrp::handle hGrp =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Themes");
+    // Writing them is no longer what makes the stylesheets resolve -- that has
+    // the same default now, whether or not the wizard has ever run. Kept so the
+    // colors show up in the Theme preference page as editable values.
     const unsigned long nonExistentColor = -1434171135;
-    const unsigned long defaultAccentColor = 1434171135;
     unsigned long longAccentColor1 = hGrp->GetUnsigned("ThemeAccentColor1", nonExistentColor);
     if (longAccentColor1 == nonExistentColor) {
-        hGrp->SetUnsigned("ThemeAccentColor1", defaultAccentColor);
-        hGrp->SetUnsigned("ThemeAccentColor2", defaultAccentColor);
-        hGrp->SetUnsigned("ThemeAccentColor3", defaultAccentColor);
+        hGrp->SetUnsigned("ThemeAccentColor1", Gui::Application::DefaultAccentColor);
+        hGrp->SetUnsigned("ThemeAccentColor2", Gui::Application::DefaultAccentColor);
+        hGrp->SetUnsigned("ThemeAccentColor3", Gui::Application::DefaultAccentColor);
     }
 }
 

@@ -3242,9 +3242,16 @@ QString Application::replaceVariablesInQss(QString qssText)
 
     // The three accent colors predate the Variables group and shipped
     // stylesheets name them, so they keep the place they have always had.
+    //
+    // Defaulted to FreeCAD's blue, not to zero: no theme pack declares these,
+    // and every sheet reaches for @ThemeAccentColor1 to paint a selection --
+    // a checked tool button, a highlighted row, the current theme's button in
+    // the Start wizard. A zero default painted all of them black on any
+    // configuration that had not been through the Start wizard, which is the
+    // only place that ever wrote the keys.
     std::vector<std::pair<std::string, QString>> variables;
     for (const char* name : {"ThemeAccentColor1", "ThemeAccentColor2", "ThemeAccentColor3"}) {
-        variables.emplace_back(name, asColor(hGrp->GetUnsigned(name, 0)));
+        variables.emplace_back(name, asColor(hGrp->GetUnsigned(name, DefaultAccentColor)));
     }
 
     // Everything in Themes/Variables substitutes for @<name>, typed by how it

@@ -267,6 +267,14 @@ public:
      * the previous scheme. Widgets that set a palette of their own are kept.
      */
     static void refreshInheritedPalettes();
+    /** The accent color a stylesheet gets where the configuration names none.
+     *
+     * FreeCAD's blue, #557BB6, packed with an opaque alpha the way the Themes
+     * parameters store it. The Theme preference page and the Start wizard both
+     * already carry this value; it is here so that everything that resolves
+     * @ThemeAccentColor* agrees on it.
+     */
+    static constexpr unsigned long DefaultAccentColor = 0x557BB6FFUL;
     //@}
 
     /** @name User Commands */
