@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -418,6 +419,19 @@ void MaskedDepth::rasterize(const float *positions, size_t stride,
 }
 
 void MaskedDepth::rasterize(const float *positions, size_t stride,
+                            size_t vertexCount, const int32_t *indices,
+                            size_t indexCount, const float *model)
+{
+    // A MeshData's indices are signed and never negative in practice.
+    // Reading them as unsigned turns any that are into a very large
+    // value, which the bounds check in the call below rejects — so the
+    // cast cannot produce a dereference the signed form would have
+    // avoided.
+    rasterize(positions, stride, vertexCount,
+              reinterpret_cast<const uint32_t *>(indices), indexCount, model);
+}
+
+void MaskedDepth::rasterize(const float *positions, size_t stride,
                             size_t vertexCount, const float *model)
 {
     if (blocks.empty() || !positions || vertexCount < 3)
@@ -623,6 +637,241 @@ OccludeAnswer MaskedDepth::testRect(float x0, float y0, float x1, float y1,
     }
     ++framestats.queriesOccluded;
     return OccludeAnswer::Occluded;
+}
+
+// ---------------------------------------------------------------------
+// The occluder pass, and the walk that spends it
+// ---------------------------------------------------------------------
+
+namespace
+{
+
+/// Whether a draw contributes to the depth the eye passes leave behind.
+/// Only such a draw can hide anything, and rasterizing anything else is
+/// budget spent on a surface that is not there.
+bool occludes(const DrawCall &d)
+{
+    if (d.material.type != Material::Triangle)
+        return false;
+    if (!d.material.depthwrite || !d.material.depthtest)
+        return false;
+    if (d.material.transparent || d.material.ontop)
+        return false;
+    if (!d.mesh || !d.mesh->positions || !d.mesh->triangleIndices
+        || d.mesh->numTriangleIndices < 3 || d.mesh->numVertices < 3)
+        return false;
+    // ⚠️ A stand-in is a box drawn where the real mesh has not arrived
+    // (docs/SceneStreaming.md §6). It *does* write depth, so it really
+    // does occlude the frame it appears in — but it is bigger than the
+    // shape it replaces, and treating it as an occluder would hide
+    // geometry behind a surface that will shrink when the real mesh
+    // lands. Under-culling for the few frames a stand-in is up is the
+    // cheaper mistake.
+    if (d.standIn)
+        return false;
+    return d.bboxMin[0] <= d.bboxMax[0] && d.bboxMin[1] <= d.bboxMax[1]
+            && d.bboxMin[2] <= d.bboxMax[2];
+}
+
+/// The index range a draw covers, resolved from its part selection.
+void indexRange(const DrawCall &d, size_t &first, size_t &count)
+{
+    const size_t total = size_t(d.mesh->numTriangleIndices);
+    first = size_t(std::max(0, d.indexStart));
+    count = d.indexCount > 0 ? size_t(d.indexCount) : total;
+    if (first > total)
+        first = total;
+    if (first + count > total)
+        count = total - first;
+}
+
+float millisSince(const std::chrono::steady_clock::time_point &t0)
+{
+    const auto dt = std::chrono::steady_clock::now() - t0;
+    return float(std::chrono::duration<double, std::milli>(dt).count());
+}
+
+}  // namespace
+
+void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
+                               const float *proj, bool homogeneousDepth,
+                               int viewportW, int viewportH)
+{
+    const auto t0 = std::chrono::steady_clock::now();
+    framestats = MaskedCullStats();
+
+    const int div = std::max(1, conf.resolutionDivisor);
+    buffer.resize(viewportW / div, viewportH / div);
+    if (buffer.empty())
+        return;
+    buffer.clear();
+    buffer.resetStats();
+    buffer.setCamera(view, proj, homogeneousDepth);
+
+    // Rank by how much of the screen the draw's bounds cover. Cheap, and
+    // it is the right order for a budget: a triangle in a large near
+    // occluder hides more than a triangle in a small far one, and what
+    // the budget drops is therefore what mattered least.
+    const float vh = float(viewportH);
+    ranking.clear();
+    for (size_t i = 0; i < draws.size(); ++i) {
+        const DrawCall &d = draws[i];
+        if (!occludes(d))
+            continue;
+        const BoxSight sight =
+                sightBounds(d.bboxMin, d.bboxMax, view, proj, vh);
+        if (sight.what == BoxSight::Offscreen || sight.what == BoxSight::Empty)
+            continue;
+        // A box the camera is inside has no meaningful projected size
+        // and is exactly the sort of thing that occludes most, so it
+        // goes to the front rather than being measured.
+        const float px = sight.what == BoxSight::Inside ? FLT_MAX
+                                                        : sight.diagPx;
+        if (px < conf.minOccluderPx)
+            continue;
+        ranking.emplace_back(px, uint32_t(i));
+    }
+    framestats.occluderCandidates = uint32_t(ranking.size());
+    std::sort(ranking.begin(), ranking.end(),
+              [](const std::pair<float, uint32_t> &a,
+                 const std::pair<float, uint32_t> &b) {
+                  return a.first > b.first;
+              });
+
+    uint32_t budget = conf.triangleBudget;
+    const size_t limit = std::min<size_t>(ranking.size(), conf.maxOccluders);
+    for (size_t r = 0; r < ranking.size(); ++r) {
+        if (r >= limit || budget == 0) {
+            ++framestats.occludersDropped;
+            continue;
+        }
+        const DrawCall &d = draws[ranking[r].second];
+        size_t first = 0, count = 0;
+        indexRange(d, first, count);
+        const uint32_t tris = uint32_t(count / 3);
+        if (tris == 0)
+            continue;
+        if (tris > budget) {
+            // ⚠️ Truncating a mesh mid-list leaves a partial surface,
+            // which is a *hole*: the remaining triangles still occlude
+            // correctly, but nothing behind the missing part is hidden.
+            // That is under-culling, so it is allowed — and it is
+            // counted, because a budget that quietly halves an occluder
+            // reads as a scene that does not occlude.
+            ++framestats.occludersDropped;
+            continue;
+        }
+        buffer.rasterize(d.mesh->positions, 0, size_t(d.mesh->numVertices),
+                         d.mesh->triangleIndices + first, count,
+                         d.identity ? nullptr : d.model);
+        budget -= tris;
+        ++framestats.occluderDraws;
+        framestats.occluderTriangles += tris;
+    }
+    framestats.rasterMs = millisSince(t0);
+}
+
+void MaskedOccluderPass::cull(const ProxyHierarchy &index, const float *view,
+                              const float *proj, float viewportHeightPx,
+                              std::vector<uint8_t> &cullMask,
+                              std::vector<int32_t> *cullOwner)
+{
+    const auto t0 = std::chrono::steady_clock::now();
+    if (cullOwner)
+        cullOwner->assign(cullMask.size(), -1);
+    if (buffer.empty() || index.empty() || index.root() == kNoProxyNode)
+        return;
+
+    const auto &nodes = index.nodes();
+    const auto &residents = index.residents();
+    const auto &instances = index.instances();
+    const int root = index.root();
+
+    auto markSubtree = [&](int from) {
+        // Attributed to the node the verdict was taken at, not to the
+        // descendant the instance lives in: that node is the one whose
+        // box was tested, and the only one there is evidence about.
+        const int32_t owner = int32_t(from);
+        walkstack.clear();
+        walkstack.push_back(from);
+        while (!walkstack.empty()) {
+            const int cur = walkstack.back();
+            walkstack.pop_back();
+            const ProxyNode &n = nodes[size_t(cur)];
+            for (uint32_t r = 0; r < n.residentCount; ++r) {
+                const uint32_t inst = residents[n.residentFirst + r];
+                const uint32_t row = instances[inst].drawIndex;
+                if (row < cullMask.size())
+                    cullMask[row] = 1;
+                if (cullOwner && row < cullOwner->size())
+                    (*cullOwner)[row] = owner;
+            }
+            for (int c : n.child) {
+                if (c != kNoProxyNode)
+                    walkstack.push_back(c);
+            }
+        }
+    };
+
+    // ⭐ No padding. The hardware path needs two pad terms because its
+    // box has to win a depth comparison against the very surface it
+    // bounds; here a tie answers visible by construction (see
+    // MaskedDepth::testRect) and the block floor is already a
+    // conservative under-estimate of what is really there. Padding on
+    // top of that would only cost culling.
+    std::vector<int> &descend = descendstack;
+    descend.clear();
+    descend.push_back(root);
+    while (!descend.empty()) {
+        const int node = descend.back();
+        descend.pop_back();
+        const ProxyNode &n = nodes[size_t(node)];
+        ++framestats.nodesVisited;
+
+        const BoxSight sight = sightBounds(n.contentMin, n.contentMax, view,
+                                           proj, viewportHeightPx);
+        if (sight.what == BoxSight::Offscreen) {
+            // Left to the frustum mask the renderer already computed;
+            // counted here only so the readout can separate what
+            // occlusion contributed from what the frustum did.
+            ++framestats.nodesOffscreen;
+            framestats.offscreenInstances += n.subtreeCount;
+            continue;
+        }
+
+        const OccludeAnswer answer =
+                buffer.testBox(n.contentMin, n.contentMax);
+        if (answer == OccludeAnswer::Offscreen) {
+            ++framestats.nodesOffscreen;
+            framestats.offscreenInstances += n.subtreeCount;
+            continue;
+        }
+        ++framestats.nodesTested;
+        if (answer == OccludeAnswer::Occluded) {
+            if (node == root) {
+                // Refused, not acted on: every occluder in the buffer is
+                // inside this box, so its nearest corner stands in front
+                // of all of them and it cannot be hidden by them. Acting
+                // would blank the model; counting it makes the symptom
+                // visible instead.
+                ++framestats.rootRefused;
+            }
+            else {
+                markSubtree(node);
+                framestats.hiddenInstances += n.subtreeCount;
+                ++framestats.nodesHidden;
+                continue;
+            }
+        }
+
+        framestats.drawnInstances += n.residentCount;
+        for (int c : n.child) {
+            if (c != kNoProxyNode)
+                descend.push_back(c);
+        }
+    }
+    framestats.nearExempt = buffer.stats().queriesNearPlane;
+    framestats.walkMs = millisSince(t0);
 }
 
 // ⚠️ Deliberately scalar. The layout is the SIMD one — 8x4 blocks whose

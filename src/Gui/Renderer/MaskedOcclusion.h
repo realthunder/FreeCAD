@@ -80,8 +80,10 @@
 /// measured to be the bottleneck.
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
+#include "ProxyHierarchy.h"
 #include "Renderer.h"
 
 namespace Render {
@@ -177,6 +179,13 @@ public:
                    const uint32_t *indices, size_t indexCount,
                    const float *model = nullptr);
 
+    /// The same, for the signed indices a MeshData carries. A negative
+    /// index is not dereferenced — it fails the same bounds check an
+    /// out-of-range unsigned one does.
+    void rasterize(const float *positions, size_t stride, size_t vertexCount,
+                   const int32_t *indices, size_t indexCount,
+                   const float *model = nullptr);
+
     /// The same, for an unindexed triangle list.
     void rasterize(const float *positions, size_t stride, size_t vertexCount,
                    const float *model = nullptr);
@@ -264,6 +273,133 @@ private:
     bool orthographic = false;
     float viewproj[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     mutable MaskedOcclusionStats framestats;
+};
+
+// ---------------------------------------------------------------------
+// Using it: choosing occluders, and the walk that spends them
+// ---------------------------------------------------------------------
+
+/// What the occluder pass is allowed to cost, and how it spends it.
+struct MaskedCullConfig {
+    /// Buffer resolution as a divisor of the viewport.
+    ///
+    /// ⚠️⚠️ **Above 1 this can over-cull, and over-culling is the bug
+    /// this whole mechanism exists to remove.** A coarse pixel is marked
+    /// covered when the occluder reaches its centre, but it stands for
+    /// several real pixels, and the ones the occluder missed are then
+    /// claimed too. The literature runs at reduced resolution and
+    /// accepts it; this workstream has spent three sections on deleted
+    /// geometry, so the default is 1 and anything else is a measurement,
+    /// not a setting. Correct reduction needs coverage sampled over the
+    /// coarse pixel's whole footprint rather than at its centre, which
+    /// is not built.
+    ///
+    /// The memory argument for reducing is weak anyway: a full 1863x1064
+    /// buffer is 233x266 blocks at 12 bytes, about 744 KB.
+    int resolutionDivisor = 1;
+    /// Triangles rasterized per frame, at most. The budget is spent
+    /// largest-on-screen first, so what it drops is what occludes least.
+    uint32_t triangleBudget = 250000;
+    /// A draw whose projected bounding-box diagonal is under this many
+    /// pixels is not worth rasterizing: it can hide almost nothing, and
+    /// the budget it spends is taken from something that could.
+    float minOccluderPx = 24.0f;
+    /// How many draws may be considered at all, after sorting.
+    uint32_t maxOccluders = 8192;
+
+    bool operator==(const MaskedCullConfig &o) const
+    {
+        return resolutionDivisor == o.resolutionDivisor
+                && triangleBudget == o.triangleBudget
+                && minOccluderPx == o.minOccluderPx
+                && maxOccluders == o.maxOccluders;
+    }
+    bool operator!=(const MaskedCullConfig &o) const { return !(*this == o); }
+};
+
+/// What one frame did, reported rather than inferred.
+struct MaskedCullStats {
+    uint32_t occluderCandidates = 0;  ///< draws that could have occluded
+    uint32_t occluderDraws = 0;       ///< draws actually rasterized
+    uint32_t occluderTriangles = 0;
+    /// ⭐ Candidates the triangle budget refused. A silent cap reads as
+    /// "everything was rasterized" when it was not, and the difference
+    /// is the difference between "the scene does not occlude" and "we
+    /// did not look".
+    uint32_t occludersDropped = 0;
+
+    uint32_t nodesVisited = 0;
+    uint32_t nodesOffscreen = 0;
+    uint32_t nodesTested = 0;
+    uint32_t nodesHidden = 0;
+    uint32_t nearExempt = 0;
+    /// ⭐ The root answered hidden. Structurally impossible — its box
+    /// contains every occluder, so its nearest corner is in front of all
+    /// of them — which makes any non-zero count a report that the test
+    /// is broken rather than a scene that is entirely hidden. Counted
+    /// and refused, never acted on.
+    uint32_t rootRefused = 0;
+
+    uint32_t hiddenInstances = 0;
+    uint32_t offscreenInstances = 0;
+    uint32_t drawnInstances = 0;
+
+    float rasterMs = 0.0f;
+    float walkMs = 0.0f;
+};
+
+/// The occluder pass and the walk that spends it.
+///
+/// ⭐⭐ **There is no state between frames and no policy layer.** No
+/// verdict is stored, so nothing can go stale; no test is pending, so
+/// nothing can be starved; no answer is confirmed over several frames,
+/// because the answer is taken and used inside one walk. The
+/// hidden-streak counter, the visible time-to-live, the query pool, the
+/// lease expiry and the starvation fail-safe that the hardware path
+/// needs are all consequences of the answer arriving a frame late, and
+/// none of them have anything to answer for here. That deletion is most
+/// of what this change is worth (docs/FarFieldProxies.md §12.12).
+///
+/// ⚠️ It is also why the two paths cannot share `OcclusionCuller`: its
+/// per-node state exists to survive latency, and carrying it here would
+/// re-introduce exactly the coupling being removed.
+class RendererExport MaskedOccluderPass
+{
+public:
+    void configure(const MaskedCullConfig &c) { conf = c; }
+    const MaskedCullConfig &config() const { return conf; }
+
+    /// Rasterize this camera's occluders. Sizes and clears the buffer,
+    /// so it is the only call that has to happen before the walk.
+    void build(const DrawCallList &draws, const float *view,
+               const float *proj, bool homogeneousDepth, int viewportW,
+               int viewportH);
+
+    /// Walk \a index and set \a cullMask for every draw row that cannot
+    /// have reached the screen.
+    ///
+    /// \a cullMask is indexed by `DrawCall` row and is only ever *set*,
+    /// never cleared, so it composes with the frustum mask the renderer
+    /// already computed. \a cullOwner, when given, receives the node
+    /// whose verdict cut each row — the join that makes an over-culled
+    /// draw traceable to the test that deleted it.
+    void cull(const ProxyHierarchy &index, const float *view,
+              const float *proj, float viewportHeightPx,
+              std::vector<uint8_t> &cullMask,
+              std::vector<int32_t> *cullOwner = nullptr);
+
+    const MaskedDepth &depth() const { return buffer; }
+    MaskedDepth &depth() { return buffer; }
+    const MaskedCullStats &lastFrame() const { return framestats; }
+
+private:
+    MaskedDepth buffer;
+    MaskedCullConfig conf;
+    MaskedCullStats framestats;
+    /// Scratch kept across frames so that a frame allocates nothing.
+    std::vector<std::pair<float, uint32_t>> ranking;
+    std::vector<int> walkstack;
+    std::vector<int> descendstack;
 };
 
 }  // namespace Render

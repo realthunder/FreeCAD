@@ -25,6 +25,8 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdint>
+#include <deque>
+#include <memory>
 #include <random>
 #include <vector>
 
@@ -766,6 +768,291 @@ TEST(MaskedOcclusion, IndexedAndUnindexedAgree)
         for (int x = 0; x < a.width(); ++x)
             ASSERT_EQ(a.pixelDepth(x, y), b.pixelDepth(x, y))
                     << "at (" << x << "," << y << ")";
+}
+
+// -----------------------------------------------------------------
+// The pass: choosing occluders, and the walk that spends them
+// -----------------------------------------------------------------
+
+namespace
+{
+
+/// A draw list with real triangle meshes behind it. The meshes are held
+/// in deques so that the pointers a MeshData carries stay valid as the
+/// scene grows.
+struct SceneBuilder {
+    std::deque<std::vector<float>> positions;
+    std::deque<std::vector<int32_t>> indices;
+    DrawCallList draws;
+
+    DrawCall &add(std::vector<float> pos, std::vector<int32_t> idx,
+                  uint64_t key)
+    {
+        positions.push_back(std::move(pos));
+        indices.push_back(std::move(idx));
+        auto mesh = std::make_shared<MeshData>();
+        mesh->numVertices = int(positions.back().size() / 3);
+        mesh->positions = positions.back().data();
+        mesh->triangleIndices = indices.back().data();
+        mesh->numTriangleIndices = int(indices.back().size());
+        DrawCall d;
+        d.mesh = mesh;
+        d.objectKey = key;
+        for (int k = 0; k < 3; ++k) {
+            d.bboxMin[k] = FLT_MAX;
+            d.bboxMax[k] = -FLT_MAX;
+        }
+        for (size_t v = 0; v + 2 < positions.back().size(); v += 3)
+            for (int k = 0; k < 3; ++k) {
+                d.bboxMin[k] = std::min(d.bboxMin[k], positions.back()[v + k]);
+                d.bboxMax[k] = std::max(d.bboxMax[k], positions.back()[v + k]);
+            }
+        draws.push_back(d);
+        return draws.back();
+    }
+
+    /// An axis-aligned wall on the plane z, as two triangles.
+    DrawCall &addWall(float x0, float y0, float x1, float y1, float z,
+                      uint64_t key)
+    {
+        return add({x0, y0, z, x1, y0, z, x1, y1, z, x0, y1, z},
+                   {0, 1, 2, 0, 2, 3}, key);
+    }
+
+    /// A closed box, as twelve triangles — real geometry rather than a
+    /// bounding volume, which is what an occluder has to be.
+    DrawCall &addBox(float cx, float cy, float cz, float half, uint64_t key)
+    {
+        std::vector<float> p;
+        for (int c = 0; c < 8; ++c) {
+            p.push_back(cx + ((c & 1) ? half : -half));
+            p.push_back(cy + ((c & 2) ? half : -half));
+            p.push_back(cz + ((c & 4) ? half : -half));
+        }
+        const unsigned short *bi = occlusionBoxIndices();
+        std::vector<int32_t> idx;
+        for (int i = 0; i < 36; ++i)
+            idx.push_back(int32_t(bi[i]));
+        return add(std::move(p), std::move(idx), key);
+    }
+};
+
+/// The pass under a camera, with the hierarchy built from the same draw
+/// list. Returns the mask.
+///
+/// ⚠️ `maxPerCell` is 1 rather than the default 32 throughout these
+/// tests. Culling is per *node*, so a scene small enough to fit one cell
+/// has exactly one node — the root — and the root can never be hidden by
+/// its own contents. That is correct behaviour and it is also a test
+/// that proves nothing, so the partition is forced to subdivide. The
+/// benchmark scenes have thousands of instances and subdivide on their
+/// own.
+std::vector<uint8_t> runPass(MaskedOccluderPass &pass, SceneBuilder &scene,
+                             const float *V, const float *P, int w, int h,
+                             ProxyHierarchy &index,
+                             std::vector<int32_t> *owner = nullptr)
+{
+    std::vector<ProxyInstance> inst;
+    proxyInstances(scene.draws, inst);
+    ProxyParams params;
+    params.maxPerCell = 1;
+    index.build(inst, params);
+    pass.build(scene.draws, V, P, true, w, h);
+    std::vector<uint8_t> mask(scene.draws.size(), 0);
+    pass.cull(index, V, P, float(h), mask, owner);
+    return mask;
+}
+
+}  // namespace
+
+TEST(MaskedOcclusionPass, HidesWhatTheWallCovers)
+{
+    float V[16], P[16];
+    viewAt(V, 40.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    SceneBuilder scene;
+    scene.addWall(-25.0f, -25.0f, 25.0f, 25.0f, 0.0f, 1);  // draw 0
+    // Behind the wall, and small enough that the wall covers them whole.
+    for (int i = 0; i < 8; ++i)
+        scene.addBox(-8.0f + 2.0f * i, 0.0f, -20.0f, 0.8f, 10 + uint64_t(i));
+    // In front of the wall.
+    const size_t front = scene.draws.size();
+    scene.addBox(0.0f, 0.0f, 20.0f, 1.0f, 99);
+
+    MaskedOccluderPass pass;
+    ProxyHierarchy index;
+    std::vector<int32_t> owner;
+    const auto mask = runPass(pass, scene, V, P, 512, 512, index, &owner);
+
+    EXPECT_EQ(0u, pass.lastFrame().rootRefused);
+    // The wall, and the box in front of it, which is opaque geometry and
+    // occludes whatever is behind it just as legitimately.
+    EXPECT_GE(pass.lastFrame().occluderDraws, 1u) << "the wall was not an occluder";
+    EXPECT_EQ(0, mask[0]) << "the wall culled itself";
+    EXPECT_EQ(0, mask[front]) << "geometry in front of the wall was culled";
+    int hidden = 0;
+    for (size_t i = 1; i < front; ++i)
+        hidden += mask[i] ? 1 : 0;
+    EXPECT_EQ(int(front - 1), hidden)
+            << "the wall did not hide everything behind it";
+    EXPECT_GT(pass.lastFrame().hiddenInstances, 0u);
+    // The verdict is traceable to the node that took it.
+    for (size_t i = 1; i < front; ++i)
+        EXPECT_GE(owner[i], 0) << "row " << i << " was cut by nobody";
+}
+
+TEST(MaskedOcclusionPass, NothingIsHiddenWithoutAnOccluder)
+{
+    // The same scene with the wall removed must cull nothing at all.
+    // ⭐ This is the control the image comparisons of §12.5 lacked: a
+    // mechanism that culls a fixed set regardless of the scene looks
+    // identical to one that is working, until it is asked about a scene
+    // with nothing to hide behind.
+    float V[16], P[16];
+    viewAt(V, 40.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    SceneBuilder scene;
+    for (int i = 0; i < 8; ++i)
+        scene.addBox(-8.0f + 2.0f * i, 0.0f, -20.0f, 0.8f, 10 + uint64_t(i));
+
+    MaskedOccluderPass pass;
+    ProxyHierarchy index;
+    const auto mask = runPass(pass, scene, V, P, 512, 512, index);
+    for (size_t i = 0; i < mask.size(); ++i)
+        EXPECT_EQ(0, mask[i]) << "row " << i << " was culled by nothing";
+    EXPECT_EQ(0u, pass.lastFrame().hiddenInstances);
+}
+
+TEST(MaskedOcclusionPass, OnlyDepthWritingOpaqueTrianglesOcclude)
+{
+    // A surface that does not write depth cannot hide anything, and
+    // rasterizing it would hide geometry the eye can plainly see through.
+    float V[16], P[16];
+    viewAt(V, 40.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    for (int variant = 0; variant < 4; ++variant) {
+        SceneBuilder scene;
+        DrawCall &wall = scene.addWall(-25.0f, -25.0f, 25.0f, 25.0f, 0.0f, 1);
+        switch (variant) {
+            case 0: wall.material.transparent = true; break;
+            case 1: wall.material.ontop = true; break;
+            case 2: wall.material.depthwrite = false; break;
+            case 3: wall.material.type = Material::Line; break;
+        }
+        scene.addBox(0.0f, 0.0f, -20.0f, 1.0f, 10);
+
+        MaskedOccluderPass pass;
+        ProxyHierarchy index;
+        const auto mask = runPass(pass, scene, V, P, 256, 256, index);
+        EXPECT_EQ(0u, pass.lastFrame().occluderDraws)
+                << "variant " << variant << " was rasterized as an occluder";
+        EXPECT_EQ(0, mask[1]) << "variant " << variant << " hid something";
+    }
+}
+
+TEST(MaskedOcclusionPass, ATriangleBudgetUnderCullsAndSaysSo)
+{
+    // ⭐ A cap that drops occluders must be reported. A silent one reads
+    // as "this scene does not occlude" when what happened is "we did not
+    // look" — the shape of mistake §12.10 had to correct twice.
+    float V[16], P[16];
+    viewAt(V, 40.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    SceneBuilder scene;
+    scene.addWall(-25.0f, -25.0f, 25.0f, 25.0f, 0.0f, 1);
+    scene.addBox(0.0f, 0.0f, -20.0f, 1.0f, 10);
+
+    MaskedCullConfig conf;
+    conf.triangleBudget = 1;  // the wall is two triangles
+    MaskedOccluderPass pass;
+    pass.configure(conf);
+    ProxyHierarchy index;
+    const auto mask = runPass(pass, scene, V, P, 256, 256, index);
+
+    EXPECT_GT(pass.lastFrame().occludersDropped, 0u);
+    EXPECT_EQ(0u, pass.lastFrame().occluderDraws);
+    for (size_t i = 0; i < mask.size(); ++i)
+        EXPECT_EQ(0, mask[i]) << "row " << i << " culled with no occluders";
+}
+
+TEST(MaskedOcclusionPass, ANodeIsNotHiddenByItsOwnGeometry)
+{
+    // ⭐⭐ The failure this whole mechanism replaces. On the hardware
+    // path a node was re-tested after the pass that wrote its own
+    // contents, and its bounding box lost the depth comparison against
+    // itself. Here the wall is its own occluder and must survive being
+    // asked about.
+    float V[16], P[16];
+    viewAt(V, 40.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    SceneBuilder scene;
+    for (int i = 0; i < 24; ++i) {
+        const float x = -20.0f + 1.7f * i;
+        scene.addWall(x, -25.0f, x + 1.7f, 25.0f, 0.0f, uint64_t(i));
+    }
+
+    MaskedOccluderPass pass;
+    ProxyHierarchy index;
+    const auto mask = runPass(pass, scene, V, P, 512, 512, index);
+    for (size_t i = 0; i < mask.size(); ++i)
+        EXPECT_EQ(0, mask[i]) << "row " << i << " was hidden by itself";
+    EXPECT_EQ(0u, pass.lastFrame().rootRefused);
+}
+
+TEST(MaskedOcclusionPass, TheCameraInsideTheModelStillDrawsIt)
+{
+    // A node the camera stands inside cannot be reduced to a screen
+    // rect. It must be drawn and counted as exempt, not culled — the
+    // trap that once reported an entire model hidden.
+    float V[16], P[16];
+    viewAt(V, 0.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    SceneBuilder scene;
+    scene.addBox(0.0f, 0.0f, 0.0f, 30.0f, 1);   // the camera is inside it
+    scene.addBox(0.0f, 0.0f, -20.0f, 1.0f, 2);
+
+    MaskedOccluderPass pass;
+    ProxyHierarchy index;
+    const auto mask = runPass(pass, scene, V, P, 256, 256, index);
+    EXPECT_EQ(0, mask[0]);
+    EXPECT_GT(pass.lastFrame().nearExempt, 0u);
+    EXPECT_EQ(0u, pass.lastFrame().rootRefused);
+}
+
+TEST(MaskedOcclusionPass, TheMaskIsAdditiveAndTheOwnerIsNot)
+{
+    // The mask composes with the frustum's rejections, so it is only
+    // ever set. The attribution is the opposite: a stale owner names a
+    // verdict that may since have been withdrawn, so it is cleared every
+    // frame.
+    float V[16], P[16];
+    viewAt(V, 40.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    SceneBuilder scene;
+    scene.addWall(-25.0f, -25.0f, 25.0f, 25.0f, 0.0f, 1);
+    scene.addBox(0.0f, 0.0f, -20.0f, 1.0f, 10);
+
+    std::vector<ProxyInstance> inst;
+    proxyInstances(scene.draws, inst);
+    ProxyHierarchy index;
+    index.build(inst, ProxyParams());
+
+    MaskedOccluderPass pass;
+    pass.build(scene.draws, V, P, true, 256, 256);
+    std::vector<uint8_t> mask(scene.draws.size(), 0);
+    mask[0] = 1;  // as if the frustum had rejected the wall
+    std::vector<int32_t> owner(scene.draws.size(), 7);
+    pass.cull(index, V, P, 256.0f, mask, &owner);
+
+    EXPECT_EQ(1, mask[0]) << "the culler cleared somebody else's rejection";
+    EXPECT_EQ(-1, owner[0]) << "a stale attribution survived the frame";
 }
 
 TEST(MaskedOcclusion, OutOfRangeIndicesAreCulledNotDereferenced)
