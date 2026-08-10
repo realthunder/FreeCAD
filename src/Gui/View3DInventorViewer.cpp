@@ -2217,7 +2217,23 @@ void View3DInventorViewer::applyOverrideMode()
     else if (SoFCUnifiedSelection::DisplayModeTessellation == mode) {
         this->shading = true;
         this->selectionRoot->overrideMode = SoFCUnifiedSelection::DisplayModeTessellation;
-        this->getSoRenderManager()->setRenderMode(SoRenderManager::HIDDEN_LINE);
+        // Coin's HIDDEN_LINE opens with clearBuffers(TRUE, TRUE) -- a
+        // colour+depth clear of the whole framebuffer, taken before it
+        // fills the scene depth-only. On the plain path that is exactly
+        // right. On the composited path it runs *after* the backend has
+        // rendered its frame into the same buffer, ignores the
+        // clearwindow/clearzbuffer arguments it was passed, and throws
+        // that frame away; and since the backend owns the geometry,
+        // SoFCRenderer emits none to put back. The window is left
+        // showing the clear colour.
+        //
+        // The backend implements this style itself -- faces filled in
+        // the background colour to occlude, then the triangle edges as
+        // geometry (BGFXView::submitTessellation) -- so it wants the
+        // plain mode and no second opinion from Coin.
+        this->getSoRenderManager()->setRenderMode(
+                _pimpl->renderer ? SoRenderManager::AS_IS
+                                 : SoRenderManager::HIDDEN_LINE);
     }
     else if (SoFCUnifiedSelection::DisplayModeHiddenLine == mode) {
         _pimpl->initHiddenLineConfig(true);
@@ -4138,6 +4154,16 @@ void View3DInventorViewer::setRendererType(const std::string &type)
     // The Coin shadow ground is suppressed while a backend is active
     // (it draws its own); re-evaluate if the Shadow style is on.
     _pimpl->updateShadowGroundSwitch();
+    // Likewise the Coin render mode, which Tessellation picks differently
+    // with a backend present: it is sticky, so switching the backend on
+    // or off under that style already applied has to re-decide it. Only
+    // Tessellation -- applyOverrideMode() would re-enter activateShadow()
+    // for the Shadow style, which is neither cheap nor wanted here.
+    if (SoFCUnifiedSelection::DisplayModeTessellation == overrideMode.c_str()) {
+        getSoRenderManager()->setRenderMode(
+                _pimpl->renderer ? SoRenderManager::AS_IS
+                                 : SoRenderManager::HIDDEN_LINE);
+    }
 }
 
 void View3DInventorViewer::pickAndSelect(const SbVec3f &origin,
