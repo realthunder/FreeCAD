@@ -74,6 +74,70 @@ the standalone tier — is missing, `BGFXView::init()` reports the pack
 and tears the view back down, and every frame after that declines
 until `reloadShaders()` moves the shader generation.
 
+### Startup and backend lifetime
+
+The backend used to be built by the first 3D view, which put its whole
+cost (GL context, `bgfx::init`, device objects, every shader program) in
+front of the user's first **New Document**. It now comes up during the
+splash instead: `Gui::postMainWindowSetup` calls `RendererLib::warmup()`
+just before `mw.stopSplasher()`, gated on render-cache mode 3 and a
+non-empty renderer `Type`. `warmup()` is a default no-op on
+`RendererLib`, so a backend that has nothing to warm costs nothing.
+
+The bgfx implementation warms two distinct things, and both are needed:
+
+1. `prepare()`: the offscreen surface, the GL context and `bgfx::init`.
+2. The **programs**, by building a view (its own `init()`) and pumping
+   one `bgfx::frame()`. WARNING: creating a program is nearly free on
+   the API side; bgfx defers the real work to the frame submit, so
+   warming without a `bgfx::frame()` moves nothing.
+
+WARNING: **the warm view is kept alive for the life of the process.**
+`removeView()` of the last view calls `shutdown()`, so releasing the
+warm view tears the device back down and warms nothing, and frees the
+context out from under the `doneCurrent()` that follows, which
+segfaults in the startup path. The consequence is deliberate and worth
+knowing: **bgfx now stays up for the whole session** rather than going
+away when the last 3D view closes.
+
+WARNING: **Qt 6.4+ destroys and recreates a top-level's native window
+the first time a `QOpenGLWidget` appears under it.** The surface type
+changes from `RasterSurface` to `OpenGLSurface`
+(doc.qt.io/qt-6/qopenglwidget.html, "This behavior is new in Qt 6.4").
+In FreeCAD the 3D view is that first widget, so the *first* New Document
+made the main window vanish, taskbar entry included, and come back.
+The fix is one hidden 1x1 `QOpenGLWidget` named `GLSurfaceWarmup`,
+created in the `MainWindow` constructor where no native window exists
+yet; the renderer warm-up reuses it for its pixel format. It must be
+**kept**: constructing and destroying it takes the surface state back
+with it and the vanish returns unchanged.
+
+Measured with `fcad-probes/newdoc_delay_probe.py` (xvfb/llvmpipe debug
+build), seconds to the first three New Documents:
+
+| | doc 1 | doc 2 | doc 3 |
+| --- | --- | --- | --- |
+| before | 1.406 | 0.223 | 0.284 |
+| + `GLSurfaceWarmup` | 1.049 | 0.185 | 0.237 |
+| + device warm-up | 0.735 | 0.173 | 0.202 |
+| + programs (shipped) | **0.236** | 0.213 | 0.208 |
+
+The first document now costs what every later one does. The warm-up
+itself is 458 ms there (context 21, device 141, programs 5, flush 292)
+and **1015 ms on the real GPU** (Mesa d3d12 / RTX 3070 Ti: context 73,
+device 373, programs 6, flush 564), and 1102 ms with a cold driver
+shader cache, so the first launch after a build pays more. It is spent
+under the splash, which was already on screen for longer than that.
+
+WARNING: `getView()` calls `prepare()` again and `prepare()` zeroes its own
+timing counters on entry, so read them *before* `getView()` or the
+context and device phases both report 0.
+
+The attribution that settled where the time went: run the same probe
+with `Type=Default`. The plain-GL path was flat (0.103 / 0.092 / 0.088),
+which rules out document, `Gui::Document` and 3D-view construction and
+leaves the backend.
+
 ### Tiers
 
 The engine is one private header, `BGFXRendererP.h` (class definitions,
