@@ -485,6 +485,30 @@ struct MaskedCullStats {
 
     float rasterMs = 0.0f;
     float walkMs = 0.0f;
+
+    /// KEY: Where `rasterMs` went, split so that it cannot be attributed by
+    /// arithmetic. Two sessions running have improved a component of this
+    /// pass and found the wall clock barely moved -- the draw-submission
+    /// saving priced at 10-12 ms that measured 4.9 (section 12.12), the
+    /// vector pre-pass that took 4x off the transform and 0.5 ms off the
+    /// frame (section 12.14) -- and in both cases the thing that was
+    /// missing was a *measurement of the other terms*, not a better
+    /// estimate of the one being changed. These are that measurement.
+    ///
+    /// `rasterMs` is the sum of `selectMs`, `shardMs` and `mergeMs` plus
+    /// the little left over; the `worst*` fields are the largest single
+    /// worker's share of a phase, so the difference between a phase and
+    /// its worst worker is what the threading cost rather than the work.
+    float selectMs = 0.0f;   ///< sizing, clearing, ranking, job building
+    float shardMs = 0.0f;    ///< phase 1 wall: clear + rasterize on workers
+    float mergeMs = 0.0f;    ///< phase 2 wall: folding the shards together
+    float worstClearMs = 0.0f;   ///< the slowest worker's shard clear
+    float worstRasterMs = 0.0f;  ///< the slowest worker's rasterization
+    float worstMergeMs = 0.0f;   ///< the slowest worker's merge range
+    /// Every worker's rasterization added up. Against `worstRasterMs`
+    /// this is the load balance; against `shardMs` times the worker
+    /// count it is how much of the machine the phase actually used.
+    float sumRasterMs = 0.0f;
 };
 
 /// The occluder pass and the walk that spends it.
@@ -549,6 +573,15 @@ private:
     /// One buffer per worker, kept across frames: a 744 KB allocation
     /// per worker per frame would cost more than the rasterization.
     std::vector<MaskedDepth> shards;
+    /// What each worker spent, written once per phase by the worker that
+    /// owns the entry and read after the join. Separated from the shard
+    /// so that timing one costs nothing when nobody reads it.
+    struct WorkerTime {
+        float clearMs;
+        float rasterMs;
+        float mergeMs;
+    };
+    std::vector<WorkerTime> times;
     std::vector<int> walkstack;
     std::vector<int> descendstack;
 };

@@ -1027,7 +1027,26 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
     framestats = MaskedCullStats();
 
     const int div = std::max(1, conf.resolutionDivisor);
-    buffer.resize(viewportW / div, viewportH / div);
+    // WARNING: Only when the size actually changed -- the same trap the shard
+    // loop below documents, which this line was falling into. resize()
+    // fills every block and then calls clear(), which fills them again,
+    // so an unconditional resize is *two* passes over 744 KB before a
+    // triangle is looked at, every frame, for a viewport that has not
+    // moved. The clear below is the one that has to happen.
+    //
+    // WARNING: Against the *rounded* size, not the viewport. resize() rounds
+    // up to whole blocks, so a 1863-pixel viewport gives a 1864-pixel
+    // buffer -- and comparing against 1863 would find them different
+    // every frame and skip nothing, which is the shape of a cache that
+    // never hits.
+    const int wantW = viewportW / div;
+    const int wantH = viewportH / div;
+    const auto roundUp = [](int v, int block) {
+        return v > 0 ? (v + block - 1) / block * block : 0;
+    };
+    if (buffer.width() != roundUp(wantW, MaskedDepth::BlockW)
+        || buffer.height() != roundUp(wantH, MaskedDepth::BlockH))
+        buffer.resize(wantW, wantH);
     if (buffer.empty())
         return;
     buffer.clear();
@@ -1125,6 +1144,12 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
         framestats.occluderTriangles += tris;
     }
 
+    // Everything above is the same work whatever the triangles do: sizing
+    // the buffer, clearing it, projecting every candidate's bounds,
+    // sorting them and cutting the budget. Timed separately because it is
+    // the one term that a change to the rasterizer cannot move.
+    framestats.selectMs = millisSince(t0);
+
     auto runJob = [&draws](MaskedDepth &into, const OccluderJob &j) {
         const DrawCall &d = draws[j.draw];
         into.rasterize(d.mesh->positions, 0, size_t(d.mesh->numVertices),
@@ -1139,8 +1164,17 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
     framestats.occluderThreads = workers;
 
     if (workers == 1) {
+        const auto t1 = std::chrono::steady_clock::now();
         for (const OccluderJob &j : jobs)
             runJob(buffer, j);
+        // One worker rasterizes straight into the shared buffer, so there
+        // is no shard to clear and nothing to merge: the whole of phase
+        // one is the rasterization, and phase two does not exist. That is
+        // what makes the one-worker row the honest measure of the
+        // triangle work itself.
+        framestats.shardMs = millisSince(t1);
+        framestats.worstRasterMs = framestats.shardMs;
+        framestats.sumRasterMs = framestats.shardMs;
         framestats.rasterMs = millisSince(t0);
         return;
     }
@@ -1174,33 +1208,64 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
     std::vector<std::thread> pool;
     pool.reserve(workers - 1);
     const size_t nblocks = buffer.blockCount();
+    times.assign(workers, WorkerTime{0.0f, 0.0f, 0.0f});
     auto work = [&](uint32_t w) {
         MaskedDepth &shard = shards[w];
+        const auto tc = std::chrono::steady_clock::now();
         shard.clear();  // parallel, for the same reason as the merge
         shard.resetStats();
+        const auto tr = std::chrono::steady_clock::now();
+        times[w].clearMs =
+                float(std::chrono::duration<double, std::milli>(tr - tc).count());
         for (size_t i = w; i < jobs.size(); i += workers)
             runJob(shard, jobs[i]);
+        // Written once, by the worker that owns the entry: three clock
+        // reads per worker per frame, and nothing reads these until the
+        // join.
+        times[w].rasterMs = millisSince(tr);
     };
     auto mergeRange = [&](uint32_t w) {
+        const auto tm = std::chrono::steady_clock::now();
         const size_t lo = nblocks * w / workers;
         const size_t hi = nblocks * (w + 1) / workers;
         for (uint32_t s = 0; s < workers; ++s)
             buffer.mergeBlocks(shards[s], lo, hi);
+        times[w].mergeMs = millisSince(tm);
     };
     auto both = [&](uint32_t w) { work(w); };
 
+    const auto tphase1 = std::chrono::steady_clock::now();
     for (uint32_t w = 1; w < workers; ++w)
         pool.emplace_back(both, w);
     both(0);
     for (std::thread &t : pool)
         t.join();
     pool.clear();
+    framestats.shardMs = millisSince(tphase1);
 
+    const auto tphase2 = std::chrono::steady_clock::now();
     for (uint32_t w = 1; w < workers; ++w)
         pool.emplace_back(mergeRange, w);
     mergeRange(0);
     for (std::thread &t : pool)
         t.join();
+    framestats.mergeMs = millisSince(tphase2);
+
+    // KEY: The worst worker, not the average. A phase costs what its
+    // slowest thread costs, and the gap between a phase's wall clock and
+    // its slowest worker is what the threading itself took -- spawning
+    // and joining 26 threads, and waiting for the scheduler to run them.
+    // Reported rather than inferred, because that gap is precisely the
+    // quantity two previous estimates in this section got wrong.
+    for (uint32_t w = 0; w < workers; ++w) {
+        framestats.worstClearMs =
+                std::max(framestats.worstClearMs, times[w].clearMs);
+        framestats.worstRasterMs =
+                std::max(framestats.worstRasterMs, times[w].rasterMs);
+        framestats.worstMergeMs =
+                std::max(framestats.worstMergeMs, times[w].mergeMs);
+        framestats.sumRasterMs += times[w].rasterMs;
+    }
     // Counters last, on one thread: two workers incrementing one counter
     // is a data race, and these are reported rather than acted on.
     for (uint32_t w = 0; w < workers; ++w)

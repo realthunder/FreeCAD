@@ -1355,6 +1355,61 @@ TEST(MaskedOcclusionPass, TheCameraInsideTheModelStillDrawsIt)
     EXPECT_EQ(0u, pass.lastFrame().rootRefused);
 }
 
+TEST(MaskedOcclusionPass, ThePhaseBreakdownAccountsForTheWholePass)
+{
+    // KEY: Not a timing assertion -- those are flaky and would be testing
+    // the machine. This tests that the phases *account* for the pass:
+    // every term is a real elapsed interval, the parts fit inside the
+    // whole, and the worst worker fits inside its phase. That is what
+    // makes the breakdown usable as evidence, and section 12.15 exists
+    // because for two sessions the missing term was attributed by
+    // subtraction instead.
+    float V[16], P[16];
+    viewAt(V, 40.0f);
+    perspective(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    for (uint32_t threads : {1u, 4u}) {
+        SceneBuilder scene;
+        for (int i = 0; i < 16; ++i) {
+            const float x = -24.0f + 3.0f * i;
+            scene.addWall(x, -25.0f, x + 3.0f, 25.0f, -0.1f * i, uint64_t(i));
+        }
+        MaskedOccluderPass pass;
+        MaskedCullConfig c;
+        c.threads = threads;
+        pass.configure(c);
+        ProxyHierarchy index;
+        runPass(pass, scene, V, P, 512, 512, index);
+        const MaskedCullStats &s = pass.lastFrame();
+
+        EXPECT_EQ(threads, s.occluderThreads);
+        for (float t : {s.rasterMs, s.selectMs, s.shardMs, s.mergeMs,
+                        s.worstClearMs, s.worstRasterMs, s.worstMergeMs,
+                        s.sumRasterMs})
+            EXPECT_GE(t, 0.0f) << threads << " workers: a negative interval";
+
+        const float slack = 1e-3f;  // the clock is read between the phases
+        EXPECT_LE(s.selectMs + s.shardMs + s.mergeMs, s.rasterMs + slack)
+                << threads << " workers: the phases exceed the pass";
+        EXPECT_LE(s.worstClearMs + s.worstRasterMs, s.shardMs + slack)
+                << threads << " workers: a worker outlasted its own phase";
+        EXPECT_LE(s.worstMergeMs, s.mergeMs + slack);
+        EXPECT_LE(s.worstRasterMs, s.sumRasterMs + slack)
+                << "the worst worker is not part of the sum";
+        EXPECT_GT(s.rasterMs, 0.0f) << "the pass took no time at all";
+
+        if (threads == 1) {
+            // One worker rasterizes into the shared buffer: there is no
+            // shard to clear and nothing to merge, and saying so is what
+            // makes the one-worker row the honest measure of the
+            // triangle work.
+            EXPECT_EQ(0.0f, s.mergeMs);
+            EXPECT_EQ(0.0f, s.worstClearMs);
+            EXPECT_FLOAT_EQ(s.worstRasterMs, s.sumRasterMs);
+        }
+    }
+}
+
 TEST(MaskedOcclusionPass, WorkersNeverCullMoreThanOneThreadWould)
 {
     // KEY: The occluder pass splits its work across workers that each
