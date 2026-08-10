@@ -680,21 +680,49 @@ ActionGroup::~ActionGroup()
  * command is invoked) and follows it back through Action::actionChecked,
  * which is how a state set elsewhere reaches the menu.
  */
-/** Dismiss the popup chain a menu row belongs to.
+/** Dismiss the popup chain a menu row belongs to, the way Qt does it.
  *
  * Clicking a menu item closes the menu. A QWidgetAction's widget handles
  * its own mouse events, so QMenu never activates an action and never
  * hides -- the row runs its command and the popup just stands there.
- * Qt's own way out of this (QMenuPrivate::hideUpToMenuBar) is private,
- * so walk the parent chain and hide every menu in it: a submenu is
- * created with its parent menu as its parent, and a top-level popup with
- * the menu bar or the toolbar, so the chain ends by itself.
+ *
+ * ⚠️ Hiding the menus by hand is not enough, and what it misses is the
+ * rest of QMenuPrivate::hideUpToMenuBar: besides hiding the chain, that
+ * clears the menu bar's current action and leaves keyboard mode. Hide
+ * them by hand and the menu bar still believes its popup is up, so the
+ * next click on it is spent closing a menu that is already gone, and
+ * only the one after that opens anything. That was this function's
+ * first version, and it is the defect it was reported for.
+ *
+ * hideUpToMenuBar is private, but QMenu calls it itself for a press that
+ * lands on no action of its own -- so hand the popup one, out beyond its
+ * rect, and Qt runs its own teardown. The release follows so the menu's
+ * mouseDown is not left set. Should a future Qt stop answering that
+ * press, the hide is kept as a fallback: a menu that does not close is a
+ * worse failure than a menu bar that eats one click.
  */
 static void closeMenuChain(QWidget *widget)
 {
-    for (QWidget *w = widget; w; w = w->parentWidget()) {
-        if (auto menu = qobject_cast<QMenu*>(w))
-            menu->hide();
+    QMenu *menu = nullptr;
+    for (QWidget *w = widget; w && !menu; w = w->parentWidget())
+        menu = qobject_cast<QMenu*>(w);
+    if (!menu)
+        return;
+
+    const QPointF local(-100, -100);
+    const QPointF global(menu->mapToGlobal(local.toPoint()));
+    QMouseEvent press(QEvent::MouseButtonPress, local, global,
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, local, global,
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(menu, &press);
+    QApplication::sendEvent(menu, &release);
+
+    for (QWidget *w = menu; w; w = w->parentWidget()) {
+        if (auto m = qobject_cast<QMenu*>(w)) {
+            if (m->isVisible())
+                m->hide();
+        }
     }
 }
 
@@ -741,8 +769,18 @@ static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions,
         // already run by the time the menu goes. Re-clicking the row
         // that is already checked emits no toggled at all and still
         // dismisses, which is what a menu item does.
-        QObject::connect(button, &QAbstractButton::clicked, menu,
-                         [button]() { closeMenuChain(button); });
+        //
+        // ⚠️ And deferred to the next turn of the event loop, not done
+        // here. A popup holds a mouse grab, and hiding it from inside
+        // the click it is still delivering unwinds that grab halfway:
+        // the press/release pair never completes, and afterwards the
+        // menu misbehaves -- the radio rows stopped responding at all,
+        // while the checkbox and slider rows, which nothing hid, were
+        // fine. Invisible to QTest, which posts events straight to the
+        // widget and never takes the grab; it wants a real pointer.
+        QObject::connect(button, &QAbstractButton::clicked, menu, [button]() {
+            QTimer::singleShot(0, button, [button]() { closeMenuChain(button); });
+        });
         // The row is a widget action now, so the command's own action is
         // no longer in any menu -- and an action that belongs to no
         // widget never receives QEvent::Shortcut, which would leave the
