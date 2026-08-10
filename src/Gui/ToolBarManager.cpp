@@ -1249,6 +1249,135 @@ void ToolBarManager::relocateMenuBarAreas()
     }
 }
 
+std::vector<QToolBar*> ToolBarManager::firstToolBarRow()
+{
+    // QMainWindow does not hand out its dock rows, but it has laid them out by
+    // the time anyone asks: the first row is the smallest y, left to right.
+    auto mw = getMainWindow();
+    std::vector<QToolBar*> docked;
+    for (auto &v : toolBars()) {
+        QToolBar *toolbar = v.second;
+        if (toolbar && toolbar->isVisible() && toolbar->parentWidget() == mw
+                && mw->toolBarArea(toolbar) == Qt::TopToolBarArea) {
+            docked.push_back(toolbar);
+        }
+    }
+    if (docked.empty()) {
+        return {};
+    }
+
+    int top = docked.front()->geometry().y();
+    for (auto toolbar : docked) {
+        top = std::min(top, toolbar->geometry().y());
+    }
+
+    std::map<int, QToolBar*> byX;
+    for (auto toolbar : docked) {
+        if (toolbar->geometry().y() == top) {
+            byX[toolbar->geometry().x()] = toolbar;
+        }
+    }
+
+    std::vector<QToolBar*> row;
+    for (auto &v : byX) {
+        row.push_back(v.second);
+    }
+    return row;
+}
+
+void ToolBarManager::setTitleBarToolBars(bool enable)
+{
+    auto mw = getMainWindow();
+    if (!mw || !menuBarLeftArea || !menuBarRightArea) {
+        return;
+    }
+
+    if (!enable) {
+        // Put them back at the front of the top area, not on the end of it:
+        // addToolBar() appends, which drops the returning row below whichever
+        // rows stayed behind, and a Dark -> Classic -> Dark round trip would
+        // then rotate the rows one place every time.
+        auto stayed = firstToolBarRow();
+        QToolBar *before = stayed.empty() ? nullptr : stayed.front();
+        bool returned = false;
+
+        for (auto area : {menuBarLeftArea, menuBarRightArea}) {
+            std::vector<QToolBar*> parked;
+            area->foreachToolBar([&parked](QToolBar *toolbar, int, ToolBarArea*) {
+                parked.push_back(toolbar);
+            });
+            for (auto toolbar : parked) {
+                // isHidden(), not isVisible(): the latter is false whenever an
+                // ancestor is hidden, and the area above one of these is hidden
+                // for part of a title bar swap. What has to be remembered is
+                // whether the toolbar was hidden in its own right.
+                const bool visible = !toolbar->isHidden();
+
+                // Blocked across the whole move, and this is what makes it
+                // stick: reparenting hides a widget, that emits
+                // visibilityChanged, and onToggleToolBar writes the hidden
+                // state into the toolbar's visibility preference. Restoring it
+                // afterwards does not undo the write -- setToolBarVisible()
+                // blocks signals -- so the 100 ms timer would read the
+                // parameter back and hide every toolbar this moved.
+                QSignalBlocker blocker(toolbar);
+
+                // removeWidget() is the one that takes the grip off and drops
+                // the area's parameter entry; without it the toolbar re-docks
+                // wearing a grip it has no area to be dragged around by.
+                area->removeWidget(toolbar);
+                if (before) {
+                    Base::StateLocker guard(adding);
+                    mw->insertToolBar(before, toolbar);
+                }
+                else {
+                    addToolBarToMainWindow(toolbar);
+                }
+                setToolBarVisible(toolbar, visible);
+                returned = true;
+            }
+        }
+
+        // The row that stayed behind was a second row while these were away,
+        // and inserting into it would leave one crowded row where there were
+        // two. `before` is only set when something did stay, which is exactly
+        // when there was a break to put back.
+        if (returned && before && !mw->toolBarBreak(before)) {
+            Base::StateLocker guard(adding);
+            mw->insertToolBarBreak(before);
+        }
+        return;
+    }
+
+    if (menuBarLeftArea->count() || menuBarRightArea->count()) {
+        return;
+    }
+
+    // Left to right as they sit now, renumbered from zero -- restoreState()
+    // reads the map key as the position in the area, not as a coordinate.
+    std::map<int, QToolBar*> row;
+    for (auto toolbar : firstToolBarRow()) {
+        row[(int)row.size()] = toolbar;
+    }
+    if (row.empty()) {
+        return;
+    }
+
+    // Blocked for the same reason as the return above, and this is the half
+    // that mattered: restoreState() takes each toolbar off the main window
+    // first, that hides it, and onToggleToolBar records the hide as the user
+    // having switched the toolbar off. Nothing notices while it sits in the
+    // area -- toolbars there are exempt from the visibility pass -- but the
+    // day it comes back the timer reads that parameter and hides it for good.
+    // Being moved into the title bar is not being switched off.
+    std::vector<QSignalBlocker> blockers;
+    blockers.reserve(row.size());
+    for (auto &v : row) {
+        blockers.emplace_back(v.second);
+    }
+    menuBarLeftArea->restoreState(row);
+}
+
 ToolBarArea *ToolBarManager::getToolBarArea(QToolBar *toolbar)
 {
     auto parent = toolbar->parentWidget();

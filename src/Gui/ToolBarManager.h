@@ -188,6 +188,17 @@ public:
      */
     void detachMenuBarAreas();
 
+    /*! Move the first row of top-docked toolbars into the title bar's left
+     * area, or, with \a enable false, move whatever is parked in the two areas
+     * back to the top dock.
+     *
+     * Which toolbars make up "the first row" is asked of the layout rather than
+     * named: the set differs per workbench, so a fixed list would be right in
+     * the one workbench it was written for and wrong in the rest. Filling only
+     * happens when both areas are empty -- a row the user arranged is theirs.
+     */
+    void setTitleBarToolBars(bool enable);
+
 protected Q_SLOTS:
     void onToggleToolBar(bool);
     void onMovableChanged(bool);
@@ -213,6 +224,11 @@ protected:
      * drop it.
      */
     QRect menuBarDropRect() const;
+
+    /*! The visible toolbars in the top dock area's first row, left to right,
+     * i.e. the row directly under the menu bar. Empty when there are none.
+     */
+    std::vector<QToolBar*> firstToolBarRow();
 
     bool addToolBarToArea(QObject *, QMouseEvent*);
     bool showContextMenu(QObject *);

@@ -131,6 +131,12 @@ const std::vector<std::string>& ThemeManager::appearanceKeys()
         "OverlayActiveStyleSheet",
         "MenuStyleSheet",
         "TiledBackground",
+        // Window chrome, not colour, but a theme owns it for the same reason:
+        // Classic means the platform title bar with the toolbars under the
+        // menu bar, and a theme that says nothing must not inherit the last
+        // one's answer.
+        "CustomTitleBar",
+        "TitleBarToolBars",
     };
     return keys;
 }

@@ -95,6 +95,19 @@ public:
     bool foldTitleBarMenu() const;
     void setFoldTitleBarMenu(bool enable);
 
+    /*! Whether the first row of toolbars belongs in the custom title bar rather
+     * than under the menu bar. MainWindow/TitleBarToolBars, on by default, and
+     * meaningless while the platform's title bar is in charge.
+     */
+    bool titleBarToolBars() const;
+
+    /*! Put the window chrome where MainWindow/CustomTitleBar and
+     * MainWindow/TitleBarToolBars now say it goes. A preference pack -- which
+     * is what a theme is -- carries both, so this is how a theme decides which
+     * title bar the window wears and what lives in it.
+     */
+    void applyTitleBarParams();
+
     enum ConfirmSaveResult {
         Cancel = 0,
         Save,

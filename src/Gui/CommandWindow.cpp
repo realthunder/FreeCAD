@@ -425,6 +425,52 @@ bool StdCmdFoldTitleBarMenu::isActive()
 }
 
 //===========================================================================
+// Std_ViewTitleBarToolBars
+//===========================================================================
+
+DEF_STD_CMD_AC(StdCmdTitleBarToolBars)
+
+StdCmdTitleBarToolBars::StdCmdTitleBarToolBars()
+  : Command("Std_ViewTitleBarToolBars")
+{
+    sGroup        = "View";
+    sMenuText     = QT_TR_NOOP("Toolbars in the title bar");
+    sToolTipText  = QT_TR_NOOP("Moves the first row of toolbars into the custom title bar, "
+                               "giving their row back to the model. Turning it off puts "
+                               "them back under the menu bar");
+    sWhatsThis    = "Std_ViewTitleBarToolBars";
+    sStatusTip    = sToolTipText;
+    eType         = 0;
+}
+
+Action * StdCmdTitleBarToolBars::createAction()
+{
+    Action *pcAction = Command::createAction();
+    pcAction->setCheckable(true);
+    pcAction->setChecked(getMainWindow()->titleBarToolBars(), true);
+    return pcAction;
+}
+
+void StdCmdTitleBarToolBars::activated(int iMsg)
+{
+    // Written, not applied: the parameter observer is what moves the toolbars,
+    // so that a theme setting the same key and a click here do the same thing.
+    App::GetApplication()
+        .GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow")
+        ->SetBool("TitleBarToolBars", iMsg != 0);
+
+    if (auto action = getAction()) {
+        action->setChecked(getMainWindow()->titleBarToolBars(), true);
+    }
+}
+
+bool StdCmdTitleBarToolBars::isActive()
+{
+    // With the platform's title bar there is nowhere for them to go.
+    return getMainWindow()->isCustomTitleBar();
+}
+
+//===========================================================================
 // Std_ViewStatusBar
 //===========================================================================
 
@@ -564,6 +610,7 @@ void CreateWindowStdCommands()
     rcCmdMgr.addCommand(new StdCmdWindowsMenu());
     rcCmdMgr.addCommand(new StdCmdTitleBar());
     rcCmdMgr.addCommand(new StdCmdFoldTitleBarMenu());
+    rcCmdMgr.addCommand(new StdCmdTitleBarToolBars());
     rcCmdMgr.addCommand(new StdCmdStatusBar());
     rcCmdMgr.addCommand(new StdCmdUserInterface());
 }

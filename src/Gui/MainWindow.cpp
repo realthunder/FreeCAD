@@ -290,6 +290,7 @@ struct MainWindowP
     QTimer* visibleTimer;
     QTimer saveStateTimer;
     QTimer restoreStateTimer;
+    QTimer titleBarTimer;
     QMdiArea* mdiArea;
     QPointer<MDIView> activeView;
     QSignalMapper* windowMapper;
@@ -439,6 +440,15 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
                 OverlayManager::instance()->reload(OverlayManager::ReloadMode::ReloadPause);
                 d->restoreStateTimer.start(100);
             }
+            else if (boost::equals(Name, "CustomTitleBar")
+                    || boost::equals(Name, "TitleBarToolBars")) {
+                // Deferred, because the caller is usually a preference pack
+                // part way through writing a hundred keys, and because
+                // setCustomTitleBar() writes this one back and would arrive
+                // here again mid-swap. Coalescing both keys into one pass is
+                // what lets a theme name them independently.
+                d->titleBarTimer.start(0);
+            }
         });
 
     d->hGrp = App::GetApplication().GetParameterGroupByPath(
@@ -457,6 +467,9 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
         ToolBarManager::getInstance()->restoreState();
         OverlayManager::instance()->reload(OverlayManager::ReloadMode::ReloadResume);
     });
+
+    d->titleBarTimer.setSingleShot(true);
+    connect(&d->titleBarTimer, &QTimer::timeout, [this](){ applyTitleBarParams(); });
 
     // support for grouped dragging of dockwidgets
     // https://woboq.com/blog/qdockwidget-changes-in-56.html
@@ -1911,6 +1924,32 @@ void MainWindow::setFoldTitleBarMenu(bool enable)
     }
     d->hGrp->SetBool("FoldTitleBarMenu", enable);
     setupTitleBarMenu();
+}
+
+bool MainWindow::titleBarToolBars() const
+{
+    return d->hGrp->GetBool("TitleBarToolBars", true);
+}
+
+void MainWindow::applyTitleBarParams()
+{
+    const bool custom = d->hGrp->GetBool("CustomTitleBar", false);
+    // Only ever asked of the title bar that exists: with the platform's there
+    // is nowhere to put a row, and false is also what empties one back out.
+    const bool row = custom && titleBarToolBars();
+    auto toolBars = ToolBarManager::getInstance();
+
+    // Emptying happens before the swap and filling after it, both for the same
+    // reason: the two areas are only intact while the title bar hosting them
+    // is. setCustomTitleBar() reparents and hides them on the way through, so
+    // a row emptied afterwards is read mid-teardown.
+    if (!row && toolBars) {
+        toolBars->setTitleBarToolBars(false);
+    }
+    setCustomTitleBar(custom);
+    if (row && toolBars) {
+        toolBars->setTitleBarToolBars(true);
+    }
 }
 
 void MainWindow::setCustomTitleBar(bool enable)
