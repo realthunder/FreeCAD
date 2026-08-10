@@ -188,16 +188,27 @@ public:
      */
     void detachMenuBarAreas();
 
-    /*! Move the first row of top-docked toolbars into the title bar's left
-     * area, or, with \a enable false, move whatever is parked in the two areas
-     * back to the top dock.
+    /*! The visible toolbars in the top dock area's first row, left to right,
+     * i.e. the row directly under the menu bar. Empty when there are none.
      *
-     * Which toolbars make up "the first row" is asked of the layout rather than
-     * named: the set differs per workbench, so a fixed list would be right in
-     * the one workbench it was written for and wrong in the rest. Filling only
-     * happens when both areas are empty -- a row the user arranged is theirs.
+     * Which toolbars those are is asked of the layout rather than named: the
+     * set differs per workbench, so a fixed list would be right in the one
+     * workbench it was written for and wrong in the rest.
      */
-    void setTitleBarToolBars(bool enable);
+    std::vector<QToolBar*> firstToolBarRow();
+
+    /*! Move \a row into the title bar's left area, or, with \a enable false,
+     * move whatever is parked in the two areas back to the top dock. An empty
+     * \a row asks firstToolBarRow() for one.
+     *
+     * Pass the row when the caller is about to disturb the layout -- the
+     * geometry this reads is meaningless until Qt has laid the toolbars out
+     * again, and a title bar swap hides and re-shows the whole window.
+     *
+     * Filling only happens when both areas are empty: a row the user arranged
+     * is theirs.
+     */
+    void setTitleBarToolBars(bool enable, const std::vector<QToolBar*> &row = {});
 
 protected Q_SLOTS:
     void onToggleToolBar(bool);
@@ -224,11 +235,6 @@ protected:
      * drop it.
      */
     QRect menuBarDropRect() const;
-
-    /*! The visible toolbars in the top dock area's first row, left to right,
-     * i.e. the row directly under the menu bar. Empty when there are none.
-     */
-    std::vector<QToolBar*> firstToolBarRow();
 
     bool addToolBarToArea(QObject *, QMouseEvent*);
     bool showContextMenu(QObject *);
@@ -257,6 +263,14 @@ private:
     bool restored = false;
     bool migrating = false;
     bool adding = false;
+    /*! Set while this class is moving toolbars around itself. Every such move
+     * hides the toolbar on the way -- QMainWindow::removeToolBar() and
+     * reparenting both do -- and onToggleToolBar() would otherwise record that
+     * as the user having switched the toolbar off, in a parameter that
+     * outlives the session. Applying a theme goes through here, so a few theme
+     * switches were enough to record every toolbar as off and empty the window.
+     */
+    bool relocating = false;
     Qt::ToolBarArea defaultArea;
     Qt::ToolBarArea globalArea;
     std::set<QString> globalToolBarNames;

@@ -770,6 +770,7 @@ static bool isToolBarEmpty(QToolBar *toolbar)
 
 void ToolBarManager::onTimer()
 {
+    Base::StateLocker guard(relocating);
     std::string defarea = hMainWindow->GetASCII("DefaultToolBarArea");
     auto area = Qt::TopToolBarArea;
     if (defarea == "Bottom")
@@ -1129,6 +1130,7 @@ void ToolBarManager::saveState() const
 
 void ToolBarManager::restoreState()
 {
+    Base::StateLocker guard(relocating);
     std::map<int, QToolBar*> sbToolBars;
     std::map<int, QToolBar*> mbRightToolBars;
     std::map<int, QToolBar*> mbLeftToolBars;
@@ -1285,12 +1287,14 @@ std::vector<QToolBar*> ToolBarManager::firstToolBarRow()
     return row;
 }
 
-void ToolBarManager::setTitleBarToolBars(bool enable)
+void ToolBarManager::setTitleBarToolBars(bool enable, const std::vector<QToolBar*> &row)
 {
     auto mw = getMainWindow();
     if (!mw || !menuBarLeftArea || !menuBarRightArea) {
         return;
     }
+
+    Base::StateLocker guard(relocating);
 
     if (!enable) {
         // Put them back at the front of the top area, not on the end of it:
@@ -1312,15 +1316,6 @@ void ToolBarManager::setTitleBarToolBars(bool enable)
                 // for part of a title bar swap. What has to be remembered is
                 // whether the toolbar was hidden in its own right.
                 const bool visible = !toolbar->isHidden();
-
-                // Blocked across the whole move, and this is what makes it
-                // stick: reparenting hides a widget, that emits
-                // visibilityChanged, and onToggleToolBar writes the hidden
-                // state into the toolbar's visibility preference. Restoring it
-                // afterwards does not undo the write -- setToolBarVisible()
-                // blocks signals -- so the 100 ms timer would read the
-                // parameter back and hide every toolbar this moved.
-                QSignalBlocker blocker(toolbar);
 
                 // removeWidget() is the one that takes the grip off and drops
                 // the area's parameter entry; without it the toolbar re-docks
@@ -1355,27 +1350,17 @@ void ToolBarManager::setTitleBarToolBars(bool enable)
 
     // Left to right as they sit now, renumbered from zero -- restoreState()
     // reads the map key as the position in the area, not as a coordinate.
-    std::map<int, QToolBar*> row;
-    for (auto toolbar : firstToolBarRow()) {
-        row[(int)row.size()] = toolbar;
+    std::map<int, QToolBar*> wanted;
+    for (auto toolbar : (row.empty() ? firstToolBarRow() : row)) {
+        if (toolbar) {
+            wanted[(int)wanted.size()] = toolbar;
+        }
     }
-    if (row.empty()) {
+    if (wanted.empty()) {
         return;
     }
 
-    // Blocked for the same reason as the return above, and this is the half
-    // that mattered: restoreState() takes each toolbar off the main window
-    // first, that hides it, and onToggleToolBar records the hide as the user
-    // having switched the toolbar off. Nothing notices while it sits in the
-    // area -- toolbars there are exempt from the visibility pass -- but the
-    // day it comes back the timer reads that parameter and hides it for good.
-    // Being moved into the title bar is not being switched off.
-    std::vector<QSignalBlocker> blockers;
-    blockers.reserve(row.size());
-    for (auto &v : row) {
-        blockers.emplace_back(v.second);
-    }
-    menuBarLeftArea->restoreState(row);
+    menuBarLeftArea->restoreState(wanted);
 }
 
 ToolBarArea *ToolBarManager::getToolBarArea(QToolBar *toolbar)
@@ -1479,7 +1464,7 @@ void ToolBarManager::onToggleToolBar(bool visible)
         setToolBarVisible(toolbar, false);
         return;
     }
-    if (!restored || getMainWindow()->isRestoringWindowState())
+    if (!restored || relocating || getMainWindow()->isRestoringWindowState())
         return;
 
     bool enabled = visible;

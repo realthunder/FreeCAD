@@ -1939,16 +1939,38 @@ void MainWindow::applyTitleBarParams()
     const bool row = custom && titleBarToolBars();
     auto toolBars = ToolBarManager::getInstance();
 
+    // Nothing that happens below is the user's doing, and it has to be said so
+    // for the whole swap rather than around each move. setCustomTitleBar()
+    // reparents the two menu-bar areas, which hides every toolbar sitting in
+    // one; onToggleToolBar reads that as the toolbar having been switched off
+    // and writes it to BaseApp/MainWindow/ToolBars, where it stays. A few
+    // theme switches were enough to record all twelve as off and empty the
+    // window. This is the flag onToggleToolBar and saveWindowSettings already
+    // honour for the same reason.
+    Base::StateLocker restoring(d->_restoring);
+
     // Emptying happens before the swap and filling after it, both for the same
     // reason: the two areas are only intact while the title bar hosting them
     // is. setCustomTitleBar() reparents and hides them on the way through, so
     // a row emptied afterwards is read mid-teardown.
-    if (!row && toolBars) {
-        toolBars->setTitleBarToolBars(false);
+    //
+    // Which row to fill with is settled before the swap as well, and that is
+    // not symmetry: setMode() hides and re-shows the window, and until Qt has
+    // laid the toolbars out again their geometry is the un-laid-out default
+    // and they are not yet visible -- so asking afterwards found no first row
+    // at all, and the first switch into a custom title bar moved nothing.
+    std::vector<QToolBar*> wanted;
+    if (toolBars) {
+        if (row) {
+            wanted = toolBars->firstToolBarRow();
+        }
+        else {
+            toolBars->setTitleBarToolBars(false);
+        }
     }
     setCustomTitleBar(custom);
     if (row && toolBars) {
-        toolBars->setTitleBarToolBars(true);
+        toolBars->setTitleBarToolBars(true, wanted);
     }
 }
 
