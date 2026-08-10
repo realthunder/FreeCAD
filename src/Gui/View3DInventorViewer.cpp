@@ -4402,6 +4402,38 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyFloat>(view, "BloomRadius",
             RenderParams::docBloomRadius(),
             RenderParams::getBloomRadius());
+    // The renderer's own scene light (docs/CoinRetirement.md stage 4a).
+    // Off by default and inert while off: a light found in the Coin
+    // traversal still wins, so the Shadow draw style is unaffected.
+    // Direction and position are vectors here rather than the three
+    // scalars the global parameters use, to match the Shadow_* shape a
+    // later stage has to migrate from.
+    _renderParam<App::PropertyBool>(view, "Light",
+            RenderParams::docLight(), RenderParams::getLight());
+    _renderParam<App::PropertyVector>(view, "LightDirection",
+            RenderParams::docLight(),
+            Base::Vector3d(RenderParams::getLightDirectionX(),
+                           RenderParams::getLightDirectionY(),
+                           RenderParams::getLightDirectionZ()));
+    _renderParam<App::PropertyColor>(view, "LightColor",
+            RenderParams::docLightColor(),
+            App::Color(uint32_t(RenderParams::getLightColor())));
+    _renderParam<App::PropertyFloat>(view, "LightIntensity",
+            RenderParams::docLightIntensity(),
+            RenderParams::getLightIntensity());
+    _renderParam<App::PropertyBool>(view, "LightSpot",
+            RenderParams::docLightSpot(), RenderParams::getLightSpot());
+    _renderParam<App::PropertyVector>(view, "LightPosition",
+            RenderParams::docLightSpot(),
+            Base::Vector3d(RenderParams::getLightPositionX(),
+                           RenderParams::getLightPositionY(),
+                           RenderParams::getLightPositionZ()));
+    _renderParam<App::PropertyFloat>(view, "LightCutOffAngle",
+            RenderParams::docLightCutOffAngle(),
+            RenderParams::getLightCutOffAngle());
+    _renderParam<App::PropertyFloat>(view, "LightDropOffRate",
+            RenderParams::docLightDropOffRate(),
+            RenderParams::getLightDropOffRate());
     _renderParam<App::PropertyBool>(view, "SunDisc",
             RenderParams::docSunDisc(), RenderParams::getSunDisc());
     _renderParam<App::PropertyFloat>(view, "SunDiscSize",

@@ -315,6 +315,18 @@ backend and is the cache's, not the backend's). Still unvisited from
 §3.2: TechDraw, FEM, Draft, Assembly, annotation text, large models and
 real-GPU behaviour.
 
+**Stage 1b — the draggers, and Coin reaching into the backend's
+framebuffer.** Draggers are the largest thing still drawn by Coin GL on
+top of the backend's frame, and the Tessellation defect showed what that
+exposes them to: Coin's `HIDDEN_LINE` mode cleared colour and depth
+under a frame the backend had already rendered, ignoring the
+`clearwindow`/`clearzbuffer` arguments it was passed. That one is fixed
+where the mode is chosen, but the general shape — a Coin path that can
+stomp a buffer the backend owns — is worth closing rather than meeting
+again. Check the shadow light manipulator, the Transform manipulator and
+a Sketcher drag, ⚠️ **on screen via `grabFramebuffer`**: `saveImage`
+renders offscreen, never composites, and is blind to the entire class.
+
 **Stage 2 — flip the defaults.** `RenderCache` 3 and a real `Type` as
 shipped defaults, with a one-time migration for existing user configs.
 Keep both parameters working exactly as now.
@@ -331,13 +343,31 @@ cleanup. `Shadow` is the only thing that puts a light in the graph the
 backend will accept, so it cannot be removed until the renderer owns
 one. In order:
 
-- **4a — the renderer owns its light.** Build `Render::LightConfig` from
-  `Render_*` view properties (direction, intensity, spot, cone) instead
-  of resolving it out of `SoLightElement`. Keep reading the Coin light
-  while the draw style still exists, so the two coexist for a release
-  rather than swapping over in one commit. This is the whole of the
-  blocker, and it is Coin-retirement work whether or not the draw style
-  ever goes.
+- **4a — the renderer owns its light. DONE.** `Render::LightConfig` is
+  built from `Render_Light*` view properties — direction, colour,
+  intensity, spot, position, cone, drop-off — with `RenderParams`
+  supplying the global defaults.
+
+  Two decisions worth keeping:
+
+  - **A gate, `Render_Light`, default off.** Handing the backend a light
+    unconditionally would relight every scene in every draw style. While
+    off, nothing about the frame changes.
+  - **The traversal light still wins.** The `Render_*` light is built
+    only when `SoLightElement` offers none, so the Shadow draw style
+    behaves exactly as before and the two coexist, as this stage
+    intended, rather than swapping over in one commit.
+
+  What this unblocks is the point: in the **Shaded** style, with no
+  Shadow style anywhere, the scene is lit, grounded and casting a shadow
+  map from a light nothing in the graph provides.
+  `fcad-probes/renderer_light_probe.py`, 10/10 — light-with-no-draw-style
+  (mean pixel diff 111), direction (26), spot vs directional (40), cone
+  angle (63), `Render_Shadow` dropping the map (111), and the Shadow
+  style still winning (0.00).
+
+  ⚠️ `Render_Shadow` defaults **on**, so a test that switches it on
+  measures nothing. Switch it off to see the map.
 - **4b — the ground moves to the backend.** Partly there already
   (`Render::LightConfig::ground`); the rest is the Coin geometry in
   `pcShadowGroundGroup`, which today also has to carry its own

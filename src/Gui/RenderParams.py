@@ -35,7 +35,7 @@ sys.path.append(path.join(path.dirname(path.dirname(path.abspath(__file__))), 'T
 import params_utils
 
 from params_utils import ParamBool, ParamString, ParamFloat, ParamInt, \
-                         ParamComboBox, auto_comment
+                         ParamHex, ParamColor, ParamComboBox, auto_comment
 
 NameSpace = 'Gui'
 ClassName = 'RenderParams'
@@ -397,6 +397,43 @@ Params = [
     ParamFloat('BloomRadius',  1.0, title='Bloom radius',
         doc="Radius scale of the glow halo. One is the default gaussian\n"
         "footprint; larger blooms wider."),
+    ParamBool('Light',  False, title='Renderer scene light',
+        doc="Let the render engine supply its own directional or spot scene\n"
+        "light, described by the Light* settings below, instead of taking\n"
+        "one out of the Coin traversal.\n"
+        "\n"
+        "Everything the engine keys off a light -- shadows, volumetric\n"
+        "shafts, the sun disc, ground reflection -- today has exactly one\n"
+        "source: the Shadow display style, which is what puts an\n"
+        "SoShadowDirectionalLight or SoSpotLight in the scene graph at all\n"
+        "(the viewer headlight is a plain SoDirectionalLight, which the\n"
+        "engine rejects by type). That makes a draw style the owner of the\n"
+        "lighting, and it is why the style cannot simply be retired\n"
+        "(docs/CoinRetirement.md 3.4).\n"
+        "\n"
+        "Off by default, and while off nothing changes. A light found in\n"
+        "the traversal still wins when one is there, so the Shadow style\n"
+        "keeps behaving exactly as before; these settings supply a light\n"
+        "when it does not."),
+    ParamFloat('LightIntensity',  0.8, title='Light intensity',
+        doc="Brightness of the renderer's own scene light."),
+    ParamFloat('LightDirectionX',  -1.0),
+    ParamFloat('LightDirectionY',  -1.0),
+    ParamFloat('LightDirectionZ',  -1.0),
+    ParamHex('LightColor',  0xf0fdffff, title='Light color', proxy=ParamColor(),
+        doc="Colour of the renderer's own scene light."),
+    ParamBool('LightSpot',  False, title='Use spot light',
+        doc="Make the renderer's own light a spot rather than a directional\n"
+        "one. A spot has a position and a cone; a directional light has\n"
+        "only a direction."),
+    ParamFloat('LightPositionX',  0.0),
+    ParamFloat('LightPositionY',  0.0),
+    ParamFloat('LightPositionZ',  0.0),
+    ParamFloat('LightCutOffAngle',  45.0, title='Spot cut-off angle',
+        doc="Half angle of the spot cone, in degrees."),
+    ParamFloat('LightDropOffRate',  0.0, title='Spot drop-off rate',
+        doc="How sharply a spot falls off from the cone axis. Zero is even\n"
+        "across the cone."),
     ParamBool('SunDisc',  False, title='Sun disc',
         doc="Draw a visible sun -- a bright disc with a limb glow -- in\n"
         "the sky along the Shadow display style's directional scene light,\n"

@@ -999,6 +999,157 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter Light
+    ///
+    /// Let the render engine supply its own directional or spot scene
+    /// light, described by the Light* settings below, instead of taking
+    /// one out of the Coin traversal.
+    /// 
+    /// Everything the engine keys off a light -- shadows, volumetric
+    /// shafts, the sun disc, ground reflection -- today has exactly one
+    /// source: the Shadow display style, which is what puts an
+    /// SoShadowDirectionalLight or SoSpotLight in the scene graph at all
+    /// (the viewer headlight is a plain SoDirectionalLight, which the
+    /// engine rejects by type). That makes a draw style the owner of the
+    /// lighting, and it is why the style cannot simply be retired
+    /// (docs/CoinRetirement.md 3.4).
+    /// 
+    /// Off by default, and while off nothing changes. A light found in
+    /// the traversal still wins when one is there, so the Shadow style
+    /// keeps behaving exactly as before; these settings supply a light
+    /// when it does not.
+    static const bool & getLight();
+    static const bool & defaultLight();
+    static void removeLight();
+    static void setLight(const bool &v);
+    static const char *docLight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightIntensity
+    ///
+    /// Brightness of the renderer's own scene light.
+    static const double & getLightIntensity();
+    static const double & defaultLightIntensity();
+    static void removeLightIntensity();
+    static void setLightIntensity(const double &v);
+    static const char *docLightIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightDirectionX
+    static const double & getLightDirectionX();
+    static const double & defaultLightDirectionX();
+    static void removeLightDirectionX();
+    static void setLightDirectionX(const double &v);
+    static const char *docLightDirectionX();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightDirectionY
+    static const double & getLightDirectionY();
+    static const double & defaultLightDirectionY();
+    static void removeLightDirectionY();
+    static void setLightDirectionY(const double &v);
+    static const char *docLightDirectionY();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightDirectionZ
+    static const double & getLightDirectionZ();
+    static const double & defaultLightDirectionZ();
+    static void removeLightDirectionZ();
+    static void setLightDirectionZ(const double &v);
+    static const char *docLightDirectionZ();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightColor
+    ///
+    /// Colour of the renderer's own scene light.
+    static const unsigned long & getLightColor();
+    static const unsigned long & defaultLightColor();
+    static void removeLightColor();
+    static void setLightColor(const unsigned long &v);
+    static const char *docLightColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightSpot
+    ///
+    /// Make the renderer's own light a spot rather than a directional
+    /// one. A spot has a position and a cone; a directional light has
+    /// only a direction.
+    static const bool & getLightSpot();
+    static const bool & defaultLightSpot();
+    static void removeLightSpot();
+    static void setLightSpot(const bool &v);
+    static const char *docLightSpot();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightPositionX
+    static const double & getLightPositionX();
+    static const double & defaultLightPositionX();
+    static void removeLightPositionX();
+    static void setLightPositionX(const double &v);
+    static const char *docLightPositionX();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightPositionY
+    static const double & getLightPositionY();
+    static const double & defaultLightPositionY();
+    static void removeLightPositionY();
+    static void setLightPositionY(const double &v);
+    static const char *docLightPositionY();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightPositionZ
+    static const double & getLightPositionZ();
+    static const double & defaultLightPositionZ();
+    static void removeLightPositionZ();
+    static void setLightPositionZ(const double &v);
+    static const char *docLightPositionZ();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightCutOffAngle
+    ///
+    /// Half angle of the spot cone, in degrees.
+    static const double & getLightCutOffAngle();
+    static const double & defaultLightCutOffAngle();
+    static void removeLightCutOffAngle();
+    static void setLightCutOffAngle(const double &v);
+    static const char *docLightCutOffAngle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightDropOffRate
+    ///
+    /// How sharply a spot falls off from the cone axis. Zero is even
+    /// across the cone.
+    static const double & getLightDropOffRate();
+    static const double & defaultLightDropOffRate();
+    static void removeLightDropOffRate();
+    static void setLightDropOffRate(const double &v);
+    static const char *docLightDropOffRate();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter SunDisc
     ///
     /// Draw a visible sun -- a bright disc with a limb glow -- in

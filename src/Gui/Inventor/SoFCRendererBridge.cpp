@@ -1532,6 +1532,65 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         res.valid = true;
         break;
     }
+    // No qualifying light in the traversal -- which is every draw style
+    // except Shadow, the only one that puts an SoShadowDirectionalLight
+    // or SoSpotLight in the graph. The renderer can supply its own from
+    // Render_Light* instead, so that everything keyed off a light stops
+    // depending on a draw style (docs/CoinRetirement.md stage 4a).
+    //
+    // Deliberately second, not first: while the Shadow style exists the
+    // light it provides keeps winning, so this is additive and the style
+    // behaves exactly as before. Off by default, so a view that has not
+    // asked for it is lit as it always was.
+    if (!res.valid
+            && viewParamOverride<App::PropertyBool>(
+                view, "Render", "Light", RenderParams::getLight())) {
+        Base::Vector3d dir(RenderParams::getLightDirectionX(),
+                           RenderParams::getLightDirectionY(),
+                           RenderParams::getLightDirectionZ());
+        if (auto prop = viewPropOverride<App::PropertyVector>(
+                    view, "Render", "LightDirection"))
+            dir = prop->getValue();
+        if (dir.Length() < 1e-9)
+            dir = Base::Vector3d(-1.0, -1.0, -1.0);
+        dir.Normalize();
+        // Already world space: these are the user's numbers, not a
+        // traversal result, so none of the view-reference unwinding the
+        // Coin branch needs applies.
+        res.direction[0] = float(dir.x);
+        res.direction[1] = float(dir.y);
+        res.direction[2] = float(dir.z);
+        res.spot = viewParamOverride<App::PropertyBool>(
+                view, "Render", "LightSpot", RenderParams::getLightSpot());
+        if (res.spot) {
+            Base::Vector3d pos(RenderParams::getLightPositionX(),
+                               RenderParams::getLightPositionY(),
+                               RenderParams::getLightPositionZ());
+            if (auto prop = viewPropOverride<App::PropertyVector>(
+                        view, "Render", "LightPosition"))
+                pos = prop->getValue();
+            res.position[0] = float(pos.x);
+            res.position[1] = float(pos.y);
+            res.position[2] = float(pos.z);
+            // Coin's SoSpotLight::cutOffAngle is radians; the property is
+            // degrees, like the Shadow style's SpotLightCutOffAngle.
+            res.cutOffAngle = float(viewParamOverride<App::PropertyFloat>(
+                    view, "Render", "LightCutOffAngle",
+                    RenderParams::getLightCutOffAngle()) * M_PI / 180.0);
+            res.dropOffRate = float(viewParamOverride<App::PropertyFloat>(
+                    view, "Render", "LightDropOffRate",
+                    RenderParams::getLightDropOffRate()));
+        }
+        if (auto prop = viewPropOverride<App::PropertyColor>(
+                    view, "Render", "LightColor"))
+            res.color = prop->getValue().getPackedValue();
+        else
+            res.color = uint32_t(RenderParams::getLightColor());
+        res.intensity = float(viewParamOverride<App::PropertyFloat>(
+                view, "Render", "LightIntensity",
+                RenderParams::getLightIntensity()));
+        res.valid = true;
+    }
     if (res.valid) {
         // Render_Shadow (Render group) is a convenience toggle to drop the
         // shadow map while keeping the scene lit; the Shadow draw style
