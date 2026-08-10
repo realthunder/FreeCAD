@@ -3070,7 +3070,13 @@ void Application::applyColorScheme()
         return;
     }
 
-    const std::string scheme = hGrp->GetASCII("ColorScheme");
+    // Absent, not empty, is the default: a configuration that has never had a
+    // theme applied gets Classic's palette, which is what a fresh install is
+    // supposed to look like. Qt's windows11 style follows the desktop when
+    // nothing is pinned, so leaving this unset came up black on a dark Windows.
+    // An explicit empty value still means "follow the desktop" -- that is what
+    // the Match desktop entry writes.
+    const std::string scheme = hGrp->GetASCII("ColorScheme", "Light");
 
     if (scheme == "Light") {
         qGuiApp->styleHints()->setColorScheme(Qt::ColorScheme::Light);

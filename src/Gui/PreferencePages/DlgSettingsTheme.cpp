@@ -148,6 +148,22 @@ void DlgSettingsTheme::loadCustomization()
     ui->ColorScheme->addItem(tr("Light"), QByteArray("Light"));
     ui->ColorScheme->addItem(tr("Dark"), QByteArray("Dark"));
     ui->ColorScheme->onRestore();
+    {
+        // onRestore() leaves the combo on its first entry when the key has never
+        // been written, and that entry is Match desktop -- which is not what an
+        // untouched configuration actually draws with. Show what
+        // Application::applyColorScheme() is doing.
+        auto hGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/MainWindow");
+        const auto entries = hGrp->GetASCIIMap();
+        const bool declared = std::any_of(
+            entries.begin(), entries.end(),
+            [](const auto& entry) { return entry.first == "ColorScheme"; });
+        if (!declared) {
+            ui->ColorScheme->setCurrentIndex(
+                ui->ColorScheme->findData(QByteArray("Light")));
+        }
+    }
 
     const QSignalBlocker policyBlocker(ui->IconSetPolicy);
     ui->IconSetPolicy->clear();
