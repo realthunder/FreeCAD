@@ -556,6 +556,45 @@ what the FORCE now overrides.
 .conda\run.cmd cmake --build build\win-relwithdebinfo-801 -- -j N
 ```
 
+**The console code page decides whether incremental builds are correct.** On a
+Chinese Windows, `cl.exe` writes its `/showIncludes` lines as *注意: 包含文件:* in
+the **console output code page** (CP936), while CMake writes the same string into
+`CMakeFiles\rules.ninja` as `msvc_deps_prefix` in **UTF-8**. When the two encodings
+disagree ninja matches none of those lines, which has two consequences — one loud,
+one silent:
+
+- every compile dumps ~2000 `/showIncludes` lines into the build output (a full
+  build log goes from a few thousand lines to ~170 000), and
+- **ninja records zero header dependencies for that object.** `ninja -t deps <obj>`
+  reports `#deps 0, ... (VALID)`, so the object is only ever rebuilt when its own
+  `.cpp` changes. Edit or pull a header and every consumer stays stale.
+
+Nothing fails at the time. The first symptom arrives days later as an unresolved
+external at a link step — e.g. `Mesh.pyd` demanding a two-argument
+`Base::SequencerLauncher` constructor after a third parameter was added to it, because
+`Exporter.cpp.obj` was four days old and had never heard of the change.
+
+`run.cmd` therefore does `chcp 65001` before anything else, which makes the compiler's
+bytes match what CMake wrote. **A build launched outside `run.cmd`, or through a
+wrapper that gives `cmd.exe` no console (`Start-Process -RedirectStandardOutput`),
+re-opens the hole** — redirect inside the command (`cmd /c "... > log 2>&1"`) instead.
+`VSLANG=1033` is the other documented fix and is cleaner, but it needs the English
+language pack, which this VS Build Tools install does not have — setting it changes
+nothing on a Chinese-only install.
+
+To check an existing build tree, and to repair one:
+
+```bat
+:: how many objects carry no dependency information at all
+ninja -t deps > deps.txt          :: run in the build dir
+findstr /c:"#deps 0," deps.txt | find /c /v ""
+```
+
+Delete exactly those objects and rebuild; the rest of the tree is sound, so this is
+much cheaper than wiping the build directory. On the first box that was 1361 of 3553
+objects — all of `src/Gui`, TechDraw, PartDesign, Mesh, Part, Sketcher — against only
+30 in bgfx, whose dependency records had happened to be captured from a UTF-8 console.
+
 **Choosing N.** On a 12-thread / 16 GB box, `-j 8` produced
 `fatal error C1060: compiler is out of heap space` on OCCT-heavy translation units
 (`src/Mod/Part`), and `-j 4` was needed. Peak per-TU memory is roughly 1.5 GB for the
