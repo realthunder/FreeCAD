@@ -208,6 +208,47 @@ one-frame skew it was built to find.
 Needs a backend with texture readback, which WebGL2 is not; it says so once
 rather than reporting zeros. The id image itself still renders there.
 
+#### ⭐⭐ The attribution line — which verdict deleted the row
+
+A second line, printed only when there is over-cull to explain
+(docs/FarFieldProxies.md §12.10). The audit line names the *draws* the
+culling wrongly removed; this one names the **verdict** that removed each,
+and says how fresh and how stable that verdict was:
+
+```
+render cull attribution: N node(s) account for P px
+  | verdict fresh (<=2f) A px (x%), older B px (y%)
+  | from nodes that have flipped >=3 times: C px (z%)
+  | frustum, not occlusion: R rows S px
+  | worst n<id>(L<level> res<n> sub<n> lastpx<n> age<n>f hid<n>f ev<n>):<n>px/<n>rows
+```
+
+- **`frustum, not occlusion`** separates rows the occlusion culler cut from
+  rows something else in the same mask cut. They are different bugs in
+  different code, and a fix credited to the wrong one is worse than no fix.
+  The percentages above it are shares of what *occlusion* cut, so that the
+  other bug getting worse cannot silently shrink them.
+- **fresh vs older** is the age of the answer that produced the verdict. A
+  query that lied and a correct answer the world moved out from under look
+  identical in one verdict; against a static camera, a *fresh* verdict had no
+  time for the second explanation.
+- `ev` counts how many times the node has **entered** the hidden state (not
+  how often it was re-confirmed), and `hid` how long it has been there: ⭐
+  together they distinguish a stable wrong verdict (`ev1`, large `hid`) from
+  an oscillator (`ev` climbing) without needing a second frame to compare
+  against.
+
+⛔ **What this line deliberately does not report**, because it would be a
+tautology: whether the deciding test was taken while the node's own contents
+were being drawn. Only an already-hidden node is offered a test from the
+hidden set, so the answer that first hides a node is *always* of the drawn
+kind — the number would read 100% for every scene, including every scene
+where the explanation it appears to support is false. See
+`OcclusionNodeState` and docs/FarFieldProxies.md §12.10.
+
+The node states are snapshotted with the image, like the mask, for the
+reason given above.
+
 Mode-specific tuning rides the `u_userParams[0]` bootstrap lane: `.z`
 overrides the overdraw full-red count (default 8) and the mode-7 probe
 amplification (default 4096); `.x/.y` stay the generic output scale/bias.

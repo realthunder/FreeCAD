@@ -1935,7 +1935,13 @@ whatever geometry had arrived, and a smoke run left the finished model
 covering 3% of the viewport — which silently divides every coverage number
 by thirty. Same family as the 400x300-reporting-1920x1200 trap of §10.2.
 
-| visible ttl | confirmations | instances hidden | **audit: over-cull** | picture: differing px |
+⚠️⚠️ **Every over-cull figure in this table is a single sample, and §12.10
+shows the distribution behind it is enormous** — the ttl 60 row alone ranges
+from 0 to 64712 px across one thirty-second window. Read the two zero rows,
+which are stable by construction; do not read the last two as magnitudes,
+and do not read the ordering between them.
+
+| visible ttl | confirmations | instances hidden | audit: over-cull (⚠️ one sample) | picture: differing px |
 |---|---|---|---|---|
 | 10^6 | **1** | 818 of 17727 | **0 px, 0 rows** | **0** |
 | 10^6 | 2 | **0** | 0 px | 0 |
@@ -2003,3 +2009,145 @@ to named draws but does not say why their nodes' boxes answer wrongly.
 Steps 2 and 3 of §12.8 (the priming pass, then choosing between ID feedback
 and masked software occlusion) are unchanged, and now have something to be
 verified against. `Render_Occlusion` stays default off.
+
+⇒ §12.10 revisits both: step 2 turns out to be already built, and the
+over-cull figures above turn out to be single samples of a wide
+distribution.
+
+### 12.10 measured: which verdict deleted the row, and two corrections
+
+The audit of §12.9 names the *draws* the culling wrongly removed. This step
+makes it name the **verdict**: `cull()` fills a parallel `cullOwner` giving,
+for every masked row, the node whose hidden answer cut it, and the readout
+snapshots every node's visibility state with the id image the way the mask
+is already snapshotted. `RenderDebug_CullAudit` prints a second line
+(format in docs/RenderDebug.md §2.4e). Same harness, same server assembly,
+same fixed converged camera, 1863x1064, real GPU with the monitor off.
+
+It was built to close §12.7's open question — *the condition under which a
+node whose residents are drawn reports no pixels, repeatedly*. It does not
+close it. It produced two corrections instead, and both are worth more than
+the answer would have been.
+
+#### ⛔⛔ Correction 1: the obvious discriminator is a tautology
+
+§12.6 explains the per-test failure as a **drawn** node losing a depth tie
+against its own contents. The obvious confirmation is to record, per
+verdict, whether the test that produced it was offered while the node was
+being drawn — and the first version of this instrument did exactly that,
+and reported **100.0% drawn / 0.0% hidden** on every row.
+
+It has to. `mustTest` is filled inside `if (st.hidden)` and `mayTest` in the
+visible branch, so **only an already-hidden node is ever offered from the
+hidden set**, and the answer that *first* sets `hidden` can only ever be the
+answer to a drawn-kind offer. The number is 100% for every scene, every
+camera and every configuration — including all the ones where §12.6's
+explanation is false. It is the same shape as the whole-model box reading
+"hidden": an output that cannot come out any other way, wearing the
+appearance of a strong result.
+
+⚠️ Generalise, and it is the third time in this section: **before reading a
+measurement, ask what its other outcome would have looked like.** §12.9's
+validation row was licensed by exactly that question and passed it — 818
+masked instances, 0 reported, where an inflating instrument had 818 chances
+to show itself. This field could not have failed. It was removed rather than
+reported, and replaced by what a lying query and a stale one actually differ
+in: the **age** of the deciding answer, and how many times the node has
+**entered** the hidden state.
+
+#### ⚠️⚠️ Correction 2: §12.9's table quotes one sample of an oscillator
+
+Re-running the same harness against the same build, camera and settings did
+not reproduce §12.9's numbers, and not by a little. So the harness now reads
+*every* audit line in the settle window instead of the last one:
+
+| visible ttl | confirmations | over-cull px, per sample across ~30 samples | quoted in §12.9 |
+|---|---|---|---|
+| 60 | 2 | min **0** · median **572** · max **64712** | 36629 |
+| 6 | 2 | min **0** · median **17525** · max **46056** | 44415 |
+
+Framing is identical across all of it — the culling-off control reports
+`163364 covered px` and `16913 of 17727 drawn-but-invisible` in every run,
+to the pixel, which rules out the 3%-of-the-viewport trap and any difference
+in what had loaded. Only *which frame was read* differs.
+
+⭐ **The trap survived being moved to a better instrument.** §12.6's rule was
+written about pictures — an off→on comparison cannot be read until on→on is
+zero — and the audit exists because pictures name nothing. But the audit
+samples the same oscillating system, so one audit line is worth no more per
+sample than one capture was.
+
+⭐⭐ And the damage it does is not merely noise around a true value: **ttl 60's
+maximum (64712) is larger than ttl 6's (46056)**, while its median is thirty
+times smaller. §12.7's "damage is proportional to the number of re-tests"
+survives in the *median* and is invisible — even inverted — in a single
+sample. That response surface was single samples.
+
+#### What the attribution does establish
+
+Summed over every sample in the window:
+
+| visible ttl | over-cull from a verdict ≤2 frames old | from nodes that have flipped ≥3× | cut by the frustum, not occlusion |
+|---|---|---|---|
+| 60 | 205041 px (**99.5%**) | 47404 px (23.0%) | **0 px** |
+| 6 | 481752 px (**94.1%**) | 437956 px (85.5%) | **0 px** |
+
+- ⭐⭐ **The over-cull is not stale verdicts.** 94–99.5% of it comes from
+  answers less than two frames old, against a camera that never moved. The
+  "the query was right when it was taken and the world moved underneath it"
+  explanation needs time it did not have ⇒ **the query is answering wrongly**,
+  which is the per-test failure §12.7 could not establish from pictures.
+- **The frustum is clean.** Not one over-culled pixel in any row belongs to
+  the other contributor to the same mask, so nothing here is a fix waiting to
+  be credited to the wrong mechanism.
+- **Flipping tracks the re-test rate** — 23% of the damage at ttl 60 against
+  85.5% at ttl 6, with the worst nodes entering the hidden state 16–22 times
+  in a thirty-second window. §12.7 inferred "the false answers come in runs"
+  from the shape of a confirmation sweep; this measures it as a state.
+- ⭐ **The cost of a wrong verdict scales with where in the tree it is taken,
+  and the evidence required does not.** At ttl 6 the worst node is `L1
+  res12 sub1938` and owns 17305 of 25947 px — 67% of the row from one
+  verdict — and the top four all stand for ≥1938 instances at levels 1-3. A
+  node speaking for two thousand instances needs exactly the same two
+  confirmations as one speaking for twelve.
+
+#### ⭐⭐ And the priming pass is already what this renderer does
+
+Step 2 of §12.8 — *draw the previously visible set first, test against that*
+— was the next thing to build. It has been built since §12.1. The mask is
+computed at the top of the frame from the verdicts in hand; the opaque pass
+draws the set that survives it, which **is** the previously visible set; and
+the boxes are rasterized against exactly that depth, because
+`ViewOcclusionProbe` sits immediately after `ViewOpaque`/`ViewSelection` in
+the view order and transparent geometry writes no depth.
+
+What NVIDIA's *Temporal Current Frame* adds beyond that is not a different
+depth buffer. It is a **second draw pass inside the same frame** for the
+objects the test brings back — which needs the query resolved without a CPU
+round trip (compute plus indirect draws, which WebGL2 does not have, §10.4),
+and which fixes objects appearing a frame *late*. That is under-draw. This
+fault is over-cull. ⇒ **Priming would not have moved it**, and building it
+first would have cost a session to find that out.
+
+#### What is still owed
+
+Why a box that bounds drawn, visible residents returns zero samples is still
+unexplained. What the attribution adds is where to stop looking: the failure
+is in **re-tests of nodes that are currently drawn** — the one configuration
+in which a hardware query cannot be asked at all without the node's own
+contents already in the depth buffer it will be answered against, because
+the query happens after the pass that wrote them. That is not a property of
+the box, the padding or the policy but of *when* the question can be asked,
+and it is what §12.8's remaining option removes: Intel's masked software
+occlusion culling advertises interleaved occluder rasterization and queries,
+which is what lets a node be asked *before* its own geometry is added — what
+CHC++ gets from front-to-back traversal and an end-of-frame hardware query
+cannot have at any padding.
+
+⛔ Named so it is not mistaken for a fix: the damage concentrates in nodes
+with large subtrees, so requiring evidence in proportion to what a verdict
+would delete would cut the worst of it. That is exposure reduction of the
+kind §12.7 already measured and rejected — hysteresis dilutes a failure that
+comes in runs; it does not remove it.
+
+`Render_Occlusion` stays default off.
