@@ -482,6 +482,7 @@ ToolBarManager::ToolBarManager()
             "BaseApp/MainWindow/ToolBars");
 
     hMovable = hPref->GetGroup("Movable");
+    hWorkbenchReturn = hPref->GetGroup("WorkbenchReturn");
 
     if (auto sb = getMainWindow()->statusBar()) {
         sb->installEventFilter(this);
@@ -1251,34 +1252,82 @@ void ToolBarManager::relocateMenuBarAreas()
     }
 }
 
-QToolBar *ToolBarManager::nextTopDockToolBar(QToolBar *toolbar)
+QToolBar *ToolBarManager::nextDockToolBar(QToolBar *toolbar)
 {
     // QMainWindow does not hand out its dock order, but it has laid the
-    // toolbars out by the time anyone asks: row-major is y then x. Read for one
-    // toolbar only, and only while \a toolbar is still docked, so the layout is
-    // the one on screen.
+    // toolbars out by the time anyone asks, and ToolBarKey already turns that
+    // geometry into the order the dock is in -- rows for a horizontal area,
+    // columns for a vertical one. Read for one toolbar only, and only while
+    // \a toolbar is still docked, so the layout is the one on screen.
     auto mw = getMainWindow();
-    std::map<std::pair<int, int>, QToolBar*> docked;
+    const auto area = mw->toolBarArea(toolbar);
+    std::map<ToolBarKey, QToolBar*> docked;
     for (auto &v : toolBars()) {
         QToolBar *tb = v.second;
         if (tb && !tb->isHidden() && tb->parentWidget() == mw
-                && mw->toolBarArea(tb) == Qt::TopToolBarArea) {
-            docked.emplace(std::make_pair(tb->geometry().y(), tb->geometry().x()), tb);
+                && mw->toolBarArea(tb) == area) {
+            docked.emplace(ToolBarKey(tb), tb);
         }
     }
-    auto it = docked.find(std::make_pair(toolbar->geometry().y(), toolbar->geometry().x()));
+    auto it = docked.find(ToolBarKey(toolbar));
     if (it == docked.end() || ++it == docked.end()) {
         return nullptr;
     }
     return it->second;
 }
 
-/*! Where the workbench toolbar goes back to, in MainWindow/ToolBars beside the
- * per-toolbar visibility flags. An ASCII entry among bools, so it cannot
- * collide with a toolbar of the same name, and it is absent exactly when the
- * toolbar is not in the title bar.
+/*! The dock slot the workbench toolbar goes back to, under
+ * MainWindow/ToolBars/WorkbenchReturn -- a subgroup for the same reason
+ * Movable is one, so that writing it does not look like a toolbar preference
+ * change and restart the 100 ms re-placement pass.
+ *
+ * Absent exactly when the toolbar is not in the title bar. Four entries,
+ * because between them they are the whole slot: which dock area it was in,
+ * which toolbar it stood in front of there, and where its row began and ended.
+ * QMainWindow::removeToolBar() erases all of that from Qt's own
+ * MainWindowState the moment the title bar takes the toolbar.
+ *
+ * The two breaks are read in different cases, and only one of them ever
+ * matters at a time. Inserting in front of the anchor already puts the toolbar
+ * at the head of that row if that is where it was, so BreakBefore is only
+ * needed where there is no anchor to insert in front of -- the toolbar was
+ * last in its area, and the break has to be appended before it. BreakAfter is
+ * the opposite case: the anchor started the next row, so the toolbar had a row
+ * that ended at it, and the anchor needs its break back or the two arrive as
+ * one row.
  */
-static const char *workbenchReturnAnchor = "WorkbenchReturnAnchor";
+static const char *returnArea = "Area";
+static const char *returnAnchor = "Anchor";
+static const char *returnBreakBefore = "BreakBefore";
+static const char *returnBreakAfter = "BreakAfter";
+
+static const char *toolBarAreaName(Qt::ToolBarArea area)
+{
+    switch (area) {
+    case Qt::BottomToolBarArea:
+        return "Bottom";
+    case Qt::LeftToolBarArea:
+        return "Left";
+    case Qt::RightToolBarArea:
+        return "Right";
+    default:
+        return "Top";
+    }
+}
+
+static Qt::ToolBarArea toolBarAreaFromName(const std::string &name)
+{
+    if (name == "Bottom") {
+        return Qt::BottomToolBarArea;
+    }
+    if (name == "Left") {
+        return Qt::LeftToolBarArea;
+    }
+    if (name == "Right") {
+        return Qt::RightToolBarArea;
+    }
+    return Qt::TopToolBarArea;
+}
 
 void ToolBarManager::setTitleBarToolBars(bool enable)
 {
@@ -1323,21 +1372,24 @@ void ToolBarManager::setTitleBarToolBars(bool enable)
     Base::ConnectionBlocker block(connParam);
 
     if (enable) {
-        // Which toolbar it sits in front of right now, so it can go back
-        // between the same two neighbours. addToolBar() appends to the last row
-        // instead, which turns every trip into the title bar and out again into
-        // a move to the bottom of the dock.
+        // The dock slot as it stands, so the toolbar can go back into it.
+        // addToolBar() appends to the end of the area instead, which turns every
+        // trip into the title bar and out again into a move to the bottom of the
+        // dock, and merges a row of its own into the one above.
         //
         // Written to the configuration rather than kept in a member: the trip
         // out is usually not in the session that made the trip in. A start with
         // the toolbar already parked -- which is what MainWindow/MenuBarLeft
         // arranges -- has nothing in memory to go back to.
-        auto anchor = nextTopDockToolBar(toolbar);
+        auto anchor = nextDockToolBar(toolbar);
+        hWorkbenchReturn->SetASCII(returnArea, toolBarAreaName(mw->toolBarArea(toolbar)));
+        hWorkbenchReturn->SetBool(returnBreakBefore, mw->toolBarBreak(toolbar));
+        hWorkbenchReturn->SetBool(returnBreakAfter, anchor && mw->toolBarBreak(anchor));
         if (anchor) {
-            hPref->SetASCII(workbenchReturnAnchor, anchor->objectName().toUtf8());
+            hWorkbenchReturn->SetASCII(returnAnchor, anchor->objectName().toUtf8());
         }
         else {
-            hPref->RemoveASCII(workbenchReturnAnchor);
+            hWorkbenchReturn->RemoveASCII(returnAnchor);
         }
         mw->removeToolBar(toolbar);
         toolbar->setOrientation(Qt::Horizontal);
@@ -1355,24 +1407,39 @@ void ToolBarManager::setTitleBarToolBars(bool enable)
         // The anchor is a name, so it has to be looked up again: the workbench
         // in charge now need not be the one that was there when it was
         // recorded. Gone -- a workbench-specific toolbar, or a toolbar the user
-        // has since moved elsewhere -- and the end of the dock is as good an
+        // has since moved elsewhere -- and the end of the area is as good an
         // answer as any.
         QToolBar *anchor = nullptr;
-        const QString name = QString::fromUtf8(hPref->GetASCII(workbenchReturnAnchor).c_str());
+        const QString name = QString::fromUtf8(hWorkbenchReturn->GetASCII(returnAnchor).c_str());
         if (!name.isEmpty()) {
             auto found = bars.find(name);
             if (found != bars.end() && found->second && found->second->parentWidget() == mw) {
                 anchor = found->second;
             }
         }
+        const auto dockArea = toolBarAreaFromName(hWorkbenchReturn->GetASCII(returnArea, "Top"));
+
+        Base::StateLocker adder(adding);
         if (anchor) {
-            Base::StateLocker adder(adding);
+            // Inserting in front of the anchor lands the toolbar back on the
+            // anchor's row, at the head of it if that is where it was -- so the
+            // break before it needs nothing done. The break after it does: the
+            // anchor gave its own up when the two rows merged into one.
             mw->insertToolBar(anchor, toolbar);
+            if (hWorkbenchReturn->GetBool(returnBreakAfter, false)
+                    && !mw->toolBarBreak(anchor)) {
+                mw->insertToolBarBreak(anchor);
+            }
         }
         else {
-            addToolBarToMainWindow(toolbar);
+            // Last in its area: appending is the right place, and the break has
+            // to go first because there is nothing to insert in front of.
+            if (hWorkbenchReturn->GetBool(returnBreakBefore, false)) {
+                mw->addToolBarBreak(dockArea);
+            }
+            mw->addToolBar(dockArea, toolbar);
         }
-        hPref->RemoveASCII(workbenchReturnAnchor);
+        hWorkbenchReturn->Clear();
     }
     setToolBarVisible(toolbar, visible);
 }

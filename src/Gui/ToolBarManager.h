@@ -224,10 +224,10 @@ protected:
      */
     QRect menuBarDropRect() const;
 
-    /*! The toolbar that follows \a toolbar in the top dock area, reading the
-     * laid-out geometry row-major. Null when it is the last one there.
+    /*! The toolbar that follows \a toolbar in its own dock area, in the order
+     * the area lays them out. Null when it is the last one there.
      */
-    QToolBar *nextTopDockToolBar(QToolBar *toolbar);
+    QToolBar *nextDockToolBar(QToolBar *toolbar);
 
     bool addToolBarToArea(QObject *, QMouseEvent*);
     bool showContextMenu(QObject *);
@@ -246,6 +246,11 @@ private:
     static ToolBarManager* _instance;
     ParameterGrp::handle hPref;
     ParameterGrp::handle hMovable;
+    /*! The dock slot the workbench toolbar left when the title bar took it:
+     * area, the toolbar it stood in front of, and whether it began a row.
+     * Qt's own MainWindowState loses all three at removeToolBar().
+     */
+    ParameterGrp::handle hWorkbenchReturn;
     ParameterGrp::handle hMainWindow;
     ParameterGrp::handle hGlobal;
     ParameterGrp::handle hStatusBar;
