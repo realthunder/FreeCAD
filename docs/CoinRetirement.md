@@ -270,19 +270,22 @@ The `Shadow_*` dynamic properties are a fourth thing to place: group
 ground colour and transparency and the rest. They need mapping onto
 `Render_*` equivalents or they are left orphaned on the view.
 
-Two defects found while establishing the above, both open and both
-recorded in `docs/HANDOFF_ShadingAndDrawStyle.md` §2:
+Two defects found while establishing the above, both recorded in
+`docs/HANDOFF_ShadingAndDrawStyle.md` §2 and **both since closed**:
 
-- `Shadow_ShowGround` is never created when a backend is active. The
-  call that materializes it sits behind `!renderer &&` at
-  `View3DInventorViewer.cpp:2389`, so the short circuit skips it. The
-  global preference still reaches the backend through the bridge's
-  fallback; only the per-view override is unreachable.
+- `Shadow_ShowGround` was never created when a backend is active: the
+  call that materializes it sat behind `!renderer &&`, so the short
+  circuit skipped it. The global preference still reached the backend
+  through the bridge's fallback; only the per-view override was
+  unreachable (`5e49f8bdd9`).
 - The backend's shadow ground is roughly twice the extent of glr's —
   0.9927 of the frame against 0.4791 on one sphere and one cylinder,
   glr ending at a horizon where the backend reaches every edge. The
   bridge notes it "sizes its ground from the scene bounding box only",
-  which is where the difference most likely is.
+  which is where the difference most likely is. Sizing and placement
+  brought to parity in `d4edf90458`; the pixel disagreement that survived
+  it turned out to be the quad being *clipped*, not sized wrong, and is
+  §1c.
 
 ⚠️ Both were invisible for as long as the comparison leg was cache 0,
 which has no shadow support at all: its shadow frame measures identical
@@ -379,10 +382,11 @@ looked like.
   standing observation: Coin's shadow machinery is still built and run
   underneath a backend frame, and that is the cost stage 4c removes.
 
-**Stage 1c — auto clipping does not account for what the backend draws
-outside the scene graph.** Found while bringing the shadow ground to
-parity, and it is the *only* difference left between the two grounds
-once sizing and placement match. Measured on one 20mm cube, same camera:
+**Stage 1c — auto clipping did not account for what the backend draws
+outside the scene graph. DONE.** Found while bringing the shadow ground
+to parity, and it was the *only* difference left between the two grounds
+once sizing and placement matched. Measured on one 20mm cube, same
+camera:
 
 | ground | bgfx near/far | glr near/far | quads agree |
 | --- | --- | --- | --- |
@@ -416,7 +420,13 @@ can be attributed, gives the mechanism:
    box cache and never descends, so `SoFCUnifiedSelection::getBoundingBox`
    — the only route to `onGetBoundingBox`, and so the only route by
    which the backend's ground can reach the bounds — is reached just
-   **once per leg**.
+   **once per leg**. That ancestor is the `SoShadowGroup`
+   `activateShadow()` wraps the scene root in: it derives from
+   `SoSeparator` and caches like one. Not the superscene above it, which
+   Quarter builds with `boundingBoxCaching` **OFF**
+   (`Quarter/QuarterWidget.cpp:657`) and whose camera invalidates any
+   open cache anyway (`SoCamera::getBoundingBox`). So the draw style that
+   has a ground is also the one that puts a caching separator in the way.
 3. That one time is the frame straight after `setRendererType`, when the
    renderer has been built but no traversal has run yet, so
    `lightconf` is still default: `valid` false, `ground` false.
@@ -438,19 +448,57 @@ Coin's own quad still in the graph from the preceding glr shot, not the
 backend's contribution. Do not take them as evidence that the path works
 in those cases.
 
-The fix therefore has two halves, and the second is the one with teeth:
-the single query must see a populated light config, **and** a change in
-what the backend draws outside the graph has to invalidate the Coin
-bounding-box cache, or the answer is computed once and kept forever.
-⚠️ The obvious hook — touch the selection root when the renderer's
-reported bounds change — feeds a redraw from inside the redraw, so it
-has to be guarded on an actual change rather than on the config being
-re-pushed, which happens every traversal.
+**Fixed 2026-08-10**, and *not* the way the diagnosis proposed. That
+called for two halves — make the single query see a populated light
+config, and invalidate the Coin cache whenever what the backend draws
+changes. The second half is unnecessary, and the route to it was a trap
+worth recording: the node that would have to be touched is the selection
+root, and `SoFCRenderCacheManager::traverse` gates its capture on
+`root->getNodeId()`, which `SoNode::notify` bumps for every node the
+notification passes through. Touching it to move a clip plane re-captures
+the whole scene feed — on the large models the backend exists for, the
+expensive traversal, once per bounds change.
 
-Related, and probably the same defect from the other side: an
-**"invisible" show-on-top object is clipped by auto clipping** — it does
-not contribute to the bounds it is then judged against. Reported
-2026-08-10, not investigated.
+Instead the bounds are reported from a place no cache can answer for: an
+`SoCallback` added directly under the superscene
+(`Private::addRendererBoundsNode`), which is asked on every traversal
+because that separator does not cache. It calls the same
+`onGetBoundingBox`, so there is still one computation of the bounds and
+one place that folds in `LightConfig::groundQuad`; reaching it twice —
+once there, once through `SoFCUnifiedSelection` for traversals applied
+below — is a union of one box with itself. Nothing has to notice a
+change, so nothing feeds a redraw from inside a redraw either.
+
+The ordering half of the diagnosis then takes care of itself: the query
+happens every frame, so the frame after the render-cache traversal
+pushes the light config already clips to the ground.
+
+`clip_bounds_probe.py` 5/5 — the backend's box goes from the cube's own
+`((-10,-10,0),(10,10,20))` to the quad's `((-40,-40,-1),(40,40,20))`, its
+planes from 240.73 / 277.00 to glr's 205.68 / 312.70, and the "asked
+again later" and "left drawing" checks stay put. `ground_parity_probe.py`
+10/10: every row of the table above now clips identically on both paths,
+and the auto and explicit-size quads land on the same pixels (0 px, from
+49 and 56) — the pixel disagreement *was* the clipping, the far corners
+of the quad falling behind the far plane. `renderer_light_probe.py`
+10/10.
+
+What this does **not** settle is the doubt raised above about the rows
+that already agreed: whether the backend leg's *pixels* are its own quad
+or Coin's, left in the graph by the preceding leg, is a question about
+what is drawn, and clipping is not what would decide it. What is now
+established is on the bounds side — `clip_bounds_probe.py` runs its
+backend leg **first**, and that leg's box moved from the cube's to the
+quad's across this change, with no glr leg before it to leave anything
+behind.
+
+Still open, and the same shape from the other side: an **"invisible"
+show-on-top object is clipped by auto clipping** — it does not contribute
+to the bounds it is then judged against. Reported 2026-08-10, not
+investigated; untouched by the above, which only moved where the
+*backend's* bounds are reported. That one is drawn by Coin from a node
+that is in the graph, so it is a question of which traversals count it,
+not of whether anything asks.
 
 **Stage 1b — the draggers, and Coin reaching into the backend's
 framebuffer.** Draggers are the largest thing still drawn by Coin GL on
