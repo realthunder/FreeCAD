@@ -383,6 +383,48 @@ bool StdCmdTitleBar::isActive()
 }
 
 //===========================================================================
+// Std_ViewFoldTitleBarMenu
+//===========================================================================
+
+DEF_STD_CMD_AC(StdCmdFoldTitleBarMenu)
+
+StdCmdFoldTitleBarMenu::StdCmdFoldTitleBarMenu()
+  : Command("Std_ViewFoldTitleBarMenu")
+{
+    sGroup        = "View";
+    sMenuText     = QT_TR_NOOP("Fold the title bar menu");
+    sToolTipText  = QT_TR_NOOP("Hides the menu bar behind the logo in the custom title bar, "
+                               "leaving the whole row for toolbars. Point at the logo to "
+                               "open it");
+    sWhatsThis    = "Std_ViewFoldTitleBarMenu";
+    sStatusTip    = sToolTipText;
+    eType         = 0;
+}
+
+Action * StdCmdFoldTitleBarMenu::createAction()
+{
+    Action *pcAction = Command::createAction();
+    pcAction->setCheckable(true);
+    pcAction->setChecked(getMainWindow()->foldTitleBarMenu(), true);
+    return pcAction;
+}
+
+void StdCmdFoldTitleBarMenu::activated(int iMsg)
+{
+    getMainWindow()->setFoldTitleBarMenu(iMsg != 0);
+
+    if (auto action = getAction()) {
+        action->setChecked(getMainWindow()->foldTitleBarMenu(), true);
+    }
+}
+
+bool StdCmdFoldTitleBarMenu::isActive()
+{
+    // Nothing to fold while the platform draws the title bar.
+    return getMainWindow()->isCustomTitleBar();
+}
+
+//===========================================================================
 // Std_ViewStatusBar
 //===========================================================================
 
@@ -521,6 +563,7 @@ void CreateWindowStdCommands()
     rcCmdMgr.addCommand(new StdCmdToolBarMenu());
     rcCmdMgr.addCommand(new StdCmdWindowsMenu());
     rcCmdMgr.addCommand(new StdCmdTitleBar());
+    rcCmdMgr.addCommand(new StdCmdFoldTitleBarMenu());
     rcCmdMgr.addCommand(new StdCmdStatusBar());
     rcCmdMgr.addCommand(new StdCmdUserInterface());
 }

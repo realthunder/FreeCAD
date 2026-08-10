@@ -84,6 +84,7 @@
 #include <DAGView/DAGView.h>
 #include <TaskView/TaskView.h>
 
+#include <customtitlebarkit/FoldableMenuBar.h>
 #include <customtitlebarkit/MenuIntegration.h>
 
 #include "MainWindow.h"
@@ -423,8 +424,6 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     d->whatsthis = false;
     d->assistant = new Assistant();
 
-    setupTitleBarMenu();
-
     // global access
     instance = this;
 
@@ -444,6 +443,11 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
 
     d->hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/MainWindow");
+
+    // After d->hGrp, which it reads, and before the menu bar exists, which is
+    // what it decides the layout of.
+    setupTitleBarMenu();
+
     d->saveStateTimer.setSingleShot(true);
     connect(&d->saveStateTimer, &QTimer::timeout, [this](){this->saveWindowSettings();});
 
@@ -1756,6 +1760,106 @@ void MainWindow::closeEvent (QCloseEvent * e)
     }
 }
 
+namespace {
+
+/*! The button a folded title bar menu hides behind: the application logo, and
+ * beside it the three bars that say a menu opens from here.
+ *
+ * Those three bars are the whole reason for a custom widget. Without them the
+ * button is a logo, a logo is a brand mark rather than a control, and a menu
+ * bar that has turned into one reads as a menu bar that has gone missing --
+ * which is exactly how the first version of this was reported. They are painted
+ * rather than set as text or a second icon, so they follow the palette without
+ * being recomposed on every theme change and cannot come out as the empty box
+ * a font with no U+2630 would give.
+ *
+ * Resting the pointer on it opens the menu, so it can also be found by sweeping
+ * the mouse along the title bar rather than by reading the mark.
+ */
+class TitleBarMenuButton: public QPushButton
+{
+public:
+    explicit TitleBarMenuButton(QWidget *parent)
+        : QPushButton(parent)
+        , logo(BitmapFactory().iconFromTheme("freecad"))
+    {
+        setObjectName(QStringLiteral("titleBarLogo"));
+        setFlat(true);
+        setCursor(Qt::PointingHandCursor);
+        setFixedSize(3 * margin + logoSize + barsWidth, 35);
+
+        // Long enough that crossing the button on the way somewhere else does
+        // not open anything, short enough to feel like the button reacting.
+        hoverTimer.setSingleShot(true);
+        hoverTimer.setInterval(250);
+        connect(&hoverTimer, &QTimer::timeout, this, [this]() {
+            if (!underMouse()) {
+                return;
+            }
+            if (auto *bar = qobject_cast<FoldableMenuBar *>(parentWidget())) {
+                if (!bar->isExpanded()) {
+                    bar->setExpanded(true);
+                }
+            }
+        });
+    }
+
+protected:
+    void paintEvent(QPaintEvent *e) override
+    {
+        // The base class paints the background and frame the stylesheet asks
+        // for. It has neither icon nor text to draw, so everything visible
+        // below is ours.
+        QPushButton::paintEvent(e);
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+
+        const int top = (height() - logoSize) / 2;
+        logo.paint(&painter, QRect(margin, top, logoSize, logoSize));
+
+        // Three bars in whatever colour the theme gives button text, dimmed
+        // until the mouse is over the button: this is a hint, not a control of
+        // its own.
+        QColor ink = palette().buttonText().color();
+        ink.setAlphaF(isDown() || underMouse() ? 1.0F : 0.65F);
+        painter.setPen(QPen(ink, barThickness, Qt::SolidLine, Qt::RoundCap));
+
+        const qreal x = margin + logoSize + margin;
+        const qreal middle = height() / 2.0;
+        for (int row = -1; row <= 1; ++row) {
+            const qreal y = middle + row * barSpacing;
+            painter.drawLine(QPointF(x, y), QPointF(x + barsWidth, y));
+        }
+    }
+
+    void enterEvent(QEnterEvent *e) override
+    {
+        QPushButton::enterEvent(e);
+        hoverTimer.start();
+        update();  // the bars brighten under the mouse
+    }
+
+    void leaveEvent(QEvent *e) override
+    {
+        QPushButton::leaveEvent(e);
+        hoverTimer.stop();
+        update();
+    }
+
+private:
+    static constexpr int logoSize = 24;
+    static constexpr int barsWidth = 11;
+    static constexpr int margin = 5;
+    static constexpr qreal barSpacing = 3.5;
+    static constexpr qreal barThickness = 1.4;
+
+    QIcon logo;
+    QTimer hoverTimer;
+};
+
+}  // namespace
+
 void MainWindow::setupTitleBarMenu()
 {
     // Let the stylesheets tell the backends apart -- the generic one draws its
@@ -1773,14 +1877,18 @@ void MainWindow::setupTitleBarMenu()
         return;
     }
 
+    if (!foldTitleBarMenu()) {
+        // nullptr asks the kit for the platform default, which lays the menu
+        // bar out inline in the title bar.
+        setMenuIntegration(nullptr);
+        if (d->titleBarLogo) {
+            d->titleBarLogo->hide();
+        }
+        return;
+    }
+
     if (!d->titleBarLogo) {
-        auto logo = new QPushButton(this);
-        logo->setObjectName(QStringLiteral("titleBarLogo"));
-        logo->setIcon(BitmapFactory().iconFromTheme("freecad"));
-        logo->setIconSize(QSize(24, 24));
-        logo->setFixedSize(35, 35);
-        logo->setFlat(true);
-        logo->setCursor(Qt::PointingHandCursor);
+        auto logo = new TitleBarMenuButton(this);
         logo->setToolTip(tr("Show the menu"));
         d->titleBarLogo = logo;
     }
@@ -1789,6 +1897,20 @@ void MainWindow::setupTitleBarMenu()
     d->titleBarLogo->setParent(this);
 
     setMenuIntegration(new FoldableMenuIntegration(d->titleBarLogo, this));
+}
+
+bool MainWindow::foldTitleBarMenu() const
+{
+    return d->hGrp->GetBool("FoldTitleBarMenu", true);
+}
+
+void MainWindow::setFoldTitleBarMenu(bool enable)
+{
+    if (enable == foldTitleBarMenu()) {
+        return;
+    }
+    d->hGrp->SetBool("FoldTitleBarMenu", enable);
+    setupTitleBarMenu();
 }
 
 void MainWindow::setCustomTitleBar(bool enable)

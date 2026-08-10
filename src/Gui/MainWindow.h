@@ -88,6 +88,13 @@ public:
      */
     void setCustomTitleBar(bool enable);
 
+    /*! Whether the custom title bar's menu bar is folded behind the logo button
+     * rather than laid out inline. Folding gives the row back to the toolbars
+     * at the cost of a hover; MainWindow/FoldTitleBarMenu, on by default.
+     */
+    bool foldTitleBarMenu() const;
+    void setFoldTitleBarMenu(bool enable);
+
     enum ConfirmSaveResult {
         Cancel = 0,
         Save,
