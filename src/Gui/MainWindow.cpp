@@ -40,6 +40,7 @@
 # include <QLabel>
 # include <QMdiSubWindow>
 # include <QMenu>
+# include <QOpenGLWidget>
 # include <QMenuBar>
 # include <QMessageBox>
 # include <QMimeData>
@@ -403,6 +404,29 @@ protected:
 MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
   : QMainWindow( parent, f/*WDestructiveClose*/ )
 {
+    // Qt destroys and recreates a top-level's native window the first
+    // time a render-to-texture child -- a QOpenGLWidget -- appears under
+    // it: the surface it was created with cannot composite one, and
+    // QOpenGLWidget's constructor asks its whole ancestry for it. The 3D
+    // view is the first such child, which is why the *first* New
+    // Document made the whole window vanish, taskbar entry and all, and
+    // come back with the document in it, while every later one was
+    // quiet.
+    //
+    // Ask for it here instead, where there is no native window yet, so
+    // the window is created OpenGL-capable the first time and never has
+    // to be recreated. The widget is kept for the window's lifetime
+    // rather than constructed and thrown away: a destroyed one takes the
+    // state back with it, and the first New Document vanished exactly as
+    // before. It is hidden and 1x1, and an unshown QOpenGLWidget builds
+    // no GL context.
+    {
+        auto warmSurface = new QOpenGLWidget(this);
+        warmSurface->setObjectName(QStringLiteral("GLSurfaceWarmup"));
+        warmSurface->resize(1, 1);
+        warmSurface->hide();
+    }
+
     d = new MainWindowP;
     d->splashscreen = nullptr;
     d->activeView = nullptr;
