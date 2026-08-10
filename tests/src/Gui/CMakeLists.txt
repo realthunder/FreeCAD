@@ -51,7 +51,7 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(OcclusionCull_tests_run gtest_main FreeCADRenderer)
     add_test(NAME OcclusionCull_tests_run COMMAND OcclusionCull_tests_run)
 
-    # The software occlusion rasterizer (docs/FarFieldProxies.md §12.12).
+    # The software occlusion rasterizer (docs/FarFieldProxies.md 12.12).
     # Its central claim is a one-directional one -- it may under-cull and
     # may never over-cull -- so the tests carry a reference
     # full-resolution depth buffer to compare against, and the comparison

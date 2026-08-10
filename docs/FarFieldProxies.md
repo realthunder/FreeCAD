@@ -180,7 +180,7 @@ and, measured, a third pulling the same way rather than against it
 (§11.1a).
 
 **The grids nest.** Level `L`'s decimation grid is an exact
-subdivision of level `L-1`'s — shared origin, power-of-two — and the
+subdivision of level `L−1`'s — shared origin, power-of-two — and the
 grid is global per level rather than fitted to each node's own bounds,
 so neighbouring cells at the same level snap identically. §7 draws the
 generation consequence out of this.
