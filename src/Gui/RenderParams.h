@@ -1278,6 +1278,31 @@ public:
     static void setDebugProxyGen(const bool &v);
     static const char *docDebugProxyGen();
     //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugCullAudit
+    ///
+    /// Check what the occlusion culling skipped against what the
+    /// geometry actually put on screen (docs/FarFieldProxies.md §12.9).
+    /// Every other measurement of the culling compares two pictures and
+    /// reports how many pixels differ, which says that something is
+    /// wrong without saying what: this re-rasterizes the scene with the
+    /// cull mask ignored and each draw writing its own identity instead
+    /// of a colour, so the ids that own a pixel are an exact answer to
+    /// which draws reach the screen. Their intersection with the mask is
+    /// a list of proven over-culls -- each one a named draw with a pixel
+    /// count -- and the ids that own nothing while being drawn are the
+    /// converse: the headroom the culling has not taken. Reads the image
+    /// back to the CPU once a second, so it costs a full-resolution
+    /// transfer on the frames it reports and nothing while off. Needs a
+    /// backend with texture readback, which WebGL2 is not.
+    static const bool & getDebugCullAudit();
+    static const bool & defaultDebugCullAudit();
+    static void removeDebugCullAudit();
+    static void setDebugCullAudit(const bool &v);
+    static const char *docDebugCullAudit();
+    //@}
 //[[[end]]]
 
     /// Called on any parameter change: re-selects the renderer backend on

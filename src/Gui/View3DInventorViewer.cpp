@@ -4521,7 +4521,7 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         static const char* _debugViewModeEnums[] =
             {"Off", "Depth", "Normal", "AO", "Shadow", "ShadowTile",
              "Overdraw", "ShadowFilter", "UV", "Reflection",
-             "ImpactMap", nullptr};
+             "ImpactMap", "InstanceId", nullptr};
         auto prop = static_cast<App::PropertyEnumeration*>(
                 view->addDynamicProperty("App::PropertyEnumeration",
                                          "RenderDebug_ViewMode", "RenderDebug",
@@ -4592,6 +4592,14 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
                                          "RenderDebug_ProxyGen", "RenderDebug",
                                          RenderParams::docDebugProxyGen()));
         prop->setValue(RenderParams::getDebugProxyGen());
+        prop->setStatus(App::Property::Hidden, true);
+    }
+    if (!view->getPropertyByName("RenderDebug_CullAudit")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "RenderDebug_CullAudit", "RenderDebug",
+                                         RenderParams::docDebugCullAudit()));
+        prop->setValue(RenderParams::getDebugCullAudit());
         prop->setStatus(App::Property::Hidden, true);
     }
 }

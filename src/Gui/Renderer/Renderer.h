@@ -457,8 +457,11 @@ struct OcclusionCullConfig {
 struct RenderDebugConfig {
     /// Buffer visualization routed to the screen instead of the shaded
     /// scene: 0 = off, 1 = linearized depth, 2 = view-space normals,
-    /// 3 = ambient occlusion term, 4 = shadow term. The on-top,
-    /// highlight and overlay passes still draw on top.
+    /// 3 = ambient occlusion term, 4 = shadow term, 5 = shadow tile
+    /// coverage, 6 = overdraw, 7 = shadow filtering probe, 8 = UV,
+    /// 9 = planar reflection, 10 = particle impact map, 11 =
+    /// per-instance draw id. The on-top, highlight and overlay passes
+    /// still draw on top.
     int viewMode = 0;
     /// Freeze every intentionally time- or history-dependent input
     /// (temporal accumulation/jitter, water/fire animation time) so a
@@ -499,6 +502,22 @@ struct RenderDebugConfig {
     /// error axis. Unlike the others this one builds meshes, so it is
     /// bounded by a node sample and reports what it left out.
     bool proxyGen = false;
+    /// ⭐ Audit the occlusion culling against the geometry itself, once
+    /// a second (docs/FarFieldProxies.md §12.9). Every other measurement
+    /// of the culling compares *pictures* — this one compares a verdict
+    /// against what the draws it covers actually put on screen: the
+    /// scene is re-rasterized with the cull mask ignored and each draw
+    /// writing its own identity, so the set of ids owning a pixel is an
+    /// exact answer to "which draws reach the screen", and its
+    /// intersection with the mask is a list of proven over-culls, each
+    /// named, with a pixel count. The same histogram gives the converse
+    /// for free: drawn rows that own no pixel at all, which is the
+    /// headroom the culling has not taken.
+    ///
+    /// Independent of \ref viewMode — the id re-render runs either for
+    /// mode 11 (look at it) or for this (measure it), and the audit does
+    /// not disturb what is on screen.
+    bool cullAudit = false;
 
     /// A dynamically bound named shader parameter (docs/RenderDebug.md
     /// §2.5): any RenderDebug_* view property beyond the fixed knobs
@@ -526,7 +545,8 @@ struct RenderDebugConfig {
         return viewMode == o.viewMode && freezeFrame == o.freezeFrame
             && frameTiming == o.frameTiming && occlusion == o.occlusion
             && coverage == o.coverage && proxyCut == o.proxyCut
-            && proxyGen == o.proxyGen && userParams == o.userParams;
+            && proxyGen == o.proxyGen && cullAudit == o.cullAudit
+            && userParams == o.userParams;
     }
     bool operator!=(const RenderDebugConfig &o) const { return !(*this == o); }
 };

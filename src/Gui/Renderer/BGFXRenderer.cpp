@@ -2582,16 +2582,26 @@ public:
                             // marking needs the stencil buffer before
                             // the outline passes leave their marks)
         ViewDebugScene,     // debug scene re-render (docs/RenderDebug.md
-                            // modes 6/8): scene triangle fills
-                            // re-rasterized into a dedicated full-res
-                            // target — additive fragment counting for
-                            // the overdraw heatmap, or depth-tested
-                            // texcoord output for the UV mode; the
+                            // modes 6/8/11): scene draws re-rasterized
+                            // into a dedicated full-res target —
+                            // additive fragment counting for the
+                            // overdraw heatmap, depth-tested texcoord
+                            // output for the UV mode, or every draw's
+                            // own identity for the instance-id mode; the
                             // ViewDebug blit samples the result.
                             // (Repurposes the retired AO-apply slot —
                             // the fullscreen AO multiply moved into the
                             // mesh shaders' ambient terms, aoMeshTex at
                             // unit 9.)
+        ViewIdReadback,     // blit-only view of the cull audit
+                            // (RenderDebug_CullAudit): copies the id
+                            // image into a readback texture. Its own
+                            // view id because bgfx runs a view's blits
+                            // BEFORE its draws — asked on ViewDebugScene
+                            // the copy would carry the previous frame's
+                            // image, and comparing a verdict against a
+                            // frame-old picture is the very error this
+                            // instrument was built to rule out.
         ViewGroundReflApply, // ground reflection overlay: the mirrored
                             // scene blended onto the shadow ground quad
                             // (depth EQUAL against the ground's own
@@ -2873,7 +2883,7 @@ public:
                 *fb = BGFX_INVALID_HANDLE;
             }
         }
-        for (auto tex : {&debugSceneTex, &debugSceneDepth,
+        for (auto tex : {&debugSceneTex, &debugSceneDepth, &idReadTex,
                          &aoNormalZ, &aoDepth, &aoTex, &aoBlurTex,
                          &aoMipTex[0], &aoMipTex[1],
                          &aoMipTex[2], &aoMipTex[3], &aoMipTex[4],
@@ -5691,6 +5701,53 @@ public:
         return bgfx::isValid(debugSceneFbo);
     }
 
+    /// Whether this backend can hand the id image back to the CPU at
+    /// all. WebGL2 cannot, which is why the audit is a desktop
+    /// instrument that informs the browser tier rather than one that
+    /// runs there.
+    static bool idReadbackSupported()
+    {
+        const bgfx::Caps *caps = bgfx::getCaps();
+        return caps
+            && (caps->supported & BGFX_CAPS_TEXTURE_BLIT)
+            && (caps->supported & BGFX_CAPS_TEXTURE_READ_BACK);
+    }
+
+    /// CPU-readable mirror of the id image, created on first use at the
+    /// debug target's size. A render target cannot be read back
+    /// directly on every backend; blitting into a plain READ_BACK
+    /// texture is the portable arrangement.
+    bool ensureIdReadback()
+    {
+        if (!idReadbackSupported() || !bgfx::isValid(debugSceneTex))
+            return false;
+        if (bgfx::isValid(idReadTex) && idReadW == debugSceneW
+                && idReadH == debugSceneH)
+            return true;
+        if (bgfx::isValid(idReadTex)) {
+            bgfx::destroy(idReadTex);
+            idReadTex = BGFX_INVALID_HANDLE;
+        }
+        idReadTex = bgfx::createTexture2D(debugSceneW, debugSceneH, false, 1,
+            bgfx::TextureFormat::RGBA16F,
+            BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
+        idReadW = debugSceneW;
+        idReadH = debugSceneH;
+        return bgfx::isValid(idReadTex);
+    }
+
+    /// Copy this frame's id image and ask for it back. Returns the frame
+    /// number at which \a dst is filled — the caller must keep \a dst
+    /// alive until bgfx has reached it, since the render thread writes
+    /// into it long after this returns. 0 = the copy could not be made.
+    uint32_t readbackId(void *dst)
+    {
+        if (!bgfx::isValid(idReadTex) || !bgfx::isValid(debugSceneTex))
+            return 0;
+        bgfx::blit(vid(ViewIdReadback), idReadTex, 0, 0, debugSceneTex);
+        return bgfx::readTexture(idReadTex, dst);
+    }
+
     /// Rasterize one scene triangle draw into the debug scene target
     /// (docs/RenderDebug.md): mode 6 accumulates a fragment count with
     /// the depth test off (additive blend — the overdraw heatmap
@@ -5710,6 +5767,14 @@ public:
         setClipUniforms(mat);
         float params[4] = {float(mode), 0.0f, 0.0f, 0.0f};
         bgfx::setUniform(u_debugParams, params);
+        // ⚠️ The debug-scene vertex shader reads u_params.w as an NDC
+        // depth bias, and a bgfx uniform keeps whatever the last draw
+        // left in it. These modes want none, but they must SAY so: a
+        // line draw leaves its dim alpha (1.0) there, and one NDC unit
+        // of bias is past the far plane, which rasterizes nothing at all
+        // (docs/FarFieldProxies.md §12.6 — the same trap, once already).
+        float bias[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_params, bias);
         setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
                          (float)height);
         bgfx::setVertexBuffer(0, gpu->geom->vbh);
@@ -5729,6 +5794,201 @@ public:
         bgfx::setState(state);
         bgfx::submit(vid(ViewDebugScene),
                      clipped ? m_progDebugSceneClip : m_progDebugScene);
+        ++drawcount;
+    }
+
+    /// ⭐ Rasterize one scene draw into the debug scene target as its own
+    /// identity (docs/RenderDebug.md §2.3b, view mode 11): a pixel's
+    /// value IS the id of the draw that won the depth test there, so the
+    /// finished image is an exact answer to "which draws reached the
+    /// screen" — the invariant occlusion culling claims, and the only
+    /// measurement of that claim which compares a verdict against
+    /// geometry instead of comparing two pictures.
+    ///
+    /// \a drawIdx is the DrawCall row, which is the granularity the cull
+    /// mask is indexed at (`ProxyInstance::drawIndex`) — per *instance*,
+    /// not per mesh, so a disagreement names a thing that can actually
+    /// be masked. Encoded as drawIdx+1 in three raw byte lanes, since
+    /// zero has to stay available for "no draw owns this pixel".
+    ///
+    /// ⭐⭐ Exact integers, never a hash or a palette: two draws sharing a
+    /// colour is precisely the failure this instrument exists to detect,
+    /// and a mode that made ids pretty would hide it. The target is
+    /// RGBA16F, which carries 0..255 per channel exactly.
+    ///
+    /// Every geometry kind, deliberately. The residual damage of the
+    /// culling shows up on edges, so an audit that skipped lines and
+    /// points would come back clean while missing exactly the draws that
+    /// were wrong. Lines and points therefore go through the same
+    /// screen-space quad expansion the beauty pass uses — the same
+    /// vertex programs, so the coverage IS the coverage — with
+    /// fs_fc_flat's constant-colour path carrying the id (u_params.x = 0
+    /// selects u_matColor; a zero emissive leaves it untouched).
+    ///
+    /// ⚠️ The coverage and depth decisions below are copied from
+    /// submit(); they are the ones that decide which pixels a draw
+    /// takes, so a copy that drifts reports pixels the frame never drew.
+    /// Anything that changes thick-line/point expansion, culling or
+    /// depth there has to change here too.
+    void submitId(const Render::DrawCall &draw, int drawIdx, bool noseam)
+    {
+        const Render::Material &mat = draw.material;
+        if (!draw.mesh || draw.mesh->numVertices == 0)
+            return;
+        GpuMesh *mesh = getMesh(*draw.mesh);
+        if (!bgfx::isValid(mesh->geom->vbh))
+            return;
+        if (noseam && mat.type == Render::Material::Line)
+            mesh->ensureNoSeam(*draw.mesh);
+        noseam = noseam && mat.type == Render::Material::Line
+            && bgfx::isValid(mesh->geom->lineNoSeam);
+        bgfx::IndexBufferHandle ibh = BGFX_INVALID_HANDLE;
+        switch (mat.type) {
+        case Render::Material::Triangle: ibh = mesh->geom->tri; break;
+        case Render::Material::Line:
+            ibh = noseam ? mesh->geom->lineNoSeam : mesh->geom->line;
+            break;
+        case Render::Material::Point: ibh = mesh->geom->point; break;
+        }
+        if (!bgfx::isValid(ibh))
+            return;
+
+        uint32_t linepattern = mat.linepattern;
+        bool patterned = mat.type == Render::Material::Line
+            && (linepattern & 0xffff) != 0xffff;
+        bool thickline = mat.type == Render::Material::Line
+            && (mat.linewidth > 1.001f || patterned)
+            && m_instancing
+            && bgfx::isValid(noseam ? mesh->lineNoSeamInst
+                                    : mesh->lineInst);
+        patterned = patterned && thickline;
+        bool thickpoint = mat.type == Render::Material::Point
+            && mat.pointsize > 1.001f
+            && m_instancing && bgfx::isValid(mesh->pointInst);
+
+        bool transparent = mat.transparent
+            || (mat.pervertexcolor && draw.mesh->hasTransparency);
+        bool twoside = mat.twoside || transparent || mat.ontop;
+        bool culling = mat.culling && !transparent;
+
+        // Depth exactly as the beauty pass resolves it — who owns the
+        // pixel is the entire answer here. On-top draws keep the depth
+        // test off and are submitted in a second round by the caller,
+        // so they take the same pixels they take on screen.
+        bool depthtest = mat.ontop ? false : mat.depthtest;
+        bool depthwrite = (!mat.ontop && transparent) ? false
+                                                      : mat.depthwrite;
+        if (!depthtest)
+            depthwrite = false;
+
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+        if (depthtest)
+            state |= depthFuncState(mat.depthfunc);
+        if (depthwrite)
+            state |= BGFX_STATE_WRITE_Z;
+        if (culling && !twoside && mat.type == Render::Material::Triangle)
+            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
+        if (mat.type == Render::Material::Line && !thickline)
+            state |= BGFX_STATE_PT_LINES;
+        else if (mat.type == Render::Material::Point && !thickpoint)
+            state |= BGFX_STATE_PT_POINTS
+                | BGFX_STATE_POINT_SIZE(
+                    uint32_t(qMax(mat.pointsize, 1.0f)));
+
+        const uint32_t id = uint32_t(drawIdx) + 1u;
+        const float idc[4] = {float(id & 0xffu), float((id >> 8) & 0xffu),
+                              float((id >> 16) & 0xffu), 1.0f};
+
+        bool clipped = clipActiveFor(mat);
+        if (clipped)
+            setClipUniforms(mat);
+        setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
+                         (float)height);
+
+        bgfx::ProgramHandle prog;
+        if (mat.type == Render::Material::Triangle) {
+            // The debug-scene programs: a bare transform and a constant
+            // output, with none of the mesh shader's lighting, fog, AO
+            // or tone mapping between the id and the target.
+            float dbg[4] = {11.0f, idc[0], idc[1], idc[2]};
+            bgfx::setUniform(u_debugParams, dbg);
+            // ...and its polygon offset, so a fill still resolves
+            // against its own biased edges the way it does on screen.
+            float params[4] = {0.0f, 0.0f, 0.0f, polygonOffsetBias(mat)};
+            bgfx::setUniform(u_params, params);
+            prog = clipped ? m_progDebugSceneClip : m_progDebugScene;
+        }
+        else {
+            float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            // u_params for the line/point/flat family: x = 0 picks the
+            // constant colour over the vertex stream, y = width in
+            // pixels, z = the NDC pull of highlighted lines, w = 1 = no
+            // alpha ceiling (the dimming of occluded on-top lines must
+            // not touch an id).
+            float params[4] = {
+                0.0f,
+                mat.type == Render::Material::Line
+                    ? qMax(1.0f, std::floor(mat.linewidth + 0.5f))
+                    : qMax(1.0f, std::floor(mat.pointsize + 0.5f)),
+                (mat.highlightline && depthtest)
+                    ? -2.0f * (2.0f * 16.0f / 16777216.0f) : 0.0f,
+                1.0f};
+            bgfx::setUniform(u_matColor, idc);
+            bgfx::setUniform(u_matEmissive, zero);
+            bgfx::setUniform(u_params, params);
+            if (patterned) {
+                uint32_t factor = linepattern >> 16;
+                factor = factor < 1 ? 1 : factor > 256 ? 256 : factor;
+                float pat[4] = {float(linepattern & 0xffff), float(factor),
+                                0.0f, 0.0f};
+                bgfx::setUniform(u_linePattern, pat);
+            }
+            prog = thickline
+                ? (patterned ? (clipped ? m_progLinePatClip : m_progLinePat)
+                             : (clipped ? m_progLineClip : m_progLine))
+                : thickpoint
+                    ? (clipped ? m_progPointClip : m_progPoint)
+                    : (clipped ? m_progFlatClip : m_progFlat);
+        }
+        if (!bgfx::isValid(prog))
+            return;
+
+        if (thickline) {
+            uint32_t startSeg = 0;
+            uint32_t numSeg = uint32_t(noseam
+                ? draw.mesh->numNoSeamLineIndices
+                : draw.mesh->numLineIndices) / 2;
+            if (draw.indexCount > 0) {
+                startSeg = uint32_t(draw.indexStart) / 2;
+                numSeg = uint32_t(draw.indexCount) / 2;
+            }
+            bgfx::setVertexBuffer(0, m_lineQuadVb);
+            bgfx::setIndexBuffer(m_lineQuadIb);
+            bgfx::setInstanceDataBuffer(
+                noseam ? mesh->lineNoSeamInst : mesh->lineInst,
+                startSeg, numSeg);
+        }
+        else if (thickpoint) {
+            uint32_t startPt = 0;
+            uint32_t numPt = uint32_t(draw.mesh->numPointIndices);
+            if (draw.indexCount > 0) {
+                startPt = uint32_t(draw.indexStart);
+                numPt = uint32_t(draw.indexCount);
+            }
+            bgfx::setVertexBuffer(0, m_lineQuadVb);
+            bgfx::setIndexBuffer(m_lineQuadIb);
+            bgfx::setInstanceDataBuffer(mesh->pointInst, startPt, numPt);
+        }
+        else {
+            setMeshVertexBuffers(mesh, *draw.mesh);
+            if (draw.indexCount > 0)
+                bgfx::setIndexBuffer(ibh, uint32_t(draw.indexStart),
+                                     uint32_t(draw.indexCount));
+            else
+                bgfx::setIndexBuffer(ibh);
+        }
+        bgfx::setState(state);
+        bgfx::submit(vid(ViewDebugScene), prog);
         ++drawcount;
     }
 
@@ -8299,6 +8559,12 @@ public:
     bgfx::FrameBufferHandle debugSceneFbo = BGFX_INVALID_HANDLE;
     uint16_t debugSceneW = 0;
     uint16_t debugSceneH = 0;
+    /// CPU-readable copy of the id image (RenderDebug_CullAudit). A
+    /// render target cannot be read back directly, so the audit blits
+    /// into this and reads that.
+    bgfx::TextureHandle idReadTex = BGFX_INVALID_HANDLE;
+    uint16_t idReadW = 0;
+    uint16_t idReadH = 0;
     bgfx::UniformHandle s_texAccum = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texReveal = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCap = BGFX_INVALID_HANDLE;
@@ -9265,6 +9531,145 @@ static void driveOcclusionCull(
     // could only return via the starvation fail-safe.
     for (size_t i = sent; i < batch.nodes.size(); ++i)
         culler.abandon(batch.nodes[i]);
+}
+
+/// Whether the once-a-second cull audit is due. Split from the report
+/// like the far-field readouts, and for the same reason: what it gates
+/// is a full-resolution transfer off the GPU, which must not be paid on
+/// the frames that print nothing.
+static bool cullAuditDue()
+{
+    static int64_t lastReport = 0;
+    const int64_t now = bx::getHPCounter();
+    const int64_t freq = bx::getHPFrequency();
+    if (lastReport && now - lastReport < freq)
+        return false;
+    lastReport = now;
+    return true;
+}
+
+/// ⭐⭐ Check the occlusion culling against the geometry it stands for
+/// (docs/FarFieldProxies.md §12.9).
+///
+/// \a pixels is the id image as it was rendered with the mask ignored,
+/// \a mask and \a keys the verdict and the draw identities as they were
+/// at that moment. A pixel's id is the draw that won the depth test
+/// there, so `owns a pixel` ∩ `masked` is a set of *proven* errors —
+/// not pixels that differ between two pictures, which is a symptom that
+/// names nothing, but named draws that the frame would have shown and
+/// the culling removed.
+///
+/// The converse falls out of the same histogram and is worth as much:
+/// rows that were drawn and own no pixel at all are the work the
+/// culling has not yet found.
+static void reportCullAudit(const std::vector<uint16_t> &pixels,
+                            uint16_t w, uint16_t h,
+                            const std::vector<uint8_t> &mask,
+                            const std::vector<uint64_t> &keys,
+                            const Render::ObjectInfoMap &names,
+                            std::vector<uint32_t> &hist)
+{
+    const size_t rows = keys.size();
+    const size_t npx = size_t(w) * size_t(h);
+    if (!rows || pixels.size() < npx * 4)
+        return;
+    hist.assign(rows + 1, 0u);
+    size_t covered = 0, outOfRange = 0;
+    for (size_t p = 0; p < npx; ++p) {
+        const uint16_t *px = &pixels[p * 4];
+        // .w = 1 marks a fragment; the target clears to zero, so a
+        // background pixel is not merely id 0 but uncovered.
+        if (bx::halfToFloat(px[3]) < 0.5f)
+            continue;
+        ++covered;
+        // Raw byte lanes, rounded rather than truncated: fp16 carries
+        // 0..255 exactly, so any rounding here is the *absence* of a
+        // bug rather than a tolerance.
+        const uint32_t id =
+              uint32_t(bx::halfToFloat(px[0]) + 0.5f)
+            | (uint32_t(bx::halfToFloat(px[1]) + 0.5f) << 8)
+            | (uint32_t(bx::halfToFloat(px[2]) + 0.5f) << 16);
+        if (id == 0 || id > rows) {
+            ++outOfRange;
+            continue;
+        }
+        ++hist[id];
+    }
+
+    // ⛔ The impossible-root guard, in its second incarnation (see
+    // OcclusionFrameStats::rootRefused). An id pass that drew nothing
+    // makes every draw look as though it reached no pixel, so the audit
+    // would report a flawless culling and a colossal amount of wasted
+    // work — the most convincing possible output, and entirely a report
+    // that the instrument is broken. A frame that put geometry on the
+    // screen covers pixels here; say so instead of computing on it.
+    if (!covered) {
+        RENDER_ERR("render cull audit: the id image is empty -- no draw "
+                   "claimed a pixel, which cannot be true of a frame that "
+                   "rendered. The audit is not measuring the scene; its "
+                   "numbers would be meaningless and are not reported.");
+        return;
+    }
+
+    // The two answers, and their worst offenders.
+    struct Offender { uint32_t id; uint32_t px; };
+    std::vector<Offender> overcull;
+    size_t overcullPx = 0, zeroPixelDrawn = 0, drawn = 0, masked = 0;
+    for (size_t i = 0; i < rows; ++i) {
+        const bool cut = i < mask.size() && mask[i] != 0;
+        if (cut) {
+            ++masked;
+            if (hist[i + 1])
+                overcull.push_back({uint32_t(i), hist[i + 1]});
+            overcullPx += hist[i + 1];
+        }
+        else {
+            ++drawn;
+            if (!hist[i + 1])
+                ++zeroPixelDrawn;
+        }
+    }
+    std::sort(overcull.begin(), overcull.end(),
+              [](const Offender &a, const Offender &b) {
+                  return a.px > b.px;
+              });
+
+    std::string worst;
+    const size_t show = std::min<size_t>(overcull.size(), 5);
+    for (size_t i = 0; i < show; ++i) {
+        const uint64_t key = overcull[i].id < keys.size()
+            ? keys[overcull[i].id] : 0;
+        auto it = names.find(key);
+        worst += " ";
+        // The label if the producer resolved one, else the internal
+        // name, else the row. Never nothing: a count without a name is
+        // the readout this whole exercise exists to replace.
+        if (it != names.end() && !it->second.label.empty())
+            worst += it->second.label;
+        else if (it != names.end() && !it->second.obj.empty())
+            worst += it->second.obj;
+        else
+            worst += "row";
+        worst += "#" + std::to_string(overcull[i].id) + ":"
+            + std::to_string(overcull[i].px) + "px";
+    }
+
+    char buf[1024];
+    snprintf(buf, sizeof(buf),
+             "render cull audit: %ux%u %zu covered px | over-cull %zu of %zu "
+             "masked rows, %zu px (%.3f%% of covered)%s | drawn-but-invisible "
+             "%zu of %zu (%.1f%%)%s\n",
+             unsigned(w), unsigned(h), covered,
+             overcull.size(), masked, overcullPx,
+             100.0 * double(overcullPx) / double(covered),
+             worst.c_str(), zeroPixelDrawn, drawn,
+             drawn ? 100.0 * double(zeroPixelDrawn) / double(drawn) : 0.0,
+             outOfRange ? " | WARNING: ids outside the draw list" : "");
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
 }
 
 class BGFXRenderer::Private
@@ -11444,12 +11849,44 @@ public:
 
         const bool prepassRender = prepassActive && aoRender;
 
-        // Debug scene re-render (docs/RenderDebug.md modes 6/8): the
-        // counting/UV rasterization runs every frame while its mode is
+        // Debug scene re-render (docs/RenderDebug.md modes 6/8/11): the
+        // counting/UV/id rasterization runs every frame while its mode is
         // active — debug-only work, no caching.
+        //
+        // The id variant has two independent callers: mode 11 draws it
+        // on screen, and RenderDebug_CullAudit reads it back to check
+        // the culling against it. The audit deliberately does not
+        // require the view mode — measuring what the frame skipped and
+        // looking at a false-colour id image are different jobs, and
+        // forcing the second to run the first would mean the audit can
+        // only be taken while the screen shows something nobody can
+        // navigate by.
+        const bool idPassRender = (debugconf.viewMode == 11
+                                   || debugconf.cullAudit)
+            && view->ensureDebugScene();
         const bool debugSceneRender = (debugconf.viewMode == 6
                                        || debugconf.viewMode == 8)
             && view->ensureDebugScene();
+
+        // The audit's readback, once a second: it is a full-resolution
+        // transfer off the GPU. One in flight at a time — a second would
+        // only overwrite the buffer the first is still being written
+        // into, and the readback is the cheap half anyway.
+        bool idReadbackWanted = false;
+        if (debugconf.cullAudit && idPassRender && !idReadyFrame) {
+            if (!BGFXView::idReadbackSupported()) {
+                if (!idAuditWarned) {
+                    idAuditWarned = true;
+                    RENDER_ERR("render cull audit: this backend cannot read "
+                               "a texture back, so the audit cannot run "
+                               "here. The id image itself still renders "
+                               "(RenderDebug_ViewMode 11) and can be "
+                               "captured off the screen.");
+                }
+            }
+            else if (view->ensureIdReadback() && cullAuditDue())
+                idReadbackWanted = true;
+        }
 
         // Ground reflection: mirror the world about the shadow ground
         // plane (z = scene bbox bottom, the plane the ground quad sits
@@ -11665,7 +12102,15 @@ public:
                              bloomActive);
             view->markPasses(V::ViewUserPostCopy, V::ViewUserPost,
                              userPostActive);
-            view->markPass(V::ViewDebugScene, debugSceneRender);
+            view->markPass(V::ViewDebugScene,
+                           debugSceneRender || idPassRender);
+            // The id readback's blit needs a view of its own that runs
+            // after the pass it copies: bgfx performs a view's blits
+            // before its draws, so asking for the copy on ViewDebugScene
+            // itself would read the previous frame's image — and one
+            // frame of camera motion is exactly the error class this
+            // instrument exists to measure.
+            view->markPass(V::ViewIdReadback, idReadbackWanted);
             // Shared by the measurement and the culling that acts on
             // it: both rasterize boxes against the finished opaque
             // depth, and it is the view id that places them there.
@@ -12133,14 +12578,33 @@ public:
                 bgfx::setViewMode(id, bgfx::ViewMode::Default);
                 bgfx::touch(id);
                 continue;
-            } else if (debugSceneRender && i == BGFXView::ViewDebugScene) {
-                // Fresh count/UV target every frame: the overdraw
+            } else if ((debugSceneRender || idPassRender)
+                       && i == BGFXView::ViewDebugScene) {
+                // Fresh count/UV/id target every frame: the overdraw
                 // counts accumulate from zero, .w = 0 marks pixels the
-                // UV re-render did not cover.
+                // UV re-render did not cover, and id 0 is "no draw owns
+                // this pixel" — all three want a cleared target and none
+                // of them may inherit last frame's.
                 bgfx::setViewFrameBuffer(id, view->debugSceneFbo);
                 bgfx::setViewClear(id,
                     uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
                     0x00000000u, 1.0f, 0);
+                // The id pass resolves coincident geometry by draw
+                // order (on-top last), so it cannot be state-sorted;
+                // the counting/UV modes do not care either way.
+                if (idPassRender)
+                    bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
+            } else if (idReadbackWanted && i == BGFXView::ViewIdReadback) {
+                // Blit-only view: no framebuffer of its own, nothing
+                // drawn into it. It exists to place the copy after the
+                // pass it copies (see markPass).
+                bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
+                bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                                   clearColor, 1.0f, 0);
+                bgfx::setViewRect(id, 0, 0, width, height);
+                bgfx::setViewTransform(id, nullptr, nullptr);
+                bgfx::touch(id);
+                continue;
             } else if (prepassRender && i == BGFXView::ViewAOPrepass) {
                 // Prepass target clears to 0 (.w = 0 marks background
                 // in the AO pass), with its own depth buffer.
@@ -12523,6 +12987,52 @@ public:
                 && d.material.type == Render::Material::Line
                 && d.partIndex < 0;
         };
+
+        // ⭐ The per-instance id image (docs/RenderDebug.md §2.3b, view
+        // mode 11 / RenderDebug_CullAudit): every scene draw rasterized
+        // into the debug target as its own identity, with the cull mask
+        // NOT consulted. That last part is the whole point — the image
+        // has to be what the frame would have drawn had nothing been
+        // skipped, or intersecting it with the mask proves nothing.
+        //
+        // Submitted here, before any pass reads `culled`, so the ground
+        // truth is taken from the same draw list under the same camera
+        // as the verdict it is about to be compared against.
+        //
+        // Two rounds: on-top draws render with the depth test off and
+        // win their pixels in the beauty frame by arriving in a later
+        // view. This pass has one view, so the order has to supply what
+        // the view ids otherwise would.
+        if (idPassRender) {
+            for (int round = 0; round < 2; ++round) {
+                for (size_t i = 0; i < scene.size(); ++i) {
+                    const auto &draw = scene[i];
+                    if (draw.material.ontop != (round == 1))
+                        continue;
+                    if (isHidden(draw) || isDup(draw) || hideFill(draw)
+                            || hidePoints(draw) || outlineOnly(draw))
+                        continue;
+                    view->submitId(draw, int(i), sceneNoSeam(draw));
+                }
+            }
+            // Snapshot the verdict with the image it is an answer
+            // about. Both change under the readback's latency, and
+            // checking a picture against a mask that was walked again
+            // in between would reintroduce, inside the instrument, the
+            // exact one-frame skew it was built to find.
+            if (idReadbackWanted) {
+                idPixW = view->idReadW;
+                idPixH = view->idReadH;
+                idPixels.assign(size_t(idPixW) * size_t(idPixH) * 4, 0);
+                idMask = sceneCulled;
+                idKeys.clear();
+                idKeys.reserve(scene.size());
+                for (const auto &d : scene)
+                    idKeys.push_back(d.objectKey);
+                idReadyFrame = view->readbackId(idPixels.data());
+            }
+        }
+
         // Which face-part set a whole-cache outline splits into
         // (GL: renderOutline ~1400). Clipped geometry and the
         // perFaceOutline mode (with a positive outline width, unless the
@@ -13488,13 +13998,14 @@ public:
                           "frame and did not render");
         }
 
+        uint32_t frameNum = 0;
 #ifdef FC_RENDERER_STANDALONE
         view->present();
-        bgfx::frame();
+        frameNum = bgfx::frame();
 #else
         widget->doneCurrent();
         _BGFXLib.makeCurrent();
-        bgfx::frame();
+        frameNum = bgfx::frame();
         widget->makeCurrent();
         view->blit(dumpPending ? &pendingDump : nullptr, &lastStats);
         if (dumpPending && !pendingDump.overlays) {
@@ -13506,6 +14017,18 @@ public:
         }
         dumpPending = false;
 #endif
+
+        // The cull audit's id image lands a frame or two after the copy
+        // was queued — bgfx says which frame, and the buffer must not be
+        // touched before it. Checked here rather than at the top of the
+        // next publishScene because publishScene returns early on
+        // several paths, and an audit that only ran on frames that got
+        // all the way through would silently sample a subset.
+        if (idReadyFrame && frameNum >= idReadyFrame) {
+            reportCullAudit(idPixels, idPixW, idPixH, idMask, idKeys,
+                            objectInfo, idHist);
+            idReadyFrame = 0;
+        }
 
         // docs/FarFieldProxies.md §10.1: what that frame cost the CPU
         // against what it cost the GPU. Sampled here rather than at the
@@ -14109,6 +14632,25 @@ public:
     /// hands back every handle as its answer is read.
     std::vector<bgfx::OcclusionQueryHandle> cullQueries;
     std::vector<int> cullQueryNode;
+    /// ⭐ The cull audit (docs/FarFieldProxies.md §12.9): one id image in
+    /// flight, plus the verdict it is an answer about.
+    ///
+    /// The snapshots are the point. A readback lands a frame or two
+    /// after the image was drawn, by which time the mask has been walked
+    /// again and the draw list may have been republished; checking the
+    /// image against *then-current* state would compare a picture with a
+    /// verdict that was never applied to it — which is the same
+    /// one-frame skew that made the culling oscillate in the first
+    /// place, reappearing inside the instrument built to find it.
+    std::vector<uint16_t> idPixels;   ///< RGBA16F, 4 halves per pixel
+    std::vector<uint8_t> idMask;      ///< the cull mask, as it was
+    std::vector<uint64_t> idKeys;     ///< objectKey per row, as it was
+    std::vector<uint32_t> idHist;     ///< pixels owned, per id
+    /// Frame at which idPixels is filled; 0 = no readback in flight.
+    uint32_t idReadyFrame = 0;
+    uint16_t idPixW = 0;
+    uint16_t idPixH = 0;
+    bool idAuditWarned = false;
     /// The draw list the index was built from. A rebuild costs 12-28 ms
     /// on a large assembly, so it happens when the scene changes and
     /// never per frame.

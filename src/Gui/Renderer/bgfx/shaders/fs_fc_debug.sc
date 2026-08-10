@@ -9,7 +9,9 @@ $input v_texcoord0
  * u_debugParams: x = mode (1 = linearized depth, 2 = view-space
  *                normal, 3 = AO term, 4 = shadow term, 5 = shadow
  *                tile/atlas coverage, 6 = overdraw heatmap, 7 = shadow
- *                filtering-precision probe, 8 = UV),
+ *                filtering-precision probe, 8 = UV, 9 = planar
+ *                reflection, 10 = particle impact map, 11 = per-instance
+ *                draw id),
  *                y = 1 / max linear view depth (depth normalization),
  *                z = shadow state valid this frame,
  *                w = scene shadow map size in texels (mode 7)
@@ -19,8 +21,9 @@ $input v_texcoord0
  * Stage 2: the finished AO term.
  * Stage 3: the bulb shadow tile atlas (mode 5 coverage tint).
  * Stage 5: the planar reflection target (mode 9).
- * Stage 4: the debug scene re-render target (modes 6/8 — overdraw
- *          counts in .x, or texcoords in .xy with .w marking coverage).
+ * Stage 4: the debug scene re-render target (modes 6/8/11 — overdraw
+ *          counts in .x, texcoords in .xy with .w marking coverage, or
+ *          the owning draw's id in .xyz as three raw byte lanes).
  */
 
 #include <bgfx_shader.sh>
@@ -131,6 +134,26 @@ void main()
 		float full = u_userParams[0].z > 0.0 ? u_userParams[0].z : 8.0;
 		float count = texture2D(s_texDebugScene, v_texcoord0).x;
 		rgb = heatRamp(count / full);
+	}
+	else if (mode > 10.5)
+	{
+		// Per-instance id (docs/RenderDebug.md §2.3b): the re-render
+		// target holds the exact draw id in three raw byte lanes. THAT
+		// is the ground truth, read back on the CPU; what is drawn here
+		// is a hashed palette, because consecutive ids differ by one
+		// and would otherwise be a black screen with an invisible
+		// gradient. Neighbouring draws in different colours is the only
+		// thing the eye needs from this mode; the screen is never the
+		// thing the audit reads.
+		vec4 idc = texture2D(s_texDebugScene, v_texcoord0);
+		float id = idc.x + idc.y * 256.0 + idc.z * 65536.0;
+		if (idc.w < 0.5)
+			rgb = vec3_splat(0.0);   // background: no draw owns it
+		else
+			rgb = vec3(fract(id * 0.6180339887),
+			           fract(id * 0.4142135624),
+			           fract(id * 0.7320508076)) * 0.85
+			      + vec3_splat(0.15);
 	}
 	else if (mode > 9.5)
 	{

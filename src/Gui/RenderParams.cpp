@@ -123,6 +123,7 @@ public:
     bool DebugProxyCut;
     bool DebugOcclusion;
     bool DebugProxyGen;
+    bool DebugCullAudit;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -275,6 +276,8 @@ public:
         funcs["DebugOcclusion"] = &RenderParamsP::updateDebugOcclusion;
         DebugProxyGen = this->handle->GetBool("DebugProxyGen", false);
         funcs["DebugProxyGen"] = &RenderParamsP::updateDebugProxyGen;
+        DebugCullAudit = this->handle->GetBool("DebugCullAudit", false);
+        funcs["DebugCullAudit"] = &RenderParamsP::updateDebugCullAudit;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -586,6 +589,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugProxyGen(RenderParamsP *self) {
         self->DebugProxyGen = self->handle->GetBool("DebugProxyGen", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugCullAudit(RenderParamsP *self) {
+        self->DebugCullAudit = self->handle->GetBool("DebugCullAudit", false);
     }
 };
 
@@ -2979,6 +2986,47 @@ void RenderParams::setDebugProxyGen(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeDebugProxyGen() {
     instance()->handle->RemoveBool("DebugProxyGen");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugCullAudit() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Check what the occlusion culling skipped against what the\n"
+"geometry actually put on screen (docs/FarFieldProxies.md §12.9).\n"
+"Every other measurement of the culling compares two pictures and\n"
+"reports how many pixels differ, which says that something is\n"
+"wrong without saying what: this re-rasterizes the scene with the\n"
+"cull mask ignored and each draw writing its own identity instead\n"
+"of a colour, so the ids that own a pixel are an exact answer to\n"
+"which draws reach the screen. Their intersection with the mask is\n"
+"a list of proven over-culls -- each one a named draw with a pixel\n"
+"count -- and the ids that own nothing while being drawn are the\n"
+"converse: the headroom the culling has not taken. Reads the image\n"
+"back to the CPU once a second, so it costs a full-resolution\n"
+"transfer on the frames it reports and nothing while off. Needs a\n"
+"backend with texture readback, which WebGL2 is not.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugCullAudit() {
+    return instance()->DebugCullAudit;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugCullAudit() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugCullAudit(const bool &v) {
+    instance()->handle->SetBool("DebugCullAudit",v);
+    instance()->DebugCullAudit = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugCullAudit() {
+    instance()->handle->RemoveBool("DebugCullAudit");
 }
 //[[[end]]]
 
