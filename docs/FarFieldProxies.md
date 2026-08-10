@@ -180,7 +180,7 @@ and, measured, a third pulling the same way rather than against it
 (§11.1a).
 
 **The grids nest.** Level `L`'s decimation grid is an exact
-subdivision of level `L−1`'s — shared origin, power-of-two — and the
+subdivision of level `L-1`'s — shared origin, power-of-two — and the
 grid is global per level rather than fitted to each node's own bounds,
 so neighbouring cells at the same level snap identically. §7 draws the
 generation consequence out of this.
@@ -2273,7 +2273,7 @@ a candidate — it answers the same question at the same moment in the frame.
 
 ### 12.12 built: the oracle moved to the CPU
 
-§12.11 settled the choice and this builds it: Intel's masked software
+Section 12.11 settled the choice and this builds it: Intel's masked software
 occlusion structure, as `Gui/Renderer/MaskedOcclusion.h`, driving the
 same `ProxyHierarchy` index the hardware path walks.
 `Render_OcclusionSoftware` selects it; `Render_Occlusion` still gates
@@ -2281,80 +2281,80 @@ both and is still default off.
 
 #### What the structure is
 
-Per 8×4 block of pixels: **two depth values and a 32-bit coverage mask**
+Per 8x4 block of pixels: **two depth values and a 32-bit coverage mask**
 saying which of the two each pixel belongs to. 12 bytes per 32 pixels, so
-a full 1863×1064 buffer is ~744 KB rather than the 8 MB of a real depth
+a full 1863x1064 buffer is ~744 KB rather than the 8 MB of a real depth
 buffer. The second layer is what makes it beat a plain hierarchical-Z
-minimum — a single conservative minimum per block is destroyed by one
+minimum -- a single conservative minimum per block is destroyed by one
 distant fragment, where a partially covered block can hold the incoming
 surface separately until its coverage completes and it is promoted to the
 block's floor.
 
 Depth is stored as a quantity that is **affine in screen space and larger
-when nearer**: 1/w under a perspective projection, −z_ndc under an
+when nearer**: 1/w under a perspective projection, -z_ndc under an
 orthographic one. Both are affine, which is what lets a triangle's depth
 over a block be a plane equation rather than a per-pixel divide, and
 having both means nothing downstream asks which projection it is looking
 at.
 
-#### ⭐⭐ The one invariant, and why it is one-sided
+#### KEY: The one invariant, and why it is one-sided
 
 > For every pixel, the depth stored is **no nearer** than the true
 > nearest surface there.
 
 Every heuristic in the merge may throw occlusion away and each of them
 does; none may invent it. Kept, the mechanism can only fail by *drawing
-something it could have skipped* — and over-culling is the entire failure
-history of §12.5 through §12.11. So the tests assert an inequality
+something it could have skipped* -- and over-culling is the entire failure
+history of section 12.5 through section 12.11. So the tests assert an inequality
 against an independently written full-resolution depth buffer rather than
 comparing an image: 27 cases, including random scenes checked pixel by
 pixel, and the query-level form of the same claim (a box reported hidden
 must have every pixel of its rect already covered by something nearer in
 the reference).
 
-⚠️ Two of them exist only because a passing one-sided test is also what a
+WARNING: Two of them exist only because a passing one-sided test is also what a
 buffer that rasterized *nothing* produces. `expectConservative` returns
 the pixel count it checked and every caller asserts on it, and the pass
-has a control row — the same scene with the occluder removed must cull
-**nothing at all**. That is the control §12.5's image comparisons lacked
-and §12.9 had to correct after the fact.
+has a control row -- the same scene with the occluder removed must cull
+**nothing at all**. That is the control section 12.5's image comparisons lacked
+and section 12.9 had to correct after the fact.
 
-#### ⭐⭐ What disappears, which is most of the value
+#### KEY: What disappears, which is most of the value
 
 The software walk keeps **no state between frames** and has **no policy
 layer**:
 
 | the hardware path needs | why | software path |
 |---|---|---|
-| `hiddenConfirm` streaks | verdicts arrive stale | — |
-| `visibleTtl` | re-test frequency vs. cost | — |
-| `maxHiddenFrames` fail-safe | answers may stop arriving | — |
-| query pool, leases, expiry | handles are object identity | — |
-| `padFraction` + `depthPadLsb` | box must beat its own surface | — |
-| `budget`, `offercursor` | tests are a scarce resource | — |
+| `hiddenConfirm` streaks | verdicts arrive stale | -- |
+| `visibleTtl` | re-test frequency vs. cost | -- |
+| `maxHiddenFrames` fail-safe | answers may stop arriving | -- |
+| query pool, leases, expiry | handles are object identity | -- |
+| `padFraction` + `depthPadLsb` | box must beat its own surface | -- |
+| `budget`, `offercursor` | tests are a scarce resource | -- |
 
 Every one of those exists to survive an answer that arrives one to two
 frames after the question. The answer here is used where it is computed.
 The padding goes for a different reason worth stating separately: a tie
 answers **visible** by construction (`testRect` compares strictly), and
-the block floor is already a conservative under-estimate — so a node
+the block floor is already a conservative under-estimate -- so a node
 whose own geometry is the only thing in the buffer *cannot* hide itself,
-which is exactly the failure §12.6 diagnosed and §12.11 measured.
+which is exactly the failure section 12.6 diagnosed and section 12.11 measured.
 
 #### Occluders are real triangles, chosen by screen size
 
 Only draws that write the depth the eye sees: opaque triangle draws, not
 transparent surfaces, not on-top overlays, not lines, and **not
 stand-ins** (a stand-in does write depth, so it genuinely occludes the
-frame it appears in — but it is larger than the mesh it replaces, and
+frame it appears in -- but it is larger than the mesh it replaces, and
 under-culling for the few frames it is up is the cheaper mistake). They
 are ranked by projected bounding-box diagonal and rasterized largest
 first until `Render_OcclusionOccluderTris` runs out, so what the budget
-drops is what would have hidden least — and the drops are **counted**,
+drops is what would have hidden least -- and the drops are **counted**,
 because a silent cap reads as "this scene does not occlude" when what
 happened is "we did not look".
 
-⚠️ **`Render_OcclusionResolution` defaults to 1 and reducing it can
+WARNING: **`Render_OcclusionResolution` defaults to 1 and reducing it can
 over-cull.** A coarse pixel is marked covered when an occluder reaches
 its centre, but it stands for several real pixels and the ones the
 occluder missed are claimed with it. The literature runs reduced and
@@ -2362,44 +2362,44 @@ accepts this; given three sections spent on deleted geometry, here it is
 a measurement and not a setting. Correct reduction needs coverage sampled
 over the coarse pixel's whole footprint, which is not built.
 
-#### ⭐⭐ measured: exact, and too expensive
+#### KEY: measured: exact, and too expensive
 
-Real GPU, monitor off, 1863×1064, `server_imported.FCStd` (5455 objects,
-17727 drawn instances), whole-assembly camera, 29–30 samples per row,
+Real GPU, monitor off, 1863x1064, `server_imported.FCStd` (5455 objects,
+17727 drawn instances), whole-assembly camera, 29-30 samples per row,
 both rows in the same run against the same framing.
 
-| | software (§12.12) | hardware, ttl 6 confirm 2 |
+| | software (section 12.12) | hardware, ttl 6 confirm 2 |
 |---|---|---|
 | over-cull, median of 29 | **0 px** | 21212 px |
 | over-cull, min / max | **0 / 0** | 0 / 90458 |
 | over-culled rows | **0 of 7974 masked** | 423 of 14607 |
-| picture, off→on | **0 of 1440000 px** | 34702 px (2.41%) |
+| picture, off->on | **0 of 1440000 px** | 34702 px (2.41%) |
 | instances hidden | 7974 (45.0%) | 14607 (82.4%) |
 | nodes hidden / visited | 203 / 760 | 87 / 364 |
-| CPU per frame | **raster 21–29 ms**, walk 0.44 ms | — |
+| CPU per frame | **raster 21-29 ms**, walk 0.44 ms | -- |
 
-⭐⭐ **The correctness claim holds, and this is the first configuration in
-this section that is both exact and actually culling.** §12.9's
-correction was that the one pixel-exact row hid *nothing* — it was exact
+KEY: **The correctness claim holds, and this is the first configuration in
+this section that is both exact and actually culling.** section 12.9's
+correction was that the one pixel-exact row hid *nothing* -- it was exact
 because it was structurally incapable of culling. This one deletes 7974
 of 17727 instances and still differs from the un-culled image in **zero
 pixels**, over 29 samples, with `rootrefused 0` and `nearclip 0`. The
 audit and the picture agree, which they did not for any hardware row.
 
-⛔ **And it does not pay.** Removing 7974 draws saves ~10–12 ms of CPU
-submission at §10.2's 1.2–1.5 µs; the occluder pass costs 26 ms of it.
-Net CPU loss of ~14–16 ms per frame, every frame, and the variance is
-small (21.3–28.9 ms across 30 samples) so this is the cost and not a
-sampling artefact. **The walk is free** — 0.44 ms for 760 node tests,
-stable to a hundredth of a millisecond — so *all* of the cost is
+STOP: **And it does not pay.** Removing 7974 draws saves ~10-12 ms of CPU
+submission at section 10.2's 1.2-1.5 us; the occluder pass costs 26 ms of it.
+Net CPU loss of ~14-16 ms per frame, every frame, and the variance is
+small (21.3-28.9 ms across 30 samples) so this is the cost and not a
+sampling artefact. **The walk is free** -- 0.44 ms for 760 node tests,
+stable to a hundredth of a millisecond -- so *all* of the cost is
 rasterizing occluders and none of it is the mechanism.
 
-#### ⭐⭐ Why it costs that, which is not "scalar code"
+#### KEY: Why it costs that, which is not "scalar code"
 
 Two numbers from the same row say it, and they point the same way:
 
 - **68% of the rasterized triangles never touch a pixel.** 249998
-  triangles submitted, **79314 drawn, 170684 culled** — sub-pixel or
+  triangles submitted, **79314 drawn, 170684 culled** -- sub-pixel or
   off-buffer, discarded after paying for their transform and screen-space
   setup. A CAD tessellation at full detail is mostly triangles smaller
   than the pixel grid it is being rasterized onto.
@@ -2409,25 +2409,25 @@ Two numbers from the same row say it, and they point the same way:
   detail would be ~8.9M triangles.
 
 So the buffer is simultaneously *too detailed* (two thirds of the work
-discarded) and *too incomplete* (most of the model's depth missing) — and
+discarded) and *too incomplete* (most of the model's depth missing) -- and
 the incompleteness is why it hides 45% where the scene's ceiling is
 95.4%: `drawn-but-invisible` was still **8939 of the 9753** instances it
 left drawn. That gap is not a limit of the mechanism; it is occluders
-that were never rasterized. ⭐ The `occludersDropped` counter earned
+that were never rasterized. KEY: The `occludersDropped` counter earned
 itself here: without it this row reads as "the software oracle culls half
 as well", when what it says is "it was shown a twenty-seventh of the
 model".
 
-⚠️ Note what this rules out. Vectorizing would attack the 26 ms by some
-constant — SIMD128 is 4 lanes, so at absolute best ~6.5 ms — while
+WARNING: Note what this rules out. Vectorizing would attack the 26 ms by some
+constant -- SIMD128 is 4 lanes, so at absolute best ~6.5 ms -- while
 leaving both ratios exactly as they are. It is the wrong lever to pull
 first.
 
-#### ⭐⭐ measured again: parallel, and what the cost actually is
+#### KEY: measured again: parallel, and what the cost actually is
 
 The 26 ms above was one thread and a rasterizer that paid full setup for
 every triangle. Both were wrong to leave, and fixing them moved it a
-long way — same model, same camera, same 1863×1064, ~30 samples a row:
+long way -- same model, same camera, same 1863x1064, ~30 samples a row:
 
 | | workers | raster | hidden | over-cull |
 |---|---|---|---|---|
@@ -2436,30 +2436,30 @@ long way — same model, same camera, same 1863×1064, ~30 samples a row:
 | + 14 workers, whole draws | 14 | 14.0 ms | 7974 | 0 px |
 | + chunked draws | 14 | **9.73 ms** | 7974 | 0 px |
 
-⭐ **Every configuration is still pixel-exact.** Reject reordering,
+KEY: **Every configuration is still pixel-exact.** Reject reordering,
 reciprocals, fourteen-way parallelism and a lossy shard merge, and the
 audit still says 0 over-culled rows and 0 px over ~30 samples in each.
 
-#### ⛔ Two predictions, both wrong, both corrected by the clock
+#### STOP: Two predictions, both wrong, both corrected by the clock
 
 Worth recording as method rather than as result, because this section
 has now made the same class of mistake three times:
 
-1. **"Removing 7974 draws saves 10–12 ms."** Estimated from §10.2's
-   1.2–1.5 µs per draw. The frame log had the real answer: submit
-   30.9 → 26.0 ms, i.e. **4.9 ms**, with the GPU essentially unmoved
-   (38.5 → 38.0). Out by 2×. ⇒ *Never price a saving from a per-draw
+1. **"Removing 7974 draws saves 10-12 ms."** Estimated from section 10.2's
+   1.2-1.5 us per draw. The frame log had the real answer: submit
+   30.9 -> 26.0 ms, i.e. **4.9 ms**, with the GPU essentially unmoved
+   (38.5 -> 38.0). Out by 2x. => *Never price a saving from a per-draw
    constant when the frame timer is already running.*
 2. **"The serial merge is the bottleneck."** Parallelizing it bought
-   1.7 ms of 15.7. The real cause was granularity — 37 draws over 14
+   1.7 ms of 15.7. The real cause was granularity -- 37 draws over 14
    workers, differing in triangle count by an order of magnitude, so the
    frame waited on the largest single mesh. Chunking the index range
-   took it to 9.73 ms. ⇒ *Amdahl's residual names a quantity, not a
+   took it to 9.73 ms. => *Amdahl's residual names a quantity, not a
    culprit; it took splitting the counter to find which.*
 
-#### ⭐⭐ Where the time goes, now that the counter says
+#### KEY: Where the time goes, now that the counter says
 
-`offbuf 0, subpx 170684, degen 0` — of 249998 triangles rasterized,
+`offbuf 0, subpx 170684, degen 0` -- of 249998 triangles rasterized,
 79314 are drawn and **every single discarded one is sub-pixel**. None
 are off the buffer, which in hindsight is forced: occluders are selected
 *by projected size*, so they are all on screen by construction. The
@@ -2467,44 +2467,44 @@ clip-space outcode reject added for them therefore buys nothing here and
 is kept only for cameras that do put an occluder off screen.
 
 So two thirds of the pass is transform, project and reject on triangles
-smaller than a pixel — a uniform, branch-free workload. That is the
+smaller than a pixel -- a uniform, branch-free workload. That is the
 shape SIMD is for, and it is also exactly what coarser occluder geometry
 would delete outright rather than merely speed up.
 
 #### The order to try things in
 
-⭐ **Decided (2026-08-10): SIMD first.** The ordering below had coarse
+KEY: **Decided (2026-08-10): SIMD first.** The ordering below had coarse
 occluders ahead of it, on the argument that deleting the sub-pixel work
 beats accelerating it. That still holds as an argument; the decision
-went the other way, and the counter split is what makes it defensible —
+went the other way, and the counter split is what makes it defensible --
 the 68% is now a *measured*, branch-free, uniformly-shaped workload
 rather than a guess about where the time goes.
 
-1. ⭐ **SIMD the transform and projection.** Well targeted rather than
+1. KEY: **SIMD the transform and projection.** Well targeted rather than
    speculative: it is 68% of the work, branch-free, and the block
-   layout was built for it (8×4 blocks, coverage exactly one 32-bit
-   word, four to a 128-bit lane). ⚠️ **The blocker is precision, and it
+   layout was built for it (8x4 blocks, coverage exactly one 32-bit
+   word, four to a 128-bit lane). WARNING: **The blocker is precision, and it
    is self-inflicted**: this file is `double` throughout because a
    near-plane-clipped triangle projects to screen coordinates in the
    millions and float cancellation there sets coverage bits the triangle
-   never reached. SIMD128 holds 2 doubles but 4 floats, so the 4× needs
+   never reached. SIMD128 holds 2 doubles but 4 floats, so the 4x needs
    a float fast path with a guard band and a double fallback for clipped
    geometry. The measurement supports it: **clipped 0** on this camera.
-   ⚠️ The gate is not speed: over-cull must stay at **0 px**. Every
+   WARNING: The gate is not speed: over-cull must stay at **0 px**. Every
    configuration measured so far is exact, and a float path that costs
    even a few pixels is a regression rather than a trade.
-2. ⭐⭐ **Coarser occluder geometry.** Deletes the sub-pixel work instead
+2. KEY: **Coarser occluder geometry.** Deletes the sub-pixel work instead
    of accelerating it, and admits far more occluders inside the same
-   budget. ⚠️ Must be an *inner* hull: a decimation that moves a surface
-   **towards** the camera invents occlusion and breaks §12.12's
+   budget. WARNING: Must be an *inner* hull: a decimation that moves a surface
+   **towards** the camera invents occlusion and breaks section 12.12's
    invariant, which error-minimising decimation (`MeshSimplify.cpp`)
-   does not promise. ⚠️ And note the ablation above — 40× the budget
-   bought 8.5 points of culling — so this is about *cost*, not about
+   does not promise. WARNING: And note the ablation above -- 40x the budget
+   bought 8.5 points of culling -- so this is about *cost*, not about
    closing the 45%-vs-95.4% gap.
-3. **Wire §12.13's estimator into the renderer.** Built and tested, not
+3. **Wire section 12.13's estimator into the renderer.** Built and tested, not
    yet connected: it needs the per-frame CPU time and to gate the mask.
 4. **Reuse the buffer while the camera is static.** Exact, and does not
-   reintroduce §12.6 (that was intra-frame ordering, not a fixed camera).
+   reintroduce section 12.6 (that was intra-frame ordering, not a fixed camera).
 
 `Render_Occlusion` stays default off, and `Render_OcclusionSoftware`
 with it.
@@ -2515,9 +2515,9 @@ Everything above prices one camera on one model. Nothing about it
 transfers: what a draw costs to submit depends on its mesh, how much a
 frame occludes depends on whether the eye is inside a chassis or looking
 at a silhouette, and what the occluder pass costs depends on how many
-triangles the occluders carry. §12.12 measured the same mechanism saving
+triangles the occluders carry. Section 12.12 measured the same mechanism saving
 4.9 ms while costing 26 ms to decide, and then 9.7 ms after two rounds
-of work — the *sign* of that trade changed under optimisation, on a
+of work -- the *sign* of that trade changed under optimisation, on a
 fixed scene.
 
 `CullBenefitEstimator` therefore decides it at runtime, per scene, and
@@ -2527,19 +2527,19 @@ the machine rather than assume it, because occlusion queries "may still
 reduce efficiency compared to simple view frustum culling, especially in
 cases of low depth complexity".
 
-⭐⭐ **It models nothing.** There is no microseconds-per-draw constant,
-no occlusion-probability estimate and no calibration table — reasoning
+KEY: **It models nothing.** There is no microseconds-per-draw constant,
+no occlusion-probability estimate and no calibration table -- reasoning
 from a per-draw constant is exactly how the saving got estimated at
-10–12 ms when the clock said 4.9. It runs an A/B experiment on real
+10-12 ms when the clock said 4.9. It runs an A/B experiment on real
 frames: alternate arms, discard the warm-up after each switch (the
 switch itself perturbs the frames that follow it), compare **medians**
 over 24 frames, re-probe every 20 s.
 
-⚠️ **Two thresholds, not one.** Turning culling on demands a 5% gain;
+WARNING: **Two thresholds, not one.** Turning culling on demands a 5% gain;
 leaving it on needs only 1%. A single threshold at the noise floor flips
 every probe, and a mechanism that rebuilds the draw set every twenty
-seconds is worse than one that never culls — §12.7 measured what
+seconds is worse than one that never culls -- section 12.7 measured what
 oscillation costs here. Having established nothing, it does not cull:
 the untested direction has to be the one that draws too much.
 
-11 tests, timings fed in directly — no GL context, no scene, no clock.
+11 tests, timings fed in directly -- no GL context, no scene, no clock.
