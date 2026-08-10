@@ -1566,7 +1566,18 @@ public:
     /// and need not be the widget that will eventually draw.
     /// Returns false if the backend does not warm up, or could not --
     /// in which case nothing is broken and create() will try again.
-    virtual bool warmup(QOpenGLWidget *, const std::string &) { return false; }
+    ///
+    /// Milliseconds per phase, so the host can report where the time
+    /// went rather than only that it was spent.
+    struct WarmupTiming {
+        double context = 0;   ///< graphics context and its surface
+        double device = 0;    ///< the backend device itself
+        double programs = 0;  ///< shader programs and render targets
+        double flush = 0;     ///< handing that work to the driver
+        double total = 0;
+    };
+    virtual bool warmup(QOpenGLWidget *, const std::string &,
+                        WarmupTiming * = nullptr) { return false; }
 };
 
 class RendererExport RendererFactory
@@ -1585,7 +1596,8 @@ public:
     /// Bring \a type's backend up ahead of the first create(), so that
     /// the first 3D view of a session does not pay for it. See
     /// RendererLib::warmup.
-    static bool warmup(const std::string &type, QOpenGLWidget *widget);
+    static bool warmup(const std::string &type, QOpenGLWidget *widget,
+                       RendererLib::WarmupTiming *timing = nullptr);
     static void registerLib(RendererLib *);
     static void setResourcePath(const std::string &path);
     static const std::string &resourcePath();

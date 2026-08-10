@@ -625,11 +625,14 @@ const std::vector<std::string> &BGFXRendererLib::types() const
     return _BGFXLib.types;
 }
 
-bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type)
+bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type,
+                             WarmupTiming *timing)
 {
     auto it = _BGFXLib.typeMap.find(type);
     if (it == _BGFXLib.typeMap.end() || !widget)
         return false;
+    QElapsedTimer clock;
+    clock.start();
     // Everything one-time lives in prepare(): the GL context bgfx draws
     // through, its offscreen surface, and bgfx::init itself. The view
     // that getView() adds on top is per widget and cheap, and the
@@ -643,7 +646,55 @@ bool BGFXRendererLib::warmup(QOpenGLWidget *widget, const std::string &type)
     // context it hands over belongs to the thread that made it current.
     // There is no worker thread to move this to without changing that
     // decision.
-    return _BGFXLib.prepare(widget, it->second);
+    if (!_BGFXLib.prepare(widget, it->second))
+        return false;
+    // ⚠️ Read now, not after getView(): getView() calls prepare() too,
+    // and prepare() zeroes them on entry -- read late and the context
+    // and device phases both report 0 while their time is charged to
+    // the programs.
+    const double msContext = _BGFXLib.msContext;
+    const double msDevice = _BGFXLib.msDevice;
+
+    // The shader programs, through the view's own init() rather than a
+    // second list of program names to keep in step with it. init()
+    // loads every stock program and builds the render targets, and
+    // bgfx only hands that work to the driver when a frame is
+    // submitted -- so a frame follows, or nothing would be compiled and
+    // the cost would simply move to the first real one.
+    //
+    // ⚠️ The warm view is kept, not dropped. removeView() of the last
+    // view calls shutdown(), so dropping it tears the device down again
+    // and warms nothing -- it also freed the context out from under the
+    // doneCurrent() below, which is how this was found. Keeping it
+    // makes it the process's anchor for the device: bgfx now stays up
+    // from here until the application quits, rather than going away
+    // whenever the last 3D view closes and being rebuilt for the next
+    // one. Its cost is a 1x1 view's render targets and one set of
+    // programs.
+    if (auto view = _BGFXLib.getView(widget, it->second)) {
+        _BGFXLib.makeCurrent();
+        view->init();
+        double msPrograms = clock.nsecsElapsed() / 1.0e6
+            - msContext - msDevice;
+        clock.restart();
+        bgfx::frame();
+        double msFlush = clock.nsecsElapsed() / 1.0e6;
+        _BGFXLib.doneCurrent();
+        if (timing) {
+            timing->context = msContext;
+            timing->device = msDevice;
+            timing->programs = msPrograms;
+            timing->flush = msFlush;
+            timing->total = timing->context + timing->device
+                + timing->programs + timing->flush;
+        }
+    }
+    else if (timing) {
+        timing->context = msContext;
+        timing->device = msDevice;
+        timing->total = timing->context + timing->device;
+    }
+    return true;
 }
 
 std::unique_ptr<Renderer> BGFXRendererLib::create(

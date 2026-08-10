@@ -85,6 +85,7 @@
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QImage>
 #include <QProcess>
@@ -495,8 +496,18 @@ public:
     void doneCurrent() {}
     void freeFBO(int) {}
 #else
+    /// Milliseconds the last prepare() spent building the GL context
+    /// and its surface, and in bgfx::init. Zero when it had nothing to
+    /// do. Read by BGFXRendererLib::warmup to report where startup
+    /// time goes; a frame never looks at them.
+    double msContext = 0;
+    double msDevice = 0;
+
     bool prepare(QOpenGLWidget *widget, RendererType::Enum type)
     {
+        QElapsedTimer _warmClock;
+        _warmClock.start();
+        msContext = msDevice = 0;
         if (!context) {
             context.reset(new QOpenGLContext);
             auto format = widget->format();
@@ -531,6 +542,9 @@ public:
                                  });
             }
         }
+
+        msContext = _warmClock.nsecsElapsed() / 1.0e6;
+        _warmClock.restart();
 
         if (currentType == RendererType::Noop) {
             currentType = type;
@@ -594,6 +608,7 @@ public:
                 RENDER_ERR("init failed");
                 return false;
             }
+            msDevice = _warmClock.nsecsElapsed() / 1.0e6;
         }
         return true;
     }
