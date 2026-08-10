@@ -36,6 +36,14 @@ void DefaultMenuIntegration::install(QMenuBar *menuBar, CustomTitleBarWindow *wi
         layout->setSpacing(0);
     }
     static_cast<QHBoxLayout *>(layout)->insertWidget(0, m_container);
+
+    // LOCAL DIVERGENCE from FreeCAD/FreeCAD#26766: show what was just built.
+    // Upstream only ever installs before the window is up, when Qt shows every
+    // child along with it. Installing into a window that is already on screen
+    // -- which is what switching the title bar at run time does -- leaves a
+    // freshly created child hidden, and adding it to a layout does not change
+    // that.
+    m_container->show();
 }
 
 void DefaultMenuIntegration::uninstall(CustomTitleBarWindow *window)
@@ -79,6 +87,15 @@ void FoldableMenuIntegration::install(QMenuBar *menuBar, CustomTitleBarWindow *w
         layout->setSpacing(0);
     }
     static_cast<QHBoxLayout *>(layout)->insertWidget(0, m_foldableBar);
+
+    // LOCAL DIVERGENCE from FreeCAD/FreeCAD#26766, same reason as in
+    // DefaultMenuIntegration::install() above. The brand widget needs it too,
+    // and for a second reason: uninstall() hides it on the way out, so it comes
+    // back hidden however visible its new parent is.
+    m_foldableBar->show();
+    if (m_brandWidget) {
+        m_brandWidget->show();
+    }
 }
 
 void FoldableMenuIntegration::uninstall(CustomTitleBarWindow *window)
