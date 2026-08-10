@@ -551,6 +551,25 @@ struct View3DInventorViewer::Private
     std::string debugLabelFedText;
     SbVec2s debugLabelFedVp {0, 0};
 
+    // What the backend draws outside the scene graph — today the shadow
+    // ground — has no node for a bounding box traversal to find, so auto
+    // clipping cuts it away: SoRenderManagerP::setClippingPlanes applies
+    // an SoGetBoundingBoxAction on every render, and the answer holds the
+    // model alone. This callback carries the backend's own bounds into
+    // that traversal.
+    //
+    // It has to sit *directly under the render manager's superscene*,
+    // which Quarter builds with boundingBoxCaching OFF, so it is asked
+    // every traversal. The obvious place — SoFCUnifiedSelection::
+    // getBoundingBox, which already reports the same bounds — is below
+    // whatever separator the scene root is wrapped in (SoShadowGroup, in
+    // the very draw style that has a ground), and that one caches: it
+    // answers once and nothing the backend draws can invalidate a Coin
+    // cache. docs/CoinRetirement.md §1c.
+    CoinPtr<SoCallback> rendererBoundsNode;
+    static void rendererBoundsCB(void *ud, SoAction *action);
+    void addRendererBoundsNode();
+
     // Redraw throttle for a document being filled by a live operation. The
     // clock is monotonic and starts with the viewer, so the zero stamps below
     // read as long overdue: the first request of an import always renders at
@@ -3189,6 +3208,8 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
         }
     }
 
+    _pimpl->addRendererBoundsNode();
+
     navigation->findBoundingSphere();
 }
 
@@ -4054,6 +4075,33 @@ void View3DInventorViewer::onGetBoundingBox(SoGetBoundingBoxAction *action)
         if (_pimpl->renderer->boundBox(xmin, ymin, zmin, xmax, ymax, zmax))
             action->extendBy(SbBox3f(xmin, ymin, zmin, xmax, ymax, zmax));
     }
+}
+
+void View3DInventorViewer::Private::rendererBoundsCB(void *ud, SoAction *action)
+{
+    if (!action->isOfType(SoGetBoundingBoxAction::getClassTypeId()))
+        return;
+    auto self = static_cast<View3DInventorViewer::Private *>(ud);
+    // The same report SoFCUnifiedSelection makes, from a place a cache
+    // cannot answer for. Reaching both is a union of one box with itself.
+    self->owner->onGetBoundingBox(static_cast<SoGetBoundingBoxAction *>(action));
+}
+
+void View3DInventorViewer::Private::addRendererBoundsNode()
+{
+    auto scene = owner->getSoRenderManager()->getSceneGraph();
+    if (!scene || !scene->isOfType(SoSeparator::getClassTypeId()))
+        return;
+    auto super = static_cast<SoSeparator *>(scene);
+    if (!rendererBoundsNode) {
+        rendererBoundsNode = new SoCallback;
+        rendererBoundsNode->setName("RendererBounds");
+        rendererBoundsNode->setCallback(&Private::rendererBoundsCB, this);
+    }
+    // Appended, not inserted: activateShadow() swaps the scene root by
+    // index, and a node at the front would shift every one of them.
+    if (super->findChild(rendererBoundsNode) < 0)
+        super->addChild(rendererBoundsNode);
 }
 
 bool View3DInventorViewer::hasExternalRenderer() const
