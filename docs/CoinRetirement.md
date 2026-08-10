@@ -729,3 +729,87 @@ one. In order:
 Not in scope, and not close: Coin as scene graph, traversal and picking.
 Replacing that is a different project — the backend has no picking at all
 and the whole feed is built on Coin traversal.
+
+## 5. Evaluated and not taken: one capture root to catch everything
+
+Stage 1b left an obvious-looking follow-on: if what Coin still draws is
+what sits *outside* the render cache's capture, raise the capture root up
+the graph until nothing is outside it. Evaluated 2026-08-11, and the
+answer is no -- not because it is hard, but because it buys almost
+nothing, costs a per-frame full re-traverse, and works against the reason
+the captures are split up in the first place. Recorded here so it is not
+re-proposed from the same premise.
+
+**The layout, measured** (`fcad-probes/capture_root_probe.py`, 6/6). The
+children of Quarter's superscene, in order:
+
+```
+superscene (SoSeparator, renderCaching OFF, boundingBoxCaching OFF)
+  DirectionalLight       backlight
+  DirectionalLight       headlight, tracks the camera
+  OrthographicCamera     the view camera
+  SoFCUnifiedSelection   <- the capture root today
+  Callback               renderer bounds (1c)
+  Group                  aux root: on-top group, editing root, dimensions
+```
+
+**1. The node-id gate makes a higher root re-capture on every camera
+move.** `SoFCRenderCacheManager::render` gates the capture on
+`sceneid != path->getTail()->getNodeId()`, and `SoNode::notify` bumps the
+unique id of every node a notification passes through. The camera and the
+headlight are siblings of the capture root, so a higher root sees both:
+
+| event | superscene id | capture root id |
+| --- | --- | --- |
+| one camera move | 1557 -> 1560 | 1556 -> 1556 |
+| one geometry change | 1560 -> 2056 | 1556 -> 2051 |
+| five camera moves | 10 bumps | none |
+
+Two bumps per camera move, so orbiting would re-traverse the whole scene
+every frame -- on exactly the models the backend exists for. The
+headlight would do it independently, tracking the camera.
+
+**2. There is no traversal cost to win back.**
+`SoFCUnifiedSelection::GLRenderBelowPath` calls the manager and returns
+*without descending* when it renders, so Coin's per-frame walk already
+stops at the capture root. Raising the root moves that stop one level up
+and saves nothing.
+
+**3. There is almost nothing left to catch.** Stage 1b measured who draws
+what: among nodes in the graph, only the **shadow light manipulator** is
+still Coin-drawn. The aux root's contents already reach the backend --
+the on-top group through `addSelection`, the editing graph and the
+dimensions through their own overlay captures. Everything else Coin
+draws (NaviCube, axis cross, fps readout, graphics items, rubber band,
+datum labels) is not scene-graph content under the superscene at all; it
+is raw GL in `renderScene`, mirrored by the nine `OverlayCapture` feeds.
+A graph root cannot catch drawing that is not in the graph.
+
+**4. The split is invalidation partitioning, not accidental
+fragmentation.** Each capture root is its own dirty domain with its own
+id gate. One root would couple a 60 Hz Sketcher drag to a full
+re-traverse of the entire scene, where today that drag re-captures only
+the small editing graph. The pressure is therefore toward *more* roots,
+not fewer, until invalidation stops being node-id-based
+(`docs/IncrementalPublish.md`, where `publishdelta` already lives).
+
+**What to do instead**, depending on which goal the proposal was serving:
+
+- *"Nothing should be drawn by Coin"* -- add one more `OverlayCapture`
+  for the shadow light manipulator, mirroring `editingCapture`: a sibling
+  root fed as a scene-camera overlay, no graph surgery. WARNING: it has a
+  scheduled expiry -- stage 4e deletes the Shadow draw style and that
+  manipulator with it. When `Render_Light` gets a manipulator of its own,
+  putting it under the editing root captures it for free, and this stops
+  being a question.
+- *"Retire Coin's frame"* -- the lever is the **trigger**, not the root.
+  `SceneServeSource` already runs the capture standalone
+  (`manager->traverse(root, viewport)`) outside any GL traversal. Doing
+  the same on the desktop, before `renderer->render()`, would remove the
+  one-frame lag that `needsRedraw()` + `scheduleRedraw()` currently
+  papers over -- the feed is built *after* the backend has drawn the
+  frame it belongs to -- and would make Coin's GL pass optional rather
+  than structural. That is the change worth designing.
+
+Revisit the raise only after invalidation is no longer node-id-based. Its
+whole cost is in that gate.
