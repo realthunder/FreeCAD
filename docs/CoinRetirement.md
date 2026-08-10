@@ -297,6 +297,57 @@ There is already a migration of exactly this shape to copy:
 `App::Document`, converts it into `Shadow_DisplayMode`, and calls
 `doc->removeDynamicProperty("Shadow_FlatLines")` (`:2415`-`2420`).
 
+### 3.5 The display style menu: what a row is allowed to do
+
+The draw style list and the shading switches are the user's whole
+interface to everything above, and this stage rebuilt them (checkboxes
+on `QWidgetAction` rows, then radio buttons, plus the cavity radius
+slider). The rule that came out of it, from the user, is worth stating
+before anyone "fixes" it again:
+
+> A row built as a `QWidgetAction` (the display style radios, the
+> shading checkboxes) does **not** dismiss the menu. Trying Shaded
+> against Flat Lines is what the list is for. A normal menu item keeps
+> Qt's own behaviour and dismisses.
+
+So the menu's staying up under a widget row is the feature, not a
+regression in Qt's handling of embedded widgets. A first report was
+read here as the opposite ("rows should dismiss like ordinary items"),
+built over three commits and taken back out again (`c6f73aef90`); the
+net change to the menu is none.
+
+WARNING: **never hide a popup by hand to dismiss it.** `QMenu::hide()`,
+or hiding the chain of parent popups, is only half of
+`QMenuPrivate::hideUpToMenuBar`, which also clears the menu bar's
+current action and leaves keyboard mode. Without that half the menu bar
+goes on believing its popup is up, so it **swallows the next click on
+it** and opens only on the one after. If a row ever must dismiss
+itself, hand the popup a synthetic mouse press at a point *outside its
+own rect*: QMenu answers that with `hideUpToMenuBar` itself, all of it.
+
+The menu machinery around these rows produced five separate defects,
+all found by pulling on "why is there no tooltip on the cavity row" and
+all fixed: tooltips set on a `QWidgetAction` never render (they belong
+on the row widget, `62d8eb5566`); a button's `toggled` wired to both
+`setChecked` and `toggled` ran every command **twice**, which is why
+entering Shadow always raised the light manipulator (`d6032d90cc`);
+`V,1` to `V,9` were dead because `fillGroupMenu` adds an action to the
+menu only when it is *not* checkable, so the actions belonged to no
+widget and Qt delivers `QEvent::Shortcut` only to associated actions
+(`a104c949f3`); `Action::setChecked` emitted `actionChecked` only on a
+change while an exclusive `QActionGroup` unchecks its siblings itself,
+leaving a stale tick that made that entry unclickable, a ticked radio
+emitting nothing (`3371b53ab0`); and the repeat shortcut that toggles
+the manipulator needs `QActionGroup::ExclusionPolicy::ExclusiveOptional`,
+because `QAction::activate` silently drops a trigger on the checked
+member of a strictly exclusive group (`09fc56d3be`).
+
+WARNING: **no harness here can see a menu grab bug.** Three were
+measured against a build the user could see was broken, and all three
+passed; `docs/RenderDebug.md` section 5.1 records what they were. For
+menu behaviour the user is the only oracle; say that instead of
+reporting a pass.
+
 ## 4. Plan
 
 Ordered so that nothing user-visible regresses at any step.
@@ -540,6 +591,18 @@ renders offscreen, never composites, and is blind to the entire class.
 **Stage 2 — flip the defaults.** `RenderCache` 3 and a real `Type` as
 shipped defaults, with a one-time migration for existing user configs.
 Keep both parameters working exactly as now.
+
+One prerequisite of this stage is already in: while the backend was
+opt-in, it was acceptable for it to be built by the first 3D view and
+for that view to cost a second. As a default it is not: a first New
+Document took 1.4 s. The backend now comes up **during the splash**
+instead, documented in `docs/RenderEngine.md` under "Startup and backend
+lifetime", which brings the first document to 0.236 s and, as a
+deliberate side effect, keeps bgfx alive for the whole session rather
+than shutting it down with the last 3D view. The same work fixed a
+defect that would have hit every user on this default: Qt 6.4+ recreates
+a top-level's native window on its first `QOpenGLWidget`, so the main
+window vanished and came back on the first document.
 
 **Stage 3 — hide the switches.** Remove render cache and renderer type
 from the preferences UI; keep the parameters as the debug/A-B route
