@@ -9475,7 +9475,8 @@ static void driveOcclusionCull(
         Render::OcclusionTestBatch &batch,
         std::vector<bgfx::OcclusionQueryHandle> &queries,
         std::vector<int> &queryNode, const float *V, const float *P,
-        float viewportHeightPx, std::vector<uint8_t> &cullMask)
+        float viewportHeightPx, std::vector<uint8_t> &cullMask,
+        std::vector<int32_t> *cullOwner)
 {
     const bgfx::Caps *caps = bgfx::getCaps();
     if (!caps)
@@ -9500,7 +9501,7 @@ static void driveOcclusionCull(
 
     // 2. Decide what this camera draws.
     culler.cull(V, P, viewportHeightPx, caps->homogeneousDepth, cullMask,
-                batch);
+                batch, cullOwner);
     if (batch.nodes.empty())
         return;
 
@@ -9562,9 +9563,16 @@ static bool cullAuditDue()
 /// The converse falls out of the same histogram and is worth as much:
 /// rows that were drawn and own no pixel at all are the work the
 /// culling has not yet found.
+/// \a owner and \a nodes carry the attribution (§12.10): which node's
+/// verdict cut each masked row, and what every node's state was at the
+/// moment the image was drawn. Both may be empty — occlusion culling
+/// off, or the audit turned on mid-flight — in which case the second
+/// line is not printed rather than printed with nothing in it.
 static void reportCullAudit(const std::vector<uint16_t> &pixels,
                             uint16_t w, uint16_t h,
                             const std::vector<uint8_t> &mask,
+                            const std::vector<int32_t> &owner,
+                            const std::vector<Render::OcclusionNodeAudit> &nodes,
                             const std::vector<uint64_t> &keys,
                             const Render::ObjectInfoMap &names,
                             std::vector<uint32_t> &hist)
@@ -9669,6 +9677,104 @@ static void reportCullAudit(const std::vector<uint16_t> &pixels,
     std::printf("%s", buf);
 #else
     Base::Console().Message("%s", buf);
+#endif
+
+    // ⭐⭐ The second line: not *that* the culling deleted visible
+    // geometry but *which verdict* did (docs/FarFieldProxies.md §12.10).
+    //
+    // ⛔ What is deliberately not here: a drawn/hidden split of the
+    // tests that produced those verdicts. §12.6's account of the
+    // per-test failure is a drawn node losing a depth tie against its
+    // own contents, and flagging which set the offer came from looks
+    // like the way to confirm it — but only an already-hidden node is
+    // offered from the hidden set, so the answer that first sets
+    // `hidden` is *always* of the drawn kind. It would report 100%
+    // every time, for every scene, including scenes where the account
+    // is wrong. See OcclusionNodeState.
+    //
+    // What is measurable, and what these two numbers are: how *fresh*
+    // the deciding answer was, and how often the node has flipped. A
+    // query that lied and a world that moved underneath a correct
+    // answer look identical in a single verdict; they do not look
+    // identical in a node that has entered the hidden state eighteen
+    // times against a camera that never moved.
+    if (overcull.empty() || owner.empty() || nodes.empty())
+        return;
+
+    struct NodeTally { uint32_t px = 0, rows = 0; };
+    std::map<int32_t, NodeTally> byNode;
+    size_t frustumRows = 0, frustumPx = 0;
+    // Fresh: the deciding answer arrived within the last couple of
+    // frames, so with a static camera nothing had time to change
+    // between the query and the mask it produced.
+    size_t freshPx = 0, stalePx = 0, flippingPx = 0;
+    static const uint32_t kFreshFrames = 2;
+    static const uint16_t kFlipping = 3;
+    for (const Offender &o : overcull) {
+        const int32_t node = o.id < owner.size() ? owner[o.id] : -1;
+        if (node < 0 || size_t(node) >= nodes.size()) {
+            // Masked, wrongly, and not by occlusion. A frustum test
+            // that rejects a draw owning pixels is a different bug in
+            // a different piece of code, and counting the two together
+            // is how a fix gets attributed to the wrong mechanism.
+            ++frustumRows;
+            frustumPx += o.px;
+            continue;
+        }
+        NodeTally &t = byNode[node];
+        t.px += o.px;
+        ++t.rows;
+        const Render::OcclusionNodeAudit &a = nodes[size_t(node)];
+        (a.framesSinceAnswer <= kFreshFrames ? freshPx : stalePx) += o.px;
+        if (a.hidEvents >= kFlipping)
+            flippingPx += o.px;
+    }
+
+    std::vector<std::pair<int32_t, NodeTally>> ranked(byNode.begin(),
+                                                      byNode.end());
+    std::sort(ranked.begin(), ranked.end(),
+              [](const std::pair<int32_t, NodeTally> &a,
+                 const std::pair<int32_t, NodeTally> &b) {
+                  return a.second.px > b.second.px;
+              });
+
+    std::string worstNodes;
+    for (size_t i = 0; i < std::min<size_t>(ranked.size(), 5); ++i) {
+        const Render::OcclusionNodeAudit &a = nodes[size_t(ranked[i].first)];
+        char nb[224];
+        snprintf(nb, sizeof(nb),
+                 " n%d(L%u res%u sub%u lastpx%d age%uf hid%uf ev%u):%upx/%urows",
+                 int(ranked[i].first), unsigned(a.level),
+                 unsigned(a.residentCount), unsigned(a.subtreeCount),
+                 int(a.lastPx), unsigned(a.framesSinceAnswer),
+                 unsigned(a.framesHidden), unsigned(a.hidEvents),
+                 unsigned(ranked[i].second.px),
+                 unsigned(ranked[i].second.rows));
+        worstNodes += nb;
+    }
+
+    // Shares of what occlusion cut, not of the whole over-cull: the
+    // frustum's rows are in the same mask but are not this mechanism's
+    // to explain, and folding them into the denominator would quietly
+    // shrink every share here whenever the other bug got worse.
+    const size_t occPx = freshPx + stalePx;
+    char nbuf[1024];
+    snprintf(nbuf, sizeof(nbuf),
+             "render cull attribution: %zu node(s) account for %zu px "
+             "| verdict fresh (<=%uf) %zu px (%.1f%%), older %zu px (%.1f%%) "
+             "| from nodes that have flipped >=%u times: %zu px (%.1f%%) "
+             "| frustum, not occlusion: %zu rows %zu px | worst%s\n",
+             ranked.size(), occPx, kFreshFrames, freshPx,
+             occPx ? 100.0 * double(freshPx) / double(occPx) : 0.0,
+             stalePx,
+             occPx ? 100.0 * double(stalePx) / double(occPx) : 0.0,
+             unsigned(kFlipping), flippingPx,
+             occPx ? 100.0 * double(flippingPx) / double(occPx) : 0.0,
+             frustumRows, frustumPx, worstNodes.c_str());
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", nbuf);
+#else
+    Base::Console().Message("%s", nbuf);
 #endif
 }
 
@@ -12765,6 +12871,10 @@ public:
         static const bool noCulling =
             getenv("FC_BGFX_NO_CULLING") != nullptr;
         std::vector<uint8_t> sceneCulled;
+        // Which node's verdict cut each row, -1 for rows occlusion did
+        // not cut (docs/FarFieldProxies.md §12.10). Filled by the
+        // culler only when the audit asks for it.
+        std::vector<int32_t> cullOwner;
         if (!noCulling && !hlconfig.show && !scene.empty()) {
             float vp[16];
             bx::mtxMul(vp, viewMat,
@@ -12848,11 +12958,18 @@ public:
                         cullQueries.push_back(q);
                         cullQueryNode.push_back(-1);
                     }
+                    // The attribution is only maintained while the
+                    // audit is on: it is a second vector the width of
+                    // the draw list, written on every masked row of
+                    // every frame, and nothing but the readout reads
+                    // it.
                     driveOcclusionCull(*view, culler, cullBatch, cullQueries,
                                        cullQueryNode, viewMat,
                                        reinterpret_cast<const float *>(
                                            projMatrix),
-                                       float(view->height), sceneCulled);
+                                       float(view->height), sceneCulled,
+                                       debugconf.cullAudit ? &cullOwner
+                                                           : nullptr);
                 }
                 else if (!cullUnsupported) {
                     cullUnsupported = true;
@@ -13025,6 +13142,18 @@ public:
                 idPixH = view->idReadH;
                 idPixels.assign(size_t(idPixW) * size_t(idPixH) * 4, 0);
                 idMask = sceneCulled;
+                idOwner = cullOwner;
+                // The node states go with the image too, for the same
+                // reason the mask does. A verdict read back a second
+                // later has been re-tested many times over; the one
+                // that deleted these rows is the one standing now.
+                idNodeAudit.clear();
+                if (!cullOwner.empty()) {
+                    const size_t n = culler.hierarchy().nodes().size();
+                    idNodeAudit.reserve(n);
+                    for (size_t i = 0; i < n; ++i)
+                        idNodeAudit.push_back(culler.nodeAudit(int(i)));
+                }
                 idKeys.clear();
                 idKeys.reserve(scene.size());
                 for (const auto &d : scene)
@@ -14025,8 +14154,8 @@ public:
         // several paths, and an audit that only ran on frames that got
         // all the way through would silently sample a subset.
         if (idReadyFrame && frameNum >= idReadyFrame) {
-            reportCullAudit(idPixels, idPixW, idPixH, idMask, idKeys,
-                            objectInfo, idHist);
+            reportCullAudit(idPixels, idPixW, idPixH, idMask, idOwner,
+                            idNodeAudit, idKeys, objectInfo, idHist);
             idReadyFrame = 0;
         }
 
@@ -14644,6 +14773,12 @@ public:
     /// place, reappearing inside the instrument built to find it.
     std::vector<uint16_t> idPixels;   ///< RGBA16F, 4 halves per pixel
     std::vector<uint8_t> idMask;      ///< the cull mask, as it was
+    /// Which node's verdict cut each masked row, as it was. Empty when
+    /// occlusion culling is off, which is how the readout tells "the
+    /// frustum cut this row" from "nothing was attributing at all".
+    std::vector<int32_t> idOwner;
+    /// Every node's visibility state, as it was. Indexed by node.
+    std::vector<Render::OcclusionNodeAudit> idNodeAudit;
     std::vector<uint64_t> idKeys;     ///< objectKey per row, as it was
     std::vector<uint32_t> idHist;     ///< pixels owned, per id
     /// Frame at which idPixels is filled; 0 = no readback in flight.

@@ -107,6 +107,49 @@ struct OcclusionNodeState {
     /// query is not answering" are the same byte otherwise, and the
     /// second is a bug that looks exactly like a spectacular result.
     int32_t lastPx = -1;
+
+    // ⛔ Not recorded here: whether the deciding test was taken while
+    // the node's own contents were drawn. §12.6's account of the
+    // per-test failure is that a *drawn* node loses a depth tie against
+    // its own geometry, and the obvious instrument is to flag which set
+    // the offer came from. It would answer "always drawn", for every
+    // node, always -- and mean nothing: only a node that is *already*
+    // hidden is offered from the hidden set, so the answer that first
+    // sets `hidden` can only ever come from the drawn set. A tautology
+    // reported as a measurement is the failure mode this whole section
+    // exists to avoid (see OcclusionFrameStats::rootRefused), so the
+    // field is deliberately absent rather than present and misleading.
+    // What separates a query that lied from a world that moved is
+    // below: the age of the deciding answer, and how often the node has
+    // flipped.
+
+    /// How many times this node has entered the hidden state. ⭐ One
+    /// separates a stable wrong verdict from an oscillator without
+    /// needing a second frame to compare against: a node that entered
+    /// once and stayed is answering consistently (and wrongly), while
+    /// a node with a high count is flipping.
+    uint16_t hidEvents = 0;
+    /// Frame `hidden` was last set from clear. Ages the verdict itself
+    /// rather than the answer that maintains it.
+    uint32_t hidFrame = 0;
+};
+
+/// One node's visibility state, flattened for the readout
+/// (docs/FarFieldProxies.md §12.10). Nothing here drives the mechanism;
+/// it exists so that an over-culled draw can be traced back to the
+/// verdict that deleted it, and that verdict judged for freshness and
+/// stability.
+struct OcclusionNodeAudit {
+    uint32_t level = 0;
+    uint32_t residentCount = 0;
+    uint32_t subtreeCount = 0;
+    int32_t lastPx = -1;
+    uint32_t framesSinceAnswer = 0;
+    uint32_t framesHidden = 0;
+    uint16_t hidEvents = 0;
+    uint8_t hidden = 0;
+    uint8_t hiddenStreak = 0;
+    uint8_t answered = 0;
 };
 
 /// Which nodes a frame wants tested, as boxes for the backend to
@@ -185,9 +228,17 @@ public:
     /// \a batch is filled with the boxes to test; the caller submits as
     /// many as it can and reports each answer through result(), or
     /// abandon() for the ones it dropped.
+    ///
+    /// \a cullOwner, when given, is sized to \a cullMask and receives
+    /// the node whose hidden verdict cut each row, -1 for a row this
+    /// walk did not cut. ⭐ It is what makes an over-culled draw
+    /// traceable: the mask alone cannot say whether a wrongly deleted
+    /// row was deleted by occlusion or by the frustum test that shares
+    /// the mask, and those are different bugs.
     void cull(const float *view, const float *proj, float viewportHeightPx,
               bool homogeneousDepth, std::vector<uint8_t> &cullMask,
-              OcclusionTestBatch &batch);
+              OcclusionTestBatch &batch,
+              std::vector<int32_t> *cullOwner = nullptr);
 
     /// One query's answer. \a visible false means the box put no
     /// fragment through the depth test, so nothing at or below the node
@@ -195,6 +246,9 @@ public:
     void result(int node, bool visible, int32_t px = -1);
     /// The last answer's pixel count for \a node, -1 if never answered.
     int32_t nodePixels(int node) const;
+    /// \a node's visibility state, for the readout. An out-of-range
+    /// node returns the default, which reads as "never answered".
+    OcclusionNodeAudit nodeAudit(int node) const;
     /// A test that was offered and will never be answered — the backend
     /// had no query handle, or the walk was thrown away. The node keeps
     /// whatever it believed and is simply offered again.
@@ -206,7 +260,8 @@ public:
     uint32_t frame() const { return framecounter; }
 
 private:
-    void markSubtree(int node, std::vector<uint8_t> &cullMask);
+    void markSubtree(int node, std::vector<uint8_t> &cullMask,
+                     std::vector<int32_t> *cullOwner);
 
     ProxyHierarchy index;
     std::vector<OcclusionNodeState> state;

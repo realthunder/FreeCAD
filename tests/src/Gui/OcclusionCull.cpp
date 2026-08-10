@@ -735,3 +735,144 @@ TEST(OcclusionCull, oneVisibleAnswerOutweighsAnyRunOfHiddenOnes)
     EXPECT_EQ(c.lastFrame().nodesHidden, 0u)
         << "the streak resumed where it left off instead of restarting";
 }
+
+// ---------------------------------------------------------------------
+// The attribution the readout traces an over-cull with
+// (docs/FarFieldProxies.md §12.10). None of this steers the mechanism;
+// what it protects is the ability to say *which verdict* deleted a draw
+// — and every earlier session of this workstream was lost to a
+// measurement that could not.
+// ---------------------------------------------------------------------
+
+TEST(OcclusionCull, everyMaskedRowNamesTheVerdictThatCutIt)
+{
+    OcclusionCuller c;
+    c.configure(OcclusionCullConfig());
+    c.build(lattice());
+    Camera cam;
+    std::vector<uint8_t> mask(1000, 0);
+    std::vector<int32_t> owner;
+    OcclusionTestBatch batch;
+    for (int i = 0; i < 24; ++i) {
+        std::fill(mask.begin(), mask.end(), 0);
+        c.cull(cam.V, cam.P, cam.height, true, mask, batch, &owner);
+        answerByLevel(c, batch, 1);
+    }
+    ASSERT_GT(countSet(mask), 0u);
+    ASSERT_EQ(owner.size(), mask.size());
+
+    const auto &nodes = c.hierarchy().nodes();
+    uint32_t attributed = 0;
+    for (size_t i = 0; i < mask.size(); ++i) {
+        if (!mask[i]) {
+            EXPECT_LT(owner[i], 0)
+                << "row " << i << " was drawn but names a verdict";
+            continue;
+        }
+        ASSERT_GE(owner[i], 0) << "row " << i << " was cut by nobody";
+        ASSERT_LT(size_t(owner[i]), nodes.size());
+        ++attributed;
+    }
+    EXPECT_EQ(attributed, countSet(mask));
+}
+
+TEST(OcclusionCull, aRowTheFrustumCutIsNotBlamedOnOcclusion)
+{
+    // The mask is shared with the frustum test, and the two are
+    // different bugs. A readout that cannot separate them credits a fix
+    // to the wrong mechanism.
+    OcclusionCuller c;
+    c.configure(OcclusionCullConfig());
+    c.build(lattice());
+    Camera cam;
+    std::vector<uint8_t> mask(1000, 1);   // the frustum cut everything
+    std::vector<int32_t> owner;
+    OcclusionTestBatch batch;
+    for (int i = 0; i < 24; ++i) {
+        c.cull(cam.V, cam.P, cam.height, true, mask, batch, &owner);
+        answerAll(c, batch, true);        // and nothing is occluded
+    }
+    ASSERT_EQ(countSet(mask), 1000u);
+    for (size_t i = 0; i < owner.size(); ++i)
+        EXPECT_LT(owner[i], 0) << "row " << i << " blamed on occlusion";
+}
+
+TEST(OcclusionCull, aWithdrawnVerdictStopsNamingItsRows)
+{
+    // Unlike the mask, which is additive, an attribution from a
+    // previous frame is simply wrong once the verdict is gone.
+    OcclusionCuller c;
+    c.configure(OcclusionCullConfig());
+    c.build(lattice());
+    Camera cam;
+    std::vector<uint8_t> mask(1000, 0);
+    std::vector<int32_t> owner;
+    OcclusionTestBatch batch;
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 24);
+    // ⚠️ Answered, like every other frame here. A batch left in flight
+    // strands its nodes on `pending`, and a pending hidden node is
+    // never offered again — so the enclosure below could not open and
+    // the test would fail for a reason that is not the one it is about.
+    std::fill(mask.begin(), mask.end(), 0);
+    c.cull(cam.V, cam.P, cam.height, true, mask, batch, &owner);
+    answerByLevel(c, batch, 1);
+    ASSERT_GT(countSet(mask), 0u);
+
+    for (int i = 0; i < 8; ++i) {
+        std::fill(mask.begin(), mask.end(), 0);
+        c.cull(cam.V, cam.P, cam.height, true, mask, batch, &owner);
+        answerAll(c, batch, true);
+    }
+    std::fill(mask.begin(), mask.end(), 0);
+    c.cull(cam.V, cam.P, cam.height, true, mask, batch, &owner);
+    ASSERT_EQ(countSet(mask), 0u);
+    for (size_t i = 0; i < owner.size(); ++i)
+        EXPECT_LT(owner[i], 0) << "row " << i << " still names a dead verdict";
+}
+
+TEST(OcclusionCull, theHideCounterCountsEntriesNotConfirmations)
+{
+    // ⭐ The field that separates an oscillator from a stable wrong
+    // verdict. A node re-confirmed hidden every frame must NOT climb —
+    // otherwise the counter is a re-test counter wearing the name of a
+    // flip counter, and the readout would call the steadiest verdict in
+    // the scene the most unstable one.
+    OcclusionCuller c;
+    c.configure(OcclusionCullConfig());
+    c.build(lattice());
+    Camera cam;
+    std::vector<uint8_t> mask(1000, 0);
+    OcclusionTestBatch batch;
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 24);
+
+    const auto &nodes = c.hierarchy().nodes();
+    uint32_t hidden = 0;
+    for (size_t n = 0; n < nodes.size(); ++n) {
+        if (c.nodeAudit(int(n)).hidden)
+            ++hidden;
+    }
+    ASSERT_GT(hidden, 0u);
+
+    // Twenty more frames of the same answers: confirmations, not events.
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 20);
+    for (size_t n = 0; n < nodes.size(); ++n) {
+        const auto a = c.nodeAudit(int(n));
+        if (a.hidden)
+            EXPECT_EQ(a.hidEvents, 1) << "node " << n << " counted re-tests";
+    }
+
+    // A round trip out of the hidden state and back is one more event.
+    for (int i = 0; i < 8; ++i) {
+        std::fill(mask.begin(), mask.end(), 0);
+        c.cull(cam.V, cam.P, cam.height, true, mask, batch);
+        answerAll(c, batch, true);
+    }
+    settle(c, cam.V, cam.P, cam.height, mask, batch, 24);
+    uint32_t twice = 0;
+    for (size_t n = 0; n < nodes.size(); ++n) {
+        if (c.nodeAudit(int(n)).hidEvents >= 2)
+            ++twice;
+    }
+    EXPECT_GT(twice, 0u) << "a node that left the hidden set and came back "
+                            "was never counted as flipping";
+}

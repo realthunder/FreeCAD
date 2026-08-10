@@ -50,6 +50,10 @@ void OcclusionCuller::configure(const OcclusionCullConfig &config)
         st.hiddenStreak = 0;
         st.answered = 0;
         st.lastPx = -1;
+        // The readout's history goes with the verdicts it describes:
+        // counting hide events across a settings change would report
+        // one configuration's oscillation against another's.
+        st.hidEvents = 0;
     }
 }
 
@@ -102,8 +106,39 @@ void OcclusionCuller::result(int node, bool visible, int32_t px)
         ++st.hiddenStreak;
     // A node already hidden stays hidden on a single confirmation: the
     // streak only has to be *reached*, not re-earned every frame.
-    if (st.hiddenStreak >= (conf.hiddenConfirm ? conf.hiddenConfirm : 1))
+    if (st.hiddenStreak >= (conf.hiddenConfirm ? conf.hiddenConfirm : 1)
+            && !st.hidden) {
         st.hidden = 1;
+        // At the transition and nowhere else: re-confirmations of a node
+        // that is already hidden are not new events, and counting them
+        // would turn "how often does this node flip" — the one thing
+        // that distinguishes an oscillator from a stable wrong verdict —
+        // into a re-test counter.
+        st.hidFrame = framecounter;
+        if (st.hidEvents < 0xffff)
+            ++st.hidEvents;
+    }
+}
+
+OcclusionNodeAudit OcclusionCuller::nodeAudit(int node) const
+{
+    OcclusionNodeAudit a;
+    if (node < 0 || size_t(node) >= state.size()
+            || size_t(node) >= index.nodes().size())
+        return a;
+    const OcclusionNodeState &st = state[size_t(node)];
+    const ProxyNode &n = index.nodes()[size_t(node)];
+    a.level = n.level;
+    a.residentCount = n.residentCount;
+    a.subtreeCount = n.subtreeCount;
+    a.lastPx = st.lastPx;
+    a.framesSinceAnswer = st.answered ? framecounter - st.lastAnswer : 0;
+    a.framesHidden = st.hidden ? framecounter - st.hidFrame : 0;
+    a.hidEvents = st.hidEvents;
+    a.hidden = st.hidden;
+    a.hiddenStreak = st.hiddenStreak;
+    a.answered = st.answered;
+    return a;
 }
 
 int32_t OcclusionCuller::nodePixels(int node) const
@@ -128,8 +163,14 @@ void OcclusionCuller::abandon(int node)
     // whose tests are being dropped.
 }
 
-void OcclusionCuller::markSubtree(int node, std::vector<uint8_t> &cullMask)
+void OcclusionCuller::markSubtree(int node, std::vector<uint8_t> &cullMask,
+                                  std::vector<int32_t> *cullOwner)
 {
+    // Attributed to the node the verdict was taken at, not to the
+    // descendant the instance happens to live in: that node is the one
+    // whose box was tested and whose answer deleted the row, and it is
+    // the only one there is any evidence about.
+    const int32_t owner = int32_t(node);
     const auto &nodes = index.nodes();
     const auto &residents = index.residents();
     const auto &instances = index.instances();
@@ -144,6 +185,8 @@ void OcclusionCuller::markSubtree(int node, std::vector<uint8_t> &cullMask)
             const uint32_t row = instances[inst].drawIndex;
             if (row < cullMask.size())
                 cullMask[row] = 1;
+            if (cullOwner && row < cullOwner->size())
+                (*cullOwner)[row] = owner;
         }
         for (int c : n.child) {
             if (c != kNoProxyNode)
@@ -155,7 +198,8 @@ void OcclusionCuller::markSubtree(int node, std::vector<uint8_t> &cullMask)
 void OcclusionCuller::cull(const float *view, const float *proj,
                            float viewportHeightPx, bool homogeneousDepth,
                            std::vector<uint8_t> &cullMask,
-                           OcclusionTestBatch &batch)
+                           OcclusionTestBatch &batch,
+                           std::vector<int32_t> *cullOwner)
 {
     ++framecounter;
     framestats = OcclusionFrameStats();
@@ -164,6 +208,12 @@ void OcclusionCuller::cull(const float *view, const float *proj,
     batch.nodes.clear();
     mustTest.clear();
     mayTest.clear();
+    // Cleared here rather than by the caller, and every frame: unlike
+    // the mask, which composes with the frustum's rejections and is
+    // only ever set, an attribution from a previous frame is simply
+    // wrong — the verdict it names may have been withdrawn since.
+    if (cullOwner)
+        cullOwner->assign(cullMask.size(), -1);
 
     if (index.empty() || index.root() == kNoProxyNode)
         return;
@@ -276,7 +326,7 @@ void OcclusionCuller::cull(const float *view, const float *proj,
                 ++framestats.forcedVisible;
             }
             else {
-                markSubtree(node, cullMask);
+                markSubtree(node, cullMask, cullOwner);
                 framestats.hiddenInstances += n.subtreeCount;
                 ++framestats.nodesHidden;
                 if (!st.pending)
