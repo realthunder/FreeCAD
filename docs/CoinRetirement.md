@@ -315,6 +315,25 @@ backend and is the cache's, not the backend's). Still unvisited from
 §3.2: TechDraw, FEM, Draft, Assembly, annotation text, large models and
 real-GPU behaviour.
 
+**Stage 1a — clear the Coin warnings from the console.** Surveyed
+2026-08-10 and none of them is a correctness bug, which is not a reason
+to keep them: three permanent warnings make a console nobody reads, and
+the next real one then arrives invisible.
+
+- `SbSphere::circumscribe(): The box is empty` — once at startup, before
+  any document. Skip the call on an empty box.
+- `SoGLLineWidthElement: 2.0 outside [1.0, 1.0]` — this GL supports only
+  1px lines. Clamp against `GL_ALIASED_LINE_WIDTH_RANGE` before setting.
+  ⚠️ The consequence is not the warning: wide lines silently do not draw
+  on the plain GL path. The backend is unaffected — it draws lines as
+  geometry.
+- `SoGLSLShaderParameter: 'baseimage' not found in program` ×4 — Coin's
+  `SoShadowGroup` sets a sampler its generated blur program does not
+  declare (`src/shadows/SoShadowGroup.cpp:445`); a fork fix. ⚠️ It fires
+  while the **backend** is drawing the shadows, i.e. Coin's shadow
+  machinery is still being built and run underneath — the cost stage 4c
+  removes. The warning and the waste may be one change.
+
 **Stage 1c — auto clipping does not account for what the backend draws
 outside the scene graph.** Found while bringing the shadow ground to
 parity, and it is the *only* difference left between the two grounds
