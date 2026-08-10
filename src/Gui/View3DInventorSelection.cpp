@@ -46,6 +46,32 @@ FC_LOG_LEVEL_INIT("3DViewerSelection",true,true)
 
 using namespace Gui;
 
+namespace {
+
+/** The on-top alpha byte, from the TransparencyOnTop preference.
+ *
+ * The low byte of the packed colour handed to
+ * SoFCRenderCacheManager::addSelection() is an *alpha*, with 0xff meaning
+ * opaque: that is Coin's own convention (SbColor::getPackedValue() writes
+ * (1 - transparency) * 255 there) and it is how SoFCRenderCache reads the
+ * byte back. TransparencyOnTop is a transparency, so it has to be
+ * inverted on the way in.
+ *
+ * Handing it over uninverted inverted the meaning of the preference
+ * everywhere except at its default: at 0.5 both readings land on the same
+ * byte, which is why this survived. At 0 -- "draw an on-top object
+ * opaque" -- the object became fully transparent instead, and at 1.0 it
+ * drew solid.
+ */
+uint32_t onTopAlpha()
+{
+    auto t = static_cast<float>(ViewParams::getTransparencyOnTop());
+    t = t < 0.0F ? 0.0F : (t > 1.0F ? 1.0F : t);
+    return static_cast<uint32_t>((1.0F - t) * 255.0F + 0.5F);
+}
+
+} // anonymous namespace
+
 View3DInventorSelection::OnTopInfo::OnTopInfo(OnTopInfo &&other)
     :node(std::move(other.node)),elements(std::move(other.elements))
 {
@@ -318,7 +344,7 @@ void View3DInventorSelection::checkGroupOnTop(const SelectionChanges &Reason, bo
                                       nodePath,
                                       detailPath,
                                       detail,
-                                      (uint32_t)(ViewParams::getTransparencyOnTop() * 255),
+                                      onTopAlpha(),
                                       true,
                                       true);
                 if (guiDocument) {

@@ -563,7 +563,13 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
   if ((pass & RenderPassLineMask) == RenderPassLinePattern) {
     if (pass == RenderPassLinePattern) {
       transp = true;
-      uint32_t alpha = (uint32_t)(ViewParams::getTransparencyOnTop() * 255);
+      // TransparencyOnTop is a transparency, but this byte is an alpha with
+      // 0xff meaning opaque -- SoFCRenderCache's convention, and Coin's in
+      // SbColor::getPackedValue(). Inverting is what keeps
+      // TransparencyOnTop = 0 meaning a solid on-top line rather than an
+      // invisible one. Same correction as View3DInventorSelection.cpp.
+      float t = std::min(std::max((float)ViewParams::getTransparencyOnTop(), 0.0F), 1.0F);
+      uint32_t alpha = (uint32_t)((1.0F - t) * 255.0F + 0.5F);
       if (alpha < (col & 0xff))
         col = (col & 0xffffff00) | alpha;
       overrideflags.set(Material::FLAG_TRANSPARENCY);
