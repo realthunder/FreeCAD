@@ -1492,7 +1492,7 @@ against that, and what it measures.
 Code: `Gui/Renderer/OcclusionCull.{h,cpp}` (the policy, plain float, no
 backend), its wiring in `BGFXRenderer.cpp`, tests in
 `tests/src/Gui/OcclusionCull.cpp`. Knobs: `Render_Occlusion` and the
-four `Render_Occlusion*` tuning parameters, per `docs/RenderDebug.md`
+five `Render_Occlusion*` tuning parameters, per `docs/RenderDebug.md`
 §1 — a runtime property, not a recompile.
 
 ### 12.1 The mechanism
@@ -1670,3 +1670,253 @@ Where to look next, in order:
    same way is culled silently, and would look exactly like this.
 3. Only then the policy in `OcclusionCull.cpp`, which the unit tests
    already cover and which the on-top result suggests is not at fault.
+
+### 12.6 measured: three faults, and where the remaining one lives
+
+§12.5 left an ordered list of suspects. Two of the three named there
+were real, a third was found underneath them, and none of them was the
+policy in `OcclusionCull.cpp`:
+
+**1. The test boxes inherited a depth bias from the last line draw.**
+The boxes were submitted with the mesh program, whose vertex shader
+reads `u_params.w` as an NDC depth bias — and a bgfx uniform keeps
+whatever the last draw that set it left in it. The last scene draw
+before the probe view is routinely a *line* draw, where `u_params.w` is
+not a bias at all but the on-top dim alpha, normally **1.0**. Inherited,
+that pushes every test box a whole NDC unit away from the viewer, past
+the far plane, so the box rasterizes nothing and the node reports itself
+hidden however plainly it is in view. Three other mesh-program pairings
+in `BGFXRenderer.cpp` already zero `u_params` for exactly this reason;
+this one did not. The boxes now use the flat program, whose vertex
+shader transforms the position and nothing else, and set `u_params`
+explicitly anyway.
+
+⭐ This is also why the synthetic wall smoke scene never reproduced the
+failure: triangles only, no line draw, so the inherited bias there was
+0. **A smoke test whose scene is simpler than the real one can be
+two-sided, guarded and green while the mechanism is broken.**
+
+**2. The box was not a box.** Corners are bit-encoded — x from bit 0, y
+from bit 1, z from bit 2 — so a face's four corners run 0,1,3,2 around
+its rim, not 0,1,2,3. The index table was written the second, natural-
+looking way. The result rasterized **3.5 of the box's 6 faces**: the two
+x-facing faces were absent entirely, replaced by two diagonal
+cross-sections through the interior, and the two z-facing faces were a
+quarter short each. It draws something from every angle, so it always
+answered; what it answered with, over much of the box's footprint, was
+an *interior* surface — deeper than the front face it stands in for, so
+LEQUAL rejects it and the node reads hidden. Padding cannot rescue this,
+which is why the residue survived the first fix. The table now lives in
+`Render::occlusionBoxIndices()` and is checked as a property (every
+triangle on a face plane, two per face, total area equal to the box's
+surface) rather than transcribed at the call site.
+
+**3. Padding in the model's units cannot answer a question about the
+depth buffer's.** `padFraction` is a fraction of the box's own diagonal,
+so a small part lying flush on a large panel gets a small pad — at a
+distance where one depth step is far larger. Both surfaces quantize to
+the same stored value, the tie goes whichever way the rasterizer rounds,
+and the node reports itself hidden. `depthQuantumPad()` adds the missing
+term: `Render_OcclusionDepthPad` steps of the 24-bit depth buffer,
+converted to a world distance at the box's nearest corner
+(`z^2/|P[14]|`). Both terms are needed and neither substitutes for the
+other.
+
+#### ⭐⭐⭐ And the measurement was reading a moving target
+
+Fixing the above moved the differing-pixel count around without ever
+settling — 1.54% → 0.75% → 0.48%, but also *worse* at a larger pad than
+a smaller one, and a figure that would not reproduce between runs. The
+control that explained it is the one that changes nothing:
+
+| control | pixels differing |
+|---|---|
+| off → off, two captures 30 s apart | **0** |
+| **on → on, two captures 30 s apart** | **14101 (0.98%)** |
+
+**The culled image never stopped changing.** Two frames of the same
+scene, same camera, same settings, thirty seconds apart, differed as
+much as culling-off differed from culling-on — so every row of the pad
+sweep was one sample of an oscillating system, and the ordering between
+them was noise. The per-second readout confirms it directly: with the
+index never rebuilt (constant 11.8 ms build), `instances hidden` swings
+between **9303 and 17715** of 17727, and at the extreme **8 nodes hide
+all but 12 instances**. That is the model blinking, not a static
+over-cull.
+
+⚠️ Generalise: **an off→on comparison cannot be read until on→on is
+zero.** §12.5 paired the measurement with an image; it did not pair the
+image with a control, and a moving target answers every question
+plausibly.
+
+#### The fault is re-testing a node whose own geometry is drawn
+
+A node is tested by rasterizing its box against the opaque depth. For a
+node that is *currently drawn*, that depth was written by the node's own
+contents, and the test is a tie it can lose. Lose it and the node is
+culled; culled, it stops writing depth, so the next test — now against
+whatever lies behind — passes, and it comes back. Period-two
+oscillation, one node at a time, hundreds at once.
+
+`visibleTtl` is exactly the frequency of those re-tests, which makes it
+the discriminator. Raised out of reach (10^6 frames), so that every node
+is tested once and only nodes that are *not* drawn are ever re-tested:
+
+| | pixels differing | instances hidden | drawn |
+|---|---|---|---|
+| on → on, 30 s apart | **0** | 15777 | 1950 |
+| **off → on, same camera** | **0** | 15777 of 17727 | 1950 |
+
+⭐⭐ **Pixel-identical to the unculled frame, and stable, while removing
+89% of the instances.** The box test, with the three fixes above, is
+sound: every node's first test is right. The entire remaining error is
+in what re-testing does, and it is a property of the loop — the depth
+buffer is built from the culled frame and the culling is derived from
+the depth buffer — not of the box.
+
+⛔ An unreachable `visibleTtl` is not the fix, only the proof: nothing
+would ever be re-tested, so a camera that moves would freeze the culling
+at whatever it discovered first. It errs safe (a stale *visible* verdict
+draws geometry that could have been skipped; it never deletes any), but
+it stops the mechanism from tracking. What is owed is a re-test that
+cannot lose the tie against the node's own contents — the candidates
+being to test against a depth buffer that includes the previously
+visible set (CHC++'s actual arrangement, which this deliberately
+simplified away in §12.1), or to exempt a node from re-test while its
+own residents are the frontmost thing inside its box.
+
+`Render_Occlusion` stays default off until that is closed.
+
+### 12.7 measured: confirmations are not the fix, and why
+
+§12.6 named the re-test loop as the open fault and hysteresis as the
+first candidate: require `hiddenConfirm` consecutive answers of "no
+pixels" before acting, on the theory that a verdict issued against one
+frame's depth and read against a later one produces answers that
+alternate. It is built (`Render_OcclusionConfirm`, default 2, with the
+oscillator and the one-visible-answer-wins asymmetry under test in
+`tests/src/Gui/OcclusionCull.cpp`) and it **does not fix it**.
+
+The response surface, server assembly, same fixed converged camera, each
+row an adjacent pair with the off→off control reading 0:
+
+| confirmations | visible lifetime | on→on differing px | severe |
+|---|---|---|---|
+| 2 | 6 (default) | 13714 (0.95%) | 3960 |
+| **6** | 6 | **6191 (0.43%)** | 1705 |
+| 2 | **60** | **1666 (0.12%)** | 248 |
+| any | 10^6 (never re-tested) | **0** | 0 |
+
+Two things follow, and together they say what the fault is not:
+
+- ⭐ **Damage is proportional to the number of re-tests.** Ten times
+  fewer tests is roughly eight times less damage; no tests at all is
+  none. Each re-test carries a small chance of a false "hidden" on a
+  node whose geometry is drawn, and a false hidden persists, so the
+  damage accumulates with the count of opportunities rather than
+  settling anywhere.
+- ⭐⭐ **The false answers come in runs, not singly.** Tripling the
+  confirmations only halved the damage — nothing like the p^n an
+  independent per-test error would give. A node that answers falsely
+  once tends to answer falsely again for a stretch, which means it
+  enters a *state* rather than catching noise, and hysteresis can only
+  ever dilute that.
+
+⇒ Both knobs reduce exposure and neither addresses the cause, so
+neither is a shipping answer: `visibleTtl` traded high enough to matter
+is `visibleTtl` too high to track a camera. What is still owed is the
+per-test failure itself — the condition under which a node whose
+residents are drawn reports no pixels, repeatedly — and the instrument
+that finds it is the one this section did not build: for a node the
+culler is about to skip, ask whether its residents actually contributed
+a pixel, and report the disagreement. Every measurement so far has
+compared *pictures*; this one would compare a verdict against the
+geometry it claims to stand for.
+
+`Render_Occlusion` stays default off.
+
+### 12.8 what the field does, and the three options this leaves
+
+Researched 2026-08-10, after §12.7 established that the fault is in the
+re-test loop rather than in the box.
+
+**The state of the art is closed to us for now.** Everyone has converged
+on two-pass HZB culling with GPU-driven indirect draws: draw last
+frame's visible set, build a depth mip pyramid, run a compute thread per
+object against it, draw the survivors indirectly with no CPU round-trip.
+NVIDIA's `gl_occlusion_culling` sample measures the payoff on 17576
+objects — almost exactly this scene — at **5286 µs of CPU frame time
+down to 494 µs** when the same culling moves from readback to
+MultiDrawIndirect. It needs compute and indirect draws, which WebGL2
+does not have, which is what §10.4 already decided.
+
+⚠️ WebGPU is at roughly **85% global browser support** (Chrome 113+,
+Safari 26+, iOS Safari 26+, Chrome Android 151+; Firefox still not on by
+default), so that route is opening — but **not through this codebase**:
+bgfx's WebGPU backend was re-implemented in January 2026 and is Dawn
+*native only*, unusable through Emscripten, with its author's verdict
+that WebGPU "isn't quite ready yet". Revisit in a year; do not design
+around it now.
+
+**The ID-buffer idea is a shipped technique.** NVIDIA calls it *raster
+culling*: draw with colour writes off and let fragments passing the
+depth test set `visible[objectid] = 1`. Fyrox ships a tile-based variant
+with two details worth taking:
+
+- ⭐ **Collapse each tile to one value with a logical OR before reading
+  back**, so the readback is at tile resolution rather than pixel
+  resolution. That answers §12.7's bandwidth objection without the
+  sub-pixel loss plain downsampling would cause — an OR keeps anything
+  that touched any pixel in the tile.
+- ⭐ **Objects with no cached visibility default to visible.** The same
+  asymmetry this design keeps enforcing by policy, made structural.
+
+**And the literature already names our fix.** NVIDIA's *Temporal Current
+Frame* method draws last frame's visible set first to prime the depth
+buffer and only then tests the rest against it. Its stated purpose is to
+draw each object exactly once; its side effect is that the occluder set
+stops churning between a test being issued and its answer being used —
+which is §12.7's fault exactly. This is the priming step §12.1
+deliberately dropped. Note also that Unreal still ships per-actor
+hardware occlusion queries as its *default* dynamic method, reads them
+back a frame later, and documents the same popping under camera motion;
+its HZB variant is explicitly *more conservative — fewer objects
+culled*. Nobody claims the query approach is exact.
+
+**The no-compute answer the field actually uses is a CPU software
+rasterizer.** Intel's Masked Software Occlusion Culling (HPG 2016, open
+source) culls **98% of what a full-resolution depth buffer would** at 3x
+the speed of prior work, with very low memory — and, in its own words,
+*"doesn't introduce any latency into the system"* and *"supports
+interleaving occluder rasterization and occlusion queries without
+penalty"*. Godot 4 ships this shape (occluders rasterized to a
+low-resolution CPU buffer via Embree). ⭐⭐ Read those two clauses
+against §12.6 and §12.7: **no latency means no stale verdicts, and
+interleaving means no feedback between what was culled and what the
+depth buffer holds. Both of our failure modes are absent by
+construction rather than by policy.** It is SIMD, and WASM has SIMD128,
+so it is the only option that behaves identically on desktop, mobile
+and browser — which is what CLAUDE.md asks renderer work to preserve.
+The cost is CPU time in a frame that is already CPU-heavy, against a
+saving of ~12000 draws at ~1.2 µs each.
+
+#### The plan this leaves, in order
+
+1. **The per-instance ID debug mode**, whatever else happens: nothing
+   else gives ground truth, and every option below has to be verified
+   against something. Exact 24-bit `drawIndex + 1`, per *instance* (the
+   granularity the cull mask uses), no MSAA, no shading.
+2. **Add the priming step** to the mechanism that exists — draw the
+   previously-visible set, test against that. Small, and it is the
+   canonical remedy for the one fault still open.
+3. **Then choose the oracle on measurement**: ID feedback (near-free if
+   the ID rides as an MRT on the opaque pass, cheap to read back with
+   the tile-OR, but keeps a frame of latency and leans on WebGL2
+   readback, which is its weak point) against masked software occlusion
+   (costs CPU, but deletes latency, feedback, the query pool and the
+   whole policy layer, and is identical in the browser).
+
+Given that this workstream's pain has been latency and feedback rather
+than culling accuracy, the software rasterizer is the stronger long-term
+bet and the ID buffer is both the near-term auditor and the thing that
+proves whichever oracle wins.
