@@ -315,24 +315,69 @@ backend and is the cache's, not the backend's). Still unvisited from
 §3.2: TechDraw, FEM, Draft, Assembly, annotation text, large models and
 real-GPU behaviour.
 
-**Stage 1a — clear the Coin warnings from the console.** Surveyed
-2026-08-10 and none of them is a correctness bug, which is not a reason
-to keep them: three permanent warnings make a console nobody reads, and
-the next real one then arrives invisible.
+**Stage 1a — clear the Coin warnings from the console. DONE.** The
+survey judged that none of the three was a correctness bug. **Two of
+them were**, and both were being read as cosmetic precisely because the
+console was too noisy to look at twice — which is the case for the
+stage, not against it. Measured on the real-GPU desktop leg
+(`renderer-desktop.sh`, demo-lights, Mesa d3d12 / RTX 3070 Ti): four
+`Coin warning` lines a session before, none after.
 
-- `SbSphere::circumscribe(): The box is empty` — once at startup, before
-  any document. Skip the call on an empty box.
-- `SoGLLineWidthElement: 2.0 outside [1.0, 1.0]` — this GL supports only
-  1px lines. Clamp against `GL_ALIASED_LINE_WIDTH_RANGE` before setting.
-  ⚠️ The consequence is not the warning: wide lines silently do not draw
-  on the plain GL path. The backend is unaffected — it draws lines as
-  geometry.
-- `SoGLSLShaderParameter: 'baseimage' not found in program` ×4 — Coin's
-  `SoShadowGroup` sets a sampler its generated blur program does not
-  declare (`src/shadows/SoShadowGroup.cpp:445`); a fork fix. ⚠️ It fires
-  while the **backend** is drawing the shadows, i.e. Coin's shadow
-  machinery is still being built and run underneath — the cost stage 4c
-  removes. The warning and the waste may be one change.
+Each was located by breaking on `SoDebugError::postWarning` under gdb
+rather than by matching the message to a plausible call site — worth the
+five minutes twice over, since two of the three were not what they
+looked like.
+
+- `SbSphere::circumscribe(): The box is empty` —
+  `NavigationStyle::findBoundingSphere`, from `setSceneGraph` during
+  viewer construction, before any document. **Not cosmetic.**
+  `SbSphere`'s default constructor leaves centre and radius
+  uninitialized and `circumscribe()` returns without setting them, so
+  `NavigationStyle::boundingSphere` stayed uninitialized —
+  `reorientCamera` reads it to place an orthographic camera's clip
+  planes. A *release* Coin is worse than the debug one that warns: the
+  empty-box check is `COIN_DEBUG`-only, so it takes a centre from the
+  inverted empty bounds and yields a NaN. Now set to a degenerate sphere
+  at the origin (`3ddfb5d3ae`).
+- `SoGLLineWidthElement: 2.0 outside [1.0, 1.0]` — from
+  `SoFCRendererP::applyMaterial`, i.e. the **glr** path, not the
+  backend. ⚠️ **The plan's own fix for this one is void.** It said to
+  clamp against `GL_ALIASED_LINE_WIDTH_RANGE` instead; measured through
+  gdb in a live context, this driver reports `[1, 1]` for the aliased
+  range *and* the smooth one, with `GL_LINE_SMOOTH` disabled. No clamp
+  site anywhere can make a wide line draw here. So the warning is
+  accurate, unactionable and permanent: Coin now keeps it for a genuine
+  overrun and drops it when the implementation offers a single width
+  (`coin e7ffbe41c`). The clamp is untouched — wide lines still do not
+  draw wide on the fixed-function path, and the backend, which draws
+  lines as geometry, remains the only thing that honours the width.
+- `SoGLSLShaderParameter: 'baseimage' not found in program` ×4 — **not a
+  missing declaration.** The generated blur program declares and uses
+  it; dumping the source at the failure point showed every Gaussian tap
+  multiplied by `0.000000` or `-0.000000`, so the compiler folded the
+  program to a constant and the driver dropped the sampler as inactive.
+  `SoShadowGroupP::binomial()` returned `int`. The filter asks for the
+  central coefficient of `n = 2*size + 4`, which leaves `int` at size 15
+  (C(34,17) = 2333606220) and is 2.4e24 at size 40 — and
+  `ShadowSmoothBorder` **defaults to 40**, so the shipped configuration
+  sat in the overflowed range and Coin's shadow-map blur output was a
+  constant. Returning `double` restores it (`coin 4635a6c61`): tap sums
+  go from 0.233 to 1.000 at size 15 and from -0.000 to 1.000 at size 40,
+  and nothing below size 15 changes.
+
+  `fcad-probes/shadow_blur_probe.py` (8/8) measures the result on the
+  glr leg: against an unfiltered control the penumbra widens from 9.97%
+  to 14.72% of the receiver. ⚠️ Do not expect size 40 to look much
+  softer than size 14 — binomial weights have width `sqrt(n)/2`, so 40
+  taps is 1.6× wider than 14, and the outer taps weigh ~1e-22. ⚠️ The
+  probe's first two passes used `saveImage` and read a 0.00 difference
+  between *every* smoothing size: the shadow map is an `SoSceneTexture2`
+  with its own FBO, and nesting that inside a capture's offscreen target
+  flattens the thing under test. `grabFramebuffer`, per §1b.
+
+  The warning fired while the **backend** was drawing, which is the
+  standing observation: Coin's shadow machinery is still built and run
+  underneath a backend frame, and that is the cost stage 4c removes.
 
 **Stage 1c — auto clipping does not account for what the backend draws
 outside the scene graph.** Found while bringing the shadow ground to
