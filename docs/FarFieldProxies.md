@@ -2362,25 +2362,84 @@ accepts this; given three sections spent on deleted geometry, here it is
 a measurement and not a setting. Correct reduction needs coverage sampled
 over the coarse pixel's whole footprint, which is not built.
 
-#### ⛔ Not yet measured
+#### ⭐⭐ measured: exact, and too expensive
 
-Everything above is a property, not a number. **No frame of either
-benchmark model has been through this yet**, so the two questions the
-whole change turns on are open:
+Real GPU, monitor off, 1863×1064, `server_imported.FCStd` (5455 objects,
+17727 drawn instances), whole-assembly camera, 29–30 samples per row,
+both rows in the same run against the same framing.
 
-1. **What does the occluder pass cost?** It is scalar — the layout is the
-   SIMD one (8×4 blocks whose coverage is one 32-bit word, four to a
-   128-bit lane) but nothing is vectorized, deliberately, because this
-   workstream has been wrong twice about where its time goes (§12.10).
-   Against a saving of ~12000 draws at ~1.2–1.5 µs, the budget is real
-   but not generous.
-2. **Does it cull as much?** MSOC's published figure is 98% of what a
-   full-resolution depth buffer achieves, but that is against *its* choice
-   of occluders. Here the occluder set is a screen-size ranking under a
-   triangle budget, and whether a CAD chassis's panels survive that
-   ranking is a property of this scene, not of the paper.
+| | software (§12.12) | hardware, ttl 6 confirm 2 |
+|---|---|---|
+| over-cull, median of 29 | **0 px** | 21212 px |
+| over-cull, min / max | **0 / 0** | 0 / 90458 |
+| over-culled rows | **0 of 7974 masked** | 423 of 14607 |
+| picture, off→on | **0 of 1440000 px** | 34702 px (2.41%) |
+| instances hidden | 7974 (45.0%) | 14607 (82.4%) |
+| nodes hidden / visited | 203 / 760 | 87 / 364 |
+| CPU per frame | **raster 21–29 ms**, walk 0.44 ms | — |
 
-`cull_audit.py` takes `sw`, `sw/<divisor>` and `sw/<divisor>/<tris>` row
-specs for exactly this. ⚠️ The rows are not two settings of one
-mechanism, so only the left half of the readout — instances and nodes
-hidden — compares across them.
+⭐⭐ **The correctness claim holds, and this is the first configuration in
+this section that is both exact and actually culling.** §12.9's
+correction was that the one pixel-exact row hid *nothing* — it was exact
+because it was structurally incapable of culling. This one deletes 7974
+of 17727 instances and still differs from the un-culled image in **zero
+pixels**, over 29 samples, with `rootrefused 0` and `nearclip 0`. The
+audit and the picture agree, which they did not for any hardware row.
+
+⛔ **And it does not pay.** Removing 7974 draws saves ~10–12 ms of CPU
+submission at §10.2's 1.2–1.5 µs; the occluder pass costs 26 ms of it.
+Net CPU loss of ~14–16 ms per frame, every frame, and the variance is
+small (21.3–28.9 ms across 30 samples) so this is the cost and not a
+sampling artefact. **The walk is free** — 0.44 ms for 760 node tests,
+stable to a hundredth of a millisecond — so *all* of the cost is
+rasterizing occluders and none of it is the mechanism.
+
+#### ⭐⭐ Why it costs that, which is not "scalar code"
+
+Two numbers from the same row say it, and they point the same way:
+
+- **68% of the rasterized triangles never touch a pixel.** 249998
+  triangles submitted, **79314 drawn, 170684 culled** — sub-pixel or
+  off-buffer, discarded after paying for their transform and screen-space
+  setup. A CAD tessellation at full detail is mostly triangles smaller
+  than the pixel grid it is being rasterized onto.
+- **97% of the candidate occluders never got in.** 1322 draws qualified;
+  the 250k triangle budget was consumed by **37 of them**, at ~6757
+  triangles each, and **1285 were dropped**. Admitting them all at that
+  detail would be ~8.9M triangles.
+
+So the buffer is simultaneously *too detailed* (two thirds of the work
+discarded) and *too incomplete* (most of the model's depth missing) — and
+the incompleteness is why it hides 45% where the scene's ceiling is
+95.4%: `drawn-but-invisible` was still **8939 of the 9753** instances it
+left drawn. That gap is not a limit of the mechanism; it is occluders
+that were never rasterized. ⭐ The `occludersDropped` counter earned
+itself here: without it this row reads as "the software oracle culls half
+as well", when what it says is "it was shown a twenty-seventh of the
+model".
+
+⚠️ Note what this rules out. Vectorizing would attack the 26 ms by some
+constant — SIMD128 is 4 lanes, so at absolute best ~6.5 ms — while
+leaving both ratios exactly as they are. It is the wrong lever to pull
+first.
+
+#### The order to try things in
+
+1. ⭐⭐ **Coarse occluder geometry.** The waste and the incompleteness are
+   one problem, and a decimated occluder mesh fixes both: fewer triangles
+   per draw admits far more draws within the same budget. ⚠️ It must be an
+   *inner* hull — a decimation that moves a surface **towards** the camera
+   invents occlusion and breaks the invariant of §12.12, which ordinary
+   error-minimising decimation (`MeshSimplify.cpp`) does not promise. This
+   is the one that has to be got right rather than merely built.
+2. **Reuse the buffer across frames whose camera has not moved.** Exact
+   while the camera is static, which is most of the time an engineer
+   spends looking at a model, and it does *not* reintroduce §12.6: that
+   failure was about ordering inside a frame, not about a buffer whose
+   camera is unchanged. It does nothing for the case that matters for
+   interaction, though.
+3. **Then SIMD**, when the ratios above have been fixed and the remaining
+   cost is genuinely per-triangle work that is being done usefully.
+
+`Render_Occlusion` stays default off, and `Render_OcclusionSoftware` with
+it.
