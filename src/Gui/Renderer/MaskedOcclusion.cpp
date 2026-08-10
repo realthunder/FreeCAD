@@ -35,7 +35,7 @@ namespace
 /// A vertex in clip space, kept in double through clipping and
 /// projection.
 ///
-/// ⚠️ Double, and not because the depths need the precision — they do
+/// WARNING: Double, and not because the depths need the precision -- they do
 /// not. A triangle straddling the near plane projects to screen
 /// coordinates in the millions, and the edge equations below are
 /// differences of products of those coordinates. In float the
@@ -96,7 +96,7 @@ int clipAgainst(const CVert *in, int n, CVert *out, double pa, double pb,
     return m;
 }
 
-/// Smallest w a perspective divide is allowed to see. Not a near plane —
+/// Smallest w a perspective divide is allowed to see. Not a near plane --
 /// the near plane clip below is separate and exact; this only keeps the
 /// division finite for the degenerate case of a projection with no near
 /// plane at all.
@@ -125,7 +125,7 @@ void MaskedDepth::resize(int widthPx, int heightPx)
 
 void MaskedDepth::clear()
 {
-    // ⚠️ The cleared floor is -FLT_MAX and not zero. Zero is a perfectly
+    // WARNING: The cleared floor is -FLT_MAX and not zero. Zero is a perfectly
     // ordinary depth in the orthographic convention below (and the exact
     // depth of the far plane in the perspective one), so a zero floor
     // would let an empty block claim to occlude everything behind the
@@ -172,7 +172,7 @@ float MaskedDepth::blockFloor(int x, int y) const
 }
 
 // ---------------------------------------------------------------------
-// The block update — the paper's heuristic, and the invariant it keeps
+// The block update -- the paper's heuristic, and the invariant it keeps
 // ---------------------------------------------------------------------
 
 void MaskedDepth::updateBlock(int bx, int by, uint32_t cov, float ztri)
@@ -190,7 +190,7 @@ void MaskedDepth::updateBlock(int bx, int by, uint32_t cov, float ztri)
 
     const uint32_t Full = 0xFFFFFFFFu;
 
-    // ⭐ The merge decision, and the whole reason two layers beat one
+    // KEY: The merge decision, and the whole reason two layers beat one
     // conservative minimum. Layer 1 is kept only while the incoming
     // surface is *nearer to it* than it is to the floor
     // (z1 - z0 < ztri - z1, written without the subtraction). When the
@@ -424,7 +424,7 @@ void MaskedDepth::rasterize(const float *positions, size_t stride,
 {
     // A MeshData's indices are signed and never negative in practice.
     // Reading them as unsigned turns any that are into a very large
-    // value, which the bounds check in the call below rejects — so the
+    // value, which the bounds check in the call below rejects -- so the
     // cast cannot produce a dereference the signed form would have
     // avoided.
     rasterize(positions, stride, vertexCount,
@@ -508,7 +508,7 @@ void MaskedDepth::emitTriangle(const float *pa, const float *pb,
         }
     }
 
-    // Project. ⭐ Both depth conventions below are *affine in screen
+    // Project. KEY: Both depth conventions below are *affine in screen
     // space*, which is what lets rasterTri interpolate them with a plane
     // equation: 1/w is affine under a perspective projection, and NDC z
     // is affine under an orthographic one. Larger is nearer in both, so
@@ -627,9 +627,9 @@ OccludeAnswer MaskedDepth::testRect(float x0, float y0, float x1, float y1,
     for (int byi = by0; byi <= by1; ++byi) {
         const Block *row = &blocks[size_t(byi) * size_t(bw)];
         for (int bxi = bx0; bxi <= bx1; ++bxi) {
-            // ⭐ Strictly nearer, so a coincident surface answers
+            // KEY: Strictly nearer, so a coincident surface answers
             // visible. The tie a node's own geometry creates against its
-            // own bounding box is the one §12.6 lost, and losing it is
+            // own bounding box is the one section 12.6 lost, and losing it is
             // what deleted geometry that was on screen.
             if (floorOf(row[bxi]) <= depthNear)
                 return OccludeAnswer::Visible;
@@ -660,9 +660,9 @@ bool occludes(const DrawCall &d)
     if (!d.mesh || !d.mesh->positions || !d.mesh->triangleIndices
         || d.mesh->numTriangleIndices < 3 || d.mesh->numVertices < 3)
         return false;
-    // ⚠️ A stand-in is a box drawn where the real mesh has not arrived
-    // (docs/SceneStreaming.md §6). It *does* write depth, so it really
-    // does occlude the frame it appears in — but it is bigger than the
+    // WARNING: A stand-in is a box drawn where the real mesh has not arrived
+    // (docs/SceneStreaming.md section 6). It *does* write depth, so it really
+    // does occlude the frame it appears in -- but it is bigger than the
     // shape it replaces, and treating it as an occluder would hide
     // geometry behind a surface that will shrink when the real mesh
     // lands. Under-culling for the few frames a stand-in is up is the
@@ -752,10 +752,10 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
         if (tris == 0)
             continue;
         if (tris > budget) {
-            // ⚠️ Truncating a mesh mid-list leaves a partial surface,
+            // WARNING: Truncating a mesh mid-list leaves a partial surface,
             // which is a *hole*: the remaining triangles still occlude
             // correctly, but nothing behind the missing part is hidden.
-            // That is under-culling, so it is allowed — and it is
+            // That is under-culling, so it is allowed -- and it is
             // counted, because a budget that quietly halves an occluder
             // reads as a scene that does not occlude.
             ++framestats.occludersDropped;
@@ -813,7 +813,7 @@ void MaskedOccluderPass::cull(const ProxyHierarchy &index, const float *view,
         }
     };
 
-    // ⭐ No padding. The hardware path needs two pad terms because its
+    // KEY: No padding. The hardware path needs two pad terms because its
     // box has to win a depth comparison against the very surface it
     // bounds; here a tie answers visible by construction (see
     // MaskedDepth::testRect) and the block floor is already a
@@ -874,12 +874,12 @@ void MaskedOccluderPass::cull(const ProxyHierarchy &index, const float *view,
     framestats.walkMs = millisSince(t0);
 }
 
-// ⚠️ Deliberately scalar. The layout is the SIMD one — 8x4 blocks whose
+// WARNING: Deliberately scalar. The layout is the SIMD one -- 8x4 blocks whose
 // coverage is exactly one 32-bit word, four of which fit a 128-bit lane
-// — so vectorizing is a rewrite of rasterTri's inner loops and of
+// -- so vectorizing is a rewrite of rasterTri's inner loops and of
 // updateBlock across four blocks at once, not a change of structure or
 // of results. It is not done yet because nothing has measured what this
 // costs on the benchmark scene, and this workstream has been wrong twice
-// about where its time goes (docs/FarFieldProxies.md §12.10). The
+// about where its time goes (docs/FarFieldProxies.md section 12.10). The
 // measurement comes first; SIMD128 is available on every tier including
 // WASM when it says so.

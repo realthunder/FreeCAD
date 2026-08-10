@@ -67,6 +67,10 @@ public:
     long OcclusionMaxHidden;
     long OcclusionDepthPad;
     long OcclusionConfirm;
+    bool OcclusionSoftware;
+    long OcclusionOccluderTris;
+    long OcclusionMinOccluder;
+    long OcclusionResolution;
     bool AO;
     bool Shadow;
     long AOMethod;
@@ -164,6 +168,14 @@ public:
         funcs["OcclusionDepthPad"] = &RenderParamsP::updateOcclusionDepthPad;
         OcclusionConfirm = this->handle->GetInt("OcclusionConfirm", 2);
         funcs["OcclusionConfirm"] = &RenderParamsP::updateOcclusionConfirm;
+        OcclusionSoftware = this->handle->GetBool("OcclusionSoftware", false);
+        funcs["OcclusionSoftware"] = &RenderParamsP::updateOcclusionSoftware;
+        OcclusionOccluderTris = this->handle->GetInt("OcclusionOccluderTris", 250000);
+        funcs["OcclusionOccluderTris"] = &RenderParamsP::updateOcclusionOccluderTris;
+        OcclusionMinOccluder = this->handle->GetInt("OcclusionMinOccluder", 24);
+        funcs["OcclusionMinOccluder"] = &RenderParamsP::updateOcclusionMinOccluder;
+        OcclusionResolution = this->handle->GetInt("OcclusionResolution", 1);
+        funcs["OcclusionResolution"] = &RenderParamsP::updateOcclusionResolution;
         AO = this->handle->GetBool("AO", false);
         funcs["AO"] = &RenderParamsP::updateAO;
         Shadow = this->handle->GetBool("Shadow", true);
@@ -365,6 +377,22 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionConfirm(RenderParamsP *self) {
         self->OcclusionConfirm = self->handle->GetInt("OcclusionConfirm", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionSoftware(RenderParamsP *self) {
+        self->OcclusionSoftware = self->handle->GetBool("OcclusionSoftware", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionOccluderTris(RenderParamsP *self) {
+        self->OcclusionOccluderTris = self->handle->GetInt("OcclusionOccluderTris", 250000);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionMinOccluder(RenderParamsP *self) {
+        self->OcclusionMinOccluder = self->handle->GetInt("OcclusionMinOccluder", 24);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionResolution(RenderParamsP *self) {
+        self->OcclusionResolution = self->handle->GetInt("OcclusionResolution", 1);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAO(RenderParamsP *self) {
@@ -1234,6 +1262,155 @@ void RenderParams::setOcclusionConfirm(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeOcclusionConfirm() {
     instance()->handle->RemoveInt("OcclusionConfirm");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionSoftware() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Answer the occlusion question with a software depth buffer on\n"
+"the CPU instead of hardware occlusion queries\n"
+"(docs/FarFieldProxies.md #12.12).\n"
+"\n"
+"A hardware query cannot be asked at the moment its answer would\n"
+"be right. It is issued against one frame's depth and read a\n"
+"frame or two later, so a node is tested after the pass that drew\n"
+"its own geometry and is asked to win a depth comparison against\n"
+"itself -- measured as boxes returning no samples at all while\n"
+"their contents were plainly on screen. The confirmations,\n"
+"lifetimes and padding beside this setting all exist to contain\n"
+"that, and none of them reach it.\n"
+"\n"
+"On the CPU, occluders are rasterized and nodes tested against\n"
+"the same buffer in one pass, so a node is asked before its own\n"
+"geometry joins the buffer and the answer arrives in the frame\n"
+"that asked. There is no latency to age, no verdict to confirm\n"
+"and no query pool to run out of. It costs CPU time in a frame\n"
+"that is already CPU-bound, which is the trade to measure, and it\n"
+"behaves identically in the browser, where hardware queries do\n"
+"not.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusionSoftware() {
+    return instance()->OcclusionSoftware;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusionSoftware() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionSoftware(const bool &v) {
+    instance()->handle->SetBool("OcclusionSoftware",v);
+    instance()->OcclusionSoftware = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionSoftware() {
+    instance()->handle->RemoveBool("OcclusionSoftware");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionOccluderTris() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many triangles the CPU occlusion buffer may rasterize in one\n"
+"frame. Only used when occlusion runs on the CPU.\n"
+"\n"
+"Occluders are spent largest-on-screen first, so what the budget\n"
+"drops is what would have hidden least. Dropping them costs\n"
+"culling and never pixels: an occluder that was not rasterized\n"
+"simply hides nothing.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionOccluderTris() {
+    return instance()->OcclusionOccluderTris;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionOccluderTris() {
+    const static long def = 250000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionOccluderTris(const long &v) {
+    instance()->handle->SetInt("OcclusionOccluderTris",v);
+    instance()->OcclusionOccluderTris = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionOccluderTris() {
+    instance()->handle->RemoveInt("OcclusionOccluderTris");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionMinOccluder() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How large a draw must appear on screen, in pixels across its\n"
+"bounding box diagonal, before it is worth rasterizing into the\n"
+"CPU occlusion buffer. Smaller draws can hide almost nothing and\n"
+"spend budget that a larger one could use.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionMinOccluder() {
+    return instance()->OcclusionMinOccluder;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionMinOccluder() {
+    const static long def = 24;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionMinOccluder(const long &v) {
+    instance()->handle->SetInt("OcclusionMinOccluder",v);
+    instance()->OcclusionMinOccluder = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionMinOccluder() {
+    instance()->handle->RemoveInt("OcclusionMinOccluder");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionResolution() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Resolution of the CPU occlusion buffer, as a divisor of the\n"
+"viewport. 1 matches the viewport.\n"
+"\n"
+"Above 1 this can remove geometry that was visible, which is the\n"
+"one failure this mechanism exists to avoid: a coarse pixel is\n"
+"marked covered when an occluder reaches its centre, but it\n"
+"stands for several real pixels, and the ones the occluder missed\n"
+"are claimed with it. Reduce it only to measure what it costs, not\n"
+"as a setting.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionResolution() {
+    return instance()->OcclusionResolution;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionResolution() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionResolution(const long &v) {
+    instance()->handle->SetInt("OcclusionResolution",v);
+    instance()->OcclusionResolution = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionResolution() {
+    instance()->handle->RemoveInt("OcclusionResolution");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

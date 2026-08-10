@@ -229,6 +229,51 @@ Params = [
         "that flickers rather than one that is merely wrong. Geometry\n"
         "that really is hidden answers so every time and costs only the\n"
         "extra confirmations."),
+    ParamBool('OcclusionSoftware',  False, title='Occlusion on the CPU',
+        doc="Answer the occlusion question with a software depth buffer on\n"
+        "the CPU instead of hardware occlusion queries\n"
+        "(docs/FarFieldProxies.md #12.12).\n"
+        "\n"
+        "A hardware query cannot be asked at the moment its answer would\n"
+        "be right. It is issued against one frame's depth and read a\n"
+        "frame or two later, so a node is tested after the pass that drew\n"
+        "its own geometry and is asked to win a depth comparison against\n"
+        "itself -- measured as boxes returning no samples at all while\n"
+        "their contents were plainly on screen. The confirmations,\n"
+        "lifetimes and padding beside this setting all exist to contain\n"
+        "that, and none of them reach it.\n"
+        "\n"
+        "On the CPU, occluders are rasterized and nodes tested against\n"
+        "the same buffer in one pass, so a node is asked before its own\n"
+        "geometry joins the buffer and the answer arrives in the frame\n"
+        "that asked. There is no latency to age, no verdict to confirm\n"
+        "and no query pool to run out of. It costs CPU time in a frame\n"
+        "that is already CPU-bound, which is the trade to measure, and it\n"
+        "behaves identically in the browser, where hardware queries do\n"
+        "not."),
+    ParamInt('OcclusionOccluderTris',  250000, title='Occlusion occluder budget',
+        doc="How many triangles the CPU occlusion buffer may rasterize in one\n"
+        "frame. Only used when occlusion runs on the CPU.\n"
+        "\n"
+        "Occluders are spent largest-on-screen first, so what the budget\n"
+        "drops is what would have hidden least. Dropping them costs\n"
+        "culling and never pixels: an occluder that was not rasterized\n"
+        "simply hides nothing."),
+    ParamInt('OcclusionMinOccluder',  24, title='Occlusion minimum occluder',
+        doc="How large a draw must appear on screen, in pixels across its\n"
+        "bounding box diagonal, before it is worth rasterizing into the\n"
+        "CPU occlusion buffer. Smaller draws can hide almost nothing and\n"
+        "spend budget that a larger one could use."),
+    ParamInt('OcclusionResolution',  1, title='Occlusion buffer divisor',
+        doc="Resolution of the CPU occlusion buffer, as a divisor of the\n"
+        "viewport. 1 matches the viewport.\n"
+        "\n"
+        "Above 1 this can remove geometry that was visible, which is the\n"
+        "one failure this mechanism exists to avoid: a coarse pixel is\n"
+        "marked covered when an occluder reaches its centre, but it\n"
+        "stands for several real pixels, and the ones the occluder missed\n"
+        "are claimed with it. Reduce it only to measure what it costs, not\n"
+        "as a setting."),
     ParamBool('AO',  False, title='Ambient occlusion',
         doc="Enable screen space ambient occlusion of the experimental render\n"
         "engine (render cache mode 3 with a selected renderer type)."),

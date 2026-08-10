@@ -440,13 +440,38 @@ struct OcclusionCullConfig {
     /// is the direction every default here errs in.
     uint32_t hiddenConfirm = 2;
 
+    /// KEY: Answer with a CPU software depth buffer
+    /// (Gui/Renderer/MaskedOcclusion.h) instead of hardware queries.
+    ///
+    /// Everything above this line -- the lifetimes, the confirmations,
+    /// the budget, both pads -- exists because a hardware query's answer
+    /// arrives a frame or two after the question, and section 12.11 measured
+    /// that none of them reach the failure it causes. The software path
+    /// reads none of them: occluders are rasterized and nodes tested
+    /// against the same buffer in one pass, so there is no latency to
+    /// age and no verdict to confirm. What it reads instead is the three
+    /// fields below.
+    bool software = false;
+    /// Triangles the software occluder pass may rasterize per frame.
+    uint32_t occluderTriangles = 250000;
+    /// Projected bounding-box diagonal, in pixels, under which a draw is
+    /// not worth rasterizing as an occluder.
+    float minOccluderPx = 24.0f;
+    /// Software buffer resolution as a divisor of the viewport.
+    /// WARNING: Above 1 this can over-cull -- see MaskedCullConfig.
+    uint32_t softwareDivisor = 1;
+
     bool operator==(const OcclusionCullConfig &o) const {
         return enabled == o.enabled && visibleTtl == o.visibleTtl
             && budget == o.budget && minSubtree == o.minSubtree
             && maxHiddenFrames == o.maxHiddenFrames
             && padFraction == o.padFraction
             && depthPadLsb == o.depthPadLsb
-            && hiddenConfirm == o.hiddenConfirm;
+            && hiddenConfirm == o.hiddenConfirm
+            && software == o.software
+            && occluderTriangles == o.occluderTriangles
+            && minOccluderPx == o.minOccluderPx
+            && softwareDivisor == o.softwareDivisor;
     }
     bool operator!=(const OcclusionCullConfig &o) const { return !(*this == o); }
 };

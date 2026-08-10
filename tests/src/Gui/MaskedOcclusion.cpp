@@ -1,7 +1,7 @@
 // Tests for the masked software occlusion depth buffer
-// (docs/FarFieldProxies.md §12.12). Like the OcclusionCull and
+// (docs/FarFieldProxies.md section 12.12). Like the OcclusionCull and
 // ProxyHierarchy tests beside them these need no GL context and no
-// document — the whole point of putting the oracle on the CPU is that it
+// document -- the whole point of putting the oracle on the CPU is that it
 // is ordinary arithmetic that can be tested.
 //
 // **The bias every test here encodes**, and it is the one the mechanism
@@ -9,8 +9,8 @@
 // over-cull. So the central test is not an image comparison but an
 // inequality against an independently written full-resolution depth
 // buffer: whatever this thing stores, no pixel of it may claim a surface
-// nearer than the one really there. Everything downstream — a node
-// wrongly hidden, geometry deleted from the screen — is that inequality
+// nearer than the one really there. Everything downstream -- a node
+// wrongly hidden, geometry deleted from the screen -- is that inequality
 // broken.
 //
 // The reference below is deliberately stupid: it tests all three edge
@@ -134,7 +134,7 @@ void boxAt(float *bmin, float *bmax, float cx, float cy, float cz, float half)
 /// Independently written, and written to be obviously right rather than
 /// fast: no blocks, no layers, no spans, one depth per pixel.
 ///
-/// ⚠️ It handles no near-plane clipping, so every scene it is used on
+/// WARNING: It handles no near-plane clipping, so every scene it is used on
 /// keeps its geometry in front of the near plane. That is a limitation
 /// of the *reference*, not of what is being tested; the clipping paths
 /// have their own cases below.
@@ -214,9 +214,9 @@ struct RefDepth {
 /// The one claim the whole file is about: nothing stored is nearer than
 /// what is really there.
 ///
-/// Returns how many pixels the buffer actually claimed. ⚠️ The caller
+/// Returns how many pixels the buffer actually claimed. WARNING: The caller
 /// must check it. A one-sided assertion over an empty buffer passes
-/// perfectly and means nothing, which is the shape of mistake §12.9 had
+/// perfectly and means nothing, which is the shape of mistake section 12.9 had
 /// to correct once already: a configuration that measured zero over-cull
 /// because it was structurally incapable of culling.
 int expectConservative(const MaskedDepth &md, const RefDepth &ref)
@@ -326,7 +326,7 @@ TEST(MaskedOcclusion, WallHidesWhatIsBehindIt)
 
 TEST(MaskedOcclusion, CoincidentSurfaceAnswersVisible)
 {
-    // ⭐⭐ The tie §12.6 lost. A node's own geometry is in the depth
+    // KEY: The tie section 12.6 lost. A node's own geometry is in the depth
     // buffer when its bounding box is tested, and the box's front face
     // is coincident with it. On the GPU that comparison went the wrong
     // way and deleted the node. Here it must answer visible.
@@ -372,7 +372,7 @@ TEST(MaskedOcclusion, BoxCrossingNearPlaneIsRefusedNotCulled)
 
 TEST(MaskedOcclusion, RootBoxIsNeverOccludedByItsOwnContents)
 {
-    // ⭐ The impossible-root guard, expressed as a property rather than
+    // KEY: The impossible-root guard, expressed as a property rather than
     // as a runtime counter: the box that contains every occluder cannot
     // be hidden by them, because its nearest point is in front of all of
     // them. A mechanism answering otherwise is broken, not lucky.
@@ -422,7 +422,7 @@ TEST(MaskedOcclusion, PartialCoverageDoesNotOcclude)
 
 TEST(MaskedOcclusion, TwoPartialOccludersCompleteABlock)
 {
-    // ⭐ The merge path, which is the paper's actual contribution: two
+    // KEY: The merge path, which is the paper's actual contribution: two
     // triangles at similar depth each covering part of a block together
     // hide what a single conservative minimum could not, because the
     // mask remembers the coverage until it completes.
@@ -445,11 +445,11 @@ TEST(MaskedOcclusion, TwoPartialOccludersCompleteABlock)
 
 TEST(MaskedOcclusion, InterleavingChangesTheAnswerWithinTheFrame)
 {
-    // ⭐⭐ The property the whole change is for. The same node is asked
+    // KEY: The property the whole change is for. The same node is asked
     // twice in one frame and gets different answers, because between the
     // two questions an occluder joined the buffer. No hardware query can
     // do this: its answer is a frame old by construction, and that
-    // staleness is what §12.11 measured as the fault.
+    // staleness is what section 12.11 measured as the fault.
     MaskedDepth md;
     md.resize(128, 128);
     float V[16], P[16];
@@ -498,8 +498,8 @@ TEST(MaskedOcclusion, WindingDoesNotDecideWhetherASurfaceOccludes)
 
 TEST(MaskedOcclusion, OrthographicProjectionOccludes)
 {
-    // The depth convention differs between the two projections — 1/w is
-    // constant under an orthographic matrix and useless — so the
+    // The depth convention differs between the two projections -- 1/w is
+    // constant under an orthographic matrix and useless -- so the
     // orthographic path is a separate claim and gets its own case.
     MaskedDepth md;
     md.resize(128, 128);
@@ -573,7 +573,7 @@ TEST(MaskedOcclusion, OccluderCrossingTheNearPlaneIsClippedNotDropped)
     EXPECT_EQ(2u, md.stats().trianglesClipped);
     EXPECT_GT(md.stats().blocksUpdated, 0u);
 
-    // A box under the floor is hidden by it — which is only true of the
+    // A box under the floor is hidden by it -- which is only true of the
     // part of the floor that survived the cut.
     float bmin[3], bmax[3];
     boxAt(bmin, bmax, 0.0f, -6.0f, -30.0f, 2.0f);
@@ -590,7 +590,7 @@ TEST(MaskedOcclusion, OccluderCrossingTheNearPlaneIsClippedNotDropped)
 
 TEST(MaskedOcclusion, NeverClaimsASurfaceNearerThanTheTruth)
 {
-    // ⭐⭐ The test the rest of the file exists to support. Random
+    // KEY: The test the rest of the file exists to support. Random
     // triangles at random depths, compared pixel by pixel against a
     // full-resolution buffer built by a different algorithm. The
     // assertion is one-sided on purpose: this buffer is allowed to be
@@ -684,7 +684,7 @@ TEST(MaskedOcclusion, AnOccludedVerdictSurvivesTheReference)
                         << "box reported hidden but pixel (" << x << "," << y
                         << ") is open";
     }
-    // A test that culls nothing proves nothing; §12.9 quotes a whole
+    // A test that culls nothing proves nothing; section 12.9 quotes a whole
     // configuration that measured zero over-cull because it was
     // structurally incapable of culling at all.
     EXPECT_GT(occluded, 20) << "the scene did not exercise occlusion";
@@ -819,7 +819,7 @@ struct SceneBuilder {
                    {0, 1, 2, 0, 2, 3}, key);
     }
 
-    /// A closed box, as twelve triangles — real geometry rather than a
+    /// A closed box, as twelve triangles -- real geometry rather than a
     /// bounding volume, which is what an occluder has to be.
     DrawCall &addBox(float cx, float cy, float cz, float half, uint64_t key)
     {
@@ -840,9 +840,9 @@ struct SceneBuilder {
 /// The pass under a camera, with the hierarchy built from the same draw
 /// list. Returns the mask.
 ///
-/// ⚠️ `maxPerCell` is 1 rather than the default 32 throughout these
+/// WARNING: `maxPerCell` is 1 rather than the default 32 throughout these
 /// tests. Culling is per *node*, so a scene small enough to fit one cell
-/// has exactly one node — the root — and the root can never be hidden by
+/// has exactly one node -- the root -- and the root can never be hidden by
 /// its own contents. That is correct behaviour and it is also a test
 /// that proves nothing, so the partition is forced to subdivide. The
 /// benchmark scenes have thousands of instances and subdivide on their
@@ -888,7 +888,8 @@ TEST(MaskedOcclusionPass, HidesWhatTheWallCovers)
     EXPECT_EQ(0u, pass.lastFrame().rootRefused);
     // The wall, and the box in front of it, which is opaque geometry and
     // occludes whatever is behind it just as legitimately.
-    EXPECT_GE(pass.lastFrame().occluderDraws, 1u) << "the wall was not an occluder";
+    EXPECT_GE(pass.lastFrame().occluderDraws, 1u)
+            << "the wall was not an occluder";
     EXPECT_EQ(0, mask[0]) << "the wall culled itself";
     EXPECT_EQ(0, mask[front]) << "geometry in front of the wall was culled";
     int hidden = 0;
@@ -905,7 +906,7 @@ TEST(MaskedOcclusionPass, HidesWhatTheWallCovers)
 TEST(MaskedOcclusionPass, NothingIsHiddenWithoutAnOccluder)
 {
     // The same scene with the wall removed must cull nothing at all.
-    // ⭐ This is the control the image comparisons of §12.5 lacked: a
+    // KEY: This is the control the image comparisons of section 12.5 lacked: a
     // mechanism that culls a fixed set regardless of the scene looks
     // identical to one that is working, until it is asked about a scene
     // with nothing to hide behind.
@@ -955,9 +956,9 @@ TEST(MaskedOcclusionPass, OnlyDepthWritingOpaqueTrianglesOcclude)
 
 TEST(MaskedOcclusionPass, ATriangleBudgetUnderCullsAndSaysSo)
 {
-    // ⭐ A cap that drops occluders must be reported. A silent one reads
+    // KEY: A cap that drops occluders must be reported. A silent one reads
     // as "this scene does not occlude" when what happened is "we did not
-    // look" — the shape of mistake §12.10 had to correct twice.
+    // look" -- the shape of mistake section 12.10 had to correct twice.
     float V[16], P[16];
     viewAt(V, 40.0f);
     perspective(P, 60.0f, 1.0f, 1.0f, 400.0f);
@@ -981,7 +982,7 @@ TEST(MaskedOcclusionPass, ATriangleBudgetUnderCullsAndSaysSo)
 
 TEST(MaskedOcclusionPass, ANodeIsNotHiddenByItsOwnGeometry)
 {
-    // ⭐⭐ The failure this whole mechanism replaces. On the hardware
+    // KEY: The failure this whole mechanism replaces. On the hardware
     // path a node was re-tested after the pass that wrote its own
     // contents, and its bounding box lost the depth comparison against
     // itself. Here the wall is its own occluder and must survive being
@@ -1007,7 +1008,7 @@ TEST(MaskedOcclusionPass, ANodeIsNotHiddenByItsOwnGeometry)
 TEST(MaskedOcclusionPass, TheCameraInsideTheModelStillDrawsIt)
 {
     // A node the camera stands inside cannot be reduced to a screen
-    // rect. It must be drawn and counted as exempt, not culled — the
+    // rect. It must be drawn and counted as exempt, not culled -- the
     // trap that once reported an entire model hidden.
     float V[16], P[16];
     viewAt(V, 0.0f);

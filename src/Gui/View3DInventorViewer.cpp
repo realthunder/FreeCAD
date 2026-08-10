@@ -4486,6 +4486,18 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
                                          RenderParams::docOcclusion()));
         prop->setValue(RenderParams::getOcclusion());
     }
+    // Which oracle answers the occlusion question (section 12.12). Hidden
+    // beside the tuning parameters rather than shown with the switch
+    // above: it selects a mechanism, not an effect, and the two are
+    // meant to be indistinguishable in the image.
+    if (!view->getPropertyByName("Render_OcclusionSoftware")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "Render_OcclusionSoftware", "Render",
+                                         RenderParams::docOcclusionSoftware()));
+        prop->setValue(RenderParams::getOcclusionSoftware());
+        prop->setStatus(App::Property::Hidden, true);
+    }
     {
         static const struct { const char *name; long value;
                               const char *(*doc)(); } _occlusionParams[] = {
@@ -4506,6 +4518,17 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             {"Render_OcclusionConfirm",
              RenderParams::getOcclusionConfirm(),
              &RenderParams::docOcclusionConfirm},
+            // The software oracle's own knobs (section 12.12). The six above
+            // are read only by the hardware-query path.
+            {"Render_OcclusionOccluderTris",
+             RenderParams::getOcclusionOccluderTris(),
+             &RenderParams::docOcclusionOccluderTris},
+            {"Render_OcclusionMinOccluder",
+             RenderParams::getOcclusionMinOccluder(),
+             &RenderParams::docOcclusionMinOccluder},
+            {"Render_OcclusionResolution",
+             RenderParams::getOcclusionResolution(),
+             &RenderParams::docOcclusionResolution},
         };
         for (const auto &p : _occlusionParams) {
             if (view->getPropertyByName(p.name))

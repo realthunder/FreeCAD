@@ -1275,6 +1275,26 @@ RendererBridge::translateOcclusionCullConfig(App::PropertyContainer * view)
     res.hiddenConfirm = atLeast(viewParamOverride<App::PropertyInteger>(
             view, "Render", "OcclusionConfirm",
             RenderParams::getOcclusionConfirm()), 1);
+    // The software oracle, and the three knobs that belong to it alone.
+    // None of the ones above are read when it is on: they exist to
+    // contain a latency it does not have (section 12.12).
+    res.software = viewParamOverride<App::PropertyBool>(
+            view, "Render", "OcclusionSoftware",
+            RenderParams::getOcclusionSoftware());
+    // Zero is allowed: it is the occluder pass rasterizing nothing,
+    // which culls nothing, and being able to ask for that is what makes
+    // the pass ablatable rather than merely believed.
+    res.occluderTriangles = uint32_t(std::max<long>(0,
+            viewParamOverride<App::PropertyInteger>(
+                    view, "Render", "OcclusionOccluderTris",
+                    RenderParams::getOcclusionOccluderTris())));
+    res.minOccluderPx = float(std::max<long>(0,
+            viewParamOverride<App::PropertyInteger>(
+                    view, "Render", "OcclusionMinOccluder",
+                    RenderParams::getOcclusionMinOccluder())));
+    res.softwareDivisor = atLeast(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "OcclusionResolution",
+            RenderParams::getOcclusionResolution()), 1);
     return res;
 }
 

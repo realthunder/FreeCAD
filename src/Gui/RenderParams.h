@@ -425,6 +425,91 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter OcclusionSoftware
+    ///
+    /// Answer the occlusion question with a software depth buffer on
+    /// the CPU instead of hardware occlusion queries
+    /// (docs/FarFieldProxies.md #12.12).
+    /// 
+    /// A hardware query cannot be asked at the moment its answer would
+    /// be right. It is issued against one frame's depth and read a
+    /// frame or two later, so a node is tested after the pass that drew
+    /// its own geometry and is asked to win a depth comparison against
+    /// itself -- measured as boxes returning no samples at all while
+    /// their contents were plainly on screen. The confirmations,
+    /// lifetimes and padding beside this setting all exist to contain
+    /// that, and none of them reach it.
+    /// 
+    /// On the CPU, occluders are rasterized and nodes tested against
+    /// the same buffer in one pass, so a node is asked before its own
+    /// geometry joins the buffer and the answer arrives in the frame
+    /// that asked. There is no latency to age, no verdict to confirm
+    /// and no query pool to run out of. It costs CPU time in a frame
+    /// that is already CPU-bound, which is the trade to measure, and it
+    /// behaves identically in the browser, where hardware queries do
+    /// not.
+    static const bool & getOcclusionSoftware();
+    static const bool & defaultOcclusionSoftware();
+    static void removeOcclusionSoftware();
+    static void setOcclusionSoftware(const bool &v);
+    static const char *docOcclusionSoftware();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionOccluderTris
+    ///
+    /// How many triangles the CPU occlusion buffer may rasterize in one
+    /// frame. Only used when occlusion runs on the CPU.
+    /// 
+    /// Occluders are spent largest-on-screen first, so what the budget
+    /// drops is what would have hidden least. Dropping them costs
+    /// culling and never pixels: an occluder that was not rasterized
+    /// simply hides nothing.
+    static const long & getOcclusionOccluderTris();
+    static const long & defaultOcclusionOccluderTris();
+    static void removeOcclusionOccluderTris();
+    static void setOcclusionOccluderTris(const long &v);
+    static const char *docOcclusionOccluderTris();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionMinOccluder
+    ///
+    /// How large a draw must appear on screen, in pixels across its
+    /// bounding box diagonal, before it is worth rasterizing into the
+    /// CPU occlusion buffer. Smaller draws can hide almost nothing and
+    /// spend budget that a larger one could use.
+    static const long & getOcclusionMinOccluder();
+    static const long & defaultOcclusionMinOccluder();
+    static void removeOcclusionMinOccluder();
+    static void setOcclusionMinOccluder(const long &v);
+    static const char *docOcclusionMinOccluder();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionResolution
+    ///
+    /// Resolution of the CPU occlusion buffer, as a divisor of the
+    /// viewport. 1 matches the viewport.
+    /// 
+    /// Above 1 this can remove geometry that was visible, which is the
+    /// one failure this mechanism exists to avoid: a coarse pixel is
+    /// marked covered when an occluder reaches its centre, but it
+    /// stands for several real pixels, and the ones the occluder missed
+    /// are claimed with it. Reduce it only to measure what it costs, not
+    /// as a setting.
+    static const long & getOcclusionResolution();
+    static const long & defaultOcclusionResolution();
+    static void removeOcclusionResolution();
+    static void setOcclusionResolution(const long &v);
+    static const char *docOcclusionResolution();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter AO
     ///
     /// Enable screen space ambient occlusion of the experimental render

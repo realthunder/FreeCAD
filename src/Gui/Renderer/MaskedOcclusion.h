@@ -23,17 +23,17 @@
 #define RENDERER_MASKED_OCCLUSION_H
 
 /// A masked software occlusion depth buffer
-/// (docs/FarFieldProxies.md §12.8 step 3, §12.12) — the CPU oracle that
-/// replaces the hardware occlusion query.
+/// (docs/FarFieldProxies.md section 12.8 step 3, section 12.12) -- the
+/// CPU oracle that replaces the hardware occlusion query.
 ///
 /// **Why this exists at all, when a hardware query already works.** The
 /// query mechanism is built, correct per test in isolation, and it still
-/// deletes visible geometry. §12.11 closed the last way to explain that
+/// deletes visible geometry. section 12.11 closed the last way to explain that
 /// away: with one query handle created per test and destroyed after its
 /// read, a box that reports zero samples cannot be reading somebody
-/// else's zero — and the worst nodes still report `lastpx0 age1f`, a box
+/// else's zero -- and the worst nodes still report `lastpx0 age1f`, a box
 /// that rasterized nothing one frame ago for contents that are plainly
-/// on screen. That is §12.6's account standing on a measurement: a node
+/// on screen. That is section 12.6's account standing on a measurement: a node
 /// re-tested *after* the pass that wrote its own contents is asked to
 /// win a depth comparison against itself, and loses. Padding, hysteresis
 /// and freshness policy were each tried and none of them reach it,
@@ -44,17 +44,17 @@
 /// likes, so a node can be tested *before* its own geometry has been
 /// added; and the answer arrives inside the frame that asked, so there
 /// is no window in which the world moves underneath a verdict. Intel's
-/// HPG 2016 paper is explicit about both properties — "doesn't introduce
+/// HPG 2016 paper is explicit about both properties -- "doesn't introduce
 /// any latency into the system", "supports interleaving occluder
-/// rasterization and occlusion queries without penalty" — and both of
+/// rasterization and occlusion queries without penalty" -- and both of
 /// this workstream's failure modes are absent by construction rather
 /// than by policy.
 ///
 /// **What is masked about it.** A full-resolution depth buffer at
 /// 1863x1064 is 8 MB to clear and touch per frame. The paper's structure
 /// keeps, per 8x4 block of pixels, *two* depth values and a 32-bit
-/// coverage mask saying which pixels belong to the nearer of them —
-/// 12 bytes per 32 pixels, a 21x reduction — and reports culling within
+/// coverage mask saying which pixels belong to the nearer of them --
+/// 12 bytes per 32 pixels, a 21x reduction -- and reports culling within
 /// 2% of what the full-resolution buffer would achieve. The two layers
 /// are what make it work where a plain hierarchical-Z minimum does not:
 /// a single conservative minimum per block is destroyed by one distant
@@ -71,7 +71,7 @@
 /// is therefore safe to be wrong and the tests beside it assert that
 /// direction rather than an exact image.
 ///
-/// ⚠️ Nothing here knows about bgfx, Coin, Qt or OCCT and the arithmetic
+/// WARNING: Nothing here knows about bgfx, Coin, Qt or OCCT and the arithmetic
 /// is plain float, for the reason SceneLadder.h and ProxyHierarchy.h
 /// keep the same discipline: this is the tier that has to behave
 /// *identically* in the browser. A GPU query is a different mechanism on
@@ -88,8 +88,8 @@
 
 namespace Render {
 
-/// What a query could establish. ⚠️ `Visible` is the answer given
-/// whenever the buffer *cannot* answer — an empty buffer, a box crossing
+/// What a query could establish. WARNING: `Visible` is the answer given
+/// whenever the buffer *cannot* answer -- an empty buffer, a box crossing
 /// the near plane, a degenerate rect. Every unknown resolves to drawing.
 enum class OccludeAnswer : uint8_t {
     Visible,    ///< something at or nearer than the query survived
@@ -98,7 +98,7 @@ enum class OccludeAnswer : uint8_t {
 };
 
 /// What one frame's rasterization did, reported rather than inferred
-/// (docs/RenderDebug.md §1).
+/// (docs/RenderDebug.md section 1).
 struct MaskedOcclusionStats {
     uint32_t trianglesIn = 0;        ///< offered by the caller
     uint32_t trianglesCulled = 0;    ///< degenerate, backfacing or off-buffer
@@ -109,7 +109,7 @@ struct MaskedOcclusionStats {
     uint32_t queries = 0;
     uint32_t queriesOccluded = 0;
     uint32_t queriesOffscreen = 0;
-    /// ⭐ Queries refused because the box crosses the near plane, and so
+    /// KEY: Queries refused because the box crosses the near plane, and so
     /// has no bounded screen rect to test. Separated from `queries`
     /// because it is the trap that made the GPU probe report the whole
     /// model hidden (see `boxReachesNearPlane`), and a mechanism that
@@ -123,13 +123,13 @@ struct MaskedOcclusionStats {
 /// Usage within a frame is: `resize` once, then per frame `clear`,
 /// `setCamera`, some number of `rasterize` calls, and any number of
 /// `testBox`/`testRect` calls interleaved with them in any order. The
-/// interleaving is the point — see the class comment.
+/// interleaving is the point -- see the class comment.
 class RendererExport MaskedDepth
 {
 public:
     /// A block is 8x4 pixels so that its coverage is exactly one
     /// uint32_t, which is what makes the mask free to test and merge.
-    /// ⚠️ Do not "tune" these: 32 bits per block is the structure, not a
+    /// WARNING: Do not "tune" these: 32 bits per block is the structure, not a
     /// parameter.
     static const int BlockW = 8;
     static const int BlockH = 4;
@@ -142,7 +142,7 @@ public:
     int height() const { return bufh; }
     bool empty() const { return blocks.empty(); }
 
-    /// Forget every occluder. Cheap — 12 bytes per 32 pixels — but not
+    /// Forget every occluder. Cheap -- 12 bytes per 32 pixels -- but not
     /// free, and it is what must run once per frame.
     void clear();
 
@@ -155,7 +155,7 @@ public:
     /// orthographic projection is recognised by `proj[15] != 0`, the
     /// same test `sightBounds` uses.
     ///
-    /// ⚠️ Calling this does *not* clear the buffer: a caller that moves
+    /// WARNING: Calling this does *not* clear the buffer: a caller that moves
     /// the camera without clearing gets occluders from two cameras mixed,
     /// which breaks the invariant. `clear()` first, always.
     void setCamera(const float *view, const float *proj,
@@ -167,9 +167,9 @@ public:
     /// (0 meaning tightly packed). \a model is a GL-layout matrix taking
     /// those positions to world space, or null for identity.
     ///
-    /// ⭐ **Two-sided by design.** Back-face culling would halve the
+    /// KEY: **Two-sided by design.** Back-face culling would halve the
     /// work, and every renderer does it, but it assumes consistent
-    /// winding — which tessellated B-Rep out of a CAD kernel does not
+    /// winding -- which tessellated B-Rep out of a CAD kernel does not
     /// reliably have, and a wrongly culled occluder face is a *hole* in
     /// the depth buffer that under-culls silently. A back face is a real
     /// surface at a real depth; rasterizing it costs time and cannot
@@ -180,7 +180,7 @@ public:
                    const float *model = nullptr);
 
     /// The same, for the signed indices a MeshData carries. A negative
-    /// index is not dereferenced — it fails the same bounds check an
+    /// index is not dereferenced -- it fails the same bounds check an
     /// out-of-range unsigned one does.
     void rasterize(const float *positions, size_t stride, size_t vertexCount,
                    const int32_t *indices, size_t indexCount,
@@ -193,10 +193,10 @@ public:
     /// Whether a world-space axis-aligned box could have reached the
     /// screen given the occluders rasterized so far.
     ///
-    /// ⚠️ A box that reaches the near plane answers `Visible` and is
+    /// WARNING: A box that reaches the near plane answers `Visible` and is
     /// counted in `queriesNearPlane`: its projection is unbounded, so
     /// there is no rect to test. This is the same exemption the GPU path
-    /// needs (`boxReachesNearPlane`) and for a related reason — the
+    /// needs (`boxReachesNearPlane`) and for a related reason -- the
     /// difference being that here it is a missing *rect* rather than a
     /// box whose front faces have been clipped away.
     OccludeAnswer testBox(const float *bboxMin, const float *bboxMax) const;
@@ -209,8 +209,8 @@ public:
     /// `boxDepthNear` produces one. Pixel coordinates have y increasing
     /// upwards, matching NDC rather than a window system.
     ///
-    /// ⭐ The comparison is strict, so a surface exactly coincident with
-    /// the query answers `Visible`. That tie is the one §12.6 lost: a
+    /// KEY: The comparison is strict, so a surface exactly coincident with
+    /// the query answers `Visible`. That tie is the one section 12.6 lost: a
     /// node whose own geometry is already in the buffer must not be able
     /// to hide itself.
     OccludeAnswer testRect(float x0, float y0, float x1, float y1,
@@ -226,7 +226,7 @@ public:
     bool projectBox(const float *bboxMin, const float *bboxMax, float *rect,
                     float *depthNear) const;
 
-    /// Whether back faces are rasterized (default true — see
+    /// Whether back faces are rasterized (default true -- see
     /// `rasterize`).
     void setTwoSided(bool on) { twosided = on; }
     bool twoSided() const { return twosided; }
@@ -236,7 +236,7 @@ public:
 
     /// The depth stored for one pixel, in the internal convention, or 0
     /// where nothing has been rasterized. For tests and the debug
-    /// readout only — the mechanism never reads a single pixel.
+    /// readout only -- the mechanism never reads a single pixel.
     float pixelDepth(int x, int y) const;
 
     /// The conservative floor of the block containing (\a x, \a y): no
@@ -283,7 +283,7 @@ private:
 struct MaskedCullConfig {
     /// Buffer resolution as a divisor of the viewport.
     ///
-    /// ⚠️⚠️ **Above 1 this can over-cull, and over-culling is the bug
+    /// WARNING: **Above 1 this can over-cull, and over-culling is the bug
     /// this whole mechanism exists to remove.** A coarse pixel is marked
     /// covered when the occluder reaches its centre, but it stands for
     /// several real pixels, and the ones the occluder missed are then
@@ -322,7 +322,7 @@ struct MaskedCullStats {
     uint32_t occluderCandidates = 0;  ///< draws that could have occluded
     uint32_t occluderDraws = 0;       ///< draws actually rasterized
     uint32_t occluderTriangles = 0;
-    /// ⭐ Candidates the triangle budget refused. A silent cap reads as
+    /// KEY: Candidates the triangle budget refused. A silent cap reads as
     /// "everything was rasterized" when it was not, and the difference
     /// is the difference between "the scene does not occlude" and "we
     /// did not look".
@@ -333,9 +333,9 @@ struct MaskedCullStats {
     uint32_t nodesTested = 0;
     uint32_t nodesHidden = 0;
     uint32_t nearExempt = 0;
-    /// ⭐ The root answered hidden. Structurally impossible — its box
+    /// KEY: The root answered hidden. Structurally impossible -- its box
     /// contains every occluder, so its nearest corner is in front of all
-    /// of them — which makes any non-zero count a report that the test
+    /// of them -- which makes any non-zero count a report that the test
     /// is broken rather than a scene that is entirely hidden. Counted
     /// and refused, never acted on.
     uint32_t rootRefused = 0;
@@ -350,7 +350,7 @@ struct MaskedCullStats {
 
 /// The occluder pass and the walk that spends it.
 ///
-/// ⭐⭐ **There is no state between frames and no policy layer.** No
+/// KEY: **There is no state between frames and no policy layer.** No
 /// verdict is stored, so nothing can go stale; no test is pending, so
 /// nothing can be starved; no answer is confirmed over several frames,
 /// because the answer is taken and used inside one walk. The
@@ -358,9 +358,9 @@ struct MaskedCullStats {
 /// lease expiry and the starvation fail-safe that the hardware path
 /// needs are all consequences of the answer arriving a frame late, and
 /// none of them have anything to answer for here. That deletion is most
-/// of what this change is worth (docs/FarFieldProxies.md §12.12).
+/// of what this change is worth (docs/FarFieldProxies.md section 12.12).
 ///
-/// ⚠️ It is also why the two paths cannot share `OcclusionCuller`: its
+/// WARNING: It is also why the two paths cannot share `OcclusionCuller`: its
 /// per-node state exists to survive latency, and carrying it here would
 /// re-introduce exactly the coupling being removed.
 class RendererExport MaskedOccluderPass
@@ -381,7 +381,7 @@ public:
     /// \a cullMask is indexed by `DrawCall` row and is only ever *set*,
     /// never cleared, so it composes with the frustum mask the renderer
     /// already computed. \a cullOwner, when given, receives the node
-    /// whose verdict cut each row — the join that makes an over-culled
+    /// whose verdict cut each row -- the join that makes an over-culled
     /// draw traceable to the test that deleted it.
     void cull(const ProxyHierarchy &index, const float *view,
               const float *proj, float viewportHeightPx,

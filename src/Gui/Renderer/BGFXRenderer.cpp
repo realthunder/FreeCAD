@@ -26,6 +26,7 @@
 #include "MeshSource.h"
 #include "SceneLadder.h"
 #include "ProxyHierarchy.h"
+#include "MaskedOcclusion.h"
 #include "OcclusionCull.h"
 #include "MeshSimplify.h"
 #ifndef FC_RENDERER_STANDALONE
@@ -12411,8 +12412,13 @@ public:
             // Shared by the measurement and the culling that acts on
             // it: both rasterize boxes against the finished opaque
             // depth, and it is the view id that places them there.
+            // KEY: The software oracle rasterizes no boxes at all, so it
+            // does not want this pass -- that is the point of it, and
+            // reserving a view for it would leave the box draws in the
+            // frame the culling is being priced against.
             view->markPass(V::ViewOcclusionProbe,
-                           debugconf.occlusion || cullconf.enabled);
+                           debugconf.occlusion
+                                   || (cullconf.enabled && !cullconf.software));
             for (int s = 0; s < int(V::NumOverlayViews); ++s)
                 view->markPass(V::ViewOverlay0 + s, s < int(overlays.size()));
 
@@ -13150,19 +13156,39 @@ public:
                 // one's verdict (OcclusionLeases). A backend that
                 // refuses to create them costs culling and not
                 // correctness -- an untested node draws.
-                if (caps && (caps->supported & BGFX_CAPS_OCCLUSION_QUERY)) {
-                    // The attribution is only maintained while the
-                    // audit is on: it is a second vector the width of
-                    // the draw list, written on every masked row of
-                    // every frame, and nothing but the readout reads
-                    // it.
+                // The attribution is only maintained while the audit is
+                // on: it is a second vector the width of the draw list,
+                // written on every masked row of every frame, and
+                // nothing but the readout reads it.
+                std::vector<int32_t> *owner =
+                        debugconf.cullAudit ? &cullOwner : nullptr;
+                const float *projf =
+                        reinterpret_cast<const float *>(projMatrix);
+                if (cullconf.software) {
+                    // KEY: Rasterize this camera's occluders and spend
+                    // them in the same breath. No handles, no in-flight
+                    // tests, no verdicts carried across the frame
+                    // boundary -- the answer is used where it is
+                    // computed, which is the whole of what section 12.12
+                    // changes. It also needs nothing of the backend but
+                    // the depth convention, so it is the path that
+                    // survives into WebGL2 unaltered.
+                    Render::MaskedCullConfig mc;
+                    mc.resolutionDivisor = int(cullconf.softwareDivisor);
+                    mc.triangleBudget = cullconf.occluderTriangles;
+                    mc.minOccluderPx = cullconf.minOccluderPx;
+                    maskedCull.configure(mc);
+                    maskedCull.build(scene, viewMat, projf,
+                                     caps ? caps->homogeneousDepth : true,
+                                     int(view->width), int(view->height));
+                    maskedCull.cull(culler.hierarchy(), viewMat, projf,
+                                    float(view->height), sceneCulled, owner);
+                }
+                else if (caps && (caps->supported & BGFX_CAPS_OCCLUSION_QUERY)) {
                     driveOcclusionCull(*view, culler, cullBatch, cullQueries,
-                                       viewMat,
-                                       reinterpret_cast<const float *>(
-                                           projMatrix),
+                                       viewMat, projf,
                                        float(view->height), sceneCulled,
-                                       debugconf.cullAudit ? &cullOwner
-                                                           : nullptr);
+                                       owner);
                 }
                 else if (!cullUnsupported) {
                     cullUnsupported = true;
@@ -14369,7 +14395,37 @@ public:
             // scene that hides nothing from a mechanism that is not
             // working. The test boxes are themselves draws and are
             // counted in that line, so a win has to be net of them.
-            if (due && cullconf.enabled) {
+            if (due && cullconf.enabled && cullconf.software) {
+                // A different mechanism reports different things, and
+                // saying so in the same line under different names would
+                // make two runs look comparable when the numbers mean
+                // different work. What carries over is the left half --
+                // instances and nodes -- which is what a comparison
+                // between the oracles is actually about.
+                const auto &ms = maskedCull.lastFrame();
+                const auto &bs = maskedCull.depth().stats();
+                Base::Console().Message(
+                        "render culling: instances hidden %u / drawn %u / "
+                        "offscreen %u | nodes visited %u hidden %u offscreen %u "
+                        "tested %u | occluders %u of %u draws, %u tris, "
+                        "dropped %u | buffer %dx%d, tris drawn %u clipped %u "
+                        "culled %u, blocks %u | nearclip %u rootrefused %u "
+                        "| raster %.2fms walk %.2fms | indexed %u of %u draws "
+                        "(%u on-top exempt) | index %u nodes, build %.1fms\n",
+                        ms.hiddenInstances, ms.drawnInstances,
+                        ms.offscreenInstances, ms.nodesVisited, ms.nodesHidden,
+                        ms.nodesOffscreen, ms.nodesTested, ms.occluderDraws,
+                        ms.occluderCandidates, ms.occluderTriangles,
+                        ms.occludersDropped, maskedCull.depth().width(),
+                        maskedCull.depth().height(), bs.trianglesDrawn,
+                        bs.trianglesClipped, bs.trianglesCulled,
+                        bs.blocksUpdated, ms.nearExempt, ms.rootRefused,
+                        ms.rasterMs, ms.walkMs,
+                        cullIndexed, unsigned(scene.size()), cullExemptOnTop,
+                        unsigned(culler.hierarchy().nodes().size()),
+                        cullBuildMs);
+            }
+            else if (due && cullconf.enabled) {
                 const auto &cs = culler.lastFrame();
                 Base::Console().Message(
                         "render culling: instances hidden %u / drawn %u / "
@@ -14957,6 +15013,13 @@ public:
     /// bgfx query handle is an object's identity and a reassigned one
     /// answers with the previous occupant's verdict (OcclusionLeases).
     OcclusionCullQueries cullQueries;
+    /// KEY: The other oracle (docs/FarFieldProxies.md section 12.12): a CPU
+    /// depth buffer, rasterized and questioned inside one frame. It
+    /// shares the *index* with the culler above and nothing else -- no
+    /// verdict, no lease, no pad, no confirmation -- because everything
+    /// the culler keeps between frames is there to survive a latency
+    /// this path does not have.
+    Render::MaskedOccluderPass maskedCull;
     /// ⭐ The cull audit (docs/FarFieldProxies.md §12.9): one id image in
     /// flight, plus the verdict it is an answer about.
     ///
