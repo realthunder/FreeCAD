@@ -1273,6 +1273,13 @@ QToolBar *ToolBarManager::nextTopDockToolBar(QToolBar *toolbar)
     return it->second;
 }
 
+/*! Where the workbench toolbar goes back to, in MainWindow/ToolBars beside the
+ * per-toolbar visibility flags. An ASCII entry among bools, so it cannot
+ * collide with a toolbar of the same name, and it is absent exactly when the
+ * toolbar is not in the title bar.
+ */
+static const char *workbenchReturnAnchor = "WorkbenchReturnAnchor";
+
 void ToolBarManager::setTitleBarToolBars(bool enable)
 {
     auto mw = getMainWindow();
@@ -1313,12 +1320,25 @@ void ToolBarManager::setTitleBarToolBars(bool enable)
     // right.
     const bool visible = !toolbar->isHidden();
 
+    Base::ConnectionBlocker block(connParam);
+
     if (enable) {
-        // Whatever sits next to it right now, so it can go back between the
-        // same two neighbours. addToolBar() appends to the last row instead,
-        // which turns every trip into the title bar and out again into a move
-        // to the bottom of the dock.
-        workbenchNeighbour = nextTopDockToolBar(toolbar);
+        // Which toolbar it sits in front of right now, so it can go back
+        // between the same two neighbours. addToolBar() appends to the last row
+        // instead, which turns every trip into the title bar and out again into
+        // a move to the bottom of the dock.
+        //
+        // Written to the configuration rather than kept in a member: the trip
+        // out is usually not in the session that made the trip in. A start with
+        // the toolbar already parked -- which is what MainWindow/MenuBarLeft
+        // arranges -- has nothing in memory to go back to.
+        auto anchor = nextTopDockToolBar(toolbar);
+        if (anchor) {
+            hPref->SetASCII(workbenchReturnAnchor, anchor->objectName().toUtf8());
+        }
+        else {
+            hPref->RemoveASCII(workbenchReturnAnchor);
+        }
         mw->removeToolBar(toolbar);
         toolbar->setOrientation(Qt::Horizontal);
         // addWidget() gives it the grip to be dragged back out by, and records
@@ -1331,16 +1351,28 @@ void ToolBarManager::setTitleBarToolBars(bool enable)
         // grip it has no area to be dragged around by, and the parameter would
         // send it back to the area on the next start.
         area->removeWidget(toolbar);
-        // Gone, or never recorded because the move in happened in an earlier
-        // session -- then the end of the dock is as good an answer as any.
-        if (workbenchNeighbour && workbenchNeighbour->parentWidget() == mw) {
+
+        // The anchor is a name, so it has to be looked up again: the workbench
+        // in charge now need not be the one that was there when it was
+        // recorded. Gone -- a workbench-specific toolbar, or a toolbar the user
+        // has since moved elsewhere -- and the end of the dock is as good an
+        // answer as any.
+        QToolBar *anchor = nullptr;
+        const QString name = QString::fromUtf8(hPref->GetASCII(workbenchReturnAnchor).c_str());
+        if (!name.isEmpty()) {
+            auto found = bars.find(name);
+            if (found != bars.end() && found->second && found->second->parentWidget() == mw) {
+                anchor = found->second;
+            }
+        }
+        if (anchor) {
             Base::StateLocker adder(adding);
-            mw->insertToolBar(workbenchNeighbour, toolbar);
+            mw->insertToolBar(anchor, toolbar);
         }
         else {
             addToolBarToMainWindow(toolbar);
         }
-        workbenchNeighbour = nullptr;
+        hPref->RemoveASCII(workbenchReturnAnchor);
     }
     setToolBarVisible(toolbar, visible);
 }

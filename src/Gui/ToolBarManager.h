@@ -189,8 +189,9 @@ public:
     void detachMenuBarAreas();
 
     /*! Move the workbench toolbar into the title bar's left area, or, with
-     * \a enable false, move it back to the top dock, between the neighbours it
-     * left.
+     * \a enable false, move it back to the top dock, in front of the toolbar it
+     * was in front of when it left. That anchor is remembered in the
+     * configuration, so the trip back works in a later session too.
      *
      * Only that one toolbar, and only when it is where this left it: a toolbar
      * the user dragged into an area is theirs, and so is one they dragged out.
@@ -263,12 +264,6 @@ private:
      * switches were enough to record every toolbar as off and empty the window.
      */
     bool relocating = false;
-    /*! What the workbench toolbar was docked in front of before the title bar
-     * took it, so it can go back there. Only meaningful within the session that
-     * moved it; across a restart the parameters put it in the title bar
-     * directly and there is nothing to undo.
-     */
-    QPointer<QToolBar> workbenchNeighbour;
     Qt::ToolBarArea defaultArea;
     Qt::ToolBarArea globalArea;
     std::set<QString> globalToolBarNames;
