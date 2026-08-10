@@ -633,8 +633,15 @@ int ToolBarManager::toolBarIconSize(QWidget *widget) const
                 || widget->parentWidget() == menuBarRightArea) {
             if (_menuBarIconSize > 0)
                 s = _menuBarIconSize;
-            else
+            else if (!getMainWindow() || !getMainWindow()->isCustomTitleBar()) {
+                // In the menu bar's corners these icons sit beside menu text
+                // and are shrunk to keep the bar the height that text asks
+                // for. The custom title bar hosts the two areas as a toolbar
+                // row of its own, with nothing to match but the other
+                // toolbars -- so there they take the toolbar icon size.
+                // MenuBarIconSize still overrides both.
                 s *= 0.8;
+            }
         }
     }
     return std::max(s, 5);

@@ -1934,6 +1934,10 @@ void MainWindow::setCustomTitleBar(bool enable)
 
     if (toolBars) {
         toolBars->relocateMenuBarAreas();
+        // Toolbars in the two areas are sized against the title bar they are
+        // in -- full size in ours, shrunk to menu-text height in the
+        // platform's -- so the swap changes what they should be.
+        toolBars->setupToolBarIconSize();
     }
 
     d->hGrp->SetBool("CustomTitleBar", enable);
