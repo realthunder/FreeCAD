@@ -456,6 +456,73 @@ shape of everything above, so its contract is stated here:
   `View3DInventorViewer::Private::getBoundingBox` folds into the scene
   bounds, moving everything sized from them. `view.DrawStyle = "Shadow"`
   is idempotent.
+- WARNING: **`saveImage` is blind to anything that renders into its own
+  FBO, and to the composite.** It re-renders offscreen, so a nested
+  render target is flattened away and Coin's on-top pass never happens.
+  Both bit: every shadow smoothing size read a 0.00 difference through
+  `saveImage` because the shadow map is an `SoSceneTexture2` with its
+  own framebuffer, and the entire class of "Coin stomps a buffer the
+  backend owns" is invisible to it. Use
+  `v.getViewer().grabFramebuffer()` for anything on-screen-shaped, and
+  `saveRenderDump` for the backend's own buffers.
+
+This closes the "no reliable way to verify rendering" gap: the SwiftShader
+blindspot is covered by the desktop leg being a *real-GPU readback* of the
+same knob-for-knob staged frame.
+
+The user-shader feature (section 6) has its own companion harness,
+`scripts/user-shader-verify.sh`: a desktop leg running the
+document-object-model GUI suites under xvfb (`user_shader_params.py`,
+`user_shader_post.py` — property binding, per-binding overrides,
+activation/deactivation with byte-exact restores) and a viewer leg
+re-running the pipeline against a live headless-Chromium WASM viewer
+(`user_shader_viewer.py` scene-graph route,
+`user_shader_viewer_appearance.py` document-object route).
+
+### 5.1 What this harness cannot see
+
+Recorded because each entry cost a session, and because a harness that
+passes on a build the user can see is broken is worse than no harness.
+
+- WARNING: **menu behaviour, entirely.** Three ways of driving a menu
+  were measured against a visibly broken build and all three passed:
+  (a) `QTest.mouseClick(widget)` posts straight to the widget and never
+  takes the popup grab (`menu_dismiss_probe.py`, 12/12 green while the
+  menu bar was swallowing clicks); (b) **xdotool/XTEST** moves the real
+  pointer onto the right widget with the popup up and the application
+  receives *nothing*, `underMouse()` staying false under xvfb and under
+  real XWayland alike; (c) posting to the `QWindow` through
+  `QWindowSystemInterface` (`menu_opener_probe.py`) passes 5/5 on the
+  broken build too. The likely common cause is that no real grab is ever
+  taken without a window manager. **The user is the only oracle for
+  menu behaviour**: report it as unverified, never as a pass.
+- WARNING: **probe key presses must go through
+  `QTest.keyClick(mw.windowHandle(), ...)`.** A key event sent to a
+  `QWidget` never reaches Qt's shortcut map, so accelerator tests pass
+  against dead accelerators.
+- WARNING: **PySide deletes menu widgets you inspect.** Reaching an
+  entry through `QWidgetAction::defaultWidget()`, or holding any QWidget
+  wrapper across statements, makes PySide take ownership and collect it,
+  killing the C++ children. It surfaces as "Internal C++ object already
+  deleted" on something that was alive a line earlier, and reads as the
+  menu rebuilding itself. Use `findChildren` plus a parent-chain
+  ancestry filter and reduce everything to `str`/`int` inside the loop.
+  Probes only; in C++ the menu owns them.
+- WARNING: **startup `Console().Log` output is invisible to a probe.** A
+  probe script runs long after the splash, and enabling logging from
+  Python is too late for anything that happened during it. Pass
+  **`--log-file <path>`** and read the line back from the file;
+  `scripts/renderer-desktop.sh` takes **`FC_ARGS`** for exactly this.
+- WARNING: **a `gdb --batch` run leaves FreeCAD alive** after the script
+  ends, so kill it by PID. `pkill -f '<pattern>'` matched *its own
+  shell* and killed the cleanup instead of the application, twice,
+  leaving stray GUI windows behind.
+- NOTE: **for a Coin console warning, break on
+  `SoDebugError::postWarning` under gdb and read the backtrace.**
+  Matching a message to a plausible call site got two of three warnings
+  wrong: neither the place nor the cause was what the text suggested,
+  and both were real bugs that had been called cosmetic
+  (`docs/CoinRetirement.md` stage 1a).
 
 This closes the "no reliable way to verify rendering" gap: the SwiftShader
 blindspot is covered by the desktop leg being a *real-GPU readback* of the
