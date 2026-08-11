@@ -25,6 +25,7 @@
 
 #include <cstddef>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <App/Document.h>
@@ -77,6 +78,50 @@ public:
         const auto& objs = doc->getObjects();
         _names.reserve(objs.size());
         for (auto obj : objs) {
+            if (const char* name = obj->getNameInDocument()) {
+                _names.emplace_back(name);
+            }
+        }
+    }
+
+    /** Record \a doc's objects as the set this drain owes work to, taking
+     * the order from \a order rather than from the document's array.
+     *
+     * For the phase whose eager counterpart walked an ordered list -- the
+     * finish pass, which the eager load ran from
+     * App::Document::afterRestore()'s dependency-sorted walk. \a order may
+     * name objects of other documents (a dependency walk crosses them);
+     * those are dropped. Objects of \a doc that \a order does *not* name
+     * are appended in array order, so the set is still every object
+     * whatever the ordering left out -- a cursor that skipped one would
+     * leave it with Gui::isRestoring set and no mode switch.
+     */
+    void snapshot(const App::Document* doc, const std::vector<App::DocumentObject*>& order)
+    {
+        _names.clear();
+        _pos = 0;
+        _ready = true;
+        if (!doc) {
+            return;
+        }
+        const auto& objs = doc->getObjects();
+        _names.reserve(objs.size());
+        std::unordered_set<const App::DocumentObject*> seen;
+        seen.reserve(objs.size());
+        for (auto obj : order) {
+            if (!obj || obj->getDocument() != doc) {
+                continue;
+            }
+            if (const char* name = obj->getNameInDocument()) {
+                if (seen.insert(obj).second) {
+                    _names.emplace_back(name);
+                }
+            }
+        }
+        for (auto obj : objs) {
+            if (seen.count(obj)) {
+                continue;
+            }
             if (const char* name = obj->getNameInDocument()) {
                 _names.emplace_back(name);
             }

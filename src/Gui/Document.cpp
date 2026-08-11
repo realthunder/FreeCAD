@@ -2474,8 +2474,22 @@ void Document::runDeferredRestoreSlice()
     // and from here on the document is live between slices -- see
     // DrainCursor.h for why neither phase may index the object array.
     if (!d->_deferCreate.ready()) {
+        // Phase one in the document's own order: its eager counterpart is
+        // slotNewObject() riding the create pass, which is that order.
         d->_deferCreate.snapshot(d->_pcDocument);
-        d->_deferFinish.snapshot(d->_pcDocument);
+        // Phase three is not. Eagerly, finishRestoring() rides
+        // signalFinishRestoreObject, which App::Document::afterRestore()
+        // emits from its *dependency-sorted* walk -- so an object's view
+        // provider is always finished before that of anything depending on
+        // it. Finish handlers rely on it: ViewProviderLink's reaches the
+        // linked objects' view providers, ViewProviderPart's applyColors()
+        // walks its children's. Creation order agrees with dependency order
+        // often enough to hide this, but not always -- what an
+        // afterRestore() created (an App::Part's Origin above all) lands at
+        // the end of the object array no matter what depends on it.
+        d->_deferFinish.snapshot(d->_pcDocument,
+                App::Document::getDependencyList(d->_pcDocument->getObjects(),
+                                                 App::Document::DepSort));
     }
 
     // Restore semantics for everything a slice builds: attach() must not
