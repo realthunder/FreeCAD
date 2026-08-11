@@ -485,10 +485,11 @@ public:
     /// Accessor for parameter MatcapTint
     ///
     /// How much each object's own color tints the matcap, 0 to 1.
-    /// Zero shades the whole scene as one uniform material, which is
-    /// what makes shape comparable across parts; one multiplies the
-    /// matcap by the object color, keeping the assembly's color coding
-    /// at the cost of some of that uniformity.
+    /// One multiplies the matcap by the object color, so the matcap
+    /// supplies the shading and the assembly keeps its color coding.
+    /// Zero shades the whole scene as one uniform material instead,
+    /// which drops the color coding but makes shape directly
+    /// comparable across parts.
     static const double & getMatcapTint();
     static const double & defaultMatcapTint();
     static void removeMatcapTint();

@@ -238,12 +238,13 @@ Params = [
         "rim; Clay = matte, no highlight, the most neutral read of form;\n"
         "Metal = banded sweep with a hard edge, exaggerates curvature;\n"
         "Pearl = warm/cool dual tone, shows shallow undulation."),
-    ParamFloat('MatcapTint',  0.0, title='Matcap object tint',
+    ParamFloat('MatcapTint',  1.0, title='Matcap object tint',
         doc="How much each object's own color tints the matcap, 0 to 1.\n"
-        "Zero shades the whole scene as one uniform material, which is\n"
-        "what makes shape comparable across parts; one multiplies the\n"
-        "matcap by the object color, keeping the assembly's color coding\n"
-        "at the cost of some of that uniformity."),
+        "One multiplies the matcap by the object color, so the matcap\n"
+        "supplies the shading and the assembly keeps its color coding.\n"
+        "Zero shades the whole scene as one uniform material instead,\n"
+        "which drops the color coding but makes shape directly\n"
+        "comparable across parts."),
     ParamBool('PBR',  False, title='Physically based shading',
         doc="Enable physically based shading with image based lighting of\n"
         "the experimental render engine (render cache mode 3 with a\n"

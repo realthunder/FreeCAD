@@ -180,7 +180,7 @@ public:
         funcs["Matcap"] = &RenderParamsP::updateMatcap;
         MatcapPreset = this->handle->GetInt("MatcapPreset", 0);
         funcs["MatcapPreset"] = &RenderParamsP::updateMatcapPreset;
-        MatcapTint = this->handle->GetFloat("MatcapTint", 0.0);
+        MatcapTint = this->handle->GetFloat("MatcapTint", 1.0);
         funcs["MatcapTint"] = &RenderParamsP::updateMatcapTint;
         PBR = this->handle->GetBool("PBR", false);
         funcs["PBR"] = &RenderParamsP::updatePBR;
@@ -406,7 +406,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateMatcapTint(RenderParamsP *self) {
-        self->MatcapTint = self->handle->GetFloat("MatcapTint", 0.0);
+        self->MatcapTint = self->handle->GetFloat("MatcapTint", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBR(RenderParamsP *self) {
@@ -1419,10 +1419,11 @@ void RenderParams::removeMatcapPreset() {
 const char *RenderParams::docMatcapTint() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "How much each object's own color tints the matcap, 0 to 1.\n"
-"Zero shades the whole scene as one uniform material, which is\n"
-"what makes shape comparable across parts; one multiplies the\n"
-"matcap by the object color, keeping the assembly's color coding\n"
-"at the cost of some of that uniformity.");
+"One multiplies the matcap by the object color, so the matcap\n"
+"supplies the shading and the assembly keeps its color coding.\n"
+"Zero shades the whole scene as one uniform material instead,\n"
+"which drops the color coding but makes shape directly\n"
+"comparable across parts.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1432,7 +1433,7 @@ const double & RenderParams::getMatcapTint() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const double & RenderParams::defaultMatcapTint() {
-    const static double def = 0.0;
+    const static double def = 1.0;
     return def;
 }
 
