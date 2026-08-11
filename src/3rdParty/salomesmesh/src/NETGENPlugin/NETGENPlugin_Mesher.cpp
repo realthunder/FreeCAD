@@ -4200,8 +4200,15 @@ void NETGENPlugin_NetgenLibWrapper::setMesh( Ng_Mesh* mesh )
 
 std::string NETGENPlugin_NetgenLibWrapper::getOutputFileName()
 {
-//  std::string aTmpDir = SALOMEDS_Tool::GetTmpDir();
+    // "/tmp" doesn't exist on Windows, so it dumps the file to C:\ root
+#ifdef _WIN32
+    char buf[512];
+    memset(buf, 0, sizeof(buf));
+    GetTempPathA(sizeof(buf), buf);
+    const std::string aTmpDir = std::string(buf) + "\\";
+#else
   std::string aTmpDir = "/tmp";
+#endif
 
   TCollection_AsciiString aGenericName = (char*)aTmpDir.c_str();
   aGenericName += "NETGEN_";
