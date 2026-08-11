@@ -126,6 +126,14 @@ SET_BIN_DIR(FreeCADMainPy FreeCAD)
 SET_PYTHON_PREFIX_SUFFIX(FreeCADMainPy)
 
 if(WIN32)
+    # Name clash with target "FreeCADMain": both land in bin/ as "FreeCAD",
+    # so both linkers would write bin/FreeCAD.pdb and the second to finish
+    # wins. Same reasoning as FreeCADGuiPy below.
+    set_target_properties(FreeCADMainPy PROPERTIES PDB_NAME "FreeCADMainPy")
+    set_target_properties(FreeCADMainPy PROPERTIES PDB_NAME_DEBUG "FreeCADMainPy_d")
+endif(WIN32)
+
+if(WIN32)
     INSTALL(TARGETS FreeCADMainPy
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -152,8 +160,10 @@ if(BUILD_GUI)
     if(WIN32)
         # Name clash with target "FreeCADGui"
         # Must be called "FreeCADGuiPy_d" and "FreeCADGuiPy" to work so override default
+        # PDB_NAME covers every configuration; PDB_NAME_RELEASE alone left
+        # RelWithDebInfo and MinSizeRel back on the clashing default.
         set_target_properties(FreeCADGuiPy PROPERTIES PDB_NAME_DEBUG "FreeCADGuiPy_d")
-        set_target_properties(FreeCADGuiPy PROPERTIES PDB_NAME_RELEASE "FreeCADGuiPy")
+        set_target_properties(FreeCADGuiPy PROPERTIES PDB_NAME "FreeCADGuiPy")
     endif(WIN32)
 
     if(WIN32)
