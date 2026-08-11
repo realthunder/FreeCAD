@@ -342,42 +342,48 @@ colour. Per-field storage replaces that workaround with a rule: restoring a
 one-entry material writes size 1 into each field array and **must not
 clobber a `_diffuse` that already holds N entries**. Test both file orders.
 
-#### 1.3 Save per field, so the dedup scheme can do its job
+#### 1.3 Hook the default-value scheme: store a field only when it differs
 
-Write `ShapeAppearance` as **one content-addressed list per field**, not as
-a single interleaved material list, and route each through the fork's
-`FileBlobManager`.
+The fork already has a scheme for this and appearance must use it rather
+than invent its own: **a property carries a known default, is materialised
+only when something actually sets it, and absence means the default.** The
+per-view `<group>_<name>` overrides are the worked example --
+`viewPropOverride` explicitly "never creates the property"
+(`SoFCRendererBridge.cpp:90-96`), so a `Render_SSAO` that nobody set simply
+is not there and the reader falls back to the default. `Property::hasSetValue`
+completes it at the other end, dropping same-value writes via `isSame` so
+setting a property to what it already holds does not even mark it changed.
 
-That manager is content-addressed by design: a blob "is identified by, and
-stored under, the hash of its content", there is "one archive entry per
-blob", and "properties serialize just the hash", so any number of
-properties across any number of objects share one entry. Plain doc-files get
-none of this -- `Writer::addFile` only uniquifies the *name*
-(`Writer.cpp:264`) and never compares content, so today two identical colour
-lists are two archive entries.
+Appearance maps onto this exactly, and the cardinality convention from
+section 3 already *is* the mapping:
 
-**Why per field rather than per material list.** Dedup keys on the whole
-blob, so granularity decides how often it hits:
+- **size 0** -- the field equals its default. Not materialised, not written,
+  costs nothing anywhere.
+- **size 1** -- uniform, one value.
+- **size N** -- genuinely per-entry.
 
-- interleaved: one object's shininess differing by a hair makes the entire
-  N-entry blob unique, and nothing is shared;
-- per field: only the shininess blob differs, while the diffuse, specular
-  and emissive blobs stay shared.
+⭐ **This is the strongest argument yet for per-field lists over a material
+list, and it is about more than bytes.** With an interleaved list of whole
+materials there is exactly one thing to compare against a default, so the
+moment *any* field differs the entire N-entry record becomes non-default and
+every field gets stored -- including the four that nothing can even render
+per face. Storing one list per field makes the comparison per field: a
+non-default diffuse array is written, and specular, emissive, ambient,
+shininess and the three strings stay absent. The common object writes
+nothing at all beyond the property's own presence.
 
-The wins are the common cases. An imported assembly whose instances share a
-palette shares one `_diffuse` blob. A uniform field that is identical across
-every object in the document -- the usual state of `_specular` and
-`_emissive` -- collapses to a single shared blob. And a field at size 0
-costs nothing at all, because there is no blob to write.
+So the save format is one list per field, absent fields omitted entirely --
+the same shape as the in-memory layout and as the property surface. Three
+representations, one convention.
 
-This is the same argument as the in-memory layout, applied to the file:
-**fields are independent, so store them independently.**
-
-Integration work, concretely: the blob path is currently typed to file-backed
-properties -- `addPendingReferrer(hash, PropertyFileIncluded*)` and the
-restore dispatch behind it. Generalise the referrer to an interface so a
-property that *generates* its content can register too, rather than only one
-that wraps a user file.
+⚠️ **I first hooked this to the wrong mechanism.** `FileBlobManager` is
+content-addressed storage for file-backed content (hash-keyed, one archive
+entry per blob, shared by any number of referrers) and it is *not* what this
+needs. Worth recording the fact it turned up on the way, though: plain
+doc-files do **not** dedup by content -- `Writer::addFile` only uniquifies
+the name (`Writer.cpp:264`) -- so two identical colour lists are two archive
+entries today. Never writing the defaults avoids that question rather than
+answering it.
 
 ### Stage 2 -- Coin carries the information through, ABI intact
 
