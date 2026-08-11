@@ -2172,6 +2172,117 @@ arrays and stand on the coarse rung, which is always resident.
    the worker. The per-source callbacks live in one
    `MeshSourceRegistry::LevelHooks` struct: refine / cancelRefine /
    demote / downgrade / fallbackError.
+
+   **The budget was unenforceable, and the margin is why (measured
+   2026-08-12).** With 64 MB pinned against 517.6 MB in use on the
+   rack model, the downgrade sweep dropped nothing at all, and its
+   refusal counters said why: `considered 6207 | no fallback rung
+   5909 | too big 296 | eligible 2`. Of the sources that carried a
+   rung to fall back to, **376 of 376 were refused "on screen and
+   too big"** -- because the pass above will not trade visible error
+   for memory at any pressure. That is not a budget that is hard to
+   meet; it is a budget with no mechanism behind it, and it turns a
+   model too large to display exactly into one that cannot be
+   displayed at all. The user's framing is the correction: too large
+   to show exact means show it coarse, which beats showing nothing.
+
+   So `planMeshDemotes` now selects in **two tiers**, and the
+   pressure that asked for the sweep is passed in as a **byte
+   deficit**:
+
+   - **Free** -- off screen, or the coarse rung errs at most
+     `kPlanDemoteMargin` x the tolerance. Taken always, exactly as
+     before. A deficit of 0 (no pressure, or a ceiling observed
+     without a quantity behind it) leaves this the whole pass, so
+     nothing about the settled no-pressure desktop changed.
+   - **Priced** -- over that margin, so demoting it *would* show.
+     Ranked by projected error and admitted cheapest-first, stopping
+     the moment the deficit is covered.
+
+   The effective tolerance is therefore an **outcome, not a knob**:
+   pressure raises it, and only as far as the deficit reaches. The
+   plan reports what it reached (`acceptedErrorPx`) beside what it
+   freed, so a pass that gave the camera 6 px of error to save 200 MB
+   says so rather than leaving it to be inferred from a policy
+   constant. Two consequences of pricing rather than vetoing: a
+   source shared by several instances is priced by its **neediest
+   owner** (the largest projected error) instead of being refused
+   outright by it, and a source that would free **nothing** is never
+   demoted -- showing a coarse rung for zero bytes is a pure loss.
+   Bounds that cannot be judged (no box, or the camera inside it)
+   stay out of both tiers: a price nobody can compute is not a
+   licence to guess it low.
+
+   **Making the descent work exposed the climb fighting it
+   (measured, same run).** With the priced tier in, the plan
+   downgraded 372 sources -- and the very next plan asked for **366
+   of them straight back**. It could not have done otherwise: a
+   source demoted to save memory is by definition one erring more
+   than the tolerance on screen, which is precisely the refine
+   pass's own criterion, so two passes reading two different
+   tolerances make the ladder oscillate and every lap costs a
+   tessellation and an upload. Nothing had ever descended before,
+   so nothing could fight.
+
+   So pressure raises **one** effective tolerance, for both
+   directions. The descent reports the worst error it had to accept;
+   dividing by `kPlanDemoteMargin` puts the climb's threshold back
+   above it by the same hysteresis band the two passes use with no
+   pressure at all, and the plan runs the climb *after* the descent
+   so it settles in one pass rather than two. Two rules keep it
+   honest: only the climb reads the raised value (feeding it back
+   into the descent would run away -- a wider free tier accepts more
+   error, which widens the tolerance, which widens the free tier --
+   while the priced tier is bounded by the deficit and stops on its
+   own), and what holds it up is the **pressure standing**, never the
+   sweep having succeeded. The plan after a successful descent finds
+   only sources with no rung left to drop and so accepts no error at
+   all; reading the tolerance off that number would hand it straight
+   back to the camera and re-ask for everything just given up. It is
+   cleared by the first plan that is inside its budget, and the
+   ladder climbs again.
+
+   **What the two together now do** (rack model, 64 MB pinned, three
+   plans, VirtualGL -- counting rows, not timing ones):
+
+   | plan | used | displayed coarse / exact | refine | downgrade |
+   |---|---|---|---|---|
+   | 1 | 530.5MB | 2022 / 1569 | 0 | **372** |
+   | 2 | 530.5MB | 2394 / 1197 | **0** | 0 |
+   | 3 | **441.3MB** | 2394 / 1197 | 0 | 0 |
+
+   The descent fires where it never had (372 against every previous
+   run's 0), the climb does not undo it (0 against 366), and the
+   ladder settles rather than cycling. Two things the run says
+   plainly:
+
+   - **The estimate overstates what a downgrade frees**, as designed:
+     172.5MB planned against 89.2MB actually returned by the upload
+     accounting, because the coarse rung it swaps in takes some of it
+     back. The replan loop is what closes that gap, and why the
+     selection must not be trusted as a one-shot answer.
+   - **The budget is still not met -- 441.3MB against 64MB -- and
+     the priced tier is not why.** It took every source it could:
+     `considered 1569 | no fallback rung 1197 | too big 0 | under
+     pressure 372`. **1197 of 1569 have no rung to fall back to**,
+     the sources built exact up front, and no policy can descend
+     what was never given a way down. That is the next gap, and it
+     is a generation problem, not a selection one.
+
+   The deficits come from the two pressures themselves. The GPU half
+   passes `used - budget` directly, and **replans while it is still
+   over budget and the last pass dropped something** -- one pass
+   cannot know it freed enough, because it counts what the meshes
+   declare while the budget is judged against what the backend
+   reports uploaded, and that only catches up once the downgraded
+   rungs have been re-uploaded. Each drop consumes its source's hook,
+   so the sequence terminates. The CPU half carries the shortfall on
+   the observation itself (`observeMemoryCeiling(shortfallBytes)`):
+   the refine worker is the only place that knows both the floor and
+   what the system had free. A `bad_alloc` states only "no", never
+   how much, so it re-reads available memory rather than inventing a
+   number, and passes 0 when the machine is not actually under the
+   floor -- one outsized build is not evidence of general pressure.
 4. ✅ **As built (2026-07-31):** `cancel` wired to plan changes. The
    ask became state instead of consumption:
    `MeshSourceRegistry::requestRefine` sets a standing `asked` on
