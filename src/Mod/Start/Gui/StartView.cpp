@@ -47,7 +47,6 @@
 #include <App/DocumentObject.h>
 #include <App/Application.h>
 #include <Base/Interpreter.h>
-#include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 
@@ -64,6 +63,37 @@ struct NewButton
     QString description;
     QString iconPath;
 };
+
+// A string as Python source: quotes included, every backslash and quote
+// escaped exactly once, and nothing but ASCII left for the interpreter.
+//
+// Hand-escaping this is what went wrong before. Base::Tools offers two
+// escapers and the obvious move is to apply both -- but
+// escapedUnicodeFromUtf8() is Python's own unicode-escape, which already
+// doubles a backslash, so following it with escapeEncodeFilename() doubles
+// each one again. A Windows path arrived as C:\\\\dir and opened as
+// C://dir. Letting Python write its own literal cannot get this wrong;
+// PyObject_ASCII is PyObject_Repr with non-ASCII escaped as well.
+std::string asPythonLiteral(const QString& text)
+{
+    Base::PyGILStateLocker lock;
+    std::string literal {"''"};
+
+    PyObject* str = PyUnicode_FromString(text.toUtf8().constData());
+    if (!str) {
+        PyErr_Clear();
+        return literal;
+    }
+    if (PyObject* repr = PyObject_ASCII(str)) {
+        literal = PyUnicode_AsUTF8(repr);
+        Py_DECREF(repr);
+    }
+    else {
+        PyErr_Clear();
+    }
+    Py_DECREF(str);
+    return literal;
+}
 
 // Formats several modules claim, so the user gets asked which one to import
 // with rather than silently getting whichever registered first.
@@ -471,8 +501,7 @@ void StartView::postStart(PostStartBehavior behavior) const
 void StartView::fileCardSelected(const QModelIndex& index)
 {
     auto file = index.data(static_cast<int>(Start::DisplayedFilesModelRoles::path)).toString();
-    std::string escapedstr = Base::Tools::escapedUnicodeFromUtf8(file.toStdString().c_str());
-    escapedstr = Base::Tools::escapeEncodeFilename(escapedstr);
+    const std::string path = asPythonLiteral(file);
     const QString extension = QFileInfo(file).suffix().toLower();
 
     // Which module imports a given extension is a user preference, written by
@@ -480,8 +509,8 @@ void StartView::fileCardSelected(const QModelIndex& index)
     // choice stick; leaving it empty takes whichever module registered first.
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Start");
-    const std::string module = Base::Tools::escapeEncodeFilename(
-        hGrp->GetASCII(("DefaultImport" + extension.toStdString()).c_str(), ""));
+    const std::string module = asPythonLiteral(QString::fromStdString(
+        hGrp->GetASCII(("DefaultImport" + extension.toStdString()).c_str(), "")));
 
     std::string command;
     if (isImage(extension)) {
@@ -490,9 +519,9 @@ void StartView::fileCardSelected(const QModelIndex& index)
         // would hand the file to a module's insert() with no document to
         // insert into.
         command = "FreeCAD.newDocument()\n"
-                  "FreeCADGui.insert('"
-            + escapedstr
-            + "', FreeCAD.activeDocument().Name)\n"
+                  "FreeCADGui.insert("
+            + path
+            + ", FreeCAD.activeDocument().Name)\n"
               "FreeCAD.activeDocument().recompute()\n"
               "FreeCADGui.activeDocument().sendMsgToViews('ViewFit')\n";
     }
@@ -507,7 +536,7 @@ void StartView::fileCardSelected(const QModelIndex& index)
         // empty untouched startup document, adding the file to the recent list,
         // moving the file dialog's working directory, and fitting the view for
         // an imported, non-FCStd file.
-        command = "FreeCADGui.loadFile('" + escapedstr + "', '" + module + "'"
+        command = "FreeCADGui.loadFile(" + path + ", " + module
             + (wantsImportChooser(extension) ? ", interactive=True" : "") + ")";
     }
     try {
