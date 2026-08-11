@@ -176,13 +176,32 @@ antialias differently — but a within-leg delta can.
 | transform dragger | 0.088 | 0.055 | 0.279 | bgfx and glr agree to 0.0078 in matched state |
 | clipping plane | 0.005 | 0.097 | — | **the one difference that indicts the backend** — see below |
 
-**The clipping plane.** glr draws a hatched section cap where the plane
-cuts; the backend draws nothing at all. Worth qualifying before it is
-called a gap: in this probe *no leg actually clipped the solid* — the
-box stayed whole on all three while `hasClippingPlane()` reported true —
-so the probe's use of `toggleClippingPlane` is not exercising what a
-user's section view does. What is solid is the difference: given the
-same scene state, one path drew a cap and the other did not.
+**The clipping plane — RESOLVED, and the audit row above is wrong.** The
+qualification it carried was the important part: in that probe *no leg
+actually clipped the solid* — the box stayed whole on all three while
+`hasClippingPlane()` reported true — so it compared two unclipped frames
+and "the backend draws no cap" was an artifact of that. With a plane
+that really cuts (`section_cap_probe.py`, which asserts the cut before
+comparing), the backend draws the cap, hatch and all.
+
+What was real: the backend also drew the hidden geometry's inside
+corners back over its own cap — a Y across the cut face, 283 px where
+glr is flat. The cap was innocent. **Cavity shading is a fullscreen
+multiply over the depth+normal prepass target** (`aoNormalZ`), which
+the cap never entered, so it darkened creases belonging to the geometry
+the cap hides. Fixed by rendering the cap into the prepass too, in its
+own Sequential view: `ViewAOPrepassCap`. GTAO reads that target as well
+and gains the same correction. The cut face now carries a ridge along
+its rim, which is cavity seeing a real surface rather than leaking
+through one.
+
+⚠️ The diagnosis cost three wrong turns worth recording, all of the same
+shape — *testing one gate at a time on the draw that was not at fault*:
+forcing the cap's depth test to ALWAYS, then its stencil test, then both,
+each changed nothing or almost nothing. What localized it was moving the
+cap draw to a late view, which fixed 227 of 283 pixels: an ordering
+symptom points at a **later pass reading a stale buffer**, not at the
+draw's own state.
 
 **A bug found along the way, and it is not the backend's.** Entering and
 leaving Transform edit mode (`Std_TransformManip`) leaves the object
@@ -368,12 +387,13 @@ blits into, which is a pass nobody needs.
 
 **Stage 1 — extend the audit to §3.2. First pass done** (§3.3): Sketcher
 edit mode, the draggers, and the selection/preselection highlights all
-match the GL renderer. Two things are open out of it — the backend draws
-no section cap for a clipping plane, and Transform edit mode leaves both
-render-cache paths drawing the object see-through (that one predates the
-backend and is the cache's, not the backend's). Still unvisited from
-§3.2: TechDraw, FEM, Draft, Assembly, annotation text, large models and
-real-GPU behaviour.
+match the GL renderer. Both things it left open are now closed, and
+neither was what the audit said it was: the backend does draw a section
+cap (see below), and Transform edit mode does not leave the object
+see-through for a user — that reading came from a probe holding its own
+call stack, so the task dialog was never deleted and the object stayed
+registered on top. Still unvisited from §3.2: TechDraw, FEM, Draft,
+Assembly, annotation text, large models and real-GPU behaviour.
 
 **Stage 1a — clear the Coin warnings from the console. DONE.** The
 survey judged that none of the three was a correctness bug. **Two of
