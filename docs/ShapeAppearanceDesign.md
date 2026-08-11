@@ -282,6 +282,77 @@ Verifiable without any view provider or GPU: unit tests for cardinality
 transitions (0 -> 1 -> N and back), plus a document round-trip against a
 file written by upstream FreeCAD.
 
+#### 1.1 `DiffuseColor` as a real accessor, not a copy
+
+`DiffuseColor` stays a genuine `App::PropertyColorList` -- so the property
+system, the editor, persistence and every existing C++ call site keep
+working -- but a derived class redirects its storage into
+`ShapeAppearance`:
+
+    class PropertyDiffuseColor: public App::PropertyColorList {
+        PropertyMaterialList* appearance;   // set by the view provider
+        // readers and writers forward to appearance's _diffuse
+    };
+
+**Prerequisite, and it is our own code:** in `PropertyListsT`,
+`getValues()`, its `getValue()` alias and `operator[]` are **non-virtual**
+and read `_lValueList` directly (`Property.h:57-62`), while `setValues`,
+`set1Value`, `setSize` and `getSize` are already virtual. Make those three
+readers virtual. `Property` is already polymorphic, so this adds vtable
+slots rather than object size, and we do not hold ABI against upstream
+FreeCAD binaries -- we ship the whole application.
+
+⭐ **This is where the per-field layout pays off a second time.** `_diffuse`
+is literally a `std::vector<Base::Color>`, which is exactly the type
+`PropertyColorList::getValues()` must return -- so the override hands back a
+reference to the real storage. No cache, no materialisation, no second copy.
+**Upstream cannot do this**: from an array of whole materials they would
+have to synthesise a `vector<Color>` on every call, which is precisely why
+they deleted the property and emulated it in Python only.
+
+Our fork's C++ use is all direct member access and all of it survives:
+`getValues` 22, `setValues` 20, `setValue` 2, `getSize` 1, plus one
+`find`/`end` pair iterating the returned vector.
+
+Details: route writes through the appearance's setters so change
+notification is keyed on `ShapeAppearance` and the existing update logic
+runs; and hide `DiffuseColor` from the property editor so one datum does not
+appear as two rows.
+
+#### 1.2 Save the cheapest encoding upstream can still read
+
+Do not always write a material list. Choose per object:
+
+| what varies | what gets written |
+|---|---|
+| nothing per face | `ShapeAppearance`, one entry, the uniform material |
+| colour only, per face | that, **plus `DiffuseColor` as an `App::PropertyColorList`** |
+| some non-colour field, per face | the full N-entry material list |
+
+**Upstream reads the middle case, verified.**
+`ViewProviderPartExt::handleChangedPropertyName` accepts a saved property
+named `"DiffuseColor"` of type `App::PropertyColorList` and restores it into
+a hidden `_diffuseColor`; `finishRestoring()` then pushes it through when
+`getSize() > 1`, and `onChanged(&_diffuseColor)` calls
+`ShapeAppearance.setDiffuseColors(colors)`. That is the same path old 0.21
+documents take. So **both encodings we emit are readable by current upstream
+FreeCAD**, and the common case is roughly 10x smaller on disk than a
+material list, for the same reason it is smaller in memory.
+
+Mechanism for choosing at save time: `PropertyContainer::Save` tests
+`prop->testStatus(Property::Transient)` when it runs
+(`PropertyContainer.cpp:310`), so the encoding is selected by flipping that
+status on `DiffuseColor` in `ViewProviderPartExt::Save` before delegating to
+the base. Transient properties still emit a status-only `<_Property>`
+element, which older readers ignore by design.
+
+⚠️ **Restore ordering.** Upstream needed `finishRestoring()` because
+`ShapeAppearance` is restored *after* `DiffuseColor` and would otherwise
+overwrite it with its single colour. Per-field storage gives a cleaner rule
+instead of a workaround: restoring a one-entry material writes size 1 into
+each field array and **must not clobber a `_diffuse` that already holds N
+entries**. Test both file orders.
+
 ### Stage 2 -- Coin carries the information through, ABI intact
 
 **Scope: make Coin a faithful carrier, not a renderer of per-face
