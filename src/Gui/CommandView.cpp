@@ -2364,7 +2364,10 @@ void StdViewScreenShot::activated(int iMsg)
 
         if (fd.exec() == QDialog::Accepted) {
             selFilter = fd.selectedNameFilter();
-            QString fn = Base::Tools::escapeEncodeString(fd.selectedFiles().front());
+            // The raw path: QFileInfo and QPixmap below want the real name, and
+            // used to be handed the escaped one.
+            QString fn = fd.selectedFiles().front();
+            std::string pyfn = Base::Tools::pythonLiteral(fn);
 
             Gui::WaitCursor wc;
 
@@ -2408,12 +2411,12 @@ void StdViewScreenShot::activated(int iMsg)
                 QStringList lines = comment.split(QStringLiteral("\n"), QString::KeepEmptyParts );
 #endif
                 comment = lines.join(QStringLiteral("\\n"));
-                doCommand(Gui,"Gui.activeDocument().activeView().saveImage('%s',%d,%d,'%s','%s')",
-                            fn.toUtf8().constData(),w,h,background,comment.toUtf8().constData());
+                doCommand(Gui,"Gui.activeDocument().activeView().saveImage(%s,%d,%d,'%s','%s')",
+                            pyfn.c_str(),w,h,background,comment.toUtf8().constData());
             }
             else {
-                doCommand(Gui,"Gui.activeDocument().activeView().saveImage('%s',%d,%d,'%s')",
-                            fn.toUtf8().constData(),w,h,background);
+                doCommand(Gui,"Gui.activeDocument().activeView().saveImage(%s,%d,%d,'%s')",
+                            pyfn.c_str(),w,h,background);
             }
 
             // When adding a watermark check if the image could be created

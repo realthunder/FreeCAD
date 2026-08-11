@@ -125,8 +125,8 @@ void CmdTechDrawPageDefault::activated(int iMsg)
         doCommand(Doc, "App.activeDocument().%s.translateLabel('DrawSVGTemplate', 'Template', '%s')",
               TemplateName.c_str(), TemplateName.c_str());
 
-        doCommand(Doc, "App.activeDocument().%s.Template = '%s'", TemplateName.c_str(),
-                  templateFileName.toStdString().c_str());
+        doCommand(Doc, "App.activeDocument().%s.Template = %s", TemplateName.c_str(),
+                  Base::Tools::pythonLiteral(templateFileName).c_str());
         doCommand(Doc, "App.activeDocument().%s.Template = App.activeDocument().%s",
                   PageName.c_str(), TemplateName.c_str());
 
@@ -204,9 +204,8 @@ void CmdTechDrawPageTemplate::activated(int iMsg)
 
         //why is "Template" property set twice? -wf
         // once to set DrawSVGTemplate.Template to OS template file name
-        templateFileName = Base::Tools::escapeEncodeFilename(templateFileName);
-        doCommand(Doc, "App.activeDocument().%s.Template = \"%s\"", TemplateName.c_str(),
-                  templateFileName.toUtf8().constData());
+        doCommand(Doc, "App.activeDocument().%s.Template = %s", TemplateName.c_str(),
+                  Base::Tools::pythonLiteral(templateFileName).c_str());
         // once to set Page.Template to DrawSVGTemplate.Name
         doCommand(Doc, "App.activeDocument().%s.Template = App.activeDocument().%s",
                   PageName.c_str(), TemplateName.c_str());
@@ -1230,9 +1229,8 @@ void CmdTechDrawSymbol::activated(int iMsg)
     if (!filename.isEmpty())
     {
         std::string FeatName = getUniqueObjectName("Symbol",page);
-        filename = Base::Tools::escapeEncodeFilename(filename);
         openCommand(QT_TRANSLATE_NOOP("Command", "Create Symbol"));
-        doCommand(Doc, "f = open(\"%s\", 'r')", (const char*)filename.toUtf8());
+        doCommand(Doc, "f = open(%s, 'r')", Base::Tools::pythonLiteral(filename).c_str());
         doCommand(Doc, "svg = f.read()");
         doCommand(Doc, "f.close()");
         Gui::cmdAppDocument(page, std::ostringstream() << "addObject('TechDraw::DrawViewSymbol','" << FeatName << "')");
@@ -1530,9 +1528,8 @@ void CmdTechDrawExportPageDXF::activated(int iMsg)
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Save page to dxf"));
     doCommand(Doc, "import TechDraw");
-    fileName = Base::Tools::escapeEncodeFilename(fileName);
-    doCommand(Doc,"TechDraw.writeDXFPage(%s,u'%s')",
-            getObjectCmd(page).c_str(), fileName.toUtf8().constData());
+    doCommand(Doc,"TechDraw.writeDXFPage(%s,%s)",
+            getObjectCmd(page).c_str(), Base::Tools::pythonLiteral(fileName).c_str());
     updateActive();
     commitCommand();
 }

@@ -25,6 +25,7 @@
 #include <QMessageBox>
 #endif
 
+#include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
@@ -98,10 +99,10 @@ void CmdRobotExportKukaCompact::activated(int)
 
     doCommand(Doc, "from KukaExporter import ExportCompactSub");
     doCommand(Doc,
-              "ExportCompactSub(App.activeDocument().%s,App.activeDocument().%s,'%s')",
+              "ExportCompactSub(App.activeDocument().%s,App.activeDocument().%s,%s)",
               pcRobotObject->getNameInDocument(),
               pcTrajectoryObject->getNameInDocument(),
-              (const char*)fn.toUtf8());
+              Base::Tools::pythonLiteral(fn).c_str());
 }
 
 bool CmdRobotExportKukaCompact::isActive()
@@ -173,10 +174,10 @@ void CmdRobotExportKukaFull::activated(int)
 
     doCommand(Doc, "from KukaExporter import ExportFullSub");
     doCommand(Doc,
-              "ExportFullSub(App.activeDocument().%s,App.activeDocument().%s,'%s')",
+              "ExportFullSub(App.activeDocument().%s,App.activeDocument().%s,%s)",
               pcRobotObject->getNameInDocument(),
               pcTrajectoryObject->getNameInDocument(),
-              (const char*)fn.toUtf8());
+              Base::Tools::pythonLiteral(fn).c_str());
 }
 
 bool CmdRobotExportKukaFull::isActive()

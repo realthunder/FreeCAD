@@ -1644,9 +1644,9 @@ bool Document::saveAs()
                 Command::doCommand(Command::Doc,
                         "App.getDocument(\"%s\").SaveSchemaVersion = %d", DocName,
                         chosenCompact ? (int)App::Document::getCurrentSchemaVersion() : 5);
-            std::string escapedstr = Base::Tools::escapeEncodeFilename(fn).toUtf8().constData();
-            Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveAs(u\"%s\")"
-                                           , DocName, escapedstr.c_str());
+            std::string literal = Base::Tools::pythonLiteral(fn);
+            Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveAs(%s)"
+                                           , DocName, literal.c_str());
             // App::Document::saveAs() may modify the passed file name
             fi.setFile(QString::fromUtf8(d->_pcDocument->FileName.getValue()));
             setModified(false);
@@ -1749,9 +1749,9 @@ bool Document::saveCopy()
 
         // save as new file name
         Gui::WaitCursor wc;
-        QString pyfn = Base::Tools::escapeEncodeFilename(fn);
-        Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveCopy(\"%s\")"
-                                       , DocName, (const char*)pyfn.toUtf8());
+        std::string pyfn = Base::Tools::pythonLiteral(fn);
+        Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveCopy(%s)"
+                                       , DocName, pyfn.c_str());
 
         return true;
     }

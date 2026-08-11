@@ -637,15 +637,15 @@ void BrowserView::urlFilter(const QUrl& url)
                     }
                     // Gui::Command::doCommand(Gui::Command::Gui,"execfile('%s')",(const char*)
                     // fi.absoluteFilePath().	toLocal8Bit());
-                    QString filename = Base::Tools::escapeEncodeFilename(fi.absoluteFilePath());
+                    std::string filename = Base::Tools::pythonLiteral(fi.absoluteFilePath());
                     // Set flag indicating that this load/restore has been initiated by the user
                     // (not by a macro)
                     Gui::Application::Instance->setStatus(
                         Gui::Application::UserInitiatedOpenDocument,
                         true);
                     Gui::Command::doCommand(Gui::Command::Gui,
-                                            "with open('%s') as file:\n\texec(file.read())",
-                                            (const char*)filename.toUtf8());
+                                            "with open(%s) as file:\n\texec(file.read())",
+                                            filename.c_str());
                     Gui::Application::Instance->setStatus(
                         Gui::Application::UserInitiatedOpenDocument,
                         false);

@@ -648,7 +648,7 @@ void Application::open(const char* FileName, const char* Module)
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
     string te = File.extension();
-    string unicodepath = Base::Tools::escapeEncodeFilename(File.filePath());
+    string unicodepath = Base::Tools::pythonLiteral(File.filePath());
 
     // if the active document is empty and not modified, close it
     // in case of an automatically created empty document at startup
@@ -676,14 +676,14 @@ void Application::open(const char* FileName, const char* Module)
 
                 if (!handled)
                     Command::doCommand(
-                        Command::App, "FreeCAD.openDocument('%s')", unicodepath.c_str());
+                        Command::App, "FreeCAD.openDocument(%s)", unicodepath.c_str());
             }
             else {
                 // issue module loading
                 Command::doCommand(Command::App, "import %s", Module);
 
                 // load the file with the module
-                Command::doCommand(Command::App, "%s.open(u\"%s\")", Module, unicodepath.c_str());
+                Command::doCommand(Command::App, "%s.open(%s)", Module, unicodepath.c_str());
 
                 // ViewFit
                 if (sendHasMsgToActiveView("ViewFit")) {
@@ -719,7 +719,7 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
     std::string te = File.extension();
-    string unicodepath = Base::Tools::escapeEncodeFilename(File.filePath());
+    string unicodepath = Base::Tools::pythonLiteral(File.filePath());
 
     if (Module) {
         try {
@@ -728,7 +728,7 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
 
             // load the file with the module
             if (File.hasExtension("FCStd")) {
-                Command::doCommand(Command::App, "%s.open(u\"%s\")"
+                Command::doCommand(Command::App, "%s.open(%s)"
                                                , Module, unicodepath.c_str());
                 if (activeDocument())
                     activeDocument()->setModified(false);
@@ -755,11 +755,11 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
                     Base::ObjectStatusLocker<App::Document::Status, App::Document>
                         guard(App::Document::Restoring, appDoc);
                     if (DocName) {
-                        Command::doCommand(Command::App, "%s.insert(u\"%s\",\"%s\")"
+                        Command::doCommand(Command::App, "%s.insert(%s,\"%s\")"
                                                     , Module, unicodepath.c_str(), DocName);
                     }
                     else {
-                        Command::doCommand(Command::App, "%s.insert(u\"%s\")"
+                        Command::doCommand(Command::App, "%s.insert(%s)"
                                                     , Module, unicodepath.c_str());
                     }
                 }
@@ -845,7 +845,7 @@ void Application::exportTo(const char* FileName, const char* DocName, const char
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
     std::string te = File.extension();
-    string unicodepath = Base::Tools::escapeEncodeFilename(File.filePath());
+    string unicodepath = Base::Tools::pythonLiteral(File.filePath());
 
     if (Module) {
         try {
@@ -862,7 +862,7 @@ void Application::exportTo(const char* FileName, const char* DocName, const char
             str << "import " << Module << "\n"
                 << "__objs__=[]\n"
                 << "if hasattr(" << Module << ", 'exportSelection'):\n"
-                << "    __objs__=" << Module << ".exportSelection(u\"" << unicodepath << "\")\n"
+                << "    __objs__=" << Module << ".exportSelection(" << unicodepath << ")\n"
                 << "else:\n";
 
             for (std::vector<App::DocumentObject*>::iterator it = sel.begin(); it != sel.end(); ++it) {
@@ -870,10 +870,10 @@ void Application::exportTo(const char* FileName, const char* DocName, const char
                     str << "    __objs__.append(" << (*it)->getFullName(true) << ")\n";
             }
             str << "    if hasattr(" << Module << ", \"exportOptions\"):\n"
-                << "        options = " << Module << ".exportOptions(u\"" << unicodepath << "\")\n"
-                << "        " << Module << ".export(__objs__, u\"" << unicodepath << "\", options)\n"
+                << "        options = " << Module << ".exportOptions(" << unicodepath << ")\n"
+                << "        " << Module << ".export(__objs__, " << unicodepath << ", options)\n"
                 << "    else:\n"
-                << "        " << Module << ".export(__objs__, u\"" << unicodepath << "\")\n";
+                << "        " << Module << ".export(__objs__, " << unicodepath << ")\n";
 
             std::string code = str.str();
             // the original file name is required

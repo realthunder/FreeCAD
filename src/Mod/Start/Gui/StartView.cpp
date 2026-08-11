@@ -47,6 +47,7 @@
 #include <App/DocumentObject.h>
 #include <App/Application.h>
 #include <Base/Interpreter.h>
+#include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 
@@ -63,37 +64,6 @@ struct NewButton
     QString description;
     QString iconPath;
 };
-
-// A string as Python source: quotes included, every backslash and quote
-// escaped exactly once, and nothing but ASCII left for the interpreter.
-//
-// Hand-escaping this is what went wrong before. Base::Tools offers two
-// escapers and the obvious move is to apply both -- but
-// escapedUnicodeFromUtf8() is Python's own unicode-escape, which already
-// doubles a backslash, so following it with escapeEncodeFilename() doubles
-// each one again. A Windows path arrived as C:\\\\dir and opened as
-// C://dir. Letting Python write its own literal cannot get this wrong;
-// PyObject_ASCII is PyObject_Repr with non-ASCII escaped as well.
-std::string asPythonLiteral(const QString& text)
-{
-    Base::PyGILStateLocker lock;
-    std::string literal {"''"};
-
-    PyObject* str = PyUnicode_FromString(text.toUtf8().constData());
-    if (!str) {
-        PyErr_Clear();
-        return literal;
-    }
-    if (PyObject* repr = PyObject_ASCII(str)) {
-        literal = PyUnicode_AsUTF8(repr);
-        Py_DECREF(repr);
-    }
-    else {
-        PyErr_Clear();
-    }
-    Py_DECREF(str);
-    return literal;
-}
 
 // Formats several modules claim, so the user gets asked which one to import
 // with rather than silently getting whichever registered first.
@@ -501,7 +471,7 @@ void StartView::postStart(PostStartBehavior behavior) const
 void StartView::fileCardSelected(const QModelIndex& index)
 {
     auto file = index.data(static_cast<int>(Start::DisplayedFilesModelRoles::path)).toString();
-    const std::string path = asPythonLiteral(file);
+    const std::string path = Base::Tools::pythonLiteral(file);
     const QString extension = QFileInfo(file).suffix().toLower();
 
     // Which module imports a given extension is a user preference, written by
@@ -509,7 +479,7 @@ void StartView::fileCardSelected(const QModelIndex& index)
     // choice stick; leaving it empty takes whichever module registered first.
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Start");
-    const std::string module = asPythonLiteral(QString::fromStdString(
+    const std::string module = Base::Tools::pythonLiteral(QString::fromStdString(
         hGrp->GetASCII(("DefaultImport" + extension.toStdString()).c_str(), "")));
 
     std::string command;

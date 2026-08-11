@@ -808,9 +808,9 @@ void StdCmdSaveAsDirectory::activated(int iMsg)
         // save as new file name
         try {
             Gui::WaitCursor wc;
-            std::string escapedstr = Base::Tools::escapeEncodeFilename(fn).toUtf8().constData();
-            Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveAs(u\"%s\")"
-                                           , DocName, escapedstr.c_str());
+            std::string literal = Base::Tools::pythonLiteral(fn);
+            Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveAs(%s)"
+                                           , DocName, literal.c_str());
             gdoc->setModified(false);
             getMainWindow()->appendRecentFile(fi.filePath());
         }

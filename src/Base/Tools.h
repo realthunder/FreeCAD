@@ -351,6 +351,23 @@ struct BaseExport Tools
     static std::string escapeEncodeFilename(const std::string& s);
 
     /**
+     * @brief pythonLiteral Render a string as Python source: a complete
+     * literal, quotes included, that evaluates back to exactly this string.
+     *
+     * Use this to put a value -- a file path above all -- into a command
+     * string handed to the interpreter, and do not add quotes of your own.
+     * It is written by Python itself, so unlike escapeEncodeString() and
+     * escapeEncodeFilename(), which escape only backslash and the two
+     * quotes, it also survives a newline or a tab in a file name (legal on
+     * Linux and macOS) and leaves nothing but ASCII behind.
+     *
+     * @param s String to render.
+     * @return A quoted Python literal; "''" if the string cannot be encoded.
+     */
+    static std::string pythonLiteral(const std::string& s);
+    static std::string pythonLiteral(const QString& s);
+
+    /**
      * @brief toStdString Convert a QString into a UTF-8 encoded std::string.
      * @param s String to convert.
      * @return A std::string encoded as UTF-8.

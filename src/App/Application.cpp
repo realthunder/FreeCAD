@@ -3026,14 +3026,14 @@ std::list<std::string> Application::processFiles(const std::list<std::string>& f
                 std::string ext = file.extension();
                 std::vector<std::string> mods = App::GetApplication().getImportModules(ext.c_str());
                 if (!mods.empty()) {
-                    std::string escapedstr = Base::Tools::escapeEncodeFilename(file.filePath());
+                    std::string literal = Base::Tools::pythonLiteral(file.filePath());
 
                     Base::Interpreter().loadModule(mods.front().c_str());
                     Base::Interpreter().runStringArg("import %s",mods.front().c_str());
-                    Base::Interpreter().runStringArg("%s.open(u\"%s\")",mods.front().c_str(),
-                            escapedstr.c_str());
+                    Base::Interpreter().runStringArg("%s.open(%s)",mods.front().c_str(),
+                            literal.c_str());
                     processed.push_back(it);
-                    Base::Console().Log("Command line open: %s.open(u\"%s\")\n",mods.front().c_str(),escapedstr.c_str());
+                    Base::Console().Log("Command line open: %s.open(%s)\n",mods.front().c_str(),literal.c_str());
                 }
                 else if (file.exists()) {
                     Base::Console().Warning("File format not supported: %s \n", file.filePath().c_str());
@@ -3078,8 +3078,9 @@ void Application::processCmdLineFiles()
     std::map<std::string,std::string>::const_iterator it = cfg.find("SaveFile");
     if (it != cfg.end()) {
         std::string output = it->second;
-        output = Base::Tools::escapeEncodeFilename(output);
 
+        // Note this is the raw path: escaping it here used to leave FileInfo
+        // below, and every message in this block, looking at an escaped name.
         Base::FileInfo fi(output);
         std::string ext = fi.extension();
         try {
@@ -3087,8 +3088,8 @@ void Application::processCmdLineFiles()
             if (!mods.empty()) {
                 Base::Interpreter().loadModule(mods.front().c_str());
                 Base::Interpreter().runStringArg("import %s",mods.front().c_str());
-                Base::Interpreter().runStringArg("%s.export(App.ActiveDocument.Objects, '%s')"
-                    ,mods.front().c_str(),output.c_str());
+                Base::Interpreter().runStringArg("%s.export(App.ActiveDocument.Objects, %s)"
+                    ,mods.front().c_str(),Base::Tools::pythonLiteral(output).c_str());
             }
             else {
                 Base::Console().Warning("File format not supported: %s \n", output.c_str());
