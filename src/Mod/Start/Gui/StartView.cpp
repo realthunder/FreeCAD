@@ -26,6 +26,7 @@
 #ifndef _PreComp_
 #include <QApplication>
 #include <QCheckBox>
+#include <QFileInfo>
 #include <QFrame>
 #include <QGridLayout>
 #include <QLabel>
@@ -63,6 +64,39 @@ struct NewButton
     QString description;
     QString iconPath;
 };
+
+// Formats several modules claim, so the user gets asked which one to import
+// with rather than silently getting whichever registered first.
+bool wantsImportChooser(const QString& extension)
+{
+    static const QStringList extensions {QStringLiteral("fcstd"),
+                                         QStringLiteral("stp"),
+                                         QStringLiteral("step"),
+                                         QStringLiteral("iges"),
+                                         QStringLiteral("igs")};
+    return extensions.contains(extension);
+}
+
+// An image is not a document to open but something to place into one, so it
+// takes a different route entirely -- see fileCardSelected().
+bool isImage(const QString& extension)
+{
+    static const QStringList extensions {QStringLiteral("bmp"),
+                                         QStringLiteral("cur"),
+                                         QStringLiteral("gif"),
+                                         QStringLiteral("ico"),
+                                         QStringLiteral("pbm"),
+                                         QStringLiteral("pgm"),
+                                         QStringLiteral("png"),
+                                         QStringLiteral("jpg"),
+                                         QStringLiteral("jpeg"),
+                                         QStringLiteral("ppm"),
+                                         QStringLiteral("svg"),
+                                         QStringLiteral("svgz"),
+                                         QStringLiteral("xbm"),
+                                         QStringLiteral("xpm")};
+    return extensions.contains(extension);
+}
 
 QPushButton* createNewButton(const NewButton& newButton)
 {
@@ -439,16 +473,43 @@ void StartView::fileCardSelected(const QModelIndex& index)
     auto file = index.data(static_cast<int>(Start::DisplayedFilesModelRoles::path)).toString();
     std::string escapedstr = Base::Tools::escapedUnicodeFromUtf8(file.toStdString().c_str());
     escapedstr = Base::Tools::escapeEncodeFilename(escapedstr);
-    // FreeCADGui.loadFile, not FreeCAD.loadFile: the App-level one goes straight
-    // to <module>.openDocument(), which throws when that document is already
-    // open -- and a card for an open document is exactly what a user clicks by
-    // mistake. Gui::Application::open() looks for a document already holding
-    // this file path and reloads it instead (cc2f2151d5, which is why the old
-    // web start page's LoadMRU.py called the Gui one). It also does the rest of
-    // what opening from the UI means: dropping the empty untouched startup
-    // document, adding the file to the recent list, moving the file dialog's
-    // working directory, and fitting the view for an imported, non-FCStd file.
-    auto command = std::string("FreeCADGui.loadFile('") + escapedstr + "')";
+    const QString extension = QFileInfo(file).suffix().toLower();
+
+    // Which module imports a given extension is a user preference, written by
+    // the import dialog as DefaultImport<ext>. Passing it on is what makes that
+    // choice stick; leaving it empty takes whichever module registered first.
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Start");
+    const std::string module = Base::Tools::escapeEncodeFilename(
+        hGrp->GetASCII(("DefaultImport" + extension.toStdString()).c_str(), ""));
+
+    std::string command;
+    if (isImage(extension)) {
+        // An image has no document of its own to open. The old web start page
+        // made one and inserted the image into it, and loadFile cannot: it
+        // would hand the file to a module's insert() with no document to
+        // insert into.
+        command = "FreeCAD.newDocument()\n"
+                  "FreeCADGui.insert('"
+            + escapedstr
+            + "', FreeCAD.activeDocument().Name)\n"
+              "FreeCAD.activeDocument().recompute()\n"
+              "FreeCADGui.activeDocument().sendMsgToViews('ViewFit')\n";
+    }
+    else {
+        // FreeCADGui.loadFile, not FreeCAD.loadFile: the App-level one goes
+        // straight to <module>.openDocument(), which throws when that document
+        // is already open -- and a card for an open document is exactly what a
+        // user clicks by mistake. Gui::Application::open() looks for a document
+        // already holding this file path and reloads it instead (cc2f2151d5,
+        // which is why the old web start page's LoadMRU.py called the Gui one).
+        // It also does the rest of what opening from the UI means: dropping the
+        // empty untouched startup document, adding the file to the recent list,
+        // moving the file dialog's working directory, and fitting the view for
+        // an imported, non-FCStd file.
+        command = "FreeCADGui.loadFile('" + escapedstr + "', '" + module + "'"
+            + (wantsImportChooser(extension) ? ", interactive=True" : "") + ")";
+    }
     try {
         Base::Interpreter().runString(command.c_str());
         postStart(PostStartBehavior::doNotSwitchWorkbench);
