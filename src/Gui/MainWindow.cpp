@@ -1969,6 +1969,14 @@ void MainWindow::setCustomTitleBar(bool enable)
         return;
     }
 
+    // None of what follows is the user's doing, and the swap hides widgets on
+    // its way through. FilterStatusBar answers a hidden status bar with
+    // saveWindowSettings(), which would write the transient hide out as the
+    // setting -- the same trap the toolbar areas are in, described in
+    // applyTitleBarParams(). Set here rather than only there because
+    // Std_ViewTitleBar calls this directly.
+    Base::StateLocker restoring(d->_restoring);
+
     // The two menu-bar toolbar areas live inside whichever title bar is in
     // charge, and setMode() deletes the one it is replacing -- a child of a
     // deleted widget goes with it. Park them on the window across the swap.
@@ -1977,7 +1985,22 @@ void MainWindow::setCustomTitleBar(bool enable)
         toolBars->detachMenuBarAreas();
     }
 
+    // Both directions run through setWindowFlags, and Qt hides a window whose
+    // flags change. setMode() puts the window itself back, but the status bar
+    // comes out of it *explicitly* hidden, so re-showing the parent does not
+    // bring it back -- and it stayed gone for good, surviving both a swap back
+    // to the platform title bar and every later start, because the hide had by
+    // then been saved as StatusBar=false.
+    //
+    // isHidden(), not isVisible(): only the explicit flag says what the user
+    // asked for. A status bar that is merely waiting on a window not shown yet
+    // -- which is where this stands when applyTitleBarParams() runs at startup
+    // -- reads as invisible, and restoring *that* would hide it for real.
+    const bool statusBarHidden = statusBar()->isHidden();
+
     setMode(enable ? Mode::Custom : Mode::Native);
+
+    statusBar()->setVisible(!statusBarHidden);
 
     // setMode() installs the kit's own inline integration; swap in ours.
     setupTitleBarMenu();
