@@ -57,8 +57,6 @@
 #include <BRep_Tool.hxx>
 #include <Standard_Version.hxx>
 #if OCC_VERSION_HEX >= 0x080000
-// OCCT 8.0 dropped the standalone header; Bnd_B3d is now an alias
-// for Bnd_B3<double>, declared in Bnd_B3.hxx.
 #include <Bnd_B3.hxx>
 #else
 #include <Bnd_B3d.hxx>
@@ -3469,7 +3467,11 @@ namespace
         double dist = GEOMUtils::GetMinDistance( plane, allFacesComp, pPlane, pFaces );
         if ( dist < 0 )
         {
+#if OCC_VERSION_HEX >= 0x080000
+          Bnd_B3<double> bb;
+#else
           Bnd_B3d bb;
+#endif
           gp_XYZ corner;
           for ( int i = 0; i < 2; ++i ) {
             corner.SetCoord( 1, sP[ i*3 ]);
@@ -3519,7 +3521,7 @@ bool StdMeshers_Cartesian_3D::Compute(SMESH_Mesh &         theMesh,
   // The algorithm generates the mesh in following steps:
 
   // 1) Intersection of grid lines with the geometry boundary.
-  // This step allows to find out if a given node of the initial grid is
+  // This step allows one to find out if a given node of the initial grid is
   // inside or outside the geometry.
 
   // 2) For each cell of the grid, check how many of it's nodes are outside

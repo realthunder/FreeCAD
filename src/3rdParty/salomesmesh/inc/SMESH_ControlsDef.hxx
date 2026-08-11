@@ -31,8 +31,6 @@
 #include <BRepClass3d_SolidClassifier.hxx>
 #include <Standard_Version.hxx>
 #if OCC_VERSION_HEX >= 0x080000
-// OCCT 8.0 dropped the standalone header; Bnd_B3d is now an alias
-// for Bnd_B3<double>, declared in Bnd_B3.hxx.
 #include <Bnd_B3.hxx>
 #else
 #include <Bnd_B3d.hxx>

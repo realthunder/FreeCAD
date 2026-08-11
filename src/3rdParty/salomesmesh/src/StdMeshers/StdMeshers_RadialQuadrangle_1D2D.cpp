@@ -50,7 +50,6 @@
 #include <TColgp_SequenceOfPnt2d.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_ListOfShape.hxx>
 #include <TopoDS.hxx>
 
 

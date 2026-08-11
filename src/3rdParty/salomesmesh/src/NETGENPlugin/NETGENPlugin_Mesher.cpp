@@ -27,6 +27,14 @@
 // Project   : SALOME
 //=============================================================================
 
+#ifdef _WIN32
+// Include this before any possible calls to "using namespace std" to avoid conflicts
+// with std::byte in the Windows API header files - as of MSVC 2022 17.10.1, June 2024
+#define NOMINMAX 1
+#include <windows.h>
+#undef NOMINMAX
+#endif
+
 #include "NETGENPlugin_Mesher.hxx"
 #include "NETGENPlugin_Hypothesis_2D.hxx"
 #include "NETGENPlugin_SimpleHypothesis_3D.hxx"
@@ -56,8 +64,6 @@
 #include <BRep_Tool.hxx>
 #include <Standard_Version.hxx>
 #if OCC_VERSION_HEX >= 0x080000
-// OCCT 8.0 dropped the standalone header; Bnd_B3d is now an alias
-// for Bnd_B3<double>, declared in Bnd_B3.hxx.
 #include <Bnd_B3.hxx>
 #else
 #include <Bnd_B3d.hxx>
@@ -69,8 +75,10 @@
 #include <TColStd_MapOfInteger.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
-#include <TopTools_DataMapOfShapeInteger.hxx>
-#include <TopTools_DataMapOfShapeShape.hxx>
+#if OCC_VERSION_HEX < 0x080000
+# include <TopTools_DataMapIteratorOfDataMapOfShapeShape.hxx>
+# include <TopTools_DataMapIteratorOfDataMapOfIntegerListOfShape.hxx>
+#endif
 #include <TopTools_DataMapOfShapeInteger.hxx>
 #include <TopTools_DataMapOfShapeShape.hxx>
 #include <TopTools_MapOfShape.hxx>
@@ -125,7 +133,11 @@ namespace netgen {
 #endif
   //extern void OCCSetLocalMeshSize(OCCGeometry & geom, Mesh & mesh);
   DLL_HEADER extern MeshingParameters mparam;
-  DLL_HEADER extern volatile multithreadt multithread;
+#if NETGEN_VERSION >= NETGEN_VERSION_STRING(6,2,2601)
+    using ngcore::multithread;
+#else
+    DLL_HEADER extern volatile multithreadt multithread;
+#endif
   DLL_HEADER extern bool merge_solids;
 }
 
@@ -374,11 +386,27 @@ struct Link
   {
     return (( Contains( other.n1 ) || Contains( other.n2 )) && ( this != &other ));
   }
+  bool operator==(const Link& rhs) const {
+      return rhs.n1 == n1 && rhs.n2 == n2;
+  }
+};
+
+template<>
+struct std::hash<Link>
+{
+    std::size_t operator()(const Link& aLink) const noexcept
+    {
+        return std::hash<int> {}(aLink.n1 + aLink.n2);
+    }
 };
 
 int HashCode(const Link& aLink, int aLimit)
 {
+#if OCC_VERSION_HEX >= 0x070800
+    return std::hash<Link> {}(aLink);
+#else
   return HashCode(aLink.n1 + aLink.n2, aLimit);
+#endif
 }
 
 Standard_Boolean IsEqual(const Link& aLink1, const Link& aLink2)
@@ -718,7 +746,7 @@ double NETGENPlugin_Mesher::GetDefaultMinSize(const TopoDS_Shape& geom,
         return triangulation->Node(index);
     };
 #endif
-    const Poly_Array1OfTriangle& trias = triangulation->Triangles();
+    const auto& trias = triangulation->Triangles();
     for ( int iT = trias.Lower(); iT <= trias.Upper(); ++iT )
     {
       trias(iT).Get( i1, i2, i3 );
@@ -2386,8 +2414,11 @@ namespace
   {
     SMESH_Comment str("Exception in netgen::OCCGenerateMesh()");
     str << " at " << netgen::multithread.task
-        << ": " << ex.DynamicType()->Name();
-    if ( ex.GetMessageString() && strlen( ex.GetMessageString() ))
+#if OCC_VERSION_HEX < 0x080000
+            << ": " << ex.DynamicType()->Name();
+#else
+      << ": " << ex.ExceptionType();
+#endif    if ( ex.GetMessageString() && strlen( ex.GetMessageString() ))
       str << ": " << ex.GetMessageString();
     return std::move(str);
   }
@@ -4169,15 +4200,8 @@ void NETGENPlugin_NetgenLibWrapper::setMesh( Ng_Mesh* mesh )
 
 std::string NETGENPlugin_NetgenLibWrapper::getOutputFileName()
 {
-    // "/tmp" doesn't exist on Windows, so it dumps the file to C:\ root
-#ifdef _WIN32
-    char buf[512];
-    memset(buf, 0, sizeof(buf));
-    GetTempPathA(sizeof(buf), buf);
-    const std::string aTmpDir = std::string(buf) + "\\";
-#else
+//  std::string aTmpDir = SALOMEDS_Tool::GetTmpDir();
   std::string aTmpDir = "/tmp";
-#endif
 
   TCollection_AsciiString aGenericName = (char*)aTmpDir.c_str();
   aGenericName += "NETGEN_";

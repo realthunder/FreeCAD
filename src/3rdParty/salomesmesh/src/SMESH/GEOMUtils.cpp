@@ -26,11 +26,6 @@
 # pragma clang diagnostic ignored "-Wimport-preprocessor-directive-pedantic"
 #endif
 
-// OCCT 8.0 dropped Standard_Stream.hxx, which only pulled in these.
-#include <iostream>
-#include <iomanip>
-#include <fstream>
-
 #include <GEOMUtils.hxx>
 
 #include <Basics_OCCTVersion.hxx>
@@ -71,7 +66,6 @@
 #include <TopoDS_Iterator.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_MapOfShape.hxx>
-#include <TopTools_ListOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopTools_Array1OfShape.hxx>
 
