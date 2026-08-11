@@ -248,6 +248,51 @@ path to a persistent, user-facing property, not teaching Coin to draw it.
 What it costs is 4.5x the per-face storage, the three-into-one migration on
 a base class, and that regression tail.
 
+### 5.1.1 Is it wasteful? Only in the per-face case
+
+`App::Material` is 18 floats (four colours plus shininess and transparency)
+against `App::Color`'s 4, so a 10k-face imported solid carries roughly
+720 KB of appearance instead of 160 KB, in memory and in the saved
+document. On STEP import 14 of those 18 floats per face are defaults,
+because the reader only ever supplies colour and alpha. That is the real
+inefficiency and it is worth naming.
+
+But the uniform case, which is nearly every object, goes the other way, and
+our own tree is the reason. `Gui::ViewProviderGeometryObject` here carries
+**three overlapping properties** -- `ShapeColor`, `ShapeMaterial` and
+`Transparency` -- holding duplicated state that `onChanged` has to keep
+manually in sync: setting `ShapeColor` writes into
+`ShapeMaterial.diffuseColor`, and `ShapeMaterial`'s transparency writes back
+into `Transparency` (`ViewProviderGeometryObject.cpp:154-175`). One
+`ShapeAppearance` entry is both smaller than that pair and free of the sync
+obligation. Upstream's unification is a simplification for the common case;
+it is only the per-face list that bloats.
+
+Upstream also only binds `PER_PART` when the list actually has more than one
+entry, so the cost is not paid by objects with a uniform appearance.
+
+### 5.1.2 Did anyone object?
+
+Not at design time, as far as the record shows -- the change rode in with the
+1.0 Materials work, which was broadly wanted. The objections arrived
+afterwards as a long tail of bug reports, which is the more honest measure of
+the disruption:
+
+- #14938 DiffuseColor ignores transparency
+- #14414 DiffuseColor and ShapeColor applied inconsistently
+- #15170 changing the whole object's ShapeAppearance no longer clears
+  per-face overrides -- a behaviour regression against 0.21
+- #19048 colour components rounded when changing ShapeAppearance
+- #15027 per-face transparency handled incorrectly
+- #18152 glTF alpha channel misinterpretation
+- #20213 line and point colours *still* use RGBT rather than RGBA
+- #23444 Link MaterialOverride does not override line and point colours
+
+Third-party macros ended up testing for both spellings, `ShapeColor` for
+older versions and `ShapeAppearance` for 0.22 on. #20213 and #23444 indicate
+the migration is still not finished two years on -- which is the strongest
+argument against this fork taking it on as FEM collateral.
+
 **Question:** keep `ShapeColor` / `ShapeMaterial` / `DiffuseColor` and adapt
 FEM's 37 sites to them, or take the widening? Adapting FEM is much the
 cheaper side, and per-face *colour* already covers the common cases; per-face
