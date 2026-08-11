@@ -1726,6 +1726,82 @@ public:
             bool publishOnly = false) const = 0;
 };
 
+/// CPU accounting for the part of a frame that is *not* the renderer's.
+///
+/// The frame line splits its CPU into three: our own C++, the bgfx call
+/// it ends in, and `outside` -- everything else between one backend
+/// frame and the next. `outside` is derived (frame minus ours), so it is
+/// complete by construction but says nothing about what is in it, and on
+/// a native run it is the largest of the three. This is what puts an
+/// instrument on it.
+///
+/// It lives here, as a process-wide accumulator rather than a method on
+/// Renderer, because the code being timed is Gui's -- Coin's composite,
+/// Qt's paint, the overlays -- and runs after render() has returned. The
+/// backend drains it on the same tick it prints the frame line, and the
+/// remainder it cannot attribute is printed too: a breakdown of a
+/// derived quantity is only trustworthy if it says how much it missed.
+class RendererExport FrameOutside
+{
+public:
+    enum Phase {
+        /// renderScene() before the backend call: viewport, background
+        /// colour resolution, the meta feed.
+        Pre,
+        /// The background root traversal (and the GL background fill on
+        /// frames the backend did not draw).
+        Background,
+        /// inherited::actualRedraw() -- the whole Coin scene-graph
+        /// traversal. At render-cache mode 3 the geometry went to the
+        /// backend, so this ought to be compositing overlays and little
+        /// else; if it is not, that is a bug, not a tuning knob.
+        Coin,
+        /// The foreground root traversal.
+        Foreground,
+        /// Overlay captures re-traversed and fed to the backend.
+        Captures,
+        /// The chrome after them: axis cross, dimension text, navigation
+        /// redraw, graphics items, fps string, NaviCube, alpha fixup.
+        Chrome,
+        PhaseCount
+    };
+
+    /// Whether anything is draining. False costs one relaxed load, which
+    /// is what makes it safe to leave the calls in the render path.
+    static bool enabled() { return active.load(std::memory_order_relaxed); }
+    static void setEnabled(bool on);
+    static void add(Phase p, double ms);
+    /// Move the accumulated per-phase milliseconds out, zeroing them.
+    /// \a out is indexed by Phase and always fully written.
+    static void drain(double *out);
+
+private:
+    static std::atomic<bool> active;
+    static double phaseMs[PhaseCount];
+};
+
+/// Times a scope into a FrameOutside phase. Reads the switch once, on
+/// entry, so a scope that spans the frame where it is turned on is
+/// either wholly counted or wholly not -- never half.
+class RendererExport FrameOutsideScope
+{
+public:
+    explicit FrameOutsideScope(FrameOutside::Phase p);
+    ~FrameOutsideScope();
+    /// End the region early and disarm. For a span that starts at the
+    /// top of a function and ends in its middle, where a nested block
+    /// would put the locals it declares out of reach of the rest.
+    /// Several scopes may name the same phase; they add.
+    void stop();
+    FrameOutsideScope(const FrameOutsideScope &) = delete;
+    FrameOutsideScope &operator=(const FrameOutsideScope &) = delete;
+
+private:
+    FrameOutside::Phase phase;
+    bool on;
+    int64_t t0;
+};
+
 class RendererExport RendererFactory
 {
 public:

@@ -22,6 +22,7 @@
 
 #include "Renderer.h"
 
+#include <chrono>
 #include <map>
 #include <vector>
 #include <string>
@@ -49,7 +50,63 @@ const std::map<std::string, RendererLib*> &rendererTypes()
     return _rendererTypes;
 }
 
+int64_t nowNs()
+{
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 } // anonymous namespace
+
+std::atomic<bool> FrameOutside::active{false};
+double FrameOutside::phaseMs[FrameOutside::PhaseCount] = {};
+
+void FrameOutside::setEnabled(bool on)
+{
+    if (active.load(std::memory_order_relaxed) == on)
+        return;
+    // Zero on the transition, not on drain alone: a scope that ran while
+    // the switch was off contributes nothing, but a scope that ran
+    // before it was ever drained would otherwise be averaged over a
+    // window it does not belong to.
+    for (double &v : phaseMs)
+        v = 0.0;
+    active.store(on, std::memory_order_relaxed);
+}
+
+void FrameOutside::add(Phase p, double ms)
+{
+    // Single-threaded by construction: every caller is on the GUI thread
+    // between one backend frame and the next, which is the only thread
+    // that draws.
+    if (p >= 0 && p < PhaseCount)
+        phaseMs[p] += ms;
+}
+
+void FrameOutside::drain(double *out)
+{
+    for (int i = 0; i < PhaseCount; ++i) {
+        out[i] = phaseMs[i];
+        phaseMs[i] = 0.0;
+    }
+}
+
+FrameOutsideScope::FrameOutsideScope(FrameOutside::Phase p)
+    : phase(p), on(FrameOutside::enabled()), t0(on ? nowNs() : 0)
+{}
+
+FrameOutsideScope::~FrameOutsideScope()
+{
+    stop();
+}
+
+void FrameOutsideScope::stop()
+{
+    if (!on)
+        return;
+    on = false;
+    FrameOutside::add(phase, double(nowNs() - t0) / 1.0e6);
+}
 
 void RendererFactory::registerLib(RendererLib *lib)
 {

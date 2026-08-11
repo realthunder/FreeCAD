@@ -15025,6 +15025,9 @@ public:
         if (debugconf.frameTiming != profilerOn) {
             profilerOn = debugconf.frameTiming;
             bgfx::setDebug(profilerOn ? BGFX_DEBUG_PROFILER : BGFX_DEBUG_NONE);
+            // The Gui-side scopes read the same switch, so `outside` is
+            // broken down exactly on the windows the frame line prints.
+            Render::FrameOutside::setEnabled(profilerOn);
         }
         if (debugconf.frameTiming) {
             accumulateFrameStats(frameStats, view->width, view->height,
@@ -15036,7 +15039,8 @@ public:
             std::map<int, std::pair<double, double>> viewMs;
             uint32_t viewFrames = 0;
             double phaseMs[CpuPhaseCount] = {};
-            double ourMs = 0.0, bgfxMs = 0.0;
+            double outMs[Render::FrameOutside::PhaseCount] = {};
+            double ourMs = 0.0, bgfxMs = 0.0, outsideMs = 0.0;
             if (due) {
                 viewMs = frameStats.viewMs;
                 viewFrames = frameStats.frames;
@@ -15044,6 +15048,10 @@ public:
                     phaseMs[i] = cpuPhaseMs[i];
                 ourMs = frameStats.renderMs;
                 bgfxMs = frameStats.bgfxFrameMs;
+                // The same subtraction the frame line prints, taken
+                // before the report resets the accumulator.
+                outsideMs = frameStats.frameMs - frameStats.renderMs;
+                Render::FrameOutside::drain(outMs);
                 std::memset(cpuPhaseMs, 0, sizeof(cpuPhaseMs));
             }
             if (due)
@@ -15086,6 +15094,41 @@ public:
                         phaseMs[CpuCtxOut] / f, phaseMs[CpuCtxIn] / f,
                         phaseMs[CpuBlit] / f, unattr / f, bgfxMs / f,
                         ourMs / f);
+            }
+            // * The other side of the same frame: what the *rest* of the
+            // process spends between one backend frame and the next.
+            // Natively this is the largest of the three terms and had no
+            // instrument at all (docs/DrawSubmission.md).
+            //
+            // `unattr` is the whole point. The phases below are Gui code
+            // we chose to bracket; `outside` is a subtraction that
+            // includes everything we did not -- Qt's paint plumbing, the
+            // swap, the event loop between frames. A small remainder
+            // says the brackets found the cost; a large one says the
+            // cost is somewhere nobody has looked yet, and either answer
+            // is worth more than the six numbers on their own.
+            //
+            // ! Like `ours` above, these trail the window by one frame:
+            // the reporting frame's outside phases run after this line
+            // is printed. Over 13-20 frames that is under a frame and it
+            // does not accumulate.
+            if (due && viewFrames) {
+                const double f = double(viewFrames);
+                double sum = 0.0;
+                for (double v : outMs)
+                    sum += v;
+                Base::Console().Message(
+                        "render outside (ms/frame): outside %.2f [pre %.2f | "
+                        "background %.2f | coin %.2f | foreground %.2f | "
+                        "captures %.2f | chrome %.2f | unattr %.2f]\n",
+                        outsideMs / f,
+                        outMs[Render::FrameOutside::Pre] / f,
+                        outMs[Render::FrameOutside::Background] / f,
+                        outMs[Render::FrameOutside::Coin] / f,
+                        outMs[Render::FrameOutside::Foreground] / f,
+                        outMs[Render::FrameOutside::Captures] / f,
+                        outMs[Render::FrameOutside::Chrome] / f,
+                        (outsideMs - sum) / f);
             }
             // ⭐ Where the frame line's milliseconds actually go, per
             // pass, for both processors (docs/DrawSubmission.md phase

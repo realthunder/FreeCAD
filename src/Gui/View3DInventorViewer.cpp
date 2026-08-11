@@ -4696,6 +4696,12 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
 // upon spin.
 void View3DInventorViewer::renderScene()
 {
+    // The frame line splits the frame's CPU into ours, bgfx's and
+    // `outside` -- and `outside` is this function's other half plus Qt.
+    // These scopes are what tell them apart; they cost a relaxed load
+    // each while the timing switch is off (Render::FrameOutside).
+    Render::FrameOutsideScope outPre(Render::FrameOutside::Pre);
+
     // Must set up the OpenGL viewport manually, as upon resize
     // operations, Coin won't set it up until the SoGLRenderAction is
     // applied again. And since we need to do glClear() before applying
@@ -4754,6 +4760,9 @@ void View3DInventorViewer::renderScene()
         // only a serving process builds the table at all.
         if (Render::SceneStreamServer::instance().running())
             ObjectMetaFeed::instance().feed(_pimpl->renderer.get());
+        // Everything past here for this frame is the renderer's own
+        // account, which it times itself.
+        outPre.stop();
         externalRendered =
             _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
         // Time-animated backend content (e.g. water caustics) keeps
@@ -4792,11 +4801,14 @@ void View3DInventorViewer::renderScene()
     // not write depth. Suppress both for backend-rendered frames (the
     // suppress flag is reset right after so offscreen renders sharing the
     // node keep their background).
-    if (!externalRendered)
-        drawSingleBackground(col);
-    pcBackGround->setSuppressed(externalRendered);
-    glra->apply(this->backgroundroot);
-    pcBackGround->setSuppressed(false);
+    {
+        Render::FrameOutsideScope outBg(Render::FrameOutside::Background);
+        if (!externalRendered)
+            drawSingleBackground(col);
+        pcBackGround->setSuppressed(externalRendered);
+        glra->apply(this->backgroundroot);
+        pcBackGround->setSuppressed(false);
+    }
 
     SoBoxSelectionRenderAction *glbra = nullptr;
     if(glra->isOfType(SoBoxSelectionRenderAction::getClassTypeId())) {
@@ -4817,6 +4829,13 @@ void View3DInventorViewer::renderScene()
         externalRendered && _pimpl->editingBackendFed && !parallelgl;
     SoFCRenderCacheManager::SuppressImageGLRender =
         SoDatumLabel::SuppressGLRender;
+    // * The sharp one. At render-cache mode 3 the geometry has already
+    // gone to the backend above, so this traversal should be compositing
+    // overlays and nothing else. If it is a large share of the frame it
+    // is walking the whole scene graph for no pixels -- a bug, not a
+    // cost. (Both actualRedraw() calls are inside the span: the retry
+    // after an out-of-memory is still time this frame spent.)
+    Render::FrameOutsideScope outCoin(Render::FrameOutside::Coin);
     try {
         // Render normal scenegraph.
         inherited::actualRedraw();
@@ -4831,6 +4850,7 @@ void View3DInventorViewer::renderScene()
         QMessageBox::warning(parentWidget(), QObject::tr("Out of memory"),
                              QObject::tr("Not enough memory available to display the data."));
     }
+    outCoin.stop();
     SoDatumLabel::SuppressGLRender = false;
     SoFCRenderCacheManager::SuppressImageGLRender = false;
     if (glbra) {
@@ -4843,11 +4863,15 @@ void View3DInventorViewer::renderScene()
 #endif
 
     // Render overlay front scenegraph.
-    if (!externalRendered || parallelgl)
-        glra->apply(this->foregroundroot);
+    {
+        Render::FrameOutsideScope outFg(Render::FrameOutside::Foreground);
+        if (!externalRendered || parallelgl)
+            glra->apply(this->foregroundroot);
+    }
 
     // Compose the fps/stats readout before the overlay captures run so
     // the backend feed carries the current frame's numbers.
+    Render::FrameOutsideScope outFps(Render::FrameOutside::Chrome);
     if (fpsEnabled) {
         static FC_COIN_THREAD_LOCAL std::ostringstream stream;
         stream.str("");
@@ -4866,9 +4890,15 @@ void View3DInventorViewer::renderScene()
         _pimpl->fpsText.clear();
     }
 
-    if (_pimpl->renderer)
-        _pimpl->updateOverlayCaptures(glra);
+    outFps.stop();
+    {
+        Render::FrameOutsideScope outCaps(Render::FrameOutside::Captures);
+        if (_pimpl->renderer)
+            _pimpl->updateOverlayCaptures(glra);
+    }
 
+    // The rest of the function: chrome, and the alpha fixup at the end.
+    Render::FrameOutsideScope outChrome(Render::FrameOutside::Chrome);
     if (this->axiscrossEnabled && (!externalRendered || parallelgl)) {
         this->drawAxisCross();
     }
