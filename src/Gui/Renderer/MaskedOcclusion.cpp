@@ -25,8 +25,18 @@
 #include <cfloat>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <set>
+#include <string>
 #include <thread>
+
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#endif
 
 #include "Simd4.h"
 
@@ -1043,6 +1053,94 @@ float millisSince(const std::chrono::steady_clock::time_point &t0)
 
 }  // namespace
 
+namespace
+{
+
+/// One reading of the machine's topology. Separated from the cache so
+/// the platform code is the only thing inside the #ifdefs.
+uint32_t readPhysicalCores()
+{
+#if defined(__linux__)
+    // Each logical CPU names the set of siblings it shares a core with,
+    // so the number of *distinct* sibling sets is the number of cores.
+    // Reading the sets rather than counting core_id values because a
+    // core_id is only unique within its package.
+    const unsigned hw = std::thread::hardware_concurrency();
+    const unsigned scan = hw ? hw * 2 + 8 : 512;
+    std::set<std::string> cores;
+    for (unsigned cpu = 0; cpu < scan; ++cpu) {
+        char path[128];
+        std::snprintf(path, sizeof(path),
+                      "/sys/devices/system/cpu/cpu%u/topology/"
+                      "thread_siblings_list",
+                      cpu);
+        std::ifstream in(path);
+        if (!in)
+            continue;   // offline or absent; gaps are allowed
+        std::string siblings;
+        if (std::getline(in, siblings) && !siblings.empty())
+            cores.insert(siblings);
+    }
+    return uint32_t(cores.size());
+#elif defined(__APPLE__)
+    int cores = 0;
+    size_t len = sizeof(cores);
+    if (sysctlbyname("hw.physicalcpu", &cores, &len, nullptr, 0) == 0
+        && cores > 0)
+        return uint32_t(cores);
+    return 0;
+#elif defined(_WIN32)
+    DWORD bytes = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &bytes);
+    if (bytes == 0)
+        return 0;
+    std::vector<uint8_t> buf(bytes);
+    auto *info =
+            reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *>(
+                    buf.data());
+    if (!GetLogicalProcessorInformationEx(RelationProcessorCore, info, &bytes))
+        return 0;
+    uint32_t cores = 0;
+    for (DWORD off = 0; off + sizeof(*info) <= bytes;) {
+        auto *cur = reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *>(
+                buf.data() + off);
+        if (cur->Size == 0)
+            break;
+        if (cur->Relationship == RelationProcessorCore)
+            ++cores;
+        off += cur->Size;
+    }
+    return cores;
+#else
+    // Emscripten and anything else: navigator.hardwareConcurrency is all
+    // there is, and it does not distinguish.
+    return 0;
+#endif
+}
+
+}  // namespace
+
+uint32_t Render::physicalCoreCount()
+{
+    static const uint32_t cores = readPhysicalCores();
+    return cores;
+}
+
+uint32_t Render::occluderWorkers(uint32_t configured)
+{
+    uint32_t workers = configured;
+    if (workers == 0) {
+        workers = physicalCoreCount();
+        if (workers == 0) {
+            // Nothing said how many cores there are. Leave the
+            // submitting thread and one other alone, as before.
+            const unsigned hw = std::thread::hardware_concurrency();
+            workers = hw > 3 ? hw - 2 : 1;
+        }
+    }
+    return std::max<uint32_t>(1, std::min<uint32_t>(workers, 32));
+}
+
 void Render::occluderRecede(const float *view, const float *proj, float *out)
 {
     out[0] = out[1] = out[2] = 0.0f;
@@ -1129,14 +1227,10 @@ void MaskedOccluderPass::build(const DrawCallList &draws, const float *view,
                   return a.first > b.first;
               });
 
-    uint32_t workers = conf.threads;
-    if (workers == 0) {
-        const unsigned hw = std::thread::hardware_concurrency();
-        // Leave the submitting thread and one other alone: this runs in
-        // the middle of a frame, not on an idle machine.
-        workers = hw > 3 ? hw - 2 : 1;
-    }
-    workers = std::max<uint32_t>(1, std::min<uint32_t>(workers, 32));
+    // One worker per physical core, the calling thread included -- see
+    // occluderWorkers. SMT siblings were measured to add a third to the
+    // CPU bill for a flat wall clock (section 12.18).
+    uint32_t workers = occluderWorkers(conf.threads);
 
     const size_t limit = std::min<size_t>(ranking.size(), conf.maxOccluders);
 
@@ -1557,12 +1651,7 @@ void MaskedOccluderPass::cull(const ProxyHierarchy &index, const float *view,
     if (!instanceTests.empty()) {
         const auto t1 = std::chrono::steady_clock::now();
         framestats.instancesTested = uint32_t(instanceTests.size());
-        uint32_t workers = conf.threads;
-        if (workers == 0) {
-            const unsigned hw = std::thread::hardware_concurrency();
-            workers = hw > 3 ? hw - 2 : 1;
-        }
-        workers = std::max<uint32_t>(1, std::min<uint32_t>(workers, 32));
+        uint32_t workers = occluderWorkers(conf.threads);
         // Below this the split costs more than the tests do.
         if (instanceTests.size() < 256)
             workers = 1;

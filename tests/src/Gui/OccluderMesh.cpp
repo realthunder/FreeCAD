@@ -796,3 +796,48 @@ TEST(PerInstanceCull, CostsNothingAndChangesNothingWhileOff)
     EXPECT_EQ(stats.instancesHiddenAlone, 0u);
     EXPECT_EQ(stats.instanceMs, 0.0f);
 }
+
+// -----------------------------------------------------------------
+// How many workers the pass asks for (section 12.18)
+// -----------------------------------------------------------------
+
+TEST(OccluderWorkers, CountsCoresRatherThanSiblings)
+{
+    const uint32_t physical = physicalCoreCount();
+    const unsigned logical = std::thread::hardware_concurrency();
+
+    // 0 is "the platform would not say", which is allowed. What is not
+    // allowed is claiming more cores than there are threads to run on.
+    if (physical > 0 && logical > 0)
+        EXPECT_LE(physical, logical);
+
+    const uint32_t automatic = occluderWorkers(0);
+    EXPECT_GE(automatic, 1u);
+    EXPECT_LE(automatic, 32u);
+    if (physical > 0)
+        EXPECT_EQ(automatic, std::min<uint32_t>(physical, 32));
+
+    // KEY: On an SMT machine the automatic count must come *down*. This is
+    // the whole change: 8 workers on 8 cores measured a flat wall clock
+    // against 14 and a third less CPU.
+    if (physical > 0 && logical > physical)
+        EXPECT_LT(automatic, logical);
+}
+
+TEST(OccluderWorkers, HonoursAnExplicitCountAndItsBounds)
+{
+    EXPECT_EQ(occluderWorkers(1), 1u);
+    EXPECT_EQ(occluderWorkers(6), 6u);
+    // Clamped, not trusted: these ride a view property a script can set
+    // to anything.
+    EXPECT_EQ(occluderWorkers(1000), 32u);
+}
+
+TEST(OccluderWorkers, IsStableAcrossCalls)
+{
+    // Cached after the first reading -- it is asked once a frame and the
+    // Linux path reads sysfs.
+    const uint32_t first = physicalCoreCount();
+    for (int i = 0; i < 100; ++i)
+        EXPECT_EQ(physicalCoreCount(), first);
+}

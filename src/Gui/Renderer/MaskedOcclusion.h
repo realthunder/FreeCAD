@@ -520,6 +520,35 @@ struct MaskedCullConfig {
     bool operator!=(const MaskedCullConfig &o) const { return !(*this == o); }
 };
 
+/// Physical cores, or 0 when the platform will not say.
+///
+/// KEY: Not `hardware_concurrency`, which counts SMT siblings. Two threads
+/// sharing one core share its execution units, and a rasterizer that is
+/// already saturating them gets no throughput from the second -- measured
+/// on this box (8 physical, 16 logical, section 12.15): per-worker
+/// throughput falls to 0.55 at fourteen workers, which is what 8/14
+/// predicts, and the wall clock is *flat* past eight while the CPU bill
+/// is a third higher.
+///
+/// Cached after the first call: the Linux implementation reads sysfs and
+/// this is asked once a frame.
+RendererExport uint32_t physicalCoreCount();
+
+/// How many workers the occluder pass should use given a configured
+/// value, 0 meaning automatic.
+///
+/// Automatic is **one thread per physical core**, and that is exactly
+/// the whole machine rather than a share of it because the calling
+/// thread is one of them -- the pass runs `work(0)` inline and spawns
+/// the rest, so it is blocked in here for the duration and its core is
+/// not being used for anything else.
+///
+/// WARNING: Where the core count is unknown this falls back to
+/// `hardware_concurrency() - 2`, the pre-section-12.18 default. It
+/// over-subscribes an SMT machine, which costs CPU and not wall clock;
+/// under-subscribing would cost wall clock, which is worse.
+RendererExport uint32_t occluderWorkers(uint32_t configured);
+
 /// The world-space unit vector that moves a point *away* from the
 /// camera, given GL-layout view and projection matrices. Zero when the
 /// matrices do not determine one.
