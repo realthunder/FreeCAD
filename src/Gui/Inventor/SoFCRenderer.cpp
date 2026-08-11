@@ -123,6 +123,97 @@ _check_glerror(int line) {
   }
 }
 
+/** Does this driver actually honour GL_CONSTANT_ALPHA blending?
+ *
+ * There is no query for it, so it has to be drawn: white over black at a
+ * constant alpha of 0.5 must land near mid grey. Mesa's d3d12 driver on
+ * WSLg accepts glBlendColor and reads the value back through
+ * GL_BLEND_COLOR, then blends as though the constant were zero, which
+ * drops the draw entirely.
+ *
+ * Answering "cannot tell" as true keeps the behaviour drivers had before
+ * there was a check at all.
+ *
+ * The entry points come through Coin's glue because Windows exports only
+ * GL 1.1 from opengl32, so none of this links there directly.
+ *
+ * ⚠️ It needs a target of its own. The on-screen target is a multisampled
+ * FBO, and glReadPixels on one of those is an INVALID_OPERATION that
+ * returns nothing -- probing the widget's own framebuffer would report
+ * every driver as broken.
+ */
+static bool
+_constantAlphaBlendWorks(const cc_glglue * glue, PFNGLBLENDCOLORPROC blendColor)
+{
+  if (!glue || !blendColor || !cc_glglue_has_framebuffer_objects(glue))
+    return true;
+
+  GLint prevfbo = 0;
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevfbo);
+
+  GLuint fbo = 0, rbo = 0;
+  cc_glglue_glGenFramebuffers(glue, 1, &fbo);
+  cc_glglue_glGenRenderbuffers(glue, 1, &rbo);
+  cc_glglue_glBindRenderbuffer(glue, GL_RENDERBUFFER, rbo);
+  cc_glglue_glRenderbufferStorage(glue, GL_RENDERBUFFER, GL_RGBA8, 1, 1);
+  cc_glglue_glBindFramebuffer(glue, GL_FRAMEBUFFER, fbo);
+  cc_glglue_glFramebufferRenderbuffer(glue, GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                      GL_RENDERBUFFER, rbo);
+
+  bool works = true;
+  if (cc_glglue_glCheckFramebufferStatus(glue, GL_FRAMEBUFFER)
+        == GL_FRAMEBUFFER_COMPLETE)
+  {
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glViewport(0, 0, 1, 1);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_CULL_FACE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glEnable(GL_BLEND);
+    blendColor(0.0F, 0.0F, 0.0F, 0.5F);
+    glBlendFunc(GL_CONSTANT_ALPHA_EXT, GL_ONE_MINUS_CONSTANT_ALPHA_EXT);
+    glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+    glBegin(GL_TRIANGLE_STRIP);
+    glVertex3f(-1.0F, -1.0F, 0.0F);
+    glVertex3f( 1.0F, -1.0F, 0.0F);
+    glVertex3f(-1.0F,  1.0F, 0.0F);
+    glVertex3f( 1.0F,  1.0F, 0.0F);
+    glEnd();
+
+    unsigned char px[4] = {0, 0, 0, 0};
+    glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glPopAttrib();
+
+    // A driver that ignores the constant lands on 0 (as though it were
+    // zero) or 255 (as though one); an honest one lands near 127.
+    works = px[0] > 64 && px[0] < 192;
+  }
+
+  cc_glglue_glBindFramebuffer(glue, GL_FRAMEBUFFER, (GLuint)prevfbo);
+  cc_glglue_glDeleteFramebuffers(glue, 1, &fbo);
+  cc_glglue_glDeleteRenderbuffers(glue, 1, &rbo);
+  while (glGetError() != GL_NO_ERROR) { }   // the probe's own errors, only
+
+  return works;
+}
+
 static inline void
 setDepthFunc(int depthfunc)
 {
@@ -698,6 +789,21 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
         hasBlendColor = (glBlendColor != nullptr);
       }
 #endif
+      // Having the entry point says nothing about the driver doing the
+      // arithmetic, so ask it once, the first time one is actually
+      // wanted -- geometry that needs a constant alpha is uncommon, and
+      // a driver that has the call but ignores it drops the draw
+      // silently rather than failing.
+      static bool probed = false;
+      if (hasBlendColor && !probed) {
+        probed = true;
+        hasBlendColor = _constantAlphaBlendWorks(
+            cc_glglue_instance(action->getCacheContext()), &glBlendColor);
+        if (!hasBlendColor)
+          FC_WARN("constant alpha blending is not honoured by this driver; "
+                  "an overridden transparency on per-vertex colored geometry "
+                  "falls back to source alpha");
+      }
       if (hasBlendColor) {
         glBlendColor(0.f, 0.f, 0.f,  (col & 0xff)/255.f);
         sfactor = GL_CONSTANT_ALPHA_EXT;
