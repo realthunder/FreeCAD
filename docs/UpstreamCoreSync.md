@@ -127,26 +127,74 @@ These three are why this document ends with questions rather than steps.
 
 ### 5.1 ShapeAppearance
 
-Upstream replaced `App::PropertyColorList DiffuseColor` on
-`ViewProviderPartExt` with `App::PropertyMaterialList ShapeAppearance` (37
-FEM sites, plus `originalPoint/Line/FaceColors`). This is not a rename:
+**Scope correction.** An earlier draft of this section described this as
+Part's `DiffuseColor` being renamed. It is considerably larger. The property
+lives on **`Gui::ViewProviderGeometryObject`, the base class**, and upstream
+removed *two* properties from it, not one:
 
-- It is a **document-format change**. Upstream carries a hidden
-  `_diffuseColor` property purely to restore old files asynchronously.
-- `DiffuseColor` reaches **322 sites in 62 files** under `src/Mod` alone,
-  including Python.
-- It collides with fork-only properties that sit right beside it in
-  `ViewProviderExt.h`: `MappedColors`, `MapFaceColor`, `MapLineColor`,
-  `MapPointColor`, `MapTransparency` -- and with the Appearance LinkGroup
-  design.
+| ours (base class) | upstream |
+|---|---|
+| `App::PropertyColor ShapeColor` | removed |
+| `App::PropertyMaterial ShapeMaterial` | removed |
+| -- | `App::PropertyMaterialList ShapeAppearance` |
+
+Part's per-face `App::PropertyColorList DiffuseColor` is then subsumed into
+the same list. So three properties expressing appearance at different
+granularities collapse into one list-of-materials, on the class every
+geometry view provider derives from -- 18 direct derivatives in our tree
+plus everything under Part, not just `ViewProviderPartExt`.
+
+Fork-wide reach of what it displaces:
+
+| symbol | hits | files |
+|---|---|---|
+| `ShapeColor` | 260 | 106 |
+| `DiffuseColor` | 282 | 57 |
+| `ShapeMaterial` | 83 | 17 |
+
+**The rationale** (David Carter, `495a96a0f5`, 2024-03-17, part of the 1.0
+Materials rework): "The ShapeColor attribute is replaced by a ShapeAppearance
+attribute. This is a material list that describes all appearance properties,
+not just diffuse color. As a list it can be used for all elements of a
+shape, such as edges and faces." The follow-up `8b5a3b1124` that removed
+`DiffuseColor` outright adds: "Lays the foundation for future texture
+support."
+
+The motivation is coherent: per-face colour was only ever *diffuse* colour,
+so specular, shininess and transparency could not vary per face, and the
+view-side appearance was disconnected from the new physical-material system.
+
+**What it cost upstream**, which is the part worth weighing: 33 commits
+touched appearance in the following nine months, 11 of them fixes or
+reverts, spanning PartDesign datum features and shape binders, STEP import
+colour-per-face, transparency handling, CAM, Draft, BIM and DXF import --
+including issue #15027, "ShapeAppearance does not handle transparency per
+face correctly", not fixed until 2024-06-29. Most of the cleanup was done by
+wmayer rather than the author.
+
+**Compatibility they built**, which is genuinely careful: old documents
+migrate through `handleChangedPropertyName` (`ShapeColor` and
+`ShapeMaterial` are converted on restore); Part keeps a hidden
+`_diffuseColor` to restore per-face colours asynchronously; and Python
+macros still see `DiffuseColor` and `ShapeColor` because
+`ViewProviderPartExtPyImp` and `ViewProviderGeometryObjectPyImp` emulate
+them as custom attributes over `ShapeAppearance`.
+
+**Why it is still a consult item here.** It collides with fork-only
+properties sitting right beside it in `ViewProviderExt.h` --
+`MappedColors`, `MapFaceColor`, `MapLineColor`, `MapPointColor`,
+`MapTransparency` -- and with the Appearance LinkGroup design. It is a
+document-format change to user data. And nothing on this fork's roadmap
+asks for per-face materials.
 
 Good news: the bgfx path does not read the property (the one
 `setDiffuseColorOverride` hit in `SoFCRenderCache.cpp` is a Coin state
 element, unrelated), so this is a data-model question, not a renderer one.
 
 **Question:** do we want per-face *materials* rather than per-face colours,
-accepting a document migration -- or keep `DiffuseColor` and adapt FEM's 37
-sites to it?
+accepting a base-class change and a document migration -- or keep
+`ShapeColor`/`ShapeMaterial`/`DiffuseColor` and adapt FEM's 37 sites to
+them? Adapting FEM is much the cheaper side of this one.
 
 ### 5.2 The Materials module
 
