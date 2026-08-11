@@ -600,6 +600,7 @@ static void reportProxyCut(const Render::ProxyHierarchy &index,
     // since the proxy's own primitives come off it and are not knowable
     // without generating (11.1c).
     std::string prims;
+    std::string bytesLine;
     for (float tol : kTolerances) {
         Render::ProxyCut cut;
         index.selectCut(V, P, viewportHeightPx, tol, cut);
@@ -612,6 +613,48 @@ static void reportProxyCut(const Render::ProxyHierarchy &index,
                  double(cut.coveredPrims) / 1e6,
                  total > 0.0 ? 100.0 * double(cut.coveredPrims) / total : 0.0);
         prims += buf;
+        // The other axis, and the one that decides whether a model
+        // opens at all: what the cut lets stop being resident.
+        //
+        // Counted per distinct MESH, not per instance, and only where
+        // NO exact instance still references it. Instances share meshes
+        // heavily here (495 instanced submits stand in for 5432 rows),
+        // so summing bytes over covered instances would overstate the
+        // saving several times over, and a mesh with one exact user
+        // left stays resident in full.
+        std::unordered_set<const void *> held, freed;
+        const auto &insts = index.instances();
+        for (uint32_t idx : cut.exact) {
+            if (insts[idx].sourceTag)
+                held.insert(insts[idx].sourceTag);
+        }
+        uint64_t freedBytes = 0, heldBytes = 0;
+        std::vector<uint32_t> sub;
+        for (int node : cut.proxyNodes) {
+            sub.clear();
+            index.subtreeInstances(node, sub);
+            for (uint32_t idx : sub) {
+                const auto &inst = insts[idx];
+                if (!inst.sourceTag || held.count(inst.sourceTag))
+                    continue;
+                if (freed.insert(inst.sourceTag).second)
+                    freedBytes += inst.meshBytes;
+            }
+        }
+        std::unordered_set<const void *> counted;
+        for (uint32_t idx : cut.exact) {
+            const auto &inst = insts[idx];
+            if (inst.sourceTag && counted.insert(inst.sourceTag).second)
+                heldBytes += inst.meshBytes;
+        }
+        const double totalBytes = double(freedBytes + heldBytes);
+        snprintf(buf, sizeof(buf),
+                 " %gpx:%.1fMB held+%.1fMB freed(%.0f%%) over %zu meshes",
+                 double(tol), double(heldBytes) / 1048576.0,
+                 double(freedBytes) / 1048576.0,
+                 totalBytes > 0.0 ? 100.0 * double(freedBytes) / totalBytes : 0.0,
+                 freed.size());
+        bytesLine += buf;
     }
     // The distributions that size the partition (§3.2): how many
     // instances a cell holds decides both the size of a pop and how much
@@ -630,14 +673,16 @@ static void reportProxyCut(const Render::ProxyHierarchy &index,
              " | nodes:%u depth:%u buckets:%u | build %.1fms",
              stats.nodes, stats.depth, stats.distinctBuckets, buildMs);
 #ifdef FC_RENDERER_STANDALONE
-    std::printf("render proxycut: instances:%u draws@tol%s%s\n%s\n%s\n",
+    std::printf("render proxycut: instances:%u draws@tol%s%s\n%s\n%s\n%s\n",
                 stats.instances, line.c_str(), buf, prims.c_str(),
-                levels.c_str());
+                bytesLine.c_str(), levels.c_str());
 #else
     Base::Console().Message(
             "render proxycut: instances:%u draws@tol%s%s\n", stats.instances,
             line.c_str(), buf);
     Base::Console().Message("render proxycut prims@tol:%s\n", prims.c_str());
+    Base::Console().Message("render proxycut bytes@tol:%s\n",
+                            bytesLine.c_str());
     Base::Console().Message("render proxycut levels:%s\n", levels.c_str());
 #endif
 }

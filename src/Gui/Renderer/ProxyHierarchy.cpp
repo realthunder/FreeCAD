@@ -220,6 +220,26 @@ uint32_t drawPrimitives(const DrawCall &d)
     return indices > 0 ? uint32_t(indices / perPrim) : 0u;
 }
 
+/// Bytes a mesh occupies once uploaded: positions, and whichever
+/// optional attribute arrays it actually carries, plus every index
+/// array. All topologies are counted, not just the one this draw uses
+/// -- residency is a property of the mesh, and a mesh is uploaded
+/// whole.
+uint32_t meshResidentBytes(const MeshData *m)
+{
+    if (!m)
+        return 0;
+    uint64_t bytes = uint64_t(m->numVertices) * 3 * sizeof(float);
+    if (m->normals)
+        bytes += uint64_t(m->numVertices) * 3 * sizeof(float);
+    if (m->colors)
+        bytes += uint64_t(m->numVertices) * 4;
+    bytes += uint64_t(m->numTriangleIndices) * sizeof(int32_t);
+    bytes += uint64_t(m->numLineIndices) * sizeof(int32_t);
+    bytes += uint64_t(m->numPointIndices) * sizeof(int32_t);
+    return uint32_t(std::min<uint64_t>(bytes, 0xffffffffULL));
+}
+
 } // anonymous namespace
 
 void Render::proxyInstances(const DrawCallList &draws,
@@ -241,6 +261,7 @@ void Render::proxyInstances(const DrawCallList &draws,
         inst.sourceTag = d.mesh ? static_cast<const void *>(d.mesh.get())
                                 : nullptr;
         inst.primCount = drawPrimitives(d);
+        inst.meshBytes = meshResidentBytes(d.mesh.get());
         out.push_back(inst);
     }
 }

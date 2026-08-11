@@ -196,6 +196,16 @@ struct ProxyInstance {
     /// (docs/DrawSubmission.md). A cut that removes draws without
     /// removing primitives buys nothing here.
     uint32_t primCount = 0;
+    /// Resident bytes of the mesh behind this draw -- vertices and
+    /// indices as uploaded. Keyed to \ref sourceTag, NOT summable over
+    /// instances: many instances share one mesh, and its bytes come
+    /// back only when the last of them stops needing it.
+    ///
+    /// Carried because occlusion and aggregation are not only speed
+    /// mechanisms. What they remove from residency is what decides
+    /// whether a model opens at all, and that axis has a different
+    /// answer from the primitive axis beside it.
+    uint32_t meshBytes = 0;
     /// Which row of the table this was projected from. The partition
     /// never follows it — it is the join back to whatever the caller
     /// holds the geometry in, which generation needs and selection will

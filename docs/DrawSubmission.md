@@ -26,7 +26,16 @@ frame **20.4 ms** against **19.8 ms of GPU**. **This scene is
 GPU-bound.** The CPU spends 16.0 ms and then waits ~4 ms for the GPU.
 Of the CPU: bgfx backend 9.9, our own C++ 6.0, **all of Coin+Qt 0.8**.
 
-**4. The original headline was wrong twice**: "30577 draws, 32 ms, 76 ms"
+**4. EVERY VERDICT ON THIS PAGE IS ON THE TIME AXIS, AND THE SCENE
+FITS.** The rack server is fully resident in a 12 GB card, so
+"GPU-bound at 19.8 ms" describes a *resident* scene. Occlusion and
+aggregation are not only speed mechanisms -- what they keep out of
+residency is what decides whether a model opens at all, and that axis
+is not measured here. Where this page says a mechanism buys little, read
+"buys little in frame time on a model that fits". A model that does not
+fit is a different problem, and none of these numbers transfer to it.
+
+**5. The original headline was wrong twice**: "30577 draws, 32 ms, 76 ms"
 was the culling-OFF validation row *with* the cull audit inflating it.
 Always state the culling config and the audit setting with any number.
 
@@ -402,7 +411,9 @@ chain is also complete for the first time: its `unattr` is **0.02 ms**.
 
 **What this does to the plan.** Phases 1 and 3 spend CPU time the frame
 does not have to give: even a *free* submission path would move 20.4 ms
-to 19.8. The lever is the GPU half, and sec "primitives explain it better
+to 19.8. (On *this* model, which fits in VRAM -- see the header's point
+4. Nothing here prices what a mechanism does for residency.) The lever
+is the GPU half, and sec "primitives explain it better
 than draws" says which one -- fewer triangles, not fewer draws.
 
 ### !! The wait was also inflating the CPU numbers, by 1.5-2x

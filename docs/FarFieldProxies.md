@@ -1301,11 +1301,45 @@ deterministic:
 | 16px | 8265 | 2.14x | 23.57M | 3.60M | **13%** |
 | 64px | **4457** | **3.98x** | 19.26M | **7.92M** | **29%** |
 
+!! **This is the TIME axis only.** Primitives bound what the cut saves
+the GPU per frame. What it saves in *residency* is a different number --
+covered BYTES, not covered primitives -- and residency is what decides
+whether a model opens at all rather than how fast it draws. The bytes
+column below is that axis; neither judges the other.
+
 **At 64px the cut removes 75% of the draws and 29% of the primitives.**
 That is the number the phase-2 case has to be made on, and it is 2.6x
 smaller than the one it was made on. It is also a **ceiling**: the proxy
 that replaces those 7.92M primitives has primitives of its own, which
 come off the saving and cannot be known without generating (sec 11.1c).
+
+#### And on the residency axis: 21%, less than the primitive axis
+
+Same run, same tolerances. Bytes are counted per **distinct mesh**, and
+a mesh frees only where no exact instance still references it -- summing
+over covered instances would overstate it several times, since 495
+instanced submits stand in for 5432 rows here:
+
+| tolerance | held | **freed** | share | meshes freed |
+|---|---|---|---|---|
+| 1px | 259.8MB | 0.1MB | 0% | 87 |
+| 4px | 258.5MB | 1.4MB | 1% | 738 |
+| 16px | 249.9MB | 10.0MB | 4% | 1532 |
+| 64px | 204.7MB | **55.1MB** | **21%** | 2463 |
+
+* **The memory axis is WORSE than the time axis, not better** (21%
+against 29%), and the reason is sharing: a covered instance whose mesh
+still has one exact user frees nothing. The guess that per-mesh overhead
+would push residency past the primitive share was wrong -- 2463 fewer
+buffers is under a megabyte of handles against 55MB of payload.
+
+!! **Neither axis can be judged on this model.** Its entire resident
+geometry is **260MB**. On the card these numbers were taken on that is
+2% of VRAM, so the scene is nowhere near the regime where residency
+decides anything, and 21% of nothing is nothing. The memory case for
+aggregation has to be made on a model that actually strains a device --
+which is the case the mechanism exists for, and which no measurement in
+this document has ever used.
 
 ** **The bigger finding is the other column.** At the most aggressive
 tolerance measured, **19.26M of 27.17M on-screen primitives -- 71% --
