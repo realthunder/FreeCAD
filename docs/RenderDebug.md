@@ -508,6 +508,22 @@ passes on a build the user can see is broken is worse than no harness.
   menu rebuilding itself. Use `findChildren` plus a parent-chain
   ancestry filter and reduce everything to `str`/`int` inside the loop.
   Probes only; in C++ the menu owns them.
+- WARNING: **`updateGui()` never delivers a deferred delete**, so a probe
+  that holds the call stack is blind to every cleanup a destructor does.
+  `QApplication::processEvents()` skips `DeferredDelete` events, and a
+  *nested* `QEventLoop` skips them too: the event is posted at the outer
+  loop level and waits for that stack to unwind. A probe that wants what
+  a user gets from clicking has to run each step from its own main-loop
+  callback, i.e. a `QTimer::singleShot` chain. The cost of learning
+  this: "leaving Transform edit leaves the object drawn transparent"
+  survived two sessions as a rendering bug and was the probe's own call
+  stack keeping the task dialog -- and with it the object's on-top
+  registration -- alive. Compare `dragger_stale_probe.py` (one long
+  function, reads the defect) with `dragger_stale3_probe.py` (callback
+  chain, same build, reads 0.0000 on all three render paths).
+  `QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete)`
+  forces delivery regardless of loop level and is the quick way to tell
+  a deferred destructor from a stale frame.
 - WARNING: **startup `Console().Log` output is invisible to a probe.** A
   probe script runs long after the splash, and enabling logging from
   Python is too late for anything that happened during it. Pass
