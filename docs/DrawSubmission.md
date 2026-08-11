@@ -133,6 +133,53 @@ the cull, the group rebuild -- it is now the single largest CPU item in
 the renderer, and it is not addressed anywhere in this plan. **Find it
 before building phase 2.**
 
+### FOUND: the fixed cost is the post-submit pass region, and it is flat
+
+The 15.6 ms was chased with a second instrument, `render cpu phases:`,
+which partitions `render()` exactly (the parts sum to `ours` to within
+0.02 ms). At the default config, 12850 draws in a 50.6 ms frame:
+
+| term | ms | share of frame |
+|---|---|---|
+| pre (setup, pass marking, instance groups) | 1.90 | 3.8% |
+| cull (frustum + occlusion) | 0.41 | 0.8% |
+| main submit loop | 3.99 | 7.9% |
+| **post (the passes after the main loop)** | **12.95** | **25.6%** |
+| bgfx::frame (backend) | 16.51 | 32.6% |
+| outside (Coin + Qt + app) | 14.79 | 29.2% |
+
+**Two hypotheses died here, which is why the instrument was worth
+building rather than reasoning from the code:**
+
+- ** The cull is not the cost.** 0.41 ms. It walks every row each frame
+  and it is still under 1% of the frame. Every intuition that put the
+  cull near the top was wrong.
+- ** The main submit loop is not the cost either.** 4.0 ms. It walks all
+  17727 rows and evaluates predicates per row, which looked like the
+  obvious 15 ms; it is a quarter of that.
+
+**`post` is the fixed cost, and it is flat to the point of being
+diagnostic**: 13.00 / 12.95 / 12.84 ms at 12849 / 12850 / 30578 draws --
+a 2.4x change in draw count moves it by 1%. Nothing about it depends on
+what survives culling.
+
+The reason is structural and visible in the source: the region between
+the main submit loop and `bgfx::frame()` contains **eight more
+`for (const auto &draw : scene)` loops** -- ground reflection, the
+two-pass scene, outline, highlight, selection and the rest. Every one is
+`scene.size()` long whatever the camera sees, so together they are
+~142k row visits per frame that culling cannot reduce.
+
+`pre`, by contrast, scales properly: 1.90 ms at 12850 draws against
+6.38 ms at 30578, because the instance-group work is per visible member.
+
+**So the target is named:** ~13 ms/frame, a quarter of the frame, in
+per-pass full scans of the draw list. It is worth more than phases 1-3
+combined and it is not a submission problem at all -- it is the
+*incremental-by-default* rule this project already applies elsewhere,
+not yet applied to the per-pass loops. The next measurement should split
+`post` per pass to find which of the eight dominate.
+
 ### The GPU half: primitives explain it better than draws
 
 Across the same two points, GPU cost per *draw* varies 27% (1.72 vs

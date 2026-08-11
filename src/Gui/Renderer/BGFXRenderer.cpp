@@ -10935,6 +10935,11 @@ public:
         if (publishOnly)
             return false;
 
+        // Checkpoint for the pre-submit half of the frame's CPU. Taken
+        // after the publish-only bail so it only ever covers a frame
+        // that really renders.
+        renderInnerT0 = bx::getHPCounter();
+
         // The pending scene data (whatever its age) is consumed by this
         // frame; needsRedraw() reports false until new data arrives.
         // Two distinct "dirty" signals:
@@ -13581,6 +13586,10 @@ public:
         // culler only when the audit asks for it.
         std::vector<int32_t> cullOwner;
         if (!noCulling && !hlconfig.show && !scene.empty()) {
+            // Frustum + occlusion together: both walk the whole draw
+            // list, and the question this answers is how much of the
+            // fixed per-frame cost is the cull at all.
+            CpuScope cullTiming(this, CpuCull);
             float vp[16];
             bx::mtxMul(vp, viewMat,
                        reinterpret_cast<const float *>(projMatrix));
@@ -14168,6 +14177,15 @@ public:
         // Hidden-line entries get their stencil outline right after the
         // fill and honor the face/seam/vertex hiding rules.
         view->ontop = false;
+        // The per-draw C++ the plan calls "submit": this walks every row
+        // of the draw list, culled or not, and decides per row what to
+        // submit. Braced so the scope covers the loop and nothing after.
+        {
+        if (debugconf.frameTiming)
+            cpuPhaseMs[CpuPreSubmit] += 1000.0
+                * double(bx::getHPCounter() - renderInnerT0)
+                / double(bx::getHPFrequency());
+        CpuScope submitTiming(this, CpuSubmitLoop);
         for (int drawIdx = 0; drawIdx < int(scene.size()); ++drawIdx) {
             const auto &draw = scene[drawIdx];
             if (draw.material.ontop || isHidden(draw)) {
@@ -14354,6 +14372,7 @@ public:
             if (!cullDraw)
                 submitSceneOutline(draw);
         }
+        }  // CpuSubmitLoop
         if (shadowBlurActive)
             view->submitShadowBlur(lightconf.smoothBorder);
         if (shadowActive && lightconf.ground && bboxValid) {
@@ -15001,12 +15020,44 @@ public:
             // Snapshot before the report, which resets the accumulator.
             std::map<int, std::pair<double, double>> viewMs;
             uint32_t viewFrames = 0;
+            double phaseMs[CpuPhaseCount] = {};
+            double ourMs = 0.0, bgfxMs = 0.0;
             if (due) {
                 viewMs = frameStats.viewMs;
                 viewFrames = frameStats.frames;
+                for (int i = 0; i < CpuPhaseCount; ++i)
+                    phaseMs[i] = cpuPhaseMs[i];
+                ourMs = frameStats.renderMs;
+                bgfxMs = frameStats.bgfxFrameMs;
+                std::memset(cpuPhaseMs, 0, sizeof(cpuPhaseMs));
             }
             if (due)
                 reportFrameStats(frameStats);
+            // Which part of our own C++ the fixed per-frame cost is in.
+            // `rest` is derived rather than measured on purpose: it is
+            // everything inside render() that is neither scoped above nor
+            // bgfx's, so a breakdown can be incomplete but never wrong
+            // about how much it failed to account for.
+            //
+            // ! renderMs for the reporting frame itself is added after
+            // this runs (the outer render() adds it on the way out), so
+            // `ours` here trails the window by one frame. Over 13-20
+            // frames that is under a frame and it does not accumulate.
+            if (due && viewFrames) {
+                const double f = double(viewFrames);
+                // pre excludes the cull, which it contains; post is what
+                // is left over once every measured region is removed.
+                const double pre = phaseMs[CpuPreSubmit] - phaseMs[CpuCull];
+                const double post = ourMs - bgfxMs
+                    - phaseMs[CpuPreSubmit] - phaseMs[CpuSubmitLoop];
+                Base::Console().Message(
+                        "render cpu phases (ms/frame): pre %.2f | cull %.2f | "
+                        "submitloop %.2f | post %.2f | bgfx::frame %.2f | "
+                        "ours %.2f\n",
+                        pre / f, phaseMs[CpuCull] / f,
+                        phaseMs[CpuSubmitLoop] / f, post / f,
+                        bgfxMs / f, ourMs / f);
+            }
             // ⭐ Where the frame line's milliseconds actually go, per
             // pass, for both processors (docs/DrawSubmission.md phase
             // 0). Sorted by CPU cost and capped, with the number
@@ -15702,6 +15753,48 @@ public:
     /// draw different scenes and a shared accumulator would report
     /// their mean as though it were one frame's.
     FrameStatsAccum frameStats;
+    /// Where the FIXED per-frame CPU goes inside render()
+    /// (docs/DrawSubmission.md phase 0 item 2). The frame line already
+    /// splits ours / bgfx / outside; it found 15.6ms of our own C++ that
+    /// does NOT scale with draw count, which is four times the per-draw
+    /// part and is the largest single CPU item in the renderer. These
+    /// name the candidates: the cull walks all rows, and so does the
+    /// submit loop, whatever the survivors number.
+    ///
+    /// Accumulated over the reporting window like frameStats, and reset
+    /// with it. Anything not scoped shows up in the derived remainder,
+    /// which is the point -- a breakdown that cannot be wrong about what
+    /// it left out.
+    /// CpuPreSubmit is everything from the top of render() to the main
+    /// submit loop (the cull included, and subtracted back out when
+    /// reported); CpuPostSubmit is what the remainder must then be.
+    /// Measured with a checkpoint rather than a scope because the region
+    /// has early returns and is not a block.
+    enum CpuPhase { CpuCull, CpuSubmitLoop, CpuPreSubmit, CpuPhaseCount };
+    int64_t renderInnerT0 = 0;
+    double cpuPhaseMs[CpuPhaseCount] = {};
+    /// RAII so an early return or a throw cannot leave a phase open.
+    struct CpuScope {
+        Private *self;
+        int phase;
+        int64_t t0;
+        bool on;
+        CpuScope(Private *s, int p)
+            : self(s), phase(p), t0(0), on(s->debugconf.frameTiming)
+        {
+            if (on)
+                t0 = bx::getHPCounter();
+        }
+        ~CpuScope()
+        {
+            if (on)
+                self->cpuPhaseMs[phase] += 1000.0
+                    * double(bx::getHPCounter() - t0)
+                    / double(bx::getHPFrequency());
+        }
+        CpuScope(const CpuScope &) = delete;
+        CpuScope &operator=(const CpuScope &) = delete;
+    };
     /// The occluded-fraction walk (docs/FarFieldProxies.md §10.1) and
     /// its scratch. Per view for the same reason as frameStats: two
     /// views see different scenes from different cameras.
