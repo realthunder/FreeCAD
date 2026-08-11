@@ -35,7 +35,9 @@ the server comes back up on the next start.
 
 import ast
 import collections
+import contextlib
 import io
+import logging
 import os
 import sys
 import threading
@@ -83,6 +85,10 @@ class LogResult(TypedDict):
 
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 8765
+# How far past the requested port to look before giving up. Generous: the point
+# of the search is that several FreeCAD sessions (and, on a box running WSL with
+# mirrored networking, several *operating systems*) can be after the same port.
+_PORT_ATTEMPTS = 20
 
 # Persistent REPL namespace, shared across every run_python call.
 _namespace: dict = {}
@@ -91,6 +97,7 @@ _executor = None
 _server_thread = None
 _mcp = None
 _uvicorn = None          # the uvicorn.Server, when we were able to drive it ourselves
+_socket = None           # the listening socket handed to uvicorn, see _bind()
 _bound = (_DEFAULT_HOST, _DEFAULT_PORT)
 
 # --- session-long console capture -------------------------------------------
@@ -509,6 +516,86 @@ outlives the process -- read that if FreeCAD died.
 """
 
 
+def _bind(host: str, port: int, attempts: int = _PORT_ATTEMPTS):
+    """Bind a listening socket to *port*, or to the next free port after it.
+
+    Returns ``(socket, port)``.  Binding here rather than letting uvicorn do it
+    is what makes "is this port free?" and "take it" a single step: probing
+    first and binding afterwards leaves a window for something else to take the
+    port, and the failure would then surface on the server thread -- long after
+    :func:`start` had returned a URL that was never true.
+    """
+    import socket
+
+    last_error = None
+    for candidate in range(port, port + attempts):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # SO_REUSEADDR means near-opposite things across platforms: on POSIX it
+        # only permits reusing an address left in TIME_WAIT, but on Windows it
+        # permits binding a port a live listener already holds. Setting it there
+        # would defeat this whole loop -- every bind would appear to succeed and
+        # two servers would answer on one port. SO_EXCLUSIVEADDRUSE is the
+        # Windows spelling of the guarantee we actually want.
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, candidate))
+        except OSError as exc:
+            sock.close()
+            last_error = exc
+            continue
+        return sock, candidate
+
+    raise OSError("no free port for the MCP console in %d..%d (%s)"
+                  % (port, port + attempts - 1, last_error))
+
+
+def _release_socket():
+    """Give the port back after a start that did not get as far as serving."""
+    global _socket
+    if _socket is not None:
+        try:
+            _socket.close()
+        except OSError:
+            pass
+        _socket = None
+
+
+@contextlib.contextmanager
+def _preserved_logging():
+    """Undo any logging reconfiguration the wrapped code performs.
+
+    Building the MCP server calls the library's own ``configure_logging()``,
+    which runs ``logging.basicConfig`` on the **root** logger: level INFO with a
+    RichHandler writing to **stderr**.  Inside FreeCAD stderr is redirected to
+    ``Base::Console().Error``, so every routine INFO line the transport emits
+    ("StreamableHTTP session manager started", "Created new transport with
+    session ID: ...") lands in the report view coloured as an error -- and the
+    hijacked root logger then applies to all of FreeCAD's Python, not just to
+    this module.  uvicorn.Config does the same for its own loggers.
+
+    So put the root logger back exactly as it was, and clamp the two library
+    loggers to WARNING, which keeps their chatter out of the console whatever
+    handler is attached later.
+    """
+    root = logging.getLogger()
+    level, handlers = root.level, root.handlers[:]
+    try:
+        yield
+    finally:
+        for handler in root.handlers[:]:
+            if handler not in handlers:
+                root.removeHandler(handler)
+        for handler in handlers:
+            if handler not in root.handlers:
+                root.addHandler(handler)
+        root.setLevel(level)
+        for name in ("mcp", "uvicorn"):
+            logging.getLogger(name).setLevel(logging.WARNING)
+
+
 def _make_server(host: str, port: int):
     """Return ``(server, serve)`` for whichever major version of ``mcp`` is present.
 
@@ -716,7 +803,7 @@ def get_log(limit: int = 200, level: Optional[str] = None,
     }
 
 
-def _make_serve(server, fallback, host: str, port: int):
+def _make_serve(server, fallback, host: str, port: int, sock):
     """Return ``(uvicorn_server, serve)`` for an already-configured MCP server.
 
     Prefer building the ASGI app and running uvicorn ourselves: ``server.run()``
@@ -728,6 +815,9 @@ def _make_serve(server, fallback, host: str, port: int):
     """
     app_factory = getattr(server, "streamable_http_app", None)
     if not callable(app_factory):
+        # This path binds the port itself, so hand ours back first. The port was
+        # free a moment ago, which is the best this path can offer.
+        sock.close()
         return None, fallback
 
     import uvicorn
@@ -735,8 +825,9 @@ def _make_serve(server, fallback, host: str, port: int):
     config = uvicorn.Config(app_factory(), host=host, port=port, log_level="warning")
     uv = uvicorn.Server(config)
     # uvicorn skips signal-handler installation off the main thread, so running
-    # this on our daemon thread is fine.
-    return uv, uv.run
+    # this on our daemon thread is fine. Serving the socket _bind() already took
+    # means uvicorn never re-binds, so the port cannot be lost between the two.
+    return uv, (lambda: uv.run(sockets=[sock]))
 
 
 _atexit_registered = False
@@ -764,12 +855,18 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT,
     """Start the MCP console server on a background thread.
 
     Must be called from FreeCAD's main thread (e.g. the Python console). Returns
-    the endpoint URL. Idempotent: a second call while running is a no-op.
+    a status line naming the endpoint. Idempotent: a second call while running
+    is a no-op.
+
+    ``port`` is where to start looking, not a promise: if it is taken the next
+    free port after it is used instead, and the status line says so. Read
+    :func:`url` for the one actually bound.
 
     Console capture is attached for the life of the server; ``log`` overrides
     where it is written (default ``<UserAppData>/mcp_console.log``).
     """
-    global _executor, _server_thread, _mcp, _uvicorn, _bound, _atexit_registered
+    global _executor, _server_thread, _mcp, _uvicorn, _bound, _socket
+    global _atexit_registered
 
     if is_running():
         return "MCP console already running at " + url()
@@ -779,6 +876,11 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT,
         atexit.register(_atexit_cleanup)
         _atexit_registered = True
 
+    # Take the port before building anything, so a box with no free port fails
+    # here -- with a plain OSError naming the range tried -- rather than on the
+    # server thread once start() has already reported success.
+    requested = port
+    _socket, port = _bind(host, port)
     _bound = (host, port)
     _seed_namespace()
     try:
@@ -786,7 +888,16 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT,
     except Exception:
         logfile = None  # capture is a convenience, never a reason not to serve
     _executor = _make_executor()
-    _mcp, _fallback_serve = _make_server(host, port)
+    # Both construction steps import a third-party package and can fail outright
+    # -- _make_server raises when 'mcp' is missing, _make_serve imports uvicorn.
+    # Hand the port back if they do, or a session that never served would keep
+    # it held and push the next attempt one port along.
+    try:
+        with _preserved_logging():
+            _mcp, _fallback_serve = _make_server(host, port)
+    except BaseException:
+        _release_socket()
+        raise
 
     @_mcp.tool(name="run_python", description=_RUN_PYTHON_DESCRIPTION)
     def run_python(code: str) -> RunResult:
@@ -809,12 +920,20 @@ def start(host: str = _DEFAULT_HOST, port: int = _DEFAULT_PORT,
         # to be able to read the log while the main thread is busy or wedged.
         return get_log(limit=limit, level=level, contains=contains)
 
-    _uvicorn, _serve_forever = _make_serve(_mcp, _fallback_serve, host, port)
+    try:
+        with _preserved_logging():
+            _uvicorn, _serve_forever = _make_serve(_mcp, _fallback_serve, host,
+                                                   port, _socket)
+    except BaseException:
+        _release_socket()
+        raise
 
     _server_thread = threading.Thread(target=_serve_forever, name="mcp-console",
                                       daemon=True)
     _server_thread.start()
     msg = "MCP console running at " + url()
+    if port != requested:
+        msg += " (port %d was taken)" % requested
     if logfile:
         msg += " (console log: %s)" % logfile
     return msg
@@ -849,6 +968,9 @@ def stop(timeout: float = 5.0) -> str:
     _uvicorn = None
     _mcp = None
     _executor = None
+    # uvicorn closes the sockets it was handed, so this is belt and braces -- but
+    # the port has to be free for the next start(), and closing twice is a no-op.
+    _release_socket()
     # Console capture is documented to last "for the life of the server".
     _detach_log_observer()
     return "MCP console stopped (was " + was + ")"

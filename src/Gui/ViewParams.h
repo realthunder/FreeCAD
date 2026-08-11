@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:549)
+// Auto generated code (Gui/ViewParams.py:551)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -2185,7 +2185,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:555)
+    // Auto generated code (Gui/ViewParams.py:557)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2213,7 +2213,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:565)
+// Auto generated code (Gui/ViewParams.py:567)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

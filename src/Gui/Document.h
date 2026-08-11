@@ -25,6 +25,7 @@
 
 #include <list>
 #include <map>
+#include <memory>
 #include <string>
 #include <boost_signals2.hpp>
 #include <QString>
@@ -183,8 +184,43 @@ public:
     void importObjects(const std::vector<App::DocumentObject*>&, Base::Reader&,
                        const std::map<std::string, std::string>& nameMapping);
     void readObject(Base::XMLReader &reader);
-    void writeObject(Base::Writer &writer, 
+    void writeObject(Base::Writer &writer,
             const App::DocumentObject *doc, const ViewProvider *obj) const;
+
+    /** @name The shared view provider defaults
+     *
+     * View providers of one class are nearly identical, so the file carries
+     * one default block per class and each view provider only its difference
+     * from it. See Gui::Document::saveDefaults for what that buys.
+     */
+    //@{
+    /// Record one class default block (App::SharedDefaults) per view provider
+    /// class present in this document, or none at all when the document is
+    /// being written as an older schema. The stand-in each record is taken
+    /// from does not outlive the recording.
+    void buildDefaults(Base::Writer &writer,
+            std::map<std::string, App::SharedDefaults> &defaults) const;
+    /// Write those records as the block the objects refer to, byte for byte.
+    void saveDefaults(Base::Writer &writer,
+            const std::map<std::string, App::SharedDefaults> &defaults) const;
+    /// Read the block back and keep whatever it says that this build does
+    /// not, comparing at the archive's schema (not this file's own).
+    void restoreDefaults(Base::XMLReader &reader, int count, int schemaVersion);
+    /// Put that difference on one view provider, before its own properties.
+    void applyDefaults(ViewProvider *vp);
+    //@}
+
+    /** @name Deferred view provider restore (progressive load) */
+    //@{
+    /// True while a progressive load's view providers are still being built
+    bool isRestoringViewProviders() const;
+    /** Build and restore whatever the load deferred, now.
+     *
+     * A save, an export, or anything else that needs every view provider to
+     * exist calls this; it is a no-op once the drain has finished.
+     */
+    void flushDeferredRestore();
+    //@}
     /// Add all root objects of the given array to a group
     void addRootObjectsToGroup(const std::vector<App::DocumentObject*>&, App::DocumentObject*);
     //@}
@@ -362,6 +398,20 @@ protected:
 private:
     //handles the scene graph nodes to correctly group child and parents
     void handleChildren3D(ViewProvider* viewProvider, bool deleting=false);
+
+    /// Build and restore one captured view provider during the load itself,
+    /// handing its archive file requests to the archive's reader
+    void restoreCapturedViewProvider(const std::string &xml,
+            Base::XMLReader &archiveReader);
+    /// Post a drain slice for the deferred view provider restore
+    void scheduleDeferredRestore(int delayMs=0);
+    /// Build and restore parked view providers for one budget's worth
+    void runDeferredRestoreSlice();
+    /// Serve parked archive entries for one budget's worth, once the view
+    /// provider drain that used to carry them has finished (or never ran)
+    void runDeferredServeSlice();
+    /// The drain has emptied: default what was never recorded, then refresh
+    void finishDeferredRestore();
 
     /// Check other documents for the same transaction ID
     bool checkTransactionID(bool undo, int iSteps);

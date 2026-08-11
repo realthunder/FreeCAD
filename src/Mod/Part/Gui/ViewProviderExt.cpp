@@ -52,7 +52,12 @@
 
 # include <QApplication>
 # include <QAction>
+# include <QCoreApplication>
+# include <QTimer>
 # include <QMenu>
+# include <deque>
+# include <map>
+# include <chrono>
 # include <sstream>
 
 # include <Inventor/SoPickedPoint.h>
@@ -91,6 +96,7 @@
 #include <Base/TimeInfo.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
+#include <Gui/Document.h>
 #include <Gui/Action.h>
 #include <Gui/Selection.h>
 #include <Gui/View3DInventorViewer.h>
@@ -135,7 +141,11 @@ class SoFCCoordinate3: public SoCoordinate3
 {
 public:
     virtual void getBoundingBox(SoGetBoundingBoxAction * action) {
-        if (vp && vp->VisualTouched)
+        // A visual parked for the progressive-load queue must stay parked:
+        // the first repaint after a load traverses the whole scene, and
+        // building on demand here would hand back the very stall the queue
+        // exists to break up. It contributes nothing until its slice comes.
+        if (vp && vp->VisualTouched && !vp->VisualDeferred)
             vp->updateVisual();
         SoCoordinate3::getBoundingBox(action);
     }
@@ -144,6 +154,55 @@ public:
 };
 
 void initShapeInstancingGateObserver();  // PartParams.cpp
+
+namespace {
+
+/// The visual builds a document restore asked for and did not get. Held by
+/// weak handle: a slice may run long after the load, and the document may
+/// have been closed by then.
+struct DeferredVisualQueue {
+    std::deque<App::DocumentObjectT> pending;
+    /// Counted per drain, for the one line the queue reports itself with.
+    std::size_t built = 0;
+    std::size_t slices = 0;
+    std::chrono::duration<double> spent {0};
+};
+
+/// One queue per document, keyed by name (the queue outlives objects, and
+/// documents come and go between slices). Documents load independently --
+/// a second file opened while the first still drains, a reload of one of
+/// them -- and one queue for all of them made every decision the front
+/// item's document's decision: a document still restoring stalled everyone
+/// behind it, and the counts of any two loads ran together into one line
+/// that described neither.
+struct DeferredVisuals {
+    std::map<std::string, DeferredVisualQueue> docs;
+    bool scheduled = false;
+    /// A serve inside a slice reports progress, and a progress indicator
+    /// pumps events -- from which this slice's own timer can fire. The
+    /// walk is not re-entrant: it holds an iterator into the map.
+    bool running = false;
+};
+
+DeferredVisuals &deferredVisuals()
+{
+    static DeferredVisuals visuals;
+    // A closing document takes its queue with it, rather than leaving it to
+    // be swept when some later slice finds the name unresolvable: the same
+    // file reopened right away answers to the same name, and stale handles
+    // would resolve against the new document's objects.
+    static bool observing = []() {
+        App::GetApplication().signalDeleteDocument.connect(
+                [](const App::Document &doc) {
+                    visuals.docs.erase(doc.getName());
+                });
+        return true;
+    }();
+    (void)observing;
+    return visuals;
+}
+
+} // anonymous namespace
 
 /// Key of one shared tessellation in the global instance-geometry table:
 /// the underlying TShape with its orientation (a reversed occurrence winds
@@ -515,17 +574,20 @@ static void restructureInstanceVertex(ShapeInstanceRep::Instance &inst)
 }
 
 /// The environment part of the shape-instancing gate: the feature param,
-/// a backend renderer selected (plain Coin/GL always flattens — without
+/// a backend renderer live (plain Coin/GL always flattens — without
 /// GPU instancing many small shared nodes are a net loss), and the
-/// backend's published instancing capability.
+/// backend's published instancing capability. The backend question is
+/// asked of the actual renderer state, not the Render Type preference:
+/// a backend can be attached with the pref still "Default" (per-view or
+/// scripted selection), and a pref naming a backend yields none when
+/// creation fails (plain-GL fallback).
 static bool shapeInstancingActive()
 {
     if (!PartParams::getShapeInstancing())
         return false;
     if (Gui::ViewParams::getRenderCache() != 3)
         return false;
-    const std::string &type = Gui::RenderParams::getType();
-    if (type.empty() || type == "Default")
+    if (Render::Renderer::activeCount() == 0)
         return false;
     return Render::Renderer::instancingHint();
 }
@@ -1490,7 +1552,11 @@ static bool materialsUnrepresentable(const std::vector<App::Material> &mats)
 
 void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& colors)
 {
-    if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange))
+    // Not during a restore: the eager path touched and then had the touch
+    // purged by afterRestore; the deferred drain runs after that purge, so
+    // the touch would survive and a document would open already modified.
+    if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange)
+            && !App::Document::isAnyRestoring())
         getObject()->touch(true);
 
     // Any per-face color VECTOR is representable by the instanced
@@ -3245,6 +3311,185 @@ bool ViewProviderPartExt::buildCoarseStandIn()
     return true;
 }
 
+bool ViewProviderPartExt::deferVisualForLoad()
+{
+    if (!Gui::RenderParams::getProgressiveLoad())
+        return false;
+    auto obj = getObject();
+    auto doc = obj ? obj->getDocument() : nullptr;
+    if (!doc)
+        return false;
+    if (!doc->testStatus(App::Document::Restoring)) {
+        // The deferred view-provider drain counts as loading too: its
+        // slices run with the Restoring bit clear between them, and a
+        // visual built in such a gap is walked by the staging sweep that
+        // follows — the very interleaving the queue itself refuses
+        // (runDeferredVisualSlice checks this same flag before building).
+        // Without the same gate here, a direct updateVisual — e.g. from
+        // the camera-fit path while a second document's drain is mid-way —
+        // builds into a half-staged subtree, and the content never reaches
+        // the renderer: built Coin-side, never drawn.
+        auto guiDoc = Gui::Application::Instance->getDocument(doc);
+        if (!guiDoc || !guiDoc->isRestoringViewProviders())
+            return false;
+    }
+
+    VisualTouched = true;
+    if (!VisualDeferred) {
+        VisualDeferred = true;
+        deferredVisuals().docs[doc->getName()].pending.emplace_back(obj);
+    }
+    // The restore pumps events through its progress sequencer, so a slice
+    // can be posted now; it will find the document still restoring and put
+    // itself off until the load has let go.
+    scheduleDeferredVisualSlice();
+    return true;
+}
+
+void ViewProviderPartExt::scheduleDeferredVisualSlice(int delayMs)
+{
+    auto &visuals = deferredVisuals();
+    if (visuals.scheduled || visuals.docs.empty())
+        return;
+    visuals.scheduled = true;
+    QTimer::singleShot(delayMs, QCoreApplication::instance(),
+                       []() { ViewProviderPartExt::runDeferredVisualSlice(); });
+}
+
+void ViewProviderPartExt::runDeferredVisualSlice()
+{
+    auto &visuals = deferredVisuals();
+    visuals.scheduled = false;
+    if (visuals.docs.empty() || visuals.running)
+        return;
+    Base::StateLocker walking(visuals.running);
+
+    const double budget =
+        std::max(1L, Gui::RenderParams::getProgressiveLoadBudgetMS()) / 1000.0;
+    auto start = std::chrono::high_resolution_clock::now();
+    auto elapsed = [&start]() {
+        return std::chrono::duration<double>(
+                std::chrono::high_resolution_clock::now() - start);
+    };
+
+    // Which documents can be worked on at all right now. A document still
+    // loading is not one of them: everything built now would only be parked
+    // again. The deferred view provider drain counts as loading -- a visual
+    // built between its slices is re-touched by the property sweep that
+    // follows, and every action the sweep applies then walks a populated
+    // node. Per document, because another document's load says nothing
+    // about whether this one's visuals may be built.
+    auto eligible = [](const std::string &name) {
+        auto doc = App::GetApplication().getDocument(name.c_str());
+        if (!doc)
+            return static_cast<App::Document*>(nullptr);
+        auto guiDoc = Gui::Application::Instance->getDocument(doc);
+        if (doc->testStatus(App::Document::Restoring)
+                || (guiDoc && guiDoc->isRestoringViewProviders()))
+            return static_cast<App::Document*>(nullptr);
+        return doc;
+    };
+    std::size_t ready = 0;
+    for (const auto &e : visuals.docs) {
+        if (eligible(e.first))
+            ++ready;
+    }
+    if (!ready) {
+        // Everything left belongs to a document still loading. Wait rather
+        // than spin on the events its restore pumps.
+        scheduleDeferredVisualSlice(100);
+        return;
+    }
+
+    // One budget for the slice, split evenly between the documents that can
+    // use it: what has to stay bounded is the time before the event loop
+    // gets its turn back, and that is per slice however many documents are
+    // draining. An even split is also what keeps two loads progressing at
+    // once -- with the whole budget to the first document, a large one
+    // would hold the others up until it finished, which is the
+    // serialization the single shared queue used to impose.
+    const double share = budget / ready;
+    bool more = false;
+    for (auto it = visuals.docs.begin(); it != visuals.docs.end(); ) {
+        auto &queue = it->second;
+        auto doc = eligible(it->first);
+        if (!doc) {
+            if (!App::GetApplication().getDocument(it->first.c_str())) {
+                // Closed while its builds were queued: nothing left to build
+                // them for, and nothing of it may resolve against a document
+                // reopened under the same name.
+                it = visuals.docs.erase(it);
+                continue;
+            }
+            more = true;
+            ++it;
+            continue;
+        }
+        auto mark = elapsed();
+        auto charge = [&queue, &elapsed, &mark]() {
+            queue.spent += elapsed() - mark;
+        };
+        // This document's share, never past the slice's own end.
+        const double limit = std::min(budget, mark.count() + share);
+        const double left = std::max(0.001, limit - mark.count());
+
+        // Deferred shape restore (docs/DocumentLoad.md §14): serve this
+        // document's parked archive entries BEFORE any of its visuals is
+        // built. Shapes materializing inside the visual fill was the
+        // two-document lesson in reverse -- mid-drain content arriving
+        // through a path the staging never audited left link snapshots and
+        // renderer caches stale. Served first, a shape arrives through the
+        // same property change notification an ordinary edit uses, and the
+        // visual fill that follows runs with every shape present -- the
+        // exact dynamics of the non-deferred load, with the reads moved off
+        // the blocking open into these first slices. (The document drains
+        // these on its own timer too, for the entries no queued visual
+        // would ever ask about; whichever gets there first, the other finds
+        // nothing left to do.)
+        if (doc->serveDeferredFiles(left)) {
+            charge();
+            more = true;
+            ++it;
+            continue;
+        }
+
+        ++queue.slices;
+        while (!queue.pending.empty()) {
+            auto obj = queue.pending.front().getObject();
+            queue.pending.pop_front();
+            auto vp = obj ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
+                                Gui::Application::Instance->getViewProvider(obj))
+                          : nullptr;
+            if (vp && vp->VisualDeferred) {
+                vp->VisualDeferred = false;
+                // Something may have built it in the meantime -- counted
+                // only when this slice is what built it, or the line would
+                // report work it never did.
+                if (vp->VisualTouched) {
+                    vp->updateVisual();
+                    ++queue.built;
+                }
+            }
+            if (elapsed().count() >= limit)
+                break;
+        }
+        charge();
+
+        if (!queue.pending.empty()) {
+            more = true;
+            ++it;
+            continue;
+        }
+        FC_LOG("progressive load " << it->first << ": " << queue.built
+                << " visuals in " << queue.slices << " slices, "
+                << queue.spent.count() << 's');
+        it = visuals.docs.erase(it);
+    }
+
+    if (more)
+        scheduleDeferredVisualSlice();
+}
+
 void ViewProviderPartExt::updateVisual()
 {
     if (!getObject()
@@ -3254,6 +3499,13 @@ void ViewProviderPartExt::updateVisual()
         VisualTouched = true;
         return;
     }
+
+    if (deferVisualForLoad())
+        return;
+
+    // A restore or a live import runs this thousands of times inside another
+    // stage's timing; the accumulator is what makes that share visible.
+    Gui::ViewProvider::VisualBuildTimer buildTimer;
 
     Gui::SoUpdateVBOAction action;
     action.apply(this->faceset);
@@ -3569,18 +3821,26 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
         bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
 
+        {
+            // Separated from the node building around it: a mesh already
+            // resident (an instance sharing this TShape, a stand-in resolved
+            // by the pool) makes this call nearly free, and only the split
+            // says whether a bulk fill is paying for tessellation at all.
+            Gui::ViewProvider::VisualBuildTimer meshTimer(
+                    Gui::ViewProvider::VisualMeshTime, nullptr);
 #if OCC_VERSION_HEX >= 0x070500
-        IMeshTools_Parameters meshParams;
-        meshParams.Deflection = deflection;
-        meshParams.Relative = Standard_False;
-        meshParams.Angle = AngDeflectionRads;
-        meshParams.InParallel = Standard_True;
-        meshParams.AllowQualityDecrease = Standard_True;
+            IMeshTools_Parameters meshParams;
+            meshParams.Deflection = deflection;
+            meshParams.Relative = Standard_False;
+            meshParams.Angle = AngDeflectionRads;
+            meshParams.InParallel = Standard_True;
+            meshParams.AllowQualityDecrease = Standard_True;
 
-        BRepMesh_IncrementalMesh(cShape, meshParams);
+            BRepMesh_IncrementalMesh(cShape, meshParams);
 #else
-        BRepMesh_IncrementalMesh(cShape, deflection, Standard_False, AngDeflectionRads, Standard_True);
+            BRepMesh_IncrementalMesh(cShape, deflection, Standard_False, AngDeflectionRads, Standard_True);
 #endif
+        }
 
 
         // A face without a geometric surface is a purely triangulated one

@@ -17,7 +17,9 @@ ADD_CUSTOM_TARGET(Example_data ALL
 
 # 0001097: CMake stops with error "Circular ... <- ... dependency dropped."
 if(NOT "${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
-    fc_copy_sources(Example_data "${CMAKE_BINARY_DIR}/share/examples" ${Examples_Files})
+    # Same as data/settings: the resource dir is CMAKE_INSTALL_DATADIR, "data"
+    # on MSVC and "share" only under GNUInstallDirs.
+    fc_copy_sources(Example_data "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/examples" ${Examples_Files})
 endif()
 
 if (WIN32 AND FREECAD_LIBPACK_USE)

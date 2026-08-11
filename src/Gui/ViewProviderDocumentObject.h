@@ -138,6 +138,20 @@ public:
     //@{
     virtual void startRestoring();
     virtual void finishRestoring();
+    /** Two properties a shared default block can never speak for.
+     *
+     * Visibility, because a restore that never sees it falls back to the
+     * document object's own visibility in finishRestoring(), and
+     * startRestoring() has hidden the view provider by then -- so leaving it
+     * out is not the same as writing the default.
+     *
+     * DisplayMode, because its enumeration comes from attach(), and a
+     * stand-in built outside any document is never attached. Its DisplayMode
+     * holds an empty enumeration, which describes no view provider at all.
+     */
+    bool mustSave(const App::Property &prop) const override {
+        return &prop == &Visibility || &prop == &DisplayMode;
+    }
     //@}
 
     bool removeDynamicProperty(const char* prop) override;

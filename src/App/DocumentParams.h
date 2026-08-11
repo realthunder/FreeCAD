@@ -173,6 +173,61 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter InlineListSize
+    ///
+    /// Largest list property, in bytes of values, still written inline
+    /// in the XML instead of taking an archive entry of its own. An
+    /// entry costs around 190 bytes of zip headers before any content,
+    /// and one more thing for the reader to open, which a one-element
+    /// colour list has no way of paying back. Written in the same form
+    /// the reader has always used for lists that cannot be streamed, so
+    /// the file stays readable by FreeCAD versions without this option.
+    /// Set to 0 to give every list an entry, as before.
+    static const long & getInlineListSize();
+    static const long & defaultInlineListSize();
+    static void removeInlineListSize();
+    static void setInlineListSize(const long &v);
+    static const char *docInlineListSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ArchiveRandomAccess
+    ///
+    /// Restore a document archive through its zip central directory
+    /// instead of one forward-only stream. Entries are then opened
+    /// independently and served in registration order whatever their
+    /// archive order, nothing pays for inflating entries nobody reads,
+    /// and an entry can be reopened after the restore. Turn off to
+    /// fall back to the forward-only walk.
+    static const bool & getArchiveRandomAccess();
+    static const bool & defaultArchiveRandomAccess();
+    static void removeArchiveRandomAccess();
+    static void setArchiveRandomAccess(const bool &v);
+    static const char *docArchiveRandomAccess();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DeferShapeLoad
+    ///
+    /// Park shape archive entries during restore and read each one on
+    /// first real use instead of before the document opens, so the
+    /// window is up while shapes stream in with the progressive visual
+    /// fill. Requires ArchiveRandomAccess. An entry not yet served is
+    /// read when anything asks for the shape -- visual build, script,
+    /// save -- so the value is never observably missing; the trade is
+    /// that the document must not be rewritten externally while loads
+    /// are pending. Off by default until gated on the large references.
+    static const bool & getDeferShapeLoad();
+    static const bool & defaultDeferShapeLoad();
+    static void removeDeferShapeLoad();
+    static void setDeferShapeLoad(const bool &v);
+    static const char *docDeferShapeLoad();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter AutoRemoveFile
     static const bool & getAutoRemoveFile();
     static const bool & defaultAutoRemoveFile();
@@ -415,6 +470,21 @@ public:
     static void removeMCPServerAutoStart();
     static void setMCPServerAutoStart(const bool &v);
     static const char *docMCPServerAutoStart();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MCPServerPort
+    ///
+    /// Port the MCP debug console server listens on. If it is already in
+    /// use the server takes the next free port after it, so the port it
+    /// ends up on is reported in the console and in the Tools -> MCP
+    /// Server tooltip.
+    static const long & getMCPServerPort();
+    static const long & defaultMCPServerPort();
+    static void removeMCPServerPort();
+    static void setMCPServerPort(const long &v);
+    static const char *docMCPServerPort();
     //@}
 
 // Auto generated code (Tools/params_utils.py:179)

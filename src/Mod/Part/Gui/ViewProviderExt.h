@@ -297,6 +297,24 @@ protected:
 
     bool VisualTouched;
     bool NormalsFromUV;
+    /// This shape's visual build was put off to the progressive-load queue
+    /// and is waiting its slice; a restore asks for the same visual more
+    /// than once, and the flag keeps it queued only the first time.
+    bool VisualDeferred = false;
+
+    /** Park this shape's visual build instead of building it now.
+     *
+     * A document restore asks for the visual of every shape it brings back,
+     * inline on the main thread, while nothing paints. With Progressive
+     * document load on, the ask is parked and served in bounded slices once
+     * the load is over. Returns whether it was parked, in which case the
+     * shape is left visually touched and the caller is done.
+     */
+    bool deferVisualForLoad();
+    /// Build one slice of the parked visuals, then reschedule if any remain.
+    static void runDeferredVisualSlice();
+    /// Post the next slice to the event loop (nothing if one is pending).
+    static void scheduleDeferredVisualSlice(int delayMs = 0);
     /// The TShape whose exact tessellation the desktop refine has
     /// already transferred onto the flattened shape (§13): while the
     /// current shape still is that one, updateVisual builds at the

@@ -1179,6 +1179,15 @@ namespace {
 // binding the module into __main__ just to call one function on it.
 const char *McpConsoleModule = "__import__('freecad.mcp_console', fromlist=['server'])";
 
+// The endpoint goes in the tooltip because the port is not always the configured
+// one: a port already in use makes the server take the next free one, and an
+// agent has to be told where to connect.
+const char *McpServingToolTip = QT_TRANSLATE_NOOP("StdCmdMCPServer",
+        "Serving this FreeCAD session to an AI agent at %1");
+const char *McpStoppedToolTip = QT_TRANSLATE_NOOP("StdCmdMCPServer",
+        "Serve this FreeCAD session to an AI agent over the Model Context "
+        "Protocol (port %1, or the next free one)");
+
 bool mcpServerIsRunning()
 {
     try {
@@ -1192,6 +1201,36 @@ bool mcpServerIsRunning()
     }
 }
 
+/*! The endpoint a running server is actually serving, empty if it is not up.
+ * Only the server knows this -- the configured port is where it started
+ * looking, not necessarily where it landed.
+ */
+std::string mcpServerUrl()
+{
+    try {
+        Base::PyGILStateLocker lock;
+        return static_cast<std::string>(Py::String(Base::Interpreter().runStringObject(
+                (std::string(McpConsoleModule) + ".url()").c_str())));
+    }
+    catch (Base::Exception &e) {
+        e.ReportException();
+        return {};
+    }
+}
+
+void mcpServerUpdateToolTip(Action *action, bool running)
+{
+    if (!action)
+        return;
+    std::string endpoint = running ? mcpServerUrl() : std::string();
+    if (!endpoint.empty())
+        action->setToolTip(QCoreApplication::translate("StdCmdMCPServer", McpServingToolTip)
+                           .arg(QString::fromStdString(endpoint)));
+    else
+        action->setToolTip(QCoreApplication::translate("StdCmdMCPServer", McpStoppedToolTip)
+                           .arg(App::DocumentParams::getMCPServerPort()));
+}
+
 /*! Start or stop the MCP console server and return the state it actually ended
  * up in. Neither request is assumed to have been honoured: start() raises if
  * the 'mcp' package is missing, and stop() declines when the installed mcp
@@ -1200,10 +1239,22 @@ bool mcpServerIsRunning()
 bool mcpServerSetRunning(bool run)
 {
     try {
+        std::string call = McpConsoleModule;
+        if (run)
+            call += ".start(port=" + std::to_string(App::DocumentParams::getMCPServerPort()) + ")";
+        else
+            call += ".stop()";
+
         Base::PyGILStateLocker lock;
-        Py::Object res = Base::Interpreter().runStringObject(
-                (std::string(McpConsoleModule) + (run ? ".start()" : ".stop()")).c_str());
-        Base::Console().Message("%s\n", static_cast<std::string>(Py::String(res)).c_str());
+        Py::Object res = Base::Interpreter().runStringObject(call.c_str());
+        std::string msg = static_cast<std::string>(Py::String(res));
+        // A warning on the way up, because the line names the port the server
+        // actually got -- which the configured one does not always predict, and
+        // which nothing else will tell the user. Coming down is unremarkable.
+        if (run)
+            Base::Console().Warning("%s\n", msg.c_str());
+        else
+            Base::Console().Message("%s\n", msg.c_str());
     }
     catch (Base::Exception &e) {
         e.ReportException();
@@ -1213,7 +1264,7 @@ bool mcpServerSetRunning(bool run)
 
 } // anonymous namespace
 
-DEF_STD_CMD_AC(StdCmdMCPServer)
+DEF_STD_CMD_ACL(StdCmdMCPServer)
 
 StdCmdMCPServer::StdCmdMCPServer()
   : Command("Std_MCPServer")
@@ -1235,6 +1286,7 @@ Action * StdCmdMCPServer::createAction()
     // built, so show the remembered state here; activated() corrects it if the
     // server then refuses to come up.
     pcAction->setChecked(App::DocumentParams::getMCPServerAutoStart(), true);
+    mcpServerUpdateToolTip(pcAction, mcpServerIsRunning());
     return pcAction;
 }
 
@@ -1247,6 +1299,18 @@ void StdCmdMCPServer::activated(int iMsg)
 
     if (_pcAction && running != (iMsg != 0))
         _pcAction->setChecked(running, true);
+
+    // The endpoint only exists once the server is up, and it changes if the
+    // configured port was taken, so the tooltip is rebuilt on every transition.
+    mcpServerUpdateToolTip(_pcAction, running);
+}
+
+void StdCmdMCPServer::languageChange()
+{
+    Command::languageChange();
+    // Command::languageChange() puts the static sToolTipText back, which knows
+    // nothing about the port.
+    mcpServerUpdateToolTip(_pcAction, mcpServerIsRunning());
 }
 
 bool StdCmdMCPServer::isActive()

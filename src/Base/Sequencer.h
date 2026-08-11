@@ -24,7 +24,14 @@
 #ifndef BASE_SEQUENCER_H
 #define BASE_SEQUENCER_H
 
+#include <atomic>
+#include <cstddef>
+#include <string>
+#include <vector>
+
 #include "Exception.h"
+
+class QThread;
 
 namespace Base
 {
@@ -152,6 +159,17 @@ public:
     virtual void checkAbort()
     {}
 
+    /**
+     * Returns true if this indicator is driven by polling (e.g. the GUI status
+     * bar polling SequencerManager on a timer) instead of by per-step pushes.
+     * Worker-thread ticks may then skip driving the indicator altogether and
+     * only bump their launcher's atomic counters.
+     */
+    virtual bool updatesViaPoll() const
+    {
+        return false;
+    }
+
 protected:
     /**
      * Starts a new operation, returns false if there is already a pending operation,
@@ -205,10 +223,10 @@ protected:
 protected:
     /** construction */
     SequencerBase();
-    SequencerBase(const SequencerBase&) = default;
-    SequencerBase(SequencerBase&&) = default;
-    SequencerBase& operator=(const SequencerBase&) = default;
-    SequencerBase& operator=(SequencerBase&&) = default;
+    SequencerBase(const SequencerBase&) = delete;
+    SequencerBase(SequencerBase&&) = delete;
+    SequencerBase& operator=(const SequencerBase&) = delete;
+    SequencerBase& operator=(SequencerBase&&) = delete;
     /**
      * Sets a text what the pending operation is doing. The default implementation
      * does nothing.
@@ -249,8 +267,9 @@ protected:
     // NOLINTEND
 
 private:
-    bool _bLocked {false};     /**< Lock/unlock sequencer. */
-    bool _bCanceled {false};   /**< Is set to true if the last pending operation was canceled */
+    bool _bLocked {false}; /**< Lock/unlock sequencer. */
+    std::atomic<bool> _bCanceled {
+        false};                /**< Is set to true if the last pending operation was canceled */
     int _nLastPercentage {-1}; /**< Progress in percent. */
 };
 
@@ -284,6 +303,9 @@ private:
     void setText(const char* pszTxt) override;
     /** Resets the sequencer */
     void resetData() override;
+
+    std::string _lastText;   /**< last printed text, to skip repeats */
+    bool _printed {false};   /**< a progress line needs clearing */
 };
 
 /** The SequencerLauncher class is provided for convenience. It allows you to run an instance of the
@@ -372,7 +394,29 @@ private:
 class BaseExport SequencerLauncher
 {
 public:
-    SequencerLauncher(const char* pszStr=nullptr, size_t steps=0);
+    /** What the indicator may do to the UI on this sequence's behalf.
+     *
+     * A sequence started on the main thread has always meant "this loop
+     * owns the GUI thread until it ends", and the indicator answers it by
+     * grabbing input: a wait cursor, the application event filter that
+     * swallows clicks and keys, and the 3D viewer's own filter dropping
+     * navigation (View3DInventorViewer's eventFilter tests
+     * Sequencer().isBlocking() too). That is right for a loop that keeps
+     * the thread.
+     *
+     * It is wrong for a sequence that spans event-loop turns -- a load
+     * draining in budgeted slices (docs/ProgressiveLoading.md §2) reports
+     * one sequence across many returns to the event loop, and the whole
+     * point of the drain is that the window stays usable while it runs.
+     * KeepInteractive reports such a sequence without letting the
+     * indicator take the input away.
+     */
+    enum Blocking {
+        BlockInput,       ///< the sequence owns the GUI thread (default)
+        KeepInteractive,  ///< sliced on the event loop; leave the UI usable
+    };
+    SequencerLauncher(const char* pszStr=nullptr, size_t steps=0,
+                      Blocking blocking=BlockInput);
     virtual ~SequencerLauncher();
     size_t numberOfSteps() const;
     size_t progress() const;
@@ -393,19 +437,67 @@ public:
     bool stop();
 private:
     std::string strText;
-    size_t nProgress {0};
-    size_t nTotalSteps {0};
+    std::atomic<size_t> nProgress {0};
+    std::atomic<size_t> nTotalSteps {0};
     // Allow cancel by user code
-    bool bCanceled {false};
+    std::atomic<bool> bCanceled {false};
     bool bBlocking {false};
+    bool bKeepInteractive {false};
     bool bNoException {false};
-    std::vector<SequencerLauncher*> vChildren;
-    SequencerLauncher *pParent {nullptr};
+    QThread *ownerThread {nullptr};
 
     SequencerLauncher(const SequencerLauncher&) = delete;
     SequencerLauncher(SequencerLauncher&&) = delete;
     void operator=(const SequencerLauncher&) = delete;
     void operator=(SequencerLauncher&&) = delete;
+
+    friend class SequencerManager;
+};
+
+/**
+ * \brief Thread-aware collector of all parallel running sequences.
+ *
+ * Every SequencerLauncher on any thread registers itself; this class turns
+ * that registry into a consolidated progress a UI can poll on its own cadence
+ * (poll, not push): workers only bump their launcher's atomic counters, the
+ * consolidation work happens at snapshot() time in the reader.
+ *
+ * Sequences are reported per thread as a hierarchy: the outermost active
+ * launcher is the root (depth 0) and nested launchers follow it in nesting
+ * order with increasing depth, up to \a maxLevels. Only the roots feed the
+ * consolidated numbers, preserving the "nested sequences do not inflate
+ * progress" rule, while launchers running on different threads sum up. A
+ * launcher may also be shared by several worker threads (e.g. a parallel
+ * recompute with one launcher for the whole job) — next() is safe to call
+ * concurrently.
+ */
+class BaseExport SequencerManager
+{
+public:
+    struct Info
+    {
+        std::string text;       /**< what this sequence says it is doing */
+        size_t progress = 0;    /**< steps done so far */
+        size_t total = 0;       /**< 0 = unknown (busy indicator) */
+        size_t depth = 0;       /**< nesting level within its thread; 0 = root */
+        bool mainThread = false;
+    };
+    struct Snapshot
+    {
+        /** grouped per thread: each root (depth 0) directly followed by its
+         * nested sequences in nesting order */
+        std::vector<Info> sequences;
+        size_t progress = 0; /**< consolidated over roots: sum of min(progress, total) */
+        size_t total = 0;    /**< consolidated over roots; 0 = indeterminate */
+        /** number of root (depth 0) sequences, i.e. parallel sequences */
+        size_t roots = 0;
+    };
+
+    /** Lock-free count of live launchers (cheap "is anything running?"). */
+    static size_t activeCount();
+    /** Consolidated snapshot of all running sequences (locks briefly),
+     * reporting at most \a maxLevels nesting levels per thread. */
+    static Snapshot snapshot(size_t maxLevels = 5);
 };
 
 /** Access to the only SequencerBase instance */

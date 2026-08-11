@@ -2383,7 +2383,13 @@ public:
     // framebuffer owns (created with destroyTextures=true, e.g. the
     // sink attachments) are NOT listed; their owner's release
     // invalidates them by hand.
-    enum HandleLife : uint8_t { LifeSized, LifeView };
+    //   LifeProgram -- shader programs, uniforms and the stand-in
+    //                textures: size-independent, and linking them is the
+    //                single most expensive thing this class does (Intel's
+    //                GL JIT ~5 s for this set). A resize keeps them --
+    //                init(keepShared) skips destroyPrograms() -- and only
+    //                a shader-generation or MSAA change releases them.
+    enum HandleLife : uint8_t { LifeSized, LifeView, LifeProgram };
     template <typename Fn>
     void forEachHandle(Fn &&fn)
     {
@@ -2428,8 +2434,8 @@ public:
         fn(volHistFrontTex, LifeSized);
         fn(bloomTex, LifeSized);
         fn(bloomBlurTex, LifeSized);
-        fn(bulbShadowTex, LifeSized);
-        fn(bulbShadowDepth, LifeSized);
+        fn(bulbShadowTex, LifeProgram);
+        fn(bulbShadowDepth, LifeProgram);
         fn(waterFrontTex, LifeSized);
         fn(waterBackTex, LifeSized);
         fn(waterFrontDepth, LifeSized);
@@ -2449,63 +2455,63 @@ public:
         fn(sceneCopyTex, LifeSized);
         fn(reflTex, LifeSized);
         fn(reflDepth, LifeSized);
-        fn(s_texVol, LifeSized);
-        fn(s_texVolFront, LifeSized);
-        fn(u_volParams, LifeSized);
-        fn(u_volMedium, LifeSized);
-        fn(u_volTexel, LifeSized);
-        fn(s_texWaterFront, LifeSized);
-        fn(s_texWaterBack, LifeSized);
-        fn(u_waterSigma, LifeSized);
-        fn(u_causticParams, LifeSized);
-        fn(s_texScene, LifeSized);
-        fn(s_texRefl, LifeSized);
-        fn(u_waterSurf, LifeSized);
-        fn(u_waterAbsorb, LifeSized);
-        fn(u_waterRipple, LifeSized);
-        fn(u_reflParams, LifeSized);
-        fn(s_texGlassFront, LifeSized);
-        fn(s_texGlassBack, LifeSized);
-        fn(u_glassParams, LifeSized);
-        fn(s_texCloudFront, LifeSized);
-        fn(s_texCloudBack, LifeSized);
-        fn(u_cloudParams, LifeSized);
-        fn(s_texFireFront, LifeSized);
-        fn(s_texFireBack, LifeSized);
-        fn(u_fireParams, LifeSized);
-        fn(u_fireParams2, LifeSized);
-        fn(u_fireFrame, LifeSized);
-        fn(u_fountainParams, LifeSized);
-        fn(u_fountainFrame, LifeSized);
-        fn(u_waterSplash, LifeSized);
-        fn(u_mediumSlot, LifeSized);
-        fn(m_progPrepass, LifeSized);
-        fn(m_progPrepassClip, LifeSized);
-        fn(m_progMedDepth, LifeSized);
-        fn(m_progMedDepthClip, LifeSized);
-        fn(m_progPrepassInst, LifeSized);
-        fn(m_progSsao, LifeSized);
-        fn(m_progGtao, LifeSized);
-        fn(m_progGtaoBlur, LifeSized);
-        fn(m_progGtaoDepth, LifeSized);
-        fn(m_progSsaoBlur, LifeSized);
+        fn(s_texVol, LifeProgram);
+        fn(s_texVolFront, LifeProgram);
+        fn(u_volParams, LifeProgram);
+        fn(u_volMedium, LifeProgram);
+        fn(u_volTexel, LifeProgram);
+        fn(s_texWaterFront, LifeProgram);
+        fn(s_texWaterBack, LifeProgram);
+        fn(u_waterSigma, LifeProgram);
+        fn(u_causticParams, LifeProgram);
+        fn(s_texScene, LifeProgram);
+        fn(s_texRefl, LifeProgram);
+        fn(u_waterSurf, LifeProgram);
+        fn(u_waterAbsorb, LifeProgram);
+        fn(u_waterRipple, LifeProgram);
+        fn(u_reflParams, LifeProgram);
+        fn(s_texGlassFront, LifeProgram);
+        fn(s_texGlassBack, LifeProgram);
+        fn(u_glassParams, LifeProgram);
+        fn(s_texCloudFront, LifeProgram);
+        fn(s_texCloudBack, LifeProgram);
+        fn(u_cloudParams, LifeProgram);
+        fn(s_texFireFront, LifeProgram);
+        fn(s_texFireBack, LifeProgram);
+        fn(u_fireParams, LifeProgram);
+        fn(u_fireParams2, LifeProgram);
+        fn(u_fireFrame, LifeProgram);
+        fn(u_fountainParams, LifeProgram);
+        fn(u_fountainFrame, LifeProgram);
+        fn(u_waterSplash, LifeProgram);
+        fn(u_mediumSlot, LifeProgram);
+        fn(m_progPrepass, LifeProgram);
+        fn(m_progPrepassClip, LifeProgram);
+        fn(m_progMedDepth, LifeProgram);
+        fn(m_progMedDepthClip, LifeProgram);
+        fn(m_progPrepassInst, LifeProgram);
+        fn(m_progSsao, LifeProgram);
+        fn(m_progGtao, LifeProgram);
+        fn(m_progGtaoBlur, LifeProgram);
+        fn(m_progGtaoDepth, LifeProgram);
+        fn(m_progSsaoBlur, LifeProgram);
         fn(m_progCavity, LifeSized);
-        fn(m_progVol, LifeSized);
-        fn(m_progVolAccum, LifeSized);
-        fn(m_progReflMedia, LifeSized);
-        fn(m_progBloomBright, LifeSized);
-        fn(m_progBloomEmit, LifeSized);
-        fn(m_progBloomBlur, LifeSized);
-        fn(m_progBloomApply, LifeSized);
-        fn(m_progSun, LifeSized);
-        fn(m_progEnvBg, LifeSized);
-        fn(m_progVolApply, LifeSized);
-        fn(m_progVolExt, LifeSized);
-        fn(m_progCaustics, LifeSized);
-        fn(m_progWaterCopy, LifeSized);
-        fn(m_progWater, LifeSized);
-        fn(m_progGlass, LifeSized);
-        fn(m_progGroundRefl, LifeSized);
+        fn(m_progVol, LifeProgram);
+        fn(m_progVolAccum, LifeProgram);
+        fn(m_progReflMedia, LifeProgram);
+        fn(m_progBloomBright, LifeProgram);
+        fn(m_progBloomEmit, LifeProgram);
+        fn(m_progBloomBlur, LifeProgram);
+        fn(m_progBloomApply, LifeProgram);
+        fn(m_progSun, LifeProgram);
+        fn(m_progEnvBg, LifeProgram);
+        fn(m_progVolApply, LifeProgram);
+        fn(m_progVolExt, LifeProgram);
+        fn(m_progCaustics, LifeProgram);
+        fn(m_progWaterCopy, LifeProgram);
+        fn(m_progWater, LifeProgram);
+        fn(m_progGlass, LifeProgram);
+        fn(m_progGroundRefl, LifeProgram);
         // Shadow resources: the framebuffers before their textures.
         fn(shadowFbo, LifeSized);
         fn(shadowBlurFbo, LifeSized);
@@ -2518,55 +2524,55 @@ public:
         fn(shadowBlurTex, LifeSized);
         fn(shadowTintTex, LifeSized);
         fn(shadowTintBlurTex, LifeSized);
-        fn(m_progShadow, LifeSized);
-        fn(m_progShadowClip, LifeSized);
-        fn(m_progShadowInst, LifeSized);
-        fn(m_progShadowBlur, LifeSized);
-        fn(m_progShadowTint, LifeSized);
-        fn(s_texShadow, LifeSized);
-        fn(s_texShadowTint, LifeSized);
-        fn(s_texAOScreen, LifeSized);
-        fn(u_debugParams, LifeSized);
-        fn(s_texDebugScene, LifeSized);
-        fn(u_shadowParams, LifeSized);
-        fn(u_lightDir, LifeSized);
-        fn(u_lightPos, LifeSized);
-        fn(u_lightColor, LifeSized);
-        fn(u_shadowMatrix, LifeSized);
-        fn(u_shadowBlur, LifeSized);
-        fn(u_evsm, LifeSized);
-        fn(u_localLight, LifeSized);
-        fn(u_localLightColor, LifeSized);
-        fn(s_texBloom, LifeSized);
-        fn(u_bloomParams, LifeSized);
-        fn(u_bloomTexel, LifeSized);
-        fn(u_bloomBlur, LifeSized);
-        fn(u_sunParams, LifeSized);
-        fn(s_texBulbShadow, LifeSized);
-        fn(u_bulbShadowMtx, LifeSized);
-        fn(u_bulbShadowConf, LifeSized);
-        fn(u_bulbShadowRot, LifeSized);
+        fn(m_progShadow, LifeProgram);
+        fn(m_progShadowClip, LifeProgram);
+        fn(m_progShadowInst, LifeProgram);
+        fn(m_progShadowBlur, LifeProgram);
+        fn(m_progShadowTint, LifeProgram);
+        fn(s_texShadow, LifeProgram);
+        fn(s_texShadowTint, LifeProgram);
+        fn(s_texAOScreen, LifeProgram);
+        fn(u_debugParams, LifeProgram);
+        fn(s_texDebugScene, LifeProgram);
+        fn(u_shadowParams, LifeProgram);
+        fn(u_lightDir, LifeProgram);
+        fn(u_lightPos, LifeProgram);
+        fn(u_lightColor, LifeProgram);
+        fn(u_shadowMatrix, LifeProgram);
+        fn(u_shadowBlur, LifeProgram);
+        fn(u_evsm, LifeProgram);
+        fn(u_localLight, LifeProgram);
+        fn(u_localLightColor, LifeProgram);
+        fn(s_texBloom, LifeProgram);
+        fn(u_bloomParams, LifeProgram);
+        fn(u_bloomTexel, LifeProgram);
+        fn(u_bloomBlur, LifeProgram);
+        fn(u_sunParams, LifeProgram);
+        fn(s_texBulbShadow, LifeProgram);
+        fn(u_bulbShadowMtx, LifeProgram);
+        fn(u_bulbShadowConf, LifeProgram);
+        fn(u_bulbShadowRot, LifeProgram);
         // PBR environment resources.
-        fn(m_envTex, LifeSized);
-        fn(m_dummyEnvTex, LifeSized);
-        fn(s_texNormalZ, LifeSized);
-        fn(s_texAONoise, LifeSized);
-        fn(s_texAO, LifeSized);
+        fn(m_envTex, LifeProgram);
+        fn(m_dummyEnvTex, LifeProgram);
+        fn(s_texNormalZ, LifeProgram);
+        fn(s_texAONoise, LifeProgram);
+        fn(s_texAO, LifeProgram);
         for (auto &h : s_texAOMip)
-            fn(h, LifeSized);
-        fn(u_aoParams, LifeSized);
-        fn(u_aoParams2, LifeSized);
+            fn(h, LifeProgram);
+        fn(u_aoParams, LifeProgram);
+        fn(u_aoParams2, LifeProgram);
         fn(u_cavityParams, LifeSized);
-        fn(u_aoKernel, LifeSized);
-        fn(s_texEnv, LifeSized);
-        fn(u_pbrParams, LifeSized);
+        fn(u_aoKernel, LifeProgram);
+        fn(s_texEnv, LifeProgram);
+        fn(u_pbrParams, LifeProgram);
         fn(u_matcapParams, LifeSized);
-        fn(u_envSH, LifeSized);
-        fn(s_texBump, LifeSized);
-        fn(u_bumpParams, LifeSized);
-        fn(s_texEmissive, LifeSized);
-        fn(s_texOcclusion, LifeSized);
-        fn(s_texMetallicRoughness, LifeSized);
+        fn(u_envSH, LifeProgram);
+        fn(s_texBump, LifeProgram);
+        fn(u_bumpParams, LifeProgram);
+        fn(s_texEmissive, LifeProgram);
+        fn(s_texOcclusion, LifeProgram);
+        fn(s_texMetallicRoughness, LifeProgram);
         // The OIT framebuffer references bgfxDepth (owned by bgfxFbo),
         // so it goes first; the sink framebuffer owns its attachments
         // (sinkColor/sinkDepth are invalidated by the sweep caller).
@@ -2575,53 +2581,53 @@ public:
         fn(oitReveal, LifeSized);
         fn(bgfxFbo, LifeSized);
         fn(sinkFbo, LifeSized);
-        fn(m_progMesh, LifeSized);
-        fn(m_progMeshInst, LifeSized);
-        fn(m_progMeshInstTex, LifeSized);
-        fn(m_progMeshInstOit, LifeSized);
-        fn(m_progMeshInstOitTex, LifeSized);
-        fn(u_instParams, LifeSized);
-        fn(m_progFlat, LifeSized);
-        fn(m_progMeshClip, LifeSized);
-        fn(m_progFlatClip, LifeSized);
-        fn(m_progLine, LifeSized);
-        fn(m_progLineClip, LifeSized);
-        fn(m_progLinePat, LifeSized);
-        fn(m_progLinePatClip, LifeSized);
-        fn(m_progPoint, LifeSized);
-        fn(m_progPointClip, LifeSized);
-        fn(m_progMeshTex, LifeSized);
-        fn(m_progMeshTexClip, LifeSized);
-        fn(m_progMeshOitTex, LifeSized);
-        fn(m_progMeshOitTexClip, LifeSized);
-        fn(s_texColor, LifeSized);
-        fn(u_texMatrix, LifeSized);
-        fn(u_texParams, LifeSized);
-        fn(u_texBlendColor, LifeSized);
-        fn(m_progMeshOit, LifeSized);
-        fn(m_progMeshOitClip, LifeSized);
-        fn(m_progComp, LifeSized);
-        fn(m_progDebug, LifeSized);
-        fn(m_progDebugScene, LifeSized);
-        fn(m_progDebugSceneClip, LifeSized);
-        fn(m_progCap, LifeSized);
-        fn(m_progCapClip, LifeSized);
-        fn(s_texHatch, LifeSized);
-        fn(m_whiteTex, LifeSized);
-        fn(m_blackTex, LifeSized);
-        fn(m_hatchTex, LifeSized);
-        fn(s_texAccum, LifeSized);
-        fn(s_texReveal, LifeSized);
+        fn(m_progMesh, LifeProgram);
+        fn(m_progMeshInst, LifeProgram);
+        fn(m_progMeshInstTex, LifeProgram);
+        fn(m_progMeshInstOit, LifeProgram);
+        fn(m_progMeshInstOitTex, LifeProgram);
+        fn(u_instParams, LifeProgram);
+        fn(m_progFlat, LifeProgram);
+        fn(m_progMeshClip, LifeProgram);
+        fn(m_progFlatClip, LifeProgram);
+        fn(m_progLine, LifeProgram);
+        fn(m_progLineClip, LifeProgram);
+        fn(m_progLinePat, LifeProgram);
+        fn(m_progLinePatClip, LifeProgram);
+        fn(m_progPoint, LifeProgram);
+        fn(m_progPointClip, LifeProgram);
+        fn(m_progMeshTex, LifeProgram);
+        fn(m_progMeshTexClip, LifeProgram);
+        fn(m_progMeshOitTex, LifeProgram);
+        fn(m_progMeshOitTexClip, LifeProgram);
+        fn(s_texColor, LifeProgram);
+        fn(u_texMatrix, LifeProgram);
+        fn(u_texParams, LifeProgram);
+        fn(u_texBlendColor, LifeProgram);
+        fn(m_progMeshOit, LifeProgram);
+        fn(m_progMeshOitClip, LifeProgram);
+        fn(m_progComp, LifeProgram);
+        fn(m_progDebug, LifeProgram);
+        fn(m_progDebugScene, LifeProgram);
+        fn(m_progDebugSceneClip, LifeProgram);
+        fn(m_progCap, LifeProgram);
+        fn(m_progCapClip, LifeProgram);
+        fn(s_texHatch, LifeProgram);
+        fn(m_whiteTex, LifeProgram);
+        fn(m_blackTex, LifeProgram);
+        fn(m_hatchTex, LifeProgram);
+        fn(s_texAccum, LifeProgram);
+        fn(s_texReveal, LifeProgram);
         fn(m_lineQuadVb, LifeSized);
         fn(m_lineQuadIb, LifeSized);
-        fn(u_matColor, LifeSized);
-        fn(u_matEmissive, LifeSized);
-        fn(u_matSpecular, LifeSized);
-        fn(u_params, LifeSized);
+        fn(u_matColor, LifeProgram);
+        fn(u_matEmissive, LifeProgram);
+        fn(u_matSpecular, LifeProgram);
+        fn(u_params, LifeProgram);
         fn(u_polyOffset, LifeSized);
-        fn(u_clipParams, LifeSized);
-        fn(u_clipPlanes, LifeSized);
-        fn(u_linePattern, LifeSized);
+        fn(u_clipParams, LifeProgram);
+        fn(u_clipPlanes, LifeProgram);
+        fn(u_linePattern, LifeProgram);
 #ifdef FC_RENDERER_STANDALONE
         fn(m_progPresent, LifeSized);
 #endif
@@ -2661,11 +2667,19 @@ public:
     ~BGFXView();
 
     void destroy();
+    /// The uploaded scene (meshes, geometries, textures): kept across a
+    /// resize, which is why it is not part of destroyTargets().
+    void destroySceneCaches();
+    /// Everything sized by the viewport; the one set a plain resize drops.
+    void destroyTargets();
+    /// Programs, uniforms and stand-in textures: expensive to relink, so
+    /// a resize keeps them.
+    void destroyPrograms();
 
     bgfx::TextureHandle createTexture(bgfx::TextureFormat::Enum format, uint64_t flags = 0,
                                       bool sampled = false);
 
-    void init();
+    void init(bool keepShared = false);
 
     /// Radiance of the environment for a world direction (Z up, unit
     /// length). With a user image (PBRConfig::envImage) that image is
@@ -4101,6 +4115,10 @@ public:
     /// Draw identity resolved by the producer (setObjectInfo); consulted
     /// by the snapshot writer for the published object entries.
     Render::ObjectInfoMap objectInfo;
+    /// The labels those identities carry to a viewer (setObjectMeta),
+    /// pushed by the serving source when a document changes them rather
+    /// than rebuilt per publish. Empty on a view nobody serves.
+    Render::ObjectMetaMap objectMeta;
     // Cross-object instance groups of the scene feed: draws sharing one
     // geometry content (by hash — a shared cache OR coincidentally
     // identical flattened caches), index range and material (diffuse

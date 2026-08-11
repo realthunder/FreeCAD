@@ -351,10 +351,10 @@ void CmdMeshImport::activated(int)
                                                        QString(),
                                                        filter.join(QStringLiteral(";;")));
     for (const auto& it : fn) {
-        std::string unicodepath = Base::Tools::escapeEncodeString((it)).toUtf8().constData();
+        std::string unicodepath = Base::Tools::pythonLiteral(it);
         openCommand(QT_TRANSLATE_NOOP("Command", "Import Mesh"));
         doCommand(Doc, "import Mesh");
-        doCommand(Doc, "Mesh.insert(u\"%s\")", unicodepath.c_str());
+        doCommand(Doc, "Mesh.insert(%s)", unicodepath.c_str());
         commitCommand();
         updateActive();
     }

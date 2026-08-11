@@ -289,6 +289,23 @@ Conformance is verified end-to-end (initialize / tools list+call with input &
 output schema, structured content, main-thread execution, and driving the live
 GUI to build a `Part::Box` and read its OCCT volume).
 
+**`127.0.0.1:8765` is ambiguous on a box that also runs WSL2 in mirrored networking
+mode.** A FreeCAD started inside the distro serves its console on the same loopback
+address the Windows side sees, so a Windows client connects to the *Linux* process and
+everything looks normal — same tool, same API, plausible answers — until a path gives it
+away (`os.getcwd()` returning `/home/...`, or a screenshot that "saved" successfully and
+does not exist on disk). `Get-NetTCPConnection -LocalPort 8765` lists no owning Windows
+process in that case, which is the tell. Start the Windows console on its own port
+(`mcp_console.start(port=8766)`) whenever both stacks may be live, and verify with
+`App.getHomePath()` before trusting a session.
+
+**Screenshots need an unlocked desktop.** `Gui.getMainWindow().grab()` renders the widget
+tree, so menus, toolbars, panels and the report view come out fine with the session
+locked — but the 3D view's GL surface is not composited and the viewport comes back as a
+faint ghost under *both* the default GL and bgfx backends. That is a capture artifact,
+not a render defect; the discriminator is a console line like
+`bgfx: scene consumed: 3 draws, 3 meshes`, which says the backend really did draw.
+
 ## Fallback stack: system gcc + apt Qt 6.4.2
 
 Kept intact and working, but **PySide6 is impossible here** (see above) — Python
@@ -366,9 +383,24 @@ and keeps the Linux-style in-repo layout.
   two — do not conclude from that that MSVC is missing. Check
   `<VS>\VC\Tools\MSVC\<ver>\bin\Hostx64\x64\cl.exe`, and look under
   `D:\Program Files (x86)\` too, not just `Program Files`.
-- **Miniforge** (not Miniconda — see the channel note below).
+- **Miniforge** (not Miniconda — see the channel note below). Installs unattended with
+  `Miniforge3-Windows-x86_64.exe /InstallationType=JustMe /RegisterPython=0 /AddToPath=0
+  /S /D=<prefix>` (`/D` last, unquoted).
 - Git for Windows, and optionally the gh CLI (the winget MSI needs elevation; the
-  portable zip from the GitHub releases page needs none).
+  portable zip from the GitHub releases page needs none). Set `user.name`/`user.email`
+  before the first commit — a fresh box has neither, and the failure only surfaces at
+  `git commit`.
+- **`git submodule update --init --recursive` right after cloning.** A plain clone has
+  empty `src/3rdParty/bgfx` and `src/3rdParty/OndselSolver`, and configure fails on both
+  ("does not contain a CMakeLists.txt file"). bgfx pulls three nested submodules of its
+  own (bgfx, bimg, bx).
+- **If an older Miniconda is also installed**, it exports `CONDA_EXE` into the ambient
+  environment, and `conda.bat activate` honours a pre-set `CONDA_EXE`: the *old* conda
+  then generates the activation script in its old format, the new `_conda_activate.bat`
+  parses it into nothing, and activation reports errorlevel 0 while setting **no
+  variable at all** — `cmake`/`python` silently resolve to VS's copies or the Store stub.
+  `run.cmd` pins `CONDA_EXE`/`CONDA_PYTHON_EXE` to miniforge and then asserts
+  `CONDA_PREFIX`.
 
 ### conda env
 
@@ -508,17 +540,60 @@ then fails to link with ~78 unresolved externals, all of them C++ (`bgfx::init`,
 asymmetry is the fingerprint of bgfx-as-DLL; ELF default visibility hides it on
 Linux.
 
-**Do not try to fix this from the preset.** `src/3rdParty/CMakeLists.txt` sets
-`BGFX_LIBRARY_TYPE` as a *plain* variable, which shadows the cache entry a preset
-or `-D` provides. A cache override appears to work immediately after
-`cmake --preset` and then silently reverts to SHARED the next time anything
-regenerates the build — a pull touching any `CMakeLists.txt` is enough — leaving a
-`bgfx.dll` plus a small import library and the unresolved-symbol wall above.
+**Do not try to fix this from the preset**, and note that a *plain* variable does not
+work either — `src/3rdParty/CMakeLists.txt` sets it as a **FORCEd cache entry** for
+exactly that reason. bgfx's own `CMakeLists.txt` runs
+`set(BGFX_LIBRARY_TYPE "SHARED" CACHE STRING "Linking type for library")`, and creating
+a cache entry *removes any normal variable of that name from the calling scope*. So on
+a fresh cache the plain value set two lines earlier is discarded and the SHARED default
+wins; it only appears to work where a STATIC cache entry already exists from an earlier
+`-D`, which is why the second Windows box hit the unresolved-symbol wall above on its
+first build (fixed in `34f146d508`). A preset/`-D` override is separately useless: it is
+what the FORCE now overrides.
 
 ```bat
 .conda\run.cmd cmake --preset win-relwithdebinfo-local
 .conda\run.cmd cmake --build build\win-relwithdebinfo-801 -- -j N
 ```
+
+**The console code page decides whether incremental builds are correct.** On a
+Chinese Windows, `cl.exe` writes its `/showIncludes` lines as *注意: 包含文件:* in
+the **console output code page** (CP936), while CMake writes the same string into
+`CMakeFiles\rules.ninja` as `msvc_deps_prefix` in **UTF-8**. When the two encodings
+disagree ninja matches none of those lines, which has two consequences — one loud,
+one silent:
+
+- every compile dumps ~2000 `/showIncludes` lines into the build output (a full
+  build log goes from a few thousand lines to ~170 000), and
+- **ninja records zero header dependencies for that object.** `ninja -t deps <obj>`
+  reports `#deps 0, ... (VALID)`, so the object is only ever rebuilt when its own
+  `.cpp` changes. Edit or pull a header and every consumer stays stale.
+
+Nothing fails at the time. The first symptom arrives days later as an unresolved
+external at a link step — e.g. `Mesh.pyd` demanding a two-argument
+`Base::SequencerLauncher` constructor after a third parameter was added to it, because
+`Exporter.cpp.obj` was four days old and had never heard of the change.
+
+`run.cmd` therefore does `chcp 65001` before anything else, which makes the compiler's
+bytes match what CMake wrote. **A build launched outside `run.cmd`, or through a
+wrapper that gives `cmd.exe` no console (`Start-Process -RedirectStandardOutput`),
+re-opens the hole** — redirect inside the command (`cmd /c "... > log 2>&1"`) instead.
+`VSLANG=1033` is the other documented fix and is cleaner, but it needs the English
+language pack, which this VS Build Tools install does not have — setting it changes
+nothing on a Chinese-only install.
+
+To check an existing build tree, and to repair one:
+
+```bat
+:: how many objects carry no dependency information at all
+ninja -t deps > deps.txt          :: run in the build dir
+findstr /c:"#deps 0," deps.txt | find /c /v ""
+```
+
+Delete exactly those objects and rebuild; the rest of the tree is sound, so this is
+much cheaper than wiping the build directory. On the first box that was 1361 of 3553
+objects — all of `src/Gui`, TechDraw, PartDesign, Mesh, Part, Sketcher — against only
+30 in bgfx, whose dependency records had happened to be captured from a UTF-8 console.
 
 **Choosing N.** On a 12-thread / 16 GB box, `-j 8` produced
 `fatal error C1060: compiler is out of heap space` on OCCT-heavy translation units
@@ -532,6 +607,39 @@ Note also that `BGFX_BUILD_TOOLS_SHADER=ON` drags in **tint/Dawn** from bgfx's
 3rdparty tree — hundreds of heavy C++ TUs that dwarf FreeCAD's own code. It is needed
 to compile shaders (`ninja Renderer_assets`), but it is the single largest
 contributor to a cold Windows build.
+
+### Running the C++ (GoogleTest) suites
+
+`ENABLE_DEVELOPER_TESTS` is **OFF** in this build dir, as in the Linux presets, so
+`tests/` is not configured at all and `ninja Tests_run` answers *unknown target*.
+Turning it on costs one configure and no rebuild of what is already there:
+
+```cmd
+run.cmd cmake -S . -B build\win-relwithdebinfo-801 -DENABLE_DEVELOPER_TESTS=ON
+run.cmd cmake --build build\win-relwithdebinfo-801 --target <suite> -j 4
+```
+
+googletest is vendored (`tests/lib`), so nothing is fetched. Two things to know:
+
+- **The shared `Tests_run` suite does not link here**, for reasons that have
+  nothing to do with whatever you are testing: `tests/src/Base/Reader.cpp` names
+  `xercesc_3_2` while the conda env ships 3.3, and `tests/src/App/Expression.cpp`
+  uses `UnitExpression`/`OperatorExpression::UNIT` as they no longer are. Build a
+  focused executable instead (`DeferredLoad_tests_run`, `RestoreDrain_tests_run`,
+  …) — that is part of why those exist. `-- -k 0` gets ninja past the two broken
+  translation units if you only want a compile check of your own.
+- **The test exes need `bin` on `PATH`.** They are built into
+  `build\...\tests\src\App\`, not next to `FreeCADApp.dll`, and `run.cmd` does not
+  add the build's `bin` (it adds the dependency prefixes). Without it the process
+  dies before `main()` with no output at all:
+
+  ```cmd
+  set PATH=D:\Zheng.Lei\sw\fcad\build\win-relwithdebinfo-801\bin;%PATH%
+  run.cmd build\win-relwithdebinfo-801\tests\src\App\RestoreDrain_tests_run.exe
+  ```
+
+Put `ENABLE_DEVELOPER_TESTS` back to `OFF` afterwards, or a plain
+`cmake --build` of everything fails on those same two files.
 
 ### Building pivy
 
@@ -596,7 +704,7 @@ Committed to the OCCT fork (`4af0655f9a` on `LinkVibe-801`):
   TKDESTEP), so the call crosses a DLL boundary. ELF default visibility exports it
   regardless; MSVC does not.
 
-Uncommitted in the FreeCAD tree at the time of writing:
+In the FreeCAD tree (all committed since; the list is kept for the reasoning):
 
 | File | Fix |
 |---|---|
@@ -688,9 +796,16 @@ gates it on `QtWebEngineWidgets_FOUND`, and the non-WebEngine branch of `Browser
 falls back to QtWebKit's `QWebView`, which does not exist in Qt6. So WebEngine is not
 optional here.
 
+**On a fresh env, skip all of this and install a matched set.** conda-forge now carries
+`qt6-main`, `pyside6` **and** `qt6-webengine` at 6.10.2, so asking for all three at once
+gives a consistent env with no `@EXPLICIT` spec file and no patched `*Dependencies.cmake`
+— this is the "clean 6.10.2 bump" the last paragraph of this section recommends, and it
+is what the second Windows box was built with. The rest of this subsection applies only
+to an env already pinned to 6.10.1.
+
 **Installing it.** conda-forge splits WebEngine out of `qt6-main`, and its oldest build is
-**6.10.2** while this env is pinned to 6.10.1 (`conda-meta/pinned`). Rather than bump the
-whole Qt stack — which rewrites every Qt header and forces a rebuild of all of Gui and
+**6.10.2** while a 6.10.1-pinned env cannot take it (`conda-meta/pinned`). Rather than bump
+the whole Qt stack — which rewrites every Qt header and forces a rebuild of all of Gui and
 every module's Gui lib — install the one package against the older Qt. Qt patch releases
 are binary-compatible, and this one verifiably is:
 

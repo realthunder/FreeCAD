@@ -85,6 +85,9 @@
 #include <DAGView/DAGView.h>
 #include <TaskView/TaskView.h>
 
+#include <customtitlebarkit/FoldableMenuBar.h>
+#include <customtitlebarkit/MenuIntegration.h>
+
 #include "MainWindow.h"
 #include "Action.h"
 #include "Assistant.h"
@@ -288,6 +291,7 @@ struct MainWindowP
     QTimer* visibleTimer;
     QTimer saveStateTimer;
     QTimer restoreStateTimer;
+    QTimer titleBarTimer;
     QMdiArea* mdiArea;
     QPointer<MDIView> activeView;
     QSignalMapper* windowMapper;
@@ -307,6 +311,10 @@ struct MainWindowP
     bool _restoring = false;
     bool _closingAll = false;
     QTime _showNormal;
+
+    /// The button the title bar's menu folds behind. Outlives every switch
+    /// between the two title bars, so it is built once and handed back.
+    QPointer<QPushButton> titleBarLogo;
 
     QString overrideIcons;
     bool hasOverrideIcons = false;
@@ -402,8 +410,16 @@ protected:
 /* TRANSLATOR Gui::MainWindow */
 
 MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
-  : QMainWindow( parent, f/*WDestructiveClose*/ )
+  : CustomTitleBarWindow(
+        App::GetApplication()
+                .GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow")
+                ->GetBool("CustomTitleBar", false)
+            ? Mode::Custom
+            : Mode::Native,
+        parent)
 {
+    Q_UNUSED(f)  // CustomTitleBarWindow owns the window flags in Custom mode
+
     // Qt destroys and recreates a top-level's native window the first
     // time a render-to-texture child -- a QOpenGLWidget -- appears under
     // it: the surface it was created with cannot composite one, and
@@ -448,10 +464,24 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
                 OverlayManager::instance()->reload(OverlayManager::ReloadMode::ReloadPause);
                 d->restoreStateTimer.start(100);
             }
+            else if (boost::equals(Name, "CustomTitleBar")
+                    || boost::equals(Name, "TitleBarToolBars")) {
+                // Deferred, because the caller is usually a preference pack
+                // part way through writing a hundred keys, and because
+                // setCustomTitleBar() writes this one back and would arrive
+                // here again mid-swap. Coalescing both keys into one pass is
+                // what lets a theme name them independently.
+                d->titleBarTimer.start(0);
+            }
         });
 
     d->hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/MainWindow");
+
+    // After d->hGrp, which it reads, and before the menu bar exists, which is
+    // what it decides the layout of.
+    setupTitleBarMenu();
+
     d->saveStateTimer.setSingleShot(true);
     connect(&d->saveStateTimer, &QTimer::timeout, [this](){this->saveWindowSettings();});
 
@@ -461,6 +491,9 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
         ToolBarManager::getInstance()->restoreState();
         OverlayManager::instance()->reload(OverlayManager::ReloadMode::ReloadResume);
     });
+
+    d->titleBarTimer.setSingleShot(true);
+    connect(&d->titleBarTimer, &QTimer::timeout, [this](){ applyTitleBarParams(); });
 
     // support for grouped dragging of dockwidgets
     // https://woboq.com/blog/qdockwidget-changes-in-56.html
@@ -837,6 +870,30 @@ void populateMenu(QMenu *menu, MenuType type, bool popup,
             lockAction->setCheckable(true);
             lockAction->setChecked(!ToolBarManager::getInstance()->isDefaultMovable());
         }
+
+        // The toolbars parked in the menu bar and status bar, as a group. They
+        // are the ones a stray drag pulls out of place most easily, and with a
+        // custom title bar they share a row with the window drag area.
+        auto titleCb = [](bool checked) {
+            ToolBarManager::getInstance()->setTitleToolBarsLocked(checked);
+        };
+        const QString titleTitle = QObject::tr("Menu bar and status bar");
+        const QString titleTip = QObject::tr("Lock the toolbars docked in the menu bar and the status bar");
+        const bool titleLocked = ToolBarManager::getInstance()->areTitleToolBarsLocked();
+        if (popup) {
+            QCheckBox *checkbox;
+            auto wa = Action::addCheckBox(lockMenu, titleTitle, titleTip, QIcon(),
+                    titleLocked, &checkbox);
+            QObject::connect(wa, &QWidgetAction::toggled, titleCb);
+            QObject::connect(checkbox, &QCheckBox::toggled, titleCb);
+        } else {
+            auto act = lockMenu->addAction(titleTitle);
+            act->setToolTip(titleTip);
+            act->setCheckable(true);
+            act->setChecked(titleLocked);
+            QObject::connect(act, &QAction::toggled, titleCb);
+        }
+
         lockMenu->addSeparator();
 
         bool relocate = false;
@@ -849,10 +906,14 @@ void populateMenu(QMenu *menu, MenuType type, bool popup,
             relocate = relocate || (toolbar->isFloating()
                     && !rectMain.contains(toolbar->mapToGlobal(QPoint(0,0))));
 
-            if (parent == mw 
+            // A toolbar parked in one of the three toolbar areas belongs here
+            // too, and asking the manager which area owns it is the only test
+            // that survives a custom title bar -- the two menu-bar areas then
+            // sit in the title bar, not in the menu bar.
+            if (parent == mw
                     || parent == mw->statusBar()
-                    || (parent && (parent->parentWidget() == mw->statusBar()
-                                   || parent->parentWidget() == mw->menuBar()))) {
+                    || ToolBarManager::getInstance()->getToolBarArea(toolbar)
+                    || (parent && parent->parentWidget() == mw->statusBar())) {
                 // Some misbehaved code may force the toolbar to be visible
                 // while hiding its action, which causes the user to be unable
                 // to switch it off. We'll just include those actions anyway.
@@ -1316,7 +1377,7 @@ bool MainWindow::event(QEvent *e)
         if(std::abs(d->currentStatusType) <= MainWindow::Wrn)
             return true;
     }
-    return QMainWindow::event(e);
+    return CustomTitleBarWindow::event(e);
 }
 
 bool MainWindow::eventFilter(QObject* o, QEvent* e)
@@ -1397,7 +1458,7 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e)
         }
     }
 
-    return QMainWindow::eventFilter(o, e);
+    return CustomTitleBarWindow::eventFilter(o, e);
 }
 
 void MainWindow::addWindow(MDIView* view)
@@ -1736,16 +1797,259 @@ void MainWindow::closeEvent (QCloseEvent * e)
     }
 }
 
+namespace {
+
+/*! The button a folded title bar menu hides behind: the application logo, and
+ * beside it the three bars that say a menu opens from here.
+ *
+ * Those three bars are the whole reason for a custom widget. Without them the
+ * button is a logo, a logo is a brand mark rather than a control, and a menu
+ * bar that has turned into one reads as a menu bar that has gone missing --
+ * which is exactly how the first version of this was reported. They are painted
+ * rather than set as text or a second icon, so they follow the palette without
+ * being recomposed on every theme change and cannot come out as the empty box
+ * a font with no U+2630 would give.
+ *
+ * Resting the pointer on it opens the menu, so it can also be found by sweeping
+ * the mouse along the title bar rather than by reading the mark.
+ */
+class TitleBarMenuButton: public QPushButton
+{
+public:
+    explicit TitleBarMenuButton(QWidget *parent)
+        : QPushButton(parent)
+        , logo(BitmapFactory().iconFromTheme("freecad"))
+    {
+        setObjectName(QStringLiteral("titleBarLogo"));
+        setFlat(true);
+        setCursor(Qt::PointingHandCursor);
+        setFixedSize(3 * margin + logoSize + barsWidth, 35);
+
+        // Long enough that crossing the button on the way somewhere else does
+        // not open anything, short enough to feel like the button reacting.
+        hoverTimer.setSingleShot(true);
+        hoverTimer.setInterval(250);
+        connect(&hoverTimer, &QTimer::timeout, this, [this]() {
+            if (!underMouse()) {
+                return;
+            }
+            if (auto *bar = qobject_cast<FoldableMenuBar *>(parentWidget())) {
+                if (!bar->isExpanded()) {
+                    bar->setExpanded(true);
+                }
+            }
+        });
+    }
+
+protected:
+    void paintEvent(QPaintEvent *e) override
+    {
+        // The base class paints the background and frame the stylesheet asks
+        // for. It has neither icon nor text to draw, so everything visible
+        // below is ours.
+        QPushButton::paintEvent(e);
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+
+        const int top = (height() - logoSize) / 2;
+        logo.paint(&painter, QRect(margin, top, logoSize, logoSize));
+
+        // Three bars in whatever colour the theme gives button text, dimmed
+        // until the mouse is over the button: this is a hint, not a control of
+        // its own.
+        QColor ink = palette().buttonText().color();
+        ink.setAlphaF(isDown() || underMouse() ? 1.0F : 0.65F);
+        painter.setPen(QPen(ink, barThickness, Qt::SolidLine, Qt::RoundCap));
+
+        const qreal x = margin + logoSize + margin;
+        const qreal middle = height() / 2.0;
+        for (int row = -1; row <= 1; ++row) {
+            const qreal y = middle + row * barSpacing;
+            painter.drawLine(QPointF(x, y), QPointF(x + barsWidth, y));
+        }
+    }
+
+    void enterEvent(QEnterEvent *e) override
+    {
+        QPushButton::enterEvent(e);
+        hoverTimer.start();
+        update();  // the bars brighten under the mouse
+    }
+
+    void leaveEvent(QEvent *e) override
+    {
+        QPushButton::leaveEvent(e);
+        hoverTimer.stop();
+        update();
+    }
+
+private:
+    static constexpr int logoSize = 24;
+    static constexpr int barsWidth = 11;
+    static constexpr int margin = 5;
+    static constexpr qreal barSpacing = 3.5;
+    static constexpr qreal barThickness = 1.4;
+
+    QIcon logo;
+    QTimer hoverTimer;
+};
+
+}  // namespace
+
+void MainWindow::setupTitleBarMenu()
+{
+    // Let the stylesheets tell the backends apart -- the generic one draws its
+    // own close button and wants the red hover, the others do not. The kit
+    // itself never sets this, so the selector upstream's stylesheet uses would
+    // match nothing without it.
+    setProperty("backend", isCustomTitleBar() ? backendName() : QString());
+
+    if (!isCustomTitleBar()) {
+        return;
+    }
+    if (backendName().startsWith(QLatin1String("mac"))) {
+        // The mac backend keeps the system menu bar at the top of the screen,
+        // so there is nothing in the title bar to fold.
+        return;
+    }
+
+    if (!foldTitleBarMenu()) {
+        // nullptr asks the kit for the platform default, which lays the menu
+        // bar out inline in the title bar.
+        setMenuIntegration(nullptr);
+        if (d->titleBarLogo) {
+            d->titleBarLogo->hide();
+        }
+        return;
+    }
+
+    if (!d->titleBarLogo) {
+        auto logo = new TitleBarMenuButton(this);
+        logo->setToolTip(tr("Show the menu"));
+        d->titleBarLogo = logo;
+    }
+    // FoldableMenuIntegration::uninstall() hands the brand widget back with no
+    // parent at all, so take ownership again before passing it on.
+    d->titleBarLogo->setParent(this);
+
+    setMenuIntegration(new FoldableMenuIntegration(d->titleBarLogo, this));
+}
+
+bool MainWindow::foldTitleBarMenu() const
+{
+    return d->hGrp->GetBool("FoldTitleBarMenu", true);
+}
+
+void MainWindow::setFoldTitleBarMenu(bool enable)
+{
+    if (enable == foldTitleBarMenu()) {
+        return;
+    }
+    d->hGrp->SetBool("FoldTitleBarMenu", enable);
+    setupTitleBarMenu();
+}
+
+bool MainWindow::titleBarToolBars() const
+{
+    return d->hGrp->GetBool("TitleBarToolBars", true);
+}
+
+void MainWindow::applyTitleBarParams()
+{
+    const bool custom = d->hGrp->GetBool("CustomTitleBar", false);
+    // Only ever asked of the title bar that exists: with the platform's there
+    // is nowhere to put the toolbar, and false is also what puts it back.
+    const bool inTitleBar = custom && titleBarToolBars();
+    auto toolBars = ToolBarManager::getInstance();
+
+    // Nothing that happens below is the user's doing, and it has to be said so
+    // for the whole swap rather than around each move. setCustomTitleBar()
+    // reparents the two menu-bar areas, which hides every toolbar sitting in
+    // one; onToggleToolBar reads that as the toolbar having been switched off
+    // and writes it to BaseApp/MainWindow/ToolBars, where it stays. A few
+    // theme switches were enough to record all twelve as off and empty the
+    // window. This is the flag onToggleToolBar and saveWindowSettings already
+    // honour for the same reason.
+    Base::StateLocker restoring(d->_restoring);
+
+    // Emptying happens before the swap and filling after it, both for the same
+    // reason: the two areas are only intact while the title bar hosting them
+    // is. setCustomTitleBar() reparents and hides them on the way through, so
+    // a toolbar taken out afterwards is read mid-teardown -- it comes back
+    // hidden, because everything looks hidden at that point.
+    if (toolBars && !inTitleBar) {
+        toolBars->setTitleBarToolBars(false);
+    }
+    setCustomTitleBar(custom);
+    if (toolBars && inTitleBar) {
+        toolBars->setTitleBarToolBars(true);
+    }
+}
+
+void MainWindow::setCustomTitleBar(bool enable)
+{
+    if (enable == isCustomTitleBar()) {
+        return;
+    }
+
+    // None of what follows is the user's doing, and the swap hides widgets on
+    // its way through. FilterStatusBar answers a hidden status bar with
+    // saveWindowSettings(), which would write the transient hide out as the
+    // setting -- the same trap the toolbar areas are in, described in
+    // applyTitleBarParams(). Set here rather than only there because
+    // Std_ViewTitleBar calls this directly.
+    Base::StateLocker restoring(d->_restoring);
+
+    // The two menu-bar toolbar areas live inside whichever title bar is in
+    // charge, and setMode() deletes the one it is replacing -- a child of a
+    // deleted widget goes with it. Park them on the window across the swap.
+    auto toolBars = ToolBarManager::getInstance();
+    if (toolBars) {
+        toolBars->detachMenuBarAreas();
+    }
+
+    // Both directions run through setWindowFlags, and Qt hides a window whose
+    // flags change. setMode() puts the window itself back, but the status bar
+    // comes out of it *explicitly* hidden, so re-showing the parent does not
+    // bring it back -- and it stayed gone for good, surviving both a swap back
+    // to the platform title bar and every later start, because the hide had by
+    // then been saved as StatusBar=false.
+    //
+    // isHidden(), not isVisible(): only the explicit flag says what the user
+    // asked for. A status bar that is merely waiting on a window not shown yet
+    // -- which is where this stands when applyTitleBarParams() runs at startup
+    // -- reads as invisible, and restoring *that* would hide it for real.
+    const bool statusBarHidden = statusBar()->isHidden();
+
+    setMode(enable ? Mode::Custom : Mode::Native);
+
+    statusBar()->setVisible(!statusBarHidden);
+
+    // setMode() installs the kit's own inline integration; swap in ours.
+    setupTitleBarMenu();
+
+    if (toolBars) {
+        toolBars->relocateMenuBarAreas();
+        // Toolbars in the two areas are sized against the title bar they are
+        // in -- full size in ours, shrunk to menu-text height in the
+        // platform's -- so the swap changes what they should be.
+        toolBars->setupToolBarIconSize();
+    }
+
+    d->hGrp->SetBool("CustomTitleBar", enable);
+}
+
 void MainWindow::showEvent(QShowEvent* e)
 {
     std::clog << "Show main window" << std::endl;
-    QMainWindow::showEvent(e);
+    CustomTitleBarWindow::showEvent(e);
 }
 
 void MainWindow::hideEvent(QHideEvent* e)
 {
     std::clog << "Hide main window" << std::endl;
-    QMainWindow::hideEvent(e);
+    CustomTitleBarWindow::hideEvent(e);
 }
 
 void MainWindow::processMessages(const QList<QByteArray> & msg)
@@ -2334,7 +2638,7 @@ void MainWindow::dropEvent (QDropEvent* e)
         loadUrls(App::GetApplication().getActiveDocument(), data->urls());
     }
     else {
-        QMainWindow::dropEvent(e);
+        CustomTitleBarWindow::dropEvent(e);
     }
 }
 
@@ -2592,7 +2896,7 @@ void MainWindow::childEvent(QChildEvent *e)
         ToolBarManager::checkToolBar();
     }
 
-    QMainWindow::childEvent(e);
+    CustomTitleBarWindow::childEvent(e);
 }
 
 QString MainWindow::overrideIcons() const
@@ -2714,7 +3018,20 @@ QStringList loadIconSet(std::set<QString> &files,
 QStringList loadIconSet(QString content, bool asFileName)
 {
     std::set<QString> files;
-    return loadIconSet(files, content, asFileName);
+    if (!asFileName)
+        return loadIconSet(files, content, false);
+
+    // MainWindow/IconSet holds a ';'-separated list so a theme's icon set can
+    // layer over the user's own without either having to edit the other's file.
+    // Order is what does it: applyOverrideIcons() lets a later line win, which
+    // is the same rule "#import" already relies on.
+    QStringList lines;
+    for (const auto &entry : content.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+        auto name = entry.trimmed();
+        if (!name.isEmpty())
+            lines += loadIconSet(files, name, /*asFileName*/true);
+    }
+    return lines;
 }
 } // anonymous namespace
 
@@ -2763,7 +3080,7 @@ void MainWindow::changeEvent(QEvent *e)
         }
     }
     else {
-        QMainWindow::changeEvent(e);
+        CustomTitleBarWindow::changeEvent(e);
     }
 }
 

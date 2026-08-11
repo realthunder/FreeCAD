@@ -47,6 +47,31 @@ Params = [
     ParamInt('ForceXML', 3),
     ParamBool('SplitXML', True),
     ParamBool('PreferBinary', False),
+    ParamInt('InlineListSize', 64,
+        doc='Largest list property, in bytes of values, still written inline\n'
+            'in the XML instead of taking an archive entry of its own. An\n'
+            'entry costs around 190 bytes of zip headers before any content,\n'
+            'and one more thing for the reader to open, which a one-element\n'
+            'colour list has no way of paying back. Written in the same form\n'
+            'the reader has always used for lists that cannot be streamed, so\n'
+            'the file stays readable by FreeCAD versions without this option.\n'
+            'Set to 0 to give every list an entry, as before.'),
+    ParamBool('ArchiveRandomAccess', True,
+        doc='Restore a document archive through its zip central directory\n'
+            'instead of one forward-only stream. Entries are then opened\n'
+            'independently and served in registration order whatever their\n'
+            'archive order, nothing pays for inflating entries nobody reads,\n'
+            'and an entry can be reopened after the restore. Turn off to\n'
+            'fall back to the forward-only walk.'),
+    ParamBool('DeferShapeLoad', True,
+        doc='Park shape archive entries during restore and read each one on\n'
+            'first real use instead of before the document opens, so the\n'
+            'window is up while shapes stream in with the progressive visual\n'
+            'fill. Requires ArchiveRandomAccess. An entry not yet served is\n'
+            'read when anything asks for the shape -- visual build, script,\n'
+            'save -- so the value is never observably missing; the trade is\n'
+            'that the document must not be rewritten externally while loads\n'
+            'are pending. Off by default until gated on the large references.'),
     ParamBool('AutoRemoveFile', True),
     ParamBool('AutoNameDynamicProperty', False),
     ParamBool('BackupPolicy', True),
@@ -75,6 +100,11 @@ Params = [
     ParamBool('MCPServerAutoStart', False,
         doc='Start the MCP debug console server (freecad.mcp_console) when the\n'
             'application starts. Toggled by the Tools -> MCP Server menu action.'),
+    ParamInt('MCPServerPort', 8765,
+        doc='Port the MCP debug console server listens on. If it is already in\n'
+            'use the server takes the next free port after it, so the port it\n'
+            'ends up on is reported in the console and in the Tools -> MCP\n'
+            'Server tooltip.'),
 ]
 
 def declare():

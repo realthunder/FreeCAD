@@ -31,6 +31,7 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
 {
     snap.scene = scene;
     snap.objectInfo = &objectInfo;
+    snap.objectMeta = &objectMeta;
     snap.selections.assign(selections.begin(), selections.end());
     snap.highlight = highlight;
     snap.highlightWholeOnTop = hlWholeOnTop;

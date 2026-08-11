@@ -269,7 +269,8 @@ void Property::touch()
     _StatusBits.set(Touched);
     if (getName() && father
                   && !Transaction::isApplying(this)
-                  && !Document::isRemoving(this)) {
+                  && !Document::isRemoving(this)
+                  && !Document::isRestoringDefaults()) {
         father->onEarlyChange(this);
         father->onChanged(this);
         if(!testStatus(Busy)) {
@@ -498,7 +499,26 @@ void PropertyLists::Save (Base::Writer &writer) const
         return;
     }
 
-    if (writer.isForceXML() || !canSaveStream(writer)) {
+    // A list small enough that the archive entry costs more than the values
+    // do. An entry is not free: two zip headers, a name, a directory record --
+    // around 190 bytes before any content -- and one more thing for the reader
+    // to open and drain. A one-colour DiffuseColor spends all of that on eight
+    // bytes, and a large assembly has one per object.
+    //
+    // Written as count="N", which is the form the reader has always taken for
+    // a list that could not be streamed, so nothing on the read side changes
+    // and no file written this way needs a newer FreeCAD to read it. The
+    // threshold is on getMemSize() rather than the element count because the
+    // elements are of wildly different sizes; XML text runs roughly three
+    // times the binary, so the default keeps the inline form comfortably under
+    // what the entry it replaces would have cost.
+    //
+    // A class that streams must implement saveXML too -- ForceXML has always
+    // required that of it -- so this branch cannot reach the base class throw
+    // where the file branch would not have.
+    const long inlineLimit = DocumentParams::getInlineListSize();
+    if (writer.isForceXML() || !canSaveStream(writer)
+            || (inlineLimit > 0 && static_cast<long>(getMemSize()) <= inlineLimit)) {
         writer.Stream() << writer.ind() << '<' << element << " count=\"" <<  getSize() <<"\" ";
         if(!saveXML(writer))
             writer.Stream() << writer.ind() << "</" << element << ">\n";

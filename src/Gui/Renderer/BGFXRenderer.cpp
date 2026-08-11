@@ -236,8 +236,54 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
 void BGFXRenderer::setObjectInfo(ObjectInfoMap &&info)
 {
     pimpl->objectInfo = std::move(info);
+    noteObjectInfoStated();
     // Identity rides the published root's object entries; a change to
     // it alone (rename) only reaches viewers with the next publish.
+    pimpl->feedDirty = true;
+}
+
+void BGFXRenderer::updateObjectInfo(ObjectInfoMap &&added)
+{
+    if (added.empty())
+        return;
+    if (pimpl->objectInfo.empty())
+        pimpl->objectInfo = std::move(added);
+    else {
+        for (auto &entry : added)
+            pimpl->objectInfo.insert(std::move(entry));
+    }
+    pimpl->feedDirty = true;
+}
+
+void BGFXRenderer::setObjectMeta(ObjectMetaMap &&meta)
+{
+    pimpl->objectMeta = std::move(meta);
+    // A rename changes no geometry and no key, so nothing else marks the
+    // feed dirty for it -- without this the new label would sit here
+    // until something moved.
+    pimpl->feedDirty = true;
+}
+
+void BGFXRenderer::updateObjectMeta(
+        ObjectMetaMap &&changed,
+        const std::vector<std::pair<std::string, std::string>> &removed)
+{
+    for (auto &doc : changed) {
+        auto &byObject = pimpl->objectMeta[doc.first];
+        for (auto &obj : doc.second)
+            byObject[obj.first] = std::move(obj.second);
+    }
+    for (const auto &key : removed) {
+        auto doc = pimpl->objectMeta.find(key.first);
+        if (doc == pimpl->objectMeta.end())
+            continue;
+        doc->second.erase(key.second);
+        // A document whose last object went takes its own entry with
+        // it, so the table cannot accumulate empty documents across a
+        // session of opening and closing files.
+        if (doc->second.empty())
+            pimpl->objectMeta.erase(doc);
+    }
     pimpl->feedDirty = true;
 }
 

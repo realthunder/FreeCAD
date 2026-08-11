@@ -330,6 +330,42 @@ std::string Base::Tools::escapeEncodeFilename(const std::string& s)
     return result;
 }
 
+std::string Base::Tools::pythonLiteral(const std::string& s)
+{
+    Base::PyGILStateLocker lock;
+    std::string literal {"''"};
+
+    PyObject* str = PyUnicode_FromStringAndSize(s.c_str(), static_cast<Py_ssize_t>(s.size()));
+    if (!str) {
+        PyErr_Clear();
+        return literal;
+    }
+
+    // PyObject_ASCII is repr() with the non-ASCII escaped as well, so the
+    // result is a complete literal that is safe to paste into a command
+    // string whatever the interpreter's source encoding turns out to be.
+    if (PyObject* repr = PyObject_ASCII(str)) {
+        if (const char* text = PyUnicode_AsUTF8(repr)) {
+            literal = text;
+        }
+        else {
+            PyErr_Clear();
+        }
+        Py_DECREF(repr);
+    }
+    else {
+        PyErr_Clear();
+    }
+
+    Py_DECREF(str);
+    return literal;
+}
+
+std::string Base::Tools::pythonLiteral(const QString& s)
+{
+    return pythonLiteral(std::string(s.toUtf8().constData()));
+}
+
 std::string Base::Tools::quoted(const char* name)
 {
     std::stringstream str;

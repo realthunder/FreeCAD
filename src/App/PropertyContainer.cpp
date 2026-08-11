@@ -319,7 +319,7 @@ void PropertyContainer::beforeSave() const
     }
 }
 
-void PropertyContainer::Save (Base::Writer &writer) const 
+void PropertyContainer::Save (Base::Writer &writer) const
 {
     if (!_pimpl || _pimpl->propertyMap.empty())
         beforeSave();
@@ -328,6 +328,61 @@ void PropertyContainer::Save (Base::Writer &writer) const
 
     auto & Map = _pimpl->propertyMap;
     auto & transients = _pimpl->transients;
+
+    // Drop everything the shared default block already says -- and "says" is
+    // literal. A property is left out only when its own serialization is
+    // byte-identical to what the block records and the file therefore
+    // carries, and its status agrees. No isSame() stands between the file
+    // and the decision, so an equivalence that is looser than the bytes can
+    // never lose a value. The opt-outs are checked first, so the counters
+    // only speak about properties that were actually eligible.
+    if (auto defaults = getSaveDefaults()) {
+        const unsigned long touchedMask = 1UL << Property::Touched;
+        std::string bytes;
+        for (auto it = Map.begin(); it != Map.end();) {
+            auto &prop = *it->second;
+            if (!prop.canShareDefault()
+                       || prop.testStatus(Property::PropDynamic)
+                       || mustSave(prop)) {
+                ++it;
+                continue;
+            }
+            auto entry = defaults->find(it->first);
+            if (!entry || entry->type != prop.getTypeId()) {
+                ++savedDefaultsUnknown;
+                ++it;
+            }
+            // ⚠️ Every bit but Touched. A file does not preserve that one:
+            // Restore() applies the recorded status and then calls the
+            // property's own Restore, which touches it again -- so a property
+            // written untouched comes back touched whatever the file said,
+            // and that is as true of the properties this leaves in as of the
+            // ones it takes out. Comparing it would only refuse to elide
+            // anything at all, since a stand-in is freshly built and every
+            // settled object has been purged: it was 255 of 411 refusals on
+            // the check document.
+            else if ((entry->status & ~touchedMask)
+                        != (prop.getStatus() & ~touchedMask)) {
+                ++savedDefaultsStatus;
+                ++it;
+            }
+            // The memSize test is only a prefilter: unequal sizes cannot
+            // serialize equally, and it spares a big list the serialization
+            // that would only confirm it differs from a small default. A
+            // property that fails to serialize is written out as it always
+            // was -- the false from serializeForCompare, never an exception.
+            else if (entry->memSize != prop.getMemSize()
+                        || !SharedDefaults::serializeForCompare(writer, prop, bytes)
+                        || bytes != entry->content) {
+                ++savedDefaultsValue;
+                ++it;
+            }
+            else {
+                it = Map.erase(it);
+                ++savedDefaults;
+            }
+        }
+    }
 
     writer.incInd(); // indentation for 'Properties Count'
     writer.Stream() << writer.ind() << "<Properties Count=\"" << Map.size()
@@ -398,8 +453,123 @@ void PropertyContainer::Save (Base::Writer &writer) const
     writer.decInd(); // indentation for 'Properties Count'
 }
 
+PropertyContainer::RestoreStats PropertyContainer::restoreStats;
+std::size_t PropertyContainer::savedDefaults;
+std::size_t PropertyContainer::savedDefaultsUnknown;
+std::size_t PropertyContainer::savedDefaultsValue;
+std::size_t PropertyContainer::savedDefaultsStatus;
+
+bool SharedDefaults::serializeForCompare(const Base::Writer &fileWriter,
+                                         const Property &prop, std::string &out)
+{
+    return serializeForCompare(fileWriter.getSchemaVersion(),
+                               fileWriter.getFileVersion(), prop, out);
+}
+
+bool SharedDefaults::eligible(const PropertyContainer &owner, const Property &prop)
+{
+    if (!prop.getName() || prop.getContainer() != &owner)
+        return false;
+    if (!prop.canShareDefault()
+            || prop.testStatus(Property::PropDynamic)
+            || owner.mustSave(prop))
+        return false;
+    if (prop.testStatus(Property::PropNoPersist)
+            || prop.testStatus(Property::Transient)
+            || (prop.getType() & Prop_Transient))
+        return false;
+    return true;
+}
+
+bool SharedDefaults::serializeForCompare(int schemaVersion, int fileVersion,
+                                         const Property &prop, std::string &out)
+{
+    try {
+        // A writer of its own, fresh each time: the canonical settings are
+        // the file's schema and version with XML forced and no indentation,
+        // and a Save that throws must not leave a shared writer's state for
+        // the next comparison to inherit. Fresh construction is a string
+        // and a stream -- cheap against what a single elision saves.
+        Base::StringWriter scratch;
+        scratch.setSchemaVersion(schemaVersion);
+        scratch.setFileVersion(fileVersion);
+        scratch.setForceXML(9999);
+        prop.Save(scratch);
+        out = scratch.getString();
+        return true;
+    }
+    catch (Base::Exception &e) {
+        FC_LOG("Failed to serialize " << prop.getFullName()
+                << " for comparison: " << e.what());
+    }
+    catch (const std::exception &e) {
+        FC_LOG("Failed to serialize " << prop.getFullName()
+                << " for comparison: " << e.what());
+    }
+    catch (...) {
+        FC_LOG("Failed to serialize " << prop.getFullName() << " for comparison");
+    }
+    return false;
+}
+
+void SharedDefaults::build(const PropertyContainer &standIn,
+                           const Base::Writer &fileWriter)
+{
+    entries.clear();
+    std::vector<Property*> props;
+    standIn.getPropertyList(props);
+    for (auto prop : props) {
+        // The same eligibility the writer applies, settled once at the point
+        // of recording: what is not in here can never be elided, whatever a
+        // container might have answered.
+        if (!eligible(standIn, *prop))
+            continue;
+        Entry entry;
+        entry.type = prop->getTypeId();
+        entry.status = prop->getStatus();
+        entry.memSize = prop->getMemSize();
+        // A Save can emit nothing against the stand-in and still emit
+        // something against a real owner -- PropertyXLink returns without
+        // writing when its container has no document. Such a recording can
+        // never equal any object's own bytes, so it buys no elision, and the
+        // property's Restore cannot parse emptiness when the block is read
+        // back. Not recorded means not elidable, which is the safe direction.
+        if (serializeForCompare(fileWriter, *prop, entry.content)
+                && !entry.content.empty())
+            entries.emplace(prop->getName(), std::move(entry));
+    }
+}
+
+void SharedDefaults::save(Base::Writer &writer) const
+{
+    // The same element shape PropertyContainer::Save produces, so the same
+    // Restore reads it back -- but the content is spliced in verbatim from
+    // what build() recorded. The file states the exact bytes every elision
+    // was decided against; emitting through a second serialization would
+    // reopen the gap this class exists to close. The content was recorded
+    // without indentation, and stays that way in the file.
+    writer.incInd();
+    writer.Stream() << writer.ind() << "<Properties Count=\"" << entries.size()
+                    << "\" TransientCount=\"0\">\n";
+    for (const auto &v : entries) {
+        writer.incInd();
+        writer.Stream() << writer.ind() << "<Property name=\"" << v.first
+                        << "\" type=\"" << v.second.type.getName();
+        if (v.second.status)
+            writer.Stream() << "\" status=\"" << v.second.status;
+        writer.Stream() << "\">\n";
+        writer.Stream() << v.second.content;
+        writer.Stream() << writer.ind() << "</Property>\n";
+        writer.decInd();
+    }
+    writer.Stream() << writer.ind() << "</Properties>\n";
+    writer.decInd();
+}
+
 void PropertyContainer::Restore(Base::XMLReader &reader)
 {
+    auto tRestore = std::chrono::high_resolution_clock::now();
+
     reader.clearPartialRestoreProperty();
     reader.readElement("Properties");
     int Cnt = reader.getAttributeAsInteger("Count");
@@ -457,7 +627,19 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
                         && !prop->testStatus(Property::PropTransient))
                 {
                     FC_TRACE("restoring property " << prop->getFullName());
+                    auto tValue = std::chrono::high_resolution_clock::now();
                     prop->Restore(reader);
+                    auto dValue = std::chrono::high_resolution_clock::now() - tValue;
+                    restoreStats.value += dValue;
+                    // Self-selecting: a single property worth tens of
+                    // milliseconds is never the parse, it is a reaction to
+                    // the value -- name it, so a slow restore says where
+                    // the time went.
+                    if (dValue > std::chrono::milliseconds(5))
+                        FC_LOG("slow property restore " << prop->getFullName()
+                                << " (" << prop->getTypeId().getName() << "): "
+                                << std::chrono::duration<double>(dValue).count()
+                                << 's');
                 }else
                     FC_TRACE("skip transient " << prop->getFullName());
             }
@@ -468,6 +650,7 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
             // name doesn't match, the sub-class then has to know
             // if the property has been renamed or removed
             else {
+                ++restoreStats.unmatched;
                 handleChangedPropertyName(reader, TypeName.c_str(), PropName.c_str());
             }
 
@@ -510,6 +693,9 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
         reader.readEndElement("Property",&guard);
     }
     reader.readEndElement("Properties");
+
+    restoreStats.count += Cnt;
+    restoreStats.total += std::chrono::high_resolution_clock::now() - tRestore;
 }
 
 void PropertyContainer::onPropertyStatusChanged(const Property &prop, unsigned long oldStatus)

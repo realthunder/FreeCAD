@@ -219,6 +219,26 @@ public:
      */
     virtual void onContainerRestored() {}
 
+    /** @name Deferred archive-entry restore (docs/DocumentLoad.md §14)
+     *
+     * A property may opt in to having its RestoreDocFile() parked by
+     * the restore and served lazily from the still-indexed document
+     * archive. The property's own accessors are then responsible for
+     * asking Document::restoreDeferredFile() before touching the value
+     * (tracked through the pending flag below, which the document sets
+     * when it parks the entry and clears when it serves it). Neither
+     * state persists -- both describe this process, not the file.
+     */
+    //@{
+    /// Whether this property's RestoreDocFile() may be parked.
+    virtual bool canDeferRestore() const { return false; }
+    /// Whether a parked entry has yet to be served.
+    virtual bool isRestorePending() const { return false; }
+    /// Set/clear the parked state; only the document and the property
+    /// itself have business calling this.
+    virtual void setRestorePending(bool) {}
+    //@}
+
     /** Property status handling
      */
     //@{
@@ -277,6 +297,25 @@ public:
     virtual bool isSame(const Property &other) const = 0;
     /// Compare property by comparing their XML content
     bool isSameContent(const Property &other) const;
+
+    /** Whether a shared class-default block may ever speak for this property.
+     *
+     * The default is no. A property type must opt in before a save is
+     * allowed to leave it out in favour of a recorded class default, and
+     * before a reader is allowed to paste such a default over it. The
+     * opt-in belongs on cheap, deterministic value types only -- eliding a
+     * property means serializing it for comparison against the record on
+     * every save, and pasting it on any load whose build disagrees. A type
+     * whose serialization is expensive (a shape), context-dependent (a
+     * Python object), or nondeterministic by construction (a UUID) must
+     * stay out, and with this polarity it stays out by doing nothing.
+     *
+     * This is the type-level gate; PropertyContainer::mustSave() remains
+     * the container-level veto for properties whose *absence* from a file
+     * carries meaning even though their type is cheap (a view provider's
+     * Visibility). Both must agree before a property can be elided.
+     */
+    virtual bool canShareDefault() const { return false; }
     /** Returns a new copy before change of the property
      *
      * This function is used internally by property to detect changes.

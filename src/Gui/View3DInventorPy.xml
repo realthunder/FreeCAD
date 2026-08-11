@@ -169,7 +169,21 @@ scale: sets distance from camera to origin, and height of the screen in model
     </Methode>
     <Methode Name="saveImage">
       <Documentation>
-        <UserDocu>sageImage()</UserDocu>
+        <UserDocu>saveImage(path, width=-1, height=-1, background='Current', comment='$MIBA', samples=...)
+
+Write the view to an image file. A width or height of -1 keeps the
+view's own. 'background' is a color name, or 'Current' for the view's.
+
+With an external render backend active (render cache mode 3) the scene
+is drawn by the backend, not by the Coin scene graph, so the capture is
+taken through the backend's own frame readback instead
+(docs/RenderDebug.md section 4). The image is of the model: the
+navigation cube, the corner axis cross and on-screen text are left out
+of it, while in-scene overlays (editing overlays, dimensions) stay. Two
+limits come with the readback -- it is taken at the view's resolution
+and scaled if another size is asked for, and its background is opaque.
+saveRenderDump(source='renderer') captures the same frame as staged,
+chrome included, when that is what you want.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="saveVectorGraphic">

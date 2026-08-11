@@ -221,6 +221,16 @@ public:
     QImage grabFramebuffer();
     void imageFromFramebuffer(int width, int height, int samples,
                               const QColor& bgcolor, QImage& img);
+    /// Pump paint events until an armed one-shot frame dump has been
+    /// consumed by a rendered frame (docs/RenderDebug.md §4.2); false on
+    /// timeout, or if the renderer was replaced while pumping.
+    bool pumpFrameDump(Render::Renderer *renderer);
+    /// Capture the frame through the render backend's own one-shot dump
+    /// rather than an offscreen Coin render, which cannot see what the
+    /// backend drew. False when there is no backend or it has no capture
+    /// path, and the caller falls back to the Coin route.
+    bool imageFromRenderer(int width, int height, const QColor& bgcolor,
+                           QImage& img);
 
     void setViewing(bool enable) override;
     virtual void setCursorEnabled(bool enable);

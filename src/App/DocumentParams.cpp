@@ -55,6 +55,9 @@ public:
         signalParamChanged("ForceXML");
         signalParamChanged("SplitXML");
         signalParamChanged("PreferBinary");
+        signalParamChanged("InlineListSize");
+        signalParamChanged("ArchiveRandomAccess");
+        signalParamChanged("DeferShapeLoad");
         signalParamChanged("AutoRemoveFile");
         signalParamChanged("AutoNameDynamicProperty");
         signalParamChanged("BackupPolicy");
@@ -79,6 +82,7 @@ public:
         signalParamChanged("HashIndexedName");
         signalParamChanged("EnableMaterialEdit");
         signalParamChanged("MCPServerAutoStart");
+        signalParamChanged("MCPServerPort");
 
     // Auto generated code (Tools/params_utils.py:240)
     }
@@ -92,6 +96,9 @@ public:
     long ForceXML;
     bool SplitXML;
     bool PreferBinary;
+    long InlineListSize;
+    bool ArchiveRandomAccess;
+    bool DeferShapeLoad;
     bool AutoRemoveFile;
     bool AutoNameDynamicProperty;
     bool BackupPolicy;
@@ -116,6 +123,7 @@ public:
     bool HashIndexedName;
     bool EnableMaterialEdit;
     bool MCPServerAutoStart;
+    long MCPServerPort;
 
     // Auto generated code (Tools/params_utils.py:253)
     DocumentParamsP() {
@@ -142,6 +150,12 @@ public:
         funcs["SplitXML"] = &DocumentParamsP::updateSplitXML;
         PreferBinary = this->handle->GetBool("PreferBinary", false);
         funcs["PreferBinary"] = &DocumentParamsP::updatePreferBinary;
+        InlineListSize = this->handle->GetInt("InlineListSize", 64);
+        funcs["InlineListSize"] = &DocumentParamsP::updateInlineListSize;
+        ArchiveRandomAccess = this->handle->GetBool("ArchiveRandomAccess", true);
+        funcs["ArchiveRandomAccess"] = &DocumentParamsP::updateArchiveRandomAccess;
+        DeferShapeLoad = this->handle->GetBool("DeferShapeLoad", true);
+        funcs["DeferShapeLoad"] = &DocumentParamsP::updateDeferShapeLoad;
         AutoRemoveFile = this->handle->GetBool("AutoRemoveFile", true);
         funcs["AutoRemoveFile"] = &DocumentParamsP::updateAutoRemoveFile;
         AutoNameDynamicProperty = this->handle->GetBool("AutoNameDynamicProperty", false);
@@ -190,6 +204,8 @@ public:
         funcs["EnableMaterialEdit"] = &DocumentParamsP::updateEnableMaterialEdit;
         MCPServerAutoStart = this->handle->GetBool("MCPServerAutoStart", false);
         funcs["MCPServerAutoStart"] = &DocumentParamsP::updateMCPServerAutoStart;
+        MCPServerPort = this->handle->GetInt("MCPServerPort", 8765);
+        funcs["MCPServerPort"] = &DocumentParamsP::updateMCPServerPort;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -249,6 +265,18 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePreferBinary(DocumentParamsP *self) {
         self->PreferBinary = self->handle->GetBool("PreferBinary", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateInlineListSize(DocumentParamsP *self) {
+        self->InlineListSize = self->handle->GetInt("InlineListSize", 64);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateArchiveRandomAccess(DocumentParamsP *self) {
+        self->ArchiveRandomAccess = self->handle->GetBool("ArchiveRandomAccess", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDeferShapeLoad(DocumentParamsP *self) {
+        self->DeferShapeLoad = self->handle->GetBool("DeferShapeLoad", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAutoRemoveFile(DocumentParamsP *self) {
@@ -345,6 +373,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateMCPServerAutoStart(DocumentParamsP *self) {
         self->MCPServerAutoStart = self->handle->GetBool("MCPServerAutoStart", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMCPServerPort(DocumentParamsP *self) {
+        self->MCPServerPort = self->handle->GetInt("MCPServerPort", 8765);
     }
 };
 
@@ -640,6 +672,109 @@ void DocumentParams::setPreferBinary(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removePreferBinary() {
     instance()->handle->RemoveBool("PreferBinary");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docInlineListSize() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Largest list property, in bytes of values, still written inline\n"
+"in the XML instead of taking an archive entry of its own. An\n"
+"entry costs around 190 bytes of zip headers before any content,\n"
+"and one more thing for the reader to open, which a one-element\n"
+"colour list has no way of paying back. Written in the same form\n"
+"the reader has always used for lists that cannot be streamed, so\n"
+"the file stays readable by FreeCAD versions without this option.\n"
+"Set to 0 to give every list an entry, as before.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & DocumentParams::getInlineListSize() {
+    return instance()->InlineListSize;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & DocumentParams::defaultInlineListSize() {
+    const static long def = 64;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setInlineListSize(const long &v) {
+    instance()->handle->SetInt("InlineListSize",v);
+    instance()->InlineListSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeInlineListSize() {
+    instance()->handle->RemoveInt("InlineListSize");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docArchiveRandomAccess() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Restore a document archive through its zip central directory\n"
+"instead of one forward-only stream. Entries are then opened\n"
+"independently and served in registration order whatever their\n"
+"archive order, nothing pays for inflating entries nobody reads,\n"
+"and an entry can be reopened after the restore. Turn off to\n"
+"fall back to the forward-only walk.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & DocumentParams::getArchiveRandomAccess() {
+    return instance()->ArchiveRandomAccess;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & DocumentParams::defaultArchiveRandomAccess() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setArchiveRandomAccess(const bool &v) {
+    instance()->handle->SetBool("ArchiveRandomAccess",v);
+    instance()->ArchiveRandomAccess = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeArchiveRandomAccess() {
+    instance()->handle->RemoveBool("ArchiveRandomAccess");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docDeferShapeLoad() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Park shape archive entries during restore and read each one on\n"
+"first real use instead of before the document opens, so the\n"
+"window is up while shapes stream in with the progressive visual\n"
+"fill. Requires ArchiveRandomAccess. An entry not yet served is\n"
+"read when anything asks for the shape -- visual build, script,\n"
+"save -- so the value is never observably missing; the trade is\n"
+"that the document must not be rewritten externally while loads\n"
+"are pending. Off by default until gated on the large references.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & DocumentParams::getDeferShapeLoad() {
+    return instance()->DeferShapeLoad;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & DocumentParams::defaultDeferShapeLoad() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setDeferShapeLoad(const bool &v) {
+    instance()->handle->SetBool("DeferShapeLoad",v);
+    instance()->DeferShapeLoad = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeDeferShapeLoad() {
+    instance()->handle->RemoveBool("DeferShapeLoad");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -1292,5 +1427,36 @@ void DocumentParams::setMCPServerAutoStart(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removeMCPServerAutoStart() {
     instance()->handle->RemoveBool("MCPServerAutoStart");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docMCPServerPort() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Port the MCP debug console server listens on. If it is already in\n"
+"use the server takes the next free port after it, so the port it\n"
+"ends up on is reported in the console and in the Tools -> MCP\n"
+"Server tooltip.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & DocumentParams::getMCPServerPort() {
+    return instance()->MCPServerPort;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & DocumentParams::defaultMCPServerPort() {
+    const static long def = 8765;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setMCPServerPort(const long &v) {
+    instance()->handle->SetInt("MCPServerPort",v);
+    instance()->MCPServerPort = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeMCPServerPort() {
+    instance()->handle->RemoveInt("MCPServerPort");
 }
 //[[[end]]]

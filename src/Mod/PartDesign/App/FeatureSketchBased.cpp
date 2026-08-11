@@ -1085,54 +1085,46 @@ void ProfileBased::getAxis(const App::DocumentObject * pcReferenceAxis, const st
     if (!pcReferenceAxis)
         return;
 
-    App::DocumentObject* profile = Profile.getValue();
-    gp_Pln sketchplane;
+    Base::Placement SketchPlm = getVerifiedObject()->Placement.getValue();
+    Base::Vector3d SketchVector = getProfileNormal();
+    Base::Vector3d SketchPos = SketchPlm.getPosition();
+    gp_Pln sketchplane(gp_Pnt(SketchPos.x, SketchPos.y, SketchPos.z),
+                       gp_Dir(SketchVector.x, SketchVector.y, SketchVector.z));
 
-    if (subReferenceAxis.size() && profile->isDerivedFrom<Part::Part2DObject>()) {
-        Part::Part2DObject* sketch = getVerifiedSketch();
-        Base::Placement SketchPlm = sketch->Placement.getValue();
-        Base::Vector3d SketchVector = Base::Vector3d(0, 0, 1);
-        Base::Rotation SketchOrientation = SketchPlm.getRotation();
-        SketchOrientation.multVec(SketchVector, SketchVector);
-        Base::Vector3d SketchPos = SketchPlm.getPosition();
-        sketchplane = gp_Pln(gp_Pnt(SketchPos.x, SketchPos.y, SketchPos.z), gp_Dir(SketchVector.x, SketchVector.y, SketchVector.z));
-
-        if (pcReferenceAxis == profile) {
-            bool hasValidAxis = false;
-            Base::Axis axis;
-            if (subReferenceAxis[0] == "V_Axis") {
-                hasValidAxis = true;
-                axis = sketch->getAxis(Part::Part2DObject::V_Axis);
-            }
-            else if (subReferenceAxis[0] == "H_Axis") {
-                hasValidAxis = true;
-                axis = sketch->getAxis(Part::Part2DObject::H_Axis);
-            }
-            else if (subReferenceAxis[0] == "N_Axis") {
-                hasValidAxis = true;
-                axis = sketch->getAxis(Part::Part2DObject::N_Axis);
-            }
-            else if (subReferenceAxis[0].compare(0, 4, "Axis") == 0) {
-                int AxId = std::atoi(subReferenceAxis[0].substr(4, 4000).c_str());
-                if (AxId >= 0 && AxId < sketch->getAxisCount()) {
-                    hasValidAxis = true;
-                    axis = sketch->getAxis(AxId);
-                }
-            }
-            if (hasValidAxis) {
-                axis *= SketchPlm;
-                base = axis.getBase();
-                dir = axis.getDirection();
-                return;
-            } //else - an edge of the sketch was selected as an axis
+    // A sketch axis reference (H_Axis/V_Axis/N_Axis/AxisN) is resolved against the
+    // referenced sketch itself. It need not be the profile -- the profile may have been
+    // changed to something else (e.g. a binder) after the axis was picked, and those
+    // sub-element names are not shape sub-elements, so they must not fall through to the
+    // shape lookup below.
+    if (subReferenceAxis.size() && pcReferenceAxis->isDerivedFrom<Part::Part2DObject>()) {
+        auto sketch = static_cast<const Part::Part2DObject*>(pcReferenceAxis);
+        bool hasValidAxis = false;
+        Base::Axis axis;
+        if (subReferenceAxis[0] == "V_Axis") {
+            hasValidAxis = true;
+            axis = sketch->getAxis(Part::Part2DObject::V_Axis);
         }
-
-    }
-    else {
-        Base::Placement SketchPlm = getVerifiedObject()->Placement.getValue();
-        Base::Vector3d SketchVector = getProfileNormal();
-        Base::Vector3d SketchPos = SketchPlm.getPosition();
-        sketchplane = gp_Pln(gp_Pnt(SketchPos.x, SketchPos.y, SketchPos.z), gp_Dir(SketchVector.x, SketchVector.y, SketchVector.z));
+        else if (subReferenceAxis[0] == "H_Axis") {
+            hasValidAxis = true;
+            axis = sketch->getAxis(Part::Part2DObject::H_Axis);
+        }
+        else if (subReferenceAxis[0] == "N_Axis") {
+            hasValidAxis = true;
+            axis = sketch->getAxis(Part::Part2DObject::N_Axis);
+        }
+        else if (subReferenceAxis[0].compare(0, 4, "Axis") == 0) {
+            int AxId = std::atoi(subReferenceAxis[0].substr(4, 4000).c_str());
+            if (AxId >= 0 && AxId < sketch->getAxisCount()) {
+                hasValidAxis = true;
+                axis = sketch->getAxis(AxId);
+            }
+        }
+        if (hasValidAxis) {
+            axis *= sketch->Placement.getValue();
+            base = axis.getBase();
+            dir = axis.getDirection();
+            return;
+        } //else - an edge of the sketch was selected as an axis
     }
 
     // get reference axis

@@ -341,6 +341,136 @@ Action * StdCmdToolBarMenu::createAction()
 }
 
 //===========================================================================
+// Std_ViewTitleBar
+//===========================================================================
+
+DEF_STD_CMD_AC(StdCmdTitleBar)
+
+StdCmdTitleBar::StdCmdTitleBar()
+  : Command("Std_ViewTitleBar")
+{
+    sGroup        = "View";
+    sMenuText     = QT_TR_NOOP("Custom title bar");
+    sToolTipText  = QT_TR_NOOP("Draws the title bar in the application rather than the "
+                               "platform's, so the menu and toolbars can share its row");
+    sWhatsThis    = "Std_ViewTitleBar";
+    sStatusTip    = sToolTipText;
+    eType         = 0;
+}
+
+Action * StdCmdTitleBar::createAction()
+{
+    Action *pcAction = Command::createAction();
+    pcAction->setCheckable(true);
+    pcAction->setChecked(getMainWindow()->isCustomTitleBar(), true);
+    return pcAction;
+}
+
+void StdCmdTitleBar::activated(int iMsg)
+{
+    getMainWindow()->setCustomTitleBar(iMsg != 0);
+
+    // The window refuses the swap if the platform backend cannot do it, so
+    // report what actually happened rather than what was asked for.
+    if (auto action = getAction()) {
+        action->setChecked(getMainWindow()->isCustomTitleBar(), true);
+    }
+}
+
+bool StdCmdTitleBar::isActive()
+{
+    return true;
+}
+
+//===========================================================================
+// Std_ViewFoldTitleBarMenu
+//===========================================================================
+
+DEF_STD_CMD_AC(StdCmdFoldTitleBarMenu)
+
+StdCmdFoldTitleBarMenu::StdCmdFoldTitleBarMenu()
+  : Command("Std_ViewFoldTitleBarMenu")
+{
+    sGroup        = "View";
+    sMenuText     = QT_TR_NOOP("Fold the title bar menu");
+    sToolTipText  = QT_TR_NOOP("Hides the menu bar behind the logo in the custom title bar, "
+                               "leaving the whole row for toolbars. Point at the logo to "
+                               "open it");
+    sWhatsThis    = "Std_ViewFoldTitleBarMenu";
+    sStatusTip    = sToolTipText;
+    eType         = 0;
+}
+
+Action * StdCmdFoldTitleBarMenu::createAction()
+{
+    Action *pcAction = Command::createAction();
+    pcAction->setCheckable(true);
+    pcAction->setChecked(getMainWindow()->foldTitleBarMenu(), true);
+    return pcAction;
+}
+
+void StdCmdFoldTitleBarMenu::activated(int iMsg)
+{
+    getMainWindow()->setFoldTitleBarMenu(iMsg != 0);
+
+    if (auto action = getAction()) {
+        action->setChecked(getMainWindow()->foldTitleBarMenu(), true);
+    }
+}
+
+bool StdCmdFoldTitleBarMenu::isActive()
+{
+    // Nothing to fold while the platform draws the title bar.
+    return getMainWindow()->isCustomTitleBar();
+}
+
+//===========================================================================
+// Std_ViewTitleBarToolBars
+//===========================================================================
+
+DEF_STD_CMD_AC(StdCmdTitleBarToolBars)
+
+StdCmdTitleBarToolBars::StdCmdTitleBarToolBars()
+  : Command("Std_ViewTitleBarToolBars")
+{
+    sGroup        = "View";
+    sMenuText     = QT_TR_NOOP("Workbench toolbar in the title bar");
+    sToolTipText  = QT_TR_NOOP("Moves the workbench toolbar into the custom title bar, "
+                               "giving its row back to the model. Turning it off puts "
+                               "it back under the menu bar");
+    sWhatsThis    = "Std_ViewTitleBarToolBars";
+    sStatusTip    = sToolTipText;
+    eType         = 0;
+}
+
+Action * StdCmdTitleBarToolBars::createAction()
+{
+    Action *pcAction = Command::createAction();
+    pcAction->setCheckable(true);
+    pcAction->setChecked(getMainWindow()->titleBarToolBars(), true);
+    return pcAction;
+}
+
+void StdCmdTitleBarToolBars::activated(int iMsg)
+{
+    // Written, not applied: the parameter observer is what moves the toolbars,
+    // so that a theme setting the same key and a click here do the same thing.
+    App::GetApplication()
+        .GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow")
+        ->SetBool("TitleBarToolBars", iMsg != 0);
+
+    if (auto action = getAction()) {
+        action->setChecked(getMainWindow()->titleBarToolBars(), true);
+    }
+}
+
+bool StdCmdTitleBarToolBars::isActive()
+{
+    // With the platform's title bar there is nowhere for them to go.
+    return getMainWindow()->isCustomTitleBar();
+}
+
+//===========================================================================
 // Std_ViewStatusBar
 //===========================================================================
 
@@ -478,6 +608,9 @@ void CreateWindowStdCommands()
     rcCmdMgr.addCommand(new StdCmdDockViewMenu());
     rcCmdMgr.addCommand(new StdCmdToolBarMenu());
     rcCmdMgr.addCommand(new StdCmdWindowsMenu());
+    rcCmdMgr.addCommand(new StdCmdTitleBar());
+    rcCmdMgr.addCommand(new StdCmdFoldTitleBarMenu());
+    rcCmdMgr.addCommand(new StdCmdTitleBarToolBars());
     rcCmdMgr.addCommand(new StdCmdStatusBar());
     rcCmdMgr.addCommand(new StdCmdUserInterface());
 }

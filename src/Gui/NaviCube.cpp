@@ -229,7 +229,21 @@ public:
 	void handleMenu(QWidget *parent);
     void getParams();
 
-	bool drawNaviCube(SoCamera *cam, bool picking, int hiliteId, bool hit);
+	bool drawNaviCube(SoCamera *cam, int hiliteId, bool hit);
+
+	/** Pick id under the cube-viewport coords (u, v), both 0..1 with v up.
+	 *
+	 * Geometric, no GL: the old implementation re-drew the cube into an FBO in
+	 * fixed-function GL and read back a colour-coded pixel, which only works
+	 * while the plain GL path owns the context -- with an external backend the
+	 * cube is drawn from the Coin overlay graph and that pick pass silently
+	 * produced nothing, so nothing ever highlighted and clicks were dead. These
+	 * reproduce the same two passes analytically from the same data the drawing
+	 * uses, so they also work in the WASM viewer.
+	 */
+	int pickButton(float u, float v) const;
+	int pickCube(SoCamera *cam, float u, float v) const;
+
 	bool initNaviCube();
 	void addFace(const Vector3f&, const Vector3f&, int, int, int, bool flag=false);
 
@@ -277,8 +291,6 @@ public:
     QImage m_LabelX;
     QImage m_LabelY;
     QImage m_LabelZ;
-
-	QtGLFramebufferObject* m_PickingFramebuffer = nullptr;
 
 	vector<GLubyte> m_IndexArray;
 	vector<Vector2f> m_TextureCoordArray;
@@ -340,7 +352,7 @@ public:
 	explicit NaviCubeImplementation(Gui::View3DInventorViewer*);
 	~NaviCubeImplementation() override;
 	void drawNaviCube();
-	void drawNaviCube(bool picking);
+	void drawCube();
 
 	/// Observer message from the ParameterGrp
 	void OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::MessageType Reason) override;
@@ -500,10 +512,6 @@ void NaviCubeShared::deinit(QOpenGLContext *ctx)
 
     m_Context = nullptr;
 
-    if (m_PickingFramebuffer) {
-        delete m_PickingFramebuffer;
-        m_PickingFramebuffer = nullptr;
-    }
     m_glTextures.clear();
 	m_IndexArray.clear();
 	m_TextureCoordArray.clear();
@@ -1123,13 +1131,12 @@ bool NaviCubeShared::initNaviCube() {
 
     createAxisLabels();
 
-	m_PickingFramebuffer = new QtGLFramebufferObject(2 * m_CubeWidgetSize, 2 * m_CubeWidgetSize, QtGLFramebufferObject::CombinedDepthStencil);
     return true;
 }
 
 void NaviCubeImplementation::drawNaviCube() {
 	glViewport(m_CubeWidgetPosX - m_CubeWidgetSize / 2, m_CubeWidgetPosY - m_CubeWidgetSize / 2, m_CubeWidgetSize, m_CubeWidgetSize);
-	drawNaviCube(false);
+	drawCube();
 }
 
 void NaviCubeImplementation::handleResize() {
@@ -1174,21 +1181,14 @@ void NaviCubeImplementation::handleResize() {
 	}
 }
 
-void NaviCubeImplementation::drawNaviCube(bool pickMode) {
+void NaviCubeImplementation::drawCube() {
 	SoCamera* cam = m_View3DInventorViewer->getSoRenderManager()->getCamera();
 
 	if (!cam)
 		return;
 
 	handleResize();
-	// Always draw the rotate buttons in the pick pass (they are invisible
-	// there anyway): pickFace() gates the buttons on the stale m_Hit, so the
-	// frame the cursor first crosses into the cube region and lands on an
-	// arrow has no buttons to pick — the arrow never highlights until the
-	// mouse moves again. Forcing them in for picking lets a stationary
-	// landing highlight (and reveal) the arrow immediately. Display is
-	// unaffected (it calls with pickMode == false).
-	if (m_Shared->drawNaviCube(cam, pickMode, m_HiliteId, m_Hit || pickMode))
+	if (m_Shared->drawNaviCube(cam, m_HiliteId, m_Hit))
 		m_View3DInventorViewer->getSoRenderManager()->scheduleRedraw();
 }
 
@@ -1568,7 +1568,7 @@ SoSeparator *NaviCubeImplementation::getOverlayButtonGraph(Render::OverlayAnchor
 	return m_CoinButtonRoot;
 }
 
-bool NaviCubeShared::drawNaviCube(SoCamera *cam, bool pickMode, int hiliteId, bool hit) {
+bool NaviCubeShared::drawNaviCube(SoCamera *cam, int hiliteId, bool hit) {
     bool res = initNaviCube();
 
 	// Store GL state.
@@ -1629,22 +1629,12 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, bool pickMode, int hiliteId, bo
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	if (pickMode) {
-		glDisable(GL_BLEND);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glShadeModel(GL_FLAT);
-		glDisable(GL_DITHER);
-		glDisable(GL_POLYGON_SMOOTH);
-	}
-	else {
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	}
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
 	glClear(GL_DEPTH_BUFFER_BIT);
 
-	if (!pickMode) {
+	{
 		// Draw the axes
 		if (m_ShowCS) {
 			glDisable(GL_TEXTURE_2D);
@@ -1716,19 +1706,7 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, bool pickMode, int hiliteId, bo
 	glTexCoordPointer(2, GL_FLOAT, 0, m_TextureCoordArray.data());
 
 	// Draw the cube faces
-	if (pickMode) {
-        for (auto &f : m_Faces) {
-            // Only the exact-polygon fill faces define the pick region; the
-            // label squares (glyph texture, m_PickTextureId 0) would poke past
-            // the octagon at the chamfer corners, so skip them.
-            if (f.m_TextureId != f.m_PickTextureId)
-                continue;
-            glColor3ub(f.m_PickId, 0, 0);
-            glBindTexture(GL_TEXTURE_2D, f.m_PickTextureId);
-            glDrawElements(GL_TRIANGLE_FAN, f.m_VertexCount, GL_UNSIGNED_BYTE, (void*) &m_IndexArray[f.m_FirstVertex]);
-        }
-	}
-	else if (hit || !m_AutoHideCube) {
+	if (hit || !m_AutoHideCube) {
         // Fill faces are untextured exact polygons now; disable texturing so
         // the flat face/edge/corner color is driver-independent (some drivers
         // still sample the bound texture 0).
@@ -1751,7 +1729,7 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, bool pickMode, int hiliteId, bo
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 
 
-	if (!pickMode && (hit || !m_AutoHideCube)) {
+	if (hit || !m_AutoHideCube) {
 		for (int pass = 0; pass < 3 ; pass++) {
             for (auto &f : m_Faces) {
                 if (pass != f.m_RenderPass || f.m_TextureId == f.m_PickTextureId)
@@ -1844,14 +1822,9 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, bool pickMode, int hiliteId, bo
         glLoadIdentity();
 
         for (vector<int>::iterator b = m_Buttons.begin(); b != m_Buttons.end(); b++) {
-            if (pickMode) {
-                glColor3ub(*b, 0, 0);
-                glBindTexture(GL_TEXTURE_2D, m_Textures[*b+1]);
-            } else {
-                QColor& c = (hiliteId ==(*b)) ? m_HiliteColor : m_ButtonColor;
-                glColor4f(c.redF(), c.greenF(), c.blueF(), c.alphaF());
-                glBindTexture(GL_TEXTURE_2D, m_Textures[*b]);
-            }
+            QColor& c = (hiliteId ==(*b)) ? m_HiliteColor : m_ButtonColor;
+            glColor4f(c.redF(), c.greenF(), c.blueF(), c.alphaF());
+            glBindTexture(GL_TEXTURE_2D, m_Textures[*b]);
 
             glBegin(GL_QUADS);
             glTexCoord2f(0, 0);
@@ -1866,28 +1839,24 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, bool pickMode, int hiliteId, bo
         }
 
         // Draw the view menu icon
-        if (pickMode) {
-            glColor3ub(TEX_VIEW_MENU_FACE, 0, 0);
+        if (hiliteId == TEX_VIEW_MENU_FACE) {
+            QColor& hc = m_HiliteColor;
+            glColor4f(hc.redF(), hc.greenF(), hc.blueF(), hc.alphaF());
             glBindTexture(GL_TEXTURE_2D, m_Textures[TEX_VIEW_MENU_FACE]);
+
+            glBegin(GL_QUADS); // DO THIS WITH VERTEX ARRAYS
+            glTexCoord2f(0, 0);
+            glVertex3f(0.0f, 1.0f, 0.0f);
+            glTexCoord2f(1, 0);
+            glVertex3f(1.0f, 1.0f, 0.0f);
+            glTexCoord2f(1, 1);
+            glVertex3f(1.0f, 0.0f, 0.0f);
+            glTexCoord2f(0, 1);
+            glVertex3f(0.0f, 0.0f, 0.0f);
+            glEnd();
         }
-        else {
-            if (hiliteId == TEX_VIEW_MENU_FACE) {
-                QColor& c = m_HiliteColor;
-                glColor4f(c.redF(), c.greenF(), c.blueF(),c.alphaF());
-                glBindTexture(GL_TEXTURE_2D, m_Textures[TEX_VIEW_MENU_FACE]);
 
-                glBegin(GL_QUADS); // DO THIS WITH VERTEX ARRAYS
-                glTexCoord2f(0, 0);
-                glVertex3f(0.0f, 1.0f, 0.0f);
-                glTexCoord2f(1, 0);
-                glVertex3f(1.0f, 1.0f, 0.0f);
-                glTexCoord2f(1, 1);
-                glVertex3f(1.0f, 0.0f, 0.0f);
-                glTexCoord2f(0, 1);
-                glVertex3f(0.0f, 0.0f, 0.0f);
-                glEnd();
-            }
-
+        {
             QColor& c = m_ButtonColor;
             glColor4f(c.redF(), c.greenF(), c.blueF(), c.alphaF());
             glBindTexture(GL_TEXTURE_2D, m_Textures[TEX_VIEW_MENU_ICON]);
@@ -1919,28 +1888,120 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, bool pickMode, int hiliteId, bo
     return res;
 }
 
-int NaviCubeImplementation::pickFace(short x, short y) {
-	GLubyte pixels[4] = { 0 };
-    if (auto fb = m_Shared->m_PickingFramebuffer) {
-		fb->bind();
+namespace {
+// Alpha-mask test against a button texture, matching the pick pass's
+// glAlphaFunc(GL_GREATER, 0.25). The images in m_TexQImages are the bottom-up
+// copies handed to the Coin twins, so t (and therefore v) runs with row 0 at
+// the bottom -- the same sense as the event's y and the quad's texcoords.
+bool maskHit(const QImage &img, float u, float v)
+{
+	if (img.isNull())
+		return false;
+	int px = int(u * (img.width() - 1) + 0.5f);
+	int py = int(v * (img.height() - 1) + 0.5f);
+	if (px < 0 || py < 0 || px >= img.width() || py >= img.height())
+		return false;
+	return qAlpha(img.pixel(px, py)) > 63;
+}
+} // namespace
 
-		glViewport(0, 0, 2 * m_CubeWidgetSize, 2 * m_CubeWidgetSize);
-		glLoadIdentity();
+int NaviCubeShared::pickButton(float u, float v) const
+{
+	// Reverse draw order: the buttons are drawn with the depth test off after
+	// the cube, and the view-menu icon last of all, so later draws win.
+	auto sample = [this, u, v](int texKey) {
+		auto tex = m_Textures.find(texKey);
+		if (tex == m_Textures.end())
+			return false;
+		auto img = m_TexQImages.find(tex->second);
+		return img != m_TexQImages.end() && maskHit(img->second, u, v);
+	};
 
-		glClearColor(0, 0, 0, 1);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	if (sample(TEX_VIEW_MENU_FACE))
+		return TEX_VIEW_MENU_FACE;
 
-		drawNaviCube(true);
-
-		glFinish();
-
-		glReadPixels(2 * (x - (m_CubeWidgetPosX - m_CubeWidgetSize / 2)), 2 * (y - (m_CubeWidgetPosY - m_CubeWidgetSize / 2)), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, &pixels);
-		fb->release();
-
-		//QImage image = m_PickingFramebuffer->toImage();
-		//image.save(QStringLiteral("pickimage.png"));
+	for (auto b = m_Buttons.rbegin(); b != m_Buttons.rend(); ++b) {
+		// The pick variant (the unstroked mask) is the one the GL pass bound.
+		if (sample(*b + 1))
+			return *b;
 	}
-	return pixels[3] == 255 ? pixels[0] : 0;
+	return 0;
+}
+
+int NaviCubeShared::pickCube(SoCamera *cam, float u, float v) const
+{
+	// Same frustum and modelview drawNaviCube() sets up: a 1:1 viewport, the
+	// camera's orientation, and the eye parked 5 units out along its axis.
+	const float NEARVAL = 0.1f;
+	const float dim = NEARVAL * float(tan(M_PI / 8.0)) * 1.2f;
+
+	SbMatrix rot;
+	rot.setRotate(cam->orientation.getValue());
+
+	SbVec3f eye, dir;
+	rot.multVecMatrix(SbVec3f(0, 0, 5), eye);
+	rot.multDirMatrix(SbVec3f((2 * u - 1) * dim, (2 * v - 1) * dim, -NEARVAL), dir);
+	if (dir.normalize() == 0.0f)
+		return 0;
+
+	// Nearest hit over the exact region polygons -- the octagons, edge
+	// rectangles and corner hexagons that the fill/pick pass draws. They are
+	// planar and convex, so a plane hit plus a same-side test is exact.
+	int best = 0;
+	float bestT = 0.0f;
+	for (const auto &v2 : m_VertexArrays2) {
+		const auto &poly = v2.second;
+		if (poly.size() < 3)
+			continue;
+		auto pt = [&poly](int i) {
+			return SbVec3f(poly[i][0], poly[i][1], poly[i][2]);
+		};
+		SbVec3f p0 = pt(0);
+		SbVec3f n = (pt(1) - p0).cross(pt(2) - p0);
+		float denom = n.dot(dir);
+		if (fabs(denom) < 1e-9f)
+			continue;
+		float t = n.dot(p0 - eye) / denom;
+		if (t <= 0.0f || (best && t >= bestT))
+			continue;
+		SbVec3f hit = eye + t * dir;
+		bool inside = true;
+		for (size_t i = 0, c = poly.size(); i < c; ++i) {
+			SbVec3f a = pt(int(i));
+			SbVec3f b = pt(int((i + 1) % c));
+			if ((b - a).cross(hit - a).dot(n) < 0.0f) {
+				inside = false;
+				break;
+			}
+		}
+		if (!inside)
+			continue;
+		best = v2.first;
+		bestT = t;
+	}
+	return best;
+}
+
+int NaviCubeImplementation::pickFace(short x, short y) {
+	auto shared = m_Shared.get();
+	if (shared->m_VertexArrays2.empty())
+		return 0; // not initialised yet
+
+	SoCamera* cam = m_View3DInventorViewer->getSoRenderManager()->getCamera();
+	if (!cam)
+		return 0;
+
+	handleResize();
+
+	const float size = float(m_CubeWidgetSize);
+	float u = (float(x) - (m_CubeWidgetPosX - m_CubeWidgetSize / 2)) / size;
+	float v = (float(y) - (m_CubeWidgetPosY - m_CubeWidgetSize / 2)) / size;
+	if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f)
+		return 0;
+
+	if (int id = shared->pickButton(u, v))
+		return id;
+	return shared->pickCube(cam, u, v);
 }
 
 bool NaviCubeImplementation::mousePressed(short x, short y) {

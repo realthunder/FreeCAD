@@ -74,6 +74,10 @@ class AppExport PropertyExpressionEngine : public App::PropertyExpressionContain
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 public:
+    // Opted back in past PropertyXLinkContainer's opt-out: almost every
+    // object carries an engine holding nothing, and an empty engine
+    // serializes to one line.
+    bool canShareDefault() const override { return true; }
 
     void updateElementReference(
             App::DocumentObject *feature, bool reverse=false, bool notify=false) override;
@@ -163,6 +167,26 @@ public:
     App::ObjectIdentifier canonicalPath(const App::ObjectIdentifier &p) const override;
 
     size_t numExpressions() const;
+
+    /** Answer the one comparison an engine can answer cheaply: emptiness.
+     *
+     * PropertyExpressionContainer declines to compare at all, which is safe
+     * but costs a document its largest single elidable property -- almost
+     * every object in a large one carries an engine holding nothing, and a
+     * saved default it cannot be compared against is a default it can never
+     * be left out for. Two engines that both hold no expression are the same
+     * engine by any reading. Anything else still declines: comparing
+     * expression trees is a different question and this is not the place to
+     * answer it.
+     */
+    bool isSame(const Property &other) const override {
+        if (&other == this)
+            return true;
+        if (other.getTypeId() != getTypeId())
+            return false;
+        return !numExpressions()
+            && !static_cast<const PropertyExpressionEngine*>(&other)->numExpressions();
+    }
 
     ///signal called when an expression was changed
     boost::signals2::signal<void (const App::ObjectIdentifier &)> expressionChanged;

@@ -386,6 +386,13 @@ struct SceneSnapshot {
     /// map (Renderer::setObjectInfo). The writer stamps each object
     /// entry's `info` from it; null = entries stay unnamed.
     const ObjectInfoMap *objectInfo = nullptr;
+    /// Save side: the labels those identities carry to a viewer
+    /// (Renderer::setObjectMeta), joined onto each entry by document and
+    /// object name. Null or missing = the entry goes out with identity
+    /// and no label, which is what a viewer's fallback expects — it
+    /// shows the internal name, which is what identifies the object
+    /// anyway.
+    const ObjectMetaMap *objectMeta = nullptr;
 
     /// Where the parts of a root that may later be rewritten ended up
     /// in the payload, recorded on save when non-null.

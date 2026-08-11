@@ -957,11 +957,18 @@ Document::Document(const char* documentName)
             "Prefer binary format when saving object data.\n"
             "This can result in smaller file but bad for version control.");
     PreferBinary.setValue(DocumentParams::getPreferBinary());
-    ADD_PROPERTY_TYPE(SaveSchemaVersion,(getCurrentSchemaVersion()),"Format",Prop_None,
+    // ⚠️ 5, not getCurrentSchemaVersion(). Schema 6 is the compact format --
+    // shared default blocks under an <FCDocument> root no other FreeCAD
+    // opens -- and an incompatibility like that is chosen, never inherited
+    // from a constructor. The save dialog is where a user chooses it,
+    // per document, past a warning that stays on screen.
+    ADD_PROPERTY_TYPE(SaveSchemaVersion,(5),"Format",Prop_None,
             "Document schema version to write.\n"
-            "Lower it to keep the document readable by an older FreeCAD, at\n"
-            "the cost of what the newer versions added. Only versions this\n"
-            "build can still write are accepted.");
+            "5 is readable by every FreeCAD version. 6 is the compact\n"
+            "format: smaller and faster to load, but readable only by\n"
+            "builds of this fork that know it -- no other FreeCAD, upstream\n"
+            "included, will open the file. Only versions this build can\n"
+            "still write are accepted.");
     {
         const auto &versions = getWritableSchemaVersions();
         static App::PropertyIntegerConstraint::Constraints schemaRange;
@@ -1034,14 +1041,38 @@ std::string Document::getTransientDirectoryName(const std::string& uuid, const s
 
 // Newest schema version this build writes. Every entry of
 // getWritableSchemaVersions() is a shape the writer can still produce.
-#define FC_DOC_SCHEMA_VER 5
+#define FC_DOC_SCHEMA_VER 6
+
+// Root element of a document written at schema 6 or later -- one that may
+// share class defaults. The new name is the format's incompatibility made
+// loud: no released reader, this fork's or upstream's, checks a schema
+// number before reading, but every one of them scans for <Document>, reaches
+// the end of the stream without finding it, and throws. The alternative was
+// each of them opening the file and silently reverting every elided property
+// to its own build's defaults. Keep the name stable from here on -- the
+// SchemaVersion attribute carries versioning, the name only says "not for
+// readers that predate it".
+#define FC_ELEM_FCDOCUMENT "FCDocument"
 
 void Document::Save (Base::Writer &writer) const
 {
     d->hashers.clear();
     addStringHasher(d->Hasher);
 
-    writer.Stream() << "<Document SchemaVersion=\"" << getSaveSchemaVersion() 
+    // Not every caller comes through save(): the content dump streams a
+    // document through a writer nothing has resolved a schema onto, and a
+    // writer's own default is 0 -- which a reader would take for a
+    // pre-schema file and restore no objects from. Whoever asks this
+    // document to write itself gets the document's resolved answer.
+    if (writer.getSchemaVersion() <= 0)
+        writer.setSchemaVersion(resolveSchemaVersion(writer));
+
+    // The writer's schema is the resolved outcome (resolveSchemaVersion),
+    // and the root element states it twice: once as the attribute, and at 6
+    // or later as its own name.
+    writer.Stream() << '<'
+                    << (writer.getSchemaVersion() >= 6 ? FC_ELEM_FCDOCUMENT : "Document")
+                    << " SchemaVersion=\"" << writer.getSchemaVersion()
                     << "\" ProgramVersion=\""
                     << App::Application::Config()["BuildVersionMajor"] << "."
                     << App::Application::Config()["BuildVersionMinor"] << "R"
@@ -1095,7 +1126,14 @@ void Document::Restore(Base::XMLReader &reader)
 
     setStatus(Document::PartialDoc,false);
 
-    reader.readElement("Document");
+    // Either root: <Document> as ever, or the <FCDocument> a default-sharing
+    // file announces itself with. The new name exists to be unreadable by
+    // builds that predate it -- this build reads both in full, and anything
+    // else is not a FreeCAD document.
+    reader.readElement();
+    if (strcmp(reader.localName(), "Document") != 0
+            && strcmp(reader.localName(), FC_ELEM_FCDOCUMENT) != 0)
+        throw Base::XMLParseException("Not a FreeCAD document");
     long scheme = reader.getAttributeAsInteger("SchemaVersion");
     reader.DocumentSchema = scheme;
     if (reader.hasAttribute("ProgramVersion")) {
@@ -1194,7 +1232,9 @@ void Document::Restore(Base::XMLReader &reader)
         Tip.setValue(getObject(TipName.getValue()));
     }
 
-    reader.readEndElement("Document");
+    // Nameless on purpose: the next end element is the root's own, whichever
+    // of the two roots this file used.
+    reader.readEndElement();
 }
 
 std::pair<bool,int> Document::addStringHasher(const StringHasherRef & hasher) const {
@@ -1280,7 +1320,11 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
     }
 
     Base::ZipWriter writer(out);
-    writer.setSchemaVersion(getSaveSchemaVersion());
+    // An exported fragment never shares defaults: it is small, it travels
+    // (clipboard, merge), and a reader that merges it may be anything. Cap
+    // at 5, which also keeps buildDefaults' schema gate closed and the
+    // <Document> root a fragment has always had.
+    writer.setSchemaVersion(std::min<long>(getSaveSchemaVersion(), 5));
     // Only the exported objects' files: a clipboard buffer has no business
     // carrying content belonging to the rest of the document.
     getFileBlobManager().beginSave(writer);
@@ -1288,7 +1332,7 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
 
     writer.putNextEntry("Document.xml");
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n";
-    writer.Stream() << R"(<Document SchemaVersion=")" << getSaveSchemaVersion() 
+    writer.Stream() << R"(<Document SchemaVersion=")" << writer.getSchemaVersion()
                         << R"(" ProgramVersion=")"
                         << App::Application::Config()["BuildVersionMajor"] << "."
                         << App::Application::Config()["BuildVersionMinor"] << "R"
@@ -1319,6 +1363,330 @@ void Document::exportObjects(const std::vector<App::DocumentObject*>& obj, std::
 #define FC_ATTR_DEP_OBJ_NAME "Name"
 #define FC_ATTR_DEP_ALLOW_PARTIAL "AllowPartial"
 #define FC_ELEMENT_OBJECT_DEP "Dep"
+
+namespace {
+
+// The element names of the shared default block, and the attribute on
+// <ObjectData> that says how many entries it has. A reader that finds no
+// attribute never looks for the block, which is what lets a file written
+// without one be read by the same code.
+const char *FC_ELEM_DEFAULTS = "Defaults";
+const char *FC_ELEM_DEFAULT = "Default";
+const char *FC_ATTR_DEFAULTS = "Defaults";
+
+/** Build an object of the given class outside any document.
+ *
+ * What a class treats as a default lives in its constructor and nowhere
+ * else -- there is no metadata to ask -- so the only way to find out is to
+ * build one and read its properties. Returns null for a class that cannot be
+ * instantiated, and the caller then writes everything as before.
+ */
+std::unique_ptr<DocumentObject> makeDefaultObject(const char *typeName)
+{
+    auto type = Base::Type::fromName(typeName);
+    if (type.isBad() || !type.isDerivedFrom(DocumentObject::getClassTypeId()))
+        return {};
+    std::unique_ptr<DocumentObject> res;
+    try {
+        res.reset(static_cast<DocumentObject*>(type.createInstance()));
+    }
+    catch (Base::Exception &e) {
+        e.ReportException();
+    }
+    catch (const std::exception &e) {
+        FC_ERR("Failed to build a default " << typeName << ": " << e.what());
+    }
+    if (!res)
+        FC_LOG("No default object for " << typeName);
+
+    return res;
+}
+
+// Raised while a <Defaults> block is being read into a stand-in, and
+// consulted by Property::touch(). A counter rather than a bool so the App
+// and Gui readers cannot un-say each other. See
+// Document::isRestoringDefaults().
+int _RestoringDefaults;
+
+} // anonymous namespace
+
+bool Document::isRestoringDefaults()
+{
+    return _RestoringDefaults > 0;
+}
+
+Document::RestoringDefaultsGuard::RestoringDefaultsGuard()
+{
+    ++_RestoringDefaults;
+}
+
+Document::RestoringDefaultsGuard::~RestoringDefaultsGuard()
+{
+    --_RestoringDefaults;
+}
+
+Document::RestoringScopeGuard::RestoringScopeGuard()
+    : toggled(!globalIsRestoring)
+{
+    globalIsRestoring = true;
+}
+
+Document::RestoringScopeGuard::~RestoringScopeGuard()
+{
+    if (toggled)
+        globalIsRestoring = false;
+}
+
+Document::RestoreDrainGuard::RestoreDrainGuard(Document *doc)
+    : doc(doc)
+    , toggled(doc && !doc->testStatus(Status::RestoreDrain))
+{
+    if (toggled)
+        doc->setStatus(Status::RestoreDrain, true);
+}
+
+Document::RestoreDrainGuard::~RestoreDrainGuard()
+{
+    if (toggled)
+        doc->setStatus(Status::RestoreDrain, false);
+}
+
+void Document::reportRestoreDrainChange(const DocumentObject *obj, const Property *prop)
+{
+    // An object that is still restoring is not a finding: that is the load's
+    // own work arriving late, and it already keeps this promise its own way
+    // -- restoreDeferredFile() serves a parked archive entry with the owner's
+    // touch saved and put back. What the report is for is the handler that
+    // writes back on a *render*, and it is worth nothing if the expected
+    // writes crowd the unexpected ones out of it.
+    if (obj->isRestoring())
+        return;
+    ++d->drainReport.count;
+    // The count is the measurement; the names are there to point at the
+    // handler, and one of each is enough for that.
+    if (d->drainReport.truncated)
+        return;
+    std::string name = obj->getFullName();
+    name += '.';
+    name += prop && prop->getName() ? prop->getName() : "touch()";
+    if (std::find(d->drainReport.names.begin(), d->drainReport.names.end(), name)
+            != d->drainReport.names.end())
+        return;
+    if (d->drainReport.names.size() >= 10)
+        d->drainReport.truncated = true;
+    else
+        d->drainReport.names.push_back(std::move(name));
+}
+
+const Document::RestoreDrainReport &Document::getRestoreDrainReport() const
+{
+    return d->drainReport;
+}
+
+void Document::clearRestoreDrainReport()
+{
+    d->drainReport = RestoreDrainReport();
+}
+
+void Document::buildDefaults(Base::Writer &writer,
+        const std::vector<App::DocumentObject*>& obj,
+        std::map<std::string, SharedDefaults> &defaults) const
+{
+    // One gate, and it is the document's own: the resolved schema. Six is
+    // the version that introduced the block (getWritableSchemaVersions),
+    // the user chooses it per document in the save dialog, and a document
+    // that resolved lower has asked to come out in a shape an older FreeCAD
+    // reads in full. No preference outranks what a document promised.
+    if (writer.getSchemaVersion() < 6)
+        return;
+
+    // A default block is one class's whole property set, so it only pays for
+    // itself once enough objects can leave that set out. Two roughly break
+    // even; below that a document would come out larger than if nothing had
+    // been shared at all.
+    const std::size_t minInstances = 3;
+
+    std::map<std::string, std::size_t> counts;
+    for (auto o : obj)
+        ++counts[o->getTypeId().getName()];
+    for (const auto &v : counts) {
+        if (v.second < minInstances)
+            continue;
+        // The stand-in lives exactly as long as this recording. What the
+        // objects compare against, and what the file will carry, are the
+        // bytes SharedDefaults took down -- the object itself has nothing
+        // more to say once they are recorded.
+        if (auto proto = makeDefaultObject(v.first.c_str())) {
+            SharedDefaults record;
+            record.build(*proto, writer);
+            if (!record.empty())
+                defaults.emplace(v.first, std::move(record));
+        }
+    }
+}
+
+void Document::saveDefaults(Base::Writer &writer,
+        const std::map<std::string, SharedDefaults> &defaults) const
+{
+    if (defaults.empty())
+        return;
+
+    writer.Stream() << writer.ind() << '<' << FC_ELEM_DEFAULTS << " Count=\""
+                    << defaults.size() << "\">\n";
+    writer.incInd();
+    for (const auto &v : defaults) {
+        writer.Stream() << writer.ind() << '<' << FC_ELEM_DEFAULT << " type=\""
+                        << v.first << "\">\n";
+        // Properties only, and only the recorded ones: eligibility was
+        // settled when the record was built, and the bytes going out here
+        // are the same bytes every elision was decided against.
+        v.second.save(writer);
+        writer.Stream() << writer.ind() << "</" << FC_ELEM_DEFAULT << ">\n";
+    }
+    writer.decInd();
+    writer.Stream() << writer.ind() << "</" << FC_ELEM_DEFAULTS << ">\n";
+}
+
+void Document::restoreDefaults(Base::XMLReader &reader, int count)
+{
+    d->restoreDefaults.clear();
+    if (count <= 0)
+        return;
+
+    // ⚠️ The stand-in is in no document, and an object's reaction to its own
+    // property changing is written for one that is: restoring an App::Link's
+    // element list into a document-less stand-in walks straight into
+    // LinkBaseExtension::update() dereferencing a null document. Nothing here
+    // is a change to anything anyway -- there is no object behind these
+    // values, only a record of what a class starts out holding.
+    RestoringDefaultsGuard restoringGuard;
+
+    reader.readElement(FC_ELEM_DEFAULTS);
+    for (int i=0; i<count; ++i) {
+        int guard;
+        reader.readElement(FC_ELEM_DEFAULT, &guard);
+        std::string type = reader.getAttribute("type");
+        auto proto = makeDefaultObject(type.c_str());
+        // What the record says against what this build produces. Only the
+        // difference has to be pasted onto anything, and on the build that
+        // wrote the file there is none.
+        //
+        // ⚠️ Two stand-ins, not one stand-in and a pile of Property::Copy().
+        // A detached copy has no container, so link properties compare by a
+        // scope they no longer know and enumerations by a list they no
+        // longer have. Two live stand-ins of the same class, both serialized
+        // the way the writer serialized, is the comparison the writer made.
+        auto fresh = proto ? makeDefaultObject(type.c_str()) : nullptr;
+        if (proto && fresh) {
+            // Names before the restore, lookups after it. A block written by
+            // a different build may create or replace properties on the way
+            // in, so pointers collected here would not be trusted afterwards.
+            std::vector<std::string> candidates;
+            {
+                std::vector<App::Property*> props;
+                proto->getPropertyList(props);
+                for (auto prop : props)
+                    if (SharedDefaults::eligible(*proto, *prop))
+                        candidates.emplace_back(prop->getName());
+            }
+
+            proto->App::PropertyContainer::Restore(reader);
+
+            // The diff is decided the same way the writer decided the
+            // elision: by the bytes each side serializes to, through
+            // SharedDefaults::serializeForCompare on both. Serializing the
+            // restored proto rather than trusting the file's literal text
+            // cancels whatever formatting a parse-and-save round trip
+            // applies, so a difference here is a difference in what was
+            // recorded, not in how a float prints. Status counts too, mod
+            // Touched -- a pasted default must carry the writer's status the
+            // way a written property carries its status attribute.
+            const unsigned long touchedMask = 1UL << Property::Touched;
+            DocumentP::RestoreDefaults entry;
+            std::string recorded, built;
+            for (const auto &name : candidates) {
+                auto prop = proto->getPropertyByName(name.c_str());
+                auto other = fresh->getPropertyByName(name.c_str());
+                if (!prop || !other || prop->getTypeId() != other->getTypeId())
+                    continue;
+                bool differs = (prop->getStatus() & ~touchedMask)
+                        != (other->getStatus() & ~touchedMask);
+                if (!differs) {
+                    // A side that will not serialize is a side that cannot
+                    // be compared, and a default nobody compared is not
+                    // pasted over anything.
+                    if (!SharedDefaults::serializeForCompare(reader.DocumentSchema,
+                                reader.FileVersion, *prop, recorded)
+                            || !SharedDefaults::serializeForCompare(reader.DocumentSchema,
+                                reader.FileVersion, *other, built))
+                        continue;
+                    differs = (recorded != built);
+                }
+                if (differs)
+                    entry.names.emplace_back(name);
+            }
+            if (!entry.names.empty() && FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+                // Named, not just counted. On the build that wrote the file
+                // this list is empty, so anything in it is either a genuine
+                // change of default between builds or a property that does
+                // not survive its own round trip -- and only the name says
+                // which.
+                std::ostringstream ss;
+                for (const auto &n : entry.names)
+                    ss << ' ' << n;
+                FC_LOG("Default object " << type << " differs in "
+                        << entry.names.size() << " properties:" << ss.str());
+            }
+            // Kept even when nothing differs: a property in the block may
+            // have registered an archive entry against this stand-in, and the
+            // reader will come looking for its owner later.
+            entry.proto = std::move(proto);
+            d->restoreDefaults[type] = std::move(entry);
+        }
+        reader.readEndElement(FC_ELEM_DEFAULT, &guard);
+    }
+    reader.readEndElement(FC_ELEM_DEFAULTS);
+}
+
+void Document::applyDefaults(DocumentObject *obj)
+{
+    if (d->restoreDefaults.empty())
+        return;
+    auto it = d->restoreDefaults.find(obj->getTypeId().getName());
+    if (it == d->restoreDefaults.end() || it->second.names.empty())
+        return;
+    for (const auto &name : it->second.names) {
+        auto prop = obj->getPropertyByName(name.c_str());
+        auto other = it->second.proto->getPropertyByName(name.c_str());
+        if (!prop || !other || prop->getTypeId() != other->getTypeId())
+            continue;
+        // Status first and value second, the order Restore itself uses --
+        // and the same masking of the reserved User bits. Behind the same
+        // kind of per-property net, too: one recorded default that will not
+        // paste must cost that property, not the whole document.
+        try {
+            Property::StatusBits status(other->getStatus());
+            status.reset(Property::User1);
+            status.reset(Property::User2);
+            status.reset(Property::User3);
+            prop->setStatusValue(status.to_ulong());
+            prop->Paste(*other);
+        }
+        catch (Base::Exception &e) {
+            e.ReportException();
+            FC_ERR("Failed to apply default " << obj->getFullName()
+                    << '.' << name);
+        }
+        catch (const std::exception &e) {
+            FC_ERR("Failed to apply default " << obj->getFullName()
+                    << '.' << name << ": " << e.what());
+        }
+        catch (...) {
+            FC_ERR("Failed to apply default " << obj->getFullName()
+                    << '.' << name);
+        }
+    }
+}
 
 void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
                             Base::Writer &writer) const
@@ -1396,21 +1764,71 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
     writer.decInd();  // indentation for 'Object type'
     writer.Stream() << writer.ind() << "</Objects>\n";
 
+    // Objects of one class are mostly what their constructor gave them: an
+    // identity placement, an empty expression engine, a flag nobody touched.
+    // Write that constructor state once per class and let each object save
+    // only its difference from it -- on a large assembly that is most of
+    // Document.xml, and the load has that many fewer properties to restore.
+    // The defaults are written out, not implied, so a document opened by a
+    // build whose constructors differ still holds what its author saved.
+    // Nothing is shared in the split-XML layout: each object is its own file
+    // there, with no block to point at.
+    std::map<std::string, SharedDefaults> defaults;
+    if (!writer.isSplitXML())
+        buildDefaults(writer, obj, defaults);
+
     // writing the features itself
     writer.Stream() << writer.ind() << "<ObjectData Count=\"";
     if(writer.isSplitXML())
         writer.Stream() << "0\">\n";
     else {
-        writer.Stream() << obj.size() <<"\">\n";
+        writer.Stream() << obj.size() << '"';
+        if (!defaults.empty())
+            writer.Stream() << ' ' << FC_ATTR_DEFAULTS << "=\"" << defaults.size() << '"';
+        writer.Stream() << ">\n";
 
         writer.incInd(); // indentation for 'Object name'
-        for (it = obj.begin(); it != obj.end(); ++it) 
-            writeObject(writer,*it);
+        saveDefaults(writer, defaults);
+        auto elided = PropertyContainer::savedDefaults;
+        auto unknown = PropertyContainer::savedDefaultsUnknown;
+        auto byValue = PropertyContainer::savedDefaultsValue;
+        auto byStatus = PropertyContainer::savedDefaultsStatus;
+        // Point every object at its class record for the duration of the
+        // write, and at nothing again after it -- the records do not
+        // outlive this call.
+        auto pointAtDefaults = [&](bool on) {
+            for (auto o : obj) {
+                auto def = defaults.find(o->getTypeId().getName());
+                o->setSaveDefaults(
+                        on && def != defaults.end() ? &def->second : nullptr);
+            }
+        };
+        pointAtDefaults(true);
+        try {
+            for (it = obj.begin(); it != obj.end(); ++it)
+                writeObject(writer,*it);
+        }
+        catch (...) {
+            pointAtDefaults(false);
+            throw;
+        }
+        pointAtDefaults(false);
+        if (!defaults.empty())
+            FC_LOG("save " << getName() << ": " << obj.size() << " objects, "
+                    << defaults.size() << " class defaults, "
+                    << (PropertyContainer::savedDefaults - elided)
+                    << " properties left out, written anyway: "
+                    << (PropertyContainer::savedDefaultsValue - byValue) << " by value, "
+                    << (PropertyContainer::savedDefaultsStatus - byStatus) << " by status, "
+                    << (PropertyContainer::savedDefaultsUnknown - unknown) << " not in the block");
         writer.decInd(); // indentation for 'Object name'
     }
     writer.Stream() << writer.ind() << "</ObjectData>\n";
     writer.decInd();  // indentation for 'Objects count'
-    writer.Stream() << "</Document>\n";
+    // Close whichever root Save() (or exportObjects, always <= 5) opened.
+    writer.Stream() << "</"
+                    << (writer.getSchemaVersion() >= 6 ? FC_ELEM_FCDOCUMENT : "Document")
+                    << ">\n";
 }
 
 void Document::writeObject(Base::Writer &writer, DocumentObject *obj) const 
@@ -1432,7 +1850,7 @@ void Document::SaveDocFile(Base::Writer &writer) const {
     else {
         writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
                         << "<!-- FreeCAD DocumentObject -->\n"
-                        << "<Document SchemaVersion=\"" << getSaveSchemaVersion()
+                        << "<Document SchemaVersion=\"" << writer.getSchemaVersion()
                         << "\" FileVersion=\"" << writer.getFileVersion()
                         << "\">\n";
         writeObject(writer,obj);
@@ -1461,6 +1879,10 @@ void Document::readObject(Base::XMLReader &reader) {
         pObj->setStatus(ObjectStatus::Restore, true);
         try {
             FC_TRACE("restoring " << pObj->getFullName());
+            // Whatever the shared default block moved off this build's own
+            // defaults has to be put back before the object's own properties,
+            // so that what the file states for this object still wins.
+            applyDefaults(pObj);
             pObj->Restore(reader);
         }
         // Try to continue only for certain exception types if not handled
@@ -1579,6 +2001,7 @@ Document::readObjects(Base::XMLReader& reader)
     }
 
     long lastId = 0;
+    FC_TIME_INIT(t);
     for (int i=0 ;i<Cnt ;i++) {
         reader.readElement("Object");
         std::string type = reader.getAttribute("type");
@@ -1622,7 +2045,9 @@ Document::readObjects(Base::XMLReader& reader)
             // otherwise we may cause a dependency to itself
             // Example: Object 'Cut001' references object 'Cut' and removing the
             // digits we make an object 'Cut' referencing itself.
+            FC_TIME_INIT(tAdd);
             App::DocumentObject* obj = addObject(type.c_str(), obj_name, /*isNew=*/ false, viewType.c_str(), partial);
+            FC_DURATION_PLUS(d->restoreTiming.createAdd, tAdd);
             if (obj) {
                 if(lastId < obj->_Id)
                     lastId = obj->_Id;
@@ -1657,6 +2082,8 @@ Document::readObjects(Base::XMLReader& reader)
         d->lastObjectId = lastId;
 
     reader.readEndElement("Objects");
+    FC_DURATION_PLUS(d->restoreTiming.create, t);
+    d->restoreTiming.objectCount += objs.size();
     setStatus(Document::KeepTrailingDigits, keepDigits);
 
     // read the features itself
@@ -1664,7 +2091,12 @@ Document::readObjects(Base::XMLReader& reader)
 
     reader.readElement("ObjectData");
     Cnt = reader.getAttributeAsInteger("Count");
+    // Before any element of the block is read: readElement() replaces the
+    // attributes of the element we are standing on.
+    restoreDefaults(reader, reader.getAttributeAsInteger(FC_ATTR_DEFAULTS, "0"));
     std::string objName;
+    _FC_TIME_INIT(t);
+    auto propStats = PropertyContainer::restoreStats;
     try {
         for (int i=0 ;i<Cnt ;i++) {
             int guard;
@@ -1679,6 +2111,8 @@ Document::readObjects(Base::XMLReader& reader)
         throw;
     }
     reader.readEndElement("ObjectData");
+    FC_DURATION_PLUS(d->restoreTiming.data, t);
+    d->restoreTiming.props = PropertyContainer::restoreStats - propStats;
 
     return objs;
 }
@@ -1699,7 +2133,13 @@ Document::importObjects(Base::XMLReader& reader)
     Base::ObjectStatusLocker<Status, Document> restoreBit(Status::Restoring, this);
     Base::ObjectStatusLocker<Status, Document> restoreBit2(Status::Importing, this);
     ExpressionParser::ExpressionImporter expImporter(reader);
-    reader.readElement("Document");
+    // Fragments are exported capped at 5 and rooted <Document>, but accept
+    // both roots here too -- reading is cheap to keep symmetric, and a
+    // future exporter may earn the other name.
+    reader.readElement();
+    if (strcmp(reader.localName(), "Document") != 0
+            && strcmp(reader.localName(), FC_ELEM_FCDOCUMENT) != 0)
+        throw Base::XMLParseException("Not a FreeCAD document");
     long scheme = reader.getAttributeAsInteger("SchemaVersion");
     reader.DocumentSchema = scheme;
     if (reader.hasAttribute("ProgramVersion")) {
@@ -1739,12 +2179,17 @@ Document::importObjects(Base::XMLReader& reader)
         }
     }
 
-    reader.readEndElement("Document");
+    // Nameless on purpose: the next end element is the root's own, whichever
+    // of the two roots this file used.
+    reader.readEndElement();
 
     // readFiles() runs from this signal, so the content is in the store by
     // the time it returns and the importing properties can be served.
     signalImportObjects(objs, reader);
     getFileBlobManager().dispatchPending();
+
+    // See restore(): nothing refers to the stand-ins once the files are in.
+    d->restoreDefaults.clear();
 
     afterRestore(objs,true);
 
@@ -2162,6 +2607,16 @@ bool Document::saveToFile(const char* filename) const
 {
     ExpressionBlocker::check();
 
+    // Nothing may still be parked once this returns: the source archive is
+    // renamed to a backup or deleted below, and an entry served afterwards
+    // would seek a stale offset into whatever now carries that name. The
+    // property accessors alone do not cover it -- a Transient or
+    // non-persistent property is skipped by beforeSave()/Save() and would
+    // keep its parked entry across the rename -- and on Windows the index's
+    // own open handle can fail the rename outright. Faulting everything in
+    // here costs what the save was going to read anyway.
+    const_cast<Document*>(this)->flushDeferredFiles();
+
     signalStartSave(*this, filename);
 
     int compression = DocumentParams::getCompressionLevel();
@@ -2311,7 +2766,12 @@ void Document::save(Base::Writer &writer, bool archive) const {
         writer.setSplitXML(SplitXML.getValue());
     }
 
-    writer.setSchemaVersion(getSaveSchemaVersion());
+    // The property is the cap the user chose; what the writer carries from
+    // here on is the outcome this save resolves it to, and every header
+    // below states the outcome. The two must not be conflated: a split save
+    // has no block to share and comes out as 5 -- old-readable -- whatever
+    // the cap says, without touching the cap.
+    writer.setSchemaVersion(resolveSchemaVersion(writer));
     // Collect before anything is written: the included files go into the
     // archive ahead of the objects and views that refer to them.
     getFileBlobManager().beginSave(writer);
@@ -2366,27 +2826,240 @@ void Document::restore (const char *filename,
     }
 
     std::unique_ptr<Base::Reader> _reader;
+    std::shared_ptr<Base::ZipFileReader> zfreader;
     std::unique_ptr<Base::XMLReader> _xmlReader;
     std::unique_ptr<zipios::ZipInputStream> zipstream;
     std::string dirname;
+
+    // Whatever was parked from a previous restore of this document is
+    // gone with the objects it belonged to.
+    d->deferredFiles.clear();
+    d->archiveReader.reset();
+    d->deferServeSeq.reset();
 
     if(fi.fileNamePure() == "Document" && fi.hasExtension("xml")) {
         Base::FileInfo di(fi.dirPath());
         _reader.reset(new Base::FileReader(fi,di.fileName()+"/Document.xml"));
         _xmlReader.reset(new Base::XMLReader(*_reader));
     } else {
-        // file.open(fi, std::ios::in | std::ios::binary);
-        // std::streambuf* buf = file.rdbuf();
-        // std::streamoff size = buf->pubseekoff(0, std::ios::end, std::ios::in);
-        // buf->pubseekoff(0, std::ios::beg, std::ios::in);
-        // if (size < 22) // an empty zip archive has 22 bytes
-        //     throw Base::FileException("Invalid project file",filename);
-        zipstream.reset(new zipios::ZipInputStream(filename));
-        _reader.reset(new Base::ZipReader(*zipstream,filename));
-        _xmlReader.reset(new Base::XMLReader(*_reader));
+        if (DocumentParams::getArchiveRandomAccess()) {
+            try {
+                zfreader = std::make_shared<Base::ZipFileReader>(filename);
+            } catch (Base::Exception &e) {
+                // An archive the central-directory index cannot digest may
+                // still open the old way (and if not, the forward walk
+                // produces the error the user should see).
+                FC_WARN("Archive random access unavailable for " << filename
+                        << " (" << e.what() << "), falling back");
+            }
+        }
+        Base::Reader *reader;
+        if (zfreader) {
+            reader = zfreader.get();
+        } else {
+            zipstream.reset(new zipios::ZipInputStream(filename));
+            _reader.reset(new Base::ZipReader(*zipstream,filename));
+            reader = _reader.get();
+        }
+        _xmlReader.reset(new Base::XMLReader(*reader));
+        if (zfreader && DocumentParams::getDeferShapeLoad()) {
+            // Park opted-in entries instead of serving them during the
+            // walk; the index stays behind for restoreDeferredFile().
+            d->archiveReader = zfreader;
+            _xmlReader->setFileDeferrer(
+                [this](const std::string &name, Base::Persistence *obj) {
+                    auto prop = dynamic_cast<App::Property*>(obj);
+                    if (!prop || !prop->canDeferRestore() || !prop->hasName())
+                        return false;
+                    auto owner = dynamic_cast<App::DocumentObject*>(prop->getContainer());
+                    if (!owner || !owner->getNameInDocument()
+                               || owner->getDocument() != this)
+                        return false;
+                    d->deferredFiles[std::make_pair(
+                            std::string(owner->getNameInDocument()),
+                            std::string(prop->getName()))] = name;
+                    prop->setRestorePending(true);
+                    return true;
+                });
+        }
     }
 
     restore(*_xmlReader, delaySignal, objNames);
+}
+
+bool Document::hasDeferredFile(const Base::Persistence *obj) const
+{
+    if (d->deferredFiles.empty())
+        return false;
+    auto prop = dynamic_cast<const App::Property*>(obj);
+    auto owner = prop ? dynamic_cast<const App::DocumentObject*>(prop->getContainer()) : nullptr;
+    if (!owner || !owner->getNameInDocument() || !prop->hasName())
+        return false;
+    return d->deferredFiles.count(std::make_pair(
+                std::string(owner->getNameInDocument()),
+                std::string(prop->getName()))) != 0;
+}
+
+bool Document::hasDeferredFiles() const
+{
+    return !d->deferredFiles.empty();
+}
+
+bool Document::restoreDeferredFile(Base::Persistence *obj)
+{
+    if (d->deferredFiles.empty())
+        return false;
+    auto prop = dynamic_cast<App::Property*>(obj);
+    auto owner = prop ? dynamic_cast<App::DocumentObject*>(prop->getContainer()) : nullptr;
+    if (!owner || !owner->getNameInDocument() || !prop->hasName())
+        return false;
+    auto it = d->deferredFiles.find(std::make_pair(
+                std::string(owner->getNameInDocument()),
+                std::string(prop->getName())));
+    if (it == d->deferredFiles.end())
+        return false;
+    std::string name = std::move(it->second);
+    // Erased before serving: a reentrant ask from inside RestoreDocFile
+    // must find nothing rather than recurse.
+    d->deferredFiles.erase(it);
+    prop->setRestorePending(false);
+
+    auto archive = d->archiveReader;
+    if (!archive) {
+        FC_ERR("Deferred entry " << name << " of " << prop->getFullName()
+                << " lost: no archive index");
+        return false;
+    }
+    FC_TIME_INIT(tServe);
+    // Opening is as fallible as reading: an archive truncated, replaced or
+    // deleted since the load throws from here, and this runs inside a
+    // timer slice and inside arbitrary const accessors -- neither of which
+    // may be left to unwind.
+    std::unique_ptr<zipios::ZipInputStream> stream;
+    try {
+        stream = archive->openEntry(name);
+    } catch (const std::exception &e) {
+        FC_ERR("Deferred entry " << name << " of " << prop->getFullName()
+                << " unreadable from " << archive->getFileName()
+                << ": " << e.what());
+        return false;
+    }
+    if (!stream) {
+        FC_ERR("Deferred entry " << name << " of " << prop->getFullName()
+                << " missing from " << archive->getFileName());
+        return false;
+    }
+    FC_DURATION_PLUS(d->deferOpenTime, tServe);
+    // Reproduce load-time conditions: observers see a restoring object,
+    // and the owner does not come out touched by being served.
+    bool wasTouched = owner->isTouched();
+    {
+        Base::ObjectStatusLocker<ObjectStatus, DocumentObject> guard(
+                ObjectStatus::Restore, owner);
+        try {
+            Base::ZipReader zipreader(*stream, name);
+            obj->RestoreDocFile(zipreader);
+        } catch (Base::Exception &e) {
+            e.ReportException();
+            FC_ERR("Reading failed from deferred embedded file: " << name);
+        } catch (...) {
+            FC_ERR("Reading failed from deferred embedded file: " << name);
+        }
+    }
+    FC_DURATION_PLUS(d->deferRestoreTime, tServe);
+    // No change notification is replayed here: the serve runs before the
+    // visual fill (runDeferredVisualSlice's pre-phase), so consumers pick
+    // the shape up when they build -- and a per-serve signal costs
+    // per-object GUI work (tree, property view) that multiplies into
+    // minutes across a large document.
+    if (!wasTouched)
+        owner->purgeTouched();
+    if (d->deferredFiles.empty())
+        d->archiveReader.reset();
+    return true;
+}
+
+void Document::cancelDeferredFile(Base::Persistence *obj)
+{
+    if (d->deferredFiles.empty())
+        return;
+    auto prop = dynamic_cast<App::Property*>(obj);
+    auto owner = prop ? dynamic_cast<App::DocumentObject*>(prop->getContainer()) : nullptr;
+    if (!owner || !owner->getNameInDocument() || !prop->hasName())
+        return;
+    if (d->deferredFiles.erase(std::make_pair(
+                std::string(owner->getNameInDocument()),
+                std::string(prop->getName())))) {
+        prop->setRestorePending(false);
+        if (d->deferredFiles.empty()) {
+            d->archiveReader.reset();
+            d->deferServeSeq.reset();
+        }
+    }
+}
+
+void Document::flushDeferredFiles()
+{
+    while (!d->deferredFiles.empty()) {
+        auto key = d->deferredFiles.begin()->first;
+        auto oit = d->objectMap.find(key.first);
+        App::Property *prop = oit == d->objectMap.end() ? nullptr
+            : oit->second->getPropertyByName(key.second.c_str());
+        if (!prop || !prop->canDeferRestore() || !restoreDeferredFile(prop)) {
+            // Owner gone or renamed away -- nothing left to serve it to.
+            d->deferredFiles.erase(key);
+        }
+    }
+    d->archiveReader.reset();
+    d->deferServeSeq.reset();
+}
+
+bool Document::serveDeferredFiles(double budgetSeconds)
+{
+    if (d->deferredFiles.empty())
+        return false;
+    if (!d->deferServeSeq)
+        // This sequence outlives its slice: it is reported across every
+        // return to the event loop until the last entry is served. An
+        // ordinary main-thread sequence would have the indicator grab the
+        // input for all of it -- wait cursor, clicks beeping, no
+        // navigation -- which is exactly what the progressive load exists
+        // to avoid. It reports; it does not take the window away.
+        d->deferServeSeq = std::make_unique<Base::SequencerLauncher>(
+                "Loading shapes...", d->deferredFiles.size(),
+                Base::SequencerLauncher::KeepInteractive);
+    auto start = std::chrono::steady_clock::now();
+    std::size_t served = 0;
+    while (!d->deferredFiles.empty()) {
+        auto key = d->deferredFiles.begin()->first;
+        auto oit = d->objectMap.find(key.first);
+        App::Property *prop = oit == d->objectMap.end() ? nullptr
+            : oit->second->getPropertyByName(key.second.c_str());
+        if (!prop || !prop->canDeferRestore() || !restoreDeferredFile(prop))
+            d->deferredFiles.erase(key);
+        ++served;
+        // Serving one entry can cancel another (a consumer overwriting a
+        // parked value), and the cancel that empties the map drops this
+        // sequence with it.
+        if (d->deferServeSeq)
+            d->deferServeSeq->next();
+        if (std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - start).count()
+                >= budgetSeconds)
+            break;
+    }
+    FC_LOG("deferred serve slice " << getName() << ": " << served << " in "
+            << std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - start).count()
+            << "s (open " << d->deferOpenTime.count()
+            << "s, restore " << d->deferRestoreTime.count()
+            << "s cumulative), " << d->deferredFiles.size() << " pending");
+    if (d->deferredFiles.empty()) {
+        d->archiveReader.reset();
+        d->deferServeSeq.reset();
+        return false;
+    }
+    return true;
 }
 
 void Document::restore(Base::XMLReader &reader,
@@ -2397,6 +3070,10 @@ void Document::restore(Base::XMLReader &reader,
 
     clearUndos();
     d->files.clear();
+    // Stale parked entries must never resolve against the new objects
+    // (same names, different content). The archive index itself is
+    // managed by the caller that installed it.
+    d->deferredFiles.clear();
     bool signal = false;
     Document *activeDoc = GetApplication().getActiveDocument();
     if (!d->objectArray.empty()) {
@@ -2425,6 +3102,9 @@ void Document::restore(Base::XMLReader &reader,
     GetApplication().signalStartRestoreDocument(*this);
     setStatus(Document::Restoring, true);
 
+    d->restoreTiming.clear();
+    FC_TIME_INIT(tRestore);
+
     // Claim the included-file entries out of the archive. The properties that
     // refer to them queue up as they are parsed and are served once the
     // entries have been drained, which readFiles() does before anything else.
@@ -2451,13 +3131,23 @@ void Document::restore(Base::XMLReader &reader,
     // without GUI. But if available then follow after all data files of the App document.
     signalRestoreDocument(reader);
 
+    FC_DURATION_DECL_INIT(dXml);
+    FC_DURATION_PLUS(dXml, tRestore);
+
+    FC_TIME_INIT(tFiles);
     reader.readFiles();
+    FC_DURATION_PLUS(d->restoreTiming.files, tFiles);
 
     // Hand the restored content to the properties waiting for it. Referrers
     // that appear later -- a view document replayed from its embedded string
     // -- take theirs straight from the store, which holds it until
     // afterRestore() lets go.
     getFileBlobManager().dispatchPending();
+
+    // The default stand-ins have served their purpose and nothing points at
+    // them any more -- including the reader, which has just drained whatever
+    // they registered.
+    d->restoreDefaults.clear();
 
     for(auto &f : reader.getFilenames()) {
         FC_TRACE("document " << getName() << " file: " << f);
@@ -2469,8 +3159,34 @@ void Document::restore(Base::XMLReader &reader,
         Base::Console().Error("There were errors while loading the file. Some data might have been modified or not recovered at all. Look above for more specific information about the objects involved.\n");
     }
 
-    if(!delaySignal)
+    FC_DURATION_DECL_INIT(dAfter);
+    if(!delaySignal) {
+        FC_TIME_INIT(tAfter);
         afterRestore();
+        FC_DURATION_PLUS(dAfter, tAfter);
+    }
+
+    // One line per load, split by stage. 'xml' is the whole Document.xml pass,
+    // of which 'create' (the <Objects> pass that instantiates each object) and
+    // 'data' (the <ObjectData> pass that restores properties) are the parts
+    // worth separating; 'files' is the archive bulk -- shapes and anything
+    // else that queued an addFile(); 'after' is the link/expression fixup, and
+    // carries the Gui visual build with it when a Gui document is attached --
+    // but only when this call ran it. Opening a document defers it, and
+    // Application::openDocuments then times it as 'postprocess'.
+    auto &rt = d->restoreTiming;
+    FC_LOG("restore " << getName() << ": " << rt.objectCount << " objects, "
+            << d->files.size() << " files"
+            << ", xml " << dXml.count()
+            << " (create " << rt.create.count()
+            << " [addObject " << rt.createAdd.count() << "s]"
+            << ", data " << rt.data.count()
+            << " [" << rt.props.count << " properties, "
+            << rt.props.total.count() << "s of which value "
+            << rt.props.value.count() << "s]" << ')'
+            << ", files " << rt.files.count()
+            << ", after " << dAfter.count()
+            << ", total " << (dXml + rt.files + dAfter).count() << 's');
 }
 
 bool Document::afterRestore(bool checkPartial) {
@@ -2640,8 +3356,16 @@ const std::vector<long>& Document::getWritableSchemaVersions()
     // still accepts are deliberately absent: offering to write a shape we
     // cannot build would fail silently at the worst moment.
     // 4 = one archive entry per PropertyFileIncluded. 5 = one entry per
-    // distinct content, shared by every property referring to it.
-    static const std::vector<long> versions {4, FC_DOC_SCHEMA_VER};
+    // distinct content, shared by every property referring to it. 6 = a class
+    // may state its defaults once and every container of that class be
+    // written as the difference -- view providers in the view file, objects
+    // in Document.xml -- and the root element becomes <FCDocument>, so that
+    // every reader which cannot put an elided property back refuses the file
+    // outright instead of silently reverting those properties to its own
+    // defaults. One version for both sides: they are the same mechanism,
+    // released together, and a reader that understands one understands the
+    // other.
+    static const std::vector<long> versions {4, 5, FC_DOC_SCHEMA_VER};
     return versions;
 }
 
@@ -2663,6 +3387,18 @@ long Document::getSaveSchemaVersion() const
     FC_WARN("Document " << getName() << ": cannot write schema version "
             << requested << ", using " << getCurrentSchemaVersion());
     return getCurrentSchemaVersion();
+}
+
+long Document::resolveSchemaVersion(const Base::Writer &writer) const
+{
+    const long cap = getSaveSchemaVersion();
+    // Split-XML has nothing to share -- every object is its own file, with
+    // no block to point at -- so a split save is written as 5 and stays
+    // readable by builds that predate the blocks. The cap is untouched: the
+    // same document saved un-split comes out as what it asked for.
+    if (cap >= 6 && writer.isSplitXML())
+        return 5;
+    return cap;
 }
 
 FileBlobManager& Document::getFileBlobManager() const

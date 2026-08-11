@@ -12,6 +12,7 @@ SET(PreferencePackTemplates_Files
     Sketcher_Colors.cfg
     Start_Colors.cfg
     TechDraw_Colors.cfg
+    Theme.cfg
     View.cfg
     Window_Colors.cfg
 )

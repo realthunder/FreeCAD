@@ -57,6 +57,7 @@ class AppExport PropertyVector: public Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
     /**
      * A constructor.
      * A more elaborate description of the constructor.
@@ -343,6 +344,7 @@ class AppExport PropertyPlacement: public Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
     /**
      * A constructor.
      * A more elaborate description of the constructor.

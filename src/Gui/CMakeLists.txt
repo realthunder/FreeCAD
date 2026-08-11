@@ -60,6 +60,7 @@ endif(MSVC)
 if(MSVC)
     set(FreeCADGui_LIBS
          FreeCADApp
+         customtitlebarkit
          ${COIN3D_LIBRARIES}
          ${OPENGL_gl_LIBRARY}
     )
@@ -73,6 +74,7 @@ if(MSVC)
 else(MSVC)
     set(FreeCADGui_LIBS
         FreeCADApp
+        customtitlebarkit
         ${COIN3D_LIBRARIES}
         ${Boost_LIBRARIES}
         ${OPENGL_gl_LIBRARY}
@@ -1053,6 +1055,7 @@ SET(Inventor_CPP_SRCS
     SoFCOffscreenRenderer.cpp
     SoQtOffscreenRendererPy.cpp
     SoFCSelection.cpp
+    ObjectMetaFeed.cpp
     SceneServeSource.cpp
     ShareDocument.cpp
     SoFCUnifiedSelection.cpp
@@ -1113,6 +1116,7 @@ SET(Inventor_SRCS
     SoFCOffscreenRenderer.h
     SoQtOffscreenRendererPy.h
     SoFCSelection.h
+    ObjectMetaFeed.h
     SceneServeSource.h
     ShareDocument.h
     SoFCUnifiedSelection.h
@@ -1310,6 +1314,7 @@ SET(FreeCADGui_CPP_SRCS
     Control.cpp
     SpaceballEvent.cpp
     PreferencePackManager.cpp
+    ThemeManager.cpp
     Thumbnail.cpp
     Utilities.cpp
     LiveViewInteraction.cpp
@@ -1348,6 +1353,7 @@ SET(FreeCADGui_SRCS
     Control.h
     SpaceballEvent.h
     PreferencePackManager.h
+    ThemeManager.h
     Thumbnail.h
     Tools.h
     Utilities.h

@@ -116,6 +116,15 @@ ColorUpdater::~ColorUpdater()
 
 void ColorUpdater::addObject(App::DocumentObject *obj)
 {
+    // A restore -- eager, or replayed later by the deferred view provider
+    // drain -- reads every object's own colors from the record, so there is
+    // nothing to propagate; and what the outermost onChanged pays here per
+    // registered object is a dependency sort of the whole document, which a
+    // large load cannot afford once per color property. The eager path was
+    // already exempt, by accident: a freshly restored object is still
+    // Touched, and the guard below skips it. Say so on purpose.
+    if (App::Document::isAnyRestoring())
+        return;
     if (_ColorUpdateCounter && obj && !obj->isRecomputing() && !obj->isTouched())
         _ColorChangedObjects.emplace(obj);
 }
@@ -434,7 +443,14 @@ void ViewProviderDocumentObject::updateView()
     bool vis = ViewProvider::isShow();
     if (vis) ViewProvider::hide();
     for (const auto & it : Map) {
+        FC_TIME_INIT(t);
         updateData(it.second);
+        auto dt = Base::GetDuration(t);
+        // Self-selecting: a bulk sweep spending real time on one property
+        // names it here.
+        if (dt > FC_DURATION(0.001))
+            FC_LOG("slow updateData " << getFullName() << '.' << it.first
+                    << ": " << dt.count() << 's');
     }
     if (vis && Visibility.getValue()) ViewProvider::show();
 }

@@ -24,6 +24,7 @@
 #ifndef APP_PROPERTYCONTAINER_H
 #define APP_PROPERTYCONTAINER_H
 
+#include <chrono>
 #include <map>
 #include <cstring>
 #include <Base/Persistence.h>
@@ -139,6 +140,83 @@ struct AppExport PropertyData
 
 class PropertyContainerP;
 
+/** One class's recorded defaults: the bytes the file carries, per property.
+ *
+ * The whole shared-default mechanism is only as sound as the equivalence it
+ * elides by, so the equivalence is the file itself. build() serializes each
+ * eligible property of a freshly constructed stand-in once, at canonical
+ * settings; save() emits exactly those bytes as the class's block; and a
+ * container being written elides a property only when its own serialization
+ * is byte-identical to the record. Nothing is left out that the file does
+ * not literally state, which is a property no isSame() implementation can
+ * promise.
+ *
+ * Eligible means: named, static, not transient or non-persistent, the type
+ * opted in (Property::canShareDefault) and the container did not veto it
+ * (PropertyContainer::mustSave). A property whose serialization throws is
+ * simply not recorded -- the containers then write it as they always did.
+ */
+class AppExport SharedDefaults
+{
+public:
+    struct Entry {
+        Base::Type type;
+        unsigned long status = 0;
+        /// Cheap size prefilter: unequal getMemSize() can never serialize
+        /// equally for the recorded types, and it spares a large list the
+        /// serialization that would only confirm it differs from an empty
+        /// default.
+        unsigned int memSize = 0;
+        /// What Save() emits at canonical settings. This is both the block
+        /// content written to the file and the reference an elision compares
+        /// against, so the two can never drift apart.
+        std::string content;
+    };
+
+    /// Record the stand-in's eligible properties. Canonical settings come
+    /// from the writer the file is being produced with (schema and file
+    /// version), plus forced XML and no indentation.
+    void build(const PropertyContainer &standIn, const Base::Writer &fileWriter);
+
+    /** The one eligibility test, shared by writer and readers.
+     *
+     * Eligible means: named, static, owned by this container, persistent,
+     * not transient, the type opted in (Property::canShareDefault) and the
+     * container did not veto (mustSave). The writer records and elides by
+     * it, the readers diff and paste by it; a second copy of this list
+     * would be a place for the two to disagree.
+     */
+    static bool eligible(const PropertyContainer &owner, const Property &prop);
+
+    /// Emit the record as the <Properties> element of a <Default> block,
+    /// byte-for-byte the content build() recorded.
+    void save(Base::Writer &writer) const;
+
+    const Entry *find(const std::string &name) const {
+        auto it = entries.find(name);
+        return it == entries.end() ? nullptr : &it->second;
+    }
+    bool empty() const { return entries.empty(); }
+    std::size_t size() const { return entries.size(); }
+
+    /** Serialize one property the way build() does, for comparison.
+     *
+     * Returns false -- never throws -- when the property will not
+     * serialize; the caller then writes it out as usual (writer side) or
+     * declines to paste (reader side). Both sides of every comparison must
+     * come from here, or the bytes stop meaning the same thing. The int
+     * overload is for the readers, which have a file's declared schema and
+     * version rather than a writer.
+     */
+    static bool serializeForCompare(int schemaVersion, int fileVersion,
+                                    const Property &prop, std::string &out);
+    static bool serializeForCompare(const Base::Writer &fileWriter,
+                                    const Property &prop, std::string &out);
+
+private:
+    std::map<std::string, Entry> entries;
+};
+
 /** Base class of all classes with properties
  */
 class AppExport PropertyContainer: public Base::Persistence
@@ -242,6 +320,81 @@ public:
   void Save (Base::Writer &writer) const override;
   void Restore(Base::XMLReader &reader) override;
 
+  /** Accumulated cost of restoring properties.
+   *
+   * A document load runs hundreds of thousands of property restores inside a
+   * single stage's timing, and the two halves answer to different fixes:
+   * reading the element and finding the property is the reader's cost, what
+   * the property then does with the value is the property's. Only the split
+   * says which one to attack. Whoever reports a stage snapshots this before
+   * and after and logs the difference.
+   */
+  struct AppExport RestoreStats
+  {
+      std::chrono::duration<double> total {0};
+      /// Of total, the share inside Property::Restore() -- everything the
+      /// value costs once the element has been read and the property found.
+      std::chrono::duration<double> value {0};
+      /// Properties read, and of those the ones no container claimed.
+      std::size_t count = 0;
+      std::size_t unmatched = 0;
+
+      RestoreStats operator-(const RestoreStats &other) const
+      {
+          return {total - other.total, value - other.value,
+                  count - other.count, unmatched - other.unmatched};
+      }
+  };
+  static RestoreStats restoreStats;
+
+  /** Properties left out of a save because getSaveDefaults() held them.
+   *
+   * A shared default block that quietly stops matching -- a status bit that
+   * drifted, a class whose stand-in cannot be built -- writes the whole file
+   * again and looks like nothing happened. This is the counter that says.
+   */
+  static std::size_t savedDefaults;
+
+  /** Why the rest were written anyway, split by which test said no.
+   *
+   * A block that quietly stops paying is the failure mode worth naming, and
+   * "it wrote everything again" does not say which of the three reasons it
+   * was: the defaults never heard of the property, its value really differs,
+   * or only its status does -- which is the one that looks like a bug in the
+   * mechanism rather than a property doing its job.
+   */
+  static std::size_t savedDefaultsUnknown;
+  static std::size_t savedDefaultsValue;
+  static std::size_t savedDefaultsStatus;
+
+  /** The recorded class defaults this container may leave out of a save.
+   *
+   * Thousands of containers of the same class mostly hold what their
+   * constructor gave them, and writing that out per container is what makes
+   * a large document's view file bigger than the document. A save that has
+   * already written those values somewhere the reader can find them points
+   * here, and every property whose own serialization is byte-identical to
+   * the record -- and whose status agrees -- is left out of the file.
+   *
+   * The reader is responsible for putting them back. Returning null, the
+   * default, writes everything.
+   */
+  virtual const SharedDefaults *getSaveDefaults() const { return nullptr; }
+
+  /** Whether a property has to be written even when the defaults agree.
+   *
+   * Leaving a property out is not the same as writing its default value if
+   * something downstream reacts to the file having mentioned it at all.
+   * A container that has such a property says so here.
+   *
+   * The answer is also what the reader must not take from a shared block: a
+   * property the stand-in cannot speak for is one whose recorded default
+   * would do damage if pasted. A writer of such a block may go further and
+   * keep the property out of it altogether -- if every object states it
+   * anyway, a recorded default for it is bytes nobody reads.
+   */
+  virtual bool mustSave(const Property &prop) const { (void)prop; return false; }
+
   virtual void beforeSave() const;
 
   virtual void editProperty(const char * /*propName*/) {}
@@ -285,7 +438,7 @@ public:
 protected:
   DynamicProperty dynamicProps;
 
-private: 
+private:
   std::string _propertyPrefix;
   static PropertyData propertyData;
 

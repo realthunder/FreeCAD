@@ -32,8 +32,6 @@
 #include <QImage>
 
 #include <App/Application.h>
-#include <App/Document.h>
-#include <App/DocumentObject.h>
 #include <App/PropertyFile.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyStandard.h>
@@ -916,7 +914,8 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
 Render::DrawCallList
 RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                           int selId, bool highlight, bool sequentialOrder,
-                          Render::ObjectInfoMap * objectInfo)
+                          Render::ObjectInfoMap * objectInfo,
+                          Render::ObjectInfoMap * addedInfo)
 {
     Render::DrawCallList res;
 
@@ -1060,22 +1059,42 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             draw.material = rmat;
             draw.mesh = mesh;
             draw.objectKey = ventry.key ? ventry.key->hash() : 0;
+            // A key already in the map is already right, so the lookup is
+            // the whole cost of a draw whose object has been seen before,
+            // and the two string copies happen once per object rather
+            // than once per object per publish
+            // (docs/IncrementalPublish.md §4d-iv).
+            //
+            // ⚠️ That leans on a key never being recycled onto a
+            // different object, and an internal name *is* reused: delete
+            // Box001 and the next object added can be given that name
+            // back. It holds because a key is a chain of
+            // SoFCSelectionRoot selnodeids and that counter only
+            // increments, so the deleted object's key is retired for the
+            // life of the process and the new Box001 composes one of its
+            // own. But the origin is deliberately not part of
+            // NodeKey::hash() or operator==, so nothing here enforces
+            // this: pushing anything recyclable — a pointer — into a key
+            // would make a stale entry reachable, and this guard would
+            // never correct it.
             if (objectInfo && draw.objectKey
                     && !objectInfo->count(draw.objectKey)) {
                 if (const auto & org = ventry.key->getOrigin()) {
+                    // Identity only, and it costs two string copies: an
+                    // internal name is fixed, so the origin captured at
+                    // cache build still names the same object. The label
+                    // and the type are presentation, they describe no
+                    // mesh, and a viewer gets them from the serving
+                    // source's ObjectMetaMap instead
+                    // (Renderer::setObjectMeta) -- resolving them here
+                    // meant a getDocument()+getObject() per draw on
+                    // every publish, in every view, for a table only a
+                    // remote viewer ever reads.
                     Render::ObjectInfo info;
                     info.doc = org->doc;
                     info.obj = org->obj;
-                    // Label and type are read fresh: the origin was
-                    // captured at cache build, and a label can change
-                    // without touching the scene graph.
-                    if (auto doc = App::GetApplication().getDocument(
-                                org->doc.c_str())) {
-                        if (auto obj = doc->getObject(org->obj.c_str())) {
-                            info.label = obj->Label.getValue();
-                            info.type = obj->getTypeId().getName();
-                        }
-                    }
+                    if (addedInfo)
+                        (*addedInfo)[draw.objectKey] = info;
                     (*objectInfo)[draw.objectKey] = std::move(info);
                 }
             }

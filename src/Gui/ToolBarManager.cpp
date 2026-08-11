@@ -482,6 +482,7 @@ ToolBarManager::ToolBarManager()
             "BaseApp/MainWindow/ToolBars");
 
     hMovable = hPref->GetGroup("Movable");
+    hWorkbenchReturn = hPref->GetGroup("WorkbenchReturn");
 
     if (auto sb = getMainWindow()->statusBar()) {
         sb->installEventFilter(this);
@@ -495,12 +496,14 @@ ToolBarManager::ToolBarManager()
         mb->installEventFilter(this);
         menuBarLeftArea = new ToolBarArea(mb, hMenuBarLeft, connParam, &menuBarTimer);
         menuBarLeftArea->setObjectName(QStringLiteral("MenuBarLeftArea"));
-        mb->setCornerWidget(menuBarLeftArea, Qt::TopLeftCorner);
-        menuBarLeftArea->show();
         menuBarRightArea = new ToolBarArea(mb, hMenuBarRight, connParam, &menuBarTimer);
         menuBarRightArea->setObjectName(QStringLiteral("MenuBarRightArea"));
-        mb->setCornerWidget(menuBarRightArea, Qt::TopRightCorner);
-        menuBarRightArea->show();
+        // Watch the areas themselves, not just the menu bar hosting them: with a
+        // custom title bar they move out of the menu bar and a right click on
+        // one would otherwise reach nothing.
+        menuBarLeftArea->installEventFilter(this);
+        menuBarRightArea->installEventFilter(this);
+        relocateMenuBarAreas();
     }
 
     globalArea = defaultArea = Qt::TopToolBarArea;
@@ -562,6 +565,13 @@ ToolBarManager::ToolBarManager()
 
     menuBarTimer.setSingleShot(true);
     QObject::connect(&menuBarTimer, &QTimer::timeout, [this]() {
+        // Only worth doing while the menu bar is what hosts the two areas. With
+        // a custom title bar they sit in the title bar instead, which keeps its
+        // own height, and sizing the menu bar to fit them would shrink the text
+        // strip around a row it no longer contains.
+        if (getMainWindow()->isCustomTitleBar()) {
+            return;
+        }
         if (auto menuBar = getMainWindow()->menuBar()) {
             menuBar->adjustSize();
         }
@@ -597,10 +607,11 @@ int ToolBarManager::toolBarIconSize(QWidget *widget) const
     int s = _toolBarIconSize;
     if (widget) {
         if (qobject_cast<WorkbenchTabWidget*>(widget)) {
+            // The tabs live in a toolbar, side by side with real tool buttons,
+            // so their icons match those by default rather than being shrunk to
+            // 0.8 of them. WorkbenchTabIconSize still overrides it.
             if (_workbenchTabIconSize > 0)
                 s = _workbenchTabIconSize;
-            else
-                s *= 0.8;
             widget = widget->parentWidget();
         }
         else if (qobject_cast<WorkbenchComboBox*>(widget)) {
@@ -623,8 +634,15 @@ int ToolBarManager::toolBarIconSize(QWidget *widget) const
                 || widget->parentWidget() == menuBarRightArea) {
             if (_menuBarIconSize > 0)
                 s = _menuBarIconSize;
-            else
-                s *= 0.6;
+            else if (!getMainWindow() || !getMainWindow()->isCustomTitleBar()) {
+                // In the menu bar's corners these icons sit beside menu text
+                // and are shrunk to keep the bar the height that text asks
+                // for. The custom title bar hosts the two areas as a toolbar
+                // row of its own, with nothing to match but the other
+                // toolbars -- so there they take the toolbar icon size.
+                // MenuBarIconSize still overrides both.
+                s *= 0.8;
+            }
         }
     }
     return std::max(s, 5);
@@ -657,6 +675,32 @@ void ToolBarManager::setDefaultMovable(bool enable)
 {
     hMovable->Clear();
     hMovable->SetBool("*", enable);
+}
+
+bool ToolBarManager::areTitleToolBarsLocked() const
+{
+    // Upstream FreeCAD/FreeCAD#26766 defaults this to true. Here it does not:
+    // the toolbars in these areas have always been movable in this fork, and a
+    // parameter that has never existed should not lock them on first run.
+    return hGeneral->GetBool("LockTitleToolBars", false);
+}
+
+void ToolBarManager::setTitleToolBarsLocked(bool locked)
+{
+    hGeneral->SetBool("LockTitleToolBars", locked);
+    setTitleToolBarsMovable(!locked);
+}
+
+void ToolBarManager::setTitleToolBarsMovable(bool movable)
+{
+    for (auto &v : toolBars()) {
+        QToolBar *toolbar = v.second;
+        if (!toolbar || !getToolBarArea(toolbar))
+            continue;
+        // setMovable() emits movableChanged, which is what puts the grip and
+        // the leading separator in or takes them out again.
+        toolbar->setMovable(movable);
+    }
 }
 
 struct ToolBarKey {
@@ -727,6 +771,7 @@ static bool isToolBarEmpty(QToolBar *toolbar)
 
 void ToolBarManager::onTimer()
 {
+    Base::StateLocker guard(relocating);
     std::string defarea = hMainWindow->GetASCII("DefaultToolBarArea");
     auto area = Qt::TopToolBarArea;
     if (defarea == "Bottom")
@@ -814,6 +859,10 @@ void ToolBarManager::onTimer()
     statusBarArea->restoreState(sbToolBars);
     menuBarRightArea->restoreState(mbRightToolBars);
     menuBarLeftArea->restoreState(mbLeftToolBars);
+
+    // Last, because the loop above gave every toolbar its own stored movability
+    // and the toolbars only reached their areas just now.
+    setTitleToolBarsMovable(!areTitleToolBarsLocked());
 }
 
 QToolBar *ToolBarManager::createToolBar(const QString &name)
@@ -1082,6 +1131,7 @@ void ToolBarManager::saveState() const
 
 void ToolBarManager::restoreState()
 {
+    Base::StateLocker guard(relocating);
     std::map<int, QToolBar*> sbToolBars;
     std::map<int, QToolBar*> mbRightToolBars;
     std::map<int, QToolBar*> mbLeftToolBars;
@@ -1121,6 +1171,7 @@ void ToolBarManager::restoreState()
     statusBarArea->restoreState(sbToolBars);
     menuBarRightArea->restoreState(mbRightToolBars);
     menuBarLeftArea->restoreState(mbLeftToolBars);
+    setTitleToolBarsMovable(!areTitleToolBarsLocked());
     restored = true;
 }
 
@@ -1128,6 +1179,269 @@ void ToolBarManager::addToolBarToMainWindow(QToolBar *toolbar)
 {
     Base::StateLocker guard(adding);
     getMainWindow()->addToolBar(toolbar);
+}
+
+void ToolBarManager::detachMenuBarAreas()
+{
+    auto mw = getMainWindow();
+    if (auto mb = mw->menuBar()) {
+        if (mb->cornerWidget(Qt::TopLeftCorner) == menuBarLeftArea) {
+            mb->setCornerWidget(nullptr, Qt::TopLeftCorner);
+        }
+        if (mb->cornerWidget(Qt::TopRightCorner) == menuBarRightArea) {
+            mb->setCornerWidget(nullptr, Qt::TopRightCorner);
+        }
+    }
+    for (auto area : {menuBarLeftArea, menuBarRightArea}) {
+        if (!area) {
+            continue;
+        }
+        if (auto layout = area->parentWidget() ? area->parentWidget()->layout() : nullptr) {
+            layout->removeWidget(area);
+        }
+        area->setParent(mw);
+        area->hide();
+    }
+}
+
+void ToolBarManager::relocateMenuBarAreas()
+{
+    if (!menuBarLeftArea || !menuBarRightArea) {
+        return;
+    }
+
+    auto mw = getMainWindow();
+    auto mb = mw->menuBar();
+
+    // Always take them out of the menu bar's corners first. Leaving a corner
+    // widget behind while reparenting it elsewhere leaves QMenuBar with a
+    // dangling corner and a gap where it used to reserve space.
+    if (mb) {
+        if (mb->cornerWidget(Qt::TopLeftCorner) == menuBarLeftArea) {
+            mb->setCornerWidget(nullptr, Qt::TopLeftCorner);
+        }
+        if (mb->cornerWidget(Qt::TopRightCorner) == menuBarRightArea) {
+            mb->setCornerWidget(nullptr, Qt::TopRightCorner);
+        }
+    }
+
+    if (mw->isCustomTitleBar()) {
+        const auto place = [](QWidget *host, ToolBarArea *area) {
+            if (!host) {
+                return;
+            }
+            auto layout = qobject_cast<QHBoxLayout*>(host->layout());
+            if (!layout) {
+                layout = new QHBoxLayout(host);
+                layout->setContentsMargins(0, 0, 0, 0);
+                layout->setSpacing(0);
+            }
+            area->setParent(host);
+            layout->addWidget(area);
+            area->show();
+        };
+        place(mw->leftArea(), menuBarLeftArea);
+        place(mw->rightArea(), menuBarRightArea);
+    }
+    else if (mb) {
+        // setCornerWidget reparents for us.
+        mb->setCornerWidget(menuBarLeftArea, Qt::TopLeftCorner);
+        mb->setCornerWidget(menuBarRightArea, Qt::TopRightCorner);
+        menuBarLeftArea->show();
+        menuBarRightArea->show();
+    }
+}
+
+QToolBar *ToolBarManager::nextDockToolBar(QToolBar *toolbar)
+{
+    // QMainWindow does not hand out its dock order, but it has laid the
+    // toolbars out by the time anyone asks, and ToolBarKey already turns that
+    // geometry into the order the dock is in -- rows for a horizontal area,
+    // columns for a vertical one. Read for one toolbar only, and only while
+    // \a toolbar is still docked, so the layout is the one on screen.
+    auto mw = getMainWindow();
+    const auto area = mw->toolBarArea(toolbar);
+    std::map<ToolBarKey, QToolBar*> docked;
+    for (auto &v : toolBars()) {
+        QToolBar *tb = v.second;
+        if (tb && !tb->isHidden() && tb->parentWidget() == mw
+                && mw->toolBarArea(tb) == area) {
+            docked.emplace(ToolBarKey(tb), tb);
+        }
+    }
+    auto it = docked.find(ToolBarKey(toolbar));
+    if (it == docked.end() || ++it == docked.end()) {
+        return nullptr;
+    }
+    return it->second;
+}
+
+/*! The dock slot the workbench toolbar goes back to, under
+ * MainWindow/ToolBars/WorkbenchReturn -- a subgroup for the same reason
+ * Movable is one, so that writing it does not look like a toolbar preference
+ * change and restart the 100 ms re-placement pass.
+ *
+ * Absent exactly when the toolbar is not in the title bar. Four entries,
+ * because between them they are the whole slot: which dock area it was in,
+ * which toolbar it stood in front of there, and where its row began and ended.
+ * QMainWindow::removeToolBar() erases all of that from Qt's own
+ * MainWindowState the moment the title bar takes the toolbar.
+ *
+ * The two breaks are read in different cases, and only one of them ever
+ * matters at a time. Inserting in front of the anchor already puts the toolbar
+ * at the head of that row if that is where it was, so BreakBefore is only
+ * needed where there is no anchor to insert in front of -- the toolbar was
+ * last in its area, and the break has to be appended before it. BreakAfter is
+ * the opposite case: the anchor started the next row, so the toolbar had a row
+ * that ended at it, and the anchor needs its break back or the two arrive as
+ * one row.
+ */
+static const char *returnArea = "Area";
+static const char *returnAnchor = "Anchor";
+static const char *returnBreakBefore = "BreakBefore";
+static const char *returnBreakAfter = "BreakAfter";
+
+static const char *toolBarAreaName(Qt::ToolBarArea area)
+{
+    switch (area) {
+    case Qt::BottomToolBarArea:
+        return "Bottom";
+    case Qt::LeftToolBarArea:
+        return "Left";
+    case Qt::RightToolBarArea:
+        return "Right";
+    default:
+        return "Top";
+    }
+}
+
+static Qt::ToolBarArea toolBarAreaFromName(const std::string &name)
+{
+    if (name == "Bottom") {
+        return Qt::BottomToolBarArea;
+    }
+    if (name == "Left") {
+        return Qt::LeftToolBarArea;
+    }
+    if (name == "Right") {
+        return Qt::RightToolBarArea;
+    }
+    return Qt::TopToolBarArea;
+}
+
+void ToolBarManager::setTitleBarToolBars(bool enable)
+{
+    auto mw = getMainWindow();
+    if (!mw || !menuBarLeftArea || !menuBarRightArea) {
+        return;
+    }
+
+    // One named toolbar, not a measured row. The workbench selector is the same
+    // toolbar in every workbench and the one the title bar has room for; taking
+    // whatever happened to be laid out on the first row moved a different set
+    // per workbench, and moved toolbars the user had put there themselves.
+    // Asked of toolBars() rather than findChild(): recorded toolbars are
+    // pre-created empty so Qt can restore their position, so the window can
+    // hold two of this name and only that map knows which one is the real one.
+    auto bars = toolBars();
+    auto it = bars.find(QStringLiteral("Workbench"));
+    QToolBar *toolbar = it == bars.end() ? nullptr : it->second.data();
+    if (!toolbar) {
+        return;
+    }
+
+    auto area = getToolBarArea(toolbar);
+    if (enable ? (area != nullptr) : (area != menuBarLeftArea && area != menuBarRightArea)) {
+        // Already where it is being asked to go, or somewhere this did not put
+        // it -- the status bar, or an area the user dragged it into.
+        return;
+    }
+
+    // Nothing below is the user's doing. Every move here hides the toolbar on
+    // the way -- removeToolBar() and reparenting both do -- and onToggleToolBar
+    // would otherwise write that into the toolbar's visibility preference,
+    // where it outlives the session.
+    Base::StateLocker guard(relocating);
+
+    // isHidden(), not isVisible(): the latter is false whenever an ancestor is
+    // hidden, and the area above this one is hidden for part of a title bar
+    // swap. What has to be kept is whether the toolbar was hidden in its own
+    // right.
+    const bool visible = !toolbar->isHidden();
+
+    Base::ConnectionBlocker block(connParam);
+
+    if (enable) {
+        // The dock slot as it stands, so the toolbar can go back into it.
+        // addToolBar() appends to the end of the area instead, which turns every
+        // trip into the title bar and out again into a move to the bottom of the
+        // dock, and merges a row of its own into the one above.
+        //
+        // Written to the configuration rather than kept in a member: the trip
+        // out is usually not in the session that made the trip in. A start with
+        // the toolbar already parked -- which is what MainWindow/MenuBarLeft
+        // arranges -- has nothing in memory to go back to.
+        auto anchor = nextDockToolBar(toolbar);
+        hWorkbenchReturn->SetASCII(returnArea, toolBarAreaName(mw->toolBarArea(toolbar)));
+        hWorkbenchReturn->SetBool(returnBreakBefore, mw->toolBarBreak(toolbar));
+        hWorkbenchReturn->SetBool(returnBreakAfter, anchor && mw->toolBarBreak(anchor));
+        if (anchor) {
+            hWorkbenchReturn->SetASCII(returnAnchor, anchor->objectName().toUtf8());
+        }
+        else {
+            hWorkbenchReturn->RemoveASCII(returnAnchor);
+        }
+        mw->removeToolBar(toolbar);
+        toolbar->setOrientation(Qt::Horizontal);
+        // addWidget() gives it the grip to be dragged back out by, and records
+        // the area in MainWindow/MenuBarLeft so the next start puts it here.
+        menuBarLeftArea->addWidget(toolbar);
+    }
+    else {
+        // removeWidget() is the one that takes the grip off and drops the
+        // area's parameter entry; without it the toolbar re-docks wearing a
+        // grip it has no area to be dragged around by, and the parameter would
+        // send it back to the area on the next start.
+        area->removeWidget(toolbar);
+
+        // The anchor is a name, so it has to be looked up again: the workbench
+        // in charge now need not be the one that was there when it was
+        // recorded. Gone -- a workbench-specific toolbar, or a toolbar the user
+        // has since moved elsewhere -- and the end of the area is as good an
+        // answer as any.
+        QToolBar *anchor = nullptr;
+        const QString name = QString::fromUtf8(hWorkbenchReturn->GetASCII(returnAnchor).c_str());
+        if (!name.isEmpty()) {
+            auto found = bars.find(name);
+            if (found != bars.end() && found->second && found->second->parentWidget() == mw) {
+                anchor = found->second;
+            }
+        }
+        const auto dockArea = toolBarAreaFromName(hWorkbenchReturn->GetASCII(returnArea, "Top"));
+
+        Base::StateLocker adder(adding);
+        if (anchor) {
+            // Inserting in front of the anchor lands the toolbar back on the
+            // anchor's row, at the head of it if that is where it was -- so the
+            // break before it needs nothing done. The break after it does: the
+            // anchor gave its own up when the two rows merged into one.
+            mw->insertToolBar(anchor, toolbar);
+            if (hWorkbenchReturn->GetBool(returnBreakAfter, false)
+                    && !mw->toolBarBreak(anchor)) {
+                mw->insertToolBarBreak(anchor);
+            }
+        }
+        else {
+            // Last in its area: appending is the right place, and the break has
+            // to go first because there is nothing to insert in front of.
+            if (hWorkbenchReturn->GetBool(returnBreakBefore, false)) {
+                mw->addToolBarBreak(dockArea);
+            }
+            mw->addToolBar(dockArea, toolbar);
+        }
+        hWorkbenchReturn->Clear();
+    }
+    setToolBarVisible(toolbar, visible);
 }
 
 ToolBarArea *ToolBarManager::getToolBarArea(QToolBar *toolbar)
@@ -1231,7 +1545,7 @@ void ToolBarManager::onToggleToolBar(bool visible)
         setToolBarVisible(toolbar, false);
         return;
     }
-    if (!restored || getMainWindow()->isRestoringWindowState())
+    if (!restored || relocating || getMainWindow()->isRestoringWindowState())
         return;
 
     bool enabled = visible;
@@ -1313,18 +1627,38 @@ void ToolBarManager::checkToolBar()
     }
 }
 
+QRect ToolBarManager::menuBarDropRect() const
+{
+    auto mw = getMainWindow();
+
+    if (mw->isCustomTitleBar()) {
+        // The two areas live in the title bar now, and the menu bar is only the
+        // text strip beside them -- a fraction of the row's width. Drop against
+        // the whole title bar, or most of it would not accept a toolbar at all.
+        auto left = mw->leftArea();
+        auto titleBar = left ? left->parentWidget() : nullptr;
+        if (!titleBar || !titleBar->isVisible()) {
+            return {};
+        }
+        return {titleBar->mapToGlobal(QPoint(0, 0)), titleBar->size()};
+    }
+
+    auto menuBar = mw->menuBar();
+    if (!menuBar || !menuBar->isVisible()) {
+        return {};
+    }
+    return {menuBar->mapToGlobal(QPoint(0, 0)), menuBar->size()};
+}
+
 bool ToolBarManager::addToolBarToArea(QObject *o, QMouseEvent *ev)
 {
     auto statusBar = getMainWindow()->statusBar();
     if (!statusBar || !statusBar->isVisible())
         statusBar = nullptr;
 
-    auto menuBar = getMainWindow()->menuBar();
-    if (!menuBar || !menuBar->isVisible()) {
-        if (!statusBar)
-            return false;
-        menuBar = nullptr;
-    }
+    const QRect menuBarRect = menuBarDropRect();
+    if (menuBarRect.isEmpty() && !statusBar)
+        return false;
 
     auto tb = qobject_cast<QToolBar*>(o);
     if (!tb || !tb->isFloating())
@@ -1359,12 +1693,12 @@ bool ToolBarManager::addToolBarToArea(QObject *o, QMouseEvent *ev)
             area = statusBarArea;
     }
     if (!area) {
-        if (!menuBar) {
+        if (menuBarRect.isEmpty()) {
             return false;
         }
-        QRect rect(menuBar->mapToGlobal(QPoint(0,0)), menuBar->size());
+        const QRect &rect = menuBarRect;
         if (rect.contains(pos)) {
-            if (pos.x() - rect.left() < menuBar->width()/2) {
+            if (pos.x() - rect.left() < rect.width()/2) {
                 area = menuBarLeftArea;
             }
             else {
@@ -1447,6 +1781,12 @@ bool ToolBarManager::showContextMenu(QObject *source)
             }
         }
     }
+    else if (source == menuBarLeftArea) {
+        area = menuBarLeftArea;
+    }
+    else if (source == menuBarRightArea) {
+        area = menuBarRightArea;
+    }
     else if (getMainWindow()->menuBar() == source) {
         QPoint pos = QCursor::pos();
         QRect rect(menuBarLeftArea->mapToGlobal(QPoint(0,0)), menuBarLeftArea->size());
@@ -1504,6 +1844,10 @@ bool ToolBarManager::showContextMenu(QObject *source)
     }
 
     area->foreachToolBar(addMenuVisibleItem);
+    if (menu.isEmpty()) {
+        // An empty area has nothing to offer; let the caller fall back.
+        return false;
+    }
     menu.exec(QCursor::pos());
     return true;
 }
@@ -1517,6 +1861,16 @@ bool ToolBarManager::eventFilter(QObject *o, QEvent *e)
         if (mev->button() == Qt::RightButton) {
             if (showContextMenu(o)) {
                 return true;
+            }
+            if (o == menuBarLeftArea || o == menuBarRightArea) {
+                // Nothing is parked here yet. The empty stretch of a title bar
+                // is still a sensible place to ask for the window's own toolbar
+                // and dock menu, which is where the toolbars come from.
+                if (auto menu = getMainWindow()->createPopupMenu()) {
+                    menu->setAttribute(Qt::WA_DeleteOnClose);
+                    menu->exec(QCursor::pos());
+                    return true;
+                }
             }
         }
     }

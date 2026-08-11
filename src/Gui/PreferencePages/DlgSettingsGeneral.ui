@@ -217,23 +217,6 @@ are shown on the same screen as the main window.</string>
           </property>
          </widget>
         </item>
-        <item row="0" column="0">
-         <widget class="Gui::PrefCheckBox" name="tiledBackground">
-          <property name="toolTip">
-           <string>Background of the main window will consist of tiles of a special image.
-See the FreeCAD Wiki for details about the image.</string>
-          </property>
-          <property name="text">
-           <string>Enable tiled background</string>
-          </property>
-          <property name="prefPath" stdset="0">
-           <cstring>MainWindow</cstring>
-          </property>
-          <property name="prefEntry" stdset="0">
-           <cstring>TiledBackground</cstring>
-          </property>
-         </widget>
-        </item>
         <item row="0" column="1">
          <widget class="Gui::PrefCheckBox" name="EnableCursorBlinking">
           <property name="toolTip">
@@ -278,28 +261,28 @@ display the splash screen</string>
       </item>
       <item>
        <layout class="QGridLayout" name="gridLayout_3">
-        <item row="7" column="0">
+        <item row="1" column="0">
          <widget class="QLabel" name="labelToolTipIconSize">
           <property name="text">
            <string>Size of tool tip icon:</string>
           </property>
          </widget>
         </item>
-        <item row="11" column="0">
+        <item row="4" column="0">
          <widget class="QLabel" name="label_8">
           <property name="text">
            <string>Application font size</string>
           </property>
          </widget>
         </item>
-        <item row="9" column="0">
+        <item row="2" column="0">
          <widget class="QLabel" name="label_7">
           <property name="text">
            <string>Workbench toolbar area</string>
           </property>
          </widget>
         </item>
-        <item row="7" column="3">
+        <item row="1" column="3">
          <widget class="Gui::PrefSpinBox" name="workbenchTabIconSize">
           <property name="toolTip">
            <string/>
@@ -312,7 +295,7 @@ display the splash screen</string>
           </property>
          </widget>
         </item>
-        <item row="10" column="1" colspan="3">
+        <item row="3" column="1" colspan="3">
          <widget class="Gui::PrefComboBox" name="globalToolbarArea">
           <property name="toolTip">
            <string>Choose default docking area for global toolbars</string>
@@ -328,14 +311,7 @@ display the splash screen</string>
           </property>
          </widget>
         </item>
-        <item row="4" column="0">
-         <widget class="QLabel" name="label_2">
-          <property name="text">
-           <string>View menu style sheet:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="7" column="1">
+        <item row="1" column="1">
          <widget class="Gui::PrefSpinBox" name="toolTipIconSize">
           <property name="maximum">
            <number>512</number>
@@ -354,14 +330,7 @@ display the splash screen</string>
           </property>
          </widget>
         </item>
-        <item row="1" column="0">
-         <widget class="QLabel" name="styleSheetLabel">
-          <property name="text">
-           <string>Style sheet:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="11" column="1">
+        <item row="4" column="1">
          <widget class="Gui::PrefSpinBox" name="appFontSize">
           <property name="toolTip">
            <string>Set the default application font size</string>
@@ -374,34 +343,14 @@ display the splash screen</string>
           </property>
          </widget>
         </item>
-        <item row="3" column="1" colspan="3">
-         <widget class="Gui::PrefComboBox" name="OverlayStyleSheets">
-          <property name="prefPath" stdset="0">
-           <cstring>MainWindow</cstring>
-          </property>
-          <property name="prefEntry" stdset="0">
-           <cstring>OverlayActiveStyleSheet</cstring>
-          </property>
-          <property name="prefType" stdset="0">
-           <cstring></cstring>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="0">
-         <widget class="QLabel" name="themesLabel">
-          <property name="text">
-           <string>Theme:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="10" column="0">
+        <item row="3" column="0">
          <widget class="QLabel" name="label_9">
           <property name="text">
            <string>Global toolbar area</string>
           </property>
          </widget>
         </item>
-        <item row="11" column="2" colspan="2">
+        <item row="4" column="2" colspan="2">
          <spacer name="horizontalSpacer">
           <property name="orientation">
            <enum>Qt::Horizontal</enum>
@@ -414,27 +363,14 @@ display the splash screen</string>
           </property>
          </spacer>
         </item>
-        <item row="6" column="0">
+        <item row="0" column="0">
          <widget class="QLabel" name="iconSizeLabel">
           <property name="text">
            <string>Size of toolbar icons:</string>
           </property>
          </widget>
         </item>
-        <item row="4" column="1" colspan="3">
-         <widget class="Gui::PrefComboBox" name="MenuStyleSheets">
-          <property name="prefPath" stdset="0">
-           <cstring>MainWindow</cstring>
-          </property>
-          <property name="prefEntry" stdset="0">
-           <cstring>MenuStyleSheet</cstring>
-          </property>
-          <property name="prefType" stdset="0">
-           <cstring></cstring>
-          </property>
-         </widget>
-        </item>
-        <item row="12" column="0" colspan="3">
+        <item row="5" column="0" colspan="3">
          <widget class="Gui::PrefCheckBox" name="checkboxTaskList">
           <property name="toolTip">
            <string>Separate task list into its own dockable widget</string>
@@ -450,37 +386,7 @@ display the splash screen</string>
           </property>
          </widget>
         </item>
-        <item row="1" column="1" colspan="3">
-         <widget class="Gui::PrefComboBox" name="StyleSheets">
-          <property name="toolTip">
-           <string>Style sheet how user interface will look like</string>
-          </property>
-          <property name="prefPath" stdset="0">
-           <cstring>MainWindow</cstring>
-          </property>
-          <property name="prefEntry" stdset="0">
-           <cstring>StyleSheet</cstring>
-          </property>
-          <property name="prefType" stdset="0">
-           <cstring></cstring>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="1" colspan="3">
-         <widget class="QComboBox" name="themesCombobox">
-          <property name="toolTip">
-           <string>Customize how user interface will look like</string>
-          </property>
-         </widget>
-        </item>
-        <item row="3" column="0">
-         <widget class="QLabel" name="label">
-          <property name="text">
-           <string>Overlay style sheet:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="9" column="1" colspan="3">
+        <item row="2" column="1" colspan="3">
          <widget class="Gui::PrefComboBox" name="toolbarArea">
           <property name="toolTip">
            <string>Choose default docking area for workbench toolbars</string>
@@ -496,14 +402,14 @@ display the splash screen</string>
           </property>
          </widget>
         </item>
-        <item row="7" column="2">
+        <item row="1" column="2">
          <widget class="QLabel" name="iconSizeLabel_2">
           <property name="text">
            <string>Workbench tab icon size:</string>
           </property>
          </widget>
         </item>
-        <item row="6" column="1" colspan="3">
+        <item row="0" column="1" colspan="3">
          <widget class="Gui::PrefComboBox" name="toolbarIconSize">
           <property name="toolTip">
            <string>Choose your preference for toolbar icon size. You can adjust
@@ -517,29 +423,6 @@ this according to your screen size or personal taste</string>
           </property>
           <property name="prefType" stdset="0">
            <number>0</number>
-          </property>
-         </widget>
-        </item>
-        <item row="5" column="0">
-         <widget class="QLabel" name="styleSheetLabel_2">
-          <property name="text">
-           <string>Icon set:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="5" column="1" colspan="3">
-         <widget class="Gui::PrefComboBox" name="IconSets">
-          <property name="toolTip">
-           <string>User defined icon set</string>
-          </property>
-          <property name="prefPath" stdset="0">
-           <cstring>MainWindow</cstring>
-          </property>
-          <property name="prefEntry" stdset="0">
-           <cstring>IconSet</cstring>
-          </property>
-          <property name="prefType" stdset="0">
-           <cstring></cstring>
           </property>
          </widget>
         </item>
@@ -825,9 +708,6 @@ dot/period will always be printed.</string>
  <tabstops>
   <tabstop>RecentFiles</tabstop>
   <tabstop>tiledBackground</tabstop>
-  <tabstop>StyleSheets</tabstop>
-  <tabstop>OverlayStyleSheets</tabstop>
-  <tabstop>MenuStyleSheets</tabstop>
   <tabstop>toolbarIconSize</tabstop>
  </tabstops>
  <resources/>

@@ -142,6 +142,14 @@ public:
     void restoreState();
     void setDefaultMovable(bool enable);
     bool isDefaultMovable() const;
+
+    /*! Whether the toolbars parked in the menu bar and status bar areas are
+     * locked as a group, independently of the per-toolbar locks. They are the
+     * ones a stray drag is most likely to pull out of place, and with a custom
+     * title bar they share a row with the window drag area.
+     */
+    bool areTitleToolBarsLocked() const;
+    void setTitleToolBarsLocked(bool locked);
     void retranslate();
     static void checkToolBar();
 
@@ -166,6 +174,30 @@ public:
     ToolBarArea *getToolBarArea(QToolBar *);
     void setToolBarMovable(QToolBar *);
 
+    /*! Put the two menu-bar toolbar areas wherever the title bar currently is:
+     * the menu bar's corners with a native title bar, the title bar's own left
+     * and right areas with a custom one. Called once during setup and again
+     * whenever MainWindow switches between them.
+     */
+    void relocateMenuBarAreas();
+
+    /*! Park the two menu-bar toolbar areas on the main window itself. Whichever
+     * title bar is about to be torn down owns them, and a child of a deleted
+     * widget is deleted with it -- so this has to run first, with
+     * relocateMenuBarAreas() putting them back afterwards.
+     */
+    void detachMenuBarAreas();
+
+    /*! Move the workbench toolbar into the title bar's left area, or, with
+     * \a enable false, move it back to the top dock, in front of the toolbar it
+     * was in front of when it left. That anchor is remembered in the
+     * configuration, so the trip back works in a later session too.
+     *
+     * Only that one toolbar, and only when it is where this left it: a toolbar
+     * the user dragged into an area is theirs, and so is one they dragged out.
+     */
+    void setTitleBarToolBars(bool enable);
+
 protected Q_SLOTS:
     void onToggleToolBar(bool);
     void onMovableChanged(bool);
@@ -184,6 +216,19 @@ protected:
     void getGlobalToolBarNames();
     bool eventFilter(QObject *, QEvent *);
 
+    void setTitleToolBarsMovable(bool movable);
+
+    /*! Where a floating toolbar has to be dropped to land in one of the two
+     * menu-bar areas, in global coordinates. Empty when there is nowhere to
+     * drop it.
+     */
+    QRect menuBarDropRect() const;
+
+    /*! The toolbar that follows \a toolbar in its own dock area, in the order
+     * the area lays them out. Null when it is the last one there.
+     */
+    QToolBar *nextDockToolBar(QToolBar *toolbar);
+
     bool addToolBarToArea(QObject *, QMouseEvent*);
     bool showContextMenu(QObject *);
     void onToggleStatusBarWidget(QWidget *, bool);
@@ -201,6 +246,11 @@ private:
     static ToolBarManager* _instance;
     ParameterGrp::handle hPref;
     ParameterGrp::handle hMovable;
+    /*! The dock slot the workbench toolbar left when the title bar took it:
+     * area, the toolbar it stood in front of, and whether it began a row.
+     * Qt's own MainWindowState loses all three at removeToolBar().
+     */
+    ParameterGrp::handle hWorkbenchReturn;
     ParameterGrp::handle hMainWindow;
     ParameterGrp::handle hGlobal;
     ParameterGrp::handle hStatusBar;
@@ -211,6 +261,14 @@ private:
     bool restored = false;
     bool migrating = false;
     bool adding = false;
+    /*! Set while this class is moving toolbars around itself. Every such move
+     * hides the toolbar on the way -- QMainWindow::removeToolBar() and
+     * reparenting both do -- and onToggleToolBar() would otherwise record that
+     * as the user having switched the toolbar off, in a parameter that
+     * outlives the session. Applying a theme goes through here, so a few theme
+     * switches were enough to record every toolbar as off and empty the window.
+     */
+    bool relocating = false;
     Qt::ToolBarArea defaultArea;
     Qt::ToolBarArea globalArea;
     std::set<QString> globalToolBarNames;

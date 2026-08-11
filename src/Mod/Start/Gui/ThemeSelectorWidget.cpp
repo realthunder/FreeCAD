@@ -23,73 +23,214 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <set>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPainter>
+#include <QPixmap>
 #include <QString>
 #include <QToolButton>
 #endif
 
 #include "ThemeSelectorWidget.h"
 #include <App/Application.h>
+#include <Base/Parameter.h>
+#include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/PreferencePackManager.h>
+#include <Gui/ThemeManager.h>
 
 using namespace StartGui;
+
+namespace
+{
+/// The thumbnails shipped for the themes this page used to be limited to.
+QString shippedThumbnail(const QString& packName)
+{
+    if (packName.isEmpty()) {
+        return QStringLiteral(":/thumbnails/Theme_thumbnail_auto.png");
+    }
+    if (packName == QLatin1String("Classic")) {
+        return QStringLiteral(":/thumbnails/Theme_thumbnail_classic.png");
+    }
+    if (packName == QLatin1String("Light")) {
+        return QStringLiteral(":/thumbnails/Theme_thumbnail_light.png");
+    }
+    if (packName == QLatin1String("Dark")) {
+        return QStringLiteral(":/thumbnails/Theme_thumbnail_dark.png");
+    }
+    return {};
+}
+
+/// Which way a theme pins the palette, read from the pack itself.
+bool themeIsDark(const QString& packName)
+{
+    const auto configFile =
+        Gui::Application::Instance->prefPackManager()->configFileFor(packName.toStdString());
+    if (configFile.empty()) {
+        return false;
+    }
+
+    auto parameters = ParameterManager::Create();
+    parameters->LoadDocument(configFile.string().c_str());
+    Base::Reference<ParameterGrp> group(parameters);
+    for (const char* name : {"BaseApp", "Preferences", "MainWindow"}) {
+        if (!group->HasGroup(name)) {
+            return false;
+        }
+        group = group->GetGroup(name);
+    }
+    return group->GetASCII("ColorScheme") == "Dark";
+}
+
+/// A window-ish swatch in the theme's own light or dark, for a theme that
+/// ships no thumbnail of its own.
+QIcon drawSwatch(const QSize& size, bool dark)
+{
+    const QColor paper = dark ? QColor(0x2b, 0x2e, 0x33) : QColor(0xf4, 0xf4, 0xf5);
+    const QColor ink = dark ? QColor(0x60, 0x64, 0x6a) : QColor(0xb4, 0xb4, 0xb8);
+
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    const QRectF frame(1.5, 1.5, size.width() - 3.0, size.height() - 3.0);
+    painter.setPen(QPen(ink, 2.0));
+    painter.setBrush(paper);
+    painter.drawRoundedRect(frame, 6.0, 6.0);
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(ink);
+    painter.drawRect(QRectF(frame.left() + 1.0,
+                            frame.top() + 1.0,
+                            frame.width() - 2.0,
+                            std::max(4.0, frame.height() * 0.18)));
+
+    return QIcon(pixmap);
+}
+}  // namespace
 
 ThemeSelectorWidget::ThemeSelectorWidget(QWidget* parent)
     : QWidget(parent)
     , _titleLabel {nullptr}
     , _descriptionLabel {nullptr}
-    , _buttons {nullptr, nullptr, nullptr}
 {
     setObjectName(QLatin1String("ThemeSelectorWidget"));
     setupUi();
     qApp->installEventFilter(this);
 }
 
+QString ThemeSelectorWidget::displayName(const QString& packName)
+{
+    // The names the three themes FreeCAD ships have gone by on this page since
+    // before it listed packs, kept because they are translated and because
+    // that is what these themes are called. Anything else goes by its pack.
+    if (packName.isEmpty()) {
+        return tr("Match Desktop", "Visual theme name");
+    }
+    if (packName == QLatin1String("Classic")) {
+        return tr("FreeCAD Classic", "Visual theme name");
+    }
+    if (packName == QLatin1String("Light")) {
+        return tr("FreeCAD Light", "Visual theme name");
+    }
+    if (packName == QLatin1String("Dark")) {
+        return tr("FreeCAD Dark", "Visual theme name");
+    }
+    return packName;
+}
+
+QIcon ThemeSelectorWidget::iconForTheme(const QString& packName)
+{
+    const QString shipped = shippedThumbnail(packName);
+    if (!shipped.isEmpty()) {
+        return QIcon(shipped);
+    }
+
+    // Match whatever the shipped thumbnails are, so a row of mixed buttons
+    // still lines up.
+    static const QSize size =
+        QIcon(QStringLiteral(":/thumbnails/Theme_thumbnail_auto.png")).actualSize(QSize(256, 256));
+    return drawSwatch(size, themeIsDark(packName));
+}
 
 void ThemeSelectorWidget::setupButtons(QBoxLayout* layout)
 {
     if (!layout) {
         return;
     }
-    std::map<Theme, QString> themeMap {{Theme::Classic, tr("FreeCAD Classic")},
-                                       {Theme::Dark, tr("FreeCAD Dark")},
-                                       {Theme::Light, tr("FreeCAD Light")}};
-    std::map<Theme, QIcon> iconMap {
-        {Theme::Classic, QIcon(QLatin1String(":/thumbnails/Theme_thumbnail_classic.png"))},
-        {Theme::Light, QIcon(QLatin1String(":/thumbnails/Theme_thumbnail_light.png"))},
-        {Theme::Dark, QIcon(QLatin1String(":/thumbnails/Theme_thumbnail_dark.png"))}};
+
+    // Everything the installation declares as a theme is offered, so a theme
+    // from the Addon Manager is on this page the same way the shipped ones are.
+    std::set<QString> installed;
+    for (const auto& pack : Gui::Application::Instance->prefPackManager()->preferencePacks()) {
+        if (pack.second.metadata().type() == "Theme") {
+            installed.insert(QString::fromStdString(pack.first));
+        }
+    }
+
+    // The shipped themes keep the order they have always been shown in, so a
+    // default installation looks exactly as it did; Match Desktop has no pack
+    // of its own and sits where it always has. Anything else follows, in the
+    // only order there is to give it.
+    std::vector<QString> packNames;
+    for (const auto& shipped : {QStringLiteral("Classic"),
+                                QString(),
+                                QStringLiteral("Light"),
+                                QStringLiteral("Dark")}) {
+        if (shipped.isEmpty()) {
+            packNames.push_back(shipped);
+        }
+        else if (installed.erase(shipped) > 0) {
+            packNames.push_back(shipped);
+        }
+    }
+    packNames.insert(packNames.end(), installed.begin(), installed.end());
+
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/MainWindow");
-    auto styleSheetName = QString::fromStdString(hGrp->GetASCII("StyleSheet"));
-    for (const auto& theme : themeMap) {
+    // Auto keeps the stylesheet of whichever theme it resolved to, so it is
+    // recognizable only by its own marker and has to be tested first.
+    const QString activeTheme = [&hGrp] {
+        if (hGrp->GetBool("ThemeAuto", false)) {
+            return QString();
+        }
+        const QString theme = QString::fromStdString(Gui::ThemeManager::currentTheme());
+        if (!theme.isEmpty()) {
+            return theme;
+        }
+        // A config written before the applied pack was recorded carries only
+        // the stylesheet the pack left behind (Dark.qss, Light.qss, ...).
+        const auto styleSheet = QString::fromStdString(hGrp->GetASCII("StyleSheet"));
+        if (styleSheet.contains(QLatin1String("Light"), Qt::CaseInsensitive)) {
+            return QStringLiteral("Light");
+        }
+        if (styleSheet.contains(QLatin1String("Dark"), Qt::CaseInsensitive)) {
+            return QStringLiteral("Dark");
+        }
+        return QStringLiteral("Classic");  // the theme without a stylesheet of its own
+    }();
+
+    for (const auto& packName : packNames) {
         auto button = new QToolButton();
         button->setCheckable(true);
         button->setAutoExclusive(true);
         button->setToolButtonStyle(Qt::ToolButtonStyle::ToolButtonTextUnderIcon);
-        button->setText(theme.second);
-        button->setIcon(iconMap[theme.first]);
-        button->setIconSize(iconMap[theme.first].actualSize(QSize(256, 256)));
-        if (theme.first == Theme::Classic && styleSheetName.isEmpty()) {
+        button->setText(displayName(packName));
+        const QIcon icon = iconForTheme(packName);
+        button->setIcon(icon);
+        button->setIconSize(icon.actualSize(QSize(256, 256)));
+        if (packName == activeTheme) {
             button->setChecked(true);
         }
-        else if (theme.first == Theme::Light
-                 && styleSheetName.contains(QLatin1String("FreeCAD Light"),
-                                            Qt::CaseSensitivity::CaseInsensitive)) {
-            button->setChecked(true);
-        }
-        else if (theme.first == Theme::Dark
-                 && styleSheetName.contains(QLatin1String("FreeCAD Dark"),
-                                            Qt::CaseSensitivity::CaseInsensitive)) {
-            button->setChecked(true);
-        }
-        connect(button, &QToolButton::clicked, this, [this, theme] {
-            themeChanged(theme.first);
+        connect(button, &QToolButton::clicked, this, [this, packName] {
+            themeChanged(packName);
         });
         layout->addWidget(button);
-        _buttons[static_cast<int>(theme.first)] = button;
+        _buttons.push_back({packName, button});
     }
 }
 
@@ -125,30 +266,44 @@ void ThemeSelectorWidget::onLinkActivated(const QString& link)
     Gui::Application::Instance->commandManager().runCommandByName("Std_AddonMgr");
 }
 
-void ThemeSelectorWidget::themeChanged(Theme newTheme)
+void ThemeSelectorWidget::themeChanged(const QString& packName)
 {
-    // Run the appropriate preference pack:
     auto prefPackManager = Gui::Application::Instance->prefPackManager();
-    switch (newTheme) {
-        case Theme::Classic:
-            prefPackManager->apply("FreeCAD Classic");
-            break;
-        case Theme::Dark:
-            prefPackManager->apply("FreeCAD Dark");
-            break;
-        case Theme::Light:
-            prefPackManager->apply("FreeCAD Light");
-            break;
+    // Auto has no pack of its own; it resolves to the one matching the desktop.
+    const bool isAuto = packName.isEmpty();
+    const bool wantDark = isAuto && Gui::Application::systemPrefersDarkScheme();
+    if (isAuto) {
+        prefPackManager->apply(wantDark ? "Dark" : "Light");
     }
+    else {
+        prefPackManager->apply(packName.toStdString());
+    }
+
+    auto hMainWindow = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow");
+    // The pack has already written ColorScheme, and writing it is enough to
+    // repaint: DlgSettingsGeneral observes that key and re-applies palette and
+    // stylesheet, the same way it does for a stylesheet change, so no restart is
+    // needed here either. Auto only adds a marker saying which way it resolved,
+    // so the next start can re-resolve if the desktop changed meanwhile; the
+    // palette stays pinned to the resolved scheme, keeping it consistent with
+    // the stylesheet the pack applied.
+    hMainWindow->SetBool("ThemeAuto", isAuto);
+    if (isAuto) {
+        hMainWindow->SetASCII("ThemeAutoApplied", wantDark ? "Dark" : "Light");
+    }
+
     ParameterGrp::handle hGrp =
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Themes");
+    // Writing them is no longer what makes the stylesheets resolve -- that has
+    // the same default now, whether or not the wizard has ever run. Kept so the
+    // colors show up in the Theme preference page as editable values.
     const unsigned long nonExistentColor = -1434171135;
-    const unsigned long defaultAccentColor = 1434171135;
     unsigned long longAccentColor1 = hGrp->GetUnsigned("ThemeAccentColor1", nonExistentColor);
     if (longAccentColor1 == nonExistentColor) {
-        hGrp->SetUnsigned("ThemeAccentColor1", defaultAccentColor);
-        hGrp->SetUnsigned("ThemeAccentColor2", defaultAccentColor);
-        hGrp->SetUnsigned("ThemeAccentColor3", defaultAccentColor);
+        hGrp->SetUnsigned("ThemeAccentColor1", Gui::Application::DefaultAccentColor);
+        hGrp->SetUnsigned("ThemeAccentColor2", Gui::Application::DefaultAccentColor);
+        hGrp->SetUnsigned("ThemeAccentColor3", Gui::Application::DefaultAccentColor);
     }
 }
 
@@ -165,7 +320,8 @@ void ThemeSelectorWidget::retranslateUi()
     _titleLabel->setText(QLatin1String("<h2>") + tr("Theme") + QLatin1String("</h2>"));
     _descriptionLabel->setText(tr("Looking for more themes? You can obtain them using "
                                   "<a href=\"freecad:Std_AddonMgr\">Addon Manager</a>."));
-    _buttons[static_cast<int>(Theme::Dark)]->setText(tr("FreeCAD Dark", "Visual theme name"));
-    _buttons[static_cast<int>(Theme::Light)]->setText(tr("FreeCAD Light", "Visual theme name"));
-    _buttons[static_cast<int>(Theme::Classic)]->setText(tr("FreeCAD Classic", "Visual theme name"));
+
+    for (const auto& entry : _buttons) {
+        entry.button->setText(displayName(entry.packName));
+    }
 }

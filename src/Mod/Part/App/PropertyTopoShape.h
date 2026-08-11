@@ -109,6 +109,17 @@ public:
 
     void afterRestore() override;
 
+    /** @name Deferred shape restore (docs/DocumentLoad.md §14)
+     * The shape's archive entry may be parked by the restore and read on
+     * first real use; every accessor that touches _Shape goes through
+     * ensureRestored() first, so the value is never observably missing.
+     */
+    //@{
+    bool canDeferRestore() const override { return true; }
+    bool isRestorePending() const override { return _RestorePending; }
+    void setRestorePending(bool on) override { _RestorePending = on; }
+    //@}
+
     friend class Feature;
 
 protected:
@@ -119,12 +130,18 @@ private:
     TopoDS_Shape loadFromFile(Base::Reader &reader);
     TopoDS_Shape loadFromStream(Base::Reader &reader);
 
+    /// Serve the parked archive entry, if any, before _Shape is used.
+    void ensureRestored() const;
+    /// Drop the parked entry unserved -- the value got overwritten.
+    void cancelRestorePending();
+
 private:
     TopoShape _Shape;
     TopoShape _ShapeNoName;
     std::string _Ver;
     mutable int _HasherIndex = 0;
     mutable bool _SaveHasher = false;
+    mutable bool _RestorePending = false;
 };
 
 struct PartExport ShapeHistory {

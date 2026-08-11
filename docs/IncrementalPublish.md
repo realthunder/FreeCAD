@@ -538,6 +538,109 @@ rebuilt to be moved. Note the one field that is genuinely volatile — a
 label can change without touching the scene graph — so whatever carries
 it needs an invalidation, not just a memo.
 
+### 4d-iii. What is left of translate, and why a fingerprint pass cannot take it
+
+Re-ablated 2026-08-08, after mesh reuse and after the label resolution
+left the publish path (§8.4): **translate is 16-17ms** of a ~40ms publish
+at 6000 objects — 18000 draws in **4 material buckets**. The stage is
+still the largest, so the question was only which design takes it.
+
+| gate | translate |
+|---|---|
+| nothing (baseline) | **16-17ms** |
+| no object-info map | **13ms** |
+| draws built holding a mesh and nothing else | **11-14ms** |
+
+So the *contents* of a draw — the material copy, the identity map, the
+bounding box, the index ranges and every field write — are together only
+**3-5ms**. The other **11-14ms** is the per-entry loop itself: a hash
+lookup per entry to share a mesh, the memo lookup and match that keep
+reuse honest, the `shared_ptr` refcount traffic, and constructing 18000
+`DrawCall` objects.
+
+⭐ **That is the finding, and it rules a design out.** Any scheme that
+still *visits every entry every publish* — including the obvious one, a
+per-entry fingerprint compared against the previous publish to find what
+moved — can win at most the 3-5ms, because the visit is what costs. Two
+attempts to measure a floor below that both came out **above** the
+baseline (25-33ms), and neither number is load-bearing: one starved the
+weak mesh memo (a draw list referring to nothing expires every mesh, so
+the next publish re-translates the scene), the other paid its own
+`shared_ptr` traffic parking the meshes to avoid that. ⚠️ **A translate
+ablation that stops building draws is not measuring translate** — the
+mesh memo is keyed to the draw list's lifetime, so removing the draws
+changes what the *next* publish has to do.
+
+⇒ The remaining 11-14ms is only reachable by **not visiting unchanged
+entries at all**, which is the per-child slice design of §5 — the change
+set names the children that moved, and the draw ranges of the ones that
+did not are kept without being looked at. Note this needs the slice
+provenance to reach the *root's* flattened map, composed across levels
+(§5, "at every level, not just the top"): the flatten records
+`ChildSlice{bucket, start, count}` per child today, but a scene root
+holding one container child has one slice covering everything, and 4
+buckets over 18000 draws is far too coarse to splice against. Bucket
+granularity is not slice granularity.
+
+### 4d-iv. The identity map stops being rebuilt — SHIPPED
+
+The one item from §4d-iii that does not need the slice work. The
+identity map was built from nothing and moved to the backend on every
+publish: a lookup per draw, and an insert with two string copies per
+object, to arrive at a table that was **already correct**. What an
+`objectKey` renders is a document and an object internal name, and
+neither can change (§8.4) — so a publish has nothing to correct there,
+only new keys to announce.
+
+So the producer keeps the map it has told the backend, and
+`Renderer::updateObjectInfo(added)` announces what is new;
+`setObjectInfo()` still states the whole table for the first publish, a
+newly attached backend, and the restate below. **translate 16-17ms →
+13-15ms** at 6000 objects, and a steady scene now announces *nothing*:
+measured `added=0` on every publish after the first, and `added=1` for
+one object added to a 12-object scene.
+
+Three properties worth stating, because they are what make it safe:
+
+- **The claim is versioned.** The resident map is a claim about what one
+  renderer holds, and a renderer's *address* is reused — a backend torn
+  down and rebuilt on a preference change can be allocated exactly where
+  the last one was, and `setExternalRenderer()` early-returns on an equal
+  pointer. So the producer stores `Renderer::instanceId()` (monotonic,
+  never reused) and `objectInfoVersion()` (bumped by every
+  `setObjectInfo`) beside the map, and a mismatch restates the table
+  instead of sending deltas against one that was never received.
+  Without it the failure is silent and total: every object already in the
+  scene stays permanently nameless to every viewer.
+
+- **The resident map is a superset of the scene, never a subset.** An
+  `objectKey` is a content hash, so an object leaving the scene says
+  nothing — it is simply a key never mentioned again. Verified across
+  add/delete/hide/reorder: `resident` tracks or exceeds a freshly built
+  map, with **zero missing and zero differing entries** in every publish
+  of every probe. A viewer can always name what it picks.
+- **A recycled *name* is not a recycled key.** An internal name is
+  reclaimable — the allocator counts up rather than filling gaps, but
+  `addObject(type, "Box003")` takes a freed name back, and undoing a
+  deletion restores one. An entry already in the map is never corrected,
+  so this would be a corruption if a key could land on a different
+  object. It cannot: a key is a chain of `SoFCSelectionRoot` selnodeids
+  and that counter only increments, so a deleted object's key is retired
+  for the life of the process and the new `Box003` composes its own.
+  ⚠️ Nothing *enforces* that — `Origin` is deliberately outside
+  `NodeKey::hash()` and `operator==` — so pushing anything recyclable (a
+  pointer) into a key would make a stale entry reachable and this guard
+  would never correct it. Both reclaim paths are covered by
+  `name_reuse_probe.py`.
+- **The residue is bounded.** Once the map has grown past `4 × draws +
+  4096` it is dropped and restated whole. The decision is made from the
+  *previous* publish's draw count, so restating costs a copy of the map
+  rather than a second translate.
+
+⚠️ The remaining object-info cost is the per-draw `count()` lookup —
+~1.5-2ms, and the reason this lands at 2ms rather than the 3-4ms §4d-iii
+ablated. That ablation removed the lookup too; only the slice design can.
+
 ## 4e. The MiSTer gate — 272M triangles, real GPU
 
 The gate this workstream had been deferring, run 2026-08-05 on the 285MB MiSTer assembly
@@ -694,10 +797,15 @@ up rather than being assumed.
    it was not incremental *work* at all but repetition — every vertex
    cache re-translated into a backend mesh every publish. Keeping those
    translations took translate 41-45ms → 24-28ms and the backend stage
-   11-15ms → 2ms (§4d-i), on by default. What remains for this phase is
-   the original plan: per-child draw-call slices and an `updateScene`
-   delta on the `Renderer` interface, so the list is not rebuilt
-   wholesale to be handed over.
+   11-15ms → 2ms (§4d-i), on by default. The label resolution then left
+   the publish path entirely (§8.4), taking 4-5ms more. What remains for
+   this phase is the original plan: per-child draw-call slices and an
+   `updateScene` delta on the `Renderer` interface, so the list is not
+   rebuilt wholesale to be handed over — and §4d-iii is why it has to be
+   that plan and not a cheaper one: at 16-17ms, only 3-5ms is the draws'
+   contents, so a design that still walks every entry cannot reach the
+   rest. The slice provenance has to be composed down to the root's
+   flattened map first; that is the unbuilt part.
 5. Incremental backend bookkeeping (19%): instance groups, bbox and
    level-plan invalidation, which otherwise inherit the O(N).
 6. Verification mode (§7) and the equivalence runs; then revisit the

@@ -55,14 +55,6 @@ public:
     void saveSettings() override;
     void loadSettings() override;
 
-    static void populateStylesheets(const char *key,
-                                    const char *path,
-                                    PrefComboBox *combo,
-                                    const char *def,
-                                    QStringList filter = QStringList());
-    void saveThemes();
-    void loadThemes();
-
     static void attachObserver();
     void setupToolBarIconSize();
 
@@ -75,10 +67,8 @@ private:
 
 public Q_SLOTS:
     void onUnitSystemIndexChanged(int index);
-    void onThemeChanged(int index);
 
 private:
-    bool themeChanged;
     std::unique_ptr<Ui_DlgSettingsGeneral> ui;
 };
 

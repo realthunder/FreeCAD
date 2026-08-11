@@ -55,8 +55,16 @@ EXTENSION_PROPERTY_SOURCE(App::LinkBaseExtension, App::DocumentObjectExtension)
 LinkBaseExtension::LinkBaseExtension()
 {
     initExtensionType(LinkBaseExtension::getExtensionClassTypeId());
+    // Prop_Output: this property carries no input state -- its value is never
+    // read, only its change, which is how the view provider hears that the
+    // link's dependents recomputed (see extensionExecute()). Without
+    // Prop_Output every such notification also sets ObjectStatus::Touch, so
+    // poking it marks the object as needing a recompute. During a load that
+    // went unnoticed because App::Document::afterRestore() purges the touch
+    // afterwards; the progressive drain runs past that purge and the touch
+    // survives, leaving the document dirty on open.
     EXTENSION_ADD_PROPERTY_TYPE(_LinkTouched, (false), " Link",
-            PropertyType(Prop_Hidden|Prop_NoPersist),0);
+            PropertyType(Prop_Hidden|Prop_NoPersist|Prop_Output),0);
     EXTENSION_ADD_PROPERTY_TYPE(_ChildCache, (), " Link",
             PropertyType(Prop_Hidden|Prop_NoPersist|Prop_ReadOnly),0);
     _ChildCache.setScope(LinkScope::Global);
@@ -889,10 +897,22 @@ void LinkBaseExtension::monitorOnChangeCopyObjects(
         return;
     for(auto obj : objs) {
         copyOnChangeSrcConns.emplace_back(obj->signalChanged.connect(
-            [this](const DocumentObject &, const Property &) {
-                if (auto prop = this->getLinkCopyOnChangeTouchedProperty()) {
+            [this](const DocumentObject &obj, const Property &prop) {
+                // Same job as the copy-on-change *source* watcher installed in
+                // update(), and it needs the same guards -- only that one had
+                // them. A restore is not an edit: the properties arriving are
+                // the file's own, and marking the link from them leaves the
+                // document dirty on open. Nor is a change the owner asked not
+                // to be touched for, nor one on an output property, which
+                // carries no state the copy could diverge on.
+                if (App::Document::isAnyRestoring()
+                        || obj.testStatus(ObjectStatus::NoTouch)
+                        || (prop.getType() & Prop_Output)
+                        || prop.testStatus(Property::Output))
+                    return;
+                if (auto propTouch = this->getLinkCopyOnChangeTouchedProperty()) {
                     if (this->getLinkCopyOnChangeValue() != CopyOnChangeDisabled)
-                        prop->setValue(true);
+                        propTouch->setValue(true);
                 }
             }));
     }

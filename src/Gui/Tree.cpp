@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <set>
 # include <QAction>
 # include <QActionGroup>
 # include <QApplication>
@@ -4228,6 +4229,23 @@ void TreeWidget::onUpdateStatus()
         return;
     }
 
+    // A drain replaying a load's view providers counts as restoring: items
+    // created now would take every per-property signal the replay emits --
+    // an icon rebuild per InvalidShape alone outweighs the restore itself.
+    // The eager path's tree was exactly this quiet, for exactly this window.
+    // Only the draining document's items wait, though: a second file opening
+    // is no reason for the first one's tree to stop answering, and a drain
+    // is long enough to be felt.
+    std::set<const App::Document*> draining;
+    for(auto &v : DocumentMap) {
+        if(v.first->isRestoringViewProviders())
+            draining.insert(v.first->getDocument());
+    }
+    // What is held back here is held back until the drain ends, so the
+    // timer has to bring us back for it.
+    if(!draining.empty())
+        _updateStatus();
+
     bool clearTimer = true;
 
     for(auto &v : DocumentMap) {
@@ -4249,15 +4267,23 @@ void TreeWidget::onUpdateStatus()
 
     std::vector<App::DocumentObject*> errors;
 
-    // Checking for new objects
-    for(auto &v : NewObjects) {
+    // Checking for new objects. Taken away first: creating an item can
+    // announce further objects, which writes into this same map -- and what
+    // a draining document owns goes back, to be made when its drain ends.
+    auto pendingNew = std::move(NewObjects);
+    NewObjects.clear();
+    for(auto &v : pendingNew) {
         auto doc = App::GetApplication().getDocument(v.first.c_str());
-        if(!doc)
+        // A draining document's new objects keep their place in the queue:
+        // the drain announces them itself, and the items it would make here
+        // are the ones that must not exist yet.
+        if(doc && draining.count(doc)) {
+            auto &slot = NewObjects[v.first];
+            slot.insert(slot.end(), v.second.begin(), v.second.end());
             continue;
-        auto gdoc = Application::Instance->getDocument(doc);
-        if(!gdoc)
-            continue;
-        auto docItem = getDocumentItem(gdoc);
+        }
+        auto gdoc = doc ? Application::Instance->getDocument(doc) : nullptr;
+        auto docItem = gdoc ? getDocumentItem(gdoc) : nullptr;
         if(!docItem)
             continue;
         for(auto id : v.second) {
@@ -4277,11 +4303,17 @@ void TreeWidget::onUpdateStatus()
             }
         }
     }
-    NewObjects.clear();
 
-    // Update children of changed objects
-    for(auto &v : ChangedObjects) {
+    // Update children of changed objects, taken away for the same reason.
+    auto pendingChanged = std::move(ChangedObjects);
+    ChangedObjects.clear();
+    for(auto &v : pendingChanged) {
         auto obj = v.first;
+        // Held for the drain, like this document's new objects above.
+        if(!draining.empty() && draining.count(obj->getDocument())) {
+            ChangedObjects[obj] |= v.second;
+            continue;
+        }
 
         auto iter = ObjectTable.find(obj);
         if(iter == ObjectTable.end())
@@ -4310,11 +4342,11 @@ void TreeWidget::onUpdateStatus()
         }
     }
 
-    ChangedObjects.clear();
-
     FC_LOG("update item status");
     TimingInit();
     for (auto pos = DocumentMap.begin();pos!=DocumentMap.end();++pos) {
+        if(draining.count(pos->first->getDocument()))
+            continue;
         // The on-top bookkeeping runs either way -- it drives what the 3D view
         // draws on top, so it must not lag. Only the per-item status pass is
         // deferred.
@@ -4326,6 +4358,11 @@ void TreeWidget::onUpdateStatus()
     // Checking for just restored documents
     for(auto &v : DocumentMap) {
         auto docItem = v.second;
+        // Still draining: not just restored, and its pending population is
+        // exactly the work the drain is holding back. The connect below
+        // refuses it too, on its own account.
+        if(draining.count(v.first->getDocument()))
+            continue;
 
         for(auto obj : docItem->PopulateObjects)
             docItem->populateObject(obj);
@@ -4334,7 +4371,12 @@ void TreeWidget::onUpdateStatus()
         auto doc = v.first->getDocument();
 
         bool checkOnTop = false;
-        if(!docItem->connectChgObject.connected()) {
+        // A document whose view providers the progressive load is still
+        // replaying is not "just restored" yet -- connecting now would let
+        // setupTreeRank() renumber every object the drain announces. The
+        // eager path kept this disconnected for exactly that window.
+        if(!docItem->connectChgObject.connected()
+                && !v.first->isRestoringViewProviders()) {
             checkOnTop = true;
             docItem->connectChgObject = docItem->document()->signalChangedObject.connect(
                     std::bind(&TreeWidget::slotChangeObject, this, sp::_1, sp::_2));

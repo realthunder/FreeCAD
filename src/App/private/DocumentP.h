@@ -27,14 +27,18 @@
 #pragma warning( disable : 4834 )
 #endif
 
+#include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObserver.h>
 #include <App/StringHasher.h>
 #include <App/FileBlobManager.h>
+#include <Base/Reader.h>
+#include <Base/Sequencer.h>
 #include <CXX/Objects.hxx>
 #include <boost/bimap.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/bimap.hpp>
+#include <chrono>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -105,6 +109,70 @@ struct DocumentP
 
     // restored files
     std::set<std::string> files;
+
+    /// What was written to this document while it was in a
+    /// Document::RestoreDrainGuard, and therefore not touched. Reported once
+    /// by whoever opened the scope, then cleared.
+    Document::RestoreDrainReport drainReport;
+
+    /// Where the last restore() spent its time, reported as one line when it
+    /// finishes. Split by stage so a load can be attributed without a
+    /// profiler: the two XML passes, the archive bulk, and the fixup after.
+    struct RestoreTiming {
+        std::chrono::duration<double> create {0};
+        /// Of 'create': what the addObject() calls took by themselves --
+        /// the factory, the name bookkeeping, the notifications -- against
+        /// the XML element reads that surround them in the same pass.
+        std::chrono::duration<double> createAdd {0};
+        std::chrono::duration<double> data {0};
+        std::chrono::duration<double> files {0};
+        std::size_t objectCount = 0;
+        /// What the <ObjectData> pass spent inside property restores, of
+        /// which 'value' is the share the properties themselves took once
+        /// the element was read and the property found.
+        App::PropertyContainer::RestoreStats props;
+
+        void clear() { *this = RestoreTiming(); }
+    };
+    RestoreTiming restoreTiming;
+
+    /** What a <Defaults> block says an object class holds.
+     *
+     * Restored into an object built for the purpose, and reduced to the
+     * properties the record actually moved off what this build's constructor
+     * produces. That list is usually empty -- the file was written by a build
+     * that agrees with this one -- and then a document's objects cost nothing
+     * to default. When it is not empty, those few properties are pasted onto
+     * every object of the class before the file's own statement about that
+     * object is read.
+     */
+    struct RestoreDefaults {
+        std::unique_ptr<DocumentObject> proto;
+        std::vector<std::string> names;
+    };
+    std::map<std::string, RestoreDefaults> restoreDefaults;
+
+    /** Deferred archive-entry restores (docs/DocumentLoad.md §14).
+     *
+     * While DeferShapeLoad is on, the archive walk parks entries whose
+     * consumer opted in (Property::DeferRestore) instead of serving
+     * them. The reader stays behind -- it holds no open handle, only
+     * the central-directory index -- and each consumer is served on
+     * first real use through Document::restoreDeferredFile(), or in
+     * bulk by flushDeferredFiles(). Keyed by object and property NAME,
+     * not pointer: an entry whose object got deleted (or is parked in a
+     * transaction) simply stops resolving, instead of dangling.
+     */
+    std::shared_ptr<Base::ZipFileReader> archiveReader;
+    std::map<std::pair<std::string, std::string>, std::string> deferredFiles;
+    /// The serve phase's progress: alive across serve slices so the
+    /// indicator shows shapes-served over the whole backlog, with the
+    /// per-shape import indicators nested beneath it.
+    std::unique_ptr<Base::SequencerLauncher> deferServeSeq;
+    /// Serve-time attribution for the slice log: entry opening vs the
+    /// consumer's RestoreDocFile, against the slice wall clock.
+    std::chrono::duration<double> deferOpenTime {0};
+    std::chrono::duration<double> deferRestoreTime {0};
 
     DocumentP();
 

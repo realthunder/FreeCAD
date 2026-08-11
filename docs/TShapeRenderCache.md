@@ -127,11 +127,16 @@ The flattened build remains the default and runs whenever any of the
 following holds (`buildInstanced()` gate):
 
 - `ShapeInstancing` parameter off, or render-cache mode ≠ 3, or no
-  backend renderer selected, or the backend publishes no GPU-instancing
-  capability (`Render::Renderer::instancingHint()`, from
+  backend renderer *live* (`Render::Renderer::activeCount()` — the
+  actual instance count, not the Render Type preference: a backend can
+  be attached with the pref still "Default", and a pref naming a
+  backend yields none when creation fails), or the backend publishes no
+  GPU-instancing capability (`Render::Renderer::instancingHint()`, from
   `BGFX_CAPS_INSTANCING`). Without real instancing many small shared
   nodes are a net loss — the 2021 `LinkShapeTable` lesson. A parameter
-  observer rebuilds Part visuals when a gate parameter flips.
+  observer rebuilds Part visuals when a gate parameter flips, and a
+  renderer activity observer does the same when a backend comes or goes
+  without a pref flip.
 - The shape is not a compound, or no (TShape, orientation) repeats
   among its leaves.
 - An instance is mirror-placed (`Trsf::IsNegative` flips winding).

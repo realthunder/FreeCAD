@@ -35,6 +35,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -560,6 +562,14 @@ struct FrameDumpRequest {
     /// RenderDebug view-mode override for the captured frame only
     /// (RenderDebugConfig::viewMode); -1 keeps the active mode.
     int mode = -1;
+    /// Whether the captured frame carries the viewport chrome: the
+    /// corner-anchored and pixel-space overlay feeds (navigation cube,
+    /// corner axis cross, on-screen text). A debug capture wants the
+    /// frame as staged and keeps them; an image export is of the model
+    /// and does not. In-scene overlay feeds (OverlayAnchor::sceneCamera
+    /// — editing overlays, dimensions) are scene content and are drawn
+    /// either way.
+    bool overlays = true;
 };
 
 /// Readback statistics of a captured frame — the cheap numeric
@@ -1274,18 +1284,46 @@ struct DrawCall {
 
 typedef std::vector<DrawCall> DrawCallList;
 
-/// The document object behind an objectKey, resolved by the scene
-/// producer (which alone can see the document — see setObjectInfo()).
-/// Everything is a plain string: the renderer and the serving path must
-/// stay free of App/Gui types.
+/// The document object behind an objectKey. Everything is a plain
+/// string: the renderer and the serving path must stay free of App/Gui
+/// types.
+///
+/// Two halves with different lifetimes, and the split is the point:
+///
+/// - `doc` + `obj` are the **identity**, and they are fixed. An internal
+///   name never changes, so the producer reads both straight off the
+///   cache key's origin (setObjectInfo()) without touching a document.
+/// - `label` + `type` are **presentation**, for a viewer to show a
+///   human a name. They have nothing to do with a mesh, so they are not
+///   resolved on the publish path: the serving path fills them from an
+///   ObjectMetaMap (setObjectMeta()) that changes only when a document
+///   does. A publish that nobody serves resolves neither.
+///
+/// ⚠️ Every one of these strings is UTF-8 and may hold any character a
+/// Python identifier may — internal names included. Nothing here may be
+/// byte-inspected, case-folded or truncated.
 struct ObjectInfo {
-    std::string doc;    ///< document internal name
-    std::string obj;    ///< object internal name
-    std::string label;  ///< user-visible label at capture time
+    std::string doc;    ///< document internal name (identity)
+    std::string obj;    ///< object internal name (identity)
+    std::string label;  ///< user-visible label, presentation only
     std::string type;   ///< DocumentObject type id, e.g. "Part::Box"
 };
 
 typedef std::unordered_map<uint64_t, ObjectInfo> ObjectInfoMap;
+
+/// What a viewer needs to *name* an object to a human. Not identity,
+/// not geometry: a rename changes this and nothing else.
+struct ObjectMeta {
+    std::string label;  ///< the object's Label at the time it was pushed
+    std::string type;   ///< DocumentObject type id
+};
+
+/// Presentation metadata by document internal name, then object
+/// internal name. Nested rather than a joined key precisely because
+/// both names are arbitrary UTF-8: there is no separator byte that
+/// cannot occur in a name.
+typedef std::unordered_map<std::string,
+        std::unordered_map<std::string, ObjectMeta>> ObjectMetaMap;
 
 /// Flag bits of the selection ids fed through Renderer::addSelection
 /// (mirroring SoFCRenderer::SelIdBits — the producer side of the feed).
@@ -1300,7 +1338,25 @@ enum SelIdBits : int {
 class RendererExport Renderer
 {
 public:
-    virtual ~Renderer() {}
+    Renderer();
+    virtual ~Renderer();
+
+    /// Unique for the lifetime of the process, and never reused. A
+    /// producer that keeps state about what a renderer has already been
+    /// told has to store this next to it: a renderer's *address* is
+    /// reused freely — a backend torn down and rebuilt on a preference
+    /// change can land where the last one was — and a producer comparing
+    /// pointers would go on sending deltas against a table the new
+    /// renderer never received.
+    uint64_t instanceId() const { return instanceid; }
+
+    /// How many times this renderer's identity table has been stated
+    /// whole (setObjectInfo). Together with instanceId() this is the
+    /// token a producer stores beside its resident copy, so that anything
+    /// replacing the table behind the producer's back is a mismatch on
+    /// the next publish rather than a silently incomplete table.
+    uint32_t objectInfoVersion() const { return infoversion; }
+
     virtual const std::string &type() const = 0;
     virtual bool render(const QColor &bg,
                         const void *viewMatrix,
@@ -1370,6 +1426,19 @@ public:
     static void setInstancingHint(bool supported);
     static bool instancingHint();
 
+    /// Number of live backend renderer instances in the process. This —
+    /// not any preference string — is the truth about whether a backend
+    /// is active: a backend can be attached with the type preference
+    /// still "Default" (per-view or scripted selection), and a
+    /// preference naming a backend yields none when creation fails
+    /// (plain-GL fallback).
+    static int activeCount();
+    /// Register a callback fired whenever activeCount() or
+    /// instancingHint() changes. Observers are never removed — register
+    /// only from static-lifetime contexts. Fires on the thread doing the
+    /// change (backend create/destroy happens on the GUI thread).
+    static void addActivityObserver(std::function<void()> observer);
+
     /// \name Scene API
     /// Mirrors SoFCRenderer's feed. Backends that don't consume scene data
     /// keep the default no-ops and canSkipInternal() == false, so the
@@ -1384,6 +1453,39 @@ public:
     /// the scene-serving snapshot so a remote viewer can name what it
     /// picks (docs/ThinClient.md §4.1).
     virtual void setObjectInfo(ObjectInfoMap &&info) { (void)info; }
+    /// Add identities the renderer does not have yet, leaving the rest of
+    /// the table alone. What an objectKey renders is *fixed* -- a document
+    /// and an object internal name, neither of which can change -- so a
+    /// publish has nothing to correct here, only new keys to announce.
+    /// Rebuilding the whole map to hand it over cost an insert and two
+    /// string copies per object on every publish for a table that was
+    /// already right (docs/IncrementalPublish.md §4d-iv).
+    /// setObjectInfo() remains the way to state the whole table: the first
+    /// publish, a renderer that has just been attached, and whenever the
+    /// producer drops its resident copy rather than let it grow.
+    virtual void updateObjectInfo(ObjectInfoMap &&added) { (void)added; }
+    /// Presentation metadata (label, type) for the objects this renderer
+    /// publishes, by document and object internal name. Pushed by the
+    /// serving source when a document changes it — a rename, an object
+    /// added or removed — and NOT per publish: nothing here describes a
+    /// mesh, and re-deriving it per publish cost a document lookup per
+    /// draw for a table only a serving viewer reads. A renderer nobody
+    /// serves is never given one, and its published entries carry
+    /// identity alone.
+    virtual void setObjectMeta(ObjectMetaMap &&meta) { (void)meta; }
+    /// Apply a change to that metadata: \a changed replaces or adds the
+    /// entries it names, \a removed drops {document, object} pairs. The
+    /// renderer holds the resident table, so a rename in a large
+    /// document sends one entry rather than all of them — and a live
+    /// import announcing thousands of new objects sends what arrived
+    /// since the last publish rather than everything so far, every
+    /// frame. setObjectMeta() remains the way to state the whole table,
+    /// for the first push and whenever the producer cannot say what
+    /// changed.
+    virtual void updateObjectMeta(
+            ObjectMetaMap &&changed,
+            const std::vector<std::pair<std::string, std::string>> &removed)
+    { (void)changed; (void)removed; }
     /// Describe the window background for the next render(). The bg color
     /// passed to render() stays the clear-color fallback for backends that
     /// ignore this.
@@ -1541,6 +1643,23 @@ public:
     /// internal fixed-function GL pass can be skipped.
     virtual bool canSkipInternal() const { return false; }
     //@}
+
+protected:
+    /// Record that the identity table has just been stated whole, so a
+    /// producer holding a resident copy of it can tell. Every override of
+    /// setObjectInfo() owes this call; updateObjectInfo() must not make
+    /// it, because a delta leaves the producer's copy still describing
+    /// what the renderer holds.
+    void noteObjectInfoStated() { ++infoversion; }
+
+private:
+    static uint64_t nextInstanceId()
+    {
+        static std::atomic<uint64_t> counter{0};
+        return ++counter;
+    }
+    const uint64_t instanceid = nextInstanceId();
+    uint32_t infoversion = 0;
 };
 
 class RendererLib

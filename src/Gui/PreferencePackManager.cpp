@@ -25,19 +25,26 @@
 
 #ifndef _PreComp_
 # include <memory>
+# include <set>
 # include <string_view>
 # include <mutex>
 #endif
 
 #include <boost/filesystem.hpp>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <QTextStream>
 
 #include "PreferencePackManager.h"
+#include "Action.h"
 #include "App/Metadata.h"
 #include "Base/Parameter.h"
 #include "Base/Interpreter.h"
 #include "Base/Console.h"
 #include "DockWindowManager.h"
+#include "ThemeManager.h"
 #include "ToolBarManager.h"
 
 #include <App/Application.h>
@@ -56,17 +63,28 @@ PreferencePack::PreferencePack(const fs::path& path, const App::Metadata& metada
         throw std::runtime_error{ "Cannot access " + path.string() };
     }
 
-    auto qssPaths = QDir::searchPaths(QString::fromUtf8("qss"));
-    auto cssPaths = QDir::searchPaths(QString::fromUtf8("css"));
-    auto overlayPaths = QDir::searchPaths(QString::fromUtf8("overlay"));
+    // Let a pack carry its own assets. Every prefix a theme can name has to be
+    // covered here, or the pack cannot ship the file it asks for: a pack that
+    // sets MenuStyleSheet or IconSet needs "qssm" and "iconset" just as much as
+    // one setting StyleSheet needs "qss".
+    //
+    // rescan() rebuilds every PreferencePack, so appending unconditionally grew
+    // the search paths without bound -- the same directory once per rescan.
+    auto addSearchPath = [](const char* prefix, const std::string& dir) {
+        const auto key = QString::fromUtf8(prefix);
+        auto paths = QDir::searchPaths(key);
+        const auto path = QString::fromStdString(dir);
+        if (!paths.contains(path)) {
+            paths.append(path);
+            QDir::setSearchPaths(key, paths);
+        }
+    };
 
-    qssPaths.append(QString::fromStdString(_path.string()));
-    cssPaths.append(QString::fromStdString(_path.string()));
-    overlayPaths.append(QString::fromStdString(_path.string() + "/overlay"));
-
-    QDir::setSearchPaths(QString::fromUtf8("qss"), qssPaths);
-    QDir::setSearchPaths(QString::fromUtf8("css"), cssPaths);
-    QDir::setSearchPaths(QString::fromUtf8("overlay"), overlayPaths);
+    addSearchPath("qss", _path.string());
+    addSearchPath("css", _path.string());
+    addSearchPath("overlay", (_path / "overlay").string());
+    addSearchPath("qssm", (_path / "menu").string());
+    addSearchPath("iconset", (_path / "iconsets").string());
 }
 
 std::string PreferencePack::name() const
@@ -122,14 +140,44 @@ App::Metadata Gui::PreferencePack::metadata() const
     return _metadata;
 }
 
+fs::path Gui::PreferencePack::path() const
+{
+    return _path;
+}
+
+fs::path Gui::PreferencePack::configFile() const
+{
+    return _path / (_metadata.name() + ".cfg");
+}
+
 void PreferencePack::applyConfigChanges() const
 {
     auto configFile = _path / (_metadata.name() + ".cfg");
-    if (fs::exists(configFile)) {
-        auto newParameters = ParameterManager::Create();
-        newParameters->LoadDocument(configFile.string().c_str());
-        auto baseAppGroup = App::GetApplication().GetUserParameter().GetGroup("BaseApp");
-        newParameters->GetGroup("BaseApp")->insertTo(baseAppGroup);
+    if (!fs::exists(configFile)) {
+        return;
+    }
+
+    auto newParameters = ParameterManager::Create();
+    newParameters->LoadDocument(configFile.string().c_str());
+
+    // Inserting only writes the keys the pack contains, so on its own a theme is
+    // a partial description of the look: whatever it omits survives from the
+    // theme before it. A theme owns all of it, so clear that set first.
+    const bool isTheme = _metadata.type() == "Theme";
+    ThemeManager::Transition transition;
+    if (isTheme) {
+        transition = ThemeManager::beginThemeChange(*newParameters);
+    }
+
+    auto baseAppGroup = App::GetApplication().GetUserParameter().GetGroup("BaseApp");
+    newParameters->GetGroup("BaseApp")->insertTo(baseAppGroup);
+
+    if (isTheme) {
+        ThemeManager::endThemeChange(transition);
+        ThemeManager::setCurrentTheme(_metadata.name());
+    }
+    else {
+        ThemeManager::forgetThemeIfAppearanceChanged(*newParameters);
     }
 }
 
@@ -163,7 +211,8 @@ void PreferencePackManager::rescan()
     }
 }
 
-void Gui::PreferencePackManager::AddPackToMetadata(const std::string &packName) const
+void Gui::PreferencePackManager::AddPackToMetadata(const std::string &packName,
+                                                  const std::string &type) const
 {
     std::lock_guard<std::mutex> lock(_mutex);
     auto savedPreferencePacksDirectory =
@@ -183,43 +232,39 @@ void Gui::PreferencePackManager::AddPackToMetadata(const std::string &packName) 
     else {
         metadata = std::make_unique<App::Metadata>();
         metadata->setName("User-Saved Preference Packs");
-        std::stringstream str;
-        str << "Generated automatically -- edits may be lost when saving new preference packs. To "
-            << "distribute one or more of these packs:\n"
-            << "    1) copy the entire SavedPreferencePacks directory to a convenient location,\n"
-            << "    2) rename the directory (usually to the name of the preference pack you are "
-            << "distributing),\n"
-            << "    3) delete any subfolders containing packs you don't want to distribute,\n"
-            << "    4) use git to initialize the directory as a git repository,\n"
-            << "    5) push it to a remote git host,\n"
-            << "    6) activate Developer Mode in the Addon Manager,\n"
-            << "    7) use Developer Tools in the Addon Manager to update the metadata file,\n"
-            << "    8) add, commit, and push the updated package.xml file,\n"
-            << "    9) add your remote host to the custom repositories list in the Addon Manager"
-            << " preferences,\n"
-            << "   10) use the Addon Manager to install your preference pack locally for testing.";
-        metadata->setDescription(str.str());
+        // Deliberately short. The instructions for handing a pack to someone
+        // else used to live here, ten steps of them, in a file whose author
+        // has no reason to open it; they are shown when a pack is saved now.
+        metadata->setDescription("Generated automatically -- edits may be lost when saving new "
+                                 "preference packs.");
         metadata->addLicense(App::Meta::License("All Rights Reserved", fs::path()));
     }
     for (const auto &item : metadata->content()) {
         if (item.first == "preferencepack") {
             if (item.second.name() == packName) {
-                // A pack with this name exists already, bail out
-                return;
+                // A pack with this name exists already. Its type may still be
+                // wrong -- saving over a plain pack with a theme has to make it
+                // one, or the theme list would never show it.
+                if (item.second.type() == type)
+                    return;
+                metadata->removeContentItem("preferencepack", packName);
+                break;
             }
         }
     }
     App::Metadata newPreferencePackMetadata;
     newPreferencePackMetadata.setName(packName);
+    if (!type.empty())
+        newPreferencePackMetadata.setType(type);
 
     metadata->addContentItem("preferencepack", newPreferencePackMetadata);
     metadata->write(savedPreferencePacksDirectory / "package.xml");
 }
 
 void Gui::PreferencePackManager::importConfig(const std::string& packName,
-    const boost::filesystem::path& path)
+    const boost::filesystem::path& path, const std::string& type)
 {
-    AddPackToMetadata(packName);
+    AddPackToMetadata(packName, type);
 
     auto savedPreferencePacksDirectory =
         fs::path(App::Application::getUserAppDataDir()) / "SavedPreferencePacks";
@@ -286,6 +331,13 @@ bool PreferencePackManager::apply(const std::string& preferencePackName) const
 {
     std::lock_guard<std::mutex> lock(_mutex);
     if (auto preferencePack = _preferencePacks.find(preferencePackName); preferencePack != _preferencePacks.end()) {
+        // The presets menu's in-session undo. A pack is applied from three
+        // places -- that menu, the Theme preferences page and Python -- and
+        // all three should be undoable in one step, so it is pushed here
+        // rather than by whoever asked. Null when the command is not
+        // registered, which is every session without a main window.
+        if (auto presets = PresetsAction::instance())
+            presets->push(QString::fromUtf8(preferencePackName.c_str()));
         BackupCurrentConfig();
         bool wasApplied = preferencePack->second.apply();
         if (wasApplied) {
@@ -304,6 +356,16 @@ bool PreferencePackManager::apply(const std::string& preferencePackName) const
     else {
         throw std::runtime_error("No such Preference Pack: " + preferencePackName);
     }
+}
+
+fs::path PreferencePackManager::configFileFor(const std::string& preferencePackName) const
+{
+    std::lock_guard<std::mutex> lock(_mutex);
+    auto pack = _preferencePacks.find(preferencePackName);
+    if (pack == _preferencePacks.end())
+        return {};
+    auto configFile = pack->second.configFile();
+    return fs::exists(configFile) ? configFile : fs::path {};
 }
 
 std::string findUnusedName(const std::string &basename, ParameterGrp::handle parent)
@@ -438,12 +500,264 @@ void copyTemplateParameters(/*const*/ ParameterManager& templateParameterManager
     }
 }
 
-void PreferencePackManager::save(const std::string& name, const std::vector<TemplateFile>& templates)
+namespace
+{
+
+/**
+ * An appearance parameter that names a file, and the Qt search-path prefix its
+ * value is resolved through. The pack directory is registered on every one of
+ * these prefixes (see PreferencePack's constructor), which is what lets a pack
+ * carry the files it asks for.
+ */
+struct AssetKey
+{
+    const char* name;
+    const char* prefix;
+    bool isList;  ///< a ';'-separated list, read left to right
+};
+
+const std::vector<AssetKey>& assetKeys()
+{
+    static const std::vector<AssetKey> keys {
+        {"StyleSheet", "qss", false},
+        {"OverlayActiveStyleSheet", "overlay", false},
+        {"MenuStyleSheet", "qssm", false},
+        {"IconSet", "iconset", true},
+    };
+    return keys;
+}
+
+/// Where a pack keeps files named through a given prefix, relative to its root.
+QString packSubdir(const QString& prefix)
+{
+    if (prefix == QLatin1String("overlay")) {
+        return QStringLiteral("overlay");
+    }
+    if (prefix == QLatin1String("qssm")) {
+        return QStringLiteral("menu");
+    }
+    if (prefix == QLatin1String("iconset")) {
+        return QStringLiteral("iconsets");
+    }
+    return {};  // "qss" and "css" are read from the pack root
+}
+
+/// Resolve a name the way the code that consumes it does: a path that exists as
+/// given, otherwise through the prefix's search paths.
+QFileInfo resolveAsset(const QString& prefix, const QString& name)
+{
+    if (name.isEmpty()) {
+        return {};
+    }
+    if (QFile::exists(name)) {
+        return QFileInfo(name);
+    }
+    const QString prefixed = prefix + QLatin1Char(':') + name;
+    if (QFile::exists(prefixed)) {
+        return QFileInfo(prefixed);
+    }
+    return {};
+}
+
+/// A file FreeCAD ships resolves on every machine, so a pack gains nothing by
+/// carrying a copy of it.
+bool isShipped(const QFileInfo& file)
+{
+    if (file.filePath().startsWith(QLatin1Char(':'))) {
+        return true;  // compiled into the binary
+    }
+    static const QString resourceDir =
+        QDir(QString::fromUtf8(App::Application::getResourceDir().c_str())).absolutePath()
+        + QLatin1Char('/');
+    return file.absoluteFilePath().startsWith(resourceDir);
+}
+
+void copyAssetIntoPack(const fs::path& packDir,
+                       const QString& prefix,
+                       const QString& name,
+                       const QFileInfo& file,
+                       std::set<QString>& seen);
+
+/**
+ * Follow what a stylesheet or icon set refers to. Both name other files the
+ * same way the parameters do -- "qss:images/close.svg", "iconset:My/tree.svg"
+ * -- and an icon set can also "#import" another one. A pack that carried only
+ * the file it names would still be missing every image in it.
+ */
+void copyReferencedAssets(const fs::path& packDir, const QFileInfo& file, std::set<QString>& seen)
+{
+    const auto suffix = file.suffix().toLower();
+    if (suffix != QLatin1String("qss") && suffix != QLatin1String("css")
+        && suffix != QLatin1String("txt")) {
+        return;
+    }
+
+    QFile input(file.filePath());
+    if (!input.open(QFile::ReadOnly | QFile::Text)) {
+        return;
+    }
+    QTextStream stream(&input);
+    const QString content = stream.readAll();
+    input.close();
+
+    static const QRegularExpression reference(
+        QStringLiteral(R"((qss|css|overlay|qssm|iconset):([^\s"')<>;,]+))"));
+    auto references = reference.globalMatch(content);
+    while (references.hasNext()) {
+        const auto match = references.next();
+        const QString prefix = match.captured(1);
+        const QString name = match.captured(2);
+        const QFileInfo target = resolveAsset(prefix, name);
+        if (target.exists() && !isShipped(target)) {
+            copyAssetIntoPack(packDir, prefix, name, target, seen);
+        }
+    }
+
+    static const QRegularExpression import(QStringLiteral(R"(^[ \t]*#import[ \t]+(.+?)[ \t]*$)"),
+                                           QRegularExpression::MultilineOption);
+    auto imports = import.globalMatch(content);
+    while (imports.hasNext()) {
+        const QString name = imports.next().captured(1);
+        const QFileInfo target = resolveAsset(QStringLiteral("iconset"), name);
+        if (target.exists() && !isShipped(target)) {
+            copyAssetIntoPack(packDir, QStringLiteral("iconset"), name, target, seen);
+        }
+    }
+}
+
+/**
+ * Copy one file into the pack and recurse into what it refers to. \a name is
+ * the name the file is known by, and it keeps that name inside the pack: a
+ * reference to "images/close.svg" resolves only if the pack stores it under
+ * that same relative path.
+ */
+void copyAssetIntoPack(const fs::path& packDir,
+                       const QString& prefix,
+                       const QString& name,
+                       const QFileInfo& file,
+                       std::set<QString>& seen)
+{
+    const QString canonical = file.canonicalFilePath();
+    if (canonical.isEmpty() || !seen.insert(canonical).second) {
+        return;  // already carried, or an import cycle
+    }
+
+    fs::path destination = packDir;
+    const auto subdir = packSubdir(prefix);
+    if (!subdir.isEmpty()) {
+        destination /= subdir.toStdString();
+    }
+    destination /= fs::path(name.toStdString());
+
+    const fs::path source(canonical.toStdString());
+    try {
+        fs::create_directories(destination.parent_path());
+        // Re-saving a pack over itself resolves its own copy: nothing to do.
+        if (!fs::exists(destination) || !fs::equivalent(source, destination)) {
+            fs::copy_file(source, destination, fs::copy_options::overwrite_existing);
+        }
+    }
+    catch (const std::exception& e) {
+        Base::Console().Warning("Preference pack could not carry %s: %s\n",
+                                canonical.toUtf8().constData(), e.what());
+        return;
+    }
+
+    copyReferencedAssets(packDir, file, seen);
+}
+
+/**
+ * Make a saved pack self-contained. Every appearance asset it names that
+ * FreeCAD does not ship is copied in, and the parameter is rewritten to the
+ * name the pack stores it under. Without this a pack naming a stylesheet from
+ * the author's own Gui/Stylesheets directory is broken on every other machine.
+ */
+void bundlePackAssets(const fs::path& packDir, ParameterManager& parameters)
+{
+    // Walk rather than GetGroup() the whole way: the latter creates what it
+    // walks through, which would put empty groups into the saved pack.
+    Base::Reference<ParameterGrp> group(&parameters);
+    for (const char* name : {"BaseApp", "Preferences", "MainWindow"}) {
+        if (!group->HasGroup(name)) {
+            return;
+        }
+        group = group->GetGroup(name);
+    }
+
+    std::set<QString> seen;
+    for (const auto& key : assetKeys()) {
+        const QString value = QString::fromStdString(group->GetASCII(key.name));
+        if (value.isEmpty()) {
+            continue;
+        }
+
+        const QString prefix = QString::fromUtf8(key.prefix);
+        const QStringList names = key.isList
+            ? value.split(QLatin1Char(';'), Qt::SkipEmptyParts)
+            : QStringList {value};
+
+        QStringList stored;
+        for (const auto& entry : names) {
+            const QString name = entry.trimmed();
+            const QFileInfo file = resolveAsset(prefix, name);
+            if (!file.exists()) {
+                Base::Console().Warning("Preference pack names %s, which cannot be found, "
+                                        "so the pack cannot carry it\n",
+                                        name.toUtf8().constData());
+                stored << name;
+                continue;
+            }
+            if (isShipped(file)) {
+                stored << name;  // resolves anywhere FreeCAD is installed
+                continue;
+            }
+
+            // An absolute path means nothing on another machine, and nothing
+            // inside the pack either; the file keeps only its own name.
+            const QString packName = QFileInfo(name).isAbsolute() ? file.fileName() : name;
+            copyAssetIntoPack(packDir, prefix, packName, file, seen);
+            stored << packName;
+        }
+
+        group->SetASCII(key.name, stored.join(QLatin1Char(';')).toUtf8().constData());
+    }
+}
+
+/// Copy a parameter group whole -- every key, with its type, and every subgroup.
+void copyGroupVerbatim(const Base::Reference<ParameterGrp>& from,
+                       const Base::Reference<ParameterGrp>& to)
+{
+    for (const auto& entry : from->GetBoolMap()) {
+        to->SetBool(entry.first.c_str(), entry.second);
+    }
+    for (const auto& entry : from->GetIntMap()) {
+        to->SetInt(entry.first.c_str(), entry.second);
+    }
+    for (const auto& entry : from->GetUnsignedMap()) {
+        to->SetUnsigned(entry.first.c_str(), entry.second);
+    }
+    for (const auto& entry : from->GetFloatMap()) {
+        to->SetFloat(entry.first.c_str(), entry.second);
+    }
+    for (const auto& entry : from->GetASCIIMap()) {
+        to->SetASCII(entry.first.c_str(), entry.second.c_str());
+    }
+    for (const auto& subgroup : from->GetGroups()) {
+        const std::string name = subgroup->GetGroupName();
+        copyGroupVerbatim(subgroup, to->GetGroup(name.c_str()));
+    }
+}
+
+}  // namespace
+
+void PreferencePackManager::save(const std::string& name,
+                                 const std::vector<TemplateFile>& templates,
+                                 const std::string& type)
 {
     if (templates.empty())
         return;
 
-    AddPackToMetadata(name);
+    AddPackToMetadata(name, type);
 
     // Create the config file
     auto outputParameterManager = ParameterManager::Create();
@@ -453,9 +767,30 @@ void PreferencePackManager::save(const std::string& name, const std::vector<Temp
         templateParameterManager->LoadDocument(t.path.string().c_str());
         copyTemplateParameters(*templateParameterManager, *outputParameterManager);
     }
+    // A theme's stylesheet variables are its own, and a template can only name
+    // keys it knows about, so copyTemplateParameters cannot reach them. Take
+    // the group whole.
+    if (type == "Theme") {
+        auto hThemes = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Themes");
+        if (hThemes->HasGroup("Variables")) {
+            copyGroupVerbatim(hThemes->GetGroup("Variables"),
+                              outputParameterManager->GetGroup("BaseApp")
+                                  ->GetGroup("Preferences")
+                                  ->GetGroup("Themes")
+                                  ->GetGroup("Variables"));
+        }
+    }
+
     auto savedPreferencePacksDirectory =
         fs::path(App::Application::getUserAppDataDir()) / "SavedPreferencePacks";
-    auto cfgFilename = savedPreferencePacksDirectory / name / (name + ".cfg");
+    auto packDirectory = savedPreferencePacksDirectory / name;
+
+    // A pack that only points at the author's own stylesheet is not something
+    // anyone else can install, so hand it its assets before writing the config.
+    bundlePackAssets(packDirectory, *outputParameterManager);
+
+    auto cfgFilename = packDirectory / (name + ".cfg");
     outputParameterManager->SaveDocument(cfgFilename.string().c_str());
 }
 
@@ -584,5 +919,40 @@ std::vector<boost::filesystem::path> Gui::PreferencePackManager::configBackups()
             results.push_back(backup);
         }
     }
+    // Newest first, which is the one an undo wants: apply() writes a backup
+    // immediately before it changes anything. Sort by the timestamp rather than
+    // the name -- the name carries one, but directory order guarantees nothing.
+    std::sort(results.begin(), results.end(), [](const fs::path& a, const fs::path& b) {
+        return fs::last_write_time(a) > fs::last_write_time(b);
+    });
     return results;
+}
+
+fs::path Gui::PreferencePackManager::revertToBackup(const fs::path& backup) const
+{
+    fs::path chosen = backup;
+    if (chosen.empty()) {
+        auto backups = configBackups();
+        if (backups.empty()) {
+            return {};
+        }
+        chosen = backups.front();
+    }
+    if (!fs::exists(chosen)) {
+        throw std::runtime_error("No such config backup: " + chosen.string());
+    }
+
+    auto newParameters = ParameterManager::Create();
+    newParameters->LoadDocument(chosen.string().c_str());
+    auto baseAppGroup = App::GetApplication().GetUserParameter().GetGroup("BaseApp");
+    // copyTo, not insertTo: the backup is the whole state, so a key the user has
+    // gained since then has to go, not survive underneath.
+    newParameters->GetGroup("BaseApp")->copyTo(baseAppGroup);
+
+    // The same two that apply() reloads by hand, for the same reason: their
+    // state lives in parameters that have just been rewritten under them.
+    DockWindowManager::instance()->loadState();
+    ToolBarManager::getInstance()->restoreState();
+
+    return chosen;
 }

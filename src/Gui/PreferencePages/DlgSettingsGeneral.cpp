@@ -80,11 +80,9 @@ static DlgSettingsGeneral *_Instance;
  */
 DlgSettingsGeneral::DlgSettingsGeneral( QWidget* parent )
   : PreferencePage(parent)
-  , themeChanged(false)
   , ui(new Ui_DlgSettingsGeneral)
 {
     ui->setupUi(this);
-    connect(ui->themesCombobox, qOverload<int>(&QComboBox::activated), this, &DlgSettingsGeneral::onThemeChanged);
 
     connect(ui->comboBox_UnitSystem, qOverload<int>(&QComboBox::currentIndexChanged), this, &DlgSettingsGeneral::onUnitSystemIndexChanged);
     ui->spinBoxDecimals->setMaximum(std::numeric_limits<double>::digits10 + 1);
@@ -203,7 +201,6 @@ void DlgSettingsGeneral::saveSettings()
 
     ui->AutoApply->onSave();
     ui->SaveParameter->onSave();
-    ui->tiledBackground->onSave();
     ui->Languages->onSave();
     ui->toolbarArea->onSave();
     ui->globalToolbarArea->onSave();
@@ -220,73 +217,9 @@ void DlgSettingsGeneral::saveSettings()
     ui->checkPopUpWindow->onSave();
     ui->toolbarIconSize->onSave();
     ui->workbenchTabIconSize->onSave();
-    ui->StyleSheets->onSave();
-    ui->IconSets->onSave();
-    ui->OverlayStyleSheets->onSave();
-    ui->MenuStyleSheets->onSave();
     ui->checkboxTaskList->onSave();
     ui->toolTipIconSize->onSave();
     saveTreeMode(ui->treeMode->currentIndex());
-
-    if (themeChanged)
-        saveThemes();
-}
-
-void DlgSettingsGeneral::populateStylesheets(const char *key,
-                                        const char *path,
-                                        PrefComboBox *combo,
-                                        const char *def,
-                                        QStringList filter) {
-    auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
-    // List all .qss/.css files
-    QMap<QString, QString> cssFiles;
-    QDir dir;
-    if (filter.isEmpty()) {
-        filter << QStringLiteral("*.qss");
-        filter << QStringLiteral("*.css");
-    }
-    QFileInfoList fileNames;
-
-    // read from user, resource and built-in directory
-    QStringList qssPaths = QDir::searchPaths(QString::fromUtf8(path));
-    for (QStringList::iterator it = qssPaths.begin(); it != qssPaths.end(); ++it) {
-        dir.setPath(*it);
-        fileNames = dir.entryInfoList(filter, QDir::Files, QDir::Name);
-        for (QFileInfoList::iterator jt = fileNames.begin(); jt != fileNames.end(); ++jt) {
-            if (cssFiles.find(jt->baseName()) == cssFiles.end()) {
-                cssFiles[jt->baseName()] = jt->fileName();
-            }
-        }
-    }
-
-    combo->clear();
-
-    // now add all unique items
-    combo->addItem(tr(def), QStringLiteral(""));
-    for (QMap<QString, QString>::iterator it = cssFiles.begin(); it != cssFiles.end(); ++it) {
-        combo->addItem(it.key(), it.value());
-    }
-
-    QString selectedStyleSheet = QString::fromUtf8(hGrp->GetASCII(key).c_str());
-    int index = combo->findData(selectedStyleSheet);
-
-    // might be an absolute path name
-    if (index < 0 && !selectedStyleSheet.isEmpty()) {
-        QFileInfo fi(selectedStyleSheet);
-        if (fi.isAbsolute()) {
-            QString path = fi.absolutePath();
-            if (qssPaths.indexOf(path) >= 0) {
-                selectedStyleSheet = fi.fileName();
-            }
-            else {
-                selectedStyleSheet = fi.absoluteFilePath();
-                combo->addItem(fi.baseName(), selectedStyleSheet);
-            }
-        }
-    }
-
-    combo->setCurrentIndex(index);
-    combo->onRestore();
 }
 
 void DlgSettingsGeneral::setupToolBarIconSize()
@@ -385,11 +318,6 @@ void DlgSettingsGeneral::loadSettings()
             if (PrefParam::AutoSave()) saveTreeMode(value);
         });
 
-    populateStylesheets("StyleSheet", "qss", ui->StyleSheets, "No style sheet");
-    populateStylesheets("IconSet", "iconset", ui->IconSets, "None", QStringList(QStringLiteral("*.txt")));
-    populateStylesheets("OverlayActiveStyleSheet", "overlay", ui->OverlayStyleSheets, "Auto");
-    populateStylesheets("MenuStyleSheet", "qssm", ui->MenuStyleSheets, "Auto");
-
     ui->toolbarArea->addItem(tr("Top"), QByteArray("Top"));
     ui->toolbarArea->addItem(tr("Left"), QByteArray("Left"));
     ui->toolbarArea->addItem(tr("Right"), QByteArray("Right"));
@@ -407,7 +335,6 @@ void DlgSettingsGeneral::loadSettings()
     });
 
     ui->SaveParameter->onRestore();
-    ui->tiledBackground->onRestore();
     ui->Languages->onRestore();
     ui->toolbarArea->onRestore();
     ui->globalToolbarArea->onRestore();
@@ -437,69 +364,6 @@ void DlgSettingsGeneral::loadSettings()
     ui->toolTipIconSize->onRestore();
 
     updateLanguage();
-    loadThemes();
-}
-
-void DlgSettingsGeneral::saveThemes()
-{
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
-
-    // First we check if the theme has actually changed.
-    std::string previousTheme = hGrp->GetASCII("Theme", "").c_str();
-    std::string newTheme = ui->themesCombobox->currentText().toStdString();
-
-    if (previousTheme == newTheme) {
-        themeChanged = false;
-        return;
-    }
-
-    // Save the name of the theme
-    hGrp->SetASCII("Theme", newTheme);
-
-    // Then we apply the themepack.
-    Application::Instance->prefPackManager()->rescan();
-    auto packs = Application::Instance->prefPackManager()->preferencePacks();
-
-    for (const auto& pack : packs) {
-        if (pack.first == newTheme) {
-
-            if (Application::Instance->prefPackManager()->apply(pack.first)) {
-                auto parentDialog = qobject_cast<DlgPreferencesImp*> (this->window());
-                if (parentDialog)
-                    parentDialog->reload();
-            }
-            break;
-        }
-    }
-
-    // Set the StyleSheet
-    QString sheet = QString::fromStdString(hGrp->GetASCII("StyleSheet"));
-    bool tiledBackground = hGrp->GetBool("TiledBackground", false);
-    Application::Instance->setStyleSheet(sheet, tiledBackground);
-
-    themeChanged = false;
-}
-
-void DlgSettingsGeneral::loadThemes()
-{
-    ui->themesCombobox->clear();
-
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/MainWindow");
-
-    QString currentTheme = QString::fromUtf8(hGrp->GetASCII("Theme", "").c_str());
-
-    Application::Instance->prefPackManager()->rescan();
-    auto packs = Application::Instance->prefPackManager()->preferencePacks();
-    for (const auto& pack : packs) {
-        if (pack.second.metadata().type() == "Theme") {
-            ui->themesCombobox->addItem(QString::fromStdString(pack.first));
-        }
-    }
-
-    int index = ui->themesCombobox->findText(currentTheme);
-    if (index >= 0 && index < ui->themesCombobox->count()) {
-        ui->themesCombobox->setCurrentIndex(index);
-    }
 }
 
 void DlgSettingsGeneral::updateLanguage()
@@ -540,20 +404,8 @@ void DlgSettingsGeneral::onUnitSystemIndexChanged(int index)
     }
 }
 
-void DlgSettingsGeneral::onThemeChanged(int index) {
-    Q_UNUSED(index);
-    themeChanged = true;
-}
-
 ///////////////////////////////////////////////////////////
 namespace {
-
-void applyStyleSheet(ParameterGrp *hGrp)
-{
-    auto sheet = hGrp->GetASCII("StyleSheet");
-    bool tiledBG = hGrp->GetBool("TiledBackground", false);
-    Application::Instance->setStyleSheet(QString::fromUtf8(sheet.c_str()), tiledBG);
-}
 
 void applyToolTipIconSize(ParameterGrp *)
 {
@@ -637,9 +489,9 @@ void DlgSettingsGeneral::attachObserver()
 {
     static ParamHandlers handlers;
 
-    handlers.addDelayedHandler("BaseApp/Preferences/MainWindow",
-                               {"StyleSheet", "TiledBackground", "IconSet"},
-                               applyStyleSheet);
+    // Appearance is owned by DlgSettingsTheme, which registers the handler for
+    // it. Two pages once registered one each on overlapping keys, so every
+    // stylesheet change ran the apply twice.
 
     auto hDockWindows = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/DockWindows");
     auto applyDockWidget = std::shared_ptr<ParamHandler>(new ApplyDockWidget);

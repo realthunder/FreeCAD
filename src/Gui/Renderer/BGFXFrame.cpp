@@ -119,33 +119,49 @@ bool BGFXRenderer::Private::render(const QColor &col,
         warmupReinit = true;
         view->warmup = -1;  // fired; never again for this view
     }
-    if (_BGFXLib.standaloneWidth != view->width
+    // As on the desktop path: the warmup rebuild and every size or
+    // scale change want the sized targets back, not a relink and not a
+    // re-upload. Relinking on WebGL2 is just as slow as it is on a
+    // native driver, and re-streaming the scene there is worse.
+    const bool progChanged =
+        _BGFXLib.standaloneSamples != view->msaaSamples
+        || _BGFXLib.shaderGeneration != view->shaderGen;
+    if (progChanged
+            || _BGFXLib.standaloneWidth != view->width
             || _BGFXLib.standaloneHeight != view->height
-            || _BGFXLib.standaloneSamples != view->msaaSamples
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale
-            || _BGFXLib.shaderGeneration != view->shaderGen
             || warmupReinit) {
         if (_BGFXLib.standaloneWidth != view->width
                 || _BGFXLib.standaloneHeight != view->height)
             bgfx::reset(_BGFXLib.standaloneWidth,
                         _BGFXLib.standaloneHeight,
                         BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY);
-        view->init();
+        view->init(!progChanged);
     }
 
     if (!bgfx::isValid(view->bgfxFbo))
         return false;
 #else
-    if (_BGFXLib.viewWidth(widget) != int(view->width)
+    // Only a shader-generation or MSAA change actually invalidates the
+    // programs (MSAA also re-decides m_oit, i.e. which programs exist).
+    // A resize or effect-scale change rebuilds the sized targets and
+    // nothing else: it must not relink — the driver's shader compiler
+    // takes seconds to do it, Intel's GL JIT ~5 s for this program set,
+    // long enough to freeze the UI through a dock-splitter drag — and it
+    // must not drop the uploaded scene either, which only bought a full
+    // re-upload on the next frame.
+    const bool progChanged =
+        _BGFXLib.shaderGeneration != view->shaderGen
+        || (_BGFXLib.desktopSamples >= 0
+            && _BGFXLib.desktopSamples != view->msaaSamples);
+    if (progChanged
+            || _BGFXLib.viewWidth(widget) != int(view->width)
             || _BGFXLib.viewHeight(widget) != int(view->height)
             || !bgfx::isValid(view->bgfxFbo)
             || _BGFXLib.effectResolution != view->effectScale
-            || _BGFXLib.ssaoResolution != view->ssaoScale
-            || _BGFXLib.shaderGeneration != view->shaderGen
-            || (_BGFXLib.desktopSamples >= 0
-                && _BGFXLib.desktopSamples != view->msaaSamples))
-        view->init();
+            || _BGFXLib.ssaoResolution != view->ssaoScale)
+        view->init(!progChanged);
 
     if (!bgfx::isValid(view->bgfxFbo)) {
         widget->makeCurrent();
@@ -3742,8 +3758,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // camera and viewport, fresh depth — through the normal submit
     // path with the target view overridden.
     {
+        // A capture taken for an image export drops the viewport
+        // chrome: the corner-anchored and pixel-space feeds are the
+        // navigation cube, the corner axis cross and on-screen text,
+        // which belong to the viewport rather than to the model. The
+        // scene-camera feeds stay -- those are in-scene content.
+        const bool skipChrome = dumpPending && !pendingDump.overlays;
         int slot = 0;
         for (const auto &ov : overlays) {
+            if (skipChrome && !ov.second.anchor.sceneCamera)
+                continue;
             if (slot >= BGFXView::NumOverlayViews) {
                 static bool warned = false;
                 if (!warned) {
@@ -3830,6 +3854,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
     QOpenGLContext::currentContext()->extraFunctions()
         ->glBindFramebuffer(GL_FRAMEBUFFER, GLuint(hostFbo));
     view->blit(dumpPending ? &pendingDump : nullptr, &lastStats);
+    if (dumpPending && !pendingDump.overlays) {
+        // That frame went to the screen as well as to the capture, and
+        // it is missing the chrome the capture asked to leave out. It
+        // would stay on screen until something else happened to dirty
+        // the scene, so redraw it whole.
+        sceneDirty = true;
+    }
     dumpPending = false;
 #endif
 

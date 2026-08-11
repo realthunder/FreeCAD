@@ -29,6 +29,8 @@
 #include <sstream>
 #include <functional>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include <xercesc/framework/XMLPScanToken.hpp>
 #include <xercesc/sax2/Attributes.hpp>
@@ -206,6 +208,28 @@ public:
      * @param guard: optional level guard. @sa readElement().
      */
     void readEndElement(const char* ElementName=nullptr, int *guard=nullptr);
+
+    /** Capture the current element's content as XML text instead of parsing it
+     *
+     * To be called right after readElement() has read the element whose
+     * content is to be captured. Consumes the reader up to the element's end
+     * tag -- which is left as the current position, so a readEndElement()
+     * for the element still matches -- and appends everything in between to
+     * \a out, re-serialized with the same escaping the writer used. The
+     * captured text can later be replayed through a fresh XMLReader wrapped
+     * in any root element, which is what lets a restore park a subtree and
+     * apply it after the load has let go.
+     */
+    void captureChildren(std::string &out);
+
+    /** Capture the current element, tags included, as XML text
+     *
+     * Same contract as captureChildren(), with the element's own start and
+     * end tag re-serialized around the content -- the form a caller wants
+     * when the fragment is replayed on its own.
+     */
+    void captureElement(std::string &out);
+
     /** Read element character content and save to a file
      *
      *  @param filename: file name to save into
@@ -303,12 +327,42 @@ public:
      * true consumes the entry without disturbing the match cursor.
      */
     using ArchiveHandler = std::function<bool(const std::string &, Base::Reader &)>;
-    void setArchiveHandler(ArchiveHandler handler) { _archiveHandler = std::move(handler); }
+    /** Name-only predicate telling whether the handler wants an entry.
+     *
+     * The forward-only walk offers every entry for free -- its stream is
+     * already positioned there -- but a random-access reader has to open
+     * an entry before it can offer content, so it asks this first and
+     * skips the open for entries the handler would refuse anyway.
+     */
+    using ArchiveFilter = std::function<bool(const std::string &)>;
+    void setArchiveHandler(ArchiveHandler handler, ArchiveFilter filter = {}) {
+        _archiveHandler = std::move(handler);
+        _archiveFilter = std::move(filter);
+    }
     /// Offer an entry to the handler; true when it took it.
     bool handleArchiveEntry(const std::string &name, Base::Reader &reader) const {
-        return _archiveHandler && _archiveHandler(name, reader);
+        return wantsArchiveEntry(name) && _archiveHandler(name, reader);
     }
     bool hasArchiveHandler() const { return static_cast<bool>(_archiveHandler); }
+    /// Whether the handler exists and its filter (if any) accepts \a name.
+    bool wantsArchiveEntry(const std::string &name) const {
+        return _archiveHandler && (!_archiveFilter || _archiveFilter(name));
+    }
+
+    /** Deferred serving of registered files.
+     *
+     * A random-access archive walk consults this before serving a
+     * registered entry; true means the installer took ownership of the
+     * entry -- recorded it, and will reopen and serve it later -- so the
+     * walk skips the consumer's RestoreDocFile. Meaningless for the
+     * forward-only walk, which cannot reopen anything and ignores it.
+     */
+    using FileDeferrer = std::function<bool(const std::string &, Base::Persistence *)>;
+    void setFileDeferrer(FileDeferrer deferrer) { _fileDeferrer = std::move(deferrer); }
+    /// Offer a registered entry for deferral; true when it was taken.
+    bool deferFileEntry(const std::string &name, Base::Persistence *obj) const {
+        return _fileDeferrer && _fileDeferrer(name, obj);
+    }
 
     /// Reader this parser draws from, or null. Its getDirectory() tells a
     /// consumer whether the document is an archive or an unpacked directory.
@@ -394,8 +448,43 @@ protected:
     std::string Characters;
     std::streamsize CharacterOffset {-1};
 
-    std::map<std::string, std::string> AttrMap;
-    using AttrMapType = std::map<std::string, std::string>;
+    /** The attributes of the current element, one entry per attribute.
+     * The store is reused across elements -- entries are assigned in
+     * place so their string capacity survives the next startElement --
+     * and AttrCount says how many of them are live. Lookup is a linear
+     * scan: an element carries a handful of attributes, and this runs
+     * once per attribute access against once per element for the
+     * allocations a fresh container would cost.
+     */
+    struct Attribute {
+        std::string name;
+        std::string value;
+    };
+    std::vector<Attribute> AttrStore;
+    std::size_t AttrCount {0};
+    const std::string *findAttribute(const char *AttrName) const;
+
+    /** Where captureChildren() is diverting the SAX events, if anywhere.
+     * While set, the element handlers append re-serialized XML here instead
+     * of updating the element state; the end tag of the element being
+     * captured (the first one below CaptureLevel) drops the diversion and
+     * is processed normally.
+     */
+    std::string *CaptureBuf {nullptr};
+    int CaptureLevel {0};
+    std::string CaptureScratch;
+    /** A captured start tag whose '>' is not written yet.
+     *
+     * An empty element has to be re-serialized as <x/> and not as <x></x>.
+     * The two are the same XML, but not the same parse: the parser hands a
+     * self-closing tag back as one token and a pair as two, and readElement()
+     * is built on that difference -- so a pair makes the *next* readElement()
+     * take the sibling's end tag for the end of its own scope. Whether a tag
+     * is empty is only known once the following event arrives, hence a tag
+     * left open until then.
+     */
+    bool CaptureTagOpen {false};
+    void captureCloseTag();
 
     enum
     {
@@ -419,6 +508,8 @@ protected:
 
     std::vector<FileEntry> FileList;
     ArchiveHandler _archiveHandler;
+    ArchiveFilter _archiveFilter;
+    FileDeferrer _fileDeferrer;
     std::vector<std::string> FileNames;
 
     std::vector<int*> Guards;
@@ -465,6 +556,44 @@ protected:
     void readFiles(XMLReader &reader) override;
 
     zipios::ZipInputStream &_stream;
+};
+
+/** Random-access archive reader over a document zip.
+ *
+ * Where ZipReader hands every consumer the one forward-only stream --
+ * which requires the archive to hold entries in registration order and
+ * pays for inflating past entries nobody reads -- this reader indexes
+ * the zip central directory once and opens each entry as an independent
+ * stream. Registered files can then be restored in any order, an entry
+ * can be reopened after the walk, and entries can in principle be read
+ * concurrently (every openEntry() owns its own file handle).
+ *
+ * The reader itself streams the first archive entry (the document's
+ * main XML), mirroring what the forward-only reader exposed.
+ */
+class BaseExport ZipFileReader : public Base::Reader
+{
+public:
+    /// Indexes the archive; throws Base::FileException when \a fileName
+    /// is not a readable zip archive with at least one entry.
+    explicit ZipFileReader(const std::string &fileName, XMLReader *parent=nullptr);
+    ~ZipFileReader() override;
+
+    bool hasEntry(const std::string &name) const;
+    /// Open an archive entry as an independent stream; null when absent.
+    std::unique_ptr<zipios::ZipInputStream> openEntry(const std::string &name) const;
+
+protected:
+    void readFiles(XMLReader &reader) override;
+
+private:
+    std::string _fileName;
+    /// entry name -> local header offset, from the central directory
+    std::unordered_map<std::string, std::streamoff> _offsets;
+    /// archive order, for walking unregistered entries
+    std::vector<std::string> _entryOrder;
+    /// the first entry, streamed through this reader's own streambuf
+    std::unique_ptr<zipios::ZipInputStream> _mainStream;
 };
 
 class BaseExport FileReader : public Base::Reader

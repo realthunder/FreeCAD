@@ -33,11 +33,15 @@
 # include <QLocale>
 # include <QMessageBox>
 # include <QMessageLogContext>
+# include <QPainter>
 # include <QProcess>
+# include <QProxyStyle>
 # include <QRegularExpression>
 # include <QRegularExpressionMatch>
 # include <QStatusBar>
 # include <QStyle>
+# include <QStyleHints>
+# include <QStyleOptionMenuItem>
 # include <QTextStream>
 # include <QTimer>
 # include <QWindow>
@@ -244,6 +248,8 @@ struct ApplicationP
     /// Handles all commands
     CommandManager commandManager;
     std::string initWorkbench;
+    /// Handlers whose Initialize() has been run, so it is run only once
+    std::set<std::string> initializedWorkbenches;
     QTimer timer;
     ViewProviderMap viewproviderMap;
     std::bitset<32> StatusBits;
@@ -644,7 +650,7 @@ void Application::open(const char* FileName, const char* Module)
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
     string te = File.extension();
-    string unicodepath = Base::Tools::escapeEncodeFilename(File.filePath());
+    string unicodepath = Base::Tools::pythonLiteral(File.filePath());
 
     // if the active document is empty and not modified, close it
     // in case of an automatically created empty document at startup
@@ -672,14 +678,14 @@ void Application::open(const char* FileName, const char* Module)
 
                 if (!handled)
                     Command::doCommand(
-                        Command::App, "FreeCAD.openDocument('%s')", unicodepath.c_str());
+                        Command::App, "FreeCAD.openDocument(%s)", unicodepath.c_str());
             }
             else {
                 // issue module loading
                 Command::doCommand(Command::App, "import %s", Module);
 
                 // load the file with the module
-                Command::doCommand(Command::App, "%s.open(u\"%s\")", Module, unicodepath.c_str());
+                Command::doCommand(Command::App, "%s.open(%s)", Module, unicodepath.c_str());
 
                 // ViewFit
                 if (sendHasMsgToActiveView("ViewFit")) {
@@ -715,7 +721,7 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
     std::string te = File.extension();
-    string unicodepath = Base::Tools::escapeEncodeFilename(File.filePath());
+    string unicodepath = Base::Tools::pythonLiteral(File.filePath());
 
     if (Module) {
         try {
@@ -724,7 +730,7 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
 
             // load the file with the module
             if (File.hasExtension("FCStd")) {
-                Command::doCommand(Command::App, "%s.open(u\"%s\")"
+                Command::doCommand(Command::App, "%s.open(%s)"
                                                , Module, unicodepath.c_str());
                 if (activeDocument())
                     activeDocument()->setModified(false);
@@ -751,11 +757,11 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
                     Base::ObjectStatusLocker<App::Document::Status, App::Document>
                         guard(App::Document::Restoring, appDoc);
                     if (DocName) {
-                        Command::doCommand(Command::App, "%s.insert(u\"%s\",\"%s\")"
+                        Command::doCommand(Command::App, "%s.insert(%s,\"%s\")"
                                                     , Module, unicodepath.c_str(), DocName);
                     }
                     else {
-                        Command::doCommand(Command::App, "%s.insert(u\"%s\")"
+                        Command::doCommand(Command::App, "%s.insert(%s)"
                                                     , Module, unicodepath.c_str());
                     }
                 }
@@ -841,7 +847,7 @@ void Application::exportTo(const char* FileName, const char* DocName, const char
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
     std::string te = File.extension();
-    string unicodepath = Base::Tools::escapeEncodeFilename(File.filePath());
+    string unicodepath = Base::Tools::pythonLiteral(File.filePath());
 
     if (Module) {
         try {
@@ -858,7 +864,7 @@ void Application::exportTo(const char* FileName, const char* DocName, const char
             str << "import " << Module << "\n"
                 << "__objs__=[]\n"
                 << "if hasattr(" << Module << ", 'exportSelection'):\n"
-                << "    __objs__=" << Module << ".exportSelection(u\"" << unicodepath << "\")\n"
+                << "    __objs__=" << Module << ".exportSelection(" << unicodepath << ")\n"
                 << "else:\n";
 
             for (std::vector<App::DocumentObject*>::iterator it = sel.begin(); it != sel.end(); ++it) {
@@ -866,10 +872,10 @@ void Application::exportTo(const char* FileName, const char* DocName, const char
                     str << "    __objs__.append(" << (*it)->getFullName(true) << ")\n";
             }
             str << "    if hasattr(" << Module << ", \"exportOptions\"):\n"
-                << "        options = " << Module << ".exportOptions(u\"" << unicodepath << "\")\n"
-                << "        " << Module << ".export(__objs__, u\"" << unicodepath << "\", options)\n"
+                << "        options = " << Module << ".exportOptions(" << unicodepath << ")\n"
+                << "        " << Module << ".export(__objs__, " << unicodepath << ", options)\n"
                 << "    else:\n"
-                << "        " << Module << ".export(__objs__, u\"" << unicodepath << "\")\n";
+                << "        " << Module << ".export(__objs__, " << unicodepath << ")\n";
 
             std::string code = str.str();
             // the original file name is required
@@ -1569,9 +1575,28 @@ std::string Application::initializeWorkbench(const char *name, Py::Object handle
             else
                 _ExecFile = iter->second;
 
-            // import the matching module first
-            Py::Callable activate(handler.getAttr(std::string("Initialize")));
-            activate.apply(args);
+            // Import the matching module first -- once. Neither guard above
+            // stops a C++ workbench getting here twice: __Workbench__ is set
+            // only once the workbench has actually been activated, and
+            // WorkbenchManager holds nothing under this name until then. So a
+            // module imported by Initialize() that asks whether one of its own
+            // commands exists -- InvoluteGearFeature.py does exactly that --
+            // reaches Command::get(), which resolves the name through
+            // Preferences/Commands and calls straight back in here, running the
+            // whole of Initialize() a second time and doubling every message it
+            // prints. Command.cpp's own _sPendingWorkbench guard does not cover
+            // it, because the outer call came from activateWorkbench().
+            if (d->initializedWorkbenches.insert(name).second) {
+                try {
+                    Py::Callable activate(handler.getAttr(std::string("Initialize")));
+                    activate.apply(args);
+                }
+                catch (...) {
+                    // an Initialize() that failed must stay retryable
+                    d->initializedWorkbenches.erase(name);
+                    throw;
+                }
+            }
 
             // Dependent on the implementation of a workbench handler the type
             // can be defined after the call of Initialize()
@@ -2636,6 +2661,33 @@ void postMainWindowSetup(MainWindow &mw)
         }
     }
 
+    hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow");
+
+    // The "Auto" theme follows the desktop, so re-apply the matching preference
+    // pack whenever the system scheme changed since the last run. This has to
+    // happen before the stylesheet is read below, because the pack sets it.
+    Application::resolveAutoTheme();
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    // ...and while running, so switching the desktop to dark in the evening is
+    // not something FreeCAD needs restarting to notice.
+    QObject::connect(qGuiApp->styleHints(),
+                     &QStyleHints::colorSchemeChanged,
+                     qGuiApp,
+                     [](Qt::ColorScheme) {
+                         Application::resolveAutoTheme();
+                     });
+#endif
+
+    // Pin the palette before any of the widgets below exist. Qt hands a widget
+    // the palette that is in effect when it is polished and keeps giving it
+    // back, so anything built while the desktop scheme still applies stays that
+    // colour for the rest of the session however often the application palette
+    // changes afterwards. Pinning after activateWorkbench() left the workbench
+    // tab bar drawing its tabs dark under a light theme.
+    Application::applyColorScheme();
+
     // Call this before showing the main window because otherwise:
     // 1. it shows a white window for a few seconds which doesn't look nice
     // 2. the layout of the toolbars is completely broken
@@ -2647,8 +2699,6 @@ void postMainWindowSetup(MainWindow &mw)
         mw.loadWindowSettings();
     }
 
-    hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/MainWindow");
     std::string style = hGrp->GetASCII("StyleSheet");
     if (style.empty()) {
         // check the branding settings
@@ -2700,6 +2750,14 @@ void postMainWindowSetup(MainWindow &mw)
             Application::Instance->initializeWorkbench(workbench.c_str());
 
     _ApplicationStartUp = false;
+
+    // Belt to the braces above: anything that still got built before the colour
+    // scheme was settled -- an autoloaded workbench, a plugin, a dialog created
+    // during init -- is holding the palette that was in effect at the time.
+    // setStyleSheet() does this after every theme change but skips it while
+    // starting up, so nothing had ever done it for the widgets init leaves
+    // behind.
+    Application::refreshInheritedPalettes();
 
     // gets called once we start the event loop
     QTimer::singleShot(0, &mw, SLOT(delayedStartup()));
@@ -2754,6 +2812,99 @@ bool Application::checkRestart() {
     return true;
 }
 
+namespace {
+
+/*!
+ * Corrections to the platform style that belong to the style rather than to a
+ * theme, so that they hold for the themes and for Classic alike -- Classic
+ * ships no style sheet, and a widget style sheet would take the menu bar away
+ * from whatever theme is loaded. A theme still layers on top of this: setting
+ * an application style sheet wraps the application style in a
+ * QStyleSheetStyle, which delegates anything the sheet does not decide back
+ * here.
+ */
+class ApplicationStyle: public QProxyStyle
+{
+public:
+    explicit ApplicationStyle(QStyle* base)
+        : QProxyStyle(base)
+    {}
+
+    QSize sizeFromContents(ContentsType type,
+                           const QStyleOption* option,
+                           const QSize& contentsSize,
+                           const QWidget* widget) const override
+    {
+        // Qt 6's windows11 style spends 17px either side of a menu bar label
+        // and stands the item 32px tall, which is what makes the menu bar read
+        // as mostly empty space. Nothing between the label and the metric can
+        // be reached from a style sheet: PM_MenuBarItemSpacing, HMargin and
+        // VMargin are all 0, and the padding is inside the item's own size.
+        if (type == CT_MenuBarItem && !contentsSize.isEmpty()) {
+            return {contentsSize.width() + 2 * menuBarItemHPadding,
+                    contentsSize.height() + 2 * menuBarItemVPadding};
+        }
+        return QProxyStyle::sizeFromContents(type, option, contentsSize, widget);
+    }
+
+    void drawControl(ControlElement element,
+                     const QStyleOption* option,
+                     QPainter* painter,
+                     const QWidget* widget) const override
+    {
+        // The windows11 style does mark the item under the pointer, but with a
+        // near-white rounded fill that is invisible against a menu bar which is
+        // already off-white -- so Classic looks like it has no hover at all
+        // while a theme, which names its own accent, looks fine.
+        //
+        // Borrow the shading rather than name a colour, so it follows the style
+        // and the palette. The one to borrow is a *split* tool button's: a tool
+        // button with a menu shades light blue on hover, a plain one only gets
+        // a pale outline. Both switches matter -- the style wants
+        // QStyleOptionToolButton::Menu and State_AutoRaise together, and drops
+        // to the pale grey if either is missing.
+        const auto* item = qstyleoption_cast<const QStyleOptionMenuItem*>(option);
+        if (element == CE_MenuBarItem && item && (item->state & State_Selected)) {
+            QStyleOptionToolButton panel;
+            static_cast<QStyleOption&>(panel) = *item;
+            panel.state |= State_MouseOver | State_AutoRaise | State_Raised;
+            panel.features = QStyleOptionToolButton::Menu;
+            panel.subControls = SC_ToolButton;
+            panel.activeSubControls = SC_ToolButton;
+            panel.toolButtonStyle = Qt::ToolButtonIconOnly;
+            panel.arrowType = Qt::NoArrow;
+
+            // Only the button half is drawn, and the style takes the arrow's
+            // width off the right before drawing it. Hand it a rect that is
+            // wider by exactly that, and the half that does get drawn lands on
+            // the item, corners and all.
+            panel.rect.adjust(0, 0,
+                              proxy()->pixelMetric(PM_MenuButtonIndicator, &panel, widget), 0);
+
+            painter->save();
+            painter->setClipRect(item->rect);
+            proxy()->drawComplexControl(CC_ToolButton, &panel, painter, widget);
+            painter->restore();
+
+            // Let the style draw the label as if nothing were selected, so the
+            // text is laid out exactly as it is the rest of the time. Drawing
+            // it here instead moved it: a menu title must not resize under the
+            // pointer.
+            QStyleOptionMenuItem label(*item);
+            label.state &= ~(State_Selected | State_MouseOver | State_Sunken);
+            QProxyStyle::drawControl(element, &label, painter, widget);
+            return;
+        }
+        QProxyStyle::drawControl(element, option, painter, widget);
+    }
+
+private:
+    static constexpr int menuBarItemHPadding = 12;
+    static constexpr int menuBarItemVPadding = 4;
+};
+
+} // anonymous namespace
+
 void Application::runApplication(void)
 {
     preAppSetup();
@@ -2794,6 +2945,9 @@ void Application::runApplication(void)
     }
 
     postAppSetup();
+
+    // Before any widget exists, so nothing has to be re-polished afterwards.
+    QApplication::setStyle(new ApplicationStyle(QApplication::style()));
 
     Application app(true);
     MainWindow mw;
@@ -2875,6 +3029,99 @@ bool Application::testStatus(Status pos) const
 void Application::setStatus(Status pos, bool on)
 {
     d->StatusBits.set((size_t)pos, on);
+}
+
+bool Application::systemPrefersDarkScheme()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    if (!qGuiApp) {
+        return false;
+    }
+    // colorScheme() reports the scheme in effect, which is our own pin whenever
+    // MainWindow/ColorScheme names one -- asking while pinned just reads the pin
+    // back. Drop it long enough to see what the desktop says (unsetColorScheme()
+    // updates the value synchronously, so nothing repaints in between), then let
+    // applyColorScheme() restore whatever the parameter asks for.
+    auto* styleHints = qGuiApp->styleHints();
+    styleHints->unsetColorScheme();
+    const bool dark = styleHints->colorScheme() == Qt::ColorScheme::Dark;
+    applyColorScheme();
+    return dark;
+#elif QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    // 6.5 reports the system scheme but cannot override it, so it is never pinned.
+    return qGuiApp && qGuiApp->styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+#else
+    // Before 6.5 Qt does not report the system scheme at all, and its styles
+    // never followed it, so a light desktop is the only thing we can assume.
+    return false;
+#endif
+}
+
+void Application::resolveAutoTheme()
+{
+    // Pinning the palette emits colorSchemeChanged, and reading the desktop
+    // scheme unpins and repins it, so this is called back into while it runs.
+    static bool resolving = false;
+    if (resolving) {
+        return;
+    }
+
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow");
+    if (!hGrp->GetBool("ThemeAuto", false)) {
+        return;  // the user picked a theme outright; the desktop is not its business
+    }
+
+    Base::StateLocker lock(resolving);
+
+    const char* wanted = Application::systemPrefersDarkScheme() ? "Dark" : "Light";
+    if (hGrp->GetASCII("ThemeAutoApplied") == wanted) {
+        return;
+    }
+
+    Application::Instance->prefPackManager()->apply(wanted);
+    // The pack itself has no notion of Auto; restore the marker it just
+    // overwrote so this keeps following the desktop.
+    hGrp->SetBool("ThemeAuto", true);
+    hGrp->SetASCII("ThemeAutoApplied", wanted);
+}
+
+void Application::applyColorScheme()
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    if (!qGuiApp) {
+        return;
+    }
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow");
+
+    // "Match Desktop" means the desktop decides, so nothing is pinned: an
+    // override does not merely fix the palette, it silences
+    // colorSchemeChanged, and that signal is what tells us the desktop moved.
+    // Pinning here would be following the desktop only until it changed.
+    if (hGrp->GetBool("ThemeAuto", false)) {
+        qGuiApp->styleHints()->unsetColorScheme();
+        return;
+    }
+
+    // Absent, not empty, is the default: a configuration that has never had a
+    // theme applied gets Classic's palette, which is what a fresh install is
+    // supposed to look like. Qt's windows11 style follows the desktop when
+    // nothing is pinned, so leaving this unset came up black on a dark Windows.
+    // An explicit empty value still means "follow the desktop" -- that is what
+    // the Match desktop entry writes.
+    const std::string scheme = hGrp->GetASCII("ColorScheme", "Light");
+
+    if (scheme == "Light") {
+        qGuiApp->styleHints()->setColorScheme(Qt::ColorScheme::Light);
+    }
+    else if (scheme == "Dark") {
+        qGuiApp->styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+    }
+    else {
+        qGuiApp->styleHints()->unsetColorScheme();
+    }
+#endif
 }
 
 void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
@@ -2987,28 +3234,90 @@ void Application::setStyleSheet(const QString& qssFile, bool tiledBackground)
     if (!d->startingUp) {
         if (mdi->style())
             mdi->style()->unpolish(qApp);
+
+        refreshInheritedPalettes();
+    }
+}
+
+void Application::refreshInheritedPalettes()
+{
+    // Leaving a themed stylesheet does not return widgets to the current
+    // palette: Qt restores each one to the palette it held when the stylesheet
+    // polished it, which came from the *previous* color scheme. Switching Dark
+    // -> Classic therefore left docked panels and combo boxes painted dark on a
+    // light UI, with no stylesheet in play to explain it.
+    //
+    // Re-assigning a default palette makes a widget resolve against the
+    // application palette again. Only widgets that never set a palette of their
+    // own are touched -- a deliberate one (an invalid-input SpinBox, a tooltip,
+    // a notification) carries a non-zero resolve mask and must survive.
+    for (QWidget* widget : qApp->allWidgets()) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        const auto resolved = widget->palette().resolveMask();
+#else
+        const auto resolved = widget->palette().resolve();
+#endif
+        if (resolved == 0) {
+            widget->setPalette(QPalette());
+        }
     }
 }
 
 QString Application::replaceVariablesInQss(QString qssText)
 {
-    //First we fetch the colors from preferences,
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Themes");
-    unsigned long longAccentColor1 = hGrp->GetUnsigned("ThemeAccentColor1", 0);
-    unsigned long longAccentColor2 = hGrp->GetUnsigned("ThemeAccentColor2", 0);
-    unsigned long longAccentColor3 = hGrp->GetUnsigned("ThemeAccentColor3", 0);
+    // The ulong carries an alpha channel, so eight hex digits where a
+    // stylesheet wants six.
+    auto asColor = [](unsigned long packed) {
+        return QStringLiteral("#%1").arg(packed, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
+    };
 
-    //convert them to hex.
-    //Note: the ulong contains alpha channels so 8 hex characters when we need 6 here.
-    QString accentColor1 = QStringLiteral("#%1").arg(longAccentColor1, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
-    QString accentColor2 = QStringLiteral("#%1").arg(longAccentColor2, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
-    QString accentColor3 = QStringLiteral("#%1").arg(longAccentColor3, 8, 16, QLatin1Char('0')).toUpper().mid(0, 7);
+    ParameterGrp::handle hGrp =
+        App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Themes");
 
-    qssText = qssText.replace(QStringLiteral("@ThemeAccentColor1"), accentColor1);
-    qssText = qssText.replace(QStringLiteral("@ThemeAccentColor2"), accentColor2);
-    qssText = qssText.replace(QStringLiteral("@ThemeAccentColor3"), accentColor3);
+    // The three accent colors predate the Variables group and shipped
+    // stylesheets name them, so they keep the place they have always had.
+    //
+    // Defaulted to FreeCAD's blue, not to zero: no theme pack declares these,
+    // and every sheet reaches for @ThemeAccentColor1 to paint a selection --
+    // a checked tool button, a highlighted row, the current theme's button in
+    // the Start wizard. A zero default painted all of them black on any
+    // configuration that had not been through the Start wizard, which is the
+    // only place that ever wrote the keys.
+    std::vector<std::pair<std::string, QString>> variables;
+    for (const char* name : {"ThemeAccentColor1", "ThemeAccentColor2", "ThemeAccentColor3"}) {
+        variables.emplace_back(name, asColor(hGrp->GetUnsigned(name, DefaultAccentColor)));
+    }
 
-    //Base::Console().Warning("%s\n", qssText.toStdString());
+    // Everything in Themes/Variables substitutes for @<name>, typed by how it
+    // is stored. This is what lets a theme ship one parameterised stylesheet
+    // and a group of values: recoloring it is then a preference edit rather
+    // than an edit of the .qss.
+    if (hGrp->HasGroup("Variables")) {
+        auto hVars = hGrp->GetGroup("Variables");
+        for (const auto& entry : hVars->GetUnsignedMap()) {
+            variables.emplace_back(entry.first, asColor(entry.second));
+        }
+        for (const auto& entry : hVars->GetASCIIMap()) {
+            variables.emplace_back(entry.first, QString::fromStdString(entry.second));
+        }
+        for (const auto& entry : hVars->GetIntMap()) {
+            variables.emplace_back(entry.first, QString::number(entry.second));
+        }
+        for (const auto& entry : hVars->GetFloatMap()) {
+            variables.emplace_back(entry.first, QString::number(entry.second));
+        }
+    }
+
+    // Longest name first, or "@Accent" would eat the front of "@AccentDark".
+    std::sort(variables.begin(), variables.end(), [](const auto& lhs, const auto& rhs) {
+        return lhs.first.size() > rhs.first.size();
+    });
+
+    for (const auto& variable : variables) {
+        qssText.replace(QLatin1Char('@') + QString::fromStdString(variable.first),
+                        variable.second);
+    }
+
     return qssText;
 }
 

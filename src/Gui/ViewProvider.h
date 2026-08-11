@@ -24,6 +24,7 @@
 #define GUI_VIEWPROVIDER_H
 
 #include <bitset>
+#include <chrono>
 #include <map>
 #include <memory>
 #include <string>
@@ -107,6 +108,33 @@ public:
 
     /// destructor.
     ~ViewProvider() override;
+
+    /** Accumulated cost of rebuilding visual representations.
+     *
+     * A bulk fill -- a document restore, a live import -- runs thousands of
+     * visual builds inside some other stage's timing, and there is no way to
+     * tell that share from the outside. The building side scopes a
+     * VisualBuildTimer around its work and whoever reports the fill reads and
+     * resets the total.
+     */
+    static std::chrono::duration<double> VisualBuildTime;
+    /// Of VisualBuildTime, the share spent tessellating rather than building
+    /// nodes and bookkeeping -- the two answer to different fixes.
+    static std::chrono::duration<double> VisualMeshTime;
+    static std::size_t VisualBuildCount;
+
+    /// Scope guard adding to one of the accumulators above.
+    class GuiExport VisualBuildTimer
+    {
+    public:
+        explicit VisualBuildTimer(std::chrono::duration<double> &accum = VisualBuildTime,
+                                  std::size_t *counter = &VisualBuildCount);
+        ~VisualBuildTimer();
+    private:
+        std::chrono::duration<double> &accum;
+        std::size_t *counter;
+        std::chrono::high_resolution_clock::time_point start;
+    };
 
     // returns the root node of the Provider (3D)
     virtual SoSeparator* getRoot() const {return pcRoot;}
@@ -550,6 +578,17 @@ public:
     void Restore(Base::XMLReader& reader) override;
     bool isRestoring() {return testStatus(Gui::isRestoring);}
 
+    /** The per-class defaults this view provider may leave out of a save.
+     *
+     * Set by Gui::Document for the duration of one save: it records one
+     * default block per view provider class and points every view provider
+     * of that class at it, so what lands in the file is the byte-for-byte
+     * difference. Never owned here, and cleared again as soon as the save
+     * is done.
+     */
+    void setSaveDefaults(const App::SharedDefaults *defaults) { _saveDefaults = defaults; }
+    const App::SharedDefaults *getSaveDefaults() const override { return _saveDefaults; }
+
 
     /** @name Display mask modes
      * Mainly controls an SoSwitch node which selects the display mask modes.
@@ -631,6 +670,7 @@ protected:
     CoinPtr<SoGroup> pcChildGroup;
 
 private:
+    const App::SharedDefaults *_saveDefaults{nullptr};
     int _iActualMode{-1};
     int _iEditMode{-1};
     int viewOverrideMode{-1};

@@ -53,6 +53,7 @@
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "RenderParams.h"
+#include "ObjectMetaFeed.h"
 #include "SceneControl.h"
 #include "Selection.h"
 #include "SoFCUnifiedSelection.h"
@@ -159,6 +160,10 @@ public:
 
     ~Private()
     {
+        // The label feed remembers renderers by address; this one is
+        // about to stop being one.
+        if (renderer)
+            ObjectMetaFeed::instance().forget(renderer.get());
         // Detach the backend before the graph goes: the cache manager
         // lives in the root and would otherwise push into a renderer
         // that is already being destroyed.
@@ -313,6 +318,15 @@ SceneServeSource::SceneServeSource(Document *doc)
         pimpl->connections.emplace_back(doc->signalDeleteDocument.connect(
             [this](const Document &) { unserve(pimpl->doc); }));
     }
+
+    // A rename changes no geometry and no key, so nothing else in this
+    // source would ask for a publish over it -- and then the new label
+    // would sit in ObjectMetaFeed until something moved. What to send is
+    // the feed's business; that there is something to send is this
+    // source's.
+    pimpl->connections.emplace_back(
+        App::GetApplication().signalRelabelObject.connect(
+            [this](const App::DocumentObject &) { schedulePublish(); }));
 
     installHandlers();
     schedulePublish();
@@ -578,6 +592,10 @@ bool SceneServeSource::publishNow()
     // The two feeds a viewer supplies from outside its scene graph.
     pimpl->renderer->setBackground(backgroundFromPreferences());
     applySectionHatchTexture(*manager);
+
+    // What the objects on this wire are called. A no-op unless something
+    // was renamed, added or removed since the last publish.
+    ObjectMetaFeed::instance().feed(pimpl->renderer.get());
 
     // Build the caches without a frame. This is the whole of what a
     // drawing viewer's render path did for the feed.

@@ -73,10 +73,10 @@ void CmdDrawingOpen::activated(int iMsg)
         QString(),
         QStringLiteral("%1 (*.svg *.svgz)").arg(QObject::tr("Scalable Vector Graphic")));
     if (!filename.isEmpty()) {
-        filename = Base::Tools::escapeEncodeFilename(filename);
         // load the file with the module
         Command::doCommand(Command::Gui, "import Drawing, DrawingGui");
-        Command::doCommand(Command::Gui, "DrawingGui.open(\"%s\")", (const char*)filename.toUtf8());
+        Command::doCommand(Command::Gui, "DrawingGui.open(%s)",
+                           Base::Tools::pythonLiteral(filename).c_str());
     }
 }
 
@@ -107,15 +107,15 @@ void CmdDrawingNewPage::activated(int iMsg)
 
     QFileInfo tfi(a->property("Template").toString());
     if (tfi.isReadable()) {
-        QString filename = Base::Tools::escapeEncodeFilename(tfi.filePath());
+        std::string filename = Base::Tools::pythonLiteral(tfi.filePath());
         openCommand("Create page");
         doCommand(Doc,
                   "App.activeDocument().addObject('Drawing::FeaturePage','%s')",
                   FeatName.c_str());
         doCommand(Doc,
-                  "App.activeDocument().%s.Template = '%s'",
+                  "App.activeDocument().%s.Template = %s",
                   FeatName.c_str(),
-                  (const char*)filename.toUtf8());
+                  filename.c_str());
         doCommand(Doc, "App.activeDocument().recompute()");
         doCommand(Doc, "Gui.activeDocument().getObject('%s').show()", FeatName.c_str());
         commitCommand();
@@ -641,10 +641,9 @@ void CmdDrawingSymbol::activated(int iMsg)
     if (!filename.isEmpty()) {
         std::string PageName = pages.front()->getNameInDocument();
         std::string FeatName = getUniqueObjectName("Symbol");
-        filename = Base::Tools::escapeEncodeFilename(filename);
         openCommand("Create Symbol");
         doCommand(Doc, "import Drawing");
-        doCommand(Doc, "f = open(\"%s\",'r')", (const char*)filename.toUtf8());
+        doCommand(Doc, "f = open(%s,'r')", Base::Tools::pythonLiteral(filename).c_str());
         doCommand(Doc, "svg = f.read()");
         doCommand(Doc, "f.close()");
         doCommand(Doc,
@@ -710,9 +709,8 @@ void CmdDrawingExportPage::activated(int iMsg)
         openCommand("Drawing export page");
 
         doCommand(Doc, "PageFile = open(App.activeDocument().%s.PageResult,'r')", Sel[0].FeatName);
-        std::string fname = (const char*)fn.toUtf8();
-        fname = Base::Tools::escapeEncodeFilename(fname);
-        doCommand(Doc, "OutFile = open(\"%s\",'w')", fname.c_str());
+        std::string fname = Base::Tools::pythonLiteral(fn);
+        doCommand(Doc, "OutFile = open(%s,'w')", fname.c_str());
         doCommand(Doc, "OutFile.write(PageFile.read())");
         doCommand(Doc, "del OutFile,PageFile");
 

@@ -35,6 +35,25 @@ BGFXView::~BGFXView()
 
 void BGFXView::destroy()
 {
+    destroyTargets();
+    destroySceneCaches();
+    destroyPrograms();
+}
+
+/// The uploaded scene: mesh and shared-geometry buffers, their textures
+/// and the white color stream.
+///
+/// Nothing here follows the viewport — a vertex buffer does not care how
+/// big the framebuffer is — and the set manages its own residency anyway:
+/// getMesh() uploads on demand and collectMeshes() retires whatever no
+/// draw call has referenced for two frames. So a resize leaves it alone;
+/// dropping it there only bought a full re-upload of the scene on the
+/// next frame.
+///
+/// meshes and geometries must be cleared together: GpuMesh::geom is a raw
+/// pointer into the geometries map.
+void BGFXView::destroySceneCaches()
+{
     for (auto &v : meshes)
         v.second.destroy();
     meshes.clear();
@@ -45,6 +64,13 @@ void BGFXView::destroy()
     for (auto &v : textures)
         v.second.destroy();
     textures.clear();
+}
+
+/// GPU resources whose extent follows the viewport (or the host widget's
+/// framebuffer): the scene/OIT/AO/volumetric/medium targets. A plain
+/// resize drops exactly this set and nothing else.
+void BGFXView::destroyTargets()
+{
     // The recreated moments texture starts empty, so the cached-map
     // hash resets with it (same for the AO/prepass cache and the
     // bulb shadow tiles).
@@ -56,8 +82,6 @@ void BGFXView::destroy()
         bulbShadowHash[t] = 0;
     }
     aoMipCount = 0;
-    m_envBuilt = false;
-    m_hatchVersion = 0;
     sweepHandles(LifeSized);
     // The sink framebuffer owned its attachments (created with
     // destroyTextures): the sweep released them with it.
@@ -72,6 +96,19 @@ void BGFXView::destroy()
         hasFBO = false;
     }
 #endif
+}
+
+/// Shader programs, uniforms and the stand-in textures. Linking them is
+/// the single most expensive thing this class does — Intel's GL driver
+/// JITs this set for ~5 s — so a plain resize must never come through
+/// here; only a shader-generation or MSAA change does, which is what
+/// init(keepShared) selects. The environment and hatch textures live with
+/// the programs, so their built-state flags reset with them.
+void BGFXView::destroyPrograms()
+{
+    m_envBuilt = false;
+    m_hatchVersion = 0;
+    sweepHandles(LifeProgram);
 }
 
 void BGFXView::sweepHandles(HandleLife life)
@@ -99,9 +136,24 @@ bgfx::TextureHandle BGFXView::createTexture(bgfx::TextureFormat::Enum format, ui
     return bgfx::createTexture2D(width, height, false, 1, format, tsFlags | flags);
 }
 
-void BGFXView::init()
+/// Rebuild the view's GPU resources.
+///
+/// With \a keepShared everything that does not follow the viewport is left
+/// in place — the shader programs, uniforms and stand-in textures, plus
+/// the uploaded scene — and only the sized targets are recreated. That is
+/// the resize path. Every creation below is guarded on the handle still
+/// being invalid, so the kept handles are simply skipped, and the scene
+/// caches repopulate through getMesh() as draws reference them.
+///
+/// Pass false whenever the programs themselves must change: a shader
+/// generation bump, or an MSAA change (which re-decides m_oit and so which
+/// program set exists at all).
+void BGFXView::init(bool keepShared)
 {
-    destroy();
+    if (keepShared)
+        destroyTargets();
+    else
+        destroy();
 #ifdef FC_RENDERER_STANDALONE
     width = _BGFXLib.standaloneWidth;
     height = _BGFXLib.standaloneHeight;

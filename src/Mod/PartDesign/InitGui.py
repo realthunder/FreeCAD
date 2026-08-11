@@ -37,16 +37,17 @@ class PartDesignWorkbench ( Workbench ):
     def Initialize(self):
         # load the module
         try:
-            import traceback
             from PartDesign.WizardShaft import WizardShaft
-        except RuntimeError:
-            print ("{}".format(traceback.format_exc()))
         except ImportError:
-            print("Wizard shaft module cannot be loaded")
-            try:
-                from FeatureHole import HoleGui
-            except Exception:
-                pass
+            # The shaft wizard drives FEM constraint view providers, so it is
+            # only built and installed together with FEM. Its absence is
+            # expected and already handled -- PartDesignGui's menu setup adds
+            # the entry only when the command got registered -- so say so at
+            # log level rather than in the report view.
+            FreeCAD.Console.PrintLog("PartDesign: shaft wizard not installed\n")
+        except RuntimeError:
+            import traceback
+            FreeCAD.Console.PrintError(traceback.format_exc())
 
         import PartDesignGui
         import PartDesign

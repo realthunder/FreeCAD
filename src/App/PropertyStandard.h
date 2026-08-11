@@ -53,6 +53,7 @@ class AppExport PropertyInteger: public Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
     PropertyInteger();
     ~PropertyInteger() override;
 
@@ -138,6 +139,7 @@ class AppExport PropertyEnumeration: public Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
     /// Standard constructor
     PropertyEnumeration();
 
@@ -348,6 +350,7 @@ class AppExport PropertyIntegerList: public PropertyListsT<long>
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
     /**
 
      * A constructor.
@@ -500,6 +503,7 @@ class AppExport PropertyFloat: public Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
     /** Value Constructor
      *  Construct with explicit Values
      */
@@ -655,6 +659,7 @@ class AppExport PropertyFloatList: public PropertyListsT<double>
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
 
     /**
      * A constructor.
@@ -723,6 +728,7 @@ class AppExport PropertyString: public Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
 
     /**
      * A constructor.
@@ -837,6 +843,7 @@ class AppExport PropertyStringList: public PropertyListsT<std::string>
     using inherited = PropertyListsT<std::string>;
 
 public:
+    bool canShareDefault() const override { return true; }
 
     /**
      * A constructor.
@@ -878,6 +885,7 @@ class AppExport PropertyBool : public Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
 
     /**
      * A constructor.
@@ -926,6 +934,7 @@ class AppExport PropertyBoolList : public PropertyListsT<bool,boost::dynamic_bit
     using inherited = PropertyListsT<bool, boost::dynamic_bitset<> >;
 
 public:
+    bool canShareDefault() const override { return true; }
     PropertyBoolList();
     ~PropertyBoolList() override;
 
@@ -952,6 +961,7 @@ class AppExport PropertyColor : public Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
     /**
      * A constructor.
      * A more elaborate description of the constructor.
@@ -1002,6 +1012,7 @@ class AppExport PropertyColorList: public PropertyListsT<Color>
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
 
     /**
      * A constructor.
@@ -1040,6 +1051,7 @@ class AppExport PropertyMaterial : public Property
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
 
     /**
      * A constructor.
@@ -1094,6 +1106,7 @@ class AppExport PropertyMaterialList : public PropertyListsT<Material>
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    bool canShareDefault() const override { return true; }
 
     /**
     * A constructor.
@@ -1133,6 +1146,10 @@ class AppExport PropertyPersistentObject: public PropertyString {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
     using inherited = PropertyString;
 public:
+    // Inherits PropertyString's opt-in, but holds a serialized object of
+    // arbitrary size and meaning -- not a value a class default block
+    // may speak for.
+    bool canShareDefault() const override { return false; }
     PyObject *getPyObject() override;
     void setValue(const char* type) override;
 

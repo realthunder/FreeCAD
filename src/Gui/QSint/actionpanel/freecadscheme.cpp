@@ -35,11 +35,12 @@ namespace QSint
 {
 
 
+// The panel itself is deliberately left unpainted: TaskView fills with the
+// window colour, so the groups sit on the same background as the rest of the
+// dock. It used to carry a navy-to-lavender gradient of its own, which had no
+// relation to any palette and filled the whole panel wherever it showed
+// through.
 const char* ActionPanelFreeCAD =
-
-    "QFrame[class='panel'] {"
-        "background-color:qlineargradient(x1:1, y1:0.3, x2:1, y2:0, stop:0 rgb(51,51,101), stop:1 rgb(171,171,193));"
-    "}"
 
     "QSint--ActionGroup QFrame[class='header'] {"
         "border: 1px solid #ffffff;"
@@ -261,9 +262,6 @@ QPixmap SystemPanelScheme::drawFoldIcon(const QPalette& p, bool fold) const
 
 QString SystemPanelScheme::systemStyle(const QPalette& p) const
 {
-  QColor panelBackground1 = p.color(QPalette::Dark);
-  QColor panelBackground2 = p.color(QPalette::Midlight);
-
   QColor headerBackground1 = p.color(QPalette::Highlight);
   QColor headerBackground2 = p.color(QPalette::Highlight).lighter();
 
@@ -276,33 +274,31 @@ QString SystemPanelScheme::systemStyle(const QPalette& p) const
   QColor taskLabelText = p.color(QPalette::Text);
   QColor taskLabelTextOver = p.color(QPalette::Highlight);
 
+  // No rule for QFrame[class='panel']: the panel keeps the window background
+  // it is sitting on rather than painting a gradient of its own.
   QString style = QStringLiteral(
-    "QFrame[class='panel'] {"
-        "background-color:qlineargradient(x1:1, y1:0.3, x2:1, y2:0, stop:0 %1, stop:1 %2);"
-    "}"
-
     "QSint--ActionGroup QFrame[class='header'] {"
         "border: 1px solid #ffffff;"                                // todo
         "border-top-left-radius: 4px;"
         "border-top-right-radius: 4px;"
-        "background-color: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 %3, stop: 1 %4);"
+        "background-color: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0, stop: 0 %1, stop: 1 %2);"
     "}"
 
     "QSint--ActionGroup QToolButton[class='header'] {"
         "text-align: left;"
-        "color: %5;"
+        "color: %3;"
         "background-color: transparent;"
         "border: 1px solid transparent;"
         "font-weight: bold;"
     "}"
 
     "QSint--ActionGroup QToolButton[class='header']:hover {"
-        "color: %6;"
+        "color: %4;"
     "}"
 
     "QSint--ActionGroup QFrame[class='content'] {"
-        "background-color: %7;"
-        "border: 1px solid %8;"
+        "background-color: %5;"
+        "border: 1px solid %6;"
     "}"
 
     "QSint--ActionGroup QFrame[class='content'][header='true'] {"
@@ -312,7 +308,7 @@ QString SystemPanelScheme::systemStyle(const QPalette& p) const
     "QSint--ActionGroup QToolButton[class='action'] {"
         "background-color: transparent;"
         "border: 1px solid transparent;"
-        "color: %9;"
+        "color: %7;"
         "text-align: left;"
     "}"
 
@@ -321,7 +317,7 @@ QString SystemPanelScheme::systemStyle(const QPalette& p) const
     "}"
 
     "QSint--ActionGroup QToolButton[class='action']:hover {"
-        "color: %10;"
+        "color: %8;"
         "text-decoration: underline;"
     "}"
 
@@ -334,16 +330,14 @@ QString SystemPanelScheme::systemStyle(const QPalette& p) const
         "color: #006600;"                                           // todo
     "}"
   )
-          .arg(panelBackground1.name(),
-               panelBackground2.name(),
-               headerBackground1.name(),
+          .arg(headerBackground1.name(),
                headerBackground2.name(),
                headerLabelText.name(),
                headerLabelTextOver.name(),
                groupBackground.name(),
                groupBorder.name(),
-               taskLabelText.name())
-           .arg(taskLabelTextOver.name())
+               taskLabelText.name(),
+               taskLabelTextOver.name())
   ;
 
   return style;

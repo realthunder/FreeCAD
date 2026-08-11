@@ -85,6 +85,9 @@ public:
         RecomputeOnRestore = 13, // Mark pending recompute on restore for migration purpose
         LiveImport = 14, // A progressive import is filling the document while the GUI
                          // stays interactive; doc-mutating commands are gated meanwhile
+        RestoreDrain = 15, // View-side catch-up on a finished restore: the work runs in
+                           // full, but nothing it does may modify the document.
+                           // See RestoreDrainGuard.
     };
 
     /** @name Properties */
@@ -241,6 +244,34 @@ public:
     /// Restore the document from a pre-constructed xml reader
     void restore (Base::XMLReader &xmlReader,
             bool delaySignal=false, const std::vector<std::string> &objNames={});
+    /** @name Deferred archive-entry restores (docs/DocumentLoad.md §14)
+     *
+     * With DeferShapeLoad on, the restore parks the archive entries of
+     * properties that opted in (Property::DeferRestore) instead of
+     * reading them during the load, and each is served from the still
+     * indexed archive on first real use. The consumer's accessors call
+     * restoreDeferredFile() before touching their value.
+     */
+    //@{
+    /// Serve \a obj its parked entry; false when nothing was parked.
+    bool restoreDeferredFile(Base::Persistence *obj);
+    /// Whether \a obj still has a parked entry.
+    bool hasDeferredFile(const Base::Persistence *obj) const;
+    /// Whether anything at all is still parked, i.e. whether this document
+    /// still owes a serve phase (and still holds its archive index open).
+    bool hasDeferredFiles() const;
+    /// Drop \a obj's parked entry unserved -- its value was overwritten
+    /// before anything asked for the archived one.
+    void cancelDeferredFile(Base::Persistence *obj);
+    /// Serve every parked entry, e.g. before the archive is rewritten.
+    void flushDeferredFiles();
+    /// Serve parked entries for up to \a budgetSeconds; true while more
+    /// remain. The progressive-load drain calls this in slices before it
+    /// builds any visuals, so shapes arrive through the same property
+    /// change path an edit uses instead of materializing inside a
+    /// half-staged visual fill.
+    bool serveDeferredFiles(double budgetSeconds);
+    //@}
     enum ExportStatus {
         NotExporting,
         Exporting,
@@ -303,8 +334,14 @@ public:
     static const std::vector<long>& getWritableSchemaVersions();
     /// Newest writable schema version.
     static long getCurrentSchemaVersion();
-    /// Schema version this document will be written with.
+    /// Schema version this document asks to be written with -- the user's
+    /// cap, validated against the writable list.
     long getSaveSchemaVersion() const;
+    /// Schema version one particular save actually comes out as. The cap
+    /// answers "what may this document be?", this answers "what is this
+    /// file?" -- a split save has no block to share and comes out as 5,
+    /// old-readable, whatever the cap says.
+    long resolveSchemaVersion(const Base::Writer &writer) const;
     //@}
 
     void Save (Base::Writer &writer) const override;
@@ -353,6 +390,96 @@ public:
     /** Query if the document is removing so as to delay property change notification
      */
     static void removePendingProperty(Property *);
+
+    /** Query whether a class's recorded defaults are being read into a stand-in.
+     *
+     * The stand-in belongs to no document and stands for a class rather than
+     * for anything in one, so a property landing in it has nobody to notify.
+     * Saying so is not an optimisation: an object's reaction to its own
+     * property changing is written for an object that is in a document, and
+     * App::Link's dereferences one unconditionally.
+     */
+    static bool isRestoringDefaults();
+
+    /** RAII for isRestoringDefaults(), shared by every block reader.
+     *
+     * The Gui document restores its view provider blocks into stand-ins of
+     * its own, and a detached view provider's reaction to a property is no
+     * more written for the occasion than a detached object's -- one guard,
+     * both readers.
+     */
+    class AppExport RestoringDefaultsGuard {
+    public:
+        RestoringDefaultsGuard();
+        ~RestoringDefaultsGuard();
+        RestoringDefaultsGuard(const RestoringDefaultsGuard &) = delete;
+        RestoringDefaultsGuard &operator=(const RestoringDefaultsGuard &) = delete;
+    };
+
+    /** RAII scope that answers isAnyRestoring() with true.
+     *
+     * For work that replays a load's record after the load itself has let
+     * go -- the Gui document's deferred view provider drain. Everything
+     * that keys off isAnyRestoring() treated the record's properties as a
+     * restore when they were read eagerly; a slice replaying them later is
+     * the same work and needs the same answer.
+     */
+    class AppExport RestoringScopeGuard {
+    public:
+        RestoringScopeGuard();
+        ~RestoringScopeGuard();
+        RestoringScopeGuard(const RestoringScopeGuard &) = delete;
+        RestoringScopeGuard &operator=(const RestoringScopeGuard &) = delete;
+    private:
+        bool toggled;
+    };
+
+    /** RAII scope for view-side work replayed after a restore has finished.
+     *
+     * The eager load ran a view provider's updateData() per property while
+     * the object was still restoring, and afterRestore() then purged what
+     * those handlers touched -- per object, right before it announced the
+     * object as finished (see the purgeTouched() call there). A recompute
+     * purges its own the same way. So a handler that writes back while it
+     * renders -- a page template noting the size of the SVG it just parsed --
+     * cost the eager path nothing: the mark never outlived the load.
+     *
+     * The deferred view provider drain has no such window. It replays those
+     * same handlers slices later, past every purge, where the identical
+     * write leaves the document needing a recompute merely because it was
+     * opened. Marking the objects as restoring again is not the answer:
+     * handlers skip their real work while restoring -- rendering an SVG
+     * template returns nothing at all -- which is what the catch-up exists
+     * to do. This scope says the other half instead, "render, but do not
+     * write": a change inside it does not touch its object, and names
+     * itself in the document's report, so the handler that should not be
+     * writing on a render is found by opening a file rather than by
+     * attaching a debugger.
+     */
+    class AppExport RestoreDrainGuard {
+    public:
+        explicit RestoreDrainGuard(Document *doc);
+        ~RestoreDrainGuard();
+        RestoreDrainGuard(const RestoreDrainGuard &) = delete;
+        RestoreDrainGuard &operator=(const RestoreDrainGuard &) = delete;
+    private:
+        Document *doc;
+        bool toggled;
+    };
+
+    /// What RestoreDrainGuard suppressed: how many changes, and up to ten
+    /// distinct property names among them.
+    struct RestoreDrainReport {
+        std::size_t count = 0;
+        std::vector<std::string> names;
+        /// Set once a name is dropped, so a report can say that it is a sample
+        bool truncated = false;
+    };
+    const RestoreDrainReport &getRestoreDrainReport() const;
+    void clearRestoreDrainReport();
+    /// Record a change suppressed by RestoreDrainGuard. Called from the touch
+    /// paths; 'prop' is null when the caller touched the object directly.
+    void reportRestoreDrainChange(const DocumentObject *obj, const Property *prop);
 
     /** Add an existing feature with sName (ASCII) to this document and set it active.
      * Unicode names are set through the Label property.
@@ -674,6 +801,26 @@ protected:
 
     void readObject(Base::XMLReader &reader);
     void writeObject(Base::Writer &writer, App::DocumentObject *obj) const;
+
+    /** The shared default block, written once per object class.
+     *
+     * buildDefaults picks the classes worth a block, builds a stand-in for
+     * each, and records what its eligible properties serialize to
+     * (App::SharedDefaults) -- the stand-in itself does not outlive the
+     * recording. saveDefaults writes those records; every object of the
+     * class is then pointed at its record and saves only what differs from
+     * it, byte for byte. See App::SharedDefaults for the mechanism, and
+     * writeObjects for what it buys.
+     */
+    void buildDefaults(Base::Writer &writer,
+            const std::vector<App::DocumentObject*>& obj,
+            std::map<std::string, SharedDefaults> &defaults) const;
+    void saveDefaults(Base::Writer &writer,
+            const std::map<std::string, SharedDefaults> &defaults) const;
+    /// Read the block, and work out what of it this build does not already produce.
+    void restoreDefaults(Base::XMLReader &reader, int count);
+    /// Paste that difference onto an object, before its own properties are read.
+    void applyDefaults(DocumentObject *obj);
 
     void _removeObject(DocumentObject* pcObject);
     void _addObject(DocumentObject* pcObject, const char* pObjectName);

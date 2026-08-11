@@ -349,8 +349,13 @@ void FileBlobManager::beginRestore(Base::XMLReader& reader)
         }
     }
 
-    reader.setArchiveHandler([this](const std::string& name, Base::Reader& entry) {
-        if (name.compare(0, std::strlen(archivePrefix()), archivePrefix()) != 0) {
+    // The name predicate doubles as the ArchiveFilter: a random-access
+    // reader asks it before paying to open an entry.
+    auto wanted = [](const std::string& name) {
+        return name.compare(0, std::strlen(archivePrefix()), archivePrefix()) == 0;
+    };
+    reader.setArchiveHandler([this, wanted](const std::string& name, Base::Reader& entry) {
+        if (!wanted(name)) {
             return false;
         }
         try {
@@ -360,7 +365,7 @@ void FileBlobManager::beginRestore(Base::XMLReader& reader)
             FC_ERR("Failed to read included file " << name << ": " << e.what());
         }
         return true;
-    });
+    }, wanted);
 }
 
 void FileBlobManager::readBlobEntry(Base::Reader& entry)

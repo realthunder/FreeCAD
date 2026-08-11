@@ -2258,6 +2258,29 @@ QToolBar > QToolButton#qt_toolbutton_menubutton:open {
     border: 1px solid #333333;
 }
 
+/* Mouse-over lifts the icon a pixel and pressing pushes it a pixel down. The
+   top and bottom padding always add up to the button's own total, so no button
+   changes size and the toolbar never relayouts under the pointer. */
+QToolBar > QToolButton:hover {
+    padding-top: 1px;
+    padding-bottom: 3px;
+}
+
+QToolBar > QToolButton:pressed {
+    padding-top: 3px;
+    padding-bottom: 1px;
+}
+
+QToolBar > QToolButton#qt_toolbutton_menubutton:hover {
+    padding-top: 2px;
+    padding-bottom: 4px;
+}
+
+QToolBar > QToolButton#qt_toolbutton_menubutton:pressed {
+    padding-top: 4px;
+    padding-bottom: 2px;
+}
+
 QToolBar QToolButton::menu-button,
 QToolBar > QToolButton#qt_toolbutton_menubutton::menu-button {
     subcontrol-origin: padding;
@@ -2507,11 +2530,6 @@ QPushButton#NavigationIndicator::menu-indicator {
     width: 0px;
 }
 
-QToolBar QToolButton[popupMode="1"] {
-    width: 100px;
-    background: red;
-}
-
 /*==================================================================================================
 SKETCHER
 ==================================================================================================*/
@@ -2573,3 +2591,56 @@ QTreeView::branch#groupsTreeView:closed:has-children:has-siblings  {
   QTreeView::branch#groupsTreeView:has-siblings:!adjoins-item  {
     border-image: none 0;
   }
+
+/*==================================================================================================
+CustomTitleBarWindow
+==================================================================================================*/
+
+/* The logo the menu bar folds behind. The icon comes from the theme in C++,
+   so only the chrome belongs here. */
+#titleBarLogo {
+  border: none;
+  background: transparent;
+  padding: 0px;
+  margin-left: 4px;
+  margin-right: 4px;
+}
+
+#titleBarLogo:hover {
+  background-color: @ThemeAccentColor1;
+}
+
+#titleBarLogo:pressed {
+  background-color: @ThemeAccentColor2;
+}
+
+/* Folded, the menu bar is an overlay drawn over the title bar rather than a
+   strip of its own, so it must not paint its own background. */
+QMenuBar[foldable="true"] {
+  background-color: transparent;
+}
+
+WindowDecorationButton {
+  background: transparent;
+  border: none;
+}
+
+WindowDecorationButton:hover {
+  background-color: @ThemeAccentColor1;
+}
+
+WindowDecorationButton:pressed {
+  background-color: @ThemeAccentColor2;
+}
+
+/* Only the generic backend draws its own close button, and the platform
+   convention it is imitating is a red one. */
+CustomTitleBarWindow[backend="generic"] WindowDecorationButton#closeButton:hover {
+  background-color: #E81123;
+  color: White;
+}
+
+CustomTitleBarWindow[backend="generic"] WindowDecorationButton#closeButton:pressed {
+  background-color: #C50F1F;
+  color: White;
+}

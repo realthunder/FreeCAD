@@ -68,6 +68,24 @@ using namespace Base;
 
 namespace Gui {
 
+std::chrono::duration<double> ViewProvider::VisualBuildTime {0};
+std::chrono::duration<double> ViewProvider::VisualMeshTime {0};
+std::size_t ViewProvider::VisualBuildCount = 0;
+
+ViewProvider::VisualBuildTimer::VisualBuildTimer(
+        std::chrono::duration<double> &accum, std::size_t *counter)
+    : accum(accum)
+    , counter(counter)
+    , start(std::chrono::high_resolution_clock::now())
+{}
+
+ViewProvider::VisualBuildTimer::~VisualBuildTimer()
+{
+    accum += std::chrono::high_resolution_clock::now() - start;
+    if (counter)
+        ++*counter;
+}
+
 void coinRemoveAllChildren(SoGroup *group) {
     if(!group)
         return;

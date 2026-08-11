@@ -71,6 +71,8 @@
 #include "Command.h"
 #include "CommandCompleter.h"
 #include "DlgUndoRedo.h"
+#include "DockWindowManager.h"
+#include "PreferencePackManager.h"
 #include "PreferencePages/DlgSettingsWorkbenchesImp.h"
 #include "Document.h"
 #include "EditorView.h"
@@ -1072,6 +1074,13 @@ public:
         handle->SetBool("ShowTabBar", enable);
     }
 
+    /*! How much room the tab bar may ask for along the direction the tabs run,
+     * in pixels. 0 asks for as much as the tabs it holds actually need.
+     */
+    int tabBarMaxLength() {
+        return handle->GetInt("TabBarMaxLength", 0);
+    }
+
     void OnChange(Base::Subject<const char*> &, const char *reason)
     {
         if (!reason)
@@ -1152,7 +1161,8 @@ WorkbenchTabWidget::WorkbenchTabWidget(WorkbenchGroup* wb, QWidget* parent)
             if (!Name)
                 return;
             if (Param == this->group->_pimpl->handle) {
-                if (boost::equals(Name, "TabBarShowText") || boost::equals(Name, "ShowTabBar"))
+                if (boost::equals(Name, "TabBarShowText") || boost::equals(Name, "ShowTabBar")
+                        || boost::equals(Name, "TabBarMaxLength"))
                     timer.start(100);
             } else if (Param == this->group->_pimpl->hGeneral) {
                 if (boost::equals(Name, "ToolbarIconSize")
@@ -1165,6 +1175,11 @@ WorkbenchTabWidget::WorkbenchTabWidget(WorkbenchGroup* wb, QWidget* parent)
     connect(&timer, &QTimer::timeout, [this]() {
         group->workbenchListUpdated();
         setupVisibility();
+        // TabBarMaxLength changes nothing about the tabs themselves, only how
+        // much room they may ask for, so nothing above invalidates the layout.
+        updateGeometry();
+        if (auto toolbar = getToolBar())
+            toolbar->adjustSize();
     });
 
     timerCurrentChange.setSingleShot(true);
@@ -1175,6 +1190,35 @@ WorkbenchTabWidget::WorkbenchTabWidget(WorkbenchGroup* wb, QWidget* parent)
 
 WorkbenchTabWidget::~WorkbenchTabWidget()
 {
+}
+
+QSize WorkbenchTabWidget::sizeHint() const
+{
+    QSize size = QTabWidget::sizeHint();
+    if (!usesScrollButtons())
+        return size;
+
+    // QTabWidget bounds the tab bar's contribution to its size hint at 200px
+    // in each direction as soon as scroll buttons are in use, on the reasoning
+    // that the pages behind the tabs are what should decide how big the widget
+    // wants to be. There are no pages here -- the widget *is* the tab bar --
+    // so that cap is all there is, and it asks for room for about five
+    // workbenches however much the row has to give. Ask for the tabs we
+    // actually hold instead, up to Workbenches/TabBarMaxLength.
+    const QSize bar = tabBar()->sizeHint();
+    const bool vertical = tabPosition() == West || tabPosition() == East;
+    int wanted = vertical ? bar.height() : bar.width();
+    if (int limit = group->_pimpl->tabBarMaxLength())
+        wanted = std::min(wanted, limit);
+
+    const int grown = wanted - std::min(vertical ? bar.height() : bar.width(), 200);
+    if (grown > 0) {
+        if (vertical)
+            size.rheight() += grown;
+        else
+            size.rwidth() += grown;
+    }
+    return size;
 }
 
 QToolBar *WorkbenchTabWidget::getToolBar()
@@ -1261,11 +1305,22 @@ void WorkbenchTabWidget::updateWorkbenches()
         if (this->styleSheet().size())
             this->setStyleSheet(QString());
     } else if (this->styleSheet().isEmpty()) {
+        // These tabs carry an icon and no text. Left to the native metric the
+        // label is laid out with PM_TabBarTabHSpace/2 of space before the icon
+        // -- 12px against a 34px tab here -- which a tab shrunk by min-width
+        // has no room for, so the icon comes out pushed right and clipped by
+        // the tab border. Declaring the padding puts it in the middle of the
+        // box instead.
+        //
+        // The horizontal value is the vertical one + 1 on purpose: the tab ends
+        // up sized as icon + 2 + twice the vertical padding, so that is the
+        // figure that splits the leftover evenly. 4/5 keeps the tab the same
+        // size it had before, whatever the icon size is.
         this->setStyleSheet(
                 QStringLiteral("::tab:top,"
-                               "::tab:bottom {min-width: -1;}"
+                               "::tab:bottom {min-width: -1; padding: 4px 5px;}"
                                "::tab:left,"
-                               "::tab:right {min-height: -1;}"));
+                               "::tab:right {min-height: -1; padding: 5px 4px;}"));
     }
     int i=0;
     for (auto action : this->group->actions()) {
@@ -3227,6 +3282,18 @@ PresetsAction::~PresetsAction()
 {
     delete _menu;
     delete _undoMenu;
+    // _packMenu is a child of _menu, and went with it
+}
+
+namespace {
+// Both of these keep state that lives in parameters which have just been
+// rewritten underneath them, so they have to be told. PreferencePackManager
+// reloads the same two after applying a pack, for the same reason.
+void reloadWindowState()
+{
+    DockWindowManager::instance()->loadState();
+    ToolBarManager::getInstance()->restoreState();
+}
 }
 
 void PresetsAction::addTo ( QWidget * w )
@@ -3245,14 +3312,19 @@ void PresetsAction::addTo ( QWidget * w )
 }
 
 void PresetsAction::onAction(QAction *action) {
-    auto param = App::GetApplication().GetParameterSet(
-            action->data().toByteArray().constData());
+    bool revert = (QApplication::queryKeyboardModifiers() == Qt::ControlModifier);
+    auto pack = action->property("PreferencePack");
+    if (pack.isValid())
+        applyPreferencePack(pack.toString(), revert);
+    else
+        applyPreset(action->data().toByteArray(), action->text(), revert);
+}
+
+void PresetsAction::applyPreset(const QByteArray &name, const QString &title, bool revert)
+{
+    auto param = App::GetApplication().GetParameterSet(name.constData());
     if (param) {
-        bool revert = (QApplication::queryKeyboardModifiers() == Qt::ControlModifier);
-        QString title = action->text();
-        if (revert)
-            title = tr("Revert ") + title;
-        push(title);
+        push(revert ? tr("Revert %1").arg(title) : title);
         if (revert)
             App::GetApplication().GetUserParameter().revert(param.get());
         else {
@@ -3266,12 +3338,58 @@ void PresetsAction::onAction(QAction *action) {
     }
 }
 
+void PresetsAction::applyPreferencePack(const QString &name, bool revert)
+{
+    auto manager = Application::Instance->prefPackManager();
+    if (!revert) {
+        // No push() here: apply() does it, so that a theme picked on the Theme
+        // preferences page lands on this same stack rather than only in the
+        // backup files it writes beside it.
+        manager->apply(name.toStdString());
+        return;
+    }
+    // A pack has no un-apply of its own, but its .cfg is exactly the file
+    // ParameterGrp::revert() wants: it drops the keys still equal to the
+    // pack's, so they fall back to the coded defaults and anything the user
+    // changed since survives.
+    auto configFile = manager->configFileFor(name.toStdString());
+    if (configFile.empty())
+        return;
+    push(tr("Revert %1").arg(name));
+    App::GetApplication().GetUserParameter().revert(configFile.string().c_str());
+    reloadWindowState();
+}
+
 PresetsAction *PresetsAction::instance()
 {
+    // Called from PreferencePackManager, which is reachable before the command
+    // is registered and in a session with no command manager at all
+    if (!Application::Instance)
+        return nullptr;
     auto cmd = Application::Instance->commandManager().getCommandByName("Std_CmdPresets");
     if (cmd)
         return static_cast<PresetsAction*>(cmd->getAction());
     return nullptr;
+}
+
+QStringList PresetsAction::undoTitles() const
+{
+    QStringList titles;
+    for (auto it = _undos.rbegin(); it != _undos.rend(); ++it)
+        titles.append(it->first);
+    return titles;
+}
+
+QString PresetsAction::undo(int index)
+{
+    int i = (int)_undos.size() - 1 - index;
+    if (index < 0 || i < 0)
+        return QString();
+    QString title = _undos[i].first;
+    _undos[i].second->copyTo(&App::GetApplication().GetUserParameter());
+    _undos.resize(i);
+    reloadWindowState();
+    return title;
 }
 
 void PresetsAction::push(const QString &title)
@@ -3314,19 +3432,62 @@ void PresetsAction::onShowMenu()
         action->setData(QByteArray(v.first.c_str()));
     }
 
+    // Preference packs are the same idea as a preset -- a set of parameters
+    // laid over the user's -- kept in a different place, with their metadata
+    // in a package.xml instead of inside the file. Listing them here gives
+    // them the undo and the Ctrl + Click un-apply they have nowhere else.
+    QString packTip = tr("Click to apply the preference pack.\n"
+                         "Ctrl + Click to drop the settings it applied.");
+    if (!_packMenu) {
+        // Parented, unlike the undo menu below, and it matters: a submenu's
+        // action reaches onAction() through QMenu::triggered of its parent
+        // menu, and off the mouse path Qt finds that parent by walking
+        // parentWidget(). clear() does not take the submenu with it -- the
+        // action it is added by belongs to the submenu, not to _menu.
+        _packMenu = new QMenu(tr("Themes"), _menu);
+        _packMenu->setToolTipsVisible(true);
+    }
+    _packMenu->clear();
+    bool separated = false;
+    for (const auto &v : Application::Instance->prefPackManager()->preferencePacks()) {
+        auto name = QString::fromUtf8(v.first.c_str());
+        auto metadata = v.second.metadata();
+        // A theme is a pack too, but there are more of them than of everything
+        // else in this menu put together, and they have a preferences page of
+        // their own to be picked from. One entry for all of them, not nine.
+        QMenu *target = _packMenu;
+        if (metadata.type() != "Theme") {
+            target = _menu;
+            if (!separated) {
+                separated = true;
+                _menu->addSeparator();
+            }
+        }
+        auto action = new QAction(name, target);
+        QString t = QString::fromUtf8(metadata.description().c_str());
+        if (t.size())
+            t += QStringLiteral("\n\n");
+        t += packTip;
+        action->setToolTip(t);
+        action->setProperty("PreferencePack", name);
+        target->addAction(action);
+    }
+    if (!_packMenu->isEmpty()) {
+        _menu->addSeparator();
+        _menu->addMenu(_packMenu);
+    }
+
     if (_undos.size()) {
         _menu->addSeparator();
         if (!_undoMenu) {
             _undoMenu = new QMenu(tr("Undo"));
+            _undoMenu->setToolTipsVisible(true);
             QObject::connect(_undoMenu, &QMenu::aboutToShow, [this]() {
                 _undoMenu->clear();
-                for (int i=(int)_undos.size()-1; i>=0; --i) {
-                    _undoMenu->addAction(_undos[i].first, [this, i]() {
-                        if (i < (int)_undos.size()) {
-                            _undos[i].second->copyTo(&App::GetApplication().GetUserParameter());
-                            _undos.resize(i);
-                        }
-                    });
+                int index = 0;
+                for (const auto &title : undoTitles()) {
+                    _undoMenu->addAction(title, [this, index]() { undo(index); });
+                    ++index;
                 }
             });
         }

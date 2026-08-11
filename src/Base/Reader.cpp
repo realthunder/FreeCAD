@@ -24,7 +24,10 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <map>
 #include <memory>
+#include <sstream>
+#include <unordered_set>
 #include <xercesc/sax2/XMLReaderFactory.hpp>
 #endif
 
@@ -46,6 +49,8 @@
 #ifdef _MSC_VER
 #include <zipios++/zipios-config.h>
 #endif
+#include <zipios++/zipfile.h>
+#include <zipios++/ziphead.h>
 #include <zipios++/zipinputstream.h>
 #include <boost/iostreams/filtering_stream.hpp>
 
@@ -167,7 +172,7 @@ const char* Base::XMLReader::localName() const
 
 unsigned int Base::XMLReader::getAttributeCount() const
 {
-    return static_cast<unsigned int>(AttrMap.size());
+    return static_cast<unsigned int>(AttrCount);
 }
 
 long Base::XMLReader::getAttributeAsInteger(const char* AttrName, const char *def) const
@@ -187,12 +192,9 @@ double Base::XMLReader::getAttributeAsFloat  (const char* AttrName, const char *
 
 const char* Base::XMLReader::getAttribute (const char* AttrName, const char *def) const
 {
-    AttrMapType::const_iterator pos = AttrMap.find(AttrName);
-
-    if (pos != AttrMap.end()) {
-        return pos->second.c_str();
-    }
-    else if(def) 
+    if (const std::string *value = findAttribute(AttrName))
+        return value->c_str();
+    else if(def)
         return def;
     else {
         _FC_READER_THROW(Base::XMLAttributeError, "XML Attribute: '" << AttrName << "' not found");
@@ -201,7 +203,16 @@ const char* Base::XMLReader::getAttribute (const char* AttrName, const char *def
 
 bool Base::XMLReader::hasAttribute(const char* AttrName) const
 {
-    return AttrMap.find(AttrName) != AttrMap.end();
+    return findAttribute(AttrName) != nullptr;
+}
+
+const std::string *Base::XMLReader::findAttribute(const char* AttrName) const
+{
+    for (std::size_t i = 0; i < AttrCount; ++i) {
+        if (AttrStore[i].name == AttrName)
+            return &AttrStore[i].value;
+    }
+    return nullptr;
 }
 
 void Base::XMLReader::read()
@@ -237,7 +248,7 @@ void Base::XMLReader::readElement(const char* ElementName, int *guard)
 {
     endCharStream();
 
-    AttrMap.clear();
+    AttrCount = 0;
 
     int currentLevel = Level;
     std::string currentName = LocalName;
@@ -250,7 +261,7 @@ void Base::XMLReader::readElement(const char* ElementName, int *guard)
                 // Missing element. Consider this as non-fatal
                 FC_ERR("Document XML element '" << (ElementName?ElementName:"") << "' not found\n"
                         << "In context: " << _ReaderContext);
-                AttrMap.clear();
+                AttrCount = 0;
             }
             break;
         }
@@ -355,6 +366,67 @@ void Base::XMLReader::readEndElement(const char* ElementName, int *guard)
 
     if(guard)
         Guards.pop_back();
+}
+
+static void appendEscaped(std::string &out, const std::string &s, bool attribute);
+
+void Base::XMLReader::captureCloseTag()
+{
+    if (CaptureTagOpen) {
+        *CaptureBuf += '>';
+        CaptureTagOpen = false;
+    }
+}
+
+void Base::XMLReader::captureChildren(std::string &out)
+{
+    endCharStream();
+    if (ReadType == StartEndElement)
+        return;  // an empty element has no content to capture
+    if (ReadType != StartElement)
+        FC_READER_THROW("captureChildren() called outside a start element");
+
+    CaptureBuf = &out;
+    CaptureLevel = Level;
+    CaptureTagOpen = false;
+    try {
+        while (CaptureBuf)
+            read();
+    }
+    catch (...) {
+        // The buffer belongs to the caller; a dangling diversion would have
+        // the next parse writing into whatever it left behind.
+        CaptureBuf = nullptr;
+        CaptureTagOpen = false;
+        throw;
+    }
+}
+
+void Base::XMLReader::captureElement(std::string &out)
+{
+    out += '<';
+    out += LocalName;
+    for (std::size_t i = 0; i < AttrCount; ++i) {
+        out += ' ';
+        out += AttrStore[i].name;
+        out += "=\"";
+        appendEscaped(out, AttrStore[i].value, true);
+        out += '"';
+    }
+    if (ReadType == StartEndElement) {
+        // Empty here too, and for the same reason as inside the capture: give
+        // it back self-closing or the replay parses it as two tokens.
+        out += "/>";
+        return;
+    }
+    out += '>';
+    captureChildren(out);
+    // Both ways out of captureChildren leave LocalName on this element:
+    // an empty element never changed it, and a captured one ends on its
+    // own end tag, which is processed normally.
+    out += "</";
+    out += LocalName;
+    out += '>';
 }
 
 std::streamsize Base::XMLReader::read(char_type* s, std::streamsize n)
@@ -540,6 +612,67 @@ bool Base::XMLReader::doNameMapping() const
 // ---------------------------------------------------------------------------
 //  Base::XMLReader: Implementation of the SAX DocumentHandler interface
 // ---------------------------------------------------------------------------
+
+// XMLCh is UTF-16. Convert straight into a caller-owned string: the
+// transcode helpers allocate a fresh buffer per call, and the element
+// handlers would pay that for every name and value of every element.
+static void appendUTF8(std::string &out, const XMLCh *s, std::size_t len)
+{
+    for (std::size_t i = 0; i < len; ++i) {
+        char32_t c = s[i];
+        if (c >= 0xD800 && c <= 0xDBFF && i + 1 < len
+                && s[i+1] >= 0xDC00 && s[i+1] <= 0xDFFF) {
+            c = 0x10000 + ((c - 0xD800) << 10) + (s[i+1] - 0xDC00);
+            ++i;
+        }
+        if (c < 0x80)
+            out += static_cast<char>(c);
+        else if (c < 0x800) {
+            out += static_cast<char>(0xC0 | (c >> 6));
+            out += static_cast<char>(0x80 | (c & 0x3F));
+        }
+        else if (c < 0x10000) {
+            out += static_cast<char>(0xE0 | (c >> 12));
+            out += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (c & 0x3F));
+        }
+        else {
+            out += static_cast<char>(0xF0 | (c >> 18));
+            out += static_cast<char>(0x80 | ((c >> 12) & 0x3F));
+            out += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (c & 0x3F));
+        }
+    }
+}
+
+static void assignUTF8(std::string &out, const XMLCh *s)
+{
+    out.clear();
+    appendUTF8(out, s, XMLString::stringLen(s));
+}
+
+// Re-escaping for captured subtrees. The parser hands over decoded text, so
+// writing it back out must escape exactly what Persistence::encodeAttribute
+// escaped, or a replayed fragment parses to different bytes than the
+// original did -- an attribute value's newline, in particular, would be
+// normalized to a space on the second parse if written literally.
+static void appendEscaped(std::string &out, const std::string &s, bool attribute)
+{
+    for (char c : s) {
+        switch (c) {
+        case '<': out += "&lt;"; break;
+        case '>': out += "&gt;"; break;
+        case '&': out += "&amp;"; break;
+        case '"': if (attribute) { out += "&quot;"; break; } out += c; break;
+        case '\'': if (attribute) { out += "&apos;"; break; } out += c; break;
+        case '\r': out += "&#13;"; break;
+        case '\n': if (attribute) { out += "&#10;"; break; } out += c; break;
+        case '\t': if (attribute) { out += "&#9;"; break; } out += c; break;
+        default: out += c; break;
+        }
+    }
+}
+
 void Base::XMLReader::startDocument()
 {
     ReadType = StartDocument;
@@ -556,12 +689,37 @@ void Base::XMLReader::startElement(const XMLCh* const /*uri*/,
                                    const XERCES_CPP_NAMESPACE_QUALIFIER Attributes& attrs)
 {
     Level++;  // new scope
-    LocalName = StrX(localname).c_str();
 
-    // saving attributes of the current scope, delete all previously stored ones
-    AttrMap.clear();
-    for (unsigned int i = 0; i < attrs.getLength(); i++) {
-        AttrMap[StrX(attrs.getQName(i)).c_str()] = StrXUTF8(attrs.getValue(i)).c_str();
+    if (CaptureBuf) {
+        captureCloseTag();  // the parent's tag: it has content after all
+        std::string &out = *CaptureBuf;
+        out += '<';
+        assignUTF8(CaptureScratch, localname);
+        out += CaptureScratch;
+        for (XMLSize_t i = 0; i < attrs.getLength(); ++i) {
+            out += ' ';
+            assignUTF8(CaptureScratch, attrs.getQName(i));
+            out += CaptureScratch;
+            out += "=\"";
+            assignUTF8(CaptureScratch, attrs.getValue(i));
+            appendEscaped(out, CaptureScratch, true);
+            out += '"';
+        }
+        CaptureTagOpen = true;  // '>' or '/>' once the next event says which
+        ReadType = StartElement;
+        return;
+    }
+
+    assignUTF8(LocalName, localname);
+
+    // the attributes of the current scope replace the previous element's;
+    // entries beyond AttrCount are stale and never read
+    AttrCount = attrs.getLength();
+    if (AttrStore.size() < AttrCount)
+        AttrStore.resize(AttrCount);
+    for (std::size_t i = 0; i < AttrCount; ++i) {
+        assignUTF8(AttrStore[i].name, attrs.getQName(i));
+        assignUTF8(AttrStore[i].value, attrs.getValue(i));
     }
 
     ReadType = StartElement;
@@ -572,7 +730,32 @@ void Base::XMLReader::endElement(const XMLCh* const /*uri*/,
                                  const XMLCh* const /*qname*/)
 {
     Level--;  // end of scope
-    LocalName = StrX(localname).c_str();
+
+    if (CaptureBuf) {
+        if (Level >= CaptureLevel) {
+            if (CaptureTagOpen) {
+                // Nothing came between the tags, so it was an empty element
+                // and has to go back out as one.
+                *CaptureBuf += "/>";
+                CaptureTagOpen = false;
+                ReadType = StartEndElement;
+            }
+            else {
+                *CaptureBuf += "</";
+                assignUTF8(CaptureScratch, localname);
+                *CaptureBuf += CaptureScratch;
+                *CaptureBuf += '>';
+                ReadType = EndElement;
+            }
+            return;
+        }
+        // This end tag closes the element being captured; the diversion is
+        // over and the tag itself is the caller's, processed as usual.
+        CaptureBuf = nullptr;
+        CaptureTagOpen = false;
+    }
+
+    assignUTF8(LocalName, localname);
 
     if (ReadType == StartElement) {
         ReadType = StartEndElement;
@@ -598,13 +781,20 @@ void Base::XMLReader::endCDATA()
 
 void Base::XMLReader::characters(const XMLCh* const chars, const XMLSize_t length)
 {
-    (void)length;
     ReadType = Chars;
+
+    if (CaptureBuf) {
+        captureCloseTag();
+        CaptureScratch.clear();
+        appendUTF8(CaptureScratch, chars, length);
+        appendEscaped(*CaptureBuf, CaptureScratch, false);
+        return;
+    }
 
     // We only capture characters when some one wants it
     if(CharacterOffset>=0) {
         Characters.erase(Characters.begin(), Characters.begin()+CharacterOffset);
-        Characters += StrXUTF8(chars).c_str();
+        appendUTF8(Characters, chars, length);
         CharacterOffset = 0;
     }
 }
@@ -762,7 +952,19 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
     const auto &FileList = xmlReader.getFileList();
     std::size_t it = 0;
     Base::SequencerLauncher seq("Importing project files...", FileList.size());
+
+    // Attribution for the archive stage. 'advance' is what the forward-only
+    // stream costs on its own -- inflating past entries nobody reads --
+    // separated from the parse each owner does, which is broken out by
+    // extension because one archive mixes shape data, a nested XML document
+    // and tens of thousands of near-empty property files.
+    FC_DURATION_DECL_INIT(dAdvance);
+    std::map<std::string, std::pair<std::size_t, FC_DURATION>> kinds;
+    std::size_t entryCount = 0;
+    FC_TIME_INIT(tAdvance);
+
     while (entry->isValid()) {
+        ++entryCount;
         // Entries nobody registered for may still have an owner -- shared
         // included files are written once and referred to from anywhere, so
         // they cannot take part in the ordered match below. Offer them first;
@@ -792,6 +994,7 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
         // If this condition is true both file names match and we can read-in the data, otherwise
         // no file name for the current entry in the zip was registered.
         if (jt < FileList.size()) {
+            FC_DURATION_PLUS(dAdvance, tAdvance);
             try {
                 Base::ZipReader zipreader(_stream, FileList[jt].FileName, &xmlReader);
                 FileList[jt].Object->RestoreDocFile(zipreader);
@@ -810,6 +1013,12 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
                 // failure.
                 FC_ERR("Reading failed from embedded file: " << FileList[jt].FileName);
             }
+            const auto &fname = FileList[jt].FileName;
+            auto pos = fname.rfind('.');
+            auto &kind = kinds[pos == std::string::npos ? std::string("(none)")
+                                                       : fname.substr(pos + 1)];
+            ++kind.first;
+            kind.second += Base::GetDuration(tAdvance);
             // Go to the next registered file name
             it = jt + 1;
         }
@@ -825,12 +1034,158 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
             break;
         }
     }
+
+    FC_DURATION_PLUS(dAdvance, tAdvance);
+    if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+        std::stringstream ss;
+        ss << "readFiles " << getFileName() << ": " << entryCount << " entries, "
+           << FileList.size() << " registered, advance " << dAdvance.count() << 's';
+        for (const auto &v : kinds)
+            ss << ", " << v.first << ' ' << v.second.first << '/'
+               << v.second.second.count() << 's';
+        FC_LOG(ss.str());
+    }
 }
 
 
 // ----------------------------------------------------------
 
-Base::FileReader::FileReader(const Base::FileInfo &fi, 
+Base::ZipFileReader::ZipFileReader(const std::string &fileName, Base::XMLReader *parent)
+    :Base::Reader(fileName, parent)
+    ,_fileName(fileName)
+{
+    try {
+        // The ZipFile object only serves to parse the central directory:
+        // entries are opened by local-header offset afterwards, each with
+        // its own file handle, so nothing of it needs to stay around.
+        zipios::ZipFile zip(fileName);
+        for (const auto &entry : zip.entries()) {
+            auto cdir = dynamic_cast<const zipios::ZipCDirEntry*>(entry.get());
+            if (!cdir || !entry->isValid())
+                continue;
+            if (_offsets.emplace(entry->getName(),
+                        std::streamoff(cdir->getLocalHeaderOffset())).second)
+                _entryOrder.push_back(entry->getName());
+        }
+    } catch (const std::exception &e) {
+        throw Base::FileException(e.what(), fileName.c_str());
+    }
+    if (_entryOrder.empty())
+        throw Base::FileException("Empty project archive", fileName.c_str());
+    // Stream the first entry (the document's main XML) through this
+    // reader, as the forward-only reader did.
+    _mainStream = openEntry(_entryOrder.front());
+    rdbuf(_mainStream->rdbuf());
+}
+
+Base::ZipFileReader::~ZipFileReader() = default;
+
+bool Base::ZipFileReader::hasEntry(const std::string &name) const
+{
+    return _offsets.count(name) != 0;
+}
+
+std::unique_ptr<zipios::ZipInputStream>
+Base::ZipFileReader::openEntry(const std::string &name) const
+{
+    auto it = _offsets.find(name);
+    if (it == _offsets.end())
+        return nullptr;
+    return std::make_unique<zipios::ZipInputStream>(_fileName, it->second);
+}
+
+void Base::ZipFileReader::readFiles(XMLReader &xmlReader)
+{
+    const auto &FileList = xmlReader.getFileList();
+    Base::SequencerLauncher seq("Importing project files...", FileList.size());
+
+    FC_DURATION_DECL_INIT(dParse);
+    std::map<std::string, std::pair<std::size_t, FC_DURATION>> kinds;
+    FC_TIME_INIT(tParse);
+
+    // Entries nobody registered for may still have an owner -- shared
+    // included files are written once and referred to from anywhere.
+    // Serve them first: the consumers queue up while the document XML is
+    // parsed and are dispatched after this walk, so before-the-owners is
+    // as early as the content can matter. The name filter keeps this
+    // from opening the thousands of entries the handler would refuse.
+    std::unordered_set<std::string> consumed;
+    consumed.insert(_entryOrder.front());
+    if (xmlReader.hasArchiveHandler()) {
+        for (std::size_t i = 1; i < _entryOrder.size(); ++i) {
+            const std::string &name = _entryOrder[i];
+            if (!xmlReader.wantsArchiveEntry(name))
+                continue;
+            auto stream = openEntry(name);
+            Base::ZipReader zipreader(*stream, name, &xmlReader);
+            if (xmlReader.handleArchiveEntry(name, zipreader))
+                consumed.insert(name);
+        }
+    }
+
+    // Registered files, in registration order. The list grows while it
+    // is walked -- a nested document restored from one entry registers
+    // entries of its own -- so the size is re-read every iteration and
+    // the entry is copied before its consumer runs.
+    std::size_t deferred = 0;
+    for (std::size_t i = 0; i < FileList.size(); ++i) {
+        FileEntry entry = FileList[i];
+        if (consumed.count(entry.FileName))
+            continue;
+        if (!hasEntry(entry.FileName)) {
+            // Not an error: e.g. a document saved without GUI serves no
+            // GuiDocument.xml, matching the forward walk's silent skip.
+            continue;
+        }
+        if (xmlReader.deferFileEntry(entry.FileName, entry.Object)) {
+            ++deferred;
+            seq.next();
+            continue;
+        }
+        FC_DURATION_PLUS(dParse, tParse);
+        try {
+            // Inside the guard: an entry the central directory promises but
+            // the archive cannot deliver throws from the open, and one bad
+            // entry must cost its own consumer, not the rest of the load --
+            // which is what the forward-only walk did by construction.
+            auto stream = openEntry(entry.FileName);
+            Base::ZipReader zipreader(*stream, entry.FileName, &xmlReader);
+            entry.Object->RestoreDocFile(zipreader);
+        } catch(Base::AbortException &e) {
+            e.ReportException();
+            FC_ERR("User abort when reading embedded file: " << entry.FileName);
+            throw;
+        } catch(Base::Exception &e) {
+            e.ReportException();
+            FC_ERR("Reading failed from embedded file: " << entry.FileName);
+        } catch(...) {
+            FC_ERR("Reading failed from embedded file: " << entry.FileName);
+        }
+        auto pos = entry.FileName.rfind('.');
+        auto &kind = kinds[pos == std::string::npos ? std::string("(none)")
+                                                    : entry.FileName.substr(pos + 1)];
+        ++kind.first;
+        kind.second += Base::GetDuration(tParse);
+        seq.next();
+    }
+
+    FC_DURATION_PLUS(dParse, tParse);
+    if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
+        std::stringstream ss;
+        ss << "readFiles(random access) " << getFileName() << ": "
+           << _entryOrder.size() << " entries, "
+           << FileList.size() << " registered, "
+           << deferred << " deferred, other " << dParse.count() << 's';
+        for (const auto &v : kinds)
+            ss << ", " << v.first << ' ' << v.second.first << '/'
+               << v.second.second.count() << 's';
+        FC_LOG(ss.str());
+    }
+}
+
+// ----------------------------------------------------------
+
+Base::FileReader::FileReader(const Base::FileInfo &fi,
         const std::string &name, Base::XMLReader *parent)
     :Base::Reader(name.size()?name:fi.fileName(),parent)
     ,_dir(fi.dirPath())
