@@ -47,6 +47,7 @@ namespace Gui
       QDialogButtonBox::StandardButtons getStandardButtons() const override
         { return QDialogButtonBox::Ok | QDialogButtonBox::Cancel;}
       void open() override;
+      void closed() override;
       bool accept() override;
       void onEndMove();
       void recompute(bool finish);
