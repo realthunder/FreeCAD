@@ -209,11 +209,44 @@ per-face `DiffuseColor` this fork already has.
 
 **So the real question is narrower than it first looks:** should a per-face
 appearance entry be a colour (4 floats, what we have) or a full visual
-material (18 floats)? What the widening buys is per-face transparency,
-specular and shininess -- which matters for STEP and glTF import fidelity,
-and is why upstream needed a dedicated fix for colour-per-face STEP import
-and another for per-face transparency (#15027). What it costs is 4.5x the
-per-face storage, the three-into-one migration, and that regression tail.
+material (18 floats)? The widening buys per-face specular, shininess,
+ambient and emissive.
+
+The split itself is standard practice, not an invention: Fusion 360,
+SolidWorks, Inventor, NX and Onshape all carry one *physical* material per
+body or component (density, modulus, driving mass properties and
+simulation) while letting *appearance* be overridden down to the face. None
+of them assign physical material per face -- that would make mass
+properties meaningless. Upstream's two-property split matches this exactly.
+
+**But the import-fidelity argument for the widening does not survive
+checking, and an earlier draft of this section asserted it.** Measured in
+the OCCT 8.0.1 source:
+
+- `STEPCAFControl_Reader.cxx` contains **zero** references to
+  `VisMaterialTool`. Every use of its `STEPConstruct_RenderingProperties`
+  reduces to `GetRGBAColor()`, and what reaches the XCAF document is
+  `XCAFDoc_ColorTool::SetColor` -- **colour plus alpha, nothing else**.
+- OCCT *can* represent more: `STEPConstruct_RenderingProperties` converts
+  to and from `XCAFDoc_VisMaterialCommon`, and STEP's
+  `surface_style_rendering` carries reflectance and shininess. The reader
+  simply does not keep it.
+- FreeCAD reads `XCAFDoc_VisMaterial` in exactly one place,
+  `ReaderGltf.cpp`. `ImportOCAF.cpp` and `ImportOCAF2.cpp` use the colour
+  tool only.
+
+So for STEP, the dominant import path, per-face fidelity means colour and
+transparency -- which this fork already stores and already renders. Only
+glTF benefits from the widening.
+
+**And the rendering capability is not what is being bought either.** We
+already have it: `ViewProviderPartExt::setHighlightedFaces` (ViewProviderExt.cpp:1547)
+sets `SoMaterialBinding::PER_PART` and fills the diffuse, ambient, specular
+and emissive arrays per face today. Upstream's contribution is wiring that
+path to a persistent, user-facing property, not teaching Coin to draw it.
+
+What it costs is 4.5x the per-face storage, the three-into-one migration on
+a base class, and that regression tail.
 
 **Question:** keep `ShapeColor` / `ShapeMaterial` / `DiffuseColor` and adapt
 FEM's 37 sites to them, or take the widening? Adapting FEM is much the
