@@ -87,6 +87,29 @@ To change a Python API, edit the **`.xml`** and the **`PyImp.cpp`** — never th
 - `.git-blame-ignore-revs` lists bulk-reformat commits — use `git blame --ignore-revs-file .git-blame-ignore-revs`.
 - **Commit messages**: `Area: summary`, where Area is the module abbreviated — `Gui:`, `App:`, `Part:`, `PD:` (PartDesign), `Sketcher:`, `TD:`/`Techdraw:`, `Sheet:` (Spreadsheet). Keep one problem per PR.
 
+### ASCII only (hard rule)
+
+Everything **you** write -- code, comments, docs, commit messages, test data -- must be
+pure ASCII. No em dashes, no curly quotes, no arrows, no stars, no warning signs, no
+emoji, no non-breaking spaces. Write `--` not an em dash, `->` not an arrow, `<=` not
+a less-or-equal sign, `us` not a micro sign, `deg` not a degree sign, `sec` not a
+section sign, `...` not an ellipsis.
+
+Scope: **only lines you add or change.** Never reformat pre-existing non-ASCII -- over
+a thousand tracked files carry it legitimately (upstream author names in copyright
+headers, Qt translations, test fixtures), and rewriting them buries the real change.
+This applies to CLAUDE.md and the docs too: the existing text stays as it is.
+
+Enforcement is `scripts/strip-nonascii.py`, installed as a `post-commit` hook by
+`scripts/install-hooks.sh` (run it once per clone, and for the sibling coin/occt
+repos). It transliterates the non-ASCII on lines the commit added, fixes the commit
+message, and amends the commit. It stands down during rebase/merge/cherry-pick, skips
+merge commits, skips files edited since the commit, and skips translations. A line
+containing `nonascii-ok` is left alone; `NO_STRIP_NONASCII=1` skips a commit. Use
+`python3 scripts/strip-nonascii.py --check` to see what it would rewrite.
+
+The hook is a backstop, not a licence to be sloppy -- write ASCII in the first place.
+
 ## Gotchas
 - `Auto` Qt detection picks Qt5 when present — always force `-DFREECAD_QT_VERSION=6`.
 - Never hand-edit generated `*Py.cpp`; change the `.xml`/`PyImp.cpp`.
