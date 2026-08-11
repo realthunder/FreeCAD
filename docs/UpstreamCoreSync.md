@@ -240,10 +240,19 @@ transparency -- which this fork already stores and already renders. Only
 glTF benefits from the widening.
 
 **And the rendering capability is not what is being bought either.** We
-already have it: `ViewProviderPartExt::setHighlightedFaces` (ViewProviderExt.cpp:1547)
-sets `SoMaterialBinding::PER_PART` and fills the diffuse, ambient, specular
-and emissive arrays per face today. Upstream's contribution is wiring that
-path to a persistent, user-facing property, not teaching Coin to draw it.
+already fill the same arrays: `ViewProviderPartExt::setHighlightedFaces`
+(ViewProviderExt.cpp:1547) sets `SoMaterialBinding::PER_PART` and fills the
+diffuse, ambient, specular and emissive arrays per face today. Upstream's
+contribution is wiring that path to a persistent, user-facing property, not
+teaching Coin to draw it.
+
+**Filling those arrays is not the same as drawing them, and both this
+document and the analysis behind it originally conflated the two.** Coin
+consumes only diffuse colour and transparency per face; ambient, specular,
+emissive and shininess are read once, at index 0. See
+[ShapeAppearanceDesign.md](./ShapeAppearanceDesign.md) section 5.1 for the
+proof. So neither side renders per-face specular -- upstream fills four
+arrays that the lazy element never reads per index.
 
 What it costs is 4.5x the per-face storage, the three-into-one migration on
 a base class, and that regression tail.
