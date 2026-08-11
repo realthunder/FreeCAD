@@ -11150,13 +11150,14 @@ public:
                 [this]() {
                     const float h = float(widget->height()
                                           * widget->devicePixelRatioF());
-                    auto tags = Render::planMeshRefines(
-                        scene, levelPlanner.viewMatrix(),
-                        levelPlanner.projMatrix(), h,
-                        levelPlanner.tolerance());
                     auto &reg = Render::MeshSourceRegistry::instance();
                     size_t nDemote = 0, nDowngrade = 0;
-                    Render::PlanDemoteStats dgStats;
+                    // The deficits the two sweeps actually ran with,
+                    // kept for the readout: re-deriving them after the
+                    // drops would report a different number, since the
+                    // upload accounting has not moved yet.
+                    size_t dmDeficit = 0, dgDeficit = 0;
+                    Render::PlanDemoteStats dmStats, dgStats;
                     // Demotions first (§13 step 3), and only ever under
                     // an observed CPU-memory ceiling: drop the hidden
                     // exact rungs outright (nothing on screen changes),
@@ -11166,13 +11167,22 @@ public:
                     // builds.
                     if (reg.memoryCeilingEpoch()) {
                         reg.dropHiddenLevels();
+                        // How much RAM the observer wanted back (the
+                        // refine worker knows its floor and what the
+                        // system had free). Non-zero buys the priced
+                        // tier: exact rungs whose coarse replacement
+                        // WOULD show, cheapest first, until the
+                        // shortfall is covered. Zero -- a ceiling
+                        // observed without a quantity, e.g. a
+                        // bad_alloc -- leaves the free tier alone.
                         auto drops = Render::planMeshDemotes(
                             scene, levelPlanner.viewMatrix(),
                             levelPlanner.projMatrix(), h,
                             levelPlanner.tolerance(),
                             [&reg](const void *t) {
                                 return reg.demoteError(t);
-                            });
+                            },
+                            &dmStats, dmDeficit = reg.memoryShortfall());
                         nDemote = drops.size();
                         for (const void *tag : drops)
                             reg.requestDemote(tag);
@@ -11183,7 +11193,8 @@ public:
                     // CPU RAM — the way back up is an instant
                     // re-activation through an ordinary refine.
                     const size_t gpuBudget = gpuBudgetBytes();
-                    if (gpuBudget && gpuUsedBytes() > gpuBudget) {
+                    const size_t gpuUsed = gpuUsedBytes();
+                    if (gpuBudget && gpuUsed > gpuBudget) {
                         auto drops = Render::planMeshDemotes(
                             scene, levelPlanner.viewMatrix(),
                             levelPlanner.projMatrix(), h,
@@ -11191,11 +11202,81 @@ public:
                             [&reg](const void *t) {
                                 return reg.downgradeError(t);
                             },
-                            &dgStats);
+                            &dgStats, dgDeficit = gpuUsed - gpuBudget);
                         nDowngrade = drops.size();
                         for (const void *tag : drops)
                             reg.requestDowngrade(tag);
+                        // One pass cannot know it freed enough: the
+                        // bytes it counted are what the meshes declare,
+                        // while the budget is judged against what the
+                        // backend reports uploaded, which only catches
+                        // up once the downgraded rungs have been
+                        // re-uploaded. So while the budget still stands
+                        // exceeded, replan -- but only after a pass
+                        // that actually dropped something, or a budget
+                        // nothing can satisfy would replan forever.
+                        // Each drop consumes its source's hook, so the
+                        // sequence terminates.
+                        if (nDowngrade)
+                            levelPlanner.markDirty();
                     }
+
+                    // The climb, and it runs AFTER the descent on
+                    // purpose -- at the descent's tolerance, not the
+                    // camera's.
+                    //
+                    // Measured on the rack model at a 64 MB budget: the
+                    // plan downgraded 372 sources, and the very next
+                    // plan's refine pass asked for 366 of them straight
+                    // back. Of course it did -- a source demoted to save
+                    // memory is by definition one erring more than the
+                    // tolerance on screen, which is exactly the refine
+                    // pass's own criterion. Two passes reading two
+                    // different tolerances make the ladder oscillate,
+                    // and every lap costs a tessellation and an upload.
+                    //
+                    // So pressure raises ONE effective tolerance, for
+                    // both directions. The descent reports the worst
+                    // error it had to accept; dividing by the demote
+                    // margin puts the climb's threshold back above it by
+                    // the same hysteresis band the two passes use with
+                    // no pressure at all. It applies only for as long as
+                    // the pressure does: at the first plan that is
+                    // inside its budget the tolerance is the camera's
+                    // again and the ladder climbs back.
+                    //
+                    // Only the CLIMB reads the raised value. Feeding it
+                    // back into the descent would run away -- a wider
+                    // free tier accepts more error, which widens the
+                    // tolerance, which widens the free tier -- whereas
+                    // the priced tier is bounded by the deficit and
+                    // stops on its own.
+                    // What holds the raised tolerance up is the PRESSURE
+                    // standing, never the sweep having succeeded. The
+                    // plan after a successful descent finds only sources
+                    // with no rung left to drop, so it accepts no error
+                    // at all -- and reading the tolerance off that would
+                    // hand it straight back to the camera and re-ask for
+                    // everything just given up. Highest error accepted
+                    // while this spell of pressure lasts, cleared the
+                    // first plan that is inside its budget.
+                    const bool underPressure =
+                        (gpuBudget && gpuUsed > gpuBudget)
+                        || (reg.memoryCeilingEpoch() && reg.memoryShortfall());
+                    levelPressureErrPx = underPressure
+                        ? std::max(levelPressureErrPx,
+                                   std::max(dmStats.acceptedErrorPx,
+                                            dgStats.acceptedErrorPx))
+                        : 0.0f;
+                    const float refineTolerance = levelPressureErrPx > 0.0f
+                        ? std::max(levelPlanner.tolerance(),
+                                   levelPressureErrPx
+                                       / Render::kPlanDemoteMargin)
+                        : levelPlanner.tolerance();
+                    auto tags = Render::planMeshRefines(
+                        scene, levelPlanner.viewMatrix(),
+                        levelPlanner.projMatrix(), h, refineTolerance);
+
                     // Cancels next (§13 step 4): every coarse source
                     // this plan does not want is de-wanted — a queued
                     // tessellation the camera moved away from is work,
@@ -11239,7 +11320,8 @@ public:
                         Base::Console().Message(
                             "render levels: budget %s used %.1fMB | displayed "
                             "coarse %zu exact %zu | plan: refine %zu demote %zu "
-                            "downgrade %zu | cpu ceiling %s\n",
+                            "downgrade %zu | cpu ceiling %s | refine tolerance "
+                            "%.2fpx%s\n",
                             budget ? (std::to_string(budget / 1048576)
                                       + "MB").c_str()
                                    : "NONE (GL reports no limit; set "
@@ -11247,7 +11329,10 @@ public:
                             double(gpuUsedBytes()) / 1048576.0,
                             coarse.size(), exact.size(), tags.size(),
                             nDemote, nDowngrade,
-                            reg.memoryCeilingEpoch() ? "OBSERVED" : "no");
+                            reg.memoryCeilingEpoch() ? "OBSERVED" : "no",
+                            refineTolerance,
+                            levelPressureErrPx > 0.0f
+                                ? " (RAISED BY PRESSURE)" : "");
                         // Why a downgrade pass that ran refused
                         // everything. Printed only when it ran, so its
                         // absence is not mistaken for "no candidates".
@@ -11272,14 +11357,32 @@ public:
                                 "downgrade armed, dm = demote armed):%s\n",
                                 line.c_str());
                         }
-                        if (dgStats.considered)
+                        // Both sweeps, same shape. `under pressure` and
+                        // the accepted error are what say whether the
+                        // budget was honourable at all: a pass that
+                        // freed nothing while a deficit stood has run
+                        // out of sources to descend, which is a
+                        // different defect from a pass that refused on
+                        // policy.
+                        auto reportPass = [](const char *what,
+                                             const Render::PlanDemoteStats &s,
+                                             size_t deficit) {
+                            if (!s.considered)
+                                return;
                             Base::Console().Message(
-                                "render levels: downgrade pass: considered %u | "
+                                "render levels: %s pass: considered %u | "
                                 "no fallback rung %u | on screen and too big %u "
-                                "| offscreen %u | eligible %u\n",
-                                dgStats.considered, dgStats.noRung,
-                                dgStats.tooBig, dgStats.offscreen,
-                                dgStats.eligible);
+                                "| offscreen %u | eligible %u | under pressure "
+                                "%u | unpriceable %u | want %.1fMB freed "
+                                "%.1fMB | accepted error %.2fpx\n",
+                                what, s.considered, s.noRung, s.tooBig,
+                                s.offscreen, s.eligible, s.underPressure,
+                                s.unpriceable, double(deficit) / 1048576.0,
+                                double(s.bytesFreed) / 1048576.0,
+                                s.acceptedErrorPx);
+                        };
+                        reportPass("demote", dmStats, dmDeficit);
+                        reportPass("downgrade", dgStats, dgDeficit);
                     }
                 });
 
@@ -16256,6 +16359,12 @@ public:
     // The last memory-ceiling epoch this view replanned for (§13
     // step 3) — a new observation marks the planner dirty.
     uint64_t levelCeilingSeen = 0;
+    /// The worst projected error the descent has had to accept while the
+    /// current spell of memory pressure lasts, in pixels; 0 = no
+    /// pressure. It is what the climb reads its tolerance from, so that
+    /// both directions of the ladder agree on one -- see the plan
+    /// callback, where the oscillation it prevents is measured.
+    float levelPressureErrPx = 0.0f;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
     // Whether the last rendered frame stood over the GPU budget — the

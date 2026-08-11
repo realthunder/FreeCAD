@@ -393,32 +393,77 @@ RendererExport CoverageHistogram coverageHistogram(const DrawCallList &draws,
 /// work here.
 constexpr float kPlanDemoteMargin = 0.5f;
 
-/// The way back down (§13 step 3), pure policy: among \a draws, the
-/// *exact*-resident sources (levelError 0) whose coarse rung — its
-/// error answered by \a demoteErrOf, 0 = not demotable — would commit
-/// at most kPlanDemoteMargin × \a tolerancePx on screen, plus every
-/// demotable source off screen or wholly behind the camera. Only
-/// consulted under an observed memory ceiling: without one the desktop
-/// keeps every rung it built ("keep both"), and a non-positive
-/// tolerance demotes nothing — everything desires exact.
 /// Why the plan refused, when it refuses everything. A budget that
 /// cannot be honoured looks identical to a budget nobody read, and the
 /// two want opposite fixes: `noRung` is plumbing (nothing to fall back
-/// to), `tooBig` is policy (the coarse rung would show, and this pass
-/// will not accept visible error to save memory).
+/// to), `tooBig` is policy (the coarse rung would show, and the free
+/// tier will not accept visible error to save memory).
+///
+/// `considered` counts SOURCES, one per distinct tag, which is what its
+/// name always claimed: the first version counted a source once per
+/// draw carrying it and reported 6287 where 2482 sources stood.
 struct PlanDemoteStats {
     uint32_t considered = 0;   ///< exact-resident sources examined
     uint32_t noRung = 0;       ///< demotable error 0: no fallback exists
-    uint32_t tooBig = 0;       ///< on screen and over the margin
+    uint32_t tooBig = 0;       ///< over the margin, and pressure never reached it
     uint32_t offscreen = 0;    ///< free outright
     uint32_t eligible = 0;     ///< on screen and under the margin
+    uint32_t underPressure = 0;///< over the margin, taken because the deficit demanded it
+    uint32_t unpriceable = 0;  ///< no judgeable bounds, or the camera inside the box
+    /// Resident bytes the selection gives back, by the same accounting
+    /// the far-field cut prices residency with -- per distinct mesh, so
+    /// an instanced source is not counted once per instance.
+    uint64_t bytesFreed = 0;
+    /// The worst projected coarse error accepted, in pixels: the
+    /// tolerance this plan effectively ran at. Equal to
+    /// kPlanDemoteMargin x tolerancePx or below while no deficit
+    /// stands, and above it by exactly as much as the deficit forced.
+    float acceptedErrorPx = 0.0f;
 };
 
+/// The way back down (sec 13 step 3), pure policy: among \a draws, the
+/// *exact*-resident sources (levelError 0) whose coarse rung -- its
+/// error answered by \a demoteErrOf, 0 = not demotable -- the camera can
+/// be given without missing it. Only consulted under an observed memory
+/// ceiling: without one the desktop keeps every rung it built ("keep
+/// both"), and a non-positive tolerance demotes nothing -- everything
+/// desires exact.
+///
+/// Two tiers, and the second is what makes a budget honourable:
+///
+/// 1. **Free** -- off screen or wholly behind the camera, or a coarse
+///    rung erring at most kPlanDemoteMargin x \a tolerancePx on screen.
+///    Always taken; nothing visible is traded.
+/// 2. **Priced** -- over that margin, so demoting it *would* show.
+///    Admitted only while \a deficitBytes of the pressure that asked
+///    for this pass still stands, cheapest projected error first, and
+///    stopping the moment the deficit is covered.
+///
+/// Tier 2 exists because tier 1 alone cannot honour anything: measured
+/// on the rack model with 64 MB pinned against 517 MB in use, every one
+/// of the 376 sources that carried a fallback rung was refused "on
+/// screen and too big", so the plan reported a budget it had no way to
+/// meet. A policy that will never trade visible error for memory turns
+/// a model too large to display exactly into one that cannot be
+/// displayed at all -- where showing it coarse is better than nothing.
+///
+/// So the effective tolerance is an *outcome* here, not a knob: pressure
+/// raises it, and only as far as the deficit reaches (reported as
+/// PlanDemoteStats::acceptedErrorPx). \a deficitBytes 0 -- no pressure,
+/// or none that can be quantified -- leaves the original free-tier-only
+/// behaviour exactly as it was.
+///
+/// A source is priced by its NEEDIEST owner (the largest projected
+/// error over the draws sharing its tag), the mirror of the refine
+/// pass's union: one instance close to the camera makes the shared
+/// source expensive for every other. It is still a price and not a
+/// veto, which is the difference from the free tier, where any owner
+/// over the margin kept the source exact outright.
 RendererExport std::vector<const void *> planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
     const std::function<float(const void *)> &demoteErrOf,
-    PlanDemoteStats *stats = nullptr);
+    PlanDemoteStats *stats = nullptr, size_t deficitBytes = 0);
 
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.

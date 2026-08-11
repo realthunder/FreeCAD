@@ -189,7 +189,12 @@ void refineLoop()
             floor = std::max(floor, size_t(simMB) << 20);
         const size_t avail = Render::MemoryBudget::availableMemory();
         if (avail && avail < floor) {
-            Render::MeshSourceRegistry::instance().observeMemoryCeiling();
+            // The shortfall travels with the observation: it is the
+            // only place that knows both numbers, and it is what lets
+            // the level plan buy memory back with visible error --
+            // exactly as much as the floor is missing and no more.
+            Render::MeshSourceRegistry::instance().observeMemoryCeiling(
+                floor - avail);
             continue;
         }
         bool outOfMemory = false;
@@ -201,7 +206,17 @@ void refineLoop()
             meshed.Nullify();
         }
         if (outOfMemory) {
-            Render::MeshSourceRegistry::instance().observeMemoryCeiling();
+            // A bad_alloc states only "no", never how much: what it
+            // costs to make the next build fit is exactly the number
+            // nobody has. So the shortfall is re-read here rather than
+            // invented -- normally the allocation failed because the
+            // system is under the floor, and that gap is the ask; when
+            // it is not (one outsized build on a machine with room),
+            // 0 says so, and the plan keeps to what the camera cannot
+            // see.
+            const size_t now = Render::MemoryBudget::availableMemory();
+            Render::MeshSourceRegistry::instance().observeMemoryCeiling(
+                now && now < floor ? floor - now : 0);
             continue;
         }
         if (meshed.IsNull())

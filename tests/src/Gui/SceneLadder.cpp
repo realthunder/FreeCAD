@@ -693,12 +693,18 @@ TEST(PlanStep, planNeededUnionsTheOwnersRungs)
 namespace
 {
 
+/// \a verts gives the mesh real geometry, so it prices at `verts * 12`
+/// bytes (positions only). The refine and free-tier tests do not care
+/// what a source frees and leave it 0; the priced tier is the whole
+/// question of how much a demotion gives back.
 Render::DrawCall meshDraw(const void *tag, float levelError,
-                          float cx, float cy, float cz, float half)
+                          float cx, float cy, float cz, float half,
+                          int verts = 0)
 {
     auto mesh = std::make_shared<Render::MeshData>();
     mesh->sourceTag = tag;
     mesh->levelError = levelError;
+    mesh->numVertices = verts;
     Render::DrawCall d;
     d.mesh = mesh;
     d.bboxMin[0] = cx - half; d.bboxMin[1] = cy - half;
@@ -950,4 +956,177 @@ TEST(PlanMeshDemotes, aSharedSourceStaysExactForItsNeediestOwner)
     auto tags2 = Render::planMeshDemotes(far, cam.view, cam.proj,
                                          1000.0f, 2.0f, demoteErrs(errs));
     ASSERT_EQ(tags2.size(), 1u);
+}
+
+//////////////////////////////////////////////////////////////////////
+// The priced tier: what a deficit may buy that the margin refused.
+
+namespace
+{
+
+/// On axis at depth \a cz, with geometry behind it (see meshDraw).
+Render::DrawCall sizedDraw(const void *tag, float levelError,
+                           float cz, float half, int verts)
+{
+    return meshDraw(tag, levelError, 0, 0, cz, half, verts);
+}
+
+const uint64_t kVertBytes = 12;  ///< xyz float positions
+
+}  // namespace
+
+TEST(PlanMeshDemotes, pressureBuysWhatTheMarginRefused)
+{
+    // Half 5 at depth 100 projects ~95 px, so a 3% coarse rung errs
+    // ~2.8 px -- over the 1 px margin of a 2 px tolerance, and refused
+    // outright while nothing is asking for memory. It is the only
+    // thing this scene has to give, so a deficit takes it: better a
+    // model shown coarse than one that cannot be shown.
+    PlanCamera cam;
+    int only = 0;
+    Render::DrawCallList draws;
+    draws.push_back(sizedDraw(&only, 0.0f, -100, 5, 1000));
+    std::map<const void *, float> errs{{&only, 0.03f}};
+
+    Render::PlanDemoteStats calm;
+    EXPECT_TRUE(Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                        2.0f, demoteErrs(errs), &calm)
+                    .empty());
+    EXPECT_EQ(calm.tooBig, 1u);
+    EXPECT_EQ(calm.underPressure, 0u);
+    EXPECT_EQ(calm.bytesFreed, 0u);
+
+    Render::PlanDemoteStats pressed;
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                        2.0f, demoteErrs(errs), &pressed,
+                                        1000 * kVertBytes);
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_EQ(tags[0], &only);
+    EXPECT_EQ(pressed.underPressure, 1u);
+    EXPECT_EQ(pressed.tooBig, 0u);
+    EXPECT_EQ(pressed.bytesFreed, 1000 * kVertBytes);
+    // The tolerance the plan effectively ran at -- an outcome, and one
+    // the readout can state rather than a number nobody chose.
+    EXPECT_NEAR(pressed.acceptedErrorPx, 2.84f, 0.05f);
+    // Both passes examined the same source once, not once per draw.
+    EXPECT_EQ(pressed.considered, 1u);
+}
+
+TEST(PlanMeshDemotes, theDeficitStopsTheCheapestFirstWalk)
+{
+    // Three sources over the margin at 2.8, 1.9 and 1.4 px. A deficit
+    // of 20 KB against 12 KB apiece must take the two cheapest and
+    // stop -- the whole point of pricing the tier is that pressure
+    // raises the tolerance only as far as it has to.
+    PlanCamera cam;
+    int close = 0, mid = 0, cheap = 0;
+    Render::DrawCallList draws;
+    draws.push_back(sizedDraw(&close, 0.0f, -100, 5, 1000));
+    draws.push_back(sizedDraw(&mid, 0.0f, -150, 5, 1000));
+    draws.push_back(sizedDraw(&cheap, 0.0f, -200, 5, 1000));
+    std::map<const void *, float> errs{
+        {&close, 0.03f}, {&mid, 0.03f}, {&cheap, 0.03f}};
+
+    Render::PlanDemoteStats stats;
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                        2.0f, demoteErrs(errs), &stats,
+                                        20000);
+    ASSERT_EQ(tags.size(), 2u);
+    EXPECT_EQ(tags[0], &cheap);
+    EXPECT_EQ(tags[1], &mid);
+    EXPECT_EQ(stats.underPressure, 2u);
+    EXPECT_EQ(stats.tooBig, 1u);
+    EXPECT_EQ(stats.bytesFreed, 2000 * kVertBytes);
+    EXPECT_NEAR(stats.acceptedErrorPx, 1.9f, 0.1f);
+}
+
+TEST(PlanMeshDemotes, theFreeTierIsSpentBeforeAnythingVisible)
+{
+    // An off-screen source covers the deficit on its own, so the
+    // visible one is left alone however much the budget wanted: free
+    // bytes always come first, and the priced tier only sees what they
+    // did not cover.
+    PlanCamera cam;
+    int aside = 0, seen = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&aside, 0.0f, 500, 0, -100, 5, 4000));
+    draws.push_back(sizedDraw(&seen, 0.0f, -100, 5, 1000));
+    std::map<const void *, float> errs{{&aside, 0.03f}, {&seen, 0.03f}};
+
+    Render::PlanDemoteStats stats;
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                        2.0f, demoteErrs(errs), &stats,
+                                        20000);
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_EQ(tags[0], &aside);
+    EXPECT_EQ(stats.offscreen, 1u);
+    EXPECT_EQ(stats.underPressure, 0u);
+    EXPECT_EQ(stats.tooBig, 1u);
+    // Nothing visible was traded, so the plan ran at no error at all.
+    EXPECT_FLOAT_EQ(stats.acceptedErrorPx, 0.0f);
+}
+
+TEST(PlanMeshDemotes, anInstancedSourceIsChargedOncePerMesh)
+{
+    // Two rows of one proto share one upload. Summing per row would
+    // report twice what demoting it gives back, and a deficit priced
+    // that way stops half way -- the overstatement the far-field cut
+    // hit first (495 instanced submits for 5432 rows).
+    PlanCamera cam;
+    int proto = 0;
+    Render::DrawCallList draws;
+    draws.push_back(sizedDraw(&proto, 0.0f, -100, 5, 1000));
+    Render::DrawCall second = draws.front();
+    second.objectKey = 2;
+    second.bboxMin[0] += 20;
+    second.bboxMax[0] += 20;
+    draws.front().objectKey = 1;
+    draws.push_back(second);
+    std::map<const void *, float> errs{{&proto, 0.03f}};
+
+    Render::PlanDemoteStats stats;
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                        2.0f, demoteErrs(errs), &stats,
+                                        1000 * kVertBytes);
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_EQ(stats.bytesFreed, 1000 * kVertBytes);
+    EXPECT_EQ(stats.considered, 1u);
+}
+
+TEST(PlanMeshDemotes, pressurePricesASharedSourceByItsNeediestOwner)
+{
+    // The free tier's veto becomes a price: a proto with one near
+    // instance and one far one is not refused outright under pressure,
+    // it is simply expensive -- so a lone far source is spent first,
+    // and the proto only follows if the deficit is still open.
+    PlanCamera cam;
+    int proto = 0, lone = 0;
+    Render::DrawCallList draws;
+    Render::DrawCall nearRow = sizedDraw(&proto, 0.0f, -100, 5, 1000);
+    nearRow.objectKey = 1;
+    Render::DrawCall farRow = sizedDraw(&proto, 0.0f, -200, 5, 1000);
+    farRow.objectKey = 2;
+    draws.push_back(nearRow);
+    draws.push_back(farRow);
+    Render::DrawCall loneRow = sizedDraw(&lone, 0.0f, -200, 5, 1000);
+    loneRow.objectKey = 3;
+    draws.push_back(loneRow);
+    std::map<const void *, float> errs{{&proto, 0.03f}, {&lone, 0.03f}};
+
+    // Enough for one source: the cheap one, priced at its own 1.4 px,
+    // beats the proto priced at its near instance's 2.8 px.
+    Render::PlanDemoteStats stats;
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                        2.0f, demoteErrs(errs), &stats,
+                                        1000 * kVertBytes);
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_EQ(tags[0], &lone);
+    EXPECT_NEAR(stats.acceptedErrorPx, 1.42f, 0.1f);
+
+    // A deficit neither can cover alone takes both, worst last.
+    auto more = Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                        2.0f, demoteErrs(errs), nullptr,
+                                        1000 * kVertBytes + 1);
+    ASSERT_EQ(more.size(), 2u);
+    EXPECT_EQ(more[1], &proto);
 }

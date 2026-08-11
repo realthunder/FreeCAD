@@ -1191,23 +1191,54 @@ Render::CoverageHistogram Render::coverageHistogram(const DrawCallList &draws,
     return out;
 }
 
+namespace
+{
+
+/// One demotable source, priced: what dropping it would show and what
+/// it would give back. Accumulated over every draw carrying the tag,
+/// because the answer belongs to the source and the draws are only how
+/// it appears on screen.
+struct DemoteCandidate {
+    const void *tag = nullptr;
+    /// The coarse rung's error relative to the shape diagonal, as the
+    /// registry answered it -- asked once per source, not once per draw.
+    float coarseErr = 0.0f;
+    /// Largest projected coarse error over the source's owners, in
+    /// pixels -- what the neediest instance would show.
+    float errPx = 0.0f;
+    /// Resident bytes, per distinct mesh (see meshResidentBytes).
+    uint64_t bytes = 0;
+    /// Some owner is on screen: an all-off-screen source is free.
+    bool visible = false;
+    /// Some owner could not be judged (no bounds, or the camera inside
+    /// the box, where projected size is meaningless). Unpriceable, so
+    /// never dropped at any pressure -- a price nobody can compute is
+    /// not a licence to guess it low.
+    bool unpriceable = false;
+};
+
+}  // namespace
+
 std::vector<const void *> Render::planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
     const std::function<float(const void *)> &demoteErrOf,
-    PlanDemoteStats *stats)
+    PlanDemoteStats *stats, size_t deficitBytes)
 {
     std::vector<const void *> out;
     if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f
         || tolerancePx <= 0.0f || !demoteErrOf)
         return out;
     const PlanBoxes boxes(draws);
-    // A tag drops only when EVERY draw carrying it may — the mirror of
-    // the refine pass's union: a shared source stays exact for its
-    // neediest owner.
-    std::set<const void *> kept;
-    std::vector<const void *> candidates;
-    std::set<const void *> seen;
+    // Price every candidate first, decide after: which sources are
+    // worth dropping cannot be answered draw by draw once pressure is
+    // allowed to widen the selection, because the cheapest source is
+    // only known once they have all been seen.
+    std::vector<DemoteCandidate> cands;
+    std::map<const void *, size_t> index;
+    // Bytes belong to a mesh, not to a draw. An instanced source is one
+    // upload behind many rows, so the same MeshData is charged once.
+    std::set<std::pair<const void *, const MeshData *>> charged;
     for (const auto &draw : draws) {
         if (!draw.mesh)
             continue;
@@ -1217,45 +1248,91 @@ std::vector<const void *> Render::planMeshDemotes(
         // to (the registry answers its error; 0 = nothing resident).
         if (!mesh.sourceTag || mesh.levelError > 0.0f)
             continue;
-        if (kept.count(mesh.sourceTag))
-            continue;
-        if (stats)
-            ++stats->considered;
-        const float coarseErr = demoteErrOf(mesh.sourceTag);
-        if (coarseErr <= 0.0f) {
+        auto found = index.find(mesh.sourceTag);
+        if (found == index.end()) {
             if (stats)
-                ++stats->noRung;
-            continue;
+                ++stats->considered;
+            const float coarseErr = demoteErrOf(mesh.sourceTag);
+            if (coarseErr <= 0.0f) {
+                if (stats)
+                    ++stats->noRung;
+                // Remembered as a non-candidate so the registry is
+                // asked once per source rather than once per draw.
+                index.emplace(mesh.sourceTag, size_t(-1));
+                continue;
+            }
+            found = index.emplace(mesh.sourceTag, cands.size()).first;
+            DemoteCandidate cand;
+            cand.tag = mesh.sourceTag;
+            cand.coarseErr = coarseErr;
+            cands.push_back(cand);
         }
+        if (found->second == size_t(-1))
+            continue;
+        DemoteCandidate &cand = cands[found->second];
+        if (charged.emplace(mesh.sourceTag, &mesh).second)
+            cand.bytes += Render::meshResidentBytes(&mesh);
         const BoxSight sight = boxes.sight(draw, viewMatrix, projMatrix,
                                            viewportHeightPx);
-        // Off-screen frees outright; on screen only when the coarse
-        // rung clears the tolerance by the demote margin — at the
-        // refine boundary itself a drifting camera would trade a full
-        // tessellation back and forth across it.
-        const bool droppable = sight.what == BoxSight::Offscreen
-            || (sight.what == BoxSight::Visible
-                && coarseErr * sight.diagPx
-                    <= tolerancePx * kPlanDemoteMargin);
-        if (stats) {
-            if (!droppable)
-                ++stats->tooBig;
-            else if (sight.what == BoxSight::Offscreen)
-                ++stats->offscreen;
-            else
-                ++stats->eligible;
+        if (sight.what == BoxSight::Visible) {
+            cand.visible = true;
+            cand.errPx = std::max(cand.errPx,
+                                  cand.coarseErr * sight.diagPx);
         }
-        if (!droppable) {
-            kept.insert(mesh.sourceTag);
+        else if (sight.what != BoxSight::Offscreen)
+            cand.unpriceable = true;
+    }
+
+    // The free tier: nothing the camera can see changes. Off screen is
+    // free outright; on screen only when the coarse rung clears the
+    // tolerance by the demote margin -- at the refine boundary itself a
+    // drifting camera would trade a full tessellation back and forth
+    // across it.
+    const float freeErrPx = tolerancePx * kPlanDemoteMargin;
+    std::vector<const DemoteCandidate *> priced;
+    uint64_t freed = 0;
+    float accepted = 0.0f;
+    for (const DemoteCandidate &cand : cands) {
+        if (cand.unpriceable) {
+            if (stats)
+                ++stats->unpriceable;
             continue;
         }
-        if (!seen.count(mesh.sourceTag)) {
-            seen.insert(mesh.sourceTag);
-            candidates.push_back(mesh.sourceTag);
+        if (cand.visible && cand.errPx > freeErrPx) {
+            priced.push_back(&cand);
+            continue;
         }
+        if (stats)
+            ++(cand.visible ? stats->eligible : stats->offscreen);
+        out.push_back(cand.tag);
+        freed += cand.bytes;
+        accepted = std::max(accepted, cand.errPx);
     }
-    for (const void *tag : candidates)
-        if (!kept.count(tag))
-            out.push_back(tag);
+
+    // The priced tier: visible error, bought only with a deficit and
+    // only as much of it as the deficit needs. Cheapest first, so the
+    // tolerance rises no further than the budget forces it to.
+    std::stable_sort(priced.begin(), priced.end(),
+                     [](const DemoteCandidate *a, const DemoteCandidate *b) {
+                         return a->errPx < b->errPx;
+                     });
+    for (const DemoteCandidate *cand : priced) {
+        if (freed >= deficitBytes || !cand->bytes) {
+            // A source that frees nothing cannot close a deficit, and
+            // showing its coarse rung for nothing is a pure loss.
+            if (stats)
+                ++stats->tooBig;
+            continue;
+        }
+        if (stats)
+            ++stats->underPressure;
+        out.push_back(cand->tag);
+        freed += cand->bytes;
+        accepted = std::max(accepted, cand->errPx);
+    }
+    if (stats) {
+        stats->bytesFreed = freed;
+        stats->acceptedErrorPx = accepted;
+    }
     return out;
 }

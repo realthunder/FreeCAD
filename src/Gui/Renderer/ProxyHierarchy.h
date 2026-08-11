@@ -87,6 +87,21 @@ RendererExport BoxSight sightBounds(const float *bboxMin, const float *bboxMax,
                                     const float *V, const float *P,
                                     float viewportHeightPx);
 
+/// Bytes a mesh occupies once uploaded: positions, and whichever
+/// optional attribute arrays it actually carries, plus every index
+/// array. All topologies are counted, not just the one a given draw
+/// uses -- residency is a property of the mesh, and a mesh is uploaded
+/// whole.
+///
+/// Shared with the level plan (SceneLadder.h, planMeshDemotes) so that
+/// what a far-field cut says it would free and what a demotion says it
+/// frees are the same number computed once, rather than two estimates
+/// that drift apart. Callers that sum it over draws must dedupe by mesh
+/// first: 495 instanced submits stand in for 5432 rows on the model this
+/// was measured on, and charging each row would overstate residency
+/// several times over.
+RendererExport uint32_t meshResidentBytes(const MeshData *m);
+
 /// Whether any corner of the box lies at or beyond the near plane.
 ///
 /// Not a visibility question: it is what says an occlusion query

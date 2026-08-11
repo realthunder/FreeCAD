@@ -265,12 +265,15 @@ void MeshSourceRegistry::dropHiddenLevels()
         fn();
 }
 
-void MeshSourceRegistry::observeMemoryCeiling()
+void MeshSourceRegistry::observeMemoryCeiling(size_t shortfallBytes)
 {
     ++ceilingEpoch;
+    ceilingShortfall = shortfallBytes;
     std::fprintf(stderr,
-                 "mesh source: memory ceiling observed (epoch %llu)\n",
-                 static_cast<unsigned long long>(ceilingEpoch.load()));
+                 "mesh source: memory ceiling observed (epoch %llu, "
+                 "shortfall %.1fMB)\n",
+                 static_cast<unsigned long long>(ceilingEpoch.load()),
+                 double(shortfallBytes) / 1048576.0);
 }
 
 bool MeshSourceRegistry::generate(const std::string &key, uint32_t level,

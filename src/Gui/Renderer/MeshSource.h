@@ -220,8 +220,19 @@ public:
     /// level plan from then on also demotes what the camera would not
     /// miss. The epoch lets the planner replan promptly on a new
     /// observation.
-    void observeMemoryCeiling();
+    ///
+    /// \a shortfallBytes is how much memory the observer wanted back --
+    /// the floor less what the system had free. It is what lets the
+    /// plan trade *visible* error for memory, and only as much of it as
+    /// the shortfall needs (planMeshDemotes' priced tier); a ceiling
+    /// observed without a quantity behind it (a bad_alloc says only
+    /// "no") passes 0, and the plan stays inside its free tier.
+    /// Freshest observation wins rather than the largest: the shortfall
+    /// is a statement about memory now, and a stale one would keep
+    /// demoting against pressure that has passed.
+    void observeMemoryCeiling(size_t shortfallBytes = 0);
     uint64_t memoryCeilingEpoch() const { return ceilingEpoch; }
+    size_t memoryShortfall() const { return ceilingShortfall; }
 
 private:
     struct Source {
@@ -240,6 +251,7 @@ private:
     std::map<const void *, Source> sources;
     std::unordered_map<std::string, const void *> keys;
     std::atomic<uint64_t> ceilingEpoch {0};
+    std::atomic<size_t> ceilingShortfall {0};
     /// See generation(). Bumped by every add() and remove(), which are
     /// the only things that can change what publishedError() answers.
     std::atomic<uint32_t> registryGen {0};
