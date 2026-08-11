@@ -5,13 +5,21 @@ Status: **plan**, plus the instruments it needs. Built so far:
 (per-pass CPU/GPU cost), and `FC_NO_AUDIT=1` in the harness. No
 submission route has been changed yet.
 
-**IMPORTANT: the baseline was corrected on 2026-08-11 and the frame was
-then measured properly. At the DEFAULT culling config it is 12850 draws
-in a 50.6 ms frame -- not 30577 in 76 ms, which was the culling-OFF
-validation row with the cull audit inflating it. The CPU splits 38% our
-own C++ / 32% bgfx backend / 30% Coin+Qt, and 80% of our share does not
-scale with draw count. Read "The measured problem" and the two sections
-under it before spending any number on this page.**
+**IMPORTANT -- read before spending any number on this page.**
+
+**1. Numbers taken under `vglrun`/Xvfb are NOT frame costs.** Every
+measurement here predating the native run was, and the harness moved the
+frame 50.6 -> 33.3 ms and one span by 19x. Frame timings need the native
+session with the monitor on. The VirtualGL recipe is still correct for
+"is it the real GPU" -- it is -- but not for "what does a frame cost".
+
+**2. The native baseline (default culling row, 12850 draws):**
+frame **33.3 ms** = Coin+Qt **47%** / bgfx backend **33%** / our own C++
+**20%**. See "MEASURED NATIVELY".
+
+**3. The original headline was wrong twice**: "30577 draws, 32 ms, 76 ms"
+was the culling-OFF validation row *with* the cull audit inflating it.
+Always state the culling config and the audit setting with any number.
 
 This is the workstream that follows occlusion culling, and it starts
 where `docs/FarFieldProxies.md` §12.19 ends: both sides of box-based
