@@ -36,8 +36,8 @@
 # 5455 objects -- it is not in this repository); FC_ROWS the settings to
 # measure, FC_SETTLE the seconds per row, FC_OUT/FC_LOG/FC_SHOTS where the
 # results go. A row is `<ttl>/<confirm>` for the hardware oracle or
-# `sw/<divisor>/<tris>/<threads>/<simd>/<coarse>/<level>/<bias>` for the
-# software one (#12.12, coarse hulls #12.16).
+# `sw/<divisor>/<tris>/<threads>/<simd>/<coarse>/<level>/<bias>/<perinst>`
+# for the software one (#12.12, coarse hulls #12.16, per-instance #12.17).
 #
 # /!\ GIVE EVERY FIELD OF A SOFTWARE ROW EXPLICITLY. The rows set view
 # properties and nothing resets them, so an omitted field silently
@@ -323,7 +323,11 @@ def run():
             got_parts = [spread("hidden", r"instances hidden (\d+)"),
                          spread("drawn", r"instances hidden \d+ / drawn (\d+)"),
                          spread("nodeshidden", r"nodes visited \d+ hidden (\d+)"),
-                         spread("occluders", r"occluders (\d+) of \d+ draws")]
+                         spread("occluders", r"occluders (\d+) of \d+ draws"),
+                         # What the per-instance pass added on its own
+                         # (#12.17), and what it cost to ask.
+                         spread("perinsthid", r"perinst tested \d+ hid (\d+)"),
+                         spread("perinsttested", r"perinst tested (\d+)")]
             got_parts = [p for p in got_parts if p]
             if got_parts:
                 emit("    culled over %d samples, min/med/max: %s"
@@ -406,14 +410,21 @@ def run():
                 coarse = parts[5] if len(parts) > 5 and parts[5] else ""
                 level = parts[6] if len(parts) > 6 and parts[6] else ""
                 bias = parts[7] if len(parts) > 7 and parts[7] else ""
-                label = "software%s%s%s%s%s%s%s" % (
+                # Per-instance testing (#12.17): ask the occlusion
+                # question of each object rather than of the group it
+                # was partitioned into. Same buffer, same frame, finer
+                # granularity -- so the over-cull gate applies to it
+                # exactly as it does to everything else here.
+                perinst = parts[8] if len(parts) > 8 and parts[8] else ""
+                label = "software%s%s%s%s%s%s%s%s" % (
                     " div %s" % div if div else "",
                     " tris %s" % tris if tris else "",
                     " thr %s" % thr if thr else "",
                     " simd %s" % simd if simd else "",
                     " coarse %s" % coarse if coarse else "",
                     " lvl %s" % level if level else "",
-                    " bias %s" % bias if bias else "")
+                    " bias %s" % bias if bias else "",
+                    " perinst %s" % perinst if perinst else "")
             else:
                 ttl, _, confirm = spec.partition("/")
                 label = "ttl %s confirm %s" % (ttl, confirm or "-")
@@ -437,6 +448,8 @@ def run():
                     v.Render_OcclusionCoarseLevel = int(level)
                 if bias:
                     v.Render_OcclusionCoarseBias = int(bias)
+                if perinst:
+                    v.Render_OcclusionPerInstance = bool(int(perinst))
             else:
                 v.Render_OcclusionVisibleTtl = int(ttl)
                 if confirm:

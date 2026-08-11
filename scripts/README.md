@@ -167,8 +167,9 @@ env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb \
 ```
 
 Each row is a setting: `<ttl>/<confirm>` for the hardware-query oracle,
-`sw/<divisor>/<tris>/<threads>/<simd>/<coarse>/<level>/<bias>` for the CPU
-masked buffer (the last three are the coarse occluder hulls of §12.16).
+`sw/<divisor>/<tris>/<threads>/<simd>/<coarse>/<level>/<bias>/<perinst>` for
+the CPU masked buffer (coarse occluder hulls §12.16, per-instance testing
+§12.17).
 **Give every field of a software row** — the rows set view properties and
 nothing resets them, so an omitted field inherits the previous row's value.
 

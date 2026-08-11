@@ -276,12 +276,25 @@ honest, separately from the verdicts:
   Non-zero `refused` means the backend's pool is too small for the budget.
 
 The software oracle prints a different right-hand half — it has no
-queries to account for — ending in the coarse occluder hulls
-(docs/FarFieldProxies.md §12.16):
+queries to account for — carrying the granularity the question was asked
+at (§12.17) and the coarse occluder hulls (§12.16):
 
 ```
+| perinst tested N hid K redundant R in Z ms
 | hulls C of D draws, saved T tris (held H, built B, pending P, X MB, Y ms)
 ```
+
+- **hid** is the whole of what per-instance testing buys: draws whose own
+  box is covered, sitting in a group that had already answered visible.
+  Read it against `instances hidden` on the left — measured, it is 17% of
+  the total on the benchmark, for 0.4 ms.
+- **redundant** counts nodes holding one instance and nothing below them,
+  whose content box *is* that instance's box, so the answer was already
+  taken. ⚠️ A partition fine enough to make every leaf a single instance
+  drives `tested` to zero and `redundant` to everything — the node walk is
+  then already per-instance and there is nothing left to ask. That is a
+  correct reading, not a broken one, and it is what a unit test with
+  `maxPerCell = 1` measures.
 
 - **C of D** is how much of the pass ran on hulls rather than on meshes,
   and **saved** is the budget those draws did not spend — which is the

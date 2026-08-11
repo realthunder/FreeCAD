@@ -2919,3 +2919,104 @@ what makes the hull *provably* unable to claim to be nearer than its
 surface; a camera that finds a concave bulge would over-cull without it,
 and this workstream has already spent three sections on geometry deleted
 by an occlusion test that was right on the cameras it was tried on.
+
+### 12.17 built: asking the question per object instead of per group
+
+Section 12.16 ended by naming the limit: the walk tests *nodes*, a node is
+skipped only when all of it is hidden, and 91% of what a cull still
+submits reaches no pixel. This is that gap closed at the point it opens.
+
+`MaskedCullConfig::testInstances` (`Render_OcclusionPerInstance`). When a
+node answers visible, its residents are collected rather than waved
+through, and after the descent each is tested against the same buffer
+with its own box.
+
+KEY: **Everything that made this cheap was already there.** The test is
+read-only against a buffer nothing writes to any more, one box per
+instance, one distinct draw row each (`proxyInstances` emits one instance
+per row) -- so the tests are independent, need no lock, and run on the
+worker threads the rasterization already spawns. There is no new state,
+no verdict carried across a frame, and nothing the backend has to
+support: the reason section 12.12 moved the oracle to the CPU is the same
+reason this costs a loop rather than an architecture.
+
+Two properties keep it one-directional, which is the only thing that
+matters here:
+
+- an instance test is the *same* conservative test the node got, so it
+  can only ever answer `Occluded` where the pixels really are covered;
+- a self-occlusion tie answers **visible** (`MaskedDepth::testRect`),
+  which is what lets an instance be tested against a buffer its own
+  surface is already in -- the failure that sank the hardware path
+  (section 12.6) cannot arise here.
+
+**The redundancy that is worth skipping.** A node holding one instance
+and nothing below it has that instance's box for its content box, so its
+test *is* the instance's test and re-asking spends a projection to learn
+what is already known. Counted as `instancesRedundant`. WARNING: This is
+also why a test harness with `maxPerCell = 1` measures nothing -- every
+leaf is then a single instance, the node walk already *is* a per-instance
+walk, and the pass correctly finds nothing left to ask. The first draft
+of the unit test did exactly that and reported a working mechanism
+hiding nothing.
+
+#### Why this is not the same as lowering `maxPerCell`
+
+A finer partition would also test smaller groups, and it is the obvious
+alternative. It is the worse one, in both directions at once: it makes
+the tree deeper and the descent more expensive for *every* frame, and
+section 8.1 wants nodes **large** because a node is the size of a pop when
+the far-field proxies of this document switch. This mode leaves the tree
+alone -- coarse, cheap to walk, good at pruning whole subtrees -- and
+pays a flat per-instance test only for what survives the walk. The two
+knobs are independent, and only this one is free of the pop question.
+
+#### measured: 17% more hidden for 0.4 ms, and it over-culls nothing
+
+Same rack model, camera and instrument as section 12.16; 28-30 audit
+samples per row. Every row **over-cull 0 px** at min, median and max, and
+**0 of 1440000 pixels differ**.
+
+| | hidden | nodes hidden | occluders | walk med | still invisible |
+|---|---|---|---|---|---|
+| per node | 7974 | 203 | 37 | 0.48 | 8939 of 9753 (91.7%) |
+| per **instance** | **9345** (+17.2%) | 203 | 37 | 0.90 | 7568 of 8382 (90.3%) |
+| per instance + hulls | 9501 (+19.1%) | 230 | 373 | 0.93 | 7412 of 8226 (90.1%) |
+
+⭐⭐ **Nodes hidden, occluders admitted and triangles rasterized are
+identical between the first two rows.** Granularity is the only variable,
+and it is worth **1371 draws** -- every one of them a draw whose own box
+is provably covered, sitting in a group that had answered visible. The
+per-instance pass costs **0.42 ms** of the 9752 tests it ran.
+
+Against section 12.16's arm, at one camera: **+17.2% for 0.42 ms** where
+ten times the occluders bought +3.1% for 3.4 ms. Roughly five times the
+benefit at an eighth of the cost. Priced by section 12.12's own measured
+rate for what a hidden draw saves in submission (4.9 ms per 7974), the
+1371 extra are worth ~0.84 ms against 0.42 ms spent -- the first change
+in this section that pays for itself rather than breaking even.
+
+⇒ **On by default.** It cannot be less correct than the node test it
+refines: a draw is skipped when its own box is covered, rather than when
+its neighbours' collectively are. WARNING: One camera on one model, like
+every number in this section.
+
+The hulls of section 12.16 add +156 on top of this and still cost their
+3.4 ms, which does not change their verdict.
+
+#### KEY: what is left, and it is the query volume now
+
+7568 draws still reach no pixel while being submitted -- 90% of what is
+drawn, barely moved. But the reason has changed, and the new one is
+visible in the arithmetic: 9752 instances were tested individually and
+only 1371 came back hidden. **These draws are individually invisible and
+their bounding boxes are individually not covered.** A box is a loose
+stand-in for a thin bracket or an L-shaped chassis panel: the geometry
+reaches no pixel, the box does.
+
+So the limit has moved from the *granularity* of the query to the
+*volume* being queried, which is a different fix and a known one -- test
+the occludee's own geometry rather than its box. That is what the coarse
+hulls built in section 12.16 already are, and testing a few hundred hull
+triangles instead of six box faces is the standard occludee-geometry
+trade. It is the first use for them that their measurement supports.
