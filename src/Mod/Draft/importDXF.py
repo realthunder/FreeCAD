@@ -85,10 +85,11 @@ dxfReader = None
 dxfColorMap = None
 dxfLibrary = None
 
-# Save the native open function to avoid collisions
-# with the function declared here
-if open.__module__ in ['__builtin__', 'io']:
-    pythonopen = open
+# Save the native open function to avoid a collision with the function
+# declared here. The guard this replaces tested the Python 2 spelling of
+# open.__module__ and so never ran on Python 3 -- see importSVG.py.
+import builtins
+pythonopen = builtins.open
 
 
 def errorDXFLib(gui):

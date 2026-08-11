@@ -74,9 +74,16 @@ else:
     gui = False
     draftui = None
 
-# Save the native open function to avoid collisions
-if open.__module__ in ['__builtin__', 'io']:
-    pythonopen = open
+# Save the native open function to avoid a collision with the open()
+# this module defines further down.
+#
+# What stood here tested open.__module__ against the Python 2 spelling
+# ('__builtin__', or 'io'). On Python 3 it reads '_io', so the guard was
+# false, pythonopen was never assigned, and every use of it raised
+# NameError -- loading the SVG hatch patterns among them, which is the
+# first thing a Draft object asks for in the GUI.
+import builtins
+pythonopen = builtins.open
 
 svgcolors = {
     'Pink': (255, 192, 203),

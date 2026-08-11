@@ -50,9 +50,12 @@ else:
     def translate(context, txt):
         return txt
 
-# Save the native open function to avoid collisions
-if open.__module__ == '__builtin__':
-    pythonopen = open
+# Save the native open function to avoid a collision with the open()
+# this module defines further down. The guard this replaces tested the
+# Python 2 spelling of open.__module__ and so never ran on Python 3 --
+# see importSVG.py.
+import builtins
+pythonopen = builtins.open
 
 
 def open(filename):
