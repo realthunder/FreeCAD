@@ -14972,10 +14972,18 @@ public:
         frameNum = timedBgfxFrame();
 #else
         widget->doneCurrent();
+        cpuMark(CpuCtxDone);
         _BGFXLib.makeCurrent();
+        cpuMark(CpuCtxOut);
         frameNum = timedBgfxFrame();
+        // bgfx::frame() has its own timer; restart the chain past it so
+        // it is not counted twice.
+        if (debugconf.frameTiming)
+            cpuMarkT = bx::getHPCounter();
         widget->makeCurrent();
+        cpuMark(CpuCtxIn);
         view->blit(dumpPending ? &pendingDump : nullptr, &lastStats);
+        cpuMark(CpuBlit);
         if (dumpPending && !pendingDump.overlays) {
             // That frame went to the screen as well as to the capture, and
             // it is missing the chrome the capture asked to leave out. It
@@ -15062,17 +15070,22 @@ public:
                 // is not to be believed.
                 const double unattr = post - phaseMs[CpuPostCaps]
                     - phaseMs[CpuPostEffects] - phaseMs[CpuPostSel]
-                    - phaseMs[CpuPostTail];
+                    - phaseMs[CpuPostTail] - phaseMs[CpuCtxOut]
+                    - phaseMs[CpuCtxIn] - phaseMs[CpuBlit]
+                    - phaseMs[CpuCtxDone];
                 Base::Console().Message(
                         "render cpu phases (ms/frame): pre %.2f | cull %.2f | "
                         "submitloop %.2f | post %.2f [caps %.2f effects %.2f "
-                        "sel %.2f tail %.2f unattr %.2f] | bgfx::frame %.2f | "
-                        "ours %.2f\n",
+                        "sel %.2f tail %.2f done %.2f ctxout %.2f ctxin %.2f blit %.2f "
+                        "unattr %.2f] | bgfx::frame %.2f | ours %.2f\n",
                         pre / f, phaseMs[CpuCull] / f,
                         phaseMs[CpuSubmitLoop] / f, post / f,
                         phaseMs[CpuPostCaps] / f, phaseMs[CpuPostEffects] / f,
                         phaseMs[CpuPostSel] / f, phaseMs[CpuPostTail] / f,
-                        unattr / f, bgfxMs / f, ourMs / f);
+                        phaseMs[CpuCtxDone] / f,
+                        phaseMs[CpuCtxOut] / f, phaseMs[CpuCtxIn] / f,
+                        phaseMs[CpuBlit] / f, unattr / f, bgfxMs / f,
+                        ourMs / f);
             }
             // ⭐ Where the frame line's milliseconds actually go, per
             // pass, for both processors (docs/DrawSubmission.md phase
@@ -15795,8 +15808,17 @@ public:
     /// guards that are off on this camera, and the three that do run
     /// short-circuit per row. Counting loops in the source is not
     /// measuring them.
+    ///
+    /// CpuCtxOut / CpuCtxIn / CpuBlit are the desktop hand-off around
+    /// bgfx::frame(): drop the Qt GL context, take bgfx's, and after the
+    /// frame take Qt's back and copy bgfx's target into the widget. The
+    /// comment on timedBgfxFrame calls these "Qt's cost, not bgfx's" and
+    /// excludes them from the bgfx figure -- which is right, and is
+    /// exactly why they need a number of their own. They are flat per
+    /// frame, which is the shape the fixed cost has.
     enum CpuPhase { CpuCull, CpuSubmitLoop, CpuPreSubmit,
                     CpuPostCaps, CpuPostEffects, CpuPostSel, CpuPostTail,
+                    CpuCtxOut, CpuCtxIn, CpuBlit, CpuCtxDone,
                     CpuPhaseCount };
     int64_t renderInnerT0 = 0;
     /// Running checkpoint for the Post* phases: each mark closes the

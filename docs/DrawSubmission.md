@@ -190,10 +190,51 @@ believed) rather than explained again from reading.
 `pre`, by contrast, scales properly: 1.90 ms at 12850 draws against
 6.38 ms at 30578, because the instance-group work is per visible member.
 
-**So the target is located but not yet named:** ~13 ms/frame, a quarter
-of the frame, somewhere in the post-submit region, flat in draw count.
-It is worth more than phases 1-3 combined and it is not a submission
-problem. What it is remains open until the subdivision is run.
+### NAMED: it is the Qt <-> bgfx GL context switch
+
+The subdivision was run, and the first result was that the four spans
+accounted for **0.6 ms of the 12.9** -- `unattr` came back at 12.34. The
+residual earned its place immediately: `post` is *derived*
+(`ours - pre - submitloop - bgfx::frame`), so it also contains everything
+**after** `bgfx::frame()` returns, which no checkpoint covered. The cost
+was never in the pass region at all.
+
+Instrumenting the hand-off around `bgfx::frame()` closes it (`unattr`
+now -0.11 to +0.05, so the split is complete):
+
+| span | ms | what it is |
+|---|---|---|
+| `widget->doneCurrent()` | **5.15** | release the Qt GL context |
+| `_BGFXLib.makeCurrent()` | **7.16** | make bgfx's context current |
+| `widget->makeCurrent()` | 0.08 | take Qt's back afterwards |
+| `view->blit(...)` | 0.03 | copy bgfx's target into the widget |
+| everything in the pass region | 0.64 | caps, effects, sel, tail |
+
+**12.3 ms/frame -- 24% of the frame -- is one GL context switch.** It is
+flat in draw count because a context switch does not care what the scene
+contains, which is exactly the signature the fixed cost had.
+
+Note what this does to the earlier reasoning: the comment on
+`timedBgfxFrame` excludes these calls from the bgfx figure on the grounds
+that they are "Qt's cost, not bgfx's". That was correct, and it is
+precisely why they needed a number of their own -- excluded from one
+bucket and never given another, they were invisible in every readout.
+
+**Why the switch exists, and what removes it.** bgfx owns a GL context
+separate from the Qt widget's, so a frame must go Qt (Coin) -> bgfx ->
+Qt. The blit itself is free (0.03 ms); it is the two context
+transitions that cost. => This is the same architectural knot the Vulkan
+section reaches: **while Coin composites into the viewport, the frame
+pays a context round-trip.** Removing it is worth 24% of the frame on
+its own, before any submission work.
+
+!! **Confirm on a native session before optimizing.** Every number here
+was taken under `vglrun -d egl0` on Xvfb (the monitor-off recipe), and
+GL context switching is exactly the operation an indirect-rendering
+layer is most likely to make expensive. A 12 ms context switch is
+extreme for a native driver. **This is the one finding on this page most
+likely to be a harness artifact, and it must be re-taken on a real
+desktop session before a line of code is changed for it.**
 
 ### The GPU half: primitives explain it better than draws
 
