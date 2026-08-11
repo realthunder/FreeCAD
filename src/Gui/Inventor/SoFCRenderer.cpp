@@ -676,7 +676,20 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
   {
     static bool hasBlendColor = true;
     GLenum sfactor = GL_SRC_ALPHA, dfactor = GL_ONE_MINUS_SRC_ALPHA;
-    if (hasBlendColor && overrideflags.test(Material::FLAG_TRANSPARENCY)) {
+    // A constant-alpha blend is only worth asking for when the geometry
+    // carries per-vertex colors: that is the one case where the vertices'
+    // own alphas would otherwise win over the override. Without them every
+    // fragment already takes its alpha from the glColor4ub above, which is
+    // the same number the blend color would carry, so the two blends are
+    // arithmetically identical and only one of them is portable.
+    //
+    // Mesa's d3d12 driver (WSLg) accepts glBlendColor and reports it back
+    // through GL_BLEND_COLOR, then blends as though the constant were
+    // zero, which drops the draw entirely. Since FLAG_TRANSPARENCY is set
+    // only when alpha != 0xff, that turned every partially transparent
+    // on-top object invisible there while a fully opaque one still drew.
+    if (hasBlendColor && next.pervertexcolor
+        && overrideflags.test(Material::FLAG_TRANSPARENCY)) {
 #ifdef FC_OS_WIN32
       static PFNGLBLENDCOLORPROC glBlendColor;
       if (hasBlendColor && !glBlendColor) {
