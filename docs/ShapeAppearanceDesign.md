@@ -201,6 +201,52 @@ as in Coin.
   would need changes in Coin (which we fork) or in the bgfx backend, and
   that is a separate piece of work with its own justification.
 
+### 5.2 No exporter consumes the extra fields either
+
+An earlier draft of this document justified keeping the full material
+per face partly on glTF export round-tripping it. That is wrong, and the
+two halves have to be separated:
+
+- **OCCT can.** `XCAFPrs_Style` carries a whole
+  `XCAFDoc_VisMaterial` (`Material()` / `SetMaterial()`), and
+  `RWGltf_CafWriter` merges faces into primitives keyed by style
+  (`NCollection_DataMap<XCAFPrs_Style, Handle(RWGltf_GltfFace)>`), which is
+  exactly how per-face materials are expressed in glTF, since glTF binds one
+  material per primitive rather than per triangle.
+- **FreeCAD does not feed it.** `ExportOCAF2` only ever calls
+  `aColorTool->SetColor(...)`, and outside `ReaderGltf.cpp` there is no
+  reference to `XCAFDoc_VisMaterial` or `VisMaterialTool` anywhere in
+  `src/Mod/Import`. Export emits per-face *colours* into the colour tool.
+  The OCCT capability sits unused.
+
+So the tally for the four non-diffuse fields, per face: Coin does not render
+them, the bgfx backend does not render them, STEP import never produces
+them, and glTF export does not write them. The only things that consume a
+full per-face material today are the appearance UI and the property's own
+round-trip through the document.
+
+### 5.3 Upstream knows, and has it filed as a bug
+
+Not merely known -- reported, and still open. Issue #15181, "ShapeAppearance
+does not handle emissive color per face correctly", describes the symptom
+precisely: *the emissive colour of the first material in the list is used
+for the whole object*. That is `emissiveColor[0]` in
+`SoMaterial::doAction`, observed from the outside. Related: #14940 ("set
+appearance per face is confusing"), #14938, #15170.
+
+The forum answer to the same question is blunter: only diffuse is kept per
+face, and there is no way to set the others per face from Python without
+modifying the Coin node by hand.
+
+Worth noting for us specifically: upstream **cannot** fix this cheaply,
+because they consume Coin as an external dependency. We fork Coin. If
+per-face specular or emissive is ever wanted here, extending
+`SoLazyElement` to take those as pointer-plus-count -- the way it already
+does for diffuse and transparency -- is open to this fork and closed to
+them. That is an argument for the per-field layout on its own: the day
+those become renderable, `_specular` and `_emissive` grow to N and nothing
+above the storage changes.
+
 ## 6. Staging
 
 1. ~~Probe risk 2~~ -- answered from the Coin source (section 5.1); the
