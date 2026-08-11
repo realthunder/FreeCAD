@@ -439,7 +439,16 @@ void StartView::fileCardSelected(const QModelIndex& index)
     auto file = index.data(static_cast<int>(Start::DisplayedFilesModelRoles::path)).toString();
     std::string escapedstr = Base::Tools::escapedUnicodeFromUtf8(file.toStdString().c_str());
     escapedstr = Base::Tools::escapeEncodeFilename(escapedstr);
-    auto command = std::string("FreeCAD.loadFile('") + escapedstr + "')";
+    // FreeCADGui.loadFile, not FreeCAD.loadFile: the App-level one goes straight
+    // to <module>.openDocument(), which throws when that document is already
+    // open -- and a card for an open document is exactly what a user clicks by
+    // mistake. Gui::Application::open() looks for a document already holding
+    // this file path and reloads it instead (cc2f2151d5, which is why the old
+    // web start page's LoadMRU.py called the Gui one). It also does the rest of
+    // what opening from the UI means: dropping the empty untouched startup
+    // document, adding the file to the recent list, moving the file dialog's
+    // working directory, and fitting the view for an imported, non-FCStd file.
+    auto command = std::string("FreeCADGui.loadFile('") + escapedstr + "')";
     try {
         Base::Interpreter().runString(command.c_str());
         postStart(PostStartBehavior::doNotSwitchWorkbench);
