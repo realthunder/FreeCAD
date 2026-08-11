@@ -247,16 +247,151 @@ them. That is an argument for the per-field layout on its own: the day
 those become renderable, `_specular` and `_emissive` grow to N and nothing
 above the storage changes.
 
-## 6. Staging
+## 6. The plan
 
-1. ~~Probe risk 2~~ -- answered from the Coin source (section 5.1); the
-   layout needs no expansion path.
-2. `App::PropertyMaterialList` with the layout above, full upstream API,
-   upstream save/restore format. Unit-testable without any view provider.
-3. `ShapeAppearance` on `Gui::ViewProviderGeometryObject`, with
-   `ShapeColor`/`ShapeMaterial` kept as compatibility accessors over it, and
-   the restore-time migration.
-4. `ViewProviderPartExt`: `DiffuseColor` becomes a view onto `_diffuse`;
-   reconcile the fork's Map* properties.
-5. Python emulation of `DiffuseColor`/`ShapeColor`, then run the existing
-   probe suites plus a document round-trip against an upstream-written file.
+Five stages, in the order they must land. Each is independently useful and
+independently verifiable; none breaks the document format, which stays
+upstream's throughout.
+
+The invariant that holds it together: **storage is per-field arrays sized
+0, 1 or N, and each stage simply lets more of those arrays legitimately
+reach N.** Stage 1 makes N storable, stage 2 makes it survive traversal,
+stage 3 makes it visible, stages 4 and 5 make it arrive and leave through
+file formats. Nothing above the storage layer changes shape again after
+stage 1.
+
+### Stage 1 -- storage
+
+`App::PropertyMaterialList` with the layout in section 3: the full upstream
+API, upstream's save/restore format, per-field arrays underneath.
+
+- Do not inherit `PropertyListsT<Material>` (risk 1): it owns a concrete
+  `_lValueList` and `getValues()` is non-virtual. Implement the interface
+  directly and serve `getValues()` from a `mutable` cache built on demand,
+  dropped on write.
+- `ShapeAppearance` on `Gui::ViewProviderGeometryObject`;
+  `ShapeColor`/`ShapeMaterial` become compatibility accessors over it, which
+  also retires the three-way hand-written sync at
+  `ViewProviderGeometryObject.cpp:154-175`.
+- `ViewProviderPartExt`: `DiffuseColor` becomes a view onto `_diffuse`.
+  Reconcile the fork's `MappedColors` / `Map*Color` / `MapTransparency`.
+- Restore-time migration (`handleChangedPropertyName`) plus the Python
+  emulation of `DiffuseColor` and `ShapeColor`.
+
+Verifiable without any view provider or GPU: unit tests for cardinality
+transitions (0 -> 1 -> N and back), plus a document round-trip against a
+file written by upstream FreeCAD.
+
+### Stage 2 -- Coin carries the information through
+
+**Scope: make Coin a faithful carrier, not a renderer of per-face
+materials.** Coin's own GL path may keep using index 0 for the four
+non-diffuse fields; the fork does not care, because the bgfx backend is the
+work horse. What matters is that the per-face arrays survive traversal and
+reach the render-cache callback intact.
+
+Today they do not: `SoFCRenderCache` reads
+`SoLazyElement::getDiffuse(state, 0)` and the scalar `getAmbient` /
+`getSpecular` / `getEmissive` / `getShininess`
+(`SoFCRenderCache.cpp:442-451`), because those are all `SoLazyElement`
+offers. The information is destroyed at the element boundary, not at the
+renderer.
+
+So the Coin-side change is additive plumbing:
+
+- extend `SoLazyElement`'s state to keep pointer-plus-count for ambient,
+  specular, emissive and shininess alongside the existing diffuse and
+  transparency arrays;
+- extend `SoLazyElement::setMaterials` (or add an overload) so
+  `SoMaterial::doAction` can pass the whole fields instead of `[0]`;
+- add indexed getters so a traversal can ask for entry i.
+
+Deliberately **not** in scope: `SoGLLazyElement`'s send path. Per-face
+diffuse is cheap there because it is a vertex attribute
+(`glColor4ub` under `glColorMaterial`), whereas ambient, specular and
+emissive go through `glMaterialfv` and shininess through `glMaterialf`,
+which are GL *state* changes -- one per face would break batching, VBOs and
+display lists. That is why Open Inventor only ever indexed diffuse, and it
+is a fixed-function limitation we have no reason to fight. If Coin's own
+renderer ever needs it, the right shape is to group faces into runs sharing
+a material and emit one `glMaterialfv` set per run, the same trick OCCT's
+glTF writer uses.
+
+- ⚠️ Changing `SoLazyElement`'s layout is a Coin ABI break: **pivy must be
+  rebuilt**, and `coin3d-feedstock` / `pivy-feedstock` move together.
+- Verify by reading the values back through the callback, not by looking at
+  a picture; Coin's own output is expected to be unchanged at this stage.
+
+### Stage 3 -- bgfx renders it
+
+Where per-face material is actually cheap: no GL state changes, just a
+material index per primitive resolved in the shader.
+
+- `SoFCRenderCache::Material` currently holds one `uint32_t` each for
+  diffuse, ambient, emissive and specular plus a single `shininess`. Extend
+  it to carry an optional per-part material index, keeping the single-value
+  case exactly as it is so uniform objects change neither in size nor in
+  code path.
+- Feed the arrays picked up in stage 2 into the backend as a material table
+  plus per-primitive indices. The existing per-face colour machinery and the
+  TShape instancing work in `docs/TShapeRenderCache.md` are the model to
+  follow.
+- ⚠️ Re-check merge and dedup behaviour in the render cache (risk 3):
+  per-face colour already fragments it, so measure whether widening changes
+  anything rather than assuming it does.
+- Verify with the A/B harness against the glr and Coin legs, remembering
+  that only bgfx is expected to show per-face specular.
+
+### Stage 4 -- glTF, both directions
+
+The format and OCCT both support this fully; only FreeCAD's wiring is
+missing.
+
+- **Import.** `ReaderGltf.cpp:112` already fetches the
+  `XCAFDoc_VisMaterial` per face label, then keeps only `BaseColor()` and
+  writes it into the colour tool -- its own comment explains why: *"the
+  ImportOCAF(2) class expects color labels. Thus, the material labels are
+  converted into color labels."* After stage 1 that downgrade is no longer
+  necessary: carry the material through into `ShapeAppearance`.
+- **Export.** Nothing in `src/Mod/Import` outside `ReaderGltf.cpp` so much
+  as mentions `XCAFDoc_VisMaterial`; `ExportOCAF2` only calls
+  `aColorTool->SetColor(...)`. Populate `XCAFDoc_VisMaterialTool` from
+  `ShapeAppearance`. `RWGltf_CafWriter` then does the rest for free: it
+  merges faces into primitives keyed by `XCAFPrs_Style`
+  (`NCollection_DataMap<XCAFPrs_Style, Handle(RWGltf_GltfFace)>`), which is
+  exactly how glTF expresses per-face materials, since it binds one material
+  per primitive.
+- Verify by round-tripping a multi-material glTF out and back in, comparing
+  materials per face rather than pixels.
+
+### Stage 5 -- STEP, both directions
+
+Feasible on both ends. OCCT already has every primitive; the reader simply
+discards what it builds.
+
+- **Import.** `STEPCAFControl_Reader` constructs a
+  `STEPConstruct_RenderingProperties` per style and then keeps only
+  `GetRGBAColor()`. That class already offers `IsMaterialConvertible()` and
+  `CreateXCAFMaterial()`, which returns an `XCAFDoc_VisMaterialCommon`. Call
+  them and populate `XCAFDoc_VisMaterialTool` instead of collapsing to a
+  colour. This is an OCCT fork change and a good upstreaming candidate.
+- **Export.** `STEPCAFControl_Writer` already takes a `theVisMaterialMode`
+  and writes `STEPConstruct_RenderingProperties` built from
+  `aStyle.Material()` when it is set. Mostly a matter of feeding styles that
+  carry materials and enabling the mode.
+- STEP's `surface_style_rendering` carries the reflectance and shininess
+  this needs, so the format is not the constraint.
+- ⚠️ Keep the fork ABI-compatible with upstream OCCT here, per the standing
+  rule; this change is additive to a reader body, so it should not need new
+  members.
+- Verify against a STEP file exported from another CAD package with per-face
+  finishes, not only against our own output.
+
+### What lands when
+
+Stage 1 alone is worth having: it removes the redundant property trio, and
+costs less memory than what we do today. Stage 2 is small and additive.
+Stage 3 is the first stage a user can see. Stages 4 and 5 are what make the
+data come from and go somewhere other than our own documents -- and stage 5
+is the one that fixes the case that motivated all of this, an imported
+solid whose faces carry real finishes.
