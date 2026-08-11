@@ -302,9 +302,19 @@ renderer.**
    pointer-plus-count for ambient, specular, emissive and shininess
    alongside the inherited diffuse and transparency arrays. Existing class
    layouts are untouched.
-2. Exported C entry points -- a factory `createLazyElementEx()` plus one
-   accessor per extra field, over opaque `SoState*` handles and plain
-   arrays.
+2. Exported C entry points: an **install** call that registers the type and
+   enables it on the relevant actions, plus one accessor per extra field,
+   over opaque `SoState*` handles and plain arrays.
+
+   Note there is **no per-instance factory and no destroyer**. Elements are
+   not ref-counted and are not consumer-allocated: `SoElement` is a plain
+   class, not `SoBase`-derived, and `SoState` creates exactly one instance
+   per enabled element through `type.createInstance()`
+   (`SoState.cpp:166`) and deletes them all in its destructor (`:191`). So
+   the state owns them cradle to grave, and the consumer only ever *reads
+   and writes* through the accessors. (Ref-counting would be the relevant
+   rule if we ever added an `Ex` **node**, since those derive from
+   `SoBase`.)
 3. FreeCAD **looks those symbols up at runtime**. Present -> read per-face
    materials; absent -> exactly today's behaviour against stock Coin.
 
