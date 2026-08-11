@@ -608,6 +608,39 @@ Note also that `BGFX_BUILD_TOOLS_SHADER=ON` drags in **tint/Dawn** from bgfx's
 to compile shaders (`ninja Renderer_assets`), but it is the single largest
 contributor to a cold Windows build.
 
+### Running the C++ (GoogleTest) suites
+
+`ENABLE_DEVELOPER_TESTS` is **OFF** in this build dir, as in the Linux presets, so
+`tests/` is not configured at all and `ninja Tests_run` answers *unknown target*.
+Turning it on costs one configure and no rebuild of what is already there:
+
+```cmd
+run.cmd cmake -S . -B build\win-relwithdebinfo-801 -DENABLE_DEVELOPER_TESTS=ON
+run.cmd cmake --build build\win-relwithdebinfo-801 --target <suite> -j 4
+```
+
+googletest is vendored (`tests/lib`), so nothing is fetched. Two things to know:
+
+- **The shared `Tests_run` suite does not link here**, for reasons that have
+  nothing to do with whatever you are testing: `tests/src/Base/Reader.cpp` names
+  `xercesc_3_2` while the conda env ships 3.3, and `tests/src/App/Expression.cpp`
+  uses `UnitExpression`/`OperatorExpression::UNIT` as they no longer are. Build a
+  focused executable instead (`DeferredLoad_tests_run`, `RestoreDrain_tests_run`,
+  …) — that is part of why those exist. `-- -k 0` gets ninja past the two broken
+  translation units if you only want a compile check of your own.
+- **The test exes need `bin` on `PATH`.** They are built into
+  `build\...\tests\src\App\`, not next to `FreeCADApp.dll`, and `run.cmd` does not
+  add the build's `bin` (it adds the dependency prefixes). Without it the process
+  dies before `main()` with no output at all:
+
+  ```cmd
+  set PATH=D:\Zheng.Lei\sw\fcad\build\win-relwithdebinfo-801\bin;%PATH%
+  run.cmd build\win-relwithdebinfo-801\tests\src\App\RestoreDrain_tests_run.exe
+  ```
+
+Put `ENABLE_DEVELOPER_TESTS` back to `OFF` afterwards, or a plain
+`cmake --build` of everything fails on those same two files.
+
 ### Building pivy
 
 Draft and Arch import `pivy.coin` at load time, so without pivy those workbenches
