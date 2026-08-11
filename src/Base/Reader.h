@@ -473,6 +473,18 @@ protected:
     std::string *CaptureBuf {nullptr};
     int CaptureLevel {0};
     std::string CaptureScratch;
+    /** A captured start tag whose '>' is not written yet.
+     *
+     * An empty element has to be re-serialized as <x/> and not as <x></x>.
+     * The two are the same XML, but not the same parse: the parser hands a
+     * self-closing tag back as one token and a pair as two, and readElement()
+     * is built on that difference -- so a pair makes the *next* readElement()
+     * take the sibling's end tag for the end of its own scope. Whether a tag
+     * is empty is only known once the following event arrives, hence a tag
+     * left open until then.
+     */
+    bool CaptureTagOpen {false};
+    void captureCloseTag();
 
     enum
     {

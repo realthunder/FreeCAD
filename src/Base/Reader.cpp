@@ -370,6 +370,14 @@ void Base::XMLReader::readEndElement(const char* ElementName, int *guard)
 
 static void appendEscaped(std::string &out, const std::string &s, bool attribute);
 
+void Base::XMLReader::captureCloseTag()
+{
+    if (CaptureTagOpen) {
+        *CaptureBuf += '>';
+        CaptureTagOpen = false;
+    }
+}
+
 void Base::XMLReader::captureChildren(std::string &out)
 {
     endCharStream();
@@ -380,6 +388,7 @@ void Base::XMLReader::captureChildren(std::string &out)
 
     CaptureBuf = &out;
     CaptureLevel = Level;
+    CaptureTagOpen = false;
     try {
         while (CaptureBuf)
             read();
@@ -388,6 +397,7 @@ void Base::XMLReader::captureChildren(std::string &out)
         // The buffer belongs to the caller; a dangling diversion would have
         // the next parse writing into whatever it left behind.
         CaptureBuf = nullptr;
+        CaptureTagOpen = false;
         throw;
     }
 }
@@ -402,6 +412,12 @@ void Base::XMLReader::captureElement(std::string &out)
         out += "=\"";
         appendEscaped(out, AttrStore[i].value, true);
         out += '"';
+    }
+    if (ReadType == StartEndElement) {
+        // Empty here too, and for the same reason as inside the capture: give
+        // it back self-closing or the replay parses it as two tokens.
+        out += "/>";
+        return;
     }
     out += '>';
     captureChildren(out);
@@ -675,6 +691,7 @@ void Base::XMLReader::startElement(const XMLCh* const /*uri*/,
     Level++;  // new scope
 
     if (CaptureBuf) {
+        captureCloseTag();  // the parent's tag: it has content after all
         std::string &out = *CaptureBuf;
         out += '<';
         assignUTF8(CaptureScratch, localname);
@@ -688,7 +705,7 @@ void Base::XMLReader::startElement(const XMLCh* const /*uri*/,
             appendEscaped(out, CaptureScratch, true);
             out += '"';
         }
-        out += '>';
+        CaptureTagOpen = true;  // '>' or '/>' once the next event says which
         ReadType = StartElement;
         return;
     }
@@ -716,16 +733,26 @@ void Base::XMLReader::endElement(const XMLCh* const /*uri*/,
 
     if (CaptureBuf) {
         if (Level >= CaptureLevel) {
-            *CaptureBuf += "</";
-            assignUTF8(CaptureScratch, localname);
-            *CaptureBuf += CaptureScratch;
-            *CaptureBuf += '>';
-            ReadType = EndElement;
+            if (CaptureTagOpen) {
+                // Nothing came between the tags, so it was an empty element
+                // and has to go back out as one.
+                *CaptureBuf += "/>";
+                CaptureTagOpen = false;
+                ReadType = StartEndElement;
+            }
+            else {
+                *CaptureBuf += "</";
+                assignUTF8(CaptureScratch, localname);
+                *CaptureBuf += CaptureScratch;
+                *CaptureBuf += '>';
+                ReadType = EndElement;
+            }
             return;
         }
         // This end tag closes the element being captured; the diversion is
         // over and the tag itself is the caller's, processed as usual.
         CaptureBuf = nullptr;
+        CaptureTagOpen = false;
     }
 
     assignUTF8(LocalName, localname);
@@ -757,6 +784,7 @@ void Base::XMLReader::characters(const XMLCh* const chars, const XMLSize_t lengt
     ReadType = Chars;
 
     if (CaptureBuf) {
+        captureCloseTag();
         CaptureScratch.clear();
         appendUTF8(CaptureScratch, chars, length);
         appendEscaped(*CaptureBuf, CaptureScratch, false);
