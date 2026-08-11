@@ -319,39 +319,65 @@ notification is keyed on `ShapeAppearance` and the existing update logic
 runs; and hide `DiffuseColor` from the property editor so one datum does not
 appear as two rows.
 
-#### 1.2 Save the cheapest encoding upstream can still read
+#### 1.2 Reading upstream files, and not pretending ours are readable
 
-Do not always write a material list. Choose per object:
+Two directions, and only one of them is a requirement:
 
-| what varies | what gets written |
-|---|---|
-| nothing per face | `ShapeAppearance`, one entry, the uniform material |
-| colour only, per face | that, **plus `DiffuseColor` as an `App::PropertyColorList`** |
-| some non-colour field, per face | the full N-entry material list |
+- **We must read theirs.** Upstream and pre-1.0 documents are user data.
+  Keep the whole restore path: upstream's `MaterialList` doc-file, the old
+  `ShapeColor`/`ShapeMaterial` conversion via `handleChangedPropertyName`,
+  and an old `DiffuseColor` colour list restoring into `_diffuse`.
+- **They need not read ours.** The dedup schema in 1.3 is a fork format and
+  is *not* upstream compatible. An earlier draft of this section proposed
+  emitting a plain `DiffuseColor` colour list so current upstream could load
+  our files, having verified that it would
+  (`handleChangedPropertyName` accepts a `DiffuseColor` element of type
+  `App::PropertyColorList`). That is no longer a design goal, so the save
+  side is free to pick whatever encoding is cheapest for us.
 
-**Upstream reads the middle case, verified.**
-`ViewProviderPartExt::handleChangedPropertyName` accepts a saved property
-named `"DiffuseColor"` of type `App::PropertyColorList` and restores it into
-a hidden `_diffuseColor`; `finishRestoring()` then pushes it through when
-`getSize() > 1`, and `onChanged(&_diffuseColor)` calls
-`ShapeAppearance.setDiffuseColors(colors)`. That is the same path old 0.21
-documents take. So **both encodings we emit are readable by current upstream
-FreeCAD**, and the common case is roughly 10x smaller on disk than a
-material list, for the same reason it is smaller in memory.
+⚠️ **Restore ordering still matters**, for reading upstream files.
+Upstream needed `finishRestoring()` because `ShapeAppearance` is restored
+*after* `DiffuseColor` and would otherwise overwrite it with its single
+colour. Per-field storage replaces that workaround with a rule: restoring a
+one-entry material writes size 1 into each field array and **must not
+clobber a `_diffuse` that already holds N entries**. Test both file orders.
 
-Mechanism for choosing at save time: `PropertyContainer::Save` tests
-`prop->testStatus(Property::Transient)` when it runs
-(`PropertyContainer.cpp:310`), so the encoding is selected by flipping that
-status on `DiffuseColor` in `ViewProviderPartExt::Save` before delegating to
-the base. Transient properties still emit a status-only `<_Property>`
-element, which older readers ignore by design.
+#### 1.3 Save per field, so the dedup scheme can do its job
 
-⚠️ **Restore ordering.** Upstream needed `finishRestoring()` because
-`ShapeAppearance` is restored *after* `DiffuseColor` and would otherwise
-overwrite it with its single colour. Per-field storage gives a cleaner rule
-instead of a workaround: restoring a one-entry material writes size 1 into
-each field array and **must not clobber a `_diffuse` that already holds N
-entries**. Test both file orders.
+Write `ShapeAppearance` as **one content-addressed list per field**, not as
+a single interleaved material list, and route each through the fork's
+`FileBlobManager`.
+
+That manager is content-addressed by design: a blob "is identified by, and
+stored under, the hash of its content", there is "one archive entry per
+blob", and "properties serialize just the hash", so any number of
+properties across any number of objects share one entry. Plain doc-files get
+none of this -- `Writer::addFile` only uniquifies the *name*
+(`Writer.cpp:264`) and never compares content, so today two identical colour
+lists are two archive entries.
+
+**Why per field rather than per material list.** Dedup keys on the whole
+blob, so granularity decides how often it hits:
+
+- interleaved: one object's shininess differing by a hair makes the entire
+  N-entry blob unique, and nothing is shared;
+- per field: only the shininess blob differs, while the diffuse, specular
+  and emissive blobs stay shared.
+
+The wins are the common cases. An imported assembly whose instances share a
+palette shares one `_diffuse` blob. A uniform field that is identical across
+every object in the document -- the usual state of `_specular` and
+`_emissive` -- collapses to a single shared blob. And a field at size 0
+costs nothing at all, because there is no blob to write.
+
+This is the same argument as the in-memory layout, applied to the file:
+**fields are independent, so store them independently.**
+
+Integration work, concretely: the blob path is currently typed to file-backed
+properties -- `addPendingReferrer(hash, PropertyFileIncluded*)` and the
+restore dispatch behind it. Generalise the referrer to an interface so a
+property that *generates* its content can register too, rather than only one
+that wraps a user file.
 
 ### Stage 2 -- Coin carries the information through, ABI intact
 
