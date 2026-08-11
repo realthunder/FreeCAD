@@ -77,14 +77,38 @@ the real frame:
 outright: if most of the time is (b)/(c) rather than (a), then doing less
 per draw beats spreading or merging the draws.
 
-### Phase 0.5 — the instancing that already exists and does not engage
+### Phase 0.5 — how much does the instancing we already have collapse?
 
-`buildInstanceGroups()` already batches *identical geometry with
-identical material* into one instanced submit, and there is a standing
-bug: **instancing never engages at render cache 3 when Render Type is
-"Default"** (see the two-doc render note). Worth fixing and measuring
-before building anything new — it may already be leaving a large batch
-win on the table, and it changes the draw count phase 3 is aimed at.
+⚠️ An earlier draft of this plan listed a bug here: "instancing never
+engages at render cache 3 when Render Type is Default". **That was fixed
+on 2026-08-07** (`a06f4c2938`, an ancestor of this branch) — the gate in
+`ViewProviderExt.cpp::shapeInstancingActive()` asks the live backend
+(`Render::Renderer::activeCount()` / `instancingHint()`) instead of the
+preference string, with an observer rebuilding Part visuals when a
+backend attaches. There is no bug to fix here.
+
+The open question is the *quantitative* one, and nothing currently
+answers it: **there is no instancing readout anywhere in the renderer.**
+The benchmark log reports `scene consumed: 5954 draws, 1242 meshes` at
+load and `indexed 17727 of 17727 draws` at cull time, and nothing in
+between says how many submits the two instancing layers actually
+collapse:
+
+- **Part-side (Coin/TShape) instancing** — `shapeInstancingActive()`,
+  identical tessellations shared across placements;
+- **renderer-side grouping** — `buildInstanceGroups()`, identical
+  geometry content *and* identical material folded into one instanced
+  submit.
+
+⇒ **The first task is a readout, not a fix**: instance groups formed,
+draws they replaced, and the residual per-draw submits, on the
+`render culling:` cadence. 1242 distinct meshes behind 5954 draws says
+the scene has real repetition; whether the renderer is exploiting it is
+unmeasured, and phase 3's ceiling is whatever is left after it does.
+
+⭐ Worth stating plainly because it nearly cost a phase: the note that
+recorded the bug also recorded its fix, in a later section. Read the
+whole record before planning work against it.
 
 ## Phase 1 — Encoded: spread the same submits across cores
 
