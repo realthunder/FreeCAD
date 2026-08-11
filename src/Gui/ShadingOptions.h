@@ -78,6 +78,8 @@ private:
     void setModel(bool pbr, bool matcap);
     /// Grey the radius row unless the cavity pass is on and available.
     void updateCavityRadiusEnabled();
+    /// Grey the tint row unless the matcap model is on and available.
+    void updateMatcapTintEnabled();
     void setFlag(const char *name, bool value);
     /// Enter or leave the Shadow draw style, carrying the current style
     /// in and handing it back on the way out. The draw style is what puts
@@ -91,6 +93,9 @@ private:
     QRadioButton *matcapRadio;
     QLabel *matcapLabel;
     QComboBox *matcapCombo;
+    QLabel *matcapTintLabel;
+    QSlider *matcapTintSlider;
+    QLabel *matcapTintValue;
     QCheckBox *cavityCheck;
     QLabel *cavityRadiusLabel;
     QSlider *cavityRadiusSlider;

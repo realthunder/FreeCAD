@@ -140,6 +140,28 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     layout->addWidget(matcapLabel, 2, 0);
     layout->addWidget(matcapCombo, 2, 1);
 
+    // Matcap's other number, and the one that surprises people: at zero
+    // the whole scene shades as a single material, so an assembly's
+    // color coding disappears and only form is left. That is the point
+    // of the default, but it reads as "the renderer lost my colors"
+    // until you find the knob -- so the knob sits next to the preset,
+    // beside the 3D view, rather than in the preferences.
+    matcapTintLabel = new QLabel(tr("Matcap tint:"), this);
+    matcapTintSlider = new QSlider(Qt::Horizontal, this);
+    matcapTintSlider->setRange(0, 100);
+    matcapTintSlider->setPageStep(10);
+    matcapTintSlider->setToolTip(doc(RenderParams::docMatcapTint()));
+    matcapTintLabel->setToolTip(matcapTintSlider->toolTip());
+    matcapTintValue = new QLabel(this);
+    matcapTintValue->setMinimumWidth(
+        matcapTintValue->fontMetrics().horizontalAdvance(tr("000 %")));
+    auto tintRow = new QHBoxLayout;
+    tintRow->setContentsMargins(0, 0, 0, 0);
+    tintRow->addWidget(matcapTintSlider, 1);
+    tintRow->addWidget(matcapTintValue);
+    layout->addWidget(matcapTintLabel, 3, 0);
+    layout->addLayout(tintRow, 3, 1);
+
     // The modifiers: each composes with any shading model and with the
     // others, which is exactly why they are checkboxes and not entries in
     // the draw style list above.
@@ -165,7 +187,7 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     flags->addWidget(aoCheck, 0, 1);
     flags->addWidget(shadowCheck, 1, 0);
     flags->addWidget(bloomCheck, 1, 1);
-    layout->addLayout(flags, 3, 0, 1, 2);
+    layout->addLayout(flags, 4, 0, 1, 2);
 
     // Cavity is the one modifier here whose usefulness depends on a
     // number rather than on being on: the radius decides which features
@@ -188,14 +210,14 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     radiusRow->setContentsMargins(0, 0, 0, 0);
     radiusRow->addWidget(cavityRadiusSlider, 1);
     radiusRow->addWidget(cavityRadiusValue);
-    layout->addWidget(cavityRadiusLabel, 4, 0);
-    layout->addLayout(radiusRow, 4, 1);
+    layout->addWidget(cavityRadiusLabel, 5, 0);
+    layout->addLayout(radiusRow, 5, 1);
 
     hint = new QLabel(tr("Needs the render engine: set the render cache "
                          "to the renderer mode\nand pick a renderer type "
                          "in the 3D view preferences."), this);
     hint->setEnabled(false);
-    layout->addWidget(hint, 5, 0, 1, 2);
+    layout->addWidget(hint, 6, 0, 1, 2);
 
     connect(defaultRadio, &QRadioButton::toggled, this, [this](bool on) {
         if (on && !loading)
@@ -216,6 +238,14 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
         if (auto prop = renderProp<App::PropertyEnumeration>(activeView(),
                                                             "MatcapPreset"))
             prop->setValue(long(index));
+    });
+    connect(matcapTintSlider, &QSlider::valueChanged, this, [this](int value) {
+        matcapTintValue->setText(tr("%1 %").arg(value));
+        if (loading)
+            return;
+        if (auto prop = renderProp<App::PropertyFloat>(activeView(),
+                                                       "MatcapTint"))
+            prop->setValue(double(value) / 100.0);
     });
     connect(cavityCheck, &QCheckBox::toggled, this, [this](bool on) {
         setFlag("Cavity", on);
@@ -316,6 +346,16 @@ void ShadingOptionsWidget::updateCavityRadiusEnabled()
     cavityRadiusValue->setEnabled(on);
 }
 
+void ShadingOptionsWidget::updateMatcapTintEnabled()
+{
+    // Same reasoning as the cavity radius: a tint that shades nothing is
+    // a control that does nothing.
+    const bool on = matcapRadio->isEnabled() && matcapRadio->isChecked();
+    matcapTintLabel->setEnabled(on);
+    matcapTintSlider->setEnabled(on);
+    matcapTintValue->setEnabled(on);
+}
+
 void ShadingOptionsWidget::setModel(bool pbr, bool matcap)
 {
     auto view = activeView();
@@ -325,6 +365,7 @@ void ShadingOptionsWidget::setModel(bool pbr, bool matcap)
         prop->setValue(matcap);
     matcapLabel->setEnabled(matcap);
     matcapCombo->setEnabled(matcap);
+    updateMatcapTintEnabled();
 }
 
 void ShadingOptionsWidget::setFlag(const char *name, bool value)
@@ -353,6 +394,14 @@ void ShadingOptionsWidget::refresh()
     defaultRadio->setChecked(!pbr && !matcap);
     if (auto prop = renderProp<App::PropertyEnumeration>(view, "MatcapPreset"))
         matcapCombo->setCurrentIndex(int(prop->getValue()));
+    if (auto prop = renderProp<App::PropertyFloat>(view, "MatcapTint"))
+        matcapTintSlider->setValue(int(prop->getValue() * 100.0 + 0.5));
+    else
+        matcapTintSlider->setValue(int(RenderParams::getMatcapTint() * 100.0
+                                       + 0.5));
+    // As with the radius: valueChanged is silent when the value has not
+    // moved, so the readout is written here rather than left to the signal.
+    matcapTintValue->setText(tr("%1 %").arg(matcapTintSlider->value()));
     cavityCheck->setChecked(renderFlag(view, "Cavity", false));
     if (auto prop = renderProp<App::PropertyFloat>(view, "CavityRadius"))
         cavityRadiusSlider->setValue(int(prop->getValue() + 0.5));
@@ -374,6 +423,7 @@ void ShadingOptionsWidget::refresh()
     matcapRadio->setEnabled(available);
     matcapLabel->setEnabled(available && matcap);
     matcapCombo->setEnabled(available && matcap);
+    updateMatcapTintEnabled();
     cavityCheck->setEnabled(available);
     updateCavityRadiusEnabled();
     aoCheck->setEnabled(available);
