@@ -135,7 +135,9 @@ Stated so the table is not read as more than it is. All of it ran
 headless under llvmpipe on one small two-solid scene:
 
 - workbench-specific scene graphs — TechDraw, FEM result meshes, Draft
-  working plane, Assembly (Sketcher edit mode: **now covered**, §3.3)
+  working plane, Assembly (Sketcher edit mode: **now covered**, §3.3;
+  Draft, annotation text, Mesh, Points and Assembly: **now covered**,
+  §3.6, which leaves FEM)
 - the shadow light manipulator (the transform dragger: §3.3)
 - dimension and annotation text (clipping planes, selection and
   preselection highlight: §3.3)
@@ -373,6 +375,129 @@ passed; `docs/RenderDebug.md` section 5.1 records what they were. For
 menu behaviour the user is the only oracle; say that instead of
 reporting a pass.
 
+### 3.6 Stage 1c: the workbench scene graphs
+
+`wb_audit_probe.py` -- the rest of the first bullet of 3.2. Nine cases,
+the same three legs in one process, the same within-leg method: grab,
+add the feature, grab, report the fraction of pixels that changed.
+
+| case | what it exercises | bgfx | glr | coin |
+| --- | --- | --- | --- | --- |
+| Draft Wire | line geometry through a Python view provider | 0.0030 | 0.0029 | 0.0024 |
+| Draft Text | screen-space text | 0.0007 | 0.0005 | 0.0025 |
+| Draft Dimension | leader lines plus annotation text | 0.1875 | 0.1873 | 0.1869 |
+| Draft grid | the working-plane tracker | 0.1455 | 0.1456 | 0.1456 |
+| App::AnnotationLabel | `SoFrameLabel`, a Qt-drawn `SoImage` | 0.0029 | **0.1760** | 0.0028 |
+| Mesh::Feature | `SoFCMeshObjectShape`, a shape that draws itself with raw GL | 0.0198 | 0.0192 | 0.0192 |
+| Points::Feature | point sets | 0.0080 | 0.0084 | 0.0084 |
+| Assembly + grounded joint | Assembly's own `SoSwitchMarker` | 0.0253 | 0.0202 | 0.0202 |
+
+**The backend draws all of them**, and cross-leg it agrees with glr
+everywhere but one row: bgfx against glr sits at its 0.066 floor (what
+the two paths' shading differs by on the bare box) for every case,
+0.0778 for the mesh and 0.0839 for the assembly, and **0.2423 for the
+annotation label**.
+
+TechDraw is not in the table because it is not a 3D path at all: a page
+is its own `QGraphicsView` over `QGI*` items painted by QPainter, so
+there is no before/after 3D frame to take. The case that remains is a
+liveness check -- a page comes up and carries ink with the backend live
+in the same process and GL context. Auditing the page renderer, and
+judging whether it could be drawn by the backend, is separate work.
+
+**The one disagreement, and the backend is not the one that is wrong.**
+On the annotation label bgfx reads 0.0029 and cache 0 reads 0.0028 --
+the same small screen-space label in the same place -- while glr reads
+0.1760 and differs from cache 0 by 0.1761. glr draws the label as a
+world-space billboard several times the size of the 20 mm box.
+
+The mechanism is in the capture companion. `SoImage` draws in screen
+space, but its `generatePrimitives()` emits a quad sized in model units
+for the capture-time view, so `SoFCRenderCacheManager::preImage()`
+substitutes a companion instead (`SoFCRenderCacheManager.cpp:2229`): the
+image as a REPLACE texture on a quad **in native pixel units**, under an
+`SoAutoZoomTranslation` with `billboard TRUE` and `pixelScale 1`. Those
+two fields are read in exactly one place, `SoFCRendererBridge.cpp:870`,
+which feeds the **backend** -- `BGFXRendererP.h:1783` turns `pixelscale`
+into on-screen pixels per emitted unit every frame. glr instead replays
+the node itself (`SoFCRenderer.cpp:1555`, `info.node->GLRender(action)`),
+and `SoAutoZoomTranslation::doAction` honours only `scaleFactor`, whose
+default 0 short-circuits `getScaleFactor()` to 1.0. So the quad's pixel
+coordinates are used as world coordinates and the model rotation is
+kept: a roughly 400-unit billboard lying in the model plane.
+
+This is not one label. It is every `SoImage` on the glr path, Sketcher's
+constraint icons included -- which is worth re-reading 3.3's Sketcher
+row against (bgfx 0.251, glr 0.331; the larger number is glr's, and
+oversized icons would produce exactly that).
+
+Two places could fix it, and the obvious one is the trap:
+
+- `SoAutoZoomTranslation::doAction` could honour `billboard` and
+  `pixelScale`, which is where the field's documented contract lives.
+  But `doAction` is also what the **capture** traversal runs
+  (`callback()`), so a camera-dependent rotation and scale would be
+  baked into the static vertex cache -- the precise failure the
+  companion exists to avoid, and the reason the comment above
+  `SoFCImageQuad` was written.
+- `SoFCRendererP`'s autozoom replay loop could carry the backend's
+  per-frame math instead, overwriting the accumulated matrix's 3x3 with
+  the camera basis scaled by `pixelScale` world-units-per-pixel. That is
+  the symmetric place: the bridge does it for the backend, this does it
+  for glr, and nothing capture-side moves.
+
+Not done here. Recorded rather than half-landed, since it wants its own
+verification pass across the icon sites, not just this label.
+
+**Two numbers per case, because the capture is not the frame.** Every
+row above is measured twice, `saveImage` and a screen grab, and one case
+disagrees: under cache 0 the Draft grid is absent from `saveImage`
+(0.0000) while the screen shows it (0.1456). The grid is a viewer-level
+tracker rather than document geometry; under cache 3 both legs capture
+it. So 3.1's finding -- that `saveImage` and the on-screen frame agree
+-- holds for what the render cache feeds and not for everything the
+viewer draws. The Dimension row inherits the same effect, because
+creating a Draft dimension switches the grid on behind it.
+
+**A bug found on the way, and it is not the renderer's.** The Draft
+cases could not run at all: creating any Draft object in the GUI asks
+for the SVG hatch patterns, and `importSVG.getContents` raised
+`NameError: name 'pythonopen' is not defined`. All five Draft importers
+saved the builtin `open` behind a guard that names the Python 2 spelling
+of `open.__module__`; on Python 3 it reads `_io`, so the guard has been
+false for the whole Python 3 era and `pythonopen` was never assigned.
+Fixed in `8fcb8cd196` (24 patterns load where the call raised); the same
+dead guard sits at 38 more sites across Arch, Idf, Spreadsheet,
+Material, OpenSCAD and the Path post-processors, recorded separately.
+
+Harness notes, each of which cost a run:
+
+- **The 3D grabs are `saveImage`, not screen grabs.** These cases
+  provoke Coin errors, the Report view raises itself over the viewport,
+  and a screen grab cropped to the viewport rect then contains a text
+  panel -- which put the same phantom drift on five consecutive cases.
+  Clearing the five `checkShowReportViewOn*` parameters did **not** stop
+  it. `grabmethod_probe.py` measures `saveImage` against the on-screen
+  frame as identical (0.0000 on both cache-3 legs), so the audit uses
+  it, and every line carries a `drift` column -- the difference between
+  the case's own base grab and the leg's first frame -- so a leak shows
+  up as a number instead of poisoning the case silently.
+- **The Draft grid is stateful and `Draft_ToggleGrid` is blind.**
+  Creating any Draft object turns the grid on, so by the grid case it
+  was already lit: the toggle switched it off, and the tidy-up switched
+  it back on for every case after. Read the state from
+  `Gui.Snapper.grid.Visible` and drive it, do not toggle.
+- **`metaObject()->className()` carries the C++ namespace.** The
+  TechDraw page answers to `TechDrawGui::QGVPage`; matching `QGVPage`
+  reported "no page window found" while the window was plainly up.
+- The first frame after a leg switch is not the leg's frame. The bgfx
+  leg's first grab was an empty gradient; grab twice and keep the
+  second.
+
+Still unvisited from 3.2 after this: **FEM** (`BUILD_FEM=OFF` in this
+tree, so it was not measurable here), large models, real-GPU behaviour,
+and VR / quad-buffer stereo.
+
 ## 4. Plan
 
 Ordered so that nothing user-visible regresses at any step.
@@ -392,8 +517,17 @@ neither was what the audit said it was: the backend does draw a section
 cap (see below), and Transform edit mode does not leave the object
 see-through for a user — that reading came from a probe holding its own
 call stack, so the task dialog was never deleted and the object stayed
-registered on top. Still unvisited from §3.2: TechDraw, FEM, Draft,
-Assembly, annotation text, large models and real-GPU behaviour.
+registered on top.
+
+**Stage 1c — the workbench scene graphs. DONE** (§3.6): Draft (wire,
+text, dimension, working-plane grid), `App::AnnotationLabel`, Mesh,
+Points and Assembly all draw on the backend, and cross-leg it agrees
+with glr on every one of them. The single disagreement indicts **glr**,
+not the backend: it draws `SoImage` capture companions at pixel
+coordinates read as world units, because `billboard`/`pixelScale` are
+consumed only by the bridge that feeds the backend. TechDraw turned out
+not to be a 3D path at all. Still unvisited from §3.2: FEM (not built
+in this tree), large models and real-GPU behaviour.
 
 **Stage 1a — clear the Coin warnings from the console. DONE.** The
 survey judged that none of the three was a correctness bug. **Two of
