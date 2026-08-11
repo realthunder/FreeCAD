@@ -26,7 +26,10 @@
 # pragma clang diagnostic ignored "-Wimport-preprocessor-directive-pedantic"
 #endif
 
-#include <Standard_Stream.hxx>
+// OCCT 8.0 dropped Standard_Stream.hxx, which only pulled in these.
+#include <iostream>
+#include <iomanip>
+#include <fstream>
 
 #include <GEOMUtils.hxx>
 
