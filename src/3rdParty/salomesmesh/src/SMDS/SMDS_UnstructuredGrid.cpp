@@ -1077,7 +1077,6 @@ void SMDS_UnstructuredGrid::BuildLinks()
   GetLinks()->BuildLinks(this);
 #else
   GetLinks()->SetDataSet(this);
-  std::cout << this->GetNumberOfPoints() << std::endl;
   GetLinks()->BuildLinks();
 #endif
   GetLinks()->Delete();
