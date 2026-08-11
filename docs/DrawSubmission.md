@@ -228,13 +228,40 @@ section reaches: **while Coin composites into the viewport, the frame
 pays a context round-trip.** Removing it is worth 24% of the frame on
 its own, before any submission work.
 
-!! **Confirm on a native session before optimizing.** Every number here
-was taken under `vglrun -d egl0` on Xvfb (the monitor-off recipe), and
-GL context switching is exactly the operation an indirect-rendering
-layer is most likely to make expensive. A 12 ms context switch is
-extreme for a native driver. **This is the one finding on this page most
-likely to be a harness artifact, and it must be re-taken on a real
-desktop session before a line of code is changed for it.**
+### The harness-artifact worry, tested and mostly dismissed
+
+This document first flagged the 12.3 ms as "the one finding most likely
+to be a harness artifact", because it was taken under `vglrun -d egl0`
+on Xvfb. **That was over-stated.** Three separate doubts, each tested:
+
+1. **"It might not be the real GPU."** DEAD. The run log says
+   `OpenGL renderer is: NVIDIA GeForce RTX 3060/PCIe/SSE2`,
+   `4.6.0 NVIDIA 535.183.01`, and carries no vglfaker preload warning --
+   so not the silent llvmpipe fallback the recipe warns about.
+   **Grep for it every run**: it is the difference between a hardware
+   number and a software one, and nothing else in the log says which.
+2. **"VirtualGL taxes every context switch."** REFUTED by the split
+   itself: `widget->makeCurrent()` costs **0.08 ms** where
+   `_BGFXLib.makeCurrent()` costs **7.16 ms**. Same call, same faker,
+   90x apart -- a uniform per-switch tax cannot produce that.
+3. **"It is vsync, not work."** Raised because `bgfx::frame` at 16.85 ms
+   sits just above one 60 Hz interval (16.67), and `BGFX_RESET_VSYNC` is
+   hard-coded at all three reset sites. REFUTED: at 30578 draws it is
+   31.47 ms, *below* two intervals (33.33), and a vsync wait rounds up;
+   and it tracks the validated fit (5.34 ms + 0.859 us/draw predicts
+   16.38 and 31.61). **A vsync wait does not scale with draw count.**
+
+! **What is still untested** is narrow: whether VirtualGL inflates
+`context->makeCurrent(offscreen)` *specifically*. That call targets a
+`QOffscreenSurface`, which is exactly what an indirect layer emulates,
+and its 7.16 ms has no cheap counterpart to compare against the way
+`widget->makeCurrent()` gave us for point 2. Settling it needs a
+painting run without VirtualGL, which needs a display attached: **every
+output on this box reports `disconnected`, so a run on `:1` paints zero
+frames** and says nothing about it. A dummy EDID plug would unblock it.
+
+=> Treat the 12.3 ms as **real and reproducible on hardware GL**, with
+one specific untested residue -- not as a suspect number.
 
 ### The GPU half: primitives explain it better than draws
 
