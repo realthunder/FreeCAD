@@ -85,6 +85,9 @@ public:
         RecomputeOnRestore = 13, // Mark pending recompute on restore for migration purpose
         LiveImport = 14, // A progressive import is filling the document while the GUI
                          // stays interactive; doc-mutating commands are gated meanwhile
+        RestoreDrain = 15, // View-side catch-up on a finished restore: the work runs in
+                           // full, but nothing it does may modify the document.
+                           // See RestoreDrainGuard.
     };
 
     /** @name Properties */
@@ -430,6 +433,53 @@ public:
     private:
         bool toggled;
     };
+
+    /** RAII scope for view-side work replayed after a restore has finished.
+     *
+     * The eager load ran a view provider's updateData() per property while
+     * the object was still restoring, and afterRestore() then purged what
+     * those handlers touched -- per object, right before it announced the
+     * object as finished (see the purgeTouched() call there). A recompute
+     * purges its own the same way. So a handler that writes back while it
+     * renders -- a page template noting the size of the SVG it just parsed --
+     * cost the eager path nothing: the mark never outlived the load.
+     *
+     * The deferred view provider drain has no such window. It replays those
+     * same handlers slices later, past every purge, where the identical
+     * write leaves the document needing a recompute merely because it was
+     * opened. Marking the objects as restoring again is not the answer:
+     * handlers skip their real work while restoring -- rendering an SVG
+     * template returns nothing at all -- which is what the catch-up exists
+     * to do. This scope says the other half instead, "render, but do not
+     * write": a change inside it does not touch its object, and names
+     * itself in the document's report, so the handler that should not be
+     * writing on a render is found by opening a file rather than by
+     * attaching a debugger.
+     */
+    class AppExport RestoreDrainGuard {
+    public:
+        explicit RestoreDrainGuard(Document *doc);
+        ~RestoreDrainGuard();
+        RestoreDrainGuard(const RestoreDrainGuard &) = delete;
+        RestoreDrainGuard &operator=(const RestoreDrainGuard &) = delete;
+    private:
+        Document *doc;
+        bool toggled;
+    };
+
+    /// What RestoreDrainGuard suppressed: how many changes, and up to ten
+    /// distinct property names among them.
+    struct RestoreDrainReport {
+        std::size_t count = 0;
+        std::vector<std::string> names;
+        /// Set once a name is dropped, so a report can say that it is a sample
+        bool truncated = false;
+    };
+    const RestoreDrainReport &getRestoreDrainReport() const;
+    void clearRestoreDrainReport();
+    /// Record a change suppressed by RestoreDrainGuard. Called from the touch
+    /// paths; 'prop' is null when the caller touched the object directly.
+    void reportRestoreDrainChange(const DocumentObject *obj, const Property *prop);
 
     /** Add an existing feature with sName (ASCII) to this document and set it active.
      * Unicode names are set through the Label property.

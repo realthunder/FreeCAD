@@ -2505,6 +2505,15 @@ void Document::runDeferredRestoreSlice()
     // restore when they were read eagerly, and each of them charges real
     // time per property when told otherwise.
     App::Document::RestoringScopeGuard restoringScope;
+    // And the half that isAnyRestoring() cannot say. Phase three drops the
+    // view provider's restore status before sweeping its properties, because
+    // with the guards on the handlers render nothing at all -- so they run
+    // here as they never ran eagerly: past afterRestore()'s purge, where a
+    // handler that writes back while rendering leaves the document needing a
+    // recompute merely because it was opened. The whole slice is inside the
+    // scope, not just that sweep: every phase of the drain is the file's own
+    // record being replayed, and none of it is an edit.
+    App::Document::RestoreDrainGuard drainScope(d->_pcDocument);
     try {
         // Phase zero: the parked shape archive entries
         // (docs/DocumentLoad.md §14). Serving them before any view
@@ -2753,6 +2762,24 @@ void Document::finishDeferredRestore()
     // What the drain rebuilt is the file's own record, not an edit; leave
     // the document as slotFinishRestoreDocument left it.
     setModified(d->_pcDocument->testStatus(App::Document::LinkStampChanged));
+
+    // The App side of the same statement, and the one that names names: what
+    // a handler tried to write into the document while the drain replayed it
+    // (App::Document::RestoreDrainGuard). Suppressed, so nothing here is the
+    // user's problem -- but a handler writing on a render is a bug of its
+    // own, and this is what points at it without a debugger.
+    const auto &drain = d->_pcDocument->getRestoreDrainReport();
+    if (drain.count) {
+        std::string names;
+        for (const auto &name : drain.names)
+            names += (names.empty() ? "" : ", ") + name;
+        if (drain.truncated)
+            names += ", ...";
+        FC_WARN("progressive restore " << d->_pcDocument->getName() << ": "
+                << drain.count << " document changes suppressed while replaying"
+                   " the view providers (" << names << ')');
+        d->_pcDocument->clearRestoreDrainReport();
+    }
 
     // Whatever the drain's phase zero did not get through is this document's
     // own business from here on -- see runDeferredServeSlice().

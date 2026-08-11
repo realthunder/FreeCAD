@@ -1437,6 +1437,57 @@ Document::RestoringScopeGuard::~RestoringScopeGuard()
         globalIsRestoring = false;
 }
 
+Document::RestoreDrainGuard::RestoreDrainGuard(Document *doc)
+    : doc(doc)
+    , toggled(doc && !doc->testStatus(Status::RestoreDrain))
+{
+    if (toggled)
+        doc->setStatus(Status::RestoreDrain, true);
+}
+
+Document::RestoreDrainGuard::~RestoreDrainGuard()
+{
+    if (toggled)
+        doc->setStatus(Status::RestoreDrain, false);
+}
+
+void Document::reportRestoreDrainChange(const DocumentObject *obj, const Property *prop)
+{
+    // An object that is still restoring is not a finding: that is the load's
+    // own work arriving late, and it already keeps this promise its own way
+    // -- restoreDeferredFile() serves a parked archive entry with the owner's
+    // touch saved and put back. What the report is for is the handler that
+    // writes back on a *render*, and it is worth nothing if the expected
+    // writes crowd the unexpected ones out of it.
+    if (obj->isRestoring())
+        return;
+    ++d->drainReport.count;
+    // The count is the measurement; the names are there to point at the
+    // handler, and one of each is enough for that.
+    if (d->drainReport.truncated)
+        return;
+    std::string name = obj->getFullName();
+    name += '.';
+    name += prop && prop->getName() ? prop->getName() : "touch()";
+    if (std::find(d->drainReport.names.begin(), d->drainReport.names.end(), name)
+            != d->drainReport.names.end())
+        return;
+    if (d->drainReport.names.size() >= 10)
+        d->drainReport.truncated = true;
+    else
+        d->drainReport.names.push_back(std::move(name));
+}
+
+const Document::RestoreDrainReport &Document::getRestoreDrainReport() const
+{
+    return d->drainReport;
+}
+
+void Document::clearRestoreDrainReport()
+{
+    d->drainReport = RestoreDrainReport();
+}
+
 void Document::buildDefaults(Base::Writer &writer,
         const std::vector<App::DocumentObject*>& obj,
         std::map<std::string, SharedDefaults> &defaults) const
