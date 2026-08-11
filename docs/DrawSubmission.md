@@ -1,12 +1,14 @@
-# Draw submission: getting 30577 draws onto the GPU
+# Draw submission: getting the frame's draws onto the GPU
 
 Status: **plan**, plus the instruments it needs. Built so far:
 `render instancing:` (what batching already collapses), `render passes:`
 (per-pass CPU/GPU cost), and `FC_NO_AUDIT=1` in the harness. No
 submission route has been changed yet.
 
-⛔⛔ **Read "OPEN: the baseline is suspect" near the end before spending
-any number on this page.**
+**IMPORTANT: the baseline was corrected on 2026-08-11 and the prize shrank: the
+frame is 6485 draws / 10.8 ms submit / 54.8 ms, not 30577 / 32 / 76. See
+"The measured problem" and "RESOLVED: the suspect baseline was the
+harness measuring itself".**
 
 This is the workstream that follows occlusion culling, and it starts
 where `docs/FarFieldProxies.md` §12.19 ends: both sides of box-based
@@ -17,32 +19,68 @@ buys 8.9% (§12.19). What is left is not culling.
 
 ## The measured problem
 
-⭐ **Measured, not estimated — and the estimate was wrong in both
-directions.** An earlier draft of this document multiplied "17727 draws"
-by a per-draw microbenchmark rate and called it ~24 ms. 17727 is the
-size of the *scene draw list*, not the number of draws a frame submits:
-each row goes to several views (color, prepass, shadow, on-top,
-outline). The renderer's own `render frame:` line has carried the real
-numbers all along:
+**CORRECTED 2026-08-11. The numbers this document was scoped against
+were wrong twice over, and both errors inflated the prize.** The
+superseded headline read "30577 draws, 32 ms submit, 76 ms frame". That
+sample was taken (a) with the **cull audit on**, which adds the entire
+17727-row scene list to the frame as a second rasterization, and (b)
+**before the scene converged**, while occlusion culling was still
+resolving. Neither is a frame a user ever renders.
 
-```
-draws 30577 prims 81141172 (2654/draw) | per-draw submit 1.06us gpu 1.26us
-frame 76.28ms  submit 32.34ms  gpu 38.56ms
-```
+The corrected baseline, read from the converged tail of two audit-off
+runs (`clean_run.out` / `clean2.out`, 10 windows each, deterministic
+draw counts), against the same rack model and camera:
 
-⇒ **30577 draws, 32 ms of CPU submission, in a 76 ms frame.** Two things
-follow that the estimate hid:
+| | audit ON (converged) | **audit OFF (converged)** | the instrument |
+|---|---|---|---|
+| draws | 24213 | **6485** | +17728 |
+| frame | 80.41 ms | **54.78 ms** | +25.6 ms |
+| submit | 28.70 ms | **10.77 ms** | +17.9 ms |
+| gpu | 36.16 ms | **19.64 ms** | +16.5 ms |
+| prims | 74.1 M | **33.5 M** (5165/draw) | |
 
-- the draw count is **1.7x** what was assumed, and
-- ⭐⭐ **the GPU's per-draw cost is the larger half** (1.26 us x 30577 =
-  ~38 ms). The draw-call note already measured that this is per-draw
-  *state*, not fill or triangle count. So removing a draw is worth
-  ~2.3 us across both processors, and a change that only makes CPU
-  submission cheaper leaves the bigger half on the table.
+(medians of 10 converged windows; audit-off submit spread 10.47-11.04,
+gpu 19.50-19.81, frame 53.99-55.95.)
 
-⚠️ Nothing here needed building to find out. **Read `render frame:`
-before designing anything** — Phase 0 below exists because this document
-was first written without it.
+**The audit's cost is exactly the scene draw list**: 6485 + 17727 =
+24212, against 24213 measured. That is the id pass re-rendering every
+row, and it was on by default -- `cull_audit.py` hard-coded
+`RenderDebug_CullAudit = True` until `64cb4090d9`. So **every timing
+this workstream has ever quoted included it.**
+
+### What the correction does to the plan
+
+**Draw submission is 20% of the frame, not 42%.**
+
+- submit **10.8 ms** of a **54.8 ms** frame;
+- gpu 19.6 ms;
+- and `cpuTimeFrame` minus the backend's submit leaves **~44 ms that is
+  neither**. bgfx's own field names are explicit: `cpuTimeFrame` is "CPU
+  time between two `bgfx::frame` calls" (the whole application frame),
+  while `cpuTimeBegin/End` is "**render thread** CPU submit" -- the
+  backend issuing GL calls. Our 466-line `submit()`, the cull, the
+  instance grouping and Coin's composite all live in the ~44 ms, and
+  **nothing currently measures any of it.**
+
+**So the largest item in the frame is the one with no instrument on
+it**, and phases 1 and 2 below both target that unmeasured bucket rather
+than the 10.8 ms the `render passes:` line accounts for.
+
+**TRAP: the per-draw GPU claim needs re-testing at this operating point.**
+The draw-call note measured GPU cost as per-draw *state*, not fill or
+triangles. The converged frame pushes **33.5 M primitives across 6485
+draws -- 5165 per draw**, about 1.7 Gtri/s over 19.6 ms, which is near
+this box's raster throughput. If the GPU half is geometry-bound here,
+then merging draws (phase 3) does nothing for it and fewer *triangles*
+(far-field proxies / LOD) is the lever. That is a measurement, not a
+conclusion -- but it must be taken before phase 3 is justified on GPU
+grounds.
+
+WARNING: nothing here needed building to find out. **Read `render frame:`
+before designing anything, and state which convergence state and which
+audit setting a number came from** -- Phase 0 exists because this
+document was first written without it, and this correction exists
+because the numbers that replaced the estimate carried neither label.
 
 ## ⭐⭐ The constraint that shapes everything: one route, both tiers
 
@@ -128,7 +166,7 @@ work on both. It is so the routes can be *measured against each other on
 one camera in one run*, the way `cull_audit.py` measures occlusion arms,
 and so a regression has a one-property bisect.
 
-## Phase 0 — where the 32 ms goes (partly answered already)
+## Phase 0 -- where the frame's time goes (mostly answered now)
 
 ⛔⛔ **The rule this workstream has already paid for twice**: §12.16 built
 a mechanism on an unchecked premise, and §12.19's first run divided by
@@ -136,30 +174,38 @@ the wrong denominator. The ~24 ms figure is a *per-draw microbenchmark
 rate multiplied by a draw count*. Before any of it is optimized, measure
 the real frame:
 
-✅ **Already known** (`render frame:`): 30577 draws, 1.06 us submit and
-1.26 us GPU per draw, 32 ms submit against a 76 ms frame.
+**Corrected** (`render frame:`, converged + audit off): **6485 draws,
+1.66 us submit and 3.03 us GPU per draw, 10.8 ms backend submit against
+a 54.8 ms frame.** The heading's "32 ms" was the harness measuring
+itself; see the RESOLVED section.
 
 Still open, and each of these redirects the phases below:
 
-1. **Which passes the 30577 draws belong to.** 8388 scene rows survive
-   the cull, so the draws are ~3.6x the rows: color, AO prepass, shadow
-   caster, on-top, outline. ⭐ A pass that contributes thousands of draws
-   for a small visual effect is a cheaper win than any of phase 1-3.
+1. **Which passes the draws belong to. ANSWERED.**: with the audit
+   off, `opaque` is essentially the whole frame -- 9.5 ms of the 10.4 ms
+   backend CPU and 18.2 ms of the 18.4 ms GPU. Everything else
+   (background, sectioncap, the numbered overlay passes) is under 0.5 ms
+   apiece. There is **no secondary pass worth deleting**: the hoped-for
+   "a pass contributing thousands of draws for a small visual effect"
+   does not exist in this scene. Shadow, AO and OIT are not live on this
+   camera.
 
-   ✅ **BUILT** — `render passes:` on the timing cadence, from bgfx's own
-   `Stats::viewStats` behind `BGFX_DEBUG_PROFILER`; no per-call-site
-   instrumentation was needed. It immediately found something wrong —
-   see the OPEN section below.
-2. **The split inside our own submit**: bgfx `submit()` itself vs the
-   per-draw C++ before it (material unpack, texture routing, state
-   assembly) vs the six `setUniform` calls vs `setTransform`.
-3. The **fill / line / point** mix — §12.19 found ~2787 point and ~2800
+   ` render passes (top 8 of 14, totals 10.19/18.38): opaque 9.31/18.17
+   pass80 0.47/0.03 background 0.17/0.07 pass81 0.15/0.09 ... `
+2. **NOW THE PRIORITY -- the ~44 ms nothing measures.** `cpuTimeFrame`
+   54.8 ms minus the 10.8 ms backend render-thread submit leaves ~44 ms
+   in our own code and Coin's: the cull, `buildInstanceGroups()`, the
+   466-line `submit()` per-draw C++, the six `setUniform`,
+   `setTransform`, and `SoGLRenderAction` compositing on top. Phases 1
+   and 2 both target this bucket blind. **Break it down before building
+   either.**
+3. The **fill / line / point** mix -- sec 12.19 found ~2787 point and ~2800
    line draws among 8388 rows, and they do not cost the same.
 
-⛔ **This can still kill phase 3**: if most of the CPU is (2)'s
-per-draw C++ rather than bgfx, doing less per draw beats merging draws —
-and if the frame is GPU-bound on per-draw state, only *fewer draws*
-helps, which points the other way. Measure before choosing.
+**This still points away from phase 3, and now more sharply**: the
+backend submit it would reduce is 10.8 ms of 54.8, and at 5165
+primitives per draw the GPU half may be geometry-bound rather than
+draw-bound. Measure (2) and the geometry-bound question before choosing.
 
 ### Phase 0.5 — how much does the instancing we already have collapse?
 
@@ -223,11 +269,15 @@ to 1, `bx`'s threading is compiled out, and bgfx's free functions
 (`bgfx::submit` and friends) **already route to encoder 0**. So adopting
 `Encoder` is a no-op on web by construction.
 
-It is still worth doing — 32 ms of desktop CPU divided by 8 cores is the
-single largest number on this page — but it must be described as what it
-is: a desktop-tier speedup that leaves the browser exactly where it was,
-and it does nothing about the ~38 ms **GPU** per-draw half on either
-tier.
+**Demoted again by the 2026-08-11 correction.** The claim here was "32 ms
+of desktop CPU divided by 8 cores is the single largest number on this
+page". It was not 32 ms, it is **10.8 ms**, and that 10.8 ms is the
+**backend render-thread** time (`cpuTimeBegin/End`), which is not what
+`Encoder` parallelizes -- Encoder splits the *API-side* building of the
+draw-item array, which lives in the unmeasured ~44 ms. So this phase's
+prize is unknown rather than large, and it cannot be sized until the
+~44 ms is broken down. It remains desktop-only, and it still does nothing
+for the GPU half on either tier.
 
 - N encoders, one per worker, partitioning the draw list by contiguous
   range; reuse `Render::physicalCoreCount()`/`occluderWorkers()` so the
@@ -335,36 +385,49 @@ against.
 - ⭐ Counts here should be deterministic like the culler's; only timings
   need the min/median/max treatment.
 
-## ⛔⛔ OPEN: the baseline above is suspect — resolve this FIRST
+## RESOLVED: the suspect baseline was the harness measuring itself
 
-Building the per-pass readout turned up something that has to be settled
-before any number on this page is spent:
+**Settled 2026-08-11 from the existing run logs -- no new run, no new
+instrument.** The question was why `ViewDebugScene` cost ~15 ms CPU and
+~16 ms GPU in runs where "nothing should have turned it on":
 
 ```
-render passes (cpu/gpu ms, top 8 of 15, totals 30.49/37.00):
-  opaque 14.76/20.59   debugscene 14.51/16.15   pass80 0.51/0.04  ...
+render passes (cpu/gpu ms, top 8 of 16, totals 26.46/34.99):
+  debugscene 15.41/16.52   opaque 9.95/18.26   pass79 0.57/0.03  ...
 ```
 
-**`ViewDebugScene` is costing ~15 ms of CPU and ~16 ms of GPU — about
-half the frame — and it should not be running at all.** It is gated on
-`viewMode == 6 || viewMode == 8` (the debug scene re-render) or
-`viewMode == 11 || cullAudit` (the id pass), and:
+**The cull audit turned it on, and the harness turned the audit on.**
+`scripts/cull_audit.py` hard-coded `RenderDebug_CullAudit = True` until
+`64cb4090d9`; `idPassRender` is `(viewMode == 11 || cullAudit)`, so the
+id pass ran in **every frame of every run ever taken**. The note that
+recorded the question also recorded, one section later, the `FC_NO_AUDIT=1`
+that fixes it -- the flag had simply never been exercised.
 
-- the saved frame is an ordinary render, so `viewMode` is `Off`;
-- the run had the cull audit **off** and produced zero audit lines;
-- `user.cfg` carries no persisted override of either.
+The claim in the superseded text that "the run had the cull audit off and
+produced zero audit lines" was **false**: the log for that run carries 84
+`render cull audit:` lines. Nothing about the attribution was wrong. The
+instrument was correct and was reporting a pass that was genuinely running.
 
-⇒ Either something else turns that pass on, or the attribution is still
-wrong. ⚠️ **Until it is explained, treat 30577 draws / 32 ms submit /
-76 ms frame as possibly including a pass a real user frame never
-runs** — every phase in this document is scoped against that number, and
-half of it may be an instrument.
+Proof, from the two runs side by side (converged tails): turning the
+audit off removes **17728 draws**, which is the 17727-row scene draw list
+to within one, and takes the frame from 80.4 ms to 54.8 ms. The table at
+the top of this document is that comparison.
 
-**How to settle it in one run**: log `idPassRender`, `debugSceneRender`
-and `debugconf.cullAudit` on the timing cadence. If the id pass is
-running unbidden in ordinary frames, that is a *bug worth more than any
-phase here* — it would be a full extra scene rasterization on every
-frame, for every user.
+**What this cost, and the rule it earns:**
+
+- Every number in the first draft of this plan was inflated ~3x on
+  submit and ~2x on GPU.
+- **A default-on instrument is worse than no instrument.** The audit
+  defaulted on because it was the only consumer of the harness; the
+  moment a second consumer (frame timing) appeared, the default became a
+  silent multiplier on every number the second consumer produced.
+- **`os.environ.get("FC_NO_AUDIT", "") in ("", "0")` reads as "off by
+  default" and means the opposite** -- unset gives `""`, which is in the
+  tuple, which enables the audit. The polarity of an env-var default is
+  worth reading twice.
+- The earlier fix in this family was real and is kept: per-view stats are
+  resolved to a pass **in the frame the sample was taken**, never by raw
+  bgfx view id, because `idMap` is rebuilt each frame from the live set.
 
 ⚠️ The instrument already had one bug of this family and it is fixed:
 per-view stats were accumulated by **raw bgfx view id**, but `idMap` is

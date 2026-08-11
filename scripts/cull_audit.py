@@ -195,9 +195,23 @@ def run():
         # as "what a frame costs" must be taken with this OFF, or it is
         # a measurement of the measuring apparatus. The cull numbers
         # still need it ON, so the two cannot come from one row.
+        # /!\ Read the polarity twice: unset gives "", which IS in the
+        # tuple, so the audit defaults ON. It read as "off by default"
+        # for a while and every frame timing this workstream quoted was
+        # inflated ~3x on submit as a result.
         audit = os.environ.get("FC_NO_AUDIT", "") in ("", "0")
         v.RenderDebug_CullAudit = audit
-        if not audit:
+        # Both arms announce themselves. Only the OFF arm used to, so a
+        # run whose timings were inflated by the instrument said nothing
+        # at all -- and silence reads as "clean" to whoever greps the log
+        # a week later. A default that changes the numbers must be as
+        # loud as the flag that overrides it.
+        if audit:
+            emit("cull audit ON (default; FC_NO_AUDIT=1 turns it off) -- "
+                 "cull/over-cull numbers are valid, but the id pass adds "
+                 "the whole scene draw list to every frame, so FRAME "
+                 "TIMINGS IN THIS RUN ARE NOT A REAL FRAME")
+        else:
             emit("cull audit OFF -- frame timings are clean, cull/over-cull "
                  "numbers are NOT available in this run")
         # The culler's own account of the same frames, on the same cadence.
