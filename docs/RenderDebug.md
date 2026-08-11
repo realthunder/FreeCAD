@@ -307,6 +307,57 @@ at (§12.17) and the coarse occluder hulls (§12.16):
   reads as a weak version of the mechanism rather than as an unfinished
   one. `cull_audit.py` prints it beside every coarse row for that reason.
 
+### 2.4f `RenderDebug_CullBounds` — would a tighter occludee bound pay?
+
+A **diagnostic that decides whether a mechanism is worth building**, not a
+mechanism (docs/FarFieldProxies.md §12.19). It rides the cull audit's
+frame and asks every still-drawn row three more times against the same
+occluder buffer — with the world box that ships, with the mesh's own box
+through its model matrix, and with every triangle and line segment asked
+separately. **Nothing is culled by any of it**: the verdicts are counted
+against the id image and discarded.
+
+```
+render tight-bound audit: D drawn, N invisible (J of them judged)
+  | control world AABB cull C (p prize + r RISK) = rows never asked
+  | OBB corners cull O (...), o over control
+  | per-primitive cull P (...), p over control
+  | ceiling X% of judged invisible | judged J skipped S (points, no mesh) ...
+```
+
+Read it in this order, because two of the columns exist to stop the other
+ones being believed too early:
+
+- ⚠️⚠️ **RISK** — rows an arm would cull that own pixels. It must be zero.
+  An arm is conservative on paper until the id image has been asked, and
+  this workstream twice shipped a box test that answered hidden for
+  things plainly on screen (§12.6, §12.10).
+- ⚠️ **control** — the shipping world box, re-run here. A row it culls was
+  never asked by the pass at all, so it is a *coverage* gap and belongs to
+  neither tighter arm. Non-zero control means the arms' totals are
+  measuring the wrong thing.
+- ⚠️⚠️ **`(J of them judged)`** is the ceiling's denominator, and it is not
+  N. The first run of this diagnostic asked only about triangles, judged
+  2803 of 8388 rows, divided by all 7574 invisible ones and reported a
+  mechanism as weak that had never been offered two thirds of the
+  problem — a CAD frame draws each object's edges as well as its faces.
+  Line draws are now judged; **point draws still are not, on purpose**: a
+  point is a sprite and its vertex is not its footprint, so it is the one
+  arm here that could answer hidden for something visible.
+
+The arms are monotone — a triangle's hull lies inside the OBB, whose hull
+lies inside the AABB — so an arm that adds nothing to its predecessor is
+a proven dead end rather than an unlucky sample. Measured, the OBB arm
+adds 8 rows and the per-primitive ceiling 457 of 5157, which is what
+closed the occludee-bound question (§12.19).
+
+⚠️ **It costs far more than a frame** (~2M primitive queries, 27-38 ms)
+and runs only on the audit's frame. A row measured with it on is not
+comparable for timings with a row measured without it; `cull_audit.py`
+gates it behind `FC_TIGHT=1` and says so. Needs the cull audit on (it
+supplies the image) and the software occluder pass (it owns the buffer
+being re-asked).
+
 Mode-specific tuning rides the `u_userParams[0]` bootstrap lane: `.z`
 overrides the overdraw full-red count (default 8) and the mode-7 probe
 amplification (default 4096); `.x/.y` stay the generic output scale/bias.

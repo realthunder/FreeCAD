@@ -3089,3 +3089,126 @@ trade, not a free win, and `Render_OcclusionThreads` still overrides it.
 difference goes the way the merge predicts: **fewer shards lose less**,
 so eight workers hide *four more nodes* (207 against 203) and therefore
 leave six fewer instances for the per-instance pass to catch.
+
+### 12.19 measured: the occludee bound is not what is left
+
+Section 12.17 ended by naming the next suspect. After per-instance
+testing, 7568 draws -- 90% of everything a culled frame still submits --
+reach no pixel, while each of them was tested individually and answered
+visible. So the geometry is hidden and the box around it is not, and the
+obvious reading is that the box is too loose a stand-in: a world AABB is
+the axis-aligned box *of an oriented box* for any rotated part, inflated
+once by the rotation and again by the projection to a screen rectangle.
+
+⭐⭐ **This section is the measurement taken before that was built.**
+Section 12.16 built a mechanism on an unchecked premise and the premise
+was wrong; the rule that came out of it is that a number saying work was
+*discarded* is not evidence the work mattered. The same rule applies to a
+bound that *looks* loose.
+
+#### the instrument: three arms against one image
+
+`RenderDebug_CullBounds`, on the cull audit's frame only. Every row the
+cull left drawn is re-asked against the same occluder buffer, three ways,
+and **nothing is culled by any of it** -- the verdicts are counted
+against the id image of section 12.9 and thrown away:
+
+- **control** -- the world AABB that ships, run again here;
+- **OBB corners** -- the mesh's own local box through the draw's model
+  matrix, so the rotation is not paid for twice
+  (`MaskedDepth::projectPoints` folds the matrix exactly as `rasterize`
+  folds it for occluders, which is why a query about a mesh's vertices
+  lands where occluders built from those vertices landed);
+- **per primitive** -- every triangle, and every line segment, asked on
+  its own. ⚠️ Not shippable: section 12.17 costed occludee geometry at
+  9.75M triangles of query rasterization. It is here as the **ceiling**,
+  because nothing asked about an occludee can beat asking about its
+  geometry.
+
+Each arm is monotone in the one above it -- a triangle's hull lies inside
+the OBB, whose hull lies inside the AABB, and `testRect` answers Occluded
+for a subset rect at a no-nearer depth whenever it does for the enclosing
+one. So an arm that adds nothing to its predecessor is a *proven* dead
+end rather than an unlucky sample.
+
+**Two counters decide whether the readout may be believed at all**, and
+both were added after a first run that could not have been read without
+them:
+
+- **the control is not optional.** A row reaching this diagnostic
+  survived the cull, which covers both "tested and answered visible" and
+  "never asked". Without re-running the shipping box here, a coverage gap
+  would be published as a tightness win. It measured **0**, so every row
+  below really was tested.
+- **RISK** -- rows an arm would cull that own pixels. It must be zero. An
+  arm is conservative on paper until the id image has been asked, and
+  this workstream has twice shipped a box test that answered hidden for
+  things plainly on screen (sections 12.6, 12.10).
+
+#### ⛔⛔ measured: the tight bound buys 8 draws, the ceiling buys 457
+
+Rack model, 5455 objects, one camera, per-instance testing on, 72 audit
+samples. Every arm is **flat across all 72** (the CPU oracle is
+deterministic, section 12.16), **RISK 0 everywhere**, picture 0 of
+1440000 px differ.
+
+| arm | rows it would cull | over control | share of judged invisible |
+|---|---|---|---|
+| control (world AABB) | 0 | -- | -- |
+| OBB corners | **8** | 8 | 0.16% |
+| per primitive (ceiling) | **457** | 457 | **8.9%** |
+
+8388 rows drawn, 7574 of them invisible, 5157 of those judged; 1968681
+primitives asked in 27-38 ms.
+
+⛔ **The oriented box is a no-op, and the geometry says why it had to
+be.** The screen rect of the projected OBB corners can only beat the
+AABB's rect by the amount perspective inflates the AABB's extra corners
+-- under an orthographic camera the two rects are *identical*, because
+the extremum of screen x over a point set is the extremum of world x when
+x maps to x. The "inflated twice" story was wrong: the second inflation
+is the rect, and the rect is the same rect. 8 rows out of 5157.
+
+⛔⛔ **And the ceiling refutes the whole family.** Asking about every
+triangle and every segment of every drawn object -- the tightest question
+that can be asked of an occludee, at a cost no frame could pay -- flips
+**8.9%** of the invisible rows. The other 91% are invisible for a reason
+no occludee-side refinement can reach: they are behind geometry that is
+not in the occluder buffer. Priced at section 12.12's measured rate for
+what a hidden draw saves, 457 draws are worth **~0.3-0.6 ms**.
+
+#### ⚠️⚠️ the denominator, and how the first run got it wrong
+
+The first run of this diagnostic judged **2803 of 8388** drawn rows and
+divided its result by all 7574 invisible ones, reporting a 3.0% ceiling.
+The skipped 5585 were **line draws**: the arms asked only about
+triangles. A CAD frame submits each object's edges as well as its faces,
+so the line draws were not a rounding error -- they were the majority of
+what was left, and they are the *tighter* half of the problem, since a
+segment is a far smaller thing to ask about than the box around a
+wireframe. Including them doubled the ceiling (228 -> 457) and halved the
+denominator's dishonesty (7574 -> 5157 judged).
+
+⭐⭐ **A diagnostic that skips part of its input reports the mechanism as
+weak when the mechanism was never asked.** The readout now prints
+`invisible (N of them judged)` and divides by that, and prints what it
+skipped and why. Point draws are still skipped, on purpose: a point is a
+*sprite*, and its vertex is not its footprint, so it is the one arm here
+that could answer hidden for something on screen.
+
+#### KEY: what this decides
+
+Both sides of box-based occlusion are now measured and both are
+exhausted on this camera: ten times the occluders bought 3.1% (section
+12.16), and the tightest possible occludee bound buys 8.9%. **The
+remaining prize is not culling, it is submission** -- ~1.2-1.5 us of CPU
+per draw against 17727 draws is ~24 ms, which is two orders of magnitude
+more than what is left in the occlusion question.
+
+⚠️ That is a decision, not a task, and it is the fork section 12.17
+already laid out: GPU-driven indirect submission removes the per-draw CPU
+cost entirely, but there are no compute shaders in WebGL2 (which forks
+the browser tier, the project's first direction), bgfx's WebGPU backend
+is Dawn-native and unusable through Emscripten, and per-draw materials
+would have to become bindless first. ⚠️ One camera on one model, like
+every number in this section.
