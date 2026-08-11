@@ -279,23 +279,42 @@ def run():
         # bgfx's GL renderer reports no limit.
         budget_mb = int(os.environ.get("FC_GPU_BUDGET_MB", "0"))
         ceiling_mb = int(os.environ.get("FC_LEVEL_CEILING_MB", "0"))
+        # /!\ SET THE VIEW PROPERTY, NOT THE GLOBAL PARAMETER. Render_*
+        # are dynamic view properties and, where one exists, it WINS
+        # over the parameter of the same name -- so pinning the global
+        # GpuMemoryBudgetMB while the view carries its own 0 delivers
+        # nothing, silently, and the renderer reports "budget NONE"
+        # exactly as if the knob did not exist. Cost one run to find.
         rp = App.ParamGet("User parameter:BaseApp/Preferences/View/Render")
         rp.SetBool("LevelDebug", True)
+        # addProperty is idempotent on the pre-created render set, so
+        # this both creates the property on a build that lacks it and
+        # returns the existing one otherwise. Without it a missing
+        # property is an AttributeError that aborts the whole block --
+        # which is how one run silently set no knobs at all.
+        v.addProperty("App::PropertyBool", "Render_LevelDebug")
+        v.Render_LevelDebug = True
+        v.addProperty("App::PropertyInteger", "Render_GpuMemoryBudgetMB")
+        v.addProperty("App::PropertyInteger", "Render_LevelCeilingSimulateMB")
         if budget_mb:
             rp.SetInt("GpuMemoryBudgetMB", budget_mb)
+            v.Render_GpuMemoryBudgetMB = budget_mb
             emit("GPU budget PINNED to %d MB -- simulating a model that "
                  "does not fit; the plan may downgrade displayed meshes"
                  % budget_mb)
         else:
             rp.SetInt("GpuMemoryBudgetMB", 0)
+            v.Render_GpuMemoryBudgetMB = 0
             emit("GPU budget automatic = NONE on OpenGL -- the downgrade "
                  "half of the level plan will not run in this row")
         if ceiling_mb:
             rp.SetInt("LevelCeilingSimulateMB", ceiling_mb)
+            v.Render_LevelCeilingSimulateMB = ceiling_mb
             emit("CPU memory ceiling SIMULATED at %d MB -- exact "
                  "re-tessellations will be refused" % ceiling_mb)
         else:
             rp.SetInt("LevelCeilingSimulateMB", 0)
+            v.Render_LevelCeilingSimulateMB = 0
 
         v.RenderDebug_Timing = True
         # FC_TIGHT=1: also ask what a TIGHTER OCCLUDEE VOLUME would have

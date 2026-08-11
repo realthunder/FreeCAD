@@ -401,10 +401,24 @@ constexpr float kPlanDemoteMargin = 0.5f;
 /// consulted under an observed memory ceiling: without one the desktop
 /// keeps every rung it built ("keep both"), and a non-positive
 /// tolerance demotes nothing — everything desires exact.
+/// Why the plan refused, when it refuses everything. A budget that
+/// cannot be honoured looks identical to a budget nobody read, and the
+/// two want opposite fixes: `noRung` is plumbing (nothing to fall back
+/// to), `tooBig` is policy (the coarse rung would show, and this pass
+/// will not accept visible error to save memory).
+struct PlanDemoteStats {
+    uint32_t considered = 0;   ///< exact-resident sources examined
+    uint32_t noRung = 0;       ///< demotable error 0: no fallback exists
+    uint32_t tooBig = 0;       ///< on screen and over the margin
+    uint32_t offscreen = 0;    ///< free outright
+    uint32_t eligible = 0;     ///< on screen and under the margin
+};
+
 RendererExport std::vector<const void *> planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
-    const std::function<float(const void *)> &demoteErrOf);
+    const std::function<float(const void *)> &demoteErrOf,
+    PlanDemoteStats *stats = nullptr);
 
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.

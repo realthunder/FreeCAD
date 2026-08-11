@@ -1194,7 +1194,8 @@ Render::CoverageHistogram Render::coverageHistogram(const DrawCallList &draws,
 std::vector<const void *> Render::planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
-    const std::function<float(const void *)> &demoteErrOf)
+    const std::function<float(const void *)> &demoteErrOf,
+    PlanDemoteStats *stats)
 {
     std::vector<const void *> out;
     if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f
@@ -1218,9 +1219,14 @@ std::vector<const void *> Render::planMeshDemotes(
             continue;
         if (kept.count(mesh.sourceTag))
             continue;
+        if (stats)
+            ++stats->considered;
         const float coarseErr = demoteErrOf(mesh.sourceTag);
-        if (coarseErr <= 0.0f)
+        if (coarseErr <= 0.0f) {
+            if (stats)
+                ++stats->noRung;
             continue;
+        }
         const BoxSight sight = boxes.sight(draw, viewMatrix, projMatrix,
                                            viewportHeightPx);
         // Off-screen frees outright; on screen only when the coarse
@@ -1231,6 +1237,14 @@ std::vector<const void *> Render::planMeshDemotes(
             || (sight.what == BoxSight::Visible
                 && coarseErr * sight.diagPx
                     <= tolerancePx * kPlanDemoteMargin);
+        if (stats) {
+            if (!droppable)
+                ++stats->tooBig;
+            else if (sight.what == BoxSight::Offscreen)
+                ++stats->offscreen;
+            else
+                ++stats->eligible;
+        }
         if (!droppable) {
             kept.insert(mesh.sourceTag);
             continue;

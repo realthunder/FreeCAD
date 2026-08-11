@@ -1994,9 +1994,33 @@ RendererBridge::translateLevelDebug(App::PropertyContainer * view)
 size_t
 RendererBridge::translateGpuMemoryBudget(App::PropertyContainer * view)
 {
+    const long param = long(RenderParams::getGpuMemoryBudgetMB());
     long mb = long(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "GpuMemoryBudgetMB",
-            RenderParams::getGpuMemoryBudgetMB()));
+            view, "Render", "GpuMemoryBudgetMB", param));
+    // Which of the three links delivered the value, said once. A budget
+    // that arrives as 0 has three possible reasons -- the parameter is
+    // 0, a view property is overriding it with 0, or this translate is
+    // never called -- and the frame-side readout can distinguish none
+    // of them, having only the result.
+    // On change, not once: a one-shot here fires on the first frame of
+    // the document load, long before anything sets a budget, and then
+    // reports "param 0" forever after -- which reads as "the parameter
+    // did not arrive" when it simply had not been set yet.
+    if (std::getenv("FC_LEVEL_DEBUG")) {
+        static long lastParam = -1;
+        static long lastMb = -1;
+        if (param != lastParam || mb != lastMb) {
+            lastParam = param;
+            lastMb = mb;
+            Base::Console().Message(
+                "render levels: budget resolve: param %ldMB, view override %s "
+                "-> %ldMB\n", param,
+                viewPropOverride<App::PropertyInteger>(
+                    view, "Render", "GpuMemoryBudgetMB")
+                    ? "YES (the view property WINS over the parameter)" : "no",
+                mb);
+        }
+    }
     return mb > 0 ? size_t(mb) << 20 : 0;
 }
 

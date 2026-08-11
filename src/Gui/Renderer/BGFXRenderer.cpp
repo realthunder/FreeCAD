@@ -11156,6 +11156,7 @@ public:
                         levelPlanner.tolerance());
                     auto &reg = Render::MeshSourceRegistry::instance();
                     size_t nDemote = 0, nDowngrade = 0;
+                    Render::PlanDemoteStats dgStats;
                     // Demotions first (§13 step 3), and only ever under
                     // an observed CPU-memory ceiling: drop the hidden
                     // exact rungs outright (nothing on screen changes),
@@ -11189,7 +11190,8 @@ public:
                             levelPlanner.tolerance(),
                             [&reg](const void *t) {
                                 return reg.downgradeError(t);
-                            });
+                            },
+                            &dgStats);
                         nDowngrade = drops.size();
                         for (const void *tag : drops)
                             reg.requestDowngrade(tag);
@@ -11246,6 +11248,17 @@ public:
                             coarse.size(), exact.size(), tags.size(),
                             nDemote, nDowngrade,
                             reg.memoryCeilingEpoch() ? "OBSERVED" : "no");
+                        // Why a downgrade pass that ran refused
+                        // everything. Printed only when it ran, so its
+                        // absence is not mistaken for "no candidates".
+                        if (dgStats.considered)
+                            Base::Console().Message(
+                                "render levels: downgrade pass: considered %u | "
+                                "no fallback rung %u | on screen and too big %u "
+                                "| offscreen %u | eligible %u\n",
+                                dgStats.considered, dgStats.noRung,
+                                dgStats.tooBig, dgStats.offscreen,
+                                dgStats.eligible);
                     }
                 });
 

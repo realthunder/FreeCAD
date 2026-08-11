@@ -4329,6 +4329,12 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyInteger>(view, "GpuMemoryBudgetMB",
             RenderParams::docGpuMemoryBudgetMB(),
             RenderParams::getGpuMemoryBudgetMB());
+    _renderParam<App::PropertyBool>(view, "LevelDebug",
+            RenderParams::docLevelDebug(),
+            RenderParams::getLevelDebug());
+    _renderParam<App::PropertyInteger>(view, "LevelCeilingSimulateMB",
+            RenderParams::docLevelCeilingSimulateMB(),
+            RenderParams::getLevelCeilingSimulateMB());
     _renderParam<App::PropertyFloat>(view, "AORadius",
             RenderParams::docAORadius(), RenderParams::getAORadius());
     _renderParam<App::PropertyFloat>(view, "AOIntensity",
