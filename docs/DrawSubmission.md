@@ -7,17 +7,26 @@ submission route has been changed yet.
 
 **IMPORTANT -- read before spending any number on this page.**
 
-**1. Numbers taken under `vglrun`/Xvfb are NOT frame costs.** Every
-measurement here predating the native run was, and the harness moved the
-frame 50.6 -> 33.3 ms and one span by 19x. Frame timings need the native
-session with the monitor on. The VirtualGL recipe is still correct for
-"is it the real GPU" -- it is -- but not for "what does a frame cost".
+**1. A frame timed with the swap waiting for the display is not a frame
+cost.** Qt's default swap interval is 1, which pins the frame to the
+vblank grid: a 20 ms frame is *presented* in 33.3 ms on a 60 Hz screen.
+The wait is idle and it lands in `outside`, where it reads as though the
+application were spending it. **Every row whose clock matters wants
+`FC_SWAP_INTERVAL=0`** (and `FC_SPIN_SLEEP=0` in the harness). See "IT
+WAS THE DISPLAY".
 
-**2. The native baseline (default culling row, 12850 draws):**
-frame **33.3 ms** = Coin+Qt **47%** / bgfx backend **33%** / our own C++
-**20%**. See "MEASURED NATIVELY".
+**2. Numbers taken under `vglrun`/Xvfb are NOT frame costs either.**
+Every measurement here predating the native run was, and the harness
+moved the frame 50.6 -> 33.3 ms and one span by 19x. The VirtualGL
+recipe is still correct for "is it the real GPU" -- it is -- but not for
+"what does a frame cost".
 
-**3. The original headline was wrong twice**: "30577 draws, 32 ms, 76 ms"
+**3. The baseline (default culling row, 12850 draws, native, swap 0):**
+frame **20.4 ms** against **19.8 ms of GPU**. **This scene is
+GPU-bound.** The CPU spends 16.0 ms and then waits ~4 ms for the GPU.
+Of the CPU: bgfx backend 9.9, our own C++ 6.0, **all of Coin+Qt 0.8**.
+
+**4. The original headline was wrong twice**: "30577 draws, 32 ms, 76 ms"
 was the culling-OFF validation row *with* the cull audit inflating it.
 Always state the culling config and the audit setting with any number.
 
@@ -79,6 +88,12 @@ it**, and phases 1 and 2 below both target that unmeasured bucket rather
 than the 10.8 ms the `render passes:` line accounts for.
 
 ### MEASURED 2026-08-11: where the frame's CPU actually goes
+
+!! **Superseded twice over. Every millisecond in this subsection and the
+three that follow it was taken under VirtualGL *and* under a vblank-
+locked swap.** They are kept because the reasoning they record is the
+point -- see "IT WAS THE DISPLAY" for what the numbers actually are. The
+draw counts and the operating-point table below are still correct.
 
 The instrument was built (`cpu ours / bgfx::frame / outside` on the frame
 line) and run. **First: name the operating point.** Culling settings
@@ -287,6 +302,9 @@ removes it.
   visible member) and `bgfx::frame` to 20.09 ms, so both still scale as
   the fits said.
 
+**!! Every bullet in this subsection is wrong. `outside` is a wait, not
+work -- see the next section. The reversal was itself reversed.**
+
 !! **The rule this cost the most to learn, twice.** Every number on this
 page before today came from `vglrun` on Xvfb. It is the right recipe when
 the monitor is off ([[gpu-tests-monitor-off]] -- and it *is* the real
@@ -297,6 +315,130 @@ the monitor on; ask for the monitor rather than measuring around it.
 ! Native runs report `wait submit` / `wait render` as garbage
 (3.6e13 ms). Under VirtualGL they read 0.00. Do not quote those two
 fields from a native run until that is understood.
+
+## IT WAS THE DISPLAY: `outside` is idle, and it was inflating everything
+
+`outside` was 47% of the native frame and the largest single term, so it
+got the instrument it had never had: six spans in
+`View3DInventorViewer::renderScene()`, later four more in
+`QuarterWidget::paintEvent()`, draining onto the frame line beside an
+**unattributed remainder** (`Render::FrameOutside`).
+
+The Gui code in it costs **0.76 ms**, and the remainder was 12.3 ms:
+
+| span | ms/frame |
+|---|---|
+| Coin's whole `actualRedraw()` traversal | **0.18** |
+| background root | 0.25 |
+| paint event before the redraw | 0.16 |
+| overlay captures | 0.10 |
+| `QGraphicsView::paintEvent` (Qt's own painting) | 0.03 |
+| chrome (axis cross, navicube, items, fps) | 0.03 |
+| foreground root, delay queue, paint tail | 0.00 |
+| **unattributed** | **12.3** |
+
+So the sharp question this section was opened to ask -- *is Coin
+traversing the whole scene graph for nothing at render-cache mode 3?* --
+is answered **no, decisively**. Coin's composite is 0.5% of the frame.
+
+### What the remainder is: three arms
+
+The remainder is not in the paint event at all, and it is not work.
+
+1. **The harness's own sleep -- REFUTED.** `spin()` slept 5 ms per
+   redraw, between two `bgfx::frame` calls, i.e. inside `outside` by
+   construction. `FC_SPIN_SLEEP=0` changed **nothing** (frame 33.3,
+   outside 13.5). That null result is itself the clue: a wait that
+   *absorbs* a 5 ms sleep without growing is elastic, so it is waiting
+   on a deadline rather than doing work.
+2. **`__GL_SYNC_TO_VBLANK=0` -- no change, and the control mattered.**
+   Nothing moved. But the knob demonstrably works on this box:
+   `glxgears` goes **59.8 -> 12984 fps** under it. Without that positive
+   control the null would have read as "not vsync", which is the wrong
+   conclusion -- the variable simply does not reach the swap Qt makes
+   for the composited top-level window.
+3. **Move the vblank grid -- CONFIRMED.** `xrandr --rate 119.88` on the
+   same model, camera, culling row and binary:
+
+| | 60 Hz | 119.88 Hz | swap interval 0 |
+|---|---|---|---|
+| frame | 33.34 | **25.10** | **20.40** |
+| gpu | 19.39 | 19.52 | 19.82 |
+| draws | 12850 | 12849 | 12849 |
+| `bgfx::frame` | 10.30 | 10.34 | 9.92 |
+| outside | 12.9 | 7.0 | **4.5** |
+
+  33.33 ms is exactly two refresh intervals at 60 Hz; 25.02 ms is
+  exactly three at 119.88 Hz. The GPU, the draws and the backend do not
+  move. **The frame was waiting for the display.**
+
+`FC_SWAP_INTERVAL` (read in `preAppSetup()` into the default
+`QSurfaceFormat`, before `QApplication` exists) sets it where Qt reads
+it. It is deliberately an environment variable and not a preference: it
+is a measurement knob, and no user session should inherit a busy loop.
+
+### The baseline, with the wait removed
+
+Default culling row, 12849 draws, native, `FC_SWAP_INTERVAL=0`,
+`FC_SPIN_SLEEP=0`, audit off, converged medians:
+
+| term | ms | share of frame |
+|---|---|---|
+| **frame** | **20.40** | |
+| **gpu** | **19.82** | **97%** |
+| CPU total | ~16.0 | 78% |
+| -- `bgfx::frame` (backend submit) | 9.92 | 49% |
+| -- our own C++ | 6.02 | 30% |
+| ---- pre (instance grouping) | 1.47 | |
+| ---- submit loop | 3.17 | |
+| ---- post region | 1.00 | |
+| ---- cull | 0.34 | |
+| -- all of Coin + Qt + overlays | 0.76 | 4% |
+| CPU idle, waiting on the GPU | ~3.8 | 19% |
+
+**This scene is GPU-bound.** `frame` (20.40) sits 3% above `gpu`
+(19.82), and the CPU finishes 4 ms early every frame. The per-phase
+chain is also complete for the first time: its `unattr` is **0.02 ms**.
+
+**What this does to the plan.** Phases 1 and 3 spend CPU time the frame
+does not have to give: even a *free* submission path would move 20.4 ms
+to 19.8. The lever is the GPU half, and sec "primitives explain it better
+than draws" says which one -- fewer triangles, not fewer draws.
+
+### !! The wait was also inflating the CPU numbers, by 1.5-2x
+
+Same binary, same row, vsync on vs swap interval 0:
+
+| span | vsync on | swap 0 | ratio |
+|---|---|---|---|
+| cull | 0.68 | 0.34 | **2.0x** |
+| submit loop | 5.9 | 3.17 | 1.9x |
+| pre | 2.18 | 1.47 | 1.5x |
+| `bgfx::frame` | 10.5 | 9.92 | 1.06x |
+| ours (all of `render()`) | 20.6 | 15.9 | 1.3x |
+
+The cull issues no GL calls, so driver back-pressure cannot explain it
+doubling. The governor can: this box runs `ondemand` on `acpi-cpufreq`,
+idling at **1400 MHz** against **2724 MHz** busy -- a 1.95x ratio
+against the cull's measured 2.0x. **A process that sleeps a third of
+every frame is measured at the slow clock.**
+
+So `outside` did not merely fail to be work: while it existed it made
+every CPU span beside it read ~1.5-2x too expensive. The submit loop's
+"3.65 ms", the cull's "0.41 ms" and both fitted coefficients above were
+all taken that way.
+
+### The method, again
+
+Four wrong answers, and now a fifth and sixth, all with the same shape:
+**a term nobody had instrumented was assigned a cause by argument.** The
+cull, the submit loop, the eight scans, the context switch, "Coin is the
+problem", "the harness's sleep is the problem". What ended it each time
+was measuring the residue -- and here, one control:
+`__GL_SYNC_TO_VBLANK=0` produced *exactly* the same null result as the
+sleep did, and only `glxgears` distinguished "the mechanism is absent"
+from "the knob missed". **A null result from an unvalidated knob is not
+evidence.**
 
 ### The GPU half: primitives explain it better than draws
 
@@ -514,6 +656,12 @@ before planning work against it — and prefer a readout to a belief.
 
 ## Phase 1 — Encoded: spread the same submits across cores
 
+XX **Demoted again, harder: the frame is GPU-bound.** At the default
+row the CPU already finishes ~4 ms before the GPU does, so spreading
+submission across cores buys nothing a measurement could see -- a *free*
+submit path moves the frame 20.4 -> 19.8 ms. Revisit only if a scene is
+found whose CPU exceeds its GPU.
+
 ⚠️⚠️ **Demoted, and the honest label is desktop-only.** The plan first
 claimed the browser would "run the identical code with one encoder". It
 would — `begin()` returns a valid encoder and `end()` is a no-op — but
@@ -567,6 +715,12 @@ This one helps both.
 number is the one this phase exists for.
 
 ## Phase 3 — Batched: merge distinct meshes into one draw
+
+X **Same GPU-bound caveat as phase 1 for its CPU half** -- and its GPU
+half was already argued away by the primitives-not-draws measurement
+above. On this scene it has no side left to win on. It stays written
+down because a draw-bound scene would change that, not because this one
+is waiting for it.
 
 The structural fix, and the only one that *removes* per-draw cost instead
 of dividing it. Phases 1-2 make each draw cheaper or more parallel;
