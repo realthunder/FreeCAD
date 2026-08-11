@@ -3020,3 +3020,72 @@ the occludee's own geometry rather than its box. That is what the coarse
 hulls built in section 12.16 already are, and testing a few hundred hull
 triangles instead of six box faces is the standard occludee-geometry
 trade. It is the first use for them that their measurement supports.
+
+### 12.18 built: a worker count that counts cores
+
+Item 3 of section 12.15's list. The pass asked for
+`hardware_concurrency() - 2`, which is 14 on this box -- and this box has
+**8 physical cores and 16 logical**, so six cores were running two
+workers each. Measured there: per-worker throughput 0.55 at fourteen
+workers (8/14 predicts 0.57), the wall clock **flat** past eight, and the
+CPU bill a third higher, in the middle of a frame that also has
+thousands of draws to submit.
+
+Section 12.15 declined to fix it because "a portable physical core count
+does not exist and hw/2 would halve a non-SMT machine". Both halves of
+that are true and neither is an argument for guessing: `physicalCoreCount()`
+asks the platform, and answers 0 when it will not say.
+
+- **Linux**: the number of *distinct* `topology/thread_siblings_list`
+  values under `/sys/devices/system/cpu`. Sibling sets rather than
+  `core_id` values, because a core id is only unique within its package.
+- **macOS**: `sysctlbyname("hw.physicalcpu")`.
+- **Windows**: `GetLogicalProcessorInformationEx(RelationProcessorCore)`.
+- **Emscripten and anything else**: 0, and the caller keeps the old
+  `hardware_concurrency() - 2`. Over-subscribing costs CPU;
+  under-subscribing costs wall clock, which is the worse of the two.
+
+Cached after the first call -- the Linux path reads sysfs and this is
+asked once a frame.
+
+KEY: **Automatic is now one worker per physical core, which is the whole
+machine and not a share of it.** The pass runs `work(0)` on the calling
+thread and spawns the rest, so the submitting thread is blocked in here
+for the duration and its core is not doing anything else. Eight workers
+on eight cores is eight threads on eight cores.
+
+The same count now serves the per-instance pass of section 12.17, which
+had grown its own copy of the old formula.
+
+#### measured: 27% less CPU, and 0.4 ms more wall clock
+
+Same model and camera, per-instance testing on, 28-29 samples per row.
+The automatic row reports `8 threads` and is identical to the explicit
+eight-thread row in everything it culls.
+
+| threads | hidden | nodes hidden | sum raster min/med | raster min/med | over-cull |
+|---|---|---|---|---|---|
+| 14 (old default) | 9345 | 203 | 32.68 / 56.24 | 4.27 / 7.68 | 0 px |
+| **0 = auto = 8** | 9339 | 207 | **24.01** / 41.90 | 4.68 / 8.04 | 0 px |
+| 8 (explicit) | 9339 | 207 | 23.85 / 47.51 | 4.72 / 8.13 | 0 px |
+
+⚠️ **Read the minima here, not the medians.** The two eight-thread rows
+are the *same configuration* and their sum-raster medians are 41.90 and
+47.51 -- a 13% disagreement between identical arms, which is the same
+2x-spread problem section 12.15 was corrected for. Their minima agree to
+0.7% (24.01, 23.85), so that is the number the comparison can carry.
+
+**The trade, stated the way it came out rather than the way it was
+predicted:** aggregate worker CPU falls **27%** (32.68 -> 23.9 ms), and
+the wall clock rises about **0.4 ms** (4.27 -> 4.7 ms min). Section 12.15
+called the wall clock "flat past eight workers"; at 9.6% it is not quite
+flat, and the honest description is that eight workers buy a third of
+the machine back for a small share of the pass. In a frame that is CPU
+bound on submitting 17727 draws, nine milliseconds of worker time
+returned to the other cores is worth 0.4 ms on this one -- but it is a
+trade, not a free win, and `Render_OcclusionThreads` still overrides it.
+
+⭐ Culling is unchanged to within six draws (9345 against 9339), and the
+difference goes the way the merge predicts: **fewer shards lose less**,
+so eight workers hide *four more nodes* (207 against 203) and therefore
+leave six fewer instances for the per-instance pass to catch.
