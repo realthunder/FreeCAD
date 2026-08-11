@@ -228,40 +228,67 @@ section reaches: **while Coin composites into the viewport, the frame
 pays a context round-trip.** Removing it is worth 24% of the frame on
 its own, before any submission work.
 
-### The harness-artifact worry, tested and mostly dismissed
+### MEASURED NATIVELY: it WAS the harness, and the correction above was wrong
 
-This document first flagged the 12.3 ms as "the one finding most likely
-to be a harness artifact", because it was taken under `vglrun -d egl0`
-on Xvfb. **That was over-stated.** Three separate doubts, each tested:
+The monitor was reconnected (DP-2, 1920x1080), so the missing arm became
+possible: the same model, camera and culling row, on the real X session,
+**no VirtualGL and no Xvfb**. Both checks passed -- the log says
+`NVIDIA GeForce RTX 3060/PCIe/SSE2` and the run painted (frames 30-31
+per window, against the zero-frames trap).
 
-1. **"It might not be the real GPU."** DEAD. The run log says
-   `OpenGL renderer is: NVIDIA GeForce RTX 3060/PCIe/SSE2`,
-   `4.6.0 NVIDIA 535.183.01`, and carries no vglfaker preload warning --
-   so not the silent llvmpipe fallback the recipe warns about.
-   **Grep for it every run**: it is the difference between a hardware
-   number and a software one, and nothing else in the log says which.
-2. **"VirtualGL taxes every context switch."** REFUTED by the split
-   itself: `widget->makeCurrent()` costs **0.08 ms** where
-   `_BGFXLib.makeCurrent()` costs **7.16 ms**. Same call, same faker,
-   90x apart -- a uniform per-switch tax cannot produce that.
-3. **"It is vsync, not work."** Raised because `bgfx::frame` at 16.85 ms
-   sits just above one 60 Hz interval (16.67), and `BGFX_RESET_VSYNC` is
-   hard-coded at all three reset sites. REFUTED: at 30578 draws it is
-   31.47 ms, *below* two intervals (33.33), and a vsync wait rounds up;
-   and it tracks the validated fit (5.34 ms + 0.859 us/draw predicts
-   16.38 and 31.61). **A vsync wait does not scale with draw count.**
+Default config, 12850 draws, converged medians of 10 windows:
 
-! **What is still untested** is narrow: whether VirtualGL inflates
-`context->makeCurrent(offscreen)` *specifically*. That call targets a
-`QOffscreenSurface`, which is exactly what an indirect layer emulates,
-and its 7.16 ms has no cheap counterpart to compare against the way
-`widget->makeCurrent()` gave us for point 2. Settling it needs a
-painting run without VirtualGL, which needs a display attached: **every
-output on this box reports `disconnected`, so a run on `:1` paints zero
-frames** and says nothing about it. A dummy EDID plug would unblock it.
+| term | VirtualGL | **native** | native share |
+|---|---|---|---|
+| frame | 50.6 | **33.3** | |
+| `doneCurrent` | 5.15 | **0.28** | |
+| `_BGFXLib.makeCurrent` | 7.16 | **0.15** | |
+| whole post region | 12.95 | **1.15** | 3% |
+| bgfx::frame | 16.4 | **10.96** | 33% |
+| our C++ (pre+cull+submitloop+post) | 19.3 | **6.79** | 20% |
+| **outside (Coin + Qt + app)** | 14.8 | **15.56** | **47%** |
+| gpu | 22.1 | 19.3 | |
 
-=> Treat the 12.3 ms as **real and reproducible on hardware GL**, with
-one specific untested residue -- not as a suspect number.
+**The 12.3 ms context switch was 95% VirtualGL.** Natively it is 0.66 ms.
+The faker also inflated `bgfx::frame` by ~5.4 ms. `outside` is the one
+term it did not touch (14.8 vs 15.6) -- which is the tell: the costs that
+moved are the ones that cross the GL boundary.
+
+**This document's previous section, which downgraded the artifact worry,
+was wrong.** The reasoning it used -- "a uniform VirtualGL tax would
+also hit `widget->makeCurrent()`, which is 90x cheaper" -- was sound
+about *uniform* but wrong about the conclusion: the faker taxes
+`context->makeCurrent(offscreen)` specifically, which is precisely the
+residue that section listed as untested. **The flagged unknown was the
+whole answer.** An argument that narrows a doubt is not an argument that
+removes it.
+
+### What the native numbers do to everything above
+
+- X **"Coin is not the problem" is REVERSED.** `outside` is **47% of the
+  native frame** -- the largest single term. It only looked small because
+  VirtualGL had inflated everything around it.
+- X **The "15.6 ms of fixed cost" chase was chasing the harness.** The
+  post region is 1.15 ms natively. The cull (0.41 ms) and the submit
+  loop (3.65 ms) survive as measured; the thing they were being compared
+  against does not.
+- * **The honest native split is: Coin+Qt 47%, bgfx backend 33%, our own
+  C++ 20%.** Draw submission proper (`bgfx::frame`, 11 ms) is the second
+  target, and the first one is not in this document at all.
+- At 30578 draws `pre` rises to 8.73 ms (the instance-group work is per
+  visible member) and `bgfx::frame` to 20.09 ms, so both still scale as
+  the fits said.
+
+!! **The rule this cost the most to learn, twice.** Every number on this
+page before today came from `vglrun` on Xvfb. It is the right recipe when
+the monitor is off ([[gpu-tests-monitor-off]] -- and it *is* the real
+GPU), but **it is not a frame-cost harness**: it moved the frame 50.6 ->
+33.3 ms and one span by 19x. Frame timings need the native session with
+the monitor on; ask for the monitor rather than measuring around it.
+
+! Native runs report `wait submit` / `wait render` as garbage
+(3.6e13 ms). Under VirtualGL they read 0.00. Do not quote those two
+fields from a native run until that is understood.
 
 ### The GPU half: primitives explain it better than draws
 
