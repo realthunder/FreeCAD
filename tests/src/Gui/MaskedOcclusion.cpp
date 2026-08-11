@@ -730,6 +730,143 @@ TEST(MaskedOcclusion, AnOccludedVerdictSurvivesTheReference)
 }
 
 // -----------------------------------------------------------------
+// Asking about a volume the caller chose (section 12.19)
+// -----------------------------------------------------------------
+//
+// `testPointsConcurrent` exists so the occludee's bound can be something
+// other than the world AABB the draw carries -- its oriented box, or one
+// of its triangles. What has to be proved is that it is the *same test*
+// on a different volume, and that the volume is where the difference
+// comes from.
+
+TEST(MaskedOcclusion, PointSetAndBoxAgreeOnTheSameBox)
+{
+    MaskedDepth md;
+    md.resize(128, 128);
+    float V[16], P[16];
+    viewAt(V, 20.0f);
+    perspective(P, 60.0f, 1.0f, 0.5f, 200.0f);
+    md.setCamera(V, P, true);
+
+    const std::vector<float> wall = quadRect(-6.0f, -6.0f, 6.0f, 6.0f, 0.0f);
+    md.rasterize(wall.data(), 0, wall.size() / 3);
+
+    // The corners of a box, handed over as a point set, must answer
+    // exactly what the box answers. Anything else and the new entry
+    // point is a second test rather than the same one.
+    for (float cx : {0.0f, 4.0f, 12.0f}) {
+        for (float cz : {-10.0f, 10.0f}) {
+            float bmin[3], bmax[3];
+            boxAt(bmin, bmax, cx, 0.0f, cz, 1.0f);
+            float corners[8 * 3];
+            for (int c = 0; c < 8; ++c) {
+                corners[c * 3 + 0] = (c & 1) ? bmax[0] : bmin[0];
+                corners[c * 3 + 1] = (c & 2) ? bmax[1] : bmin[1];
+                corners[c * 3 + 2] = (c & 4) ? bmax[2] : bmin[2];
+            }
+            EXPECT_EQ(md.testBox(bmin, bmax),
+                      md.testPointsConcurrent(corners, 8))
+                    << "at cx " << cx << " cz " << cz;
+        }
+    }
+}
+
+TEST(MaskedOcclusion, ModelMatrixIsFoldedLikeTheRasterizerFoldsIt)
+{
+    MaskedDepth md;
+    md.resize(128, 128);
+    float V[16], P[16];
+    viewAt(V, 20.0f);
+    perspective(P, 60.0f, 1.0f, 0.5f, 200.0f);
+    md.setCamera(V, P, true);
+
+    const std::vector<float> wall = quadRect(-6.0f, -6.0f, 6.0f, 6.0f, 0.0f);
+    md.rasterize(wall.data(), 0, wall.size() / 3);
+
+    // A rotation about z by 45 degrees, then a translation: GL layout,
+    // the same one a DrawCall carries.
+    const float s = std::sin(0.7853981634f), c = std::cos(0.7853981634f);
+    const float model[16] = {c,     s,    0.0f, 0.0f,
+                             -s,    c,    0.0f, 0.0f,
+                             0.0f,  0.0f, 1.0f, 0.0f,
+                             1.0f,  2.0f, -10.0f, 1.0f};
+
+    // Local points, and the same points transformed by hand. The answer
+    // must not depend on which side of the call the matrix was applied,
+    // because the whole point of passing it in is that the buffer folds
+    // it exactly as `rasterize` does for the occluders.
+    const float local[4 * 3] = {-2.0f, -0.5f, 0.0f, 2.0f, -0.5f, 0.0f,
+                                2.0f,  0.5f,  0.0f, -2.0f, 0.5f, 0.0f};
+    float world[4 * 3];
+    for (int i = 0; i < 4; ++i) {
+        const float x = local[i * 3 + 0], y = local[i * 3 + 1],
+                    z = local[i * 3 + 2];
+        world[i * 3 + 0] = model[0] * x + model[4] * y + model[8] * z + model[12];
+        world[i * 3 + 1] = model[1] * x + model[5] * y + model[9] * z + model[13];
+        world[i * 3 + 2] = model[2] * x + model[6] * y + model[10] * z + model[14];
+    }
+
+    float ra[4], rb[4], da = 0.0f, db = 0.0f;
+    ASSERT_TRUE(md.projectPoints(local, 4, ra, &da, model));
+    ASSERT_TRUE(md.projectPoints(world, 4, rb, &db, nullptr));
+    for (int i = 0; i < 4; ++i)
+        EXPECT_NEAR(ra[i], rb[i], 1e-3f);
+    EXPECT_NEAR(da, db, 1e-6f);
+    EXPECT_EQ(md.testPointsConcurrent(world, 4),
+              md.testPointsConcurrent(local, 4, model));
+}
+
+TEST(MaskedOcclusion, GeometryCanBeHiddenWhereItsBoundingBoxIsNot)
+{
+    // ⭐⭐ The measurement of section 12.19, in one scene. An L-shaped
+    // part behind an L-shaped occluder: every triangle of it is covered,
+    // and its bounding box is not, because the box spans the empty
+    // quadrant of the L. This is the whole reason 90% of the draws that
+    // survive a cull reach no pixel, and the reason the diagnostic asks
+    // per triangle rather than per box.
+    MaskedDepth md;
+    md.resize(256, 256);
+    float V[16], P[16];
+    viewAt(V, 20.0f);
+    perspective(P, 60.0f, 1.0f, 0.5f, 200.0f);
+    md.setCamera(V, P, true);
+
+    // The occluder: two arms in the plane z = 0.
+    std::vector<float> occ = quadRect(-6.0f, -6.0f, -2.0f, 6.0f, 0.0f);
+    const std::vector<float> arm = quadRect(-6.0f, -6.0f, 6.0f, -2.0f, 0.0f);
+    occ.insert(occ.end(), arm.begin(), arm.end());
+    md.rasterize(occ.data(), 0, occ.size() / 3);
+
+    // The occludee: the same L, further away and inset on every edge.
+    //
+    // ⚠️ The inset is not cosmetic and it is not "room to spare" for its
+    // own sake: coverage is tracked per 8x4 block, so an occludee edge
+    // that lands on the occluder's edge shares a partially covered block
+    // and answers visible — correctly, and the test would be measuring
+    // the block grid rather than the shape. Every margin here is wider
+    // than one block at this resolution.
+    std::vector<float> part = quadRect(-6.5f, -6.5f, -4.0f, 6.5f, -5.0f);
+    const std::vector<float> arm2 = quadRect(-6.5f, -6.5f, 6.5f, -4.0f, -5.0f);
+    part.insert(part.end(), arm2.begin(), arm2.end());
+
+    // Its box spans the empty quadrant, which nothing covers.
+    float bmin[3] = {-6.5f, -6.5f, -5.0f};
+    float bmax[3] = {6.5f, 6.5f, -5.0f};
+    EXPECT_EQ(OccludeAnswer::Visible, md.testBox(bmin, bmax))
+            << "the box test must not already answer hidden, or the "
+               "comparison below is measuring nothing";
+
+    // Every triangle of it, asked on its own, is covered.
+    const size_t tris = part.size() / 9;
+    ASSERT_EQ(size_t(4), tris);
+    for (size_t t = 0; t < tris; ++t) {
+        EXPECT_EQ(OccludeAnswer::Occluded,
+                  md.testPointsConcurrent(&part[t * 9], 3))
+                << "triangle " << t;
+    }
+}
+
+// -----------------------------------------------------------------
 // The vector pre-pass (section 12.14)
 // -----------------------------------------------------------------
 //

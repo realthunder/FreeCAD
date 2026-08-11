@@ -1582,6 +1582,35 @@ public:
     static void setDebugCullAudit(const bool &v);
     static const char *docDebugCullAudit();
     //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugCullBounds
+    ///
+    /// Measure whether a tighter occludee volume would cull more
+    /// (docs/FarFieldProxies.md §12.19). After per-instance testing, 90%
+    /// of the draws a frame still submits reach no pixel while each was
+    /// tested and answered visible -- so the geometry is hidden and the
+    /// box around it is not. This re-asks every still-drawn row three
+    /// ways against the same occluder buffer: with the world box that
+    /// ships, with the mesh's own box through the model matrix (an
+    /// oriented box, where the shipping one is the axis-aligned box
+    /// around it), and with every triangle asked separately -- which is
+    /// far too slow to ship and is here as the ceiling, since nothing
+    /// asked about the occludee can beat asking about its geometry. The
+    /// verdicts are counted against the cull audit's id image, never
+    /// acted on, so an arm that would have deleted something visible
+    /// reports itself instead of being believed.
+    /// Needs the cull audit on (it supplies the image) and the software
+    /// occluder pass, which owns the buffer being asked. Runs on the
+    /// audit's frame only, and costs far more than a frame: it is a
+    /// measurement, not a mode to leave on.
+    static const bool & getDebugCullBounds();
+    static const bool & defaultDebugCullBounds();
+    static void removeDebugCullBounds();
+    static void setDebugCullBounds(const bool &v);
+    static const char *docDebugCullBounds();
+    //@}
 //[[[end]]]
 
     /// Called on any parameter change: re-selects the renderer backend on

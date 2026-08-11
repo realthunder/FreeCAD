@@ -137,6 +137,7 @@ public:
     bool DebugOcclusion;
     bool DebugProxyGen;
     bool DebugCullAudit;
+    bool DebugCullBounds;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -317,6 +318,8 @@ public:
         funcs["DebugProxyGen"] = &RenderParamsP::updateDebugProxyGen;
         DebugCullAudit = this->handle->GetBool("DebugCullAudit", false);
         funcs["DebugCullAudit"] = &RenderParamsP::updateDebugCullAudit;
+        DebugCullBounds = this->handle->GetBool("DebugCullBounds", false);
+        funcs["DebugCullBounds"] = &RenderParamsP::updateDebugCullBounds;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -684,6 +687,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDebugCullAudit(RenderParamsP *self) {
         self->DebugCullAudit = self->handle->GetBool("DebugCullAudit", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugCullBounds(RenderParamsP *self) {
+        self->DebugCullBounds = self->handle->GetBool("DebugCullBounds", false);
     }
 };
 
@@ -3605,6 +3612,51 @@ void RenderParams::setDebugCullAudit(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeDebugCullAudit() {
     instance()->handle->RemoveBool("DebugCullAudit");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugCullBounds() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Measure whether a tighter occludee volume would cull more\n"
+"(docs/FarFieldProxies.md §12.19). After per-instance testing, 90%\n"
+"of the draws a frame still submits reach no pixel while each was\n"
+"tested and answered visible -- so the geometry is hidden and the\n"
+"box around it is not. This re-asks every still-drawn row three\n"
+"ways against the same occluder buffer: with the world box that\n"
+"ships, with the mesh's own box through the model matrix (an\n"
+"oriented box, where the shipping one is the axis-aligned box\n"
+"around it), and with every triangle asked separately -- which is\n"
+"far too slow to ship and is here as the ceiling, since nothing\n"
+"asked about the occludee can beat asking about its geometry. The\n"
+"verdicts are counted against the cull audit's id image, never\n"
+"acted on, so an arm that would have deleted something visible\n"
+"reports itself instead of being believed.\n"
+"Needs the cull audit on (it supplies the image) and the software\n"
+"occluder pass, which owns the buffer being asked. Runs on the\n"
+"audit's frame only, and costs far more than a frame: it is a\n"
+"measurement, not a mode to leave on.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugCullBounds() {
+    return instance()->DebugCullBounds;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugCullBounds() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugCullBounds(const bool &v) {
+    instance()->handle->SetBool("DebugCullBounds",v);
+    instance()->DebugCullBounds = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugCullBounds() {
+    instance()->handle->RemoveBool("DebugCullBounds");
 }
 //[[[end]]]
 

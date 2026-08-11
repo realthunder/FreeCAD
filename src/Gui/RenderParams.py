@@ -695,6 +695,25 @@ Params = [
         "back to the CPU once a second, so it costs a full-resolution\n"
         "transfer on the frames it reports and nothing while off. Needs a\n"
         "backend with texture readback, which WebGL2 is not."),
+    ParamBool('DebugCullBounds',  False, title='Occludee bound diagnostic',
+        doc="Measure whether a tighter occludee volume would cull more\n"
+        "(docs/FarFieldProxies.md §12.19). After per-instance testing, 90%\n"
+        "of the draws a frame still submits reach no pixel while each was\n"
+        "tested and answered visible -- so the geometry is hidden and the\n"
+        "box around it is not. This re-asks every still-drawn row three\n"
+        "ways against the same occluder buffer: with the world box that\n"
+        "ships, with the mesh's own box through the model matrix (an\n"
+        "oriented box, where the shipping one is the axis-aligned box\n"
+        "around it), and with every triangle asked separately -- which is\n"
+        "far too slow to ship and is here as the ceiling, since nothing\n"
+        "asked about the occludee can beat asking about its geometry. The\n"
+        "verdicts are counted against the cull audit's id image, never\n"
+        "acted on, so an arm that would have deleted something visible\n"
+        "reports itself instead of being believed.\n"
+        "Needs the cull audit on (it supplies the image) and the software\n"
+        "occluder pass, which owns the buffer being asked. Runs on the\n"
+        "audit's frame only, and costs far more than a frame: it is a\n"
+        "measurement, not a mode to leave on."),
 ]
 
 def declare_begin():

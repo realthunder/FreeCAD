@@ -194,6 +194,17 @@ def run():
         # snapshot is broken" -- and one of those is a clean bill of health
         # while the other invalidates the entire run.
         v.RenderDebug_Timing = True
+        # FC_TIGHT=1: also ask what a TIGHTER OCCLUDEE VOLUME would have
+        # culled (#12.19). Off by default because its per-triangle arm
+        # costs far more than a frame -- it runs only on the audit's
+        # frame, but a row measured with it on cannot be read for
+        # timings. Turn it on for the diagnostic run and off for every
+        # row whose clock matters.
+        tight = os.environ.get("FC_TIGHT", "") not in ("", "0")
+        if tight:
+            v.RenderDebug_CullBounds = True
+            emit("tight-bound diagnostic ON -- timings in these rows are "
+                 "NOT comparable with rows measured without it")
 
         def audit_row(label):
             """One audit reading, taken only from log written after this
@@ -346,6 +357,65 @@ def run():
                         saved[len(saved) // 2] if saved else -1,
                         held[-1] if held else -1,
                         max(pend) if pend else -1))
+            # What a TIGHTER OCCLUDEE VOLUME would have culled (#12.19),
+            # when FC_TIGHT asked for it. Three arms against one image:
+            # the world box that ships, the mesh's own box through its
+            # model matrix, and every triangle asked separately (the
+            # ceiling -- nothing occludee-side beats asking the geometry).
+            #
+            # /!\ THE `RISK` COLUMN IS THE GATE, exactly as over-cull px
+            # is the gate on the culling itself. It counts rows an arm
+            # would have culled that OWN PIXELS, so a non-zero value
+            # means the arm is not conservative and its prize is not a
+            # prize. Read it before reading anything else on the line.
+            tb, _ = tail_lines("render tight-bound audit:", mark)
+            if tb:
+                emit("    tight bounds: %s"
+                     % tb[-1].split("render tight-bound audit:")[-1].strip())
+
+                def arm(name, pat):
+                    vals = [int(m.group(1)) for m in
+                            (re.search(pat, ln) for ln in tb) if m]
+                    if not vals:
+                        return None
+                    vals.sort()
+                    return "%s %d/%d/%d" % (name, vals[0],
+                                            vals[len(vals) // 2], vals[-1])
+                # Spread for the same reason #12.16 gives: the CPU oracle
+                # is deterministic, so these SHOULD be flat -- and a
+                # spread here would mean the arms are reading a buffer
+                # that is not the image's, which is the one way this
+                # diagnostic could quietly measure the wrong frame.
+                # /!\ `over control` IS THE ANSWER, not `prize`. The
+                # control re-runs the world box that already ships, so a
+                # row it also culls was never asked by the pass -- a
+                # coverage gap, and nothing to do with how tight the
+                # bound is. Reading `prize` instead would publish that
+                # gap as a win for whichever arm was being built.
+                arms = [arm("ctrlprize",
+                            r"control world AABB cull \d+ \((\d+) prize"),
+                        arm("obbover",
+                            r"OBB corners cull .*?, (\d+) over control"),
+                        arm("obbrisk",
+                            r"OBB corners cull \d+ \(\d+ prize \+ (\d+) RISK"),
+                        arm("primover",
+                            r"per-primitive cull .*?, (\d+) over control"),
+                        arm("primrisk",
+                            r"per-primitive cull \d+ \(\d+ prize \+ (\d+) RISK"),
+                        arm("invisible", r"drawn, (\d+) invisible"),
+                        # /!\ The ceiling's denominator. A row the arms
+                        # were never offered cannot be evidence that
+                        # they find nothing -- the first run of this
+                        # divided by all 7574 invisible rows while
+                        # judging 2803 of them.
+                        arm("judgedinvis", r"invisible \((\d+) of them judged")]
+                arms = [a for a in arms if a]
+                if arms:
+                    emit("    tight arms over %d samples, min/med/max: %s"
+                         % (len(tb), " | ".join(arms)))
+            elif tight:
+                emit("    tight bounds: NO LINE -- the diagnostic did not "
+                     "run (needs the software pass and the audit both on)")
             return got[-1]
 
         # 1. Instrument validation: nothing masked, so over-cull must be 0.

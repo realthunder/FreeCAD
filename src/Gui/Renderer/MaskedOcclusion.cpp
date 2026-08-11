@@ -869,22 +869,28 @@ void MaskedDepth::emitTriangle(const float *pa, const float *pb,
 // Queries
 // ---------------------------------------------------------------------
 
-bool MaskedDepth::projectBox(const float *bboxMin, const float *bboxMax,
-                             float *rect, float *depthNear) const
+bool MaskedDepth::projectPoints(const float *points, size_t count,
+                                float *rect, float *depthNear,
+                                const float *model) const
 {
-    if (blocks.empty())
+    if (blocks.empty() || !count)
         return false;
+
+    // Folded exactly as `rasterize` folds it, and for the reason given
+    // beside the declaration: a query about a mesh's own vertices has to
+    // land where the occluders built from those vertices landed.
+    float mvp[16];
+    if (model)
+        mat4Mul(mvp, viewproj, model);
+    else
+        std::memcpy(mvp, viewproj, sizeof(mvp));
 
     double rx0 = DBL_MAX, ry0 = DBL_MAX, rx1 = -DBL_MAX, ry1 = -DBL_MAX;
     double dnear = -DBL_MAX;
-    for (int c = 0; c < 8; ++c) {
-        // The bit-encoded corner order shared with occlusionBoxIndices:
-        // x from bit 0, y from bit 1, z from bit 2.
-        const double px = (c & 1) ? bboxMax[0] : bboxMin[0];
-        const double py = (c & 2) ? bboxMax[1] : bboxMin[1];
-        const double pz = (c & 4) ? bboxMax[2] : bboxMin[2];
+    for (size_t c = 0; c < count; ++c) {
+        const float *p = points + c * 3;
         CVert v;
-        transformPoint(v, viewproj, px, py, pz);
+        transformPoint(v, mvp, p[0], p[1], p[2]);
         const bool behind = homogeneous ? (v.z + v.w < 0.0) : (v.z < 0.0);
         if (behind || v.w < kMinW)
             return false;  // no bounded rect; the caller must draw it
@@ -907,6 +913,33 @@ bool MaskedDepth::projectBox(const float *bboxMin, const float *bboxMax,
     rect[3] = float(ry1);
     *depthNear = float(dnear);
     return true;
+}
+
+bool MaskedDepth::projectBox(const float *bboxMin, const float *bboxMax,
+                             float *rect, float *depthNear) const
+{
+    float corners[8 * 3];
+    for (int c = 0; c < 8; ++c) {
+        // The bit-encoded corner order shared with occlusionBoxIndices:
+        // x from bit 0, y from bit 1, z from bit 2.
+        corners[c * 3 + 0] = (c & 1) ? bboxMax[0] : bboxMin[0];
+        corners[c * 3 + 1] = (c & 2) ? bboxMax[1] : bboxMin[1];
+        corners[c * 3 + 2] = (c & 4) ? bboxMax[2] : bboxMin[2];
+    }
+    return projectPoints(corners, 8, rect, depthNear);
+}
+
+OccludeAnswer MaskedDepth::testPointsConcurrent(const float *points,
+                                                size_t count,
+                                                const float *model) const
+{
+    if (blocks.empty())
+        return OccludeAnswer::Visible;
+    float rect[4];
+    float dnear = 0.0f;
+    if (!projectPoints(points, count, rect, &dnear, model))
+        return OccludeAnswer::Visible;
+    return testRectCounted(rect[0], rect[1], rect[2], rect[3], dnear, nullptr);
 }
 
 OccludeAnswer MaskedDepth::testBox(const float *bboxMin,

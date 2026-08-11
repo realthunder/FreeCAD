@@ -4677,6 +4677,14 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         prop->setValue(RenderParams::getDebugCullAudit());
         prop->setStatus(App::Property::Hidden, true);
     }
+    if (!view->getPropertyByName("RenderDebug_CullBounds")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "RenderDebug_CullBounds", "RenderDebug",
+                                         RenderParams::docDebugCullBounds()));
+        prop->setValue(RenderParams::getDebugCullBounds());
+        prop->setStatus(App::Property::Hidden, true);
+    }
 }
 
 // #define ENABLE_GL_DEPTH_RANGE

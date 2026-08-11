@@ -1373,6 +1373,9 @@ RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
     res.cullAudit = viewParamOverride<App::PropertyBool>(
             view, "RenderDebug", "CullAudit",
             RenderParams::getDebugCullAudit());
+    res.cullBounds = viewParamOverride<App::PropertyBool>(
+            view, "RenderDebug", "CullBounds",
+            RenderParams::getDebugCullBounds());
 
     // Dynamic named shader parameters (docs/RenderDebug.md §2.5): every
     // further RenderDebug_* property becomes a like-named vec4(-array)
@@ -1398,7 +1401,8 @@ RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
                     || name == "Occlusion"  // uniform nobody declares
                     || name == "ProxyCut"
                     || name == "ProxyGen"
-                    || name == "CullAudit")
+                    || name == "CullAudit"
+                    || name == "CullBounds")
                 continue;
             Render::RenderDebugConfig::UserParam param;
             param.name = name.compare(0, 2, "u_") == 0 ? name : "u_" + name;

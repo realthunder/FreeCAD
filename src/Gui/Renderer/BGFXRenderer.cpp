@@ -60,10 +60,12 @@
 # endif
 #endif
 
+#include <cfloat>
 #include <chrono>
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <thread>
 #include <vector>
 #include <tuple>
 #include <unordered_map>
@@ -9748,6 +9750,392 @@ static bool cullAuditDue()
     return true;
 }
 
+/// ⭐⭐ What a tighter occludee volume would have culled
+/// (docs/FarFieldProxies.md §12.19). A **diagnostic**, not a mechanism:
+/// it decides whether the mechanism is worth building.
+///
+/// Section 12.17 left 90% of what is still drawn reaching no pixel while
+/// each of those draws had been tested individually and answered
+/// visible — so the boxes are not covered although the geometry is. That
+/// has three candidate explanations with wildly different prices, and
+/// this measures all three against the same frame:
+///
+/// - **world AABB** (`aabbMask`, what ships today) — the control;
+/// - **OBB corners** (`obbMask`) — the mesh's *local* box through the
+///   model matrix. A world AABB is the axis-aligned box of an oriented
+///   box for any rotated part, inflated twice; this is the cheap fix,
+///   and on an axis-aligned model it is expected to buy nothing;
+/// - **per triangle** (`triMask`) — every triangle of the draw asked
+///   separately, the draw counted hidden only when none of them reaches
+///   a pixel. ⚠️ Not a shippable mechanism (§12.17's closing paragraph
+///   costed it at 9.75M triangles of query rasterization) but it is the
+///   **ceiling**: no occludee-side refinement against this occluder set
+///   can beat asking about the geometry itself.
+///
+/// KEY: Each arm is monotone in the one above it — a triangle's hull
+/// lies inside the OBB, whose hull lies inside the AABB, and `testRect`
+/// answers Occluded for a subset rect at a no-nearer depth whenever it
+/// does for the enclosing one. So an arm that culls nothing its
+/// predecessor did not is a *proven* dead end and not an unlucky sample.
+///
+/// The masks are handed to the audit rather than acted on, and there
+/// intersected with the id image: a row that would flip and owns no
+/// pixel is the prize, a row that would flip and owns pixels is
+/// over-cull the arm would have introduced. The second number is why
+/// this is measurable at all — the arms are hypotheses, and the id image
+/// is the only thing in the renderer that can call one wrong.
+/// ⚠️ The control arm is not optional. A row reaching this diagnostic
+/// survived the cull, but "survived" covers two different things: it was
+/// tested with its world AABB and answered visible, or it was **never
+/// asked** (an on-top draw, an exempt row, anything the hierarchy does
+/// not hold). Without re-running the world AABB here, both would be
+/// counted as the tighter arms' winnings, and a coverage gap would be
+/// published as a tightness result — the §12.16 mistake in a new place:
+/// reading a number as evidence for the mechanism you happen to be
+/// building. `aabbCull` is that number, and it belongs to neither arm.
+struct TightBoundAudit {
+    uint32_t judged = 0;      ///< drawn rows the arms could answer for
+    /// ⚠️⚠️ Rows the arms were never asked about, and why. The first run
+    /// of this diagnostic judged 2803 of 8388 drawn rows and divided its
+    /// result by all 7574 invisible ones — reporting a 3.0% ceiling for
+    /// a mechanism that had not been offered two thirds of the problem.
+    /// A CAD scene draws each object as fills *and* edges, so the line
+    /// draws are not a rounding error here; they are the majority.
+    uint32_t skippedPoint = 0;   ///< point sprites: a vertex is not a footprint
+    uint32_t skippedNoMesh = 0;  ///< no geometry to ask about at all
+    uint32_t capped = 0;      ///< rows too big for the per-primitive arm
+    uint32_t aabbCull = 0;    ///< rows the shipping world box would cull
+    uint32_t obbCull = 0;     ///< rows the OBB arm would cull
+    uint32_t triCull = 0;     ///< rows the per-triangle arm would cull
+    uint32_t obbOffscreen = 0;   ///< of obbCull, decided by the rect, not depth
+    uint32_t triOffscreen = 0;   ///< of triCull, ditto
+    uint64_t primitives = 0;  ///< primitives the per-primitive arm asked about
+    float ms = 0.0f;
+};
+
+/// The local-space bounds of the vertices a draw actually references.
+///
+/// KEY: The draw's range, not the whole mesh. A part draw (`indexStart`/
+/// `indexCount`) covers a face of a mesh whose world box in `DrawCall`
+/// is already that face's, so bounding the *whole* mesh here would make
+/// the "tight" arm looser than the control it is being compared against
+/// — the one way this measurement could report a negative result that is
+/// an artefact of its own arithmetic.
+static bool drawLocalBounds(const Render::MeshData &m, const int32_t *indices,
+                            size_t first, size_t count, float *lo, float *hi)
+{
+    lo[0] = lo[1] = lo[2] = FLT_MAX;
+    hi[0] = hi[1] = hi[2] = -FLT_MAX;
+    bool any = false;
+    for (size_t i = 0; i < count; ++i) {
+        const int32_t vi = indices[first + i];
+        if (vi < 0 || vi >= m.numVertices)
+            continue;
+        const float *p = m.positions + size_t(vi) * 3;
+        for (int k = 0; k < 3; ++k) {
+            lo[k] = std::min(lo[k], p[k]);
+            hi[k] = std::max(hi[k], p[k]);
+        }
+        any = true;
+    }
+    return any;
+}
+
+/// Take the three arms over every row the cull left drawn.
+///
+/// Runs on the audit's frame only (once a second, and only while
+/// RenderDebug_CullBounds is on): the per-triangle arm is deliberately
+/// far too expensive to ship, so it must never be on a path a normal
+/// frame takes.
+static void auditTightBounds(const Render::DrawCallList &scene,
+                             const std::vector<uint8_t> &culled,
+                             const Render::MaskedDepth &depth,
+                             uint32_t primitiveCap, uint32_t threads,
+                             std::vector<uint8_t> &judgedMask,
+                             std::vector<uint8_t> &aabbMask,
+                             std::vector<uint8_t> &obbMask,
+                             std::vector<uint8_t> &triMask,
+                             TightBoundAudit &out)
+{
+    const auto t0 = bx::getHPCounter();
+    judgedMask.assign(scene.size(), 0);
+    aabbMask.assign(scene.size(), 0);
+    obbMask.assign(scene.size(), 0);
+    triMask.assign(scene.size(), 0);
+
+    uint32_t workers = Render::occluderWorkers(threads);
+    if (scene.size() < 256)
+        workers = 1;
+    std::vector<TightBoundAudit> tally(workers);
+
+    auto work = [&](uint32_t w) {
+        TightBoundAudit &t = tally[w];
+        for (size_t i = w; i < scene.size(); i += workers) {
+            if (i < culled.size() && culled[i])
+                continue;  // already skipped; nothing left to win here
+            const Render::DrawCall &d = scene[i];
+            if (!d.mesh || !d.mesh->positions || d.mesh->numVertices < 1) {
+                ++t.skippedNoMesh;
+                continue;
+            }
+            // ⭐ Whichever primitive this draw actually renders. A CAD
+            // frame submits an object's edges as well as its faces, and
+            // an edge draw is a draw: it costs the same submission, it
+            // is hidden by the same walls, and a segment is a far
+            // tighter thing to ask about than the box around a whole
+            // wireframe. Asking only about triangles measured a third
+            // of the problem and reported the answer as all of it.
+            const int32_t *indices = nullptr;
+            size_t total = 0;
+            size_t per = 3;
+            switch (d.material.type) {
+            case Render::Material::Triangle:
+                indices = d.mesh->triangleIndices;
+                total = size_t(std::max(0, d.mesh->numTriangleIndices));
+                per = 3;
+                break;
+            case Render::Material::Line:
+                indices = d.mesh->lineIndices;
+                total = size_t(std::max(0, d.mesh->numLineIndices));
+                per = 2;
+                break;
+            default:
+                // ⚠️ A point draw is a *sprite*: it covers pixels around
+                // its vertex, and the vertex alone is not that footprint.
+                // Asking about it would be the one arm here that can
+                // answer hidden for something on screen.
+                ++t.skippedPoint;
+                continue;
+            }
+            if (!indices || total < per) {
+                ++t.skippedNoMesh;
+                continue;
+            }
+            // The same resolution the occluder pass uses.
+            size_t first = size_t(std::max(0, d.indexStart));
+            size_t count = d.indexCount > 0 ? size_t(d.indexCount) : total;
+            if (first > total)
+                first = total;
+            if (first + count > total)
+                count = total - first;
+            if (count < per) {
+                ++t.skippedNoMesh;
+                continue;
+            }
+            ++t.judged;
+            judgedMask[i] = 1;
+
+            // The control: the box that ships, asked again here. A row
+            // it culls was never asked in the first place, and nothing
+            // below may take credit for it.
+            if (d.bboxMin[0] <= d.bboxMax[0]
+                && depth.testBoxConcurrent(d.bboxMin, d.bboxMax)
+                        == Render::OccludeAnswer::Occluded) {
+                aabbMask[i] = 1;
+                ++t.aabbCull;
+            }
+
+            float lo[3], hi[3];
+            if (!drawLocalBounds(*d.mesh, indices, first, count, lo, hi)) {
+                ++t.skippedNoMesh;
+                --t.judged;
+                judgedMask[i] = 0;
+                continue;
+            }
+            // The eight corners of the tight *local* box, left in local
+            // space and taken to world by the buffer itself: an oriented
+            // box, where DrawCall::bboxMin/Max is the axis-aligned box
+            // drawn around it.
+            const float *model = d.identity ? nullptr : d.model;
+            float corners[8 * 3];
+            for (int c = 0; c < 8; ++c) {
+                corners[c * 3 + 0] = (c & 1) ? hi[0] : lo[0];
+                corners[c * 3 + 1] = (c & 2) ? hi[1] : lo[1];
+                corners[c * 3 + 2] = (c & 4) ? hi[2] : lo[2];
+            }
+            const Render::OccludeAnswer obb =
+                    depth.testPointsConcurrent(corners, 8, model);
+            const bool obbHides = obb == Render::OccludeAnswer::Occluded
+                    || obb == Render::OccludeAnswer::Offscreen;
+            if (obbHides) {
+                obbMask[i] = 1;
+                ++t.obbCull;
+                if (obb == Render::OccludeAnswer::Offscreen)
+                    ++t.obbOffscreen;
+                // Monotone: every triangle is inside this box, so the
+                // finer arm cannot disagree. Skipping the loop here is
+                // not an approximation, and it is most of what makes the
+                // diagnostic affordable.
+                triMask[i] = 1;
+                ++t.triCull;
+                if (obb == Render::OccludeAnswer::Offscreen)
+                    ++t.triOffscreen;
+                continue;
+            }
+
+            const size_t prims = count / per;
+            if (prims > primitiveCap) {
+                ++t.capped;
+                continue;
+            }
+            // Every primitive asked separately. A draw is hidden only if
+            // none of them reaches a pixel; the first one that does ends
+            // the row, which is why a *visible* draw is cheap here and
+            // only the invisible ones — the ones being counted — pay in
+            // full.
+            bool hidden = true, sawDepth = false;
+            for (size_t prim = 0; prim < prims && hidden; ++prim) {
+                float p[9];
+                bool ok = true;
+                for (size_t k = 0; k < per; ++k) {
+                    const int32_t vi = indices[first + prim * per + k];
+                    if (vi < 0 || vi >= d.mesh->numVertices) {
+                        ok = false;
+                        break;
+                    }
+                    const float *src = d.mesh->positions + size_t(vi) * 3;
+                    p[k * 3 + 0] = src[0];
+                    p[k * 3 + 1] = src[1];
+                    p[k * 3 + 2] = src[2];
+                }
+                ++t.primitives;
+                if (!ok)
+                    continue;  // a degenerate index reaches no pixel either
+                const Render::OccludeAnswer a =
+                        depth.testPointsConcurrent(p, per, model);
+                if (a == Render::OccludeAnswer::Occluded)
+                    sawDepth = true;
+                else if (a != Render::OccludeAnswer::Offscreen)
+                    hidden = false;
+            }
+            if (hidden) {
+                triMask[i] = 1;
+                ++t.triCull;
+                if (!sawDepth)
+                    ++t.triOffscreen;
+            }
+        }
+    };
+
+    if (workers == 1) {
+        work(0);
+    }
+    else {
+        std::vector<std::thread> pool;
+        pool.reserve(workers - 1);
+        for (uint32_t w = 1; w < workers; ++w)
+            pool.emplace_back(work, w);
+        work(0);
+        for (auto &th : pool)
+            th.join();
+    }
+    for (const TightBoundAudit &t : tally) {
+        out.judged += t.judged;
+        out.skippedPoint += t.skippedPoint;
+        out.skippedNoMesh += t.skippedNoMesh;
+        out.capped += t.capped;
+        out.obbCull += t.obbCull;
+        out.triCull += t.triCull;
+        out.obbOffscreen += t.obbOffscreen;
+        out.triOffscreen += t.triOffscreen;
+        out.primitives += t.primitives;
+    }
+    out.ms = float(1000.0 * double(bx::getHPCounter() - t0)
+                   / double(bx::getHPFrequency()));
+}
+
+/// Read the tight-bound arms against the id image.
+///
+/// \a hist is reportCullAudit's histogram (id = row + 1), so a drawn row
+/// owning no pixel is one the frame paid for and could not see. Each arm
+/// splits that set two ways, and both halves matter:
+///
+/// - **prize** — rows the arm would cull that own no pixel: real work
+///   removed, and the reason to build it;
+/// - **RISK** — rows the arm would cull that own pixels: geometry it
+///   would have deleted from the screen. It must be zero. An arm is
+///   only conservative on paper until the id image has been asked, and
+///   this workstream has twice shipped a box test that answered
+///   "hidden" for things that were plainly visible (§12.6, §12.10).
+static void reportTightBounds(const std::vector<uint32_t> &hist,
+                              const std::vector<uint8_t> &mask,
+                              const std::vector<uint8_t> &judgedMask,
+                              const std::vector<uint8_t> &aabbMask,
+                              const std::vector<uint8_t> &obbMask,
+                              const std::vector<uint8_t> &triMask,
+                              const TightBoundAudit &t)
+{
+    if (hist.empty() || obbMask.empty())
+        return;
+    const size_t rows = hist.size() - 1;
+    size_t drawn = 0, invisible = 0;
+    // ⚠️⚠️ THE DENOMINATOR THE CEILING IS DIVIDED BY. Not every invisible
+    // row was offered to the arms, and dividing by the ones that were
+    // not is how a diagnostic reports a mechanism as weak when it was
+    // simply never asked. The first run of this made exactly that
+    // mistake and quoted 3.0% off a third of the rows.
+    size_t judgedInvisible = 0;
+    size_t aabbPrize = 0, aabbRisk = 0;
+    size_t obbPrize = 0, obbRisk = 0, triPrize = 0, triRisk = 0;
+    // What each arm wins *over the control*, which is the only figure
+    // that is about the bound rather than about coverage.
+    size_t obbOver = 0, triOver = 0;
+    for (size_t i = 0; i < rows; ++i) {
+        if (i < mask.size() && mask[i])
+            continue;
+        ++drawn;
+        const bool blind = hist[i + 1] == 0;
+        if (blind)
+            ++invisible;
+        if (blind && i < judgedMask.size() && judgedMask[i])
+            ++judgedInvisible;
+        const bool ctrl = i < aabbMask.size() && aabbMask[i];
+        if (ctrl)
+            (blind ? aabbPrize : aabbRisk) += 1;
+        if (i < obbMask.size() && obbMask[i]) {
+            (blind ? obbPrize : obbRisk) += 1;
+            if (blind && !ctrl)
+                ++obbOver;
+        }
+        if (i < triMask.size() && triMask[i]) {
+            (blind ? triPrize : triRisk) += 1;
+            if (blind && !ctrl)
+                ++triOver;
+        }
+    }
+
+    char buf[1200];
+    snprintf(buf, sizeof(buf),
+             "render tight-bound audit: %zu drawn, %zu invisible (%zu of them "
+             "judged) | control world AABB cull %u (%zu prize + %zu RISK) = "
+             "rows never asked | OBB corners cull %u (%zu prize + %zu RISK, %u "
+             "offscreen), %zu over control | per-primitive cull %u (%zu prize "
+             "+ %zu RISK, %u offscreen), %zu over control | ceiling %.1f%% of "
+             "judged invisible | judged %u skipped %u (%u points, %u no mesh) "
+             "capped %u, %llu prims in %.1f ms\n",
+             drawn, invisible, judgedInvisible,
+             t.aabbCull, aabbPrize, aabbRisk,
+             t.obbCull, obbPrize, obbRisk, t.obbOffscreen, obbOver,
+             t.triCull, triPrize, triRisk, t.triOffscreen, triOver,
+             judgedInvisible
+                     ? 100.0 * double(triOver) / double(judgedInvisible)
+                     : 0.0,
+             t.judged, t.skippedPoint + t.skippedNoMesh,
+             t.skippedPoint, t.skippedNoMesh, t.capped,
+             (unsigned long long)t.primitives, t.ms);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+    if (aabbRisk || obbRisk || triRisk) {
+        RENDER_ERR("render tight-bound audit: an arm would have culled a "
+                   "draw that owns pixels. The arm is not conservative, or "
+                   "its bound is not the geometry's -- its prize count is "
+                   "not usable until this is zero.");
+    }
+}
+
 /// ⭐⭐ Check the occlusion culling against the geometry it stands for
 /// (docs/FarFieldProxies.md §12.9).
 ///
@@ -9778,6 +10166,11 @@ static void reportCullAudit(const std::vector<uint16_t> &pixels,
 {
     const size_t rows = keys.size();
     const size_t npx = size_t(w) * size_t(h);
+    // Emptied before anything can fail: the histogram outlives the call
+    // (reportTightBounds reads it next), and a reader cannot tell a
+    // stale one, or an all-zero one from a broken id pass, from a frame
+    // in which nothing reached the screen. Empty says "no answer here".
+    hist.clear();
     if (!rows || pixels.size() < npx * 4)
         return;
     hist.assign(rows + 1, 0u);
@@ -9815,6 +10208,7 @@ static void reportCullAudit(const std::vector<uint16_t> &pixels,
                    "claimed a pixel, which cannot be true of a frame that "
                    "rendered. The audit is not measuring the scene; its "
                    "numbers would be meaningless and are not reported.");
+        hist.clear();
         return;
     }
 
@@ -13387,6 +13781,27 @@ public:
                 idKeys.reserve(scene.size());
                 for (const auto &d : scene)
                     idKeys.push_back(d.objectKey);
+
+                // The tight-bound arms, on this frame and no other
+                // (docs/FarFieldProxies.md §12.19). Here rather than
+                // beside the cull for the same reason the mask snapshot
+                // is here: the arms are answers about *this* image, and
+                // the occluder buffer still holds the occluders that
+                // produced it. Only the software pass owns a buffer that
+                // can be re-asked at all.
+                idTight = TightBoundAudit();
+                idTightJudged.clear();
+                idTightAabb.clear();
+                idTightObb.clear();
+                idTightTri.clear();
+                if (debugconf.cullBounds && cullconf.enabled
+                        && cullconf.software) {
+                    auditTightBounds(scene, sceneCulled, maskedCull.depth(),
+                                     kTightPrimitiveCap,
+                                     cullconf.softwareThreads,
+                                     idTightJudged, idTightAabb, idTightObb,
+                                     idTightTri, idTight);
+                }
                 idReadyFrame = view->readbackId(idPixels.data());
             }
         }
@@ -14385,6 +14800,12 @@ public:
         if (idReadyFrame && frameNum >= idReadyFrame) {
             reportCullAudit(idPixels, idPixW, idPixH, idMask, idOwner,
                             idNodeAudit, idKeys, objectInfo, idHist);
+            // After it, and off its histogram: the arms are a question
+            // about the same image, and reportCullAudit is what decodes
+            // it. It bails before filling the histogram on a broken id
+            // pass, which is exactly when these must not report either.
+            reportTightBounds(idHist, idMask, idTightJudged, idTightAabb,
+                              idTightObb, idTightTri, idTight);
             idReadyFrame = 0;
         }
 
@@ -15086,6 +15507,20 @@ public:
     std::vector<Render::OcclusionNodeAudit> idNodeAudit;
     std::vector<uint64_t> idKeys;     ///< objectKey per row, as it was
     std::vector<uint32_t> idHist;     ///< pixels owned, per id
+    /// What the tight-bound arms would have culled on the frame the
+    /// image was taken (docs/FarFieldProxies.md §12.19). Snapshots like
+    /// everything else here, and for the same reason — they are answers
+    /// about that image. Empty unless RenderDebug_CullBounds is on.
+    std::vector<uint8_t> idTightJudged;
+    std::vector<uint8_t> idTightAabb;
+    std::vector<uint8_t> idTightObb;
+    std::vector<uint8_t> idTightTri;
+    TightBoundAudit idTight;
+    /// Primitives a single draw may be asked about one by one before the
+    /// diagnostic gives up on it. A bound on the worst row, not a
+    /// sample: rows that hit it are counted and reported, because a cap
+    /// nobody is told about reads as a mechanism that found nothing.
+    static const uint32_t kTightPrimitiveCap = 200000;
     /// Frame at which idPixels is filled; 0 = no readback in flight.
     uint32_t idReadyFrame = 0;
     uint16_t idPixW = 0;

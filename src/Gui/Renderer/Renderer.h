@@ -592,6 +592,18 @@ struct RenderDebugConfig {
     /// not disturb what is on screen.
     bool cullAudit = false;
 
+    /// Re-ask every still-drawn row with a tighter occludee volume and
+    /// count what would have flipped (docs/FarFieldProxies.md §12.19).
+    /// A diagnostic that decides whether a mechanism is worth building,
+    /// not a mechanism: nothing is culled by it, the verdicts are only
+    /// counted against \ref cullAudit's id image — which is also why it
+    /// needs that audit on to report anything.
+    ///
+    /// ⚠️ One of its arms asks about every triangle of every drawn
+    /// object. It runs on the audit's frame alone and still costs far
+    /// more than a frame.
+    bool cullBounds = false;
+
     /// A dynamically bound named shader parameter (docs/RenderDebug.md
     /// §2.5): any RenderDebug_* view property beyond the fixed knobs
     /// becomes a like-named vec4(-array) uniform — RenderDebug_myKnob
@@ -619,6 +631,7 @@ struct RenderDebugConfig {
             && frameTiming == o.frameTiming && occlusion == o.occlusion
             && coverage == o.coverage && proxyCut == o.proxyCut
             && proxyGen == o.proxyGen && cullAudit == o.cullAudit
+            && cullBounds == o.cullBounds
             && userParams == o.userParams;
     }
     bool operator!=(const RenderDebugConfig &o) const { return !(*this == o); }

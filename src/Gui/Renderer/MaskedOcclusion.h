@@ -278,6 +278,36 @@ public:
     bool projectBox(const float *bboxMin, const float *bboxMax, float *rect,
                     float *depthNear) const;
 
+    /// The same, for an arbitrary set of points (3 floats each): the
+    /// screen rect enclosing their projections and the nearest depth
+    /// among them. Returns false if any of them is behind the near
+    /// plane, exactly as `projectBox` does.
+    ///
+    /// \a model takes the points to world space, or null if they are
+    /// already there — folded in exactly as `rasterize` folds it, so a
+    /// caller asking about a mesh's own vertices lands them where the
+    /// occluders made from the same vertices landed. That is the whole
+    /// reason it is a parameter rather than the caller's job.
+    ///
+    /// KEY: What this buys over `projectBox` is that the caller chooses
+    /// the volume. A world AABB is the axis-aligned box *of an oriented
+    /// box* for any rotated part -- inflated twice -- and a caller
+    /// holding the eight corners of the tight local box, or the three
+    /// corners of a single triangle, can ask about those instead. The
+    /// answer is conservative for the same reason `projectBox`'s is: the
+    /// convex hull of the points lies inside the rect enclosing their
+    /// projections, so a rect that is covered proves the hull is.
+    bool projectPoints(const float *points, size_t count, float *rect,
+                       float *depthNear, const float *model = nullptr) const;
+
+    /// Whether the convex hull of \a count points could have reached the
+    /// screen, given the occluders rasterized so far.
+    ///
+    /// Uncounted, like `testBoxConcurrent` and for the same reason: its
+    /// callers run many at once off the main thread.
+    OccludeAnswer testPointsConcurrent(const float *points, size_t count,
+                                       const float *model = nullptr) const;
+
     /// Whether back faces are rasterized (default true -- see
     /// `rasterize`).
     void setTwoSided(bool on) { twosided = on; }
