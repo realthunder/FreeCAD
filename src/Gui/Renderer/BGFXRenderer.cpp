@@ -13915,6 +13915,23 @@ public:
         std::vector<uint8_t> drawInstanced;
         std::vector<uint8_t> prepassInstanced;
         std::vector<uint8_t> casterInstanced;
+        // ⭐ What the instancing actually collapsed, counted rather than
+        // assumed (docs/DrawSubmission.md phase 0.5). Nothing reported
+        // this before, so "the scene has repeated geometry" and "the
+        // renderer is batching it" were the same belief with no number
+        // between them — and the draw count is what every submission
+        // decision below is scoped against.
+        instStats = InstancingStats();
+        instStats.groups = uint32_t(instGroups.size());
+        instStats.eligible = uint32_t(scene.size());
+        if (noInstancing)
+            instStats.why = "env FC_BGFX_NO_INSTANCING";
+        else if (hl.show)
+            instStats.why = "hidden-line frame";
+        else if (instGroups.empty())
+            instStats.why = "no group has two members";
+        else if (!view->instancingActive())
+            instStats.why = "backend reports no instancing";
         if (!noInstancing && !hl.show && !instGroups.empty()
                 && view->instancingActive()) {
             drawInstanced.assign(scene.size(), 0);
@@ -13939,8 +13956,12 @@ public:
                 instData.insert(instData.end(), c, c + 4);
             };
             for (const auto &group : instGroups) {
-                if (group.members.size() < 2)
+                if (group.members.size() < 2) {
+                    ++instStats.groupsSingleton;
                     continue;
+                }
+                ++instStats.groupsUsable;
+                instStats.membersUsable += uint32_t(group.members.size());
                 vis.clear();
                 visOut.clear();
                 hidden.clear();
@@ -13962,6 +13983,19 @@ public:
                                               uint32_t(vis.size()))) {
                         for (int i : vis)
                             drawInstanced[i] = 1;
+                        ++instStats.submits;
+                        instStats.drawsReplaced += uint32_t(vis.size());
+                    }
+                    else {
+                        // ⚠️ Counted separately because it is silent: the
+                        // group was formed and then refused at submit
+                        // (no program, no transient instance space, or a
+                        // transparent group on a sorted-transparency
+                        // frame) and every member fell back to a draw of
+                        // its own. A group that forms is not a group
+                        // that batches.
+                        ++instStats.refused;
+                        instStats.refusedMembers += uint32_t(vis.size());
                     }
                     // Transparent geometry neither occludes nor receives
                     // AO — it stays out of the prepass like the per-draw
@@ -13973,6 +14007,13 @@ public:
                         for (int i : vis)
                             prepassInstanced[i] = 1;
                     }
+                }
+                else {
+                    // The group exists but this frame's culling and
+                    // visibility left it with fewer than two members on
+                    // screen. Not a defect — but it is where a scene
+                    // full of repeated parts can still submit per draw.
+                    instStats.thinnedMembers += uint32_t(vis.size());
                 }
                 // Casters append the frustum-culled and hidden members
                 // after the visible ones — off-screen geometry still
@@ -14820,6 +14861,24 @@ public:
             const bool due = frameStatsDue();
             if (due)
                 reportFrameStats(frameStats);
+            // ⭐ What instancing collapsed, on the same cadence. Read
+            // `replaced` against the frame line's draw count: that is
+            // the share of submission the batching already removes, and
+            // therefore the ceiling of anything built on top of it
+            // (docs/DrawSubmission.md phase 0.5).
+            if (due) {
+                const InstancingStats &is = instStats;
+                Base::Console().Message(
+                        "render instancing: %u groups (%u usable, %u "
+                        "singleton) over %u rows | %u submits replaced %u "
+                        "draws | refused %u groups / %u draws | thinned to "
+                        "one: %u draws%s%s\n",
+                        is.groups, is.groupsUsable, is.groupsSingleton,
+                        is.eligible, is.submits, is.drawsReplaced,
+                        is.refused, is.refusedMembers, is.thinnedMembers,
+                        is.why ? " | NOT RUN: " : "",
+                        is.why ? is.why : "");
+            }
             // What the culling actually did, on the same cadence and
             // from the same switch: the frame line reports the draws
             // that survived, and without this there is no way to tell a
@@ -15526,6 +15585,29 @@ public:
     uint16_t idPixW = 0;
     uint16_t idPixH = 0;
     bool idAuditWarned = false;
+    /// What cross-object instancing collapsed on the last frame
+    /// (docs/DrawSubmission.md phase 0.5). Every submission decision is
+    /// scoped against the draw count, and until this existed nothing
+    /// said how much of that count the batching already removes —
+    /// "the model has repeated parts" and "the renderer is instancing
+    /// them" were one belief with no measurement between them.
+    struct InstancingStats {
+        uint32_t groups = 0;          ///< groups the producer formed
+        uint32_t groupsSingleton = 0; ///< of them, holding one member
+        uint32_t groupsUsable = 0;    ///< of them, holding two or more
+        uint32_t membersUsable = 0;   ///< draws in the usable groups
+        uint32_t submits = 0;         ///< instanced submits issued
+        uint32_t drawsReplaced = 0;   ///< draws those submits stood in for
+        uint32_t refused = 0;         ///< groups the backend refused
+        uint32_t refusedMembers = 0;
+        uint32_t thinnedMembers = 0;  ///< left alone by culling/visibility
+        uint32_t eligible = 0;        ///< scene rows offered
+        /// Why nothing was instanced at all, when nothing was. Null when
+        /// the path ran — a zero with no reason beside it is the readout
+        /// this exists to replace.
+        const char *why = nullptr;
+    };
+    InstancingStats instStats;
     /// The draw list the index was built from. A rebuild costs 12-28 ms
     /// on a large assembly, so it happens when the scene changes and
     /// never per frame.

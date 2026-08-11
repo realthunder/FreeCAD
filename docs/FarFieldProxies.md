@@ -3205,10 +3205,16 @@ remaining prize is not culling, it is submission** -- ~1.2-1.5 us of CPU
 per draw against 17727 draws is ~24 ms, which is two orders of magnitude
 more than what is left in the occlusion question.
 
-⚠️ That is a decision, not a task, and it is the fork section 12.17
-already laid out: GPU-driven indirect submission removes the per-draw CPU
-cost entirely, but there are no compute shaders in WebGL2 (which forks
-the browser tier, the project's first direction), bgfx's WebGPU backend
-is Dawn-native and unusable through Emscripten, and per-draw materials
-would have to become bindless first. ⚠️ One camera on one model, like
-every number in this section.
+⚠️ That is a decision, not a task, and the plan for it is
+`docs/DrawSubmission.md`. ⚠️ One camera on one model, like every number
+in this section.
+
+⚠️ **Correction to what this paragraph first claimed.** It said bgfx's
+WebGPU backend is "Dawn-native and unusable through Emscripten". That was
+true when written and has been **false since 2026-06-28**: Emscripten
+support is merged upstream (bgfx PR #3795), is in the vendored tree, and
+our own `bgfx.cmake` already links `--use-port=emdawnwebgpu`. It does not
+change this section's conclusion — multi-draw indirect is still not
+available on the web, and bgfx *emulates* it there by looping N indirect
+draws, which saves no draw calls at all. See `docs/DrawSubmission.md` for
+what it does and does not unlock.
