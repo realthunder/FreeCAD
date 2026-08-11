@@ -15120,7 +15120,9 @@ public:
                 Base::Console().Message(
                         "render outside (ms/frame): outside %.2f [pre %.2f | "
                         "background %.2f | coin %.2f | foreground %.2f | "
-                        "captures %.2f | chrome %.2f | unattr %.2f]\n",
+                        "captures %.2f | chrome %.2f | paintpre %.2f | "
+                        "delayq %.2f | gview %.2f | paintpost %.2f | "
+                        "unattr %.2f]\n",
                         outsideMs / f,
                         outMs[Render::FrameOutside::Pre] / f,
                         outMs[Render::FrameOutside::Background] / f,
@@ -15128,6 +15130,10 @@ public:
                         outMs[Render::FrameOutside::Foreground] / f,
                         outMs[Render::FrameOutside::Captures] / f,
                         outMs[Render::FrameOutside::Chrome] / f,
+                        outMs[Render::FrameOutside::PaintPre] / f,
+                        outMs[Render::FrameOutside::DelayQueue] / f,
+                        outMs[Render::FrameOutside::GraphicsView] / f,
+                        outMs[Render::FrameOutside::PaintPost] / f,
                         (outsideMs - sum) / f);
             }
             // ⭐ Where the frame line's milliseconds actually go, per

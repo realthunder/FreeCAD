@@ -1763,6 +1763,17 @@ public:
         /// The chrome after them: axis cross, dimension text, navigation
         /// redraw, graphics items, fps string, NaviCube, alpha fixup.
         Chrome,
+        /// QuarterWidget::paintEvent() before the redraw, minus the
+        /// delay queue below.
+        PaintPre,
+        /// Coin's delay queue, drained at the top of the paint event
+        /// with the GL context released around it.
+        DelayQueue,
+        /// QGraphicsView::paintEvent() -- Qt's own painting over the GL
+        /// viewport, which runs after the scene is drawn.
+        GraphicsView,
+        /// The tail of the paint event after that.
+        PaintPost,
         PhaseCount
     };
 

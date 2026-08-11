@@ -81,6 +81,16 @@ def emit(s):
         f.write("\n".join(lines) + "\n")
 
 
+# /!\ THE SLEEP IS INSIDE THE MEASURED FRAME. bgfx times a frame from
+# one bgfx::frame() to the next, so everything this loop does between
+# two redraws -- the sleep, processEvents(), the Python itself -- lands
+# in the frame line's `outside` term, which is exactly the term this
+# workstream set out to explain. At 5 ms against a 33 ms frame that is
+# 15% of the frame belonging to the harness, not the renderer.
+# Set FC_SPIN_SLEEP=0 for any row whose `outside` is being read.
+SPIN_SLEEP = float(os.environ.get("FC_SPIN_SLEEP", "0.005"))
+
+
 def spin(seconds, v=None):
     end = time.time() + seconds
     while time.time() < end:
@@ -90,7 +100,8 @@ def spin(seconds, v=None):
             except Exception:
                 pass
         QtCore.QCoreApplication.processEvents()
-        time.sleep(0.005)
+        if SPIN_SLEEP > 0:
+            time.sleep(SPIN_SLEEP)
 
 
 def compare(a, b):
@@ -211,7 +222,14 @@ def run():
                  "cull/over-cull numbers are valid, but the id pass adds "
                  "the whole scene draw list to every frame, so FRAME "
                  "TIMINGS IN THIS RUN ARE NOT A REAL FRAME")
-        else:
+        # Announced in both arms, like the audit above and for the same
+        # reason: it is part of the frame being timed, so a row that
+        # carried it must say so where the numbers are read.
+        emit("spin sleep %.4fs per redraw (FC_SPIN_SLEEP)%s"
+             % (SPIN_SLEEP,
+                " -- THIS IS INSIDE THE FRAME's `outside` TERM" if SPIN_SLEEP
+                else " -- outside is free of the harness's own sleep"))
+        if not audit:
             emit("cull audit OFF -- frame timings are clean, cull/over-cull "
                  "numbers are NOT available in this run")
         # The culler's own account of the same frames, on the same cadence.
