@@ -440,6 +440,52 @@ sleep did, and only `glxgears` distinguished "the mechanism is absent"
 from "the knob missed". **A null result from an unvalidated knob is not
 evidence.**
 
+### MEASURED: the GPU half is geometry-bound, and fill is ~nothing
+
+The frame is 97% GPU and the GPU is one pass: `opaque` is **19.58 of
+19.66 ms** (top of 15; nothing else reaches 0.05). No shadow, AO or post
+pass is on this camera, so there is no pass-level lever -- what costs is
+the geometry going through that one pass.
+
+Which half of it -- vertices or pixels? Ablated with `FC_VIEW_SCALE=0.5`
+(the 3D subwindow scaled from its maximized size, so `ViewFit` keeps the
+framing), same model, camera, culling row and binary:
+
+| | 1791x880 | 891x410 | change |
+|---|---|---|---|
+| pixels | 1.576 M | 0.365 M | **4.31x fewer** |
+| **gpu** | 19.7 | **19.05** | **-3.3%** |
+| draws | 12850 | 12850 | 0 |
+| prims | 39.60 M | 36.05 M | -9.0% |
+| **gpu per primitive** | 0.498 ns | **0.529 ns** | **+6%** |
+| ours (CPU) | 15.9 | 15.6 | control, flat |
+
+**Four times fewer pixels bought 3.3%, and per-primitive cost went
+*up*.** Fill is a rounding error on this scene; GPU time tracks
+primitives. That agrees with [[draw-call-is-the-cost-unit]], which found
+16x pixels = 0% at a different operating point.
+
+**=> The lever is fewer TRIANGLES.** Not fewer draws (phase 3 -- and the
+CPU could not use them anyway), not fewer pixels (resolution scaling),
+not cheaper submission (phases 1-2). Far-field proxies / LOD is the
+workstream this points at, and its existing measurements are gated on
+**draw** counts (phase 1: "42893 instances -> 2277 draws @64px"), which
+is the unit just shown not to cost anything here. **Re-gate it on
+primitives before building on it.**
+
+! **Open, and not explained**: prims fell 9% at an identical draw count
+when the viewport shrank. Something in the pipeline is already
+screen-size dependent per draw. The instancing readout is byte-identical
+across the arms, so it is not that. It cannot rescue fill -- per-primitive
+cost rose -- but it should be found, because whatever it is, it is
+already trading triangles for screen size and that is the mechanism this
+section is asking for.
+
+! The subwindow scale preserves the frame's aspect, not the viewport's
+(2.035 -> 2.173), because the window chrome does not scale with it. That
+is the likeliest source of the 9%, and it is a reason to size the
+viewport directly if this ablation is repeated.
+
 ### The GPU half: primitives explain it better than draws
 
 Across the same two points, GPU cost per *draw* varies 27% (1.72 vs

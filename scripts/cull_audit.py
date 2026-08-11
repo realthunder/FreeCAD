@@ -173,6 +173,15 @@ def run():
             "Type", "bgfx - OpenGL")
         App.ParamGet("User parameter:BaseApp/Preferences/View").SetBool(
             "ShowNaviCube", False)
+        # FC_VIEW_SCALE: linear scale of the 3D viewport, applied to the
+        # maximized size below. 0.5 = a quarter of the pixels with the
+        # same triangles -- the ablation that separates a fill-bound
+        # frame from a geometry-bound one.
+        # /!\ Read the ACTUAL viewport off the `render frame:` line, never
+        # this value -- a run that asked for one size and drew at another
+        # is the 400x300-reporting-1920x1200 trap, and it has already
+        # happened once here.
+        win_scale = float(os.environ.get("FC_VIEW_SCALE", "1"))
         Gui.getMainWindow().resize(1920, 1200)
         QtCore.QCoreApplication.processEvents()
 
@@ -184,6 +193,20 @@ def run():
         sub = subwindow()
         if sub:
             sub.showMaximized()
+            QtCore.QCoreApplication.processEvents()
+            if win_scale != 1.0:
+                # /!\ Size the MDI SUBWINDOW, not the main window: the
+                # main window is maximized by the window manager and
+                # quietly ignores resize(). One arm of the fill ablation
+                # was run that way and came back at the full 1791x880,
+                # reading as "shrinking the viewport does nothing".
+                # /!\ Scale from the MAXIMIZED size so the aspect ratio
+                # is preserved exactly -- ViewFit reframes on aspect, and
+                # an arm that reframes is not drawing the same triangles.
+                full_w, full_h = sub.width(), sub.height()
+                sub.showNormal()
+                QtCore.QCoreApplication.processEvents()
+                sub.resize(int(full_w * win_scale), int(full_h * win_scale))
         QtCore.QCoreApplication.processEvents()
         v.viewIsometric()
         Gui.SendMsgToActiveView("ViewFit")
