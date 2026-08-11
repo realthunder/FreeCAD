@@ -163,22 +163,37 @@ diagnostic**: 13.00 / 12.95 / 12.84 ms at 12849 / 12850 / 30578 draws --
 a 2.4x change in draw count moves it by 1%. Nothing about it depends on
 what survives culling.
 
-The reason is structural and visible in the source: the region between
-the main submit loop and `bgfx::frame()` contains **eight more
-`for (const auto &draw : scene)` loops** -- ground reflection, the
-two-pass scene, outline, highlight, selection and the rest. Every one is
-`scene.size()` long whatever the camera sees, so together they are
-~142k row visits per frame that culling cannot reduce.
+** RETRACTED, and the retraction is the lesson.** This document first
+explained the 13 ms as "eight more `for (const auto &draw : scene)`
+loops between the main submit loop and `bgfx::frame()`, ~142k row visits
+a frame that culling cannot reduce". **That explanation is wrong.**
+Reading the guards instead of counting the loops:
+
+- `groundReflActive || waterReflActive` gates one,
+- `twoPass` / `sceneTwoPass` (hidden-line) gates three,
+- `hl.show && hl.sceneOutline` gates two,
+
+and **none of those are active on this camera** -- the `render passes:`
+line lists 14 live views and no reflection, hidden-line or outline pass
+among them. Only **three** full scans actually run each frame (the two
+on-top passes, plus a ninth found later inside `submitSectionCaps`), and
+all three short-circuit per row on a cheap predicate
+(`numclipplanes > 0`, `material.ontop`). Three scans of 17727 cheap
+tests is well under a millisecond, not 13.
+
+X **Counting loops in the source is not measuring them.** The
+measurement (post = 12.95 ms, flat) stands; the *cause* is unknown and
+the region has been subdivided (`caps / effects / sel / tail`, with an
+`unattr` residual that must come out ~0 or the split is not to be
+believed) rather than explained again from reading.
 
 `pre`, by contrast, scales properly: 1.90 ms at 12850 draws against
 6.38 ms at 30578, because the instance-group work is per visible member.
 
-**So the target is named:** ~13 ms/frame, a quarter of the frame, in
-per-pass full scans of the draw list. It is worth more than phases 1-3
-combined and it is not a submission problem at all -- it is the
-*incremental-by-default* rule this project already applies elsewhere,
-not yet applied to the per-pass loops. The next measurement should split
-`post` per pass to find which of the eight dominate.
+**So the target is located but not yet named:** ~13 ms/frame, a quarter
+of the frame, somewhere in the post-submit region, flat in draw count.
+It is worth more than phases 1-3 combined and it is not a submission
+problem. What it is remains open until the subdivision is run.
 
 ### The GPU half: primitives explain it better than draws
 

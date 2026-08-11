@@ -14373,6 +14373,9 @@ public:
                 submitSceneOutline(draw);
         }
         }  // CpuSubmitLoop
+        // Start of the post-submit checkpoint chain.
+        if (debugconf.frameTiming)
+            cpuMarkT = bx::getHPCounter();
         if (shadowBlurActive)
             view->submitShadowBlur(lightconf.smoothBorder);
         if (shadowActive && lightconf.ground && bboxValid) {
@@ -14517,6 +14520,7 @@ public:
                                  hatchTex ? hatchTex->width : 0,
                                  hatchTex ? hatchTex->height : 0);
         submitSectionCaps(view, reinterpret_cast<const float *>(projMatrix));
+        cpuMark(CpuPostCaps);
 
         // 1c. SSAO resolve: generate and blur the AO (the gen/blur
         // views run before ViewOpaque, whose mesh draws sample the
@@ -14614,6 +14618,7 @@ public:
         // overwrite the scene color with the selected intermediate target.
         // Depth (mode 1) normalizes by the farthest scene-bbox corner in
         // view space so the whole model spans the visible ramp.
+        cpuMark(CpuPostEffects);
         if (debugconf.viewMode > 0) {
             float maxDepth = 0.0f;
             if (bboxValid) {
@@ -14922,6 +14927,7 @@ public:
                                 reinterpret_cast<const float *>(projMatrix), h);
         }
 
+        cpuMark(CpuPostSel);
         view->collectMeshes();
 
         // Anything that reached the discard view drew nothing: the pass
@@ -14944,6 +14950,7 @@ public:
                           "frame and did not render");
         }
 
+        cpuMark(CpuPostTail);
         // Timed on its own: in single-threaded mode bgfx::frame() runs
         // the whole backend inline, so this call is where the `submit`
         // figure lives. What it leaves over inside render() is our
@@ -15050,13 +15057,22 @@ public:
                 const double pre = phaseMs[CpuPreSubmit] - phaseMs[CpuCull];
                 const double post = ourMs - bgfxMs
                     - phaseMs[CpuPreSubmit] - phaseMs[CpuSubmitLoop];
+                // `unattr` is post minus the four measured sub-spans: if
+                // it is not ~0 the chain has a gap and the split below
+                // is not to be believed.
+                const double unattr = post - phaseMs[CpuPostCaps]
+                    - phaseMs[CpuPostEffects] - phaseMs[CpuPostSel]
+                    - phaseMs[CpuPostTail];
                 Base::Console().Message(
                         "render cpu phases (ms/frame): pre %.2f | cull %.2f | "
-                        "submitloop %.2f | post %.2f | bgfx::frame %.2f | "
+                        "submitloop %.2f | post %.2f [caps %.2f effects %.2f "
+                        "sel %.2f tail %.2f unattr %.2f] | bgfx::frame %.2f | "
                         "ours %.2f\n",
                         pre / f, phaseMs[CpuCull] / f,
                         phaseMs[CpuSubmitLoop] / f, post / f,
-                        bgfxMs / f, ourMs / f);
+                        phaseMs[CpuPostCaps] / f, phaseMs[CpuPostEffects] / f,
+                        phaseMs[CpuPostSel] / f, phaseMs[CpuPostTail] / f,
+                        unattr / f, bgfxMs / f, ourMs / f);
             }
             // ⭐ Where the frame line's milliseconds actually go, per
             // pass, for both processors (docs/DrawSubmission.md phase
@@ -15770,8 +15786,33 @@ public:
     /// reported); CpuPostSubmit is what the remainder must then be.
     /// Measured with a checkpoint rather than a scope because the region
     /// has early returns and is not a block.
-    enum CpuPhase { CpuCull, CpuSubmitLoop, CpuPreSubmit, CpuPhaseCount };
+    ///
+    /// The Post* four subdivide the post-submit region, which measured
+    /// 12.95ms flat across a 2.4x change in draw count. ! The first
+    /// explanation offered for that -- "eight per-pass full scans of the
+    /// draw list" -- was WRONG and is why these exist: six of the eight
+    /// are behind ground-reflection, hidden-line or scene-outline
+    /// guards that are off on this camera, and the three that do run
+    /// short-circuit per row. Counting loops in the source is not
+    /// measuring them.
+    enum CpuPhase { CpuCull, CpuSubmitLoop, CpuPreSubmit,
+                    CpuPostCaps, CpuPostEffects, CpuPostSel, CpuPostTail,
+                    CpuPhaseCount };
     int64_t renderInnerT0 = 0;
+    /// Running checkpoint for the Post* phases: each mark closes the
+    /// span since the previous one. Safe because the post region is
+    /// straight-line at top level (its only `return` is inside a
+    /// lambda), so no span can be left open.
+    int64_t cpuMarkT = 0;
+    void cpuMark(int phase)
+    {
+        if (!debugconf.frameTiming)
+            return;
+        const int64_t now = bx::getHPCounter();
+        cpuPhaseMs[phase] += 1000.0 * double(now - cpuMarkT)
+            / double(bx::getHPFrequency());
+        cpuMarkT = now;
+    }
     double cpuPhaseMs[CpuPhaseCount] = {};
     /// RAII so an early return or a throw cannot leave a phase open.
     struct CpuScope {
