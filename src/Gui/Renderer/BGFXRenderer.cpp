@@ -375,6 +375,27 @@ struct FrameStatsAccum {
     /// another's. -1 collects everything unmarked (they share a sink id
     /// and are not distinguishable).
     std::map<int, std::pair<double, double>> viewMs;
+    /// Wall time inside BGFXRenderer::render() and inside bgfx::frame().
+    ///
+    /// KEY (docs/DrawSubmission.md phase 0 item 2): bgfx's own numbers
+    /// account for far less of the frame than they appear to.
+    /// `cpuTimeFrame` is the whole application frame; `cpuTimeBegin/End`
+    /// -- what this file calls `submitMs` -- is bgfx's *render thread*
+    /// issuing GL calls, measured at 10.8ms of a 54.8ms frame. The other
+    /// ~44ms is our own per-draw C++, the cull, and Coin compositing on
+    /// top, and nothing measured any of it.
+    ///
+    /// These two seams split it: `renderMs` is everything inside our
+    /// render() (so ours, including the bgfx::frame() call), and
+    /// `bgfxFrameMs` is the bgfx::frame() call alone. frame - render is
+    /// then everything that is not this renderer at all.
+    ///
+    /// ! renderMs is added by the caller *after* accumulateFrameStats
+    /// has run for the same frame, so when a report falls on that frame
+    /// its renderMs lands in the next window. Over a 13-19 frame window
+    /// that is under a frame's worth and it does not accumulate.
+    double renderMs = 0.0;
+    double bgfxFrameMs = 0.0;
     /// The size the scene was actually rasterized at.
     ///
     /// ⚠️ Not bgfx::Stats::width/height: those are the *default*
@@ -469,15 +490,23 @@ static void reportFrameStats(FrameStatsAccum &acc)
     // apart, but two scenes with different ratios can, and neither
     // ratio is knowable without both numbers on the line.
     const double primsPerFrame = double(acc.prims) / frames;
-    char buf[512];
+    // Where the frame's CPU actually goes. `submit` above is only bgfx's
+    // render thread; these three split the whole frame into this
+    // renderer's own C++, the bgfx call it ends in, and everything that
+    // is not this renderer (Coin's composite, Qt, the app). Without the
+    // last one the largest term in the frame has no instrument at all.
+    const double renderMs = acc.renderMs / frames;
+    const double outsideMs = acc.frameMs / frames - renderMs;
+    char buf[640];
     snprintf(buf, sizeof(buf),
              "render frame: frames:%u %ux%u frame %.2fms submit %.2fms gpu %s | "
              "draws %.0f prims %.0f (%.0f/draw) | per-draw %s | wait submit %.2fms "
-             "render %.2fms\n",
+             "render %.2fms | cpu ours %.2fms (bgfx::frame %.2fms) outside %.2fms\n",
              acc.frames, unsigned(acc.width), unsigned(acc.height),
              acc.frameMs / frames, submitMs, gpuText, drawsPerFrame,
              primsPerFrame, drawsPerFrame > 0.0 ? primsPerFrame / drawsPerFrame : 0.0,
-             perDraw, acc.waitSubmitMs / frames, acc.waitRenderMs / frames);
+             perDraw, acc.waitSubmitMs / frames, acc.waitRenderMs / frames,
+             renderMs, acc.bgfxFrameMs / frames, outsideMs);
 #ifdef FC_RENDERER_STANDALONE
     std::printf("%s", buf);
 #else
@@ -14896,14 +14925,29 @@ public:
                           "frame and did not render");
         }
 
+        // Timed on its own: in single-threaded mode bgfx::frame() runs
+        // the whole backend inline, so this call is where the `submit`
+        // figure lives. What it leaves over inside render() is our
+        // per-draw C++, which is what phase 2 would attack. Only the
+        // call is timed -- the GL context switches around it are Qt's
+        // cost, not bgfx's, and folding them in would flatter phase 2.
+        auto timedBgfxFrame = [&]() {
+            const int64_t t0 = bx::getHPCounter();
+            const uint32_t n = bgfx::frame();
+            if (debugconf.frameTiming)
+                frameStats.bgfxFrameMs += 1000.0
+                    * double(bx::getHPCounter() - t0)
+                    / double(bx::getHPFrequency());
+            return n;
+        };
         uint32_t frameNum = 0;
 #ifdef FC_RENDERER_STANDALONE
         view->present();
-        frameNum = bgfx::frame();
+        frameNum = timedBgfxFrame();
 #else
         widget->doneCurrent();
         _BGFXLib.makeCurrent();
-        frameNum = bgfx::frame();
+        frameNum = timedBgfxFrame();
         widget->makeCurrent();
         view->blit(dumpPending ? &pendingDump : nullptr, &lastStats);
         if (dumpPending && !pendingDump.overlays) {
@@ -15934,7 +15978,17 @@ bool BGFXRenderer::render(const QColor &col,
         savedMode = pimpl->debugconf.viewMode;
         pimpl->debugconf.viewMode = pimpl->pendingDump.mode;
     }
+    // The seam that makes the frame's biggest term visible. Everything
+    // this renderer does is inside this call; bgfx's `cpuTimeFrame` is
+    // the whole application frame. The difference is Coin's composite,
+    // Qt and the app -- see docs/DrawSubmission.md phase 0 item 2, where
+    // ~44ms of a 54.8ms frame had no instrument on it at all.
+    const int64_t renderT0 = bx::getHPCounter();
     bool ok = pimpl->render(col, viewMatrix, projMatrix);
+    if (pimpl->debugconf.frameTiming)
+        pimpl->frameStats.renderMs += 1000.0
+            * double(bx::getHPCounter() - renderT0)
+            / double(bx::getHPFrequency());
     if (savedMode >= 0)
         pimpl->debugconf.viewMode = savedMode;
     return ok;
