@@ -47,12 +47,14 @@ MeshSourceRegistry &MeshSourceRegistry::instance()
 }
 
 void MeshSourceRegistry::add(const void *tag, Generator gen,
-                             float publishedError, LevelHooks hooks)
+                             float publishedError, LevelHooks hooks,
+                             const char *origin)
 {
     if (!tag || !gen)
         return;
     std::lock_guard<std::mutex> guard(mutex);
     Source &src = sources[tag];
+    src.origin = origin;
     src.gen = std::make_shared<Generator>(std::move(gen));
     src.publishedError = publishedError;
     src.canonicalKey.clear();
@@ -63,6 +65,34 @@ void MeshSourceRegistry::add(const void *tag, Generator gen,
     if (debugOn())
         std::fprintf(stderr, "mesh source: add tag=%p err=%g (%zu sources)\n",
                      tag, double(publishedError), sources.size());
+}
+
+std::vector<MeshSourceRegistry::OriginTally>
+MeshSourceRegistry::originTally() const
+{
+    std::lock_guard<std::mutex> guard(mutex);
+    std::vector<OriginTally> out;
+    for (const auto &entry : sources) {
+        const Source &src = entry.second;
+        OriginTally *slot = nullptr;
+        for (auto &t : out) {
+            if (t.origin == src.origin) {
+                slot = &t;
+                break;
+            }
+        }
+        if (!slot) {
+            out.push_back(OriginTally());
+            slot = &out.back();
+            slot->origin = src.origin;
+        }
+        ++slot->sources;
+        if (src.hooks.downgrade)
+            ++slot->withDowngrade;
+        if (src.hooks.demote)
+            ++slot->withDemote;
+    }
+    return out;
 }
 
 void MeshSourceRegistry::remove(const void *tag)

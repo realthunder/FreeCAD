@@ -220,12 +220,12 @@ struct InstGeomKey {
 };
 
 /// One color variant of a shared tessellation: instances whose resolved
-/// per-element colors diverge in value bake them per part — one variant
+/// per-element colors diverge in value bake them per part -- one variant
 /// per DISTINCT resolved color vector (the key), lazily created,
 /// refcounted, shared by every instance (across objects) applying that
 /// exact vector. The variant shape node references the geometry's
 /// coordinate/normal/texcoord nodes; only the per-part material is its
-/// own. Variants never mutate — a different vector materializes a new
+/// own. Variants never mutate -- a different vector materializes a new
 /// variant. Face variants bake diffuse+transparency, line/point variants
 /// diffuse only (like the flattened per-edge/per-vertex paths).
 struct ColorVariant {
@@ -237,7 +237,7 @@ struct ColorVariant {
 
 /// One shared, immutable tessellation of a leaf sub-shape in its local
 /// frame: the face/edge/vertex subgraphs referenced by every instance
-/// separator (across objects — the table is global). Entries never mutate
+/// separator (across objects -- the table is global). Entries never mutate
 /// after build; a changed shape produces a new TShape and thus a new entry.
 struct InstGeometry {
     Gui::CoinPtr<SoGroup> faceGroup;
@@ -270,7 +270,7 @@ static inline uint32_t packColorRGBA(const App::Color &c)
 }
 
 /// Pack \a slice into \a key and return an existing variant with that
-/// exact vector (referenced) or null — the caller then builds one.
+/// exact vector (referenced) or null -- the caller then builds one.
 static ColorVariant *lookupColorVariant(std::list<ColorVariant> &variants,
                                         const std::vector<App::Color> &slice,
                                         std::vector<uint32_t> &key)
@@ -323,12 +323,12 @@ static ColorVariant *acquireColorVariant(InstGeometry &geom,
     mat->shininess.setIgnored(TRUE);
 
     auto faceset = new SoBrepFaceSet;
-    // Same forced UV capture as the base faceset — the variant must
+    // Same forced UV capture as the base faceset -- the variant must
     // produce identical geometry arrays (incl. texcoords) so the
     // backend's content-keyed geometry buffers are shared.
     faceset->forceTexCoords = TRUE;
     // Lets the render cache manager seed this node's vertex cache with
-    // the base's — the geometry arrays stay CPU-shared, only the baked
+    // the base's -- the geometry arrays stay CPU-shared, only the baked
     // color array is owned.
     faceset->protoNode = geom.faceset;
     faceset->coordIndex = geom.faceset->coordIndex;
@@ -350,7 +350,7 @@ static ColorVariant *acquireColorVariant(InstGeometry &geom,
 }
 
 /// A diffuse-only per-element SoMaterial for line/point variants and
-/// overrides: everything else (incl. transparency — lines/points never
+/// overrides: everything else (incl. transparency -- lines/points never
 /// carry one, like the flattened paths) inherits.
 static SoMaterial *makeDiffuseOnlyMaterial()
 {
@@ -380,7 +380,7 @@ static ColorVariant *acquireLineColorVariant(InstGeometry &geom,
     int n = int(slice.size());
     auto bind = new SoMaterialBinding;
     // Although an indexed lineset is used the binding must be PER_FACE
-    // (one polyline per edge) — same as the flattened per-edge path.
+    // (one polyline per edge) -- same as the flattened per-edge path.
     bind->value = SoMaterialBinding::PER_FACE;
     auto mat = makeDiffuseOnlyMaterial();
     mat->diffuseColor.setNum(n);
@@ -468,7 +468,7 @@ struct ShapeInstanceRep {
         Gui::CoinPtr<SoSeparator> edgeSep;
         Gui::CoinPtr<SoSeparator> vertexSep;
         /// uniform-slice per-instance color: rides the render-cache
-        /// material at the wrapper (the Link mechanism) — never baked
+        /// material at the wrapper (the Link mechanism) -- never baked
         Gui::CoinPtr<SoMaterial> overrideMat;
         /// divergent-slice per-instance colors: baked color variant
         ColorVariant *variant = nullptr;
@@ -508,7 +508,7 @@ struct ShapeInstanceRep {
 
     ~ShapeInstanceRep()
     {
-        // Variant references go first — the geometry entries they nest in
+        // Variant references go first -- the geometry entries they nest in
         // are still held by the keys released below.
         for (auto &inst : instances) {
             if (inst.variant)
@@ -574,7 +574,7 @@ static void restructureInstanceVertex(ShapeInstanceRep::Instance &inst)
 }
 
 /// The environment part of the shape-instancing gate: the feature param,
-/// a backend renderer live (plain Coin/GL always flattens — without
+/// a backend renderer live (plain Coin/GL always flattens -- without
 /// GPU instancing many small shared nodes are a net loss), and the
 /// backend's published instancing capability. The backend question is
 /// asked of the actual renderer state, not the Render Type preference:
@@ -1213,7 +1213,7 @@ std::string ViewProviderPartExt::getElement(const SoDetail *detail) const
         return inherited::getElement(detail);
 
     // TShape-instanced representation: a bare detail carries a local
-    // part index of an unknown instance — unresolvable without the pick
+    // part index of an unknown instance -- unresolvable without the pick
     // path; getElementPicked is the reliable route.
     if (instanced)
         return inherited::getElement(detail);
@@ -1304,7 +1304,7 @@ bool ViewProviderPartExt::getDetailPath(const char *subname,
                                        : inst->vertexSep;
         // Append the graph chain from the mode switch down to the
         // wrapper. The chain crosses display-mode roots (plain
-        // separators — they never enter the context stack, so any of
+        // separators -- they never enter the context stack, so any of
         // the wrapper's parent paths keys identically); a search keeps
         // this independent of the mode graph layout.
         SoSearchAction sa;
@@ -1420,7 +1420,7 @@ bool ViewProviderPartExt::getDetailPath(const char *subname,
 SoDetail* ViewProviderPartExt::getDetail(const char* subelement) const
 {
     // TShape-instanced representation: no per-instance details (see
-    // getDetailPath) — null causes whole-object treatment.
+    // getDetailPath) -- null causes whole-object treatment.
     if (instanced)
         return nullptr;
 
@@ -1614,7 +1614,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
 {
     // Instanced representation: diffuse+transparency divergence goes
     // through the color-variant path; anything beyond that must bake
-    // whole materials per face — rebuild flattened (the raised flag
+    // whole materials per face -- rebuild flattened (the raised flag
     // blocks re-instancing until a representable apply clears it).
     bool divergent = materialsUnrepresentable(colors);
     if (divergent != appliedFaceColorsDivergent) {
@@ -2615,7 +2615,7 @@ bool ViewProviderPartExt::buildInstanced()
 
     // The linear deflection of a shared tessellation derives from the
     // LEAF bounding box (same formula as the flattened build, which uses
-    // the whole shape) — the same part in differently sized parents must
+    // the whole shape) -- the same part in differently sized parents must
     // agree on one mesh. Different deviation settings key apart.
     auto leafDeflection = [&](const TopoDS_Shape &s) -> Standard_Real {
         Bnd_Box bounds;
@@ -2701,7 +2701,7 @@ bool ViewProviderPartExt::buildInstanced()
             gfaceset->setSiblings({glineset, gnodeset});
             glineset->setSiblings({gfaceset, gnodeset});
             gnodeset->setSiblings({gfaceset, glineset});
-            // The shared subgraphs are SoFCSelectionRoot — the render
+            // The shared subgraphs are SoFCSelectionRoot -- the render
             // cache's child boundary. Entering the same root under N
             // transforms flattens into shared-cache entries with
             // per-instance matrices (the App::Link mechanism).
@@ -2734,7 +2734,7 @@ bool ViewProviderPartExt::buildInstanced()
             // Level generation for the shared leaf tessellation
             // (MeshLevelSource.h); released with the geometry entry.
             // The whole coarse <-> exact cycle of the entry lives in
-            // registerInstancedLevelEntry (§13): climb on plan demand,
+            // registerInstancedLevelEntry (sec 13): climb on plan demand,
             // demotion back under memory pressure.
             registerInstancedLevelEntry(local, false, builtError,
                                         defl, useAngDefl,
@@ -2762,7 +2762,7 @@ bool ViewProviderPartExt::buildInstanced()
         // contexts key on the traversed selection-root stack, so a
         // per-instance root gives each instance its own sub-element
         // context over the shared shape nodes (the App::Link
-        // mechanism) — see getDetailPath.
+        // mechanism) -- see getDetailPath.
         auto makeSep = [&mat](SoGroup *group) -> SoSeparator * {
             auto sep = new Gui::SoFCSelectionRoot;
             sep->renderCaching = SoSeparator::OFF;
@@ -2849,7 +2849,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     }
 
     // Resolve the full per-face vector: a short apply keeps the base
-    // color on the remaining faces (flat-path semantics — transparency
+    // color on the remaining faces (flat-path semantics -- transparency
     // rides the alpha channel when applied as an array).
     int total = 0;
     for (const auto &inst : instanced->instances)
@@ -2875,7 +2875,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     }
 
     // Divergent by value: partition the instances by their resolved
-    // slice — a uniform slice rides a per-instance override material on
+    // slice -- a uniform slice rides a per-instance override material on
     // the shared base subgraph (cross-instance sharable whatever its
     // value, the Link mechanism), a divergent slice a baked, refcounted
     // color variant shared by every instance applying that exact vector.
@@ -2985,7 +2985,7 @@ void ViewProviderPartExt::applyInstancedLineColors(const std::vector<App::Color>
     }
 
     // Divergent by value: partition the instances by their resolved
-    // slice like applyInstancedFaceColors — uniform slices ride a
+    // slice like applyInstancedFaceColors -- uniform slices ride a
     // per-instance override material, divergent slices a baked,
     // refcounted line color variant.
     setOverall(base);
@@ -3146,9 +3146,9 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
 {
     if (!exact) {
         // A coarse desktop build climbs back to exact through the
-        // registration (§13): the callback rebuilds the SHARED nodes
-        // in place — every instance refines at once, the per-proto
-        // ladder — and it captures the nodes, not any view provider:
+        // registration (sec 13): the callback rebuilds the SHARED nodes
+        // in place -- every instance refines at once, the per-proto
+        // ladder -- and it captures the nodes, not any view provider:
         // the entry outlives any one sharer, and a live registration
         // token is what guarantees the entry (release unregisters
         // first). Re-registering exact is what keeps a later sharer's
@@ -3177,11 +3177,12 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
         // process-wide here (null doc), not one sharer's document.
         registerMeshLevelSource(local, normalsFromUV, faceset, lineset,
                                 builtError, exactDefl, exactAng,
-                                std::move(onExact));
+                                std::move(onExact), {}, 0.0f, {}, nullptr,
+                                "instanced-leaf");
         return;
     }
     // Exact-resident: registered at error 0 with both ways back down
-    // armed (§13 step 3) — the coarse triangulation never left the
+    // armed (sec 13 step 3) -- the coarse triangulation never left the
     // shape. The demote (CPU-memory ceiling only) drops the exact
     // rung; the downgrade (GPU budget) merely re-activates the coarse
     // one, keeping the exact resident so the climb back is instant.
@@ -3218,18 +3219,19 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
     registerMeshLevelSource(local, normalsFromUV, faceset, lineset,
                             0.0f, exactDefl, exactAng, {},
                             std::move(onDemote), builtError,
-                            std::move(onDowngrade));
+                            std::move(onDowngrade), nullptr,
+                            "instanced-leaf-exact");
 }
 
 // Progressive import of an oversized part (docs/SceneStreaming.md
-// §13): a shape over the CoarseDeferFaces threshold shows a
+// sec 13): a shape over the CoarseDeferFaces threshold shows a
 // 12-triangle bounding-box stand-in immediately, and even its coarse
 // tessellation runs on the refine worker pool. The registration
 // declares the stand-in's error (0.5 of the diagonal) and names the
 // coarse rung parameters as its climb target, so the ordinary level
 // plan fires the build; the meshed copy arrives on the GUI thread,
 // its triangulation transfers onto the live shape, and the rerun of
-// updateVisual() finds every face resident — an instant rebuild. The
+// updateVisual() finds every face resident -- an instant rebuild. The
 // exact rung follows the normal ladder from there. Returns whether
 // the stand-in was built (the caller is done then).
 bool ViewProviderPartExt::buildCoarseStandIn()
@@ -3301,7 +3303,8 @@ bool ViewProviderPartExt::buildCoarseStandIn()
         registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
                                 /*builtError*/ 0.5f, deflection, angDefl,
                                 std::move(onCoarse), {}, 0.0f, {},
-                                pcObject ? pcObject->getDocument() : nullptr);
+                                pcObject ? pcObject->getDocument() : nullptr,
+                                "standin");
     }
     catch (const Standard_Failure &e) {
         FC_ERR("Failed to build the stand-in for the shape of "
@@ -3323,10 +3326,10 @@ bool ViewProviderPartExt::deferVisualForLoad()
         // The deferred view-provider drain counts as loading too: its
         // slices run with the Restoring bit clear between them, and a
         // visual built in such a gap is walked by the staging sweep that
-        // follows — the very interleaving the queue itself refuses
+        // follows -- the very interleaving the queue itself refuses
         // (runDeferredVisualSlice checks this same flag before building).
-        // Without the same gate here, a direct updateVisual — e.g. from
-        // the camera-fit path while a second document's drain is mid-way —
+        // Without the same gate here, a direct updateVisual -- e.g. from
+        // the camera-fit path while a second document's drain is mid-way --
         // builds into a half-staged subtree, and the content never reaches
         // the renderer: built Coin-side, never drawn.
         auto guiDoc = Gui::Application::Instance->getDocument(doc);
@@ -3433,7 +3436,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         const double limit = std::min(budget, mark.count() + share);
         const double left = std::max(0.001, limit - mark.count());
 
-        // Deferred shape restore (docs/DocumentLoad.md §14): serve this
+        // Deferred shape restore (docs/DocumentLoad.md sec 14): serve this
         // document's parked archive entries BEFORE any of its visuals is
         // built. Shapes materializing inside the visual fill was the
         // two-document lesson in reverse -- mid-drain content arriving
@@ -3557,7 +3560,7 @@ void ViewProviderPartExt::updateVisual()
         return;
     }
 
-    // Progressive import of an oversized part (§13): even the coarse
+    // Progressive import of an oversized part (sec 13): even the coarse
     // build of a many-face shape (or many-leaf compound) stalls the
     // GUI for seconds, and the import stall scales with the largest
     // single part. Build a 12-triangle bounding-box stand-in instead
@@ -3576,7 +3579,7 @@ void ViewProviderPartExt::updateVisual()
     // arrived behind a stand-in stays on the flattened build: the
     // resident triangulation was built at the whole-shape rung, and the
     // instanced build's per-leaf rungs would re-tessellate every leaf
-    // inline — the very stall the stand-in existed to avoid.
+    // inline -- the very stall the stand-in existed to avoid.
     bool instancedOk = false;
     const bool standInResolved =
         cachedShape.getShape().TShape().get() == CoarseMeshTShape;
@@ -3676,17 +3679,17 @@ void ViewProviderPartExt::updateVisual()
                         PartParams::getMeshAngularDeflection() : AngularDeflection.getValue()),
                       PartParams::getMinimumAngularDeflection()) / 180.0 * M_PI);
 
-        // Coarse-first publish (docs/SceneStreaming.md §7): a headless
+        // Coarse-first publish (docs/SceneStreaming.md sec 7): a headless
         // streaming server tessellates every shape at a ladder rung
-        // instead of the full display deviation — the exact mesh is
+        // instead of the full display deviation -- the exact mesh is
         // then generated on demand, where a viewer's camera asks. The
         // display parameters are kept for that on-demand build.
         double exactDeflection = deflection;
         double exactAngle = AngDeflectionRads;
         float builtError = 0.0f;
         // The desktop refine already put this very TShape's exact
-        // triangulation in place (§13): build at the display deviation
-        // — the mesher finds the finer mesh resident and keeps it — and
+        // triangulation in place (sec 13): build at the display deviation
+        // -- the mesher finds the finer mesh resident and keeps it -- and
         // register at error 0. A different TShape is a new shape, and
         // goes coarse-first again.
         const bool exactResident =
@@ -3717,10 +3720,10 @@ void ViewProviderPartExt::updateVisual()
         // replace the previous shape under the same node tags.
         //
         // On a coarse desktop build the registration also carries the
-        // climb back to exact (§13): the worker meshes a copy at the
-        // display parameters and this callback — GUI thread, and only
+        // climb back to exact (sec 13): the worker meshes a copy at the
+        // display parameters and this callback -- GUI thread, and only
         // while the registration is still the live one, which is what
-        // makes capturing `this` sound (the destructor unregisters) —
+        // makes capturing `this` sound (the destructor unregisters) --
         // transfers the triangulation onto the flattened shape and
         // rebuilds through the ordinary visual path.
         std::function<void(const TopoDS_Shape &)> onExact;
@@ -3738,9 +3741,9 @@ void ViewProviderPartExt::updateVisual()
         }
         // Exact by refine: the coarse triangulation never left the
         // shape (transferMeshLevels keeps it), so both ways back down
-        // are armed (§13 step 3). The demote — only ever under an
-        // observed CPU-memory ceiling — drops the exact rung outright;
-        // the downgrade — the GPU budget's — merely re-activates the
+        // are armed (sec 13 step 3). The demote -- only ever under an
+        // observed CPU-memory ceiling -- drops the exact rung outright;
+        // the downgrade -- the GPU budget's -- merely re-activates the
         // coarse rung for display and keeps the exact one resident,
         // so the climb back is instant.
         std::function<void()> onDemote, onDowngrade;
@@ -3771,7 +3774,8 @@ void ViewProviderPartExt::updateVisual()
                                 exactResident ? ExactMeshCoarseError
                                               : 0.0f,
                                 std::move(onDowngrade),
-                                pcObject ? pcObject->getDocument() : nullptr);
+                                pcObject ? pcObject->getDocument() : nullptr,
+                                "per-object");
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());
@@ -3960,7 +3964,7 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             TopAbs_Orientation orient = actFace.Orientation();
 
             // purely triangulated faces carry authored texture coordinates
-            // and normals in the stored mesh — use both as-is
+            // and normals in the stored mesh -- use both as-is
             bool meshOnly = isMeshOnlyFace(actFace);
             if (texcoordArr && meshOnly && mesh->HasUVNodes()) {
                 for (int n = 1; n <= nbNodesInFace; n++) {

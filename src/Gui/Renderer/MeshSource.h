@@ -110,8 +110,28 @@ public:
     /// shape diagonal) when the producer tessellated coarse-first —
     /// which is what tells the serializer to declare the exact mesh as
     /// an unbuilt rung above it.
+    /// \a origin names the registration site, for the tally below. It
+    /// is a literal owned by the caller, compared by pointer never by
+    /// content, and used for nothing else.
     void add(const void *tag, Generator gen, float publishedError = 0.0f,
-             LevelHooks hooks = LevelHooks());
+             LevelHooks hooks = LevelHooks(), const char *origin = nullptr);
+
+    /// How many live sources each registration site contributed, and
+    /// how many of those armed a downgrade hook.
+    ///
+    /// Without a downgrade hook a source can never come back down:
+    /// downgradeError() returns 0 for it and the plan skips it as
+    /// having no rung to fall back to. Whether that is most of a scene
+    /// decides whether a GPU budget can be honoured at all, and the
+    /// answer differs per site -- so counting by site is what turns
+    /// "the plan refused everything" into a defect with an address.
+    struct OriginTally {
+        const char *origin = nullptr;
+        uint32_t sources = 0;
+        uint32_t withDowngrade = 0;
+        uint32_t withDemote = 0;
+    };
+    std::vector<OriginTally> originTally() const;
     /// Drop \a tag and every chunk-key association pointing at it.
     /// Call before the geometry behind the tag dies; the tag's address
     /// may be reused.
@@ -213,8 +233,10 @@ private:
         /// requestRefine sets and cancelRefine clears.
         LevelHooks hooks;
         bool asked = false;
+        /// Registration site, a caller-owned literal (see add()).
+        const char *origin = nullptr;
     };
-    std::mutex mutex;
+    mutable std::mutex mutex;
     std::map<const void *, Source> sources;
     std::unordered_map<std::string, const void *> keys;
     std::atomic<uint64_t> ceilingEpoch {0};

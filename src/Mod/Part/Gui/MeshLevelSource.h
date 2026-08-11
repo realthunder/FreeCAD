@@ -127,7 +127,8 @@ void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              std::function<void()> onDemote = {},
                              float demoteError = 0.0f,
                              std::function<void()> onDowngrade = {},
-                             App::Document *doc = nullptr);
+                             App::Document *doc = nullptr,
+                             const char *origin = nullptr);
 
 /// Drop the registration made under these tags (before the nodes die;
 /// their addresses may be reused).

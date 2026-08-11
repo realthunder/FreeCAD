@@ -359,7 +359,8 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                                       std::function<void()> onDemote,
                                       float demoteError,
                                       std::function<void()> onDowngrade,
-                                      App::Document *doc)
+                                      App::Document *doc,
+                                      const char *origin)
 {
     if (shape.IsNull() || (!faceTag && !lineTag))
         return;
@@ -467,9 +468,9 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
     }
     auto &reg = Render::MeshSourceRegistry::instance();
     if (faceTag)
-        reg.add(faceTag, gen, builtError, hooks);
+        reg.add(faceTag, gen, builtError, hooks, origin);
     if (lineTag)
-        reg.add(lineTag, gen, builtError, hooks);
+        reg.add(lineTag, gen, builtError, hooks, origin);
 }
 
 void PartGui::unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag)

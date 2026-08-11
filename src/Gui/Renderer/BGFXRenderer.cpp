@@ -11251,6 +11251,27 @@ public:
                         // Why a downgrade pass that ran refused
                         // everything. Printed only when it ran, so its
                         // absence is not mistaken for "no candidates".
+                        // Where the sources that cannot descend came
+                        // from. The runtime counter says how many lack a
+                        // fallback rung; this says which registration
+                        // site failed to arm one, which is the
+                        // difference between a number and a defect with
+                        // an address.
+                        {
+                            std::string line;
+                            for (const auto &t : reg.originTally()) {
+                                char b[160];
+                                snprintf(b, sizeof(b), " %s:%u(dn %u/dm %u)",
+                                         t.origin ? t.origin : "unlabelled",
+                                         t.sources, t.withDowngrade,
+                                         t.withDemote);
+                                line += b;
+                            }
+                            Base::Console().Message(
+                                "render levels: sources by origin (dn = "
+                                "downgrade armed, dm = demote armed):%s\n",
+                                line.c_str());
+                        }
                         if (dgStats.considered)
                             Base::Console().Message(
                                 "render levels: downgrade pass: considered %u | "
