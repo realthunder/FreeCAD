@@ -5,10 +5,13 @@ Status: **plan**, plus the instruments it needs. Built so far:
 (per-pass CPU/GPU cost), and `FC_NO_AUDIT=1` in the harness. No
 submission route has been changed yet.
 
-**IMPORTANT: the baseline was corrected on 2026-08-11 and the prize shrank: the
-frame is 6485 draws / 10.8 ms submit / 54.8 ms, not 30577 / 32 / 76. See
-"The measured problem" and "RESOLVED: the suspect baseline was the
-harness measuring itself".**
+**IMPORTANT: the baseline was corrected on 2026-08-11 and the frame was
+then measured properly. At the DEFAULT culling config it is 12850 draws
+in a 50.6 ms frame -- not 30577 in 76 ms, which was the culling-OFF
+validation row with the cull audit inflating it. The CPU splits 38% our
+own C++ / 32% bgfx backend / 30% Coin+Qt, and 80% of our share does not
+scale with draw count. Read "The measured problem" and the two sections
+under it before spending any number on this page.**
 
 This is the workstream that follows occlusion culling, and it starts
 where `docs/FarFieldProxies.md` §12.19 ends: both sides of box-based
@@ -27,9 +30,10 @@ sample was taken (a) with the **cull audit on**, which adds the entire
 **before the scene converged**, while occlusion culling was still
 resolving. Neither is a frame a user ever renders.
 
-The corrected baseline, read from the converged tail of two audit-off
-runs (`clean_run.out` / `clean2.out`, 10 windows each, deterministic
-draw counts), against the same rack model and camera:
+First correction: the audit. Converged tails of two audit-off runs
+(`clean_run.out` / `clean2.out`, 10 windows each, deterministic draw
+counts), same rack model and camera, **both on the software-oracle
+culling row** -- the audit is the only thing toggled between the columns:
 
 | | audit ON (converged) | **audit OFF (converged)** | the instrument |
 |---|---|---|---|
@@ -50,9 +54,9 @@ this workstream has ever quoted included it.**
 
 ### What the correction does to the plan
 
-**Draw submission is 20% of the frame, not 42%.**
+**bgfx's `submit` is a minority of the frame's CPU.** On the row above,
+10.8 ms of 54.8 ms; at the default culling config, 16.4 ms of 50.6 ms.
 
-- submit **10.8 ms** of a **54.8 ms** frame;
 - gpu 19.6 ms;
 - and `cpuTimeFrame` minus the backend's submit leaves **~44 ms that is
   neither**. bgfx's own field names are explicit: `cpuTimeFrame` is "CPU
@@ -65,6 +69,85 @@ this workstream has ever quoted included it.**
 **So the largest item in the frame is the one with no instrument on
 it**, and phases 1 and 2 below both target that unmeasured bucket rather
 than the 10.8 ms the `render passes:` line accounts for.
+
+### MEASURED 2026-08-11: where the frame's CPU actually goes
+
+The instrument was built (`cpu ours / bgfx::frame / outside` on the frame
+line) and run. **First: name the operating point.** Culling settings
+change the draw count by 5x, and the three configurations measured on
+this model and camera are all "the baseline" to somebody:
+
+| config | draws |
+|---|---|
+| culling off (the audit's validation row) | 30578 |
+| hardware oracle, ttl 1e6 / confirm 2 (**the default**) | 12850 |
+| software oracle, tight bounds (`sw/1/250000/0/1/0/2/100/1`) | 6485 |
+
+The superseded "30577 draws" headline was the **culling-off validation
+row**, on top of being audit-inflated. The 6485 quoted above is the
+aggressive software-oracle row, not the default.
+
+At the **default** config, audit off, converged (medians of 10 windows):
+
+| term | ms | share |
+|---|---|---|
+| frame | 50.61 | |
+| ours (all of `render()`) | 35.70 | 70.5% |
+| -- our C++ before bgfx | **19.34** | **38.2%** |
+| -- bgfx::frame (backend) | 16.37 | 32.3% |
+| outside (Coin + Qt + app) | 14.97 | 29.6% |
+| gpu | 22.14 | |
+
+Two things fall out, and both cut against the plan as written:
+
+**1. Coin is not the problem.** "Outside" is 15 ms of 50 -- real, but the
+smallest of the three terms. The ~44 ms with no instrument was mostly
+**ours**, not Coin's.
+
+**2. Our own per-draw C++ (19.3 ms) is LARGER than bgfx's backend
+submit (16.4 ms)** -- and it is barely per-draw at all. Fitting the two
+draw counts:
+
+```
+our C++       = 15.56 ms fixed + 0.294 us/draw
+bgfx::frame   =  5.34 ms fixed + 0.859 us/draw
+```
+
+At the default config that makes our C++ **15.6 ms fixed against 3.8 ms
+per-draw: 80% of it does not scale with draws at all.**
+
+**The bgfx fit is validated on a third point from an independent run.**
+It predicts 10.91 ms of backend submit at 6485 draws; the earlier
+software-oracle run measured **10.77 ms** -- 1.3% out, across a different
+run, a different culling mechanism and a different day.
+
+! The `our C++` fit has only two points and they differ in more than draw
+count: the culling-off row also skips the cull, which should *lower* its
+fixed cost. So 15.56 ms is if anything an **under**-estimate of the fixed
+term. It needs a third point before it is quoted as a coefficient.
+
+**Consequence for the phases.** Phase 2 was scoped as "do less per
+draw". The per-draw part of our C++ is 3.8 ms of a 50 ms frame; the
+**fixed** part is 15.6 ms. Whatever that fixed work is -- the scene walk,
+the cull, the group rebuild -- it is now the single largest CPU item in
+the renderer, and it is not addressed anywhere in this plan. **Find it
+before building phase 2.**
+
+### The GPU half: primitives explain it better than draws
+
+Across the same two points, GPU cost per *draw* varies 27% (1.72 vs
+1.25 us) while GPU cost per *primitive* varies 13% (0.545 vs 0.472 ns).
+Not conclusive from two points, but it leans the way the 5165
+primitives-per-draw ratio already suggested: **at this operating point
+the GPU is closer to geometry-bound than draw-bound**, so merging draws
+(phase 3) would not buy the GPU half, and fewer triangles would.
+
+### An aside the culling workstream should have
+
+The software-oracle row culls twice as much (6485 vs 12850 draws) and
+produces a **slower** frame: 54.78 ms against 50.61 ms, a gap far outside
+either spread. Its extra CPU cull cost exceeds everything the removed
+draws save. ** Culling harder is currently a net loss on this model.**
 
 **TRAP: the per-draw GPU claim needs re-testing at this operating point.**
 The draw-call note measured GPU cost as per-draw *state*, not fill or
@@ -192,13 +275,19 @@ Still open, and each of these redirects the phases below:
 
    ` render passes (top 8 of 14, totals 10.19/18.38): opaque 9.31/18.17
    pass80 0.47/0.03 background 0.17/0.07 pass81 0.15/0.09 ... `
-2. **NOW THE PRIORITY -- the ~44 ms nothing measures.** `cpuTimeFrame`
-   54.8 ms minus the 10.8 ms backend render-thread submit leaves ~44 ms
-   in our own code and Coin's: the cull, `buildInstanceGroups()`, the
-   466-line `submit()` per-draw C++, the six `setUniform`,
-   `setTransform`, and `SoGLRenderAction` compositing on top. Phases 1
-   and 2 both target this bucket blind. **Break it down before building
-   either.**
+2. **ANSWERED -- the ~44 ms is measured, and it is mostly ours.** Built
+   as `cpu ours / bgfx::frame / outside` on the frame line and run: at
+   the default config our own C++ is 19.3 ms, the bgfx backend 16.4 ms,
+   and everything that is not this renderer (Coin's composite, Qt, the
+   app) only 15.0 ms. Coin was not the problem.
+
+   **The successor question, and the new priority: what is the 15.6 ms
+   of FIXED cost inside our C++?** It does not scale with draw count --
+   only 0.294 us/draw does. Candidates in order of suspicion: the
+   per-frame scene walk, the cull itself, `buildInstanceGroups()`, and
+   whatever else runs once per frame over all 17727 rows rather than
+   over the survivors. **Nothing in this plan addresses it, and it is
+   now the largest single CPU item in the renderer.**
 3. The **fill / line / point** mix -- sec 12.19 found ~2787 point and ~2800
    line draws among 8388 rows, and they do not cost the same.
 
