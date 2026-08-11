@@ -342,48 +342,60 @@ colour. Per-field storage replaces that workaround with a rule: restoring a
 one-entry material writes size 1 into each field array and **must not
 clobber a `_diffuse` that already holds N entries**. Test both file orders.
 
-#### 1.3 Hook the default-value scheme: store a field only when it differs
+#### 1.3 Hook the shared-default scheme (it is on origin, not in this tree)
 
-The fork already has a scheme for this and appearance must use it rather
-than invent its own: **a property carries a known default, is materialised
-only when something actually sets it, and absence means the default.** The
-per-view `<group>_<name>` overrides are the worked example --
-`viewPropOverride` explicitly "never creates the property"
-(`SoFCRendererBridge.cpp:90-96`), so a `Render_SSAO` that nobody set simply
-is not there and the reader falls back to the default. `Property::hasSetValue`
-completes it at the other end, dropping same-value writes via `isSame` so
-setting a property to what it already holds does not even mark it changed.
+⚠️ Two earlier drafts of this section guessed at the wrong mechanism --
+first `FileBlobManager`, then the `Render_*` dynamic-property pattern.
+The real one is a workstream on `origin/LinkVibe` that this working tree
+does not yet contain: `253a30b627`, `7a1f0a1a47`, `9f7c473d12`,
+`2dfeea061f`, `6fa6cdd7b8`, `c2e1fffaf8`, `c7fce04db8`, `4306c09d65`,
+`fd4437dd04`.
 
-Appearance maps onto this exactly, and the cardinality convention from
-section 3 already *is* the mapping:
+**How it works.** `App::SharedDefaults` records, per class, what each
+eligible property of a fresh stand-in object serialises to at canonical
+settings -- the file's schema and version, XML forced, no indentation.
+Those recorded bytes are written once into a `<Defaults>` block inside
+`<ObjectData>`, and every object is written as the difference. A property
+is elided only when **its own serialisation is byte-identical to the
+recorded bytes**, with status agreeing.
 
-- **size 0** -- the field equals its default. Not materialised, not written,
-  costs nothing anywhere.
-- **size 1** -- uniform, one value.
-- **size N** -- genuinely per-entry.
+⭐ The equivalence is deliberately *the file*, not `isSame()`. An earlier
+version elided by `isSame()`, which made every implementation load-bearing
+for the format -- "one that answers same more loosely than Save() writes is
+silent data loss" -- and two such bugs were found in the safe direction
+before the rule changed. Restore fidelity now reduces to XML parse
+fidelity.
 
-⭐ **This is the strongest argument yet for per-field lists over a material
-list, and it is about more than bytes.** With an interleaved list of whole
-materials there is exactly one thing to compare against a default, so the
-moment *any* field differs the entire N-entry record becomes non-default and
-every field gets stored -- including the four that nothing can even render
-per face. Storing one list per field makes the comparison per field: a
-non-default diffuse array is written, and specular, emissive, ambient,
-shininess and the three strings stay absent. The common object writes
-nothing at all beyond the property's own presence.
+**What appearance must do:**
 
-So the save format is one list per field, absent fields omitted entirely --
-the same shape as the in-memory layout and as the property surface. Three
-representations, one convention.
+1. **Opt in.** `Property::canShareDefault()` defaults to *no*; a type must
+   opt in before a save may leave it out. Colours, materials and their
+   lists already opt in, so our `PropertyMaterialList` must too --
+   deliberately, not by inheriting an accident.
+2. ⭐ **Serialise canonically.** Because elision compares *bytes*, two
+   logically-equal appearances must produce identical bytes or the elision
+   silently misses. That promotes the cardinality convention from an
+   optimisation to a **correctness requirement**: always collapse a uniform
+   field to size 1, never emit a size-N run of identical values, keep field
+   order fixed. Normalise on write, not on read.
+3. **Stay inline.** `4306c09d65` is precisely our case: after the view
+   providers stopped writing defaults, **1831 archive entries were left
+   carrying eight bytes each -- a `DiffuseColor` holding one colour**, on
+   every object whose colour differs from its class default. An archive
+   member costs "around 190 bytes before any content" plus one more thing
+   for the reader to open. `PropertyLists::Save` now writes a list inline
+   when `getMemSize()` fits `DocumentParams::InlineListSize` (64 bytes by
+   default). So our per-field lists must report `getMemSize()` honestly and
+   will then ride that path for free.
 
-⚠️ **I first hooked this to the wrong mechanism.** `FileBlobManager` is
-content-addressed storage for file-backed content (hash-keyed, one archive
-entry per blob, shared by any number of referrers) and it is *not* what this
-needs. Worth recording the fact it turned up on the way, though: plain
-doc-files do **not** dedup by content -- `Writer::addFile` only uniquifies
-the name (`Writer.cpp:264`) -- so two identical colour lists are two archive
-entries today. Never writing the defaults avoids that question rather than
-answering it.
+**This is the third independent argument for per-field lists, and the
+sharpest.** An interleaved material list fails all three at once: one entry
+is ~168 bytes, so it is over the 64-byte inline threshold immediately and
+always costs a full archive entry; and because there is one blob to compare,
+a single differing field makes the whole record differ from the class
+default and nothing is elided. Per field, a lone non-default diffuse colour
+is 16 bytes -- inline, no archive entry -- while every other field stays
+byte-identical to the default block and disappears.
 
 ### Stage 2 -- Coin carries the information through, ABI intact
 
