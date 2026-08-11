@@ -140,6 +140,15 @@ Still open, and each of these redirects the phases below:
    caster, on-top, outline. ⭐ A pass that contributes thousands of draws
    for a small visual effect is a cheaper win than any of phase 1-3, and
    nothing currently attributes draws to passes.
+
+   ⭐⭐ **And it needs no instrumentation.** bgfx already collects
+   per-view **CPU submit time and GPU time** (`bgfx::Stats::viewStats`,
+   `numViews`), gated behind `BGFX_DEBUG_PROFILER` — set it with
+   `bgfx::setDebug()` while `RenderDebug_Timing` is on and print the
+   views sorted by cost. We call neither `setDebug` nor `setViewName`
+   today, so the only work is the flag, a name per view, and a readout.
+   That is a couple of hours and it answers "which pass costs what" for
+   *both* processors — do it before choosing any phase below.
 2. **The split inside our own submit**: bgfx `submit()` itself vs the
    per-draw C++ before it (material unpack, texture routing, state
    assembly) vs the six `setUniform` calls vs `setTransform`.
