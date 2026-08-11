@@ -282,45 +282,70 @@ Verifiable without any view provider or GPU: unit tests for cardinality
 transitions (0 -> 1 -> N and back), plus a document round-trip against a
 file written by upstream FreeCAD.
 
-### Stage 2 -- Coin carries the information through
+### Stage 2 -- Coin carries the information through, ABI intact
 
 **Scope: make Coin a faithful carrier, not a renderer of per-face
 materials.** Coin's own GL path may keep using index 0 for the four
-non-diffuse fields; the fork does not care, because the bgfx backend is the
-work horse. What matters is that the per-face arrays survive traversal and
-reach the render-cache callback intact.
+non-diffuse fields; the bgfx backend is the work horse. What matters is that
+the per-face arrays survive traversal and reach the render-cache callback.
 
-Today they do not: `SoFCRenderCache` reads
+Today they do not. `SoFCRenderCache` reads
 `SoLazyElement::getDiffuse(state, 0)` and the scalar `getAmbient` /
 `getSpecular` / `getEmissive` / `getShininess`
-(`SoFCRenderCache.cpp:442-451`), because those are all `SoLazyElement`
-offers. The information is destroyed at the element boundary, not at the
-renderer.
+(`SoFCRenderCache.cpp:442-451`) because that is all `SoLazyElement` offers.
+**The information is destroyed at the element boundary, not at the
+renderer.**
 
-So the Coin-side change is additive plumbing:
+**Do it without breaking ABI**, following the fork-extension pattern:
 
-- extend `SoLazyElement`'s state to keep pointer-plus-count for ambient,
-  specular, emissive and shininess alongside the existing diffuse and
-  transparency arrays;
-- extend `SoLazyElement::setMaterials` (or add an overload) so
-  `SoMaterial::doAction` can pass the whole fields instead of `[0]`;
-- add indexed getters so a traversal can ask for entry i.
+1. A new derived element, `SoLazyElementEx : SoGLLazyElement`, holding
+   pointer-plus-count for ambient, specular, emissive and shininess
+   alongside the inherited diffuse and transparency arrays. Existing class
+   layouts are untouched.
+2. Exported C entry points -- a factory `createLazyElementEx()` plus one
+   accessor per extra field, over opaque `SoState*` handles and plain
+   arrays.
+3. FreeCAD **looks those symbols up at runtime**. Present -> read per-face
+   materials; absent -> exactly today's behaviour against stock Coin.
+
+Why this is sound in Coin, verified rather than assumed:
+
+- `PRIVATE_SOELEMENT_INIT` (`SoSubElement.h:132`) sets
+  `classStackIndex = _parent_::getClassStackIndex()`, so a **derived element
+  occupies the base's stack slot**.
+- `SO_ENABLE(action, element)` -> `enableElement(typeId, stackIndex)`
+  chooses which concrete class fills that slot, per action.
+- **`SoGLLazyElement` is the in-tree precedent**: it is precisely a derived
+  element substituted for `SoLazyElement` at the same stack index.
+- Coin already exports C entry points over opaque handles (`COIN_DLL_API`,
+  `cc_glglue_instance` and friends), so this follows its convention.
+
+Consequences, all good: **no Coin ABI break, so no pivy rebuild and no
+feedstock lockstep**, and one FreeCAD binary keeps working against stock
+Coin. The cost is that the C surface, once published, has to stay stable --
+so keep it small, and add a `..._abiVersion()` so the consumer can negotiate
+a feature level rather than mere presence.
+
+Coin-side writing: `SoMaterial`'s fields are already multi-value
+(`SoMFColor`, `SoMFFloat`), so the node can already hold the data; only
+`doAction`'s transfer collapses it to `[0]`. Teach it to pass whole fields
+when the element in the state is an `Ex`. That is a body change, not a
+layout change.
 
 Deliberately **not** in scope: `SoGLLazyElement`'s send path. Per-face
-diffuse is cheap there because it is a vertex attribute
-(`glColor4ub` under `glColorMaterial`), whereas ambient, specular and
-emissive go through `glMaterialfv` and shininess through `glMaterialf`,
-which are GL *state* changes -- one per face would break batching, VBOs and
-display lists. That is why Open Inventor only ever indexed diffuse, and it
-is a fixed-function limitation we have no reason to fight. If Coin's own
-renderer ever needs it, the right shape is to group faces into runs sharing
-a material and emit one `glMaterialfv` set per run, the same trick OCCT's
-glTF writer uses.
+diffuse is cheap there because it is a vertex attribute (`glColor4ub` under
+`glColorMaterial`), whereas ambient, specular and emissive go through
+`glMaterialfv` and shininess through `glMaterialf`, which are GL *state*
+changes -- one per face would break batching, VBOs and display lists. That
+is why Open Inventor only ever indexed diffuse, and it is a fixed-function
+limitation we have no reason to fight. If Coin's own renderer ever needs it,
+the right shape is to group faces into runs sharing a material and emit one
+`glMaterialfv` set per run, the trick OCCT's glTF writer already uses.
 
-- ⚠️ Changing `SoLazyElement`'s layout is a Coin ABI break: **pivy must be
-  rebuilt**, and `coin3d-feedstock` / `pivy-feedstock` move together.
-- Verify by reading the values back through the callback, not by looking at
-  a picture; Coin's own output is expected to be unchanged at this stage.
+Verify by reading the values back through the callback, not by looking at a
+picture: Coin's own output is expected to be unchanged at this stage. Also
+verify the fallback, by running against a stock Coin with the symbols
+absent.
 
 ### Stage 3 -- bgfx renders it
 
