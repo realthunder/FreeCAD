@@ -187,6 +187,15 @@ struct ProxyInstance {
     /// one screw expands what instancing shares) and unused by the
     /// partition itself.
     const void *sourceTag = nullptr;
+    /// Primitives this draw issues -- triangles, line segments or
+    /// points, whichever the material's topology selects.
+    ///
+    /// The unit the cut is gated on. It used to be gated on draws
+    /// alone, and draws were then measured to cost nothing on this
+    /// scene: the frame is GPU-bound and the GPU is geometry-bound
+    /// (docs/DrawSubmission.md). A cut that removes draws without
+    /// removing primitives buys nothing here.
+    uint32_t primCount = 0;
     /// Which row of the table this was projected from. The partition
     /// never follows it — it is the join back to whatever the caller
     /// holds the geometry in, which generation needs and selection will
@@ -277,6 +286,9 @@ struct ProxyNode {
     uint32_t bucketCount = 0;
     /// Instances at or below this node.
     uint32_t subtreeCount = 0;
+    /// Primitives at or below this node -- what a proxy here would have
+    /// to stand in for, and therefore the ceiling on what it can save.
+    uint64_t subtreePrims = 0;
 
     bool leaf() const
     {
@@ -304,6 +316,15 @@ struct ProxyCut {
     uint32_t proxyDraws = 0;          ///< the merged part of drawCount
     uint32_t coveredInstances = 0;    ///< instances a proxy stands for
     uint32_t culledInstances = 0;     ///< off screen, drawn by nobody
+    /// The same three populations counted in primitives instead of
+    /// draws. `coveredPrims` is the geometry a proxy replaces -- the
+    /// ceiling on what the cut can save, before the proxy's own
+    /// primitives are subtracted (which needs generating, sec 11.1c).
+    /// **This is the number the cut is now gated on**, because draws
+    /// were measured not to cost on this scene.
+    uint64_t exactPrims = 0;
+    uint64_t coveredPrims = 0;
+    uint64_t culledPrims = 0;
 };
 
 /// The spatial index of §3.2: a loose octree over world bounds with

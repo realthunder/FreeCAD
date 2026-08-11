@@ -1280,6 +1280,58 @@ Two numbers that need no such caveat:
   already chosen to allow, and which is now a requirement rather than a
   nicety.
 
+### 11.1b-prims RE-GATED ON PRIMITIVES -- the prize is 2.6x smaller
+
+XX **Every row above is in draws, and draws were then measured to cost
+nothing on this scene.** `docs/DrawSubmission.md`: the frame is 20.4 ms
+against 19.8 ms of GPU, and a quarter of the pixels buys 3.3% while
+per-primitive cost holds -- the frame is GPU-bound and the GPU is
+geometry-bound. A cut that removes draws without removing primitives
+buys exactly nothing here.
+
+So `selectCut` now counts both. Rack server, native, swap interval 0,
+converged, viewport 1791x880, 17727 instances over 1377 nodes, 4
+buckets, build 12-19 ms. 88 reports, byte-identical -- the cut is
+deterministic:
+
+| tolerance | draws | vs 17727 | prims exact | prims covered | **covered %** |
+|---|---|---|---|---|---|
+| 1px | 17604 | 1.01x | 27.11M | 0.06M | **0%** |
+| 4px | 14214 | 1.25x | 26.13M | 1.04M | **4%** |
+| 16px | 8265 | 2.14x | 23.57M | 3.60M | **13%** |
+| 64px | **4457** | **3.98x** | 19.26M | **7.92M** | **29%** |
+
+**At 64px the cut removes 75% of the draws and 29% of the primitives.**
+That is the number the phase-2 case has to be made on, and it is 2.6x
+smaller than the one it was made on. It is also a **ceiling**: the proxy
+that replaces those 7.92M primitives has primitives of its own, which
+come off the saving and cannot be known without generating (sec 11.1c).
+
+** **The bigger finding is the other column.** At the most aggressive
+tolerance measured, **19.26M of 27.17M on-screen primitives -- 71% --
+are in objects too large on screen to merge at all.** Far-field
+aggregation cannot reach them by construction: sec 3.2 assigns by size, so
+a big object is a resident of a high node and draws exactly. **The
+larger pool is per-object simplification of near geometry, not
+far-field merging of distant geometry**, and that is a different
+mechanism from the one this document plans.
+
+!! **An unexplained denominator, and the shares above are the table's,
+not the frame's.** The instance table accounts for **27.17M** on-screen
+primitives (constant across tolerances, as it must be); the same frame
+renders **39.60M**. The 1.46x gap is not diagnosed -- candidates are a
+second pass over the same geometry, and instanced rows counted once here
+and per-instance there. Against the frame, 64px covers 7.92/39.60 =
+**20%**. **Do not quote 29% as a share of the frame until the gap is
+closed** -- this workstream has already published one share against the
+wrong denominator (sec 12.19).
+
+! The draw column differs from sec 11.1b's rack table (4457 vs 7831 at
+64px) because the viewport is shorter (880 vs 1064 px). The tolerance is
+scaled by viewport height, so the same px tolerance is a coarser world
+tolerance here. Not a contradiction; a reminder that no row of any of
+these tables means anything without its viewport.
+
 ### 11.1c What a proxy commits, generated and measured
 
 `RenderDebug_ProxyGen`, same document, same machine and the same

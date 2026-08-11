@@ -592,12 +592,26 @@ static void reportProxyCut(const Render::ProxyHierarchy &index,
     std::string line;
     char buf[256];
     static const float kTolerances[] = {1.0f, 4.0f, 16.0f, 64.0f};
+    // Draws AND primitives at each tolerance. Draws alone were what
+    // this line reported for phase 1, and draws were then measured to
+    // cost nothing on this scene -- the frame is GPU-bound and the GPU
+    // is geometry-bound (docs/DrawSubmission.md). `covered` is the
+    // primitives a proxy would stand in for: the ceiling on the saving,
+    // since the proxy's own primitives come off it and are not knowable
+    // without generating (11.1c).
+    std::string prims;
     for (float tol : kTolerances) {
         Render::ProxyCut cut;
         index.selectCut(V, P, viewportHeightPx, tol, cut);
         snprintf(buf, sizeof(buf), " %gpx:%u(%u+%u)", double(tol),
                  cut.drawCount, cut.proxyDraws, unsigned(cut.exact.size()));
         line += buf;
+        const double total = double(cut.exactPrims + cut.coveredPrims);
+        snprintf(buf, sizeof(buf), " %gpx:%.2fM exact+%.2fM covered(%.0f%%)",
+                 double(tol), double(cut.exactPrims) / 1e6,
+                 double(cut.coveredPrims) / 1e6,
+                 total > 0.0 ? 100.0 * double(cut.coveredPrims) / total : 0.0);
+        prims += buf;
     }
     // The distributions that size the partition (§3.2): how many
     // instances a cell holds decides both the size of a pop and how much
@@ -616,12 +630,14 @@ static void reportProxyCut(const Render::ProxyHierarchy &index,
              " | nodes:%u depth:%u buckets:%u | build %.1fms",
              stats.nodes, stats.depth, stats.distinctBuckets, buildMs);
 #ifdef FC_RENDERER_STANDALONE
-    std::printf("render proxycut: instances:%u draws@tol%s%s\n%s\n",
-                stats.instances, line.c_str(), buf, levels.c_str());
+    std::printf("render proxycut: instances:%u draws@tol%s%s\n%s\n%s\n",
+                stats.instances, line.c_str(), buf, prims.c_str(),
+                levels.c_str());
 #else
     Base::Console().Message(
             "render proxycut: instances:%u draws@tol%s%s\n", stats.instances,
             line.c_str(), buf);
+    Base::Console().Message("render proxycut prims@tol:%s\n", prims.c_str());
     Base::Console().Message("render proxycut levels:%s\n", levels.c_str());
 #endif
 }

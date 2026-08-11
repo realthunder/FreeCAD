@@ -194,6 +194,34 @@ float Render::depthQuantumPad(const float *bmin, const float *bmax,
 // The instance table
 // ---------------------------------------------------------------------
 
+namespace
+{
+
+/// Primitives one draw issues. `indexCount` is the draw's own range
+/// when set; 0 means the whole buffer, and which buffer is decided by
+/// the material's topology, not by which arrays the mesh happens to
+/// carry -- a mesh usually has both triangles and lines, and charging a
+/// line draw for the triangle array would count most of the scene twice.
+uint32_t drawPrimitives(const DrawCall &d)
+{
+    int indices = d.indexCount;
+    int perPrim = 3;
+    if (d.material.type == Material::Line)
+        perPrim = 2;
+    else if (d.material.type == Material::Point)
+        perPrim = 1;
+    if (indices <= 0) {
+        if (!d.mesh)
+            return 0;
+        indices = d.material.type == Material::Line ? d.mesh->numLineIndices
+            : d.material.type == Material::Point ? d.mesh->numPointIndices
+            : d.mesh->numTriangleIndices;
+    }
+    return indices > 0 ? uint32_t(indices / perPrim) : 0u;
+}
+
+} // anonymous namespace
+
 void Render::proxyInstances(const DrawCallList &draws,
                             std::vector<ProxyInstance> &out)
 {
@@ -212,6 +240,7 @@ void Render::proxyInstances(const DrawCallList &draws,
             ? uint64_t(d.materialIndex) : materialIdentity(d.material);
         inst.sourceTag = d.mesh ? static_cast<const void *>(d.mesh.get())
                                 : nullptr;
+        inst.primCount = drawPrimitives(d);
         out.push_back(inst);
     }
 }
@@ -447,6 +476,10 @@ int ProxyHierarchy::buildNode(uint32_t level, const uint32_t cell[3],
             node.cellMax[a] = node.cellMin[a] + size;
         }
         node.subtreeCount = uint32_t(items.size());
+        uint64_t prims = 0;
+        for (uint32_t idx : items)
+            prims += instancedata[idx].primCount;
+        node.subtreePrims = prims;
     }
 
     // Stop conditions (§3.2): K, the depth cap, and the extent target.
@@ -581,6 +614,9 @@ void ProxyHierarchy::selectCut(const float *view, const float *proj,
     out.proxyDraws = 0;
     out.coveredInstances = 0;
     out.culledInstances = 0;
+    out.exactPrims = 0;
+    out.coveredPrims = 0;
+    out.culledPrims = 0;
     if (rootnode == kNoProxyNode || !view || !proj || viewportHeightPx <= 0.0f)
         return;
 
@@ -595,6 +631,7 @@ void ProxyHierarchy::selectCut(const float *view, const float *proj,
         if (sight.what == BoxSight::Offscreen || sight.what == BoxSight::Empty) {
             // The population a cut stops touching altogether.
             out.culledInstances += node.subtreeCount;
+            out.culledPrims += node.subtreePrims;
             continue;
         }
         // A node draws a proxy when the camera cannot resolve it and
@@ -606,6 +643,7 @@ void ProxyHierarchy::selectCut(const float *view, const float *proj,
             out.proxyNodes.push_back(ni);
             out.proxyDraws += node.bucketCount;
             out.coveredInstances += node.subtreeCount;
+            out.coveredPrims += node.subtreePrims;
             continue;
         }
         // Descended past: this node's own residents are covered by no
@@ -615,10 +653,14 @@ void ProxyHierarchy::selectCut(const float *view, const float *proj,
             const ProxyInstance &inst = instancedata[idx];
             const BoxSight is = sightBounds(inst.bboxMin, inst.bboxMax,
                                             view, proj, viewportHeightPx);
-            if (is.what == BoxSight::Offscreen || is.what == BoxSight::Empty)
+            if (is.what == BoxSight::Offscreen || is.what == BoxSight::Empty) {
                 out.culledInstances += 1;
-            else
+                out.culledPrims += inst.primCount;
+            }
+            else {
                 out.exact.push_back(idx);
+                out.exactPrims += inst.primCount;
+            }
         }
         for (int o = 0; o < 8; ++o) {
             if (node.child[o] != kNoProxyNode)

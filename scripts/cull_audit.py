@@ -259,6 +259,18 @@ def run():
         # Without it, "0 masked rows" cannot be told apart from "the mask
         # snapshot is broken" -- and one of those is a clean bill of health
         # while the other invalidates the entire run.
+        # FC_PROXYCUT=1: what a far-field cut would cost this camera,
+        # generating nothing (docs/FarFieldProxies.md 11.1). Off by
+        # default because it builds a partition over every drawn
+        # instance on the frames it reports, so its rows are diagnostic
+        # rows, not timing rows.
+        proxycut = os.environ.get("FC_PROXYCUT", "") not in ("", "0")
+        if proxycut:
+            v.RenderDebug_ProxyCut = True
+            emit("proxy-cut diagnostic ON -- it partitions every drawn "
+                 "instance on the frames it reports, so FRAME TIMINGS IN "
+                 "THIS RUN ARE NOT CLEAN")
+
         v.RenderDebug_Timing = True
         # FC_TIGHT=1: also ask what a TIGHTER OCCLUDEE VOLUME would have
         # culled (#12.19). Off by default because its per-triangle arm
