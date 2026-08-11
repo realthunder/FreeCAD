@@ -358,6 +358,23 @@ struct FrameStatsAccum {
     double gpuMs = 0.0;
     uint32_t gpuFrameSeen = 0;
     bool gpuFrameValid = false;
+    /// ⭐ Per-view CPU submit and GPU time, keyed by bgfx view id
+    /// (docs/DrawSubmission.md phase 0). The frame line says the whole
+    /// frame costs 32 ms of submit and 38 ms of GPU across 30577 draws;
+    /// this says *which pass* spends it, which is the difference
+    /// between optimizing submission in general and deleting the pass
+    /// that turns out to be half of it.
+    ///
+    /// ⚠️ bgfx only fills `viewStats` while `BGFX_DEBUG_PROFILER` is
+    /// set, so this stays empty unless the timing switch turned it on.
+    ///
+    /// ⚠️⚠️ Keyed by **pass index**, resolved in the frame the sample was
+    /// taken — never by raw bgfx view id. The id->pass map is rebuilt
+    /// every frame from which passes are live, so a window that mixes
+    /// frames with different live sets would name one pass's cost after
+    /// another's. -1 collects everything unmarked (they share a sink id
+    /// and are not distinguishable).
+    std::map<int, std::pair<double, double>> viewMs;
     /// The size the scene was actually rasterized at.
     ///
     /// ⚠️ Not bgfx::Stats::width/height: those are the *default*
@@ -375,7 +392,8 @@ struct FrameStatsAccum {
 /// unconditionally while the switch is on: getStats() hands back a
 /// pointer to state bgfx maintains anyway.
 static void accumulateFrameStats(FrameStatsAccum &acc, uint16_t sceneWidth,
-                                 uint16_t sceneHeight)
+                                 uint16_t sceneHeight,
+                                 const std::function<int(uint16_t)> &resolvePass)
 {
     const bgfx::Stats *s = bgfx::getStats();
     if (!s || s->cpuTimerFreq <= 0)
@@ -391,6 +409,16 @@ static void accumulateFrameStats(FrameStatsAccum &acc, uint16_t sceneWidth,
         acc.prims += s->numPrims[i];
     acc.width = sceneWidth;
     acc.height = sceneHeight;
+    // Per-view, while the profiler flag is on. The GPU half of a view
+    // is only meaningful when its timer resolved, same as the frame's.
+    for (uint16_t i = 0; i < s->numViews; ++i) {
+        const bgfx::ViewStats &v = s->viewStats[i];
+        auto &slot = acc.viewMs[resolvePass(v.view)];
+        slot.first += double(v.cpuTimeEnd - v.cpuTimeBegin) * toMs;
+        if (s->gpuTimerFreq > 0)
+            slot.second += double(v.gpuTimeEnd - v.gpuTimeBegin) * 1000.0
+                           / double(s->gpuTimerFreq);
+    }
     if (s->gpuTimerFreq > 0
             && (!acc.gpuFrameValid || s->gpuFrameNum != acc.gpuFrameSeen)) {
         acc.gpuFrameValid = true;
@@ -8479,6 +8507,62 @@ public:
     }
     /// The bgfx view id of a pass, or the sink if the frame did not
     /// declare it. Never returns an id outside the block.
+    /// Which pass a bgfx view id belongs to, for the per-view cost
+    /// readout (docs/DrawSubmission.md phase 0). Inverts `idMap`, so it
+    /// needs no `setViewName` and cannot drift from the real mapping.
+    ///
+    /// Named for the passes a CAD frame actually spends its draws in;
+    /// anything else reports its pass index, which is enough to find it
+    /// in the enum. A name is a convenience — the index is the fact.
+    /// ⚠️⚠️ Resolve in the SAME FRAME the stat was taken. `idMap` is
+    /// rebuilt every frame from which passes are live, so a raw bgfx
+    /// view id means different passes in different frames — accumulating
+    /// by id across a reporting window and naming it at the end
+    /// attributes one pass's milliseconds to another. Only a pass whose
+    /// mark is set is resolved; everything unmarked shares `sinkView`
+    /// and cannot be told apart.
+    int passIndexOf(uint16_t id) const
+    {
+        for (int p = 0; p < NUM_VIEWS; ++p) {
+            if (passMark[p] && idMap[p] == id)
+                return p;
+        }
+        return -1;
+    }
+
+    static std::string passNameOfIndex(int p)
+    {
+        {
+            switch (p) {
+            case ViewOpaque: return "opaque";
+            case ViewTransparent: return "transparent";
+            case ViewSelection: return "selection";
+            case ViewOutline: return "outline";
+            case ViewShadow: return "shadow";
+            case ViewShadowTint: return "shadowtint";
+            case ViewAOPrepass: return "aoprepass";
+            case ViewAOGen: return "aogen";
+            case ViewAOBlur: return "aoblur";
+            case ViewBackground: return "background";
+            case ViewOITComposite: return "oitcomposite";
+            case ViewSectionCap: return "sectioncap";
+            case ViewDebugScene: return "debugscene";
+            case ViewIdReadback: return "idreadback";
+            case ViewWaterSurface: return "watersurface";
+            case ViewGlassSurface: return "glasssurface";
+            case ViewParticles: return "particles";
+            case ViewGroundRefl: return "groundrefl";
+            case ViewVolGen: return "volgen";
+            default: break;
+            }
+            if (p >= ViewBulbShadow0 && p <= ViewBulbShadow15)
+                return "bulbshadow" + std::to_string(p - ViewBulbShadow0);
+            if (p < 0)
+                return "unmarked";
+            return "pass" + std::to_string(p);
+        }
+    }
+
     uint16_t vid(int p) const
     {
         if (p < 0 || p >= NUM_VIEWS)
@@ -14856,11 +14940,63 @@ public:
         // that was actually submitted -- publishScene returns early on
         // several paths, and a sample taken on one of those would
         // average a frame that drew nothing into the mean.
+        // ⚠️ bgfx fills `viewStats` only while this is set, and it is a
+        // whole-context switch rather than a per-view one — so it is
+        // turned on with the timing readout and off with it, never left
+        // on for a frame nobody is measuring.
+        if (debugconf.frameTiming != profilerOn) {
+            profilerOn = debugconf.frameTiming;
+            bgfx::setDebug(profilerOn ? BGFX_DEBUG_PROFILER : BGFX_DEBUG_NONE);
+        }
         if (debugconf.frameTiming) {
-            accumulateFrameStats(frameStats, view->width, view->height);
+            accumulateFrameStats(frameStats, view->width, view->height,
+                                 [&](uint16_t id) {
+                                     return view->passIndexOf(id);
+                                 });
             const bool due = frameStatsDue();
+            // Snapshot before the report, which resets the accumulator.
+            std::map<int, std::pair<double, double>> viewMs;
+            uint32_t viewFrames = 0;
+            if (due) {
+                viewMs = frameStats.viewMs;
+                viewFrames = frameStats.frames;
+            }
             if (due)
                 reportFrameStats(frameStats);
+            // ⭐ Where the frame line's milliseconds actually go, per
+            // pass, for both processors (docs/DrawSubmission.md phase
+            // 0). Sorted by CPU cost and capped, with the number
+            // dropped stated: a readout that silently shows the top few
+            // reads as though the rest were nothing.
+            if (due && !viewMs.empty() && viewFrames) {
+                std::vector<std::pair<int, std::pair<double, double>>>
+                        ranked(viewMs.begin(), viewMs.end());
+                std::sort(ranked.begin(), ranked.end(),
+                          [](const auto &a, const auto &b) {
+                              return a.second.first > b.second.first;
+                          });
+                const double f = double(viewFrames);
+                double cpuAll = 0.0, gpuAll = 0.0;
+                for (const auto &r : ranked) {
+                    cpuAll += r.second.first;
+                    gpuAll += r.second.second;
+                }
+                std::string line;
+                const size_t show = std::min<size_t>(ranked.size(), 8);
+                for (size_t i = 0; i < show; ++i) {
+                    char b[128];
+                    snprintf(b, sizeof(b), " %s %.2f/%.2f",
+                             BGFXView::passNameOfIndex(ranked[i].first).c_str(),
+                             ranked[i].second.first / f,
+                             ranked[i].second.second / f);
+                    line += b;
+                }
+                Base::Console().Message(
+                        "render passes (cpu/gpu ms, top %zu of %zu, "
+                        "totals %.2f/%.2f):%s\n",
+                        show, ranked.size(), cpuAll / f, gpuAll / f,
+                        line.c_str());
+            }
             // ⭐ What instancing collapsed, on the same cadence. Read
             // `replaced` against the frame line's draw count: that is
             // the share of submission the batching already removes, and
@@ -15608,6 +15744,10 @@ public:
         const char *why = nullptr;
     };
     InstancingStats instStats;
+    /// Whether BGFX_DEBUG_PROFILER is currently set. bgfx needs it to
+    /// fill per-view stats, and it is a context-wide switch, so it is
+    /// tracked rather than set every frame.
+    bool profilerOn = false;
     /// The draw list the index was built from. A rebuild costs 12-28 ms
     /// on a large assembly, so it happens when the scene changes and
     /// never per frame.

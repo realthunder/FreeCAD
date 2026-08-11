@@ -1,6 +1,12 @@
-# Draw submission: getting 17727 draws onto the GPU
+# Draw submission: getting 30577 draws onto the GPU
 
-Status: **plan**. Nothing here is built yet.
+Status: **plan**, plus the instruments it needs. Built so far:
+`render instancing:` (what batching already collapses), `render passes:`
+(per-pass CPU/GPU cost), and `FC_NO_AUDIT=1` in the harness. No
+submission route has been changed yet.
+
+⛔⛔ **Read "OPEN: the baseline is suspect" near the end before spending
+any number on this page.**
 
 This is the workstream that follows occlusion culling, and it starts
 where `docs/FarFieldProxies.md` §12.19 ends: both sides of box-based
@@ -138,17 +144,12 @@ Still open, and each of these redirects the phases below:
 1. **Which passes the 30577 draws belong to.** 8388 scene rows survive
    the cull, so the draws are ~3.6x the rows: color, AO prepass, shadow
    caster, on-top, outline. ⭐ A pass that contributes thousands of draws
-   for a small visual effect is a cheaper win than any of phase 1-3, and
-   nothing currently attributes draws to passes.
+   for a small visual effect is a cheaper win than any of phase 1-3.
 
-   ⭐⭐ **And it needs no instrumentation.** bgfx already collects
-   per-view **CPU submit time and GPU time** (`bgfx::Stats::viewStats`,
-   `numViews`), gated behind `BGFX_DEBUG_PROFILER` — set it with
-   `bgfx::setDebug()` while `RenderDebug_Timing` is on and print the
-   views sorted by cost. We call neither `setDebug` nor `setViewName`
-   today, so the only work is the flag, a name per view, and a readout.
-   That is a couple of hours and it answers "which pass costs what" for
-   *both* processors — do it before choosing any phase below.
+   ✅ **BUILT** — `render passes:` on the timing cadence, from bgfx's own
+   `Stats::viewStats` behind `BGFX_DEBUG_PROFILER`; no per-call-site
+   instrumentation was needed. It immediately found something wrong —
+   see the OPEN section below.
 2. **The split inside our own submit**: bgfx `submit()` itself vs the
    per-draw C++ before it (material unpack, texture routing, state
    assembly) vs the six `setUniform` calls vs `setTransform`.
@@ -333,3 +334,124 @@ against.
   `until grep DONE` waiter fires instantly on the previous run's DONE.
 - ⭐ Counts here should be deterministic like the culler's; only timings
   need the min/median/max treatment.
+
+## ⛔⛔ OPEN: the baseline above is suspect — resolve this FIRST
+
+Building the per-pass readout turned up something that has to be settled
+before any number on this page is spent:
+
+```
+render passes (cpu/gpu ms, top 8 of 15, totals 30.49/37.00):
+  opaque 14.76/20.59   debugscene 14.51/16.15   pass80 0.51/0.04  ...
+```
+
+**`ViewDebugScene` is costing ~15 ms of CPU and ~16 ms of GPU — about
+half the frame — and it should not be running at all.** It is gated on
+`viewMode == 6 || viewMode == 8` (the debug scene re-render) or
+`viewMode == 11 || cullAudit` (the id pass), and:
+
+- the saved frame is an ordinary render, so `viewMode` is `Off`;
+- the run had the cull audit **off** and produced zero audit lines;
+- `user.cfg` carries no persisted override of either.
+
+⇒ Either something else turns that pass on, or the attribution is still
+wrong. ⚠️ **Until it is explained, treat 30577 draws / 32 ms submit /
+76 ms frame as possibly including a pass a real user frame never
+runs** — every phase in this document is scoped against that number, and
+half of it may be an instrument.
+
+**How to settle it in one run**: log `idPassRender`, `debugSceneRender`
+and `debugconf.cullAudit` on the timing cadence. If the id pass is
+running unbidden in ordinary frames, that is a *bug worth more than any
+phase here* — it would be a full extra scene rasterization on every
+frame, for every user.
+
+⚠️ The instrument already had one bug of this family and it is fixed:
+per-view stats were accumulated by **raw bgfx view id**, but `idMap` is
+rebuilt every frame from which passes are live, so a window mixing
+frames with different live sets attributed one pass's milliseconds to
+another. It now resolves id → pass **in the frame the sample was taken**
+and only for passes whose mark is set.
+
+`scripts/cull_audit.py` gained **`FC_NO_AUDIT=1`** for exactly this
+reason: the audit re-renders every scene draw into the id image, so a
+frame timing taken with it on is a measurement of the measuring
+apparatus. Cull numbers need it on; frame timings need it off; the two
+cannot come from one row.
+
+## Backends: what Vulkan would and would not bring
+
+Researched against the vendored tree (`renderer_vk.cpp` /
+`renderer_gl.cpp`). **Verdict: do not add the Vulkan backend now.
+Uncomment nothing at the `typeMap` entry.**
+
+### The blocker is worse than "unsupported"
+
+`renderer_vk.cpp` reinterprets `platformData.context` as a **`VkDevice`**:
+
+```c
+if (NULL != g_platformData.context) { m_device = m_externalDevice = (VkDevice)g_platformData.context; }
+```
+
+We put a GLX context handle in that field. Under `RendererType::Vulkan`
+that is a type-confused pointer — immediate UB, not a graceful failure.
+And bgfx implements **no GL↔VK interop** (no `EXT_memory_object` /
+`external_memory` in either backend), so the whole export/import/sync
+path would be ours to write and maintain against upstream.
+
+### bgfx forfeits the Vulkan wins that matter
+
+- **One render thread, every backend.** No `std::thread`, no
+  `vkCmdExecuteCommands`, no secondary command buffers in
+  `renderer_vk.cpp`; even `sort()` runs inside the backend.
+  `bgfx::Encoder` parallelizes only the building of the unsorted
+  draw-item array — **Vulkan does not change what Encoder can do.**
+- **No bindless.** `VK_EXT_descriptor_indexing` is not used anywhere.
+  The one feature that would collapse thousands of material-varied draws
+  into a few indirect batches is not implemented.
+- ⇒ The two largest wins in NVIDIA's CAD comparison — multi-threaded
+  recording and command-buffer *reuse* — are architecturally
+  unavailable; bgfx rebuilds the command stream every frame.
+
+### The caps delta is ~nothing on our hardware
+
+GL 4.6 on this box already exposes indirect draw, indirect count and
+compute. Vulkan adds variable-rate shading and external textures, and
+nothing that reduces draw cost.
+
+### The per-draw mechanism difference is real, and second-order
+
+GL commits uniforms through a **hash-map lookup per 4-float register**
+and rebinds attributes per draw; Vulkan memcpys into a scratch buffer
+and reuses descriptor sets via **dynamic offsets**. Estimated **2-3x on
+the submit half** — 32 ms → ~12-18 ms. ⚠️ That multiplier is *inference*
+from mechanism plus NVIDIA's hand-written CAD sample (7.8 → 1.8 ms at
+44k draws); no bgfx-specific VK-vs-GL draw-cost benchmark appears to
+exist. Vulkan also **adds** ~15 MB/frame of uniform writes, because it
+re-uploads whole constant blocks where GL skips unchanged uniforms.
+
+### Interop, if it were ever wanted
+
+Vulkan offscreen + `VK_KHR_external_memory_fd` → `GL_EXT_memory_object_fd`
+works on **Linux+NVIDIA** (the extensions are present on this box) and
+has a Windows path. ⛔ **macOS is dead**: Apple GL is frozen at 4.1 and
+never shipped `EXT_external_objects`.
+
+### ⇒ When Vulkan becomes cheap
+
+When Coin no longer composites into the viewport — i.e. when the
+renderer owns the whole view — the blocker evaporates and Vulkan is a
+small incremental step. It should be a *consequence* of that project,
+not its justification. Keep the `spirv` shader profile building
+meanwhile so the option stays cheap to exercise.
+
+## ⭐ The free lever nobody has pulled
+
+`bgfx::renderFrame()` is called immediately before `bgfx::Init` **on the
+same thread**, which puts bgfx in **single-threaded mode**: no API/render
+thread overlap, so our ~30 ms of submission and the GUI thread are
+serialized today. Moving the render thread off the GUI thread overlaps
+them. Backend-independent, cheap, and it improves the GL path we already
+ship. ⚠️ Verify what it does to the Qt/Coin co-existence — Coin issues GL
+on the GUI thread, and that is exactly the constraint that made
+single-threaded mode the safe default in the first place.

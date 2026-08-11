@@ -188,7 +188,18 @@ def run():
         emit("re-fitted after convergence; camera fixed from here on")
 
         settle = float(os.environ.get("FC_SETTLE", "30"))
-        v.RenderDebug_CullAudit = True
+        # /!\ FC_NO_AUDIT=1 measures the frame WITHOUT the instrument.
+        # The audit re-renders every scene draw into the id image
+        # (ViewDebugScene), which on the rack model is ~12.7ms of CPU
+        # and ~12.9ms of GPU -- about half the frame. Any timing quoted
+        # as "what a frame costs" must be taken with this OFF, or it is
+        # a measurement of the measuring apparatus. The cull numbers
+        # still need it ON, so the two cannot come from one row.
+        audit = os.environ.get("FC_NO_AUDIT", "") in ("", "0")
+        v.RenderDebug_CullAudit = audit
+        if not audit:
+            emit("cull audit OFF -- frame timings are clean, cull/over-cull "
+                 "numbers are NOT available in this run")
         # The culler's own account of the same frames, on the same cadence.
         # Without it, "0 masked rows" cannot be told apart from "the mask
         # snapshot is broken" -- and one of those is a clean bill of health
