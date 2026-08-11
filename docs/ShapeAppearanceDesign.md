@@ -142,14 +142,8 @@ without materialising anything.
    `mutable` cache built on demand and dropped on any write. 13 upstream
    call sites; our own code should use the field accessors instead. Confirm
    no caller holds the reference across a mutation.
-2. **Coin binding with mixed cardinality.** `SoMaterialBinding::PER_PART`
-   applies to the material as a whole, and `SoMaterial`'s fields are
-   separate. It must be verified what Coin does when `diffuseColor` has N
-   values and `specularColor` has 1 -- clamp, wrap, or undefined. If it is
-   not "reuse index 0", uniform fields have to be expanded to N into a
-   scratch buffer at bind time. **This determines whether the layout saves
-   anything at render time or only in memory and on disk**, so settle it
-   first, with a probe.
+2. ~~**Coin binding with mixed cardinality.**~~ **RESOLVED, and in our
+   favour** -- see section 5.1 below. No expansion is ever required.
 3. **The render cache.** `SoFCRenderCache` dedupes and hashes materials;
    per-face variance affects merge opportunities. Per-face colour already
    does this, so the question is whether widening changes it -- measure,
@@ -158,10 +152,59 @@ without materialising anything.
    material-card identity. We keep the fields for format compatibility;
    whether the fork uses them is a separate decision.
 
+### 5.1 Coin cannot vary four of the six fields per face at all
+
+Settled by reading the Coin source, and it needs no probe because the
+signature alone proves it:
+
+    SoLazyElement::setMaterials(SoState*, SoNode*, uint32_t bitmask,
+                                SoColorPacker*,
+                                const SbColor* diffuse, int numdiffuse,
+                                const float*   transp,  int numtransp,
+                                const SbColor& ambient,
+                                const SbColor& emissive,
+                                const SbColor& specular,
+                                float shininess, ...)
+
+**Diffuse colour and transparency are pointer-plus-count. Ambient,
+emissive, specular and shininess are single values** -- a `const SbColor&`
+cannot carry N of anything. And `SoMaterial::doAction` passes exactly
+`this->ambientColor[0]`, `this->emissiveColor[0]`, `this->specularColor[0]`
+and `SbClamp(this->shininess[0], ...)` (`src/nodes/SoMaterial.cpp:530-537`).
+
+So under `SoMaterialBinding::PER_PART`, Coin varies **only diffuse colour
+and transparency** per part. Upstream's `ViewProviderPartExt` fills all six
+`SoMaterial` fields with N entries; four of those arrays are stored, saved
+to the document, uploaded to Coin, and then read at index 0 only.
+
+Our own bgfx path inherits the same shape rather than escaping it:
+`SoFCRenderCache` reads `SoLazyElement::getDiffuse(state, 0)` and the scalar
+`getAmbient`/`getSpecular`/`getEmissive`/`getShininess`
+(`SoFCRenderCache.cpp:442-451`), and its material record holds one
+`uint32_t` each for diffuse, ambient, emissive and specular plus a single
+`shininess`. Per-face variation there is carried as packed colours, exactly
+as in Coin.
+
+**Consequences for this design, all good:**
+
+- The per-field layout maps 1:1 onto what both renderers consume. `_diffuse`
+  and `_transparency` feed the pointer-plus-count parameters; the other four
+  arrays are naturally size 1 and feed the scalar parameters. There is no
+  expansion path to write, at bind time or anywhere else.
+- In practice `_ambient`, `_specular`, `_emissive`, `_shininess`,
+  `_image`, `_imagePath` and `_uuid` will be size 0 or 1 for every object,
+  because nothing can render them per face. The realistic storage cost of
+  `ShapeAppearance` on this design is therefore **exactly today's
+  `DiffuseColor` plus a transparency array**.
+- It also means per-face specular and shininess are not a feature we would
+  be giving up by not copying upstream's layout. Nobody has it. Rendering it
+  would need changes in Coin (which we fork) or in the bgfx backend, and
+  that is a separate piece of work with its own justification.
+
 ## 6. Staging
 
-1. Probe risk 2 (Coin field cardinality under `PER_PART`). It can change the
-   design.
+1. ~~Probe risk 2~~ -- answered from the Coin source (section 5.1); the
+   layout needs no expansion path.
 2. `App::PropertyMaterialList` with the layout above, full upstream API,
    upstream save/restore format. Unit-testable without any view provider.
 3. `ShapeAppearance` on `Gui::ViewProviderGeometryObject`, with
