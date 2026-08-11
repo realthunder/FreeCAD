@@ -1988,6 +1988,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                         || i == V::ViewOutline
                         || i == V::ViewSectionCap
                         || i == V::ViewSectionCapTransp
+                        || i == V::ViewAOPrepassCap
                         || i == V::ViewVolApply
                     ? bgfx::ViewMode::Sequential
                     : bgfx::ViewMode::Default);
@@ -2122,6 +2123,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
         bgfx::setViewClear(id,
             uint16_t(BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH),
             0x00000000u, 1.0f, 0);
+        configTail(i, id);
+    };
+    auto configAOPrepassCap = [&](int i, uint16_t id) {
+        // Same target as the prepass, entered after it: the caps have
+        // to depth-test against the geometry already there. Only the
+        // stencil is cleared -- clearing colour or depth here would
+        // throw away the prepass itself.
+        bgfx::setViewFrameBuffer(id, view->aoPrepassFbo);
+        bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_STENCIL),
+                           0x00000000u, 1.0f, 0);
         configTail(i, id);
     };
     auto configAOMip = [&](int i, uint16_t id) {
@@ -2500,6 +2511,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         declPass(V::ViewBulbShadow0 + t, bulbShadowRender[t],
                  configBulb);
     declPass(V::ViewAOPrepass, prepassRender, configAOPrepass);
+    declPass(V::ViewAOPrepassCap, prepassRender, configAOPrepassCap);
     for (int m = 0; m < 6; ++m)
         declPass(V::ViewAODepthMip1 + m,
                  ssaoActive && aoRender && m < view->aoMipCount,
@@ -3946,6 +3958,12 @@ void BGFXRenderer::Private::buildCapQuad(const float plane[4], const float bmin[
         vert.px = center[0] + sv*v[0] + su*u[0];
         vert.py = center[1] + sv*v[1] + su*u[1];
         vert.pz = center[2] + sv*v[2] + su*u[2];
+        // The plane's own normal, for the prepass copy of this quad;
+        // the prepass shader faces it toward the viewer itself, so the
+        // sign does not matter here.
+        vert.nx = n[0];
+        vert.ny = n[1];
+        vert.nz = n[2];
         vert.u = tu;
         vert.v = tv;
     };
@@ -4071,6 +4089,25 @@ void BGFXRenderer::Private::submitSectionCaps(BGFXView *view, const float *projM
                                         && hatchTex != nullptr,
                                     bucket == 1, capView);
                 view->submitCapCleanup(verts, capView);
+
+                // The same cap into the depth+normal prepass, so the
+                // passes that read it stop shading what the cap hides.
+                // Opaque only, matching the scene's own prepass feed
+                // (transparent geometry neither occludes nor receives).
+                // Its parity has to be marked again: the prepass target
+                // carries its own stencil.
+                const uint16_t preView = BGFXView::ViewAOPrepassCap;
+                if (bucket == 0 && view->passLive(preView)) {
+                    bool premarked = false;
+                    for (size_t k = head; k < tail; ++k)
+                        premarked |= view->submitCapMark(
+                            *list[k], mat.clipplanes[i], preView);
+                    if (premarked) {
+                        view->submitCapPrepass(verts, others, numother,
+                                               preView);
+                        view->submitCapCleanup(verts, preView);
+                    }
+                }
             }
             head = tail;
         }

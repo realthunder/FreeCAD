@@ -1085,6 +1085,7 @@ struct LineQuadVertex
 struct CapVertex
 {
     float px, py, pz;
+    float nx, ny, nz;
     float u, v;
 
     static void init()
@@ -1092,9 +1093,16 @@ struct CapVertex
         if (ms_initialized)
             return;
         ms_initialized = true;
+        // The normal is the cap plane's own, and it is here for the
+        // depth+normal prepass: the section cap has to appear in
+        // aoNormalZ, or every screen-space pass that reads it (cavity,
+        // GTAO) keeps shading the geometry the cap hides and paints the
+        // hidden creases back over it. The prepass programs take
+        // a_position + a_normal, so carrying one lets the cap reuse them.
         ms_layout
             .begin()
             .add(bgfx::Attrib::Position,  3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Normal,    3, bgfx::AttribType::Float)
             .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
             .end();
     };
@@ -2030,6 +2038,16 @@ public:
         ViewAOPrepass,      // SSAO depth+normal prepass of opaque scene
                             // triangles into a non-MSAA RGBA16F target
                             // (own framebuffer, own depth)
+        ViewAOPrepassCap,   // section caps of clipped opaque solids into
+                            // that same target, so the screen-space
+                            // passes reading it (cavity, GTAO) see the
+                            // cut as the flat surface it is rather than
+                            // the geometry behind it. A view of its own
+                            // because the parity marking must precede
+                            // the quad, which only a Sequential view
+                            // guarantees, and because the stencil the
+                            // marking inverts wants clearing first --
+                            // neither belongs on the main prepass
         ViewAODepthMip1,    // GTAO prefiltered depth pyramid (XeGTAO's
         ViewAODepthMip2,    // depth MIP chain): each level halves the
         ViewAODepthMip3,    // previous — fullscreen weighted-downsample
@@ -2927,6 +2945,12 @@ public:
     /// touched (the cut cross section lies inside the plane/circumsphere
     /// intersection), unclipped so marks outside the other planes are
     /// cleaned too. No color or depth output.
+    /// The cap quad again, into the depth+normal prepass target, so the
+    /// screen-space passes that read it see the cut surface.
+    void submitCapPrepass(const CapVertex verts[4],
+                          const float (*otherPlanes)[4], int numOther,
+                          uint16_t view);
+
     void submitCapCleanup(const CapVertex verts[4], uint16_t view);
 
     // Fullscreen WBOIT resolve: average the accumulated premultiplied

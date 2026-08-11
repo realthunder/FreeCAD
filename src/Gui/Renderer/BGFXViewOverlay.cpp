@@ -462,6 +462,46 @@ void BGFXView::submitCapQuad(const CapVertex verts[4], uint32_t color,
     ++drawcount;
 }
 
+void BGFXView::submitCapPrepass(const CapVertex verts[4],
+                   const float (*otherPlanes)[4], int numOther,
+                   uint16_t view)
+{
+    // The same quad as submitCapQuad(), into the depth+normal prepass
+    // target instead of the scene. Without this the cap exists only in
+    // the scene framebuffer, while every screen-space pass that reads
+    // aoNormalZ still sees the geometry the cap hides -- so the cavity
+    // pass darkens the solid's inside corners and paints them back over
+    // the finished cap, and GTAO occludes against a cavity that is not
+    // visible. The prepass programs read a_position + a_normal, both of
+    // which CapVertex now carries.
+    if (!bgfx::isValid(m_progPrepass))
+        return;
+    if (bgfx::getAvailTransientVertexBuffer(6, CapVertex::ms_layout) < 6)
+        return;
+    bgfx::TransientVertexBuffer tvb;
+    bgfx::allocTransientVertexBuffer(&tvb, 6, CapVertex::ms_layout);
+    auto *v = reinterpret_cast<CapVertex *>(tvb.data);
+    v[0] = verts[0]; v[1] = verts[1]; v[2] = verts[2];
+    v[3] = verts[0]; v[4] = verts[2]; v[5] = verts[3];
+
+    const bool clipped = numOther > 0 && bgfx::isValid(m_progPrepassClip);
+    if (clipped) {
+        float clipParams[4] = {float(numOther), 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_clipParams, clipParams);
+        bgfx::setUniform(u_clipPlanes, otherPlanes, numOther);
+    }
+    bgfx::setVertexBuffer(0, &tvb);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+        | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+    bgfx::setStencil(BGFX_STENCIL_TEST_EQUAL
+        | BGFX_STENCIL_FUNC_REF(1) | BGFX_STENCIL_FUNC_RMASK(0x01)
+        | BGFX_STENCIL_OP_FAIL_S_KEEP
+        | BGFX_STENCIL_OP_FAIL_Z_KEEP
+        | BGFX_STENCIL_OP_PASS_Z_KEEP);
+    bgfx::submit(vid(view), clipped ? m_progPrepassClip : m_progPrepass);
+    ++drawcount;
+}
+
 void BGFXView::submitCapCleanup(const CapVertex verts[4], uint16_t view)
 {
     if (bgfx::getAvailTransientVertexBuffer(6, CapVertex::ms_layout) < 6)
