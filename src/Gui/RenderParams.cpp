@@ -73,6 +73,7 @@ public:
     long OcclusionThreads;
     bool OcclusionSimd;
     long OcclusionResolution;
+    bool OcclusionPerInstance;
     bool OcclusionCoarse;
     long OcclusionCoarseLevel;
     long OcclusionCoarseMinTris;
@@ -188,6 +189,8 @@ public:
         funcs["OcclusionSimd"] = &RenderParamsP::updateOcclusionSimd;
         OcclusionResolution = this->handle->GetInt("OcclusionResolution", 1);
         funcs["OcclusionResolution"] = &RenderParamsP::updateOcclusionResolution;
+        OcclusionPerInstance = this->handle->GetBool("OcclusionPerInstance", true);
+        funcs["OcclusionPerInstance"] = &RenderParamsP::updateOcclusionPerInstance;
         OcclusionCoarse = this->handle->GetBool("OcclusionCoarse", false);
         funcs["OcclusionCoarse"] = &RenderParamsP::updateOcclusionCoarse;
         OcclusionCoarseLevel = this->handle->GetInt("OcclusionCoarseLevel", 2);
@@ -425,6 +428,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionResolution(RenderParamsP *self) {
         self->OcclusionResolution = self->handle->GetInt("OcclusionResolution", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionPerInstance(RenderParamsP *self) {
+        self->OcclusionPerInstance = self->handle->GetBool("OcclusionPerInstance", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionCoarse(RenderParamsP *self) {
@@ -1548,6 +1555,56 @@ void RenderParams::setOcclusionResolution(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeOcclusionResolution() {
     instance()->handle->RemoveInt("OcclusionResolution");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionPerInstance() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Test each object against the CPU occlusion buffer, not just the\n"
+"group it was partitioned into\n"
+"(docs/FarFieldProxies.md #12.17). Only used when occlusion runs\n"
+"on the CPU.\n"
+"\n"
+"The cull walk tests boxes of groups, and a group is skipped only\n"
+"when all of it is hidden -- so one visible object keeps its\n"
+"hidden neighbours on screen. Measured, that is what limits the\n"
+"culling rather than the quality of the depth buffer: after a\n"
+"cull, 91% of what is still drawn reaches no pixel, and making\n"
+"the occluders ten times better barely moved it.\n"
+"\n"
+"The extra tests are read-only against a buffer that is already\n"
+"finished, so they run on the same worker threads the occluders\n"
+"used and add no state, no latency and nothing the backend has to\n"
+"support.\n"
+"\n"
+"On by default: measured on the benchmark it hides 17% more for\n"
+"0.4ms, against 3% for 3.4ms from making the occluders ten times\n"
+"better, and it over-culls nothing. It can only ever be more\n"
+"correct than testing the group -- a draw is skipped when its own\n"
+"box is covered rather than when its neighbours' collectively\n"
+"are.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusionPerInstance() {
+    return instance()->OcclusionPerInstance;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusionPerInstance() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionPerInstance(const bool &v) {
+    instance()->handle->SetBool("OcclusionPerInstance",v);
+    instance()->OcclusionPerInstance = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionPerInstance() {
+    instance()->handle->RemoveBool("OcclusionPerInstance");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

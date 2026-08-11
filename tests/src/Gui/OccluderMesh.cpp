@@ -175,7 +175,8 @@ struct SceneBuilder {
 /// The mask the pass produces for a scene, under one configuration.
 std::vector<uint8_t> runPass(SceneBuilder &scene, const MaskedCullConfig &conf,
                              const float *V, const float *P, int w, int h,
-                             MaskedCullStats *stats = nullptr)
+                             MaskedCullStats *stats = nullptr,
+                             uint32_t maxPerCell = 1)
 {
     std::vector<ProxyInstance> inst;
     proxyInstances(scene.draws, inst);
@@ -183,7 +184,13 @@ std::vector<uint8_t> runPass(SceneBuilder &scene, const MaskedCullConfig &conf,
     // Culling is per node, and a scene that fits one cell has only the
     // root -- which can never be hidden by its own contents. The
     // benchmark scenes subdivide on their own; this one is made to.
-    params.maxPerCell = 1;
+    //
+    // WARNING: At 1 every leaf holds a single instance, so the node walk
+    // *is* already a per-instance walk and the per-instance pass
+    // correctly finds nothing left to ask. A test of that pass has to
+    // group several instances into a node, which is what the real
+    // hierarchy does at its default of 32.
+    params.maxPerCell = maxPerCell;
     ProxyHierarchy index;
     index.build(inst, params);
 
@@ -652,4 +659,140 @@ TEST(CoarseOccluderPass, ABiasedHullHidesLessThanOneLeftWhereItWasBuilt)
         hiddenPushed += pushed[i] ? 1 : 0;
     EXPECT_LT(hiddenPushed, hiddenAtRest)
             << "the bias did not move the hull away from the camera";
+}
+
+// -----------------------------------------------------------------
+// Asking per instance rather than per node (section 12.17)
+// -----------------------------------------------------------------
+
+TEST(PerInstanceCull, HidesTheInvisibleNeighboursOfAVisibleDraw)
+{
+    // The case the mode exists for: a group holding one draw that
+    // sticks out past the occluder and several that do not. The node
+    // box covers all of them, so the node answers visible and the whole
+    // group is drawn -- which is what 91% of the still-drawn draws on
+    // the rack model turned out to be.
+    float V[16], P[16];
+    viewAt(V, 60.0f, 1.0f);
+    perspectiveRH(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    SceneBuilder scene;
+    std::vector<float> pos;
+    std::vector<int32_t> idx;
+    dome(48, 25.0f, 5.0f, 0.0f, 1.0f, pos, idx);
+    scene.add(pos, idx);                          // draw 0, the occluder
+    // Hidden behind the dome, clustered together.
+    const size_t firstHidden = scene.draws.size();
+    for (int i = -2; i <= 2; ++i)
+        scene.addBox(float(i) * 3.0f, 0.0f, -8.0f, 0.9f);
+    // In plain sight beside them, and near enough to share their cells.
+    const size_t visible = scene.draws.size();
+    scene.addBox(0.0f, 0.0f, 40.0f, 1.0f);
+
+    MaskedCullConfig conf;
+    conf.triangleBudget = 1u << 22;
+    // Grouped, as the real hierarchy groups: the hidden boxes and the
+    // visible one share a node, so the node answers visible for all of
+    // them and only a finer test can separate them.
+    MaskedCullStats nodeStats, instStats;
+    const auto byNode = runPass(scene, conf, V, P, 512, 512, &nodeStats, 32);
+
+    conf.testInstances = true;
+    const auto byInstance =
+            runPass(scene, conf, V, P, 512, 512, &instStats, 32);
+
+    // The draw in front may never be hidden by either.
+    EXPECT_FALSE(byNode[visible]);
+    EXPECT_FALSE(byInstance[visible]);
+
+    // Everything the node walk hid stays hidden: this is a finer test of
+    // the same buffer, not a different question.
+    ASSERT_EQ(byNode.size(), byInstance.size());
+    for (size_t i = 0; i < byNode.size(); ++i)
+        EXPECT_TRUE(!byNode[i] || byInstance[i])
+                << "draw " << i << " was hidden per node and not per instance";
+
+    // And it finds some the node walk could not.
+    size_t hidNode = 0, hidInstance = 0;
+    for (size_t i = firstHidden; i < visible; ++i) {
+        hidNode += byNode[i] ? 1 : 0;
+        hidInstance += byInstance[i] ? 1 : 0;
+    }
+    EXPECT_GT(hidInstance, hidNode);
+    EXPECT_GT(instStats.instancesHiddenAlone, 0u);
+    EXPECT_GT(instStats.instancesTested, 0u);
+}
+
+TEST(PerInstanceCull, NeverHidesADrawThatReachesThePixels)
+{
+    // The direction that matters. A field of boxes in front of the
+    // occluder, none of which may be hidden however finely they are
+    // tested -- an instance test is still a test against the same
+    // conservative buffer, and a tie answers visible.
+    float V[16], P[16];
+    viewAt(V, 60.0f, 1.0f);
+    perspectiveRH(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    SceneBuilder scene;
+    std::vector<float> pos;
+    std::vector<int32_t> idx;
+    dome(48, 25.0f, 5.0f, -30.0f, 1.0f, pos, idx);
+    scene.add(pos, idx);
+    const size_t front = scene.draws.size();
+    for (int j = -2; j <= 2; ++j)
+        for (int i = -2; i <= 2; ++i)
+            scene.addBox(float(i) * 6.0f, float(j) * 6.0f, 10.0f, 1.5f);
+
+    MaskedCullConfig conf;
+    conf.triangleBudget = 1u << 22;
+    conf.testInstances = true;
+    MaskedCullStats stats;
+    const auto mask = runPass(scene, conf, V, P, 512, 512, &stats);
+    for (size_t i = front; i < mask.size(); ++i)
+        EXPECT_FALSE(mask[i]) << "draw " << i << " is in front and was hidden";
+}
+
+TEST(PerInstanceCull, DoesNotRetestANodeThatIsOneInstance)
+{
+    // A node holding one instance and nothing below it has that
+    // instance's box for its content box, so its test has already been
+    // taken. Re-asking would be a projection spent to learn what is on
+    // the stack -- and with maxPerCell 1 the scene below is mostly such
+    // nodes, so the saving is the common case rather than a corner.
+    float V[16], P[16];
+    viewAt(V, 60.0f, 1.0f);
+    perspectiveRH(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    SceneBuilder scene;
+    std::vector<float> pos;
+    std::vector<int32_t> idx;
+    dome(48, 25.0f, 5.0f, 0.0f, 1.0f, pos, idx);
+    scene.add(pos, idx);
+    for (int i = -3; i <= 3; ++i)
+        scene.addBox(float(i) * 7.0f, 0.0f, 30.0f, 1.0f);
+
+    MaskedCullConfig conf;
+    conf.triangleBudget = 1u << 22;
+    conf.testInstances = true;
+    MaskedCullStats stats;
+    runPass(scene, conf, V, P, 512, 512, &stats);
+    EXPECT_GT(stats.instancesRedundant, 0u);
+}
+
+TEST(PerInstanceCull, CostsNothingAndChangesNothingWhileOff)
+{
+    float V[16], P[16];
+    viewAt(V, 60.0f, 1.0f);
+    perspectiveRH(P, 60.0f, 1.0f, 1.0f, 400.0f);
+
+    SceneBuilder scene;
+    occludedScene(scene, 1.0f);
+
+    MaskedCullConfig conf;
+    conf.triangleBudget = 1u << 22;
+    MaskedCullStats stats;
+    runPass(scene, conf, V, P, 512, 512, &stats);
+    EXPECT_EQ(stats.instancesTested, 0u);
+    EXPECT_EQ(stats.instancesHiddenAlone, 0u);
+    EXPECT_EQ(stats.instanceMs, 0.0f);
 }

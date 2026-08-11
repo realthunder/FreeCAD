@@ -238,6 +238,21 @@ public:
     /// box whose front faces have been clipped away.
     OccludeAnswer testBox(const float *bboxMin, const float *bboxMax) const;
 
+    /// The same test, taken without touching the buffer's query
+    /// counters, for callers running many at once.
+    ///
+    /// WARNING: `testBox` is const but not thread-safe, and the difference
+    /// is this: the buffer it reads is immutable by then, but the stats
+    /// beside it are `mutable` and incremented on every query, so calling
+    /// it from several threads is a data race on those counters -- lost
+    /// increments at best, and a readout that quietly under-reports the
+    /// work it did. The depth answer is unaffected either way, which is
+    /// exactly what makes the bug invisible without being looked for.
+    /// A concurrent caller counts its own tests instead
+    /// (MaskedCullStats::instancesTested).
+    OccludeAnswer testBoxConcurrent(const float *bboxMin,
+                                    const float *bboxMax) const;
+
     /// The primitive `testBox` reduces to: is the screen rect
     /// [\a x0,\a x1] x [\a y0,\a y1] wholly behind what has been
     /// rasterized, given that nothing in it is nearer than \a depthNear?
@@ -335,6 +350,14 @@ public:
     /// Fold \a other's rasterization counters in. Not thread safe, and
     /// not needed to be.
     void mergeStats(const MaskedDepth &other);
+    /// The two tests above, with the accounting passed in rather than
+    /// assumed: null is a test that counts nothing and so may run
+    /// beside others.
+    OccludeAnswer testBoxCounted(const float *bboxMin, const float *bboxMax,
+                                 MaskedOcclusionStats *stats) const;
+    OccludeAnswer testRectCounted(float x0, float y0, float x1, float y1,
+                                  float depthNear,
+                                  MaskedOcclusionStats *stats) const;
 
 private:
     /// One 8x4 block: two depth layers and the mask saying which pixels
@@ -465,6 +488,25 @@ struct MaskedCullConfig {
     /// which invents occlusion. Clamped at zero where it is read.
     float coarseBias = 1.0f;
 
+    /// KEY: Test each instance of a visible node against the buffer, not
+    /// just the node (docs/FarFieldProxies.md 12.17).
+    ///
+    /// The walk tests *boxes of groups*: a node is skipped only when its
+    /// whole content box is hidden, so one visible draw keeps its forty
+    /// invisible neighbours on screen. Measured, that is what limits the
+    /// culling -- 91% of the draws still submitted after a cull reach no
+    /// pixel, and improving the occluders tenfold barely moved it
+    /// (section 12.16). This asks the same question of the same buffer at
+    /// the granularity the answer is used at.
+    ///
+    /// Bounded work with no new state: the test is read-only against a
+    /// buffer that is already complete, one box per instance, so it runs
+    /// on the same workers the rasterization used and needs nothing of
+    /// the backend. A self-occlusion tie answers *visible*
+    /// (MaskedDepth::testRect), which is what lets an instance be tested
+    /// against a buffer its own surface is in.
+    bool testInstances = false;
+
     bool operator==(const MaskedCullConfig &o) const
     {
         return resolutionDivisor == o.resolutionDivisor
@@ -472,7 +514,8 @@ struct MaskedCullConfig {
                 && minOccluderPx == o.minOccluderPx
                 && maxOccluders == o.maxOccluders && threads == o.threads
                 && simdFilter == o.simdFilter && coarse == o.coarse
-                && coarseBias == o.coarseBias;
+                && coarseBias == o.coarseBias
+                && testInstances == o.testInstances;
     }
     bool operator!=(const MaskedCullConfig &o) const { return !(*this == o); }
 };
@@ -530,6 +573,21 @@ struct MaskedCullStats {
     uint32_t hiddenInstances = 0;
     uint32_t offscreenInstances = 0;
     uint32_t drawnInstances = 0;
+
+    /// The per-instance pass (section 12.17): instances offered to their
+    /// own box test, and those it hid that their node had already
+    /// answered visible for. The second number is the whole of what this
+    /// mode adds -- it is included in `hiddenInstances` as well, because
+    /// what hid a draw does not change that it was hidden.
+    uint32_t instancesTested = 0;
+    uint32_t instancesHiddenAlone = 0;
+    /// Instances skipped because their node *is* them: a node holding
+    /// one instance and nothing below it has that instance's box for its
+    /// content box, so the answer is already known.
+    uint32_t instancesRedundant = 0;
+    /// Part of `walkMs`, reported so the granularity is priced rather
+    /// than assumed.
+    float instanceMs = 0.0f;
 
     float rasterMs = 0.0f;
     float walkMs = 0.0f;
@@ -678,6 +736,14 @@ private:
     std::vector<WorkerTime> times;
     std::vector<int> walkstack;
     std::vector<int> descendstack;
+    /// One instance the walk left drawn, and the node whose verdict let
+    /// it through -- kept so a per-instance answer is still attributable
+    /// to a place in the tree.
+    struct InstanceTest {
+        uint32_t instance;
+        int32_t owner;
+    };
+    std::vector<InstanceTest> instanceTests;
 };
 
 }  // namespace Render

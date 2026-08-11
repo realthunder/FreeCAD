@@ -4509,6 +4509,16 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         prop->setValue(RenderParams::getOcclusionSimd());
         prop->setStatus(App::Property::Hidden, true);
     }
+    // The granularity the occlusion question is asked at (section 12.17).
+    if (!view->getPropertyByName("Render_OcclusionPerInstance")) {
+        auto prop = static_cast<App::PropertyBool*>(
+                view->addDynamicProperty("App::PropertyBool",
+                                         "Render_OcclusionPerInstance",
+                                         "Render",
+                                         RenderParams::docOcclusionPerInstance()));
+        prop->setValue(RenderParams::getOcclusionPerInstance());
+        prop->setStatus(App::Property::Hidden, true);
+    }
     // Coarse occluder hulls (section 12.16). Hidden with the rest of the
     // software oracle's knobs: it changes what the pass rasterizes, and
     // is meant to leave the image alone.

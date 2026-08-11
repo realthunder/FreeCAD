@@ -902,6 +902,19 @@ bool MaskedDepth::projectBox(const float *bboxMin, const float *bboxMax,
 OccludeAnswer MaskedDepth::testBox(const float *bboxMin,
                                    const float *bboxMax) const
 {
+    return testBoxCounted(bboxMin, bboxMax, &framestats);
+}
+
+OccludeAnswer MaskedDepth::testBoxConcurrent(const float *bboxMin,
+                                             const float *bboxMax) const
+{
+    return testBoxCounted(bboxMin, bboxMax, nullptr);
+}
+
+OccludeAnswer MaskedDepth::testBoxCounted(const float *bboxMin,
+                                          const float *bboxMax,
+                                          MaskedOcclusionStats *stats) const
+{
     if (blocks.empty())
         return OccludeAnswer::Visible;
     if (bboxMin[0] > bboxMax[0] || bboxMin[1] > bboxMax[1]
@@ -911,18 +924,27 @@ OccludeAnswer MaskedDepth::testBox(const float *bboxMin,
     float rect[4];
     float dnear = 0.0f;
     if (!projectBox(bboxMin, bboxMax, rect, &dnear)) {
-        ++framestats.queriesNearPlane;
+        if (stats)
+            ++stats->queriesNearPlane;
         return OccludeAnswer::Visible;
     }
-    return testRect(rect[0], rect[1], rect[2], rect[3], dnear);
+    return testRectCounted(rect[0], rect[1], rect[2], rect[3], dnear, stats);
 }
 
 OccludeAnswer MaskedDepth::testRect(float x0, float y0, float x1, float y1,
                                     float depthNear) const
 {
+    return testRectCounted(x0, y0, x1, y1, depthNear, &framestats);
+}
+
+OccludeAnswer MaskedDepth::testRectCounted(float x0, float y0, float x1,
+                                           float y1, float depthNear,
+                                           MaskedOcclusionStats *stats) const
+{
     if (blocks.empty())
         return OccludeAnswer::Visible;
-    ++framestats.queries;
+    if (stats)
+        ++stats->queries;
 
     // Every pixel the rect *touches* has to be checked, not every pixel
     // whose centre it contains: a rect that misses one pixel centre still
@@ -937,7 +959,8 @@ OccludeAnswer MaskedDepth::testRect(float x0, float y0, float x1, float y1,
     if (py1 < py0)
         py1 = py0;
     if (px1 < 0 || py1 < 0 || px0 >= bufw || py0 >= bufh) {
-        ++framestats.queriesOffscreen;
+        if (stats)
+            ++stats->queriesOffscreen;
         return OccludeAnswer::Offscreen;
     }
     // Clipping to the buffer rather than refusing: the part of the box
@@ -961,7 +984,8 @@ OccludeAnswer MaskedDepth::testRect(float x0, float y0, float x1, float y1,
                 return OccludeAnswer::Visible;
         }
     }
-    ++framestats.queriesOccluded;
+    if (stats)
+        ++stats->queriesOccluded;
     return OccludeAnswer::Occluded;
 }
 
@@ -1453,6 +1477,7 @@ void MaskedOccluderPass::cull(const ProxyHierarchy &index, const float *view,
     // MaskedDepth::testRect) and the block floor is already a
     // conservative under-estimate of what is really there. Padding on
     // top of that would only cost culling.
+    instanceTests.clear();
     std::vector<int> &descend = descendstack;
     descend.clear();
     descend.push_back(root);
@@ -1499,11 +1524,95 @@ void MaskedOccluderPass::cull(const ProxyHierarchy &index, const float *view,
         }
 
         framestats.drawnInstances += n.residentCount;
+        // The node says its contents are not all hidden. Each of them
+        // still has its own box, and section 12.16 measured that most of
+        // them reach no pixel -- so they are offered their own test
+        // rather than inheriting the group's answer.
+        if (conf.testInstances && n.residentCount > 0) {
+            // A node holding one instance and nothing below it has that
+            // instance's box for its content box: the test just done was
+            // that instance's test, and repeating it would spend a box
+            // projection to learn what is already on the stack.
+            if (n.residentCount == 1 && n.subtreeCount == 1) {
+                ++framestats.instancesRedundant;
+            }
+            else {
+                for (uint32_t r = 0; r < n.residentCount; ++r)
+                    instanceTests.push_back(
+                            {residents[n.residentFirst + r], int32_t(node)});
+            }
+        }
         for (int c : n.child) {
             if (c != kNoProxyNode)
                 descend.push_back(c);
         }
     }
+
+    // KEY: The per-instance pass, after the walk rather than inside it.
+    // The tests are independent -- read-only against a buffer nothing
+    // writes to any more, one distinct draw row each (proxyInstances
+    // emits one instance per row) -- so they parallelize without a lock,
+    // and doing them here means the tree descent stays serial and
+    // unchanged.
+    if (!instanceTests.empty()) {
+        const auto t1 = std::chrono::steady_clock::now();
+        framestats.instancesTested = uint32_t(instanceTests.size());
+        uint32_t workers = conf.threads;
+        if (workers == 0) {
+            const unsigned hw = std::thread::hardware_concurrency();
+            workers = hw > 3 ? hw - 2 : 1;
+        }
+        workers = std::max<uint32_t>(1, std::min<uint32_t>(workers, 32));
+        // Below this the split costs more than the tests do.
+        if (instanceTests.size() < 256)
+            workers = 1;
+
+        std::vector<uint32_t> hidden(workers, 0);
+        auto work = [&](uint32_t w) {
+            uint32_t count = 0;
+            for (size_t i = w; i < instanceTests.size(); i += workers) {
+                const InstanceTest &t = instanceTests[i];
+                const ProxyInstance &inst = instances[t.instance];
+                // WARNING: The concurrent variant. testBox counts its queries
+                // into the buffer's mutable stats, which several threads
+                // would race on -- silently, since the depth answer is
+                // the same either way.
+                if (buffer.testBoxConcurrent(inst.bboxMin, inst.bboxMax)
+                    != OccludeAnswer::Occluded)
+                    continue;
+                const uint32_t row = inst.drawIndex;
+                if (row < cullMask.size())
+                    cullMask[row] = 1;
+                if (cullOwner && row < cullOwner->size())
+                    (*cullOwner)[row] = t.owner;
+                ++count;
+            }
+            hidden[w] = count;
+        };
+        if (workers == 1) {
+            work(0);
+        }
+        else {
+            std::vector<std::thread> pool;
+            pool.reserve(workers - 1);
+            for (uint32_t w = 1; w < workers; ++w)
+                pool.emplace_back(work, w);
+            work(0);
+            for (auto &th : pool)
+                th.join();
+        }
+        uint32_t alone = 0;
+        for (uint32_t h : hidden)
+            alone += h;
+        framestats.instancesHiddenAlone = alone;
+        // Counted as hidden like any other: what answered for a draw
+        // does not change whether it was skipped. `drawnInstances` gives
+        // them back for the same reason.
+        framestats.hiddenInstances += alone;
+        framestats.drawnInstances -= std::min(alone, framestats.drawnInstances);
+        framestats.instanceMs = millisSince(t1);
+    }
+
     framestats.nearExempt = buffer.stats().queriesNearPlane;
     framestats.walkMs = millisSince(t0);
 }

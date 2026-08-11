@@ -559,6 +559,40 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter OcclusionPerInstance
+    ///
+    /// Test each object against the CPU occlusion buffer, not just the
+    /// group it was partitioned into
+    /// (docs/FarFieldProxies.md #12.17). Only used when occlusion runs
+    /// on the CPU.
+    /// 
+    /// The cull walk tests boxes of groups, and a group is skipped only
+    /// when all of it is hidden -- so one visible object keeps its
+    /// hidden neighbours on screen. Measured, that is what limits the
+    /// culling rather than the quality of the depth buffer: after a
+    /// cull, 91% of what is still drawn reaches no pixel, and making
+    /// the occluders ten times better barely moved it.
+    /// 
+    /// The extra tests are read-only against a buffer that is already
+    /// finished, so they run on the same worker threads the occluders
+    /// used and add no state, no latency and nothing the backend has to
+    /// support.
+    /// 
+    /// On by default: measured on the benchmark it hides 17% more for
+    /// 0.4ms, against 3% for 3.4ms from making the occluders ten times
+    /// better, and it over-culls nothing. It can only ever be more
+    /// correct than testing the group -- a draw is skipped when its own
+    /// box is covered rather than when its neighbours' collectively
+    /// are.
+    static const bool & getOcclusionPerInstance();
+    static const bool & defaultOcclusionPerInstance();
+    static void removeOcclusionPerInstance();
+    static void setOcclusionPerInstance(const bool &v);
+    static const char *docOcclusionPerInstance();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter OcclusionCoarse
     ///
     /// Rasterize the CPU occlusion buffer's occluders from coarse

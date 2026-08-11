@@ -1303,8 +1303,12 @@ RendererBridge::translateOcclusionCullConfig(App::PropertyContainer * view)
     res.softwareSimd = viewParamOverride<App::PropertyBool>(
             view, "Render", "OcclusionSimd",
             RenderParams::getOcclusionSimd());
-    // The coarse occluder hulls (section 12.16), which belong to the
-    // software oracle as well.
+    // The granularity the question is asked at (section 12.17), and the
+    // coarse occluder hulls (section 12.16) -- both the software
+    // oracle's alone.
+    res.perInstance = viewParamOverride<App::PropertyBool>(
+            view, "Render", "OcclusionPerInstance",
+            RenderParams::getOcclusionPerInstance());
     res.coarseOccluders = viewParamOverride<App::PropertyBool>(
             view, "Render", "OcclusionCoarse",
             RenderParams::getOcclusionCoarse());

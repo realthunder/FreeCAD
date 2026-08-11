@@ -471,6 +471,13 @@ struct OcclusionCullConfig {
     /// It cannot change what the buffer claims is there.
     bool softwareSimd = true;
 
+    /// KEY: Ask the occlusion question per object rather than per
+    /// partition group (Gui/Renderer/MaskedOcclusion.h, `testInstances`).
+    /// The group is the unit the walk can skip, and measurement says it
+    /// is the unit that is failing to resolve: 91% of what a cull still
+    /// submits reaches no pixel, unmoved by a tenfold better buffer.
+    bool perInstance = false;
+
     /// KEY: Rasterize the software pass's occluders from coarse hulls
     /// rather than from their meshes (Gui/Renderer/OccluderMesh.h). The
     /// budget above says what the pass may spend; this says what it
@@ -506,6 +513,7 @@ struct OcclusionCullConfig {
             && softwareDivisor == o.softwareDivisor
             && softwareThreads == o.softwareThreads
             && softwareSimd == o.softwareSimd
+            && perInstance == o.perInstance
             && coarseOccluders == o.coarseOccluders
             && coarseLevel == o.coarseLevel
             && coarseMinTriangles == o.coarseMinTriangles

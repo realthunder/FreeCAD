@@ -13180,6 +13180,7 @@ public:
                     mc.minOccluderPx = cullconf.minOccluderPx;
                     mc.threads = cullconf.softwareThreads;
                     mc.simdFilter = cullconf.softwareSimd;
+                    mc.testInstances = cullconf.perInstance;
                     mc.coarse.enabled = cullconf.coarseOccluders;
                     mc.coarse.level = cullconf.coarseLevel;
                     mc.coarse.minTriangles = cullconf.coarseMinTriangles;
@@ -14421,6 +14422,7 @@ public:
                         "culled %u (offbuf %u subpx %u degen %u), blocks %u "
                         "| %s filtered %u guarded %u "
                         "| nearclip %u rootrefused %u "
+                        "| perinst tested %u hid %u redundant %u in %.2fms "
                         "| hulls %u of %u draws, saved %llu tris "
                         "(held %u, built %u, pending %u, %.1fMB, %.2fms) "
                         "| raster %.2fms (select %.2f shard %.2f merge %.2f "
@@ -14446,6 +14448,13 @@ public:
                         cullconf.softwareSimd ? Render::simd4Name() : "off",
                         bs.trianglesFiltered, bs.trianglesGuarded,
                         ms.nearExempt, ms.rootRefused,
+                        // What asking per object rather than per group
+                        // added, and what it cost to ask (section 12.17).
+                        // "hid" is the whole of what the mode buys: draws
+                        // whose own box was hidden inside a group that
+                        // had already answered visible.
+                        ms.instancesTested, ms.instancesHiddenAlone,
+                        ms.instancesRedundant, ms.instanceMs,
                         // What the coarse path did, beside what it cost.
                         // "saved" is the budget the hulls did not spend,
                         // which is the budget that went to a candidate
