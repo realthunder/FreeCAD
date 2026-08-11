@@ -143,6 +143,8 @@ headless under llvmpipe on one small two-solid scene:
   preselection highlight: §3.3)
 - large models (the case the backend exists for), and real-GPU
   behaviour — llvmpipe hides device-precision problems both ways
+  (real GPU: **now covered for §3.6's cases**, Mesa d3d12 on an RTX
+  3070 Ti, same readings as llvmpipe)
 - VR (`View3DInventorRiftViewer`), quad-buffer stereo
 - the "Coin still draws it on top" set: whether anything the cache does
   not claim looks right composited over backend output
@@ -401,9 +403,10 @@ annotation label**.
 TechDraw is not in the table because it is not a 3D path at all: a page
 is its own `QGraphicsView` over `QGI*` items painted by QPainter, so
 there is no before/after 3D frame to take. The case that remains is a
-liveness check -- a page comes up and carries ink with the backend live
-in the same process and GL context. Auditing the page renderer, and
-judging whether it could be drawn by the backend, is separate work.
+liveness check, and it passes identically on all three legs: an A4 page
+with its title block and the box view comes up and reads ink 0.2006 on
+each. Auditing the page renderer, and judging whether it could be drawn
+by the backend, is separate work.
 
 **The one disagreement, and the backend is not the one that is wrong.**
 On the annotation label bgfx reads 0.0029 and cache 0 reads 0.0028 --
@@ -494,9 +497,39 @@ Harness notes, each of which cost a run:
   leg's first grab was an empty gradient; grab twice and keep the
   second.
 
+**Run on the real GPU as well**, which is another 3.2 bullet: the same
+probe through `scripts/renderer-desktop.sh` on WSLg Wayland with Mesa
+d3d12, `BGFX Renderer: D3D12 (NVIDIA GeForce RTX 3070 Ti Laptop GPU)`.
+It says the same thing. The deltas are all smaller because the desktop
+viewport is larger, so the same feature covers a smaller fraction of it,
+but the shape of the table is unchanged and llvmpipe hid nothing:
+
+| case | bgfx | glr | coin |
+| --- | --- | --- | --- |
+| Draft Wire | 0.0021 | 0.0009 | 0.0008 |
+| Draft Text | 0.0007 | 0.0003 | 0.0017 |
+| Draft Dimension | 0.0560 | 0.0552 | 0.0038 |
+| Draft grid | 0.0528 | 0.0523 | 0.0000 |
+| App::AnnotationLabel | 0.0017 | **0.1683** | 0.0011 |
+| Mesh::Feature | 0.0146 | 0.0140 | 0.0140 |
+| Points::Feature | 0.0035 | 0.0033 | 0.0033 |
+| Assembly + grounded joint | 0.0186 | 0.0143 | 0.0143 |
+
+bgfx against glr floors at 0.0496 and stays there for every case except
+the annotation label at 0.2179; glr against cache 0 is 0.0000 or near it
+everywhere except that label (0.1685) and the two grid-carrying rows.
+The label picture at desktop resolution is the same billboard, only
+sharper.
+
+Two things the Wayland leg cannot do, neither of which costs a result:
+screen grabs come back invalid (`scr=-1.0000`) because a Wayland client
+cannot grab the screen, and the TechDraw page therefore measures 0x0.
+The `saveImage` numbers -- the ones the table is built from -- are
+unaffected, and the headless leg already answered TechDraw.
+
 Still unvisited from 3.2 after this: **FEM** (`BUILD_FEM=OFF` in this
-tree, so it was not measurable here), large models, real-GPU behaviour,
-and VR / quad-buffer stereo.
+tree, so it was not measurable here), large models, and VR /
+quad-buffer stereo.
 
 ## 4. Plan
 
@@ -526,8 +559,9 @@ with glr on every one of them. The single disagreement indicts **glr**,
 not the backend: it draws `SoImage` capture companions at pixel
 coordinates read as world units, because `billboard`/`pixelScale` are
 consumed only by the bridge that feeds the backend. TechDraw turned out
-not to be a 3D path at all. Still unvisited from §3.2: FEM (not built
-in this tree), large models and real-GPU behaviour.
+not to be a 3D path at all. Measured on llvmpipe **and** on the real GPU
+(Mesa d3d12, RTX 3070 Ti), which read the same. Still unvisited from
+§3.2: FEM (not built in this tree) and large models.
 
 **Stage 1a — clear the Coin warnings from the console. DONE.** The
 survey judged that none of the three was a correctness bug. **Two of
