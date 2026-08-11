@@ -151,7 +151,18 @@ QString DrawSVGTemplate::processTemplate()
         return true;
     });
 
-    extractTemplateAttributes(templateDocument);
+    // Rendering must not modify the document. The attributes come straight
+    // out of the SVG that was just parsed, so writing them back is a cache
+    // refresh, not an edit -- but Width/Height/Orientation are input
+    // properties, so setting them touches the object and leaves the document
+    // needing a recompute merely because something drew a page. The
+    // onChanged(&Template) caller above keeps the touch: there the user
+    // really did pick a different template file.
+    {
+        Base::ObjectStatusLocker<App::ObjectStatus, App::DocumentObject> guard(
+                App::ObjectStatus::NoTouch, this);
+        extractTemplateAttributes(templateDocument);
+    }
 //    // Calculate the dimensions of the page and store for retrieval
 //    // Obtain the size of the SVG document by reading the document attributes
 //    QDomElement docElement = templateDocument.documentElement();
