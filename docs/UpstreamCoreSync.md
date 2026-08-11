@@ -191,10 +191,34 @@ Good news: the bgfx path does not read the property (the one
 `setDiffuseColorOverride` hit in `SoFCRenderCache.cpp` is a Coin state
 element, unrelated), so this is a data-model question, not a renderer one.
 
-**Question:** do we want per-face *materials* rather than per-face colours,
-accepting a base-class change and a document migration -- or keep
-`ShapeColor`/`ShapeMaterial`/`DiffuseColor` and adapt FEM's 37 sites to
-them? Adapting FEM is much the cheaper side of this one.
+**What `ShapeAppearance` is not.** Calling it "per-face materials" is wrong
+and an earlier draft of this section said exactly that. Upstream splits the
+two cleanly, and their physical model agrees with the obvious objection that
+a solid is made of one material:
+
+| | property | type | cardinality |
+|---|---|---|---|
+| physical, App side | `Part::Feature::ShapeMaterial` | `Materials::PropertyMaterial` | **one per feature** |
+| visual, Gui side | `ViewProviderGeometryObject::ShapeAppearance` | `App::PropertyMaterialList` | one per face |
+
+`App::Material` is the OpenGL/Coin visual record -- ambient, diffuse,
+specular and emissive colour plus shininess and transparency. It carries no
+density, no modulus, nothing physical. So the per-face list is per-face
+*finish*, not per-face substance, and it is the direct descendant of the
+per-face `DiffuseColor` this fork already has.
+
+**So the real question is narrower than it first looks:** should a per-face
+appearance entry be a colour (4 floats, what we have) or a full visual
+material (18 floats)? What the widening buys is per-face transparency,
+specular and shininess -- which matters for STEP and glTF import fidelity,
+and is why upstream needed a dedicated fix for colour-per-face STEP import
+and another for per-face transparency (#15027). What it costs is 4.5x the
+per-face storage, the three-into-one migration, and that regression tail.
+
+**Question:** keep `ShapeColor` / `ShapeMaterial` / `DiffuseColor` and adapt
+FEM's 37 sites to them, or take the widening? Adapting FEM is much the
+cheaper side, and per-face *colour* already covers the common cases; per-face
+specular is rare in practice.
 
 ### 5.2 The Materials module
 
