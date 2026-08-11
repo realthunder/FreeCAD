@@ -57,6 +57,8 @@ public:
     long ProgressiveLoadBudgetMS;
     long LevelThreads;
     long LevelMemoryFloorMB;
+    bool LevelDebug;
+    long LevelCeilingSimulateMB;
     long GpuMemoryBudgetMB;
     double LevelTolerance;
     double EffectResolution;
@@ -158,6 +160,10 @@ public:
         funcs["LevelThreads"] = &RenderParamsP::updateLevelThreads;
         LevelMemoryFloorMB = this->handle->GetInt("LevelMemoryFloorMB", 0);
         funcs["LevelMemoryFloorMB"] = &RenderParamsP::updateLevelMemoryFloorMB;
+        LevelDebug = this->handle->GetBool("LevelDebug", false);
+        funcs["LevelDebug"] = &RenderParamsP::updateLevelDebug;
+        LevelCeilingSimulateMB = this->handle->GetInt("LevelCeilingSimulateMB", 0);
+        funcs["LevelCeilingSimulateMB"] = &RenderParamsP::updateLevelCeilingSimulateMB;
         GpuMemoryBudgetMB = this->handle->GetInt("GpuMemoryBudgetMB", 0);
         funcs["GpuMemoryBudgetMB"] = &RenderParamsP::updateGpuMemoryBudgetMB;
         LevelTolerance = this->handle->GetFloat("LevelTolerance", 2.0);
@@ -367,6 +373,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelMemoryFloorMB(RenderParamsP *self) {
         self->LevelMemoryFloorMB = self->handle->GetInt("LevelMemoryFloorMB", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelDebug(RenderParamsP *self) {
+        self->LevelDebug = self->handle->GetBool("LevelDebug", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelCeilingSimulateMB(RenderParamsP *self) {
+        self->LevelCeilingSimulateMB = self->handle->GetInt("LevelCeilingSimulateMB", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateGpuMemoryBudgetMB(RenderParamsP *self) {
@@ -966,6 +980,82 @@ void RenderParams::setLevelMemoryFloorMB(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelMemoryFloorMB() {
     instance()->handle->RemoveInt("LevelMemoryFloorMB");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelDebug() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Narrate what each mesh-level plan decides (docs/SceneStreaming.md\n"
+"#13): the GPU budget it decided against and the bytes in use, how\n"
+"many displayed sources stand at their coarse and exact rungs, and\n"
+"how many refines, demotes and downgrades the plan asked for.\n"
+"Reported on the plan's own cadence - a camera pause - because it\n"
+"is a decision, not a per-frame cost.\n"
+"Needed to tell a ladder that will not descend apart from one that\n"
+"never ran: on the desktop OpenGL backend the automatic GPU budget\n"
+"is 0 (bgfx's GL renderer reports no limit), so the downgrade half\n"
+"of the plan never executed at all and nothing said so.\n"
+"The FC_LEVEL_DEBUG environment variable also turns it on. Read\n"
+"once, at the first plan.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getLevelDebug() {
+    return instance()->LevelDebug;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultLevelDebug() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelDebug(const bool &v) {
+    instance()->handle->SetBool("LevelDebug",v);
+    instance()->LevelDebug = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelDebug() {
+    instance()->handle->RemoveBool("LevelDebug");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelCeilingSimulateMB() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Pretend the system ran out of memory for exact re-tessellation\n"
+"(docs/SceneStreaming.md #13), so the CPU-side half of the level\n"
+"plan can be exercised on a machine that has memory to spare.\n"
+"Non-zero raises the floor that the refine worker compares\n"
+"available memory against, so builds are refused and a memory\n"
+"ceiling is observed - after which the plans start demoting exact\n"
+"meshes the camera would not miss back to their coarse rung.\n"
+"A simulation knob, not a tuning one: LevelMemoryFloorMB is the\n"
+"real floor, and this overrides it upward only.\n"
+"Read when a refine is dequeued, so it takes effect live.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getLevelCeilingSimulateMB() {
+    return instance()->LevelCeilingSimulateMB;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultLevelCeilingSimulateMB() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelCeilingSimulateMB(const long &v) {
+    instance()->handle->SetInt("LevelCeilingSimulateMB",v);
+    instance()->LevelCeilingSimulateMB = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelCeilingSimulateMB() {
+    instance()->handle->RemoveInt("LevelCeilingSimulateMB");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

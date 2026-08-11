@@ -11155,6 +11155,7 @@ public:
                         levelPlanner.projMatrix(), h,
                         levelPlanner.tolerance());
                     auto &reg = Render::MeshSourceRegistry::instance();
+                    size_t nDemote = 0, nDowngrade = 0;
                     // Demotions first (§13 step 3), and only ever under
                     // an observed CPU-memory ceiling: drop the hidden
                     // exact rungs outright (nothing on screen changes),
@@ -11171,6 +11172,7 @@ public:
                             [&reg](const void *t) {
                                 return reg.demoteError(t);
                             });
+                        nDemote = drops.size();
                         for (const void *tag : drops)
                             reg.requestDemote(tag);
                     }
@@ -11188,6 +11190,7 @@ public:
                             [&reg](const void *t) {
                                 return reg.downgradeError(t);
                             });
+                        nDowngrade = drops.size();
                         for (const void *tag : drops)
                             reg.requestDowngrade(tag);
                     }
@@ -11208,6 +11211,42 @@ public:
                     }
                     for (const void *tag : tags)
                         reg.requestRefine(tag);
+
+                    // What the plan just decided, and the state it
+                    // decided against. Nothing reported any of this
+                    // before, so "the ladder is not descending" could
+                    // not be told apart from "the ladder never ran" --
+                    // and on the desktop OpenGL backend the second was
+                    // true, silently: bgfx's GL renderer reports
+                    // gpuMemoryMax = -INT64_MAX, so the automatic
+                    // budget is 0, so the downgrade branch had never
+                    // executed at all. A dormant mechanism must say it
+                    // is dormant.
+                    //
+                    // On the plan's own cadence (a camera pause), not
+                    // per frame: it is a decision, not a cost.
+                    if (levelDebug()) {
+                        std::set<const void *> coarse, exact;
+                        for (const auto &draw : scene) {
+                            if (!draw.mesh || !draw.mesh->sourceTag)
+                                continue;
+                            (draw.mesh->levelError > 0.0f ? coarse : exact)
+                                .insert(draw.mesh->sourceTag);
+                        }
+                        const size_t budget = gpuBudgetBytes();
+                        Base::Console().Message(
+                            "render levels: budget %s used %.1fMB | displayed "
+                            "coarse %zu exact %zu | plan: refine %zu demote %zu "
+                            "downgrade %zu | cpu ceiling %s\n",
+                            budget ? (std::to_string(budget / 1048576)
+                                      + "MB").c_str()
+                                   : "NONE (GL reports no limit; set "
+                                     "Render_GpuMemoryBudgetMB to simulate)",
+                            double(gpuUsedBytes()) / 1048576.0,
+                            coarse.size(), exact.size(), tags.size(),
+                            nDemote, nDowngrade,
+                            reg.memoryCeilingEpoch() ? "OBSERVED" : "no");
+                    }
                 });
 
             // docs/FarFieldProxies.md §9: how much of the model this
@@ -16189,6 +16228,17 @@ public:
     // crossing is what wakes the planner.
     bool gpuOverBudget = false;
 
+    /// Whether the level plan narrates its decisions. Pushed in from
+    /// the Gui bridge like the budget beside it -- this library knows
+    /// nothing of RenderParams -- with the environment variable as the
+    /// standalone viewer's way in.
+    bool levelDebug() const
+    {
+        static const bool env = std::getenv("FC_LEVEL_DEBUG") != nullptr;
+        return levelDebugOn || env;
+    }
+    bool levelDebugOn = false;
+
     /// GPU geometry bytes in use: the API's own number where it
     /// reports one, else the upload accounting.
     static size_t gpuUsedBytes()
@@ -16798,6 +16848,11 @@ bool BGFXRenderer::drivesMeshLevels() const
 void BGFXRenderer::setGpuMemoryBudget(size_t bytes)
 {
     pimpl->gpuBudget = bytes;
+}
+
+void BGFXRenderer::setLevelDebug(bool on)
+{
+    pimpl->levelDebugOn = on;
 }
 #endif
 

@@ -123,6 +123,30 @@ Params = [
         "0 sizes the floor automatically (at least 512 MB, or 1/16 of\n"
         "physical memory if that is more). Read when the first refine is\n"
         "queued."),
+    ParamBool('LevelDebug',  False, title='Level plan debug',
+        doc="Narrate what each mesh-level plan decides (docs/SceneStreaming.md\n"
+        "#13): the GPU budget it decided against and the bytes in use, how\n"
+        "many displayed sources stand at their coarse and exact rungs, and\n"
+        "how many refines, demotes and downgrades the plan asked for.\n"
+        "Reported on the plan's own cadence - a camera pause - because it\n"
+        "is a decision, not a per-frame cost.\n"
+        "Needed to tell a ladder that will not descend apart from one that\n"
+        "never ran: on the desktop OpenGL backend the automatic GPU budget\n"
+        "is 0 (bgfx's GL renderer reports no limit), so the downgrade half\n"
+        "of the plan never executed at all and nothing said so.\n"
+        "The FC_LEVEL_DEBUG environment variable also turns it on. Read\n"
+        "once, at the first plan."),
+    ParamInt('LevelCeilingSimulateMB',  0, title='Simulate memory ceiling below (MB)',
+        doc="Pretend the system ran out of memory for exact re-tessellation\n"
+        "(docs/SceneStreaming.md #13), so the CPU-side half of the level\n"
+        "plan can be exercised on a machine that has memory to spare.\n"
+        "Non-zero raises the floor that the refine worker compares\n"
+        "available memory against, so builds are refused and a memory\n"
+        "ceiling is observed - after which the plans start demoting exact\n"
+        "meshes the camera would not miss back to their coarse rung.\n"
+        "A simulation knob, not a tuning one: LevelMemoryFloorMB is the\n"
+        "real floor, and this overrides it upward only.\n"
+        "Read when a refine is dequeued, so it takes effect live."),
     ParamInt('GpuMemoryBudgetMB',  0, title='GPU memory budget (MB)',
         doc="GPU geometry budget of the desktop mesh-level plan\n"
         "(docs/SceneStreaming.md #13): while the uploaded geometry exceeds\n"

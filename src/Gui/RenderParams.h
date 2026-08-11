@@ -219,6 +219,50 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LevelDebug
+    ///
+    /// Narrate what each mesh-level plan decides (docs/SceneStreaming.md
+    /// #13): the GPU budget it decided against and the bytes in use, how
+    /// many displayed sources stand at their coarse and exact rungs, and
+    /// how many refines, demotes and downgrades the plan asked for.
+    /// Reported on the plan's own cadence - a camera pause - because it
+    /// is a decision, not a per-frame cost.
+    /// Needed to tell a ladder that will not descend apart from one that
+    /// never ran: on the desktop OpenGL backend the automatic GPU budget
+    /// is 0 (bgfx's GL renderer reports no limit), so the downgrade half
+    /// of the plan never executed at all and nothing said so.
+    /// The FC_LEVEL_DEBUG environment variable also turns it on. Read
+    /// once, at the first plan.
+    static const bool & getLevelDebug();
+    static const bool & defaultLevelDebug();
+    static void removeLevelDebug();
+    static void setLevelDebug(const bool &v);
+    static const char *docLevelDebug();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelCeilingSimulateMB
+    ///
+    /// Pretend the system ran out of memory for exact re-tessellation
+    /// (docs/SceneStreaming.md #13), so the CPU-side half of the level
+    /// plan can be exercised on a machine that has memory to spare.
+    /// Non-zero raises the floor that the refine worker compares
+    /// available memory against, so builds are refused and a memory
+    /// ceiling is observed - after which the plans start demoting exact
+    /// meshes the camera would not miss back to their coarse rung.
+    /// A simulation knob, not a tuning one: LevelMemoryFloorMB is the
+    /// real floor, and this overrides it upward only.
+    /// Read when a refine is dequeued, so it takes effect live.
+    static const long & getLevelCeilingSimulateMB();
+    static const long & defaultLevelCeilingSimulateMB();
+    static void removeLevelCeilingSimulateMB();
+    static void setLevelCeilingSimulateMB(const long &v);
+    static const char *docLevelCeilingSimulateMB();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter GpuMemoryBudgetMB
     ///
     /// GPU geometry budget of the desktop mesh-level plan

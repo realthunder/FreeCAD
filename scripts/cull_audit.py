@@ -271,6 +271,32 @@ def run():
                  "instance on the frames it reports, so FRAME TIMINGS IN "
                  "THIS RUN ARE NOT CLEAN")
 
+        # FC_GPU_BUDGET_MB / FC_LEVEL_CEILING_MB: simulate memory
+        # pressure (docs/SceneStreaming.md #13). The premise of the
+        # coarse-first ladder is a model that does not fit, and on a box
+        # with memory to spare neither half of it ever descends -- on
+        # desktop OpenGL the automatic GPU budget is 0 outright, because
+        # bgfx's GL renderer reports no limit.
+        budget_mb = int(os.environ.get("FC_GPU_BUDGET_MB", "0"))
+        ceiling_mb = int(os.environ.get("FC_LEVEL_CEILING_MB", "0"))
+        rp = App.ParamGet("User parameter:BaseApp/Preferences/View/Render")
+        rp.SetBool("LevelDebug", True)
+        if budget_mb:
+            rp.SetInt("GpuMemoryBudgetMB", budget_mb)
+            emit("GPU budget PINNED to %d MB -- simulating a model that "
+                 "does not fit; the plan may downgrade displayed meshes"
+                 % budget_mb)
+        else:
+            rp.SetInt("GpuMemoryBudgetMB", 0)
+            emit("GPU budget automatic = NONE on OpenGL -- the downgrade "
+                 "half of the level plan will not run in this row")
+        if ceiling_mb:
+            rp.SetInt("LevelCeilingSimulateMB", ceiling_mb)
+            emit("CPU memory ceiling SIMULATED at %d MB -- exact "
+                 "re-tessellations will be refused" % ceiling_mb)
+        else:
+            rp.SetInt("LevelCeilingSimulateMB", 0)
+
         v.RenderDebug_Timing = True
         # FC_TIGHT=1: also ask what a TIGHTER OCCLUDEE VOLUME would have
         # culled (#12.19). Off by default because its per-triangle arm

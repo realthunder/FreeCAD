@@ -1661,6 +1661,12 @@ public:
     /// automatic: the backend's own reported GPU memory limit where
     /// the API states one (D3D/Vulkan do), else no budget at all.
     virtual void setGpuMemoryBudget(size_t bytes) { (void)bytes; }
+    /// Narrate what each mesh-level plan decides. Needed to tell a
+    /// ladder that will not descend apart from one that never ran --
+    /// on desktop OpenGL the automatic GPU budget is 0, so the
+    /// downgrade half of the plan had never executed and nothing said
+    /// so.
+    virtual void setLevelDebug(bool on) { (void)on; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

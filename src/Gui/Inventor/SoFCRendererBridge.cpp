@@ -1983,6 +1983,14 @@ RendererBridge::translateLevelTolerance(App::PropertyContainer * view)
             RenderParams::getLevelTolerance()));
 }
 
+bool
+RendererBridge::translateLevelDebug(App::PropertyContainer * view)
+{
+    return bool(viewParamOverride<App::PropertyBool>(
+            view, "Render", "LevelDebug",
+            RenderParams::getLevelDebug()));
+}
+
 size_t
 RendererBridge::translateGpuMemoryBudget(App::PropertyContainer * view)
 {

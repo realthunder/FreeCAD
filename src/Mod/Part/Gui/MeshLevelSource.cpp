@@ -176,8 +176,19 @@ void refineLoop()
         // by the time it does, it may be somebody else's. The job is
         // dropped (its ask stands, so it is not retried into the same
         // wall); the observation flips the plans to demoting.
+        // The simulation knob (Render_LevelCeilingSimulateMB): raise
+        // the floor above whatever the machine actually has free, and
+        // every exact build is refused exactly as it would be on a
+        // machine that had run out -- which is the only way to exercise
+        // this half of the plan on a box with memory to spare, and the
+        // premise of the whole coarse-first design is a model that does
+        // not fit. Read per job, not once, so it can be turned on
+        // against a running viewer.
+        size_t floor = s_memFloorBytes;
+        if (const long simMB = Gui::RenderParams::getLevelCeilingSimulateMB())
+            floor = std::max(floor, size_t(simMB) << 20);
         const size_t avail = Render::MemoryBudget::availableMemory();
-        if (avail && avail < s_memFloorBytes) {
+        if (avail && avail < floor) {
             Render::MeshSourceRegistry::instance().observeMemoryCeiling();
             continue;
         }
