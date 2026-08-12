@@ -435,6 +435,18 @@ shape of everything above, so its contract is stated here:
 - ⚠️ **Always pass the full `--modes` list.** The default is `0,1,2,3,4`; a
   golden set holding 0-8 then compares only five stages and prints the rest as a
   `modes only on one side` *note*, not a failure -- a silently partial pass.
+- ⚠️ **A lone `beauty DIVERGED` with every other stage at 0.0000% is the
+  harness, not the renderer.** Mode 0 is the first capture after a camera is
+  restaged, and that slot can catch a frame the scene has not been drawn into
+  yet: the beauty shot comes back as background plus chrome while the depth,
+  normal, AO and shadow buffers captured a few hundred ms later are
+  byte-identical to the golden. A missing model that leaves an *identical
+  depth buffer* is a contradiction, and that contradiction is the tell -- read
+  it as a flake and re-run before hunting a cause. Seen once in ~6
+  `demo-fountain` runs, on one camera. The same first-frame settling shows up
+  as ~20 differing pixels between two captures with nothing done between them,
+  which is why a round-trip test needs a no-op control leg to measure its own
+  noise floor rather than comparing against zero.
 - ⚠️ **`--gpu` needs a real Wayland socket.** From a shell without
   `/run/user/$(id -u)` (agent sessions), set
   `XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir` or Qt finds no platform plugin and the
