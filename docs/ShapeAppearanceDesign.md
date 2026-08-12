@@ -1,6 +1,8 @@
 # ShapeAppearance, compatible with upstream but not laid out like it
 
-Status: stage 1 storage implemented 2026-08-12; the rest is design.
+Status: stage 1 storage and the ShapeAppearance property both landed
+2026-08-12; what remains of stage 1 is the DiffuseColor accessor and the
+restore migration. Stages 2-5 are design.
 Context: [UpstreamCoreSync.md](./UpstreamCoreSync.md) section 5.1, which
 records why the property exists and what it cost upstream.
 
@@ -347,8 +349,35 @@ anything that compares or serialises asks for the normal form first -- so a
 loop setting one entry at a time does not rescan the list on every step.
 Growing a field only materialises it when the arriving value disagrees with
 the one already there, which keeps an import that appends identically
-coloured faces linear. Still to do in this stage: `ShapeAppearance` itself,
-the `DiffuseColor` accessor of 1.1, and the restore-time migration.
+coloured faces linear. Still to do in this stage: the
+`DiffuseColor` accessor of 1.1, and the restore-time migration.
+
+**Landed 2026-08-12: the property.** `ShapeAppearance` replaces
+`ShapeMaterial` on `ViewProviderGeometryObject` and, separately, on
+`ViewProviderLink`, which is not a geometry object and carried its own copy
+-- both had to move together because they share `setElementColorsTo`, whose
+signature is now upstream's `PropertyMaterialList*`. `ShapeColor` and
+`Transparency` stay their own properties but stop being a third overlapping
+store: `onChanged` mirrors them off entry 0, and the Coin node is fed by one
+`setCoinAppearance()`, only when the appearance holds a single entry.
+`handleChangedPropertyName` folds an old document's `ShapeMaterial` in.
+
+Three things this turned up that the plan had not:
+
+- The blast radius is **~35 C++ sites in 12 files**, not the handful a
+  member-access grep suggests. `(->|\.)ShapeMaterial` finds members *named*
+  ShapeMaterial and misses bare `ShapeMaterial.getValue()`, misses
+  `&ShapeMaterial` in `prop ==` comparisons, and a `grep -v pcShapeMaterial`
+  filter silently drops every line carrying both names. Count with `grep -w`.
+- **Two sites generated Python that assigned `ShapeMaterial.DiffuseColor`.**
+  A material list hands Python a copy of each entry (section 4.1), so
+  assigning into `[0]` compiles, runs and does nothing. Reads are fine as
+  `ShapeAppearance[0].DiffuseColor`; the write now goes through the property
+  in C++, as upstream's `CommandFeat.cpp` does.
+- **Both material dialogs reach the property by name**
+  (`getPropertyByName("ShapeMaterial")` plus a `dynamic_cast`). Those compile
+  clean after a rename and silently edit nothing. Renaming a property means
+  grepping the string, not just the symbol.
 
 #### 1.1 `DiffuseColor` as a real accessor, not a copy
 
@@ -738,9 +767,11 @@ from.
 ### 7.7 Order
 
 0. ~~Port upstream's material fields~~ -- done (7.3).
-1. UpstreamCoreSync 2d, `App::Color` -> `Base::Color`, seven forward
-   declarations included (7.1).
-2. `ShapeAppearance` on `ViewProviderGeometryObject`, retiring the trio.
+1. ~~UpstreamCoreSync 2d, `App::Color` -> `Base::Color`~~ -- done
+   2026-08-12 (935bccd118), seven forward declarations included (7.1).
+2. ~~`ShapeAppearance` on `ViewProviderGeometryObject`~~ -- done 2026-08-12
+   (9ebb513d35), and on `ViewProviderLink` too, which the plan had not
+   noticed carries its own material.
 3. `DiffuseColor` as an accessor (1.1), with the two base-pointer sites
    restructured first (7.2) and the fork-only mapping behaviour preserved
    (7.5).
