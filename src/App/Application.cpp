@@ -1930,6 +1930,7 @@ static void freecadNewHandler ()
 #include <execinfo.h>
 #include <dlfcn.h>
 #include <cxxabi.h>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -1939,6 +1940,63 @@ static void freecadNewHandler ()
 #if HAVE_CONFIG_H
 #include <config.h>
 #endif // HAVE_CONFIG_H
+
+#if defined(_MSC_VER)
+#include <Base/StackWalker.h>
+
+namespace {
+
+/** The Windows half of printBacktrace().
+ *
+ * Two deliberate departures from Base::StackWalker's defaults:
+ *
+ * - Output goes straight to std::cerr, never through Base::Console(). A
+ *   segfault is as likely to have happened *inside* the console as anywhere
+ *   else -- the access violation this was written for faulted in
+ *   ConsoleSingleton::Error() -- so re-entering it from the handler is how you
+ *   lose the very backtrace you came for.
+ * - No SymUseSymSrv, and the module list is silenced. Reaching the Microsoft
+ *   symbol server from a crash handler can block for minutes, and OnLoadModule
+ *   otherwise prints a few hundred lines before the first real frame.
+ */
+class CerrStackWalker: public StackWalker
+{
+public:
+    explicit CerrStackWalker(size_t skip)
+        : StackWalker(RetrieveVerbose | SymBuildPath)
+        , m_skip(skip)
+    {}
+
+protected:
+    void OnSymInit(LPCSTR, DWORD, LPCSTR) override
+    {}
+    void OnLoadModule(LPCSTR, LPCSTR, DWORD64, DWORD, DWORD, LPCSTR, LPCSTR, ULONGLONG) override
+    {}
+    void OnDbgHelpErr(LPCSTR, DWORD, DWORD64) override
+    {}
+
+    void OnCallstackEntry(CallstackEntryType eType, CallstackEntry& entry) override
+    {
+        // Drop the frames belonging to the handler itself, so the numbering
+        // matches what the glibc branch above prints.
+        if (eType != lastEntry && entry.offset != 0 && m_seen++ < m_skip) {
+            return;
+        }
+        StackWalker::OnCallstackEntry(eType, entry);
+    }
+
+    void OnOutput(LPCSTR szText) override
+    {
+        std::cerr << szText;
+    }
+
+private:
+    size_t m_skip;
+    size_t m_seen {0};
+};
+
+}  // namespace
+#endif  // _MSC_VER
 
 // This function produces a stack backtrace with demangled function & method names.
 void printBacktrace(size_t skip=0)
@@ -1974,12 +2032,14 @@ void printBacktrace(size_t skip=0)
     }
 
     free(symbols);
+#elif defined(_MSC_VER)
+    CerrStackWalker sw(skip);
+    sw.ShowCallstack();
 #else //HAVE_BACKTRACE_SYMBOLS
     (void)skip;
     std::cerr << "Cannot print the stacktrace because the C runtime library doesn't provide backtrace or backtrace_symbols\n";
 #endif
 }
-#endif
 
 void segmentation_fault_handler(int sig)
 {
@@ -1996,12 +2056,19 @@ void segmentation_fault_handler(int sig)
     switch (sig) {
         case SIGSEGV:
             std::cerr << "Illegal storage access..." << std::endl;
+            // Print it *before* throwing. The throw unwinds to whoever catches
+            // Base::AccessViolation -- in the GUI that is
+            // GUIApplication::notify(), which only shows a message box -- and by
+            // then every frame that would say where the fault came from is gone.
+            // This is the only chance to record them.
+            printBacktrace(2);
 #if !defined(_DEBUG)
             throw Base::AccessViolation("Illegal storage access! Please save your work under a new file name and restart the application!");
 #endif
             break;
         case SIGABRT:
             std::cerr << "Abnormal program termination..." << std::endl;
+            printBacktrace(2);
 #if !defined(_DEBUG)
             throw Base::AbnormalProgramTermination("Break signal occurred");
 #endif
@@ -2032,10 +2099,19 @@ void unexpection_error_handler()
 #if defined(FC_SE_TRANSLATOR) // Microsoft compiler
 void my_se_translator_filter(unsigned int code, EXCEPTION_POINTERS* pExp)
 {
-    Q_UNUSED(pExp)
     switch (code)
     {
     case EXCEPTION_ACCESS_VIOLATION:
+        // Better placed than the one in segmentation_fault_handler(): the
+        // translator runs during the SEH filter pass, before any unwinding, and
+        // it is handed the faulting CONTEXT -- so walk that rather than the
+        // handler's own stack.
+        std::cerr << "Access violation at " << pExp->ExceptionRecord->ExceptionAddress
+                  << std::endl;
+        {
+            CerrStackWalker sw(0);
+            sw.ShowCallstack(GetCurrentThread(), pExp->ContextRecord);
+        }
         throw Base::AccessViolation();
     case EXCEPTION_FLT_DIVIDE_BY_ZERO:
     case EXCEPTION_INT_DIVIDE_BY_ZERO:
