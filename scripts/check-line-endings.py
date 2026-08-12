@@ -16,6 +16,11 @@ Usage: check-line-endings.py [FILE...]
 With no arguments, checks everything currently staged.
 """
 
+# Keeps the `list[str]` and `bytes | None` annotations below from being
+# evaluated at import, so this still runs on the 3.8/3.9 interpreters some
+# distributions still ship. Without it PEP 604 unions are a SyntaxError.
+from __future__ import annotations
+
 import subprocess
 import sys
 

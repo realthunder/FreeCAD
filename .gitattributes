@@ -1,10 +1,16 @@
 # Line endings: freeze, do not normalise.
 #
-# Upstream FreeCAD ships no .gitattributes (the old one, dropped in 9d7c8b1326
-# "Cleanup root directory", only held export-ignore rules for git archive), and
-# has no line-ending policy at all. The tree is therefore a mix -- most of
-# src/App and src/Gui is CRLF, parts of src/Gui/Inventor are LF -- and it has
-# been committed that way for years.
+# Upstream ships no *root* .gitattributes -- the old one, dropped in 9d7c8b1326
+# "Cleanup root directory", only held export-ignore rules for git archive. It
+# does have nested ones, and src/Mod/.gitattributes is a deliberate, documented
+# policy: `*.cpp text` and friends to normalise, with an explicit opt-out list
+# (Part/**, Sketcher/**, TechDraw/** and others marked -text) and a comment
+# trail to FreeCAD forum topic 41117 and PR #2752. Nested attributes win, so
+# that policy still governs src/Mod and this file governs everything else.
+#
+# Outside src/Mod there is no policy, and the tree is a mix -- most of src/App
+# and src/Gui is CRLF, parts of src/Gui/Inventor are LF -- committed that way
+# for years.
 #
 # So the textbook `* text=auto` is the wrong tool here: it would renormalise
 # every file in the tree, and turn each subsequent merge from upstream into a

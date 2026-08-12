@@ -66,7 +66,11 @@ repos:
         -   id: check-line-endings
             name: line endings not flipped wholesale
             entry: python scripts/check-line-endings.py
-            language: system
+            # python, not system: `python` is not on PATH on most Linux and
+            # macOS boxes (only python3), and on Windows a bare `python` hits
+            # the Microsoft Store stub. pre-commit provisions its own
+            # interpreter for this language, so the entry resolves everywhere.
+            language: python
             # Deliberately outside the allowlist at the top of this file: an
             # editing tool can rewrite the endings of any file in the tree, and
             # this only reads, so there is no reason to restrict where it looks.
