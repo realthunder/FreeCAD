@@ -1073,6 +1073,17 @@ public:
 
     BGFXView *getView(QOpenGLWidget *widget, RendererType::Enum type);
 
+    /// The view of \a widget if it already exists, else null. Unlike
+    /// getView it creates nothing and prepares no context -- for
+    /// callers off the render path (the level plan, asking what is
+    /// uploaded) that must not bring a view into being by asking about
+    /// it.
+    BGFXView *findView(QOpenGLWidget *widget)
+    {
+        auto it = views.find(widget);
+        return it == views.end() ? nullptr : it->second.get();
+    }
+
     void removeView(QOpenGLWidget *widget);
 
     void shutdown();
@@ -4629,6 +4640,91 @@ public:
             ++drawcount;
         }
         return count;
+    }
+
+    /// One sweep's memory of which uploads it has already charged
+    /// somebody for. GPU bytes are shared two ways -- several cache ids
+    /// (colour variants of one TShape) point at a single GpuGeometry,
+    /// and a cache id itself is content-addressed, so two sources whose
+    /// meshes match exactly are one upload behind two tags. Charging
+    /// every referent its full bytes would promise the same memory
+    /// twice and report a deficit covered that is not.
+    struct UploadCharge {
+        std::set<uint64_t> cacheIds;
+        std::set<const void *> geoms;
+    };
+
+    /// GPU bytes \a data has uploaded right now: its own per-cache
+    /// streams (baked colours, the line/point instance data) plus the
+    /// colourless geometry behind them, each charged at most once per
+    /// \a charge.
+    ///
+    /// This is the GPU budget's currency and it is NOT
+    /// meshResidentBytes, the CPU arrays of the same mesh. A line
+    /// segment is 8 bytes of index there; here it is those 8 bytes AND
+    /// a 64-byte quad-expansion instance record (two endpoints and
+    /// their colours), so a line-heavy source costs the GPU some nine
+    /// times what it costs the heap. Pricing a downgrade in the wrong
+    /// currency is how a sweep frees "enough" and stays over budget.
+    ///
+    /// 0 for a mesh nothing has uploaded, which is the honest answer:
+    /// downgrading it gives the GPU nothing back.
+    uint64_t uploadedBytesOf(const Render::MeshData &data,
+                             UploadCharge *charge)
+    {
+        auto it = meshes.find(data.cacheId);
+        if (it == meshes.end())
+            return 0;
+        uint64_t bytes = 0;
+        if (!charge || charge->cacheIds.insert(data.cacheId).second)
+            bytes += it->second.bytes;
+        if (const GpuGeometry *geom = it->second.geom) {
+            if (!charge || charge->geoms.insert(geom).second)
+                bytes += geom->bytes;
+        }
+        return bytes;
+    }
+
+    /// What the GPU accounting is holding, split by whether the scene
+    /// still wants it.
+    ///
+    /// The single total is what a budget was judged against, and it
+    /// cannot fall at the moment a descent succeeds: the rungs it
+    /// replaced stay uploaded until collectMeshes retires them two
+    /// frames later. So a plan that had just given up 2394 sources read
+    /// its own memory as having gone UP, and no descent however good
+    /// could honour anything. `live` is the same accounting asked the
+    /// question the budget means -- what the frames now being drawn
+    /// reference -- and it falls the moment the scene stops naming the
+    /// old uploads.
+    struct GpuBytes {
+        uint64_t total = 0;   ///< every buffer currently allocated
+        uint64_t live = 0;    ///< referenced recently enough to survive
+                              ///< the next collectMeshes
+        uint64_t stale = 0;   ///< total - live: awaiting collection
+        uint32_t entries = 0;
+        uint32_t staleEntries = 0;
+    };
+    GpuBytes gpuBytes() const
+    {
+        GpuBytes out;
+        // The retention rule of collectMeshes, read the other way
+        // round: an entry it would keep is one the scene still wants.
+        auto tally = [&out, this](uint64_t bytes, uint64_t lastUsed) {
+            out.total += bytes;
+            ++out.entries;
+            if (lastUsed + 2 >= frame)
+                out.live += bytes;
+            else {
+                out.stale += bytes;
+                ++out.staleEntries;
+            }
+        };
+        for (const auto &m : meshes)
+            tally(m.second.bytes, m.second.lastUsed);
+        for (const auto &g : geometries)
+            tally(g.second.bytes, g.second.lastUsed);
+        return out;
     }
 
     // Drop GPU buffers of caches/textures that no draw call referenced
@@ -11138,6 +11234,14 @@ public:
             }
             // Crossing the GPU budget wakes the planner too (§13
             // step 3): the sweep itself runs in the plan callback.
+            //
+            // The wake reads the whole-accounting total rather than the
+            // live half the sweep will judge against: it is one atomic
+            // load against a walk of every cache entry, this runs on
+            // every frame where the sweep runs on a camera settle, and
+            // total >= live -- so the cheap number wakes the planner at
+            // least as often as the exact one would, and the plan then
+            // decides on the exact one.
             if (const size_t budget = gpuBudgetBytes()) {
                 const bool over = gpuUsedBytes() > budget;
                 if (over && !gpuOverBudget)
@@ -11152,6 +11256,35 @@ public:
                                           * widget->devicePixelRatioF());
                     auto &reg = Render::MeshSourceRegistry::instance();
                     size_t nDemote = 0, nDowngrade = 0;
+                    // THE TWO METERS (sec 13 step 3). One number cannot be
+                    // both, and while it tried to be, no budget could
+                    // be honoured:
+                    //
+                    // - GPU = what is UPLOADED. Released by
+                    //   collectMeshes once the scene stops referencing
+                    //   it, which is why the sweep judges `live` and
+                    //   not the total that still carries the rungs the
+                    //   last descent replaced.
+                    // - CPU = what is RESIDENT: the mesh arrays the
+                    //   published scene holds in the heap, per distinct
+                    //   mesh. Its release point is a demote (drop the
+                    //   rung), not a downgrade (stop displaying it) --
+                    //   a different quantity freed by a different move.
+                    //
+                    // Reported side by side, and each sweep spends the
+                    // one its own budget is quoted in.
+                    BGFXView *view = _BGFXLib.findView(widget);
+                    const BGFXView::GpuBytes gpu =
+                        view ? view->gpuBytes() : BGFXView::GpuBytes();
+                    uint64_t cpuResident = 0;
+                    {
+                        std::set<const Render::MeshData *> seen;
+                        for (const auto &draw : scene) {
+                            if (draw.mesh && seen.insert(draw.mesh.get()).second)
+                                cpuResident +=
+                                    Render::meshResidentBytes(draw.mesh.get());
+                        }
+                    }
                     // The deficits the two sweeps actually ran with,
                     // kept for the readout: re-deriving them after the
                     // drops would report a different number, since the
@@ -11193,8 +11326,19 @@ public:
                     // CPU RAM — the way back up is an instant
                     // re-activation through an ordinary refine.
                     const size_t gpuBudget = gpuBudgetBytes();
-                    const size_t gpuUsed = gpuUsedBytes();
+                    // The live half, not the total: bytes the scene has
+                    // stopped referencing are already on their way out
+                    // through collectMeshes, and no further descent can
+                    // free them a second time. Judging the total is how
+                    // a plan that had just downgraded 2394 sources read
+                    // its own memory as having risen.
+                    const size_t gpuUsed = size_t(gpu.live);
                     if (gpuBudget && gpuUsed > gpuBudget) {
+                        // Priced in GPU bytes, because that is what the
+                        // deficit is quoted in -- see uploadedBytesOf.
+                        // The charge is per sweep, so a geometry shared
+                        // by several cache ids is promised once.
+                        BGFXView::UploadCharge charge;
                         auto drops = Render::planMeshDemotes(
                             scene, levelPlanner.viewMatrix(),
                             levelPlanner.projMatrix(), h,
@@ -11202,21 +11346,24 @@ public:
                             [&reg](const void *t) {
                                 return reg.downgradeError(t);
                             },
-                            &dgStats, dgDeficit = gpuUsed - gpuBudget);
+                            &dgStats, dgDeficit = gpuUsed - gpuBudget,
+                            [view, &charge](const Render::MeshData *m)
+                                -> uint64_t {
+                                return view && m
+                                    ? view->uploadedBytesOf(*m, &charge) : 0;
+                            });
                         nDowngrade = drops.size();
                         for (const void *tag : drops)
                             reg.requestDowngrade(tag);
-                        // One pass cannot know it freed enough: the
-                        // bytes it counted are what the meshes declare,
-                        // while the budget is judged against what the
-                        // backend reports uploaded, which only catches
-                        // up once the downgraded rungs have been
-                        // re-uploaded. So while the budget still stands
-                        // exceeded, replan -- but only after a pass
-                        // that actually dropped something, or a budget
-                        // nothing can satisfy would replan forever.
-                        // Each drop consumes its source's hook, so the
-                        // sequence terminates.
+                        // One pass cannot know it freed enough: what it
+                        // counted is what stands uploaded now, and the
+                        // rung it swaps in takes some of it back. So
+                        // while the budget still stands exceeded,
+                        // replan -- but only after a pass that actually
+                        // dropped something, or a budget nothing can
+                        // satisfy would replan forever. Each drop
+                        // consumes its source's hook, so the sequence
+                        // terminates.
                         if (nDowngrade)
                             levelPlanner.markDirty();
                     }
@@ -11317,8 +11464,14 @@ public:
                                 .insert(draw.mesh->sourceTag);
                         }
                         const size_t budget = gpuBudgetBytes();
+                        // Two meters, named for what they measure and
+                        // for what releases them, never added together:
+                        // the same mesh is counted in both, and it has
+                        // to be -- it occupies both.
                         Base::Console().Message(
-                            "render levels: budget %s used %.1fMB | displayed "
+                            "render levels: gpu budget %s live %.1fMB "
+                            "(uploaded %.1fMB, %.1fMB stale in %u of %u "
+                            "entries) | cpu resident %.1fMB | displayed "
                             "coarse %zu exact %zu | plan: refine %zu demote %zu "
                             "downgrade %zu | cpu ceiling %s | refine tolerance "
                             "%.2fpx%s\n",
@@ -11326,7 +11479,11 @@ public:
                                       + "MB").c_str()
                                    : "NONE (GL reports no limit; set "
                                      "Render_GpuMemoryBudgetMB to simulate)",
-                            double(gpuUsedBytes()) / 1048576.0,
+                            double(gpu.live) / 1048576.0,
+                            double(gpu.total) / 1048576.0,
+                            double(gpu.stale) / 1048576.0,
+                            gpu.staleEntries, gpu.entries,
+                            double(cpuResident) / 1048576.0,
                             coarse.size(), exact.size(), tags.size(),
                             nDemote, nDowngrade,
                             reg.memoryCeilingEpoch() ? "OBSERVED" : "no",

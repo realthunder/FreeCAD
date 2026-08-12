@@ -1166,6 +1166,72 @@ TEST(PlanMeshDemotes, pressurePricesASharedSourceByItsNeediestOwner)
     EXPECT_EQ(more[1], &proto);
 }
 
+TEST(PlanMeshDemotes, theDeficitIsSpentInTheCurrencyItIsQuotedIn)
+{
+    // The GPU budget and the CPU ceiling are different quantities, and
+    // the same mesh has a different price in each: on the heap a line
+    // segment is two int32 indices, on the GPU it is those indices AND
+    // a 64-byte quad-expansion instance record. A sweep spending GPU
+    // bytes while counting heap bytes reports a deficit covered and
+    // leaves the budget standing -- so the caller states the currency.
+    PlanCamera cam;
+    int a = 0, b = 0;
+    Render::DrawCallList draws;
+    draws.push_back(sizedDraw(&a, 0.0f, -1000, 5, 1000));
+    draws.push_back(sizedDraw(&b, 0.0f, -1000, 5, 1000));
+    std::map<const void *, float> errs{{&a, 0.03f}, {&b, 0.03f}};
+
+    // Default currency: the heap arrays. Both sources are off screen
+    // (free tier), so both go and the total is what they occupy.
+    Render::PlanDemoteStats heap;
+    auto plain = Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                         2.0f, demoteErrs(errs), &heap);
+    EXPECT_EQ(plain.size(), 2u);
+    EXPECT_EQ(heap.bytesFreed, 2 * 1000 * kVertBytes);
+
+    // The caller's currency, eight times dearer, is what gets reported
+    // -- the whole point being that the deficit it is compared against
+    // is quoted the same way.
+    Render::PlanDemoteStats gpu;
+    Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f, 2.0f,
+                            demoteErrs(errs), &gpu, 0,
+                            [](const Render::MeshData *m) -> uint64_t {
+                                return uint64_t(m->numVertices) * 8
+                                    * kVertBytes;
+                            });
+    EXPECT_EQ(gpu.bytesFreed, 8 * 2 * 1000 * kVertBytes);
+}
+
+TEST(PlanMeshDemotes, aSharedUploadIsOfferedToTheCurrencyOnlyOnce)
+{
+    // The contract a stateful currency stands on: bytesOf sees each
+    // distinct mesh once per pass, so an implementation that charges a
+    // shared GPU buffer to the first referent and answers 0 for the
+    // rest promises that memory exactly once. Promising it twice is
+    // how a sweep covers a deficit on paper and stays over budget --
+    // and the renderer's uploads really are shared, by colour variants
+    // of one TShape pointing at a single geometry buffer.
+    PlanCamera cam;
+    int proto = 0;
+    Render::DrawCallList draws;
+    draws.push_back(sizedDraw(&proto, 0.0f, -1000, 5, 1000));
+    Render::DrawCall second = draws.front();  // same MeshData, second row
+    second.objectKey = 2;
+    draws.push_back(second);
+    std::map<const void *, float> errs{{&proto, 0.03f}};
+
+    int calls = 0;
+    Render::PlanDemoteStats stats;
+    auto tags = Render::planMeshDemotes(
+        draws, cam.view, cam.proj, 1000.0f, 2.0f, demoteErrs(errs), &stats, 0,
+        [&calls](const Render::MeshData *) -> uint64_t {
+            return ++calls == 1 ? 4096 : 0;  // charged once, then free
+        });
+    EXPECT_EQ(tags.size(), 1u);
+    EXPECT_EQ(calls, 1);
+    EXPECT_EQ(stats.bytesFreed, 4096u);
+}
+
 TEST(PlanMeshDemotes, aCoarseSourceDescendsAgainUnderPressure)
 {
     // The step that makes the ladder unbounded: an object already at

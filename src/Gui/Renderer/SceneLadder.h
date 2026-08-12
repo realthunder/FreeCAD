@@ -419,9 +419,9 @@ struct PlanDemoteStats {
     uint32_t eligible = 0;     ///< on screen and under the margin
     uint32_t underPressure = 0;///< over the margin, taken because the deficit demanded it
     uint32_t unpriceable = 0;  ///< no judgeable bounds, or the camera inside the box
-    /// Resident bytes the selection gives back, by the same accounting
-    /// the far-field cut prices residency with -- per distinct mesh, so
-    /// an instanced source is not counted once per instance.
+    /// Bytes the selection gives back, in whatever currency the caller
+    /// priced it in (planMeshDemotes' \a bytesOf) -- per distinct mesh,
+    /// so an instanced source is not counted once per instance.
     uint64_t bytesFreed = 0;
     /// The worst projected coarse error accepted, in pixels: the
     /// tolerance this plan effectively ran at. Equal to
@@ -468,11 +468,28 @@ struct PlanDemoteStats {
 /// source expensive for every other. It is still a price and not a
 /// veto, which is the difference from the free tier, where any owner
 /// over the margin kept the source exact outright.
+///
+/// \a bytesOf is the CURRENCY, and it must be the same one \a
+/// deficitBytes is quoted in. Default (empty) is meshResidentBytes --
+/// the CPU arrays a mesh occupies -- which is right for the sweep run
+/// against a CPU memory ceiling and wrong for the one run against the
+/// GPU budget: the same line segment is 8 bytes of index on the CPU and
+/// 64 bytes of quad-expansion instance data on the GPU, plus the index
+/// buffer uploaded beside it. A sweep that spends GPU bytes while
+/// counting CPU bytes reports a deficit covered and leaves the budget
+/// standing, which is what one number pretending to be two costs.
+///
+/// It is called at most ONCE PER DISTINCT MESH per pass, so a stateful
+/// implementation may charge a shared upload to the first candidate
+/// that reaches it and answer 0 for the rest. Whoever carries it is
+/// arbitrary; what matters is that the total over the selection is what
+/// dropping all of it actually frees, and never more.
 RendererExport std::vector<const void *> planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
     const std::function<float(const void *)> &demoteErrOf,
-    PlanDemoteStats *stats = nullptr, size_t deficitBytes = 0);
+    PlanDemoteStats *stats = nullptr, size_t deficitBytes = 0,
+    const std::function<uint64_t(const MeshData *)> &bytesOf = {});
 
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.

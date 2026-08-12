@@ -1223,12 +1223,19 @@ std::vector<const void *> Render::planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
     const std::function<float(const void *)> &demoteErrOf,
-    PlanDemoteStats *stats, size_t deficitBytes)
+    PlanDemoteStats *stats, size_t deficitBytes,
+    const std::function<uint64_t(const MeshData *)> &bytesOf)
 {
     std::vector<const void *> out;
     if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f
         || tolerancePx <= 0.0f || !demoteErrOf)
         return out;
+    // The currency this pass prices in (see bytesOf): the CPU arrays by
+    // default, the caller's own accounting when it is spending against
+    // a different budget.
+    const auto price = [&bytesOf](const MeshData *m) -> uint64_t {
+        return bytesOf ? bytesOf(m) : uint64_t(Render::meshResidentBytes(m));
+    };
     const PlanBoxes boxes(draws);
     // Price every candidate first, decide after: which sources are
     // worth dropping cannot be answered draw by draw once pressure is
@@ -1238,7 +1245,14 @@ std::vector<const void *> Render::planMeshDemotes(
     std::map<const void *, size_t> index;
     // Bytes belong to a mesh, not to a draw. An instanced source is one
     // upload behind many rows, so the same MeshData is charged once.
-    std::set<std::pair<const void *, const MeshData *>> charged;
+    //
+    // Keyed by the mesh alone. The tag it used to be paired with is
+    // read off that same mesh, so the pair never distinguished
+    // anything -- but the key is also the guarantee bytesOf is given
+    // ("at most once per distinct mesh"), and a stateful currency
+    // charging a shared upload to its first referent depends on it, so
+    // it is worth stating in the type rather than deriving.
+    std::set<const MeshData *> charged;
     for (const auto &draw : draws) {
         if (!draw.mesh)
             continue;
@@ -1271,9 +1285,8 @@ std::vector<const void *> Render::planMeshDemotes(
                 if (stats) {
                     ++(coarseErr < 0.0f ? stats->unregistered
                                         : stats->noRung);
-                    if (charged.emplace(mesh.sourceTag, &mesh).second)
-                        stats->unreachableBytes +=
-                            Render::meshResidentBytes(&mesh);
+                    if (charged.emplace(&mesh).second)
+                        stats->unreachableBytes += price(&mesh);
                 }
                 // Remembered as a non-candidate so the registry is
                 // asked once per source rather than once per draw.
@@ -1289,13 +1302,13 @@ std::vector<const void *> Render::planMeshDemotes(
         if (found->second == size_t(-1)) {
             // A second mesh under the same unreachable tag still costs
             // its bytes; only the count is per source.
-            if (stats && charged.emplace(mesh.sourceTag, &mesh).second)
-                stats->unreachableBytes += Render::meshResidentBytes(&mesh);
+            if (stats && charged.emplace(&mesh).second)
+                stats->unreachableBytes += price(&mesh);
             continue;
         }
         DemoteCandidate &cand = cands[found->second];
-        if (charged.emplace(mesh.sourceTag, &mesh).second)
-            cand.bytes += Render::meshResidentBytes(&mesh);
+        if (charged.emplace(&mesh).second)
+            cand.bytes += price(&mesh);
         const BoxSight sight = boxes.sight(draw, viewMatrix, projMatrix,
                                            viewportHeightPx);
         if (sight.what == BoxSight::Visible) {
