@@ -2290,6 +2290,16 @@ arrays and stand on the coarse rung, which is always resident.
       a *reporting* defect and not the memory blocker. Registering
       the point set would clean the readout and buy almost nothing.
 
+      **WARNING: that 18.7MB is quoted in the CPU currency, and the point
+      sets are the worst case for reading it as a GPU number.** It is
+      `meshResidentBytes`: 4 bytes of index per point. The same point
+      on the GPU is that index *and* a 32-byte sprite instance record
+      (position + colour) -- nine times the figure that made them look
+      negligible, before their share of the vertex stream. "Buys
+      almost nothing" is safe for the CPU ceiling and was never
+      established for the GPU budget; see the accounting split below,
+      which is what makes the two answerable separately.
+
    **What the same run says the blocker actually is.** After the
    descent the scene is 2394 sources displayed coarse plus the 1197
    point sets, and it still occupies **441.3MB against a 64MB
@@ -2352,3 +2362,126 @@ first and every tessellation, coarse included, streams in behind the
 plan. That makes the desktop ladder box → generator grid rungs →
 exact, the viewer's ladder exactly, with the box promoted from
 stand-in to explicit floor.
+
+### 13a -- two meters, because one number cannot be two quantities
+
+**As built (2026-08-12).** The single `used` figure the budget was
+judged against was wrong in a way that made the budget unmeetable: a
+plan that had just downgraded 2394 sources read its own memory as
+having gone **up**, to 705.5MB, while the frame it produced drew 845K
+primitives. Two separate defects hid inside the one number, and both
+are now split out.
+
+**1. GPU and CPU are different quantities with different release
+points.**
+
+- **GPU = what is UPLOADED.** Released by `collectMeshes` once the
+  scene stops referencing a buffer -- two frames later, by design.
+- **CPU = what is RESIDENT**: the mesh arrays the published scene
+  holds in the heap, per distinct mesh. Released by a *demote* (drop
+  the rung), not by a *downgrade* (stop displaying it).
+
+The same mesh is counted in both and has to be: it occupies both. The
+`Render_LevelDebug` line reports them side by side and never adds
+them:
+
+```
+render levels: gpu budget 64MB live 441.3MB (uploaded 705.5MB,
+264.2MB stale in 1832 of 6104 entries) | cpu resident 218.9MB | ...
+```
+
+**2. The budget is judged against `live`, not the total.** The bytes
+of a rung the descent just replaced stay uploaded until the collector
+retires them, so the total *cannot* fall at the moment a descent
+succeeds -- which is exactly when the plan re-reads it and concludes
+it has achieved nothing. `live` is the same accounting asked the
+question the budget means: what the frames now being drawn reference.
+It falls the moment the scene stops naming the old uploads. The
+per-frame *wake* still reads the cheap atomic total (one load against
+a walk of every cache entry, and `total >= live`, so it wakes at least
+as often as the exact number would).
+
+**3. Each sweep spends the currency its own budget is quoted in.**
+`planMeshDemotes` took bytes from `meshResidentBytes` for both sweeps,
+so the GPU sweep priced candidates in *heap* bytes while its deficit
+was in *upload* bytes. These differ by a lot, and not by a constant: a
+line segment is 8 bytes of index on the heap, and on the GPU it is
+those 8 bytes plus a **64-byte** quad-expansion instance record (two
+endpoints and their colours); a point is 4 bytes against 4 + 32. So
+the planner now takes a `bytesOf` currency, defaulting to the heap
+accounting, and the backend passes `BGFXView::uploadedBytesOf` --
+the real bytes of that mesh's buffers, 0 for a mesh nothing has
+uploaded, which is the honest answer that downgrading it gives the GPU
+nothing back.
+
+**Do not double count.** GPU buffers are shared two ways: several
+cache ids (colour variants of one TShape) point at a single
+`GpuGeometry`, and a cache id is content-addressed. `UploadCharge`
+carries the sweep's memory of what it has already charged somebody
+for, so a shared upload is promised to the first candidate that
+reaches it and to nobody else -- the total over a selection is then
+what dropping all of it actually frees, and never more. The planner
+guarantees the currency is asked **at most once per distinct mesh**,
+which is what a stateful implementation stands on.
+
+**Separate simulated limits.** GPU pressure is
+`Render_GpuMemoryBudgetMB` (harness `FC_GPU_BUDGET_MB`), a limit on
+uploaded bytes. CPU pressure is `Render_LevelCeilingSimulateMB`
+(harness `FC_LEVEL_CEILING_MB`), which today raises the *floor* an
+exact build refuses to start under -- a simulation of the machine
+running out, not a limit on our own resident bytes. A CPU limit in the
+same shape as the GPU one (a ceiling on `cpu resident`, with the
+deficit driving the demote sweep) is the natural next step now that
+the meter exists; the two knobs are independent and neither reads the
+other.
+
+### 13b -- edges and vertices under pressure (proposed)
+
+Falls directly out of 13a's currency: **edge and point drawables are
+disproportionately expensive on the GPU** -- 9x the heap cost per
+segment, 9x per point -- so they are the first thing to give up when
+the budget cannot be met, and the last thing a triangle-count estimate
+would have flagged.
+
+1. **Vertices attached to an edge need not draw at all**
+   (`Render_ShapeVertices`, default off). Such a point lands exactly
+   on the end of an edge that is already drawn: a 32-byte sprite
+   instance apiece for something nobody looks at.
+2. **Edges bounding a face, gated dynamically under pressure**
+   (`Render_PressureDropEdges`, default on). The face still draws and
+   its silhouette still reads, and **cavity shading can fake the
+   edge** where the face geometry already implies it.
+
+**The test is TOPOLOGICAL, and this is the part that is easy to get
+wrong.** It is not "this object has faces, so drop its edges". It is
+per element:
+
+- A vertex may be skipped only if it is an **endpoint of an edge**. A
+  vertex no edge touches -- a free vertex, every point of a point
+  cloud -- always draws, because nothing else would show it.
+- An edge may be skipped only if it **bounds a face**. A free edge --
+  a wire, a sketch, a datum line -- always draws: it *is* the object.
+
+**And the display mode exempts its own subject.** The vertex gate
+never applies in the **Points** mode and the edge gate never applies
+in **Wireframe**: a mode that exists to show exactly these elements
+cannot be allowed to show nothing. Note the graph makes this less
+obvious than it sounds -- `pcPointsRoot` is a child of the Flat Lines
+root, the Wireframe root, *and* the Points mode root
+(`ViewProviderExt` ~1021-1069), so one node serves three modes and the
+gate cannot be a property of the node's contents.
+
+Both are display-side gates, not residency changes: nothing is
+demoted, nothing re-tessellates, and the way back is a frame. That
+makes them cheaper to enter and leave than any rung move, which is why
+they belong at the top of the pressure response rather than the
+bottom. **Picking, pre-selection highlighting and on-top rendering are
+unaffected** -- the geometry stays published and resident, the
+highlight draws are on-top draws, and only the base-pass submission is
+skipped.
+
+Both are display-side gates, not residency changes: nothing is
+demoted, nothing re-tessellates, and the way back is a frame. That
+makes them cheaper to enter and leave than any rung move, which is why
+they belong at the top of the pressure response rather than the
+bottom.
