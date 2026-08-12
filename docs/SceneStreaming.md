@@ -3145,3 +3145,125 @@ Next, in the order the measurement puts them: skip the mesh call whose
 work is already done; then the 808 that re-tessellate what the pool had
 already built; and only then, if what is left justifies it, move the
 traversal off the GUI thread.
+
+### 13e -- not making the call that would write nothing
+
+13d ended with three items in the order the measurement put them. This
+is the first: **half of a mass descent's tessellation calls changed no
+triangle and cost ~19ms each**, because `BRepMesh_IncrementalMesh`
+cannot conclude "already adequate" without first building its internal
+model of the shape -- every face, every wire, every edge discretized --
+and only then comparing.
+
+So the call is now asked for only when something might come of it.
+`tessellationIsRedundant()` answers the same question off what the
+faces already carry, and it is only worth trusting because it is
+**OCCT's own question, copied rather than invented**:
+
+- per face, `BRepMesh_ModelPreProcessor`'s `TriangulationConsistency` --
+  the deflection the triangulation was *built* at (its
+  `Poly_TriangulationParameters`, falling back to `Deflection()`
+  exactly as OCCT does) against the deflection the model would compute
+  for that face, through the same `BRepMesh_Deflection::IsConsistent`
+  with the same `AllowQualityDecrease` the call itself passes;
+- the same #25080 guard on triangle indices, because a triangulation
+  OCCT would have discarded as corrupt is one this fill would read;
+- every **free** edge's 3D polygon, by `BRepMesh_EdgeDiscret`'s rule.
+  Free edges are the one thing OCCT still rewrites when every face is
+  reused: face-bound polygons are committed only for faces it re-meshed
+  (`BRepMesh_ModelPostProcessor`), and `BRepMesh_FaceDiscret` skips
+  every face marked `IMeshData_Reused`. **With every face consistent,
+  the call writes nothing at all** -- so skipping it is not a
+  substitution for the call, it is the same outcome without the model
+  build.
+
+All-or-nothing per shape, where OCCT decides per face: one inconsistent
+face and the real call runs and does exactly what it does today. There
+is no arm in which guessing beats asking, because the fallback *is* the
+answer.
+
+**The check is scored, not argued.** With `Render_MeshSkipRedundant`
+off, the check still runs under the level debug flag and its verdict is
+carried into `MeshCallProbe`, which then reports how often the check and
+the call agreed. That is the only thing that can say a skip is safe:
+
+| audit arm (feature off), whole run | calls | |
+|---|---|---|
+| checks made | 7403 | 0.316 ms each |
+| said redundant, and the call rebuilt nothing | 800 | correct |
+| **said redundant, and the call REBUILT** | **1** | see below |
+| redundant but refused | 2765 | the saving left behind |
+
+**The one disagreement is one-sided by construction.** The required
+deflection computed here is a *lower bound* on the model's (it takes
+`max(ask, 2 x MaxFaceTolerance)` and drops the model's wire average of
+per-edge vertex adjustments, which is never below the ask). So the
+upper test `current < 1.1 x required` is strictly **tighter** than
+OCCT's, and a mesh too *coarse* for the ask can never be accepted. Every
+possible disagreement is OCCT wanting to *coarsen* a mesh this one kept
+-- which costs memory, never fidelity.
+
+#### What the refusals were actually costing
+
+A check that is safe but claims little is improved by evidence or not at
+all, so the refusals are counted by reason -- and only over calls that
+then proved redundant, since refusing a call that really did rebuild is
+the check working:
+
+| reason unclaimed | calls |
+|---|---|
+| **resident mesh FINER than the ask** | **2599** |
+| resident coarser | 148 |
+| a face with no triangulation | 18 |
+| bad indices, free edge, no faces | 0 |
+
+**94% of it is one reason, and the ratio is exactly 2.00** -- the
+resident mesh is the previous ladder rung, one `LevelScale` step back.
+Strictly it is not adequate: the descent asks coarse *on purpose* to
+hand memory back, which is what `AllowQualityDecrease` is for. But every
+one of those 2599 calls **changed no triangle when it was made anyway**.
+The faces were already at their floor; a two-triangle face does not
+coarsen.
+
+`Render_MeshSkipFinerResident` is that trade, and it is the one knob
+here that must be **judged by converged memory rather than by calls
+skipped**, because what it declines is a coarsening.
+
+| arm | mesh calls made | skipped | WRONG | mesh share of rebuild | live GPU | cpu resident |
+|---|---|---|---|---|---|---|
+| off (audit) | 6678 | 0 | 0 | 72% | 57.6 MB | 30.1 MB |
+| off (audit, repeat) | 7403 | 0 | 1 | 72% | 59.5 MB | 31.1 MB |
+| skip, strict | 6511 | 469 | 0 | 69% | 52.0 MB | 25.0 MB |
+| **skip + accept finer** | **3401** | **4720** | **0** | **56%** | **39.2 MB** | **22.7 MB** |
+| skip + accept finer, repeat | 3873 | 6039 | 0 | 55% | 35.7 MB | **36.3 MB** |
+
+Three of those columns repeat and one does not, and the one that does
+not is the one the knob was supposed to be judged by:
+
+- **safety repeats.** `WRONG` is 0 across 10,759 skips.
+- **the saving repeats.** The mesh share of a rebuild falls 72% -> 55-56%,
+  and validated-only calls collapse from ~3500 to ~500.
+- **GPU memory repeats** below both baselines (39.2, 35.7 MB).
+- **`cpu resident` does NOT.** 22.7 MB in one run and 36.3 MB in the
+  other -- straddling the 30-31 MB baselines. That is precisely the cost
+  the strict rule exists to prevent (triangulations kept finer than the
+  plan asked for stay in the heap), and **two runs cannot say whether it
+  is real.** So `Render_MeshSkipFinerResident` ships **off**: the
+  saving is not in doubt, the memory is, and this workstream has
+  shipped-then-refuted enough features to know which way that decides.
+
+/!\ These converged rows are each arm's *outcome*, not a controlled
+delta. The ladder is a feedback loop -- change what a rebuild costs and
+the plan does different work in the same wall clock -- and the arms
+settled at different tolerances (55.37, 190.54, 165.87, 600.00 px), as
+two identical arms settled 55s and 1.9MB apart. What *is* controlled is
+the per-call arithmetic: a validated-only call costs ~26ms, the check
+costs 0.3ms strict and 0.9-1.1ms when it must walk every face's
+triangles before accepting a finer mesh.
+
+**What ships on by default is the strict rule** -- OCCT's own, mirrored,
+one-sided-safe -- which on this model is 469 calls of the 6511 it
+checked. The rest of the prize sits behind a knob whose memory bill is
+unpaid, and the next measurement this section wants is a `cpu resident`
+meter taken over enough runs to settle it (the two-meter distinction of
+13a: uploaded GPU bytes are not resident CPU rungs).
