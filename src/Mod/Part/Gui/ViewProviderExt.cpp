@@ -93,8 +93,11 @@
 #include <App/MappedElement.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
+#include <Base/Reader.h>
+#include <Base/Stream.h>
 #include <Base/TimeInfo.h>
 #include <Base/Tools.h>
+#include <Base/Writer.h>
 #include <Gui/Application.h>
 #include <Gui/Document.h>
 #include <Gui/Action.h>
@@ -595,6 +598,247 @@ static bool shapeInstancingActive()
 } // namespace PartGui
 
 //**************************************************************************
+// PropertyDiffuseColor -- a name over ShapeAppearance's diffuse field
+
+TYPESYSTEM_SOURCE(PartGui::PropertyDiffuseColor, App::PropertyColorList)
+
+void PropertyDiffuseColor::setAppearance(App::PropertyMaterialList *appearance,
+                                         const App::PropertyColor *shapeColor)
+{
+    _appearance = appearance;
+    _shapeColor = shapeColor;
+    // Whatever the constructor's ADD_PROPERTY put in the base list is a copy
+    // of what the appearance already holds. Drop it rather than leave a
+    // second, stale answer behind where a base-pointer read could find it.
+    _lValueList.clear();
+}
+
+const std::vector<Base::Color> &PropertyDiffuseColor::getValues() const
+{
+    if (_appearance)
+        return _appearance->getDiffuseColors();
+    return App::PropertyColorList::getValues();
+}
+
+int PropertyDiffuseColor::getSize() const
+{
+    return static_cast<int>(getValues().size());
+}
+
+void PropertyDiffuseColor::setValues(std::vector<Base::Color> &&colors)
+{
+    if (!_appearance) {
+        App::PropertyColorList::setValues(std::move(colors));
+        return;
+    }
+    if (colors.empty() && _shapeColor) {
+        // Emptying the list has always meant "every face back to the object
+        // colour"; an empty field in the appearance means the default
+        // material's colour instead, which is a different colour whenever
+        // the object has one of its own.
+        _appearance->setDiffuseColor(_shapeColor->getValue());
+        return;
+    }
+    _appearance->setDiffuseColors(colors);
+}
+
+void PropertyDiffuseColor::set1Value(int idx, const Base::Color &col)
+{
+    if (!_appearance) {
+        App::PropertyColorList::set1Value(idx, col);
+        return;
+    }
+    // The appearance grows the list itself when idx names a new entry, and
+    // takes -1 as "append" the way the base does.
+    _appearance->setDiffuseColor(idx < 0 ? _appearance->getSize() : idx, col);
+}
+
+void PropertyDiffuseColor::setSize(int newSize)
+{
+    if (!_appearance) {
+        App::PropertyColorList::setSize(newSize);
+        return;
+    }
+    _appearance->setSize(newSize);
+}
+
+void PropertyDiffuseColor::setSize(int newSize, const Base::Color &def)
+{
+    if (!_appearance) {
+        App::PropertyColorList::setSize(newSize, def);
+        return;
+    }
+    App::Material mat = _appearance->getMaterial(0);
+    mat.diffuseColor = def;
+    _appearance->setSize(newSize, mat);
+}
+
+unsigned int PropertyDiffuseColor::getMemSize() const
+{
+    // Nothing of its own: the colours are counted where they are stored.
+    if (_appearance)
+        return 0;
+    return App::PropertyColorList::getMemSize();
+}
+
+bool PropertyDiffuseColor::isSame(const App::Property &other) const
+{
+    if (&other == this)
+        return true;
+    if (auto redirected = Base::freecad_dynamic_cast<const PropertyDiffuseColor>(&other))
+        return getValues() == redirected->getValues();
+    auto list = Base::freecad_dynamic_cast<const App::PropertyColorList>(&other);
+    return list && getValues() == list->getValues();
+}
+
+App::Property *PropertyDiffuseColor::Copy() const
+{
+    // A plain list, so that whoever holds the copy -- undo, mostly -- holds
+    // the values and not a second pointer into this object's appearance.
+    auto copy = new App::PropertyColorList();
+    copy->setValues(getValues());
+    return copy;
+}
+
+void PropertyDiffuseColor::Paste(const App::Property &from)
+{
+    if (auto redirected = Base::freecad_dynamic_cast<const PropertyDiffuseColor>(&from))
+        setValues(redirected->getValues());
+    else
+        setValues(dynamic_cast<const App::PropertyColorList&>(from).getValues());
+}
+
+PyObject *PropertyDiffuseColor::getPyObject()
+{
+    const auto &values = getValues();
+    PyObject *list = PyList_New(values.size());
+    int i = 0;
+    for (const auto &color : values) {
+        PyObject *rgba = PyTuple_New(4);
+        PyTuple_SetItem(rgba, 0, PyFloat_FromDouble(color.r));
+        PyTuple_SetItem(rgba, 1, PyFloat_FromDouble(color.g));
+        PyTuple_SetItem(rgba, 2, PyFloat_FromDouble(color.b));
+        PyTuple_SetItem(rgba, 3, PyFloat_FromDouble(color.a));
+        PyList_SetItem(list, i++, rgba);
+    }
+    return list;
+}
+
+void PropertyDiffuseColor::setPyObject(PyObject *value)
+{
+    // A single colour, which the base spells through its non-virtual
+    // setValue -- hence the copy of that logic rather than a call to it. The
+    // read is what may fail here; the write must not have its exception
+    // swallowed and reported as a bad sequence.
+    Base::Color color;
+    bool single = false;
+    try {
+        color = getPyValue(value);
+        single = true;
+    }
+    catch (...) {
+    }
+    if (single) {
+        setValues(std::vector<Base::Color>(1, color));
+        return;
+    }
+    // A sequence, through the list handling two levels up: PropertyListsT's
+    // own setPyObject would take the same non-virtual path again.
+    App::PropertyLists::setPyObject(value);
+}
+
+void PropertyDiffuseColor::Save(Base::Writer &writer) const
+{
+    if (!_appearance) {
+        App::PropertyColorList::Save(writer);
+        return;
+    }
+    // The colours are ShapeAppearance's, and it writes them itself. Writing
+    // them here as well would double the largest thing a per-face import
+    // saves, for a value the restore is about to overwrite anyway -- both
+    // names come back, and ShapeAppearance sorts after DiffuseColor. The
+    // element still goes out, so a document keeps a DiffuseColor of this
+    // type, which is what distinguishes it from an older one that carries
+    // the values.
+    writer.Stream() << writer.ind() << '<' << xmlName() << " file=\"\"/>\n";
+}
+
+void PropertyDiffuseColor::Restore(Base::XMLReader &reader)
+{
+    if (!_appearance) {
+        App::PropertyColorList::Restore(reader);
+        return;
+    }
+    // PropertyLists::Restore with neither values nor a file clears the list,
+    // which here would empty the appearance that is about to be restored
+    // into. Everything else is as the base does it -- including registering
+    // *this* for a separate file, which is why an older document's
+    // DiffuseColor is restored through this property and not a stand-in
+    // (the file is read long after the XML pass has moved on).
+    reader.readElement(xmlName());
+    std::string file(reader.getAttribute("file", ""));
+    if (!file.empty())
+        reader.addFile(file.c_str(), this);
+    else if (reader.hasAttribute("count"))
+        restoreXML(reader);
+}
+
+void PropertyDiffuseColor::restoreXML(Base::XMLReader &reader)
+{
+    if (!_appearance) {
+        App::PropertyColorList::restoreXML(reader);
+        return;
+    }
+    int count = reader.getAttributeAsInteger("count");
+    std::vector<Base::Color> values(count);
+    auto &stream = reader.beginCharStream() >> std::hex;
+    for (int i = 0; i < count; ++i) {
+        uint32_t packed;
+        stream >> packed;
+        values[i].setPackedValue(packed);
+    }
+    stream >> std::dec;
+    reader.endCharStream();
+    setValues(std::move(values));
+}
+
+bool PropertyDiffuseColor::saveXML(Base::Writer &writer) const
+{
+    if (!_appearance)
+        return App::PropertyColorList::saveXML(writer);
+    writer.Stream() << ">\n" << std::hex;
+    for (const auto &color : getValues())
+        writer.Stream() << color.getPackedValue() << '\n';
+    writer.Stream() << std::dec;
+    return false;
+}
+
+void PropertyDiffuseColor::restoreStream(Base::InputStream &str, unsigned count)
+{
+    if (!_appearance) {
+        App::PropertyColorList::restoreStream(str, count);
+        return;
+    }
+    std::vector<Base::Color> values(count);
+    uint32_t packed = 0;  // must be 32 bit long
+    for (auto &color : values) {
+        str >> packed;
+        color.setPackedValue(packed);
+    }
+    setValues(std::move(values));
+}
+
+void PropertyDiffuseColor::saveStream(Base::OutputStream &str) const
+{
+    if (!_appearance) {
+        App::PropertyColorList::saveStream(str);
+        return;
+    }
+    for (const auto &color : getValues())
+        str << color.getPackedValue();
+}
+
+//**************************************************************************
 // Construction/Destruction
 
 App::PropertyFloatConstraint::Constraints ViewProviderPartExt::sizeRange = {1.0,64.0,1.0};
@@ -662,6 +906,11 @@ ViewProviderPartExt::ViewProviderPartExt()
     ADD_PROPERTY_TYPE(PointColor, (vmat.diffuseColor), osgroup, App::Prop_None, "Set object point color");
     ADD_PROPERTY_TYPE(PointColorArray, (PointColor.getValue()), osgroup, App::Prop_None, "Object point color array.");
     ADD_PROPERTY_TYPE(DiffuseColor,(ShapeColor.getValue()), osgroup, App::Prop_None, "Object diffuse color.");
+    // From here on the face colours are the appearance's, which already
+    // holds this same colour as its single entry. Wired after the
+    // ADD_PROPERTY above, whose write must not be redirected into a property
+    // the base class is still setting up.
+    DiffuseColor.setAppearance(&ShapeAppearance, &ShapeColor);
     ADD_PROPERTY_TYPE(LineColorArray,(LineColor.getValue()), osgroup, App::Prop_None, "Object line color array.");
     ADD_PROPERTY_TYPE(LineWidth,(lwidth), osgroup, App::Prop_None, "Set object line width.");
     LineWidth.setConstraints(&sizeRange);
@@ -769,6 +1018,27 @@ ViewProviderPartExt::~ViewProviderPartExt()
     normb->unref();
     lineset->unref();
     nodeset->unref();
+}
+
+void ViewProviderPartExt::handleChangedPropertyType(Base::XMLReader &reader,
+                                                    const char *TypeName,
+                                                    App::Property *prop)
+{
+    // DiffuseColor kept its name and its bytes but changed type when its
+    // storage moved into ShapeAppearance, so a document written before that
+    // arrives here rather than at Restore, where the base does nothing and
+    // every per-face colour would be dropped in silence.
+    //
+    // Restored through the property itself, not a stand-in: a colour list
+    // large enough to live in its own archive entry is read long after this
+    // returns, and it is the pointer handed to the reader now that the read
+    // will write into.
+    if (prop == &DiffuseColor
+            && strcmp(TypeName, App::PropertyColorList::getClassTypeId().getName()) == 0) {
+        DiffuseColor.Restore(reader);
+        return;
+    }
+    inherited::handleChangedPropertyType(reader, TypeName, prop);
 }
 
 void ViewProviderPartExt::onChanged(const App::Property* prop)
@@ -902,6 +1172,16 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &DiffuseColor) {
+        // Only a touch() reaches this now -- a write to DiffuseColor lands in
+        // ShapeAppearance and is announced there, by the branch below.
+        setHighlightedFaces(DiffuseColor.getValues());
+        Gui::ColorUpdater::addObject(getObject());
+    }
+    else if (prop == &ShapeAppearance) {
+        // The face colours changed, whichever name they arrived under. The
+        // base class pushes a single appearance into the Coin material node;
+        // a per-face one is carried by this view provider's own material
+        // arrays, which is what setHighlightedFaces fills in.
         setHighlightedFaces(DiffuseColor.getValues());
         Gui::ColorUpdater::addObject(getObject());
     }
@@ -2006,8 +2286,91 @@ void ViewProviderPartExt::reload()
     updateVisual();
 }
 
-static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&obj, 
-        ViewProviderPartExt *&svp, App::Color &color) 
+namespace {
+
+/** One of the three per-element colour arrays, picked by element type
+ *
+ * The two places below want "the colour list for this kind of element" and
+ * do not care which one it is. They used to hold an App::PropertyColorList
+ * pointer to one of DiffuseColor, LineColorArray and PointColorArray, which
+ * stops being safe the moment DiffuseColor keeps its colours somewhere else
+ * than the base list does: the reads would come back empty, for faces only
+ * and without a word. So the branch lives here instead, once, and every
+ * access goes through the property's own static type.
+ */
+class ElementColors
+{
+public:
+    ElementColors() = default;
+    ElementColors(TopAbs_ShapeEnum type, ViewProviderPartExt *vp)
+        : _type(type), _vp(vp)
+    {}
+
+    explicit operator bool() const { return _vp != nullptr; }
+
+    int getSize() const
+    {
+        switch (_type) {
+        case TopAbs_VERTEX:
+            return _vp->PointColorArray.getSize();
+        case TopAbs_EDGE:
+            return _vp->LineColorArray.getSize();
+        default:
+            return _vp->DiffuseColor.getSize();
+        }
+    }
+
+    const std::vector<App::Color> &getValues() const
+    {
+        switch (_type) {
+        case TopAbs_VERTEX:
+            return _vp->PointColorArray.getValues();
+        case TopAbs_EDGE:
+            return _vp->LineColorArray.getValues();
+        default:
+            return _vp->DiffuseColor.getValues();
+        }
+    }
+
+    void setValues(const std::vector<App::Color> &colors)
+    {
+        switch (_type) {
+        case TopAbs_VERTEX:
+            _vp->PointColorArray.setValue(colors);
+            break;
+        case TopAbs_EDGE:
+            _vp->LineColorArray.setValue(colors);
+            break;
+        default:
+            _vp->DiffuseColor.setValue(colors);
+            break;
+        }
+    }
+
+    void touch()
+    {
+        switch (_type) {
+        case TopAbs_VERTEX:
+            _vp->PointColorArray.touch();
+            break;
+        case TopAbs_EDGE:
+            _vp->LineColorArray.touch();
+            break;
+        default:
+            _vp->DiffuseColor.touch();
+            break;
+        }
+    }
+
+private:
+    TopAbs_ShapeEnum _type = TopAbs_FACE;
+    ViewProviderPartExt *_vp = nullptr;
+};
+
+}  // namespace
+
+static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&obj,
+        ViewProviderPartExt *&svp, App::Color &color)
 {
     if(!obj)
         return false;
@@ -2116,12 +2479,8 @@ static App::Color getElementColor(App::Color color,
             return color;
 
         float trans = vp->Transparency.getValue()/100.0;
-        auto prop = &vp->DiffuseColor;
-        if(type == TopAbs_VERTEX) 
-            prop = &vp->PointColorArray;
-        else if(type == TopAbs_EDGE)
-            prop = &vp->LineColorArray;
-        if(prop->getSize()==0)
+        ElementColors prop((TopAbs_ShapeEnum)type, vp);
+        if(prop.getSize()==0)
             return color;
 
         mapped = original;
@@ -2149,23 +2508,23 @@ static App::Color getElementColor(App::Color color,
         auto idx = Part::TopoShape::shapeTypeAndIndex(indexedName);
         if(idx.second>0 && idx.second<=(int)shape.countSubShapes(idx.first)) {
             if(idx.first==type) {
-                if(prop->getSize()==1) {
-                    color = prop->getValues()[0];
+                if(prop.getSize()==1) {
+                    color = prop.getValues()[0];
                     color.a = trans;
                 }
-                else if(idx.second<=prop->getSize()) 
-                    return prop->getValues()[idx.second-1];
+                else if(idx.second<=prop.getSize())
+                    return prop.getValues()[idx.second-1];
             }else{
                 // This means the element is generated from a different type of source element,
                 // e.g. face generated by an edge.
                 auto aidx = shape.findAncestor(shape.findShape(idx.first,idx.second),(TopAbs_ShapeEnum)type);
                 if(aidx>0) {
-                    if(prop->getSize()==1) {
-                        color = prop->getValues()[0];
+                    if(prop.getSize()==1) {
+                        color = prop.getValues()[0];
                         color.a = trans;
                     }
-                    else if(aidx<=prop->getSize())
-                        return prop->getValues()[aidx-1];
+                    else if(aidx<=prop.getSize())
+                        return prop.getValues()[aidx-1];
                 }
             }
         }
@@ -2231,28 +2590,26 @@ bool ViewProviderPartExt::hasBaseFeature() const {
 
 struct ColorInfo {
     TopAbs_ShapeEnum type;
-    App::PropertyColorList *prop = 0;
+    ElementColors prop;
     App::Color defaultColor;
     std::map<int,App::Color> colors;
     bool mapColor;
 
     void init(TopAbs_ShapeEnum t, ViewProviderPartExt *vp) {
         type = t;
+        prop = ElementColors(t, vp);
         switch(type) {
         case TopAbs_VERTEX:
             defaultColor = vp->PointColor.getValue();
-            prop = &vp->PointColorArray;
             mapColor = vp->MapPointColor.getValue();
             break;
         case TopAbs_EDGE:
             defaultColor = vp->LineColor.getValue();
-            prop = &vp->LineColorArray;
             mapColor = vp->MapLineColor.getValue();
             break;
         case TopAbs_FACE:
             defaultColor = vp->ShapeColor.getValue();
             defaultColor.a = vp->Transparency.getValue()/100.0f;
-            prop = &vp->DiffuseColor;
             mapColor = vp->MapFaceColor.getValue();
             break;
         default:
@@ -2342,9 +2699,9 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
         if(!info.prop) continue;
         if(noColorMap || !info.mapColor) {
             if(info.colors.empty())
-                info.prop->touch();
+                info.prop.touch();
             else {
-                auto colors = info.prop->getValues();
+                auto colors = info.prop.getValues();
                 if(colors.size()!=shape.countSubShapes(info.type)) {
                     colors.clear();
                     colors.resize(shape.countSubShapes(info.type),info.defaultColor);
@@ -2354,7 +2711,7 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
                         break;
                     colors[v.first] = v.second;
                 }
-                info.prop->setValue(colors);
+                info.prop.setValues(colors);
             }
             continue;
         }
@@ -2396,7 +2753,7 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
             colors.clear();
             colors.push_back(info.defaultColor);
         }
-        info.prop->setValue(colors);
+        info.prop.setValues(colors);
     }
 }
 
