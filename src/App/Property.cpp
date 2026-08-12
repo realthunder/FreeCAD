@@ -518,7 +518,7 @@ void PropertyLists::Save (Base::Writer &writer) const
     // where the file branch would not have.
     const long inlineLimit = DocumentParams::getInlineListSize();
     if (writer.isForceXML() || !canSaveStream(writer)
-            || (inlineLimit > 0 && static_cast<long>(getMemSize()) <= inlineLimit)) {
+            || (inlineLimit > 0 && static_cast<long>(getSaveSize(writer)) <= inlineLimit)) {
         writer.Stream() << writer.ind() << '<' << element << " count=\"" <<  getSize() <<"\" ";
         if(!saveXML(writer))
             writer.Stream() << writer.ind() << "</" << element << ">\n";

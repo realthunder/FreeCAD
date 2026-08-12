@@ -1099,41 +1099,205 @@ private:
     Material _cMat;
 };
 
-/** Material properties
-*/
-class AppExport PropertyMaterialList : public PropertyListsT<Material>
+/** A list of materials, stored one field at a time
+ *
+ * A material list almost never varies in every field. An imported solid
+ * varies its diffuse colour, and sometimes its transparency, per face and
+ * holds a single value for everything else; an object with a uniform
+ * appearance holds a single value for all of them. Storing whole materials
+ * makes every entry pay for that variance: an App::Material is 80 bytes
+ * against a colour's 16, so a 10,000 face import spends 800 KB saying what
+ * 200 KB of colours and transparencies would have said.
+ *
+ * So the storage is one array per field, each independently sized:
+ *
+ *   - 0 -- every entry reads the field's default, and it costs nothing
+ *   - 1 -- one value shared by every entry
+ *   - N -- genuinely per entry
+ *
+ * getSize() is the logical entry count and is held separately, so a list of
+ * ten thousand identical materials is a handful of bytes. Nothing stores a
+ * whole App::Material, which is why getValues() has to build one per entry
+ * into a cache and operator[] returns by value; prefer the per field
+ * accessors, which read and write the storage directly.
+ *
+ * Collapsing a field to the smallest of those three sizes is not merely an
+ * optimisation. The shared-default scheme elides a property whose
+ * serialisation is byte-identical to its class default, so two appearances
+ * that are equal but serialise differently would silently fail to elide.
+ * Writing is therefore always from the normalised form; reading may assume
+ * it.
+ */
+class AppExport PropertyMaterialList : public PropertyLists,
+                                       public AtomicPropertyChangeInterface<PropertyMaterialList>
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    using atomic_change = AtomicPropertyChangeInterface<PropertyMaterialList>::AtomicPropertyChange;
+    friend atomic_change;
+
     bool canShareDefault() const override { return true; }
 
-    /**
-    * A constructor.
-    * A more elaborate description of the constructor.
-    */
     PropertyMaterialList();
-
-    /**
-    * A destructor.
-    * A more elaborate description of the destructor.
-    */
     ~PropertyMaterialList() override;
 
+    /// The material every entry of an empty field reads as
+    static const Material &defaultMaterial();
+
+    /** @name Whole material access
+     *
+     * The interface a material list has always had. Each of these composes
+     * or decomposes materials across the field arrays.
+     */
+    //@{
+    int getSize() const override { return _count; }
+    void setSize(int newSize) override;
+    void setSize(int newSize, const Material &def);
+
+    void setValue(const Material &mat);
+    void setValue(const std::vector<Material> &values = std::vector<Material>()) {
+        setValues(values);
+    }
+    void setValues(const std::vector<Material> &values);
+    void setValues(std::vector<Material> &&values);
+
+    /** There is deliberately no getValues()
+     *
+     * Every other list property hands back its storage; this one has no
+     * whole material to hand back, and the three ways of pretending
+     * otherwise are all worse than not offering it. A member cache would
+     * undo the layout -- the first caller grows a 10,000 entry list from
+     * 200 KB to a megabyte and keeps it there until the next write. A shared
+     * scratch buffer, the FC_STATIC idiom used elsewhere in this class of
+     * problem, makes `a.getValues() == b.getValues()` quietly compare one
+     * list with itself. Returning by value is safe but silently expensive at
+     * exactly the call sites that look cheapest.
+     *
+     * So the whole-list read is gone and the compiler says so. Read one
+     * entry with getMaterial(), or -- better -- read the one field you
+     * wanted through the per field accessors below, which touch no memory
+     * that is not already there.
+     */
+    Material operator[](int idx) const { return getMaterial(idx); }
+    Material getMaterial(int idx) const;
+    void set1Value(int idx, const Material &mat);
+    //@}
+
+    /** @name Per field access
+     *
+     * The getters hand back the raw field, whose size is 0, 1 or getSize()
+     * -- resolve a single entry with the indexed getter instead of assuming
+     * the array is as long as the list. The setters normalise, so a uniform
+     * vector handed to setDiffuseColors() collapses to one element.
+     */
+    //@{
+    const std::vector<Color> &getAmbientColors() const { return _ambient; }
+    const std::vector<Color> &getDiffuseColors() const { return _diffuse; }
+    const std::vector<Color> &getSpecularColors() const { return _specular; }
+    const std::vector<Color> &getEmissiveColors() const { return _emissive; }
+    const std::vector<float> &getShininessValues() const { return _shininess; }
+    const std::vector<float> &getTransparencyValues() const { return _transparency; }
+
+    Color getAmbientColor(int idx) const;
+    Color getDiffuseColor(int idx) const;
+    Color getSpecularColor(int idx) const;
+    Color getEmissiveColor(int idx) const;
+    float getShininess(int idx) const;
+    float getTransparency(int idx) const;
+    Material::MaterialType getType(int idx) const;
+
+    void setAmbientColors(const std::vector<Color> &colors);
+    void setDiffuseColors(const std::vector<Color> &colors);
+    void setSpecularColors(const std::vector<Color> &colors);
+    void setEmissiveColors(const std::vector<Color> &colors);
+    void setShininessValues(const std::vector<float> &values);
+    void setTransparencyValues(const std::vector<float> &values);
+
+    /// Set one field of one entry, expanding that field alone if it has to
+    void setAmbientColor(int idx, const Color &col);
+    void setDiffuseColor(int idx, const Color &col);
+    void setSpecularColor(int idx, const Color &col);
+    void setEmissiveColor(int idx, const Color &col);
+    void setShininess(int idx, float value);
+    void setTransparency(int idx, float value);
+
+    /// Set one field for every entry, leaving the others alone
+    void setAmbientColor(const Color &col);
+    void setDiffuseColor(const Color &col);
+    void setSpecularColor(const Color &col);
+    void setEmissiveColor(const Color &col);
+    void setShininess(float value);
+    void setTransparency(float value);
+    //@}
+
     PyObject *getPyObject() override;
+    void setPyObject(PyObject *) override;
 
     const char* getEditorName(void) const override;
     Property *Copy(void) const override;
     void Paste(const Property &from) override;
+    bool isSame(const Property &other) const override;
+    Property *copyBeforeChange() const override { return Copy(); }
+
+    /** The size of the storage, which is not the size of the list
+     *
+     * Content only, as every list property reports it, because the
+     * inline-versus-archive rule in PropertyLists::Save reads it as the cost
+     * of writing this property. See getSaveSize() for why that rule needs
+     * more than this number.
+     */
+    unsigned int getMemSize() const override;
+    unsigned int getSaveSize(Base::Writer &writer) const override;
+
+    void SaveDocFile(Base::Writer &writer) const override;
+    void RestoreDocFile(Base::Reader &reader) override;
 
 protected:
-    Material getPyValue(PyObject *) const override;
+    Material getPyValue(PyObject *) const;
+    void setPyValues(const std::vector<PyObject*> &vals, const std::vector<int> &indices) override;
 
     void restoreXML(Base::XMLReader &) override;
     bool saveXML(Base::Writer &) const override;
     bool canSaveStream(Base::Writer &) const override { return true; }
     void restoreStream(Base::InputStream &s, unsigned count) override;
     void saveStream(Base::OutputStream &) const override;
+
+    /// The per field encoding, written only at a schema that admits it
+    void saveFieldStream(Base::OutputStream &str) const;
+    void restoreFieldStream(Base::InputStream &str, unsigned count);
+    bool saveFieldXML(Base::Writer &writer) const;
+    void restoreFieldXML(Base::XMLReader &reader, unsigned count);
+
+private:
+    /// Collapse every field to 0, 1 or _count. Idempotent, and lazy.
+    void ensureNormalized() const;
+    void normalize();
+    /// Mark the fields as possibly denormal after a write
+    void touchFields();
+
+    template<class T> void setField(std::vector<T> &field, const std::vector<T> &values,
+                                    const T &def);
+    template<class T> void setFieldValue(std::vector<T> &field, int idx, const T &value,
+                                         const T &def);
+    template<class T> void setUniformField(std::vector<T> &field, const T &value, const T &def);
+
+    int _count {0};
+    std::vector<Color> _ambient;
+    std::vector<Color> _diffuse;
+    std::vector<Color> _specular;
+    std::vector<Color> _emissive;
+    std::vector<float> _shininess;
+    std::vector<float> _transparency;
+    /** Material::MaterialType, which operator== compares
+     *
+     * The compatible encoding has never carried it and still does not, so a
+     * list that goes through a schema 5 document comes back user-defined,
+     * as it always has. The per field encoding does carry it.
+     */
+    std::vector<int8_t> _type;
+
+    mutable bool _normalized {true};
 };
 
 

@@ -555,6 +555,20 @@ public:
     virtual void SaveDocFile (Base::Writer &writer) const override;
     virtual void RestoreDocFile(Base::Reader &reader) override;
 
+    /** What writing this property is about to cost, in bytes
+     *
+     * Save() weighs a list against the archive entry it would otherwise take
+     * out, and getMemSize() answers that for every list whose stored form is
+     * its written form. A list that stores itself more compactly than it
+     * writes itself -- PropertyMaterialList at a schema too old for the per
+     * field encoding -- has to say so here, or a list that is small in memory
+     * and enormous on disk lands inline in Document.xml.
+     */
+    virtual unsigned int getSaveSize(Base::Writer &writer) const {
+        (void)writer;
+        return getMemSize();
+    }
+
 protected:
     /** Returns the XML element name when saving into document XML
      *

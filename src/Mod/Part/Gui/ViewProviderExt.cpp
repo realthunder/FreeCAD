@@ -2044,8 +2044,8 @@ static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&o
                     vp->OverrideMaterialList[index] &&
                     vp->MaterialList.getSize()>index)
                 {
-                    color = vp->MaterialList[index].diffuseColor;
-                    color.a = vp->MaterialList[index].transparency;
+                    color = vp->MaterialList.getDiffuseColor(index);
+                    color.a = vp->MaterialList.getTransparency(index);
                     return true;
                 }
                 if(colorFound)

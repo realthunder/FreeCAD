@@ -4080,11 +4080,12 @@ QVariant PropertyMaterialListItem::toolTip(const App::Property* prop) const
 {
     assert(prop && prop->isDerivedFrom<App::PropertyMaterialList>());
 
-    const std::vector<App::Material>& values = static_cast<const App::PropertyMaterialList*>(prop)->getValues();
-    if (values.empty())
+    const auto* materials = static_cast<const App::PropertyMaterialList*>(prop);
+    if (!materials->getSize())
         return {};
 
-    App::Material value = values.front();
+    // one entry answers the tooltip, so compose only that one
+    App::Material value = materials->getMaterial(0);
     auto dc = value.diffuseColor.asValue<QColor>();
     auto ac = value.ambientColor.asValue<QColor>();
     auto sc = value.specularColor.asValue<QColor>();
@@ -4113,17 +4114,20 @@ QVariant PropertyMaterialListItem::value(const App::Property* prop) const
 {
     assert(prop && prop->isDerivedFrom<App::PropertyMaterialList>());
 
-    const std::vector<App::Material>& value = static_cast<const App::PropertyMaterialList*>(prop)->getValues();
+    const auto* materials = static_cast<const App::PropertyMaterialList*>(prop);
     QVariantList variantList;
 
-    for (const auto & it : value) {
+    // read field by field: the property stores each one once when it is
+    // uniform, and composing whole materials just to take them apart again
+    // is what the storage exists to avoid
+    for (int i = 0; i < materials->getSize(); ++i) {
         Material mat;
-        mat.diffuseColor = it.diffuseColor.asValue<QColor>();
-        mat.ambientColor = it.ambientColor.asValue<QColor>();
-        mat.specularColor = it.specularColor.asValue<QColor>();
-        mat.emissiveColor = it.emissiveColor.asValue<QColor>();
-        mat.shininess = it.shininess;
-        mat.transparency = it.transparency;
+        mat.diffuseColor = materials->getDiffuseColor(i).asValue<QColor>();
+        mat.ambientColor = materials->getAmbientColor(i).asValue<QColor>();
+        mat.specularColor = materials->getSpecularColor(i).asValue<QColor>();
+        mat.emissiveColor = materials->getEmissiveColor(i).asValue<QColor>();
+        mat.shininess = materials->getShininess(i);
+        mat.transparency = materials->getTransparency(i);
 
         variantList << QVariant::fromValue<Material>(mat);
     }

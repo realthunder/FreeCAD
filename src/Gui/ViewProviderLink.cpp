@@ -2535,8 +2535,11 @@ void ViewProviderLink::applyMaterial() {
     else {
         for(int i=0;i<linkView->getSize();++i) {
             if(MaterialList.getSize()>i &&
-               OverrideMaterialList.getSize()>i && OverrideMaterialList[i])
-                linkView->setMaterial(i,&MaterialList[i]);
+               OverrideMaterialList.getSize()>i && OverrideMaterialList[i]) {
+                // composed on the spot: the list stores fields, not materials
+                App::Material mat = MaterialList[i];
+                linkView->setMaterial(i,&mat);
+            }
             else
                 linkView->setMaterial(i,nullptr);
         }
@@ -3748,14 +3751,17 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
                 ext = vpLink->getLinkExtension();
             if(ext && ext->_getElementCountValue() && !ext->_getShowElementValue()) {
                 const auto &overrides = vpLink->OverrideMaterialList.getValues();
-                int i=-1;
-                for(const auto &mat : vpLink->MaterialList.getValues()) {
-                    if(++i>=(int)overrides.size())
-                        break;
+                const auto &materials = vpLink->MaterialList;
+                int count = materials.getSize();
+                if(count > (int)overrides.size())
+                    count = (int)overrides.size();
+                for(int i=0; i<count; ++i) {
                     if(!overrides[i])
                         continue;
-                    auto color = mat.diffuseColor;
-                    color.a = mat.transparency;
+                    // only two of the six fields are wanted, and the
+                    // material list stores each one separately
+                    auto color = materials.getDiffuseColor(i);
+                    color.a = materials.getTransparency(i);
                     colors.emplace(std::to_string(i)+"."+wildcard,color);
                 }
             }
