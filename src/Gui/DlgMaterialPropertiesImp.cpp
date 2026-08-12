@@ -85,6 +85,14 @@ QColor DlgMaterialPropertiesImp::diffuseColor() const
     return ui->diffuseColor->color();
 }
 
+/*
+ * Each of the five handlers below sets ONE field across the appearance,
+ * through the per field setter rather than by reading entry 0, changing a
+ * field and writing the whole material back. That round trip replaced the
+ * list with a single entry, so editing the shininess of an object with
+ * per-face colours threw the colours away.
+ */
+
 /**
  * Sets the ambient color.
  */
@@ -100,9 +108,7 @@ void DlgMaterialPropertiesImp::onAmbientColorChanged()
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
         if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
             auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
-            App::Material mat = ShapeMaterial->getMaterial(0);
-            mat.ambientColor = ambient;
-            ShapeMaterial->setValue(mat);
+            ShapeMaterial->setAmbientColor(ambient);
         }
     }
 }
@@ -122,9 +128,7 @@ void DlgMaterialPropertiesImp::onDiffuseColorChanged()
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
         if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
             auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
-            App::Material mat = ShapeMaterial->getMaterial(0);
-            mat.diffuseColor = diffuse;
-            ShapeMaterial->setValue(mat);
+            ShapeMaterial->setDiffuseColor(diffuse);
         }
     }
 }
@@ -144,9 +148,7 @@ void DlgMaterialPropertiesImp::onEmissiveColorChanged()
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
         if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
             auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
-            App::Material mat = ShapeMaterial->getMaterial(0);
-            mat.emissiveColor = emissive;
-            ShapeMaterial->setValue(mat);
+            ShapeMaterial->setEmissiveColor(emissive);
         }
     }
 }
@@ -166,9 +168,7 @@ void DlgMaterialPropertiesImp::onSpecularColorChanged()
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
         if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
             auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
-            App::Material mat = ShapeMaterial->getMaterial(0);
-            mat.specularColor = specular;
-            ShapeMaterial->setValue(mat);
+            ShapeMaterial->setSpecularColor(specular);
         }
     }
 }
@@ -183,9 +183,7 @@ void DlgMaterialPropertiesImp::onShininessValueChanged(int sh)
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
         if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
             auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
-            App::Material mat = ShapeMaterial->getMaterial(0);
-            mat.shininess = shininess;
-            ShapeMaterial->setValue(mat);
+            ShapeMaterial->setShininess(shininess);
         }
     }
 }
