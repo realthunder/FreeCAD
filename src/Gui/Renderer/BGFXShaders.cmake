@@ -114,10 +114,16 @@ function(fc_bgfx_check_shaders outvar)
         # A spliced medium source: wrap it the way the engine does
         # before handing it to shaderc.
         set(_dep ${_src})
+        set(_srcinc)
         file(READ ${_src} _text)
         if(_text MATCHES "fcMedium(Field|Scatter)" AND
            NOT _text MATCHES "void[ \t]+main")
-            set(_wrap ${ARG_OUTDIR}/wrap/${_name}.sc)
+            # The wrapper must not be named after the medium it splices:
+            # it sits in its own directory and pulls the medium in by
+            # bare name, and a quoted include is resolved against the
+            # including file's directory first — so a wrapper called
+            # fire_medium.sc would include itself instead of the effect.
+            set(_wrap ${ARG_OUTDIR}/wrap/${_name}_fccheck.sc)
             set(_w "$input v_texcoord0\n\n#include <bgfx_shader.sh>\n")
             if(_text MATCHES "fcMediumScatter")
                 string(APPEND _w "#define FC_USER_SCATTER_0\n")
@@ -131,10 +137,20 @@ function(fc_bgfx_check_shaders outvar)
                 string(APPEND _w "#define fcMediumField fcUserField_0\n"
                                  "#define fcMediumRamp fcUserRamp_0\n")
             endif()
+            # Reach the medium through an -i search path, never by
+            # absolute path: shaderc's preprocessor cannot open an
+            # include whose name carries a Windows drive letter (the
+            # colon), so "D:/.../fire_medium.sc" resolved to nothing and
+            # the contract functions the wrapper #defines came out
+            # unresolved — on Linux the same include has no colon and
+            # worked, which is why this only ever broke the Windows build.
+            get_filename_component(_srcdir ${_src} DIRECTORY)
+            get_filename_component(_srcfile ${_src} NAME)
             string(APPEND _w "#define FC_MEDIUM_SLOT 0\n"
-                             "#include \"${_src}\"\n")
+                             "#include \"${_srcfile}\"\n")
             file(WRITE ${_wrap} "${_w}")
             set(_dep ${_src})
+            set(_srcinc -i ${_srcdir})
             set(_src ${_wrap})
             set(_type f)
         endif()
@@ -156,7 +172,7 @@ function(fc_bgfx_check_shaders outvar)
                         ${ARG_OUTDIR}/${_profile}
                 COMMAND ${ARG_SHADERC} -f ${_src} -o ${_out}
                         --type ${_type} ${_flags}
-                        -i ${ARG_BGFXINC} -i ${ARG_SHADERDIR}
+                        -i ${ARG_BGFXINC} -i ${ARG_SHADERDIR} ${_srcinc}
                         --varyingdef ${_varying}
                 DEPENDS ${_src} ${_dep} ${_incs} ${_varying}
                         ${ARG_DEPENDS}
