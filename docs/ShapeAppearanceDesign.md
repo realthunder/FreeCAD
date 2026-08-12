@@ -1,6 +1,6 @@
 # ShapeAppearance, compatible with upstream but not laid out like it
 
-Status: design, 2026-08-11. Decision taken: adopt it. Not yet implemented.
+Status: stage 1 storage implemented 2026-08-12; the rest is design.
 Context: [UpstreamCoreSync.md](./UpstreamCoreSync.md) section 5.1, which
 records why the property exists and what it cost upstream.
 
@@ -18,18 +18,24 @@ unchanged.
 
 ## 2. Why the layout is worth diverging on
 
-`App::Material` is not 18 floats. It is:
+Two material classes are in play and they are not the same size. Upstream's
+is not 18 floats:
 
-| member | bytes |
-|---|---|
-| 4 x `Base::Color` (ambient, diffuse, specular, emissive) | 64 |
-| `shininess`, `transparency` | 8 |
-| `image`, `imagePath`, `uuid` (3 x `std::string`) | 96 |
-| **total** | **~168** |
+| member | this fork | upstream 1.0 |
+|---|---|---|
+| 4 x `Color` (ambient, diffuse, specular, emissive) | 64 | 64 |
+| `shininess`, `transparency` | 8 | 8 |
+| `MaterialType` | 4 (+4 padding) | -- |
+| `image`, `imagePath`, `uuid` (3 x `std::string`) | -- | 96 |
+| **total** | **80** | **~168**, plus a heap allocation per non-empty string |
 
-plus a heap allocation per non-empty string. Against `Base::Color`'s 16
-bytes, per-face appearance is roughly **10x** the cost of the per-face
-colour list it replaces, not the 4.5x an earlier estimate assumed.
+This fork still has the pre-1.0 `App::Material`, so the immediate multiple
+against a `Color`'s 16 bytes is **5x**, not the 10x that upstream's would
+cost. The direction of the argument does not change and the ceiling only
+rises: adopting upstream's material -- which the format compatibility in
+section 4.3 eventually asks for -- doubles the per-entry cost again, while
+the per-field layout absorbs it by leaving the three string fields at size
+zero on every object that has no texture.
 
 And on the path that actually produces per-face data -- STEP import -- 
 OCCT supplies only colour and alpha (see UpstreamCoreSync section 5.1), so
@@ -41,15 +47,21 @@ floats and three empty strings it will never use.
 Per-field arrays, each independently sized 0, 1 or N:
 
     class PropertyMaterialList {
-        int _count;                          // logical entry count N
-        std::vector<Base::Color> _ambient;   // size 0, 1, or N
-        std::vector<Base::Color> _diffuse;
-        std::vector<Base::Color> _specular;
-        std::vector<Base::Color> _emissive;
-        std::vector<float>       _shininess;
-        std::vector<float>       _transparency;
-        std::vector<std::string> _image, _imagePath, _uuid;
+        int _count;                     // logical entry count N
+        std::vector<Color> _ambient;    // size 0, 1, or N
+        std::vector<Color> _diffuse;
+        std::vector<Color> _specular;
+        std::vector<Color> _emissive;
+        std::vector<float> _shininess;
+        std::vector<float> _transparency;
+        std::vector<int8_t> _type;      // Material::MaterialType
     };
+
+`_type` is there because `App::Material::operator==` compares it, so a list
+that dropped it would fail to give back what was put into it. It has never
+been persisted -- no material list in any FreeCAD writes it -- and it stays
+that way. Upstream's `_image`, `_imagePath` and `_uuid` join the list
+unchanged in shape on the day this fork takes upstream's material.
 
 with the cardinality convention:
 
@@ -64,13 +76,18 @@ half at the same time.
 
 ### 3.1 What it costs, by case
 
-For a 10,000-face solid:
+For a 10,000-face solid, against storing this fork's 80-byte material whole:
 
-| case | upstream | this design |
+| case | whole materials | this design |
 |---|---|---|
-| uniform appearance | ~168 B | ~100 B (one element per touched field) |
-| STEP import, colour + alpha per face | ~1.68 MB | **~200 KB** (`_diffuse` 160 KB + `_transparency` 40 KB, rest empty) |
-| full per-face materials (glTF) | ~1.68 MB | ~1.68 MB |
+| uniform appearance | 800 KB | **16 B** (one colour, the only field that differs) |
+| STEP import, colour + alpha per face | 800 KB | **200 KB** (`_diffuse` 160 KB + `_transparency` 40 KB, rest empty) |
+| full per-face materials (glTF) | 800 KB | 800 KB |
+
+The uniform row is the one that matters most in practice and it is not a
+rounding difference: a field that is the same everywhere is stored once, so
+an object's appearance costs what its appearance is, not what its face count
+is.
 
 The uniform case also drops the redundancy we have today, where
 `ShapeColor`, `ShapeMaterial` and `Transparency` hold overlapping state that
@@ -112,14 +129,51 @@ The API is dominated by per-field access, which maps to this layout
 directly and gets *cheaper*. Only `getValues`/`setValues` want a whole
 material vector -- 24 sites, all enumerable.
 
-### 4.3 Document format
+⭐ **`getValues()` is gone from this property, deliberately.** Not
+deprecated, not made expensive: removed, so that the compiler names every
+caller. Every way of keeping it is worse than not having it. A member cache
+undoes the layout -- the first caller grows a 10,000 entry list from 200 KB
+to 800 KB and holds it until the next write. A shared scratch buffer, the
+`FC_STATIC` idiom this fork uses for exactly this shape of problem
+(`PropertyLinkBase::isSame`), makes `a.getValues() == b.getValues()` quietly
+compare one list against itself -- a silent wrong answer, and note that
+`isSame` needed *two* buffers for precisely that reason. Returning by value
+is correct but silently expensive at the call sites that look cheapest.
 
-Unchanged from upstream: `<MaterialList file="..." version="3"/>` plus a
-binary doc-file holding a count, then per material the four packed colours,
-shininess and transparency, then a second pass over all materials writing
-`image`, `imagePath` and `uuid`. That layout is written and read
-**sequentially by index**, so it streams straight out of per-field arrays
-without materialising anything.
+`setValues` stays: composing is the caller's problem, decomposing is ours.
+Reads are `getMaterial(i)` for one whole entry, or the per-field accessors,
+which touch nothing that is not already stored. The fork's three call sites
+were converted with the change and all three got *simpler* -- two of them
+wanted diffuse and transparency and nothing else. **This applies to
+`PropertyMaterialList` alone**; every other list property keeps
+`getValues()` exactly as it was.
+
+### 4.3 Document format: two encodings, chosen by schema
+
+The existing one is kept exactly, byte for byte, and written at **schema 5**
+-- the default, the one every other FreeCAD can read: `count="N"` and then
+one line per entry of four packed colours, shininess and transparency, or
+the same sequence in a doc file. It is written and read **sequentially by
+index**, so it streams straight out of per-field arrays without
+materialising anything.
+
+At **schema 6** -- the fork's compact format, which already writes a root
+element no other reader accepts -- each field is written once, at whatever
+length it actually has: a `fields="1"` attribute and one line per non-empty
+field in XML, a field mask and one length-prefixed run per field in a doc
+file, where a count of `0xffffffff` stands in the place a legacy entry count
+would occupy and cannot be mistaken for one. A uniform 2,000 entry list goes
+from tens of kilobytes to about thirty bytes.
+
+⚠️ **The inline-list rule has to be told which one is coming.**
+`PropertyLists::Save` weighs `getMemSize()` against
+`DocumentParams::InlineListSize` to decide between an inline list and an
+archive entry, which is right for every list whose stored form *is* its
+written form. This one has two written forms, and at schema 5 a list that is
+16 bytes in memory is a quarter of a megabyte on the way out -- inlined
+into Document.xml on the strength of the wrong number. Hence a new
+`PropertyLists::getSaveSize(writer)` hook, defaulting to `getMemSize()`,
+which this property answers per schema.
 
 ### 4.4 Back-compatibility we must keep
 
@@ -135,13 +189,13 @@ without materialising anything.
 
 ## 5. Risks to settle before writing code
 
-1. **`getValues()` returns `const std::vector<Material>&`.** It is
-   non-virtual on `PropertyListsT<T>`, which owns a concrete
-   `_lValueList`. So we cannot inherit that base and still control layout:
-   implement the interface directly, and serve `getValues()` from a
-   `mutable` cache built on demand and dropped on any write. 13 upstream
-   call sites; our own code should use the field accessors instead. Confirm
-   no caller holds the reference across a mutation.
+1. ~~**`getValues()` returns `const std::vector<Material>&`.**~~
+   **SETTLED, by removing it** -- see the starred paragraph in section 4.2.
+   The property does not inherit `PropertyListsT<Material>` (that base owns
+   a concrete `_lValueList` and its readers are non-virtual); it implements
+   `PropertyLists` directly, and the whole-list read is gone rather than
+   faked. The 13 upstream call sites become 13 compile errors on the day
+   upstream code is ported, which is the intended outcome.
 2. ~~**Coin binding with mixed cardinality.**~~ **RESOLVED, and in our
    favour** -- see section 5.1 below. No expansion is ever required.
 3. **The render cache.** `SoFCRenderCache` dedupes and hashes materials;
@@ -282,6 +336,17 @@ Verifiable without any view provider or GPU: unit tests for cardinality
 transitions (0 -> 1 -> N and back), plus a document round-trip against a
 file written by upstream FreeCAD.
 
+**Landed 2026-08-12: the storage half.** `App::PropertyMaterialList` is the
+layout above, with the per-field accessors, the two encodings of section
+4.3, the `getSaveSize` hook and `tests/src/App/PropertyMaterialList.cpp`.
+Normalisation is **lazy** -- a write marks the fields possibly denormal and
+anything that compares or serialises asks for the normal form first -- so a
+loop setting one entry at a time does not rescan the list on every step.
+Growing a field only materialises it when the arriving value disagrees with
+the one already there, which keeps an import that appends identically
+coloured faces linear. Still to do in this stage: `ShapeAppearance` itself,
+the `DiffuseColor` accessor of 1.1, and the restore-time migration.
+
 #### 1.1 `DiffuseColor` as a real accessor, not a copy
 
 `DiffuseColor` stays a genuine `App::PropertyColorList` -- so the property
@@ -294,13 +359,28 @@ working -- but a derived class redirects its storage into
         // readers and writers forward to appearance's _diffuse
     };
 
-**Prerequisite, and it is our own code:** in `PropertyListsT`,
-`getValues()`, its `getValue()` alias and `operator[]` are **non-virtual**
-and read `_lValueList` directly (`Property.h:57-62`), while `setValues`,
-`set1Value`, `setSize` and `getSize` are already virtual. Make those three
-readers virtual. `Property` is already polymorphic, so this adds vtable
-slots rather than object size, and we do not hold ABI against upstream
-FreeCAD binaries -- we ship the whole application.
+⭐ **And no new virtuals in `PropertyListsT`.** An earlier draft of this
+section proposed making `getValues()`, `getValue()` and `operator[]`
+virtual so that a derived colour list could redirect them. That is
+inconsistent with the decision in section 4.2 -- having just refused to hand
+back a reference to storage that is not there, it would be odd to add a
+vtable slot to *every* list property in the tree so that one property can do
+exactly that -- and it is also unnecessary:
+
+- `DiffuseColor` is reached as `vp->DiffuseColor`, whose static type is the
+  derived class, so the derived readers **hide** the base ones by name and
+  no virtual dispatch is involved at any of the fork's 22 call sites.
+- Everything that *does* go through a base pointer -- `Save`, `Restore`,
+  `getMemSize`, `Copy`, `Paste`, `getPyObject`, `getSize` -- is already
+  virtual, so persistence, undo and Python need nothing.
+- The one remaining base-pointer reader is the property editor's
+  `PropertyColorListItem`, and section 1.1 already hides `DiffuseColor` from
+  the editor so a single datum does not appear as two rows.
+
+Before writing it, grep for `PropertyColorList*` and
+`freecad_dynamic_cast<...PropertyColorList>` and confirm the list is empty.
+If some site genuinely needs base-pointer reads, that site is the argument
+for a virtual -- not the design.
 
 ⭐ **This is where the per-field layout pays off a second time.** `_diffuse`
 is literally a `std::vector<Base::Color>`, which is exactly the type
