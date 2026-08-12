@@ -29,8 +29,11 @@
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
 
-namespace App {
+namespace Base {
 class Color;
+}
+namespace App {
+using Color = Base::Color;
 }
 
 namespace TechDraw
@@ -67,7 +70,7 @@ public:
     bool empty();
     static bool faceIsHatched(int i, std::vector<TechDraw::DrawHatch*> hatchObjs);
     static std::string prefSvgHatch();
-    static App::Color prefSvgHatchColor();
+    static Base::Color prefSvgHatchColor();
 
     bool isSvgHatch() const;
     bool isBitmapHatch() const;

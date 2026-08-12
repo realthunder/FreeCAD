@@ -37,9 +37,13 @@ namespace Base
 class Writer;
 }
 
-namespace App
+namespace Base
 {
 class Color;
+}
+namespace App
+{
+using Color = Base::Color;
 }
 
 namespace Points

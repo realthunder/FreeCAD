@@ -1,6 +1,7 @@
 # Closing the core-API gap with upstream, starting with what FEM needs
 
-Status: plan, 2026-08-11. Nothing in stages 1-3 has been done yet.
+Status: stage 1 and steps 2a and 2d done 2026-08-12; 2b and 2c still to
+do; stage 3 waits on the FEM port itself.
 Driver: [FemPortEvaluation.md](./FemPortEvaluation.md), which found that the
 cost of porting upstream's FEM is not in FEM but in core refactors this fork
 predates.
@@ -94,6 +95,17 @@ Notes that matter when doing them:
   anything; the API is a superset but that is a signature check, not a
   semantic one. `PropertyColor`, `PropertyColorList` and the material
   classes all reference it.
+
+  WARNING: **done 2026-08-12, and the alias does not cover everything.** Seven
+  headers forward-declare `namespace App { class Color; }` -- Gui's
+  `ViewProvider.h`, Part's `TopoShape.h`, Mesh's `Importer.h` and
+  `Gui/ViewProvider.h`, Points' `PointsFeature.h`, TechDraw's `DrawHatch.h`
+  and `Preferences.h`. A using-alias and a class declaration of the same
+  name cannot coexist, so those seven declare `Base::Color` instead and say
+  `Base::Color` in their own signatures. The other 836 sites needed nothing.
+  Note this fork's `App::Color` is *not* upstream's `Base::Color`: upstream's
+  has grown a `color_traits` template and more besides. This step moved ours
+  and left the content alone; adopting their additions is separate.
 
 **Verification for each step**: a full build of the eval tree plus the
 existing probe suites. Because these are aliases, a step that compiles is

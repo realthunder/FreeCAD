@@ -63,8 +63,11 @@ class QObject;
 namespace Base {
   class Matrix4D;
 }
-namespace App {
+namespace Base {
   class Color;
+}
+namespace App {
+  using Color = Base::Color;
   class PropertyLinkList;
 }
 
@@ -468,11 +471,11 @@ public:
     /** @name Color management methods
      */
     //@{
-    virtual std::map<std::string, App::Color> getElementColors(const char *element=nullptr) const {
+    virtual std::map<std::string, Base::Color> getElementColors(const char *element=nullptr) const {
         (void)element;
         return {};
     }
-    virtual void setElementColors(const std::map<std::string, App::Color> &colors) {
+    virtual void setElementColors(const std::map<std::string, Base::Color> &colors) {
         (void)colors;
     }
     virtual void updateColors(App::Document *sourceDoc=0, bool forceColorMap=false) {

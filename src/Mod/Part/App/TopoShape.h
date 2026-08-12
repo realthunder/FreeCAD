@@ -66,8 +66,11 @@ class gp_GTrsf;
 class gp_Pln;
 class gp_Dir;
 
-namespace App {
+namespace Base {
 class Color;
+}
+namespace App {
+using Color = Base::Color;
 }
 
 namespace Part
@@ -266,7 +269,7 @@ public:
     void exportBrep(std::ostream&) const;
     void exportBinary(std::ostream&) const;
     void exportStl (const char *FileName, double deflection) const;
-    void exportFaceSet(double, double, const std::vector<App::Color>&, std::ostream&) const;
+    void exportFaceSet(double, double, const std::vector<Base::Color>&, std::ostream&) const;
     void exportLineSet(std::ostream&) const;
     //@}
 
