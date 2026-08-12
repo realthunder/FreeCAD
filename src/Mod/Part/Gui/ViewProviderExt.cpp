@@ -29,13 +29,16 @@
 # include <BRepBuilderAPI_Copy.hxx>
 # include <BRepBuilderAPI_MakeVertex.hxx>
 # include <BRepExtrema_DistShapeShape.hxx>
+# include <BRepMesh_Deflection.hxx>
 # include <BRepMesh_IncrementalMesh.hxx>
+# include <BRepMesh_ShapeTool.hxx>
 # include <gp_Trsf.hxx>
 # include <Precision.hxx>
 # include <Poly_Array1OfTriangle.hxx>
 # include <Poly_Polygon3D.hxx>
 # include <Poly_PolygonOnTriangulation.hxx>
 # include <Poly_Triangulation.hxx>
+# include <Poly_TriangulationParameters.hxx>
 # include <Standard_Version.hxx>
 # include <TColgp_Array1OfDir.hxx>
 # include <TColgp_Array1OfPnt.hxx>
@@ -50,6 +53,7 @@
 # include <TopoDS_Vertex.hxx>
 # include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
+# include <TopTools_MapOfShape.hxx>
 
 # include <QApplication>
 # include <QAction>
@@ -169,6 +173,173 @@ bool levelDebugOn()
     return env || Gui::RenderParams::getLevelDebug();
 }
 
+/// Why the check below said no, so that a check which refuses too much
+/// can be improved by evidence instead of by argument. A refusal is
+/// cheap and safe; a refusal for a reason nobody measured is how the
+/// saving stays on the table.
+enum class MeshRefusal {
+    None = 0,       ///< redundant: the call would write nothing
+    NoFaces,        ///< edges and vertices only -- the call builds those
+    NoTriangulation,///< a face with no mesh at all: the first tessellation
+    TooCoarse,      ///< resident mesh coarser than the ask
+    TooFine,        ///< resident finer: the descent wants that memory back
+    BadIndices,     ///< #25080: a triangulation OCCT would discard
+    FreeEdge,       ///< a free edge whose 3D polygon is missing or stale
+    Count
+};
+
+struct MeshVerdict {
+    MeshRefusal why = MeshRefusal::None;
+    /// The deflection pair that decided a TooCoarse/TooFine refusal, so
+    /// the report can say by how much and in which direction.
+    double current = 0.0, required = 0.0;
+    bool redundant() const { return why == MeshRefusal::None; }
+};
+
+/// Would the tessellation call about to be made write anything at all?
+///
+/// Measured (#13d), half of a mass descent's tessellation calls changed
+/// no triangle and still cost ~19ms each -- 27% of the descent's whole
+/// GUI-thread rebuild time -- because BRepMesh_IncrementalMesh cannot
+/// conclude "already adequate" without first building its internal model
+/// of the shape: every face, every wire, every edge, discretized.
+///
+/// This asks the same question off what the faces already carry, and the
+/// answer is only worth trusting because it is OCCT's OWN question,
+/// copied rather than invented:
+///
+///   * per face, BRepMesh_ModelPreProcessor's TriangulationConsistency --
+///     the deflection the triangulation was BUILT at (its parameters,
+///     which is the ask; its own Deflection() is an estimate of the
+///     result and can land either side of it) against the deflection the
+///     model would have computed for that face, through the same
+///     BRepMesh_Deflection::IsConsistent with the same AllowQualityDecrease
+///     the call itself passes;
+///   * the same #25080 guard on triangle indices, because a triangulation
+///     OCCT would have discarded as corrupt is one this fill would read;
+///   * every FREE edge's 3D polygon, by BRepMesh_EdgeDiscret's rule. Free
+///     edges are the one thing OCCT still rewrites when every face is
+///     reused: face-bound polygons are committed only for faces it
+///     re-meshed (BRepMesh_ModelPostProcessor), so with every face
+///     consistent the call writes nothing and skipping it is not a
+///     substitution, it is the same outcome without the model build.
+///
+/// Deliberately ALL-OR-NOTHING per shape, where OCCT decides per face:
+/// one inconsistent face and the real call runs, which then does exactly
+/// what it does today (mesh that face, reuse the rest). There is no arm
+/// in which guessing beats asking, because the fallback IS the answer.
+///
+/// The face deflection is the model's own formula less its vertex term:
+/// max(ask, 2 * max face tolerance), where the model takes the wire
+/// average of max(ask, vertex-to-curve gap) -- always >= the ask, and
+/// equal to it unless the shape's vertices sit off their curves. So this
+/// can only UNDER-state what the model would require, and understating
+/// it errs the safe way: a mesh finer than the ask stays, one coarser
+/// than the ask is never accepted.
+///
+/// /!\ A resident mesh FINER than the ask is NOT adequate by default,
+/// and that is the whole point of AllowQualityDecrease being on: the
+/// descent asks coarse on purpose to hand memory back. `acceptFiner`
+/// (Render_MeshSkipFinerResident) drops that half of the rule, because
+/// measurement says it is where nearly all the refused saving sits --
+/// see the parameter's own doc for the numbers and the risk.
+///
+/// /!\ Where this check and OCCT can disagree, they disagree in ONE
+/// direction only, and that is what makes the approximation safe: the
+/// required deflection computed here is a LOWER bound on the model's,
+/// so the upper test (`current < 1.1 * required`) is strictly tighter
+/// than OCCT's and a mesh too COARSE for the ask can never be accepted.
+/// A disagreement is always OCCT wanting to coarsen a mesh this kept --
+/// measured at 1 call in 7403 -- which costs memory, never fidelity.
+MeshVerdict tessellationIsRedundant(const TopoDS_Shape &shape, double deflection,
+                                    bool acceptFiner)
+{
+#if OCC_VERSION_HEX >= 0x070500
+    // Mirrors the parameters the live call passes below; the pre-7.5
+    // constructor has no such flag and its rule is "no coarser than
+    // asked" alone -- which is exactly what accepting a finer resident
+    // mesh asks for, so the two spell the same thing here.
+    const bool allowDecrease = !acceptFiner;
+#else
+    (void)acceptFiner;
+    const bool allowDecrease = false;
+#endif
+    MeshVerdict verdict;
+
+    TopTools_IndexedMapOfShape faceMap;
+    TopExp::MapShapes(shape, TopAbs_FACE, faceMap);
+    // A shape with no faces is edges and vertices, whose tessellation is
+    // the thing the call would build. Nothing to be redundant about.
+    if (faceMap.IsEmpty()) {
+        verdict.why = MeshRefusal::NoFaces;
+        return verdict;
+    }
+
+    TopTools_MapOfShape facedEdges;
+    for (int i = 1; i <= faceMap.Extent(); ++i) {
+        const TopoDS_Face &face = TopoDS::Face(faceMap(i));
+        TopLoc_Location loc;
+        Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(face, loc);
+        if (tri.IsNull()) {
+            verdict.why = MeshRefusal::NoTriangulation;
+            return verdict;
+        }
+
+#if OCC_VERSION_HEX >= 0x070600
+        const Handle(Poly_TriangulationParameters) &built = tri->Parameters();
+        const double current = (!built.IsNull() && built->HasDeflection())
+            ? built->Deflection() : tri->Deflection();
+#else
+        const double current = tri->Deflection();
+#endif
+        const double required = std::max(deflection,
+                2.0 * BRepMesh_ShapeTool::MaxFaceTolerance(face));
+        if (!BRepMesh_Deflection::IsConsistent(current, required, allowDecrease)) {
+            verdict.why = current >= required ? MeshRefusal::TooCoarse
+                                              : MeshRefusal::TooFine;
+            verdict.current = current;
+            verdict.required = required;
+            return verdict;
+        }
+
+        const int nbNodes = tri->NbNodes();
+#if OCC_VERSION_HEX < 0x070600
+        const Poly_Array1OfTriangle &triangles = tri->Triangles();
+#endif
+        for (int t = 1; t <= tri->NbTriangles(); ++t) {
+            Standard_Integer n1 = 0, n2 = 0, n3 = 0;
+#if OCC_VERSION_HEX < 0x070600
+            triangles(t).Get(n1, n2, n3);
+#else
+            tri->Triangle(t).Get(n1, n2, n3);
+#endif
+            if (n1 < 1 || n1 > nbNodes || n2 < 1 || n2 > nbNodes
+                    || n3 < 1 || n3 > nbNodes) {
+                verdict.why = MeshRefusal::BadIndices;
+                return verdict;
+            }
+        }
+
+        for (TopExp_Explorer ex(face, TopAbs_EDGE); ex.More(); ex.Next())
+            facedEdges.Add(ex.Current());
+    }
+
+    for (TopExp_Explorer ex(shape, TopAbs_EDGE); ex.More(); ex.Next()) {
+        if (facedEdges.Contains(ex.Current()))
+            continue;
+        TopLoc_Location loc;
+        Handle(Poly_Polygon3D) poly =
+            BRep_Tool::Polygon3D(TopoDS::Edge(ex.Current()), loc);
+        if (poly.IsNull() || !poly->HasParameters()
+                || !BRepMesh_Deflection::IsConsistent(poly->Deflection(),
+                                                      deflection, allowDecrease)) {
+            verdict.why = MeshRefusal::FreeEdge;
+            return verdict;
+        }
+    }
+    return verdict;
+}
+
 /// Does the tessellation call in a rebuild actually TESSELLATE?
 ///
 /// The comment at that call has always claimed a resident mesh makes it
@@ -190,6 +361,28 @@ struct MeshCallProbe {
         /// finest deflection standing when it was.
         double lastAsked = 0, lastResidentMin = 0, lastResidentMax = 0;
         std::size_t noTriangulation = 0;
+        /// The redundancy check against the call it stands in for. Only
+        /// `skipped` counts calls not made; the rest are calls that WERE
+        /// made, and are what says whether skipping them would have been
+        /// safe:
+        ///   agreed  -- check said redundant, the call indeed rebuilt
+        ///              nothing. The saving on offer.
+        ///   wrong   -- check said redundant and the call REBUILT. Must
+        ///              be zero; anything else is a mesh that would have
+        ///              been silently wrong, and the feature is unsafe
+        ///              until it is explained.
+        ///   missed  -- check said no, the call rebuilt nothing anyway.
+        ///              The saving left behind by being conservative.
+        std::size_t checks = 0, skipped = 0, agreed = 0, wrong = 0, missed = 0;
+        double timeChecking = 0;
+        /// Why the check refused, counted only over the calls that then
+        /// turned out to be REDUNDANT -- a refusal on a call that really
+        /// did rebuild is the check working, and mixing the two would
+        /// bury the interesting histogram under the ordinary one.
+        std::size_t refused[std::size_t(MeshRefusal::Count)] = {};
+        /// The widest deflection disagreement seen, by ratio, on such a
+        /// call. One sample, but it says the direction and the size.
+        double worstRatio = 0, worstCurrent = 0, worstRequired = 0;
     };
     static Stats &stats()
     {
@@ -200,6 +393,9 @@ struct MeshCallProbe {
     const TopoDS_Shape &shape;
     double asked;
     bool active;
+    /// What the redundancy check said about the call being made anyway,
+    /// so this can score the check against the only authority there is.
+    MeshVerdict verdict;
     int trisBefore = 0, facesBefore = 0, facesTotal = 0;
     double residentMin = 0.0, residentMax = 0.0;
     std::chrono::high_resolution_clock::time_point start;
@@ -226,8 +422,9 @@ struct MeshCallProbe {
         }
     }
 
-    MeshCallProbe(const TopoDS_Shape &s, double deflection)
-        : shape(s), asked(deflection), active(levelDebugOn())
+    MeshCallProbe(const TopoDS_Shape &s, double deflection,
+                  const MeshVerdict &v)
+        : shape(s), asked(deflection), active(levelDebugOn()), verdict(v)
     {
         if (!active)
             return;
@@ -248,7 +445,9 @@ struct MeshCallProbe {
         ++st.calls;
         if (!facesBefore && facesTotal)
             ++st.noTriangulation;
-        if (trisAfter != trisBefore || facesAfter != facesBefore) {
+        const bool rebuilt =
+            trisAfter != trisBefore || facesAfter != facesBefore;
+        if (rebuilt) {
             ++st.rebuilt;
             st.timeRebuilt += spent;
             st.lastAsked = asked;
@@ -257,6 +456,25 @@ struct MeshCallProbe {
         }
         else
             st.timeValidated += spent;
+        // The check scored against the call it wanted to replace.
+        if (verdict.redundant())
+            ++(rebuilt ? st.wrong : st.agreed);
+        else if (!rebuilt) {
+            // Refused, and the call proved it could have been skipped.
+            // This is the histogram worth having: it says which reason
+            // is costing the saving, rather than that some reason is.
+            ++st.missed;
+            ++st.refused[std::size_t(verdict.why)];
+            if (verdict.required > 0.0) {
+                const double ratio = verdict.current / verdict.required;
+                const double off = ratio > 1.0 ? ratio : 1.0 / std::max(ratio, 1e-9);
+                if (off > st.worstRatio) {
+                    st.worstRatio = off;
+                    st.worstCurrent = verdict.current;
+                    st.worstRequired = verdict.required;
+                }
+            }
+        }
     }
 };
 
@@ -335,8 +553,37 @@ struct VisualSplitReporter {
                 ms.calls - ms.rebuilt, ms.timeValidated,
                 ms.noTriangulation, ms.lastAsked, ms.lastResidentMin,
                 ms.lastResidentMax);
-            ms = MeshCallProbe::Stats();
         }
+        // The redundancy check, scored. WRONG is the number that decides
+        // whether skipping is allowed at all, so it is printed even when
+        // it is zero -- an absent line reads as "not measured", which is
+        // the one thing it must never be confused with.
+        if (ms.checks) {
+            Base::Console().Message(
+                "visual build: redundancy check %zu in %.3fs, SKIPPED %zu; "
+                "of the %zu calls still made it got %zu right, %zu WRONG, "
+                "and left %zu redundant calls unclaimed\n",
+                ms.checks, ms.timeChecking, ms.skipped,
+                ms.calls, ms.agreed, ms.wrong, ms.missed);
+        }
+        // Why those unclaimed calls were refused. A check that is safe
+        // but claims little is improved here or not at all.
+        if (ms.missed) {
+            Base::Console().Message(
+                "visual build: unclaimed by reason -- no faces %zu, no "
+                "triangulation %zu, too coarse %zu, too fine %zu, bad "
+                "indices %zu, free edge %zu; widest deflection miss "
+                "%.6f vs %.6f required (x%.2f)\n",
+                ms.refused[std::size_t(MeshRefusal::NoFaces)],
+                ms.refused[std::size_t(MeshRefusal::NoTriangulation)],
+                ms.refused[std::size_t(MeshRefusal::TooCoarse)],
+                ms.refused[std::size_t(MeshRefusal::TooFine)],
+                ms.refused[std::size_t(MeshRefusal::BadIndices)],
+                ms.refused[std::size_t(MeshRefusal::FreeEdge)],
+                ms.worstCurrent, ms.worstRequired, ms.worstRatio);
+        }
+        if (ms.calls || ms.checks)
+            ms = MeshCallProbe::Stats();
     }
 };
 
@@ -4518,27 +4765,61 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             //
             // ...and MEASURED, it is not nearly free: 71% of a mass
             // descent's GUI-thread rebuild time was spent here, on shapes
-            // the refine pool had already meshed (#13d). So the claim
-            // above is now instrumented rather than asserted -- this
-            // says whether the call REBUILDS (triangle counts move) or
-            // merely validates, and what deflection it found resident
-            // against the one being asked for. Behind the level debug
-            // flag: it walks every face twice more.
-            MeshCallProbe probe(cShape, deflection);
+            // the refine pool had already meshed, and HALF of those calls
+            // rebuilt nothing at all -- 19ms each to conclude the mesh was
+            // already right (#13d). So the call is now asked for only when
+            // something might come of it: tessellationIsRedundant answers
+            // the same question off the resident triangulations, and a
+            // shape that is already meshed the way this rebuild wants
+            // never enters OCCT at all.
+            //
+            // The timer spans the CHECK as well as the call it replaces.
+            // A split whose mesh term excluded the thing that made the
+            // mesh term small would be reporting its own success.
             Gui::ViewProvider::VisualBuildTimer meshTimer(
                     Gui::ViewProvider::VisualMeshTime, nullptr);
+            const bool debugCheck = levelDebugOn();
+            const bool skipRedundant = Gui::RenderParams::getMeshSkipRedundant();
+            MeshVerdict verdict;
+            // With the feature off, the check still runs under the level
+            // debug flag and its answer is scored against the real call
+            // below -- which is the only way "safe to skip" is ever more
+            // than an argument.
+            if (skipRedundant || debugCheck) {
+                const auto checkStart =
+                    std::chrono::high_resolution_clock::now();
+                verdict = tessellationIsRedundant(cShape, deflection,
+                        Gui::RenderParams::getMeshSkipFinerResident());
+                if (debugCheck) {
+                    MeshCallProbe::Stats &ms = MeshCallProbe::stats();
+                    ++ms.checks;
+                    ms.timeChecking += std::chrono::duration<double>(
+                        std::chrono::high_resolution_clock::now()
+                        - checkStart).count();
+                    if (skipRedundant && verdict.redundant())
+                        ++ms.skipped;
+                }
+            }
+            if (!skipRedundant || !verdict.redundant()) {
+                // Behind the level debug flag, the probe says whether the
+                // call REBUILDS (triangle counts move) or merely
+                // validates, and what deflection it found resident
+                // against the one asked for. It walks every face twice
+                // more.
+                MeshCallProbe probe(cShape, deflection, verdict);
 #if OCC_VERSION_HEX >= 0x070500
-            IMeshTools_Parameters meshParams;
-            meshParams.Deflection = deflection;
-            meshParams.Relative = Standard_False;
-            meshParams.Angle = AngDeflectionRads;
-            meshParams.InParallel = Standard_True;
-            meshParams.AllowQualityDecrease = Standard_True;
+                IMeshTools_Parameters meshParams;
+                meshParams.Deflection = deflection;
+                meshParams.Relative = Standard_False;
+                meshParams.Angle = AngDeflectionRads;
+                meshParams.InParallel = Standard_True;
+                meshParams.AllowQualityDecrease = Standard_True;
 
-            BRepMesh_IncrementalMesh(cShape, meshParams);
+                BRepMesh_IncrementalMesh(cShape, meshParams);
 #else
-            BRepMesh_IncrementalMesh(cShape, deflection, Standard_False, AngDeflectionRads, Standard_True);
+                BRepMesh_IncrementalMesh(cShape, deflection, Standard_False, AngDeflectionRads, Standard_True);
 #endif
+            }
         }
 
 

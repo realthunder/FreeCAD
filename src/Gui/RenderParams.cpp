@@ -53,6 +53,8 @@ public:
     std::string Type;
     long CoarseTessellation;
     long CoarseDeferFaces;
+    bool MeshSkipRedundant;
+    bool MeshSkipFinerResident;
     bool ProgressiveLoad;
     long ProgressiveLoadBudgetMS;
     long LevelThreads;
@@ -162,6 +164,10 @@ public:
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         CoarseDeferFaces = this->handle->GetInt("CoarseDeferFaces", 1000);
         funcs["CoarseDeferFaces"] = &RenderParamsP::updateCoarseDeferFaces;
+        MeshSkipRedundant = this->handle->GetBool("MeshSkipRedundant", true);
+        funcs["MeshSkipRedundant"] = &RenderParamsP::updateMeshSkipRedundant;
+        MeshSkipFinerResident = this->handle->GetBool("MeshSkipFinerResident", false);
+        funcs["MeshSkipFinerResident"] = &RenderParamsP::updateMeshSkipFinerResident;
         ProgressiveLoad = this->handle->GetBool("ProgressiveLoad", true);
         funcs["ProgressiveLoad"] = &RenderParamsP::updateProgressiveLoad;
         ProgressiveLoadBudgetMS = this->handle->GetInt("ProgressiveLoadBudgetMS", 100);
@@ -387,6 +393,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCoarseDeferFaces(RenderParamsP *self) {
         self->CoarseDeferFaces = self->handle->GetInt("CoarseDeferFaces", 1000);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMeshSkipRedundant(RenderParamsP *self) {
+        self->MeshSkipRedundant = self->handle->GetBool("MeshSkipRedundant", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMeshSkipFinerResident(RenderParamsP *self) {
+        self->MeshSkipFinerResident = self->handle->GetBool("MeshSkipFinerResident", false);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateProgressiveLoad(RenderParamsP *self) {
@@ -912,6 +926,116 @@ void RenderParams::setCoarseDeferFaces(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeCoarseDeferFaces() {
     instance()->handle->RemoveInt("CoarseDeferFaces");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMeshSkipRedundant() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Ask the shape whether it is already tessellated the way this\n"
+"rebuild wants it, and skip the tessellation call outright when it\n"
+"is (docs/SceneStreaming.md #13e).\n"
+"A visual rebuild always called BRepMesh_IncrementalMesh, on the\n"
+"assumption that a mesh already resident makes the call nearly\n"
+"free. Measured, it does not: half the calls of a mass descent --\n"
+"2462 of 4942 -- changed no triangle at all and still cost about\n"
+"19ms each, 27% of the whole descent's rebuild time, because\n"
+"reaching the conclusion means building OCCT's internal mesh model\n"
+"of the shape first.\n"
+"The check asks the same question that model would have answered,\n"
+"off the triangulations already hanging on the faces: OCCT's own\n"
+"consistency rule (BRepMesh_ModelPreProcessor), per face, plus the\n"
+"3D polygon of every free edge. It is all-or-nothing per shape and\n"
+"deliberately the stricter test -- one face that would be\n"
+"re-tessellated, one triangulation with an index out of range, and\n"
+"the call runs exactly as before, because the fallback is the real\n"
+"thing and there is nothing to gain by guessing.\n"
+"A resident mesh FINER than the ask is not adequate. That is not\n"
+"an oversight: the descent asks for a coarser mesh on purpose, to\n"
+"give memory back, and OCCT would coarsen it. Skipping there would\n"
+"quietly hold the memory the plan asked for.\n"
+"Off, the call is made unconditionally, as it always was. With the\n"
+"level plan narrating, the off arm also reports how often the\n"
+"check and the call agreed, which is what says the check is safe.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getMeshSkipRedundant() {
+    return instance()->MeshSkipRedundant;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultMeshSkipRedundant() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMeshSkipRedundant(const bool &v) {
+    instance()->handle->SetBool("MeshSkipRedundant",v);
+    instance()->MeshSkipRedundant = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMeshSkipRedundant() {
+    instance()->handle->RemoveBool("MeshSkipRedundant");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMeshSkipFinerResident() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Count a resident mesh FINER than the rebuild asked for as\n"
+"adequate, instead of re-tessellating to coarsen it\n"
+"(docs/SceneStreaming.md #13e). Only consulted when redundant\n"
+"tessellation is being skipped at all.\n"
+"Strictly, finer is not adequate: the descent asks coarse on\n"
+"purpose to hand memory back, and OCCT coarsens the mesh when\n"
+"asked with quality decrease allowed. That is why the check\n"
+"refuses it by default -- accepting it would be the feature\n"
+"quietly holding the memory the level plan asked for.\n"
+"Measured on the descent, though, that is what the refusal is\n"
+"actually costing and it is nearly all of it: 2599 of the 2765\n"
+"refused calls had a resident mesh exactly twice as fine as the\n"
+"ask -- the previous ladder rung, one dynamic scale step back --\n"
+"and every one of them changed no triangle when the call was\n"
+"made anyway. The faces were already at their floor; a face of\n"
+"two triangles does not coarsen.\n"
+"So this trades a coarsening that mostly achieves nothing for the\n"
+"~19ms it costs to find that out. What it risks is the minority\n"
+"where the coarsening WOULD have removed triangles, which is\n"
+"memory the plan then has to recover some other way -- through\n"
+"the refine pool's own coarser rung, where it was always meant to\n"
+"come from.\n"
+"OFF BY DEFAULT, and the reason is that risk rather than the\n"
+"saving. Measured over two converging runs the saving is not in\n"
+"doubt (mesh work falls from 72% of a rebuild to 55%, with no\n"
+"wrong verdict in 10759 skips) and GPU memory came out below\n"
+"baseline in both -- but CPU resident memory landed at 22.7MB in\n"
+"one run and 36.3MB in the other, either side of a 30-31MB\n"
+"baseline, which is exactly the bill this is supposed to be\n"
+"judged by and two runs cannot settle. Judge it by converged\n"
+"memory, never by the count of calls skipped.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getMeshSkipFinerResident() {
+    return instance()->MeshSkipFinerResident;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultMeshSkipFinerResident() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMeshSkipFinerResident(const bool &v) {
+    instance()->handle->SetBool("MeshSkipFinerResident",v);
+    instance()->MeshSkipFinerResident = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMeshSkipFinerResident() {
+    instance()->handle->RemoveBool("MeshSkipFinerResident");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

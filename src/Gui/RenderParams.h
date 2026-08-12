@@ -145,6 +145,84 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter MeshSkipRedundant
+    ///
+    /// Ask the shape whether it is already tessellated the way this
+    /// rebuild wants it, and skip the tessellation call outright when it
+    /// is (docs/SceneStreaming.md #13e).
+    /// A visual rebuild always called BRepMesh_IncrementalMesh, on the
+    /// assumption that a mesh already resident makes the call nearly
+    /// free. Measured, it does not: half the calls of a mass descent --
+    /// 2462 of 4942 -- changed no triangle at all and still cost about
+    /// 19ms each, 27% of the whole descent's rebuild time, because
+    /// reaching the conclusion means building OCCT's internal mesh model
+    /// of the shape first.
+    /// The check asks the same question that model would have answered,
+    /// off the triangulations already hanging on the faces: OCCT's own
+    /// consistency rule (BRepMesh_ModelPreProcessor), per face, plus the
+    /// 3D polygon of every free edge. It is all-or-nothing per shape and
+    /// deliberately the stricter test -- one face that would be
+    /// re-tessellated, one triangulation with an index out of range, and
+    /// the call runs exactly as before, because the fallback is the real
+    /// thing and there is nothing to gain by guessing.
+    /// A resident mesh FINER than the ask is not adequate. That is not
+    /// an oversight: the descent asks for a coarser mesh on purpose, to
+    /// give memory back, and OCCT would coarsen it. Skipping there would
+    /// quietly hold the memory the plan asked for.
+    /// Off, the call is made unconditionally, as it always was. With the
+    /// level plan narrating, the off arm also reports how often the
+    /// check and the call agreed, which is what says the check is safe.
+    static const bool & getMeshSkipRedundant();
+    static const bool & defaultMeshSkipRedundant();
+    static void removeMeshSkipRedundant();
+    static void setMeshSkipRedundant(const bool &v);
+    static const char *docMeshSkipRedundant();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MeshSkipFinerResident
+    ///
+    /// Count a resident mesh FINER than the rebuild asked for as
+    /// adequate, instead of re-tessellating to coarsen it
+    /// (docs/SceneStreaming.md #13e). Only consulted when redundant
+    /// tessellation is being skipped at all.
+    /// Strictly, finer is not adequate: the descent asks coarse on
+    /// purpose to hand memory back, and OCCT coarsens the mesh when
+    /// asked with quality decrease allowed. That is why the check
+    /// refuses it by default -- accepting it would be the feature
+    /// quietly holding the memory the level plan asked for.
+    /// Measured on the descent, though, that is what the refusal is
+    /// actually costing and it is nearly all of it: 2599 of the 2765
+    /// refused calls had a resident mesh exactly twice as fine as the
+    /// ask -- the previous ladder rung, one dynamic scale step back --
+    /// and every one of them changed no triangle when the call was
+    /// made anyway. The faces were already at their floor; a face of
+    /// two triangles does not coarsen.
+    /// So this trades a coarsening that mostly achieves nothing for the
+    /// ~19ms it costs to find that out. What it risks is the minority
+    /// where the coarsening WOULD have removed triangles, which is
+    /// memory the plan then has to recover some other way -- through
+    /// the refine pool's own coarser rung, where it was always meant to
+    /// come from.
+    /// OFF BY DEFAULT, and the reason is that risk rather than the
+    /// saving. Measured over two converging runs the saving is not in
+    /// doubt (mesh work falls from 72% of a rebuild to 55%, with no
+    /// wrong verdict in 10759 skips) and GPU memory came out below
+    /// baseline in both -- but CPU resident memory landed at 22.7MB in
+    /// one run and 36.3MB in the other, either side of a 30-31MB
+    /// baseline, which is exactly the bill this is supposed to be
+    /// judged by and two runs cannot settle. Judge it by converged
+    /// memory, never by the count of calls skipped.
+    static const bool & getMeshSkipFinerResident();
+    static const bool & defaultMeshSkipFinerResident();
+    static void removeMeshSkipFinerResident();
+    static void setMeshSkipFinerResident(const bool &v);
+    static const char *docMeshSkipFinerResident();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter ProgressiveLoad
     ///
     /// Build the visual representation of a restored document after

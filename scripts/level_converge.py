@@ -75,6 +75,17 @@ MERGE = os.environ.get("FC_MERGE", "0") == "1"
 # the old immediate snap, which is the arm this harness was written to
 # convict; the empty string leaves the parameter's own default alone.
 RELEASE = os.environ.get("FC_RELEASE", "")
+# Skipping the tessellation call that would rebuild nothing (sec 13e).
+# "off" is the AUDIT arm: every call is made, and the check that wanted
+# to skip it is scored against what the call actually did -- which is
+# the only thing that can say the skip is safe. The empty string leaves
+# the parameter's own default alone.
+MESH_SKIP = os.environ.get("FC_MESH_SKIP", "")
+# Whether a resident mesh FINER than the ask counts as adequate. This is
+# the arm that must be judged by CONVERGED MEMORY rather than by how
+# many calls it skipped: it declines a coarsening, and a coarsening that
+# would have worked is memory the plan has to find elsewhere.
+MESH_FINER = os.environ.get("FC_MESH_FINER", "")
 # How many consecutive quiet plans mean "settled". Two is not enough:
 # the descent alternates passes, so a single quiet plan happens mid-run.
 CONV_PLANS = int(os.environ.get("FC_CONV_PLANS", "4"))
@@ -182,10 +193,15 @@ def run():
         rp.SetBool("LevelDebug", True)
         rp.SetBool("SimplifyExhausted", SIMPLIFY)
         rp.SetBool("SimplifyMergeParts", MERGE)
-        emit("arm: simplify=%s merge=%s budget=%dMB release=%s conv=%d "
-             "plans within %.0f%% (or %.0fs of silence)"
-             % (SIMPLIFY, MERGE, BUDGET, RELEASE or "default", CONV_PLANS,
-                CONV_TOL, CONV_QUIET_S))
+        if MESH_SKIP != "":
+            rp.SetBool("MeshSkipRedundant", MESH_SKIP == "on")
+        if MESH_FINER != "":
+            rp.SetBool("MeshSkipFinerResident", MESH_FINER == "on")
+        emit("arm: simplify=%s merge=%s budget=%dMB release=%s meshskip=%s "
+             "finer=%s conv=%d plans within %.0f%% (or %.0fs of silence)"
+             % (SIMPLIFY, MERGE, BUDGET, RELEASE or "default",
+                MESH_SKIP or "default", MESH_FINER or "default",
+                CONV_PLANS, CONV_TOL, CONV_QUIET_S))
 
         Gui.getMainWindow().resize(1920, 1200)
         QtCore.QCoreApplication.processEvents()
