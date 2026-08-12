@@ -137,8 +137,8 @@ headless under llvmpipe on one small two-solid scene:
 - workbench-specific scene graphs — TechDraw, FEM result meshes, Draft
   working plane, Assembly (Sketcher edit mode: **now covered**, §3.3;
   Draft, annotation text, Mesh, Points, Assembly **and FEM**: **now
-  covered**, §3.6 -- this bullet is closed, and FEM's colour bar is the
-  one defect it found)
+  covered**, §3.6 -- this bullet is closed; the defect it found was
+  rotated labels on non-scene-oriented overlays, since fixed)
 - the shadow light manipulator (the transform dragger: §3.3)
 - dimension and annotation text (clipping planes, selection and
   preselection highlight: §3.3)
@@ -403,8 +403,8 @@ the two paths' shading differs by on the bare box) for every case,
 0.0778 for the mesh and 0.0839 for the assembly, and **0.2423 for the
 annotation label**.
 
-**The second disagreement is FEM's colour bar, and this time the backend
-is the one that is wrong.** The two FEM rows had to run against
+**The second disagreement is FEM's colour bar, and most of it is the
+audit measuring itself.** The two FEM rows had to run against
 `build/fem-eval`, since the primary tree is configured `BUILD_FEM=OFF`
 (`FC_BIN` points `audit_run.sh` at another tree).
 
@@ -414,27 +414,47 @@ It is an `SoIndexedFaceSet` like any other and it reaches the backend
 like any other.
 
 `Fem::FemPostPipeline` reads 0.0010 on the backend against 0.0264 on
-both Coin legs, and the split says exactly where it goes. Banding the
-changed pixels by column:
+both Coin legs. Banding the changed pixels by column:
 
 | band | cache 0 | bgfx |
 | --- | --- | --- |
 | the geometry, x 400-600 | 725 px | 629 px |
-| the colour bar, x 880-1024 | 16348 px | **0 px** |
+| the colour bar, x 880-1024 | 16348 px | 0 px |
 
-So the post-processing **geometry** is drawn (629 against 725 is the
-same shading difference as every other row). What is missing is the
-scalar **colour bar**: 16348 pixels of it on the Coin legs, a vertical
-band down the right of the viewport, and not one pixel on the backend.
-That single overlay is 95% of the case's whole delta, which is why the
-top-line number looks like the object vanished when it did not.
+The geometry is drawn (629 against 725 is the usual shading
+difference). The colour bar reads zero -- but **that is the capture
+path, not the renderer**. `grab()` is `saveImage`, i.e. the image-export
+path, and an export on the backend deliberately drops the viewport
+chrome: `BGFXFrame.cpp` skips every overlay feed whose anchor is not
+`sceneCamera`, and the foreground feed that carries the colour bar is
+one of those. The Coin legs have no such rule -- their offscreen render
+just traverses the whole foreground root -- so the same call keeps the
+bar there. The 16348-against-0 is that asymmetry, not missing geometry.
 
-The colour bar is a viewport-anchored overlay rather than scene
-geometry, which puts it with the corner-anchored feeds the backend
-already treats separately (the chrome an image export deliberately
-drops). Whether it should be fed to the backend as an overlay or drawn
-by Coin on top is the same question the navigation cube answers, and it
-is not answered here.
+Measured through `saveRenderDump`, which keeps the frame as staged, the
+backend draws the bar: gradient quad and value labels both
+(`colorbar_probe.py`).
+
+**The real defect the bar exposed was its labels**, and it was in shared
+billboard code rather than in anything FEM. Screen-aligning a billboard
+substitutes the scene camera's basis for the model matrix's upper 3x3.
+That is only a screen-alignment when the view the draw is submitted into
+carries the scene rotation too, so the two cancel: the main scene, a
+`sceneCamera` overlay, and an `orientFromScene` overlay (the axis cross,
+the NaviCube labels -- which is why those looked right and nothing else
+had caught this). The foreground feed is a fixed orthographic camera
+with no scene rotation to cancel, so the substitution *tilted* the
+labels by the camera instead: under the isometric audit camera the
+values were rotated about 60 degrees. The basis is now the identity for
+an overlay that is not scene-oriented, and the labels are horizontal.
+
+What is left is a policy question, not a bug: an image export from the
+backend omits the colour bar, and the same export from Coin includes it.
+The chrome rule treats every non-`sceneCamera` feed as viewport
+furniture, which is right for the navigation cube and the axis cross and
+arguably wrong for a scalar legend, since the legend is what makes the
+exported colours mean anything. Deciding that is the navigation cube's
+question again and is not decided here.
 
 TechDraw is not in the table because it is not a 3D path at all: a page
 is its own `QGraphicsView` over `QGI*` items painted by QPainter, so
