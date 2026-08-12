@@ -2857,8 +2857,69 @@ it was taken, found while measuring 13c.1:
   stabilise them: one arm still reads a median live of 0.0MB, because
   these runs do not converge inside the harness window at all.
 
-**A converging harness is owed here before any arm-to-arm memory claim
-from this workstream is quoted again.** The honest present state: the
-rung demonstrably removes 94-99% of an object's triangles while keeping
-its shape, and its effect on the whole scene's steady-state memory has
-not been measured on a scene that reaches a steady state.
+**`scripts/level_converge.py` is that harness.** It settles on a
+CONDITION, never on a clock: the run ends when `FC_CONV_PLANS`
+consecutive plans report refine, demote and downgrade all zero with the
+live meter steady to within `FC_CONV_TOL` percent, and it reports the
+state it converged to. A run that does not converge says so and is
+explicitly **not** a measurement, rather than quietly yielding a median.
+
+Four validity gates, each of which has already produced a
+plausible-looking lie in this workstream:
+
+1. **the scene must have reached the renderer** -- a plan over 0 cache
+   entries is not a small scene, it is no scene, and averaging those in
+   is precisely what broke the first attempt;
+2. **live must be > 0 while entries > 0** -- `live` counts meshes
+   referenced by the last two frames, so 0.0MB against a populated cache
+   means the view is not drawing and every memory figure in the row
+   describes a frame nobody rendered;
+3. **the camera must not move after the initial fit** -- the plan fires
+   ~300ms after the camera settles somewhere new, so a harness that keeps
+   re-fitting keeps restarting the process it is timing;
+4. **the refine tolerance must be finite** -- see below.
+
+Gate 4 caught a real defect the moment it was written, and it is one
+this section's own feature caused. `levelPressureErrPx` is a running
+maximum of the error the descent has accepted, held up for as long as
+the pressure lasts. One non-finite candidate pins it at infinity, and an
+infinite refine tolerance is **not a large tolerance -- it is the climb
+switched off**, since `levelError * diagPx > tolerancePx` is then false
+for every source in the scene. Measured: `refine tolerance infpx` on 9
+of 30 plans, and **zero occurrences before the rung began publishing a
+large per-object error** (13c.1), so this was self-inflicted. A scene
+that could only ever descend looked exactly like a scene that had
+settled. Non-finite accepted errors are now refused entry to the
+running maximum.
+
+The bound was not enough on its own, and the harness said so. With
+non-finite values refused but the magnitude unbounded, the raised
+tolerance reached **4.3e11 px** -- finite, and just as fatal. So the
+accepted error is bounded by the SCREEN: an error of a million pixels
+and an error of the viewport height are the same statement, the object
+is not resolvable, and there is no rung beyond "already invisible".
+
+WHAT THE HARNESS THEN FOUND, and it is the real result of this section.
+Before the bound, the ladder was in a **limit cycle** on this scene:
+three plans descending under pressure with the tolerance climbing
+(5821 -> 6102 -> 6203 px), then the pressure lifting, the tolerance
+snapping back to 2.00px, and a single plan asking **946 objects to
+refine** -- straight back over budget, and round again. 43 plans in
+611s, 2567 objects put in boxes, no steady state at any point. **Every
+earlier memory figure in this workstream was a sample of that cycle at
+an arbitrary phase**, which is the deeper reason the 13c table cannot be
+quoted, beyond the empty-plan defect that first exposed it.
+
+With the bound, the same arm runs **4 plans in 420s**, descends
+monotonically (371.2 -> 150.9 -> 154.1 -> 149.1MB) and goes quiet
+(refine 0, demote 0, downgrade 0) at a tolerance that peaks at 51.06px,
+with **1 box instead of 2567**. It still has not been declared converged
+-- the run needs a longer window than 420s to collect four consecutive
+quiet plans -- but it is now a system that settles rather than one that
+cycles.
+
+The honest present state: the rung demonstrably removes 94-99% of an
+object's triangles while keeping its shape; the ladder as a whole
+oscillated until the tolerance was bounded and now appears to settle;
+and no arm-to-arm steady-state memory comparison has been taken yet,
+because none was possible until this.

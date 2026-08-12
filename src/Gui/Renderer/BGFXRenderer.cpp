@@ -11424,11 +11424,42 @@ public:
                     const bool underPressure =
                         (gpuBudget && gpuUsed > gpuBudget)
                         || (reg.memoryCeilingEpoch() && reg.memoryShortfall());
-                    levelPressureErrPx = underPressure
-                        ? std::max(levelPressureErrPx,
-                                   std::max(dmStats.acceptedErrorPx,
-                                            dgStats.acceptedErrorPx))
-                        : 0.0f;
+                    // An accepted error that is not FINITE is not a
+                    // measurement, and must never become the tolerance.
+                    // This is a running maximum held up for as long as
+                    // the pressure lasts, so one non-finite candidate
+                    // pins it at infinity -- and an infinite refine
+                    // tolerance is not a large one, it is the climb
+                    // switched OFF, since `levelError * diagPx >
+                    // tolerancePx` is then false for every source in the
+                    // scene. Seen for real: 9 of 30 plans reported
+                    // `refine tolerance infpx` the first time a producer
+                    // published a large per-object error (the decimation
+                    // rung of #13c), which is what made a scene that
+                    // could only ever descend look like one that had
+                    // settled.
+                    // Bounded by the SCREEN, not just by finiteness. An
+                    // error of a million pixels and an error of the
+                    // viewport height are the same statement -- the
+                    // object is not resolvable -- and there is no rung
+                    // beyond "already invisible", so admitting the
+                    // larger number only destroys the tolerance it is
+                    // about to become. Measured on the rack model
+                    // BEFORE this bound: the raised tolerance reached
+                    // 4.3e11 px (and, with one non-finite candidate,
+                    // `infpx`), which is the climb switched off, since
+                    // `levelError * diagPx > tolerancePx` is then false
+                    // for every source in the scene. A scene that could
+                    // only descend then looks exactly like one that has
+                    // settled.
+                    const float accepted = std::max(dmStats.acceptedErrorPx,
+                                                    dgStats.acceptedErrorPx);
+                    const float acceptCap = std::max(1.0f, h);
+                    levelPressureErrPx =
+                        underPressure && std::isfinite(accepted)
+                            ? std::max(levelPressureErrPx,
+                                       std::min(accepted, acceptCap))
+                            : (underPressure ? levelPressureErrPx : 0.0f);
                     const float refineTolerance = levelPressureErrPx > 0.0f
                         ? std::max(levelPlanner.tolerance(),
                                    levelPressureErrPx
