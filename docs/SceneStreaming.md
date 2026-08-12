@@ -2721,3 +2721,97 @@ demoted, nothing re-tessellates, and the way back is a frame. That
 makes them cheaper to enter and leave than any rung move, which is why
 they belong at the top of the pressure response rather than the
 bottom.
+
+### 13c -- decimation, the rung between a spent tessellation and the box
+
+The descent coarsens an object by asking OCCT for a larger deflection,
+and **that saturates**: a planar face is two triangles at any
+deflection, so a shape of mostly flat faces answers the same mesh
+however coarse the ask (measured earlier: 4x coarser removed 19% of
+the primitives). `MeshErrorScaleExhausted` marks the object that has
+proved it, and until now the only step below it was the **bounding
+box** -- the one representation this class could build that actually
+drops faces, and a violent one.
+
+`Render_SimplifyExhausted` (default on) puts vertex clustering
+(`Gui/Renderer/MeshSimplify.h`) in between. It rewrites the **display
+nodes only**: nothing re-tessellates, the OCCT triangulation is
+untouched, so the way back is one ordinary rebuild and each further
+step down clusters on a coarser grid.
+
+**MEASURED (rack model, 5455 objects, 64MB pinned budget, real GPU,
+one run per arm):**
+
+| | decimation on | box only |
+|---|---|---|
+| plans run | 28 | 77 |
+| live gpu, median | **29.2MB** | 73.6MB |
+| live gpu, max | 371.2MB | 212.3MB |
+| plans with pressure standing | **11 (39%)** | 61 (79%) |
+| plans at the unraised 2.00px | **17 (61%)** | 17 (22%) |
+| objects reduced to a bounding box | **1029** | 1208 |
+| decimated rungs applied | 1034 | 0 |
+
+Per object the reduction is drastic -- 3498 triangles to 220, 8454 to
+90, 13838 to 874 -- and the shape survives, which is the whole
+difference from the box. The budget is met on 61% of plans instead of
+22%, at the *unraised* tolerance: the same "quality at a fixed budget"
+the element gates bought, one rung further down.
+
+Three honest caveats.
+
+- **The max is WORSE with it on** (371.2 vs 212.3MB), and that is the
+  mechanism, not a defect: an arm that can afford quality climbs back
+  to it when pressure lifts, so it spends more at the top of the swing.
+- **One run per arm, and the arms are not the same population** -- 28
+  plans against 77, because the box-only arm keeps replanning while it
+  stays over budget. The direction is large and consistent across four
+  independent indicators; the magnitudes are single samples.
+- **Displacement is what a pressure rung looks like**: median 8.79
+  world units over 1038 rungs, max 249.58. The plan is accepting 63px
+  of screen error at that point, so this is the deal being struck, not
+  a surprise.
+
+**What it costs.** Section caps through a decimated rung can be rough
+(clustering does not preserve watertightness) and the hidden-line seam
+filter is dropped, because a welded edge may fold a seam and a non-seam
+edge together and there is no faithful answer. Both are restored by the
+rebuild that climbs out.
+
+**What it keeps, and this is what made it usable.** Face and edge
+*numbering* survive. A face that decimates away to nothing keeps its
+empty slot in `partIndex`, and an edge that collapses keeps its empty
+run in `coordIndex` -- both tables are read by element number
+(`SoBrepEdgeSet` derives the edge id from the ordinal of the `-1`
+separator), so dropping the empties would silently renumber everything
+behind them. Per-face colour and selection keep working.
+
+Two states, not one: `MeshErrorScaleExhausted` says deflection is
+spent, `MeshDecimationSpent` says decimation is too and the box is
+next. One flag doing both jobs would send an object to its box the
+moment tessellation saturated, which is the step this rung exists to
+delay. `Render_SimplifyMinReduction` (default 20%) is what makes the
+sequence terminate: a pass that cannot remove that much is refused,
+and since each step clusters coarser, a mesh with nothing left to merge
+keeps answering no.
+
+Decimation is applied as a **post-step of the ordinary build**, not in
+the descent callback that asked for it, so the state is durable -- an
+`updateVisual` for any other reason (a colour change, a placement edit)
+would otherwise rebuild at full detail and quietly undo the descent.
+
+`Render_SimplifyMergeParts` (default **off**) would weld across face
+boundaries. It was expected to be necessary -- per-face clustering
+cannot take a two-triangle face below two triangles -- but the default
+arm above already removes 94-99% per object on this model, whose
+objects are shells and compounds rather than flat-faced boxes. The
+crease-preserving arm ships; the merging one is there for the model
+that needs it.
+
+OPEN: the level registry is **not told** that the displayed error
+changed, so `publishedError` still names the pre-decimation rung and
+the refine pass can climb an object straight back out of a decimated
+one. That is the pressure system working as designed -- and it is also
+why the on-arm series oscillates (29.2 -> 165.9 -> 166.7 -> 40.8MB)
+where the box-only arm sits still. Whether the descent should register
+the rung it just built is the next question here.
