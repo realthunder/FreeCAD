@@ -1713,9 +1713,33 @@ inline void setDrawTransform(const Render::DrawCall &draw,
             // accumulated translation (m[12..14]) as the anchor.
             const float *V = viewMatrix;
             const float *P = projMatrix;
-            const float right[3] = {V[0], V[4], V[8]};   // local X -> screen right
-            const float up[3]    = {V[1], V[5], V[9]};   // local Y -> screen up
-            const float fwd[3]   = {V[2], V[6], V[10]};  // local Z -> toward viewer
+            // Substituting the SCENE camera basis only screen-aligns the
+            // content when the view the draw is submitted into carries the
+            // scene's rotation as well, so that the two cancel: the main
+            // scene, a sceneCamera overlay, and an orientFromScene overlay
+            // (the corner axis cross, the NaviCube's labels).
+            //
+            // An overlay with its own fixed camera has no scene rotation to
+            // cancel, and there the same substitution TILTS the content by
+            // the camera instead of screen-aligning it. That is what the
+            // foreground feed showed: FEM's colour bar renders on the
+            // backend, but its value labels came out rotated with the model
+            // (an isometric camera skewed them ~60 degrees), because the
+            // foreground anchor is a fixed orthographic camera. Pixel-space
+            // feeds are in the same position.
+            const bool sceneOriented =
+                !overlayAnchor || overlayAnchor->sceneCamera
+                || overlayAnchor->orientFromScene;
+            float right[3] = {1.0f, 0.0f, 0.0f};  // local X -> screen right
+            float up[3]    = {0.0f, 1.0f, 0.0f};  // local Y -> screen up
+            float fwd[3]   = {0.0f, 0.0f, 1.0f};  // local Z -> toward viewer
+            if (sceneOriented) {
+                // The camera's world-space axes are the columns of the view
+                // matrix's 3x3 (row-vector layout: p_view = p_world * V).
+                right[0] = V[0]; right[1] = V[4]; right[2] = V[8];
+                up[0]    = V[1]; up[1]    = V[5]; up[2]    = V[9];
+                fwd[0]   = V[2]; fwd[1]   = V[6]; fwd[2]   = V[10];
+            }
 
             // Size the glyph screen-constant from the ANCHOR's own view-space
             // depth (not the global autozoomScale, which uses the orbit-centre
