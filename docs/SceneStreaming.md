@@ -2923,3 +2923,148 @@ object's triangles while keeping its shape; the ladder as a whole
 oscillated until the tolerance was bounded and now appears to settle;
 and no arm-to-arm steady-state memory comparison has been taken yet,
 because none was possible until this.
+
+#### 13c.3 -- the release, which is where the cycle actually lived
+
+**"Now appears to settle" was wrong, and the re-run says so.** The
+sentence above rests on a single 420s run that never formally
+converged; the note beside it said to re-take it at a longer window
+before believing it. Re-taken at 900s, the same arm on the same model
+gives, out of **53 plans that had a scene**:
+
+| | HEAD, bounded tolerance |
+|---|---|
+| plans in 916s, all with a scene | 54 |
+| plans at the snapped 2.00px | **17** |
+| plans asking >500 objects to refine at once | **6** |
+| live gpu, mean over plans with a scene | **90.4MB** (budget 64MB) |
+| live gpu, max | 371.1MB |
+| objects reduced to a bounding box | 3498 |
+| converged | **NO -- "this row is NOT a measurement"** |
+
+The sequence is the cycle, verbatim: the tolerance climbs under
+pressure (102 -> 219 -> 600px, the viewport bound), the descent gets
+`live` under the budget, and then **one plan reads 2.00px and asks
+1018 objects to re-tessellate**, `live` goes to 204MB, and it starts
+again. Bounding the tolerance fixed a real defect -- an unbounded one
+switches the climb off entirely -- but it never touched the mechanism
+that makes the loop a loop.
+
+**The mechanism is the RELEASE, and it was a step function.** The
+descent's accepted error is held as a running maximum for as long as
+the pressure stands, which is right: the plan after a successful
+descent finds only sources with no rung left to drop, accepts no error
+at all, and reading the tolerance off *that* would hand back everything
+just given up. But it was **cleared outright at the first plan that
+came in under budget** -- so the whole raise vanished in one step, and
+the very next plan asked for a thousand objects. A control loop with a
+fast attack, real gain, and no hysteresis whatsoever on the release
+side, which is a textbook recipe for a limit cycle.
+
+**And the release was not the only thing wrong, which the same log
+says plainly.** Six of those 54 plans asked for hundreds of refines
+*while the tolerance stood at its 600px bound and the budget was still
+broken* -- 386, 546, 950. That cannot happen if the two passes share
+one tolerance, and they did not: the descents on those plans reported
+accepted errors of **3531, 6324 and 16211px**, while the raise derived
+from them was bounded by the viewport height. Bounding the raise was
+right on its own terms -- an unbounded one reached 4.3e11px and
+switched the climb off -- but it silently turned "one effective
+tolerance for both directions" back into two, and the climb spent its
+plans asking back exactly what the descent had just given up.
+
+The fix is to bound the **currency**, not just the number: the climb
+now compares each source's projected error clamped to the viewport
+height, the same statement the raise is clamped by ("beyond the screen,
+an object is simply not resolvable"), and the descent reports its
+accepted error clamped the same way while still *selecting* on the true
+values, because the ordering among candidates erring thousands of
+pixels is real and worth keeping. With both bounds in place a tolerance
+standing at the screen height means what it says: nothing left to ask
+for.
+
+The streamed viewer does not have this problem, and the reason is
+worth stating because it is a design difference and not a tuning one.
+`planLevels` (SceneLadder.h) is **one global, deterministic
+assignment**: every object starts at its box, every candidate upgrade
+is scored by screen-space error removed per byte added, and the best
+are taken until the budget is spent. Its own comment puts it exactly:
+*"the same camera, ladders and budget produce the same plan, which is
+what there is instead of damping -- a plan cannot oscillate with
+itself."* The desktop ladder is two incremental sweeps instead, and two
+sweeps reading two tolerances certainly can.
+
+`Render::PressureTolerance` (`Gui/Renderer/SceneLadder.h`) is the
+desktop answer, and it does not try to be a global plan. It keeps the
+fast attack and changes the release into a staircase that **learns
+where the floor is**:
+
+- each plan that fits keeps `Render_LevelPressureRelease` of the
+  standing error (default 0.5), so quality returns over several plans
+  and each step is *measured against the budget* before the next one
+  is taken;
+- a step that puts the scene back over budget proves that level too
+  generous, and it becomes a **floor the release never passes again**;
+- the floor only rises, so the walk down terminates: the ladder stops
+  at the coarsest tolerance that actually fits and goes quiet there.
+
+Two details decide whether the floor is learned at all, and both are
+about **lag**. The refines a release step asks for are queued: they
+land plans later, so the pressure they cause usually arrives after the
+staircase has already stopped, and a controller that only blamed the
+step it was mid-way through would learn nothing and re-try the same
+level forever. So the blame is carried on "has anything been given
+back since the pressure last stood", not on "is a step in progress".
+And the step that gives the *last* of the error back sets the raise to
+zero, so the level it let go of is remembered separately -- otherwise
+a pressure blaming that step would learn a floor of nothing, which is
+the snap again, one staircase later.
+
+Holding some error at the end is not a failure -- it is what fitting a
+64MB budget costs on this scene, and the alternative is measured: it
+is the cycle. The floor is evidence about **one camera and one
+budget**, so a camera move (`MeshLevelPlanner::cameraMoved()`) or a
+budget change forgets it; a view that genuinely fits releases all the
+way back to the camera's own tolerance and the raise disappears.
+
+A release is a staircase and a still camera over a quiet scene raises
+no event of its own, so a step that gave error back marks the planner
+dirty to ask for the next one -- otherwise quality would stop coming
+back halfway, which looks exactly like the bug this replaces.
+
+**MEASURED (rack model, 5455 objects, 64MB pinned, real GPU, same
+harness and the same camera in both arms):**
+
+| | HEAD | with 13c.3 |
+|---|---|---|
+| verdict | **NOT CONVERGED in 916s** | **CONVERGED after 394s** |
+| plans | 54, still swinging | 37, then silence |
+| live gpu | 18 -> 371MB, mean 90.4 | **60.2MB** |
+| cpu resident | -- | 33.6MB |
+| plans asking >500 refines | 6 (up to 950) | **0** |
+| objects reduced to a box | 3498 | **1313** |
+| final tolerance | cycling 600 <-> 2.00px | 82.94px, stable |
+
+The floor was learned in three steps and the log says so plainly --
+`floor 2.34px` -> `22.76` -> `41.03`, each rise bought by one release
+step that put the scene back over budget -- after which the staircase
+stopped and the plan reported `SETTLED at what fits` twice before going
+silent. `displayed coarse 2390 exact 1201` at the end: the scene is
+inside a budget it exceeded by 5.8x at its worst, holding real
+tessellation for a third of its objects, with 1313 boxes instead of
+3498.
+
+Note what "converged" had to mean here. The harness's old rule was
+"live under the budget AND no pressure standing", which would score
+this run as a failure -- the pressure IS standing, deliberately, at
+82.94px. Fitting while holding error back is the equilibrium this
+section is about, so the verdict now distinguishes "met at the
+camera's own tolerance" from "met, holding N px of error", and only
+calls the third case a miss.
+
+`Render_LevelPressureRelease = 0` restores the old snap exactly, so
+the defect stays reachable and the two arms can be compared rather
+than argued about. The plan readout now names which of three things a
+raised tolerance means -- `under pressure`, `releasing`, or `SETTLED
+at what fits` -- because for 43 plans it could not tell a ladder that
+had stopped from one that was mid-swing.

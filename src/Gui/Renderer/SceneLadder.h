@@ -393,6 +393,99 @@ RendererExport CoverageHistogram coverageHistogram(const DrawCallList &draws,
 /// work here.
 constexpr float kPlanDemoteMargin = 0.5f;
 
+/// How far the climb is held back while a budget is being met, and --
+/// the half that matters -- how that is given back
+/// (docs/SceneStreaming.md sec 13c.3).
+///
+/// The desktop ladder is two incremental sweeps where the streamed
+/// viewer has one global plan, and the streamed one is stable for a
+/// reason worth quoting from planLevels: it is deterministic, so "a
+/// plan cannot oscillate with itself". Two sweeps can, and these did.
+/// Measured on the rack model at a 64 MB budget: 43 plans in 611 s,
+/// 2567 objects boxed, no steady state at any point.
+///
+/// The mechanism was the RELEASE, not the descent. The worst error the
+/// descent had to accept is held as a running maximum while the
+/// pressure stands -- a fast attack, and right, since one plan must not
+/// hand back what the last one just gave up -- but it was cleared the
+/// instant a plan came in under budget. So the refine tolerance fell
+/// from ~51 px to 2.00 px in ONE step, the next plan asked 946 objects
+/// to refine, and the budget broke again: a control loop with gain and
+/// no hysteresis on the release side.
+///
+/// So attack fast, release in steps, and REMEMBER WHAT FAILED. Each
+/// release keeps `releaseFraction` of the raised error; a step that
+/// brings the pressure straight back proves that level too generous and
+/// raises a floor the release never passes again. The floor only rises,
+/// so the tolerance walks down to the coarsest setting that actually
+/// fits and stops there. That is an equilibrium the ladder LEARNS,
+/// which is a different thing from a cycle it damps -- and it is why
+/// this is not the hysteresis that was built for the occlusion tester
+/// and did not help there.
+///
+/// Holding short of the camera's tolerance is not a failure: it is what
+/// "the budget is met" costs. Releasing further is measured to break
+/// it.
+struct PressureTolerance {
+    /// Worst error the descent has had to accept in this spell of
+    /// pressure, in pixels -- the attack half, and what the climb's
+    /// tolerance is derived from. 0 = no pressure standing.
+    float raisedPx = 0.0f;
+    /// The lowest raised error a release has TRIED and been punished
+    /// for, in pixels: releasing to it or below it is known to put the
+    /// scene back over budget. Rises only, until forget().
+    float floorPx = 0.0f;
+    /// Whether the last update() actually gave something back. The
+    /// caller must replan when it did: a still camera over a quiet
+    /// scene raises no event of its own, so nothing else would take the
+    /// next step of the staircase.
+    bool releasing = false;
+    /// Whether anything has been given back since the pressure last
+    /// stood -- which is what makes a returning pressure ATTRIBUTABLE.
+    /// Not the same as `releasing`, and the difference is the whole
+    /// point: a refine asked for by a release step lands plans later,
+    /// so the pressure it causes usually arrives after the staircase
+    /// has already stopped. Reading `releasing` there would learn
+    /// nothing and the same level would be tried forever.
+    bool gaveBack = false;
+    /// The level the last release step actually stood at, in pixels --
+    /// kept because the step that gives the LAST of it back sets
+    /// raisedPx to 0, and a pressure blaming that step must not learn a
+    /// floor of nothing.
+    float lastStepPx = 0.0f;
+
+    /// The evidence no longer applies. The floor is learned about ONE
+    /// camera and ONE budget, and what a rung costs on screen is
+    /// exactly what changes when either moves.
+    void forget() { floorPx = 0.0f; }
+
+    /// One plan's update; returns the tolerance the CLIMB should run at
+    /// (the descent always runs at the camera's own -- feeding the
+    /// raised value into the free tier runs away: a wider tier accepts
+    /// more error, which widens the tier).
+    ///
+    /// \a acceptedPx is the worst projected error the descent accepted
+    /// this plan (PlanDemoteStats::acceptedErrorPx). Non-finite is not
+    /// a measurement and is ignored: one such candidate would pin the
+    /// running maximum at infinity, and an infinite refine tolerance is
+    /// not a large one -- it is the climb switched OFF, since
+    /// `levelError * diagPx > tolerancePx` is then false for every
+    /// source in the scene. Seen for real, on 9 of 30 plans.
+    ///
+    /// \a viewportPx caps it for the same reason at the other end: an
+    /// error of a million pixels and an error of the screen height are
+    /// the same statement -- the object is not resolvable -- and there
+    /// is no rung beyond "already invisible", so admitting the larger
+    /// number only destroys the tolerance it is about to become.
+    /// Measured before this cap: 4.3e11 px.
+    ///
+    /// \a releaseFraction 0 or less restores the old immediate snap
+    /// exactly, floor and all, so the defect this fixes stays
+    /// reachable for a measurement.
+    float update(bool underPressure, float acceptedPx, float cameraTolPx,
+                 float viewportPx, float releaseFraction);
+};
+
 /// Why the plan refused, when it refuses everything. A budget that
 /// cannot be honoured looks identical to a budget nobody read, and the
 /// two want opposite fixes: `noRung` is plumbing (nothing to fall back

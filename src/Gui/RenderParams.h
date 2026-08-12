@@ -305,6 +305,35 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LevelPressureRelease
+    ///
+    /// How much of the raised refine tolerance the plan keeps each
+    /// time it comes in under the GPU budget (docs/SceneStreaming.md
+    /// #13c.3). While the budget is exceeded the plan accepts visible
+    /// error to fit the scene, and it must not hand that error straight
+    /// back the moment one plan fits: measured on a 5455-object model at
+    /// a 64MB budget, clearing it in one step took the tolerance from
+    /// 51 pixels to 2, asked 946 objects to re-tessellate at once, broke
+    /// the budget again and cycled -- 43 plans in 611 seconds with no
+    /// steady state at any point.
+    /// So quality comes back in steps: each plan that fits keeps this
+    /// fraction of the standing tolerance, and a step that puts the
+    /// scene back over budget is remembered as a floor the release never
+    /// passes again, so the ladder settles at the coarsest tolerance
+    /// that actually fits instead of oscillating around it. The floor is
+    /// forgotten when the camera moves or the budget changes, which is
+    /// when what a rung costs on screen changes.
+    /// Smaller gives quality back faster and risks the cycle; larger is
+    /// gentler and slower. 0 or less restores the immediate snap.
+    static const double & getLevelPressureRelease();
+    static const double & defaultLevelPressureRelease();
+    static void removeLevelPressureRelease();
+    static void setLevelPressureRelease(const double &v);
+    static const char *docLevelPressureRelease();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LevelCount
     ///
     /// How many rungs the fidelity ladder declares

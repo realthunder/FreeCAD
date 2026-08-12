@@ -2049,6 +2049,14 @@ RendererBridge::translateLevelTolerance(App::PropertyContainer * view)
             RenderParams::getLevelTolerance()));
 }
 
+float
+RendererBridge::translateLevelPressureRelease(App::PropertyContainer * view)
+{
+    return float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "LevelPressureRelease",
+            RenderParams::getLevelPressureRelease()));
+}
+
 bool
 RendererBridge::translateLevelDebug(App::PropertyContainer * view)
 {

@@ -11418,53 +11418,37 @@ public:
                     // with no rung left to drop, so it accepts no error
                     // at all -- and reading the tolerance off that would
                     // hand it straight back to the camera and re-ask for
-                    // everything just given up. Highest error accepted
-                    // while this spell of pressure lasts, cleared the
-                    // first plan that is inside its budget.
+                    // everything just given up.
+                    //
+                    // How it comes back down is Render::PressureTolerance
+                    // (sec 13c.3), and it is the half that was wrong:
+                    // clearing the raise at the first plan inside the
+                    // budget is what made this ladder cycle for 43 plans
+                    // without a steady state. The controller keeps the
+                    // fast attack and releases in steps, remembering the
+                    // step that broke the budget as a floor.
                     const bool underPressure =
                         (gpuBudget && gpuUsed > gpuBudget)
                         || (reg.memoryCeilingEpoch() && reg.memoryShortfall());
-                    // An accepted error that is not FINITE is not a
-                    // measurement, and must never become the tolerance.
-                    // This is a running maximum held up for as long as
-                    // the pressure lasts, so one non-finite candidate
-                    // pins it at infinity -- and an infinite refine
-                    // tolerance is not a large one, it is the climb
-                    // switched OFF, since `levelError * diagPx >
-                    // tolerancePx` is then false for every source in the
-                    // scene. Seen for real: 9 of 30 plans reported
-                    // `refine tolerance infpx` the first time a producer
-                    // published a large per-object error (the decimation
-                    // rung of #13c), which is what made a scene that
-                    // could only ever descend look like one that had
-                    // settled.
-                    // Bounded by the SCREEN, not just by finiteness. An
-                    // error of a million pixels and an error of the
-                    // viewport height are the same statement -- the
-                    // object is not resolvable -- and there is no rung
-                    // beyond "already invisible", so admitting the
-                    // larger number only destroys the tolerance it is
-                    // about to become. Measured on the rack model
-                    // BEFORE this bound: the raised tolerance reached
-                    // 4.3e11 px (and, with one non-finite candidate,
-                    // `infpx`), which is the climb switched off, since
-                    // `levelError * diagPx > tolerancePx` is then false
-                    // for every source in the scene. A scene that could
-                    // only descend then looks exactly like one that has
-                    // settled.
                     const float accepted = std::max(dmStats.acceptedErrorPx,
                                                     dgStats.acceptedErrorPx);
-                    const float acceptCap = std::max(1.0f, h);
-                    levelPressureErrPx =
-                        underPressure && std::isfinite(accepted)
-                            ? std::max(levelPressureErrPx,
-                                       std::min(accepted, acceptCap))
-                            : (underPressure ? levelPressureErrPx : 0.0f);
-                    const float refineTolerance = levelPressureErrPx > 0.0f
-                        ? std::max(levelPlanner.tolerance(),
-                                   levelPressureErrPx
-                                       / Render::kPlanDemoteMargin)
-                        : levelPlanner.tolerance();
+                    // What the floor it learns is evidence ABOUT: this
+                    // camera, and this budget. Both change what a rung
+                    // costs on screen, so a floor measured under either
+                    // says nothing once it moves.
+                    if (levelPlanner.cameraMoved()
+                        || gpuBudget != levelBudgetSeen)
+                        levelPressure.forget();
+                    levelBudgetSeen = gpuBudget;
+                    const float refineTolerance = levelPressure.update(
+                        underPressure, accepted, levelPlanner.tolerance(), h,
+                        levelPressureReleaseFrac);
+                    // A release is a staircase, and a still camera over a
+                    // quiet scene raises no event of its own -- so the
+                    // step that just gave error back has to ask for the
+                    // next one, or quality stops coming back halfway.
+                    if (levelPressure.releasing)
+                        levelPlanner.markDirty();
                     auto tags = Render::planMeshRefines(
                         scene, levelPlanner.viewMatrix(),
                         levelPlanner.projMatrix(), h, refineTolerance);
@@ -11523,6 +11507,25 @@ public:
                                     && shapeVerticesOn
                                 ? " (no pressure)"
                                 : "";
+                        // Where the pressure controller stands, and it
+                        // has to say which of three things a raised
+                        // tolerance means: still descending, walking
+                        // back down, or STOPPED at the coarsest setting
+                        // that fits. The last one is a settled ladder
+                        // and the first is not, and for 43 plans the
+                        // readout could not tell them apart.
+                        char pressWhy[128] = "";
+                        if (levelPressure.raisedPx > 0.0f
+                            || levelPressure.floorPx > 0.0f)
+                            snprintf(pressWhy, sizeof(pressWhy),
+                                     " [holding %.2fpx, floor %.2fpx: %s]",
+                                     levelPressure.raisedPx,
+                                     levelPressure.floorPx,
+                                     underPressure ? "under pressure"
+                                     : levelPressure.releasing ? "releasing"
+                                     : levelPressure.raisedPx > 0.0f
+                                         ? "SETTLED at what fits"
+                                         : "released");
                         // Two meters, named for what they measure and
                         // for what releases them, never added together:
                         // the same mesh is counted in both, and it has
@@ -11533,7 +11536,7 @@ public:
                             "entries) | cpu resident %.1fMB | displayed "
                             "coarse %zu exact %zu | plan: refine %zu demote %zu "
                             "downgrade %zu | cpu ceiling %s | refine tolerance "
-                            "%.2fpx%s | gates: eligible %zu, suppressed "
+                            "%.2fpx%s%s | gates: eligible %zu, suppressed "
                             "%zu point + %zu line draws%s\n",
                             budget ? (std::to_string(budget / 1048576)
                                       + "MB").c_str()
@@ -11548,8 +11551,9 @@ public:
                             nDemote, nDowngrade,
                             reg.memoryCeilingEpoch() ? "OBSERVED" : "no",
                             refineTolerance,
-                            levelPressureErrPx > 0.0f
+                            levelPressure.raisedPx > 0.0f
                                 ? " (RAISED BY PRESSURE)" : "",
+                            pressWhy,
                             gateEligible, gatedPoints, gatedLines, gateWhy);
                         // Why a downgrade pass that ran refused
                         // everything. Printed only when it ran, so its
@@ -16742,12 +16746,20 @@ public:
     // The last memory-ceiling epoch this view replanned for (§13
     // step 3) — a new observation marks the planner dirty.
     uint64_t levelCeilingSeen = 0;
-    /// The worst projected error the descent has had to accept while the
-    /// current spell of memory pressure lasts, in pixels; 0 = no
-    /// pressure. It is what the climb reads its tolerance from, so that
-    /// both directions of the ladder agree on one -- see the plan
-    /// callback, where the oscillation it prevents is measured.
-    float levelPressureErrPx = 0.0f;
+    /// How much visible error the ladder is holding to fit its budget,
+    /// and what it has learned about giving it back (sec 13c.3). The climb
+    /// reads its tolerance from this, so both directions of the ladder
+    /// agree on one -- see the plan callback, where the oscillation it
+    /// prevents is measured.
+    Render::PressureTolerance levelPressure;
+    /// The budget the pressure controller's floor was learned under; a
+    /// different one is a different question and forgets it.
+    size_t levelBudgetSeen = 0;
+    /// How much of the held error survives each plan that fits, pushed
+    /// in from the bridge beside the budget (this library knows nothing
+    /// of RenderParams). The default is the parameter's, so a viewer
+    /// that never sets it still releases in steps rather than snapping.
+    float levelPressureReleaseFrac = 0.5f;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
 
@@ -17365,6 +17377,11 @@ void BGFXRenderer::setGpuMemoryBudget(size_t bytes)
 void BGFXRenderer::setLevelDebug(bool on)
 {
     pimpl->levelDebugOn = on;
+}
+
+void BGFXRenderer::setLevelPressureRelease(float fraction)
+{
+    pimpl->levelPressureReleaseFrac = fraction;
 }
 #endif
 

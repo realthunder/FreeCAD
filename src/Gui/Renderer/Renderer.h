@@ -1682,6 +1682,13 @@ public:
     /// downgrade half of the plan had never executed and nothing said
     /// so.
     virtual void setLevelDebug(bool on) { (void)on; }
+    /// How much of the error the plan is holding back to fit its GPU
+    /// budget survives each plan that fits (Render::PressureTolerance,
+    /// sec 13c.3). Handing it all back at the first plan inside the budget
+    /// is what made this ladder cycle: the tolerance fell from 51px to
+    /// 2px in one step, 946 objects re-tessellated at once, and the
+    /// budget broke again. 0 or less restores that snap.
+    virtual void setLevelPressureRelease(float fraction) { (void)fraction; }
     /// The display gates of the memory response
     /// (docs/SceneStreaming.md #13b), pushed in like every other
     /// parameter -- this library knows nothing of RenderParams.

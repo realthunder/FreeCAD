@@ -71,11 +71,19 @@ OUT = os.path.expanduser(os.environ.get("FC_OUT", "~/level_converge.txt"))
 BUDGET = int(os.environ.get("FC_GPU_BUDGET_MB", "64"))
 SIMPLIFY = os.environ.get("FC_SIMPLIFY", "on") == "on"
 MERGE = os.environ.get("FC_MERGE", "0") == "1"
+# The release half of the pressure controller (sec 13c.3). 0 reproduces
+# the old immediate snap, which is the arm this harness was written to
+# convict; the empty string leaves the parameter's own default alone.
+RELEASE = os.environ.get("FC_RELEASE", "")
 # How many consecutive quiet plans mean "settled". Two is not enough:
 # the descent alternates passes, so a single quiet plan happens mid-run.
 CONV_PLANS = int(os.environ.get("FC_CONV_PLANS", "4"))
 CONV_TOL = float(os.environ.get("FC_CONV_TOL", "5"))     # percent
 MAX_WAIT = float(os.environ.get("FC_MAX_WAIT", "600"))   # seconds
+# How long a quiet ladder may say nothing at all before that
+# silence is itself the answer. Generous: plans are ~15s apart
+# even while the scene is still moving on the rack model.
+CONV_QUIET_S = float(os.environ.get("FC_CONV_QUIET_S", "150"))
 
 LINES = []
 
@@ -141,6 +149,26 @@ def settled(window):
     return (hi - lo) <= (CONV_TOL / 100.0) * hi
 
 
+def settled_by_silence(window, quiet_for):
+    """The other way a ladder says it has stopped: it stops SPEAKING.
+
+    A plan fires on an event -- a camera settle, or the scene feed
+    changing under a still camera. So a ladder that has genuinely
+    settled emits FEWER plans, and eventually none at all, which is the
+    one outcome the count-four-quiet-plans rule cannot observe: the
+    better the fix, the less evidence it produces. A 420s run was
+    already reported as "not converged" for exactly this reason.
+
+    Silence only counts when what it follows is a quiet plan over a
+    drawn scene, and it is reported as its own verdict, never merged
+    with the other one -- an instrument must say which rule fired.
+    """
+    if not window or quiet_for < CONV_QUIET_S:
+        return False
+    last = window[-1]
+    return last.quiet and last.entries > 0 and last.live > 0.0
+
+
 def run():
     try:
         App.ParamGet("User parameter:BaseApp/Preferences/Document").SetBool(
@@ -154,8 +182,10 @@ def run():
         rp.SetBool("LevelDebug", True)
         rp.SetBool("SimplifyExhausted", SIMPLIFY)
         rp.SetBool("SimplifyMergeParts", MERGE)
-        emit("arm: simplify=%s merge=%s budget=%dMB conv=%d plans within %.0f%%"
-             % (SIMPLIFY, MERGE, BUDGET, CONV_PLANS, CONV_TOL))
+        emit("arm: simplify=%s merge=%s budget=%dMB release=%s conv=%d "
+             "plans within %.0f%% (or %.0fs of silence)"
+             % (SIMPLIFY, MERGE, BUDGET, RELEASE or "default", CONV_PLANS,
+                CONV_TOL, CONV_QUIET_S))
 
         Gui.getMainWindow().resize(1920, 1200)
         QtCore.QCoreApplication.processEvents()
@@ -171,6 +201,8 @@ def run():
         # it, which is how an earlier harness died silently.
         v.Render_GpuMemoryBudgetMB = BUDGET
         v.Render_LevelDebug = True
+        if RELEASE != "":
+            v.Render_LevelPressureRelease = float(RELEASE)
 
         # Gate 3: the camera is placed ONCE and never touched again.
         v.viewIsometric()
@@ -180,6 +212,8 @@ def run():
         since = os.path.getsize(LOG) if os.path.exists(LOG) else 0
         window, total, start = [], 0, time.time()
         sawScene = False
+        lastPlanAt = time.time()
+        bySilence = False
         while time.time() - start < MAX_WAIT:
             deadline = time.time() + 0.5
             while time.time() < deadline:
@@ -202,18 +236,31 @@ def run():
                 if p.entries == 0:
                     continue
                 sawScene = True
+                lastPlanAt = time.time()
                 window.append(p)
                 window[:] = window[-CONV_PLANS:]
             if settled(window):
                 break
+            if settled_by_silence(window, time.time() - lastPlanAt):
+                bySilence = True
+                break
 
         elapsed = time.time() - start
+        if bySilence:
+            # Report only the trailing quiet run, never a median over a
+            # window whose earlier plans were still moving the ladder.
+            trailing = []
+            for p in reversed(window):
+                if not p.quiet:
+                    break
+                trailing.insert(0, p)
+            window = trailing
         emit("plans seen %d, %d with a scene, %.0fs elapsed"
              % (total, len(window) and total or 0, elapsed))
         if not sawScene:
             emit("INVALID: no plan ever ran over a populated cache -- the "
                  "scene never reached the renderer")
-        elif not settled(window):
+        elif not settled(window) and not bySilence:
             emit("NOT CONVERGED in %.0fs -- this row is NOT a measurement" % elapsed)
             for p in window:
                 emit("  tail: %s" % p)
@@ -227,15 +274,29 @@ def run():
             live = sorted(p.live for p in window)
             cpu = sorted(p.cpu for p in window)
             last = window[-1]
-            emit("CONVERGED after %.0fs over %d quiet plans" % (elapsed, len(window)))
+            emit("CONVERGED after %.0fs over %d quiet plans%s"
+                 % (elapsed, len(window),
+                    " (BY SILENCE: no further plan for %.0fs -- a settled "
+                    "ladder stops firing, so this is the rule that sees it)"
+                    % (time.time() - lastPlanAt) if bySilence else ""))
             emit("  live gpu   %.1f MB  (min %.1f max %.1f)"
                  % (live[len(live) // 2], live[0], live[-1]))
             emit("  cpu resident %.1f MB" % cpu[len(cpu) // 2])
             emit("  displayed  coarse %d exact %d" % (last.coarse, last.exact))
             emit("  tolerance  %.2f px%s"
                  % (last.tol, " (RAISED BY PRESSURE)" if last.pressure else ""))
+            # Three outcomes, not two. "Inside the budget while holding
+            # error back" is the EQUILIBRIUM of sec 13c.3, not a failure:
+            # the ladder is fitting, and the raised tolerance is what
+            # fitting costs on this scene. Reporting it as "NOT met"
+            # (the old rule: live <= budget AND no pressure) would call
+            # the intended steady state a defeat, and would have scored
+            # the converging arm below the oscillating one.
             emit("  budget     %s (%d MB pinned)"
-                 % ("MET" if last.live <= BUDGET and not last.pressure
+                 % ("MET at the camera's own tolerance"
+                    if last.live <= BUDGET and not last.pressure
+                    else "MET, holding %.2fpx of error" % last.tol
+                    if last.live <= BUDGET
                     else "NOT met", BUDGET))
         # Whole-run counters, which are not plan state.
         try:

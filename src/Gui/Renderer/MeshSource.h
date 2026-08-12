@@ -344,6 +344,15 @@ public:
     /// The scene feed changed: replan even with a still camera.
     void markDirty() { m_dirty = true; }
 
+    /// Whether the plan now running is for a camera the last one did
+    /// not see -- valid inside the plan callback, and only there.
+    ///
+    /// What a rung costs on screen is a function of where the camera
+    /// is, so anything a plan LEARNED about this scene under a budget
+    /// (PressureTolerance::floorPx) is evidence about this camera and
+    /// stops applying when it moves.
+    bool cameraMoved() const { return m_cameraMoved; }
+
     /// The camera the pending/last plan is for — what a plan callback
     /// should pass to planMeshRefines (stable while the callback runs,
     /// unlike whatever pointer the render loop had).
@@ -365,6 +374,7 @@ private:
     bool m_haveObserved = false;
     bool m_havePlanned = false;
     bool m_dirty = false;
+    bool m_cameraMoved = true;
 };
 
 } // namespace Render

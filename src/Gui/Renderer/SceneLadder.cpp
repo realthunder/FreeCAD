@@ -1097,9 +1097,25 @@ std::vector<const void *> Render::planMeshRefines(
             // Off-screen never refines — the residency bill this pass
             // exists to stop paying; the camera inside the box span
             // refines outright.
+            //
+            // The error is bounded by the SCREEN before it is compared,
+            // and that is not cosmetic. The tolerance this pass runs at
+            // under memory pressure is the error the descent had to
+            // accept (sec 13c.3), and that raise is bounded by the
+            // viewport height -- an error of a million pixels and one
+            // of the screen height being the same statement. If the
+            // comparison here were not bounded by the same thing, the
+            // two passes would be speaking different currencies again,
+            // and the ladder would ask straight back for exactly what
+            // it had just given up. Measured on the rack model: with
+            // the tolerance at its 600px bound and descents accepting
+            // 3531, 6324 and 16211px, single plans asked 386, 546 and
+            // 950 objects to refine while the budget was still broken.
+            const float bound = std::max(1.0f, viewportHeightPx);
             const bool want = sight.what == BoxSight::Inside
                 || (sight.what == BoxSight::Visible
-                    && mesh.levelError * sight.diagPx > tolerancePx);
+                    && std::min(mesh.levelError * sight.diagPx, bound)
+                           > tolerancePx);
             if (!want)
                 continue;
         }
@@ -1110,6 +1126,78 @@ std::vector<const void *> Render::planMeshRefines(
         }
     }
     return out;
+}
+
+float Render::PressureTolerance::update(bool underPressure, float acceptedPx,
+                                        float cameraTolPx, float viewportPx,
+                                        float releaseFraction)
+{
+    // Below this the raise says nothing: the climb runs at
+    // max(cameraTolPx, raisedPx / kPlanDemoteMargin), so a raised error
+    // under the camera's own tolerance times the margin is already the
+    // camera's number.
+    const float spent = std::max(0.0f, cameraTolPx) * kPlanDemoteMargin;
+    const float frac = releaseFraction > 0.0f
+        ? std::min(releaseFraction, 0.99f) : 0.0f;
+
+    if (underPressure) {
+        // Pressure back after a release: the level released TO is proven
+        // too generous, whatever else this plan does. That is the whole
+        // of what the loop learns, and it is learned from the one event
+        // that can teach it. Asked of gaveBack rather than of
+        // `releasing`, because the refines a release asked for land
+        // plans later -- by then the staircase has usually stopped, and
+        // a controller that only learned mid-step would re-try the
+        // level that failed forever.
+        const float culprit = raisedPx > 0.0f ? raisedPx : lastStepPx;
+        if (gaveBack && culprit > 0.0f)
+            floorPx = std::max(floorPx, culprit);
+        releasing = false;
+        gaveBack = false;
+        if (std::isfinite(acceptedPx))
+            raisedPx = std::max(raisedPx,
+                                std::min(acceptedPx,
+                                         std::max(1.0f, viewportPx)));
+    }
+    else if (raisedPx > 0.0f) {
+        if (frac <= 0.0f) {
+            // The old behaviour, kept reachable so an arm can measure
+            // the defect rather than argue about it: everything given
+            // back at once, the moment one plan comes in under budget.
+            raisedPx = 0.0f;
+            releasing = false;
+        }
+        else {
+            const float next = raisedPx * frac;
+            if (next <= spent && floorPx <= spent) {
+                // Nothing left to hold back: the view fits with room,
+                // and the camera's tolerance rules again. The level it
+                // let go of is still remembered, because THIS is the
+                // step a returning pressure would be blaming, and a
+                // controller that learned 0 from it would walk the
+                // whole staircase down again next time.
+                lastStepPx = raisedPx;
+                raisedPx = 0.0f;
+                releasing = gaveBack = true;
+            }
+            else if (next <= floorPx) {
+                // Releasing this far is measured to break the budget.
+                // Stopping here IS the equilibrium -- holding some
+                // error is what fitting costs on this scene.
+                releasing = false;
+            }
+            else {
+                raisedPx = lastStepPx = next;
+                releasing = gaveBack = true;
+            }
+        }
+    }
+    else
+        releasing = false;
+
+    return raisedPx > 0.0f
+        ? std::max(cameraTolPx, raisedPx / kPlanDemoteMargin)
+        : cameraTolPx;
 }
 
 int Render::CoverageHistogram::atOrUnder(float px) const
@@ -1369,7 +1457,16 @@ std::vector<const void *> Render::planMeshDemotes(
     }
     if (stats) {
         stats->bytesFreed = freed;
-        stats->acceptedErrorPx = accepted;
+        // Reported bounded by the screen, while the SELECTION above ran
+        // on the true numbers: the ordering among candidates erring
+        // thousands of pixels is real and worth keeping (cheapest
+        // first), but what leaves this function is a tolerance that the
+        // refine pass will be compared against, and that comparison is
+        // screen-bounded (sec 13c.3). An accepted error of 16211px
+        // quoted at a pass that can never see more than the viewport
+        // height is not a stricter statement, only an unreadable one.
+        stats->acceptedErrorPx =
+            std::min(accepted, std::max(1.0f, viewportHeightPx));
     }
     return out;
 }

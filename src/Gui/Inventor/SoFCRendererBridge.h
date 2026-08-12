@@ -169,6 +169,11 @@ GuiExport float translateEffectResolution(App::PropertyContainer * view);
 GuiExport float translateSSAOResolution(App::PropertyContainer * view);
 GuiExport float translateLevelTolerance(App::PropertyContainer * view);
 GuiExport size_t translateGpuMemoryBudget(App::PropertyContainer * view);
+/// How much of the error held back to fit the GPU budget survives each
+/// plan that fits (docs/SceneStreaming.md #13c.3) -- the release half
+/// of the ladder's control loop, and the half whose absence made it
+/// oscillate.
+GuiExport float translateLevelPressureRelease(App::PropertyContainer * view);
 GuiExport bool translateLevelDebug(App::PropertyContainer * view);
 GuiExport bool translateShapeVertices(App::PropertyContainer * view);
 GuiExport bool translatePressureDropEdges(App::PropertyContainer * view);

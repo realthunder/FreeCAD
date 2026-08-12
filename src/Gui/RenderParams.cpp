@@ -61,6 +61,7 @@ public:
     long LevelCeilingSimulateMB;
     long GpuMemoryBudgetMB;
     double LevelTolerance;
+    double LevelPressureRelease;
     long LevelCount;
     double LevelScale;
     double LevelScaleBoxError;
@@ -177,6 +178,8 @@ public:
         funcs["GpuMemoryBudgetMB"] = &RenderParamsP::updateGpuMemoryBudgetMB;
         LevelTolerance = this->handle->GetFloat("LevelTolerance", 2.0);
         funcs["LevelTolerance"] = &RenderParamsP::updateLevelTolerance;
+        LevelPressureRelease = this->handle->GetFloat("LevelPressureRelease", 0.5);
+        funcs["LevelPressureRelease"] = &RenderParamsP::updateLevelPressureRelease;
         LevelCount = this->handle->GetInt("LevelCount", 8);
         funcs["LevelCount"] = &RenderParamsP::updateLevelCount;
         LevelScale = this->handle->GetFloat("LevelScale", 2.0);
@@ -416,6 +419,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelTolerance(RenderParamsP *self) {
         self->LevelTolerance = self->handle->GetFloat("LevelTolerance", 2.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelPressureRelease(RenderParamsP *self) {
+        self->LevelPressureRelease = self->handle->GetFloat("LevelPressureRelease", 0.5);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelCount(RenderParamsP *self) {
@@ -1193,6 +1200,51 @@ void RenderParams::setLevelTolerance(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelTolerance() {
     instance()->handle->RemoveFloat("LevelTolerance");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelPressureRelease() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How much of the raised refine tolerance the plan keeps each\n"
+"time it comes in under the GPU budget (docs/SceneStreaming.md\n"
+"#13c.3). While the budget is exceeded the plan accepts visible\n"
+"error to fit the scene, and it must not hand that error straight\n"
+"back the moment one plan fits: measured on a 5455-object model at\n"
+"a 64MB budget, clearing it in one step took the tolerance from\n"
+"51 pixels to 2, asked 946 objects to re-tessellate at once, broke\n"
+"the budget again and cycled -- 43 plans in 611 seconds with no\n"
+"steady state at any point.\n"
+"So quality comes back in steps: each plan that fits keeps this\n"
+"fraction of the standing tolerance, and a step that puts the\n"
+"scene back over budget is remembered as a floor the release never\n"
+"passes again, so the ladder settles at the coarsest tolerance\n"
+"that actually fits instead of oscillating around it. The floor is\n"
+"forgotten when the camera moves or the budget changes, which is\n"
+"when what a rung costs on screen changes.\n"
+"Smaller gives quality back faster and risks the cycle; larger is\n"
+"gentler and slower. 0 or less restores the immediate snap.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLevelPressureRelease() {
+    return instance()->LevelPressureRelease;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLevelPressureRelease() {
+    const static double def = 0.5;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelPressureRelease(const double &v) {
+    instance()->handle->SetFloat("LevelPressureRelease",v);
+    instance()->LevelPressureRelease = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelPressureRelease() {
+    instance()->handle->RemoveFloat("LevelPressureRelease");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

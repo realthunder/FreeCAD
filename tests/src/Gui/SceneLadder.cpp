@@ -7,7 +7,9 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -742,6 +744,36 @@ TEST(PlanMeshRefines, nearRefinesWhileFarStaysCoarse)
     EXPECT_EQ(tags[0], &nearTag);
 }
 
+TEST(PlanMeshRefines, theErrorIsBoundedByTheScreenBeforeItIsCompared)
+{
+    // The two passes must speak ONE currency. Under pressure this
+    // pass runs at the error the descent had to accept, and that raise
+    // is bounded by the viewport height -- so the comparison here is
+    // bounded by the same thing, or the ladder asks straight back for
+    // what it just gave up.
+    //
+    // A near object with a huge coarse error: unbounded it projects
+    // thousands of pixels, so ANY tolerance the raise can reach would
+    // still refine it. Bounded, the screen height is the most it can
+    // claim, and a tolerance standing at the screen height refuses it.
+    PlanCamera cam;
+    int huge = 0;
+    Render::DrawCallList draws;
+    // Depth 10, half 5: the box projects ~915px of diagonal, so a
+    // 0.9 coarse error is ~823px -- unbounded it would clear a
+    // 600px tolerance, bounded it cannot.
+    draws.push_back(meshDraw(&huge, 0.9f, 0, 0, -10, 5));
+    EXPECT_TRUE(Render::planMeshRefines(draws, cam.view, cam.proj, 600.0f,
+                                        600.0f)
+                    .empty());
+    // ...and it comes back the moment the release walks the tolerance
+    // down, which is what the staircase is for.
+    EXPECT_EQ(Render::planMeshRefines(draws, cam.view, cam.proj, 600.0f,
+                                      300.0f)
+                  .size(),
+              1u);
+}
+
 TEST(PlanMeshRefines, offscreenAndBehindNeverRefine)
 {
     // A source erring badly but out of the frustum is exactly the
@@ -1259,5 +1291,232 @@ TEST(PlanMeshDemotes, aCoarseSourceDescendsAgainUnderPressure)
     // Twice the coarse error of the pressureBuys test, so twice its
     // accepted error: the price is the step down, not the rung it is on.
     EXPECT_NEAR(pressed.acceptedErrorPx, 5.69f, 0.1f);
+}
+
+TEST(PlanMeshDemotes, theAcceptedErrorIsQuotedInTheCurrencyTheClimbReads)
+{
+    // Same bound on the other side: the descent may select on the true
+    // projected errors -- the ordering among them is real -- but what
+    // it REPORTS becomes the climb's tolerance, and 16211px quoted at a
+    // pass that can never see more than the viewport height is not a
+    // stricter statement, only an unreadable one.
+    PlanCamera cam;
+    int giant = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&giant, 0.0f, 0, 0, -10, 5, 1000));
+    std::map<const void *, float> errs{{&giant, 0.9f}};
+
+    Render::PlanDemoteStats stats;
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj, 600.0f,
+                                        2.0f, demoteErrs(errs), &stats,
+                                        1000 * kVertBytes);
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_FLOAT_EQ(stats.acceptedErrorPx, 600.0f);
+}
+
+// The release half of the ladder's control loop (sec 13c.3). Everything
+// here is about ONE question: what happens on the plan after the budget
+// is finally met, which is where the limit cycle lived.
+namespace
+{
+// The camera's own tolerance and viewport for these; the controller does
+// no projection of its own, it only arbitrates numbers the sweeps
+// produce.
+constexpr float kCamTol = 2.0f;
+constexpr float kViewport = 1200.0f;
+}  // namespace
+
+TEST(PressureTolerance, theClimbReadsTheDescentsAcceptedError)
+{
+    Render::PressureTolerance pt;
+    // No pressure, nothing accepted: the camera's number, unchanged.
+    EXPECT_FLOAT_EQ(pt.update(false, 0.0f, kCamTol, kViewport, 0.5f), kCamTol);
+
+    // Pressure, and the descent had to accept 40px of visible error:
+    // the climb must not immediately ask back what that just gave up,
+    // so its threshold sits above the accepted error by the same margin
+    // the two passes use with no pressure at all.
+    EXPECT_FLOAT_EQ(pt.update(true, 40.0f, kCamTol, kViewport, 0.5f),
+                    40.0f / Render::kPlanDemoteMargin);
+    EXPECT_FLOAT_EQ(pt.raisedPx, 40.0f);
+}
+
+TEST(PressureTolerance, theAttackIsARunningMaximum)
+{
+    // One plan accepting less than the last does not mean the scene got
+    // cheaper -- the plan after a successful descent finds only sources
+    // with no rung left to drop and accepts nothing at all.
+    Render::PressureTolerance pt;
+    pt.update(true, 40.0f, kCamTol, kViewport, 0.5f);
+    pt.update(true, 5.0f, kCamTol, kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(pt.raisedPx, 40.0f);
+    pt.update(true, 51.0f, kCamTol, kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(pt.raisedPx, 51.0f);
+}
+
+TEST(PressureTolerance, aNonFiniteAcceptedErrorIsNotAMeasurement)
+{
+    // Measured for real on 9 of 30 plans: one non-finite candidate
+    // pinned the running maximum at infinity, and an infinite refine
+    // tolerance is the climb switched OFF, not a large tolerance.
+    Render::PressureTolerance pt;
+    pt.update(true, 40.0f, kCamTol, kViewport, 0.5f);
+    const float tol = pt.update(true, std::numeric_limits<float>::infinity(),
+                                kCamTol, kViewport, 0.5f);
+    EXPECT_TRUE(std::isfinite(tol));
+    EXPECT_FLOAT_EQ(pt.raisedPx, 40.0f);
+
+    Render::PressureTolerance nan;
+    nan.update(true, std::numeric_limits<float>::quiet_NaN(), kCamTol,
+               kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(nan.raisedPx, 0.0f);
+}
+
+TEST(PressureTolerance, theScreenBoundsWhatCanBeAccepted)
+{
+    // 4.3e11 px was reached before this bound. An error of a million
+    // pixels and an error of the viewport height say the same thing.
+    Render::PressureTolerance pt;
+    pt.update(true, 4.3e11f, kCamTol, kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(pt.raisedPx, kViewport);
+}
+
+TEST(PressureTolerance, theFirstPlanThatFitsDoesNotHandItAllBack)
+{
+    // THE DEFECT, stated as a test: 51px -> 2px in one step asked 946
+    // objects to re-tessellate at once and broke the budget again.
+    Render::PressureTolerance pt;
+    pt.update(true, 51.0f, kCamTol, kViewport, 0.5f);
+    const float first = pt.update(false, 0.0f, kCamTol, kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(pt.raisedPx, 25.5f);
+    EXPECT_FLOAT_EQ(first, 51.0f);
+    EXPECT_TRUE(pt.releasing);
+}
+
+TEST(PressureTolerance, aReleaseFractionOfZeroIsTheOldSnap)
+{
+    // Kept reachable so the defect can be MEASURED against the fix
+    // rather than argued about.
+    Render::PressureTolerance pt;
+    pt.update(true, 51.0f, kCamTol, kViewport, 0.0f);
+    EXPECT_FLOAT_EQ(pt.update(false, 0.0f, kCamTol, kViewport, 0.0f), kCamTol);
+    EXPECT_FLOAT_EQ(pt.raisedPx, 0.0f);
+}
+
+TEST(PressureTolerance, aSceneThatFitsReleasesAllTheWayBack)
+{
+    // Steps are not a ratchet: when nothing pushes back, the camera's
+    // tolerance rules again and the ladder is at full quality.
+    Render::PressureTolerance pt;
+    pt.update(true, 51.0f, kCamTol, kViewport, 0.5f);
+    float tol = 0.0f;
+    for (int i = 0; i < 20 && pt.raisedPx > 0.0f; ++i)
+        tol = pt.update(false, 0.0f, kCamTol, kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(pt.raisedPx, 0.0f);
+    EXPECT_FLOAT_EQ(tol, kCamTol);
+}
+
+TEST(PressureTolerance, aReleaseThatBreaksTheBudgetIsRemembered)
+{
+    // The learned equilibrium, and the whole reason this is not just
+    // damping: the level that broke the budget becomes a floor, and the
+    // walk down stops above it instead of trying it again forever.
+    Render::PressureTolerance pt;
+    pt.update(true, 51.0f, kCamTol, kViewport, 0.5f);
+    pt.update(false, 0.0f, kCamTol, kViewport, 0.5f);   // 25.5, released
+    ASSERT_FLOAT_EQ(pt.raisedPx, 25.5f);
+
+    // ...and the scene went back over budget at that level.
+    pt.update(true, 30.0f, kCamTol, kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(pt.floorPx, 25.5f);
+    EXPECT_FLOAT_EQ(pt.raisedPx, 30.0f);
+
+    // Now the release walks down and STOPS: 15 would be under the floor,
+    // so the ladder holds 30px of error, which is what fitting costs.
+    for (int i = 0; i < 10; ++i)
+        pt.update(false, 0.0f, kCamTol, kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(pt.raisedPx, 30.0f);
+    EXPECT_FALSE(pt.releasing);
+}
+
+TEST(PressureTolerance, theLoopTerminatesInsteadOfCycling)
+{
+    // The measured cycle, simulated: a scene that fits at 20px and does
+    // not fit below it. Before the floor this ran forever -- 43 plans in
+    // 611s with no steady state. Here it must go quiet.
+    Render::PressureTolerance pt;
+    int releases = 0;
+    bool over = true;
+    for (int plan = 0; plan < 200; ++plan) {
+        const float tol = pt.update(over, over ? 51.0f : 0.0f, kCamTol,
+                                    kViewport, 0.5f);
+        if (pt.releasing)
+            ++releases;
+        // The scene is over budget whenever the climb is allowed to ask
+        // for anything erring less than 20px on screen.
+        over = tol < 20.0f / Render::kPlanDemoteMargin;
+    }
+    EXPECT_FALSE(over);
+    EXPECT_FALSE(pt.releasing);
+    EXPECT_GT(pt.floorPx, 0.0f);
+    // It settled early rather than kept trading: a handful of steps, not
+    // one per plan.
+    EXPECT_LT(releases, 20);
+}
+
+TEST(PressureTolerance, aLatePressureStillBlamesTheStepThatCausedIt)
+{
+    // The refines a release step asks for land plans later, so the
+    // pressure they cause usually arrives after the staircase has
+    // already stopped. Learning only mid-step would re-try the level
+    // that failed forever.
+    Render::PressureTolerance pt;
+    pt.update(true, 51.0f, kCamTol, kViewport, 0.5f);
+    pt.update(false, 0.0f, kCamTol, kViewport, 0.5f);      // 25.5
+    pt.floorPx = 20.0f;                                    // stops below this
+    pt.update(false, 0.0f, kCamTol, kViewport, 0.5f);      // held at 25.5
+    ASSERT_FALSE(pt.releasing);
+
+    pt.update(true, 26.0f, kCamTol, kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(pt.floorPx, 25.5f);
+}
+
+TEST(PressureTolerance, theStepThatGivesTheLastOfItBackIsStillALevel)
+{
+    // Releasing the final scrap sets the raise to 0, and a pressure
+    // blaming that step must not learn a floor of nothing -- that is
+    // the snap again, one staircase later.
+    Render::PressureTolerance pt;
+    pt.update(true, 8.0f, kCamTol, kViewport, 0.5f);
+    float last = 0.0f;
+    for (int i = 0; i < 20 && pt.raisedPx > 0.0f; ++i) {
+        last = pt.raisedPx;
+        pt.update(false, 0.0f, kCamTol, kViewport, 0.5f);
+    }
+    ASSERT_FLOAT_EQ(pt.raisedPx, 0.0f);
+
+    pt.update(true, 8.0f, kCamTol, kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(pt.floorPx, last);
+    // ...so the next walk down stops instead of reaching zero again.
+    for (int i = 0; i < 20; ++i)
+        pt.update(false, 0.0f, kCamTol, kViewport, 0.5f);
+    EXPECT_GT(pt.raisedPx, 0.0f);
+}
+
+TEST(PressureTolerance, aNewCameraForgetsWhatTheLastOneLearned)
+{
+    // What a rung costs on screen is a function of where the camera is,
+    // so a floor measured from one view is not evidence about another.
+    Render::PressureTolerance pt;
+    pt.update(true, 51.0f, kCamTol, kViewport, 0.5f);
+    pt.update(false, 0.0f, kCamTol, kViewport, 0.5f);
+    pt.update(true, 30.0f, kCamTol, kViewport, 0.5f);
+    ASSERT_GT(pt.floorPx, 0.0f);
+
+    pt.forget();
+    EXPECT_FLOAT_EQ(pt.floorPx, 0.0f);
+    for (int i = 0; i < 20 && pt.raisedPx > 0.0f; ++i)
+        pt.update(false, 0.0f, kCamTol, kViewport, 0.5f);
+    EXPECT_FLOAT_EQ(pt.raisedPx, 0.0f);
 }
 

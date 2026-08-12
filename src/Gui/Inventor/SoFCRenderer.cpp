@@ -2462,6 +2462,9 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
         RendererBridge::translateLevelTolerance(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setGpuMemoryBudget(
         RendererBridge::translateGpuMemoryBudget(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setLevelPressureRelease(
+        RendererBridge::translateLevelPressureRelease(
+            PRIVATE(this)->externalview));
     PRIVATE(this)->external->setLevelDebug(
         RendererBridge::translateLevelDebug(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setElementGates(

@@ -405,6 +405,13 @@ void MeshLevelPlanner::observe(const float *viewMatrix,
         m_timer->setSingleShot(true);
         m_timer->setInterval(300);
         QObject::connect(m_timer.get(), &QTimer::timeout, [this]() {
+            // Answered BEFORE the planned camera is overwritten, since
+            // that is the only moment the two can still be compared.
+            // The first plan of all counts as moved: nothing has been
+            // learned about a camera nobody has planned for.
+            m_cameraMoved = !m_havePlanned
+                || matricesDiffer(m_view, m_viewPlanned)
+                || matricesDiffer(m_proj, m_projPlanned);
             std::memcpy(m_viewPlanned, m_view, sizeof(m_view));
             std::memcpy(m_projPlanned, m_proj, sizeof(m_proj));
             m_havePlanned = true;
