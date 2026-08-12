@@ -1,0 +1,23 @@
+# Line endings: freeze, do not normalise.
+#
+# Upstream FreeCAD ships no .gitattributes (the old one, dropped in 9d7c8b1326
+# "Cleanup root directory", only held export-ignore rules for git archive), and
+# has no line-ending policy at all. The tree is therefore a mix -- most of
+# src/App and src/Gui is CRLF, parts of src/Gui/Inventor are LF -- and it has
+# been committed that way for years.
+#
+# So the textbook `* text=auto` is the wrong tool here: it would renormalise
+# every file in the tree, and turn each subsequent merge from upstream into a
+# whole-file conflict. What this repository needs is not one convention, it is
+# for whatever a file already has to stay put.
+#
+# `-text` does exactly that: git performs no eol conversion in either
+# direction, so the working tree is always byte-identical to the blob. Nothing
+# is rewritten by adding this, and a fresh clone gets the same bytes even if
+# the cloner has core.autocrlf=true.
+#
+# The remaining risk is an editing tool converting a file behind your back --
+# `sed -i` on Git Bash is the usual culprit, and Git Bash's own grep/file hide
+# CR so it is easy to misdiagnose. scripts/check-line-endings.py catches that
+# at commit time; see .pre-commit-config.yaml.
+* -text

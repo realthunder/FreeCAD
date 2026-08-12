@@ -61,3 +61,14 @@ repos:
     rev: v15.0.7
     hooks:
         -   id: clang-format
+-   repo: local
+    hooks:
+        -   id: check-line-endings
+            name: line endings not flipped wholesale
+            entry: python scripts/check-line-endings.py
+            language: system
+            # Deliberately outside the allowlist at the top of this file: an
+            # editing tool can rewrite the endings of any file in the tree, and
+            # this only reads, so there is no reason to restrict where it looks.
+            files: ''
+            exclude_types: [binary]
