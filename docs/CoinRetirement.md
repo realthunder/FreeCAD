@@ -136,8 +136,9 @@ headless under llvmpipe on one small two-solid scene:
 
 - workbench-specific scene graphs — TechDraw, FEM result meshes, Draft
   working plane, Assembly (Sketcher edit mode: **now covered**, §3.3;
-  Draft, annotation text, Mesh, Points and Assembly: **now covered**,
-  §3.6, which leaves FEM)
+  Draft, annotation text, Mesh, Points, Assembly **and FEM**: **now
+  covered**, §3.6 -- this bullet is closed, and FEM's colour bar is the
+  one defect it found)
 - the shadow light manipulator (the transform dragger: §3.3)
 - dimension and annotation text (clipping planes, selection and
   preselection highlight: §3.3)
@@ -379,7 +380,7 @@ reporting a pass.
 
 ### 3.6 Stage 1c: the workbench scene graphs
 
-`wb_audit_probe.py` -- the rest of the first bullet of 3.2. Nine cases,
+`wb_audit_probe.py` -- the rest of the first bullet of 3.2. Eleven cases,
 the same three legs in one process, the same within-leg method: grab,
 add the feature, grab, report the fraction of pixels that changed.
 
@@ -393,12 +394,47 @@ add the feature, grab, report the fraction of pixels that changed.
 | Mesh::Feature | `SoFCMeshObjectShape`, a shape that draws itself with raw GL | 0.0198 | 0.0192 | 0.0192 |
 | Points::Feature | point sets | 0.0080 | 0.0084 | 0.0084 |
 | Assembly + grounded joint | Assembly's own `SoSwitchMarker` | 0.0253 | 0.0202 | 0.0202 |
+| `Fem::FemMeshObject` | FEM's mesh view provider: faces, edges, node markers | 0.0020 | 0.0022 | 0.0022 |
+| `Fem::FemPostPipeline` | a VTK unstructured grid turned into Coin geometry, plus FEM's colour bar | 0.0010 | 0.0264 | 0.0264 |
 
 **The backend draws all of them**, and cross-leg it agrees with glr
 everywhere but one row: bgfx against glr sits at its 0.066 floor (what
 the two paths' shading differs by on the bare box) for every case,
 0.0778 for the mesh and 0.0839 for the assembly, and **0.2423 for the
 annotation label**.
+
+**The second disagreement is FEM's colour bar, and this time the backend
+is the one that is wrong.** The two FEM rows had to run against
+`build/fem-eval`, since the primary tree is configured `BUILD_FEM=OFF`
+(`FC_BIN` points `audit_run.sh` at another tree).
+
+`Fem::FemMeshObject` passes: the same footprint as cache 0 (x 443-580,
+y 149-266) and 1220 changed pixels against its 1446, which is shading.
+It is an `SoIndexedFaceSet` like any other and it reaches the backend
+like any other.
+
+`Fem::FemPostPipeline` reads 0.0010 on the backend against 0.0264 on
+both Coin legs, and the split says exactly where it goes. Banding the
+changed pixels by column:
+
+| band | cache 0 | bgfx |
+| --- | --- | --- |
+| the geometry, x 400-600 | 725 px | 629 px |
+| the colour bar, x 880-1024 | 16348 px | **0 px** |
+
+So the post-processing **geometry** is drawn (629 against 725 is the
+same shading difference as every other row). What is missing is the
+scalar **colour bar**: 16348 pixels of it on the Coin legs, a vertical
+band down the right of the viewport, and not one pixel on the backend.
+That single overlay is 95% of the case's whole delta, which is why the
+top-line number looks like the object vanished when it did not.
+
+The colour bar is a viewport-anchored overlay rather than scene
+geometry, which puts it with the corner-anchored feeds the backend
+already treats separately (the chrome an image export deliberately
+drops). Whether it should be fed to the backend as an overlay or drawn
+by Coin on top is the same question the navigation cube answers, and it
+is not answered here.
 
 TechDraw is not in the table because it is not a 3D path at all: a page
 is its own `QGraphicsView` over `QGI*` items painted by QPainter, so
