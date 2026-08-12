@@ -487,6 +487,9 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
         if (meshLevelFinerResident(shape)) {
             hooks.demote = [st]() { demoteMeshLevels(st->shape); };
             hooks.fallbackError = builtError;
+            // The one demote that really is free: the finer rung it
+            // drops is not the one being displayed.
+            hooks.demoteDropsHiddenRung = true;
         }
         // The dynamic-scale descent (sec 13): a source already showing its
         // coarse rung is not out of moves. Where a step coarser exists

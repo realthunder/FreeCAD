@@ -287,7 +287,14 @@ void MeshSourceRegistry::dropHiddenLevels()
         std::lock_guard<std::mutex> guard(mutex);
         for (auto &entry : sources) {
             Source &src = entry.second;
-            if (src.publishedError > 0.0f && src.hooks.demote) {
+            // demoteDropsHiddenRung is the whole gate: a coarse source
+            // with no hidden finer rung arms the VISIBLE dynamic-scale
+            // descent in the same slot (MeshLevelSource.cpp), and
+            // firing that here -- camera-blind, unpriced, on every plan
+            // pass under a sticky ceiling -- walked whole scenes to
+            // their boxes. Visible descents belong to planMeshDemotes.
+            if (src.publishedError > 0.0f && src.hooks.demote
+                    && src.hooks.demoteDropsHiddenRung) {
                 fns.push_back(std::move(src.hooks.demote));
                 src.hooks.demote = nullptr;
                 if (debugOn())

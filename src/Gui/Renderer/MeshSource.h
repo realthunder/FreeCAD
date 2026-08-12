@@ -92,6 +92,15 @@ struct LevelHooks {
     std::function<void()> downgrade;
     float fallbackError = 0.0f;
     float downgradeFallbackError = 0.0f;
+    /// Whether `demote` drops a HIDDEN finer rung -- a move that changes
+    /// nothing on screen -- as against the dynamic-scale descent, which
+    /// re-tessellates the DISPLAYED mesh coarser and visibly. The two
+    /// arrive through the same slot, and only the arming site knows
+    /// which it holds; dropHiddenLevels()'s contract ("nothing on
+    /// screen changes") is only honest for the first kind, so it fires
+    /// nothing without this. A visible descent is planMeshDemotes'
+    /// business: priced against a camera, never taken blind.
+    bool demoteDropsHiddenRung = false;
 };
 
 /// What demoteError/downgradeError answer for a tag the registry has
@@ -262,8 +271,11 @@ public:
 
     /// A CPU memory ceiling stands: drop every *hidden* exact rung —
     /// sources displaying their coarse rung while still holding the
-    /// exact one (a demote hook beside a non-zero publishedError).
-    /// Dropping those consults no camera: nothing on screen changes.
+    /// exact one (a demote hook that declares demoteDropsHiddenRung,
+    /// beside a non-zero publishedError). Dropping those consults no
+    /// camera: nothing on screen changes. A coarse source whose demote
+    /// is the visible dynamic-scale descent is deliberately NOT fired
+    /// here -- see LevelHooks::demoteDropsHiddenRung.
     void dropHiddenLevels();
 
     /// A memory ceiling was observed: an exact build failed to
