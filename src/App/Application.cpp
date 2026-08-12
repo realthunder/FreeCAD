@@ -1931,11 +1931,17 @@ static void freecadNewHandler ()
 #include <dlfcn.h>
 #include <cxxabi.h>
 #endif
+#if !defined(_MSC_VER)
+#include <unistd.h>
+#endif
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <string>
 #include <sstream>
+#include <thread>
 
 #if HAVE_CONFIG_H
 #include <config.h>
@@ -1943,27 +1949,113 @@ static void freecadNewHandler ()
 
 #if defined(_MSC_VER)
 #include <Base/StackWalker.h>
+#endif
 
 namespace {
 
-/** The Windows half of printBacktrace().
+/** Where a crash writes what it knows: <UserAppData>/crash.log, and stderr.
  *
- * Two deliberate departures from Base::StackWalker's defaults:
+ * The file comes first on every line. stderr is what you watch when you
+ * started the app from a terminal, but it is also what is gone the moment that
+ * terminal is -- and on a Windows GUI launch there is no terminal at all, so
+ * the file is the only copy that survives to be read afterwards.
  *
- * - Output goes straight to std::cerr, never through Base::Console(). A
- *   segfault is as likely to have happened *inside* the console as anywhere
- *   else -- the access violation this was written for faulted in
- *   ConsoleSingleton::Error() -- so re-entering it from the handler is how you
- *   lose the very backtrace you came for.
- * - No SymUseSymSrv, and the module list is silenced. Reaching the Microsoft
- *   symbol server from a crash handler can block for minutes, and OnLoadModule
- *   otherwise prints a few hundred lines before the first real frame.
+ * Opened for append, never truncated: a second crash in the same session must
+ * not erase the first one's stack. Written with plain stdio and flushed per
+ * line, deliberately not through Base::Console() -- a segfault is as likely to
+ * have happened *inside* the console as anywhere else (the access violation
+ * this was built for faulted in ConsoleSingleton::Error()), and re-entering it
+ * from the handler is how the backtrace gets lost.
  */
-class CerrStackWalker: public StackWalker
+class CrashSink
 {
 public:
-    explicit CerrStackWalker(size_t skip)
+    explicit CrashSink(const char* reason)
+    {
+        // Config() is empty if the crash beats initConfig(); a bare relative
+        // name still beats writing nothing.
+        std::string path = App::Application::Config()["UserAppData"];
+        path += "crash.log";
+        m_file = std::fopen(path.c_str(), "a");
+
+        std::ostringstream str;
+        str << "\n===== " << timestamp() << "  pid " << getProcessId() << "  thread "
+            << std::this_thread::get_id();
+        if (reason) {
+            str << "  " << reason;
+        }
+        str << " =====\n";
+        write(str.str().c_str());
+    }
+
+    ~CrashSink()
+    {
+        if (m_file) {
+            std::fclose(m_file);
+        }
+    }
+
+    CrashSink(const CrashSink&) = delete;
+    CrashSink& operator=(const CrashSink&) = delete;
+
+    void write(const char* text)
+    {
+        if (m_file) {
+            std::fputs(text, m_file);
+            std::fflush(m_file);  // per line: the next frame may be the one that kills us
+        }
+        std::cerr << text;
+    }
+
+    /// Local date and time down to the millisecond.
+    static std::string timestamp()
+    {
+        const auto now = std::chrono::system_clock::now();
+        const auto secs = std::chrono::time_point_cast<std::chrono::seconds>(now);
+        const auto msec = std::chrono::duration_cast<std::chrono::milliseconds>(now - secs);
+        const std::time_t tt = std::chrono::system_clock::to_time_t(secs);
+
+        std::tm tmbuf {};
+#if defined(_MSC_VER)
+        localtime_s(&tmbuf, &tt);
+#else
+        localtime_r(&tt, &tmbuf);
+#endif
+        char buf[32] {};
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmbuf);
+
+        char out[48] {};
+        std::snprintf(out, sizeof(out), "%s.%03d", buf, static_cast<int>(msec.count()));
+        return out;
+    }
+
+private:
+    static long getProcessId()
+    {
+#if defined(_MSC_VER)
+        return static_cast<long>(GetCurrentProcessId());
+#else
+        return static_cast<long>(getpid());
+#endif
+    }
+
+    std::FILE* m_file {nullptr};
+};
+
+#if defined(_MSC_VER)
+/** The Windows half of printBacktrace().
+ *
+ * Two deliberate departures from Base::StackWalker's defaults: no
+ * SymUseSymSrv, and the module list is silenced. Reaching the Microsoft symbol
+ * server from a crash handler can block for minutes, and OnLoadModule
+ * otherwise prints a few hundred lines before the first real frame.
+ */
+class CrashStackWalker: public StackWalker
+{
+public:
+    CrashStackWalker(CrashSink& sink, size_t skip)
         : StackWalker(RetrieveVerbose | SymBuildPath)
+        , m_sink(sink)
         , m_skip(skip)
     {}
 
@@ -1978,7 +2070,7 @@ protected:
     void OnCallstackEntry(CallstackEntryType eType, CallstackEntry& entry) override
     {
         // Drop the frames belonging to the handler itself, so the numbering
-        // matches what the glibc branch above prints.
+        // matches what the glibc branch prints.
         if (eType != lastEntry && entry.offset != 0 && m_seen++ < m_skip) {
             return;
         }
@@ -1987,20 +2079,23 @@ protected:
 
     void OnOutput(LPCSTR szText) override
     {
-        std::cerr << szText;
+        m_sink.write(szText);
     }
 
 private:
+    CrashSink& m_sink;
     size_t m_skip;
     size_t m_seen {0};
 };
-
-}  // namespace
 #endif  // _MSC_VER
 
+}  // namespace
+
 // This function produces a stack backtrace with demangled function & method names.
-void printBacktrace(size_t skip=0)
+// It goes to <UserAppData>/crash.log first and to stderr second, on every platform.
+void printBacktrace(size_t skip=0, const char* reason=nullptr)
 {
+    CrashSink sink(reason);
 #if defined HAVE_BACKTRACE_SYMBOLS
     void *callstack[128];
     size_t nMaxFrames = sizeof(callstack) / sizeof(callstack[0]);
@@ -2028,16 +2123,16 @@ void printBacktrace(size_t skip=0)
         }
 
         // cannot directly print to cerr when using --write-log
-        std::cerr << str.str();
+        sink.write(str.str().c_str());
     }
 
     free(symbols);
 #elif defined(_MSC_VER)
-    CerrStackWalker sw(skip);
+    CrashStackWalker sw(sink, skip);
     sw.ShowCallstack();
 #else //HAVE_BACKTRACE_SYMBOLS
     (void)skip;
-    std::cerr << "Cannot print the stacktrace because the C runtime library doesn't provide backtrace or backtrace_symbols\n";
+    sink.write("Cannot print the stacktrace because the C runtime library doesn't provide backtrace or backtrace_symbols\n");
 #endif
 }
 
@@ -2045,8 +2140,7 @@ void segmentation_fault_handler(int sig)
 {
 #if defined(FC_OS_LINUX)
     (void)sig;
-    std::cerr << "Program received signal SIGSEGV, Segmentation fault.\n";
-    printBacktrace(2);
+    printBacktrace(2, "Program received signal SIGSEGV, Segmentation fault.");
 #if defined(FC_DEBUG)
     abort();
 #else
@@ -2055,26 +2149,24 @@ void segmentation_fault_handler(int sig)
 #else
     switch (sig) {
         case SIGSEGV:
-            std::cerr << "Illegal storage access..." << std::endl;
-            // Print it *before* throwing. The throw unwinds to whoever catches
+            // Record it *before* throwing. The throw unwinds to whoever catches
             // Base::AccessViolation -- in the GUI that is
             // GUIApplication::notify(), which only shows a message box -- and by
             // then every frame that would say where the fault came from is gone.
-            // This is the only chance to record them.
-            printBacktrace(2);
+            // This is the only chance to keep them.
+            printBacktrace(2, "Illegal storage access...");
 #if !defined(_DEBUG)
             throw Base::AccessViolation("Illegal storage access! Please save your work under a new file name and restart the application!");
 #endif
             break;
         case SIGABRT:
-            std::cerr << "Abnormal program termination..." << std::endl;
-            printBacktrace(2);
+            printBacktrace(2, "Abnormal program termination...");
 #if !defined(_DEBUG)
             throw Base::AbnormalProgramTermination("Break signal occurred");
 #endif
             break;
         default:
-            std::cerr << "Unknown error occurred..." << std::endl;
+            printBacktrace(2, "Unknown error occurred...");
             break;
     }
 #endif // FC_OS_LINUX
@@ -2106,10 +2198,11 @@ void my_se_translator_filter(unsigned int code, EXCEPTION_POINTERS* pExp)
         // translator runs during the SEH filter pass, before any unwinding, and
         // it is handed the faulting CONTEXT -- so walk that rather than the
         // handler's own stack.
-        std::cerr << "Access violation at " << pExp->ExceptionRecord->ExceptionAddress
-                  << std::endl;
         {
-            CerrStackWalker sw(0);
+            std::ostringstream why;
+            why << "Access violation at " << pExp->ExceptionRecord->ExceptionAddress;
+            CrashSink sink(why.str().c_str());
+            CrashStackWalker sw(sink, 0);
             sw.ShowCallstack(GetCurrentThread(), pExp->ContextRecord);
         }
         throw Base::AccessViolation();
