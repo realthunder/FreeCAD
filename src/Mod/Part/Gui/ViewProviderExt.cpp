@@ -3887,7 +3887,13 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
             CoarseMeshTShape = tsh;
             // Climbing out of a pressure box: the object may be
             // tessellated again, so the flag that sent it here is spent.
+            // The scale resets WITH the flags -- the worker meshed at
+            // the unscaled rung deflection, and a rebuild still asking
+            // scale-x coarser refuses that mesh and re-tessellates
+            // inline on the GUI thread, the stall the stand-in and the
+            // pool exist to avoid. One rung, one statement of it.
             if (underPressure) {
+                MeshErrorScale = 1.0;
                 MeshErrorScaleExhausted = false;
                 MeshDecimationSpent = false;
             }
@@ -4378,6 +4384,25 @@ void ViewProviderPartExt::updateVisual()
         return;
     }
 
+    // The dynamic scale this object currently stands at (sec 13). It
+    // belongs to a shape, so a different TShape starts again at the
+    // rung -- otherwise an edited object would inherit the coarseness
+    // the plan bought against a shape that is gone. Checked BEFORE the
+    // stand-in gate below, which is the flags' first reader: judged
+    // after it, a recomputed shape arriving on an object the descent
+    // had boxed was drawn as a box on flags proved against the shape
+    // that no longer exists.
+    {
+        const void *scaleTShape = cachedShape.getShape().IsNull()
+            ? nullptr : cachedShape.getShape().TShape().get();
+        if (MeshErrorScaleTShape != scaleTShape) {
+            MeshErrorScaleTShape = scaleTShape;
+            MeshErrorScale = 1.0;
+            MeshErrorScaleExhausted = false;
+            MeshDecimationSpent = false;
+        }
+    }
+
     // Progressive import of an oversized part (sec 13): even the coarse
     // build of a many-face shape (or many-leaf compound) stalls the
     // GUI for seconds, and the import stall scales with the largest
@@ -4530,18 +4555,10 @@ void ViewProviderPartExt::updateVisual()
             ExactMeshTShape = nullptr;
         const int coarseLvl = exactResident
             ? -1 : coarseTessellationLevel(pcObject ? pcObject->getDocument() : nullptr);
-        // The dynamic scale this object currently stands at (sec 13). It
-        // belongs to a shape, so a different TShape starts again at the
-        // rung -- otherwise an edited object would inherit the
-        // coarseness the plan bought against a shape that is gone.
-        const void *scaleTShape = cShape.IsNull() ? nullptr
-                                                  : cShape.TShape().get();
-        if (MeshErrorScaleTShape != scaleTShape) {
-            MeshErrorScaleTShape = scaleTShape;
-            MeshErrorScale = 1.0;
-            MeshErrorScaleExhausted = false;
-            MeshDecimationSpent = false;
-        }
+        // The dynamic-scale identity reset runs at the top of
+        // updateVisual, before the stand-in gate -- the flags' first
+        // reader -- so by here the scale and flags already belong to
+        // this TShape.
         double shapeDiag = 0.0;
         if (coarseLvl >= 0) {
             double dx = xMax - xMin, dy = yMax - yMin, dz = zMax - zMin;
@@ -4643,7 +4660,6 @@ void ViewProviderPartExt::updateVisual()
                 TopoDS_Shape cur = cachedShape.getShape();
                 if (cur.IsNull() || cur.TShape().get() != tsh)
                     return;
-                MeshErrorScale = nextScale;
                 // Past the box error, or once deflection has proved it
                 // cannot coarsen this shape, re-tessellating buys
                 // nothing: only a representation that drops FACES does,
@@ -4651,6 +4667,10 @@ void ViewProviderPartExt::updateVisual()
                 // today. updateVisual takes that path off the flag.
                 if (MeshErrorScaleExhausted || (boxError > 0.0
                                                 && scaledError >= boxError)) {
+                    // The scale still advances here, synchronously: no
+                    // build can fail to land, and it is what grows the
+                    // decimation rung's grid step over step.
+                    MeshErrorScale = nextScale;
                     MeshErrorScaleExhausted = true;
                     updateVisual();
                     return;
@@ -4659,14 +4679,22 @@ void ViewProviderPartExt::updateVisual()
                 // adopt it: the transfer brings it in beside the finer
                 // rung and the demote, which keeps the fewest nodes,
                 // drops that rung and its edge polygons.
+                //
+                // The scale is committed in the APPLY, not here. A job
+                // the worker drops at its memory floor, or that a
+                // re-registration cancels, would otherwise leave the
+                // ladder's state one rung below the mesh still
+                // displayed -- and the exhaustion proof below never
+                // evaluated for that step.
                 queueMeshLevelBuild(
                     faceset ? static_cast<SoNode *>(faceset)
                             : static_cast<SoNode *>(lineset),
                     cur, nextDefl, nextAng,
-                    [this, tsh](const TopoDS_Shape &meshed) {
+                    [this, tsh, nextScale](const TopoDS_Shape &meshed) {
                         TopoDS_Shape live = cachedShape.getShape();
                         if (live.IsNull() || live.TShape().get() != tsh)
                             return;
+                        MeshErrorScale = nextScale;
                         const int before = meshLevelNodeCount(live);
                         transferMeshLevels(meshed, live);
                         demoteMeshLevels(live);
