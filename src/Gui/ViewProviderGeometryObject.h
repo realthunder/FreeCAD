@@ -181,6 +181,12 @@ public:
 
     void finishRestoring() override;
 
+    /** Re-derive ShapeColor, ShapeMaterial and Transparency from the
+     * appearance. A no-op for a document that states them; the whole
+     * migration for one that has only ShapeAppearance.
+     */
+    void refreshAppearanceMirrors();
+
     /**
      * Returns a list of picked points from the geometry under \a getRoot().
      * If \a pickAll is false (the default) only the intersection point closest to the camera will be picked, otherwise

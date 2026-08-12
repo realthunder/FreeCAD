@@ -843,8 +843,61 @@ void ViewProviderGeometryObject::updateBoundingBox() {
     }
 }
 
+/** Bring the compatibility names level with the appearance, after a restore
+ *
+ * ShapeColor, ShapeMaterial and Transparency are the single-value face of
+ * ShapeAppearance: derived from it, not a second store. A document this fork
+ * wrote states all four and restores each, so this finds nothing to do -- the
+ * mirrors already agree, and both writes below are refused as no changes.
+ *
+ * A document written by a release that has only ShapeAppearance (upstream from
+ * 1.0 on) states none of them, and then the mirrors are whatever the
+ * constructor left: a grey object at zero transparency in the property editor,
+ * over an appearance that says otherwise. The announcement the appearance
+ * makes while restoring does not reach them -- measured on a 1.1 file, where
+ * an appearance read from its own archive entry arrives correct and leaves
+ * both stale, while the same write after the restore mirrors normally -- so
+ * the derivation belongs here, once, after every value the file carries has
+ * landed.
+ *
+ * Transparency first: the reaction to a ShapeColor change folds it into the
+ * appearance's diffuse alpha, which is where this fork keeps an entry's
+ * transparency, and it has to be able to read the right one.
+ *
+ * Only while the appearance holds one diffuse colour, for the reason
+ * onChanged has: entry 0 of a per-face appearance is one face, not the object.
+ */
+void ViewProviderGeometryObject::refreshAppearanceMirrors()
+{
+    if (ShapeAppearance.getDiffuseColors().size() > 1)
+        return;
+
+    long transparency = Base::toPercent(ShapeAppearance.getTransparency(0));
+    if (transparency != Transparency.getValue()) {
+        // NoModify, or a document nobody has touched opens already modified.
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+                guard(App::Property::NoModify, &Transparency);
+        Transparency.setValue(transparency);
+    }
+
+    Base::Color color = ShapeAppearance.getDiffuseColor(0);
+    color.a = ShapeColor.getValue().a;
+    if (color != ShapeColor.getValue()) {
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+                guard(App::Property::NoModify, &ShapeColor);
+        ShapeColor.mirrorValue(color);
+    }
+    App::Material material = ShapeAppearance.getMaterial(0);
+    if (!(material == ShapeMaterial.getValue())) {
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+                guard(App::Property::NoModify, &ShapeMaterial);
+        ShapeMaterial.mirrorValue(material);
+    }
+}
+
 void ViewProviderGeometryObject::finishRestoring()
 {
+    refreshAppearanceMirrors();
     updateBoundingBox();
     // Restored Render_* dynamic properties (per-object render engine
     // settings) need their scene graph nodes rebuilt.
