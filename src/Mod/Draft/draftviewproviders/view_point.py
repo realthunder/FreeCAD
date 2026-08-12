@@ -46,7 +46,7 @@ class ViewProviderPoint(ViewProviderDraft):
         vobj.setEditorMode('Lighting', mode)
         vobj.setEditorMode('LineMaterial', mode)
         vobj.setEditorMode('ShapeColor', mode)
-        vobj.setEditorMode('ShapeMaterial', mode)
+        vobj.setEditorMode('ShapeAppearance', mode)
         vobj.setEditorMode('Transparency', mode)
 
     def getIcon(self):

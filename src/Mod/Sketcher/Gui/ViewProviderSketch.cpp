@@ -7268,8 +7268,8 @@ void ViewProviderSketch::onChanged(const App::Property *prop)
             pInternalView->ShapeColor.setValue(ShapeColor.getValue());
         else if (prop == &Transparency)
             pInternalView->Transparency.setValue(Transparency.getValue());
-        else if (prop == &ShapeMaterial)
-            pInternalView->ShapeMaterial.setValue(ShapeMaterial.getValue());
+        else if (prop == &ShapeAppearance)
+            pInternalView->ShapeAppearance.setValue(ShapeAppearance[0]);
     }
     if (prop == &SectionView)
         toggleViewSection(SectionView.getValue() ? 1 : 0);

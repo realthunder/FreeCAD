@@ -346,12 +346,12 @@ void DlgDisplayPropertiesImp::reject()
 }
 
 /**
- * Opens a dialog that allows to modify the 'ShapeMaterial' property of all selected view providers.
+ * Opens a dialog that allows to modify the 'ShapeAppearance' property of all selected view providers.
  */
 void DlgDisplayPropertiesImp::onButtonUserDefinedMaterialClicked()
 {
     std::vector<Gui::ViewProvider*> Provider = getSelection();
-    DlgMaterialPropertiesImp dlg("ShapeMaterial", this);
+    DlgMaterialPropertiesImp dlg("ShapeAppearance", this);
     dlg.setViewProviders(Provider);
     dlg.exec();
 
@@ -359,7 +359,7 @@ void DlgDisplayPropertiesImp::onButtonUserDefinedMaterialClicked()
 }
 
 /**
- * Opens a dialog that allows to modify the 'ShapeMaterial' property of all selected view providers.
+ * Opens a dialog that allows to modify the 'ShapeAppearance' property of all selected view providers.
  */
 void DlgDisplayPropertiesImp::onButtonColorPlotClicked()
 {
@@ -374,7 +374,7 @@ void DlgDisplayPropertiesImp::onButtonColorPlotClicked()
 }
 
 /**
- * Sets the 'ShapeMaterial' property of all selected view providers.
+ * Sets the 'ShapeAppearance' property of all selected view providers.
  */
 void DlgDisplayPropertiesImp::onChangeMaterialActivated(int index)
 {
@@ -387,7 +387,7 @@ void DlgDisplayPropertiesImp::onChangeMaterialActivated(int index)
                                        (int)(diffuseColor.b*255.0f)));
 
     for (auto it : Provider) {
-        if (auto* prop = dynamic_cast<App::PropertyMaterial*>(it->getPropertyByName("ShapeMaterial"))) {
+        if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(it->getPropertyByName("ShapeAppearance"))) {
             prop->setValue(mat);
         }
     }
@@ -574,9 +574,9 @@ void DlgDisplayPropertiesImp::setMaterial(const std::vector<Gui::ViewProvider*>&
     bool material = false;
     App::Material::MaterialType matType = App::Material::DEFAULT;
     for (auto view : views) {
-        if (auto* prop = dynamic_cast<App::PropertyMaterial*>(view->getPropertyByName("ShapeMaterial"))) {
+        if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(view->getPropertyByName("ShapeAppearance"))) {
             material = true;
-            matType = prop->getValue().getType();
+            matType = prop->getType(0);
             break;
         }
     }

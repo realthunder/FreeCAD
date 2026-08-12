@@ -710,7 +710,7 @@ def export( exportList, filename, colors = None, camera = None ):
             linkPlacement = obj.LinkPlacement
             while True: # drill down to get to the actual obj
                 if obj.isDerivedFrom("App::Link"):
-                    if obj.ViewObject.OverrideMaterial: color = Draft.getrgb(obj.ViewObject.ShapeMaterial.DiffuseColor, testbw = False)
+                    if obj.ViewObject.OverrideMaterial: color = Draft.getrgb(obj.ViewObject.ShapeAppearance[0].DiffuseColor, testbw = False)
                     obj = obj.LinkedObject
                     if hasattr(obj, "__len__"):
                         FreeCAD.Console.PrintMessage(label + ": Sub-Links are Unsupported.\n")

@@ -364,7 +364,7 @@ bool ViewProviderMesh::useNewSelectionModel(void) const {
 void ViewProviderMesh::onChanged(const App::Property* prop)
 {
     // we're going to change the number of colors to one
-    if (prop == &ShapeColor || prop == &ShapeMaterial) {
+    if (prop == &ShapeColor || prop == &ShapeAppearance) {
         pcMatBinding->value = SoMaterialBinding::OVERALL;
     }
     else if (prop == &ShapeTypeHint) {
@@ -411,8 +411,8 @@ void ViewProviderMesh::onChanged(const App::Property* prop)
         if (prop == &ShapeColor) {
             setOpenEdgeColorFrom(ShapeColor.getValue());
         }
-        else if (prop == &ShapeMaterial) {
-            setOpenEdgeColorFrom(ShapeMaterial.getValue().diffuseColor);
+        else if (prop == &ShapeAppearance) {
+            setOpenEdgeColorFrom(ShapeAppearance.getDiffuseColor(0));
         }
     }
 

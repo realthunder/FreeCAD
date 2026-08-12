@@ -47,6 +47,9 @@
 #include <QImage>
 #include <QMenu>
 
+#include <Base/Reader.h>
+#include <Base/Tools.h>
+
 #include <App/PropertyFile.h>
 
 #include <App/GeoFeature.h>
@@ -103,14 +106,19 @@ ViewProviderGeometryObject::ViewProviderGeometryObject()
     ADD_PROPERTY_TYPE(ShapeColor, (r, g, b), osgroup, App::Prop_None, "Set shape color");
     ADD_PROPERTY_TYPE(Transparency, (initialTransparency), osgroup, App::Prop_None, "Set object transparency");
     Transparency.setConstraints(&intPercent);
+
+    // The appearance is the one storage now, so it starts out agreeing with
+    // ShapeColor and Transparency instead of carrying DEFAULT's colour until
+    // the first change syncs them. The default material itself stays this
+    // fork's (STEEL under USER_DEFINED), not upstream's.
     App::Material mat(App::Material::DEFAULT);
-    ADD_PROPERTY_TYPE(ShapeMaterial,(mat), osgroup, App::Prop_None, "Shape material");
+    mat.diffuseColor.set(r, g, b);
+    mat.transparency = Base::fromPercent(initialTransparency);
+    ADD_PROPERTY_TYPE(ShapeAppearance, (mat), osgroup, App::Prop_None, "Shape appearance");
     ADD_PROPERTY_TYPE(BoundingBox, (false), dogroup, App::Prop_None, "Display object bounding box");
 
     pcShapeMaterial = new SoMaterial;
-    pcShapeMaterial->diffuseColor.setValue(r, g, b);
-    pcShapeMaterial->transparency = float(initialTransparency);
-    ShapeMaterial.setTransparency((float)initialTransparency / 100.0f);
+    setCoinAppearance(mat);
     pcShapeMaterial->ref();
 
     sPixmap = "Feature";
@@ -148,40 +156,37 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
 {
     Gui::ColorUpdater colorUpdater;
 
-    // Actually, the properties 'ShapeColor' and 'Transparency' are part of the property 'ShapeMaterial'.
-    // Both redundant properties are kept due to more convenience for the user. But we must keep the values
-    // consistent of all these properties.
+    // ShapeColor and Transparency are the single-value face of ShapeAppearance,
+    // kept as their own properties because they are what the user reaches for.
+    // The appearance holds the value; these two mirror entry 0 of it.
     if (prop == &ShapeColor) {
-        const App::Color &c = ShapeColor.getValue();
+        const Base::Color &c = ShapeColor.getValue();
         pcShapeMaterial->diffuseColor.setValue(c.r, c.g, c.b);
-        if (c != ShapeMaterial.getValue().diffuseColor)
-            ShapeMaterial.setDiffuseColor(c);
+        if (c != ShapeAppearance.getDiffuseColor(0))
+            ShapeAppearance.setDiffuseColor(c);
     }
     else if (prop == &Transparency) {
-        const App::Material &Mat = ShapeMaterial.getValue();
-        long value = (long)(100 * Mat.transparency);
+        long value = Base::toPercent(ShapeAppearance.getTransparency(0));
         if (value != Transparency.getValue()) {
-            float trans = Transparency.getValue() / 100.0f;
+            float trans = Base::fromPercent(Transparency.getValue());
             pcShapeMaterial->transparency = trans;
-            ShapeMaterial.setTransparency(trans);
+            ShapeAppearance.setTransparency(trans);
         }
     }
-    else if (prop == &ShapeMaterial) {
+    else if (prop == &ShapeAppearance) {
         if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange))
             getObject()->touch(true);
-        const App::Material &Mat = ShapeMaterial.getValue();
-        long value = (long)(100 * Mat.transparency);
+        long value = Base::toPercent(ShapeAppearance.getTransparency(0));
         if (value != Transparency.getValue())
             Transparency.setValue(value);
-        const App::Color& color = Mat.diffuseColor;
-        pcShapeMaterial->ambientColor.setValue(Mat.ambientColor.r,Mat.ambientColor.g,Mat.ambientColor.b);
-        pcShapeMaterial->diffuseColor.setValue(Mat.diffuseColor.r,Mat.diffuseColor.g,Mat.diffuseColor.b);
-        pcShapeMaterial->specularColor.setValue(Mat.specularColor.r,Mat.specularColor.g,Mat.specularColor.b);
-        pcShapeMaterial->emissiveColor.setValue(Mat.emissiveColor.r,Mat.emissiveColor.g,Mat.emissiveColor.b);
-        pcShapeMaterial->shininess.setValue(Mat.shininess);
-        pcShapeMaterial->transparency.setValue(Mat.transparency);
+        // Only a single appearance can be pushed into the one Coin material
+        // node; a per-face list is carried by the shape's own material arrays
+        // (ViewProviderPartExt), so leave the node alone in that case.
+        if (ShapeAppearance.getSize() == 1)
+            setCoinAppearance(ShapeAppearance[0]);
+        Base::Color color = ShapeAppearance.getDiffuseColor(0);
         if (color != ShapeColor.getValue())
-            ShapeColor.setValue(Mat.diffuseColor);
+            ShapeColor.setValue(color);
         Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &BoundingBox) {
@@ -196,6 +201,34 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
     }
 
     ViewProviderDragger::onChanged(prop);
+}
+
+void ViewProviderGeometryObject::setCoinAppearance(const App::Material &mat)
+{
+    pcShapeMaterial->ambientColor.setValue(mat.ambientColor.r, mat.ambientColor.g, mat.ambientColor.b);
+    pcShapeMaterial->diffuseColor.setValue(mat.diffuseColor.r, mat.diffuseColor.g, mat.diffuseColor.b);
+    pcShapeMaterial->specularColor.setValue(mat.specularColor.r, mat.specularColor.g, mat.specularColor.b);
+    pcShapeMaterial->emissiveColor.setValue(mat.emissiveColor.r, mat.emissiveColor.g, mat.emissiveColor.b);
+    pcShapeMaterial->shininess.setValue(mat.shininess);
+    pcShapeMaterial->transparency.setValue(mat.transparency);
+}
+
+void ViewProviderGeometryObject::handleChangedPropertyName(Base::XMLReader &reader,
+                                                           const char *TypeName,
+                                                           const char *PropName)
+{
+    // Documents written before the appearance existed carry a ShapeMaterial.
+    // It is the same datum, so fold it in rather than let it restore as an
+    // unknown property and leave the object its constructed default.
+    if (strcmp(PropName, "ShapeMaterial") == 0
+            && strcmp(TypeName, App::PropertyMaterial::getClassTypeId().getName()) == 0) {
+        App::PropertyMaterial prop;
+        prop.Restore(reader);
+        ShapeAppearance.setValue(prop.getValue());
+    }
+    else {
+        ViewProviderDragger::handleChangedPropertyName(reader, TypeName, PropName);
+    }
 }
 
 namespace {

@@ -1948,8 +1948,8 @@ ViewProviderLink::ViewProviderLink()
 
     App::Material mat(App::Material::DEFAULT);
     mat.diffuseColor.setPackedValue(ViewParams::getDefaultLinkColor());
-    ADD_PROPERTY_TYPE(ShapeMaterial, (mat), " Link", App::Prop_None, 0);
-    ShapeMaterial.setStatus(App::Property::MaterialEdit, true);
+    ADD_PROPERTY_TYPE(ShapeAppearance, (mat), " Link", App::Prop_None, 0);
+    ShapeAppearance.setStatus(App::Property::MaterialEdit, true);
 
     ADD_PROPERTY_TYPE(DrawStyle,((long int)0), " Link", App::Prop_None, "");
     static const char* DrawStyleEnums[]= {"None","Solid","Dashed","Dotted","Dashdot",nullptr};
@@ -2126,7 +2126,7 @@ void ViewProviderLink::onChanged(const App::Property* prop) {
             }
         }
     }else if(!isRestoring()) {
-        if (prop == &OverrideMaterial || prop == &ShapeMaterial ||
+        if (prop == &OverrideMaterial || prop == &ShapeAppearance ||
             prop == &MaterialList || prop == &OverrideMaterialList)
         {
             applyMaterial();
@@ -2391,8 +2391,8 @@ void ViewProviderLink::updateDataPrivate(App::LinkBaseExtension *ext, const App:
                     if(!vp) continue;
                     overrideMaterial = overrideMaterial || vp->OverrideMaterial.getValue();
                     hasMaterial = overrideMaterial || hasMaterial
-                        || vp->ShapeMaterial.getValue()!=ShapeMaterial.getValue();
-                    materials.push_back(vp->ShapeMaterial.getValue());
+                        || vp->ShapeAppearance[0]!=ShapeAppearance[0];
+                    materials.push_back(vp->ShapeAppearance[0]);
                     overrideMaterials[i] = vp->OverrideMaterial.getValue();
                 }
                 if(!overrideMaterial)
@@ -2492,7 +2492,7 @@ void ViewProviderLink::updateElementList(App::LinkBaseExtension *ext) {
             if(OverrideMaterialList.getSize()>i)
                 vp->OverrideMaterial.setValue(OverrideMaterialList[i]);
             if(MaterialList.getSize()>i)
-                vp->ShapeMaterial.setValue(MaterialList[i]);
+                vp->ShapeAppearance.setValue(MaterialList[i]);
         }
         OverrideMaterialList.setSize(0);
         MaterialList.setSize(0);
@@ -2530,8 +2530,12 @@ void ViewProviderLink::checkIcon(const App::LinkBaseExtension *ext) {
 }
 
 void ViewProviderLink::applyMaterial() {
-    if(OverrideMaterial.getValue())
-        linkView->setMaterial(-1,&ShapeMaterial.getValue());
+    if(OverrideMaterial.getValue()) {
+        // The appearance stores fields, not whole materials, so compose the
+        // one setMaterial() wants instead of pointing into storage.
+        App::Material mat = ShapeAppearance[0];
+        linkView->setMaterial(-1,&mat);
+    }
     else {
         for(int i=0;i<linkView->getSize();++i) {
             if(MaterialList.getSize()>i &&
@@ -3631,7 +3635,7 @@ PyObject *ViewProviderLink::getPyLinkView() {
 std::map<std::string, App::Color> ViewProviderLink::getElementColors(const char *subname) const {
     auto ext = getLinkExtension();
     if(ext && ext->getColoredElementsProperty()) {
-        const auto &mat = ShapeMaterial.getValue();
+        const auto mat = ShapeAppearance.getMaterial(0);
         auto colors =  getElementColorsFrom(*this,subname,*ext->getColoredElementsProperty(),
                 OverrideColorList, OverrideMaterial.getValue(), &mat, ext->getElementCountValue());
         if (!colors.empty())
@@ -3733,8 +3737,8 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
             if(!next)
                 break;
             if(!overridden && wildcard!=ViewProvider::hiddenMarker() && next->OverrideMaterial.getValue()) {
-                auto color = next->ShapeMaterial.getValue().diffuseColor;
-                color.a = next->ShapeMaterial.getValue().transparency;
+                auto color = next->ShapeAppearance.getDiffuseColor(0);
+                color.a = next->ShapeAppearance.getTransparency(0);
                 colors.emplace(wildcard,color);
                 overridden = true;
             }
@@ -3847,7 +3851,7 @@ void ViewProviderLink::setElementColors(const std::map<std::string, App::Color> 
     if(!ext || ! ext->getColoredElementsProperty())
         return;
     setElementColorsTo(*this,colorMap,*ext->getColoredElementsProperty(),
-            OverrideColorList, &OverrideMaterial, &ShapeMaterial, ext->getElementCountValue());
+            OverrideColorList, &OverrideMaterial, &ShapeAppearance, ext->getElementCountValue());
 }
 
 void ViewProviderLink::setElementColorsTo(
@@ -3856,7 +3860,7 @@ void ViewProviderLink::setElementColorsTo(
         App::PropertyLinkSub &coloredElements,
         App::PropertyColorList &colorList,
         App::PropertyBool *overrideMaterial,
-        App::PropertyMaterial *shapeMaterial,
+        App::PropertyMaterialList *shapeMaterial,
         int element_count)
 {
     if(!vp.getObject())
@@ -3916,7 +3920,7 @@ void ViewProviderLink::setElementColorsTo(
         colorList.setValues(colors);
     }
     if(hasFaceColor && shapeMaterial) {
-        auto mat = shapeMaterial->getValue();
+        auto mat = shapeMaterial->getMaterial(0);
         mat.diffuseColor = faceColor;
         mat.transparency = faceColor.a;
         shapeMaterial->setStatus(App::Property::User3,true);

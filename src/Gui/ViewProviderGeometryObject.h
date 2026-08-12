@@ -66,7 +66,13 @@ public:
     // Display properties
     App::PropertyColor ShapeColor;
     App::PropertyPercent Transparency;
-    App::PropertyMaterial ShapeMaterial;
+    /** The object's appearance, one entry per face or a single shared one
+     *
+     * Replaces the old ShapeMaterial. Storage is per field, so the common
+     * case of one appearance for the whole object costs one entry per field
+     * rather than one whole material (docs/ShapeAppearanceDesign.md).
+     */
+    App::PropertyMaterialList ShapeAppearance;
     App::PropertyBool BoundingBox;
 
     /**
@@ -115,6 +121,14 @@ public:
 protected:
     /// get called by the container whenever a property has been changed
     void onChanged(const App::Property* prop) override;
+    /// Restore a pre-ShapeAppearance document: fold the old ShapeMaterial
+    /// into the appearance rather than dropping it.
+    void handleChangedPropertyName(Base::XMLReader &reader,
+                                   const char *TypeName,
+                                   const char *PropName) override;
+
+    /// Push one whole material into the Coin material node
+    void setCoinAppearance(const App::Material &mat);
 
     virtual unsigned long getBoundColor() const;
     void updateBoundingBox();

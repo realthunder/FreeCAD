@@ -208,7 +208,7 @@ class GuiExport ViewProviderLink : public ViewProviderDocumentObject
 
 public:
     App::PropertyBool OverrideMaterial;
-    App::PropertyMaterial ShapeMaterial;
+    App::PropertyMaterialList ShapeAppearance;
     App::PropertyEnumeration DrawStyle;
     App::PropertyFloatConstraint LineWidth;
     App::PropertyFloatConstraint PointSize;
@@ -298,7 +298,7 @@ public:
             App::PropertyLinkSub &coloredElements,
             App::PropertyColorList &colorList,
             App::PropertyBool *overrideMaterial,
-            App::PropertyMaterial *shapeMaterial,
+            App::PropertyMaterialList *shapeMaterial,
             int elementCount = 0);
 
     static bool applyColorsTo(ViewProviderDocumentObject &vp, bool prevOverride);

@@ -193,7 +193,7 @@ std::map<std::string, App::Color> ViewProviderPart::getElementColors(const char 
     auto prop = getColoredElementsProperty();
     if(!prop)
         return res;
-    const auto &mat = ShapeMaterial.getValue();
+    const auto mat = ShapeAppearance.getMaterial(0);
     return ViewProviderLink::getElementColorsFrom(*this,subname,*prop,
             OverrideColorList, OverrideMaterial.getValue(), &mat);
 }
@@ -205,7 +205,7 @@ void ViewProviderPart::setElementColors(const std::map<std::string, App::Color> 
     if(!prop)
         return;
     ViewProviderLink::setElementColorsTo(*this,colorMap,*prop,OverrideColorList, 
-            &OverrideMaterial, &ShapeMaterial);
+            &OverrideMaterial, &ShapeAppearance);
 }
 
 void ViewProviderPart::applyColors() {

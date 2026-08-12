@@ -810,7 +810,7 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
                 || prop == &PointColor
                 || prop == &PointMaterial
                 || prop == &ShapeColor
-                || prop == &ShapeMaterial)
+                || prop == &ShapeAppearance)
         {
             // When restoring, rely on
             // DiffuseColor/LineColorArray/PointColorArray to setup the colors.
@@ -918,15 +918,15 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         return;
     }
     else if (prop == &Transparency) {
-        const App::Material& Mat = ShapeMaterial.getValue();
+        const App::Material Mat = ShapeAppearance.getMaterial(0);
         long value = (long)(100*Mat.transparency);
         if (value != Transparency.getValue()) {
             float trans = Transparency.getValue()/100.0f;
 
-            App::PropertyContainer* parent = ShapeMaterial.getContainer();
-            ShapeMaterial.setContainer(nullptr);
-            ShapeMaterial.setTransparency(trans);
-            ShapeMaterial.setContainer(parent);
+            App::PropertyContainer* parent = ShapeAppearance.getContainer();
+            ShapeAppearance.setContainer(nullptr);
+            ShapeAppearance.setTransparency(trans);
+            ShapeAppearance.setContainer(parent);
 
             if(!prop->testStatus(App::Property::User3)) {
                 if(MapTransparency.getValue() || MappedColors.getSize()) {
@@ -1592,7 +1592,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
             t[i] = colors[i].a;
         }
         const auto &color = ShapeColor.getValue();
-        float trans = ShapeMaterial.getValue().transparency;
+        float trans = ShapeAppearance.getTransparency(0);
         for (; i < numfaces; i++) { 
             ca[i].setValue(color.r, color.g, color.b);
             t[i] = trans;
@@ -1606,7 +1606,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
     pcFaceBind->value = SoMaterialBinding::OVERALL;
     pcShapeMaterial->diffuseColor.setValue(color.r, color.g, color.b);
     //pcShapeMaterial->transparency = colors[0].a; do not get transparency from DiffuseColor in this case
-    pcShapeMaterial->transparency.setValue(ShapeMaterial.getValue().transparency);
+    pcShapeMaterial->transparency.setValue(ShapeAppearance.getTransparency(0));
 
 }
 
@@ -1628,7 +1628,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
     if (instanced) {
         // The uniform-valued non-diffuse components ride the object
         // material; diffuse+transparency partition the instances.
-        const auto &m0 = colors.empty() ? ShapeMaterial.getValue() : colors[0];
+        const App::Material m0 = colors.empty() ? ShapeAppearance.getMaterial(0) : colors[0];
         pcShapeMaterial->ambientColor.setValue(
             m0.ambientColor.r, m0.ambientColor.g, m0.ambientColor.b);
         pcShapeMaterial->specularColor.setValue(
@@ -1672,7 +1672,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
             ec[i].setValue(colors[i].emissiveColor.r, colors[i].emissiveColor.g, colors[i].emissiveColor.b);
         }
 
-        const auto &material = ShapeMaterial.getValue();
+        const App::Material material = ShapeAppearance.getMaterial(0);
         for (; i < numfaces; ++i) {
             dc[i].setValue(material.diffuseColor.r, material.diffuseColor.g, material.diffuseColor.b);
             ac[i].setValue(material.ambientColor.r, material.ambientColor.g, material.ambientColor.b);
@@ -1687,7 +1687,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
         return;
     }
 
-    const auto &material = colors.size()==1?colors[0]:ShapeMaterial.getValue();
+    const App::Material material = colors.size()==1?colors[0]:ShapeAppearance.getMaterial(0);
     pcFaceBind->value = SoMaterialBinding::OVERALL;
     pcShapeMaterial->diffuseColor.setValue(material.diffuseColor.r, material.diffuseColor.g, material.diffuseColor.b);
     pcShapeMaterial->ambientColor.setValue(material.ambientColor.r, material.ambientColor.g, material.ambientColor.b);
@@ -2024,8 +2024,8 @@ static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&o
         auto link = obj->getExtensionByType<App::LinkBaseExtension>(true);
         if(vp && vp->OverrideMaterial.getValue()) {
             colorFound = true;
-            color = vp->ShapeMaterial.getValue().diffuseColor;
-            color.a = vp->ShapeMaterial.getValue().transparency;
+            color = vp->ShapeAppearance.getDiffuseColor(0);
+            color.a = vp->ShapeAppearance.getTransparency(0);
             if(!link || !link->getElementCountValue())
                 return true;
         }
@@ -2844,7 +2844,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
         clearInstanceColors();
         const App::Color &c = colors.size() == 1 ? colors[0] : ShapeColor.getValue();
         // do not get transparency from DiffuseColor in this case
-        setOverall(c, ShapeMaterial.getValue().transparency);
+        setOverall(c, ShapeAppearance.getTransparency(0));
         return;
     }
 
@@ -2855,7 +2855,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     for (const auto &inst : instanced->instances)
         total += inst.geom->faceCount;
     App::Color base = ShapeColor.getValue();
-    base.a = ShapeMaterial.getValue().transparency;
+    base.a = ShapeAppearance.getTransparency(0);
     std::vector<App::Color> resolved(size_t(total), base);
     for (size_t i = 0; i < colors.size() && i < resolved.size(); ++i)
         resolved[i] = colors[i];
@@ -2879,7 +2879,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     // the shared base subgraph (cross-instance sharable whatever its
     // value, the Link mechanism), a divergent slice a baked, refcounted
     // color variant shared by every instance applying that exact vector.
-    setOverall(ShapeColor.getValue(), ShapeMaterial.getValue().transparency);
+    setOverall(ShapeColor.getValue(), ShapeAppearance.getTransparency(0));
     bool structureChanged = false;
     int faceBase = 0;
     for (auto &inst : instanced->instances) {
@@ -4277,7 +4277,7 @@ void ViewProviderPartExt::finishRestoring()
     };
     syncMaterial(LineMaterial.getValue(), pcLineMaterial);
     syncMaterial(PointMaterial.getValue(), pcPointMaterial);
-    syncMaterial(ShapeMaterial.getValue(), pcShapeMaterial);
+    syncMaterial(ShapeAppearance.getMaterial(0), pcShapeMaterial);
 
     if(VisualTouched && (isUpdateForced() || Visibility.getValue()))
         updateVisual();

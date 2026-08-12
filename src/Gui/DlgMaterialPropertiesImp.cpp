@@ -50,7 +50,7 @@ DlgMaterialPropertiesImp::DlgMaterialPropertiesImp(const std::string& mat, QWidg
     ui->setupUi(this);
     setupConnections();
 
-    if (material != "ShapeMaterial") {
+    if (material != "ShapeAppearance") {
         ui->textLabel1->hide();
         ui->diffuseColor->hide();
     }
@@ -98,9 +98,9 @@ void DlgMaterialPropertiesImp::onAmbientColorChanged()
 
     for (std::vector<ViewProvider*>::iterator it= Objects.begin(); it != Objects.end(); ++it) {
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
-        if (prop && prop->isDerivedFrom<App::PropertyMaterial>()) {
-            auto ShapeMaterial = static_cast<App::PropertyMaterial*>(prop);
-            App::Material mat = ShapeMaterial->getValue();
+        if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
+            auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
+            App::Material mat = ShapeMaterial->getMaterial(0);
             mat.ambientColor = ambient;
             ShapeMaterial->setValue(mat);
         }
@@ -120,9 +120,9 @@ void DlgMaterialPropertiesImp::onDiffuseColorChanged()
 
     for (std::vector<ViewProvider*>::iterator it = Objects.begin(); it != Objects.end(); ++it) {
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
-        if (prop && prop->isDerivedFrom<App::PropertyMaterial>()) {
-            auto ShapeMaterial = static_cast<App::PropertyMaterial*>(prop);
-            App::Material mat = ShapeMaterial->getValue();
+        if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
+            auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
+            App::Material mat = ShapeMaterial->getMaterial(0);
             mat.diffuseColor = diffuse;
             ShapeMaterial->setValue(mat);
         }
@@ -142,9 +142,9 @@ void DlgMaterialPropertiesImp::onEmissiveColorChanged()
 
     for (std::vector<ViewProvider*>::iterator it = Objects.begin(); it != Objects.end(); ++it) {
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
-        if (prop && prop->isDerivedFrom<App::PropertyMaterial>()) {
-            auto ShapeMaterial = static_cast<App::PropertyMaterial*>(prop);
-            App::Material mat = ShapeMaterial->getValue();
+        if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
+            auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
+            App::Material mat = ShapeMaterial->getMaterial(0);
             mat.emissiveColor = emissive;
             ShapeMaterial->setValue(mat);
         }
@@ -164,9 +164,9 @@ void DlgMaterialPropertiesImp::onSpecularColorChanged()
 
     for (std::vector<ViewProvider*>::iterator it = Objects.begin(); it != Objects.end(); ++it) {
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
-        if (prop && prop->isDerivedFrom<App::PropertyMaterial>()) {
-            auto ShapeMaterial = static_cast<App::PropertyMaterial*>(prop);
-            App::Material mat = ShapeMaterial->getValue();
+        if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
+            auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
+            App::Material mat = ShapeMaterial->getMaterial(0);
             mat.specularColor = specular;
             ShapeMaterial->setValue(mat);
         }
@@ -181,9 +181,9 @@ void DlgMaterialPropertiesImp::onShininessValueChanged(int sh)
     float shininess = (float)sh / 100.0f;
     for (std::vector<ViewProvider*>::iterator it = Objects.begin(); it != Objects.end(); ++it) {
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
-        if (prop && prop->isDerivedFrom<App::PropertyMaterial>()) {
-            auto ShapeMaterial = static_cast<App::PropertyMaterial*>(prop);
-            App::Material mat = ShapeMaterial->getValue();
+        if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
+            auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
+            App::Material mat = ShapeMaterial->getMaterial(0);
             mat.shininess = shininess;
             ShapeMaterial->setValue(mat);
         }
@@ -199,9 +199,9 @@ void DlgMaterialPropertiesImp::setViewProviders(const std::vector<Gui::ViewProvi
 
     for (std::vector<ViewProvider*>::iterator it = Objects.begin(); it != Objects.end(); ++it) {
         App::Property* prop = (*it)->getPropertyByName(material.c_str());
-        if (prop && prop->isDerivedFrom<App::PropertyMaterial>()) {
-            auto ShapeMaterial = static_cast<App::PropertyMaterial*>(prop);
-            App::Material mat = ShapeMaterial->getValue();
+        if (prop && prop->isDerivedFrom<App::PropertyMaterialList>()) {
+            auto ShapeMaterial = static_cast<App::PropertyMaterialList*>(prop);
+            App::Material mat = ShapeMaterial->getMaterial(0);
             int r = int(mat.ambientColor.r * 255.0f);
             int g = int(mat.ambientColor.g * 255.0f);
             int b = int(mat.ambientColor.b * 255.0f);
