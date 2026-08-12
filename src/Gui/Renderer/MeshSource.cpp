@@ -150,6 +150,14 @@ float MeshSourceRegistry::publishedError(const void *tag)
     return it == sources.end() ? 0.0f : it->second.publishedError;
 }
 
+bool MeshSourceRegistry::knows(const void *tag) const
+{
+    if (!tag)
+        return false;
+    std::lock_guard<std::mutex> guard(mutex);
+    return sources.find(tag) != sources.end();
+}
+
 void MeshSourceRegistry::requestRefine(const void *tag)
 {
     // Copy the callback out under the lock, run it outside: a refine
@@ -211,7 +219,9 @@ float MeshSourceRegistry::demoteError(const void *tag)
 {
     std::lock_guard<std::mutex> guard(mutex);
     auto it = sources.find(tag);
-    if (it == sources.end() || !it->second.hooks.demote)
+    if (it == sources.end())
+        return kTagUnknown;
+    if (!it->second.hooks.demote)
         return 0.0f;
     return it->second.hooks.fallbackError;
 }
@@ -236,7 +246,9 @@ float MeshSourceRegistry::downgradeError(const void *tag)
 {
     std::lock_guard<std::mutex> guard(mutex);
     auto it = sources.find(tag);
-    if (it == sources.end() || !it->second.hooks.downgrade)
+    if (it == sources.end())
+        return kTagUnknown;
+    if (!it->second.hooks.downgrade)
         return 0.0f;
     return it->second.hooks.fallbackError;
 }

@@ -404,7 +404,16 @@ constexpr float kPlanDemoteMargin = 0.5f;
 /// draw carrying it and reported 6287 where 2482 sources stood.
 struct PlanDemoteStats {
     uint32_t considered = 0;   ///< exact-resident sources examined
-    uint32_t noRung = 0;       ///< demotable error 0: no fallback exists
+    uint32_t noRung = 0;       ///< registered, but armed no way down
+    /// Drawn, but its source is not in the registry at all (the error
+    /// callback answered kTagUnknown). Not a missing rung -- a missing
+    /// owner, and no generation work would ever reach it.
+    uint32_t unregistered = 0;
+    /// Resident bytes behind noRung + unregistered together: what the
+    /// ladder cannot reach at any pressure. The count says how many
+    /// sources are out of reach, this says whether reaching them would
+    /// be worth the work.
+    uint64_t unreachableBytes = 0;
     uint32_t tooBig = 0;       ///< over the margin, and pressure never reached it
     uint32_t offscreen = 0;    ///< free outright
     uint32_t eligible = 0;     ///< on screen and under the margin

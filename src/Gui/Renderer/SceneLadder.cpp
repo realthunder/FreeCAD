@@ -1254,8 +1254,18 @@ std::vector<const void *> Render::planMeshDemotes(
                 ++stats->considered;
             const float coarseErr = demoteErrOf(mesh.sourceTag);
             if (coarseErr <= 0.0f) {
-                if (stats)
-                    ++stats->noRung;
+                // A source that armed no descent and a tag nobody owns
+                // are separate answers to "why can this not descend".
+                // Both are priced, because what decides whether either
+                // is worth fixing is the residency standing behind it,
+                // not how many there are.
+                if (stats) {
+                    ++(coarseErr < 0.0f ? stats->unregistered
+                                        : stats->noRung);
+                    if (charged.emplace(mesh.sourceTag, &mesh).second)
+                        stats->unreachableBytes +=
+                            Render::meshResidentBytes(&mesh);
+                }
                 // Remembered as a non-candidate so the registry is
                 // asked once per source rather than once per draw.
                 index.emplace(mesh.sourceTag, size_t(-1));
@@ -1267,8 +1277,13 @@ std::vector<const void *> Render::planMeshDemotes(
             cand.coarseErr = coarseErr;
             cands.push_back(cand);
         }
-        if (found->second == size_t(-1))
+        if (found->second == size_t(-1)) {
+            // A second mesh under the same unreachable tag still costs
+            // its bytes; only the count is per source.
+            if (stats && charged.emplace(mesh.sourceTag, &mesh).second)
+                stats->unreachableBytes += Render::meshResidentBytes(&mesh);
             continue;
+        }
         DemoteCandidate &cand = cands[found->second];
         if (charged.emplace(mesh.sourceTag, &mesh).second)
             cand.bytes += Render::meshResidentBytes(&mesh);

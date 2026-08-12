@@ -85,6 +85,20 @@ struct LevelHooks {
     float fallbackError = 0.0f;
 };
 
+/// What demoteError/downgradeError answer for a tag the registry has
+/// never heard of, as against 0 for one it knows but that armed no way
+/// down.
+///
+/// The two look identical to a plan that only asks "is there a rung"
+/// and they are completely different defects: 0 is a source whose
+/// registration declined to arm a descent, while this is a drawn mesh
+/// whose source is not registered AT ALL -- never registered, or
+/// unregistered while its draw lives on. Counting them together
+/// reported "no fallback rung" for both and sent the previous
+/// investigation looking for a missing coarse build where the real
+/// question was who owns the tag.
+constexpr float kTagUnknown = -1.0f;
+
 class RendererExport MeshSourceRegistry {
 public:
     /// Build the bytes of declared level \a level of the mesh whose
@@ -156,6 +170,17 @@ public:
     /// The registered publishedError of the source behind \a tag, or 0.
     float publishedError(const void *tag);
 
+    /// Whether \a tag names a registered source at all.
+    ///
+    /// publishedError() answers 0 both for the exact rung and for a tag
+    /// nobody owns, so a mesh whose source was never registered is
+    /// published as exact and enters the level plan looking like a
+    /// source standing at the top of its ladder. Distinguishing the two
+    /// is what says whether the ladder can reach a drawn mesh; measured
+    /// on the rack model, 1197 of 1569 apparently-exact sources were
+    /// this.
+    bool knows(const void *tag) const;
+
     /// Bumped whenever a registration changes, and so whenever any
     /// tag's publishedError could have moved. A caller holding an
     /// answer from an earlier call can compare this instead of asking
@@ -196,7 +221,8 @@ public:
     /// without a callback.
     void requestDemote(const void *tag);
     /// The coarse-rung error \a tag would fall back to; 0 = not
-    /// demotable. What planMeshDemotes prices a demotion by.
+    /// demotable, kTagUnknown = no such source. What planMeshDemotes
+    /// prices a demotion by.
     float demoteError(const void *tag);
 
     /// The GPU budget wants \a tag's upload bytes back (§13 step 3):

@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "Gui/Renderer/MeshSource.h"
 #include "Gui/Renderer/SceneLadder.h"
 
 namespace
@@ -974,6 +975,31 @@ Render::DrawCall sizedDraw(const void *tag, float levelError,
 const uint64_t kVertBytes = 12;  ///< xyz float positions
 
 }  // namespace
+
+TEST(PlanMeshDemotes, anUnownedTagIsNotAMissingRung)
+{
+    // The registry answers kTagUnknown for a tag it never had, and 0
+    // for one that armed no descent. Both refuse the demotion; only
+    // one of them is a source that could be given a rung, so a plan
+    // that reports them as one number sends the reader after the
+    // wrong defect -- which is exactly what happened.
+    PlanCamera cam;
+    int registered = 0, unowned = 0;
+    Render::DrawCallList draws;
+    draws.push_back(sizedDraw(&registered, 0.0f, -1000, 5, 1000));
+    draws.push_back(sizedDraw(&unowned, 0.0f, -1000, 5, 1000));
+    auto errs = [&](const void *tag) {
+        return tag == &registered ? 0.0f : Render::kTagUnknown;
+    };
+
+    Render::PlanDemoteStats stats;
+    EXPECT_TRUE(Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                        2.0f, errs, &stats)
+                    .empty());
+    EXPECT_EQ(stats.considered, 2u);
+    EXPECT_EQ(stats.noRung, 1u);
+    EXPECT_EQ(stats.unregistered, 1u);
+}
 
 TEST(PlanMeshDemotes, pressureBuysWhatTheMarginRefused)
 {

@@ -11371,14 +11371,18 @@ public:
                                 return;
                             Base::Console().Message(
                                 "render levels: %s pass: considered %u | "
-                                "no fallback rung %u | on screen and too big %u "
+                                "no fallback rung %u | UNREGISTERED %u | on "
+                                "screen and too big %u "
                                 "| offscreen %u | eligible %u | under pressure "
                                 "%u | unpriceable %u | want %.1fMB freed "
-                                "%.1fMB | accepted error %.2fpx\n",
-                                what, s.considered, s.noRung, s.tooBig,
+                                "%.1fMB | out of reach %.1fMB | accepted "
+                                "error %.2fpx\n",
+                                what, s.considered, s.noRung,
+                                s.unregistered, s.tooBig,
                                 s.offscreen, s.eligible, s.underPressure,
                                 s.unpriceable, double(deficit) / 1048576.0,
                                 double(s.bytesFreed) / 1048576.0,
+                                double(s.unreachableBytes) / 1048576.0,
                                 s.acceptedErrorPx);
                         };
                         reportPass("demote", dmStats, dmDeficit);

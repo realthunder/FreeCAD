@@ -135,6 +135,16 @@ struct CacheMeshData : Render::MeshData {
     std::vector<int32_t> partialLines;
 };
 
+/// Drawn meshes whose source tag no registration claims, split by
+/// where the tag came from (see translateCache). Counted only while
+/// Render_LevelDebug is on, and reported at the end of translate().
+size_t s_unownedProtoTags = 0;
+size_t s_unownedOwnTags = 0;
+/// ...and by the node class behind them. A count says how much the
+/// ladder cannot reach; the class says who to go and ask, which is the
+/// difference between a number and a defect with an address.
+std::map<std::string, size_t> s_unownedByType;
+
 std::shared_ptr<CacheMeshData>
 translateCache(SoFCVertexCache * cache)
 {
@@ -159,6 +169,24 @@ translateCache(SoFCVertexCache * cache)
         auto & registry = Render::MeshSourceRegistry::instance();
         mesh->sourceGen = registry.generation();
         mesh->levelError = registry.publishedError(mesh->sourceTag);
+        // Who the level plan cannot reach, and why (Render_LevelDebug).
+        //
+        // An unregistered tag publishes at error 0 -- publishedError
+        // cannot say "unknown" -- so such a mesh enters the plan
+        // indistinguishable from one standing at its exact rung, and no
+        // climb or descent can ever touch it. Measured on the rack
+        // model, that was 1197 of 1569 apparently-exact sources. The
+        // split that matters is whether the tag came from a PROTO node:
+        // the bridge prefers the proto so colour variants share one
+        // source, while PartGui registers the view provider's own
+        // faceset/lineset, and where those are not the same node the
+        // registration cannot be found by the tag the mesh carries.
+        if (Gui::RenderParams::getLevelDebug()
+                && !registry.knows(mesh->sourceTag)) {
+            ++(proto ? s_unownedProtoTags : s_unownedOwnTags);
+            const SoNode *tagged = proto ? proto : node;
+            ++s_unownedByType[tagged->getTypeId().getName().getString()];
+        }
     }
 
     mesh->numVertices = cache->getNumVertices();
@@ -1131,6 +1159,26 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                 uint64_t kb = b.mesh ? b.mesh->cacheId : 0;
                 return ka < kb;
             });
+    // What this translation handed the plan that it cannot reach (see
+    // translateCache). Reported per translation and reset, so the line
+    // describes one publish rather than a running total, and only when
+    // there is something to report -- silence means every drawn mesh
+    // names a registered source.
+    if (s_unownedProtoTags || s_unownedOwnTags) {
+        std::string byType;
+        for (const auto & t : s_unownedByType) {
+            char buf[128];
+            snprintf(buf, sizeof(buf), " %s:%zu", t.first.c_str(), t.second);
+            byType += buf;
+        }
+        Base::Console().Message(
+            "render levels: unowned source tags this publish: from proto "
+            "node %zu | from own node %zu -- these publish as exact and "
+            "the ladder cannot climb or descend them; by node class:%s\n",
+            s_unownedProtoTags, s_unownedOwnTags, byType.c_str());
+        s_unownedProtoTags = s_unownedOwnTags = 0;
+        s_unownedByType.clear();
+    }
     return res;
 }
 

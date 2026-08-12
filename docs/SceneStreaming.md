@@ -2263,11 +2263,49 @@ arrays and stand on the coarse rung, which is always resident.
      selection must not be trusted as a one-shot answer.
    - **The budget is still not met -- 441.3MB against 64MB -- and
      the priced tier is not why.** It took every source it could:
-     `considered 1569 | no fallback rung 1197 | too big 0 | under
-     pressure 372`. **1197 of 1569 have no rung to fall back to**,
-     the sources built exact up front, and no policy can descend
-     what was never given a way down. That is the next gap, and it
-     is a generation problem, not a selection one.
+     `considered 1569 | no fallback rung 0 | UNREGISTERED 1197 |
+     too big 0 | under pressure 372`. See below: neither of the two
+     explanations this document previously gave was right.
+
+   **Two refutations, both measured 2026-08-12, and the second moves
+   the workstream.** The plan reported 1197 sources with "no fallback
+   rung" and it was read as sources built exact up front, needing a
+   coarse rung generated. Splitting the counter (`demoteError` now
+   answers `kTagUnknown` for a tag no registration claims, as against
+   0 for one that armed no descent) says otherwise:
+
+   1. **`no fallback rung 0 | UNREGISTERED 1197`.** Not one was an
+      exact-built source. All 1197 are drawn meshes whose source tag
+      the registry has never heard of -- and since `publishedError()`
+      answers 0 for an unowned tag exactly as it does for a genuine
+      exact rung, such a mesh publishes at error 0 and enters the
+      plan looking like a source standing at the top of its ladder.
+      Tallying them by node class named them outright:
+      **`SoBrepPointSet:186`, and nothing else.** It is structural --
+      `registerMeshLevelSource(shape, normalsFromUV, faceTag,
+      lineTag, ...)` has slots for a face node and a line node, while
+      `ViewProviderExt` builds a third drawable, the point set, and
+      registers nothing for it. Coarse-first was never involved.
+   2. **But they are worth 18.7MB of a 466.5MB deficit**, so this is
+      a *reporting* defect and not the memory blocker. Registering
+      the point set would clean the readout and buy almost nothing.
+
+   **What the same run says the blocker actually is.** After the
+   descent the scene is 2394 sources displayed coarse plus the 1197
+   point sets, and it still occupies **441.3MB against a 64MB
+   budget** -- so the coarse tessellation is itself roughly 420MB,
+   6.6x the budget, with every exact rung already given up. No
+   selection policy can close that, because on the desktop the
+   coarse rung IS the bottom of the ladder: a source built at
+   `CoarseTessellation` (default level 2, error 1/32) has nothing
+   below it to fall to.
+
+   So the next gap is **a rung below coarse**, not a rung above the
+   exact-built. The generator already accepts levels 0..7 and the
+   floor this section already specifies is **rung 0, the box**. A
+   descent that re-tessellates coarser -- coarse to coarser, and
+   ultimately to the box -- is what would let a budget this far under
+   the scene be honoured at all.
 
    The deficits come from the two pressures themselves. The GPU half
    passes `used - budget` directly, and **replans while it is still
