@@ -1050,6 +1050,14 @@ bool occludes(const DrawCall &d)
         return false;
     if (d.material.transparent || d.material.ontop)
         return false;
+    // A clipped solid's depth is NOT the mesh's depth: the eye sees
+    // through the cut a section plane makes, while this rasterizer has
+    // no clip planes and would stamp the full surface -- then prove
+    // "hidden" the interior geometry the cut exposes. The one arm that
+    // deletes pixels rather than culling less, so it is refused, not
+    // approximated.
+    if (d.material.numclipplanes)
+        return false;
     if (!d.mesh || !d.mesh->positions || !d.mesh->triangleIndices
         || d.mesh->numTriangleIndices < 3 || d.mesh->numVertices < 3)
         return false;
