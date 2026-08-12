@@ -162,6 +162,38 @@ ViewProviderGeometryObject::~ViewProviderGeometryObject()
     delete pcSwitchSensor;
 }
 
+namespace {
+
+/** Give the whole appearance one material, without losing the face colours
+ *
+ * A single material is a statement about the object, and an object having one
+ * appearance does not mean its faces have stopped having colours of their own.
+ * So a per-face diffuse field survives and every other field is set across the
+ * list; only an appearance that already holds one diffuse colour is replaced
+ * outright. Without this, restoring a document whose ShapeMaterial follows its
+ * per-face colours -- which is every document written before ShapeAppearance,
+ * since ShapeMaterial sorts after DiffuseColor -- throws those colours away.
+ */
+void applyWholeMaterial(App::PropertyMaterialList &appearance, const App::Material &mat)
+{
+    if (appearance.getDiffuseColors().size() <= 1) {
+        appearance.setValue(mat);
+        return;
+    }
+    App::PropertyMaterialList::atomic_change guard(appearance);
+    appearance.setAmbientColor(mat.ambientColor);
+    appearance.setSpecularColor(mat.specularColor);
+    appearance.setEmissiveColor(mat.emissiveColor);
+    appearance.setShininess(mat.shininess);
+    appearance.setTransparency(mat.transparency);
+    appearance.setImage(mat.image);
+    appearance.setImagePath(mat.imagePath);
+    appearance.setUuid(mat.uuid);
+    guard.tryInvoke();
+}
+
+}  // namespace
+
 void ViewProviderGeometryObject::onChanged(const App::Property* prop)
 {
     Gui::ColorUpdater colorUpdater;
@@ -181,9 +213,13 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
     }
     else if (prop == &ShapeMaterial) {
         const App::Material &mat = ShapeMaterial.getValue();
-        setCoinAppearance(mat);
+        // Only a single appearance can be pushed into the one Coin material
+        // node, as below: a per-face one is carried by the shape's own
+        // material arrays and pushing a single colour would wipe them.
+        if (ShapeAppearance.getDiffuseColors().size() <= 1)
+            setCoinAppearance(mat);
         if (!(mat == ShapeAppearance.getMaterial(0)))
-            ShapeAppearance.setValue(mat);
+            applyWholeMaterial(ShapeAppearance, mat);
     }
     else if (prop == &Transparency) {
         long value = Base::toPercent(ShapeAppearance.getTransparency(0));
@@ -207,8 +243,23 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
         // Refresh the two compatibility names off the appearance. mirrorValue,
         // not setValue: these read from the store they would otherwise write
         // straight back into.
-        ShapeColor.mirrorValue(ShapeAppearance.getDiffuseColor(0));
-        ShapeMaterial.mirrorValue(ShapeAppearance.getMaterial(0));
+        //
+        // Only while the appearance holds one diffuse colour, though: entry 0
+        // of a per-face appearance is one face, not the object, and taking it
+        // for the object would be worse than stale. ViewProviderPartExt
+        // answers a ShapeColor change by collapsing the face colours to it --
+        // so a per-face import that mirrored would throw away the very
+        // colours it had just applied.
+        if (ShapeAppearance.getDiffuseColors().size() <= 1) {
+            // The colour only. Alpha in a diffuse colour is that entry's
+            // transparency (which is where ViewProviderPartExt has always
+            // kept the per-face value), and ShapeColor has Transparency for
+            // that; importing it here would make the two disagree.
+            Base::Color color = ShapeAppearance.getDiffuseColor(0);
+            color.a = ShapeColor.getValue().a;
+            ShapeColor.mirrorValue(color);
+            ShapeMaterial.mirrorValue(ShapeAppearance.getMaterial(0));
+        }
         Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &BoundingBox) {
@@ -265,13 +316,16 @@ void PropertyShapeMaterial::setValue(const App::Material &mat)
 {
     App::PropertyMaterial::setValue(mat);
     if (_appearance)
-        _appearance->setValue(mat);
+        applyWholeMaterial(*_appearance, mat);
 }
 
 void PropertyShapeMaterial::applyToAppearance()
 {
-    if (_appearance && _appearance->getSize() <= 1)
-        _appearance->setValue(getValue());
+    // Also the entry point for an old document's ShapeMaterial, which arrives
+    // after its per-face colours: those are the more specific value and the
+    // rest of the material still applies over them.
+    if (_appearance)
+        applyWholeMaterial(*_appearance, getValue());
 }
 
 void PropertyShapeMaterial::Restore(Base::XMLReader &reader)

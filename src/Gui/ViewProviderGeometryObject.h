@@ -67,8 +67,11 @@ public:
     void setValue(float r, float g, float b, float a = 0.0F);
     void setValue(uint32_t rgba);
 
-    /// Refresh the mirror from the appearance, without writing back
-    void mirrorValue(const Base::Color &col) { App::PropertyColor::setValue(col); }
+    /// Refresh the mirror from the appearance, without writing back. A value
+    /// that has not moved is not written: PropertyColor::setValue announces
+    /// unconditionally, and every appearance change refreshes this.
+    void mirrorValue(const Base::Color &col)
+    { if (col != getValue()) App::PropertyColor::setValue(col); }
 
     void Restore(Base::XMLReader &reader) override;
 
@@ -104,7 +107,9 @@ public:
     { _appearance = appearance; }
 
     void setValue(const App::Material &mat);
-    void mirrorValue(const App::Material &mat) { App::PropertyMaterial::setValue(mat); }
+    /// See PropertyShapeColor::mirrorValue; same no-op rule
+    void mirrorValue(const App::Material &mat)
+    { if (!(mat == getValue())) App::PropertyMaterial::setValue(mat); }
 
     void Restore(Base::XMLReader &reader) override;
     /// See PropertyShapeColor::applyToAppearance; same ordering rule
