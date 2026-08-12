@@ -196,11 +196,32 @@ DeferredVisuals &deferredVisuals()
         App::GetApplication().signalDeleteDocument.connect(
                 [](const App::Document &doc) {
                     visuals.docs.erase(doc.getName());
+                    if (Gui::Application::Instance)
+                        Gui::Application::Instance->setBuildingVisuals(
+                                !visuals.docs.empty());
                 });
         return true;
     }();
     (void)observing;
     return visuals;
+}
+
+/// Publish "geometry is still being built into the views" for readers
+/// outside this workbench (Gui::Application::isBuildingVisuals). This
+/// queue being non-empty IS that state, and it is the only phase of a
+/// progressive load in which geometry reaches a renderer at all: the
+/// App restore and the deferred view-provider drain both complete with
+/// the 3D scene still empty, so a reader that watches only those two is
+/// told the load is over exactly when the geometry starts arriving.
+///
+/// Called at every mutation of the map rather than derived on demand,
+/// because the map is a static of this translation unit and the readers
+/// are in Gui, which must not depend on a workbench.
+void syncBuildingVisuals()
+{
+    if (Gui::Application::Instance)
+        Gui::Application::Instance->setBuildingVisuals(
+                !deferredVisuals().docs.empty());
 }
 
 } // anonymous namespace
@@ -3358,6 +3379,7 @@ bool ViewProviderPartExt::deferVisualForLoad()
     if (!VisualDeferred) {
         VisualDeferred = true;
         deferredVisuals().docs[doc->getName()].pending.emplace_back(obj);
+        syncBuildingVisuals();
     }
     // The restore pumps events through its progress sequencer, so a slice
     // can be posted now; it will find the document still restoring and put
@@ -3505,6 +3527,11 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                 << queue.spent.count() << 's');
         it = visuals.docs.erase(it);
     }
+
+    // After every erase this slice made, so the state falls on the slice
+    // that empties the queue -- the frame after it is the first one that
+    // may draw the elements the load gate was holding back.
+    syncBuildingVisuals();
 
     if (more)
         scheduleDeferredVisualSlice();

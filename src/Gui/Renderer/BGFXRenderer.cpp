@@ -107,6 +107,20 @@
 // # include <GL/glext.h>
 // #endif
 
+// One narration path for the readouts that belong to BOTH tiers.
+//
+// Base/Console.h is included above only in the Qt half, so every
+// unguarded Base::Console() in this file is a standalone build error --
+// and there were six, in the frame-timing instrument, which is why the
+// WASM tier had stopped compiling. Desktop routing is deliberately
+// UNCHANGED: the performance harnesses read these lines out of
+// --log-file, and only the console writes there.
+#ifdef FC_RENDERER_STANDALONE
+#  define FC_RENDER_MSG(...) std::printf(__VA_ARGS__)
+#else
+#  define FC_RENDER_MSG(...) Base::Console().Message(__VA_ARGS__)
+#endif
+
 #include <bgfx/bgfx.h>
 #include <bx/timer.h>
 #include <bx/math.h>
@@ -11464,6 +11478,20 @@ public:
                                 .insert(draw.mesh->sourceTag);
                         }
                         const size_t budget = gpuBudgetBytes();
+                        // Why the gates are where they are, in the one
+                        // order a reader would ask: the load gate
+                        // overrides both, then the standing pair. A
+                        // gate that fires for a reason it does not name
+                        // is the confusion this readout exists to end.
+                        const char *gateWhy =
+                            loadDropElements
+                                ? " (LOADING: both dropped)"
+                            : shapeVerticesOn && !pressureDropEdges
+                                ? " (both gates OFF)"
+                            : !gpuOverBudget && pressureDropEdges
+                                    && shapeVerticesOn
+                                ? " (no pressure)"
+                                : "";
                         // Two meters, named for what they measure and
                         // for what releases them, never added together:
                         // the same mesh is counted in both, and it has
@@ -11491,12 +11519,7 @@ public:
                             refineTolerance,
                             levelPressureErrPx > 0.0f
                                 ? " (RAISED BY PRESSURE)" : "",
-                            gateEligible, gatedPoints, gatedLines,
-                            shapeVerticesOn && !pressureDropEdges
-                                ? " (both gates OFF)"
-                                : !gpuOverBudget && pressureDropEdges
-                                      && shapeVerticesOn
-                                    ? " (no pressure)" : "");
+                            gateEligible, gatedPoints, gatedLines, gateWhy);
                         // Why a downgrade pass that ran refused
                         // everything. Printed only when it ran, so its
                         // absence is not mistaken for "no candidates".
@@ -14290,18 +14313,19 @@ public:
             if (d.mesh && d.mesh->attachedOnly)
                 ++gateEligible;
         }
-#ifndef FC_RENDERER_STANDALONE
-        const bool gateVertices = !shapeVerticesOn;
-        const bool gateEdges = pressureDropEdges && gpuOverBudget;
-#else
-        // The standalone/WASM tier carries its own ladder and has no
-        // desktop level plan behind it -- no budget, so no pressure
-        // state to gate on, and the flags themselves live with the
-        // plan. Neither gate exists there yet; the vertex one is worth
-        // having on mobile and is left as follow-up work.
-        const bool gateVertices = false;
-        const bool gateEdges = false;
-#endif
+        // A document being loaded suppresses BOTH classes for as long
+        // as the load lasts, whatever the two standing gates say. It is
+        // the moment the tier is least able to afford them and least
+        // able to use them: the faces are arriving coarse-first and
+        // being replaced under the camera, nobody is inspecting a
+        // vertex of a model that is still half there, and every byte
+        // not uploaded now is one the arriving geometry gets instead.
+        // The way back is one frame, so it costs nothing to hold the
+        // classes back until the load has let go and then let the
+        // ordinary gates decide.
+        const bool gateVertices = !shapeVerticesOn || loadDropElements;
+        const bool gateEdges = (pressureDropEdges && gpuOverBudget)
+            || loadDropElements;
         if (gateVertices || gateEdges) {
             for (const auto &d : scene) {
                 if (!d.objectKey || d.material.ontop)
@@ -14334,6 +14358,26 @@ public:
                 continue;
             ++(d.material.type == Render::Material::Point ? gatedPoints
                                                           : gatedLines);
+        }
+        // Both edges of the load gate, with what it cost on the frame
+        // it crossed. The closing edge matters as much as the opening
+        // one: a gate that never lifts is the failure this design has
+        // to rule out, and "loading OFF" arriving with the load is the
+        // evidence that it does.
+        if (loadDropElements != loadDropSeen) {
+            loadDropSeen = loadDropElements;
+            // Through the cross-tier macro: this sits outside the
+            // desktop guard with the gate it reports, and the console
+            // is Gui-only -- but on the desktop it must still reach
+            // --log-file beside the plan readout the harnesses read.
+            if (levelDebug())
+                FC_RENDER_MSG(
+                    "render levels: load gate %s -- %zu of %zu drawables "
+                    "eligible, %zu point + %zu line draws suppressed "
+                    "this frame\n",
+                    loadDropElements ? "ON (a document is arriving)"
+                                     : "OFF (loads finished)",
+                    gateEligible, scene.size(), gatedPoints, gatedLines);
         }
 
         // ⭐ The per-instance id image (docs/RenderDebug.md §2.3b, view
@@ -15575,7 +15619,7 @@ public:
                     - phaseMs[CpuPostTail] - phaseMs[CpuCtxOut]
                     - phaseMs[CpuCtxIn] - phaseMs[CpuBlit]
                     - phaseMs[CpuCtxDone];
-                Base::Console().Message(
+                FC_RENDER_MSG(
                         "render cpu phases (ms/frame): pre %.2f | cull %.2f | "
                         "submitloop %.2f | post %.2f [caps %.2f effects %.2f "
                         "sel %.2f tail %.2f done %.2f ctxout %.2f ctxin %.2f blit %.2f "
@@ -15611,7 +15655,7 @@ public:
                 double sum = 0.0;
                 for (double v : outMs)
                     sum += v;
-                Base::Console().Message(
+                FC_RENDER_MSG(
                         "render outside (ms/frame): outside %.2f [pre %.2f | "
                         "background %.2f | coin %.2f | foreground %.2f | "
                         "captures %.2f | chrome %.2f | paintpre %.2f | "
@@ -15658,7 +15702,7 @@ public:
                              ranked[i].second.second / f);
                     line += b;
                 }
-                Base::Console().Message(
+                FC_RENDER_MSG(
                         "render passes (cpu/gpu ms, top %zu of %zu, "
                         "totals %.2f/%.2f):%s\n",
                         show, ranked.size(), cpuAll / f, gpuAll / f,
@@ -15671,7 +15715,7 @@ public:
             // (docs/DrawSubmission.md phase 0.5).
             if (due) {
                 const InstancingStats &is = instStats;
-                Base::Console().Message(
+                FC_RENDER_MSG(
                         "render instancing: %u groups (%u usable, %u "
                         "singleton) over %u rows | %u submits replaced %u "
                         "draws | refused %u groups / %u draws | thinned to "
@@ -15697,7 +15741,7 @@ public:
                 // between the oracles is actually about.
                 const auto &ms = maskedCull.lastFrame();
                 const auto &bs = maskedCull.depth().stats();
-                Base::Console().Message(
+                FC_RENDER_MSG(
                         "render culling: instances hidden %u / drawn %u / "
                         "offscreen %u | nodes visited %u hidden %u offscreen %u "
                         "tested %u | occluders %u of %u draws, %u tris, "
@@ -15756,7 +15800,7 @@ public:
             }
             else if (due && cullconf.enabled) {
                 const auto &cs = culler.lastFrame();
-                Base::Console().Message(
+                FC_RENDER_MSG(
                         "render culling: instances hidden %u / drawn %u / "
                         "offscreen %u | nodes visited %u hidden %u offscreen %u "
                         "| tests offered %u budgeted %u sent %u | queries "
@@ -16608,6 +16652,57 @@ public:
     bool animatedFrame = false;
     float bboxMin[3], bboxMax[3];
 
+    /// The element gates (docs/SceneStreaming.md #13b), pushed in from
+    /// the host -- the Gui bridge on the desktop, the URL parameters in
+    /// the standalone viewer. Defaults are the pre-feature behaviour:
+    /// draw every vertex, drop no edge, suppress nothing while loading.
+    ///
+    /// OUTSIDE the desktop guard below, and deliberately: the vertex
+    /// gate is pure display -- it asks the producer's one-bit
+    /// classification and whether the edges are on screen, and needs no
+    /// budget, no level plan and no pressure state. That is worth more
+    /// on a phone than on the desktop, where a point costs a 32-byte
+    /// sprite instance record against 4 bytes in the heap. The edge
+    /// gate rides along but stays dormant there, because it reads
+    /// gpuOverBudget and the standalone tier's budget is its CPU half
+    /// only -- a resident-payload and heap figure that cannot see the
+    /// GPU buffers an edge draw would free. It arms itself the day that
+    /// tier grows an uploaded-bytes meter (#13a), with no further wiring.
+    bool shapeVerticesOn = true;
+    bool pressureDropEdges = false;
+    bool loadDropElements = false;
+    /// What the gates suppressed in the last rendered frame, and how
+    /// many drawables were eligible to be suppressed at all (classified
+    /// attachedOnly by the producer). Reported with the level plan: a
+    /// gate that cannot say whether it fired cannot be told apart from
+    /// one that is not wired, and this workstream has already spent a
+    /// session on exactly that confusion. `eligible` separates "the
+    /// rule refused" from "nobody classified anything".
+    size_t gatedPoints = 0, gatedLines = 0, gateEligible = 0;
+    // Whether the last rendered frame stood over the GPU budget. Out
+    // here because the edge gate reads it; only the desktop half ever
+    // writes it (the budget crossing, which also wakes the planner), so
+    // in the standalone build it stays false and says so honestly.
+    bool gpuOverBudget = false;
+    // The load gate as of the last frame, so the crossing can be
+    // reported. The plan readout below cannot carry it: that prints on
+    // a camera settle, and a load can begin and end entirely between
+    // two settles -- the gate would do its whole job with nothing ever
+    // saying it ran.
+    bool loadDropSeen = false;
+
+    /// Whether the level plan narrates its decisions. Pushed in from
+    /// the Gui bridge like the budget beside it -- this library knows
+    /// nothing of RenderParams -- with the environment variable as the
+    /// standalone viewer's way in. Out here with the gates it also
+    /// reports, so the standalone build can narrate them too.
+    bool levelDebug() const
+    {
+        static const bool env = std::getenv("FC_LEVEL_DEBUG") != nullptr;
+        return levelDebugOn || env;
+    }
+    bool levelDebugOn = false;
+
 #ifndef FC_RENDERER_STANDALONE
     // The desktop level plan's event half (§13 step 2): fed the camera
     // every rendered frame, fires the plan pass ~300ms after it
@@ -16624,34 +16719,6 @@ public:
     float levelPressureErrPx = 0.0f;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
-    // Whether the last rendered frame stood over the GPU budget — the
-    // crossing is what wakes the planner.
-    bool gpuOverBudget = false;
-
-    /// Whether the level plan narrates its decisions. Pushed in from
-    /// the Gui bridge like the budget beside it -- this library knows
-    /// nothing of RenderParams -- with the environment variable as the
-    /// standalone viewer's way in.
-    bool levelDebug() const
-    {
-        static const bool env = std::getenv("FC_LEVEL_DEBUG") != nullptr;
-        return levelDebugOn || env;
-    }
-    bool levelDebugOn = false;
-
-    /// The element gates (docs/SceneStreaming.md #13b), pushed in from
-    /// the Gui bridge. Defaults are the pre-feature behaviour: draw
-    /// every vertex, drop no edge.
-    bool shapeVerticesOn = true;
-    bool pressureDropEdges = false;
-    /// What the gates suppressed in the last rendered frame, and how
-    /// many drawables were eligible to be suppressed at all (classified
-    /// attachedOnly by the producer). Reported with the level plan: a
-    /// gate that cannot say whether it fired cannot be told apart from
-    /// one that is not wired, and this workstream has already spent a
-    /// session on exactly that confusion. `eligible` separates "the
-    /// rule refused" from "nobody classified anything".
-    size_t gatedPoints = 0, gatedLines = 0, gateEligible = 0;
 
     /// GPU geometry bytes in use: the API's own number where it
     /// reports one, else the upload accounting.
@@ -17264,17 +17331,19 @@ void BGFXRenderer::setGpuMemoryBudget(size_t bytes)
     pimpl->gpuBudget = bytes;
 }
 
-void BGFXRenderer::setElementGates(bool shapeVertices, bool pressureEdges)
-{
-    pimpl->shapeVerticesOn = shapeVertices;
-    pimpl->pressureDropEdges = pressureEdges;
-}
-
 void BGFXRenderer::setLevelDebug(bool on)
 {
     pimpl->levelDebugOn = on;
 }
 #endif
+
+void BGFXRenderer::setElementGates(bool shapeVertices, bool pressureEdges,
+                                   bool loadingDrop)
+{
+    pimpl->shapeVerticesOn = shapeVertices;
+    pimpl->pressureDropEdges = pressureEdges;
+    pimpl->loadDropElements = loadingDrop;
+}
 
 //////////////////////////////////////////////////////////////////////
 

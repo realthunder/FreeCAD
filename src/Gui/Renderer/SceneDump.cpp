@@ -138,8 +138,15 @@ const uint32_t kVersion = 40;
 /// part of what the content key hashes: bump it whenever a chunk's own
 /// layout changes and every key changes with it, which retires the
 /// entries cached by older builds instead of letting them be misread.
-/// (4: a shader chunk carries the particle state step and its binary.)
-const uint32_t kChunkVersion = 4;
+/// (4: a shader chunk carries the particle state step and its binary.
+///  5: a mesh chunk carries attachedOnly, the producer's one-bit
+///  element classification -- #13b. Nothing can be MISREAD without the
+///  bump: it rides a free bit of an existing flags byte, so an old
+///  chunk reads as unclassified. The bump is for the other failure,
+///  the one this file's own guard comment names: a cached chunk from
+///  an older build would answer "unclassified" forever, and the gate
+///  would work on the desktop and quietly do nothing in the browser.)
+const uint32_t kChunkVersion = 5;
 
 //////////////////////////////////////////////////////////////////////
 // Streamed config layout guards.
@@ -331,8 +338,15 @@ void writeMeshChunk(Writer &w, const MeshData &m)
 {
     w.u32(kChunkVersion);
     w.i32(m.numVertices);
+    // Bit 8 is the odd one out: the first three say a payload follows,
+    // this one is the producer's classification and carries no bytes
+    // (attachedOnly, #13b -- every vertex is an edge endpoint, or every
+    // edge bounds a face). It rides the flags byte rather than
+    // appending a field because a reader that does not know it simply
+    // does not test it, and the bit costs nothing on a mesh that has no
+    // points or lines at all.
     uint8_t flags = (m.normals ? 1 : 0) | (m.colors ? 2 : 0)
-        | (m.texCoords ? 4 : 0);
+        | (m.texCoords ? 4 : 0) | (m.attachedOnly ? 8 : 0);
     w.u8(flags);
     w.raw(m.positions, size_t(m.numVertices) * 3 * sizeof(float));
     if (m.normals)
@@ -548,6 +562,11 @@ void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
         r.floats(mesh->uvStore.data(), nv * 4);
         mesh->texCoords = mesh->uvStore.data();
     }
+    // Absent bit = unclassified = always draws, which is the safe
+    // direction and exactly what a chunk written by an older build
+    // means: nobody judged this drawable, so nothing on screen may be
+    // assumed to be standing in for it.
+    mesh->attachedOnly = (flags & 8) != 0;
 
     auto indices = [&](std::vector<int32_t> &store, const int32_t *&ptr,
                        int &count) {
@@ -634,6 +653,12 @@ bool Render::generateMeshLevel(const void *chunk, size_t size, uint32_t level,
     simplified.fill(levelMesh);
     levelMesh.hasTransparency = mesh.hasTransparency;
     levelMesh.hasOpaqueParts = mesh.hasOpaqueParts;
+    // A statement about the shape's topology, not about this mesh's
+    // resolution: whether a vertex sits on an edge does not change
+    // because the surface was decimated. Dropping it here would make a
+    // drawable un-gateable on exactly the coarse rungs a tier under
+    // memory pressure is standing on.
+    levelMesh.attachedOnly = mesh.attachedOnly;
     return writeChunk(out, [&levelMesh](Writer &w) {
         writeMeshChunk(w, levelMesh);
     });

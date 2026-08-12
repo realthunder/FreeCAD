@@ -172,6 +172,10 @@ GuiExport size_t translateGpuMemoryBudget(App::PropertyContainer * view);
 GuiExport bool translateLevelDebug(App::PropertyContainer * view);
 GuiExport bool translateShapeVertices(App::PropertyContainer * view);
 GuiExport bool translatePressureDropEdges(App::PropertyContainer * view);
+/// Whether the element gates should suppress both classes outright
+/// right now: Render_LoadDropElements is on, coarse-first is on, and
+/// some document is still arriving (docs/SceneStreaming.md #13b).
+GuiExport bool translateLoadDropElements(App::PropertyContainer * view);
 
 } // namespace RendererBridge
 } // namespace Gui

@@ -111,13 +111,18 @@ public:
     /// (reflection re-render, SSAO resolve); see Render::Renderer.
     virtual void setEffectResolution(float scale) override;
     virtual void setSSAOResolution(float scale) override;
+    /// The element gates (docs/SceneStreaming.md #13b). Outside the
+    /// desktop guard below: the vertex gate is pure display and is
+    /// worth more on a phone than on the desktop, so the standalone
+    /// viewer drives it from its URL parameters.
+    virtual void setElementGates(bool shapeVertices, bool pressureEdges,
+                                 bool loadingDrop) override;
+
 #ifndef FC_RENDERER_STANDALONE
     virtual void setLevelTolerance(float px) override;
     virtual bool drivesMeshLevels() const override;
     virtual void setGpuMemoryBudget(size_t bytes) override;
     virtual void setLevelDebug(bool on) override;
-    virtual void setElementGates(bool shapeVertices,
-                                 bool pressureEdges) override;
 #endif
 
 #ifdef FC_RENDERER_STANDALONE

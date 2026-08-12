@@ -1941,6 +1941,22 @@ bool Application::isClosing()
     return d->isClosing;
 }
 
+// A plain static, not a member of the pimpl: the owner is a workbench
+// whose queue is a function-local static of its own, and this only has
+// to outlive the drains that set it. False is the honest default for a
+// build with no such workbench loaded -- nothing is deferring anything.
+static bool s_buildingVisuals = false;
+
+void Application::setBuildingVisuals(bool building)
+{
+    s_buildingVisuals = building;
+}
+
+bool Application::isBuildingVisuals() const
+{
+    return s_buildingVisuals;
+}
+
 MacroManager *Application::macroManager()
 {
     return d->macroMngr;

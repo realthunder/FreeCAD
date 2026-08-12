@@ -32,6 +32,7 @@
 #include <QImage>
 
 #include <App/Application.h>
+#include <App/Document.h>
 #include <App/PropertyFile.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyStandard.h>
@@ -67,6 +68,8 @@
 #include <Inventor/nodes/SoShaderParameter.h>
 
 #include "SoAutoZoomTranslation.h"
+#include "../Application.h"
+#include "../Document.h"
 #include "SoFCRendererBridge.h"
 #include "SoFCDisplayModeElement.h"
 #include "SoFCRenderer.h"
@@ -2068,6 +2071,72 @@ RendererBridge::translatePressureDropEdges(App::PropertyContainer * view)
     return bool(viewParamOverride<App::PropertyBool>(
             view, "Render", "PressureDropEdges",
             RenderParams::getPressureDropEdges()));
+}
+
+bool
+RendererBridge::translateLoadDropElements(App::PropertyContainer * view)
+{
+    if (!viewParamOverride<App::PropertyBool>(
+                view, "Render", "LoadDropElements",
+                RenderParams::getLoadDropElements()))
+        return false;
+
+    // Coarse-first must be on, because that is the arrival this makes
+    // room for. Only the level half of PartGui::coarseTessellationLevel
+    // is re-asked here: its other conditions -- render cache 3, a
+    // backend that drives mesh levels -- are true by construction on
+    // the path that reaches this function at all, and its answer is
+    // per document while this is one state for the frame.
+    {
+        static const int envLevel = [] {
+            const char *env = std::getenv("FC_COARSE_TESSELLATION");
+            return env && *env ? std::atoi(env) : -2;
+        }();
+        const int level = envLevel != -2
+            ? envLevel
+            : int(viewParamOverride<App::PropertyInteger>(
+                      view, "Render", "CoarseTessellation",
+                      long(RenderParams::getCoarseTessellation())));
+        if (level < 0)
+            return false;
+    }
+
+    // The phase that actually matters, and it is the LAST one: the
+    // deferred visual drain, where tessellations are built and fed to
+    // the renderer a slice at a time.
+    //
+    // MEASURED, and it refutes the obvious predicate: on the
+    // 5455-object rack model the renderer's scene held 0 drawables for
+    // the whole of the App restore AND the whole of the deferred
+    // view-provider drain -- `eligible 0` on every frame -- and jumped
+    // to 11818 the instant both had cleared. A gate armed on the
+    // document status bits alone is therefore ON only while there is
+    // nothing on screen to suppress, and lifts exactly as the geometry
+    // arrives. It would have measured as working and bought nothing.
+    if (Gui::Application::Instance
+            && Gui::Application::Instance->isBuildingVisuals())
+        return true;
+
+    // The other ways a document can still be arriving, kept because
+    // they are real even though the case above dominates a .FCStd
+    // open: a live progressive import builds its visuals inline as
+    // objects appear, so its geometry does reach the view while the
+    // document still carries the status bit.
+    //
+    // Asked of ANY document, not just the one the camera is over: the
+    // frame draws them all, and a second document loading behind the
+    // first is where the memory this frees is worth the most.
+    for (auto doc : App::GetApplication().getDocuments()) {
+        if (doc->testStatus(App::Document::Restoring)
+                || doc->testStatus(App::Document::Importing)
+                || doc->testStatus(App::Document::LiveImport))
+            return true;
+        auto guiDoc = Gui::Application::Instance
+            ? Gui::Application::Instance->getDocument(doc) : nullptr;
+        if (guiDoc && guiDoc->isRestoringViewProviders())
+            return true;
+    }
+    return false;
 }
 
 size_t

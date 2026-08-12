@@ -66,6 +66,7 @@ public:
     double LevelScaleBoxError;
     bool ShapeVertices;
     bool PressureDropEdges;
+    bool LoadDropElements;
     double EffectResolution;
     bool Occlusion;
     long OcclusionVisibleTtl;
@@ -183,6 +184,8 @@ public:
         funcs["ShapeVertices"] = &RenderParamsP::updateShapeVertices;
         PressureDropEdges = this->handle->GetBool("PressureDropEdges", true);
         funcs["PressureDropEdges"] = &RenderParamsP::updatePressureDropEdges;
+        LoadDropElements = this->handle->GetBool("LoadDropElements", true);
+        funcs["LoadDropElements"] = &RenderParamsP::updateLoadDropElements;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
         funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
         Occlusion = this->handle->GetBool("Occlusion", false);
@@ -424,6 +427,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePressureDropEdges(RenderParamsP *self) {
         self->PressureDropEdges = self->handle->GetBool("PressureDropEdges", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLoadDropElements(RenderParamsP *self) {
+        self->LoadDropElements = self->handle->GetBool("LoadDropElements", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateEffectResolution(RenderParamsP *self) {
@@ -1365,6 +1372,66 @@ void RenderParams::setPressureDropEdges(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removePressureDropEdges() {
     instance()->handle->RemoveBool("PressureDropEdges");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLoadDropElements() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Stop drawing edges AND vertices for as long as a document is\n"
+"still arriving (docs/SceneStreaming.md #13b), and let the two\n"
+"standing gates above decide again the moment it has finished.\n"
+"A load is when the tier can least afford those two classes and\n"
+"can least use them: the faces are arriving coarse-first and\n"
+"being replaced under the camera, nobody inspects a vertex of a\n"
+"model that is still half there, and every byte not uploaded to\n"
+"an edge instance buffer now is one the arriving geometry gets\n"
+"instead.\n"
+"MEASURED: on a .FCStd open this currently suppresses NOTHING,\n"
+"and not because it fails to fire. Progressive document load\n"
+"parks every visual build and publishes the scene in one step\n"
+"when the load is done, so the renderer holds an empty scene for\n"
+"the whole load -- 0 drawables across 17.8s on a 5455-object\n"
+"model. It is kept for the case that is still real, a live\n"
+"progressive import, which builds its visuals inline as objects\n"
+"appear; that case is not yet measured.\n"
+"It overrides both gates while it lasts -- vertices drop even\n"
+"with ShapeVertices on, edges drop with no pressure yet declared\n"
+"-- but it is subject to the same all-or-nothing classification\n"
+"and the same display-mode exemptions: a wire, a sketch, a datum\n"
+"line or a point cloud draws throughout, because nothing else on\n"
+"screen would show it, and neither class is dropped in the mode\n"
+"that exists to show it.\n"
+"Costs one frame to leave, like the pressure gate, so what it\n"
+"holds back comes straight back when the load lets go.\n"
+"Applies only where coarse-first is on (CoarseTessellation 0 or\n"
+"above): with everything tessellated exact up front there is no\n"
+"progressive arrival for this to make room for.\n"
+"A load here means a document restoring, a progressive import\n"
+"filling one, or the deferred view-provider drain that follows a\n"
+"restore -- geometry is still being built into the view in all\n"
+"three.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getLoadDropElements() {
+    return instance()->LoadDropElements;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultLoadDropElements() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLoadDropElements(const bool &v) {
+    instance()->handle->SetBool("LoadDropElements",v);
+    instance()->LoadDropElements = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLoadDropElements() {
+    instance()->handle->RemoveBool("LoadDropElements");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

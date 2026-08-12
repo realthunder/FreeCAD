@@ -1682,16 +1682,21 @@ public:
     /// downgrade half of the plan had never executed and nothing said
     /// so.
     virtual void setLevelDebug(bool on) { (void)on; }
-    /// The two display gates of the memory response
+    /// The display gates of the memory response
     /// (docs/SceneStreaming.md #13b), pushed in like every other
     /// parameter -- this library knows nothing of RenderParams.
     /// \a shapeVertices false suppresses point drawables whose every
     /// vertex sits on an edge that is itself drawn; \a pressureEdges
     /// true suppresses line drawables whose every edge bounds a drawn
-    /// face, and only while the GPU budget stands exceeded. Neither
+    /// face, and only while the GPU budget stands exceeded;
+    /// \a loadingDrop true suppresses both classes outright, and is
+    /// what a host asserts while a document is still arriving. Whether
+    /// a document is loading is a question only the host can answer, so
+    /// it is pushed as a state and not derived here. None of the three
     /// ever touches an on-top or highlight draw.
-    virtual void setElementGates(bool shapeVertices, bool pressureEdges)
-    { (void)shapeVertices; (void)pressureEdges; }
+    virtual void setElementGates(bool shapeVertices, bool pressureEdges,
+                                 bool loadingDrop)
+    { (void)shapeVertices; (void)pressureEdges; (void)loadingDrop; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

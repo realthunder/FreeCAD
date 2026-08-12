@@ -2467,6 +2467,8 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
     PRIVATE(this)->external->setElementGates(
         RendererBridge::translateShapeVertices(PRIVATE(this)->externalview),
         RendererBridge::translatePressureDropEdges(
+            PRIVATE(this)->externalview),
+        RendererBridge::translateLoadDropElements(
             PRIVATE(this)->externalview));
     PRIVATE(this)->external->setAutoZoomScale(
         RendererBridge::translateAutoZoomScale(state));

@@ -221,6 +221,30 @@ public:
     /// true when the application shutting down
     bool isClosing();
 
+    /** @name Deferred visual builds */
+    //@{
+    /** Whether geometry is still being built into the views.
+     *
+     * The last phase of a progressive load, and the only one in which
+     * geometry actually reaches a renderer: the App restore and the
+     * deferred view-provider drain both finish with the 3D scene still
+     * empty, and the visuals are built afterwards, a slice at a time
+     * (ViewProviderPartExt::runDeferredVisualSlice). A consumer asking
+     * "is a document still arriving?" that only reads the document
+     * status bits and Document::isRestoringViewProviders() gets the
+     * answer "no" for exactly the phase it cares about -- measured on
+     * the 5455-object rack model, where the renderer's scene held 0
+     * drawables until after both of those had cleared.
+     *
+     * Kept here rather than in the queue itself because the queue is
+     * PartGui's and its readers are not: Gui must not depend on a
+     * workbench. The owner sets it around its drain; anything else
+     * reads it.
+     */
+    void setBuildingVisuals(bool building);
+    bool isBuildingVisuals() const;
+    //@}
+
     void checkForDeprecatedSettings();
     void checkForPreviousCrashes();
 

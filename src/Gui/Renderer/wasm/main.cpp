@@ -2753,6 +2753,12 @@ static void applySnapshot(bool fit)
     // load from the server-compiled binaries the snapshot carries.
     s_renderer->setUserShaderConfig(s_snap.usershaderconf);
     s_renderer->setAutoZoomScale(s_snap.autozoomScale);
+    // The element gates (#13b). The edge one is pushed on and stays
+    // dormant here for want of an uploaded-bytes meter; the load gate
+    // is the desktop's, where geometry arrives into a live view -- this
+    // tier's scene arrives as a snapshot that is applied whole.
+    s_renderer->setElementGates(s_shapeVertices, /*pressureEdges*/ true,
+                                /*loadingDrop*/ false);
     s_renderer->setEffectResolution(s_snap.effectResolution);
     s_renderer->setSSAOResolution(s_snap.ssaoResolution);
     if (s_snap.hatch && !s_snap.hatch->pixels.empty())
@@ -3584,6 +3590,16 @@ static bool s_noFetchOrder = false;
 /// disables selection entirely — every mesh entry fetches its finest
 /// built level, the pre-5d behavior.
 static float s_lodPx = 2.0f;
+/// ?shapevertices=1 -- draw the vertex points that sit on the ends of a
+/// shape's edges (docs/SceneStreaming.md #13b). Off, like the desktop
+/// parameter of the same name, and it matters more here: such a point
+/// lands exactly on an edge already drawn, and it costs a 32-byte
+/// sprite instance record against the 4 bytes it occupies in the heap,
+/// so on a phone it is the most expensive thing on screen per unit of
+/// what it shows. All or nothing per point set, and only where the
+/// producer classified every one of its vertices as an edge endpoint --
+/// a point cloud always draws.
+static bool s_shapeVertices = false;
 /// ?genlod — ask the server to build every declared-but-unbuilt level
 /// the current publish names (§7, phase 5c). A debug stand-in for
 /// level *selection* (phase 5d), which will ask for the one level a
@@ -6518,6 +6534,24 @@ int main()
         });
         if (px >= 0.0)
             s_lodPx = float(px);
+    }
+    // ?shapevertices=<0|1> -- see s_shapeVertices. Only the vertex gate
+    // is offered: the edge gate reads the GPU budget crossing, and this
+    // tier's budget is its CPU half only (resident payload and heap),
+    // which cannot see the GPU buffers an edge draw would free. It
+    // stays pushed and dormant rather than pretending, and arms itself
+    // the day this tier grows an uploaded-bytes meter (#13a).
+    {
+        const int on = EM_ASM_INT({
+            const v = new URLSearchParams(window.location.search)
+                .get('shapevertices');
+            return v === null ? -1 : ((v === '0' || v === 'false') ? 0 : 1);
+        });
+        if (on >= 0) {
+            s_shapeVertices = on != 0;
+            std::printf("fcviewer: shape vertices %s\n",
+                        s_shapeVertices ? "ON" : "off");
+        }
     }
     // ?membudget=<MB> — pin the resident geometry budget (§6 phase 4b),
     // which otherwise fits itself to the device. A real budget is larger

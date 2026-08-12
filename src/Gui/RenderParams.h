@@ -425,6 +425,50 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LoadDropElements
+    ///
+    /// Stop drawing edges AND vertices for as long as a document is
+    /// still arriving (docs/SceneStreaming.md #13b), and let the two
+    /// standing gates above decide again the moment it has finished.
+    /// A load is when the tier can least afford those two classes and
+    /// can least use them: the faces are arriving coarse-first and
+    /// being replaced under the camera, nobody inspects a vertex of a
+    /// model that is still half there, and every byte not uploaded to
+    /// an edge instance buffer now is one the arriving geometry gets
+    /// instead.
+    /// MEASURED: on a .FCStd open this currently suppresses NOTHING,
+    /// and not because it fails to fire. Progressive document load
+    /// parks every visual build and publishes the scene in one step
+    /// when the load is done, so the renderer holds an empty scene for
+    /// the whole load -- 0 drawables across 17.8s on a 5455-object
+    /// model. It is kept for the case that is still real, a live
+    /// progressive import, which builds its visuals inline as objects
+    /// appear; that case is not yet measured.
+    /// It overrides both gates while it lasts -- vertices drop even
+    /// with ShapeVertices on, edges drop with no pressure yet declared
+    /// -- but it is subject to the same all-or-nothing classification
+    /// and the same display-mode exemptions: a wire, a sketch, a datum
+    /// line or a point cloud draws throughout, because nothing else on
+    /// screen would show it, and neither class is dropped in the mode
+    /// that exists to show it.
+    /// Costs one frame to leave, like the pressure gate, so what it
+    /// holds back comes straight back when the load lets go.
+    /// Applies only where coarse-first is on (CoarseTessellation 0 or
+    /// above): with everything tessellated exact up front there is no
+    /// progressive arrival for this to make room for.
+    /// A load here means a document restoring, a progressive import
+    /// filling one, or the deferred view-provider drain that follows a
+    /// restore -- geometry is still being built into the view in all
+    /// three.
+    static const bool & getLoadDropElements();
+    static const bool & defaultLoadDropElements();
+    static void removeLoadDropElements();
+    static void setLoadDropElements(const bool &v);
+    static const char *docLoadDropElements();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter EffectResolution
     ///
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect
