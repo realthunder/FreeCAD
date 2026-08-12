@@ -139,6 +139,20 @@ inline T toDegrees(T r)
     return static_cast<T>((r / M_PI) * 180.0);
 }
 
+/** Transparency and the like are a percent in the property, a fraction in
+ * the scene graph. Upstream spells the two conversions this way, and every
+ * ported call site that touches a percentage expects them.
+ */
+inline float fromPercent(const long value)
+{
+    return std::roundf(static_cast<float>(value)) / 100.0F;
+}
+
+inline long toPercent(float value)
+{
+    return std::lround(100.0 * value);
+}
+
 template<class T>
 inline T fmod(T numerator, T denominator)
 {
