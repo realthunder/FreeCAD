@@ -115,6 +115,7 @@
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <Gui/Renderer/Renderer.h>
 #include <Gui/Renderer/MeshSimplify.h>
+#include <Gui/Renderer/MeshSource.h>
 #include <Mod/Part/App/Tools.h>
 
 #include "ViewProviderExt.h"
@@ -3464,7 +3465,9 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
     return true;
 }
 
-bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize)
+bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize,
+                                                double shapeDiag,
+                                                float builtErrorNow)
 {
     if (!Gui::RenderParams::getSimplifyExhausted() || !(cellSize > 0.0))
         return false;
@@ -3604,10 +3607,67 @@ bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize)
         lineset->seamIndices.setNum(0);
     }
 
-    FC_LOG(getFullName() << " decimated rung: cell " << cellSize
-            << ", triangles " << (before / 3) << " -> " << (after / 3)
-            << ", vertices " << view.mesh.numVertices << " -> " << nv
-            << ", max displacement " << stats.maxDisplacement);
+    // Restate the rung this object now stands on. The registry was told
+    // what the TESSELLATION errs by, and the decimation just moved the
+    // display well past it -- and the error is not a guess here, it is
+    // the clustering's own measured worst displacement, relative to the
+    // diagonal like every other published error.
+    //
+    // It has to be said or the object can get STUCK LOOKING DECIMATED:
+    // the refine pass wants a source when levelError * diagPx exceeds
+    // the tolerance, so an error understating how coarse the object
+    // became is one that may never ask for it back once the pressure
+    // that decimated it has gone. Restating it also prices the next
+    // descent step from the rung the object is actually on.
+    //
+    // RMS, not the worst vertex, and the difference is not academic.
+    // Every other published error on this ladder is a NOMINAL figure --
+    // the grid a rung was built on, scale/(8<<level) -- so a worst-case
+    // one is not comparable with the numbers it is about to be judged
+    // against. Measured: maxDisplacement registered a median relative
+    // error of 0.17 against a LevelScaleBoxError of 0.25, i.e. it
+    // declared most decimated objects nearly box-grade, and the plan
+    // believed it -- boxes rose from 1029 to 1204 and the median live
+    // memory from 29.2 to 69.6MB, giving back most of what the rung had
+    // won. The typical displacement is what the object looks like; the
+    // worst one is what its single worst vertex looks like.
+    if (shapeDiag > 0.0 && stats.rmsDisplacement > 0.0f) {
+        // Clamped, and the ceiling is not defensive noise: 5 of 995
+        // rungs measured a displacement LARGER than the shape diagonal
+        // they were divided by, one of them 9.4x it, which is
+        // impossible for a clustering bounded by its own grid. Whatever
+        // that is -- a compound whose bounds do not cover its own
+        // tessellation is the suspect -- the plan must not be handed a
+        // number that says an object errs by nine times its own size.
+        // Floored at the tessellation's error too, since a decimated
+        // mesh cannot be FINER than what it was decimated from.
+        const float raw = float(double(stats.rmsDisplacement) / shapeDiag);
+        const float rungError = std::min(1.0f, std::max(raw, builtErrorNow));
+        if (raw > 1.0f)
+            FC_WARN(getFullName() << " decimated rung error " << raw
+                    << " exceeds the shape diagonal -- clamped; the shape"
+                       " bounds and its tessellation disagree");
+        auto &reg = Render::MeshSourceRegistry::instance();
+        // Both drawables of the object, because both were decimated and
+        // the plan reaches a source by whichever tag a draw carries.
+        if (faceset)
+            reg.setPublishedError(faceset, rungError);
+        if (lineset)
+            reg.setPublishedError(lineset, rungError);
+        FC_LOG(getFullName() << " decimated rung: cell " << cellSize
+                << ", triangles " << (before / 3) << " -> " << (after / 3)
+                << ", vertices " << view.mesh.numVertices << " -> " << nv
+                << ", displacement rms " << stats.rmsDisplacement
+                << " max " << stats.maxDisplacement
+                << ", published error " << rungError);
+    }
+    else {
+        FC_LOG(getFullName() << " decimated rung: cell " << cellSize
+                << ", triangles " << (before / 3) << " -> " << (after / 3)
+                << ", vertices " << view.mesh.numVertices << " -> " << nv
+                << ", max displacement " << stats.maxDisplacement
+                << " (rung NOT restated: no diagonal)");
+    }
     return true;
 }
 
@@ -4184,7 +4244,8 @@ void ViewProviderPartExt::updateVisual()
         // last and the sequence terminates.
         if (MeshErrorScaleExhausted && !MeshDecimationSpent
                 && builtError > 0.0f && shapeDiag > 0.0) {
-            if (!simplifyVisualInPlace(double(builtError) * shapeDiag)) {
+            if (!simplifyVisualInPlace(double(builtError) * shapeDiag,
+                                       shapeDiag, builtError)) {
                 // Decimation is spent too. The object keeps the mesh it
                 // has for now; the descent's next step finds the flag
                 // set and takes the box.

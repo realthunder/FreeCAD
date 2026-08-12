@@ -2808,10 +2808,57 @@ objects are shells and compounds rather than flat-faced boxes. The
 crease-preserving arm ships; the merging one is there for the model
 that needs it.
 
-OPEN: the level registry is **not told** that the displayed error
-changed, so `publishedError` still names the pre-decimation rung and
-the refine pass can climb an object straight back out of a decimated
-one. That is the pressure system working as designed -- and it is also
-why the on-arm series oscillates (29.2 -> 165.9 -> 166.7 -> 40.8MB)
-where the box-only arm sits still. Whether the descent should register
-the rung it just built is the next question here.
+#### 13c.1 -- restating the rung, and what the statistic costs
+
+The registry is now told what the decimation did
+(`MeshSourceRegistry::setPublishedError`, which updates a source's
+published error in place without touching its generator or hooks).
+
+It has to be told, and the reason is not tidiness. The refine pass
+wants a source when `levelError * diagPx > tolerancePx`, so an error
+that understates how coarse an object actually became is one that may
+**never ask for it back** -- the object stays visibly decimated after
+the pressure that decimated it has gone. Restating it also prices the
+next descent step from the rung the object is standing on rather than
+the one it left.
+
+**WHICH statistic, and this turned out to matter more than whether.**
+The first attempt published `maxDisplacement`, the worst single vertex.
+Every other published error on this ladder is a NOMINAL figure -- the
+grid a rung was built on, `scale/(8<<level)` -- so a worst case is not
+comparable with the numbers it is judged against. Measured: it declared
+a median relative error of **0.17 against a `LevelScaleBoxError` of
+0.25**, i.e. most decimated objects were announced as nearly box-grade,
+and the plan believed it. Boxes rose from 1029 to 1233. RMS ships
+instead: median 0.077, p90 0.168.
+
+WARNING: 5 of 995 rungs measured a displacement **larger than the shape
+diagonal** they were divided by, one of them 9.4x it -- impossible for
+a clustering bounded by its own grid, and a sign that a shape's bounds
+and its own tessellation disagree (a compound is the suspect). The
+published error is clamped to 1.0 and floored at the tessellation's own
+error, and the clamp logs. The underlying disagreement is unexplained.
+
+#### 13c.2 -- WARNING: the arm comparison above is weaker than it looks
+
+The 13c table should be read as evidence that the rung *works
+per object*, which it is -- the per-object reductions are deterministic
+and were logged a thousand times over. It should **not** be read as a
+settled system-level memory result, and the reason is a defect in how
+it was taken, found while measuring 13c.1:
+
+- The medians were computed over **every plan line in the run,
+  including the ones that fired before any geometry reached the
+  renderer** (live 0.0MB, 0 cache entries).
+- The arms ran **20 to 77 plans**. So the share of those empty plans
+  differed per arm, and the medians were partly a measure of *when each
+  run happened to settle* rather than of what it settled at.
+- Filtering to plans that had a scene changes the numbers and does not
+  stabilise them: one arm still reads a median live of 0.0MB, because
+  these runs do not converge inside the harness window at all.
+
+**A converging harness is owed here before any arm-to-arm memory claim
+from this workstream is quoted again.** The honest present state: the
+rung demonstrably removes 94-99% of an object's triangles while keeping
+its shape, and its effect on the whole scene's steady-state memory has
+not been measured on a scene that reaches a steady state.

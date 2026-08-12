@@ -150,6 +150,26 @@ float MeshSourceRegistry::publishedError(const void *tag)
     return it == sources.end() ? 0.0f : it->second.publishedError;
 }
 
+bool MeshSourceRegistry::setPublishedError(const void *tag,
+                                           float publishedError)
+{
+    if (!tag)
+        return false;
+    std::lock_guard<std::mutex> guard(mutex);
+    auto it = sources.find(tag);
+    if (it == sources.end())
+        return false;
+    if (it->second.publishedError == publishedError)
+        return true;
+    it->second.publishedError = publishedError;
+    // Same reason as add(): anyone holding an earlier answer re-asks.
+    registryGen.fetch_add(1, std::memory_order_release);
+    if (debugOn())
+        std::fprintf(stderr, "mesh source: restate tag=%p err=%g\n",
+                     tag, double(publishedError));
+    return true;
+}
+
 bool MeshSourceRegistry::knows(const void *tag) const
 {
     if (!tag)

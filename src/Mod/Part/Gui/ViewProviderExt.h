@@ -322,7 +322,8 @@ protected:
     /// False when it is disabled, has no triangles to work on, or did
     /// not remove enough to be worth the rebuild; the caller then takes
     /// the box, which is the next step down.
-    bool simplifyVisualInPlace(double cellSize);
+    bool simplifyVisualInPlace(double cellSize, double shapeDiag,
+                               float builtErrorNow);
 
     bool deferVisualForLoad();
     /// Build one slice of the parked visuals, then reschedule if any remain.

@@ -179,6 +179,25 @@ public:
     /// The registered publishedError of the source behind \a tag, or 0.
     float publishedError(const void *tag);
 
+    /// Restate what the DISPLAY tessellation of \a tag now is, without
+    /// touching its generator or hooks. False when nothing is
+    /// registered under the tag.
+    ///
+    /// For the producer that coarsened a source in place rather than by
+    /// re-registering it -- the decimation rung of
+    /// docs/SceneStreaming.md #13c rewrites its display nodes and keeps
+    /// everything else. Leaving the old figure standing is not a
+    /// cosmetic staleness: the refine pass wants a source when
+    /// `levelError * diagPx > tolerancePx`, so an error that understates
+    /// how coarse the object actually became is one that may never ask
+    /// for it back, and the object stays visibly decimated after the
+    /// pressure that decimated it has gone. It also prices the next
+    /// descent step from a rung the object is no longer standing on.
+    ///
+    /// Bumps generation() like add(), so a cached publishedError()
+    /// answer is re-asked.
+    bool setPublishedError(const void *tag, float publishedError);
+
     /// Whether \a tag names a registered source at all.
     ///
     /// publishedError() answers 0 both for the exact rung and for a tag
