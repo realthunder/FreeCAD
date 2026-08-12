@@ -2660,15 +2660,14 @@ purpose, because the performance harnesses read those lines out of
 `--log-file` and only the console writes there -- and `std::printf` in
 the browser.
 
-WARNING: **the emsdk install is currently missing from the development
-box, and so is `build/wasm`.** Five places in the tree -- this
-directory's `CMakeLists.txt`, `scripts/wasm-viewer.sh`,
-`scripts/compile-shaders.sh`, `scripts/README.md` -- name
-`~/works/sw/emsdk/emsdk_env.sh`, and it was there when the viewer was
-last built; there is no `emcc` on the filesystem now. So nothing in the
-normal build loop compiles this tier, and **that is how two breakages
-accumulated with nothing saying so.** Until it is reinstalled the tier
-is only compile-checkable by hand, which is what was done for these
+WARNING: **this tier is not built on the development box.** The recipe
+the tree documents in five places -- this directory's `CMakeLists.txt`,
+`scripts/wasm-viewer.sh`, `scripts/compile-shaders.sh`,
+`scripts/README.md` -- wants an emsdk at `~/works/sw/emsdk`, and there
+is no `emcc` on the box. So nothing in the normal build loop compiles
+`FC_RENDERER_STANDALONE`, and **that is how two breakages accumulated
+with nothing saying so.** Until a toolchain is available the tier is
+only compile-checkable by hand, which is what was done for these
 changes:
 
 ```
