@@ -3068,3 +3068,80 @@ than argued about. The plan readout now names which of three things a
 raised tolerance means -- `under pressure`, `releasing`, or `SETTLED
 at what fits` -- because for 43 plans it could not tell a ladder that
 had stopped from one that was mid-swing.
+
+### 13d -- where a rebuild's time actually goes, and the plan it refuted
+
+The next item in this workstream was **"build Coin nodes on a worker
+thread"**, and it rested on a single figure: a mass descent costing
+`outside 1517ms` of a 1604ms frame, with the re-tessellation on the
+refine pool and the node rebuild not. That figure was one sample from
+the run that never converged (13c.3), and it had never been attributed
+to anything. Once the ladder settled it could be.
+
+Four accumulators beside the existing mesh timer -- traversal, mesh,
+prologue (the three action traversals a rebuild applies to the nodes it
+is about to discard), instancing -- and **the unattributed remainder
+printed rather than left to be inferred**. A split whose parts do not
+add up to the whole is how a missing cost stays missing.
+
+Reported by a self-selecting reporter: one build costs microseconds and
+a line per build would bury the run, so it speaks only once 0.2s of
+rebuild has piled up -- which on a quiet session is never.
+
+**MEASURED (rack model, 5455 objects, 64MB pinned, real GPU), on the
+descent, 5699 builds costing 170.05s of GUI-thread rebuild:**
+
+| term | s | % |
+|---|---|---|
+| **mesh** | **120.96** | **71.1** |
+| traversal + node fill | 39.99 | 23.5 |
+| prologue | 0.50 | 0.3 |
+| instancing | 0.04 | 0.0 |
+| unattributed | 8.51 | 5.0 |
+
+The load phase is a different question and must not be averaged in
+(there the mesh is 72.5% and legitimately so -- 98% of its calls are a
+shape's first tessellation).
+
+**So the plan targeted 23.5% of the cost.** The mesh term is the
+question, and the comment at that call had always answered it by
+assertion -- "a mesh already resident makes this call nearly free". It
+is now instrumented instead: `MeshCallProbe` asks the shape how many
+triangles it holds before and after the call, and at what deflection.
+A count that moves is a rebuild.
+
+| descent mesh calls | 4942 | |
+|---|---|---|
+| rebuilt | 2480 (50.2%) | 74.50s |
+| ...with no triangulation at all (legitimate first mesh) | 1672 | |
+| ...**re-tessellating an already-meshed shape** | **808** | |
+| **validated only -- changed nothing** | **2462 (49.8%)** | **46.45s** |
+
+**Half the calls change nothing and cost 46.45s doing it**, ~19ms each,
+building OCCT's internal mesh model only to conclude the triangulation
+was already adequate. That is 27% of all descent rebuild time -- more
+than the entire traversal the threading plan was aimed at -- and it
+needs no threading at all: the probe's own face walk answers the same
+question for a fraction of the cost.
+
+Two consequences for the threading idea, kept here because they are
+what a future attempt would otherwise re-derive:
+
+- `buildVisualNodes` has **no separable Coin phase**: it calls
+  `startEditing()` up front and the OCCT walk writes straight into the
+  raw `SbVec3f*` / `int32_t*`. But the only Coin thing that loop
+  touches is array memory and `SbVec3f`, a plain value type -- point it
+  at `std::vector` storage and it becomes Coin-free, and poolable
+  **with no Coin threading whatsoever**.
+- **`COIN_THREADSAFE` was never the prerequisite it was assumed to be.**
+  It guards the recursive *field* lock (`src/fields/SoField.cpp`), a
+  per-frame tax on render traversals; the globals node construction
+  would race on are already unconditionally mutexed -- the node id
+  counter (`SET_UNIQUE_NODE_ID`) and the `SbName` map. What does stay
+  single-threaded is node *objects*: `SoBase`'s reference count is a
+  plain `int32_t`.
+
+Next, in the order the measurement puts them: skip the mesh call whose
+work is already done; then the 808 that re-tessellate what the pool had
+already built; and only then, if what is left justifies it, move the
+traversal off the GUI thread.
