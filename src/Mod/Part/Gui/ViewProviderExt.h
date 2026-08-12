@@ -297,7 +297,16 @@ protected:
                           SoBrepPointSet *nodeset,
                           int &numTriangles, int &numNodes, int &numPoints,
                           int &numNorms, int &numFaces, int &numEdges,
-                          int &numLines);
+                          int &numLines,
+                          /// Whether the caller has already proved this
+                          /// shape cannot be coarsened by tessellating
+                          /// it again (MeshErrorScaleExhausted). Such a
+                          /// rebuild's deflection keeps doubling away
+                          /// from a mesh that will never move, so the
+                          /// tessellation call cannot achieve anything
+                          /// -- it is the caller's knowledge, and this
+                          /// function is static and cannot ask.
+                          bool tessellationSpent = false);
 
     bool VisualTouched;
     bool NormalsFromUV;

@@ -76,16 +76,19 @@ MERGE = os.environ.get("FC_MERGE", "0") == "1"
 # convict; the empty string leaves the parameter's own default alone.
 RELEASE = os.environ.get("FC_RELEASE", "")
 # Skipping the tessellation call that would rebuild nothing (sec 13e).
-# "off" is the AUDIT arm: every call is made, and the check that wanted
-# to skip it is scored against what the call actually did -- which is
-# the only thing that can say the skip is safe. The empty string leaves
-# the parameter's own default alone.
-MESH_SKIP = os.environ.get("FC_MESH_SKIP", "")
+#
+# /!\ "off" is the ONLY arm that can measure safety, and the asymmetry
+# is structural: a call that is SKIPPED is never made, so nothing can
+# say whether it would have rebuilt. With the feature on, the WRONG
+# column counts only calls the check REFUSED, which makes a zero there
+# guaranteed rather than earned. Read WRONG from the off arm or not at
+# all.
+MESH_SKIP = os.environ.get("FC_MESH_SKIP", "on")
 # Whether a resident mesh FINER than the ask counts as adequate. This is
 # the arm that must be judged by CONVERGED MEMORY rather than by how
 # many calls it skipped: it declines a coarsening, and a coarsening that
 # would have worked is memory the plan has to find elsewhere.
-MESH_FINER = os.environ.get("FC_MESH_FINER", "")
+MESH_FINER = os.environ.get("FC_MESH_FINER", "off")
 # How many consecutive quiet plans mean "settled". Two is not enough:
 # the descent alternates passes, so a single quiet plan happens mid-run.
 CONV_PLANS = int(os.environ.get("FC_CONV_PLANS", "4"))
@@ -193,14 +196,19 @@ def run():
         rp.SetBool("LevelDebug", True)
         rp.SetBool("SimplifyExhausted", SIMPLIFY)
         rp.SetBool("SimplifyMergeParts", MERGE)
-        if MESH_SKIP != "":
-            rp.SetBool("MeshSkipRedundant", MESH_SKIP == "on")
-        if MESH_FINER != "":
-            rp.SetBool("MeshSkipFinerResident", MESH_FINER == "on")
+        # /!\ ALWAYS WRITTEN, never left to whatever the last run stored.
+        # These live in the user parameter file, so an arm that omits one
+        # INHERITS the previous arm's setting and reports it as
+        # "default" -- which is how a strict-check audit here silently
+        # became an accept-finer audit, with a WRONG count 753x the
+        # strict arm's and no line saying the arm had changed.
+        rp.SetBool("MeshSkipRedundant", MESH_SKIP != "off")
+        rp.SetBool("MeshSkipFinerResident", MESH_FINER == "on")
         emit("arm: simplify=%s merge=%s budget=%dMB release=%s meshskip=%s "
              "finer=%s conv=%d plans within %.0f%% (or %.0fs of silence)"
              % (SIMPLIFY, MERGE, BUDGET, RELEASE or "default",
-                MESH_SKIP or "default", MESH_FINER or "default",
+                "off" if MESH_SKIP == "off" else "on",
+                "on" if MESH_FINER == "on" else "off",
                 CONV_PLANS, CONV_TOL, CONV_QUIET_S))
 
         Gui.getMainWindow().resize(1920, 1200)

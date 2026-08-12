@@ -383,6 +383,15 @@ struct MeshCallProbe {
         /// The widest deflection disagreement seen, by ratio, on such a
         /// call. One sample, but it says the direction and the size.
         double worstRatio = 0, worstCurrent = 0, worstRequired = 0;
+        /// Of those refusals, how many were on an object whose
+        /// tessellation is already SPENT -- one the descent has already
+        /// proved cannot coarsen further, and whose ask therefore keeps
+        /// doubling away from a mesh that will never move again
+        /// (ViewProviderExt onScaleDown, "re-tessellating buys
+        /// nothing"). If this tracks `too fine`, the refusal is not a
+        /// deflection question at all: it is a call nobody should be
+        /// making.
+        std::size_t refusedSpent = 0;
     };
     static Stats &stats()
     {
@@ -396,6 +405,8 @@ struct MeshCallProbe {
     /// What the redundancy check said about the call being made anyway,
     /// so this can score the check against the only authority there is.
     MeshVerdict verdict;
+    /// Whether the object had already proved it cannot coarsen.
+    bool spent = false;
     int trisBefore = 0, facesBefore = 0, facesTotal = 0;
     double residentMin = 0.0, residentMax = 0.0;
     std::chrono::high_resolution_clock::time_point start;
@@ -423,8 +434,9 @@ struct MeshCallProbe {
     }
 
     MeshCallProbe(const TopoDS_Shape &s, double deflection,
-                  const MeshVerdict &v)
-        : shape(s), asked(deflection), active(levelDebugOn()), verdict(v)
+                  const MeshVerdict &v, bool tessellationSpent)
+        : shape(s), asked(deflection), active(levelDebugOn()), verdict(v),
+          spent(tessellationSpent)
     {
         if (!active)
             return;
@@ -465,6 +477,8 @@ struct MeshCallProbe {
             // is costing the saving, rather than that some reason is.
             ++st.missed;
             ++st.refused[std::size_t(verdict.why)];
+            if (spent)
+                ++st.refusedSpent;
             if (verdict.required > 0.0) {
                 const double ratio = verdict.current / verdict.required;
                 const double off = ratio > 1.0 ? ratio : 1.0 / std::max(ratio, 1e-9);
@@ -572,14 +586,16 @@ struct VisualSplitReporter {
             Base::Console().Message(
                 "visual build: unclaimed by reason -- no faces %zu, no "
                 "triangulation %zu, too coarse %zu, too fine %zu, bad "
-                "indices %zu, free edge %zu; widest deflection miss "
-                "%.6f vs %.6f required (x%.2f)\n",
+                "indices %zu, free edge %zu; %zu of them on an object "
+                "whose tessellation was already SPENT; widest deflection "
+                "miss %.6f vs %.6f required (x%.2f)\n",
                 ms.refused[std::size_t(MeshRefusal::NoFaces)],
                 ms.refused[std::size_t(MeshRefusal::NoTriangulation)],
                 ms.refused[std::size_t(MeshRefusal::TooCoarse)],
                 ms.refused[std::size_t(MeshRefusal::TooFine)],
                 ms.refused[std::size_t(MeshRefusal::BadIndices)],
                 ms.refused[std::size_t(MeshRefusal::FreeEdge)],
+                ms.refusedSpent,
                 ms.worstCurrent, ms.worstRequired, ms.worstRatio);
         }
         if (ms.calls || ms.checks)
@@ -4549,7 +4565,8 @@ void ViewProviderPartExt::updateVisual()
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
                          numTriangles, numNodes, numPoints, numNorms,
-                         numFaces, numEdges, numLines);
+                         numFaces, numEdges, numLines,
+                         MeshErrorScaleExhausted);
 
         // The scene server can now re-tessellate this shape at a
         // coarser deviation when a viewer asks for a declared level of
@@ -4732,7 +4749,8 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
         SoBrepPointSet *nodeset,
         int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
-        int &numFaces, int &numEdges, int &numLines)
+        int &numFaces, int &numEdges, int &numLines,
+        bool tessellationSpent)
 {
     std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
     TopLoc_Location aLoc;
@@ -4806,7 +4824,8 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
                 // validates, and what deflection it found resident
                 // against the one asked for. It walks every face twice
                 // more.
-                MeshCallProbe probe(cShape, deflection, verdict);
+                MeshCallProbe probe(cShape, deflection, verdict,
+                                    tessellationSpent);
 #if OCC_VERSION_HEX >= 0x070500
                 IMeshTools_Parameters meshParams;
                 meshParams.Deflection = deflection;

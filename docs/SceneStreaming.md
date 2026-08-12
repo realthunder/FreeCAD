@@ -3237,20 +3237,34 @@ skipped**, because what it declines is a coarsening.
 | **skip + accept finer** | **3401** | **4720** | **0** | **56%** | **39.2 MB** | **22.7 MB** |
 | skip + accept finer, repeat | 3873 | 6039 | 0 | 55% | 35.7 MB | **36.3 MB** |
 
-Three of those columns repeat and one does not, and the one that does
-not is the one the knob was supposed to be judged by:
+**The `WRONG` column of the skip-on rows is 0 for a reason that is not
+safety, and reading it as safety was this section's own first mistake.**
+A call that is SKIPPED is never made, so nothing can say whether it
+would have rebuilt; with the feature on, `WRONG` can only count calls
+the check *refused*. A zero there is guaranteed by construction, not
+earned. **Safety is measurable in the audit (off) arm and nowhere else**,
+and that is where the two rules part company:
 
-- **safety repeats.** `WRONG` is 0 across 10,759 skips.
-- **the saving repeats.** The mesh share of a rebuild falls 72% -> 55-56%,
-  and validated-only calls collapse from ~3500 to ~500.
-- **GPU memory repeats** below both baselines (39.2, 35.7 MB).
-- **`cpu resident` does NOT.** 22.7 MB in one run and 36.3 MB in the
-  other -- straddling the 30-31 MB baselines. That is precisely the cost
-  the strict rule exists to prevent (triangulations kept finer than the
-  plan asked for stay in the heap), and **two runs cannot say whether it
-  is real.** So `Render_MeshSkipFinerResident` ships **off**: the
-  saving is not in doubt, the memory is, and this workstream has
-  shipped-then-refuted enough features to know which way that decides.
+| audit arm, every call made | predicted redundant | of those, actually REBUILT |
+|---|---|---|
+| strict | 801 | **1** |
+| accept finer | 3381 | **753 (22%)** |
+
+**Accepting a finer mesh skips a real coarsening about one time in
+five.** The converged-memory columns had only hinted at that (`cpu
+resident` 22.7 MB against 36.3 MB across two runs, straddling a
+30-31 MB baseline, settling nothing); the audit measures it directly.
+So `Render_MeshSkipFinerResident` ships **off** -- not because its bill
+is unsettled, but because it is now settled and it is 753 denied
+coarsenings.
+
+What does repeat, and is not in doubt:
+
+- **the saving.** The mesh share of a rebuild falls 72% -> 55-56%, and
+  validated-only calls collapse from ~3500 to ~500.
+- **GPU memory**, below both baselines (39.2, 35.7 MB).
+- **the strict rule's safety**: 1 wrong in 7403, one-sided toward keeping
+  a finer mesh.
 
 /!\ These converged rows are each arm's *outcome*, not a controlled
 delta. The ladder is a feedback loop -- change what a rebuild costs and
@@ -3263,7 +3277,58 @@ triangles before accepting a finer mesh.
 
 **What ships on by default is the strict rule** -- OCCT's own, mirrored,
 one-sided-safe -- which on this model is 469 calls of the 6511 it
-checked. The rest of the prize sits behind a knob whose memory bill is
-unpaid, and the next measurement this section wants is a `cpu resident`
-meter taken over enough runs to settle it (the two-meter distinction of
-13a: uploaded GPU bytes are not resident CPU rungs).
+checked.
+
+#### Where the rest of the prize actually is
+
+The refusal histogram said the resident mesh is finer than the ask by a
+ratio of **exactly 2.00**, with a tail at 4, 16 and 548. That is not a
+deflection question, it is `LevelScale` counted once per descent step,
+and the descent says so itself (`ViewProviderExt::updateVisual`,
+`onScaleDown`):
+
+```cpp
+MeshErrorScale = nextScale;              // the ask doubles
+if (MeshErrorScaleExhausted || ...) {
+    MeshErrorScaleExhausted = true;
+    updateVisual();                      // ...and NO new mesh is built
+    return;
+}
+```
+
+Once an object has proved it cannot be coarsened -- the comment there
+already says *"re-tessellating buys nothing"* -- every further descent
+step still doubles the deflection and rebuilds, so the ask walks
+geometrically away from a mesh that will never move again. The tail at
+4, 16 and 548 is objects several steps past that point.
+
+`buildVisualNodes` is **static**, so it cannot ask whether the caller
+knows this; the flag is now passed in as `tessellationSpent`, and the
+correlation is not a tendency but an identity:
+
+| strict audit arm | calls |
+|---|---|
+| redundant but refused | 2787 |
+| ...of which resident was finer than the ask | 2731 |
+| **...on an object whose tessellation was already SPENT** | **2787 (100%)** |
+
+**Every single refused-but-redundant call is on an object the descent
+had already proved it could not coarsen.** Not 94%, not "mostly" -- all
+of them.
+
+That is the shape of the remaining work, and it is **not** a policy
+choice about fidelity: a call that provably cannot coarsen anything is
+one nobody should be making, and skipping it costs no memory at all --
+unlike accepting a finer mesh, which costs 753 coarsenings.
+
+/!\ **But `MeshErrorScaleExhausted` currently conflates two things**, and
+only one of them is a proof. It is set when the descent's coarser mesh
+failed to reduce the node count (`after * 10 >= before * 9`) -- which
+*is* a proof that tessellating again buys nothing -- and also when
+`scaledError >= boxError`, which merely says the plan has decided to go
+to the box instead. An object spent for the second reason may still be
+coarsenable, so skipping its call would carry exactly the memory bill
+that convicted the accept-finer rule. **Split the flag before acting on
+it**, and audit the two populations separately: the prize is whatever
+share of the 2787 is the first kind, and it is claimable with no memory
+cost at all.

@@ -205,15 +205,18 @@ public:
     /// memory the plan then has to recover some other way -- through
     /// the refine pool's own coarser rung, where it was always meant to
     /// come from.
-    /// OFF BY DEFAULT, and the reason is that risk rather than the
-    /// saving. Measured over two converging runs the saving is not in
-    /// doubt (mesh work falls from 72% of a rebuild to 55%, with no
-    /// wrong verdict in 10759 skips) and GPU memory came out below
-    /// baseline in both -- but CPU resident memory landed at 22.7MB in
-    /// one run and 36.3MB in the other, either side of a 30-31MB
-    /// baseline, which is exactly the bill this is supposed to be
-    /// judged by and two runs cannot settle. Judge it by converged
-    /// memory, never by the count of calls skipped.
+    /// OFF BY DEFAULT, and the reason is that risk, measured. Audited
+    /// with every call still made so the check can be scored against
+    /// what the call actually did, this rule predicted 3381 calls
+    /// redundant and 753 of them -- 22%, better than one in five --
+    /// rebuilt anyway. Those are real coarsenings it would have
+    /// skipped, and real memory the plan would not get back. The
+    /// strict rule's own score on the same instrument is 1 in 7403.
+    /// /!\ Never read that count from a run with the skip ON: a call
+    /// that is skipped is never made, so nothing can say whether it
+    /// would have rebuilt, and the wrong-verdict column can only
+    /// count calls the check refused. A zero there is guaranteed by
+    /// construction rather than earned.
     static const bool & getMeshSkipFinerResident();
     static const bool & defaultMeshSkipFinerResident();
     static void removeMeshSkipFinerResident();
