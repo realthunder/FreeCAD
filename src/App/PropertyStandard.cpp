@@ -3542,17 +3542,9 @@ enum FieldBit {
 
 } // namespace
 
-/* ⚠️ Everything here goes over the wire as 32 bit, including the field mask
- * and the material type, which are a byte each in memory. Base::OutputStream
- * in its text mode writes a uint8_t as the *character* it stands for while
- * Base::InputStream reads it back as a *number* -- the two are not inverses,
- * and a doc file written to a directory rather than a zip takes that path.
- * Widening costs three bytes on a mask written once and keeps this encoding
- * out of a stream asymmetry it did not create.
- */
 void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
 {
-    uint32_t mask = 0;
+    uint8_t mask = 0;
     if (!_ambient.empty())      mask |= FieldAmbient;
     if (!_diffuse.empty())      mask |= FieldDiffuse;
     if (!_specular.empty())     mask |= FieldSpecular;
@@ -3586,7 +3578,7 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     if (!_type.empty()) {
         str << static_cast<uint32_t>(_type.size());
         for (int8_t value : _type)
-            str << static_cast<int32_t>(value);
+            str << value;
     }
 }
 
@@ -3597,7 +3589,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     _touchList.clear();
     _count = static_cast<int>(uCt);
 
-    uint32_t mask = 0;
+    uint8_t mask = 0;
     str >> mask;
 
     auto readColors = [&str, uCt](std::vector<Color> &field, bool present) {
@@ -3641,11 +3633,8 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
         if (count != 1 && count != uCt)
             throw Base::FileException("material field length does not match the list");
         _type.resize(count);
-        int32_t value = 0;
-        for (auto &entry : _type) {
+        for (auto &value : _type)
             str >> value;
-            entry = static_cast<int8_t>(value);
-        }
     }
     _normalized = true;
     guard.tryInvoke();

@@ -100,13 +100,20 @@ public:
         return *this;
     }
 
+    // ⚠️ The text form of an 8-bit integer is its number, not the character
+    // it stands for. std::ostream writes int8_t and uint8_t as characters
+    // because they are signed char and unsigned char, while InputStream has
+    // always read them back as numbers -- so the two were not inverses and
+    // nothing could round trip through them outside binary mode. Widened
+    // here rather than narrowed there, because the number is what every
+    // other integer width in this class writes.
     OutputStream& operator<<(int8_t ch)
     {
         if(_binary) {
             _out.write((const char*)&ch, sizeof(int8_t));
         }
         else {
-            _out << ch << '\n';
+            _out << static_cast<int>(ch) << '\n';
         }
         return *this;
     }
@@ -117,7 +124,7 @@ public:
             _out.write((const char*)&uch, sizeof(uint8_t));
         }
         else {
-            _out << uch << '\n';
+            _out << static_cast<unsigned>(uch) << '\n';
         }
         return *this;
     }
