@@ -449,7 +449,7 @@ struct MeshCallProbe {
     {
         if (!active)
             return;
-        const double spent = std::chrono::duration<double>(
+        const double elapsed = std::chrono::duration<double>(
                 std::chrono::high_resolution_clock::now() - start).count();
         int trisAfter = 0, facesAfter = 0, total = 0;
         sample(shape, trisAfter, facesAfter, total, nullptr, nullptr);
@@ -461,13 +461,13 @@ struct MeshCallProbe {
             trisAfter != trisBefore || facesAfter != facesBefore;
         if (rebuilt) {
             ++st.rebuilt;
-            st.timeRebuilt += spent;
+            st.timeRebuilt += elapsed;
             st.lastAsked = asked;
             st.lastResidentMin = residentMin;
             st.lastResidentMax = residentMax;
         }
         else
-            st.timeValidated += spent;
+            st.timeValidated += elapsed;
         // The check scored against the call it wanted to replace.
         if (verdict.redundant())
             ++(rebuilt ? st.wrong : st.agreed);
