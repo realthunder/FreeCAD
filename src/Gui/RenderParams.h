@@ -677,10 +677,12 @@ public:
     ///
     /// Skip drawing what the depth buffer proves could not have
     /// reached the screen (docs/FarFieldProxies.md §12). Bounding boxes
-    /// of the spatial index's nodes are tested against the finished
-    /// opaque depth under hardware occlusion queries, and a node that
-    /// puts no pixel through has its whole subtree skipped on the
-    /// following frames -- one test standing for thousands of draws.
+    /// of the spatial index's nodes are tested against the depth the
+    /// occluders leave behind -- by default in a software depth buffer
+    /// on the CPU (Render_OcclusionSoftware), which answers within the
+    /// frame that asked -- and a node that puts no pixel through has
+    /// its whole subtree skipped, one test standing for thousands of
+    /// draws.
     /// 
     /// Exact, not approximate: only geometry that could not have been
     /// seen is removed, so the image is unchanged and what is saved is
@@ -798,17 +800,23 @@ public:
     /// before its geometry is actually skipped. 1 acts on every
     /// answer, and is what an occlusion test naively does.
     /// 
-    /// This is the stability control. A test is issued against one
-    /// frame's depth and read against a later one -- it does not
-    /// block, because stalling for it would cost the frame time the
-    /// culling exists to save -- so while an answer is in flight, other
-    /// geometry is culled and the occluders move underneath it. Acted
-    /// on singly, a node tested while an occluder was still drawn gets
-    /// skipped after that occluder has gone; the hole it leaves tests
-    /// visible; it comes back; and it oscillates, which is a picture
-    /// that flickers rather than one that is merely wrong. Geometry
-    /// that really is hidden answers so every time and costs only the
-    /// extra confirmations.
+    /// A test is issued against one frame's depth and read against a
+    /// later one -- it does not block, because stalling for it would
+    /// cost the frame time the culling exists to save -- so while an
+    /// answer is in flight, other geometry is culled and the occluders
+    /// move underneath it. Acted on singly, a node tested while an
+    /// occluder was still drawn gets skipped after that occluder has
+    /// gone; the hole it leaves tests visible; it comes back; and it
+    /// oscillates, which is a picture that flickers rather than one
+    /// that is merely wrong.
+    /// 
+    /// Confirmations DILUTE that oscillation; measured, they do not
+    /// remove it (docs/FarFieldProxies.md #12.7): the false answers
+    /// arrive in runs, so tripling the confirmations bought a factor
+    /// of two, and the residual damage tracks how often nodes are
+    /// re-tested, which this setting cannot reach. The query path is
+    /// therefore not image-stable at any value here; occlusion on the
+    /// CPU (the default oracle) does not read this setting at all.
     static const long & getOcclusionConfirm();
     static const long & defaultOcclusionConfirm();
     static void removeOcclusionConfirm();
@@ -822,7 +830,8 @@ public:
     ///
     /// Answer the occlusion question with a software depth buffer on
     /// the CPU instead of hardware occlusion queries
-    /// (docs/FarFieldProxies.md #12.12).
+    /// (docs/FarFieldProxies.md #12.12). The default, because it is
+    /// the one oracle whose picture holds still.
     /// 
     /// A hardware query cannot be asked at the moment its answer would
     /// be right. It is issued against one frame's depth and read a

@@ -442,17 +442,20 @@ struct OcclusionCullConfig {
     /// How many consecutive answers of "no pixels" a node must give
     /// before its subtree is actually skipped. 1 acts on every answer.
     ///
-    /// ⚠️ The stability term, and the difference between a mechanism
-    /// that is right on average and one whose picture holds still. A
-    /// test is issued against one frame's depth and read against a
-    /// later one — non-blocking on purpose — so the occluders move
+    /// A test is issued against one frame's depth and read against a
+    /// later one -- non-blocking on purpose -- so the occluders move
     /// underneath the answer while it is in flight. Acted on singly, a
     /// node tested while an occluder was still drawn gets culled after
     /// that occluder has gone; the hole tests visible; it returns; and
     /// it oscillates. Measured at 1, two captures of the same static
-    /// scene 30 s apart differed in 14101 pixels (§12.6). Costs a few
-    /// frames of drawing geometry that could have been skipped, which
-    /// is the direction every default here errs in.
+    /// scene 30 s apart differed in 14101 pixels (sec 12.6).
+    ///
+    /// WARNING: confirmations DILUTE that oscillation and were measured
+    /// not to remove it (sec 12.7) -- false answers come in runs, and
+    /// the residual damage tracks the re-test count, which this knob
+    /// cannot reach. The hardware-query path is therefore not
+    /// image-stable at any setting of this; the software oracle below
+    /// is, by construction, and is the shipped answer.
     uint32_t hiddenConfirm = 2;
 
     /// KEY: Answer with a CPU software depth buffer
@@ -465,8 +468,9 @@ struct OcclusionCullConfig {
     /// reads none of them: occluders are rasterized and nodes tested
     /// against the same buffer in one pass, so there is no latency to
     /// age and no verdict to confirm. What it reads instead is the three
-    /// fields below.
-    bool software = false;
+    /// fields below. Default ON, matching Render_OcclusionSoftware:
+    /// the query path is not image-stable at any knob setting.
+    bool software = true;
     /// Triangles the software occluder pass may rasterize per frame.
     uint32_t occluderTriangles = 250000;
     /// Projected bounding-box diagonal, in pixels, under which a draw is
