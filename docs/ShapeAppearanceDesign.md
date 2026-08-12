@@ -350,8 +350,9 @@ anything that compares or serialises asks for the normal form first -- so a
 loop setting one entry at a time does not rescan the list on every step.
 Growing a field only materialises it when the arriving value disagrees with
 the one already there, which keeps an import that appends identically
-coloured faces linear. Still to do in this stage: the
-`DiffuseColor` accessor of 1.1, and the restore-time migration.
+coloured faces linear. The `DiffuseColor` accessor of 1.1 followed the same
+day; what is left of this stage is the rest of the restore-time migration
+(7.7 item 4).
 
 **Landed 2026-08-12: the property.** `ShapeAppearance` replaces
 `ShapeMaterial` on `ViewProviderGeometryObject` and, separately, on
@@ -407,13 +408,25 @@ exactly that -- and it is also unnecessary:
   `getMemSize`, `Copy`, `Paste`, `getPyObject`, `getSize` -- is already
   virtual, so persistence, undo and Python need nothing.
 - The one remaining base-pointer reader is the property editor's
-  `PropertyColorListItem`, and section 1.1 already hides `DiffuseColor` from
-  the editor so a single datum does not appear as two rows.
+  `PropertyColorListItem` -- which, checked when this landed, **this fork
+  does not have**. A colour list answers `getEditorName()` with the empty
+  string, and `createPropertyItem` skips a property that does, so
+  `DiffuseColor` has never had a row to hide. The editor question was
+  upstream's, not ours.
 
 Before writing it, grep for `PropertyColorList*` and
 `freecad_dynamic_cast<...PropertyColorList>` and confirm the list is empty.
 If some site genuinely needs base-pointer reads, that site is the argument
 for a virtual -- not the design.
+
+⭐ **And note which half of a base pointer is dangerous.** A third site
+turned up beyond the two in 7.2 -- `ViewProviderTransformed` picks
+`LineColorArray` or `DiffuseColor` into one `PropertyColorList*` -- and it
+needed no change, because it only *writes*. Every write the base offers
+funnels through the one virtual `setValues(ListT&&)`: `setValue(colour)`,
+`setValue(list)`, `setValues(list)` and both Python paths all reach it, so
+overriding that single function redirects all of them, through a base
+pointer or not. It is reads that go to the wrong vector.
 
 ⭐ **This is where the per-field layout pays off a second time.** `_diffuse`
 is literally a `std::vector<Base::Color>`, which is exactly the type
@@ -431,6 +444,52 @@ Details: route writes through the appearance's setters so change
 notification is keyed on `ShapeAppearance` and the existing update logic
 runs; and hide `DiffuseColor` from the property editor so one datum does not
 appear as two rows.
+
+**Landed 2026-08-12** as `PartGui::PropertyDiffuseColor` (`ce688581e7`),
+with the two base-pointer sites restructured into an `ElementColors`
+accessor in the same commit. Four things the plan had not:
+
+- ⭐⭐ **A list's XML element is named after its type.** `PropertyLists::
+  xmlName()` derives the element name from the type name with the `Property`
+  prefix stripped, so a `PartGui::PropertyDiffuseColor` writes
+  `<DiffuseColor>` where every older document says `<ColorList>` -- and
+  `PropertyLists::Restore` reads the element **by name**, so every older
+  document's colours would have been dropped, with a green build and no
+  error. `xmlName()` is overridden back to `ColorList`. Any property that
+  changes type has this problem; `ShapeColor` and `ShapeMaterial` escaped it
+  only because `PropertyColor`/`PropertyMaterial` hard-code their element
+  names.
+- ⭐ **The property writes no values at all.** Its colours are the
+  appearance's and the appearance saves them; writing them here too would
+  double the largest thing a per-face import stores, for a value the restore
+  would overwrite anyway (both names come back, and `ShapeAppearance` sorts
+  after `DiffuseColor`). `Save` emits the empty-list element -- which is
+  also what distinguishes a document written by this code from an older one
+  whose `DiffuseColor` carries the values -- and `Restore` skips
+  `PropertyLists::Restore`'s "no values means clear the list" branch, which
+  here would empty the appearance about to be restored into.
+- ⭐ **The restore of an older document must go through the property
+  itself.** The type changed, so those documents arrive at
+  `handleChangedPropertyType` (new override on `ViewProviderPartExt`), and a
+  colour list past the inline threshold lives in its own archive member --
+  read long after that hook returns, into whatever pointer was handed to
+  `reader.addFile`. A stand-in `PropertyColorList` on the stack is dangling
+  by then. Both encodings are covered by the probe.
+- **An empty assignment is not an empty field.** `DiffuseColor.setValue()`
+  has always meant "every face back to the object colour", while an empty
+  field in the appearance means the *default material's* colour -- a
+  different colour whenever the object has one of its own. The property
+  therefore also knows `ShapeColor`, and an empty write becomes a uniform
+  write of it.
+
+And one behaviour that had to change with it, in `Gui` rather than here
+(`9ce0a9d7a0`): entry 0 of a per-face appearance is one face, not the
+object. Refreshing `ShapeColor` off it made `ViewProviderPartExt` collapse
+the very colours that had just been applied, and `ShapeMaterial`'s
+write-back replaced the whole list with one material -- which is exactly
+what an old document does on restore, where `ShapeMaterial` arrives after
+`DiffuseColor`. The mirrors now run only while the diffuse field is uniform,
+and a whole-object material folds into the list instead of replacing it.
 
 #### 1.2 Reading upstream files, and not pretending ours are readable
 
@@ -705,6 +764,11 @@ spare one file a branch is the wrong trade. The compiler will find both
 sites -- `auto prop = &vp->DiffuseColor` stops accepting the other two
 assignments the moment the type changes.
 
+✅ **Done 2026-08-12** (`ce688581e7`): both now go through an
+`ElementColors` accessor that switches on the element type they already had.
+A third site (`ViewProviderTransformed`) does the same thing and needed no
+change -- it only writes, and writes are virtual all the way down (1.1).
+
 ### 7.3 The material port -- done, minus the half that changes behaviour
 
 ✅ **Done 2026-08-12, and it was right to split it.** `App::Material` now
@@ -779,11 +843,16 @@ from.
    keep working; storage is the appearance, the inherited value is a
    mirror of entry 0. Three restore traps, all silent, are recorded in
    section 7.8.
-3. `DiffuseColor` as an accessor (1.1), with the two base-pointer sites
-   restructured first (7.2) and the fork-only mapping behaviour preserved
-   (7.5).
+3. ~~`DiffuseColor` as an accessor (1.1)~~ -- done 2026-08-12
+   (`ce688581e7`), with the base-pointer sites restructured in the same
+   commit (7.2) and the fork-only mapping behaviour kept (7.5): the
+   transparency in a face colour's alpha, the collapse on a `ShapeColor`
+   write, and `updateColors`' `touch()` all behave as before, now keyed on
+   `ShapeAppearance`. Stage 1's storage half is complete.
 4. Restore-time migration, including upstream's `version="3"` second pass
-   as a lossy read (7.3).
+   as a lossy read (7.3). Partly done by the above: an old document's
+   `DiffuseColor` restores under both encodings, and a `ShapeMaterial` that
+   arrives after it now folds instead of replacing (`9ce0a9d7a0`).
 
 ### 7.8 What restore actually does, measured
 
@@ -826,3 +895,24 @@ every write path reaches, guarded so the mirror-back cannot ping-pong.
 **View provider properties are in GuiDocument.xml**, not Document.xml. A
 probe that rewrites the wrong file changes nothing and still reports PASS,
 which is how the first run of this probe lied.
+
+Three more, found landing `DiffuseColor` (1.1):
+
+**A list property's XML element is named after its type.** Renaming or
+retyping a list renames the element, and the restore reads it by name, so
+every older document loses that property in silence. Override `xmlName()`.
+
+**A retyped property whose values live in their own archive member has to
+restore through itself.** `handleChangedPropertyType` gets the reader
+positioned at the element, but a `file=` element only registers a pointer;
+the read happens after the whole XML pass. A stand-in on the stack is
+dangling by then, and the values land in freed memory.
+
+⭐ **The order alone does not protect per-face data -- the hooks have to.**
+`ShapeMaterial` sorts after `DiffuseColor`, so on every old document it
+arrives last and, before `9ce0a9d7a0`, replaced the whole appearance with
+its single material. The inline case failed while the archive-member case
+passed, purely because the member is read after the XML pass and so after
+`ShapeMaterial` had done the damage: **an encoding that changes only *when*
+a value arrives can be the difference between a passing and a failing
+restore**, so a restore probe has to exercise both.
