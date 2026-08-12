@@ -80,11 +80,15 @@ std::string saveToXML(const App::PropertyMaterialList& prop, int schema)
     return writer.getString();
 }
 
-void restoreFromXML(App::PropertyMaterialList& prop, const std::string& xml)
+void restoreFromXML(App::PropertyMaterialList& prop, const std::string& xml,
+                    const char* programVersion = "")
 {
     std::string doc = R"(<?xml version="1.0" encoding="UTF-8"?><document>)" + xml + "</document>";
     std::istringstream stream(doc);
     Base::XMLReader reader("material.xml", stream);
+    // What App::Document reads off the root element. Which release wrote a
+    // document decides what a colour's alpha component means in it.
+    reader.ProgramVersion = programVersion;
     prop.Restore(reader);
 }
 
@@ -102,6 +106,74 @@ void restoreDocFile(App::PropertyMaterialList& prop, const std::string& data)
     std::istringstream stream(data);
     Base::Reader reader(stream, "material.txt");
     prop.RestoreDocFile(reader);
+}
+
+/** The same for a binary entry, and with a parser behind it
+ *
+ * An entry read as part of a document is served by the parser that registered
+ * it, which is the only thing that knows the document's version -- the entry
+ * itself carries none. Passing none here is a reader with no document at all.
+ */
+void restoreBinaryDocFile(App::PropertyMaterialList& prop, const std::string& data,
+                          const char* programVersion = nullptr)
+{
+    std::istringstream stream(data);
+    if (!programVersion) {
+        Base::Reader reader(stream, "material.bin");
+        prop.RestoreDocFile(reader);
+        return;
+    }
+    std::istringstream doc(R"(<?xml version="1.0" encoding="UTF-8"?><document/>)");
+    Base::XMLReader parser("Document.xml", doc);
+    parser.ProgramVersion = programVersion;
+    Base::Reader reader(stream, "material.bin", &parser);
+    prop.RestoreDocFile(reader);
+}
+
+/** The archive entry a release that means opacity by alpha writes
+ *
+ * Byte by byte rather than through our own writer: the claim is about their
+ * layout and their convention. Every colour is opaque -- alpha 0xff, which in
+ * this fork's convention would read as invisible -- and each entry's
+ * transparency is in the field that carries it.
+ */
+std::string opacityEraDocFile(const std::vector<std::pair<uint32_t, float>>& entries)
+{
+    std::string bytes;
+    auto putU32 = [&bytes](uint32_t value) {
+        bytes.append(reinterpret_cast<const char*>(&value), sizeof(value));
+    };
+    auto putFloat = [&bytes](float value) {
+        bytes.append(reinterpret_cast<const char*>(&value), sizeof(value));
+    };
+
+    putU32(static_cast<uint32_t>(entries.size()));
+    for (const auto& entry : entries) {
+        putU32(0x333333ff);  // ambient, opaque their way
+        putU32(entry.first);  // diffuse, likewise
+        putU32(0x000000ff);  // specular
+        putU32(0x000000ff);  // emissive
+        putFloat(0.9F);
+        putFloat(entry.second);
+    }
+    // version 3's second pass: three empty strings per entry
+    for (std::size_t i = 0; i < entries.size() * 3; ++i) {
+        putU32(0);
+    }
+    return bytes;
+}
+
+/// The same list as an inline element, which is read during the XML pass
+std::string opacityEraElement(const std::vector<std::pair<uint32_t, float>>& entries)
+{
+    std::ostringstream body;
+    body << "<MaterialList count=\"" << entries.size() << "\" >\n" << std::hex;
+    for (const auto& entry : entries) {
+        body << 0x333333ff << ' ' << entry.first << ' ' << 0x000000ff << ' ' << 0x000000ff
+             << std::dec << " 0.9 " << entry.second << std::hex << '\n';
+    }
+    body << std::dec << "</MaterialList>\n";
+    return body.str();
 }
 
 /// Every entry read back whole, which is what a caller of the old API saw
@@ -585,4 +657,103 @@ TEST_F(PropertyMaterialListTest, readsAFileLaidOutTheWayUpstreamWritesIt)
     EXPECT_TRUE(prop.getImagePath(1).empty());
     // the ambient colour was uniform in the file and is stored once
     EXPECT_EQ(prop.getAmbientColors().size(), 1U);
+}
+
+/** Reading a document from after the alpha component changed meaning
+ *
+ * 1.1 inverted it: before that release a colour's alpha held transparency,
+ * which is still what it means here and why a face's diffuse alpha IS that
+ * face's transparency. So a file from 1.1 or later has to be converted --
+ * and for this property that means moving the transparency field into the
+ * diffuse alpha, because that is the value their file meant (their own
+ * renderer reads the field and ignores the component) and inverting the
+ * component instead would make every face opaque.
+ * docs/ShapeAppearanceDesign.md 7.9.
+ */
+TEST_F(PropertyMaterialListTest, anOpacityEraFileHasItsTransparencyMoved)
+{
+    const std::vector<std::pair<uint32_t, float>> entries {{0xff0000ffU, 0.25F},
+                                                           {0x00ff00ffU, 0.75F}};
+    App::PropertyMaterialList prop;
+    restoreFromXML(prop, "<MaterialList file=\"m.bin\" version=\"3\"/>\n", "1.1R41234");
+    restoreBinaryDocFile(prop, opacityEraDocFile(entries), "1.1R41234");
+
+    ASSERT_EQ(prop.getSize(), 2);
+    // the colour itself is untouched
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue() >> 8, 0xff0000U);
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue() >> 8, 0x00ff00U);
+    // and its alpha now says what the file's transparency field said
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 0.25F);
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(1).a, 0.75F);
+    EXPECT_FLOAT_EQ(prop.getTransparency(0), 0.25F);
+    EXPECT_FLOAT_EQ(prop.getTransparency(1), 0.75F);
+    // their opaque is 0xff; opaque here is zero
+    EXPECT_FLOAT_EQ(prop.getAmbientColor(0).a, 0.0F);
+    EXPECT_FLOAT_EQ(prop.getSpecularColor(1).a, 0.0F);
+}
+
+TEST_F(PropertyMaterialListTest, theSameBytesFromAnOlderFileAreLeftAlone)
+{
+    // The control, and the point of the whole gate: the encoding says nothing
+    // about the convention. Only the release that wrote the document does.
+    const std::vector<std::pair<uint32_t, float>> entries {{0xff0000ffU, 0.25F},
+                                                           {0x00ff00ffU, 0.75F}};
+    App::PropertyMaterialList prop;
+    restoreFromXML(prop, "<MaterialList file=\"m.bin\" version=\"3\"/>\n", "0.22R38472");
+    restoreBinaryDocFile(prop, opacityEraDocFile(entries), "0.22R38472");
+
+    ASSERT_EQ(prop.getSize(), 2);
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 1.0F);
+    EXPECT_FLOAT_EQ(prop.getAmbientColor(0).a, 1.0F);
+    EXPECT_FLOAT_EQ(prop.getTransparency(0), 0.25F);
+}
+
+TEST_F(PropertyMaterialListTest, aFileStatingNoVersionIsNotConverted)
+{
+    // 'pre-0.14' is the stand-in a reader fills in for a document with no
+    // ProgramVersion attribute, and upstream's own table classifies it as
+    // newer than every release it knows.
+    const std::vector<std::pair<uint32_t, float>> entries {{0xff0000ffU, 0.25F}};
+    App::PropertyMaterialList prop;
+    restoreFromXML(prop, "<MaterialList file=\"m.bin\" version=\"3\"/>\n", "pre-0.14");
+    restoreBinaryDocFile(prop, opacityEraDocFile(entries), "pre-0.14");
+
+    ASSERT_EQ(prop.getSize(), 1);
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 1.0F);
+}
+
+TEST_F(PropertyMaterialListTest, theInlineEncodingIsConvertedToo)
+{
+    // An inline list is read during the XML pass and an archive entry after
+    // it, and the two have disagreed about a restore before now.
+    const std::vector<std::pair<uint32_t, float>> entries {{0xff0000ffU, 0.25F},
+                                                           {0x00ff00ffU, 0.75F}};
+    App::PropertyMaterialList prop;
+    restoreFromXML(prop, opacityEraElement(entries), "1.1R41234");
+
+    ASSERT_EQ(prop.getSize(), 2);
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue() >> 8, 0x00ff00U);
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 0.25F);
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(1).a, 0.75F);
+    EXPECT_FLOAT_EQ(prop.getAmbientColor(0).a, 0.0F);
+}
+
+TEST_F(PropertyMaterialListTest, aConvertedUniformListStillCollapses)
+{
+    // The conversion runs over the fields and then renormalises. If it left
+    // them expanded, two lists that mean the same thing would stop
+    // serialising the same way and the shared-default scheme would quietly
+    // stop eliding appearances.
+    const std::vector<std::pair<uint32_t, float>> entries {{0xff0000ffU, 0.5F},
+                                                           {0xff0000ffU, 0.5F},
+                                                           {0xff0000ffU, 0.5F}};
+    App::PropertyMaterialList prop;
+    restoreFromXML(prop, "<MaterialList file=\"m.bin\" version=\"3\"/>\n", "1.1R41234");
+    restoreBinaryDocFile(prop, opacityEraDocFile(entries), "1.1R41234");
+
+    ASSERT_EQ(prop.getSize(), 3);
+    EXPECT_EQ(prop.getDiffuseColors().size(), 1U);
+    EXPECT_EQ(prop.getAmbientColors().size(), 1U);
+    EXPECT_EQ(prop.getTransparencies().size(), 1U);
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(2).a, 0.5F);
 }

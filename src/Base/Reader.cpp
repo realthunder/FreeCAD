@@ -42,6 +42,7 @@
 #include "Console.h"
 #include "InputSource.h"
 #include "Persistence.h"
+#include "ProgramVersion.h"
 #include "Sequencer.h"
 #include "Stream.h"
 #include "XMLTools.h"
@@ -921,6 +922,17 @@ int Base::Reader::getDocumentSchema() const
 
 Base::XMLReader *Base::Reader::getParent() const {
     return _parent;
+}
+
+bool Base::alphaIsOpacity(const Base::XMLReader &reader)
+{
+    return alphaIsOpacity(std::string_view(reader.ProgramVersion));
+}
+
+bool Base::alphaIsOpacity(const Base::Reader &reader)
+{
+    auto parent = reader.getParent();
+    return parent && alphaIsOpacity(*parent);
 }
 
 // ----------------------------------------------------------

@@ -40,6 +40,17 @@ target_include_directories(Stream_tests_run PRIVATE
 target_link_libraries(Stream_tests_run gtest_main FreeCADBase)
 add_test(NAME Stream_tests_run COMMAND Stream_tests_run)
 
+# The document version gate (docs/ShapeAppearanceDesign.md 7.9) is a header
+# and two reader overloads, so it tests against FreeCADBase alone.
+add_executable(ProgramVersion_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/ProgramVersion.cpp)
+target_include_directories(ProgramVersion_tests_run PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/src
+    ${Python3_INCLUDE_DIRS}
+    ${XercesC_INCLUDE_DIRS})
+target_link_libraries(ProgramVersion_tests_run gtest_main FreeCADBase)
+add_test(NAME ProgramVersion_tests_run COMMAND ProgramVersion_tests_run)
+
 # The sequencer's parallel-progress manager only needs FreeCADBase and
 # threads, so it tests from an executable of its own rather than a place
 # in Tests_run, which drags in all of FreeCADApp.

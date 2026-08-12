@@ -31,6 +31,7 @@
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
+#include <Base/ProgramVersion.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
 #include <Base/Quantity.h>
@@ -2564,6 +2565,27 @@ void PropertyColor::setPyObject(PyObject *value)
     setValue( cCol );
 }
 
+namespace {
+
+/** Turn a colour written by a reader whose alpha means opacity into one this
+ * fork can read, where the component holds transparency (Base::alphaIsOpacity).
+ * Nothing else about a colour changed, so this is the whole conversion.
+ */
+void convertAlpha(Color &color)
+{
+    color.a = 1.0F - color.a;
+}
+
+/// The same on the packed form, so a value read as an attribute need not be
+/// unpacked and repacked to be converted.
+unsigned long convertPackedAlpha(unsigned long rgba)
+{
+    constexpr unsigned long alphaMax = 0xff;
+    return (rgba & ~alphaMax) | (alphaMax - (rgba & alphaMax));
+}
+
+} // namespace
+
 void PropertyColor::Save (Base::Writer &writer) const
 {
     writer.Stream() << writer.ind() << "<PropertyColor value=\""
@@ -2576,6 +2598,8 @@ void PropertyColor::Restore(Base::XMLReader &reader)
     reader.readElement("PropertyColor");
     // get the value of my Attribute
     unsigned long rgba = reader.getAttributeAsUnsigned("value");
+    if (Base::alphaIsOpacity(reader))
+        rgba = convertPackedAlpha(rgba);
     setValue(rgba);
 }
 
@@ -2671,16 +2695,34 @@ bool PropertyColorList::saveXML(Base::Writer &writer) const
 void PropertyColorList::restoreXML(Base::XMLReader &reader)
 {
     int count = reader.getAttributeAsInteger("count");
+    bool opacity = Base::alphaIsOpacity(reader);
     std::vector<Color> values(count);
     auto &s = reader.beginCharStream() >> std::hex;
     for(int i=0;i<count;++i) {
         uint32_t v;
         s >> v;
         values[i].setPackedValue(v);
+        if (opacity)
+            convertAlpha(values[i]);
     }
     s >> std::dec;
     setValues(std::move(values));
     reader.endCharStream();
+}
+
+void PropertyColorList::RestoreDocFile(Base::Reader &reader)
+{
+    // The values arrive through restoreStream, which is handed a byte stream
+    // and no document, so the conversion happens here rather than there --
+    // and after the read, because the list is what gets converted, not the
+    // bytes. A list from a file this fork wrote is left alone.
+    PropertyLists::RestoreDocFile(reader);
+    if (!Base::alphaIsOpacity(reader) || !getSize())
+        return;
+    std::vector<Color> values = getValues();
+    for (auto &color : values)
+        convertAlpha(color);
+    setValues(std::move(values));
 }
 
 void PropertyColorList::saveStream(Base::OutputStream &str) const
@@ -2835,6 +2877,14 @@ void PropertyMaterial::Restore(Base::XMLReader &reader)
     _cMat.emissiveColor.setPackedValue(reader.getAttributeAsUnsigned("emissiveColor"));
     _cMat.shininess = (float)reader.getAttributeAsFloat("shininess");
     _cMat.transparency = (float)reader.getAttributeAsFloat("transparency");
+    // Only the colours changed meaning; transparency is transparency in every
+    // version that ever wrote this element.
+    if (Base::alphaIsOpacity(reader)) {
+        convertAlpha(_cMat.ambientColor);
+        convertAlpha(_cMat.diffuseColor);
+        convertAlpha(_cMat.specularColor);
+        convertAlpha(_cMat.emissiveColor);
+    }
     hasSetValue();
 }
 
@@ -3036,6 +3086,36 @@ void PropertyMaterialList::ensureNormalized() const
     // asks for the normal form first.
     if (!_normalized)
         const_cast<PropertyMaterialList*>(this)->normalize();
+}
+
+void PropertyMaterialList::applyOpacityConvention()
+{
+    if (_count == 0)
+        return;
+
+    atomic_change guard(*this);
+    touchFields();
+    // The diffuse alpha is where this fork reads a face's transparency. A
+    // release that means opacity by it does not: it renders per face
+    // transparency out of the transparency field and ignores the component
+    // entirely (their setHighlightedFaces takes materials[i].transparency).
+    // So the field is the value the file meant, and this moves it to where it
+    // will be read rather than inverting a component nobody set on purpose.
+    std::vector<Color> diffuse(_count);
+    for (int i = 0; i < _count; ++i) {
+        diffuse[i] = getDiffuseColor(i);
+        diffuse[i].a = getTransparency(i);
+    }
+    _diffuse.swap(diffuse);
+    // The other three are decorative in both conventions -- no renderer on
+    // either side varies them per entry -- but they are stored, so they are
+    // converted rather than left to mean the opposite of what they say.
+    for (auto *field : {&_ambient, &_specular, &_emissive}) {
+        for (auto &color : *field)
+            convertAlpha(color);
+    }
+    normalize();
+    guard.tryInvoke();
 }
 
 void PropertyMaterialList::setSize(int newSize)
@@ -3569,6 +3649,8 @@ void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
     s >> std::dec;
     reader.endCharStream();
     setValues(std::move(values));
+    if (Base::alphaIsOpacity(reader))
+        applyOpacityConvention();
 }
 
 void PropertyMaterialList::saveStream(Base::OutputStream &str) const
@@ -3685,6 +3767,11 @@ void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
         // has any to write.
         if (_fileVersion >= 3) {
             restoreStringStream(str, uCt);
+        }
+        // Asked of the reader that registered this entry: the entry itself is
+        // read after the XML pass and knows no document version.
+        if (Base::alphaIsOpacity(reader)) {
+            applyOpacityConvention();
         }
     }
 }

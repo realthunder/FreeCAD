@@ -93,6 +93,7 @@
 #include <App/MappedElement.h>
 #include <Base/Console.h>
 #include <Base/Parameter.h>
+#include <Base/ProgramVersion.h>
 #include <Base/Reader.h>
 #include <Base/Stream.h>
 #include <Base/TimeInfo.h>
@@ -790,12 +791,18 @@ void PropertyDiffuseColor::restoreXML(Base::XMLReader &reader)
         return;
     }
     int count = reader.getAttributeAsInteger("count");
+    // Whether alpha means opacity is a property of the file, not of the
+    // element, so it is asked here as well -- the same question the inherited
+    // archive-member path asks (App::PropertyColorList::RestoreDocFile).
+    bool opacity = Base::alphaIsOpacity(reader);
     std::vector<Base::Color> values(count);
     auto &stream = reader.beginCharStream() >> std::hex;
     for (int i = 0; i < count; ++i) {
         uint32_t packed;
         stream >> packed;
         values[i].setPackedValue(packed);
+        if (opacity)
+            values[i].a = 1.0F - values[i].a;
     }
     stream >> std::dec;
     reader.endCharStream();

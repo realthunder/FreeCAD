@@ -1027,11 +1027,15 @@ public:
     ~PropertyColorList() override;
 
     PyObject *getPyObject(void) override;
-    
+
     Property *Copy(void) const override;
     void Paste(const Property &from) override;
 
     void interpolateValue(int index, const Color &from, const Color &to, float t) override;
+
+    /// Converts the alpha component of a document that means opacity by it;
+    /// see Base::alphaIsOpacity.
+    void RestoreDocFile(Base::Reader &reader) override;
 
 protected:
     Color getPyValue(PyObject *) const override;
@@ -1301,6 +1305,14 @@ private:
     void normalize();
     /// Mark the fields as possibly denormal after a write
     void touchFields();
+
+    /** Re-read a list whose file means opacity by a colour's alpha
+     *
+     * Only the compatible encoding can be in that state: the per field one is
+     * this fork's own and is never written by a release that inverted the
+     * component. See Base::alphaIsOpacity.
+     */
+    void applyOpacityConvention();
 
     template<class T> void setField(std::vector<T> &field, const std::vector<T> &values,
                                     const T &def);
