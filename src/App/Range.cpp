@@ -153,7 +153,7 @@ int App::decodeRow(const std::string &rowstr, bool silent)
         return row;
     }
 
-    throw Base::IndexError("Invalid row specification.");
+    THROWM(Base::IndexError, "Invalid row specification.")
 }
 
 /**
@@ -188,7 +188,7 @@ int App::decodeColumn( const std::string &colstr, bool silent )
         return -1;
     }
 
-    throw Base::IndexError("Invalid column specification");
+    THROWM(Base::IndexError, "Invalid column specification")
 }
 
 /**
@@ -266,7 +266,7 @@ App::CellAddress App::stringToAddress(const char * strAddress, bool silent)
         return CellAddress();
     }
 
-    throw Base::RuntimeError("Invalid cell specifier.");
+    THROWM(Base::RuntimeError, "Invalid cell specifier.")
 }
 
 /**

@@ -211,7 +211,7 @@ void Area::setPlane(const TopoDS_Shape& shape) {
     gp_Trsf trsf;
     TopoDS_Shape plane = findPlane(shape, trsf);
     if (plane.IsNull())
-        throw Base::ValueError("shape is not planar");
+        THROWM(Base::ValueError, "shape is not planar")
     myWorkPlane = plane;
     myTrsf = trsf;
 }
@@ -470,14 +470,14 @@ static inline ClipperLib::ClipType toClipperOp(short op) {
         return ClipperLib::ctXor;
         break;
     default:
-        throw Base::ValueError("invalid Operation");
+        THROWM(Base::ValueError, "invalid Operation")
     }
 }
 
 void Area::add(const TopoDS_Shape& shape, short op) {
 
     if (shape.IsNull())
-        throw Base::ValueError("null shape");
+        THROWM(Base::ValueError, "null shape")
 
     if (op != OperationCompound)
         toClipperOp(op);
@@ -487,7 +487,7 @@ void Area::add(const TopoDS_Shape& shape, short op) {
     //TODO: shall we support Shells?
     if ((!haveSolid && myHaveSolid) ||
         (haveSolid && !myHaveSolid && !myShapes.empty()))
-        throw Base::ValueError("mixing solid and planar shapes is not allowed");
+        THROWM(Base::ValueError, "mixing solid and planar shapes is not allowed")
 
     myHaveSolid = haveSolid;
 
@@ -1418,7 +1418,7 @@ std::vector<shared_ptr<Area> > Area::makeSections(
         plane = getPlane(&trsf);
 
     if (plane.IsNull())
-        throw Base::ValueError("failed to obtain section plane");
+        THROWM(Base::ValueError, "failed to obtain section plane")
 
     FC_TIME_INIT2(t, t1);
 
@@ -1441,7 +1441,7 @@ std::vector<shared_ptr<Area> > Area::makeSections(
         double z;
         double d = fabs(myParams.Stepdown);
         if (myParams.SectionCount > 1 && d < Precision::Confusion())
-            throw Base::ValueError("invalid stepdown");
+            THROWM(Base::ValueError, "invalid stepdown")
 
         if (mode == SectionModeBoundBox) {
             if (myParams.Stepdown > 0.0)
@@ -1517,7 +1517,7 @@ std::vector<shared_ptr<Area> > Area::makeSections(
                 z = -z;
                 break;
             default:
-                throw Base::ValueError("invalid section mode");
+                THROWM(Base::ValueError, "invalid section mode")
             }
             if (z - zMin < myParams.SectionTolerance) {
                 if (hitMin) continue;
@@ -1537,7 +1537,7 @@ std::vector<shared_ptr<Area> > Area::makeSections(
     }
 
     if (heights.empty())
-        throw Base::ValueError("no sections");
+        THROWM(Base::ValueError, "no sections")
 
     std::vector<shared_ptr<Area> > sections;
     sections.reserve(heights.size());
@@ -1674,12 +1674,12 @@ TopoDS_Shape Area::getPlane(gp_Trsf* trsf) {
     }
     if (myShapePlane.IsNull()) {
         if (myShapes.empty())
-            throw Base::ValueError("no shape added");
+            THROWM(Base::ValueError, "no shape added")
         double top_z;
         for (auto& s : myShapes)
             foreachSubshape(s.shape, FindPlane(myShapePlane, myTrsf, top_z));
         if (myShapePlane.IsNull())
-            throw Base::ValueError("shapes are not planar");
+            THROWM(Base::ValueError, "shapes are not planar")
     }
     if (trsf) *trsf = myTrsf;
     return myShapePlane;
@@ -1721,7 +1721,7 @@ void Area::build() {
         return;
 
     if (myShapes.empty())
-        throw Base::ValueError("no shape added");
+        THROWM(Base::ValueError, "no shape added")
 
     PARAM_ENUM_CONVERT(AREA_MY, PARAM_FNAME, PARAM_ENUM_EXCEPT, AREA_PARAMS_CLIPPER_FILL);
 
@@ -2032,7 +2032,7 @@ void Area::makeOffset(list<shared_ptr<CArea> >& areas,
         }
         else {
             if (stepover > 0 || offset > 0)
-                throw Base::ValueError("invalid extra count");
+                THROWM(Base::ValueError, "invalid extra count")
             // In this case, we loop until no outputs from clipper
             count = -1;
         }
@@ -2117,13 +2117,13 @@ void Area::makeOffset(list<shared_ptr<CArea> >& areas,
 
 TopoDS_Shape Area::makePocket(int index, PARAM_ARGS(PARAM_FARG, AREA_PARAMS_POCKET)) {
     if (tool_radius < Precision::Confusion())
-        throw Base::ValueError("tool radius too small");
+        THROWM(Base::ValueError, "tool radius too small")
 
     if (stepover == 0.0)
         stepover = tool_radius;
 
     if (stepover < Precision::Confusion())
-        throw Base::ValueError("stepover too small");
+        THROWM(Base::ValueError, "stepover too small")
 
     if (mode == Area::PocketModeNone)
         return TopoDS_Shape();
@@ -2185,7 +2185,7 @@ TopoDS_Shape Area::makePocket(int index, PARAM_ARGS(PARAM_FARG, AREA_PARAMS_POCK
         CBox2D box;
         myArea->GetBox(box);
         if (!box.m_valid)
-            throw Base::ValueError("failed to get bound box");
+            THROWM(Base::ValueError, "failed to get bound box")
         double angles[4];
         int count = 1;
         angles[0] = 0.0;
@@ -2240,7 +2240,7 @@ TopoDS_Shape Area::makePocket(int index, PARAM_ARGS(PARAM_FARG, AREA_PARAMS_POCK
         done = true;
         break;
     }default:
-        throw Base::ValueError("unknown pocket mode");
+        THROWM(Base::ValueError, "unknown pocket mode")
     }
 
     if (!done) {

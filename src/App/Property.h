@@ -684,7 +684,7 @@ public:
     virtual void set1Value(int index, const_reference value) {
         int size = getSize();
         if (index<-1 || index>size)
-            throw Base::RuntimeError("index out of bound");
+            THROWM(Base::RuntimeError, "index out of bound")
 
         atomic_change guard(*this, false);
         if (index==-1 || index == size) {

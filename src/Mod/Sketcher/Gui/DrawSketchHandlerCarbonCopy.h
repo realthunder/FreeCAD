@@ -159,7 +159,7 @@ public:
             App::DocumentObject* obj =
                 sketchgui->getObject()->getDocument()->getObject(msg.pObjectName);
             if (!obj) {
-                throw Base::ValueError("Sketcher: Carbon Copy: Invalid object in selection");
+                THROWM(Base::ValueError, "Sketcher: Carbon Copy: Invalid object in selection")
             }
 
             if (obj->is<Sketcher::SketchObject>()) {

@@ -639,7 +639,7 @@ bool View3DInventor::setCamera(const char* pCamera, int animateDuration)
 {
     SoCamera * CamViewer = _viewer->getSoRenderManager()->getCamera();
     if (!CamViewer) {
-        throw Base::RuntimeError("No camera set so far...");
+        THROWM(Base::RuntimeError, "No camera set so far...")
     }
 
     SoInput in;
@@ -649,7 +649,7 @@ bool View3DInventor::setCamera(const char* pCamera, int animateDuration)
     SoDB::read(&in,Cam);
 
     if (!Cam || !Cam->isOfType(SoCamera::getClassTypeId())) {
-        throw Base::RuntimeError("Camera settings failed to read");
+        THROWM(Base::RuntimeError, "Camera settings failed to read")
     }
 
     // this is to make sure to reliably delete the node
@@ -686,7 +686,7 @@ bool View3DInventor::setCamera(const char* pCamera, int animateDuration)
             }
         }
         else {
-            throw Base::TypeError("Camera type mismatch");
+            THROWM(Base::TypeError, "Camera type mismatch")
         }
     }
     else if (Cam->getTypeId() == SoOrthographicCamera::getClassTypeId()) {
@@ -707,7 +707,7 @@ bool View3DInventor::setCamera(const char* pCamera, int animateDuration)
             }
         }
         else {
-            throw Base::TypeError("Camera type mismatch");
+            THROWM(Base::TypeError, "Camera type mismatch")
         }
     }
 

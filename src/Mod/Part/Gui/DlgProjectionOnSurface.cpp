@@ -164,14 +164,14 @@ DlgProjectionOnSurface::DlgProjectionOnSurface(QWidget *parent)
     m_partDocument = App::GetApplication().getActiveDocument();
     if (!m_partDocument)
     {
-      throw Base::ValueError(QString(tr("Have no active document!!!")).toUtf8());
+      THROWM(Base::ValueError, QString(tr("Have no active document!!!")).toUtf8())
     }
     this->attachDocument(m_partDocument);
     m_partDocument->openTransaction("Project on surface");
     m_projectionObject = dynamic_cast<Part::Feature*>(m_partDocument->addObject("Part::Feature", "Projection Object"));
     if (!m_projectionObject)
     {
-      throw Base::ValueError(QString(tr("Can not create a projection object!!!")).toUtf8());
+      THROWM(Base::ValueError, QString(tr("Can not create a projection object!!!")).toUtf8())
     }
     m_projectionObject->Label.setValue(std::string(m_projectionObjectName.toUtf8()).c_str());
     onRadioButtonShowAllClicked();
@@ -544,7 +544,7 @@ void PartGui::DlgProjectionOnSurface::create_projection_wire(std::vector<SShapeS
   {
     std::stringstream ssOcc;
     error.Print(ssOcc);
-    throw Base::ValueError(ssOcc.str().c_str());
+    THROWM(Base::ValueError, ssOcc.str().c_str())
   }
 }
 
@@ -826,7 +826,7 @@ void PartGui::DlgProjectionOnSurface::create_projection_face_from_wire(std::vect
   {
     std::stringstream ssOcc;
     error.Print(ssOcc);
-    throw Base::ValueError(ssOcc.str().c_str());
+    THROWM(Base::ValueError, ssOcc.str().c_str())
   }
 }
 
@@ -903,7 +903,7 @@ void PartGui::DlgProjectionOnSurface::create_face_extrude(std::vector<SShapeStor
   {
     std::stringstream ssOcc;
     error.Print(ssOcc);
-    throw Base::ValueError(ssOcc.str().c_str());
+    THROWM(Base::ValueError, ssOcc.str().c_str())
   }
 }
 

@@ -341,7 +341,7 @@ FreeCADGui_exportSubgraph(PyObject * /*self*/, PyObject *args)
                 buffer = SoFCDB::writeNodesToString(node);
             }
             else {
-                throw Base::ValueError("Unsupported format");
+                THROWM(Base::ValueError, "Unsupported format")
             }
 
             Base::PyStreambuf buf(output);
@@ -483,7 +483,7 @@ Application::Application(bool GUIenabled)
                     "This causes serious problems and makes the application fail to work "
                     "properly.\n"
                     "Go to the system configuration panel of the OS and fix this issue, please."));
-            throw Base::RuntimeError("Invalid system settings");
+            THROWM(Base::RuntimeError, "Invalid system settings")
         }
 #endif
 
@@ -2992,7 +2992,7 @@ void Application::runApplication(void)
         // Qt can't handle exceptions thrown from event handlers, so we need
         // to manually rethrow SystemExitExceptions.
         if (mainApp.caughtException.get())
-            throw Base::SystemExitException(*mainApp.caughtException.get());
+            THROWM(Base::SystemExitException, *mainApp.caughtException.get())
 
         // close the lock file, in case of a crash we can see the existing lock file
         // on the next restart and try to repair the documents, if needed.

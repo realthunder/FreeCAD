@@ -76,7 +76,7 @@ class XMLErrorHandler: public HandlerBase
         message << "Error at file \"" << StrX(toCatch.getSystemId()) << "\", line "
                 << toCatch.getLineNumber() << ", column " << toCatch.getColumnNumber()
                 << "\n   Message: " << StrX(toCatch.getMessage()) << std::endl;
-        throw Base::XMLBaseException(message.str());
+        THROWM(Base::XMLBaseException, message.str())
     }
 
     void fatalError(const SAXParseException& toCatch) override
@@ -85,7 +85,7 @@ class XMLErrorHandler: public HandlerBase
         message << "Fatal error at file \"" << StrX(toCatch.getSystemId()) << "\", line "
                 << toCatch.getLineNumber() << ", column " << toCatch.getColumnNumber()
                 << "\n   Message: " << StrX(toCatch.getMessage()) << std::endl;
-        throw Base::XMLBaseException(message.str());
+        THROWM(Base::XMLBaseException, message.str())
     }
 };
 }// namespace MetadataInternal
@@ -291,7 +291,7 @@ void Metadata::setName(const std::string& name)
 {
     std::string invalidCharacters = "/\\?%*:|\"<>";// Should cover all OSes
     if (_name.find_first_of(invalidCharacters) != std::string::npos) {
-        throw Base::RuntimeError("Name cannot contain any of: " + invalidCharacters);
+        THROWM(Base::RuntimeError, "Name cannot contain any of: " + invalidCharacters)
     }
     _name = name;
 }
@@ -447,7 +447,7 @@ void Metadata::removeDepend(const Meta::Dependency& dep)
         }
     }
     if (!found) {
-        throw Base::RuntimeError("No match found for dependency to remove");
+        THROWM(Base::RuntimeError, "No match found for dependency to remove")
     }
     auto new_end = std::remove(_depend.begin(), _depend.end(), dep);
     _depend.erase(new_end, _depend.end());
@@ -643,13 +643,13 @@ void Metadata::write(const fs::path& file) const
         char* message = XMLString::transcode(toCatch.getMessage());
         std::string what = message;
         XMLString::release(&message);
-        throw Base::XMLBaseException(what);
+        THROWM(Base::XMLBaseException, what)
     }
     catch (const DOMException& toCatch) {
         char* message = XMLString::transcode(toCatch.getMessage());
         std::string what = message;
         XMLString::release(&message);
-        throw Base::XMLBaseException(what);
+        THROWM(Base::XMLBaseException, what)
     }
 
     doc->release();
@@ -1106,7 +1106,7 @@ Meta::Dependency::Dependency(const XERCES_CPP_NAMESPACE::DOMElement* elem)
     }
     else {
         auto message = std::string("Invalid dependency type \"") + type_string + "\"";
-        throw Base::XMLBaseException(message);
+        THROWM(Base::XMLBaseException, message)
     }
 
     package = StrXUTF8(elem->getTextContent()).str;

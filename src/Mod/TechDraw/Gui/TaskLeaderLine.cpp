@@ -343,7 +343,7 @@ void TaskLeaderLine::createLeaderFeature(std::vector<Base::Vector3d> converted)
     Gui::cmdAppDocument(m_basePage,std::ostringstream() << "addObject('" << m_leaderType << "','" << m_leaderName << "')");
     App::DocumentObject* obj = m_basePage->getDocument()->getObject(m_leaderName.c_str());
     if (!obj) {
-        throw Base::RuntimeError("TaskLeaderLine - new markup object not found");
+        THROWM(Base::RuntimeError, "TaskLeaderLine - new markup object not found")
     }
     Gui::cmdAppObjectArgs(obj, "translateLabel('DrawLeaderLine', 'LeaderLine', '%s')", m_leaderName, m_leaderName);
     Gui::cmdAppObject(m_basePage, std::ostringstream() << "addView(" << Gui::Command::getObjectCmd(obj) << ")");
@@ -559,7 +559,7 @@ void TaskLeaderLine::startTracker()
            );
     } else {
         //this is too harsh. but need to avoid restarting process
-        throw Base::RuntimeError("TechDrawNewLeader - tracker already active\n");
+        THROWM(Base::RuntimeError, "TechDrawNewLeader - tracker already active\n")
     }
     setEditCursor(Qt::CrossCursor);
     QString msg = tr("Left click to set a point");
@@ -585,7 +585,7 @@ void TaskLeaderLine::onTrackerFinished(std::vector<QPointF> pts, QGIView* qgPare
     } else {
         Base::Console().Message("TTL::onTrackerFinished - can't find parent graphic!\n");
         //blow up!?
-        throw Base::RuntimeError("TaskLeaderLine - can not find parent graphic");
+        THROWM(Base::RuntimeError, "TaskLeaderLine - can not find parent graphic")
     }
 
     QString msg = tr("Press OK or Cancel to continue");

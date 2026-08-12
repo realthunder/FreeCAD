@@ -255,7 +255,7 @@ void DrawSVGTemplate::replaceFileIncluded(std::string newTemplateFileName)
     if (tfi.isReadable()) {
         PageResult.setValue(newTemplateFileName.c_str());
     } else {
-        throw Base::RuntimeError("Could not read the new template file");
+        THROWM(Base::RuntimeError, "Could not read the new template file")
     }
 }
 

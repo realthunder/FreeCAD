@@ -149,7 +149,11 @@ bool GUIApplication::notify (QObject * receiver, QEvent * event)
         return true;
     }
     catch (const Base::Exception& e) {
-        logNotifyException(Base::CrashLog::Severity::Caught, e.getTypeId().getName(), &e, e.what(), receiver, event);
+        // typeid, not getTypeId(): a Base::ValueError logged itself as
+        // "Base::Exception", because the exception classes do not all register
+        // a distinct type with the Base type system. typeid gives the dynamic
+        // type either way -- readable on MSVC, mangled but unambiguous on gcc.
+        logNotifyException(Base::CrashLog::Severity::Caught, typeid(e).name(), &e, e.what(), receiver, event);
         e.ReportException();
         Base::Console().Error("Unhandled Base::Exception caught in GUIApplication::notify\n");
     }

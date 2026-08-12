@@ -71,14 +71,14 @@ int Part::ImportStepParts(App::Document *pcDoc, const char* Name)
     if (!fi.exists()) {
         std::stringstream str;
         str << "File '" << Name << "' does not exist!";
-        throw Base::FileException(str.str().c_str());
+        THROWM(Base::FileException, str.str().c_str())
     }
     std::string encodednamestr = encodeFilename(std::string(Name));
     const char * encodedname = encodednamestr.c_str();
 
     if (aReader.ReadFile((Standard_CString)encodedname) !=
             IFSelect_RetDone) {
-        throw Base::FileException("Cannot open STEP file");
+        THROWM(Base::FileException, "Cannot open STEP file")
     }
 
     Handle(Message_ProgressIndicator) pi = new ProgressIndicator(100);
@@ -106,7 +106,7 @@ int Part::ImportStepParts(App::Document *pcDoc, const char* Name)
     // Collecting resulting entities
     Standard_Integer nbs = aReader.NbShapes();
     if (nbs == 0) {
-        throw Base::FileException("No shapes found in file ");
+        THROWM(Base::FileException, "No shapes found in file ")
     }
     else {
         //Handle(StepData_StepModel) Model = aReader.StepModel();

@@ -1339,7 +1339,7 @@ void DrawViewSection::replaceSvgIncluded(std::string newSvgFile)
         SvgIncluded.setValue(newSvgFile.c_str());
     }
     else {
-        throw Base::RuntimeError("Could not read the new Svg file");
+        THROWM(Base::RuntimeError, "Could not read the new Svg file")
     }
 }
 
@@ -1356,7 +1356,7 @@ void DrawViewSection::replacePatIncluded(std::string newPatFile)
         PatIncluded.setValue(newPatFile.c_str());
     }
     else {
-        throw Base::RuntimeError("Could not read the new Pat file");
+        THROWM(Base::RuntimeError, "Could not read the new Pat file")
     }
 }
 

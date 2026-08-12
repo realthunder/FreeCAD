@@ -790,14 +790,14 @@ static float decodeFloat(const PyObject* obj)
     else if (PyLong_Check(obj)) {
         return PyLong_AsLong((PyObject*)obj);
     }
-    throw Base::TypeError("Float or integer expected");
+    THROWM(Base::TypeError, "Float or integer expected")
 }
 
 static void decodeColor(PyObject* value, Color& c)
 {
     if (PyTuple_Check(value)) {
         if (PyTuple_Size(value) < 3 || PyTuple_Size(value) > 4) {
-            throw Base::TypeError("Tuple must be either of 3 or 4 floats/ints.");
+            THROWM(Base::TypeError, "Tuple must be either of 3 or 4 floats/ints.")
         }
 
         c.r = decodeFloat(PyTuple_GetItem(value, 0));
@@ -812,7 +812,7 @@ static void decodeColor(PyObject* value, Color& c)
         }
     }
     else {
-        throw Base::TypeError("Tuple required.");
+        THROWM(Base::TypeError, "Tuple required.")
     }
 }
 

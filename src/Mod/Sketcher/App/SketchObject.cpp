@@ -1386,7 +1386,7 @@ Base::Vector3d SketchObject::getPoint(int GeoId, PointPos PosId) const
 {
     if (!(GeoId == H_Axis || GeoId == V_Axis
           || (GeoId <= getHighestCurveIndex() && GeoId >= -getExternalGeometryCount())))
-        throw Base::ValueError("SketchObject::getPoint. Invalid GeoId was supplied.");
+        THROWM(Base::ValueError, "SketchObject::getPoint. Invalid GeoId was supplied.")
     const Part::Geometry* geo = getGeometry(GeoId);
     return getPoint(geo,PosId);
 }
@@ -2874,7 +2874,7 @@ int SketchObject::fillet(int GeoId1, int GeoId2, const Base::Vector3d& refPnt1,
 
                 if (std::abs(det) < Precision::Confusion()) {
                     // no intersection of normals
-                    throw Base::RuntimeError("No intersection of normals");
+                    THROWM(Base::RuntimeError, "No intersection of normals")
                 }
 
                 Base::Vector3d refp1 = curve1->pointAtParameter(refparam1);
@@ -9362,7 +9362,7 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
     Constraints.acceptGeometry(getCompleteGeometry());
 
     if(hasError && this->isRecomputing())
-        throw Base::RuntimeError("Missing external geometry reference");
+        THROWM(Base::RuntimeError, "Missing external geometry reference")
 }
 
 void SketchObject::fixExternalGeometry(const std::vector<int> &geoIds) {
@@ -10010,7 +10010,7 @@ double SketchObject::calculateAngleViaPoint(int GeoId1, int GeoId2, double px, d
         return sk.calculateAngleViaPoint(i1, i2, px, py);
     }
     else
-        throw Base::ValueError("Null geometry in calculateAngleViaPoint");
+        THROWM(Base::ValueError, "Null geometry in calculateAngleViaPoint")
 }
 
 void SketchObject::constraintsRenamed(
@@ -11988,7 +11988,7 @@ bool SketchExport::update() {
         auto shape = Part::Feature::getTopoShape(base,ref.c_str(),true,0,0,false,false);
         if(shape.isNull()) {
             FC_ERR("Invalid element reference: " << ref);
-            throw Base::RuntimeError("Invalid element reference");
+            THROWM(Base::RuntimeError, "Invalid element reference")
         }
         if(!shape.hasSubShape(TopAbs_EDGE))
             points.push_back(shape.makECopy(Part::OpCodes::SketchExport));

@@ -121,7 +121,7 @@ App::DocumentObjectExecReturn *MultiCommon::execute()
 
             for (std::vector<TopoDS_Shape>::iterator it = s.begin()+1; it != s.end(); ++it) {
                 if (it->IsNull())
-                    throw Base::RuntimeError("Input shape is null");
+                    THROWM(Base::RuntimeError, "Input shape is null")
 
                 // Let's call algorithm computing a fuse operation:
                 BRepAlgoAPI_Common mkCommon(resShape, *it);
@@ -197,7 +197,7 @@ App::DocumentObjectExecReturn *MultiCommon::execute()
         }
     }
     else {
-        throw Base::CADKernelError("Not enough shape objects linked");
+        THROWM(Base::CADKernelError, "Not enough shape objects linked")
     }
 
 #else
@@ -212,7 +212,7 @@ App::DocumentObjectExecReturn *MultiCommon::execute()
     TopoShape res(0,getDocument()->getStringHasher());
     res.makEBoolean(Part::OpCodes::Common,shapes);
     if (res.isNull())
-        throw Base::RuntimeError("Resulting shape is null");
+        THROWM(Base::RuntimeError, "Resulting shape is null")
 
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Part/Boolean");

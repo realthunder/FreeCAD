@@ -354,7 +354,7 @@ void CosmeticEdge::assignTag(const TechDraw::CosmeticEdge* ce)
     if(ce->getTypeId() == this->getTypeId())
         this->tag = ce->tag;
     else
-        throw Base::TypeError("CosmeticEdge tag can not be assigned as types do not match.");
+        THROWM(Base::TypeError, "CosmeticEdge tag can not be assigned as types do not match.")
 }
 
 CosmeticEdge* CosmeticEdge::copy() const
@@ -531,7 +531,7 @@ void GeomFormat::assignTag(const TechDraw::GeomFormat* ce)
     if(ce->getTypeId() == this->getTypeId())
         this->tag = ce->tag;
     else
-        throw Base::TypeError("GeomFormat tag can not be assigned as types do not match.");
+        THROWM(Base::TypeError, "GeomFormat tag can not be assigned as types do not match.")
 }
 
 GeomFormat *GeomFormat::clone() const

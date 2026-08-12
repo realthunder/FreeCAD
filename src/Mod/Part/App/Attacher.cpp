@@ -904,7 +904,7 @@ void AttachEngine::throwWrongMode(eMapMode mmode)
     } else {
         errmsg << "Attachment mode index (" << int(mmode) << ") is out of range." ;
     }
-    throw Base::ValueError(errmsg.str().c_str());
+    THROWM(Base::ValueError, errmsg.str().c_str())
 }
 
 std::vector<App::DocumentObject*> AttachEngine::getRefObjects() const 
@@ -1134,12 +1134,12 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         break;
     case mmTranslate:{
         if (shapes.empty())
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: no subobjects specified (need one vertex).");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: no subobjects specified (need one vertex).")
         const TopoDS_Shape &sh = *shapes[0];
         if (sh.IsNull())
-            throw Base::ValueError("Null shape in AttachEngine3D::calculateAttachedPlacement()!");
+            THROWM(Base::ValueError, "Null shape in AttachEngine3D::calculateAttachedPlacement()!")
         if (sh.ShapeType() != TopAbs_VERTEX)
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: no subobjects specified (need one vertex).");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: no subobjects specified (need one vertex).")
         gp_Pnt p = BRep_Tool::Pnt(TopoDS::Vertex(sh));
         Base::Placement plm = Base::Placement();
         plm.setPosition(Base::Vector3d(p.X(), p.Y(), p.Z()));
@@ -1187,7 +1187,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
             dirZ = pos.Axis().Direction();
             SketchBasePoint = pos.Location();
         } else {
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: need either a conic section edge, or a whole object for ObjectXY-like modes.");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: need either a conic section edge, or a whole object for ObjectXY-like modes.")
         }
 
         switch (mmode){
@@ -1212,7 +1212,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
             TopoDS_Vertex vertex;
             try { vertex = TopoDS::Vertex(*(shapes[1])); } catch(...) {}
             if (vertex.IsNull())
-                throw Base::ValueError("Null vertex in AttachEngine3D::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null vertex in AttachEngine3D::calculateAttachedPlacement()!")
 
             SketchNormal = dirZ;
             SketchXAxis = gp_Vec(dirX);
@@ -1232,7 +1232,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         GProp_GProps gpr = AttachEngine::getInertialPropsOfShape(shapes);
         GProp_PrincipalProps pr = gpr.PrincipalProperties();
         if (pr.HasSymmetryPoint())
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement:InertialCS: inertia tensor is trivial, principal axes are undefined.");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement:InertialCS: inertia tensor is trivial, principal axes are undefined.")
         if (pr.HasSymmetryAxis()){
             Base::Console().Warning("AttachEngine3D::calculateAttachedPlacement:InertialCS: inertia tensor has axis of symmetry. Second and third axes of inertia are undefined.\n");
             //find defined axis, and use it as Z axis
@@ -1261,7 +1261,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
     }break;
     case mmFlatFace:{
         if (shapes.empty())
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: no subobjects specified (needed one planar face).");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: no subobjects specified (needed one planar face).")
 
         TopoDS_Face face;
         gp_Pln plane;
@@ -1269,7 +1269,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         try { face = TopoDS::Face(*(shapes[0])); } catch(...) {}
         if (face.IsNull()) {
             if (!TopoShape(*shapes[0]).findPlane(plane))
-                throw Base::ValueError("No planar face in AttachEngine3D::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "No planar face in AttachEngine3D::calculateAttachedPlacement()!")
         } else {
             BRepAdaptor_Surface adapt(face);
             if (adapt.GetType() == GeomAbs_Plane) {
@@ -1282,7 +1282,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
                 if (check.IsPlanar())
                     plane = check.Plan();
                 else
-                    throw Base::ValueError("No planar face in AttachEngine3D::calculateAttachedPlacement()!");
+                    THROWM(Base::ValueError, "No planar face in AttachEngine3D::calculateAttachedPlacement()!")
             }
 
             if (face.Orientation() == TopAbs_REVERSED)
@@ -1307,7 +1307,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
     } break;
     case mmTangentPlane: {
         if (shapes.size() < 2)
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: not enough subshapes (need one false and one vertex).");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: not enough subshapes (need one false and one vertex).")
 
         bool bThruVertex = false;
         if (shapes[0]->ShapeType() == TopAbs_VERTEX) {
@@ -1318,12 +1318,12 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         TopoDS_Face face;
         try { face = TopoDS::Face(*(shapes[0])); } catch(...) {}
         if (face.IsNull())
-            throw Base::ValueError("Null face in AttachEngine3D::calculateAttachedPlacement()!");
+            THROWM(Base::ValueError, "Null face in AttachEngine3D::calculateAttachedPlacement()!")
 
         TopoDS_Vertex vertex;
         try { vertex = TopoDS::Vertex(*(shapes[1])); } catch(...) {}
         if (vertex.IsNull())
-            throw Base::ValueError("Null vertex in AttachEngine3D::calculateAttachedPlacement()!");
+            THROWM(Base::ValueError, "Null vertex in AttachEngine3D::calculateAttachedPlacement()!")
 
         Handle (Geom_Surface) hSurf = BRep_Tool::Surface(face);
         gp_Pnt p = BRep_Tool::Pnt(vertex);
@@ -1331,7 +1331,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         GeomAPI_ProjectPointOnSurf projector(p, hSurf);
         double u, v;
         if (projector.NbPoints()==0)
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: projecting point onto surface failed.");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: projecting point onto surface failed.")
 
         projector.LowerDistanceParameters(u, v);
         BRepAdaptor_Surface surf(face);
@@ -1342,7 +1342,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         Tools::getNormal(face, u, v, Precision::Confusion(), SketchNormal, done);
 
         if (!done)
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: finding normal to surface at projected point failed.");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: finding normal to surface at projected point failed.")
 
         // if getNormal succeeds, at least one of the tangent is defined
         if (prop.IsTangentUDefined()) {
@@ -1372,7 +1372,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
     case mmRevolutionSection:
     case mmConcentric: {//all alignments to point on curve
         if (shapes.empty())
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: no subshapes specified (need one edge, and an optional vertex).");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: no subshapes specified (need one edge, and an optional vertex).")
 
         bool bThruVertex = false;
         if (shapes[0]->ShapeType() == TopAbs_VERTEX && shapes.size()>=2) {
@@ -1383,7 +1383,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         TopoDS_Edge path;
         try { path = TopoDS::Edge(*(shapes[0])); } catch(...) {}
         if (path.IsNull())
-            throw Base::ValueError("Null path in AttachEngine3D::calculateAttachedPlacement()!");
+            THROWM(Base::ValueError, "Null path in AttachEngine3D::calculateAttachedPlacement()!")
 
         BRepAdaptor_Curve adapt(path);
 
@@ -1403,7 +1403,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
             TopoDS_Vertex vertex;
             try { vertex = TopoDS::Vertex(*(shapes[1])); } catch(...) {}
             if (vertex.IsNull())
-                throw Base::ValueError("Null vertex in AttachEngine3D::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null vertex in AttachEngine3D::calculateAttachedPlacement()!")
             p_in = BRep_Tool::Pnt(vertex);
 
             Handle (Geom_Curve) hCurve = BRep_Tool::Curve(path, u1, u2);
@@ -1417,7 +1417,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         adapt.D1(u,p,d);
 
         if (d.Magnitude()<Precision::Confusion())
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: path curve derivative is below 1e-7, too low, can't align");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: path curve derivative is below 1e-7, too low, can't align")
 
         //Set origin. Note that it will be overridden later for mmConcentric and mmRevolutionSection
         if (bThruVertex) {
@@ -1462,13 +1462,13 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
             case mmFrenetTN:
             case mmConcentric:
                 if (N.Magnitude() == 0.0)
-                    throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: Frenet-Serret normal is undefined. Can't align to TN plane.");
+                    THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: Frenet-Serret normal is undefined. Can't align to TN plane.")
                 SketchNormal = B;
                 SketchXAxis = T;
                 break;
             case mmFrenetTB:
                 if (N.Magnitude() == 0.0)
-                    throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: Frenet-Serret normal is undefined. Can't align to TB plane.");
+                    THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: Frenet-Serret normal is undefined. Can't align to TB plane.")
                 SketchNormal = N.Reversed();//it is more convenient to sketch on something looking at it so it is convex.
                 SketchXAxis = T;
                 break;
@@ -1478,7 +1478,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
             if (mmode == mmRevolutionSection || mmode == mmConcentric) {
                 //make sketch origin be at center of osculating circle
                 if (N.Magnitude() == 0.0)
-                    throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: path has infinite radius of curvature at the point. Can't align for revolving.");
+                    THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: path has infinite radius of curvature at the point. Can't align for revolving.")
                 double curvature = dd.Dot(N) / pow(d.Magnitude(), 2);
                 gp_Vec pv (p.XYZ());
                 pv.Add(N.Multiplied(1/curvature));//shift the point along curvature by radius of curvature
@@ -1499,7 +1499,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         for (const auto & shape : shapes) {
             const TopoDS_Shape &sh = *shape;
             if (sh.IsNull())
-                throw Base::ValueError("Null shape in AttachEngine3D::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null shape in AttachEngine3D::calculateAttachedPlacement()!")
             if (sh.ShapeType() == TopAbs_VERTEX){
                 const TopoDS_Vertex &v = TopoDS::Vertex(sh);
                 points.push_back(BRep_Tool::Pnt(v));
@@ -1521,7 +1521,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         }
 
         if(points.size()<3)
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: less than 3 points are specified, cannot derive the plane.");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: less than 3 points are specified, cannot derive the plane.")
 
         gp_Pnt p0 = points[0];
         gp_Pnt p1 = points[1];
@@ -1530,7 +1530,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         gp_Vec vec01 (p0,p1);
         gp_Vec vec02 (p0,p2);
         if (vec01.Magnitude() < Precision::Confusion() || vec02.Magnitude() < Precision::Confusion())
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: some of 3 points are coincident. Can't make a plane");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: some of 3 points are coincident. Can't make a plane")
         vec01.Normalize();
         vec02.Normalize();
 
@@ -1538,13 +1538,13 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         if (mmode == mmThreePointsPlane) {
             norm = vec01.Crossed(vec02);
             if (norm.Magnitude() < Precision::Confusion())
-                throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: points are collinear. Can't make a plane");
+                THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: points are collinear. Can't make a plane")
             //SketchBasePoint = (p0+p1+p2)/3.0
             SketchBasePoint = gp_Pnt(gp_Vec(p0.XYZ()).Added(p1.XYZ()).Added(p2.XYZ()).Multiplied(1.0/3.0).XYZ());
         } else if (mmode == mmThreePointsNormal) {
             norm = vec02.Subtracted(vec01.Multiplied(vec02.Dot(vec01))).Reversed();//norm = vec02 forced perpendicular to vec01.
             if (norm.Magnitude() < Precision::Confusion())
-                throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: points are collinear. Can't make a plane");
+                THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: points are collinear. Can't make a plane")
             //SketchBasePoint = (p0+p1)/2.0
 
             Handle (Geom_Plane) gPlane = new Geom_Plane(p0, gp_Dir(norm));
@@ -1565,7 +1565,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         // expected to be in one plane.
 
         if (shapes.size()<4)
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: not enough shapes (need 4 lines: edgeA, axisA, axisB, edgeB).");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: not enough shapes (need 4 lines: edgeA, axisA, axisB, edgeB).")
 
         //extract the four lines
         const TopoDS_Edge* edges[4];
@@ -1574,11 +1574,11 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
         for(int i=0  ;  i<4  ;  i++){
             try { edges[i] = &TopoDS::Edge(*(shapes[i])); } catch(...){}
             if (edges[i]->IsNull())
-                throw Base::ValueError("Null edge in AttachEngine3D::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null edge in AttachEngine3D::calculateAttachedPlacement()!")
 
             adapts[i] = BRepAdaptor_Curve(*(edges[i]));
             if (adapts[i].GetType() != GeomAbs_Line)
-                throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: Folding - non-straight edge.");
+                THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: Folding - non-straight edge.")
             lines[i] = adapts[i].Line();
         }
 
@@ -1607,7 +1607,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
             signs[0] = -1.0;
             signs[1] = -1.0;
         } else {
-            throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: Folding - edges to not share a vertex.");
+            THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: Folding - edges to not share a vertex.")
         }
         for (int i = 2  ;  i<4  ;  i++){
             p1 = adapts[i].Value(adapts[i].FirstParameter());
@@ -1617,7 +1617,7 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
             else if (p.Distance(p2) < Precision::Confusion())
                 signs[i] = -1.0;
             else
-                throw Base::ValueError("AttachEngine3D::calculateAttachedPlacement: Folding - edges to not share a vertex.");
+                THROWM(Base::ValueError, "AttachEngine3D::calculateAttachedPlacement: Folding - edges to not share a vertex.")
         }
 
         gp_Vec dirs[4];
@@ -1936,7 +1936,7 @@ Base::Placement AttachEngineLine::_calculateAttachedPlacement(
             LineBasePoint = gpr.CentreOfMass();
             GProp_PrincipalProps pr = gpr.PrincipalProperties();
             if (pr.HasSymmetryPoint())
-                throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement:AxisOfInertia: inertia tensor is trivial, principal axes are undefined.");
+                THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement:AxisOfInertia: inertia tensor is trivial, principal axes are undefined.")
 
             //query moments, to use them to check if axis is defined
             //See AttachEngine3D::calculateAttachedPlacement:case mmInertial for comment explaining these comparisons
@@ -1950,15 +1950,15 @@ Base::Placement AttachEngineLine::_calculateAttachedPlacement(
             if (mmode == mm1AxisInertia1){
                 LineDir = pr.FirstAxisOfInertia();
                 if (pr.HasSymmetryAxis() && !(d23 < d31 && d23 < d12))
-                    throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement:AxisOfInertia: inertia tensor has axis of symmetry; first axis of inertia is undefined.");
+                    THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement:AxisOfInertia: inertia tensor has axis of symmetry; first axis of inertia is undefined.")
             } else if (mmode == mm1AxisInertia2) {
                 LineDir = pr.SecondAxisOfInertia();
                 if (pr.HasSymmetryAxis() && !(d31 < d12 && d31 < d23))
-                    throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement:AxisOfInertia: inertia tensor has axis of symmetry; second axis of inertia is undefined.");
+                    THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement:AxisOfInertia: inertia tensor has axis of symmetry; second axis of inertia is undefined.")
             } else if (mmode == mm1AxisInertia3) {
                 LineDir = pr.ThirdAxisOfInertia();
                 if (pr.HasSymmetryAxis() && !(d12 < d23 && d12 < d31))
-                    throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement:AxisOfInertia: inertia tensor has axis of symmetry; third axis of inertia is undefined.");
+                    THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement:AxisOfInertia: inertia tensor has axis of symmetry; third axis of inertia is undefined.")
             }
         }break;
         case mm1TwoPoints:{
@@ -1967,7 +1967,7 @@ Base::Placement AttachEngineLine::_calculateAttachedPlacement(
             for (const auto & shape : shapes) {
                 const TopoDS_Shape &sh = *shape;
                 if (sh.IsNull())
-                    throw Base::ValueError("Null shape in AttachEngineLine::calculateAttachedPlacement()!");
+                    THROWM(Base::ValueError, "Null shape in AttachEngineLine::calculateAttachedPlacement()!")
                 if (sh.ShapeType() == TopAbs_VERTEX){
                     const TopoDS_Vertex &v = TopoDS::Vertex(sh);
                     points.push_back(BRep_Tool::Pnt(v));
@@ -1989,7 +1989,7 @@ Base::Placement AttachEngineLine::_calculateAttachedPlacement(
             }
 
             if(points.size()<2)
-                throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement: less than 2 points are specified, cannot derive the line.");
+                THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement: less than 2 points are specified, cannot derive the line.")
 
             gp_Pnt p0 = points[0];
             gp_Pnt p1 = points[1];
@@ -2001,14 +2001,14 @@ Base::Placement AttachEngineLine::_calculateAttachedPlacement(
         case mm1Asymptote1:
         case mm1Asymptote2:{
             if (shapes[0]->IsNull())
-                throw Base::ValueError("Null shape in AttachEngineLine::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null shape in AttachEngineLine::calculateAttachedPlacement()!")
             TopoDS_Edge e;
             try { e = TopoDS::Edge(*(shapes[0])); } catch(...) {}
             if (e.IsNull())
-                throw Base::ValueError("Null edge in AttachEngineLine::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null edge in AttachEngineLine::calculateAttachedPlacement()!")
             BRepAdaptor_Curve adapt (e);
             if (adapt.GetType() != GeomAbs_Hyperbola)
-                throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement: Asymptotes are available only for hyperbola-shaped edges, the one supplied is not.");
+                THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement: Asymptotes are available only for hyperbola-shaped edges, the one supplied is not.")
             gp_Hypr hyp = adapt.Hyperbola();
             if (mmode == mm1Asymptote1)
                 LineDir = hyp.Asymptote1().Direction();
@@ -2019,11 +2019,11 @@ Base::Placement AttachEngineLine::_calculateAttachedPlacement(
         case mm1Directrix1:
         case mm1Directrix2:{
             if (shapes[0]->IsNull())
-                throw Base::ValueError("Null shape in AttachEngineLine::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null shape in AttachEngineLine::calculateAttachedPlacement()!")
             TopoDS_Edge e;
             try { e = TopoDS::Edge(*(shapes[0])); } catch(...) {}
             if (e.IsNull())
-                throw Base::ValueError("Null edge in AttachEngineLine::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null edge in AttachEngineLine::calculateAttachedPlacement()!")
             BRepAdaptor_Curve adapt (e);
             gp_Ax1 dx1, dx2;//vars to receive directrices
             switch(adapt.GetType()){
@@ -2041,10 +2041,10 @@ Base::Placement AttachEngineLine::_calculateAttachedPlacement(
                 gp_Parab cc = adapt.Parabola();
                 dx1 = cc.Directrix();
                 if (mmode == mm1Directrix2)
-                    throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement: Parabola has no second directrix");
+                    THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement: Parabola has no second directrix")
             }break;
             default:
-                throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement: referenced edge is not a conic section with a directrix");
+                THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement: referenced edge is not a conic section with a directrix")
             }
             if (mmode == mm1Directrix1){
                 LineDir = dx1.Direction();
@@ -2056,14 +2056,14 @@ Base::Placement AttachEngineLine::_calculateAttachedPlacement(
         }break;
         case mm1Proximity:{
             if (shapes.size() < 2)
-                throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement: Proximity mode requires two shapes; only one is supplied");
+                THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement: Proximity mode requires two shapes; only one is supplied")
             if (shapes[0]->IsNull())
-                throw Base::ValueError("Null shape in AttachEngineLine::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null shape in AttachEngineLine::calculateAttachedPlacement()!")
             if (shapes[1]->IsNull())
-                throw Base::ValueError("Null shape in AttachEngineLine::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null shape in AttachEngineLine::calculateAttachedPlacement()!")
             BRepExtrema_DistShapeShape distancer (*(shapes[0]), *(shapes[1]));
             if (!distancer.IsDone())
-                throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement: proximity calculation failed.");
+                THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement: proximity calculation failed.")
             if (distancer.NbSolution()>1)
                 Base::Console().Warning("AttachEngineLine::calculateAttachedPlacement: proximity calculation gave %i solutions, ambiguous.\n",int(distancer.NbSolution()));
             gp_Pnt p1 = distancer.PointOnShape1(1);
@@ -2071,7 +2071,7 @@ Base::Placement AttachEngineLine::_calculateAttachedPlacement(
             LineBasePoint = p1;
             gp_Vec dist = gp_Vec(p1,p2);
             if (dist.Magnitude() < Precision::Confusion())
-                throw Base::ValueError("AttachEngineLine::calculateAttachedPlacement: can't make proximity line, because shapes touch or intersect");
+                THROWM(Base::ValueError, "AttachEngineLine::calculateAttachedPlacement: can't make proximity line, because shapes touch or intersect")
             LineDir = gp_Dir(dist);
         }break;
         default:
@@ -2186,7 +2186,7 @@ Base::Placement AttachEnginePoint::_calculateAttachedPlacement(
 
             const TopoDS_Shape &sh = *shapes[0];
             if (sh.IsNull())
-                throw Base::ValueError("Null shape in AttachEnginePoint::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null shape in AttachEnginePoint::calculateAttachedPlacement()!")
             if (sh.ShapeType() == TopAbs_VERTEX){
                 const TopoDS_Vertex &v = TopoDS::Vertex(sh);
                 BasePoint = BRep_Tool::Pnt(v);
@@ -2195,7 +2195,7 @@ Base::Placement AttachEnginePoint::_calculateAttachedPlacement(
                 BRepAdaptor_Curve crv(e);
                 double u = crv.FirstParameter();
                 if(Precision::IsInfinite(u))
-                    throw Base::ValueError("Edge is infinite");
+                    THROWM(Base::ValueError, "Edge is infinite")
                 BasePoint = crv.Value(u);
             }
 
@@ -2203,11 +2203,11 @@ Base::Placement AttachEnginePoint::_calculateAttachedPlacement(
         case mm0Focus1:
         case mm0Focus2:{
             if (shapes[0]->IsNull())
-                throw Base::ValueError("Null shape in AttachEnginePoint::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null shape in AttachEnginePoint::calculateAttachedPlacement()!")
             TopoDS_Edge e;
             try { e = TopoDS::Edge(*(shapes[0])); } catch(...) {}
             if (e.IsNull())
-                throw Base::ValueError("Null edge in AttachEnginePoint::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null edge in AttachEnginePoint::calculateAttachedPlacement()!")
             BRepAdaptor_Curve adapt (e);
             gp_Pnt f1, f2;
             switch(adapt.GetType()){
@@ -2225,10 +2225,10 @@ Base::Placement AttachEnginePoint::_calculateAttachedPlacement(
                 gp_Parab cc = adapt.Parabola();
                 f1 = cc.Focus();
                 if (mmode == mm0Focus2)
-                    throw Base::ValueError("AttachEnginePoint::calculateAttachedPlacement: Parabola has no second focus");
+                    THROWM(Base::ValueError, "AttachEnginePoint::calculateAttachedPlacement: Parabola has no second focus")
             }break;
             default:
-                throw Base::ValueError("AttachEnginePoint::calculateAttachedPlacement: referenced edge is not a conic section with a directrix");
+                THROWM(Base::ValueError, "AttachEnginePoint::calculateAttachedPlacement: referenced edge is not a conic section with a directrix")
             }
             if (mmode == mm0Focus1)
                 BasePoint = f1;
@@ -2238,11 +2238,11 @@ Base::Placement AttachEnginePoint::_calculateAttachedPlacement(
         case mm0ProximityPoint1:
         case mm0ProximityPoint2:{
             if (shapes.size() < 2)
-                throw Base::ValueError("AttachEnginePoint::calculateAttachedPlacement: Proximity mode requires two shapes; only one is supplied");
+                THROWM(Base::ValueError, "AttachEnginePoint::calculateAttachedPlacement: Proximity mode requires two shapes; only one is supplied")
             if (shapes[0]->IsNull())
-                throw Base::ValueError("Null shape in AttachEnginePoint::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null shape in AttachEnginePoint::calculateAttachedPlacement()!")
             if (shapes[1]->IsNull())
-                throw Base::ValueError("Null shape in AttachEnginePoint::calculateAttachedPlacement()!");
+                THROWM(Base::ValueError, "Null shape in AttachEnginePoint::calculateAttachedPlacement()!")
 
             BasePoint = getProximityPoint(mmode, *(shapes[0]), *(shapes[1]));
         }break;
@@ -2339,7 +2339,7 @@ gp_Pnt AttachEnginePoint::getProximityPoint(eMapMode mmode, const TopoDS_Shape& 
 
     BRepExtrema_DistShapeShape distancer (s1, s2);
     if (!distancer.IsDone())
-        throw Base::ValueError("AttachEnginePoint::calculateAttachedPlacement: proximity calculation failed.");
+        THROWM(Base::ValueError, "AttachEnginePoint::calculateAttachedPlacement: proximity calculation failed.")
     if (distancer.NbSolution() > 1)
         Base::Console().Warning("AttachEnginePoint::calculateAttachedPlacement: proximity calculation gave %i solutions, ambiguous.\n",int(distancer.NbSolution()));
 

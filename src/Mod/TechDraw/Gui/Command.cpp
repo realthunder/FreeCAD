@@ -135,7 +135,7 @@ void CmdTechDrawPageDefault::activated(int iMsg)
         TechDraw::DrawPage* fp =
             dynamic_cast<TechDraw::DrawPage*>(getDocument()->getObject(PageName.c_str()));
         if (!fp) {
-            throw Base::TypeError("CmdTechDrawPageDefault fp not found\n");
+            THROWM(Base::TypeError, "CmdTechDrawPageDefault fp not found\n")
         }
 
         Gui::ViewProvider* vp =
@@ -216,7 +216,7 @@ void CmdTechDrawPageTemplate::activated(int iMsg)
         TechDraw::DrawPage* fp =
             dynamic_cast<TechDraw::DrawPage*>(getDocument()->getObject(PageName.c_str()));
         if (!fp) {
-            throw Base::TypeError("CmdTechDrawNewPagePick fp not found\n");
+            THROWM(Base::TypeError, "CmdTechDrawNewPagePick fp not found\n")
         }
         Gui::ViewProvider* vp =
             Gui::Application::Instance->getDocument(getDocument())->getViewProvider(fp);
@@ -373,7 +373,7 @@ void CmdTechDrawView::activated(int iMsg)
 
     TechDraw::DrawViewPart* dvp = dynamic_cast<TechDraw::DrawViewPart *>(docObj);
     if (!dvp) {
-        throw Base::TypeError("CmdTechDrawView DVP not found\n");
+        THROWM(Base::TypeError, "CmdTechDrawView DVP not found\n")
     }
     dvp->Source.setValues(shapes);
     dvp->XSource.setValues(xShapes);

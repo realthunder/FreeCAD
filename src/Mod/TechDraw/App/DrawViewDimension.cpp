@@ -446,14 +446,14 @@ App::DocumentObjectExecReturn* DrawViewDimension::execute()
     }
     else if (Type.isValue("Angle")) {
         if (getRefType() != twoEdge) {
-            throw Base::RuntimeError("Angle dimension has non-edge references");
+            THROWM(Base::RuntimeError, "Angle dimension has non-edge references")
         }
         m_anglePoints = getAnglePointsTwoEdges(references);
         m_hasGeometry = true;
     }
     else if (Type.isValue("Angle3Pt")) {
         if (getRefType() != threeVertex) {
-            throw Base::RuntimeError("3 point angle dimension has non-vertex references");
+            THROWM(Base::RuntimeError, "3 point angle dimension has non-vertex references")
         }
         m_anglePoints = getAnglePointsThreeVerts(references);
         m_hasGeometry = true;
@@ -565,7 +565,7 @@ double DrawViewDimension::getDimValue()
             result = measurement->angle();
         }
         else {//tarfu
-            throw Base::ValueError("getDimValue() - Unknown Dimension Type (3)");
+            THROWM(Base::ValueError, "getDimValue() - Unknown Dimension Type (3)")
         }
     }
     else {
@@ -633,12 +633,12 @@ pointPair DrawViewDimension::getPointsOneEdge(ReferenceVector references)
         if (!geom) {
             std::stringstream ssMessage;
             ssMessage << getNameInDocument() << " can not find geometry for 2d reference (1)";
-            throw Base::RuntimeError(ssMessage.str());
+            THROWM(Base::RuntimeError, ssMessage.str())
         }
         if (geom->getGeomType() != TechDraw::GeomType::GENERIC) {
             std::stringstream ssMessage;
             ssMessage << getNameInDocument() << " 2d reference is a " << geom->geomTypeName();
-            throw Base::RuntimeError(ssMessage.str());
+            THROWM(Base::RuntimeError, ssMessage.str())
         }
         TechDraw::GenericPtr generic = std::static_pointer_cast<TechDraw::Generic>(geom);
         return {generic->points[0], generic->points[1]};
@@ -649,7 +649,7 @@ pointPair DrawViewDimension::getPointsOneEdge(ReferenceVector references)
     Base::Vector3d edgeEnd0, edgeEnd1;
     TopoDS_Shape geometry = references.front().getGeometry();
     if (geometry.IsNull() || geometry.ShapeType() != TopAbs_EDGE) {
-        throw Base::RuntimeError("Geometry for dimension reference is null.");
+        THROWM(Base::RuntimeError, "Geometry for dimension reference is null.")
     }
     const TopoDS_Edge& edge = TopoDS::Edge(geometry);
     gp_Pnt gEnd0 = BRep_Tool::Pnt(TopExp::FirstVertex(edge));
@@ -675,7 +675,7 @@ pointPair DrawViewDimension::getPointsTwoEdges(ReferenceVector references)
         if (!geom0 || !geom1) {
             std::stringstream ssMessage;
             ssMessage << getNameInDocument() << " can not find geometry for 2d reference (2)";
-            throw Base::RuntimeError(ssMessage.str());
+            THROWM(Base::RuntimeError, ssMessage.str())
         }
         return closestPoints(geom0->getOCCEdge(), geom1->getOCCEdge());
     }
@@ -685,7 +685,7 @@ pointPair DrawViewDimension::getPointsTwoEdges(ReferenceVector references)
     TopoDS_Shape geometry1 = references.at(1).getGeometry();
     if (geometry0.IsNull() || geometry1.IsNull() || geometry0.ShapeType() != TopAbs_EDGE
         || geometry1.ShapeType() != TopAbs_EDGE) {
-        throw Base::RuntimeError("Geometry for dimension reference is null.");
+        THROWM(Base::RuntimeError, "Geometry for dimension reference is null.")
     }
 
     pointPair pts = closestPoints(geometry0, geometry1);
@@ -708,7 +708,7 @@ pointPair DrawViewDimension::getPointsTwoVerts(ReferenceVector references)
         if (!v0 || !v1) {
             std::stringstream ssMessage;
             ssMessage << getNameInDocument() << " can not find geometry for 2d reference (3)";
-            throw Base::RuntimeError(ssMessage.str());
+            THROWM(Base::RuntimeError, ssMessage.str())
         }
 
         return {v0->point(), v1->point()};
@@ -719,7 +719,7 @@ pointPair DrawViewDimension::getPointsTwoVerts(ReferenceVector references)
     TopoDS_Shape geometry1 = references.at(1).getGeometry();
     if (geometry0.IsNull() || geometry1.IsNull() || geometry0.ShapeType() != TopAbs_VERTEX
         || geometry1.ShapeType() != TopAbs_VERTEX) {
-        throw Base::RuntimeError("Geometry for dimension reference is null.");
+        THROWM(Base::RuntimeError, "Geometry for dimension reference is null.")
     }
     const TopoDS_Vertex& vertex0 = TopoDS::Vertex(geometry0);
     const TopoDS_Vertex& vertex1 = TopoDS::Vertex(geometry1);
@@ -752,7 +752,7 @@ pointPair DrawViewDimension::getPointsEdgeVert(ReferenceVector references)
             vertex = getViewPart()->getProjVertexByIndex(iSubelement0);
         }
         if (!vertex || !edge) {
-            throw Base::RuntimeError("Missing geometry for dimension (4)");
+            THROWM(Base::RuntimeError, "Missing geometry for dimension (4)")
         }
 
         //get curve from edge
@@ -786,7 +786,7 @@ pointPair DrawViewDimension::getPointsEdgeVert(ReferenceVector references)
     TopoDS_Shape geometry1 = references.at(1).getGeometry();
     if (geometry0.IsNull() || geometry1.IsNull() || geometry0.ShapeType() != TopAbs_VERTEX
         || geometry1.ShapeType() != TopAbs_VERTEX) {
-        throw Base::RuntimeError("Geometry for dimension reference is null.");
+        THROWM(Base::RuntimeError, "Geometry for dimension reference is null.")
     }
 
     pointPair pts = closestPoints(geometry0, geometry1);
@@ -807,7 +807,7 @@ arcPoints DrawViewDimension::getArcParameters(ReferenceVector references)
         if (!geom) {
             std::stringstream ssMessage;
             ssMessage << getNameInDocument() << " can not find geometry for 2d reference (4)";
-            throw Base::RuntimeError(ssMessage.str());
+            THROWM(Base::RuntimeError, ssMessage.str())
         }
         return arcPointsFromBaseGeom(getViewPart()->getGeomByIndex(iSubelement));
     }
@@ -815,7 +815,7 @@ arcPoints DrawViewDimension::getArcParameters(ReferenceVector references)
     //this is a 3d reference
     TopoDS_Shape geometry = references.front().getGeometry();
     if (geometry.IsNull() || geometry.ShapeType() != TopAbs_EDGE) {
-        throw Base::RuntimeError("Geometry for dimension reference is null.");
+        THROWM(Base::RuntimeError, "Geometry for dimension reference is null.")
     }
     const TopoDS_Edge& edge = TopoDS::Edge(geometry);
     arcPoints pts = arcPointsFromEdge(edge);
@@ -914,13 +914,13 @@ arcPoints DrawViewDimension::arcPointsFromBaseGeom(TechDraw::BaseGeomPtr base)
             //checked, so something has gone badly wrong.
             Base::Console().Error("%s: can not make a Circle from this BSpline edge\n",
                                   getNameInDocument());
-            throw Base::RuntimeError("Bad BSpline geometry for arc dimension");
+            THROWM(Base::RuntimeError, "Bad BSpline geometry for arc dimension")
         }
     }
     else {
         std::stringstream ssMessage;
         ssMessage << getNameInDocument() << " 2d reference is a " << base->geomTypeName();
-        throw Base::RuntimeError(ssMessage.str());
+        THROWM(Base::RuntimeError, ssMessage.str())
     }
     return pts;
 }
@@ -990,7 +990,7 @@ arcPoints DrawViewDimension::arcPointsFromEdge(TopoDS_Edge occEdge)
             pts.isArc = isArc;
             BRepAdaptor_Curve adaptCircle(circleEdge);
             if (adaptCircle.GetType() != GeomAbs_Circle) {
-                throw Base::RuntimeError("failed to get circle from bspline");
+                THROWM(Base::RuntimeError, "failed to get circle from bspline")
             }
             gp_Circ circle = adapt.Circle();
             //TODO: same code as above. reuse opportunity.
@@ -1013,11 +1013,11 @@ arcPoints DrawViewDimension::arcPointsFromEdge(TopoDS_Edge occEdge)
             }
         }
         else {
-            throw Base::RuntimeError("failed to make circle from bspline");
+            THROWM(Base::RuntimeError, "failed to make circle from bspline")
         }
     }
     else {
-        throw Base::RuntimeError("can not get arc points from this edge");
+        THROWM(Base::RuntimeError, "can not get arc points from this edge")
     }
 
     return pts;
@@ -1037,19 +1037,19 @@ anglePoints DrawViewDimension::getAnglePointsTwoEdges(ReferenceVector references
         if (!geom0 || !geom1) {
             std::stringstream ssMessage;
             ssMessage << getNameInDocument() << " can not find geometry for 2d reference (5)";
-            throw Base::RuntimeError(ssMessage.str());
+            THROWM(Base::RuntimeError, ssMessage.str())
         }
         if (geom0->getGeomType() != TechDraw::GeomType::GENERIC) {
             std::stringstream ssMessage;
             ssMessage << getNameInDocument() << " first 2d reference is a "
                       << geom0->geomTypeName();
-            throw Base::RuntimeError(ssMessage.str());
+            THROWM(Base::RuntimeError, ssMessage.str())
         }
         if (geom1->getGeomType() != TechDraw::GeomType::GENERIC) {
             std::stringstream ssMessage;
             ssMessage << getNameInDocument() << " second 2d reference is a "
                       << geom0->geomTypeName();
-            throw Base::RuntimeError(ssMessage.str());
+            THROWM(Base::RuntimeError, ssMessage.str())
         }
         TechDraw::GenericPtr generic0 = std::static_pointer_cast<TechDraw::Generic>(geom0);
         TechDraw::GenericPtr generic1 = std::static_pointer_cast<TechDraw::Generic>(geom1);
@@ -1075,7 +1075,7 @@ anglePoints DrawViewDimension::getAnglePointsTwoEdges(ReferenceVector references
         Base::Vector3d leg1Dir = (generic1->getStartPoint() - generic1->getEndPoint()).Normalize();
         if (DrawUtil::fpCompare(fabs(leg0Dir.Dot(leg1Dir)), 1.0)) {
             //legs of the angle are parallel.
-            throw Base::RuntimeError("Can not make angle from parallel edges");
+            THROWM(Base::RuntimeError, "Can not make angle from parallel edges")
         }
         Base::Vector3d extenPoint0 = farPoint0;//extension line points
         Base::Vector3d extenPoint1 = farPoint1;
@@ -1109,7 +1109,7 @@ anglePoints DrawViewDimension::getAnglePointsTwoEdges(ReferenceVector references
     TopoDS_Shape geometry1 = references.at(1).getGeometry();
     if (geometry0.IsNull() || geometry1.IsNull() || geometry0.ShapeType() != TopAbs_EDGE
         || geometry1.ShapeType() != TopAbs_EDGE) {
-        throw Base::RuntimeError("Geometry for dimension reference is null.");
+        THROWM(Base::RuntimeError, "Geometry for dimension reference is null.")
     }
     TopoDS_Edge edge0 = TopoDS::Edge(geometry0);
     BRepAdaptor_Curve adapt0(edge0);
@@ -1117,7 +1117,7 @@ anglePoints DrawViewDimension::getAnglePointsTwoEdges(ReferenceVector references
     BRepAdaptor_Curve adapt1(edge1);
 
     if (adapt0.GetType() != GeomAbs_Line || adapt1.GetType() != GeomAbs_Line) {
-        throw Base::RuntimeError("Geometry for angle dimension must be lines.");
+        THROWM(Base::RuntimeError, "Geometry for angle dimension must be lines.")
     }
     gp_Pnt gStart0 = BRep_Tool::Pnt(TopExp::FirstVertex(edge0));
     gp_Pnt gEnd0 = BRep_Tool::Pnt(TopExp::LastVertex(edge0));
@@ -1130,7 +1130,7 @@ anglePoints DrawViewDimension::getAnglePointsTwoEdges(ReferenceVector references
         DrawUtil::toVector3d(gStart0), DrawUtil::toVector3d(gDir0), DrawUtil::toVector3d(gStart1),
         DrawUtil::toVector3d(gDir1), vApex);
     if (!haveIntersection) {
-        throw Base::RuntimeError("Geometry for 3d angle dimension does not intersect");
+        THROWM(Base::RuntimeError, "Geometry for 3d angle dimension does not intersect")
     }
     gp_Pnt gApex = DrawUtil::togp_Pnt(vApex);
 
@@ -1155,7 +1155,7 @@ anglePoints DrawViewDimension::getAnglePointsThreeVerts(ReferenceVector referenc
 {
     //    Base::Console().Message("DVD::getAnglePointsThreeVerts() - %s\n", getNameInDocument());
     if (references.size() < 3) {
-        throw Base::RuntimeError("Not enough references to make angle dimension");
+        THROWM(Base::RuntimeError, "Not enough references to make angle dimension")
     }
     App::DocumentObject* refObject = references.front().getObject();
     int iSubelement0 = DrawUtil::getIndexFromName(references.at(0).getSubName());
@@ -1168,7 +1168,7 @@ anglePoints DrawViewDimension::getAnglePointsThreeVerts(ReferenceVector referenc
         TechDraw::VertexPtr vert1 = getViewPart()->getProjVertexByIndex(iSubelement1);
         TechDraw::VertexPtr vert2 = getViewPart()->getProjVertexByIndex(iSubelement2);
         if (!vert0 || !vert1 || !vert2) {
-            throw Base::RuntimeError("References for three point angle dimension are not vertices");
+            THROWM(Base::RuntimeError, "References for three point angle dimension are not vertices")
         }
         anglePoints pts(vert1->point(), vert0->point(), vert2->point());
         return pts;
@@ -1181,7 +1181,7 @@ anglePoints DrawViewDimension::getAnglePointsThreeVerts(ReferenceVector referenc
     if (geometry0.IsNull() || geometry1.IsNull() || geometry2.IsNull()
         || geometry0.ShapeType() != TopAbs_VERTEX || geometry1.ShapeType() != TopAbs_VERTEX
         || geometry2.ShapeType() != TopAbs_VERTEX) {
-        throw Base::RuntimeError("Geometry for dimension reference is null.");
+        THROWM(Base::RuntimeError, "Geometry for dimension reference is null.")
     }
     TopoDS_Vertex vertex0 = TopoDS::Vertex(geometry0);
     gp_Pnt point0 = BRep_Tool::Pnt(vertex0);
@@ -1690,7 +1690,7 @@ pointPair DrawViewDimension::closestPoints(TopoDS_Shape s1, TopoDS_Shape s2) con
     pointPair result;
     BRepExtrema_DistShapeShape extss(s1, s2);
     if (!extss.IsDone()) {
-        throw Base::RuntimeError("DVD::closestPoints - BRepExtrema_DistShapeShape failed");
+        THROWM(Base::RuntimeError, "DVD::closestPoints - BRepExtrema_DistShapeShape failed")
     }
     int count = extss.NbSolution();
     if (count != 0) {
@@ -1710,7 +1710,7 @@ void DrawViewDimension::setReferences2d(ReferenceVector refs)
     std::vector<App::DocumentObject*> objects;
     std::vector<std::string> subNames;
     if (objects.size() != subNames.size()) {
-        throw Base::IndexError("DVD::setReferences2d - objects and subNames do not match.");
+        THROWM(Base::IndexError, "DVD::setReferences2d - objects and subNames do not match.")
     }
 
     for (size_t iRef = 0; iRef < refs.size(); iRef++) {
@@ -1732,7 +1732,7 @@ void DrawViewDimension::setReferences3d(ReferenceVector refs)
     std::vector<App::DocumentObject*> objects;
     std::vector<std::string> subNames;
     if (objects.size() != subNames.size()) {
-        throw Base::IndexError("DVD::setReferences3d - objects and subNames do not match.");
+        THROWM(Base::IndexError, "DVD::setReferences3d - objects and subNames do not match.")
     }
 
     for (size_t iRef = 0; iRef < refs.size(); iRef++) {
@@ -1797,7 +1797,7 @@ double DrawViewDimension::dist2Segs(Base::Vector3d s1, Base::Vector3d e1, Base::
 
     BRepExtrema_DistShapeShape extss(edge1, edge2);
     if (!extss.IsDone()) {
-        throw Base::RuntimeError("DVD::dist2Segs - BRepExtrema_DistShapeShape failed");
+        THROWM(Base::RuntimeError, "DVD::dist2Segs - BRepExtrema_DistShapeShape failed")
     }
     int count = extss.NbSolution();
     double minDist = 0.0;

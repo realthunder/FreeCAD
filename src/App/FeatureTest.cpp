@@ -194,7 +194,7 @@ FeatureTestException::FeatureTestException()
 DocumentObjectExecReturn *FeatureTestException::execute()
 {
     //ExceptionType;
-    throw Base::RuntimeError("FeatureTestException::execute(): Testexception  ;-)");
+    THROWM(Base::RuntimeError, "FeatureTestException::execute(): Testexception  ;-)")
 
     return nullptr;
 }
@@ -324,7 +324,7 @@ DocumentObjectExecReturn *FeatureTestAttribute::execute()
         e.clear();
         std::stringstream str;
         str << "No such attribute '" << Attribute.getValue() << "'";
-        throw Base::AttributeError(str.str());
+        THROWM(Base::AttributeError, str.str())
     }
     return StdReturn;
 }

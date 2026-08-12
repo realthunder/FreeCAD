@@ -2353,7 +2353,7 @@ namespace TechDrawGui {
         Gui::cmdAppDocumentArgs(page, "addObject('TechDraw::DrawViewDimension', '%s')", FeatName);
         dim = Base::freecad_dynamic_cast<TechDraw::DrawViewDimension>(cmd->getDocument()->getObject(FeatName.c_str()));
         if (!dim)
-            throw Base::TypeError("CmdTechDrawExtensionCreateLinDimension - dim not found\n");
+            THROWM(Base::TypeError, "CmdTechDrawExtensionCreateLinDimension - dim not found\n")
         Gui::cmdAppObjectArgs(dim, "Type = '%s'", dimType);
         dim->References2D.setValues(objs, subs);
         Gui::cmdAppObjectArgs(page, "addView(%s)", dim->getFullName(/*python*/true));

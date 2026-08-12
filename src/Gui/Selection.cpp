@@ -2527,7 +2527,7 @@ ResolveMode toEnum(int value) {
     case 3:
         return ResolveMode::FollowLink;
     default:
-        throw Base::ValueError("Wrong enum value");
+        THROWM(Base::ValueError, "Wrong enum value")
     }
 }
 }

@@ -259,7 +259,7 @@ void CmdTechDrawImage::activated(int iMsg)
     Gui::cmdAppDocument(page, std::ostringstream() << "addObject('TechDraw::DrawViewImage','" << FeatName << "')");
     auto feat = Base::freecad_dynamic_cast<TechDraw::DrawViewImage>(page->getDocument()->getObject(FeatName.c_str()));
     if (!feat) {
-        throw Base::TypeError("Feature not found");
+        THROWM(Base::TypeError, "Feature not found")
     }
     Gui::cmdAppObjectArgs(page, "translateLabel('DrawViewImage', 'Image', '%s')", FeatName);
     Gui::cmdAppObjectArgs(feat, "ImageFile = %s", Base::Tools::pythonLiteral(fileName));

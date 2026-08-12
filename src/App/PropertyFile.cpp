@@ -114,13 +114,13 @@ void PropertyFileIncluded::setValue(const char* sFile, const char* sName)
 {
     if (sFile && sFile[0] != '\0') {
         if (_blob && _blob->path() == sFile)
-            throw Base::FileSystemError("Not possible to set the same file!");
+            THROWM(Base::FileSystemError, "Not possible to set the same file!")
 
         Base::FileInfo file(sFile);
         if (!file.exists()) {
             std::stringstream str;
             str << "File " << file.filePath() << " does not exist.";
-            throw Base::FileSystemError(str.str());
+            THROWM(Base::FileSystemError, str.str())
         }
 
         auto &manager = blobManager();
@@ -179,7 +179,7 @@ PyObject *PropertyFileIncluded::getPyObject()
     const std::string &value = _blob ? _blob->path() : empty;
     PyObject *p = PyUnicode_DecodeUTF8(value.c_str(),value.size(),nullptr);
     if (!p) {
-        throw Base::UnicodeError("PropertyFileIncluded: UTF-8 conversion failure");
+        THROWM(Base::UnicodeError, "PropertyFileIncluded: UTF-8 conversion failure")
     }
     return p;
 }
@@ -200,7 +200,7 @@ const char* getNameFromFile(PyObject* value)
     }
 
     if (!string)
-        throw Base::TypeError("Unable to get filename");
+        THROWM(Base::TypeError, "Unable to get filename")
     return string;
 }
 
@@ -233,7 +233,7 @@ void PropertyFileIncluded::setPyObject(PyObject *value)
     }
     else if (PyTuple_Check(value)) {
         if (PyTuple_Size(value) != 2)
-            throw Base::TypeError("Tuple needs size of (filePath,newFileName)"); 
+            THROWM(Base::TypeError, "Tuple needs size of (filePath,newFileName)")
         PyObject* file = PyTuple_GetItem(value,0);
         PyObject* name = PyTuple_GetItem(value,1);
 
@@ -251,7 +251,7 @@ void PropertyFileIncluded::setPyObject(PyObject *value)
         else {
             std::string error = std::string("First item in tuple must be a file or string, not ");
             error += file->ob_type->tp_name;
-            throw Base::TypeError(error);
+            THROWM(Base::TypeError, error)
         }
 
         // decoding name
@@ -268,7 +268,7 @@ void PropertyFileIncluded::setPyObject(PyObject *value)
         else {
             std::string error = std::string("Second item in tuple must be a string, not ");
             error += name->ob_type->tp_name;
-            throw Base::TypeError(error);
+            THROWM(Base::TypeError, error)
         }
 
         setValue(fileStr.c_str(),nameStr.c_str());
@@ -286,7 +286,7 @@ void PropertyFileIncluded::setPyObject(PyObject *value)
     else {
         std::string error = std::string("Type must be string or file, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -434,7 +434,7 @@ void PropertyFileIncluded::SaveDocFile (Base::Writer &writer) const
         std::stringstream str;
         str << "PropertyFileIncluded::SaveDocFile(): "
             << "File '" << path << "' in transient directory doesn't exist.";
-        throw Base::FileSystemError(str.str());
+        THROWM(Base::FileSystemError, str.str())
     }
 
     writer.Stream() << from.rdbuf();
@@ -454,7 +454,7 @@ void PropertyFileIncluded::RestoreDocFile(Base::Reader &reader)
         std::stringstream str;
         str << "PropertyFileIncluded::RestoreDocFile(): "
             << "File '" << path << "' in transient directory cannot be created.";
-        throw Base::FileSystemError(str.str());
+        THROWM(Base::FileSystemError, str.str())
     }
 
     // copy plain data

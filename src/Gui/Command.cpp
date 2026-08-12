@@ -1667,7 +1667,7 @@ const char* PythonCommand::getHelpUrl() const
     if (! pcTemp )
         return "";
     if (! PyUnicode_Check(pcTemp) )
-        throw Base::TypeError("PythonCommand::CmdHelpURL(): Method CmdHelpURL() of the Python command object returns no string");
+        THROWM(Base::TypeError, "PythonCommand::CmdHelpURL(): Method CmdHelpURL() of the Python command object returns no string")
     return PyUnicode_AsUTF8(pcTemp);
 }
 

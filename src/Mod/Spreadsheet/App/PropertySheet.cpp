@@ -805,7 +805,7 @@ void PropertySheet::setDisplayUnit(CellAddress address, const std::string& unit)
 void PropertySheet::setAlias(CellAddress address, const std::string &alias, bool force)
 {
     if (!alias.empty() && !isValidAlias(alias)) {
-        throw Base::ValueError("Invalid alias");
+        THROWM(Base::ValueError, "Invalid alias")
     }
 
     const Cell* aliasedCell = getValueFromAlias(alias);
@@ -817,7 +817,7 @@ void PropertySheet::setAlias(CellAddress address, const std::string &alias, bool
     }
 
     if (aliasedCell) {
-        throw Base::ValueError("Alias already defined.");
+        THROWM(Base::ValueError, "Alias already defined.")
     }
 
     AtomicPropertyChange signaller(*this);
@@ -1789,7 +1789,7 @@ PyObject* PropertySheet::getPyObject()
 void PropertySheet::setPyObject(PyObject* obj)
 {
     if (!obj || !PyObject_TypeCheck(obj, &PropertySheetPy::Type)) {
-        throw Base::TypeError("Invalid type");
+        THROWM(Base::TypeError, "Invalid type")
     }
     if (obj != PythonObject.ptr()) {
         Paste(*static_cast<PropertySheetPy*>(obj)->getPropertySheetPtr());
@@ -1908,7 +1908,7 @@ bool PropertySheet::adjustLink(const std::set<DocumentObject*>& inList)
             std::ostringstream ss;
             ss << "Failed to adjust link for " << owner->getFullName() << " in expression "
                << expr->toString() << ": " << e.what();
-            throw Base::RuntimeError(ss.str());
+            THROWM(Base::RuntimeError, ss.str())
         }
     }
     return changed;

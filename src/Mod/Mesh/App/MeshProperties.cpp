@@ -238,7 +238,7 @@ PyObject* PropertyCurvatureList::getPyObject()
 
 CurvatureInfo PropertyCurvatureList::getPyValue(PyObject* /*value*/) const
 {
-    throw Base::AttributeError(std::string("This attribute is read-only"));
+    THROWM(Base::AttributeError, std::string("This attribute is read-only"))
 }
 
 App::Property* PropertyCurvatureList::Copy() const
@@ -432,7 +432,7 @@ void PropertyMaterial::setPyObject(PyObject* obj)
     }
     catch (Py::Exception& e) {
         e.clear();
-        throw Base::TypeError("Not a dict with expected keys");
+        THROWM(Base::TypeError, "Not a dict with expected keys")
     }
 }
 
@@ -726,7 +726,7 @@ void PropertyMeshKernel::setPyObject(PyObject* value)
     else {
         std::string error = std::string("type must be 'Mesh', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 

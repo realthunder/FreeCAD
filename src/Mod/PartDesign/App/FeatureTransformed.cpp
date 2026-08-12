@@ -129,7 +129,7 @@ Part::Feature* Transformed::getBaseObject(bool silent) const {
     }
 
     if (!silent && err) {
-        throw Base::RuntimeError(err);
+        THROWM(Base::RuntimeError, err)
     }
 
     return rv;
@@ -557,7 +557,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
                     std::string msg("Boolean operation failed");
                     if (e.GetMessageString() != NULL)
                         msg += std::string(": '") + e.GetMessageString() + "'";
-                    throw Base::CADKernelError(msg.c_str());
+                    THROWM(Base::CADKernelError, msg.c_str())
                 }
             } catch (Base::Exception &) {
                 for(auto &s : cutShapes)

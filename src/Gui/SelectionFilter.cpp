@@ -152,7 +152,7 @@ void SelectionFilter::setFilter(const char* filter)
     else {
         Filter = filter;
         if (!parse())
-            throw Base::ParserError(Errors.c_str());
+            THROWM(Base::ParserError, Errors.c_str())
     }
 }
 

@@ -59,7 +59,7 @@ QGTracker::QGTracker(QGSPage* inScene, TrackerMode m):
     if (inScene) {
         inScene->addItem(this);
     } else {
-        throw Base::ValueError("QGT::QGT() - passed scene is NULL\n");
+        THROWM(Base::ValueError, "QGT::QGT() - passed scene is NULL\n")
     }
 
     setCacheMode(QGraphicsItem::NoCache);

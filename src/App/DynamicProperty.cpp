@@ -250,9 +250,9 @@ bool DynamicProperty::removeDynamicProperty(const char* name)
     auto it = index.find(name);
     if (it != index.end()) {
         if(it->property->testStatus(Property::LockDynamic))
-            throw Base::RuntimeError("property is locked");
+            THROWM(Base::RuntimeError, "property is locked")
         else if(!it->property->testStatus(Property::PropDynamic))
-            throw Base::RuntimeError("property is not dynamic");
+            THROWM(Base::RuntimeError, "property is not dynamic")
         Property *prop = it->property;
         GetApplication().signalRemoveDynamicProperty(*prop);
 

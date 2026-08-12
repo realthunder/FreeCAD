@@ -74,7 +74,7 @@ App::DocumentObjectExecReturn* Structured::execute()
 {
     std::size_t size = Height.getValue() * Width.getValue();
     if (size != Points.getValue().size()) {
-        throw Base::ValueError("(Width * Height) doesn't match with number of points");
+        THROWM(Base::ValueError, "(Width * Height) doesn't match with number of points")
     }
     this->Points.touch();
     return App::DocumentObject::StdReturn;

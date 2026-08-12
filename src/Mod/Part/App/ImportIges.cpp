@@ -65,7 +65,7 @@ int Part::ImportIgesParts(App::Document *pcDoc, const char* FileName)
 
         IGESControl_Reader aReader;
         if (aReader.ReadFile((Standard_CString)FileName) != IFSelect_RetDone)
-            throw Base::FileException("Error in reading IGES");
+            THROWM(Base::FileException, "Error in reading IGES")
 
         // Ignore construction elements
         // http://www.opencascade.org/org/forum/thread_20603/?forum=3
@@ -122,7 +122,7 @@ int Part::ImportIgesParts(App::Document *pcDoc, const char* FileName)
         }
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 
     return 0;

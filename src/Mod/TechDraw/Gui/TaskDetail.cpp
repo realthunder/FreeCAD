@@ -444,7 +444,7 @@ void TaskDetail::createDetail()
 
     TechDraw::DrawViewDetail* dvd = dynamic_cast<TechDraw::DrawViewDetail *>(docObj);
     if (!dvd) {
-        throw Base::TypeError("TaskDetail - new detail view not found\n");
+        THROWM(Base::TypeError, "TaskDetail - new detail view not found\n")
     }
     m_detailFeat = dvd;
     dvd->Source.setValues(getBaseFeat()->Source.getValues());
@@ -551,7 +551,7 @@ DrawViewPart* TaskDetail::getBaseFeat()
     std::string msg = "TaskDetail - base feature " +
                         m_baseName +
                         " not found \n";
-    throw Base::TypeError(msg);
+    THROWM(Base::TypeError, msg)
     return nullptr;
 }
 
@@ -571,7 +571,7 @@ DrawViewDetail* TaskDetail::getDetailFeat()
                         m_detailName +
                         " not found \n";
 //        throw Base::TypeError("TaskDetail - detail feature not found\n");
-    throw Base::TypeError(msg);
+    THROWM(Base::TypeError, msg)
     return nullptr;
 }
 

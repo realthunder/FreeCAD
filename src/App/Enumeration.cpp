@@ -171,7 +171,7 @@ void Enumeration::setValue(long value, bool checkRange)
         _index = value;
     } else {
         if (checkRange) {
-            throw Base::ValueError("Out of range");
+            THROWM(Base::ValueError, "Out of range")
         } else {
             _index = value;
         }

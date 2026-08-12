@@ -142,7 +142,7 @@ void PropertyGeometryList::set1Value(int idx, std::unique_ptr<Geometry> &&lValue
     if (!lValue)
         return;
     if(idx>=(int)_lValueList.size())
-        throw Base::IndexError("Index out of bound");
+        THROWM(Base::IndexError, "Index out of bound")
     aboutToSetValue();
     if(idx < 0)
         _lValueList.push_back(lValue.release());
@@ -176,7 +176,7 @@ void PropertyGeometryList::setPyObject(PyObject *value)
             if (!PyObject_TypeCheck(item, &(GeometryPy::Type))) {
                 std::string error = std::string("types in list must be 'Geometry', not ");
                 error += item->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
 
             values[i] = static_cast<GeometryPy*>(item)->getGeometryPtr();
@@ -195,7 +195,7 @@ void PropertyGeometryList::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be 'Geometry' or list of 'Geometry', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 

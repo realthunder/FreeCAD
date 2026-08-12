@@ -102,10 +102,10 @@ App::DocumentObjectExecReturn* SetOperations::execute()
     else {
         // Error mesh property
         if (!mesh1) {
-            throw Base::ValueError("First input mesh not set");
+            THROWM(Base::ValueError, "First input mesh not set")
         }
         if (!mesh2) {
-            throw Base::ValueError("Second input mesh not set");
+            THROWM(Base::ValueError, "Second input mesh not set")
         }
     }
 

@@ -341,7 +341,7 @@ TechDraw::BaseGeomPtr CenterLine::scaledAndRotatedGeometry(TechDraw::DrawViewPar
 
     TechDraw::BaseGeomPtr newGeom = TechDraw::BaseGeom::baseFactory(newEdge);
     if (!newGeom) {
-        throw Base::RuntimeError("Failed to create center line");
+        THROWM(Base::RuntimeError, "Failed to create center line")
     }
     newGeom->setClassOfEdge(ecHARD);
     newGeom->setHlrVisible( true);
@@ -513,7 +513,7 @@ std::pair<Base::Vector3d, Base::Vector3d> CenterLine::calcEndPoints(const DrawVi
 
     if (faceBox.IsVoid()) {
         Base::Console().Error("CL::calcEndPoints - faceBox is void!\n");
-        throw Base::IndexError("CenterLine wrong number of faces.");
+        THROWM(Base::IndexError, "CenterLine wrong number of faces.")
     }
 
     double Xmin, Ymin, Zmin, Xmax, Ymax, Zmax;
@@ -617,7 +617,7 @@ std::pair<Base::Vector3d, Base::Vector3d> CenterLine::calcEndPoints2Lines(const 
     }
     if (edges.size() != 2) {
         Base::Console().Message("CL::calcEndPoints2Lines - wrong number of edges: %d!\n", edges.size());
-        throw Base::IndexError("CenterLine wrong number of edges.");
+        THROWM(Base::IndexError, "CenterLine wrong number of edges.")
     }
 
     // these points are centered, rotated, scaled and inverted.
@@ -731,7 +731,7 @@ std::pair<Base::Vector3d, Base::Vector3d> CenterLine::calcEndPoints2Points(const
         }
     }
     if (points.size() != 2) {
-        throw Base::IndexError("CenterLine wrong number of points.");
+        THROWM(Base::IndexError, "CenterLine wrong number of points.")
     }
 
     Base::Vector3d v1 = DU::invertY(points.front()->point());
@@ -1088,7 +1088,7 @@ void CenterLine::assignTag(const TechDraw::CenterLine* ce)
     if(ce->getTypeId() == this->getTypeId())
         this->tag = ce->tag;
     else
-        throw Base::TypeError("CenterLine tag can not be assigned as types do not match.");
+        THROWM(Base::TypeError, "CenterLine tag can not be assigned as types do not match.")
 }
 
 CenterLine *CenterLine::clone() const

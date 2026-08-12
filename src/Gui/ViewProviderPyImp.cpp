@@ -309,7 +309,7 @@ PyObject* ViewProviderPy::replaceObject(PyObject *args)
                 static_cast<App::DocumentObjectPy*>(oldObj)->getDocumentObjectPtr(),
                 static_cast<App::DocumentObjectPy*>(newObj)->getDocumentObjectPtr());
         if (ret <= 0)
-            throw Base::RuntimeError("Failed to replace object");
+            THROWM(Base::RuntimeError, "Failed to replace object")
         Py_Return;
     } PY_CATCH;
 }
@@ -345,16 +345,16 @@ PyObject* ViewProviderPy::reorderObjects(PyObject *args)
             for (Py::Sequence::iterator it = seq.begin(); it != seq.end(); ++it) {
                 PyObject* item = (*it).ptr();
                 if (!PyObject_TypeCheck(item, &App::DocumentObjectPy::Type))
-                    throw Base::TypeError("Expected document object inside sequence");
+                    THROWM(Base::TypeError, "Expected document object inside sequence")
                 objs.push_back(static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr());
             }
         } else
-            throw Base::TypeError("Expected first argument to be document object or sequence of document objects");
+            THROWM(Base::TypeError, "Expected first argument to be document object or sequence of document objects")
 
         bool ret = getViewProviderPtr()->reorderObjects(objs, 
                 static_cast<App::DocumentObjectPy*>(pybefore)->getDocumentObjectPtr());
         if (!ret)
-            throw Base::RuntimeError("Failed to reorder objects");
+            THROWM(Base::RuntimeError, "Failed to reorder objects")
         Py_Return;
     } PY_CATCH;
 }
@@ -374,11 +374,11 @@ PyObject* ViewProviderPy::canReorderObject(PyObject *args)
             for (Py::Sequence::iterator it = seq.begin(); it != seq.end(); ++it) {
                 PyObject* item = (*it).ptr();
                 if (!PyObject_TypeCheck(item, &App::DocumentObjectPy::Type))
-                    throw Base::TypeError("Expected document object inside sequence");
+                    THROWM(Base::TypeError, "Expected document object inside sequence")
                 objs.push_back(static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr());
             }
         } else
-            throw Base::TypeError("Expected first argument to be document object or sequence of document objects");
+            THROWM(Base::TypeError, "Expected first argument to be document object or sequence of document objects")
 
         bool ret = true;
         for (auto obj : objs) {
@@ -514,7 +514,7 @@ PyObject* ViewProviderPy::partialRender(PyObject* args)
                 std::string error = std::string("type must be str");
                 error += " not, ";
                 error += item->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
         }
     }
@@ -572,7 +572,7 @@ PyObject* ViewProviderPy::getElementPicked(PyObject* args) const
     Base::Interpreter().convertSWIGPointerObj("pivy.coin", "_p_SoPickedPoint", obj, &ptr, 0);
     auto pp = static_cast<SoPickedPoint*>(ptr);
     if(!pp)
-        throw Base::TypeError("type must be coin.SoPickedPoint");
+        THROWM(Base::TypeError, "type must be coin.SoPickedPoint")
 
     std::string name;
     if(!getViewProviderPtr()->getElementPicked(pp,name))
@@ -593,7 +593,7 @@ PyObject* ViewProviderPy::getDetailPath(PyObject* args) const
     Base::Interpreter().convertSWIGPointerObj("pivy.coin", "_p_SoPath", path, &ptr, 0);
     auto pPath = static_cast<SoPath*>(ptr);
     if(!pPath)
-        throw Base::TypeError("'path' must be a coin.SoPath");
+        THROWM(Base::TypeError, "'path' must be a coin.SoPath")
     SoDetail *det = nullptr;
     if(!getViewProviderPtr()->getDetailPath(sub,static_cast<SoFullPath*>(pPath),Base::asBoolean(append),det)) {
         delete det;

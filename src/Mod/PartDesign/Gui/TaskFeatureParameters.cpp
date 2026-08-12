@@ -340,14 +340,14 @@ bool TaskDlgFeatureParameters::accept() {
         // Make sure the feature is what we are expecting
         // Should be fine but you never know...
         if ( !feature->isDerivedFrom<PartDesign::Feature>() ) {
-            throw Base::TypeError("Bad object processed in the feature dialog.");
+            THROWM(Base::TypeError, "Bad object processed in the feature dialog.")
         }
 
         Gui::cmdGuiDocument(feature, "resetEdit()");
         Gui::cmdAppDocument(feature, "recompute()");
 
         if (!feature->isValid()) {
-            throw Base::RuntimeError(vp->getObject()->getStatusString());
+            THROWM(Base::RuntimeError, vp->getObject()->getStatusString())
         }
 
         // detach the task panel from the selection to avoid to handling of selection change

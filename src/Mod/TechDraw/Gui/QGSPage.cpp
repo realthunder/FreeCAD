@@ -529,7 +529,7 @@ void QGSPage::createBalloon(QPointF origin, DrawView* parent)
     TechDraw::DrawViewBalloon* balloon = Base::freecad_dynamic_cast<TechDraw::DrawViewBalloon>(
         page->getDocument()->getObject(featName.c_str()));
     if (!balloon) {
-        throw Base::TypeError("QGSP::createBalloon - balloon not found\n");
+        THROWM(Base::TypeError, "QGSP::createBalloon - balloon not found\n")
     }
     Gui::cmdAppObjectArgs(balloon, "translateLabel('DrawViewBalloon', 'Balloon', '%s')", featName);
     Gui::cmdAppObjectArgs(balloon, "SourceView = %s", parent->getFullName(/*python*/true));

@@ -95,7 +95,7 @@ void Toolpath::insertCommand(const Command &Cmd, int pos)
         Command *tmp = new Command(Cmd);
         vpcCommands.insert(vpcCommands.begin()+pos,tmp);
     } else {
-        throw Base::IndexError("Index not in range");
+        THROWM(Base::IndexError, "Index not in range")
     }
     recalculate();
 }
@@ -108,7 +108,7 @@ void Toolpath::deleteCommand(int pos)
     } else if (pos <= static_cast<int>(vpcCommands.size())) {
         vpcCommands.erase (vpcCommands.begin()+pos);
     } else {
-        throw Base::IndexError("Index not in range");
+        THROWM(Base::IndexError, "Index not in range")
     }
     recalculate();
 }
@@ -415,7 +415,7 @@ void Toolpath::recalculate() // recalculates the path cache
             }
         }
     } catch (KDL::Error &e) {
-        throw Base::RuntimeError(e.Description());
+        THROWM(Base::RuntimeError, e.Description())
     }
 #endif
 }

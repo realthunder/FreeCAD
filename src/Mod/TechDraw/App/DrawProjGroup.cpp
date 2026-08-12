@@ -263,7 +263,7 @@ bool DrawProjGroup::checkFit() const
     }
     auto page = findParentPage();
     if (!page)
-        throw Base::RuntimeError("No page is assigned to this feature");
+        THROWM(Base::RuntimeError, "No page is assigned to this feature")
     return checkFit(page);
 }
 
@@ -287,7 +287,7 @@ double DrawProjGroup::autoScale() const
     //    Base::Console().Message("DPG::autoScale() - %s\n", getNameInDocument());
     auto page = findParentPage();
     if (!page) {
-        throw Base::RuntimeError("No page is assigned to this feature");
+        THROWM(Base::RuntimeError, "No page is assigned to this feature")
     }
     return autoScale(page->getPageWidth(), page->getPageHeight());
 }
@@ -362,7 +362,7 @@ App::DocumentObject* DrawProjGroup::getProjObj(const char* viewProjType) const
             //if an element in Views is not a DPGI, something really bad has happened somewhere
             Base::Console().Error("PROBLEM - DPG::getProjObj - non DPGI entry in Views! %s / %s\n",
                                   getNameInDocument(), viewProjType);
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
         else if (strcmp(viewProjType, projPtr->Type.getValueAsString()) == 0) {
             return it;
@@ -380,7 +380,7 @@ DrawProjGroupItem* DrawProjGroup::getProjItem(const char* viewProjType) const
         //should never have a item in DPG that is not a DPGI.
         Base::Console().Error("PROBLEM - DPG::getProjItem finds non-DPGI in Group %s / %s\n",
                               getNameInDocument(), viewProjType);
-        throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+        THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
     }
     return result;
 }
@@ -412,7 +412,7 @@ bool DrawProjGroup::hasProjection(const char* viewProjType) const
             //should never have a item in DPG that is not a DPGI.
             Base::Console().Error("PROBLEM - DPG::hasProjection finds non-DPGI in Group %s / %s\n",
                                   getNameInDocument(), viewProjType);
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
 
         if (strcmp(viewProjType, view->Type.getValueAsString()) == 0) {
@@ -431,7 +431,7 @@ bool DrawProjGroup::canDelete(const char* viewProjType) const
             //should never have a item in DPG that is not a DPGI.
             Base::Console().Error("PROBLEM - DPG::hasProjection finds non-DPGI in Group %s / %s\n",
                                   getNameInDocument(), viewProjType);
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
 
         if (strcmp(viewProjType, view->Type.getValueAsString()) != 0) {
@@ -471,7 +471,7 @@ App::DocumentObject* DrawProjGroup::addProjection(const char* viewProjType)
             //should never happen that we create a DPGI that isn't a DPGI!!
             Base::Console().Error("PROBLEM - DPG::addProjection - created a non DPGI! %s / %s\n",
                                   getNameInDocument(), viewProjType);
-            throw Base::TypeError("Error: new projection is not a DPGI!");
+            THROWM(Base::TypeError, "Error: new projection is not a DPGI!")
         }
         if (view) {//coverity CID 151722
             // the label must be set before the view is added
@@ -516,7 +516,7 @@ int DrawProjGroup::removeProjection(const char* viewProjType)
     // TODO: shouldn't be able to delete "Front" unless deleting whole group
     if (checkViewProjType(viewProjType)) {
         if (!hasProjection(viewProjType)) {
-            throw Base::RuntimeError("The projection doesn't exist in the group");
+            THROWM(Base::RuntimeError, "The projection doesn't exist in the group")
         }
 
         // Iterate through the child views and find the projection type
@@ -534,7 +534,7 @@ int DrawProjGroup::removeProjection(const char* viewProjType)
                 Base::Console().Error(
                     "PROBLEM - DPG::removeProjection - tries to remove non DPGI! %s / %s\n",
                     getNameInDocument(), viewProjType);
-                throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+                THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
             }
         }
     }
@@ -558,7 +558,7 @@ int DrawProjGroup::purgeProjections()
             //if an element in Views is not a DPGI, something really bad has happened somewhere
             Base::Console().Error("PROBLEM - DPG::purgeProjection - tries to remove non DPGI! %s\n",
                                   getNameInDocument());
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
     }
     auto page = findParentPage();
@@ -585,7 +585,7 @@ std::pair<Base::Vector3d, Base::Vector3d> DrawProjGroup::getDirsFromFront(std::s
     DrawProjGroupItem* anch = getAnchor();
     if (!anch) {
         Base::Console().Warning("DPG::getDirsFromFront - %s - No Anchor!\n", Label.getValue());
-        throw Base::RuntimeError("Project Group missing Anchor projection item");
+        THROWM(Base::RuntimeError, "Project Group missing Anchor projection item")
     }
 
     Base::Vector3d org(0.0, 0.0, 0.0);
@@ -850,7 +850,7 @@ int DrawProjGroup::getViewIndex(const char* viewTypeCStr) const
     }
 
     if (strcmp(projType, "Third Angle") != 0 && strcmp(projType, "First Angle") != 0) {
-        throw Base::ValueError("Unknown Projection convention in DrawProjGroup::getViewIndex()");
+        THROWM(Base::ValueError, "Unknown Projection convention in DrawProjGroup::getViewIndex()")
     }
 
     //   Third Angle:  FTL  T  FTRight          0  1  2
@@ -893,7 +893,7 @@ int DrawProjGroup::getViewIndex(const char* viewTypeCStr) const
         return thirdAngle ? 9 : 0;
     }
 
-    throw Base::TypeError("Unknown view type in DrawProjGroup::getViewIndex()");
+    THROWM(Base::TypeError, "Unknown view type in DrawProjGroup::getViewIndex()")
     return 4;  // Default to front view's position;
 }
 
@@ -949,7 +949,7 @@ void DrawProjGroup::arrangeViewPointers(
             Base::Console().Error(
                 "PROBLEM - DPG::arrangeViewPointers - non DPGI in Views! %s\n",
                 getNameInDocument());
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
         else {
             const char* viewTypeCStr = oView->Type.getValueAsString();
@@ -1023,7 +1023,7 @@ void DrawProjGroup::recomputeChildren()
     for (const auto it : Views.getValues()) {
         auto view(dynamic_cast<DrawProjGroupItem*>(it));
         if (!view) {
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
         else {
             view->recomputeFeature();
@@ -1039,7 +1039,7 @@ void DrawProjGroup::autoPositionChildren()
         auto view(dynamic_cast<DrawProjGroupItem*>(it));
         if (!view) {
             //if an element in Views is not a DPGI, something really bad has happened somewhere
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
         else {
             bool touched = view->isTouched();
@@ -1060,7 +1060,7 @@ void DrawProjGroup::updateChildrenScale()
         auto view(dynamic_cast<DrawProjGroupItem*>(it));
         if (!view) {
             //if an element in Views is not a DPGI, something really bad has happened somewhere
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
 
         view->Scale.setValue(getScale());
@@ -1081,7 +1081,7 @@ void DrawProjGroup::updateChildrenSource()
             Base::Console().Error(
                 "PROBLEM - DPG::updateChildrenSource - non DPGI entry in Views! %s\n",
                 getNameInDocument());
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
         if (view->Source.getValues() != Source.getValues()) {
             view->Source.setValues(Source.getValues());
@@ -1105,7 +1105,7 @@ void DrawProjGroup::updateChildrenLock()
             Base::Console().Error(
                 "PROBLEM - DPG::updateChildrenLock - non DPGI entry in Views! %s\n",
                 getNameInDocument());
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
         view->requestPaint();
     }
@@ -1120,7 +1120,7 @@ void DrawProjGroup::updateChildrenEnforce(void)
             Base::Console().Error(
                 "PROBLEM - DPG::updateChildrenEnforce - non DPGI entry in Views! %s\n",
                 getNameInDocument());
-            throw Base::TypeError("Error: projection in DPG list is not a DPGI!");
+            THROWM(Base::TypeError, "Error: projection in DPG list is not a DPGI!")
         }
         view->enforceRecompute();
     }

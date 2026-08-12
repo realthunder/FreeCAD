@@ -54,7 +54,7 @@ void Part::FaceMaker::addShape(const TopoDS_Shape& sh)
 void Part::FaceMaker::addTopoShape(const TopoShape& shape) {
     const TopoDS_Shape &sh = shape.getShape();
     if(sh.IsNull())
-        throw Base::ValueError("Input shape is null.");
+        THROWM(Base::ValueError, "Input shape is null.")
     switch(sh.ShapeType()){
         case TopAbs_COMPOUND:
             this->myCompounds.push_back(TopoDS::Compound(sh));
@@ -72,7 +72,7 @@ void Part::FaceMaker::addTopoShape(const TopoShape& shape) {
             this->myInputFaces.push_back(sh);
         break;
         default:
-            throw Base::TypeError("Shape must be a wire, edge or compound. Something else was supplied.");
+            THROWM(Base::TypeError, "Shape must be a wire, edge or compound. Something else was supplied.")
         break;
     }
     this->mySourceShapes.push_back(shape);
@@ -101,7 +101,7 @@ const Part::TopoShape &Part::FaceMaker::TopoFace() const{
     if(this->myTopoShape.isNull())
         throw NullShapeException("Part::FaceMaker: result shape is null.");
     if (this->myTopoShape.getShape().ShapeType() != TopAbs_FACE)
-        throw Base::TypeError("Part::FaceMaker: return shape is not a single face.");
+        THROWM(Base::TypeError, "Part::FaceMaker: return shape is not a single face.")
     return this->myTopoShape;
 }
 
@@ -240,7 +240,7 @@ std::unique_ptr<Part::FaceMaker> Part::FaceMaker::ConstructFromType(const char* 
     if (fmType.isBad()){
         std::stringstream ss;
         ss << "Class '"<< className <<"' not found.";
-        throw Base::TypeError(ss.str().c_str());
+        THROWM(Base::TypeError, ss.str().c_str())
     }
     return Part::FaceMaker::ConstructFromType(fmType);
 }
@@ -250,20 +250,20 @@ std::unique_ptr<Part::FaceMaker> Part::FaceMaker::ConstructFromType(Base::Type t
     if (!type.isDerivedFrom(Part::FaceMaker::getClassTypeId())){
         std::stringstream ss;
         ss << "Class '" << type.getName() << "' is not derived from Part::FaceMaker.";
-        throw Base::TypeError(ss.str().c_str());
+        THROWM(Base::TypeError, ss.str().c_str())
     }
     std::unique_ptr<FaceMaker> instance(static_cast<Part::FaceMaker*>(type.createInstance()));
     if (!instance){
         std::stringstream ss;
         ss << "Cannot create FaceMaker from abstract type '" << type.getName() << "'";
-        throw Base::TypeError(ss.str().c_str());
+        THROWM(Base::TypeError, ss.str().c_str())
     }
     return instance;
 }
 
 void Part::FaceMaker::throwNotImplemented()
 {
-    throw Base::NotImplementedError("Not implemented yet...");
+    THROWM(Base::NotImplementedError, "Not implemented yet...")
 }
 
 

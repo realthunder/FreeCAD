@@ -244,7 +244,7 @@ bool ThicknessWidget::accept()
 
         Gui::Command::doCommand(Gui::Command::Doc,"App.ActiveDocument.recompute()");
         if (!d->thickness->isValid())
-            throw Base::CADKernelError(d->thickness->getStatusString());
+            THROWM(Base::CADKernelError, d->thickness->getStatusString())
         Gui::Command::doCommand(Gui::Command::Gui,"Gui.ActiveDocument.resetEdit()");
         Gui::Command::commitCommand();
     }

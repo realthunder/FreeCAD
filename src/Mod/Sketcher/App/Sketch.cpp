@@ -1810,7 +1810,7 @@ int Sketch::checkGeoId(int geoId) const
         geoId += Geoms.size();  // convert negative external-geometry index to index into Geoms
     }
     if (!(geoId >= 0 && geoId < int(Geoms.size()))) {
-        throw Base::IndexError("Sketch::checkGeoId. GeoId index out range.");
+        THROWM(Base::IndexError, "Sketch::checkGeoId. GeoId index out range.")
     }
     return geoId;
 }
@@ -4133,7 +4133,7 @@ double Sketch::calculateAngleViaPoint(int geoId1, int geoId2, double px, double 
     GCS::Curve* crv1 = getGCSCurveByGeoId(geoId1);
     GCS::Curve* crv2 = getGCSCurveByGeoId(geoId2);
     if (!crv1 || !crv2) {
-        throw Base::ValueError("calculateAngleViaPoint: getGCSCurveByGeoId returned NULL!");
+        THROWM(Base::ValueError, "calculateAngleViaPoint: getGCSCurveByGeoId returned NULL!")
     }
 
     return GCSsys.calculateAngleViaPoint(*crv1, *crv2, p);
@@ -4150,7 +4150,7 @@ Base::Vector3d Sketch::calculateNormalAtPoint(int geoIdCurve, double px, double 
     // check pointers
     const GCS::Curve* crv = getGCSCurveByGeoId(geoIdCurve);
     if (!crv) {
-        throw Base::ValueError("calculateNormalAtPoint: getGCSCurveByGeoId returned NULL!\n");
+        THROWM(Base::ValueError, "calculateNormalAtPoint: getGCSCurveByGeoId returned NULL!\n")
     }
 
     double tx = 0.0, ty = 0.0;

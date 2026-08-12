@@ -50,7 +50,7 @@ static inline void checkPow(UnitSignature sig, double exp)
         !isInt(sig.AmountOfSubstance * exp) ||
         !isInt(sig.LuminousIntensity * exp) ||
         !isInt(sig.Angle * exp)) {
-        throw Base::UnitsMismatchError("pow() of unit not possible");
+        THROWM(Base::UnitsMismatchError, "pow() of unit not possible")
     }
 }
 
@@ -65,7 +65,7 @@ static inline void checkRange(const char * op, int length, int mass, int time, i
          ( amountOfSubstance        >=  (1 << (UnitSignatureAmountOfSubstanceBits        - 1)) ) ||
          ( luminousIntensity        >=  (1 << (UnitSignatureLuminousIntensityBits        - 1)) ) ||
          ( angle                    >=  (1 << (UnitSignatureAngleBits                    - 1)) ) ) {
-        throw Base::OverflowError((std::string("Unit overflow in ") + std::string(op)).c_str());
+        THROWM(Base::OverflowError, (std::string("Unit overflow in ") + std::string(op)).c_str())
     }
     if ( ( length                   <  -(1 << (UnitSignatureLengthBits                   - 1)) ) ||
          ( mass                     <  -(1 << (UnitSignatureMassBits                     - 1)) ) ||
@@ -75,7 +75,7 @@ static inline void checkRange(const char * op, int length, int mass, int time, i
          ( amountOfSubstance        <  -(1 << (UnitSignatureAmountOfSubstanceBits        - 1)) ) ||
          ( luminousIntensity        <  -(1 << (UnitSignatureLuminousIntensityBits        - 1)) ) ||
          ( angle                    <  -(1 << (UnitSignatureAngleBits                    - 1)) ) ) {
-        throw Base::UnderflowError((std::string("Unit underflow in ") + std::string(op)).c_str());
+        THROWM(Base::UnderflowError, (std::string("Unit underflow in ") + std::string(op)).c_str())
     }
 }
 

@@ -83,7 +83,7 @@ void DrawDimHelper::makeExtentDim(DrawViewPart* dvp, std::vector<std::string> ed
     TechDraw::DrawViewDimExtent* dimExt =
         Base::freecad_dynamic_cast<TechDraw::DrawViewDimExtent>(doc->getObject(dimName.c_str()));
     if (!dimExt) {
-        throw Base::TypeError("Dim extent not found");
+        THROWM(Base::TypeError, "Dim extent not found")
     }
     dimExt->translateLabel("DrawViewDimExtent", "DimExtent", dimName);
     dimExt->Type.setValue(dimType.c_str());
@@ -131,7 +131,7 @@ void DrawDimHelper::makeExtentDim3d(DrawViewPart* dvp, ReferenceVector reference
     TechDraw::DrawViewDimExtent* dimExt =
         Base::freecad_dynamic_cast<TechDraw::DrawViewDimExtent>(doc->getObject(dimName.c_str()));
     if (!dimExt) {
-        throw Base::TypeError("Dim extent not found");
+        THROWM(Base::TypeError, "Dim extent not found")
     }
     dimExt->translateLabel("DrawViewDimExtent", "DimExtent", dimName);
     dimExt->Type.setValue(dimType.c_str());
@@ -427,7 +427,7 @@ DrawDimHelper::makeDistDim(DrawViewPart* dvp, std::string dimType,
     doc->addObject(typeName, dimName.c_str());
     dim = Base::freecad_dynamic_cast<TechDraw::DrawViewDimension>(doc->getObject(dimName.c_str()));
     if (!dim) {
-        throw Base::TypeError("DDH::makeDistDim - dim not found\n");
+        THROWM(Base::TypeError, "DDH::makeDistDim - dim not found\n")
     }
     dim->translateLabel(labelContext, baseName, dimName.c_str());
     dim->Type.setValue(dimType.c_str());

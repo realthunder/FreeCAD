@@ -476,7 +476,7 @@ std::istream &Base::XMLReader::charStream()
 std::istream& Base::XMLReader::beginCharStream(CharStreamFormat format)
 {
     if (CharStream) {
-        throw Base::XMLParseException("recursive character stream");
+        THROWM(Base::XMLParseException, "recursive character stream")
     }
 
     // TODO: An XML element can actually contain a mix of child elements and

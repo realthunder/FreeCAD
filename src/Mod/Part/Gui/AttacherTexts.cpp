@@ -357,7 +357,7 @@ QString getShapeTypeText(eRefType type)
         }
     }
 
-    throw Base::TypeError("getShTypeText: type value is wrong, or a string is missing in the list");
+    THROWM(Base::TypeError, "getShTypeText: type value is wrong, or a string is missing in the list")
 }
 
 QStringList getRefListForMode(AttachEngine &attacher, eMapMode mmode)

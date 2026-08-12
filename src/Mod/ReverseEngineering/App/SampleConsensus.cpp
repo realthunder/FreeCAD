@@ -123,7 +123,7 @@ double SampleConsensus::perform(std::vector<float>& parameters, std::vector<int>
             break;
         }
         default:
-            throw Base::RuntimeError("Unsupported SAC model");
+            THROWM(Base::RuntimeError, "Unsupported SAC model")
     }
 
     pcl::RandomSampleConsensus<pcl::PointXYZ> ransac(model_p);

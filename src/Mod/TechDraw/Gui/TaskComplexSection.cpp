@@ -567,7 +567,7 @@ void TaskComplexSection::createComplexSection()
         m_section = Base::freecad_dynamic_cast<TechDraw::DrawComplexSection>(newObj);
 
         if (!newObj || !m_section) {
-            throw Base::RuntimeError("TaskComplexSection - new section object not found");
+            THROWM(Base::RuntimeError, "TaskComplexSection - new section object not found")
         }
         Gui::cmdAppObjectArgs(m_page, "addView(%s)", Gui::Command::getObjectCmd(m_section));
 

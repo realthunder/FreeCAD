@@ -120,7 +120,7 @@ bool EdgeWalker::loadEdges(std::vector<TopoDS_Edge> edges)
 {
 //    Base::Console().Message("EW::loadEdges(TopoDS) - edges: %d\n", edges.size());
     if (edges.empty()) {
-        throw Base::ValueError("EdgeWalker has no edges to load\n");
+        THROWM(Base::ValueError, "EdgeWalker has no edges to load\n")
     }
 
     std::vector<TopoDS_Vertex> verts = makeUniqueVList(edges);

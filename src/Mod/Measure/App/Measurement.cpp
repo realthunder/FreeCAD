@@ -221,7 +221,7 @@ TopoDS_Shape Measurement::getShape(App::DocumentObject *obj , const char *subNam
         return TopoDS_Shape();
     }
     catch (...) {
-        throw Base::RuntimeError("Measurement: Unknown error retrieving shape");
+        THROWM(Base::RuntimeError, "Measurement: Unknown error retrieving shape")
     }
 
 }

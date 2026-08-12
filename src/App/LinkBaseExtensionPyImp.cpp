@@ -208,12 +208,12 @@ void parseLink(LinkBaseExtension *ext, int index, PyObject *value) {
         if(PyObject_TypeCheck(value,&DocumentObjectPy::Type)) {
             obj = static_cast<DocumentObjectPy*>(value)->getDocumentObjectPtr();
         }else if(!PySequence_Check(value))
-            throw Base::TypeError("Expects type of DocumentObject or sequence");
+            THROWM(Base::TypeError, "Expects type of DocumentObject or sequence")
         else{
             Py::Sequence seq(value);
             if(seq[0].ptr() != Py_None) {
                 if(!PyObject_TypeCheck(seq[0].ptr(),&DocumentObjectPy::Type))
-                    throw Base::TypeError("Expects the first argument to be DocumentObject in sequence");
+                    THROWM(Base::TypeError, "Expects the first argument to be DocumentObject in sequence")
                 obj = static_cast<DocumentObjectPy*>(seq[0].ptr())->getDocumentObjectPtr();
                 if(seq.size()>1) {
                     sub.setPyObject(seq[1].ptr());

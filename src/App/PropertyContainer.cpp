@@ -712,12 +712,12 @@ void PropertyData::addProperty(OffsetBase offsetBase,const char* PropName, Prope
     {
         short offset = offsetBase.getOffsetTo(Prop);
         if(offset < 0)
-            throw Base::RuntimeError("Invalid static property");
+            THROWM(Base::RuntimeError, "Invalid static property")
         auto &index = propertyData.get<1>();
         auto it = index.find(PropName);
         if(it == index.end()) {
             if(parentMerged)
-                throw Base::RuntimeError("Cannot add static property");
+                THROWM(Base::RuntimeError, "Cannot add static property")
             index.emplace(PropName, PropertyGroup, PropertyDocu, offset, Type);
         } else{
 #ifdef FC_DEBUG

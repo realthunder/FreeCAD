@@ -284,7 +284,7 @@ std::vector<Base::Vector3d> BaseGeom::findEndPoints()
     } else {
         //TODO: this should throw something
         Base::Console().Message("Geometry::findEndPoints - OCC edge not found\n");
-        throw Base::RuntimeError("no OCC edge in Geometry::findEndPoints");
+        THROWM(Base::RuntimeError, "no OCC edge in Geometry::findEndPoints")
     }
     return result;
 }
@@ -1074,7 +1074,7 @@ Base::Vector3d Generic::apparentInter(GenericPtr g)
     // Line Intersetion (taken from ViewProviderSketch.cpp)
     double det = dir0.x*dir1.y - dir0.y*dir1.x;
     if ((det > 0 ? det : -det) < 1e-10)
-        throw Base::ValueError("Invalid selection - Det = 0");
+        THROWM(Base::ValueError, "Invalid selection - Det = 0")
 
     double c0 = dir0.y*points.at(0).x - dir0.x*points.at(0).y;
     double c1 = dir1.y*g->points.at(1).x - dir1.x*g->points.at(1).y;

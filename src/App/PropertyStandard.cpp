@@ -110,7 +110,7 @@ void PropertyInteger::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be int, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -237,7 +237,7 @@ void PropertyPath::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be str or unicode, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 
     // assign the path
@@ -366,7 +366,7 @@ bool PropertyEnumeration::isPartOf(const char *value) const
 const char * PropertyEnumeration::getValueAsString() const
 {
     if (!_enum.isValid())
-        throw Base::RuntimeError("Cannot get value from invalid enumeration");
+        THROWM(Base::RuntimeError, "Cannot get value from invalid enumeration")
     return _enum.getCStr();
 }
 
@@ -749,7 +749,7 @@ void PropertyIntegerConstraint::setPyObject(PyObject *value)
             if (PyLong_Check(item))
                 values[i] = PyLong_AsLong(item);
             else
-                throw Base::TypeError("Type in tuple must be int");
+                THROWM(Base::TypeError, "Type in tuple must be int")
         }
 
         aboutToSetValue();
@@ -771,7 +771,7 @@ void PropertyIntegerConstraint::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be int, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -826,7 +826,7 @@ long PropertyIntegerList::getPyValue(PyObject *item) const {
         return PyLong_AsLong(item);
     std::string error = std::string("type in list must be int, not ");
     error += item->ob_type->tp_name;
-    throw Base::TypeError(error);
+    THROWM(Base::TypeError, error)
 }
 
 bool PropertyIntegerList::saveXML(Base::Writer &writer) const
@@ -935,7 +935,7 @@ void PropertyIntegerSet::setPyObject(PyObject *value)
             if (!PyLong_Check(item)) {
                 std::string error = std::string("type in list must be int, not ");
                 error += item->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
             values.insert(PyLong_AsLong(item));
         }
@@ -948,7 +948,7 @@ void PropertyIntegerSet::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be int or list of int, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -1074,7 +1074,7 @@ void PropertyFloat::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be float or int, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -1262,13 +1262,13 @@ void PropertyFloatConstraint::setPyObject(PyObject *value)
             else if (PyLong_Check(item))
                 values[i] = PyLong_AsLong(item);
             else
-                throw Base::TypeError("Type in tuple must be float or int");
+                THROWM(Base::TypeError, "Type in tuple must be float or int")
         }
 
         double stepSize = values[3];
         // need a value > 0
         if (stepSize < DBL_EPSILON)
-            throw Base::ValueError("Step size must be greater than zero");
+            THROWM(Base::ValueError, "Step size must be greater than zero")
 
         aboutToSetValue();
 
@@ -1289,7 +1289,7 @@ void PropertyFloatConstraint::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be float, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -1363,7 +1363,7 @@ double PropertyFloatList::getPyValue(PyObject *item) const {
     } else {
         std::string error = std::string("type in list must be float, not ");
         error += item->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -1458,7 +1458,7 @@ float _PropertyFloatList::getPyValue(PyObject *item) const {
     } else {
         std::string error = std::string("type in list must be float, not ");
         error += item->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -1868,7 +1868,7 @@ void PropertyUUID::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be unicode or str, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 
     try {
@@ -1878,7 +1878,7 @@ void PropertyUUID::setPyObject(PyObject *value)
         setValue(uid);
     }
     catch (const std::exception& e) {
-        throw Base::RuntimeError(e.what());
+        THROWM(Base::RuntimeError, e.what())
     }
 }
 
@@ -1962,7 +1962,7 @@ PyObject *PropertyStringList::getPyObject()
         PyObject* item = PyUnicode_DecodeUTF8(_lValueList[i].c_str(), _lValueList[i].size(), nullptr);
         if (!item) {
             Py_DECREF(list);
-            throw Base::UnicodeError("UTF8 conversion failure at PropertyStringList::getPyObject()");
+            THROWM(Base::UnicodeError, "UTF8 conversion failure at PropertyStringList::getPyObject()")
         }
         PyList_SetItem(list, i, item);
     }
@@ -1980,7 +1980,7 @@ std::string PropertyStringList::getPyValue(PyObject *item) const
     } else {
         std::string error = std::string("type in list must be str or unicode, not ");
         error += item->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
     return ret;
 }
@@ -2115,7 +2115,7 @@ PyObject *PropertyMap::getPyObject()
         PyObject* item = PyUnicode_DecodeUTF8(it->second.c_str(), it->second.size(), nullptr);
         if (!item) {
             Py_DECREF(dict);
-            throw Base::UnicodeError("UTF8 conversion failure at PropertyMap::getPyObject()");
+            THROWM(Base::UnicodeError, "UTF8 conversion failure at PropertyMap::getPyObject()")
         }
         PyDict_SetItemString(dict,it->first.c_str(),item);
         Py_DECREF(item);
@@ -2146,7 +2146,7 @@ void PropertyMap::setPyObject(PyObject *value)
             else {
                 std::string error = std::string("type of the key need to be unicode or string, not");
                 error += key->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
 
             // check on the item:
@@ -2157,7 +2157,7 @@ void PropertyMap::setPyObject(PyObject *value)
             else {
                 std::string error = std::string("type in list must be string or unicode, not ");
                 error += item->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
         }
         
@@ -2166,7 +2166,7 @@ void PropertyMap::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be a dict object");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -2277,7 +2277,7 @@ void PropertyBool::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be bool, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -2403,7 +2403,7 @@ bool PropertyBoolList::getPyValue(PyObject *item) const {
     } else {
         std::string error = std::string("type in list must be bool or int, not ");
         error += item->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -2514,18 +2514,18 @@ void PropertyColor::setPyObject(PyObject *value)
             if (PyFloat_Check(item))
                 cCol.g = (float)PyFloat_AsDouble(item);
             else
-                throw Base::TypeError("Type in tuple must be consistent (float)");
+                THROWM(Base::TypeError, "Type in tuple must be consistent (float)")
             item = PyTuple_GetItem(value,2);
             if (PyFloat_Check(item))
                 cCol.b = (float)PyFloat_AsDouble(item);
             else
-                throw Base::TypeError("Type in tuple must be consistent (float)");
+                THROWM(Base::TypeError, "Type in tuple must be consistent (float)")
             if (PyTuple_Size(value) == 4) {
                 item = PyTuple_GetItem(value,3);
                 if (PyFloat_Check(item))
                     cCol.a = (float)PyFloat_AsDouble(item);
                 else
-                    throw Base::TypeError("Type in tuple must be consistent (float)");
+                    THROWM(Base::TypeError, "Type in tuple must be consistent (float)")
             }
         }
         else if (PyLong_Check(item)) {
@@ -2534,22 +2534,22 @@ void PropertyColor::setPyObject(PyObject *value)
             if (PyLong_Check(item))
                 cCol.g = PyLong_AsLong(item)/255.0;
             else
-                throw Base::TypeError("Type in tuple must be consistent (integer)");
+                THROWM(Base::TypeError, "Type in tuple must be consistent (integer)")
             item = PyTuple_GetItem(value,2);
             if (PyLong_Check(item))
                 cCol.b = PyLong_AsLong(item)/255.0;
             else
-                throw Base::TypeError("Type in tuple must be consistent (integer)");
+                THROWM(Base::TypeError, "Type in tuple must be consistent (integer)")
             if (PyTuple_Size(value) == 4) {
                 item = PyTuple_GetItem(value,3);
                 if (PyLong_Check(item))
                     cCol.a = PyLong_AsLong(item)/255.0;
                 else
-                    throw Base::TypeError("Type in tuple must be consistent (integer)");
+                    THROWM(Base::TypeError, "Type in tuple must be consistent (integer)")
             }
         }
         else {
-            throw Base::TypeError("Type in tuple must be float or integer");
+            THROWM(Base::TypeError, "Type in tuple must be float or integer")
         }
     }
     else if (PyLong_Check(value)) {
@@ -2558,7 +2558,7 @@ void PropertyColor::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be integer or tuple of float or tuple integer, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 
     setValue( cCol );
@@ -2807,7 +2807,7 @@ void PropertyMaterial::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be 'Material', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -2901,7 +2901,7 @@ Material PropertyMaterialList::getPyValue(PyObject *value) const {
     else {
         std::string error = std::string("type must be 'Material', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -3066,9 +3066,9 @@ void PropertyPersistentObject::setValue(const char *type) {
         Base::Type::importModule(type);
         Base::Type t = Base::Type::fromName(type);
         if(t.isBad())
-            throw Base::TypeError("Invalid type");
+            THROWM(Base::TypeError, "Invalid type")
         if(!t.isDerivedFrom(Persistence::getClassTypeId()))
-            throw Base::TypeError("Type must be derived from Base::Persistence");
+            THROWM(Base::TypeError, "Type must be derived from Base::Persistence")
         if(_pObject && _pObject->getTypeId()==t)
             return;
     }

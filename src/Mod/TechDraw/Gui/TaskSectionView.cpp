@@ -104,7 +104,7 @@ TaskSectionView::TaskSectionView(TechDraw::DrawViewSection* section) :
     App::DocumentObject* newObj = m_section->BaseView.getValue();
     m_base = dynamic_cast<TechDraw::DrawViewPart*>(newObj);
     if (!newObj || !m_base) {
-        throw Base::RuntimeError("TaskSectionView - BaseView not found");
+        THROWM(Base::RuntimeError, "TaskSectionView - BaseView not found")
     }
 
     m_saveBaseName = m_base->getNameInDocument();
@@ -499,7 +499,7 @@ TechDraw::DrawViewSection* TaskSectionView::createSectionView(void)
     if (!m_section) {
         TechDraw::DrawPage* page = m_base->findParentPage();
         if (!page) {
-            throw Base::RuntimeError("TaskSectionView - no page found");
+            THROWM(Base::RuntimeError, "TaskSectionView - no page found")
         }
 
         const std::string objectName("SectionView");
@@ -509,7 +509,7 @@ TechDraw::DrawViewSection* TaskSectionView::createSectionView(void)
         App::DocumentObject* newObj = m_base->getDocument()->getObject(m_sectionName.c_str());
         m_section = Base::freecad_dynamic_cast<TechDraw::DrawViewSection>(newObj);
         if (!newObj || !m_section) {
-            throw Base::RuntimeError("TaskSectionView - new section object not found");
+            THROWM(Base::RuntimeError, "TaskSectionView - new section object not found")
         }
 
         // section labels (Section A-A) are not unique, and are not the same as the object name (SectionView)

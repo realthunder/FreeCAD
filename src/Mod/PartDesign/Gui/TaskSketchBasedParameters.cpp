@@ -1386,7 +1386,7 @@ bool TaskDlgSketchBasedParameters::accept() {
     // Make sure the feature is what we are expecting
     // Should be fine but you never know...
     if (!feature->isDerivedFrom<PartDesign::ProfileBased>()) {
-        throw Base::TypeError("Bad object processed in the sketch based dialog.");
+        THROWM(Base::TypeError, "Bad object processed in the sketch based dialog.")
     }
 
     // First verify that the feature can be built and then hide the profile as otherwise

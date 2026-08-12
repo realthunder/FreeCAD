@@ -434,7 +434,7 @@ void Application::renameDocument(const char *OldName, const char *NewName)
 {
     (void)OldName;
     (void)NewName;
-    throw Base::RuntimeError("Renaming document internal name is no longer allowed!");
+    THROWM(Base::RuntimeError, "Renaming document internal name is no longer allowed!")
 }
 
 Document* Application::newDocument(const char * Name, const char * UserName, bool createView, bool tempDoc)
@@ -972,7 +972,7 @@ Document* Application::openDocumentPrivate(const char * FileName,
     if (!File.exists()) {
         std::stringstream str;
         str << "File '" << FileName << "' does not exist!";
-        throw Base::FileSystemError(str.str().c_str());
+        THROWM(Base::FileSystemError, str.str().c_str())
     }
 
     // Before creating a new document we check whether the document is already open
@@ -1104,7 +1104,7 @@ void Application::setActiveDocument(const char *Name)
     else {
         std::stringstream s;
         s << "Try to activate unknown document '" << Name << "'";
-        throw Base::RuntimeError(s.str());
+        THROWM(Base::RuntimeError, s.str())
     }
 }
 
@@ -1244,7 +1244,7 @@ int Application::checkLinkDepth(int depth, MessageOption option)
             FC_ERR(msg);
             return 0;
         case MessageOption::Throw:
-            throw Base::RuntimeError(msg);
+            THROWM(Base::RuntimeError, msg)
         }
     }
 
@@ -1451,7 +1451,7 @@ Base::Reference<ParameterGrp>  Application::GetParameterGroupByPath(const char* 
 
     // is there a path separator ?
     if (pos == std::string::npos) {
-        throw Base::ValueError("Application::GetParameterGroupByPath() no parameter set name specified");
+        THROWM(Base::ValueError, "Application::GetParameterGroupByPath() no parameter set name specified")
     }
     // assigning the parameter set name
     cTemp.assign(cName,0,pos);
@@ -1460,7 +1460,7 @@ Base::Reference<ParameterGrp>  Application::GetParameterGroupByPath(const char* 
     // test if name is valid
     auto It = mpcPramManager.find(cTemp.c_str());
     if (It == mpcPramManager.end())
-        throw Base::ValueError("Application::GetParameterGroupByPath() unknown parameter set name specified");
+        THROWM(Base::ValueError, "Application::GetParameterGroupByPath() unknown parameter set name specified")
 
     return It->second->GetGroup(cName.c_str());
 }
@@ -2060,6 +2060,13 @@ void segmentation_fault_handler(int sig)
     _exit(1);
 #endif
 #else
+    // Re-arm first. signal() resets the disposition to SIG_DFL as the handler is
+    // entered, so without this the handler is a one-shot: the first SIGSEGV of a
+    // run is reported and every one after it bypasses this function entirely.
+    // Measured 2026-08-12 -- the second fault of a session produced no entry at
+    // all, and the third came back as a raw access violation from the CRT.
+    std::signal(sig, segmentation_fault_handler);
+
     switch (sig) {
         case SIGSEGV:
             // Record it *before* throwing. The throw unwinds to whoever catches
@@ -2069,13 +2076,13 @@ void segmentation_fault_handler(int sig)
             // This is the only chance to keep them.
             printBacktrace(2, "Illegal storage access...");
 #if !defined(_DEBUG)
-            throw Base::AccessViolation("Illegal storage access! Please save your work under a new file name and restart the application!");
+            THROWM(Base::AccessViolation, "Illegal storage access! Please save your work under a new file name and restart the application!")
 #endif
             break;
         case SIGABRT:
             printBacktrace(2, "Abnormal program termination...");
 #if !defined(_DEBUG)
-            throw Base::AbnormalProgramTermination("Break signal occurred");
+            THROWM(Base::AbnormalProgramTermination, "Break signal occurred")
 #endif
             break;
         default:
@@ -2095,7 +2102,7 @@ void unexpection_error_handler()
     std::cerr << "Unexpected error occurred..." << std::endl;
     // try to throw an exception and give the user chance to save their work
 #if !defined(_DEBUG)
-    throw Base::AbnormalProgramTermination("Unexpected error occurred! Please save your work under a new file name and restart the application!");
+    THROWM(Base::AbnormalProgramTermination, "Unexpected error occurred! Please save your work under a new file name and restart the application!")
 #else
     terminate();
 #endif
@@ -2129,7 +2136,7 @@ void my_se_translator_filter(unsigned int code, EXCEPTION_POINTERS* pExp)
     std::stringstream str;
     str << "SEH exception of type: " << code;
     // general C++ SEH exception for things we don't need to handle separately....
-    throw Base::RuntimeError(str.str());
+    THROWM(Base::RuntimeError, str.str())
 }
 #endif
 
@@ -2587,12 +2594,12 @@ void parseProgramOptions(int ac, char ** av, const string& exe, variables_map& v
     catch (const std::exception& e) {
         std::stringstream str;
         str << e.what() << endl << endl << visible << endl;
-        throw Base::UnknownProgramOption(str.str());
+        THROWM(Base::UnknownProgramOption, str.str())
     }
     catch (...) {
         std::stringstream str;
         str << "Wrong or unknown option, bailing out!" << endl << endl << visible << endl;
-        throw Base::UnknownProgramOption(str.str());
+        THROWM(Base::UnknownProgramOption, str.str())
     }
 
     if (vm.count("help")) {
@@ -2601,7 +2608,7 @@ void parseProgramOptions(int ac, char ** av, const string& exe, variables_map& v
         str << "For a detailed description see https://www.freecad.org/wiki/Start_up_and_Configuration" << endl<<endl;
         str << "Usage: " << exe << " [options] File1 File2 ..." << endl << endl;
         str << visible << endl;
-        throw Base::ProgramInformation(str.str());
+        THROWM(Base::ProgramInformation, str.str())
     }
 
     if (vm.count("response-file")) {
@@ -2612,7 +2619,7 @@ void parseProgramOptions(int ac, char ** av, const string& exe, variables_map& v
             std::stringstream str;
             str << "Could no open the response file: '"
                 << vm["response-file"].as<string>() << "'" << endl;
-            throw Base::UnknownProgramOption(str.str());
+            THROWM(Base::UnknownProgramOption, str.str())
         }
         // Read the whole file into a string
         stringstream ss;
@@ -2652,7 +2659,7 @@ void processProgramOptions(const variables_map& vm, std::map<std::string,std::st
             str << "VTK      " << fcVtkVersion << '\n';
             str << "xerces-c " << fcXercescVersion << '\n';
         }
-        throw Base::ProgramInformation(str.str());
+        THROWM(Base::ProgramInformation, str.str())
     }
 
     if (vm.count("module-path")) {
@@ -2739,7 +2746,7 @@ void processProgramOptions(const variables_map& vm, std::map<std::string,std::st
         for (const auto & it : mConfig) {
             str << it.first << "=" << it.second << std::endl;
         }
-        throw Base::ProgramInformation(str.str());
+        THROWM(Base::ProgramInformation, str.str())
     }
 
     if (vm.count("get-config")) {
@@ -2751,7 +2758,7 @@ void processProgramOptions(const variables_map& vm, std::map<std::string,std::st
             str << pos->second;
         }
         str << std::endl;
-        throw Base::ProgramInformation(str.str());
+        THROWM(Base::ProgramInformation, str.str())
     }
 
     if (vm.count("set-config")) {
@@ -3352,7 +3359,7 @@ QString getUserHome()
     int error = getpwuid_r(getuid(), &pwd, buffer.data(), buffer.size(), &result);
     Q_UNUSED(error)
     if (!result)
-        throw Base::RuntimeError("Getting HOME path from system failed!");
+        THROWM(Base::RuntimeError, "Getting HOME path from system failed!")
     path = QString::fromUtf8(result->pw_dir);
 #else
     path = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
@@ -3463,7 +3470,7 @@ boost::filesystem::path findPath(const QString& stdHome, const QString& customHo
         try {
             boost::filesystem::create_directories(appData);
         } catch (const boost::filesystem::filesystem_error& e) {
-            throw Base::FileSystemError("Could not create directories. Failed with: " + e.code().message());
+            THROWM(Base::FileSystemError, "Could not create directories. Failed with: " + e.code().message())
         }
     }
 
@@ -3669,7 +3676,7 @@ std::string Application::FindHomePath(const char* sCall)
         int nchars = readlink("/proc/self/exe", resolved, PATH_MAX);
 #endif
         if (nchars < 0 || nchars >= PATH_MAX)
-            throw Base::FileSystemError("Cannot determine the absolute path of the executable");
+            THROWM(Base::FileSystemError, "Cannot determine the absolute path of the executable")
         resolved[nchars] = '\0'; // enforce null termination
         absPath = resolved;
     }

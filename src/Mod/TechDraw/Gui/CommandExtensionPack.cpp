@@ -1787,7 +1787,7 @@ void CmdTechDrawExtensionAreaAnnotation::activated(int iMsg)
     balloon = dynamic_cast<TechDraw::DrawViewBalloon*>(
         this->getDocument()->getObject(balloonName.c_str()));
     if (!balloon)
-        throw Base::TypeError("CmdTechDrawNewBalloon - balloon not found\n");
+        THROWM(Base::TypeError, "CmdTechDrawNewBalloon - balloon not found\n")
     // the balloon has been created successfully
 
     // calculate needed variables
@@ -1912,7 +1912,7 @@ void CmdTechDrawExtensionArcLengthAnnotation::activated(int iMsg)
     std::string balloonName = _createBalloon(this, objFeat);
     auto balloon = dynamic_cast<TechDraw::DrawViewBalloon *>(getDocument()->getObject(balloonName.c_str()));
     if (!balloon) {
-        throw Base::TypeError("CmdTechDrawNewBalloon - balloon not found\n");
+        THROWM(Base::TypeError, "CmdTechDrawNewBalloon - balloon not found\n")
     }
 
     // Find the edge halving the selected path and the offset from its starting point

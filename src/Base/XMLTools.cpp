@@ -40,7 +40,7 @@ void XMLTools::initialize()
             4096,
             XMLPlatformUtils::fgMemoryManager));
         if (res != XMLTransService::Ok) {
-            throw Base::UnicodeError("Can't create transcoder");
+            THROWM(Base::UnicodeError, "Can't create transcoder")
         }
     }
 }

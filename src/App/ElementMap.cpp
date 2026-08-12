@@ -1346,7 +1346,7 @@ MappedName ComplexGeoData::setElementName(const IndexedName & element,
                                           bool overwrite)
 {
     if(!element)
-        throw Base::ValueError("Invalid input");
+        THROWM(Base::ValueError, "Invalid input")
     if(!name)  {
         if(_elementMap)
             _elementMap->erase(element);

@@ -65,12 +65,12 @@ unsigned int DrawParametricTemplate::getMemSize() const
 }
 
 double DrawParametricTemplate::getWidth() const {
-    throw Base::NotImplementedError("Need to Implement");
+    THROWM(Base::NotImplementedError, "Need to Implement")
 }
 
 
 double DrawParametricTemplate::getHeight() const {
-    throw Base::NotImplementedError("Need to Implement");
+    THROWM(Base::NotImplementedError, "Need to Implement")
 }
 
 

@@ -298,7 +298,7 @@ bool GroupExtension::hasObject(const DocumentObject* obj, bool recursive) const
                 return true;
             }
             else if (child == getExtendedObject()) {
-                throw Base::RuntimeError("Cyclic dependencies detected: Search cannot be performed");
+                THROWM(Base::RuntimeError, "Cyclic dependencies detected: Search cannot be performed")
             }
             else if ( recursive && child->hasExtension(GroupExtension::getExtensionClassTypeId()) ) {
                 App::GroupExtension *subGroup = static_cast<App::GroupExtension *> (
@@ -344,7 +344,7 @@ bool GroupExtension::recursiveHasObject(const DocumentObject* obj, const GroupEx
             auto ext = child->getExtensionByType<GroupExtension>();
             
             if (std::find(history.begin(), history.end(), ext) != history.end()) {
-                throw Base::RuntimeError("Cyclic dependencies detected: Search cannot be performed");
+                THROWM(Base::RuntimeError, "Cyclic dependencies detected: Search cannot be performed")
             }
 
             if (recursiveHasObject(obj, ext, history)) {

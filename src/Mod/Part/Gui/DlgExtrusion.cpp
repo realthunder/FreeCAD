@@ -299,7 +299,7 @@ App::DocumentObject& DlgExtrusion::getShapeToExtrude() const
 {
     std::vector<App::DocumentObject*> objs = this->getShapesToExtrude();
     if (objs.empty())
-        throw Base::ValueError("No shapes selected");
+        THROWM(Base::ValueError, "No shapes selected")
     return *(objs[0]);
 }
 
@@ -570,7 +570,7 @@ void DlgExtrusion::getAxisLink(App::PropertyLinkSub& lnk) const
         QStringList parts = text.split(QChar::fromLatin1(':'));
         App::DocumentObject* obj = App::GetApplication().getActiveDocument()->getObject(parts[0].toUtf8());
         if(!obj){
-            throw Base::ValueError(tr("Object not found: %1").arg(parts[0]).toUtf8().constData());
+            THROWM(Base::ValueError, tr("Object not found: %1").arg(parts[0]).toUtf8().constData())
         }
         lnk.setValue(obj);
         if (parts.size() == 1) {
@@ -615,13 +615,13 @@ std::vector<App::DocumentObject*> DlgExtrusion::getShapesToExtrude() const
     QList<QTreeWidgetItem *> items = ui->treeWidget->selectedItems();
     App::Document* doc = App::GetApplication().getDocument(this->document.c_str());
     if (!doc)
-        throw Base::RuntimeError("Document lost");
+        THROWM(Base::RuntimeError, "Document lost")
 
     std::vector<App::DocumentObject*> objects;
     for (auto item : items) {
         App::DocumentObject* obj = doc->getObject(item->data(0, Qt::UserRole).toString().toUtf8());
         if (!obj)
-            throw Base::RuntimeError("Object not found");
+            THROWM(Base::RuntimeError, "Object not found")
         objects.push_back(obj);
     }
     return objects;
