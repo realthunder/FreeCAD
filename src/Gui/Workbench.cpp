@@ -744,6 +744,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Std_ViewTitleBar"
           << "Std_ViewFoldTitleBarMenu"
           << "Std_ViewTitleBarToolBars"
+          << "Std_ShowMenuBar"
           << "Std_ViewStatusBar";
 
     // Tools

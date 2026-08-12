@@ -471,6 +471,39 @@ bool StdCmdTitleBarToolBars::isActive()
 }
 
 //===========================================================================
+// Std_ShowMenuBar
+//===========================================================================
+
+DEF_STD_CMD_A(StdCmdShowMenuBar)
+
+StdCmdShowMenuBar::StdCmdShowMenuBar()
+  : Command("Std_ShowMenuBar")
+{
+    sGroup        = "View";
+    sMenuText     = QT_TR_NOOP("Show the menu bar");
+    sToolTipText  = QT_TR_NOOP("Unfolds the menu bar, if it is folded behind the title bar logo, "
+                               "and hands it the keyboard: the first menu opens, Left and Right "
+                               "walk along the row, and Esc gives the keyboard back");
+    sWhatsThis    = "Std_ShowMenuBar";
+    sStatusTip    = sToolTipText;
+    // The Alt key alone does this too, wherever the platform lets it through.
+    // This is the binding for the platforms and the desktops that eat it.
+    sAccel        = "Ctrl+M";
+    eType         = 0;
+}
+
+void StdCmdShowMenuBar::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    getMainWindow()->activateMenuBar();
+}
+
+bool StdCmdShowMenuBar::isActive()
+{
+    return true;
+}
+
+//===========================================================================
 // Std_ViewStatusBar
 //===========================================================================
 
@@ -611,6 +644,7 @@ void CreateWindowStdCommands()
     rcCmdMgr.addCommand(new StdCmdTitleBar());
     rcCmdMgr.addCommand(new StdCmdFoldTitleBarMenu());
     rcCmdMgr.addCommand(new StdCmdTitleBarToolBars());
+    rcCmdMgr.addCommand(new StdCmdShowMenuBar());
     rcCmdMgr.addCommand(new StdCmdStatusBar());
     rcCmdMgr.addCommand(new StdCmdUserInterface());
 }

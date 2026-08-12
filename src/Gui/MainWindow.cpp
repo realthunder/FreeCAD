@@ -1875,6 +1875,16 @@ protected:
         QPushButton::enterEvent(e);
         hoverTimer.start();
         update();  // the bars brighten under the mouse
+
+        // Read off the command rather than written here, so the button says
+        // what the keyboard way in says -- including the shortcut, which is
+        // the whole reason a folded menu is still reachable without the
+        // mouse. Asked for on every hover because the user can rebind it, and
+        // because the command does not exist yet when this button is built.
+        if (auto *cmd = Application::Instance->commandManager()
+                            .getCommandByName("Std_ShowMenuBar")) {
+            setToolTip(Action::commandToolTip(cmd));
+        }
     }
 
     void leaveEvent(QEvent *e) override
@@ -1926,6 +1936,8 @@ void MainWindow::setupTitleBarMenu()
 
     if (!d->titleBarLogo) {
         auto logo = new TitleBarMenuButton(this);
+        // Until the first hover replaces it with the command's own, see
+        // TitleBarMenuButton::enterEvent().
         logo->setToolTip(tr("Show the menu"));
         d->titleBarLogo = logo;
     }
@@ -1948,6 +1960,35 @@ void MainWindow::setFoldTitleBarMenu(bool enable)
     }
     d->hGrp->SetBool("FoldTitleBarMenu", enable);
     setupTitleBarMenu();
+}
+
+bool MainWindow::activateMenuBar()
+{
+    QMenuBar *bar = menuBar();
+    if (!bar || !bar->isVisible()) {
+        return false;
+    }
+
+    // Everything below is Qt's own keyboard handling, reached the way the Alt
+    // key reaches it. Nothing here knows about folding: a folded bar is a
+    // clipped bar, and it unfolds itself when the focus lands on it.
+    QAction *first = nullptr;
+    for (auto *action : bar->actions()) {
+        if (action->isVisible() && action->isEnabled() && !action->isSeparator()) {
+            first = action;
+            break;
+        }
+    }
+    if (!first) {
+        return false;
+    }
+
+    bar->setFocus(Qt::MenuBarFocusReason);
+    // Opens the first menu as well as highlighting it, which is what Qt gives
+    // us and what the arrow keys need: a menu bar with no current item ignores
+    // them.
+    bar->setActiveAction(first);
+    return true;
 }
 
 bool MainWindow::titleBarToolBars() const

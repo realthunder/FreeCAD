@@ -27,6 +27,9 @@ public:
 
     /// Replace the internal QMenuBar with an external one.
     /// The FoldableMenuBar takes ownership of the menu bar.
+    /// Folding only clips the menu bar, never takes it down: it stays a live
+    /// QMenuBar throughout, so giving it the focus unfolds the bar around it
+    /// and its mnemonics work folded.
     void setMenuBar(QMenuBar *menuBar);
 
     /// Set a brand widget (logo/icon) shown at the left edge.

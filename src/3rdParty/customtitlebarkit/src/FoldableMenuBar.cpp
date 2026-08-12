@@ -8,6 +8,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QPropertyAnimation>
 #include <QTimer>
 
@@ -15,7 +16,9 @@ struct FoldableMenuBar::Impl {
     QHBoxLayout *layout = nullptr;
     QWidget *brandWidget = nullptr;
     QMenuBar *menuBar = nullptr;
-    QWidget *menuContainer = nullptr;
+    // Lives on the window rather than here, see ensureOverlayParent(), so it
+    // can be taken down with the window before this widget is.
+    QPointer<QWidget> menuContainer;
     QWidget *menuWrapper = nullptr;   // inside container, has border trick for centering
     QTimer *collapseTimer = nullptr;
     QPropertyAnimation *animation = nullptr;
@@ -38,6 +41,105 @@ struct FoldableMenuBar::Impl {
         }
     }
 
+    /// Where the menu items begin, in the coordinates of the FoldableMenuBar:
+    /// just right of the brand button, which is the only thing a folded bar
+    /// shows.
+    int menuLeft() const {
+        return brandWidget ? brandWidget->geometry().right() + 1 + layout->spacing() : 0;
+    }
+
+    /*! LOCAL DIVERGENCE from FreeCAD/FreeCAD#26766: hold the menu bar at the
+     * width one row of items needs, and park the folded container where the
+     * unfolded one starts.
+     *
+     * Folding is a clip, not a teardown -- the QMenuBar stays visible to Qt,
+     * so it keeps its mnemonics (Alt+F and friends) and its keyboard
+     * navigation. Both of those ask the bar where an item is, and a bar the
+     * zero-wide folded container has squeezed into a stack of clipped rows
+     * answers with rectangles nowhere near the ones the eye expects. Held at
+     * its natural width and positioned like the unfolded bar, a menu opened
+     * by a mnemonic while folded lands exactly where the same menu lands once
+     * the bar has unfolded around it.
+     */
+    void syncNaturalWidth() {
+        if (!menuBar) return;
+        if (!foldable) {
+            menuBar->setMinimumWidth(0);
+            menuBar->setMaximumWidth(QWIDGETSIZE_MAX);
+            return;
+        }
+        // Fixed, not merely a floor: unfolding takes the container from no
+        // width to the width of the row, and a menu bar that resizes with it
+        // forgets which item is current -- which is the item the arrow keys
+        // move from. Pinned, unfolding never resizes it.
+        menuBar->setFixedWidth(menuBar->sizeHint().width());
+        // QMenuBar re-grabs its mnemonic shortcuts when it recomputes its item
+        // rectangles, and asking for one is the only public way to make it do
+        // that. A folded bar is masked out of every repaint, so nothing else
+        // would prompt it after a workbench swapped the menus.
+        if (!menuBar->actions().isEmpty())
+            menuBar->actionGeometry(menuBar->actions().constFirst());
+    }
+
+    /*! LOCAL DIVERGENCE from FreeCAD/FreeCAD#26766: the overlay is handed to
+     * the window once and left there, rather than being reparented on every
+     * unfold.
+     *
+     * It has to live on the window at all -- not inside this widget -- so the
+     * menu items can spill out over the toolbars beside a brand button only a
+     * few pixels wide. Doing that at unfold time hides the menu bar for an
+     * instant, and a menu opened by a mnemonic dies with it: Alt+F used to
+     * open the File menu and then close it again in the same breath. Parented
+     * once, unfolding is nothing but a geometry change and a clip.
+     */
+    void ensureOverlayParent(FoldableMenuBar *self) {
+        if (!overlayExpand || !menuContainer) return;
+        QWidget *win = self->window();
+        if (win && menuContainer->parentWidget() != win) {
+            menuContainer->setParent(win);
+            menuContainer->show();
+        }
+    }
+
+    void collapseGeometry(FoldableMenuBar *self) {
+        if (overlayExpand) {
+            positionOverlay(self, 0);
+        }
+        else {
+            menuContainer->setMaximumWidth(0);
+        }
+    }
+
+    /*! Unfold on the next trip through the event loop.
+     *
+     * Every keyboard way in reaches this from inside Qt's own menu handling:
+     * a mnemonic runs it from QMenu::popup(), before the menu is on screen,
+     * and Alt runs it from the focus change that same popup causes. Unfolding
+     * underneath either is enough for Qt to take the menu straight back down
+     * -- Alt+F opened the File menu and closed it in the same breath. A hop
+     * later the menu is up, and the unfold is just a geometry change beside
+     * it.
+     */
+    void expandLater(FoldableMenuBar *self) {
+        if (!foldable || expanded) return;
+        collapseTimer->stop();
+        QMetaObject::invokeMethod(self, [self]() { self->setExpanded(true); },
+                                  Qt::QueuedConnection);
+    }
+
+    /*! Whether the menu bar is being walked with the keyboard -- reached by
+     * Alt, by the menu-bar command, or by stepping out of a menu with Esc.
+     * Folding it away underneath that would leave the keystrokes going
+     * somewhere invisible.
+     *
+     * A current item, not the focus alone: Qt leaves the focus on the bar
+     * after the last Esc, and a fold that waited for the focus to go would
+     * stay open until something else was clicked.
+     */
+    bool hasKeyboard() const {
+        return menuBar && menuBar->hasFocus() && menuBar->activeAction();
+    }
+
     bool isAnyMenuVisible() const {
         if (!menuBar) return false;
         for (auto *action : menuBar->actions()) {
@@ -52,24 +154,36 @@ struct FoldableMenuBar::Impl {
     }
 
     void connectMenuCollapse(FoldableMenuBar *self, QMenu *menu) {
+        // A menu can be opened without the bar being unfolded first: Alt+F
+        // reaches the QMenuBar's mnemonic wherever the bar is. Unfold around
+        // the menu that is opening, so what drops down has a menu bar over it.
+        QObject::connect(menu, &QMenu::aboutToShow, self, [this, self]() {
+            expandLater(self);
+        });
         QObject::connect(menu, &QMenu::aboutToHide, self, [this, self]() {
+            // Whether this was the last menu or the keyboard is still walking
+            // the row is the collapse timer's question to answer, not this
+            // one's.
             if (foldable && !self->underMouse() && !isMouseOverOverlay()) {
                 collapseTimer->start();
             }
         });
     }
 
-    void positionOverlay(FoldableMenuBar *self) {
+    /// Lay the overlay over the window at the width given, or at the width the
+    /// whole row needs when none is. Zero is the folded bar: still parked
+    /// where the items belong, so a menu opened while folded drops from the
+    /// item it belongs to.
+    void positionOverlay(FoldableMenuBar *self, int width = -1) {
         QWidget *win = self->window();
         if (!win || !menuContainer) return;
+        ensureOverlayParent(self);
 
         QPoint origin = self->mapTo(win, QPoint(0, 0));
-        int x = origin.x();
-        if (brandWidget)
-            x += brandWidget->geometry().right() + 1 + layout->spacing();
+        if (width < 0)
+            width = menuBar->sizeHint().width() + 4;
 
-        menuContainer->setGeometry(x, origin.y(),
-                                   menuBar->sizeHint().width() + 4, self->height());
+        menuContainer->setGeometry(origin.x() + menuLeft(), origin.y(), width, self->height());
     }
 
     /// Mask target widgets to hide their content in the overlay region.
@@ -163,14 +277,7 @@ FoldableMenuBar::FoldableMenuBar(QWidget *parent)
     connect(d->animation, &QPropertyAnimation::finished, this, [this]() {
         if (!d->expanded) {
             d->clearOverlayMasks();
-            if (d->overlayExpand && d->menuContainer->parent() != this) {
-                d->menuContainer->setParent(this);
-                d->menuContainer->show();
-                d->menuContainer->setGeometry(0, 0, 0, 0);
-            }
-            else if (!d->overlayExpand) {
-                d->menuContainer->setMaximumWidth(0);
-            }
+            d->collapseGeometry(this);
         }
         if (d->expanded) {
             d->menuBar->clearMask();
@@ -182,11 +289,23 @@ FoldableMenuBar::FoldableMenuBar(QWidget *parent)
     d->collapseTimer->setSingleShot(true);
     d->collapseTimer->setInterval(400);
     connect(d->collapseTimer, &QTimer::timeout, this, [this]() {
-        if (d->foldable && !underMouse() && !d->isMouseOverOverlay()
-            && !d->isAnyMenuVisible()) {
-            setExpanded(false);
+        if (!d->foldable || underMouse() || d->isMouseOverOverlay()) {
+            // The mouse is on it; leaveEvent() will ask again.
+            return;
         }
+        if (d->isAnyMenuVisible() || d->hasKeyboard()) {
+            // In use by the keyboard, which ends without the mouse moving and
+            // without the focus going anywhere -- neither of which would wake
+            // this watch again. So keep watching rather than dropping it.
+            d->collapseTimer->start();
+            return;
+        }
+        setExpanded(false);
     });
+
+    // The internal bar is watched for the same reasons an external one is,
+    // see eventFilter().
+    d->menuBar->installEventFilter(this);
 }
 
 FoldableMenuBar::~FoldableMenuBar()
@@ -238,6 +357,7 @@ void FoldableMenuBar::setMenuBar(QMenuBar *menuBar)
     d->menuBar->installEventFilter(this);
 
     // Apply current foldable state
+    d->syncNaturalWidth();
     if (d->foldable && !d->expanded) {
         d->updateClip();
     }
@@ -264,6 +384,11 @@ void FoldableMenuBar::setBrandWidget(QWidget *brand)
         brand->installEventFilter(this);
         d->layout->insertWidget(0, brand);
     }
+    // The brand is what the menu items start after, and it usually arrives
+    // after the fold has already been parked somewhere.
+    if (d->foldable && !d->expanded) {
+        d->collapseGeometry(this);
+    }
 }
 
 QWidget *FoldableMenuBar::brandWidget() const
@@ -275,16 +400,12 @@ void FoldableMenuBar::setFoldable(bool foldable)
 {
     if (d->foldable == foldable) return;
     d->foldable = foldable;
+    d->syncNaturalWidth();
     if (foldable) {
         d->expanded = false;
         d->revealWidth = 0;
         d->updateClip();
-        if (d->overlayExpand) {
-            d->menuContainer->setGeometry(0, 0, 0, 0);
-        }
-        else {
-            d->menuContainer->setMaximumWidth(0);
-        }
+        d->collapseGeometry(this);
     }
     else {
         d->expanded = true;
@@ -310,7 +431,7 @@ void FoldableMenuBar::setOverlayExpand(bool overlay)
         d->layout->removeWidget(d->menuContainer);
         d->menuContainer->setMaximumWidth(QWIDGETSIZE_MAX);
         if (d->foldable && !d->expanded) {
-            d->menuContainer->setGeometry(0, 0, 0, 0);
+            d->collapseGeometry(this);
         }
     }
     else {
@@ -350,18 +471,17 @@ void FoldableMenuBar::setExpanded(bool expanded)
         if (d->animation->state() == QAbstractAnimation::Running)
             d->animation->stop();
 
+        d->syncNaturalWidth();
         int targetWidth = d->menuBar->sizeHint().width();
 
         if (expanded) {
             if (d->overlayExpand) {
-                // Reparent to window so menu floats above all titlebar content
-                QWidget *win = window();
-                if (win) {
-                    d->menuContainer->setParent(win);
-                    d->positionOverlay(this);
-                    d->menuContainer->show();
-                    d->menuContainer->raise();
-                }
+                // Already on the window, see ensureOverlayParent(): all the
+                // unfold does is give it the width of the row and put it on
+                // top of the rest of the title bar.
+                d->positionOverlay(this);
+                d->menuContainer->show();
+                d->menuContainer->raise();
             }
             else {
                 d->menuContainer->setMaximumWidth(QWIDGETSIZE_MAX);
@@ -412,6 +532,7 @@ void FoldableMenuBar::resizeEvent(QResizeEvent *event)
     // Update mask if needed (menuBar height may have changed)
     if (d->foldable && !d->expanded) {
         d->updateClip();
+        d->collapseGeometry(this);
     }
 }
 
@@ -438,11 +559,34 @@ bool FoldableMenuBar::eventFilter(QObject *obj, QEvent *event)
         }
     }
 
-    // Watch for menus being added to the external QMenuBar
-    if (obj == d->menuBar && event->type() == QEvent::ActionAdded) {
-        auto *actionEvent = static_cast<QActionEvent *>(event);
-        if (auto *menu = actionEvent->action()->menu())
-            d->connectMenuCollapse(this, menu);
+    if (obj == d->menuBar) {
+        switch (event->type()) {
+        // Watch for menus being added to the QMenuBar
+        case QEvent::ActionAdded:
+            if (auto *menu = static_cast<QActionEvent *>(event)->action()->menu())
+                d->connectMenuCollapse(this, menu);
+            Q_FALLTHROUGH();
+        case QEvent::ActionRemoved:
+        case QEvent::ActionChanged:
+            // A workbench swap rewrites the whole row, and the folded bar has
+            // to keep answering for where its items are.
+            d->syncNaturalWidth();
+            break;
+        // Anything that hands the menu bar the keyboard -- Alt, the menu-bar
+        // command, Esc out of an open menu -- has to unfold it. A menu bar
+        // taking keystrokes where it cannot be seen is worse than one that
+        // never took them.
+        case QEvent::FocusIn:
+            d->collapseTimer->stop();
+            d->expandLater(this);
+            break;
+        case QEvent::FocusOut:
+            if (d->foldable && !d->isAnyMenuVisible())
+                d->collapseTimer->start();
+            break;
+        default:
+            break;
+        }
     }
 
     // In overlay mode, track mouse on the floating container
