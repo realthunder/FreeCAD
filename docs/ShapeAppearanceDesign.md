@@ -625,3 +625,108 @@ Stage 3 is the first stage a user can see. Stages 4 and 5 are what make the
 data come from and go somewhere other than our own documents -- and stage 5
 is the one that fixes the case that motivated all of this, an imported
 solid whose faces carry real finishes.
+
+## 7. What has to be settled before the rest of stage 1 lands
+
+An audit of where this fork and upstream differ in ways that reach
+appearance, done after the storage landed and before `ShapeAppearance`
+itself. Each item gets a verdict, and only two of them are blocking.
+
+### 7.1 Do `Base::Color` first -- and it has a trap
+
+⛔ **Blocking, and it is the reason to do UpstreamCoreSync 2d before
+anything else here.** Every line of this work is spelled in colours. Landing
+`ShapeAppearance` first means writing `App::Color` into new code and
+rewriting it days later.
+
+The plan calls 2d a file move plus
+`namespace App { using Color = Base::Color; }`, and for 836 of the 843 sites
+it is. The other seven are **forward declarations**:
+
+    src/Gui/ViewProvider.h            src/Mod/Part/App/TopoShape.h
+    src/Mod/Mesh/App/Importer.h       src/Mod/Mesh/Gui/ViewProvider.h
+    src/Mod/Points/App/PointsFeature.h
+    src/Mod/TechDraw/App/DrawHatch.h  src/Mod/TechDraw/App/Preferences.h
+
+each saying `namespace App { class Color; }`. A using-alias and a class
+declaration of the same name cannot coexist, so those seven move to
+`namespace Base` in the same commit or nothing compiles. Cheap, but it is
+not the zero the plan implies.
+
+### 7.2 Two sites read a colour list through a base pointer
+
+⛔ **Blocking for 1.1**, and it is the counterexample the design asked for.
+Section 1.1 argues no virtual reader is needed because `DiffuseColor` is
+always reached through its own static type. Two sites in
+`src/Mod/Part/Gui/ViewProviderExt.cpp` (around lines 2119 and 2255) do the
+opposite deliberately: they pick one of `DiffuseColor`, `LineColorArray` and
+`PointColorArray` by element type into a single `PropertyColorList*` and
+read through it. Under a `PropertyDiffuseColor` whose storage lives
+elsewhere, that reads an empty base vector -- silently, for faces only.
+
+Both are in one file and both already switch on `TopAbs_ShapeEnum`, so the
+verdict is **restructure the two sites, not virtualise the readers**:
+`getValues()` and `operator[]` are inlined in link resolution and other hot
+paths, and paying an indirect call across every list property in the tree to
+spare one file a branch is the wrong trade. The compiler will find both
+sites -- `auto prop = &vp->DiffuseColor` stops accepting the other two
+assignments the moment the type changes.
+
+### 7.3 Our `App::Material` is not upstream's, and their file says so
+
+**Not blocking, but it caps what "read upstream's documents" can mean.**
+Upstream's material is ours plus `image`, `imagePath`, `uuid` and a static
+`getDefaultAppearance()`. Their `MaterialList` doc file at `version="3"` is,
+byte for byte, our legacy first pass -- count, then four packed colours,
+shininess and transparency per entry -- followed by a **second pass** of
+three length-prefixed strings per material. They also keep `Version_0` and
+`Version_2` readers and a negative-integer sentinel where a count would be.
+
+So reading their file is a small change: honour the element's `version`
+attribute and consume the second pass. Until `App::Material` has the three
+fields, consuming is all it can do, and the read is lossy. Say so rather
+than claim compatibility. When the fields do arrive, the per-field layout
+takes them at size 0 on every object that has no texture -- which is nearly
+all of them.
+
+### 7.4 `uuid` points into a Materials module we do not have
+
+**Not blocking; keep it opaque.** `uuid` ties an appearance to a material
+card in upstream's Materials module, which this fork has at the
+December-2023 vintage against upstream's 346-file divergence
+(UpstreamCoreSync 5.2). Carry the string through the format and do not wire
+it to anything until that module question is answered on its own.
+
+### 7.5 The fork-only half has no upstream reference
+
+**Not blocking, but it is the actual work of 1.1.** `MappedColors`,
+`MapFaceColor`, `MapLineColor`, `MapPointColor` and `MapTransparency` are
+ours alone, and `ViewProviderPartExt::onChanged` already defers to
+`DiffuseColor` during restore *because* the order in which `DiffuseColor`
+and `ShapeColor` come back depends on whether the colour list was written
+inline or into its own file. Storage that answers to both names has to keep
+that behaviour exactly; it is the one part of stage 1 with nothing to copy
+from.
+
+### 7.6 Settled, listed so they are not re-opened
+
+- `App::Property::isSame` is pure virtual in this fork where upstream gives
+  it a default body. Every fork property answers it deliberately, including
+  the new material list. No action.
+- The `ShapeColor` / `ShapeMaterial` / `Transparency` trio kept in step by
+  hand in `ViewProviderGeometryObject::onChanged` is retired by
+  `ShapeAppearance`, not worked around.
+- Coin cannot vary four of the six fields per face (section 5.1) and no
+  exporter consumes them (5.2). Both were settled by reading the consumer
+  and neither has changed.
+
+### 7.7 Order
+
+1. UpstreamCoreSync 2d, `App::Color` -> `Base::Color`, seven forward
+   declarations included (7.1).
+2. `ShapeAppearance` on `ViewProviderGeometryObject`, retiring the trio.
+3. `DiffuseColor` as an accessor (1.1), with the two base-pointer sites
+   restructured first (7.2) and the fork-only mapping behaviour preserved
+   (7.5).
+4. Restore-time migration, including upstream's `version="3"` second pass
+   as a lossy read (7.3).
