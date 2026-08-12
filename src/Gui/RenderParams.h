@@ -366,6 +366,81 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter SimplifyExhausted
+    ///
+    /// When re-tessellating an object coarser stops removing
+    /// geometry, decimate the mesh it already has instead of dropping
+    /// straight to its bounding box (docs/SceneStreaming.md #13c).
+    /// The descent coarsens an object by asking OCCT for a larger
+    /// deflection, and that saturates: a planar face is two triangles
+    /// at any deflection, so a shape of flat faces answers the same
+    /// mesh however coarse the ask. Past that point the only thing
+    /// that removes geometry is a representation with fewer faces.
+    /// Vertex clustering is the rung between the two: it keeps the
+    /// object's shape, where the bounding box does not.
+    /// Rewrites the display nodes only. Nothing re-tessellates and the
+    /// OCCT triangulation is untouched, so the way back is one ordinary
+    /// rebuild, and each further step down clusters on a coarser grid.
+    /// Face and edge numbering survive: a face that decimates away to
+    /// nothing keeps its (empty) slot, because those tables are read by
+    /// element number.
+    /// What it gives up is exactness of the decimated rung -- section
+    /// caps through it can be rough, since clustering does not preserve
+    /// watertightness, and the hidden-line seam filter is dropped
+    /// because a welded edge may fold a seam and a non-seam together.
+    static const bool & getSimplifyExhausted();
+    static const bool & defaultSimplifyExhausted();
+    static void removeSimplifyExhausted();
+    static void setSimplifyExhausted(const bool &v);
+    static const char *docSimplifyExhausted();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SimplifyMergeParts
+    ///
+    /// Let the decimator weld vertices across face boundaries
+    /// instead of clustering each face on its own grid.
+    /// Off, no output triangle spans two faces, so a modelled crease
+    /// stays a crease and each face keeps at least the triangles its
+    /// own cells produce. That floor is the catch: this rung is reached
+    /// precisely when a shape is mostly flat faces, and per-face
+    /// clustering cannot take a two-triangle face below two triangles.
+    /// On, positions and attributes cluster once over the whole mesh,
+    /// which is what actually removes geometry there -- at the cost of
+    /// shading round creases the model really has.
+    /// Face identity survives either way: a triangle still belongs to
+    /// the face it came from, so per-face colour and selection keep
+    /// working. Only the geometry is shared.
+    static const bool & getSimplifyMergeParts();
+    static const bool & defaultSimplifyMergeParts();
+    static void removeSimplifyMergeParts();
+    static void setSimplifyMergeParts(const bool &v);
+    static const char *docSimplifyMergeParts();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SimplifyMinReduction
+    ///
+    /// How much of an object's triangle count a decimation pass has
+    /// to remove for the result to be kept, as a percentage.
+    /// Below it the pass is refused and the descent takes its next step
+    /// instead, which is the bounding box. A rung that removes almost
+    /// nothing is worse than not having one: it costs a node rewrite
+    /// and still holds the memory that made the plan ask.
+    /// This is also what stops the descent looping. Each step clusters
+    /// on a coarser grid, so a mesh that has run out of things to merge
+    /// keeps answering no and the object moves on to the box.
+    static const double & getSimplifyMinReduction();
+    static const double & defaultSimplifyMinReduction();
+    static void removeSimplifyMinReduction();
+    static void setSimplifyMinReduction(const double &v);
+    static const char *docSimplifyMinReduction();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter ShapeVertices
     ///
     /// Draw the vertex points that sit on the ends of a shape's

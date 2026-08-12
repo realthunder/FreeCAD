@@ -114,6 +114,7 @@
 #include <Gui/RenderParams.h>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <Gui/Renderer/Renderer.h>
+#include <Gui/Renderer/MeshSimplify.h>
 #include <Mod/Part/App/Tools.h>
 
 #include "ViewProviderExt.h"
@@ -223,6 +224,116 @@ void syncBuildingVisuals()
         Gui::Application::Instance->setBuildingVisuals(
                 !deferredVisuals().docs.empty());
 }
+
+/// A Render::MeshData view over what the display nodes already hold.
+///
+/// The decimator (Gui/Renderer/MeshSimplify.h) speaks MeshData and this
+/// class speaks Coin, and the two lay indices out differently. Nothing
+/// here re-tessellates: positions and normals ALIAS the node storage
+/// (SbVec3f is three floats and nothing else), and only the index
+/// re-layouts allocate.
+///
+///  - triangles: Coin stores i0,i1,i2,SO_END_FACE_INDEX per triangle,
+///    MeshData three indices with no delimiter.
+///  - face parts: Coin's partIndex is a per-face triangle COUNT,
+///    MeshData's triangleParts a {start, count} pair in INDEX units.
+///  - lines: Coin stores polylines separated by -1, MeshData GL_LINES
+///    style vertex PAIRS, so an n-point polyline becomes n-1 segments.
+///
+/// Only the arrays a decimated rung has to preserve are carried. Colours
+/// are per-object here (the material nodes hold them, not the vertices),
+/// so there are none to cluster.
+struct CoinMeshView {
+    std::vector<int32_t> tris, lines, points;
+    Render::MeshData mesh;
+
+    /// False when there is no triangle geometry to work on -- an
+    /// edges-only or points-only object, which the decimator has
+    /// nothing to say about and which is not what holds a budget open.
+    bool build(const SoCoordinate3 *coords, const SoNormal *norm,
+               const SoBrepFaceSet *faceset, const SoBrepEdgeSet *lineset,
+               const SoBrepPointSet *nodeset, const SoCoordinate3 *pcoords)
+    {
+        const int nv = coords ? coords->point.getNum() : 0;
+        const int nidx = faceset ? faceset->coordIndex.getNum() : 0;
+        if (nv <= 0 || nidx < 4)
+            return false;
+
+        mesh.numVertices = nv;
+        mesh.positions =
+            reinterpret_cast<const float *>(coords->point.getValues(0));
+        if (norm && norm->vector.getNum() == nv)
+            mesh.normals =
+                reinterpret_cast<const float *>(norm->vector.getValues(0));
+
+        const int32_t *ci = faceset->coordIndex.getValues(0);
+        tris.reserve(size_t(nidx / 4) * 3);
+        for (int i = 0; i + 3 < nidx; i += 4) {
+            if (ci[i] < 0 || ci[i + 1] < 0 || ci[i + 2] < 0)
+                continue;
+            tris.push_back(ci[i]);
+            tris.push_back(ci[i + 1]);
+            tris.push_back(ci[i + 2]);
+        }
+        if (tris.empty())
+            return false;
+        mesh.triangleIndices = tris.data();
+        mesh.numTriangleIndices = int(tris.size());
+
+        // Face parts, counts to ranges. A face that tessellated to
+        // nothing still occupies a slot: the table is read by index, so
+        // dropping empties would renumber every face after it.
+        const int nparts = faceset->partIndex.getNum();
+        if (nparts > 0) {
+            const int32_t *pi = faceset->partIndex.getValues(0);
+            mesh.triangleParts.reserve(size_t(nparts));
+            int at = 0;
+            for (int p = 0; p < nparts; ++p) {
+                const int count = std::max<int>(0, pi[p]) * 3;
+                mesh.triangleParts.emplace_back(at, count);
+                at += count;
+            }
+        }
+
+        if (lineset && lineset->coordIndex.getNum() > 0) {
+            const int nl = lineset->coordIndex.getNum();
+            const int32_t *li = lineset->coordIndex.getValues(0);
+            lines.reserve(size_t(nl) * 2);
+            int runStart = int(lines.size());
+            for (int i = 0; i < nl; ++i) {
+                if (li[i] < 0) {
+                    if (int(lines.size()) > runStart)
+                        mesh.lineParts.emplace_back(
+                                runStart, int(lines.size()) - runStart);
+                    runStart = int(lines.size());
+                    continue;
+                }
+                // Pair this point with the previous one of the same run,
+                // which is the segment between them.
+                if (i > 0 && li[i - 1] >= 0) {
+                    lines.push_back(li[i - 1]);
+                    lines.push_back(li[i]);
+                }
+            }
+            if (int(lines.size()) > runStart)
+                mesh.lineParts.emplace_back(runStart,
+                                            int(lines.size()) - runStart);
+            if (!lines.empty()) {
+                mesh.lineIndices = lines.data();
+                mesh.numLineIndices = int(lines.size());
+            }
+        }
+
+        // Vertex points index a DIFFERENT coordinate node (pcoords), so
+        // they cannot ride the same clustering as the surface: their
+        // indices would address the wrong array. They are left out and
+        // put back untouched, which is also the right answer for what
+        // they are -- a shape's vertices do not decimate.
+        (void)nodeset;
+        (void)pcoords;
+        return true;
+    }
+};
 
 } // anonymous namespace
 
@@ -3334,6 +3445,7 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
             // tessellated again, so the flag that sent it here is spent.
             if (underPressure) {
                 MeshErrorScaleExhausted = false;
+                MeshDecimationSpent = false;
             }
             FC_LOG(getFullName() << " stand-in resolved: coarse mesh in");
             updateVisual();
@@ -3349,6 +3461,153 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
                << pcObject->getFullName() << ": " << e.GetMessageString());
         return false;
     }
+    return true;
+}
+
+bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize)
+{
+    if (!Gui::RenderParams::getSimplifyExhausted() || !(cellSize > 0.0))
+        return false;
+    if (!coords || !faceset)
+        return false;
+
+    CoinMeshView view;
+    if (!view.build(coords, norm, faceset, lineset, nodeset, pcoords))
+        return false;
+
+    Render::SimplifyOptions opts;
+    // Welding across faces is what actually removes geometry on the
+    // population that gets here. This seam is reached only when
+    // deflection has PROVED it cannot coarsen the shape -- which is
+    // what a shape of planar faces answers at every deflection, two
+    // triangles a face however coarse the ask. Clustering each face on
+    // its own grid cannot go below those two, so per-face clustering
+    // removes almost nothing exactly where the ladder has run out. The
+    // cost is the crease: attributes then average over the whole mesh
+    // rather than within a face. Off by default all the same, so the
+    // cheaper and more faithful arm is what ships until measured.
+    opts.weldAcrossParts = Gui::RenderParams::getSimplifyMergeParts();
+
+    Render::SimplifiedMesh out;
+    Render::SimplifyStats stats;
+    if (!Render::simplifyMesh(view.mesh, float(cellSize), out, opts, &stats))
+        return false;
+
+    // Did it buy anything? The descent has a cheaper next step (the
+    // bounding box), so a rung that barely removes triangles is worse
+    // than useless -- it costs a rebuild and still holds the memory.
+    // The caller reads false as "decimation is spent, take the box".
+    const size_t before = view.tris.size();
+    const size_t after = out.triangleIndices.size();
+    const double keepRatio =
+        Gui::RenderParams::getSimplifyMinReduction() / 100.0;
+    if (before == 0 || double(before - after) < keepRatio * double(before))
+        return false;
+
+    const int nv = out.numVertices();
+    if (nv <= 0 || out.triangleIndices.empty())
+        return false;
+
+    // --- write the rung back into the display nodes -----------------
+    coords->point.setNum(nv);
+    std::memcpy(coords->point.startEditing(), out.positions.data(),
+                size_t(nv) * 3 * sizeof(float));
+    coords->point.finishEditing();
+
+    if (!out.normals.empty() && int(out.normals.size()) == nv * 3) {
+        norm->vector.setNum(nv);
+        std::memcpy(norm->vector.startEditing(), out.normals.data(),
+                    size_t(nv) * 3 * sizeof(float));
+        norm->vector.finishEditing();
+    }
+    else {
+        norm->vector.setNum(0);
+    }
+
+    // Texture coordinates are per vertex and the vertices are new ones.
+    // Zeroed rather than dropped: the build path always sizes this to
+    // the coordinate count, and a shorter array is what a reader
+    // indexing by vertex would run off the end of.
+    if (texcoords) {
+        texcoords->point.setNum(nv);
+        SbVec2f *uv = texcoords->point.startEditing();
+        for (int i = 0; i < nv; ++i)
+            uv[i] = SbVec2f(0.0f, 0.0f);
+        texcoords->point.finishEditing();
+    }
+
+    const int numTri = int(out.triangleIndices.size() / 3);
+    faceset->coordIndex.setNum(numTri * 4);
+    int32_t *ci = faceset->coordIndex.startEditing();
+    for (int t = 0; t < numTri; ++t) {
+        ci[t * 4]     = out.triangleIndices[size_t(t) * 3];
+        ci[t * 4 + 1] = out.triangleIndices[size_t(t) * 3 + 1];
+        ci[t * 4 + 2] = out.triangleIndices[size_t(t) * 3 + 2];
+        ci[t * 4 + 3] = SO_END_FACE_INDEX;
+    }
+    faceset->coordIndex.finishEditing();
+
+    // The face table, ranges back to counts. Every source face keeps its
+    // slot even when it decimated away to nothing: partIndex is read BY
+    // FACE NUMBER -- per-face colours, face selection, the element name
+    // a picked triangle resolves to -- so dropping the empties would
+    // silently renumber every face after the first one to collapse.
+    if (!out.triangleParts.empty()) {
+        faceset->partIndex.setNum(int(out.triangleParts.size()));
+        int32_t *pi = faceset->partIndex.startEditing();
+        for (size_t p = 0; p < out.triangleParts.size(); ++p)
+            pi[p] = out.triangleParts[p].second / 3;
+        faceset->partIndex.finishEditing();
+    }
+    else {
+        faceset->partIndex.setNum(0);
+    }
+    // Triangle counts moved, so anything derived from the old ones is
+    // stale; the solid table is rebuilt by the next full build.
+    faceset->shapeInfo.setNum(0);
+
+    if (lineset) {
+        // Segments back to polylines, ONE RUN PER SOURCE EDGE including
+        // the collapsed ones. SoBrepEdgeSet derives the edge id from
+        // the ordinal of the -1 separator (see its notify()), so an
+        // omitted empty run would renumber every edge behind it. An
+        // empty run draws nothing and cannot be picked.
+        std::vector<int32_t> runs;
+        runs.reserve(out.lineIndices.size() + out.lineParts.size() + 1);
+        auto emitRun = [&](int start, int count) {
+            for (int i = 0; i + 1 < count; i += 2) {
+                const int32_t a = out.lineIndices[size_t(start + i)];
+                const int32_t b = out.lineIndices[size_t(start + i + 1)];
+                if (runs.empty() || runs.back() != a)
+                    runs.push_back(a);
+                runs.push_back(b);
+            }
+            runs.push_back(SO_END_LINE_INDEX);
+        };
+        if (!out.lineParts.empty()) {
+            for (const auto &p : out.lineParts)
+                emitRun(p.first, p.second);
+        }
+        else if (!out.lineIndices.empty()) {
+            emitRun(0, int(out.lineIndices.size()));
+        }
+        lineset->coordIndex.setNum(int(runs.size()));
+        if (!runs.empty()) {
+            std::memcpy(lineset->coordIndex.startEditing(), runs.data(),
+                        runs.size() * sizeof(int32_t));
+            lineset->coordIndex.finishEditing();
+        }
+        // The seam filter does not survive the weld: a merged edge can
+        // fold a seam and a non-seam edge together. Cleared rather than
+        // left stale, so hidden-line mode hides nothing it cannot
+        // justify on this rung.
+        lineset->seamIndices.setNum(0);
+    }
+
+    FC_LOG(getFullName() << " decimated rung: cell " << cellSize
+            << ", triangles " << (before / 3) << " -> " << (after / 3)
+            << ", vertices " << view.mesh.numVertices << " -> " << nv
+            << ", max displacement " << stats.maxDisplacement);
     return true;
 }
 
@@ -3613,7 +3872,11 @@ void ViewProviderPartExt::updateVisual()
     // object whose deflection can no longer be coarsened is drawn as
     // its 12-triangle box, which is the one representation here that
     // actually removes faces rather than subdividing them less.
-    if (buildCoarseStandIn(MeshErrorScaleExhausted)) {
+    // The box is the LAST step, not the first one past deflection:
+    // it is taken only once decimation has been tried and has itself
+    // stopped paying (see simplifyVisualInPlace at the end of the
+    // build, which is what sets MeshDecimationSpent).
+    if (buildCoarseStandIn(MeshErrorScaleExhausted && MeshDecimationSpent)) {
         VisualTouched = false;
         setHighlightedFaces(DiffuseColor.getValues());
         setHighlightedEdges(LineColorArray.getValues());
@@ -3756,6 +4019,7 @@ void ViewProviderPartExt::updateVisual()
             MeshErrorScaleTShape = scaleTShape;
             MeshErrorScale = 1.0;
             MeshErrorScaleExhausted = false;
+            MeshDecimationSpent = false;
         }
         double shapeDiag = 0.0;
         if (coarseLvl >= 0) {
@@ -3904,6 +4168,31 @@ void ViewProviderPartExt::updateVisual()
                                 pcObject ? pcObject->getDocument() : nullptr,
                                 "per-object", std::move(onScaleDown),
                                 scaledError);
+
+        // The rung between a spent tessellation and the bounding box
+        // (docs/SceneStreaming.md #13c). Applied HERE, as a post-step of
+        // the ordinary build rather than in the descent callback that
+        // asked for it, so the state is durable: an updateVisual run for
+        // any other reason -- a colour change, a placement edit -- would
+        // otherwise rebuild this object at full detail and quietly undo
+        // the descent, leaving the plan to discover the memory back and
+        // ask all over again.
+        //
+        // The grid is the error this rung already commits, in world
+        // units: builtError is relative to the diagonal and carries
+        // MeshErrorScale, so each descent step clusters coarser than the
+        // last and the sequence terminates.
+        if (MeshErrorScaleExhausted && !MeshDecimationSpent
+                && builtError > 0.0f && shapeDiag > 0.0) {
+            if (!simplifyVisualInPlace(double(builtError) * shapeDiag)) {
+                // Decimation is spent too. The object keeps the mesh it
+                // has for now; the descent's next step finds the flag
+                // set and takes the box.
+                MeshDecimationSpent = true;
+                FC_LOG(getFullName()
+                       << " decimation spent, bounding box is next");
+            }
+        }
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());

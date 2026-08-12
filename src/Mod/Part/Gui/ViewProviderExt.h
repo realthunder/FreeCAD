@@ -314,6 +314,16 @@ protected:
      * the load is over. Returns whether it was parked, in which case the
      * shape is left visually touched and the caller is done.
      */
+    /// Decimate the display nodes in place onto a grid of \a cellSize
+    /// (docs/SceneStreaming.md #13c), the rung between "OCCT cannot
+    /// tessellate this any coarser" and the bounding box. Reads and
+    /// rewrites the nodes only -- no re-tessellation, and the OCCT
+    /// triangulation is untouched, so a full rebuild restores exactness.
+    /// False when it is disabled, has no triangles to work on, or did
+    /// not remove enough to be worth the rebuild; the caller then takes
+    /// the box, which is the next step down.
+    bool simplifyVisualInPlace(double cellSize);
+
     bool deferVisualForLoad();
     /// Build one slice of the parked visuals, then reschedule if any remain.
     static void runDeferredVisualSlice();
@@ -358,9 +368,20 @@ protected:
     /// coarser tessellation removed only 19% of the primitives. Once
     /// this is set the object stops paying for re-tessellations that
     /// buy nothing and goes to a representation that actually drops
-    /// faces (its bounding box today; mesh simplification, which can
-    /// merge across faces, is the better rung and belongs here).
+    /// faces: decimation of the mesh it already has, and below that its
+    /// bounding box.
     bool MeshErrorScaleExhausted = false;
+    /// Set when decimation in turn stopped removing enough to be worth
+    /// the rewrite (Render_SimplifyMinReduction) -- the rung below
+    /// deflection is spent too, and the next step is the bounding box.
+    ///
+    /// Separate from the flag above because the two are different
+    /// exhaustions with different next steps, and one flag doing both
+    /// jobs would send an object to its box the moment tessellation
+    /// saturated, which is exactly the step this rung exists to delay.
+    /// Cleared wherever MeshErrorScaleExhausted is: a shape that may be
+    /// tessellated again may be decimated again.
+    bool MeshDecimationSpent = false;
     bool UpdatingColor;
     bool highlightFaceEdges = false;
 

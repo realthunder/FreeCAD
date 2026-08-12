@@ -64,6 +64,9 @@ public:
     long LevelCount;
     double LevelScale;
     double LevelScaleBoxError;
+    bool SimplifyExhausted;
+    bool SimplifyMergeParts;
+    double SimplifyMinReduction;
     bool ShapeVertices;
     bool PressureDropEdges;
     bool LoadDropElements;
@@ -180,6 +183,12 @@ public:
         funcs["LevelScale"] = &RenderParamsP::updateLevelScale;
         LevelScaleBoxError = this->handle->GetFloat("LevelScaleBoxError", 0.25);
         funcs["LevelScaleBoxError"] = &RenderParamsP::updateLevelScaleBoxError;
+        SimplifyExhausted = this->handle->GetBool("SimplifyExhausted", true);
+        funcs["SimplifyExhausted"] = &RenderParamsP::updateSimplifyExhausted;
+        SimplifyMergeParts = this->handle->GetBool("SimplifyMergeParts", false);
+        funcs["SimplifyMergeParts"] = &RenderParamsP::updateSimplifyMergeParts;
+        SimplifyMinReduction = this->handle->GetFloat("SimplifyMinReduction", 20.0);
+        funcs["SimplifyMinReduction"] = &RenderParamsP::updateSimplifyMinReduction;
         ShapeVertices = this->handle->GetBool("ShapeVertices", false);
         funcs["ShapeVertices"] = &RenderParamsP::updateShapeVertices;
         PressureDropEdges = this->handle->GetBool("PressureDropEdges", true);
@@ -419,6 +428,18 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelScaleBoxError(RenderParamsP *self) {
         self->LevelScaleBoxError = self->handle->GetFloat("LevelScaleBoxError", 0.25);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSimplifyExhausted(RenderParamsP *self) {
+        self->SimplifyExhausted = self->handle->GetBool("SimplifyExhausted", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSimplifyMergeParts(RenderParamsP *self) {
+        self->SimplifyMergeParts = self->handle->GetBool("SimplifyMergeParts", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSimplifyMinReduction(RenderParamsP *self) {
+        self->SimplifyMinReduction = self->handle->GetFloat("SimplifyMinReduction", 20.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShapeVertices(RenderParamsP *self) {
@@ -1281,6 +1302,129 @@ void RenderParams::setLevelScaleBoxError(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelScaleBoxError() {
     instance()->handle->RemoveFloat("LevelScaleBoxError");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docSimplifyExhausted() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"When re-tessellating an object coarser stops removing\n"
+"geometry, decimate the mesh it already has instead of dropping\n"
+"straight to its bounding box (docs/SceneStreaming.md #13c).\n"
+"The descent coarsens an object by asking OCCT for a larger\n"
+"deflection, and that saturates: a planar face is two triangles\n"
+"at any deflection, so a shape of flat faces answers the same\n"
+"mesh however coarse the ask. Past that point the only thing\n"
+"that removes geometry is a representation with fewer faces.\n"
+"Vertex clustering is the rung between the two: it keeps the\n"
+"object's shape, where the bounding box does not.\n"
+"Rewrites the display nodes only. Nothing re-tessellates and the\n"
+"OCCT triangulation is untouched, so the way back is one ordinary\n"
+"rebuild, and each further step down clusters on a coarser grid.\n"
+"Face and edge numbering survive: a face that decimates away to\n"
+"nothing keeps its (empty) slot, because those tables are read by\n"
+"element number.\n"
+"What it gives up is exactness of the decimated rung -- section\n"
+"caps through it can be rough, since clustering does not preserve\n"
+"watertightness, and the hidden-line seam filter is dropped\n"
+"because a welded edge may fold a seam and a non-seam together.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getSimplifyExhausted() {
+    return instance()->SimplifyExhausted;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultSimplifyExhausted() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setSimplifyExhausted(const bool &v) {
+    instance()->handle->SetBool("SimplifyExhausted",v);
+    instance()->SimplifyExhausted = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeSimplifyExhausted() {
+    instance()->handle->RemoveBool("SimplifyExhausted");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docSimplifyMergeParts() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Let the decimator weld vertices across face boundaries\n"
+"instead of clustering each face on its own grid.\n"
+"Off, no output triangle spans two faces, so a modelled crease\n"
+"stays a crease and each face keeps at least the triangles its\n"
+"own cells produce. That floor is the catch: this rung is reached\n"
+"precisely when a shape is mostly flat faces, and per-face\n"
+"clustering cannot take a two-triangle face below two triangles.\n"
+"On, positions and attributes cluster once over the whole mesh,\n"
+"which is what actually removes geometry there -- at the cost of\n"
+"shading round creases the model really has.\n"
+"Face identity survives either way: a triangle still belongs to\n"
+"the face it came from, so per-face colour and selection keep\n"
+"working. Only the geometry is shared.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getSimplifyMergeParts() {
+    return instance()->SimplifyMergeParts;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultSimplifyMergeParts() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setSimplifyMergeParts(const bool &v) {
+    instance()->handle->SetBool("SimplifyMergeParts",v);
+    instance()->SimplifyMergeParts = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeSimplifyMergeParts() {
+    instance()->handle->RemoveBool("SimplifyMergeParts");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docSimplifyMinReduction() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How much of an object's triangle count a decimation pass has\n"
+"to remove for the result to be kept, as a percentage.\n"
+"Below it the pass is refused and the descent takes its next step\n"
+"instead, which is the bounding box. A rung that removes almost\n"
+"nothing is worse than not having one: it costs a node rewrite\n"
+"and still holds the memory that made the plan ask.\n"
+"This is also what stops the descent looping. Each step clusters\n"
+"on a coarser grid, so a mesh that has run out of things to merge\n"
+"keeps answering no and the object moves on to the box.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getSimplifyMinReduction() {
+    return instance()->SimplifyMinReduction;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultSimplifyMinReduction() {
+    const static double def = 20.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setSimplifyMinReduction(const double &v) {
+    instance()->handle->SetFloat("SimplifyMinReduction",v);
+    instance()->SimplifyMinReduction = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeSimplifyMinReduction() {
+    instance()->handle->RemoveFloat("SimplifyMinReduction");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
