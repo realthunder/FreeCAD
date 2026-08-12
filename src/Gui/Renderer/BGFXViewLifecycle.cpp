@@ -60,6 +60,13 @@ void BGFXView::destroySceneCaches()
     for (auto &v : geometries)
         v.second.destroy();
     geometries.clear();
+    // The white color stream and the count that gates its recreation go
+    // together. whiteColors() only rebuilds the buffer when a request
+    // exceeds the count, so a live count standing over a released handle
+    // is handed straight to bgfx as an invalid vertex buffer.
+    if (bgfx::isValid(whiteColorVb))
+        bgfx::destroy(whiteColorVb);
+    whiteColorVb = BGFX_INVALID_HANDLE;
     whiteColorCount = 0;
     for (auto &v : textures)
         v.second.destroy();

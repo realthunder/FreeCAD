@@ -2393,7 +2393,15 @@ public:
     template <typename Fn>
     void forEachHandle(Fn &&fn)
     {
-        fn(whiteColorVb, LifeSized);
+        // whiteColorVb is deliberately absent: it is the uploaded
+        // scene's white color stream, not a viewport-sized target, and
+        // destroySceneCaches() releases it together with the
+        // whiteColorCount that gates its recreation. Sweeping it as
+        // LifeSized split the two across buckets, and a keepShared init
+        // runs only destroyTargets(): the buffer died while the count
+        // still read 4096, so whiteColors() skipped the rebuild and
+        // handed a destroyed handle to the first mesh without vertex
+        // colors -- the water surface -- which is a bgfx fatal.
         // SSAO/debug-scene resources: framebuffers before the textures
         // they reference.
         fn(debugSceneFbo, LifeSized);
