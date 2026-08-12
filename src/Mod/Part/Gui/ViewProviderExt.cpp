@@ -58,6 +58,7 @@
 # include <QMenu>
 # include <deque>
 # include <map>
+# include <optional>
 # include <chrono>
 # include <sstream>
 
@@ -159,6 +160,185 @@ public:
 void initShapeInstancingGateObserver();  // PartParams.cpp
 
 namespace {
+
+/// Whether the level plan is narrating; the diagnostics below cost a
+/// walk of every face and are silent without it.
+bool levelDebugOn()
+{
+    static const bool env = std::getenv("FC_LEVEL_DEBUG") != nullptr;
+    return env || Gui::RenderParams::getLevelDebug();
+}
+
+/// Does the tessellation call in a rebuild actually TESSELLATE?
+///
+/// The comment at that call has always claimed a resident mesh makes it
+/// nearly free, and the phase split (#13d) measured it at 71% of a mass
+/// descent's GUI-thread time on shapes the refine pool had already
+/// meshed. One of those is wrong, and the difference decides the whole
+/// workstream: a call that rebuilds is a defect in what the descent
+/// hands over, while a call that merely validates expensively is an
+/// OCCT cost to be avoided rather than moved.
+///
+/// So this asks the shape itself, before and after: how many triangles
+/// it holds, and at what deflection. A count that moves is a rebuild.
+struct MeshCallProbe {
+    struct Stats {
+        std::size_t calls = 0, rebuilt = 0;
+        double timeRebuilt = 0, timeValidated = 0;
+        /// Last rebuild's evidence, so the report can say WHY rather
+        /// than only how often: what was asked, and the coarsest and
+        /// finest deflection standing when it was.
+        double lastAsked = 0, lastResidentMin = 0, lastResidentMax = 0;
+        std::size_t noTriangulation = 0;
+    };
+    static Stats &stats()
+    {
+        static Stats s;
+        return s;
+    }
+
+    const TopoDS_Shape &shape;
+    double asked;
+    bool active;
+    int trisBefore = 0, facesBefore = 0, facesTotal = 0;
+    double residentMin = 0.0, residentMax = 0.0;
+    std::chrono::high_resolution_clock::time_point start;
+
+    static void sample(const TopoDS_Shape &shape, int &tris, int &faces,
+                       int &total, double *dmin, double *dmax)
+    {
+        TopTools_IndexedMapOfShape faceMap;
+        TopExp::MapShapes(shape, TopAbs_FACE, faceMap);
+        total = faceMap.Extent();
+        for (int i = 1; i <= faceMap.Extent(); ++i) {
+            TopLoc_Location loc;
+            Handle(Poly_Triangulation) tri =
+                BRep_Tool::Triangulation(TopoDS::Face(faceMap(i)), loc);
+            if (tri.IsNull())
+                continue;
+            ++faces;
+            tris += tri->NbTriangles();
+            if (!dmin)
+                continue;
+            const double d = tri->Deflection();
+            *dmin = *dmin == 0.0 ? d : std::min(*dmin, d);
+            *dmax = std::max(*dmax, d);
+        }
+    }
+
+    MeshCallProbe(const TopoDS_Shape &s, double deflection)
+        : shape(s), asked(deflection), active(levelDebugOn())
+    {
+        if (!active)
+            return;
+        sample(shape, trisBefore, facesBefore, facesTotal,
+               &residentMin, &residentMax);
+        start = std::chrono::high_resolution_clock::now();
+    }
+
+    ~MeshCallProbe()
+    {
+        if (!active)
+            return;
+        const double spent = std::chrono::duration<double>(
+                std::chrono::high_resolution_clock::now() - start).count();
+        int trisAfter = 0, facesAfter = 0, total = 0;
+        sample(shape, trisAfter, facesAfter, total, nullptr, nullptr);
+        Stats &st = stats();
+        ++st.calls;
+        if (!facesBefore && facesTotal)
+            ++st.noTriangulation;
+        if (trisAfter != trisBefore || facesAfter != facesBefore) {
+            ++st.rebuilt;
+            st.timeRebuilt += spent;
+            st.lastAsked = asked;
+            st.lastResidentMin = residentMin;
+            st.lastResidentMax = residentMax;
+        }
+        else
+            st.timeValidated += spent;
+    }
+};
+
+/// Where a visual rebuild's time goes, reported only once it has become
+/// worth reporting (docs/SceneStreaming.md #13d).
+///
+/// A single build costs microseconds and a line per build would bury the
+/// run; a MASS DESCENT rebuilds thousands of objects and stalls the GUI
+/// thread for over a second, which is the thing being complained about.
+/// So this is a self-selecting reporter: it accumulates silently and
+/// speaks only when the cost since the last line has passed a threshold,
+/// which on a quiet session is never.
+///
+/// Every term is a DELTA since the last report, and the unattributed
+/// remainder is printed rather than left to be inferred -- a split whose
+/// parts do not add up to the whole is how a missing cost stays missing.
+struct VisualSplitReporter {
+    /// What was already reported, so each line describes its own window.
+    struct Mark {
+        double build = 0, mesh = 0, fill = 0, prologue = 0, instance = 0;
+        std::size_t count = 0;
+    };
+    static Mark &mark()
+    {
+        static Mark m;
+        return m;
+    }
+    /// Accumulated GUI-thread rebuild cost a line is worth, in seconds.
+    /// Well above any single build and well below the 1.6s frame this
+    /// exists to explain.
+    static constexpr double kReportThreshold = 0.2;
+
+    ~VisualSplitReporter()
+    {
+        using VP = Gui::ViewProvider;
+        if (!levelDebugOn())
+            return;
+        Mark &m = mark();
+        const double build = VP::VisualBuildTime.count() - m.build;
+        if (build < kReportThreshold)
+            return;
+        const double mesh = VP::VisualMeshTime.count() - m.mesh;
+        const double fill = VP::VisualFillTime.count() - m.fill;
+        const double prologue = VP::VisualPrologueTime.count() - m.prologue;
+        const double instance = VP::VisualInstanceTime.count() - m.instance;
+        const std::size_t count = VP::VisualBuildCount - m.count;
+        m = Mark{VP::VisualBuildTime.count(), VP::VisualMeshTime.count(),
+                 VP::VisualFillTime.count(), VP::VisualPrologueTime.count(),
+                 VP::VisualInstanceTime.count(), VP::VisualBuildCount};
+        // The traversal is what a worker thread could take; the mesh is
+        // already on the refine pool; the prologue and the instancing
+        // are GUI-thread work that threading would not touch at all.
+        const double traversal = fill - mesh;
+        Base::Console().Message(
+            "visual build: %zu builds in %.3fs = traversal %.3fs (%.0f%%) + "
+            "mesh %.3fs (%.0f%%) + prologue %.3fs (%.0f%%) + instancing "
+            "%.3fs (%.0f%%) + unattributed %.3fs (%.0f%%)\n",
+            count, build,
+            traversal, 100.0 * traversal / build,
+            mesh, 100.0 * mesh / build,
+            prologue, 100.0 * prologue / build,
+            instance, 100.0 * instance / build,
+            build - traversal - mesh - prologue - instance,
+            100.0 * (build - traversal - mesh - prologue - instance) / build);
+        // What that mesh term actually was. Reported beside the split
+        // rather than separately: the question "is the descent paying
+        // to re-tessellate what the pool already built" is only ever
+        // asked about this number.
+        MeshCallProbe::Stats &ms = MeshCallProbe::stats();
+        if (ms.calls) {
+            Base::Console().Message(
+                "visual build: mesh calls %zu, REBUILT %zu (%.3fs) vs "
+                "validated only %zu (%.3fs); %zu had no triangulation at "
+                "all; last rebuild asked %.6f, resident %.6f..%.6f\n",
+                ms.calls, ms.rebuilt, ms.timeRebuilt,
+                ms.calls - ms.rebuilt, ms.timeValidated,
+                ms.noTriangulation, ms.lastAsked, ms.lastResidentMin,
+                ms.lastResidentMax);
+            ms = MeshCallProbe::Stats();
+        }
+    }
+};
 
 /// The visual builds a document restore asked for and did not get. Held by
 /// weak handle: a slice may run long after the load, and the document may
@@ -3869,24 +4049,36 @@ void ViewProviderPartExt::updateVisual()
     if (deferVisualForLoad())
         return;
 
+    // Where a rebuild's time actually goes (#13d). Declared BEFORE the
+    // build timer so it is destroyed after it and sees this build's own
+    // cost, and it reports on every exit path this function has.
+    VisualSplitReporter splitReport;
     // A restore or a live import runs this thousands of times inside another
     // stage's timing; the accumulator is what makes that share visible.
     Gui::ViewProvider::VisualBuildTimer buildTimer;
 
-    Gui::SoUpdateVBOAction action;
-    action.apply(this->faceset);
+    {
+        // The prologue is work proportional to what is being DISCARDED --
+        // three action traversals over the nodes about to be refilled --
+        // so it is timed apart from the fill: a mass descent pays it once
+        // per object whether or not the new content is cheap.
+        Gui::ViewProvider::VisualBuildTimer prologueTimer(
+                Gui::ViewProvider::VisualPrologueTime, nullptr);
+        Gui::SoUpdateVBOAction action;
+        action.apply(this->faceset);
 
-    // Clear selection
-    Gui::SoSelectionElementAction saction(Gui::SoSelectionElementAction::None);
-    saction.apply(this->faceset);
-    saction.apply(this->lineset);
-    saction.apply(this->nodeset);
+        // Clear selection
+        Gui::SoSelectionElementAction saction(Gui::SoSelectionElementAction::None);
+        saction.apply(this->faceset);
+        saction.apply(this->lineset);
+        saction.apply(this->nodeset);
 
-    // Clear highlighting
-    Gui::SoHighlightElementAction haction;
-    haction.apply(this->faceset);
-    haction.apply(this->lineset);
-    haction.apply(this->nodeset);
+        // Clear highlighting
+        Gui::SoHighlightElementAction haction;
+        haction.apply(this->faceset);
+        haction.apply(this->lineset);
+        haction.apply(this->nodeset);
+    }
 
     // Drop any previous TShape-instanced representation; the qualifying
     // path rebuilds it below, every other path leaves only the flat
@@ -3954,6 +4146,11 @@ void ViewProviderPartExt::updateVisual()
     bool instancedOk = false;
     const bool standInResolved =
         cachedShape.getShape().TShape().get() == CoarseMeshTShape;
+    // Scoped to the ATTEMPT alone: a failed instanced build still costs
+    // its analysis, and lumping that into the flat fill below would
+    // report the fallback as expensive rather than the try.
+    std::optional<Gui::ViewProvider::VisualBuildTimer> instanceTimer(
+            std::in_place, Gui::ViewProvider::VisualInstanceTime, nullptr);
     try {
         if (!standInResolved)
             instancedOk = buildInstanced();
@@ -3970,6 +4167,7 @@ void ViewProviderPartExt::updateVisual()
         FC_ERR("Failed instanced representation for the shape of "
                << pcObject->getFullName());
     }
+    instanceTimer.reset();
     if (instancedOk) {
         VisualTouched = false;
         // The material has to be checked again (colors verified uniform)
@@ -4292,6 +4490,16 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
     std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
     TopLoc_Location aLoc;
 
+    // Everything this function does, tessellation INCLUDED -- the mesh
+    // accumulator nests inside this one, and the reporter subtracts it
+    // to state the traversal alone (#13d). The traversal is the
+    // candidate for the refine pool: a pure OCCT walk that happens to
+    // write its results straight into the display nodes' arrays, and
+    // knowing its share is what says whether moving it is worth the
+    // threading it would cost.
+    Gui::ViewProvider::VisualBuildTimer fillTimer(
+            Gui::ViewProvider::VisualFillTime, nullptr);
+
     {
         // The default-texture-coordinate projection frame comes from this
         // shape's own bounding box (for the flattened build that is the
@@ -4307,6 +4515,16 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             // resident (an instance sharing this TShape, a stand-in resolved
             // by the pool) makes this call nearly free, and only the split
             // says whether a bulk fill is paying for tessellation at all.
+            //
+            // ...and MEASURED, it is not nearly free: 71% of a mass
+            // descent's GUI-thread rebuild time was spent here, on shapes
+            // the refine pool had already meshed (#13d). So the claim
+            // above is now instrumented rather than asserted -- this
+            // says whether the call REBUILDS (triangle counts move) or
+            // merely validates, and what deflection it found resident
+            // against the one being asked for. Behind the level debug
+            // flag: it walks every face twice more.
+            MeshCallProbe probe(cShape, deflection);
             Gui::ViewProvider::VisualBuildTimer meshTimer(
                     Gui::ViewProvider::VisualMeshTime, nullptr);
 #if OCC_VERSION_HEX >= 0x070500
