@@ -2121,6 +2121,10 @@ void Application::initTypes()
     Gui::EditorView                             ::init();
     Gui::PythonEditorView                       ::init();
     // View Provider
+    // Properties whose storage redirects into ShapeAppearance
+    Gui::PropertyShapeColor                     ::init();
+    Gui::PropertyShapeMaterial                  ::init();
+
     Gui::ViewProvider                           ::init();
     Gui::ViewProviderExtension                  ::init();
     Gui::ViewProviderExtensionPython            ::init();

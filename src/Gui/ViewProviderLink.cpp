@@ -61,6 +61,7 @@
 #include <Base/Console.h>
 #include <Base/MatrixPy.h>
 #include <Base/PlacementPy.h>
+#include <Base/Reader.h>
 #include <Base/Tools.h>
 #include "Application.h"
 #include "ActionFunction.h"
@@ -2527,6 +2528,20 @@ void ViewProviderLink::checkIcon(const App::LinkBaseExtension *ext) {
         sPixmap = icon;
         signalChangeIcon();
     }
+}
+
+void ViewProviderLink::handleChangedPropertyName(Base::XMLReader &reader,
+                                                 const char *TypeName,
+                                                 const char *PropName)
+{
+    if (strcmp(PropName, "ShapeMaterial") == 0
+            && strcmp(TypeName, App::PropertyMaterial::getClassTypeId().getName()) == 0) {
+        App::PropertyMaterial prop;
+        prop.Restore(reader);
+        ShapeAppearance.setValue(prop.getValue());
+        return;
+    }
+    inherited::handleChangedPropertyName(reader, TypeName, PropName);
 }
 
 void ViewProviderLink::applyMaterial() {

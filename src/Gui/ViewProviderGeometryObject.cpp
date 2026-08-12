@@ -115,7 +115,17 @@ ViewProviderGeometryObject::ViewProviderGeometryObject()
     mat.diffuseColor.set(r, g, b);
     mat.transparency = Base::fromPercent(initialTransparency);
     ADD_PROPERTY_TYPE(ShapeAppearance, (mat), osgroup, App::Prop_None, "Shape appearance");
+    ADD_PROPERTY_TYPE(ShapeMaterial, (mat), osgroup, App::Prop_None, "Shape material");
+    // Retired as a store; kept only so old macros and old documents still
+    // land somewhere. One datum should not be two rows in the editor.
+    ShapeMaterial.setStatus(App::Property::Hidden, true);
     ADD_PROPERTY_TYPE(BoundingBox, (false), dogroup, App::Prop_None, "Display object bounding box");
+
+    // Both names write through to the appearance from here on. Wired after
+    // the ADD_PROPERTY calls above, whose own writes must not be redirected
+    // while the appearance is still being constructed.
+    ShapeColor.setAppearance(&ShapeAppearance);
+    ShapeMaterial.setAppearance(&ShapeAppearance);
 
     pcShapeMaterial = new SoMaterial;
     setCoinAppearance(mat);
@@ -160,10 +170,20 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
     // kept as their own properties because they are what the user reaches for.
     // The appearance holds the value; these two mirror entry 0 of it.
     if (prop == &ShapeColor) {
+        // The push lives here, not only in ShapeColor::setValue, because the
+        // base's setPyObject and Paste call setValue non-virtually and would
+        // otherwise update the mirror without ever reaching the appearance.
+        // Guarded, so the appearance mirroring back cannot ping-pong.
         const Base::Color &c = ShapeColor.getValue();
         pcShapeMaterial->diffuseColor.setValue(c.r, c.g, c.b);
         if (c != ShapeAppearance.getDiffuseColor(0))
             ShapeAppearance.setDiffuseColor(c);
+    }
+    else if (prop == &ShapeMaterial) {
+        const App::Material &mat = ShapeMaterial.getValue();
+        setCoinAppearance(mat);
+        if (!(mat == ShapeAppearance.getMaterial(0)))
+            ShapeAppearance.setValue(mat);
     }
     else if (prop == &Transparency) {
         long value = Base::toPercent(ShapeAppearance.getTransparency(0));
@@ -184,9 +204,11 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
         // (ViewProviderPartExt), so leave the node alone in that case.
         if (ShapeAppearance.getSize() == 1)
             setCoinAppearance(ShapeAppearance[0]);
-        Base::Color color = ShapeAppearance.getDiffuseColor(0);
-        if (color != ShapeColor.getValue())
-            ShapeColor.setValue(color);
+        // Refresh the two compatibility names off the appearance. mirrorValue,
+        // not setValue: these read from the store they would otherwise write
+        // straight back into.
+        ShapeColor.mirrorValue(ShapeAppearance.getDiffuseColor(0));
+        ShapeMaterial.mirrorValue(ShapeAppearance.getMaterial(0));
         Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &BoundingBox) {
@@ -203,6 +225,61 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
     ViewProviderDragger::onChanged(prop);
 }
 
+TYPESYSTEM_SOURCE(Gui::PropertyShapeColor, App::PropertyColor)
+TYPESYSTEM_SOURCE(Gui::PropertyShapeMaterial, App::PropertyMaterial)
+
+void PropertyShapeColor::setValue(const Base::Color &col)
+{
+    App::PropertyColor::setValue(col);
+    if (_appearance)
+        _appearance->setDiffuseColor(col);
+}
+
+void PropertyShapeColor::setValue(float r, float g, float b, float a)
+{
+    setValue(Base::Color(r, g, b, a));
+}
+
+void PropertyShapeColor::setValue(uint32_t rgba)
+{
+    Base::Color col;
+    col.setPackedValue(rgba);
+    setValue(col);
+}
+
+void PropertyShapeColor::applyToAppearance()
+{
+    // A per-face appearance is the more specific value and already restored:
+    // leave it alone rather than collapse or overwrite its first entry.
+    if (_appearance && _appearance->getDiffuseColors().size() <= 1)
+        _appearance->setDiffuseColor(getValue());
+}
+
+void PropertyShapeColor::Restore(Base::XMLReader &reader)
+{
+    App::PropertyColor::Restore(reader);
+    applyToAppearance();
+}
+
+void PropertyShapeMaterial::setValue(const App::Material &mat)
+{
+    App::PropertyMaterial::setValue(mat);
+    if (_appearance)
+        _appearance->setValue(mat);
+}
+
+void PropertyShapeMaterial::applyToAppearance()
+{
+    if (_appearance && _appearance->getSize() <= 1)
+        _appearance->setValue(getValue());
+}
+
+void PropertyShapeMaterial::Restore(Base::XMLReader &reader)
+{
+    App::PropertyMaterial::Restore(reader);
+    applyToAppearance();
+}
+
 void ViewProviderGeometryObject::setCoinAppearance(const App::Material &mat)
 {
     pcShapeMaterial->ambientColor.setValue(mat.ambientColor.r, mat.ambientColor.g, mat.ambientColor.b);
@@ -213,22 +290,32 @@ void ViewProviderGeometryObject::setCoinAppearance(const App::Material &mat)
     pcShapeMaterial->transparency.setValue(mat.transparency);
 }
 
-void ViewProviderGeometryObject::handleChangedPropertyName(Base::XMLReader &reader,
+void ViewProviderGeometryObject::handleChangedPropertyType(Base::XMLReader &reader,
                                                            const char *TypeName,
-                                                           const char *PropName)
+                                                           App::Property *prop)
 {
-    // Documents written before the appearance existed carry a ShapeMaterial.
-    // It is the same datum, so fold it in rather than let it restore as an
-    // unknown property and leave the object its constructed default.
-    if (strcmp(PropName, "ShapeMaterial") == 0
+    // ShapeColor and ShapeMaterial kept their names but changed type when
+    // their storage moved into ShapeAppearance, so a document written before
+    // that arrives here rather than at handleChangedPropertyName. Restore
+    // through a stand-in of the old type and fold the value in; without this
+    // the base does nothing and every such object silently loses its colour.
+    if (prop == &ShapeColor
+            && strcmp(TypeName, App::PropertyColor::getClassTypeId().getName()) == 0) {
+        App::PropertyColor old;
+        old.Restore(reader);
+        ShapeColor.mirrorValue(old.getValue());
+        ShapeColor.applyToAppearance();
+        return;
+    }
+    if (prop == &ShapeMaterial
             && strcmp(TypeName, App::PropertyMaterial::getClassTypeId().getName()) == 0) {
-        App::PropertyMaterial prop;
-        prop.Restore(reader);
-        ShapeAppearance.setValue(prop.getValue());
+        App::PropertyMaterial old;
+        old.Restore(reader);
+        ShapeMaterial.mirrorValue(old.getValue());
+        ShapeMaterial.applyToAppearance();
+        return;
     }
-    else {
-        ViewProviderDragger::handleChangedPropertyName(reader, TypeName, PropName);
-    }
+    ViewProviderDragger::handleChangedPropertyType(reader, TypeName, prop);
 }
 
 namespace {
