@@ -2886,6 +2886,16 @@ namespace {
  */
 constexpr uint32_t FieldStreamMarker = 0xffffffff;
 
+/// What a string field costs, its contents included
+std::size_t stringsMemSize(const std::vector<std::string> &field)
+{
+    std::size_t size = field.size() * sizeof(std::string);
+    for (const auto &value : field) {
+        size += value.size();
+    }
+    return size;
+}
+
 /// Resolve one entry of a field that may be 0, 1 or count long
 template<class T>
 inline const T &fieldAt(const std::vector<T> &values, int idx, const T &def)
@@ -2997,6 +3007,9 @@ void PropertyMaterialList::normalize()
         std::vector<Color>().swap(_emissive);
         std::vector<float>().swap(_shininess);
         std::vector<float>().swap(_transparency);
+        std::vector<std::string>().swap(_image);
+        std::vector<std::string>().swap(_imagePath);
+        std::vector<std::string>().swap(_uuid);
         std::vector<int8_t>().swap(_type);
     }
     else {
@@ -3006,6 +3019,9 @@ void PropertyMaterialList::normalize()
         collapseField(_emissive, def.emissiveColor);
         collapseField(_shininess, def.shininess);
         collapseField(_transparency, def.transparency);
+        collapseField(_image, def.image);
+        collapseField(_imagePath, def.imagePath);
+        collapseField(_uuid, def.uuid);
         collapseField(_type, static_cast<int8_t>(def.getType()));
     }
     _normalized = true;
@@ -3043,6 +3059,9 @@ void PropertyMaterialList::setSize(int newSize, const Material &def)
     resizeField(_emissive, _count, newSize, def.emissiveColor, zero.emissiveColor);
     resizeField(_shininess, _count, newSize, def.shininess, zero.shininess);
     resizeField(_transparency, _count, newSize, def.transparency, zero.transparency);
+    resizeField(_image, _count, newSize, def.image, zero.image);
+    resizeField(_imagePath, _count, newSize, def.imagePath, zero.imagePath);
+    resizeField(_uuid, _count, newSize, def.uuid, zero.uuid);
     resizeField(_type, _count, newSize, static_cast<int8_t>(def.getType()),
                 static_cast<int8_t>(zero.getType()));
     _count = newSize;
@@ -3061,6 +3080,9 @@ Material PropertyMaterialList::getMaterial(int idx) const
     mat.emissiveColor = fieldAt(_emissive, idx, mat.emissiveColor);
     mat.shininess = fieldAt(_shininess, idx, mat.shininess);
     mat.transparency = fieldAt(_transparency, idx, mat.transparency);
+    mat.image = fieldAt(_image, idx, mat.image);
+    mat.imagePath = fieldAt(_imagePath, idx, mat.imagePath);
+    mat.uuid = fieldAt(_uuid, idx, mat.uuid);
     mat.setType(static_cast<Material::MaterialType>(
                 fieldAt(_type, idx, static_cast<int8_t>(mat.getType()))));
     return mat;
@@ -3088,6 +3110,9 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
     std::vector<Color>().swap(_emissive);
     std::vector<float>().swap(_shininess);
     std::vector<float>().swap(_transparency);
+    std::vector<std::string>().swap(_image);
+    std::vector<std::string>().swap(_imagePath);
+    std::vector<std::string>().swap(_uuid);
     std::vector<int8_t>().swap(_type);
     if (_count) {
         _ambient.reserve(_count);
@@ -3096,6 +3121,9 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
         _emissive.reserve(_count);
         _shininess.reserve(_count);
         _transparency.reserve(_count);
+        _image.reserve(_count);
+        _imagePath.reserve(_count);
+        _uuid.reserve(_count);
         _type.reserve(_count);
         for (const auto &mat : values) {
             _ambient.push_back(mat.ambientColor);
@@ -3104,6 +3132,9 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
             _emissive.push_back(mat.emissiveColor);
             _shininess.push_back(mat.shininess);
             _transparency.push_back(mat.transparency);
+            _image.push_back(mat.image);
+            _imagePath.push_back(mat.imagePath);
+            _uuid.push_back(mat.uuid);
             _type.push_back(static_cast<int8_t>(mat.getType()));
         }
         normalize();
@@ -3137,6 +3168,9 @@ void PropertyMaterialList::set1Value(int idx, const Material &mat)
         setFieldAt(_emissive, idx, _count, mat.emissiveColor, def.emissiveColor);
         setFieldAt(_shininess, idx, _count, mat.shininess, def.shininess);
         setFieldAt(_transparency, idx, _count, mat.transparency, def.transparency);
+        setFieldAt(_image, idx, _count, mat.image, def.image);
+        setFieldAt(_imagePath, idx, _count, mat.imagePath, def.imagePath);
+        setFieldAt(_uuid, idx, _count, mat.uuid, def.uuid);
         setFieldAt(_type, idx, _count, static_cast<int8_t>(mat.getType()),
                    static_cast<int8_t>(def.getType()));
     }
@@ -3175,6 +3209,21 @@ float PropertyMaterialList::getShininess(int idx) const
 float PropertyMaterialList::getTransparency(int idx) const
 {
     return fieldAt(_transparency, idx, defaultMaterial().transparency);
+}
+
+const std::string &PropertyMaterialList::getImage(int idx) const
+{
+    return fieldAt(_image, idx, defaultMaterial().image);
+}
+
+const std::string &PropertyMaterialList::getImagePath(int idx) const
+{
+    return fieldAt(_imagePath, idx, defaultMaterial().imagePath);
+}
+
+const std::string &PropertyMaterialList::getUuid(int idx) const
+{
+    return fieldAt(_uuid, idx, defaultMaterial().uuid);
 }
 
 Material::MaterialType PropertyMaterialList::getType(int idx) const
@@ -3232,9 +3281,24 @@ void PropertyMaterialList::setShininessValues(const std::vector<float> &values)
     setField(_shininess, values, defaultMaterial().shininess);
 }
 
-void PropertyMaterialList::setTransparencyValues(const std::vector<float> &values)
+void PropertyMaterialList::setTransparencies(const std::vector<float> &values)
 {
     setField(_transparency, values, defaultMaterial().transparency);
+}
+
+void PropertyMaterialList::setImages(const std::vector<std::string> &values)
+{
+    setField(_image, values, defaultMaterial().image);
+}
+
+void PropertyMaterialList::setImagePaths(const std::vector<std::string> &values)
+{
+    setField(_imagePath, values, defaultMaterial().imagePath);
+}
+
+void PropertyMaterialList::setUuids(const std::vector<std::string> &values)
+{
+    setField(_uuid, values, defaultMaterial().uuid);
 }
 
 /// Write one entry of one field, growing the list if it names a new entry
@@ -3291,6 +3355,21 @@ void PropertyMaterialList::setTransparency(int idx, float value)
     setFieldValue(_transparency, idx, value, defaultMaterial().transparency);
 }
 
+void PropertyMaterialList::setImage(int idx, const std::string &value)
+{
+    setFieldValue(_image, idx, value, defaultMaterial().image);
+}
+
+void PropertyMaterialList::setImagePath(int idx, const std::string &value)
+{
+    setFieldValue(_imagePath, idx, value, defaultMaterial().imagePath);
+}
+
+void PropertyMaterialList::setUuid(int idx, const std::string &value)
+{
+    setFieldValue(_uuid, idx, value, defaultMaterial().uuid);
+}
+
 /// Give every entry the same value for one field, and none of it to storage
 template<class T>
 void PropertyMaterialList::setUniformField(std::vector<T> &field, const T &value, const T &def)
@@ -3342,6 +3421,21 @@ void PropertyMaterialList::setTransparency(float value)
 
 //**************************************************************************
 // Base class implementer
+
+void PropertyMaterialList::setImage(const std::string &value)
+{
+    setUniformField(_image, value, defaultMaterial().image);
+}
+
+void PropertyMaterialList::setImagePath(const std::string &value)
+{
+    setUniformField(_imagePath, value, defaultMaterial().imagePath);
+}
+
+void PropertyMaterialList::setUuid(const std::string &value)
+{
+    setUniformField(_uuid, value, defaultMaterial().uuid);
+}
 
 PyObject *PropertyMaterialList::getPyObject()
 {
@@ -3401,7 +3495,9 @@ unsigned int PropertyMaterialList::getMemSize() const
             (_ambient.size() + _diffuse.size() + _specular.size() + _emissive.size())
                 * sizeof(Color)
             + (_shininess.size() + _transparency.size()) * sizeof(float)
-            + _type.size() * sizeof(int8_t));
+            + _type.size() * sizeof(int8_t)
+            + stringsMemSize(_image) + stringsMemSize(_imagePath)
+            + stringsMemSize(_uuid));
 }
 
 unsigned int PropertyMaterialList::getSaveSize(Base::Writer &writer) const
@@ -3425,7 +3521,11 @@ unsigned int PropertyMaterialList::getSaveSize(Base::Writer &writer) const
 bool PropertyMaterialList::saveXML(Base::Writer &writer) const
 {
     ensureNormalized();
-    if (writer.getSchemaVersion() >= 6)
+    // The per field form also when a string has to survive: the inline form
+    // is fork-only at every schema -- upstream's reader looks for a file
+    // attribute and ignores a count -- so there is nothing to lose by using
+    // the encoding that can carry them, and data to lose by not.
+    if (writer.getSchemaVersion() >= 6 || hasTextureOrCard())
         return saveFieldXML(writer);
 
     writer.Stream() << ">\n" << std::hex;
@@ -3500,10 +3600,60 @@ void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
     setValues(std::move(values));
 }
 
+/** The element, and whether it promises a second pass
+ *
+ * Upstream reads a material list only out of its own archive entry, and
+ * knows the strings are there only because the element says version="3".
+ * So when there is something to say -- a texture or a material card, which
+ * nothing in this fork produces yet -- say it their way, in their file
+ * shape, and let their reader have it too. With the strings empty, which is
+ * every document today, this writes exactly what it always did.
+ */
+void PropertyMaterialList::Save(Base::Writer &writer) const
+{
+    ensureNormalized();
+    if (writer.getSchemaVersion() < 6 && hasTextureOrCard() && !writer.isForceXML()
+            && canSaveStream(writer)) {
+        writer.Stream() << writer.ind() << '<' << xmlName() << " file=\""
+                        << (getSize()
+                                ? writer.addFile(
+                                        getFileName(writer.isPreferBinary() ? ".bin" : ".txt"),
+                                        this)
+                                : "")
+                        << "\" version=\"3\"/>\n";
+        return;
+    }
+    PropertyLists::Save(writer);
+}
+
+void PropertyMaterialList::Restore(Base::XMLReader &reader)
+{
+    reader.readElement(xmlName());
+    // Remembered for RestoreDocFile, which is called later and separately
+    _fileVersion = reader.hasAttribute("version")
+        ? static_cast<int>(reader.getAttributeAsInteger("version"))
+        : 0;
+    std::string file(reader.getAttribute("file", ""));
+    if (!file.empty()) {
+        reader.addFile(file.c_str(), this);
+    }
+    else if (reader.hasAttribute("count")) {
+        restoreXML(reader);
+    }
+    else if (getSize()) {
+        setSize(0);
+    }
+}
+
 void PropertyMaterialList::SaveDocFile(Base::Writer &writer) const
 {
     if (writer.getSchemaVersion() < 6) {
-        PropertyLists::SaveDocFile(writer);
+        Base::OutputStream str(writer.Stream(), writer.isPreferBinary());
+        str << static_cast<uint32_t>(_count);
+        saveStream(str);
+        if (hasTextureOrCard()) {
+            saveStringStream(str);
+        }
         return;
     }
     ensureNormalized();
@@ -3524,7 +3674,42 @@ void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
     }
     else {
         restoreStream(str, uCt);
+        // Version 3 is the colours we have always read, followed by three
+        // strings per entry. Written by upstream, and by this fork when it
+        // has any to write.
+        if (_fileVersion >= 3) {
+            restoreStringStream(str, uCt);
+        }
     }
+}
+
+/// Upstream's second pass: image, imagePath and uuid, entry by entry
+void PropertyMaterialList::saveStringStream(Base::OutputStream &str) const
+{
+    for (int i = 0; i < _count; ++i) {
+        str << getImage(i);
+        str << getImagePath(i);
+        str << getUuid(i);
+    }
+}
+
+void PropertyMaterialList::restoreStringStream(Base::InputStream &str, unsigned uCt)
+{
+    atomic_change guard(*this);
+    touchFields();
+    std::vector<std::string> image(uCt);
+    std::vector<std::string> imagePath(uCt);
+    std::vector<std::string> uuid(uCt);
+    for (unsigned i = 0; i < uCt; ++i) {
+        str >> image[i];
+        str >> imagePath[i];
+        str >> uuid[i];
+    }
+    _image.swap(image);
+    _imagePath.swap(imagePath);
+    _uuid.swap(uuid);
+    normalize();
+    guard.tryInvoke();
 }
 
 namespace {
@@ -3538,13 +3723,16 @@ enum FieldBit {
     FieldShininess = 1 << 4,
     FieldTransparency = 1 << 5,
     FieldType = 1 << 6,
+    FieldImage = 1 << 7,
+    FieldImagePath = 1 << 8,
+    FieldUuid = 1 << 9,
 };
 
 } // namespace
 
 void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
 {
-    uint8_t mask = 0;
+    uint16_t mask = 0;
     if (!_ambient.empty())      mask |= FieldAmbient;
     if (!_diffuse.empty())      mask |= FieldDiffuse;
     if (!_specular.empty())     mask |= FieldSpecular;
@@ -3552,6 +3740,9 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     if (!_shininess.empty())    mask |= FieldShininess;
     if (!_transparency.empty()) mask |= FieldTransparency;
     if (!_type.empty())         mask |= FieldType;
+    if (!_image.empty())        mask |= FieldImage;
+    if (!_imagePath.empty())    mask |= FieldImagePath;
+    if (!_uuid.empty())         mask |= FieldUuid;
     str << mask;
 
     auto writeColors = [&str](const std::vector<Color> &field) {
@@ -3580,6 +3771,18 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
         for (int8_t value : _type)
             str << value;
     }
+    // std::string over this stream is already a length and its bytes, which
+    // is the same shape upstream writes its strings in
+    auto writeStrings = [&str](const std::vector<std::string> &field) {
+        if (field.empty())
+            return;
+        str << static_cast<uint32_t>(field.size());
+        for (const auto &value : field)
+            str << value;
+    };
+    writeStrings(_image);
+    writeStrings(_imagePath);
+    writeStrings(_uuid);
 }
 
 void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned uCt)
@@ -3589,7 +3792,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     _touchList.clear();
     _count = static_cast<int>(uCt);
 
-    uint8_t mask = 0;
+    uint16_t mask = 0;
     str >> mask;
 
     auto readColors = [&str, uCt](std::vector<Color> &field, bool present) {
@@ -3636,6 +3839,21 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
         for (auto &value : _type)
             str >> value;
     }
+    auto readStrings = [&str, uCt](std::vector<std::string> &field, bool present) {
+        std::vector<std::string>().swap(field);
+        if (!present)
+            return;
+        uint32_t count = 0;
+        str >> count;
+        if (count != 1 && count != uCt)
+            throw Base::FileException("material field length does not match the list");
+        field.resize(count);
+        for (auto &value : field)
+            str >> value;
+    };
+    readStrings(_image, (mask & FieldImage) != 0);
+    readStrings(_imagePath, (mask & FieldImagePath) != 0);
+    readStrings(_uuid, (mask & FieldUuid) != 0);
     _normalized = true;
     guard.tryInvoke();
 }
@@ -3678,6 +3896,30 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
             writer.Stream() << ' ' << static_cast<int>(value);
         writer.Stream() << '\n';
     }
+    // Hex, because these are file paths and identifiers: a space would end
+    // the token and an angle bracket would end the element. An empty string
+    // is a lone '-', which no hex byte can be mistaken for.
+    auto writeStrings = [&writer](char key, const std::vector<std::string> &field) {
+        if (field.empty())
+            return;
+        writer.Stream() << key << ' ' << field.size();
+        for (const auto &value : field) {
+            writer.Stream() << ' ';
+            if (value.empty()) {
+                writer.Stream() << '-';
+                continue;
+            }
+            writer.Stream() << std::hex;
+            for (unsigned char byte : value) {
+                writer.Stream() << (byte >> 4) << (byte & 0xf);
+            }
+            writer.Stream() << std::dec;
+        }
+        writer.Stream() << '\n';
+    };
+    writeStrings('i', _image);
+    writeStrings('p', _imagePath);
+    writeStrings('u', _uuid);
     return false;
 }
 
@@ -3693,6 +3935,9 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
     std::vector<Color>().swap(_emissive);
     std::vector<float>().swap(_shininess);
     std::vector<float>().swap(_transparency);
+    std::vector<std::string>().swap(_image);
+    std::vector<std::string>().swap(_imagePath);
+    std::vector<std::string>().swap(_uuid);
     std::vector<int8_t>().swap(_type);
 
     auto &s = reader.beginCharStream();
@@ -3727,6 +3972,26 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
         case 'e': readColors(_emissive); break;
         case 'h': readFloats(_shininess); break;
         case 't': readFloats(_transparency); break;
+        case 'i':
+        case 'p':
+        case 'u': {
+            auto &field = key[0] == 'i' ? _image : (key[0] == 'p' ? _imagePath : _uuid);
+            field.resize(count);
+            std::string token;
+            for (auto &value : field) {
+                if (!(s >> token) || token == "-") {
+                    continue;
+                }
+                if (token.size() % 2 != 0)
+                    throw Base::FileException("odd-length hex in a material string");
+                value.resize(token.size() / 2);
+                for (std::size_t i = 0; i < value.size(); ++i) {
+                    value[i] = static_cast<char>(
+                            std::stoi(token.substr(i * 2, 2), nullptr, 16));
+                }
+            }
+            break;
+        }
         case 'y': {
             _type.resize(count);
             int value = 0;
@@ -3767,6 +4032,9 @@ bool PropertyMaterialList::isSame(const Property &other) const
         && _emissive == list->_emissive
         && _shininess == list->_shininess
         && _transparency == list->_transparency
+        && _image == list->_image
+        && _imagePath == list->_imagePath
+        && _uuid == list->_uuid
         && _type == list->_type;
 }
 
@@ -3781,6 +4049,9 @@ Property *PropertyMaterialList::Copy() const
     p->_emissive = _emissive;
     p->_shininess = _shininess;
     p->_transparency = _transparency;
+    p->_image = _image;
+    p->_imagePath = _imagePath;
+    p->_uuid = _uuid;
     p->_type = _type;
     return p;
 }
@@ -3799,6 +4070,9 @@ void PropertyMaterialList::Paste(const Property &from)
     _emissive = other._emissive;
     _shininess = other._shininess;
     _transparency = other._transparency;
+    _image = other._image;
+    _imagePath = other._imagePath;
+    _uuid = other._uuid;
     _type = other._type;
     _normalized = true;
     guard.tryInvoke();

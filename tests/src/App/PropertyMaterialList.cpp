@@ -49,6 +49,16 @@ App::Material redMaterial()
     return mat;
 }
 
+App::Material texturedMaterial()
+{
+    App::Material mat;
+    mat.diffuseColor = packed(0x0000ffff);
+    mat.image = std::string("PNG\x01\x02", 5);  // bytes, not text
+    mat.imagePath = "/home/someone/textures/oak <old>.png";
+    mat.uuid = "f0e1d2c3-b4a5-6978-8a9b-0c1d2e3f4050";
+    return mat;
+}
+
 App::Material fullyPaintedMaterial()
 {
     App::Material mat;
@@ -150,7 +160,7 @@ TEST_F(PropertyMaterialListTest, uniformListCollapsesToOneOfEachField)
     EXPECT_TRUE(prop.getSpecularColors().empty());
     EXPECT_TRUE(prop.getEmissiveColors().empty());
     EXPECT_TRUE(prop.getShininessValues().empty());
-    EXPECT_TRUE(prop.getTransparencyValues().empty());
+    EXPECT_TRUE(prop.getTransparencies().empty());
     EXPECT_EQ(prop.getMemSize(), sizeof(App::Color));
 
     // and every entry still reads as that material
@@ -444,4 +454,135 @@ TEST_F(PropertyMaterialListTest, saveSizeAnswersForTheEncodingBeingWritten)
     // decides between an inline list and an archive entry has to hear that
     writer.setSchemaVersion(5);
     EXPECT_EQ(prop.getSaveSize(writer), 1000U * 24U);
+}
+
+TEST_F(PropertyMaterialListTest, texturesAndCardsCollapseLikeEveryOtherField)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(200, texturedMaterial()));
+
+    EXPECT_EQ(prop.getSize(), 200);
+    EXPECT_EQ(prop.getImages().size(), 1U);
+    EXPECT_EQ(prop.getImagePaths().size(), 1U);
+    EXPECT_EQ(prop.getUuids().size(), 1U);
+    EXPECT_EQ(prop.getUuid(199), texturedMaterial().uuid);
+
+    prop.setUuid(7, "another-card");
+    EXPECT_EQ(prop.getUuids().size(), 200U);
+    EXPECT_EQ(prop.getUuid(7), "another-card");
+    EXPECT_EQ(prop.getUuid(8), texturedMaterial().uuid);
+    // the other two did not have to grow
+    EXPECT_EQ(prop.getImages().size(), 1U);
+}
+
+TEST_F(PropertyMaterialListTest, aTexturePathSurvivesTheXMLForm)
+{
+    // spaces and angle brackets in a path, and bytes that are not text in an
+    // embedded image: the inline form has to carry them intact
+    App::PropertyMaterialList prop;
+    std::vector<App::Material> values {texturedMaterial(), App::Material()};
+    prop.setValues(values);
+
+    const std::string xml = saveToXML(prop, 5);
+    EXPECT_NE(xml.find("fields=\"1\""), std::string::npos) << xml;
+
+    App::PropertyMaterialList restored;
+    restoreFromXML(restored, xml);
+    expectEntries(restored, values);
+    EXPECT_EQ(restored.getImagePath(0), texturedMaterial().imagePath);
+}
+
+TEST_F(PropertyMaterialListTest, stringsRideTheCompactDocFile)
+{
+    App::PropertyMaterialList prop;
+    std::vector<App::Material> values(50, texturedMaterial());
+    values[3].uuid = "odd-one-out";
+    prop.setValues(values);
+
+    App::PropertyMaterialList restored;
+    restoreDocFile(restored, saveDocFile(prop, 6));
+    expectEntries(restored, values);
+}
+
+TEST_F(PropertyMaterialListTest, aFileWithStringsIsWrittenAsUpstreamsVersionThree)
+{
+    App::PropertyMaterialList prop;
+    std::vector<App::Material> values {texturedMaterial(), redMaterial()};
+    prop.setValues(values);
+
+    // the element has to say version="3", because that is the only way
+    // upstream's reader knows a second pass follows
+    Base::StringWriter element;
+    element.setSchemaVersion(5);
+    element.setPreferBinary(true);
+    element.setForceXML(0);  // a StringWriter forces XML unless told otherwise
+    prop.Save(element);
+    EXPECT_NE(element.getString().find("version=\"3\""), std::string::npos)
+        << element.getString();
+    EXPECT_NE(element.getString().find("file="), std::string::npos);
+
+    // and round trips through it
+    Base::StringWriter file;
+    file.setSchemaVersion(5);
+    file.setPreferBinary(true);
+    file.setForceXML(0);
+    prop.SaveDocFile(file);
+
+    App::PropertyMaterialList restored;
+    restoreFromXML(restored, element.getString());
+    std::istringstream stream(file.getString());
+    Base::Reader reader(stream, "material.bin");
+    restored.RestoreDocFile(reader);
+    expectEntries(restored, values);
+}
+
+TEST_F(PropertyMaterialListTest, readsAFileLaidOutTheWayUpstreamWritesIt)
+{
+    // Built byte by byte rather than with our own writer, because the claim
+    // is about their layout: a count, then four packed colours, shininess
+    // and transparency per entry, then a second pass of three
+    // length-prefixed strings per entry.
+    std::string bytes;
+    auto putU32 = [&bytes](uint32_t value) {
+        bytes.append(reinterpret_cast<const char*>(&value), sizeof(value));
+    };
+    auto putFloat = [&bytes](float value) {
+        bytes.append(reinterpret_cast<const char*>(&value), sizeof(value));
+    };
+    auto putString = [&bytes, &putU32](const std::string& value) {
+        putU32(static_cast<uint32_t>(value.size()));
+        bytes.append(value);
+    };
+
+    putU32(2);  // count
+    for (int i = 0; i < 2; ++i) {
+        putU32(0x11223344);            // ambient
+        putU32(i == 0 ? 0xff0000ffU : 0x00ff00ffU);  // diffuse
+        putU32(0x99aabbcc);            // specular
+        putU32(0xddeeff00);            // emissive
+        putFloat(0.5F);                // shininess
+        putFloat(0.25F);               // transparency
+    }
+    putString("");
+    putString("/tex/one.png");
+    putString("card-1");
+    putString("");
+    putString("");
+    putString("");
+
+    App::PropertyMaterialList prop;
+    restoreFromXML(prop, "<MaterialList file=\"m.bin\" version=\"3\"/>\n");
+    std::istringstream stream(bytes);
+    Base::Reader reader(stream, "m.bin");
+    prop.RestoreDocFile(reader);
+
+    ASSERT_EQ(prop.getSize(), 2);
+    EXPECT_TRUE(prop.getDiffuseColor(0) == packed(0xff0000ff));
+    EXPECT_TRUE(prop.getDiffuseColor(1) == packed(0x00ff00ff));
+    EXPECT_FLOAT_EQ(prop.getShininess(1), 0.5F);
+    EXPECT_EQ(prop.getImagePath(0), "/tex/one.png");
+    EXPECT_EQ(prop.getUuid(0), "card-1");
+    EXPECT_TRUE(prop.getImagePath(1).empty());
+    // the ambient colour was uniform in the file and is stored once
+    EXPECT_EQ(prop.getAmbientColors().size(), 1U);
 }

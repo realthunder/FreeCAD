@@ -24,6 +24,8 @@
 #ifndef APP_MATERIAL_H
 #define APP_MATERIAL_H
 
+#include <string>
+
 #include <App/Color.h>
 
 namespace App
@@ -122,14 +124,36 @@ public:
     Color emissiveColor; /**< Defines the emissive color. */
     float shininess;
     float transparency;
+    /** @name Texture and material-card identity, upstream's fields
+     *
+     * Nothing in this fork writes them yet. They are here so that a
+     * document written by upstream survives a round trip through it, and so
+     * that the day a reader does produce them -- glTF carries both a
+     * texture and a material identity -- there is somewhere to put them.
+     * Empty on every object until then, which is why the appearance
+     * property stores them as fields that cost nothing at size zero.
+     */
+    //@{
+    std::string image;
+    std::string imagePath;
+    std::string uuid;
+    //@}
     //@}
 
     bool operator==(const Material& m) const
     {
+        // Two appearances naming the same material card are the same
+        // appearance whatever their colours currently say, which is how
+        // upstream defines it: the card is the identity and the colours are
+        // a rendering of it. Inert here until something sets a uuid.
+        if (!uuid.empty() && uuid == m.uuid) {
+            return true;
+        }
         return _matType==m._matType && shininess==m.shininess &&
             transparency==m.transparency && ambientColor==m.ambientColor &&
             diffuseColor==m.diffuseColor && specularColor==m.specularColor &&
-            emissiveColor==m.emissiveColor;
+            emissiveColor==m.emissiveColor &&
+            image==m.image && imagePath==m.imagePath;
     }
     bool operator!=(const Material& m) const
     {

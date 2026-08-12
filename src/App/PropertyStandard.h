@@ -1182,6 +1182,8 @@ public:
     Material operator[](int idx) const { return getMaterial(idx); }
     Material getMaterial(int idx) const;
     void set1Value(int idx, const Material &mat);
+    /// upstream's spelling of set1Value, so their call sites port unchanged
+    void setValue(int idx, const Material &mat) { set1Value(idx, mat); }
     //@}
 
     /** @name Per field access
@@ -1197,7 +1199,10 @@ public:
     const std::vector<Color> &getSpecularColors() const { return _specular; }
     const std::vector<Color> &getEmissiveColors() const { return _emissive; }
     const std::vector<float> &getShininessValues() const { return _shininess; }
-    const std::vector<float> &getTransparencyValues() const { return _transparency; }
+    const std::vector<float> &getTransparencies() const { return _transparency; }
+    const std::vector<std::string> &getImages() const { return _image; }
+    const std::vector<std::string> &getImagePaths() const { return _imagePath; }
+    const std::vector<std::string> &getUuids() const { return _uuid; }
 
     Color getAmbientColor(int idx) const;
     Color getDiffuseColor(int idx) const;
@@ -1205,6 +1210,9 @@ public:
     Color getEmissiveColor(int idx) const;
     float getShininess(int idx) const;
     float getTransparency(int idx) const;
+    const std::string &getImage(int idx) const;
+    const std::string &getImagePath(int idx) const;
+    const std::string &getUuid(int idx) const;
     Material::MaterialType getType(int idx) const;
 
     void setAmbientColors(const std::vector<Color> &colors);
@@ -1212,7 +1220,10 @@ public:
     void setSpecularColors(const std::vector<Color> &colors);
     void setEmissiveColors(const std::vector<Color> &colors);
     void setShininessValues(const std::vector<float> &values);
-    void setTransparencyValues(const std::vector<float> &values);
+    void setTransparencies(const std::vector<float> &values);
+    void setImages(const std::vector<std::string> &values);
+    void setImagePaths(const std::vector<std::string> &values);
+    void setUuids(const std::vector<std::string> &values);
 
     /// Set one field of one entry, expanding that field alone if it has to
     void setAmbientColor(int idx, const Color &col);
@@ -1221,6 +1232,9 @@ public:
     void setEmissiveColor(int idx, const Color &col);
     void setShininess(int idx, float value);
     void setTransparency(int idx, float value);
+    void setImage(int idx, const std::string &value);
+    void setImagePath(int idx, const std::string &value);
+    void setUuid(int idx, const std::string &value);
 
     /// Set one field for every entry, leaving the others alone
     void setAmbientColor(const Color &col);
@@ -1229,7 +1243,13 @@ public:
     void setEmissiveColor(const Color &col);
     void setShininess(float value);
     void setTransparency(float value);
+    void setImage(const std::string &value);
+    void setImagePath(const std::string &value);
+    void setUuid(const std::string &value);
     //@}
+
+    /// Whether any entry names a texture or a material card
+    bool hasTextureOrCard() const { return !_image.empty() || !_imagePath.empty() || !_uuid.empty(); }
 
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
@@ -1250,6 +1270,8 @@ public:
     unsigned int getMemSize() const override;
     unsigned int getSaveSize(Base::Writer &writer) const override;
 
+    void Save(Base::Writer &writer) const override;
+    void Restore(Base::XMLReader &reader) override;
     void SaveDocFile(Base::Writer &writer) const override;
     void RestoreDocFile(Base::Reader &reader) override;
 
@@ -1268,6 +1290,10 @@ protected:
     void restoreFieldStream(Base::InputStream &str, unsigned count);
     bool saveFieldXML(Base::Writer &writer) const;
     void restoreFieldXML(Base::XMLReader &reader, unsigned count);
+
+    /// Upstream's second pass: three strings per entry, after the colours
+    void saveStringStream(Base::OutputStream &str) const;
+    void restoreStringStream(Base::InputStream &str, unsigned count);
 
 private:
     /// Collapse every field to 0, 1 or _count. Idempotent, and lazy.
@@ -1289,6 +1315,9 @@ private:
     std::vector<Color> _emissive;
     std::vector<float> _shininess;
     std::vector<float> _transparency;
+    std::vector<std::string> _image;
+    std::vector<std::string> _imagePath;
+    std::vector<std::string> _uuid;
     /** Material::MaterialType, which operator== compares
      *
      * The compatible encoding has never carried it and still does not, so a
@@ -1296,6 +1325,14 @@ private:
      * as it always has. The per field encoding does carry it.
      */
     std::vector<int8_t> _type;
+
+    /** Which shape the doc file being read is in
+     *
+     * Upstream states it on the element as version="3" and it means the
+     * colours are followed by a second pass of strings. Absent, or on a
+     * file this fork wrote at schema 5, there is no second pass.
+     */
+    int _fileVersion {0};
 
     mutable bool _normalized {true};
 };
