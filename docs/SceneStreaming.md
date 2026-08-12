@@ -3312,9 +3312,16 @@ correlation is not a tendency but an identity:
 | ...of which resident was finer than the ask | 2731 |
 | **...on an object whose tessellation was already SPENT** | **2787 (100%)** |
 
+/!\ /!\ **THE 100% ROW IS RETRACTED -- see 13f.** The counter read a
+local variable shadowing the flag it was named for, so it tracked
+`missed` one for one by construction. "An identity, not a tendency" was
+the bug's own signature, published as strength of evidence. Re-taken
+with the counter fixed, the share is **63%** -- a majority, not an
+identity -- and the split proposed below must be re-judged against that.
+
 **Every single refused-but-redundant call is on an object the descent
 had already proved it could not coarsen.** Not 94%, not "mostly" -- all
-of them.
+of them. *(Retracted -- see above and 13f.)*
 
 That is the shape of the remaining work, and it is **not** a policy
 choice about fidelity: a call that provably cannot coarsen anything is
@@ -3332,3 +3339,79 @@ that convicted the accept-finer rule. **Split the flag before acting on
 it**, and audit the two populations separately: the prize is whatever
 share of the 2787 is the first kind, and it is claimable with no memory
 cost at all.
+
+### 13f -- corrections from a code review, and the re-taken number
+
+A full review of this workstream (2026-08-12) found five defects; four
+are fixed, and one retracts the measurement 13e's next step was resting
+on. They are recorded together because four of them are the same
+disease at different depths: **one slot carrying two meanings, or one
+fact stated in two places that could disagree.**
+
+#### the counter behind "2787 of 2787" was a tautology
+
+`MeshCallProbe` holds `bool spent` -- whether the object had already
+proved it cannot coarsen. Its destructor declared `const double spent =
+<elapsed seconds>`, shadowing the member, and the tally read the local:
+elapsed time is never zero, so `refusedSpent == missed` on every run
+that could ever be taken. The published identity measured nothing.
+
+Re-taken with the counter fixed (audit arm, skip off, rack model, 64MB,
+converged BY SILENCE after 446s at 42.1MB / 110.34px, the 13f fixes
+below in):
+
+| refused-but-redundant | calls |
+|---|---|
+| total | 2487 |
+| on a SPENT object | **1566 (63%)** |
+| on an object still descending | 921 (37%) |
+| refusal reason: resident finer than the ask | 2465 of 2487 |
+| widest deflection miss exactly x2.00 | 305 of 345 report windows |
+
+Two things follow. The flag split 13e proposed is still worth having --
+63% is a real majority -- but it is no longer "claimable in full with no
+memory cost", and the (a)-proof vs (b)-box-choice sub-populations still
+need their own counter before anything is skipped. And the geometric
+tail (misses of x4, x16, x548) did not reproduce: the dominant miss is
+exactly ONE doubling, consistent with the state fixes below having
+removed the divergence that let the ask walk away from the mesh.
+
+#### the ceiling demote that was not free
+
+`dropHiddenLevels`'s contract is "nothing on screen changes", but it
+selected on `publishedError > 0 && hooks.demote`, and the demote slot
+also carries the dynamic-scale descent -- a VISIBLE one-rung
+re-tessellation -- for coarse sources with no hidden finer rung. The
+ceiling epoch is sticky and the caller runs the drop on every plan
+pass, so one real CPU-memory ceiling walked the whole scene to its
+boxes, unpriced and camera-blind, bypassing exactly the pricing
+planMeshDemotes exists to do. `LevelHooks::demoteDropsHiddenRung` now
+says which move the slot holds, and the ceiling drop fires only the
+free one.
+
+#### the state and the display must agree
+
+Three places the ladder's state could diverge from what was drawn, each
+ending in a wrong render or an inline GUI-thread re-tessellation:
+
+- the dynamic-scale identity reset ran AFTER the bounding-box stand-in
+  gate, so an edited object the descent had boxed was re-boxed on flags
+  proved against a TShape that no longer exists (under pressure the
+  gate skips every guard that would have noticed). The reset now runs
+  before the flags' first reader;
+- climbing out of a pressure box cleared the flags but kept the doubled
+  `MeshErrorScale`, so the rebuild refused the worker's rung-1x mesh
+  and re-tessellated inline. The scale resets with the flags;
+- the descent committed `MeshErrorScale` BEFORE queueing the coarser
+  build, so a job dropped at the worker's memory floor (or cancelled by
+  a re-registration) left the state one rung below the display, with
+  that step's exhaustion proof never evaluated. The scale is now
+  committed in the apply; the already-exhausted short circuit keeps the
+  synchronous commit, since nothing can fail to land there and the
+  advancing scale is what grows the decimation grid.
+
+Still open from the same review, in likely severity order: the worker's
+`meshedCopy` can race GUI-thread triangulation mutation (needs TSan on
+a mass descent before surgery); the three TShape identity anchors are
+raw addresses reset at three different sites (an address reuse can fake
+`exactResident`); the decimated rung zeroes texture coordinates.

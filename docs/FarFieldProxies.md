@@ -3304,3 +3304,75 @@ change this section's conclusion — multi-draw indirect is still not
 available on the web, and bgfx *emulates* it there by looping N indirect
 draws, which saves no draw calls at all. See `docs/DrawSubmission.md` for
 what it does and does not unlock.
+
+### 12.20 built: occlusion becomes a memory mechanism, and the default oracle
+
+Three changes from the 2026-08-12 review of this workstream, the third
+being the seam the whole section had been building toward without
+naming it.
+
+#### the visible switch now selects the oracle that holds still
+
+`Render_Occlusion` used to enable the hardware-query path -- the one
+sections 12.6-12.11 refuted -- while the exact CPU oracle sat behind a
+second, hidden property. `Render_OcclusionSoftware` now defaults ON, so
+turning occlusion on gets the masked depth buffer; and the comments
+that still credited `hiddenConfirm` with stability record the
+refutation instead (confirmations DILUTE the flapping and were measured
+not to remove it -- false answers come in runs, and the damage tracks
+the re-test count, which no confirmation can reach). The query path
+stays selectable for measurement, as everything refuted here does.
+
+#### a clipped solid may not occlude
+
+`occludes()` accepted every opaque depth-writing triangle draw --
+including draws with clip planes, which the CPU rasterizer does not
+have. A section-cut housing therefore stamped its FULL surface into the
+buffer, and the interior geometry the cut exposes was proven "behind" a
+wall the eye sees through: the one arm of this pass that deletes pixels
+rather than culling less. Clipped draws are now refused as occluders
+outright -- under-culling while a section plane is active is the cheap
+direction to be wrong in.
+
+#### occlusion feeds the downgrade sweep's free tier
+
+The user directive of 2026-08-11 -- "the gain from occlusion is not
+only about speed, but also gpu memory" -- now has its mechanism. The
+demote pass's only visibility signal was the frustum box test, so an
+enclosed assembly's interior priced its downgrade as VISIBLE error the
+camera literally cannot see, and under a budget that error was paid in
+quality somewhere that shows.
+
+The backend folds the finished cull mask per source: a streak of
+consecutive rendered frames in which EVERY draw carrying a tag was
+culled. A source past `Render_OcclusionDemoteStreak` (default 8, 0
+disables) joins `planMeshDemotes`' free tier beside the offscreen ones,
+and its error never enters `acceptedErrorPx` -- an error nobody can see
+must not raise the tolerance the climb runs at. Four design decisions,
+each load-bearing:
+
+- **software oracle only.** Its verdicts are exact per frame; the query
+  path's period-2 flapping fed into demotes would become an upload per
+  flip -- the 12.6 failure translated into memory churn.
+- **downgrade sweep only, not the CPU demote.** A downgrade keeps the
+  exact mesh in CPU RAM, so a verdict the camera later overturns costs
+  one re-upload; the demote sweep would pay a re-tessellation for the
+  same mistake. The feed widens to demotes only if measurement asks.
+- **the streak is the hysteresis.** The verdict is camera-dependent
+  even when exact, and the ladder's own history (13c.3) says what an
+  unhysteresed demote/refine pair costs.
+- **fold-generation guard.** A tag is a raw address that can be reused;
+  an entry answers only at the current fold, so a dead source's streak
+  cannot transfer to its successor.
+
+Built and unit-tested (the occluded tier frees without raising the
+accepted error; occluded bytes cover a deficit before any visible
+error is traded). /!\ NOT yet measured live: the converged-arm harness
+runs with occlusion off, and the whole-assembly camera it uses is the
+flattering one anyway. The honest measurement is the in-model camera of
+10.3 with a pinned budget, comparing accepted error at equal memory
+with the feed on and off. Related accident worth measuring beside it:
+an occlusion-culled draw already stops advancing `lastUsed`, so with
+shadows off its GPU buffers are collected after 2 frames TODAY,
+unmanaged, with re-upload churn as the failure mode -- the feed is the
+governed replacement for that accident.
