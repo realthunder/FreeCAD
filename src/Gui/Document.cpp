@@ -177,6 +177,11 @@ struct DocumentP
     std::size_t _deferCount = 0;
     int _deferFileVersion = 0;
     int _deferDocSchema = 0;
+    /// Which release wrote the document, for the properties replayed later.
+    /// A colour's alpha means different things across it
+    /// (Base::alphaIsOpacity), so a reader that does not carry this reads
+    /// every colour in the parked record by the wrong convention.
+    std::string _deferProgramVersion;
     std::unique_ptr<std::istringstream> _deferStream;
     std::unique_ptr<Base::XMLReader> _deferReader;
     bool _deferVPs = false;       // this load parks its view providers
@@ -2062,6 +2067,15 @@ void Document::RestoreDocFile(Base::Reader &reader)
     xmlReader.FileVersion = xmlReader.getAttributeAsInteger("FileVersion","");
     if(!xmlReader.FileVersion)
         xmlReader.FileVersion = reader.getFileVersion();
+    // This file states no program version of its own, and every property that
+    // has to know which release wrote the document lives HERE -- the colours
+    // and materials are view provider properties (Base::alphaIsOpacity). Left
+    // unset the string is empty, which classifies as "newer than anything
+    // named" and would convert colours in files that need no conversion.
+    if (auto parent = reader.getParent())
+        xmlReader.ProgramVersion = parent->ProgramVersion;
+    else if (d->_pcDocument)
+        xmlReader.ProgramVersion = d->_pcDocument->getProgramVersion();
 
     if(boost::ends_with(reader.getFileName(),FC_XML_GUI_POSTFIX)) {
         xmlReader.readElement("ViewProvider");
@@ -2116,6 +2130,7 @@ void Document::RestoreDocFile(Base::Reader &reader)
                 d->_deferBuf = "<ViewProviderData>";
                 d->_deferFileVersion = xmlReader.FileVersion;
                 d->_deferDocSchema = xmlReader.DocumentSchema;
+                d->_deferProgramVersion = xmlReader.ProgramVersion;
             }
             for (int i=0; i<Cnt; i++) {
                 int guard;
@@ -2404,6 +2419,7 @@ void Document::restoreCapturedViewProvider(const std::string &xml,
     Base::XMLReader reader("GuiDocument.xml", str);
     reader.FileVersion = archiveReader.FileVersion;
     reader.DocumentSchema = archiveReader.DocumentSchema;
+    reader.ProgramVersion = archiveReader.ProgramVersion;
     reader.readElement("ViewProvider");
     auto obj = d->_pcDocument->getObject(reader.getAttribute("name",""));
     if (obj && !getViewProvider(obj))
@@ -2560,6 +2576,7 @@ void Document::runDeferredRestoreSlice()
                     "GuiDocument.xml", *d->_deferStream);
             d->_deferReader->FileVersion = d->_deferFileVersion;
             d->_deferReader->DocumentSchema = d->_deferDocSchema;
+            d->_deferReader->ProgramVersion = d->_deferProgramVersion;
             d->_deferReader->readElement("ViewProviderData");
         }
         while (d->_deferCount) {
@@ -3103,6 +3120,10 @@ void Document::importObjects(const std::vector<App::DocumentObject*>& obj, Base:
     Base::XMLReader xmlReader(reader);
     xmlReader.readElement("Document");
     long scheme = xmlReader.getAttributeAsInteger("SchemaVersion");
+    // Imported objects come out of someone else's document, and its version
+    // is what says how to read their colours (Base::alphaIsOpacity).
+    if (auto parent = reader.getParent())
+        xmlReader.ProgramVersion = parent->ProgramVersion;
 
     // At this stage all the document objects and their associated view providers exist.
     // Now we must restore the properties of the view providers only.
