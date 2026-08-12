@@ -1953,19 +1953,21 @@ static void freecadNewHandler ()
 
 namespace {
 
-/** Where a crash writes what it knows: <UserAppData>/crash.log, and stderr.
+/** Where a crash writes what it knows: its own file, and stderr.
  *
  * The file comes first on every line. stderr is what you watch when you
  * started the app from a terminal, but it is also what is gone the moment that
  * terminal is -- and on a Windows GUI launch there is no terminal at all, so
  * the file is the only copy that survives to be read afterwards.
  *
- * Opened for append, never truncated: a second crash in the same session must
- * not erase the first one's stack. Written with plain stdio and flushed per
- * line, deliberately not through Base::Console() -- a segfault is as likely to
- * have happened *inside* the console as anywhere else (the access violation
- * this was built for faulted in ConsoleSingleton::Error()), and re-entering it
- * from the handler is how the backtrace gets lost.
+ * One file per crash, named for the moment it happened:
+ * <UserAppData>/crash-2026_08_12-17_14_52_318.log. Nothing to rotate, nothing
+ * to overwrite, and a second crash in the same session cannot land on top of
+ * the first one's stack. Written with plain stdio and flushed per line,
+ * deliberately not through Base::Console() -- a segfault is as likely to have
+ * happened *inside* the console as anywhere else (the access violation this
+ * was built for faulted in ConsoleSingleton::Error()), and re-entering it from
+ * the handler is how the backtrace gets lost.
  */
 class CrashSink
 {
@@ -1975,17 +1977,21 @@ public:
         // Config() is empty if the crash beats initConfig(); a bare relative
         // name still beats writing nothing.
         std::string path = App::Application::Config()["UserAppData"];
-        path += "crash.log";
+        path += "crash-" + timestamp(ForFileName) + ".log";
         m_file = std::fopen(path.c_str(), "a");
 
         std::ostringstream str;
-        str << "\n===== " << timestamp() << "  pid " << getProcessId() << "  thread "
+        str << "===== " << timestamp(ToRead) << "  pid " << getProcessId() << "  thread "
             << std::this_thread::get_id();
         if (reason) {
             str << "  " << reason;
         }
         str << " =====\n";
         write(str.str().c_str());
+
+        // Only to stderr: whoever is watching a terminal wants to know which
+        // file to go and read, but the file itself already knows its own name.
+        std::cerr << "Writing crash log to " << path << std::endl;
     }
 
     ~CrashSink()
@@ -2007,8 +2013,14 @@ public:
         std::cerr << text;
     }
 
+    enum Shape
+    {
+        ToRead,      ///< "2026-08-12 17:14:52.318"
+        ForFileName  ///< "2026_08_12-17_14_52_318", nothing a file system objects to
+    };
+
     /// Local date and time down to the millisecond.
-    static std::string timestamp()
+    static std::string timestamp(Shape shape)
     {
         const auto now = std::chrono::system_clock::now();
         const auto secs = std::chrono::time_point_cast<std::chrono::seconds>(now);
@@ -2021,11 +2033,20 @@ public:
 #else
         localtime_r(&tt, &tmbuf);
 #endif
+        // Spelled out twice rather than passed a format variable, so both
+        // strftime() and snprintf() keep seeing string literals and the
+        // compiler can go on checking them.
         char buf[32] {};
-        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmbuf);
-
         char out[48] {};
-        std::snprintf(out, sizeof(out), "%s.%03d", buf, static_cast<int>(msec.count()));
+        const int ms = static_cast<int>(msec.count());
+        if (shape == ForFileName) {
+            std::strftime(buf, sizeof(buf), "%Y_%m_%d-%H_%M_%S", &tmbuf);
+            std::snprintf(out, sizeof(out), "%s_%03d", buf, ms);
+        }
+        else {
+            std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmbuf);
+            std::snprintf(out, sizeof(out), "%s.%03d", buf, ms);
+        }
         return out;
     }
 
