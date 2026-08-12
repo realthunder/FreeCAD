@@ -21,21 +21,20 @@ unchanged.
 Two material classes are in play and they are not the same size. Upstream's
 is not 18 floats:
 
-| member | this fork | upstream 1.0 |
-|---|---|---|
-| 4 x `Color` (ambient, diffuse, specular, emissive) | 64 | 64 |
-| `shininess`, `transparency` | 8 | 8 |
-| `MaterialType` | 4 (+4 padding) | -- |
-| `image`, `imagePath`, `uuid` (3 x `std::string`) | -- | 96 |
-| **total** | **80** | **~168**, plus a heap allocation per non-empty string |
+| member | bytes |
+|---|---|
+| 4 x `Color` (ambient, diffuse, specular, emissive) | 64 |
+| `shininess`, `transparency` | 8 |
+| `MaterialType` | 4 (+4 padding) |
+| `image`, `imagePath`, `uuid` (3 x `std::string`) | 96 |
+| **total** | **~176**, plus a heap allocation per non-empty string |
 
-This fork still has the pre-1.0 `App::Material`, so the immediate multiple
-against a `Color`'s 16 bytes is **5x**, not the 10x that upstream's would
-cost. The direction of the argument does not change and the ceiling only
-rises: adopting upstream's material -- which the format compatibility in
-section 4.3 eventually asks for -- doubles the per-entry cost again, while
-the per-field layout absorbs it by leaving the three string fields at size
-zero on every object that has no texture.
+The three strings were ported from upstream on 2026-08-12 (section 7.3), so
+a whole material is now **11x** a colour rather than the 5x it was before --
+and on every object in every existing document all three are empty. That is
+the case the per-field layout is built for: an empty field is size 0 and
+costs nothing at all, where an array of whole materials pays 96 bytes an
+entry to store nothing.
 
 And on the path that actually produces per-face data -- STEP import -- 
 OCCT supplies only colour and alpha (see UpstreamCoreSync section 5.1), so
@@ -54,14 +53,18 @@ Per-field arrays, each independently sized 0, 1 or N:
         std::vector<Color> _emissive;
         std::vector<float> _shininess;
         std::vector<float> _transparency;
+        std::vector<std::string> _image, _imagePath, _uuid;
         std::vector<int8_t> _type;      // Material::MaterialType
     };
 
 `_type` is there because `App::Material::operator==` compares it, so a list
 that dropped it would fail to give back what was put into it. It has never
 been persisted -- no material list in any FreeCAD writes it -- and it stays
-that way. Upstream's `_image`, `_imagePath` and `_uuid` join the list
-unchanged in shape on the day this fork takes upstream's material.
+that way.
+
+`_image`, `_imagePath` and `_uuid` arrived with the material port and behave
+like every other field: empty on every object today, one element when a
+whole object shares a texture, N when faces differ.
 
 with the cardinality convention:
 
@@ -672,22 +675,34 @@ spare one file a branch is the wrong trade. The compiler will find both
 sites -- `auto prop = &vp->DiffuseColor` stops accepting the other two
 assignments the moment the type changes.
 
-### 7.3 Our `App::Material` is not upstream's, and their file says so
+### 7.3 The material port -- done, minus the half that changes behaviour
 
-**Not blocking, but it caps what "read upstream's documents" can mean.**
-Upstream's material is ours plus `image`, `imagePath`, `uuid` and a static
-`getDefaultAppearance()`. Their `MaterialList` doc file at `version="3"` is,
-byte for byte, our legacy first pass -- count, then four packed colours,
-shininess and transparency per entry -- followed by a **second pass** of
-three length-prefixed strings per material. They also keep `Version_0` and
-`Version_2` readers and a negative-integer sentinel where a count would be.
+✅ **Done 2026-08-12, and it was right to split it.** `App::Material` now
+has upstream's `image`, `imagePath` and `uuid`, and their equality rule that
+two appearances naming the same card are the same appearance whatever their
+colours say -- inert until something sets a uuid. Their `MaterialList` doc
+file at `version="3"` turned out to be, byte for byte, our own first pass --
+count, then four packed colours, shininess and transparency per entry --
+followed by a **second pass** of three length-prefixed strings per material.
+So this fork now reads their files, strings included, and writes that shape
+itself the moment an appearance has a texture or a card to name. A test
+builds those bytes by hand rather than through our own writer, because the
+claim is about their layout, not ours.
 
-So reading their file is a small change: honour the element's `version`
-attribute and consume the second pass. Until `App::Material` has the three
-fields, consuming is all it can do, and the read is lossy. Say so rather
-than claim compatibility. When the fields do arrive, the per-field layout
-takes them at size 0 on every object that has no texture -- which is nearly
-all of them.
+⛔ **Not taken, and it needs a decision of its own: upstream's default
+material is a different material.** Theirs is `shininess 0.9` and type
+`DEFAULT`; ours is `0.2` and `STEEL` colours under `USER_DEFINED`. Taking it
+would change the look of every object that has never had its appearance set
+-- and, now that a size-0 field means "the default", it would also change
+which appearances serialise to nothing and therefore which ones the
+shared-default scheme elides. That is a fork behaviour change wearing an
+additive port's clothes, and policy says it does not ride in silently
+(UpstreamCoreSync section 0).
+
+Also not taken: `Material::getDefaultAppearance()`, which reads View
+preferences directly. This fork already does that through `ViewParams` in
+`ViewProviderGeometryObject`; porting it would put a second, disagreeing
+copy of the same policy in `App`.
 
 ### 7.4 `uuid` points into a Materials module we do not have
 
@@ -722,6 +737,7 @@ from.
 
 ### 7.7 Order
 
+0. ~~Port upstream's material fields~~ -- done (7.3).
 1. UpstreamCoreSync 2d, `App::Color` -> `Base::Color`, seven forward
    declarations included (7.1).
 2. `ShapeAppearance` on `ViewProviderGeometryObject`, retiring the trio.
