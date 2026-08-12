@@ -1,8 +1,9 @@
 # ShapeAppearance, compatible with upstream but not laid out like it
 
-Status: stage 1 storage and the ShapeAppearance property both landed
-2026-08-12; what remains of stage 1 is the DiffuseColor accessor and the
-restore migration. Stages 2-5 are design.
+Status: stage 1 storage, the ShapeAppearance property, and ShapeColor /
+ShapeMaterial as names over it all landed 2026-08-12, verified by
+fcad-probes/appearance_probe.py 19/19. What remains of stage 1 is the
+DiffuseColor accessor. Stages 2-5 are design.
 Context: [UpstreamCoreSync.md](./UpstreamCoreSync.md) section 5.1, which
 records why the property exists and what it cost upstream.
 
@@ -772,8 +773,56 @@ from.
 2. ~~`ShapeAppearance` on `ViewProviderGeometryObject`~~ -- done 2026-08-12
    (9ebb513d35), and on `ViewProviderLink` too, which the plan had not
    noticed carries its own material.
+2b. ~~`ShapeColor` and `ShapeMaterial` as names over the appearance~~ --
+   done 2026-08-12 (f3a127c351). Chosen over deleting them (upstream's
+   shape) so the editor row, the C++ call sites and existing macros all
+   keep working; storage is the appearance, the inherited value is a
+   mirror of entry 0. Three restore traps, all silent, are recorded in
+   section 7.8.
 3. `DiffuseColor` as an accessor (1.1), with the two base-pointer sites
    restructured first (7.2) and the fork-only mapping behaviour preserved
    (7.5).
 4. Restore-time migration, including upstream's `version="3"` second pass
    as a lossy read (7.3).
+
+### 7.8 What restore actually does, measured
+
+Written after 2b, because every one of these fails with a green build and
+no error.
+
+**`Transient` is not "save nothing, restore normally".**
+`PropertyContainer::Restore` skips a transient property on **restore** too
+(PropertyContainer.cpp:624), on the property's own status or the file's.
+So keeping a name and marking it transient to avoid writing the datum
+twice would discard the value in every existing document. There is no
+save-only exclusion flag; the values are still written.
+
+**Three routes, two empty stubs.** Per `<Property>` element the container
+picks: name and type both match -> `prop->Restore()`; name matches and the
+type does not -> `handleChangedPropertyType`; name not found ->
+`handleChangedPropertyName`. Both hooks default to doing **nothing**, so a
+retyped or renamed property loses its old value unless the class overrides
+the right one. Retyping ShapeColor and ShapeMaterial routes them to the
+first hook; ViewProviderLink, whose own ShapeMaterial was renamed away in
+9ebb513d35, needs the second and had none -- upstream has that hook and it
+had been missed.
+
+**Save order is lexicographic by name**, because `PropertyContainer::Save`
+iterates a `std::map<std::string, Property*>`. Confirmed from a real
+GuiDocument.xml rather than from reading the writer:
+
+    DiffuseColor < ShapeAppearance < ShapeColor < ShapeMaterial < Transparency
+
+So the coarse value restores **after** the specific one, which is why
+applying a single colour is refused when the appearance already holds per
+face data. Note ShapeMaterial lands after ShapeColor, so the richer
+material wins entry 0 -- the same outcome upstream's migration produces.
+
+**The push cannot live in the derived setValue alone.** `setPyObject` and
+`Paste` call `setValue` non-virtually, so a Python assignment updates the
+mirror and never reaches the appearance. It belongs in `onChanged`, which
+every write path reaches, guarded so the mirror-back cannot ping-pong.
+
+**View provider properties are in GuiDocument.xml**, not Document.xml. A
+probe that rewrites the wrong file changes nothing and still reports PASS,
+which is how the first run of this probe lied.
