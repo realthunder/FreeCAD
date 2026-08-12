@@ -913,6 +913,35 @@ OCCT/Coin `PATH`, and the process dies at load with a bare `0xc0000135` before a
 this matters — the same problem the two sections above describe, arriving through a
 new door.
 
+**Arming crash dumps: two traps that make the arming silently do nothing.** The
+GUI run keeps a standing arm file (`D:\Zheng.Lei\sw\tools\dbg\arm_freecad.cmd`,
+passed as `-cf`, ending in `g`) that dumps on the usual exception filters. Both
+of these were live defects, found 2026-08-12 when an access violation left no
+dump and no stack:
+
+- **cdb strips backslashes inside a quoted `-c`/`-c2` command string.** A dump
+  path written `D:\Zheng.Lei\sw\tools\dbg\dumps\fcad.dmp` is stored as
+  `D:Zheng.Leisw\toolsdbgdumpsfcad.dmp`, and no dump is ever written. Doubling
+  the backslashes does not help. **Use forward slashes**, and read the setting
+  back with `sx` afterwards — printing the stored command is the only way to
+  see the mangling.
+- **An access violation never reaches second chance in the GUI.**
+  `App/Application.cpp` (`segmentation_fault_handler`, `my_se_translator_filter`)
+  turns it into `Base::AccessViolation`, which `Gui/GuiApplication.cpp`
+  (`GUIApplication::notify`) catches and reports as the "Access violation" /
+  "Illegal storage access!" message box. The app handles it, so a `sxn -c2`
+  arming never fires, and by the time the box is on screen the C++ throw has
+  unwound the faulting frames. Trap it on **first** chance instead, passing it
+  on afterwards so behaviour is unchanged:
+
+      sxe -c ".exr -1;r;kv 100;.dump /ma /u D:/Zheng.Lei/sw/tools/dbg/dumps/fcad_av.dmp;gn" av
+
+Verify the command path end to end before trusting it: `sxn -c ".echo TEST" eh`,
+resume, confirm the echo lands, then `sxn -c "" eh` to clear. To arm a process
+that is already running, connect a remote client with `-c "$$<file"` and then
+`DebugBreakProcess` the target — queued `-c` commands only run once the debugger
+has control. `sx` settings are engine-global, so they survive the client exiting.
+
 #### Four things that will waste your time
 
 - **Launch with `_NO_DEBUG_HEAP=1`, or the app crawls.** A process *created by* a debugger
