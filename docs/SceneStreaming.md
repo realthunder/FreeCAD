@@ -2658,11 +2658,33 @@ hoist fixes the first; the six now go through one `FC_RENDER_MSG`
 macro that is `Base::Console()` on the desktop -- unchanged on
 purpose, because the performance harnesses read those lines out of
 `--log-file` and only the console writes there -- and `std::printf` in
-the browser. WARNING: **there is no emsdk on the development box**, so
-this tier is only ever compile-checked by hand
-(`-fsyntax-only -DFC_RENDERER_STANDALONE -DFC_OS_WASM`) and a break in
-it is invisible to every build that gets run. That is how two of them
-accumulated.
+the browser.
+
+WARNING: **the emsdk install is currently missing from the development
+box, and so is `build/wasm`.** Five places in the tree -- this
+directory's `CMakeLists.txt`, `scripts/wasm-viewer.sh`,
+`scripts/compile-shaders.sh`, `scripts/README.md` -- name
+`~/works/sw/emsdk/emsdk_env.sh`, and it was there when the viewer was
+last built; there is no `emcc` on the filesystem now. So nothing in the
+normal build loop compiles this tier, and **that is how two breakages
+accumulated with nothing saying so.** Until it is reinstalled the tier
+is only compile-checkable by hand, which is what was done for these
+changes:
+
+```
+x86_64-conda-linux-gnu-g++ -fsyntax-only -std=c++20 -DBX_CONFIG_DEBUG=0 \
+  -DFC_RENDERER_STANDALONE -DFC_OS_WASM -DFreeCADRenderer_STATIC -DHAVE_BGFX \
+  -idirafter /usr/include -I src -I src/Gui/Renderer \
+  -I src/3rdParty/bgfx/{bgfx,bx,bimg}/include \
+  src/Gui/Renderer/BGFXRenderer.cpp
+```
+
+`-DFC_OS_WASM` or `FCGlobal.h` pulls `<QtCore.h>`; `-idirafter
+/usr/include` for `GL/gl.h`. It covers `SceneDump.cpp` too, but not
+`wasm/main.cpp`, which needs `EM_ASM`. **Baseline it against `HEAD`
+before believing an error is yours** -- that is what separated these
+changes' zero new errors from the two pre-existing breakages. A real
+`emcc` build is still owed on all of this.
 
 Second, `attachedOnly` was not on the wire at all, so even a compiling
 hoisted gate would have found **zero eligible drawables** in the
