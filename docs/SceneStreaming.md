@@ -2574,7 +2574,17 @@ drawables outright for the duration of a coarse-first document load
 and restoring them when it finishes; and hoisting the gate flags out
 of `#ifndef FC_RENDERER_STANDALONE`, where they currently compile to
 false, so the WASM tier gets the vertex gate -- it is pure display and
-needs no level plan behind it.
+needs no budget behind it.
+
+The edge gate is the harder half there, and not for want of a budget:
+the WASM tier has had one all along (`Render::MemoryBudget s_budget`,
+`wasm/main.cpp` ~3460, fed `observe(residentBytes, blobCache, heap)`
+every heartbeat and pinnable with `?membudget=`). It is a budget on
+**resident payload and heap** -- the CPU half of 13a's pair, with no
+GPU half. So a browser edge gate hung off it would be pressing on a
+signal that cannot see what the gate frees: GPU buffers are not in the
+wasm heap. That tier needs the *uploaded* meter before its edge gate
+means anything, which is the same split 13a made on the desktop.
 
 WARNING: the gate's own counters were double counted in their first
 reading (the predicate is asked by the id pass and the submit loop
