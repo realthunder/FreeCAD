@@ -2464,6 +2464,10 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
         RendererBridge::translateGpuMemoryBudget(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setLevelDebug(
         RendererBridge::translateLevelDebug(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setElementGates(
+        RendererBridge::translateShapeVertices(PRIVATE(this)->externalview),
+        RendererBridge::translatePressureDropEdges(
+            PRIVATE(this)->externalview));
     PRIVATE(this)->external->setAutoZoomScale(
         RendererBridge::translateAutoZoomScale(state));
   }

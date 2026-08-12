@@ -2385,6 +2385,29 @@ The same mesh is counted in both and has to be: it occupies both. The
 `Render_LevelDebug` line reports them side by side and never adds
 them:
 
+**The GPU figure is NOT a subset of the CPU one, and that is the whole
+reason two meters are needed.** It is tempting to reason that anything
+uploaded must have been built in the heap first, so CPU residency must
+strictly exceed GPU residency. It does not, for two reasons. The
+staging block (`bgfx::alloc` / `bgfx::copy`) is *transient* -- bgfx
+frees it once the buffer is created, so it is never resident. And the
+GPU does not hold a copy of the CPU arrays, it holds something
+*derived* from them: alongside the vertex stream and the same indices,
+the upload builds a 64-byte quad-expansion instance record per line
+segment and a 32-byte sprite instance per point, neither of which has
+any CPU counterpart. That is exactly where the measured 2x-12x excess
+comes from, and a subset relationship could not produce it.
+
+What *is* true is that the CPU meter **understates**: it counts the
+mesh arrays the published scene holds, and does not yet count the OCCT
+`Poly_Triangulation` rungs (what a demote actually frees) or the Coin
+node arrays. Naming what a meter excludes is part of the meter.
+
+**Harness rule: simulate with the CPU limit ABOVE the GPU limit.** The
+CPU side holds the source of every upload plus the rungs the GPU never
+sees, so a simulation that pins CPU below GPU is describing a machine
+that cannot exist and the two sweeps will fight.
+
 ```
 render levels: gpu budget 64MB live 441.3MB (uploaded 705.5MB,
 264.2MB stale in 1832 of 6104 entries) | cpu resident 218.9MB | ...
@@ -2435,7 +2458,7 @@ deficit driving the demote sweep) is the natural next step now that
 the meter exists; the two knobs are independent and neither reads the
 other.
 
-### 13b -- edges and vertices under pressure (proposed)
+### 13b -- edges and vertices under pressure, as built
 
 Falls directly out of 13a's currency: **edge and point drawables are
 disproportionately expensive on the GPU** -- 9x the heap cost per
@@ -2452,15 +2475,32 @@ would have flagged.
    its silhouette still reads, and **cavity shading can fake the
    edge** where the face geometry already implies it.
 
-**The test is TOPOLOGICAL, and this is the part that is easy to get
-wrong.** It is not "this object has faces, so drop its edges". It is
-per element:
+**The test is topological, and it is ALL-OR-NOTHING PER DRAWABLE.**
+The question OCCT answers is per element -- is this vertex an endpoint
+of an edge, does this edge bound a face -- but the *decision* is taken
+for the whole drawable:
 
-- A vertex may be skipped only if it is an **endpoint of an edge**. A
-  vertex no edge touches -- a free vertex, every point of a point
-  cloud -- always draws, because nothing else would show it.
-- An edge may be skipped only if it **bounds a face**. A free edge --
-  a wire, a sketch, a datum line -- always draws: it *is* the object.
+- A point set is skipped only if **every** one of its vertices is an
+  edge endpoint. One floating vertex and the whole set draws.
+- An edge set is skipped only if **every** one of its edges bounds a
+  face. One floating edge -- a wire, a sketch, a datum line -- and the
+  whole set draws.
+
+This is a deliberate relaxation, and it is what keeps the feature
+small. In practice an object is almost always either all-floating or
+none, so per-element suppression would buy nothing measurable while
+costing an index subset, a permutation of the index array, and a
+collision with the fact that **coordinate order is the picking
+identity** (`getCoordinateIndex() - startIndex + 1` is the vertex
+number, `ViewProviderExt` ~1198). All-or-nothing needs none of that:
+the classification is **one boolean per drawable**, carried from the
+node down to the draw call, and a suppressed drawable is simply not
+submitted.
+
+Computing it is `TopExp::MapShapesAndAncestors(shape, TopAbs_VERTEX,
+TopAbs_EDGE, ...)` -- floating iff the ancestor list is empty -- and
+the same for `TopAbs_EDGE -> TopAbs_FACE`. Under the all-or-nothing
+rule the scan short-circuits on the first floating element.
 
 **And the display mode exempts its own subject.** The vertex gate
 never applies in the **Points** mode and the edge gate never applies
@@ -2479,6 +2519,46 @@ bottom. **Picking, pre-selection highlighting and on-top rendering are
 unaffected** -- the geometry stays published and resident, the
 highlight draws are on-top draws, and only the base-pass submission is
 skipped.
+
+**How it is wired.** `ViewProviderPartExt::buildVisualNodes` asks OCCT
+and stores one bool per drawable on the node (`SoBrepPointSet` /
+`SoBrepEdgeSet::attachedOnly`); the render bridge reads it **by name**
+-- the `protoNode` precedent, because only PartGui can compute the
+answer and Gui must not depend on PartGui -- onto
+`MeshData::attachedOnly`; the backend gates submission. Absent field =
+absent classification = always draws, which is the safe direction.
+
+**Suppressing the draw is all it takes to free the memory.** An
+unsubmitted mesh stops advancing its `lastUsed`, so `collectMeshes`
+destroys its buffers two frames later and 13a's `live` meter sees it
+fall. No rebuild, no re-tessellation, and the way back is one frame.
+
+**MEASURED (rack model, 64 MB budget, first plan, same scene):**
+
+| | gate off | gate on |
+|---|---|---|
+| gpu live | 530.5MB | **191.2MB** |
+| cache entries | 6567 | **2253** |
+| cpu resident | 267.4MB | 267.4MB |
+| displayed coarse / exact | 2022 / 1569 | 2022 / 1569 |
+| downgrades the plan needed | 2361 | **1692** |
+| accepted error | 36.10px | **5.37px** |
+
+The rungs and the displayed geometry are identical -- only the edge
+and point drawables are gone -- so **64% of the GPU bytes of this
+scene were edges and vertices**, which is the 8-12x ratio of 13a
+paying out. The second row is the one that matters to a user: with
+two thirds of the memory returned for free, the plan has to buy far
+less of it back with visible error, and the accepted error falls from
+36.10px to 5.37px at the same budget.
+
+WARNING: the gate's own counters were double counted in their first
+reading (the predicate is asked by the id pass and the submit loop
+both, and it tallied inside itself -- all three counters came back
+equal, which is impossible for a population split between points and
+lines). They are tallied once per draw now. The table above does not
+depend on them: every figure in it is read off the memory meters and
+the plan, which are independent of the counter.
 
 Both are display-side gates, not residency changes: nothing is
 demoted, nothing re-tessellates, and the way back is a frame. That

@@ -64,6 +64,8 @@ public:
     long LevelCount;
     double LevelScale;
     double LevelScaleBoxError;
+    bool ShapeVertices;
+    bool PressureDropEdges;
     double EffectResolution;
     bool Occlusion;
     long OcclusionVisibleTtl;
@@ -177,6 +179,10 @@ public:
         funcs["LevelScale"] = &RenderParamsP::updateLevelScale;
         LevelScaleBoxError = this->handle->GetFloat("LevelScaleBoxError", 0.25);
         funcs["LevelScaleBoxError"] = &RenderParamsP::updateLevelScaleBoxError;
+        ShapeVertices = this->handle->GetBool("ShapeVertices", false);
+        funcs["ShapeVertices"] = &RenderParamsP::updateShapeVertices;
+        PressureDropEdges = this->handle->GetBool("PressureDropEdges", true);
+        funcs["PressureDropEdges"] = &RenderParamsP::updatePressureDropEdges;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
         funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
         Occlusion = this->handle->GetBool("Occlusion", false);
@@ -410,6 +416,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelScaleBoxError(RenderParamsP *self) {
         self->LevelScaleBoxError = self->handle->GetFloat("LevelScaleBoxError", 0.25);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateShapeVertices(RenderParamsP *self) {
+        self->ShapeVertices = self->handle->GetBool("ShapeVertices", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updatePressureDropEdges(RenderParamsP *self) {
+        self->PressureDropEdges = self->handle->GetBool("PressureDropEdges", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateEffectResolution(RenderParamsP *self) {
@@ -1260,6 +1274,97 @@ void RenderParams::setLevelScaleBoxError(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelScaleBoxError() {
     instance()->handle->RemoveFloat("LevelScaleBoxError");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docShapeVertices() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Draw the vertex points that sit on the ends of a shape's\n"
+"edges (docs/SceneStreaming.md #13b). Off by default: such a point\n"
+"lands exactly on an edge that is already drawn, so it adds\n"
+"nothing to look at -- and it is not cheap. A point costs the GPU\n"
+"a 32-byte sprite instance record plus its index, roughly nine\n"
+"times what the same point occupies in the heap, which is why a\n"
+"CPU-currency measurement made them look negligible.\n"
+"All or nothing per point set: it is skipped only when EVERY one\n"
+"of its vertices is an edge endpoint. One floating vertex -- one\n"
+"no edge touches, and every point of a point cloud -- and the\n"
+"whole set draws, because nothing else would show it. Objects are\n"
+"in practice all floating or none, so a per-vertex subset would\n"
+"buy nothing and cost an index permutation.\n"
+"It never applies in the Points display mode, where the vertices\n"
+"are what the mode exists to show.\n"
+"Picking, pre-selection and selection highlighting are unaffected:\n"
+"the point geometry stays published and resident, the highlight\n"
+"draws render on top as always, and only the base-pass submission\n"
+"is skipped.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getShapeVertices() {
+    return instance()->ShapeVertices;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultShapeVertices() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setShapeVertices(const bool &v) {
+    instance()->handle->SetBool("ShapeVertices",v);
+    instance()->ShapeVertices = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeShapeVertices() {
+    instance()->handle->RemoveBool("ShapeVertices");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docPressureDropEdges() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Stop drawing the edges that bound faces while the GPU memory\n"
+"budget stands exceeded (docs/SceneStreaming.md #13b), and draw\n"
+"them again as soon as it does not. Edge geometry is the GPU's\n"
+"most expensive geometry per unit of screen information: a segment\n"
+"is 8 bytes of index in the heap and those 8 bytes plus a 64-byte\n"
+"quad-expansion instance record on the GPU.\n"
+"All or nothing per edge set: it is skipped only when EVERY one\n"
+"of its edges bounds a face, because those faces still draw and\n"
+"their silhouettes still read. One floating edge -- a wire, a\n"
+"sketch, a datum line, any edge no face uses -- and the whole set\n"
+"draws: it is the object, and dropping it would show nothing at\n"
+"all.\n"
+"It never applies in the Wireframe display mode, where the edges\n"
+"are what the mode exists to show.\n"
+"A display gate, not a residency change -- nothing is demoted and\n"
+"nothing re-tessellates, so entering and leaving it costs one\n"
+"frame, which is why it is spent before any rung is given up.\n"
+"Picking, highlighting and on-top rendering are unaffected.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getPressureDropEdges() {
+    return instance()->PressureDropEdges;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultPressureDropEdges() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setPressureDropEdges(const bool &v) {
+    instance()->handle->SetBool("PressureDropEdges",v);
+    instance()->PressureDropEdges = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removePressureDropEdges() {
+    instance()->handle->RemoveBool("PressureDropEdges");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

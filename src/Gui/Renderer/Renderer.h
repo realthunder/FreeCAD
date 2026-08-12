@@ -129,6 +129,21 @@ struct MeshData {
     bool hasTransparency = false;   ///< some per-vertex colors are transparent
     bool hasOpaqueParts = false;    ///< some per-vertex colors are opaque
 
+    /// Every element of this drawable is ATTACHED to higher-dimensional
+    /// geometry of the same shape: every vertex of a point set is an
+    /// edge endpoint, or every edge of a line set bounds a face
+    /// (docs/SceneStreaming.md #13b). Such a drawable may be suppressed
+    /// under memory pressure, because what makes it redundant is drawn
+    /// anyway -- a vertex sits on an edge already on screen, an edge
+    /// runs along a face silhouette already on screen.
+    ///
+    /// All or nothing per drawable, and false by default so anything
+    /// the producer has not classified always draws. One floating
+    /// element -- a point cloud's points, a wire, a sketch, a datum
+    /// line -- makes the whole drawable unsuppressable, because nothing
+    /// else on screen would show it.
+    bool attachedOnly = false;
+
     /// Texture coordinates, xyzw per vertex (Coin's SbVec4f layout; the
     /// default texgen and 2D texcoord nodes produce (s, t, 0, 1)). Null
     /// when the cache was built without an active texture.
@@ -1667,6 +1682,16 @@ public:
     /// downgrade half of the plan had never executed and nothing said
     /// so.
     virtual void setLevelDebug(bool on) { (void)on; }
+    /// The two display gates of the memory response
+    /// (docs/SceneStreaming.md #13b), pushed in like every other
+    /// parameter -- this library knows nothing of RenderParams.
+    /// \a shapeVertices false suppresses point drawables whose every
+    /// vertex sits on an edge that is itself drawn; \a pressureEdges
+    /// true suppresses line drawables whose every edge bounds a drawn
+    /// face, and only while the GPU budget stands exceeded. Neither
+    /// ever touches an on-top or highlight draw.
+    virtual void setElementGates(bool shapeVertices, bool pressureEdges)
+    { (void)shapeVertices; (void)pressureEdges; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

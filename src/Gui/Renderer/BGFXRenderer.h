@@ -116,6 +116,8 @@ public:
     virtual bool drivesMeshLevels() const override;
     virtual void setGpuMemoryBudget(size_t bytes) override;
     virtual void setLevelDebug(bool on) override;
+    virtual void setElementGates(bool shapeVertices,
+                                 bool pressureEdges) override;
 #endif
 
 #ifdef FC_RENDERER_STANDALONE

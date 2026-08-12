@@ -170,6 +170,8 @@ GuiExport float translateSSAOResolution(App::PropertyContainer * view);
 GuiExport float translateLevelTolerance(App::PropertyContainer * view);
 GuiExport size_t translateGpuMemoryBudget(App::PropertyContainer * view);
 GuiExport bool translateLevelDebug(App::PropertyContainer * view);
+GuiExport bool translateShapeVertices(App::PropertyContainer * view);
+GuiExport bool translatePressureDropEdges(App::PropertyContainer * view);
 
 } // namespace RendererBridge
 } // namespace Gui

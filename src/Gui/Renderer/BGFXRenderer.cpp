@@ -11474,7 +11474,8 @@ public:
                             "entries) | cpu resident %.1fMB | displayed "
                             "coarse %zu exact %zu | plan: refine %zu demote %zu "
                             "downgrade %zu | cpu ceiling %s | refine tolerance "
-                            "%.2fpx%s\n",
+                            "%.2fpx%s | gates: eligible %zu, suppressed "
+                            "%zu point + %zu line draws%s\n",
                             budget ? (std::to_string(budget / 1048576)
                                       + "MB").c_str()
                                    : "NONE (GL reports no limit; set "
@@ -11489,7 +11490,13 @@ public:
                             reg.memoryCeilingEpoch() ? "OBSERVED" : "no",
                             refineTolerance,
                             levelPressureErrPx > 0.0f
-                                ? " (RAISED BY PRESSURE)" : "");
+                                ? " (RAISED BY PRESSURE)" : "",
+                            gateEligible, gatedPoints, gatedLines,
+                            shapeVerticesOn && !pressureDropEdges
+                                ? " (both gates OFF)"
+                                : !gpuOverBudget && pressureDropEdges
+                                      && shapeVerticesOn
+                                    ? " (no pressure)" : "");
                         // Why a downgrade pass that ran refused
                         // everything. Printed only when it ran, so its
                         // absence is not mistaken for "no candidates".
@@ -14248,6 +14255,87 @@ public:
                 && d.partIndex < 0;
         };
 
+        // The memory gates (docs/SceneStreaming.md #13b): edge and point
+        // drawables are the GPU's most expensive geometry per unit of
+        // screen information -- a segment is 8 bytes of index in the
+        // heap and those 8 bytes plus a 64-byte quad-expansion instance
+        // record on the GPU, a point 4 against 4 + 32 -- and measured on
+        // the rack model the GPU/CPU ratio climbs to 8-12x as the faces
+        // coarsen away, which is that signature and nothing else.
+        //
+        // Suppressing a draw is enough to free the memory: the mesh
+        // stops advancing its lastUsed, so collectMeshes destroys its
+        // buffers within two frames and the live meter sees it fall. No
+        // rebuild, no re-tessellation, and the way back is one frame --
+        // which is why these are spent before any rung is given up.
+        //
+        // WHICH draws, and the two conditions are different questions:
+        //
+        // - `attachedOnly` (from the producer, via OCCT topology) says
+        //   nothing in this drawable floats. A point cloud, a wire, a
+        //   sketch, a datum line is never suppressed, because nothing
+        //   else on screen would show it.
+        // - the thing that makes it redundant must ACTUALLY BE DRAWN:
+        //   a vertex is redundant because its edge is on screen, an
+        //   edge because its face is. This is also exactly what exempts
+        //   the display modes -- in Points mode the object has no line
+        //   draws and in Wireframe no triangle draws, so neither gate
+        //   can fire, with no display-mode plumbing in the renderer.
+        //
+        // On-top and highlight draws are never gated: picking and
+        // selection must look the same under pressure as without it.
+        std::set<uint64_t> objectsWithLines, objectsWithTriangles;
+        gatedPoints = gatedLines = gateEligible = 0;
+        for (const auto &d : scene) {
+            if (d.mesh && d.mesh->attachedOnly)
+                ++gateEligible;
+        }
+#ifndef FC_RENDERER_STANDALONE
+        const bool gateVertices = !shapeVerticesOn;
+        const bool gateEdges = pressureDropEdges && gpuOverBudget;
+#else
+        // The standalone/WASM tier carries its own ladder and has no
+        // desktop level plan behind it -- no budget, so no pressure
+        // state to gate on, and the flags themselves live with the
+        // plan. Neither gate exists there yet; the vertex one is worth
+        // having on mobile and is left as follow-up work.
+        const bool gateVertices = false;
+        const bool gateEdges = false;
+#endif
+        if (gateVertices || gateEdges) {
+            for (const auto &d : scene) {
+                if (!d.objectKey || d.material.ontop)
+                    continue;
+                if (d.material.type == Render::Material::Line)
+                    objectsWithLines.insert(d.objectKey);
+                else if (isTriangle(d))
+                    objectsWithTriangles.insert(d.objectKey);
+            }
+        }
+        auto gatedForMemory = [&](const Render::DrawCall &d) {
+            if (!d.mesh || !d.mesh->attachedOnly || !d.objectKey
+                    || d.material.ontop || d.material.highlightline)
+                return false;
+            if (d.material.type == Render::Material::Point)
+                return gateVertices && objectsWithLines.count(d.objectKey) > 0;
+            if (d.material.type == Render::Material::Line)
+                return gateEdges
+                    && objectsWithTriangles.count(d.objectKey) > 0;
+            return false;
+        };
+        // Tallied HERE, once per draw, and not inside the predicate:
+        // the predicate is asked by the id pass and the submit loop
+        // both, so counting inside it reported every draw two and three
+        // times over -- the first reading had all three counters equal,
+        // which is arithmetically impossible for a population split
+        // between points and lines.
+        for (const auto &d : scene) {
+            if (!gatedForMemory(d))
+                continue;
+            ++(d.material.type == Render::Material::Point ? gatedPoints
+                                                          : gatedLines);
+        }
+
         // ⭐ The per-instance id image (docs/RenderDebug.md §2.3b, view
         // mode 11 / RenderDebug_CullAudit): every scene draw rasterized
         // into the debug target as its own identity, with the cull mask
@@ -14269,8 +14357,16 @@ public:
                     const auto &draw = scene[i];
                     if (draw.material.ontop != (round == 1))
                         continue;
+                    // gatedForMemory belongs here with the other
+                    // display rules and NOT with the cull mask: the id
+                    // pass is ground truth for what the frame would
+                    // draw had nothing been *culled*, so a drawable the
+                    // display gate suppressed must be absent from it
+                    // too, or the audit compares a picture against a
+                    // scene the frame never had.
                     if (isHidden(draw) || isDup(draw) || hideFill(draw)
-                            || hidePoints(draw) || outlineOnly(draw))
+                            || hidePoints(draw) || outlineOnly(draw)
+                            || gatedForMemory(draw))
                         continue;
                     view->submitId(draw, int(i), sceneNoSeam(draw));
                 }
@@ -14629,7 +14725,7 @@ public:
                 }
                 continue;
             }
-            if (hideFill(draw) || hidePoints(draw))
+            if (hideFill(draw) || hidePoints(draw) || gatedForMemory(draw))
                 continue;
             // A frustum-culled draw skips its color/water/prepass
             // submits but still casts its shadow below.
@@ -16543,6 +16639,20 @@ public:
     }
     bool levelDebugOn = false;
 
+    /// The element gates (docs/SceneStreaming.md #13b), pushed in from
+    /// the Gui bridge. Defaults are the pre-feature behaviour: draw
+    /// every vertex, drop no edge.
+    bool shapeVerticesOn = true;
+    bool pressureDropEdges = false;
+    /// What the gates suppressed in the last rendered frame, and how
+    /// many drawables were eligible to be suppressed at all (classified
+    /// attachedOnly by the producer). Reported with the level plan: a
+    /// gate that cannot say whether it fired cannot be told apart from
+    /// one that is not wired, and this workstream has already spent a
+    /// session on exactly that confusion. `eligible` separates "the
+    /// rule refused" from "nobody classified anything".
+    size_t gatedPoints = 0, gatedLines = 0, gateEligible = 0;
+
     /// GPU geometry bytes in use: the API's own number where it
     /// reports one, else the upload accounting.
     static size_t gpuUsedBytes()
@@ -17152,6 +17262,12 @@ bool BGFXRenderer::drivesMeshLevels() const
 void BGFXRenderer::setGpuMemoryBudget(size_t bytes)
 {
     pimpl->gpuBudget = bytes;
+}
+
+void BGFXRenderer::setElementGates(bool shapeVertices, bool pressureEdges)
+{
+    pimpl->shapeVerticesOn = shapeVertices;
+    pimpl->pressureDropEdges = pressureEdges;
 }
 
 void BGFXRenderer::setLevelDebug(bool on)

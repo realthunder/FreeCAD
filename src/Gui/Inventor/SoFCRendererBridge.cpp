@@ -49,6 +49,7 @@
 #include <Inventor/elements/SoShapeHintsElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
+#include <Inventor/fields/SoSFBool.h>
 #include <Inventor/nodes/SoClipPlane.h>
 #include <Inventor/nodes/SoBumpMap.h>
 #include "SoFCRenderMaterial.h"
@@ -158,6 +159,20 @@ translateCache(SoFCVertexCache * cache)
         // generator registered on the base claims them all.
         SoNode *proto = SoFCVertexCache::getProtoNode(node);
         mesh->sourceTag = proto ? proto : node;
+        // Whether the display may suppress this drawable under memory
+        // pressure -- every vertex sits on an edge, or every edge
+        // bounds a face (docs/SceneStreaming.md #13b). Read by NAME,
+        // like protoNode above: the producer of the answer is PartGui
+        // (only OCCT topology can say) and Gui must not depend on it.
+        // Absent field = absent classification = always draws, which is
+        // the safe direction: a drawable nobody has judged is one
+        // nothing else on screen may be standing in for.
+        static const SbName attachedField("attachedOnly");
+        if (const SoField *f = node->getField(attachedField)) {
+            if (f->isOfType(SoSFBool::getClassTypeId()))
+                mesh->attachedOnly =
+                    static_cast<const SoSFBool *>(f)->getValue();
+        }
         // A producer running coarse-first registered what the display
         // tessellation itself is; the serializer places the mesh on
         // its ladder by this and declares the exact rung above it.
@@ -2037,6 +2052,22 @@ RendererBridge::translateLevelDebug(App::PropertyContainer * view)
     return bool(viewParamOverride<App::PropertyBool>(
             view, "Render", "LevelDebug",
             RenderParams::getLevelDebug()));
+}
+
+bool
+RendererBridge::translateShapeVertices(App::PropertyContainer * view)
+{
+    return bool(viewParamOverride<App::PropertyBool>(
+            view, "Render", "ShapeVertices",
+            RenderParams::getShapeVertices()));
+}
+
+bool
+RendererBridge::translatePressureDropEdges(App::PropertyContainer * view)
+{
+    return bool(viewParamOverride<App::PropertyBool>(
+            view, "Render", "PressureDropEdges",
+            RenderParams::getPressureDropEdges()));
 }
 
 size_t

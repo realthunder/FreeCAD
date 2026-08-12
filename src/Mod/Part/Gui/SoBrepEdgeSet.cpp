@@ -89,6 +89,7 @@ SoBrepEdgeSet::SoBrepEdgeSet()
     SO_NODE_ADD_FIELD(elementSelectable, (TRUE));
     SO_NODE_ADD_FIELD(onTopPattern, (TRUE));
     SO_NODE_ADD_FIELD(protoNode, (nullptr));
+    SO_NODE_ADD_FIELD(attachedOnly, (FALSE));
 }
 
 void SoBrepEdgeSet::notify(SoNotList * list)

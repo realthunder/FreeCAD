@@ -48,6 +48,7 @@
 # include <TopoDS_Shape.hxx>
 # include <TopoDS_Iterator.hxx>
 # include <TopoDS_Vertex.hxx>
+# include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
 
 # include <QApplication>
@@ -3911,7 +3912,6 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
         int &numFaces, int &numEdges, int &numLines)
 {
-    (void)nodeset;
     std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
     TopLoc_Location aLoc;
 
@@ -4284,6 +4284,37 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             gp_Pnt pnt = BRep_Tool::Pnt(aVertex);
             verts[i].setValue((float)(pnt.X()),(float)(pnt.Y()),(float)(pnt.Z()));
         }
+
+        // Which of these two drawables the display may suppress under
+        // memory pressure (docs/SceneStreaming.md #13b). OCCT answers
+        // it: a vertex with no edge among its ancestors floats, an edge
+        // with no face among its ancestors floats, and a drawable is
+        // suppressable only when NOTHING in it floats -- a point cloud,
+        // a wire, a sketch or a datum line is then never dropped,
+        // because nothing else on screen would show it.
+        //
+        // All or nothing per drawable, deliberately: objects are in
+        // practice either all floating or none, so a per-element subset
+        // would buy nothing measurable and cost an index permutation --
+        // and the coordinate order is the picking identity (the vertex
+        // number is getCoordinateIndex() - startIndex + 1), which such
+        // a permutation would silently break.
+        auto nothingFloats = [&cShape](TopAbs_ShapeEnum of,
+                                       TopAbs_ShapeEnum in) {
+            TopTools_IndexedDataMapOfShapeListOfShape ancestors;
+            TopExp::MapShapesAndAncestors(cShape, of, in, ancestors);
+            if (ancestors.IsEmpty())
+                return false;
+            for (int i = 1; i <= ancestors.Extent(); ++i) {
+                if (ancestors.FindFromIndex(i).IsEmpty())
+                    return false;
+            }
+            return true;
+        };
+        if (nodeset)
+            nodeset->attachedOnly = nothingFloats(TopAbs_VERTEX, TopAbs_EDGE);
+        if (lineset)
+            lineset->attachedOnly = nothingFloats(TopAbs_EDGE, TopAbs_FACE);
 
         // normalize all normals
         for (int i = 0; i< numNorms ;i++)

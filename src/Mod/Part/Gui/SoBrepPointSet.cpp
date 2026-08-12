@@ -80,6 +80,7 @@ SoBrepPointSet::SoBrepPointSet()
     highlightIndices.setNum(0);
     SO_NODE_ADD_FIELD(elementSelectable, (TRUE));
     SO_NODE_ADD_FIELD(protoNode, (nullptr));
+    SO_NODE_ADD_FIELD(attachedOnly, (FALSE));
 }
 
 bool SoBrepPointSet::isSelected(SelContextPtr ctx) {

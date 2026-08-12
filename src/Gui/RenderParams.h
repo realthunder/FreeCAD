@@ -366,6 +366,65 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ShapeVertices
+    ///
+    /// Draw the vertex points that sit on the ends of a shape's
+    /// edges (docs/SceneStreaming.md #13b). Off by default: such a point
+    /// lands exactly on an edge that is already drawn, so it adds
+    /// nothing to look at -- and it is not cheap. A point costs the GPU
+    /// a 32-byte sprite instance record plus its index, roughly nine
+    /// times what the same point occupies in the heap, which is why a
+    /// CPU-currency measurement made them look negligible.
+    /// All or nothing per point set: it is skipped only when EVERY one
+    /// of its vertices is an edge endpoint. One floating vertex -- one
+    /// no edge touches, and every point of a point cloud -- and the
+    /// whole set draws, because nothing else would show it. Objects are
+    /// in practice all floating or none, so a per-vertex subset would
+    /// buy nothing and cost an index permutation.
+    /// It never applies in the Points display mode, where the vertices
+    /// are what the mode exists to show.
+    /// Picking, pre-selection and selection highlighting are unaffected:
+    /// the point geometry stays published and resident, the highlight
+    /// draws render on top as always, and only the base-pass submission
+    /// is skipped.
+    static const bool & getShapeVertices();
+    static const bool & defaultShapeVertices();
+    static void removeShapeVertices();
+    static void setShapeVertices(const bool &v);
+    static const char *docShapeVertices();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PressureDropEdges
+    ///
+    /// Stop drawing the edges that bound faces while the GPU memory
+    /// budget stands exceeded (docs/SceneStreaming.md #13b), and draw
+    /// them again as soon as it does not. Edge geometry is the GPU's
+    /// most expensive geometry per unit of screen information: a segment
+    /// is 8 bytes of index in the heap and those 8 bytes plus a 64-byte
+    /// quad-expansion instance record on the GPU.
+    /// All or nothing per edge set: it is skipped only when EVERY one
+    /// of its edges bounds a face, because those faces still draw and
+    /// their silhouettes still read. One floating edge -- a wire, a
+    /// sketch, a datum line, any edge no face uses -- and the whole set
+    /// draws: it is the object, and dropping it would show nothing at
+    /// all.
+    /// It never applies in the Wireframe display mode, where the edges
+    /// are what the mode exists to show.
+    /// A display gate, not a residency change -- nothing is demoted and
+    /// nothing re-tessellates, so entering and leaving it costs one
+    /// frame, which is why it is spent before any rung is given up.
+    /// Picking, highlighting and on-top rendering are unaffected.
+    static const bool & getPressureDropEdges();
+    static const bool & defaultPressureDropEdges();
+    static void removePressureDropEdges();
+    static void setPressureDropEdges(const bool &v);
+    static const char *docPressureDropEdges();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter EffectResolution
     ///
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect
