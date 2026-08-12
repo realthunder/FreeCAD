@@ -26,6 +26,9 @@ struct FoldableMenuBar::Impl {
     bool foldable = false;
     bool overlayExpand = true;
     bool expanded = true;
+    /// Whether the keyboard, rather than the mouse, is what the bar is open
+    /// for. See hasKeyboard().
+    bool keyboardEntry = false;
     int revealWidth = 0;
 
     void updateClip() {
@@ -134,10 +137,13 @@ struct FoldableMenuBar::Impl {
      *
      * A current item, not the focus alone: Qt leaves the focus on the bar
      * after the last Esc, and a fold that waited for the focus to go would
-     * stay open until something else was clicked.
+     * stay open until something else was clicked. And the entry it was
+     * reached by, because that leftover focus plus an item the mouse merely
+     * swept over would otherwise read as keyboard navigation and hold the
+     * fold open after the pointer had gone.
      */
     bool hasKeyboard() const {
-        return menuBar && menuBar->hasFocus() && menuBar->activeAction();
+        return keyboardEntry && menuBar && menuBar->hasFocus() && menuBar->activeAction();
     }
 
     bool isAnyMenuVisible() const {
@@ -514,6 +520,9 @@ bool FoldableMenuBar::isExpanded() const
 
 void FoldableMenuBar::enterEvent(QEnterEvent *event)
 {
+    // The mouse is in charge from here, whatever the keyboard was doing: it
+    // is the pointer leaving that has to be able to fold this again.
+    d->keyboardEntry = false;
     d->collapseTimer->stop();
     QWidget::enterEvent(event);
 }
@@ -577,10 +586,12 @@ bool FoldableMenuBar::eventFilter(QObject *obj, QEvent *event)
         // taking keystrokes where it cannot be seen is worse than one that
         // never took them.
         case QEvent::FocusIn:
+            d->keyboardEntry = true;
             d->collapseTimer->stop();
             d->expandLater(this);
             break;
         case QEvent::FocusOut:
+            d->keyboardEntry = false;
             if (d->foldable && !d->isAnyMenuVisible())
                 d->collapseTimer->start();
             break;
@@ -592,6 +603,7 @@ bool FoldableMenuBar::eventFilter(QObject *obj, QEvent *event)
     // In overlay mode, track mouse on the floating container
     if (d->overlayExpand && obj == d->menuContainer) {
         if (event->type() == QEvent::Enter) {
+            d->keyboardEntry = false;
             d->collapseTimer->stop();
         } else if (event->type() == QEvent::Leave) {
             if (d->foldable && !d->isAnyMenuVisible())

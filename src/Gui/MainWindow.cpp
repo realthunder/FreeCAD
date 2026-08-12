@@ -36,6 +36,7 @@
 # endif
 # include <QDockWidget>
 # include <QFontMetrics>
+# include <QKeyEvent>
 # include <QKeySequence>
 # include <QLabel>
 # include <QMdiSubWindow>
@@ -315,6 +316,15 @@ struct MainWindowP
     /// The button the title bar's menu folds behind. Outlives every switch
     /// between the two title bars, so it is built once and handed back.
     QPointer<QPushButton> titleBarLogo;
+
+    /*! The top-level menu the keyboard was last on, and the bar that was
+     * watched to learn it. Coming back to the menu bar comes back to where it
+     * was left rather than to File -- the same courtesy a dialog does by
+     * remembering its last tab. Both are weak: a workbench swap replaces the
+     * whole row, and the menu that was there is then gone.
+     */
+    QPointer<QMenuBar> watchedMenuBar;
+    QPointer<QAction> lastMenuBarAction;
 
     QString overrideIcons;
     bool hasOverrideIcons = false;
@@ -1972,6 +1982,18 @@ bool MainWindow::activateMenuBar()
     // Everything below is Qt's own keyboard handling, reached the way the Alt
     // key reaches it. Nothing here knows about folding: a folded bar is a
     // clipped bar, and it unfolds itself when the focus lands on it.
+    if (d->watchedMenuBar != bar) {
+        d->watchedMenuBar = bar;
+        // hovered() is every way a top-level menu is singled out -- the arrow
+        // keys, a letter, the mouse passing along the row -- which is what
+        // makes it the record of where the menu bar was left.
+        connect(bar, &QMenuBar::hovered, this, [this](QAction *action) {
+            if (action && action->menu()) {
+                d->lastMenuBarAction = action;
+            }
+        });
+    }
+
     QAction *first = nullptr;
     for (auto *action : bar->actions()) {
         if (action->isVisible() && action->isEnabled() && !action->isSeparator()) {
@@ -1983,11 +2005,28 @@ bool MainWindow::activateMenuBar()
         return false;
     }
 
+    // Back to the menu last used, unless it left with the workbench that put
+    // it there.
+    QAction *target = d->lastMenuBarAction;
+    if (!target || !target->isVisible() || !target->isEnabled()
+        || !bar->actions().contains(target)) {
+        target = first;
+    }
+
     bar->setFocus(Qt::MenuBarFocusReason);
-    // Opens the first menu as well as highlighting it, which is what Qt gives
-    // us and what the arrow keys need: a menu bar with no current item ignores
-    // them.
-    bar->setActiveAction(first);
+    // The bar needs a current item -- the one Left and Right move from, and
+    // the one a menu bar with nothing current would ignore them for -- and
+    // setActiveAction() is the only way to give it one. It opens that item's
+    // menu as well, which is not wanted: an open menu holds the keyboard, so
+    // Alt+E and the letter keys would no longer reach the rest of the row.
+    // Escape is how that menu is put away without giving up the row, so it is
+    // how it is put away here. What is left is where the Alt key leaves it:
+    // one menu highlighted, nothing open.
+    bar->setActiveAction(target);
+    if (QMenu *menu = target->menu(); menu && menu->isVisible()) {
+        QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QCoreApplication::sendEvent(menu, &escape);
+    }
     return true;
 }
 

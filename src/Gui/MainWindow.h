@@ -102,9 +102,10 @@ public:
     bool titleBarToolBars() const;
 
     /*! Put the keyboard on the menu bar, unfolding it first if it is folded
-     * behind the title bar logo: the first menu opens, and the arrow keys walk
-     * the row from there. This is what Std_ShowMenuBar and the Alt key both
-     * come down to. Returns false if there is no menu bar to show.
+     * behind the title bar logo: the first menu is highlighted, and the arrow
+     * keys walk the row from there without opening anything. This is what
+     * Std_ShowMenuBar and the Alt key both come down to. Returns false if
+     * there is no menu bar to show.
      */
     bool activateMenuBar();
 

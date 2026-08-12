@@ -482,8 +482,9 @@ StdCmdShowMenuBar::StdCmdShowMenuBar()
     sGroup        = "View";
     sMenuText     = QT_TR_NOOP("Show the menu bar");
     sToolTipText  = QT_TR_NOOP("Unfolds the menu bar, if it is folded behind the title bar logo, "
-                               "and hands it the keyboard: the first menu opens, Left and Right "
-                               "walk along the row, and Esc gives the keyboard back");
+                               "and hands it the keyboard: Left and Right walk along the row, "
+                               "Down opens a menu, a letter jumps to the menu it underlines, "
+                               "and Esc gives the keyboard back");
     sWhatsThis    = "Std_ShowMenuBar";
     sStatusTip    = sToolTipText;
     // The Alt key alone does this too, wherever the platform lets it through.
