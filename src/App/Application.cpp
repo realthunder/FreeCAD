@@ -1947,121 +1947,12 @@ static void freecadNewHandler ()
 #include <config.h>
 #endif // HAVE_CONFIG_H
 
+#include <Base/CrashLog.h>
 #if defined(_MSC_VER)
 #include <Base/StackWalker.h>
 #endif
 
 namespace {
-
-/** Where a crash writes what it knows: its own file, and stderr.
- *
- * The file comes first on every line. stderr is what you watch when you
- * started the app from a terminal, but it is also what is gone the moment that
- * terminal is -- and on a Windows GUI launch there is no terminal at all, so
- * the file is the only copy that survives to be read afterwards.
- *
- * One file per crash, named for the moment it happened:
- * <UserAppData>/crash-2026_08_12-17_14_52_318.log. Nothing to rotate, nothing
- * to overwrite, and a second crash in the same session cannot land on top of
- * the first one's stack. Written with plain stdio and flushed per line,
- * deliberately not through Base::Console() -- a segfault is as likely to have
- * happened *inside* the console as anywhere else (the access violation this
- * was built for faulted in ConsoleSingleton::Error()), and re-entering it from
- * the handler is how the backtrace gets lost.
- */
-class CrashSink
-{
-public:
-    explicit CrashSink(const char* reason)
-    {
-        // Config() is empty if the crash beats initConfig(); a bare relative
-        // name still beats writing nothing.
-        std::string path = App::Application::Config()["UserAppData"];
-        path += "crash-" + timestamp(ForFileName) + ".log";
-        m_file = std::fopen(path.c_str(), "a");
-
-        std::ostringstream str;
-        str << "===== " << timestamp(ToRead) << "  pid " << getProcessId() << "  thread "
-            << std::this_thread::get_id();
-        if (reason) {
-            str << "  " << reason;
-        }
-        str << " =====\n";
-        write(str.str().c_str());
-
-        // Only to stderr: whoever is watching a terminal wants to know which
-        // file to go and read, but the file itself already knows its own name.
-        std::cerr << "Writing crash log to " << path << std::endl;
-    }
-
-    ~CrashSink()
-    {
-        if (m_file) {
-            std::fclose(m_file);
-        }
-    }
-
-    CrashSink(const CrashSink&) = delete;
-    CrashSink& operator=(const CrashSink&) = delete;
-
-    void write(const char* text)
-    {
-        if (m_file) {
-            std::fputs(text, m_file);
-            std::fflush(m_file);  // per line: the next frame may be the one that kills us
-        }
-        std::cerr << text;
-    }
-
-    enum Shape
-    {
-        ToRead,      ///< "2026-08-12 17:14:52.318"
-        ForFileName  ///< "2026_08_12-17_14_52_318", nothing a file system objects to
-    };
-
-    /// Local date and time down to the millisecond.
-    static std::string timestamp(Shape shape)
-    {
-        const auto now = std::chrono::system_clock::now();
-        const auto secs = std::chrono::time_point_cast<std::chrono::seconds>(now);
-        const auto msec = std::chrono::duration_cast<std::chrono::milliseconds>(now - secs);
-        const std::time_t tt = std::chrono::system_clock::to_time_t(secs);
-
-        std::tm tmbuf {};
-#if defined(_MSC_VER)
-        localtime_s(&tmbuf, &tt);
-#else
-        localtime_r(&tt, &tmbuf);
-#endif
-        // Spelled out twice rather than passed a format variable, so both
-        // strftime() and snprintf() keep seeing string literals and the
-        // compiler can go on checking them.
-        char buf[32] {};
-        char out[48] {};
-        const int ms = static_cast<int>(msec.count());
-        if (shape == ForFileName) {
-            std::strftime(buf, sizeof(buf), "%Y_%m_%d-%H_%M_%S", &tmbuf);
-            std::snprintf(out, sizeof(out), "%s_%03d", buf, ms);
-        }
-        else {
-            std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tmbuf);
-            std::snprintf(out, sizeof(out), "%s.%03d", buf, ms);
-        }
-        return out;
-    }
-
-private:
-    static long getProcessId()
-    {
-#if defined(_MSC_VER)
-        return static_cast<long>(GetCurrentProcessId());
-#else
-        return static_cast<long>(getpid());
-#endif
-    }
-
-    std::FILE* m_file {nullptr};
-};
 
 #if defined(_MSC_VER)
 /** The Windows half of printBacktrace().
@@ -2074,9 +1965,9 @@ private:
 class CrashStackWalker: public StackWalker
 {
 public:
-    CrashStackWalker(CrashSink& sink, size_t skip)
+    CrashStackWalker(Base::CrashLog::Entry& entry, size_t skip)
         : StackWalker(RetrieveVerbose | SymBuildPath)
-        , m_sink(sink)
+        , m_entry(entry)
         , m_skip(skip)
     {}
 
@@ -2100,11 +1991,11 @@ protected:
 
     void OnOutput(LPCSTR szText) override
     {
-        m_sink.write(szText);
+        m_entry.line(szText);
     }
 
 private:
-    CrashSink& m_sink;
+    Base::CrashLog::Entry& m_entry;
     size_t m_skip;
     size_t m_seen {0};
 };
@@ -2116,7 +2007,8 @@ private:
 // It goes to <UserAppData>/crash.log first and to stderr second, on every platform.
 void printBacktrace(size_t skip=0, const char* reason=nullptr)
 {
-    CrashSink sink(reason);
+    Base::CrashLog::Entry entry(Base::CrashLog::Severity::Fatal,
+                                reason ? reason : "");
 #if defined HAVE_BACKTRACE_SYMBOLS
     void *callstack[128];
     size_t nMaxFrames = sizeof(callstack) / sizeof(callstack[0]);
@@ -2144,16 +2036,16 @@ void printBacktrace(size_t skip=0, const char* reason=nullptr)
         }
 
         // cannot directly print to cerr when using --write-log
-        sink.write(str.str().c_str());
+        entry.line(str.str());
     }
 
     free(symbols);
 #elif defined(_MSC_VER)
-    CrashStackWalker sw(sink, skip);
+    CrashStackWalker sw(entry, skip);
     sw.ShowCallstack();
 #else //HAVE_BACKTRACE_SYMBOLS
     (void)skip;
-    sink.write("Cannot print the stacktrace because the C runtime library doesn't provide backtrace or backtrace_symbols\n");
+    entry.line("Cannot print the stacktrace because the C runtime library doesn't provide backtrace or backtrace_symbols\n");
 #endif
 }
 
@@ -2222,8 +2114,8 @@ void my_se_translator_filter(unsigned int code, EXCEPTION_POINTERS* pExp)
         {
             std::ostringstream why;
             why << "Access violation at " << pExp->ExceptionRecord->ExceptionAddress;
-            CrashSink sink(why.str().c_str());
-            CrashStackWalker sw(sink, 0);
+            Base::CrashLog::Entry entry(Base::CrashLog::Severity::Fatal, why.str());
+            CrashStackWalker sw(entry, 0);
             sw.ShowCallstack(GetCurrentThread(), pExp->ContextRecord);
         }
         throw Base::AccessViolation();
@@ -2267,6 +2159,10 @@ void Application::init(int argc, char ** argv)
         initTypes();
 
         initConfig(argc,argv);
+        // Only now is the user directory known. Anything that crashed before
+        // this point already wrote its log to the working directory rather
+        // than losing it.
+        Base::CrashLog::setDirectory(mConfig["UserAppData"]);
         initApplication();
     }
     catch (...) {
