@@ -528,6 +528,7 @@ const std::vector<std::pair<Unit, const char *> > &Unit::unitTypes() {
         {Unit::SpecificEnergy, "SpecificEnergy"},
         {Unit::SpecificHeat, "SpecificHeat"},
         {Unit::Stiffness, "Stiffness"},
+        {Unit::StiffnessDensity, "StiffnessDensity"},
         {Unit::Stress, "Stress"},
         {Unit::ThermalConductivity, "ThermalConductivity"},
         {Unit::ThermalExpansionCoefficient, "ThermalExpansionCoefficient"},
@@ -585,6 +586,11 @@ const Unit Unit::ElectricalResistance       (2, 1, -3, -2);
 const Unit Unit::ElectricCharge             (0, 0, 1, 1);
 const Unit Unit::ElectricPotential          (2, 1, -3, -1);
 const Unit Unit::Force                      (1, 1, -2);
+// Moment shares Work's signature, so the two are the same unit and
+// getType() answers "Work" for both -- as it does upstream, where
+// Moment and Work are likewise both { 2, 1, -2 }. Named here because
+// PropertyMoment says what it means, not because it is distinguishable.
+const Unit Unit::Moment                     (2, 1, -2);
 const Unit Unit::Frequency                  (0, 0, -1);
 const Unit Unit::HeatFlux                   (0, 1, -3, 0, 0);
 const Unit Unit::InverseArea                (-2, 0, 0);
@@ -601,6 +607,7 @@ const Unit Unit::ShearModulus               (-1,1,-2);
 const Unit Unit::SpecificEnergy             (2, 0, -2);
 const Unit Unit::SpecificHeat               (2, 0, -2, 0, -1);
 const Unit Unit::Stiffness                  (0, 1, -2);
+const Unit Unit::StiffnessDensity           (-2,1,-2);
 const Unit Unit::Stress                     (-1,1,-2);
 const Unit Unit::ThermalConductivity        (1, 1, -3, 0, -1);
 const Unit Unit::ThermalExpansionCoefficient(0, 0, 0, 0, -1);

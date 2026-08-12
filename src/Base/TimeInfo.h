@@ -39,6 +39,8 @@
 #include <cstdint>
 #endif
 
+#include <chrono>
+#include <sstream>
 #include <string>
 #include <FCGlobal.h>
 
@@ -151,6 +153,56 @@ inline bool TimeInfo::operator>(const TimeInfo& time) const
     }
     return timebuffer.time > time.timebuffer.time;
 }
+
+using Ticks = std::chrono::steady_clock;
+
+/** How long something took, upstream's spelling of it
+ *
+ * A monotonic stopwatch, which is what a duration wants and what TimeInfo
+ * above is not: that one is wall clock, so a clock adjustment lands in the
+ * middle of whatever it is timing. Ported from upstream unchanged so that
+ * code written against either tree measures the same way.
+ *
+ * TimeInfo itself is deliberately left alone. Upstream rewrote it onto
+ * std::chrono and dropped getSeconds(), getMiliseconds() and
+ * currentDateTimeString() in the process, which this fork uses; that is a
+ * behaviour change and belongs on its own consideration, not smuggled in
+ * behind an additive port.
+ */
+class TimeElapsed: public std::chrono::time_point<Ticks>
+{
+public:
+    TimeElapsed()
+    {
+        setCurrent();
+    }
+
+    TimeElapsed(const TimeElapsed&) = default;
+    TimeElapsed(TimeElapsed&&) = default;
+    ~TimeElapsed() = default;
+
+    TimeElapsed& operator=(const TimeElapsed&) = default;
+    TimeElapsed& operator=(TimeElapsed&&) = default;
+
+    void setCurrent()
+    {
+        static_cast<std::chrono::time_point<Ticks>&>(*this) = Ticks::now();
+    }
+
+    static float diffTimeF(const TimeElapsed& start, const TimeElapsed& end = TimeElapsed())
+    {
+        const std::chrono::duration<float> duration = end - start;
+        return duration.count();
+    }
+
+    static std::string diffTime(const TimeElapsed& start, const TimeElapsed& end = TimeElapsed())
+    {
+        std::stringstream ss;
+        const std::chrono::duration<float> secs = end - start;
+        ss << secs.count();
+        return ss.str();
+    }
+};  // class TimeElapsed
 
 }  // namespace Base
 

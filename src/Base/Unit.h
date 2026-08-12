@@ -162,8 +162,11 @@ public:
     static const Unit YoungsModulus;
 
     static const Unit Stiffness;
+    static const Unit StiffnessDensity;
 
     static const Unit Force;
+    /// Dimensionally Work, and equal to it: a unit is its signature
+    static const Unit Moment;
     static const Unit Work;
     static const Unit Power;
 
