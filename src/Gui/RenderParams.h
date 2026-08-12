@@ -995,6 +995,31 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter OcclusionDemoteStreak
+    ///
+    /// How many consecutive frames every draw of an object must have
+    /// been culled before the level plan's downgrade sweep may treat
+    /// it as free -- give its GPU upload back without charging the
+    /// camera any visible error. 0 never does. Only used when
+    /// occlusion runs on the CPU, whose verdicts are exact per frame.
+    /// 
+    /// This is occlusion acting as a MEMORY mechanism: an enclosed
+    /// assembly's interior is inside the view frustum, so without a
+    /// hidden verdict the plan prices its downgrade as visible error
+    /// and pays for it in quality somewhere that actually shows. What
+    /// the sweep drops stays resident in CPU RAM; the way back is an
+    /// ordinary refine, so a verdict the camera later overturns costs
+    /// one upload. The streak is the hysteresis that keeps a drifting
+    /// camera from paying that upload per flap.
+    static const long & getOcclusionDemoteStreak();
+    static const long & defaultOcclusionDemoteStreak();
+    static void removeOcclusionDemoteStreak();
+    static void setOcclusionDemoteStreak(const long &v);
+    static const char *docOcclusionDemoteStreak();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter OcclusionCoarse
     ///
     /// Rasterize the CPU occlusion buffer's occluders from coarse

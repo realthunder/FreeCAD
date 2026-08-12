@@ -589,6 +589,21 @@ Params = [
         "correct than testing the group -- a draw is skipped when its own\n"
         "box is covered rather than when its neighbours' collectively\n"
         "are."),
+    ParamInt('OcclusionDemoteStreak',  8, title='Occlusion demote streak',
+        doc="How many consecutive frames every draw of an object must have\n"
+        "been culled before the level plan's downgrade sweep may treat\n"
+        "it as free -- give its GPU upload back without charging the\n"
+        "camera any visible error. 0 never does. Only used when\n"
+        "occlusion runs on the CPU, whose verdicts are exact per frame.\n"
+        "\n"
+        "This is occlusion acting as a MEMORY mechanism: an enclosed\n"
+        "assembly's interior is inside the view frustum, so without a\n"
+        "hidden verdict the plan prices its downgrade as visible error\n"
+        "and pays for it in quality somewhere that actually shows. What\n"
+        "the sweep drops stays resident in CPU RAM; the way back is an\n"
+        "ordinary refine, so a verdict the camera later overturns costs\n"
+        "one upload. The streak is the hysteresis that keeps a drifting\n"
+        "camera from paying that upload per flap."),
     ParamBool('OcclusionCoarse',  False, title='Occlusion coarse occluders',
         doc="Rasterize the CPU occlusion buffer's occluders from coarse\n"
         "hulls instead of from their meshes\n"

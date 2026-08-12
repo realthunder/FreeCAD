@@ -1375,6 +1375,12 @@ RendererBridge::translateOcclusionCullConfig(App::PropertyContainer * view)
     res.perInstance = viewParamOverride<App::PropertyBool>(
             view, "Render", "OcclusionPerInstance",
             RenderParams::getOcclusionPerInstance());
+    // Occlusion feeding the level plan's downgrade sweep (occlusion as
+    // a memory mechanism); 0 = never.
+    res.demoteStreak = uint32_t(std::max<long>(0,
+            viewParamOverride<App::PropertyInteger>(
+                    view, "Render", "OcclusionDemoteStreak",
+                    RenderParams::getOcclusionDemoteStreak())));
     res.coarseOccluders = viewParamOverride<App::PropertyBool>(
             view, "Render", "OcclusionCoarse",
             RenderParams::getOcclusionCoarse());

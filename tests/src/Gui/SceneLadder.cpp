@@ -903,6 +903,56 @@ TEST(PlanMeshDemotes, theMarginKeepsTheRefineBoundaryApart)
     EXPECT_TRUE(refines.empty());
 }
 
+TEST(PlanMeshDemotes, anOccludedSourceIsFreeAndRaisesNoTolerance)
+{
+    // The same boundary source the margin test holds on screen -- too
+    // wrong to drop for free, and no deficit stands to price it -- is
+    // dropped outright once the caller's occlusion verdict says no
+    // pixel of it reaches the screen. And the error it would have
+    // committed must NOT enter acceptedErrorPx: nobody can see it, so
+    // it must not raise the tolerance the climb runs at.
+    PlanCamera cam;
+    int boundary = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&boundary, 0.0f, 0, 0, -200, 5));
+    std::map<const void *, float> errs{{&boundary, 0.03f}};
+    Render::PlanDemoteStats stats;
+    auto tags = Render::planMeshDemotes(
+        draws, cam.view, cam.proj, 1000.0f, 2.0f, demoteErrs(errs),
+        &stats, 0, {},
+        [&boundary](const void *tag) { return tag == &boundary; });
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_EQ(tags[0], static_cast<const void *>(&boundary));
+    EXPECT_EQ(stats.occludedFree, 1u);
+    EXPECT_EQ(stats.eligible, 0u);
+    EXPECT_EQ(stats.acceptedErrorPx, 0.0f);
+}
+
+TEST(PlanMeshDemotes, occludedMemoryCoversTheDeficitBeforeVisibleError)
+{
+    // Two sources over the margin, one occluded and one plainly
+    // visible, and a deficit the occluded one's bytes already cover:
+    // the visible source must not be traded -- the whole point of the
+    // feed is buying the memory back with error nobody can see first.
+    PlanCamera cam;
+    int hidden = 0, shown = 0;
+    Render::DrawCallList draws;
+    draws.push_back(meshDraw(&hidden, 0.0f, 0, 0, -200, 5, 100));
+    draws.push_back(meshDraw(&shown, 0.0f, 20, 0, -200, 5, 100));
+    std::map<const void *, float> errs{{&hidden, 0.03f},
+                                       {&shown, 0.03f}};
+    Render::PlanDemoteStats stats;
+    auto tags = Render::planMeshDemotes(
+        draws, cam.view, cam.proj, 1000.0f, 2.0f, demoteErrs(errs),
+        &stats, /*deficit*/ 1, {},
+        [&hidden](const void *tag) { return tag == &hidden; });
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_EQ(tags[0], static_cast<const void *>(&hidden));
+    EXPECT_EQ(stats.occludedFree, 1u);
+    EXPECT_EQ(stats.tooBig, 1u);
+    EXPECT_EQ(stats.underPressure, 0u);
+}
+
 TEST(PlanMeshDemotes, whatCanDescendIsTheRegistrysAnswer)
 {
     // A source with no way down (error 0) is out however plainly it is

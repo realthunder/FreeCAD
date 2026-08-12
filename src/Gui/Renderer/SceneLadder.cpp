@@ -1303,6 +1303,9 @@ struct DemoteCandidate {
     /// never dropped at any pressure -- a price nobody can compute is
     /// not a licence to guess it low.
     bool unpriceable = false;
+    /// The caller's occlusion verdict: no pixel of any owner reaches
+    /// the screen. Asked once per source, like coarseErr.
+    bool occluded = false;
 };
 
 }  // namespace
@@ -1312,7 +1315,8 @@ std::vector<const void *> Render::planMeshDemotes(
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
     const std::function<float(const void *)> &demoteErrOf,
     PlanDemoteStats *stats, size_t deficitBytes,
-    const std::function<uint64_t(const MeshData *)> &bytesOf)
+    const std::function<uint64_t(const MeshData *)> &bytesOf,
+    const std::function<bool(const void *)> &hiddenOf)
 {
     std::vector<const void *> out;
     if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f
@@ -1385,6 +1389,7 @@ std::vector<const void *> Render::planMeshDemotes(
             DemoteCandidate cand;
             cand.tag = mesh.sourceTag;
             cand.coarseErr = coarseErr;
+            cand.occluded = hiddenOf && hiddenOf(mesh.sourceTag);
             cands.push_back(cand);
         }
         if (found->second == size_t(-1)) {
@@ -1421,6 +1426,18 @@ std::vector<const void *> Render::planMeshDemotes(
         if (cand.unpriceable) {
             if (stats)
                 ++stats->unpriceable;
+            continue;
+        }
+        // Occlusion's verdict: in the frustum, and still reaching no
+        // pixel. Free like offscreen, and -- the half that matters --
+        // its errPx never enters the accepted error: an error nobody
+        // can see raising the climb's tolerance would trade visible
+        // quality for invisible memory.
+        if (cand.occluded) {
+            if (stats)
+                ++stats->occludedFree;
+            out.push_back(cand.tag);
+            freed += cand.bytes;
             continue;
         }
         if (cand.visible && cand.errPx > freeErrPx) {

@@ -4570,6 +4570,11 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             {"Render_OcclusionThreads",
              RenderParams::getOcclusionThreads(),
              &RenderParams::docOcclusionThreads},
+            // Occlusion feeding the level plan's downgrade sweep --
+            // occlusion as a memory mechanism.
+            {"Render_OcclusionDemoteStreak",
+             RenderParams::getOcclusionDemoteStreak(),
+             &RenderParams::docOcclusionDemoteStreak},
             // What the coarse hulls are made of and how far they recede
             // (section 12.16).
             {"Render_OcclusionCoarseLevel",

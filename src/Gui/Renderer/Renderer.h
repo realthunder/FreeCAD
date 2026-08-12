@@ -497,6 +497,15 @@ struct OcclusionCullConfig {
     /// submits reaches no pixel, unmoved by a tenfold better buffer.
     bool perInstance = false;
 
+    /// How many consecutive frames every draw of a source must have
+    /// been culled before the level plan's DOWNGRADE sweep may treat
+    /// that source as free -- occlusion as a memory mechanism, not just
+    /// a time one. 0 disables the feed. Only the software oracle's
+    /// verdicts are folded (deterministic per frame); the streak is the
+    /// hysteresis that keeps a camera drifting across a verdict from
+    /// costing an upload per flap.
+    uint32_t demoteStreak = 8;
+
     /// KEY: Rasterize the software pass's occluders from coarse hulls
     /// rather than from their meshes (Gui/Renderer/OccluderMesh.h). The
     /// budget above says what the pass may spend; this says what it
@@ -533,6 +542,7 @@ struct OcclusionCullConfig {
             && softwareThreads == o.softwareThreads
             && softwareSimd == o.softwareSimd
             && perInstance == o.perInstance
+            && demoteStreak == o.demoteStreak
             && coarseOccluders == o.coarseOccluders
             && coarseLevel == o.coarseLevel
             && coarseMinTriangles == o.coarseMinTriangles

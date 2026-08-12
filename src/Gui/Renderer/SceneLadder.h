@@ -509,6 +509,11 @@ struct PlanDemoteStats {
     uint64_t unreachableBytes = 0;
     uint32_t tooBig = 0;       ///< over the margin, and pressure never reached it
     uint32_t offscreen = 0;    ///< free outright
+    /// In the frustum but proven occluded (the caller's \a hiddenOf):
+    /// free outright, like offscreen, and for the same reason -- no
+    /// pixel of it reaches the screen -- but counted apart because the
+    /// two verdicts come from different mechanisms and fail differently.
+    uint32_t occludedFree = 0;
     uint32_t eligible = 0;     ///< on screen and under the margin
     uint32_t underPressure = 0;///< over the margin, taken because the deficit demanded it
     uint32_t unpriceable = 0;  ///< no judgeable bounds, or the camera inside the box
@@ -577,12 +582,27 @@ struct PlanDemoteStats {
 /// that reaches it and answer 0 for the rest. Whoever carries it is
 /// arbitrary; what matters is that the total over the selection is what
 /// dropping all of it actually frees, and never more.
+///
+/// \a hiddenOf, when given, answers whether a SOURCE is proven to reach
+/// no pixel at all -- occlusion's verdict, folded per tag by the caller
+/// (docs/FarFieldProxies.md sec 10: "the gain from occlusion is not
+/// only about speed, but also gpu memory"). A hidden source joins the
+/// free tier beside the offscreen ones: an enclosed chassis's interior
+/// is IN the frustum, so the box test above prices its demotion as
+/// visible error the camera literally cannot see, and under a budget
+/// that error is paid in quality somewhere visible instead. Its errPx
+/// does not enter acceptedErrorPx -- an error nobody can see must not
+/// raise the tolerance the climb runs at. The verdict must be
+/// conservative and hysteresed by the caller (frames-hidden streak):
+/// this pass acts on it without judgement, and a flapping verdict here
+/// is an upload/rebuild per flap.
 RendererExport std::vector<const void *> planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
     const std::function<float(const void *)> &demoteErrOf,
     PlanDemoteStats *stats = nullptr, size_t deficitBytes = 0,
-    const std::function<uint64_t(const MeshData *)> &bytesOf = {});
+    const std::function<uint64_t(const MeshData *)> &bytesOf = {},
+    const std::function<bool(const void *)> &hiddenOf = {});
 
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.

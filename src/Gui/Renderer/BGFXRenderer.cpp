@@ -11353,6 +11353,24 @@ public:
                         // The charge is per sweep, so a geometry shared
                         // by several cache ids is promised once.
                         BGFXView::UploadCharge charge;
+                        // Occlusion's verdict widens the free tier here
+                        // and only here: a downgrade keeps the exact
+                        // mesh in CPU RAM, so a verdict the camera
+                        // later overturns costs one upload -- the CPU
+                        // demote sweep above pays a re-tessellation for
+                        // the same mistake, and does not get the feed.
+                        const uint32_t needStreak =
+                            (cullconf.enabled && cullconf.software)
+                            ? cullconf.demoteStreak : 0;
+                        auto hiddenOf = [this, needStreak](const void *tag)
+                            -> bool {
+                            if (!needStreak)
+                                return false;
+                            auto it = occlHiddenStreak.find(tag);
+                            return it != occlHiddenStreak.end()
+                                && it->second.fold == occlStreakFold
+                                && it->second.frames >= needStreak;
+                        };
                         auto drops = Render::planMeshDemotes(
                             scene, levelPlanner.viewMatrix(),
                             levelPlanner.projMatrix(), h,
@@ -11365,7 +11383,8 @@ public:
                                 -> uint64_t {
                                 return view && m
                                     ? view->uploadedBytesOf(*m, &charge) : 0;
-                            });
+                            },
+                            hiddenOf);
                         nDowngrade = drops.size();
                         for (const void *tag : drops)
                             reg.requestDowngrade(tag);
@@ -11595,13 +11614,15 @@ public:
                                 "render levels: %s pass: considered %u | "
                                 "no fallback rung %u | UNREGISTERED %u | on "
                                 "screen and too big %u "
-                                "| offscreen %u | eligible %u | under pressure "
+                                "| offscreen %u | occluded %u | eligible %u "
+                                "| under pressure "
                                 "%u | unpriceable %u | want %.1fMB freed "
                                 "%.1fMB | out of reach %.1fMB | accepted "
                                 "error %.2fpx\n",
                                 what, s.considered, s.noRung,
                                 s.unregistered, s.tooBig,
-                                s.offscreen, s.eligible, s.underPressure,
+                                s.offscreen, s.occludedFree, s.eligible,
+                                s.underPressure,
                                 s.unpriceable, double(deficit) / 1048576.0,
                                 double(s.bytesFreed) / 1048576.0,
                                 double(s.unreachableBytes) / 1048576.0,
@@ -14185,6 +14206,51 @@ public:
                                "occlusion query support; occlusion culling "
                                "is off and only frustum culling applies");
                 }
+
+                // Fold the finished mask per SOURCE for the level plan
+                // (occlusion as a memory mechanism). Software oracle
+                // only: its verdicts are exact per frame, where the
+                // query path's flap -- fed into demotes -- would become
+                // an upload per flip. A source's streak advances only
+                // on a frame where EVERY draw carrying its tag was
+                // culled; one visible row resets it.
+                if (cullconf.software && cullconf.demoteStreak) {
+                    ++occlStreakFold;
+                    for (size_t i = 0; i < scene.size(); ++i) {
+                        const auto &d = scene[i];
+                        if (!d.mesh || !d.mesh->sourceTag)
+                            continue;
+                        const bool cut = i < sceneCulled.size()
+                            && sceneCulled[i] != 0;
+                        auto &st = occlHiddenStreak[d.mesh->sourceTag];
+                        if (st.fold == occlStreakFold) {
+                            // A later row of the same tag can only
+                            // revoke, never extend.
+                            if (!cut)
+                                st.frames = 0;
+                        }
+                        else {
+                            const bool consecutive =
+                                st.fold + 1 == occlStreakFold;
+                            st.frames = cut
+                                ? (consecutive ? st.frames + 1 : 1) : 0;
+                            st.fold = occlStreakFold;
+                        }
+                    }
+                    // Prune what the scene no longer names, on a slow
+                    // cadence: tag addresses can be reused, and the
+                    // fold-generation check above is what keeps a
+                    // stale entry inert in the meantime.
+                    if ((occlStreakFold & 1023) == 0) {
+                        for (auto it = occlHiddenStreak.begin();
+                             it != occlHiddenStreak.end();) {
+                            if (it->second.fold != occlStreakFold)
+                                it = occlHiddenStreak.erase(it);
+                            else
+                                ++it;
+                        }
+                    }
+                }
             }
         }
         // Scene draws only — the argument must reference into `scene`.
@@ -16504,6 +16570,24 @@ public:
     /// the culler keeps between frames is there to survive a latency
     /// this path does not have.
     Render::MaskedOccluderPass maskedCull;
+    /// Occlusion folded per SOURCE, for the level plan (occlusion as a
+    /// memory mechanism): how many consecutive rendered frames EVERY
+    /// draw of a source has been culled -- frustum or occlusion, with
+    /// the software oracle answering. The downgrade sweep treats a
+    /// source past OcclusionCullConfig::demoteStreak as free: its
+    /// upload comes back without charging the camera visible error.
+    /// An entry is only trusted at the CURRENT fold generation, so a
+    /// reused tag address cannot inherit a dead source's streak; the
+    /// map is pruned of stale entries on a slow cadence rather than
+    /// rebuilt, and a streak survives a paused render loop only if the
+    /// camera did (the plan fires against the last rendered frame's
+    /// camera, which is the one the fold saw).
+    struct OcclStreak {
+        uint32_t frames = 0;
+        uint64_t fold = 0;
+    };
+    std::unordered_map<const void *, OcclStreak> occlHiddenStreak;
+    uint64_t occlStreakFold = 0;
     /// ⭐ The cull audit (docs/FarFieldProxies.md §12.9): one id image in
     /// flight, plus the verdict it is an answer about.
     ///

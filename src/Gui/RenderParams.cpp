@@ -88,6 +88,7 @@ public:
     bool OcclusionSimd;
     long OcclusionResolution;
     bool OcclusionPerInstance;
+    long OcclusionDemoteStreak;
     bool OcclusionCoarse;
     long OcclusionCoarseLevel;
     long OcclusionCoarseMinTris;
@@ -234,6 +235,8 @@ public:
         funcs["OcclusionResolution"] = &RenderParamsP::updateOcclusionResolution;
         OcclusionPerInstance = this->handle->GetBool("OcclusionPerInstance", true);
         funcs["OcclusionPerInstance"] = &RenderParamsP::updateOcclusionPerInstance;
+        OcclusionDemoteStreak = this->handle->GetInt("OcclusionDemoteStreak", 8);
+        funcs["OcclusionDemoteStreak"] = &RenderParamsP::updateOcclusionDemoteStreak;
         OcclusionCoarse = this->handle->GetBool("OcclusionCoarse", false);
         funcs["OcclusionCoarse"] = &RenderParamsP::updateOcclusionCoarse;
         OcclusionCoarseLevel = this->handle->GetInt("OcclusionCoarseLevel", 2);
@@ -533,6 +536,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionPerInstance(RenderParamsP *self) {
         self->OcclusionPerInstance = self->handle->GetBool("OcclusionPerInstance", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionDemoteStreak(RenderParamsP *self) {
+        self->OcclusionDemoteStreak = self->handle->GetInt("OcclusionDemoteStreak", 8);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionCoarse(RenderParamsP *self) {
@@ -2336,6 +2343,47 @@ void RenderParams::setOcclusionPerInstance(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeOcclusionPerInstance() {
     instance()->handle->RemoveBool("OcclusionPerInstance");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionDemoteStreak() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many consecutive frames every draw of an object must have\n"
+"been culled before the level plan's downgrade sweep may treat\n"
+"it as free -- give its GPU upload back without charging the\n"
+"camera any visible error. 0 never does. Only used when\n"
+"occlusion runs on the CPU, whose verdicts are exact per frame.\n"
+"\n"
+"This is occlusion acting as a MEMORY mechanism: an enclosed\n"
+"assembly's interior is inside the view frustum, so without a\n"
+"hidden verdict the plan prices its downgrade as visible error\n"
+"and pays for it in quality somewhere that actually shows. What\n"
+"the sweep drops stays resident in CPU RAM; the way back is an\n"
+"ordinary refine, so a verdict the camera later overturns costs\n"
+"one upload. The streak is the hysteresis that keeps a drifting\n"
+"camera from paying that upload per flap.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionDemoteStreak() {
+    return instance()->OcclusionDemoteStreak;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionDemoteStreak() {
+    const static long def = 8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionDemoteStreak(const long &v) {
+    instance()->handle->SetInt("OcclusionDemoteStreak",v);
+    instance()->OcclusionDemoteStreak = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionDemoteStreak() {
+    instance()->handle->RemoveInt("OcclusionDemoteStreak");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
