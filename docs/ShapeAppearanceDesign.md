@@ -849,10 +849,97 @@ from.
    transparency in a face colour's alpha, the collapse on a `ShapeColor`
    write, and `updateColors`' `touch()` all behave as before, now keyed on
    `ShapeAppearance`. Stage 1's storage half is complete.
-4. Restore-time migration, including upstream's `version="3"` second pass
-   as a lossy read (7.3). Partly done by the above: an old document's
-   `DiffuseColor` restores under both encodings, and a `ShapeMaterial` that
-   arrives after it now folds instead of replacing (`9ce0a9d7a0`).
+4. ~~Restore-time migration, including upstream's `version="3"` second pass
+   as a lossy read (7.3)~~ -- done 2026-08-12. The second pass is read in
+   full rather than lossily (7.3), an old document's `DiffuseColor` restores
+   under both encodings, a `ShapeMaterial` arriving after it folds instead of
+   replacing (`9ce0a9d7a0`), and the one direction that was still wrong --
+   reading a document from **after** upstream inverted what a colour's alpha
+   means -- is 7.9.
+
+### 7.9 The alpha component changed meaning at 1.1, in the other direction
+
+⭐ **Found reading their reader, not their writer.** Upstream carries
+`requiresAlphaConversion` on four property classes and a
+`readerRequiresAlphaConversion(reader)` that answers
+`Base::getVersion(reader.ProgramVersion) < v1_1`: **before 1.1 a colour's
+alpha component held transparency, and from 1.1 it holds opacity.** This
+fork's convention is the pre-1.1 one -- `Base::Color::a` IS transparency
+here, which is why a face colour's alpha is that face's transparency and why
+`ViewProviderPartExt::setHighlightedFaces` writes `colors[i].a` straight into
+Coin's `transparency` field.
+
+So the migration this fork needs is the same arithmetic aimed the other way:
+convert a document written **at or after** 1.1, leave everything older alone.
+`Base::alphaIsOpacity` (new `src/Base/ProgramVersion.h`) is that gate, and
+four restore paths ask it -- `PropertyColor`, `PropertyColorList`,
+`PropertyMaterial`, `PropertyMaterialList` -- the same four upstream converts.
+
+Three things this turned up, each of which would have failed silently:
+
+- ⭐ **The gate has to fail closed, and upstream's cannot be reused as-is.**
+  Their `getVersion` returns `v1_x` for any string it does not recognise,
+  which is *newer* than every name it knows. That is the safe answer for
+  their test (`< v1_1`) and the dangerous one for ours: `pre-0.14`, the
+  stand-in a reader fills in when a document states no version at all, would
+  classify as post-1.1 and every colour in the oldest files there are would
+  come back inverted. `alphaIsOpacity` parses the leading `major.minor`
+  numerically instead, so unrecognised means "do nothing" -- and a release
+  newer than any table still answers yes.
+- ⭐⭐ **The Gui document reader knew no version, and that is where all of
+  these properties live.** `Gui::Document::RestoreDocFile` builds its own
+  `XMLReader` over GuiDocument.xml and set `DocumentSchema` and `FileVersion`
+  on it but never `ProgramVersion` -- which upstream does set, one line. Every
+  appearance, colour and material is a view provider property, so without
+  that line the whole gate reads an empty string. Note that the archive-entry
+  paths would have worked anyway (a registered entry is served by the outer
+  parser, which has the attribute), so this is another case of an encoding
+  deciding whether a restore is correct.
+- ⭐ **For the material list the conversion is a move, not an inversion.**
+  Upstream renders per-entry transparency out of the `transparency` field and
+  ignores the diffuse alpha entirely (`setHighlightedFaces` reads
+  `materials[i].transparency`), and their own pre-1.1 migration writes 1.0
+  into that alpha for every entry. So the field is the value their file
+  means, and `applyOpacityConvention` moves it into the diffuse alpha where
+  this fork reads it; inverting the component instead would make every face
+  opaque and lose the per-face transparency. The other three colours are
+  inverted, being decorative on both sides but stored.
+
+⭐⭐ **And the version was not the only thing missing: nothing derived the
+compatibility names.** A 1.0-or-later upstream document states no
+`ShapeColor`, no `ShapeMaterial` and no `Transparency` -- the appearance
+replaced all three -- so those properties stay at whatever the constructor
+left, and a blue half-transparent object opens with a grey ShapeColor and
+Transparency 0 in the property editor. The mirror `onChanged` does is not
+enough, measured rather than assumed: an appearance read from its own archive
+entry arrives correct and leaves both stale, while the same write *after* the
+restore mirrors normally. So `ViewProviderGeometryObject::finishRestoring`
+re-derives them, once, after every value the file carries has landed --
+`refreshAppearanceMirrors`, which is a no-op for every document this fork
+wrote (all four are stated, all four already agree) and the whole migration
+for one that has only the appearance. Transparency goes first: the reaction to
+a ShapeColor write folds it into the diffuse alpha.
+
+Upstream's hidden `_diffuseColor` -- a real `App::PropertyColorList` member,
+never registered and never written, that `handleChangedPropertyName` restores
+an old `DiffuseColor` element into so that `onChanged` can later split its
+alpha out into `setTransparencies` -- has **no counterpart here and needs
+none**. It exists because their storage cannot hold what that alpha means;
+ours can, so the element restores straight into the property that names the
+appearance's diffuse field (1.1), and the alpha stays where the file put it.
+
+The same gate runs the other way for free: this fork's documents state
+`0.22R<rev>`, so a 1.1 reader classifies them as pre-1.1 and converts their
+colours correctly, without either side agreeing to anything. That holds only
+while the version number does -- one more reason the note in
+`Base/ProgramVersion.h` has to be read before `PACKAGE_VERSION` moves.
+
+Verified by `fcad-probes/upstream_alpha_probe.py`, which crafts the 1.1 file
+rather than writing one: their `version="3"` archive entry packed by hand,
+`ShapeColor` / `ShapeMaterial` / `DiffuseColor` removed as a 1.1 document has
+none, and `ProgramVersion` set in Document.xml. The control is the same bytes
+under this fork's own version, which must come back unconverted -- the gate
+is the release that wrote the document, not the encoding.
 
 ### 7.8 What restore actually does, measured
 
