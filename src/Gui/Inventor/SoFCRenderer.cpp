@@ -832,8 +832,12 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
       static bool probed = false;
       if (hasBlendColor && !probed) {
         probed = true;
+        // No & — on Windows glBlendColor is the glue-resolved pointer
+        // variable above, and taking its address yields a pointer to
+        // the pointer. Elsewhere it is the GL function itself, which
+        // decays to the same pointer type on its own.
         hasBlendColor = _constantAlphaBlendWorks(
-            cc_glglue_instance(action->getCacheContext()), &glBlendColor);
+            cc_glglue_instance(action->getCacheContext()), glBlendColor);
         if (!hasBlendColor)
           FC_WARN("constant alpha blending is not honoured by this driver; "
                   "an overridden transparency on per-vertex colored geometry "
