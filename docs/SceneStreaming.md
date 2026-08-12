@@ -2569,12 +2569,113 @@ objects to bounding boxes; with them on it settles at live 63.1MB /
 cpu 33.0MB with the tolerance back to 2.00px, holding far more real
 tessellation. The gates buy quality at a fixed budget.
 
-**Follow-ups, both parameterised in the usual way:** suppressing both
-drawables outright for the duration of a coarse-first document load
-and restoring them when it finishes; and hoisting the gate flags out
-of `#ifndef FC_RENDERER_STANDALONE`, where they currently compile to
-false, so the WASM tier gets the vertex gate -- it is pure display and
-needs no budget behind it.
+#### 13b.1 -- the load gate, and the phase that turned out to matter
+
+`Render_LoadDropElements` (default on) suppresses **both** classes for
+as long as a document is still arriving, and hands them back to the
+two standing gates the moment it has finished. A load is when the tier
+can least afford edges and vertices and can least use them: the faces
+are arriving coarse-first and being replaced under the camera, nobody
+inspects a vertex of a model that is still half there, and every byte
+not spent on an edge instance buffer is one the arriving geometry
+gets. It overrides both gates while it lasts -- vertices drop with
+`ShapeVertices` on, edges drop with no pressure declared -- but it is
+subject to the same all-or-nothing classification and the same
+display-mode exemptions, so a wire, a sketch or a point cloud draws
+throughout. Leaving costs one frame, like the pressure gate.
+
+**MEASURED, and on the `.FCStd` open path it buys NOTHING -- because
+there is nothing on screen to suppress.** Rack model, 5455 objects,
+`Render_LevelDebug` on, both crossings and all ten intervening plan
+readouts logged:
+
+| phase | wall | draws in the renderer's scene | eligible | suppressed |
+|---|---|---|---|---|
+| whole load, gate ON | 17.8s | **0** | 0 | 0 point + 0 line |
+| the frame it lifted | -- | 5952 (17727 draws) | 11818 | -- |
+
+`bgfx: scene consumed: 5952 draws, 1241 meshes` appears **once**,
+after the load, and the gate lifts on that same frame. A progressive
+load parks every visual build
+(`ViewProviderPartExt::deferVisualForLoad`) and publishes the scene in
+one step when it is done, so **the renderer holds an empty scene for
+the entire load**. A display gate cannot beat a mechanism that has
+already withheld all the geometry: the two are the same idea applied
+at different depths, and the deeper one got there first.
+
+So the feature is built, correct and inert on this path. It is kept
+because the case it was designed for is real elsewhere -- a **live
+progressive import** (`App::Document::LiveImport`) builds its visuals
+inline as objects appear, so its geometry does reach a live view while
+the document is still filling. **That case is NOT yet measured.**
+
+Getting even the null result required fixing the predicate first.
+"A document is loading" reads naturally as the document status bits
+plus `Gui::Document::isRestoringViewProviders()`, and both of those
+clear *before* the deferred visual drain -- the one phase in which
+geometry would reach a renderer at all. The gate now reads the visual
+queue itself, published as `Gui::Application::isBuildingVisuals()`:
+the queue is PartGui's and its readers are not, so the owner sets the
+flag at every mutation of its map rather than have Gui depend on a
+workbench, the same constraint that makes the bridge read
+`attachedOnly` by name.
+
+WARNING: this is why the crossing is reported at all, and it is the
+whole reason the null was visible. The plan readout prints on a camera
+settle, and a load can begin and end entirely between two settles --
+the gate would have done its whole job with nothing saying it ran, and
+`eligible 0` for seventeen seconds would never have been seen. Both
+edges print under `Render_LevelDebug` with the counts of the frame
+that crossed.
+
+WARNING: the first two attempts to read this timeline were wrong
+because the gate report was `std::printf` while the harness markers
+were Python `sys.stdout` -- two differently buffered streams, whose
+interleaving in a captured pipe is not the order the events happened
+in. It read as though the gate lifted before the drain had run. The
+report goes through the console on the desktop now, so it lands in
+`--log-file` in true order beside the plan readout; **never time two
+events from two buffers.**
+
+#### 13b.2 -- the WASM tier
+
+The gate flags are hoisted out of `#ifndef FC_RENDERER_STANDALONE`, so
+the **vertex gate works in the browser** (`?shapevertices=1` turns the
+points back on; off is the default, as on the desktop). It is pure
+display -- one bit from the producer and whether the edges are drawn --
+and needs no budget, no level plan and no pressure state behind it,
+which is why it ports and the edge gate does not.
+
+The hoist alone was **not sufficient**, twice over.
+
+First, **the WASM tier did not compile**, and had not for two commits.
+The gates commit used `gatedPoints`/`gatedLines`/`gateEligible` in the
+submit loop, which is common to both tiers, while declaring them
+inside `#ifndef FC_RENDERER_STANDALONE`; and before that the
+frame-timing instrument had put six unguarded `Base::Console()` calls
+in a file that only includes `Base/Console.h` in its Qt half. The
+hoist fixes the first; the six now go through one `FC_RENDER_MSG`
+macro that is `Base::Console()` on the desktop -- unchanged on
+purpose, because the performance harnesses read those lines out of
+`--log-file` and only the console writes there -- and `std::printf` in
+the browser. WARNING: **there is no emsdk on the development box**, so
+this tier is only ever compile-checked by hand
+(`-fsyntax-only -DFC_RENDERER_STANDALONE -DFC_OS_WASM`) and a break in
+it is invisible to every build that gets run. That is how two of them
+accumulated.
+
+Second, `attachedOnly` was not on the wire at all, so even a compiling
+hoisted gate would have found **zero eligible drawables** in the
+browser and reported itself working. The classification now rides a free bit of
+the mesh chunk's existing flags byte (bit 8) and is copied onto
+generated levels, since whether a vertex sits on an edge is a fact
+about the shape's topology and not about the rung it is drawn at.
+`kChunkVersion` moves with it: nothing can be *misread* without the
+bump -- an old chunk simply reads as unclassified, which is the safe
+direction -- but a cached chunk from an older build would answer
+"unclassified" forever, and the gate would work on the desktop and
+quietly do nothing in the browser, which is the exact failure this
+file's own layout-guard comment exists to prevent.
 
 The edge gate is the harder half there, and not for want of a budget:
 the WASM tier has had one all along (`Render::MemoryBudget s_budget`,
