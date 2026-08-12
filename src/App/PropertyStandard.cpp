@@ -3074,17 +3074,23 @@ Material PropertyMaterialList::getMaterial(int idx) const
     Material mat;
     if (idx < 0 || idx >= _count)
         return mat;
-    mat.ambientColor = fieldAt(_ambient, idx, mat.ambientColor);
-    mat.diffuseColor = fieldAt(_diffuse, idx, mat.diffuseColor);
-    mat.specularColor = fieldAt(_specular, idx, mat.specularColor);
-    mat.emissiveColor = fieldAt(_emissive, idx, mat.emissiveColor);
-    mat.shininess = fieldAt(_shininess, idx, mat.shininess);
-    mat.transparency = fieldAt(_transparency, idx, mat.transparency);
-    mat.image = fieldAt(_image, idx, mat.image);
-    mat.imagePath = fieldAt(_imagePath, idx, mat.imagePath);
-    mat.uuid = fieldAt(_uuid, idx, mat.uuid);
+    // The type goes on FIRST. Material::setType() rewrites every colour and
+    // both floats with that type's preset, so a setType() after the fields
+    // are laid in throws all of them away and the list hands back the
+    // preset instead of what it stores -- silently, because the per field
+    // getters below are unaffected and keep telling the truth.
+    const Material &def = defaultMaterial();
     mat.setType(static_cast<Material::MaterialType>(
-                fieldAt(_type, idx, static_cast<int8_t>(mat.getType()))));
+                fieldAt(_type, idx, static_cast<int8_t>(def.getType()))));
+    mat.ambientColor = fieldAt(_ambient, idx, def.ambientColor);
+    mat.diffuseColor = fieldAt(_diffuse, idx, def.diffuseColor);
+    mat.specularColor = fieldAt(_specular, idx, def.specularColor);
+    mat.emissiveColor = fieldAt(_emissive, idx, def.emissiveColor);
+    mat.shininess = fieldAt(_shininess, idx, def.shininess);
+    mat.transparency = fieldAt(_transparency, idx, def.transparency);
+    mat.image = fieldAt(_image, idx, def.image);
+    mat.imagePath = fieldAt(_imagePath, idx, def.imagePath);
+    mat.uuid = fieldAt(_uuid, idx, def.uuid);
     return mat;
 }
 
