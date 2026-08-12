@@ -2552,6 +2552,30 @@ two thirds of the memory returned for free, the plan has to buy far
 less of it back with visible error, and the accepted error falls from
 36.10px to 5.37px at the same budget.
 
+**Spending order, and a proposal the data refused.** The pressure
+response spends vertices, then edges, then face rungs -- vertex third
+class, edge second, face first. It was proposed that the plan spends
+them out of order, pricing its face downgrades against memory the edge
+gate was about to free. It does not: the gates are per frame and the
+plan fires 300 ms after a camera settle, so by plan time the gate has
+been in effect for many frames and `live` already reflects it (191.2MB
+in plan 1, not the ungated 530.5MB). The frame loop supplies the
+ordering for free, and the downgrades that remain are buying a real
+gap above the budget.
+
+Both arms reach the 64 MB budget and pay very differently for it. With
+the gates off the ladder converges at live 8.9MB only by reducing 2302
+objects to bounding boxes; with them on it settles at live 63.1MB /
+cpu 33.0MB with the tolerance back to 2.00px, holding far more real
+tessellation. The gates buy quality at a fixed budget.
+
+**Follow-ups, both parameterised in the usual way:** suppressing both
+drawables outright for the duration of a coarse-first document load
+and restoring them when it finishes; and hoisting the gate flags out
+of `#ifndef FC_RENDERER_STANDALONE`, where they currently compile to
+false, so the WASM tier gets the vertex gate -- it is pure display and
+needs no level plan behind it.
+
 WARNING: the gate's own counters were double counted in their first
 reading (the predicate is asked by the id pass and the submit loop
 both, and it tallied inside itself -- all three counters came back
