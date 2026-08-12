@@ -305,6 +305,67 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LevelCount
+    ///
+    /// How many rungs the fidelity ladder declares
+    /// (docs/SceneStreaming.md #13). Rung n is tessellated at a
+    /// deflection of the shape diagonal over 8<<n, so rung 0 is the
+    /// coarsest and each further rung halves the error; this bounds
+    /// what Coarse tessellation level may select and how far a source
+    /// may climb. Raising it adds finer rungs, not coarser ones -- to
+    /// go below rung 0 the plan scales an object's error instead, see
+    /// Level scale.
+    static const long & getLevelCount();
+    static const long & defaultLevelCount();
+    static void removeLevelCount();
+    static void setLevelCount(const long &v);
+    static const char *docLevelCount();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelScale
+    ///
+    /// What the level plan multiplies an object's error by when it
+    /// must free memory and every ordinary descent is exhausted
+    /// (docs/SceneStreaming.md #13). Rung 0 is not the floor: under a
+    /// budget the plan keeps picking objects -- individually, cheapest
+    /// visible error first, never the whole scene at once -- and
+    /// re-tessellates each one this much coarser again, until the
+    /// model fits. An object whose scaled error reaches Level scale
+    /// box error is replaced by its bounding box, which is the real
+    /// floor: coarsening a deflection cannot drop a planar face below
+    /// the two triangles it always has, and on a measured STEP
+    /// assembly a 4x coarser tessellation removed only 19% of the
+    /// primitives. 1 or less turns dynamic scaling off, and then a
+    /// budget under what rung 0 costs cannot be honoured.
+    static const double & getLevelScale();
+    static const double & defaultLevelScale();
+    static void removeLevelScale();
+    static void setLevelScale(const double &v);
+    static const char *docLevelScale();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelScaleBoxError
+    ///
+    /// The scaled error at which an object stops being tessellated
+    /// at all and is drawn as its bounding box (12 triangles whatever
+    /// its face count), expressed relative to the shape diagonal. This
+    /// is where the ladder stops paying for topology it can no longer
+    /// resolve: past roughly a quarter of the diagonal a re-tessellated
+    /// shape and its box commit similar error, and only the box
+    /// actually removes the faces. 0 or less never substitutes a box.
+    static const double & getLevelScaleBoxError();
+    static const double & defaultLevelScaleBoxError();
+    static void removeLevelScaleBoxError();
+    static void setLevelScaleBoxError(const double &v);
+    static const char *docLevelScaleBoxError();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter EffectResolution
     ///
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect

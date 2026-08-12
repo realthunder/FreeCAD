@@ -71,8 +71,16 @@ namespace Render {
 ///   CPU RAM (step 3's GPU half) — fired when the GPU budget wants
 ///   upload bytes back; the way back up is then an instant
 ///   re-activation through an ordinary refine.
-/// - `fallbackError`: the error of the coarse rung either way down
-///   lands on — what the plan prices the drop by.
+/// - `fallbackError`: the error of the rung a DEMOTE lands on -- what
+///   the plan prices the drop by.
+/// - `downgradeFallbackError`: the same for the downgrade, when the two
+///   directions land somewhere different. They usually do not: dropping
+///   the exact rung and merely un-displaying it both leave the coarse
+///   one showing. But a source already displaying its coarse rung
+///   descends by re-tessellating COARSER, and then the demote (drop a
+///   hidden finer rung, nothing on screen changes) and the downgrade
+///   (show a coarser mesh) commit quite different error. 0 falls back
+///   to `fallbackError`, which is every pre-existing caller.
 ///
 /// At namespace scope rather than nested, because a nested class with
 /// default member initializers cannot be a default argument of its
@@ -83,6 +91,7 @@ struct LevelHooks {
     std::function<void()> demote;
     std::function<void()> downgrade;
     float fallbackError = 0.0f;
+    float downgradeFallbackError = 0.0f;
 };
 
 /// What demoteError/downgradeError answer for a tag the registry has

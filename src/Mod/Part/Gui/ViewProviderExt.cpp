@@ -3234,26 +3234,37 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
 // updateVisual() finds every face resident -- an instant rebuild. The
 // exact rung follows the normal ladder from there. Returns whether
 // the stand-in was built (the caller is done then).
-bool ViewProviderPartExt::buildCoarseStandIn()
+bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
 {
     const long deferFaces = Gui::RenderParams::getCoarseDeferFaces();
-    if (deferFaces < 0 || cachedShape.isNull()) {
+    if (cachedShape.isNull() || (deferFaces < 0 && !underPressure)) {
         return false;
     }
     TopoDS_Shape cShape = cachedShape.getShape();
-    if (cShape.IsNull() || CoarseMeshTShape == cShape.TShape().get()
-        || ExactMeshTShape == cShape.TShape().get()) {
+    if (cShape.IsNull()) {
         return false;
+    }
+    // Under pressure the box is a DESCENT, not a stand-in: the object
+    // has a mesh and the plan asked for it back, so the tests that say
+    // "a mesh is already here" or "this import is not live" are the
+    // wrong questions -- they exist to keep the import path from
+    // standing in for work already done.
+    if (!underPressure) {
+        if (CoarseMeshTShape == cShape.TShape().get()
+            || ExactMeshTShape == cShape.TShape().get()) {
+            return false;
+        }
+        auto d = pcObject ? pcObject->getDocument() : nullptr;
+        if (!d || !d->testStatus(App::Document::LiveImport)) {
+            return false;
+        }
+        if (long(cachedShape.countSubShapes(TopAbs_FACE)) <= deferFaces) {
+            return false;
+        }
     }
     auto doc = pcObject ? pcObject->getDocument() : nullptr;
-    if (!doc || !doc->testStatus(App::Document::LiveImport)) {
-        return false;
-    }
     const int coarseLvl = coarseTessellationLevel(doc);
     if (coarseLvl < 0) {
-        return false;
-    }
-    if (long(cachedShape.countSubShapes(TopAbs_FACE)) <= deferFaces) {
         return false;
     }
     try {
@@ -3290,13 +3301,18 @@ bool ViewProviderPartExt::buildCoarseStandIn()
                << cachedShape.countSubShapes(TopAbs_FACE)
                << " faces deferred to the refine pool)");
         const void *tsh = cShape.TShape().get();
-        auto onCoarse = [this, tsh](const TopoDS_Shape &meshed) {
+        auto onCoarse = [this, tsh, underPressure](const TopoDS_Shape &meshed) {
             TopoDS_Shape cur = cachedShape.getShape();
             if (cur.IsNull() || cur.TShape().get() != tsh) {
                 return;
             }
             transferMeshLevels(meshed, cur);
             CoarseMeshTShape = tsh;
+            // Climbing out of a pressure box: the object may be
+            // tessellated again, so the flag that sent it here is spent.
+            if (underPressure) {
+                MeshErrorScaleExhausted = false;
+            }
             FC_LOG(getFullName() << " stand-in resolved: coarse mesh in");
             updateVisual();
         };
@@ -3565,7 +3581,11 @@ void ViewProviderPartExt::updateVisual()
     // GUI for seconds, and the import stall scales with the largest
     // single part. Build a 12-triangle bounding-box stand-in instead
     // and let the level plan run the coarse build on the refine pool.
-    if (buildCoarseStandIn()) {
+    // ...and the same box as a DESCENT (sec 13, dynamic scale): an
+    // object whose deflection can no longer be coarsened is drawn as
+    // its 12-triangle box, which is the one representation here that
+    // actually removes faces rather than subdividing them less.
+    if (buildCoarseStandIn(MeshErrorScaleExhausted)) {
         VisualTouched = false;
         setHighlightedFaces(DiffuseColor.getValues());
         setHighlightedEdges(LineColorArray.getValues());
@@ -3698,13 +3718,33 @@ void ViewProviderPartExt::updateVisual()
             ExactMeshTShape = nullptr;
         const int coarseLvl = exactResident
             ? -1 : coarseTessellationLevel(pcObject ? pcObject->getDocument() : nullptr);
+        // The dynamic scale this object currently stands at (sec 13). It
+        // belongs to a shape, so a different TShape starts again at the
+        // rung -- otherwise an edited object would inherit the
+        // coarseness the plan bought against a shape that is gone.
+        const void *scaleTShape = cShape.IsNull() ? nullptr
+                                                  : cShape.TShape().get();
+        if (MeshErrorScaleTShape != scaleTShape) {
+            MeshErrorScaleTShape = scaleTShape;
+            MeshErrorScale = 1.0;
+            MeshErrorScaleExhausted = false;
+        }
+        double shapeDiag = 0.0;
         if (coarseLvl >= 0) {
             double dx = xMax - xMin, dy = yMax - yMin, dz = zMax - zMin;
             double diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+            shapeDiag = diag;
             if (diag > 0) {
-                deflection = meshLevelDeflection(diag, unsigned(coarseLvl));
-                AngDeflectionRads = meshLevelAngle(unsigned(coarseLvl));
-                builtError = float(1.0 / double(8u << unsigned(coarseLvl)));
+                const double scale = std::max(1.0, MeshErrorScale);
+                deflection = meshLevelDeflection(diag, unsigned(coarseLvl))
+                    * scale;
+                // The angular tolerance rides the same scale, clamped
+                // short of the half turn at which a revolved face stops
+                // being a surface at all.
+                AngDeflectionRads = std::min(
+                    meshLevelAngle(unsigned(coarseLvl)) * scale, M_PI / 2.0);
+                builtError =
+                    float(scale / double(8u << unsigned(coarseLvl)));
             }
         }
 
@@ -3768,6 +3808,65 @@ void ViewProviderPartExt::updateVisual()
                 updateVisual();
             };
         }
+        // The dynamic-scale descent (sec 13): what this object can still
+        // give up once it is already showing its coarse rung and the
+        // budget is not met. Armed only on a coarse-built source with
+        // a scale to apply -- an exact-resident one has the ordinary
+        // demote/downgrade above, which is cheaper and comes first.
+        std::function<void()> onScaleDown;
+        float scaledError = 0.0f;
+        const double levelScale = Gui::RenderParams::getLevelScale();
+        if (builtError > 0.0f && levelScale > 1.0 && shapeDiag > 0.0) {
+            scaledError = float(builtError * levelScale);
+            const void *tsh = cShape.TShape().get();
+            const double nextScale = std::max(1.0, MeshErrorScale) * levelScale;
+            const double nextDefl = deflection * levelScale;
+            const double nextAng = std::min(AngDeflectionRads * levelScale,
+                                            M_PI / 2.0);
+            const double boxError = Gui::RenderParams::getLevelScaleBoxError();
+            onScaleDown = [this, tsh, nextScale, nextDefl, nextAng,
+                           scaledError, boxError]() {
+                TopoDS_Shape cur = cachedShape.getShape();
+                if (cur.IsNull() || cur.TShape().get() != tsh)
+                    return;
+                MeshErrorScale = nextScale;
+                // Past the box error, or once deflection has proved it
+                // cannot coarsen this shape, re-tessellating buys
+                // nothing: only a representation that drops FACES does,
+                // and the bounding box is the one this class can build
+                // today. updateVisual takes that path off the flag.
+                if (MeshErrorScaleExhausted || (boxError > 0.0
+                                                && scaledError >= boxError)) {
+                    MeshErrorScaleExhausted = true;
+                    updateVisual();
+                    return;
+                }
+                // Otherwise mesh a copy coarser on the refine pool and
+                // adopt it: the transfer brings it in beside the finer
+                // rung and the demote, which keeps the fewest nodes,
+                // drops that rung and its edge polygons.
+                queueMeshLevelBuild(
+                    faceset ? static_cast<SoNode *>(faceset)
+                            : static_cast<SoNode *>(lineset),
+                    cur, nextDefl, nextAng,
+                    [this, tsh](const TopoDS_Shape &meshed) {
+                        TopoDS_Shape live = cachedShape.getShape();
+                        if (live.IsNull() || live.TShape().get() != tsh)
+                            return;
+                        const int before = meshLevelNodeCount(live);
+                        transferMeshLevels(meshed, live);
+                        demoteMeshLevels(live);
+                        const int after = meshLevelNodeCount(live);
+                        // Did asking for a coarser mesh actually
+                        // produce one? A shape of planar faces answers
+                        // no at every deflection, and there is no point
+                        // discovering that once per step.
+                        if (before > 0 && after * 10 >= before * 9)
+                            MeshErrorScaleExhausted = true;
+                        updateVisual();
+                    });
+            };
+        }
         registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
                                 builtError, exactDeflection, exactAngle,
                                 std::move(onExact), std::move(onDemote),
@@ -3775,7 +3874,8 @@ void ViewProviderPartExt::updateVisual()
                                               : 0.0f,
                                 std::move(onDowngrade),
                                 pcObject ? pcObject->getDocument() : nullptr,
-                                "per-object");
+                                "per-object", std::move(onScaleDown),
+                                scaledError);
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());

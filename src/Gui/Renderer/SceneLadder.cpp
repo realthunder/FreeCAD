@@ -1243,10 +1243,19 @@ std::vector<const void *> Render::planMeshDemotes(
         if (!draw.mesh)
             continue;
         const MeshData &mesh = *draw.mesh;
-        // The demotable set is the refine pass's mirror image: sources
-        // standing at their exact rung with a coarse one to fall back
-        // to (the registry answers its error; 0 = nothing resident).
-        if (!mesh.sourceTag || mesh.levelError > 0.0f)
+        // Every drawn source is asked, and the registry alone answers
+        // whether one has a way down.
+        //
+        // This used to skip sources already displaying a coarse rung,
+        // on the reading that a coarse source is the refine pass's
+        // business and has nothing left to give. That is false under a
+        // budget the coarse scene itself cannot meet -- measured, the
+        // rack model sits at 441MB of coarse geometry against 64MB with
+        // every exact rung already surrendered. Rung 0 is not a floor:
+        // a coarse source descends by re-tessellating COARSER again,
+        // step after step, and the registry's error callback is what
+        // says whether a step exists.
+        if (!mesh.sourceTag)
             continue;
         auto found = index.find(mesh.sourceTag);
         if (found == index.end()) {

@@ -61,6 +61,9 @@ public:
     long LevelCeilingSimulateMB;
     long GpuMemoryBudgetMB;
     double LevelTolerance;
+    long LevelCount;
+    double LevelScale;
+    double LevelScaleBoxError;
     double EffectResolution;
     bool Occlusion;
     long OcclusionVisibleTtl;
@@ -168,6 +171,12 @@ public:
         funcs["GpuMemoryBudgetMB"] = &RenderParamsP::updateGpuMemoryBudgetMB;
         LevelTolerance = this->handle->GetFloat("LevelTolerance", 2.0);
         funcs["LevelTolerance"] = &RenderParamsP::updateLevelTolerance;
+        LevelCount = this->handle->GetInt("LevelCount", 8);
+        funcs["LevelCount"] = &RenderParamsP::updateLevelCount;
+        LevelScale = this->handle->GetFloat("LevelScale", 2.0);
+        funcs["LevelScale"] = &RenderParamsP::updateLevelScale;
+        LevelScaleBoxError = this->handle->GetFloat("LevelScaleBoxError", 0.25);
+        funcs["LevelScaleBoxError"] = &RenderParamsP::updateLevelScaleBoxError;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
         funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
         Occlusion = this->handle->GetBool("Occlusion", false);
@@ -389,6 +398,18 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelTolerance(RenderParamsP *self) {
         self->LevelTolerance = self->handle->GetFloat("LevelTolerance", 2.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelCount(RenderParamsP *self) {
+        self->LevelCount = self->handle->GetInt("LevelCount", 8);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelScale(RenderParamsP *self) {
+        self->LevelScale = self->handle->GetFloat("LevelScale", 2.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelScaleBoxError(RenderParamsP *self) {
+        self->LevelScaleBoxError = self->handle->GetFloat("LevelScaleBoxError", 0.25);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateEffectResolution(RenderParamsP *self) {
@@ -1130,6 +1151,115 @@ void RenderParams::setLevelTolerance(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelTolerance() {
     instance()->handle->RemoveFloat("LevelTolerance");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelCount() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many rungs the fidelity ladder declares\n"
+"(docs/SceneStreaming.md #13). Rung n is tessellated at a\n"
+"deflection of the shape diagonal over 8<<n, so rung 0 is the\n"
+"coarsest and each further rung halves the error; this bounds\n"
+"what Coarse tessellation level may select and how far a source\n"
+"may climb. Raising it adds finer rungs, not coarser ones -- to\n"
+"go below rung 0 the plan scales an object's error instead, see\n"
+"Level scale.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getLevelCount() {
+    return instance()->LevelCount;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultLevelCount() {
+    const static long def = 8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelCount(const long &v) {
+    instance()->handle->SetInt("LevelCount",v);
+    instance()->LevelCount = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelCount() {
+    instance()->handle->RemoveInt("LevelCount");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelScale() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"What the level plan multiplies an object's error by when it\n"
+"must free memory and every ordinary descent is exhausted\n"
+"(docs/SceneStreaming.md #13). Rung 0 is not the floor: under a\n"
+"budget the plan keeps picking objects -- individually, cheapest\n"
+"visible error first, never the whole scene at once -- and\n"
+"re-tessellates each one this much coarser again, until the\n"
+"model fits. An object whose scaled error reaches Level scale\n"
+"box error is replaced by its bounding box, which is the real\n"
+"floor: coarsening a deflection cannot drop a planar face below\n"
+"the two triangles it always has, and on a measured STEP\n"
+"assembly a 4x coarser tessellation removed only 19% of the\n"
+"primitives. 1 or less turns dynamic scaling off, and then a\n"
+"budget under what rung 0 costs cannot be honoured.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLevelScale() {
+    return instance()->LevelScale;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLevelScale() {
+    const static double def = 2.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelScale(const double &v) {
+    instance()->handle->SetFloat("LevelScale",v);
+    instance()->LevelScale = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelScale() {
+    instance()->handle->RemoveFloat("LevelScale");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelScaleBoxError() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"The scaled error at which an object stops being tessellated\n"
+"at all and is drawn as its bounding box (12 triangles whatever\n"
+"its face count), expressed relative to the shape diagonal. This\n"
+"is where the ladder stops paying for topology it can no longer\n"
+"resolve: past roughly a quarter of the diagonal a re-tessellated\n"
+"shape and its box commit similar error, and only the box\n"
+"actually removes the faces. 0 or less never substitutes a box.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLevelScaleBoxError() {
+    return instance()->LevelScaleBoxError;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLevelScaleBoxError() {
+    const static double def = 0.25;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelScaleBoxError(const double &v) {
+    instance()->handle->SetFloat("LevelScaleBoxError",v);
+    instance()->LevelScaleBoxError = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelScaleBoxError() {
+    instance()->handle->RemoveFloat("LevelScaleBoxError");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

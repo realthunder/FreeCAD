@@ -893,6 +893,21 @@ bool PartGui::downgradeMeshLevels(const TopoDS_Shape &shape)
     return any;
 }
 
+int PartGui::meshLevelNodeCount(const TopoDS_Shape &shape)
+{
+    if (shape.IsNull())
+        return 0;
+    int nodes = 0;
+    for (TopExp_Explorer fx(shape, TopAbs_FACE); fx.More(); fx.Next()) {
+        TopLoc_Location loc;
+        Handle(Poly_Triangulation) tria =
+            BRep_Tool::Triangulation(TopoDS::Face(fx.Current()), loc);
+        if (!tria.IsNull())
+            nodes += tria->NbNodes();
+    }
+    return nodes;
+}
+
 bool PartGui::meshLevelFinerResident(const TopoDS_Shape &shape)
 {
     if (shape.IsNull())

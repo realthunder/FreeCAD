@@ -871,11 +871,18 @@ TEST(PlanMeshDemotes, theMarginKeepsTheRefineBoundaryApart)
     EXPECT_TRUE(refines.empty());
 }
 
-TEST(PlanMeshDemotes, onlyDemotableSourcesAreConsidered)
+TEST(PlanMeshDemotes, whatCanDescendIsTheRegistrysAnswer)
 {
-    // A coarse source (levelError > 0) and an exact one the registry
-    // reports no fallback for (err 0) are both out, even off screen;
-    // and a non-positive tolerance demotes nothing at all.
+    // A source with no way down (error 0) is out however plainly it is
+    // off screen; a non-positive tolerance demotes nothing at all.
+    //
+    // A source already displaying a COARSE rung used to be out too, on
+    // the reading that it had nothing left to give. Not so under a
+    // budget the coarse scene cannot meet: it descends by
+    // re-tessellating coarser again (sec 13, dynamic scale), and the
+    // registry's error -- what that next step would show -- is the
+    // only thing that decides. So the pass asks about every drawn
+    // source and lets the answer sort them out.
     PlanCamera cam;
     int coarse = 0, noFallback = 0, cheap = 0;
     Render::DrawCallList draws;
@@ -886,8 +893,10 @@ TEST(PlanMeshDemotes, onlyDemotableSourcesAreConsidered)
         {&coarse, 0.03f}, {&cheap, 0.03f}};
     auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj,
                                         1000.0f, 2.0f, demoteErrs(errs));
-    ASSERT_EQ(tags.size(), 1u);
-    EXPECT_EQ(tags[0], &cheap);
+    ASSERT_EQ(tags.size(), 2u);
+    EXPECT_NE(std::find(tags.begin(), tags.end(), &coarse), tags.end());
+    EXPECT_NE(std::find(tags.begin(), tags.end(), &cheap), tags.end());
+    EXPECT_EQ(std::find(tags.begin(), tags.end(), &noFallback), tags.end());
     EXPECT_TRUE(Render::planMeshDemotes(draws, cam.view, cam.proj,
                                         1000.0f, 0.0f, demoteErrs(errs))
                     .empty());
@@ -1156,3 +1165,33 @@ TEST(PlanMeshDemotes, pressurePricesASharedSourceByItsNeediestOwner)
     ASSERT_EQ(more.size(), 2u);
     EXPECT_EQ(more[1], &proto);
 }
+
+TEST(PlanMeshDemotes, aCoarseSourceDescendsAgainUnderPressure)
+{
+    // The step that makes the ladder unbounded: an object already at
+    // its coarse rung, on screen and too big for the free tier, taken
+    // because the deficit demands it -- priced by what its NEXT step
+    // coarser would show, not by what it shows now.
+    PlanCamera cam;
+    int shown = 0;
+    Render::DrawCallList draws;
+    draws.push_back(sizedDraw(&shown, 0.03f, -100, 5, 1000));
+    std::map<const void *, float> errs{{&shown, 0.06f}};
+
+    Render::PlanDemoteStats calm;
+    EXPECT_TRUE(Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                        2.0f, demoteErrs(errs), &calm)
+                    .empty());
+    EXPECT_EQ(calm.tooBig, 1u);
+
+    Render::PlanDemoteStats pressed;
+    auto tags = Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                        2.0f, demoteErrs(errs), &pressed,
+                                        1000 * kVertBytes);
+    ASSERT_EQ(tags.size(), 1u);
+    EXPECT_EQ(pressed.underPressure, 1u);
+    // Twice the coarse error of the pressureBuys test, so twice its
+    // accepted error: the price is the step down, not the rung it is on.
+    EXPECT_NEAR(pressed.acceptedErrorPx, 5.69f, 0.1f);
+}
+

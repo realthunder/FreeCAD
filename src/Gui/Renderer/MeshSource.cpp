@@ -250,7 +250,11 @@ float MeshSourceRegistry::downgradeError(const void *tag)
         return kTagUnknown;
     if (!it->second.hooks.downgrade)
         return 0.0f;
-    return it->second.hooks.fallbackError;
+    // Where the two directions land somewhere different, the downgrade
+    // says so itself (LevelHooks); otherwise both read the one field.
+    const LevelHooks &hooks = it->second.hooks;
+    return hooks.downgradeFallbackError > 0.0f ? hooks.downgradeFallbackError
+                                               : hooks.fallbackError;
 }
 
 void MeshSourceRegistry::dropHiddenLevels()

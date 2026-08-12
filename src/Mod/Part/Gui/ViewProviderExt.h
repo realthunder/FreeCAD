@@ -178,10 +178,14 @@ public:
 
     Part::TopoShape getShape() const;
     virtual void updateVisual();
-    /// Bounding-box stand-in of an oversized part during a progressive
-    /// import; the coarse mesh follows from the refine pool. See the
-    /// definition. Returns whether the stand-in was built.
-    bool buildCoarseStandIn();
+    /// Draw the shape as its 12-triangle bounding box: the stand-in of
+    /// an oversized part during a progressive import (the coarse mesh
+    /// follows from the refine pool), or -- \a underPressure -- the
+    /// level plan's descent (sec 13, dynamic scale). Under pressure it
+    /// skips the gates that exist to stop the import path standing in
+    /// for a mesh already built, because here the mesh exists and
+    /// giving it back is the point. Returns whether the box was built.
+    bool buildCoarseStandIn(bool underPressure = false);
 
     virtual void reattach(App::DocumentObject *) override;
     virtual void beforeDelete() override;
@@ -237,16 +241,16 @@ protected:
     /// TShape-instanced build of a qualifying compound (leaf sub-shapes
     /// with repeated TShapes share one tessellation from the global
     /// table under per-instance transforms). Returns false when the
-    /// shape or environment does not qualify — the caller then runs the
+    /// shape or environment does not qualify -- the caller then runs the
     /// flattened build exactly as before.
     bool buildInstanced();
     /// Cheap pre-check whether the current shape could instance at all
-    /// (environment gate + compound) — used to schedule lazy rebuilds on
+    /// (environment gate + compound) -- used to schedule lazy rebuilds on
     /// color-divergence transitions.
     bool instancingCandidate() const;
 
     /// Apply resolved per-face colors to the instanced representation:
-    /// partitions the instances by their slice of the vector — uniform
+    /// partitions the instances by their slice of the vector -- uniform
     /// slices ride per-instance override materials on the shared base
     /// subgraph, divergent slices reference baked, refcounted color
     /// variants from the global table (one per distinct vector).
@@ -258,13 +262,13 @@ protected:
     void applyInstancedLineColors(const std::vector<App::Color> &colors);
     void applyInstancedPointColors(const std::vector<App::Color> &colors);
 
-    /// One shape's worth of tessellation into the given nodes — the
+    /// One shape's worth of tessellation into the given nodes -- the
     /// whole shape for the flattened build, one sub-shape (at identity
     /// location) per unique TShape for the instanced build. Static so
     /// the desktop exact refine can rebuild an instanced entry's
     /// shared nodes after the view provider that first built them is
     /// gone (the entry outlives any one sharer).
-    /// One instanced geometry entry's whole level cycle (§13): the
+    /// One instanced geometry entry's whole level cycle (sec 13): the
     /// shared leaf registers at \a builtError (coarse) or at error 0
     /// (exact); the climb rebuilds the shared nodes exact and
     /// re-registers with the demotion armed; the demotion drops the
@@ -273,7 +277,7 @@ protected:
     /// static rather than closures referencing each other, because
     /// that cycle of owning std::functions would keep the shape alive
     /// forever. Captured node pointers stay valid for as long as the
-    /// registration lives — the entry release unregisters first.
+    /// registration lives -- the entry release unregisters first.
     static void registerInstancedLevelEntry(const TopoDS_Shape &local,
                           bool exact, float builtError,
                           double coarseDefl, double coarseAng,
@@ -316,22 +320,47 @@ protected:
     /// Post the next slice to the event loop (nothing if one is pending).
     static void scheduleDeferredVisualSlice(int delayMs = 0);
     /// The TShape whose exact tessellation the desktop refine has
-    /// already transferred onto the flattened shape (§13): while the
+    /// already transferred onto the flattened shape (sec 13): while the
     /// current shape still is that one, updateVisual builds at the
-    /// full display deviation (the exact triangulation is resident —
+    /// full display deviation (the exact triangulation is resident --
     /// meshing is a no-op) instead of going coarse-first again.
     const void *ExactMeshTShape = nullptr;
     /// The error of the coarse rung that refine kept resident beside
-    /// the exact one — what a demotion under memory pressure falls
-    /// back to, and what the plan prices it by (§13 step 3).
+    /// the exact one -- what a demotion under memory pressure falls
+    /// back to, and what the plan prices it by (sec 13 step 3).
     float ExactMeshCoarseError = 0.0f;
     /// The TShape whose coarse tessellation the refine pool has
     /// already delivered behind a bounding-box stand-in (progressive
     /// import of an oversized part): while the current shape still is
-    /// that one, updateVisual takes the ordinary coarse-first path —
-    /// the coarse triangulation is resident, meshing is a no-op —
+    /// that one, updateVisual takes the ordinary coarse-first path --
+    /// the coarse triangulation is resident, meshing is a no-op --
     /// instead of standing in again.
     const void *CoarseMeshTShape = nullptr;
+    /// How much coarser than its ladder rung this object is currently
+    /// tessellated (sec 13, dynamic scale). 1 is the rung itself; the
+    /// level plan multiplies it by Render_LevelScale each time it
+    /// picks this object to free memory, so the descent is unbounded
+    /// and, above all, PER OBJECT -- the plan spends the cheapest
+    /// visible error in the scene, not a global coarseness. Reset
+    /// whenever the shape changes, since it describes a tessellation
+    /// of that shape and nothing else.
+    double MeshErrorScale = 1.0;
+    /// The TShape MeshErrorScale is about; a different one is a new
+    /// shape and starts again at its rung.
+    const void *MeshErrorScaleTShape = nullptr;
+    /// Set when a coarser re-tessellation came back no smaller than
+    /// what it replaced -- deflection has run out for this shape.
+    ///
+    /// It does for most mechanical geometry sooner than one would
+    /// think: a planar face is two triangles at any deflection, so a
+    /// shape whose faces are mostly flat cannot be coarsened by asking
+    /// BRepMesh for a bigger number. Measured on the rack model, a 4x
+    /// coarser tessellation removed only 19% of the primitives. Once
+    /// this is set the object stops paying for re-tessellations that
+    /// buy nothing and goes to a representation that actually drops
+    /// faces (its bounding box today; mesh simplification, which can
+    /// merge across faces, is the better rung and belongs here).
+    bool MeshErrorScaleExhausted = false;
     bool UpdatingColor;
     bool highlightFaceEdges = false;
 

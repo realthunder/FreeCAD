@@ -169,6 +169,37 @@ Params = [
         "immediately; larger keeps more of the scene coarse. The\n"
         "streamed viewer's own tolerance is its lodpx URL parameter\n"
         "(same meaning, same default)."),
+    ParamInt('LevelCount',  8, title='Ladder rung count',
+        doc="How many rungs the fidelity ladder declares\n"
+        "(docs/SceneStreaming.md #13). Rung n is tessellated at a\n"
+        "deflection of the shape diagonal over 8<<n, so rung 0 is the\n"
+        "coarsest and each further rung halves the error; this bounds\n"
+        "what Coarse tessellation level may select and how far a source\n"
+        "may climb. Raising it adds finer rungs, not coarser ones -- to\n"
+        "go below rung 0 the plan scales an object's error instead, see\n"
+        "Level scale."),
+    ParamFloat('LevelScale',  2.0, title='Dynamic coarseness scale',
+        doc="What the level plan multiplies an object's error by when it\n"
+        "must free memory and every ordinary descent is exhausted\n"
+        "(docs/SceneStreaming.md #13). Rung 0 is not the floor: under a\n"
+        "budget the plan keeps picking objects -- individually, cheapest\n"
+        "visible error first, never the whole scene at once -- and\n"
+        "re-tessellates each one this much coarser again, until the\n"
+        "model fits. An object whose scaled error reaches Level scale\n"
+        "box error is replaced by its bounding box, which is the real\n"
+        "floor: coarsening a deflection cannot drop a planar face below\n"
+        "the two triangles it always has, and on a measured STEP\n"
+        "assembly a 4x coarser tessellation removed only 19% of the\n"
+        "primitives. 1 or less turns dynamic scaling off, and then a\n"
+        "budget under what rung 0 costs cannot be honoured."),
+    ParamFloat('LevelScaleBoxError',  0.25, title='Level scale box error',
+        doc="The scaled error at which an object stops being tessellated\n"
+        "at all and is drawn as its bounding box (12 triangles whatever\n"
+        "its face count), expressed relative to the shape diagonal. This\n"
+        "is where the ladder stops paying for topology it can no longer\n"
+        "resolve: past roughly a quarter of the diagonal a re-tessellated\n"
+        "shape and its box commit similar error, and only the box\n"
+        "actually removes the faces. 0 or less never substitutes a box."),
     ParamFloat('EffectResolution',  1.0, title='Effect resolution',
         doc="Resolution scale (0.25-1.0) of the expensive screen-space effect\n"
         "passes -- the planar/ground reflection scene re-render, the water\n"

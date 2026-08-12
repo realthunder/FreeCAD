@@ -315,6 +315,16 @@ App::PropertyContainer *renderOverrides(App::Document *doc)
     return Gui::SceneServeSource::renderProperties();
 }
 
+/// How many rungs the ladder declares (Render_LevelCount). Clamped to
+/// at least one: a ladder with no rungs is the pre-ladder behaviour,
+/// which -1 already says, and a zero here would silently disable
+/// coarse-first for every shape instead.
+unsigned ladderRungs()
+{
+    const long n = Gui::RenderParams::getLevelCount();
+    return unsigned(std::max(1L, std::min(n, 16L)));
+}
+
 } // anonymous namespace
 
 int PartGui::coarseTessellationLevel(App::Document *doc)
@@ -329,7 +339,7 @@ int PartGui::coarseTessellationLevel(App::Document *doc)
     if (haveEnv) {
         static const int level = [] {
             int lvl = std::atoi(std::getenv("FC_COARSE_TESSELLATION"));
-            return lvl >= 0 && lvl < 8 ? lvl : -1;
+            return lvl >= 0 && unsigned(lvl) < ladderRungs() ? lvl : -1;
         }();
         return level;
     }
@@ -361,7 +371,25 @@ int PartGui::coarseTessellationLevel(App::Document *doc)
                 container->getPropertyByName("Render_CoarseTessellation")))
             lvl = prop->getValue();
     }
-    return lvl >= 0 && lvl < 8 ? int(lvl) : -1;
+    return lvl >= 0 && unsigned(lvl) < ladderRungs() ? int(lvl) : -1;
+}
+
+void PartGui::queueMeshLevelBuild(const void *tag,
+                                 const TopoDS_Shape &shape,
+                                 double deflection, double angle,
+                                 std::function<void(const TopoDS_Shape &)>
+                                     apply)
+{
+    if (shape.IsNull() || !tag || !apply || !(deflection > 0.0))
+        return;
+    // A state of its own, so the parameters travel with the job rather
+    // than being read off the registration -- the descent asks for a
+    // deflection the registration knows nothing about.
+    auto st = std::make_shared<LevelSourceState>();
+    st->shape = shape;
+    st->params.exactDeflection = deflection;
+    st->params.exactAngle = angle;
+    queueExactRefine(tag, st, std::move(apply));
 }
 
 void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
@@ -375,7 +403,9 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                                       float demoteError,
                                       std::function<void()> onDowngrade,
                                       App::Document *doc,
-                                      const char *origin)
+                                      const char *origin,
+                                      std::function<void()> onScaleDown,
+                                      float scaledError)
 {
     if (shape.IsNull() || (!faceTag && !lineTag))
         return;
@@ -457,6 +487,33 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
         if (meshLevelFinerResident(shape)) {
             hooks.demote = [st]() { demoteMeshLevels(st->shape); };
             hooks.fallbackError = builtError;
+        }
+        // The dynamic-scale descent (sec 13): a source already showing its
+        // coarse rung is not out of moves. Where a step coarser exists
+        // it arms BOTH ways down at that step's error, because a
+        // coarser display mesh gives back CPU RAM and upload bytes
+        // alike -- unlike the exact/coarse pair above, where the two
+        // directions free different things. A shared flag keeps the
+        // pair to one action; the rebuild re-registers and arms the
+        // step after it, which is what lets the plan keep descending
+        // the same object until the model fits.
+        //
+        // It does not overwrite a demote armed just above: that one
+        // drops a hidden exact rung for free, so it is strictly the
+        // better move and the plan should spend it first.
+        if (onScaleDown && scaledError > 0.0f) {
+            auto fired = std::make_shared<std::atomic<bool>>(false);
+            auto once = [fired, apply = std::move(onScaleDown)]() {
+                if (fired->exchange(true))
+                    return;
+                apply();
+            };
+            if (!hooks.demote) {
+                hooks.demote = once;
+                hooks.fallbackError = scaledError;
+            }
+            hooks.downgrade = once;
+            hooks.downgradeFallbackError = scaledError;
         }
     }
     else if (builtError <= 0.0f && demoteError > 0.0f) {
