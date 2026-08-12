@@ -448,13 +448,23 @@ labels by the camera instead: under the isometric audit camera the
 values were rotated about 60 degrees. The basis is now the identity for
 an overlay that is not scene-oriented, and the labels are horizontal.
 
-What is left is a policy question, not a bug: an image export from the
-backend omits the colour bar, and the same export from Coin includes it.
-The chrome rule treats every non-`sceneCamera` feed as viewport
-furniture, which is right for the navigation cube and the axis cross and
-arguably wrong for a scalar legend, since the legend is what makes the
-exported colours mean anything. Deciding that is the navigation cube's
-question again and is not decided here.
+**The export now keeps the bar.** It did not at first: the chrome rule
+skipped every feed that was not `sceneCamera`, which swept in the
+foreground feed along with the navigation cube. That was broader than
+the rule the chrome-skip describes itself by -- "the corner-anchored and
+pixel-space feeds are the navigation cube, the corner axis cross and
+on-screen text" -- so the test is now that description rather than an
+approximation of it. A feed is chrome when it is corner-anchored or
+pixel-space; a full-viewport, non-pixel-space feed is the foreground
+root, i.e. the front-root graphs view providers publish, and that is
+where every scalar legend lives (FEM's, Mesh curvature's,
+Inspection's). A legend is what makes the exported colours mean
+anything, and the Coin path this stands in for always kept it.
+
+Both halves are measured. `colorbar_probe.py`: the exported colour-bar
+band goes from 0 to 1086 changed pixels, against 1124 on screen.
+`view_lifecycle_probe.py`: the export still drops the navigation cube,
+6700 pixels of it, while touching 0 pixels of the model.
 
 TechDraw is not in the table because it is not a 3D path at all: a page
 is its own `QGraphicsView` over `QGI*` items painted by QPainter, so

@@ -3761,12 +3761,26 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // A capture taken for an image export drops the viewport
         // chrome: the corner-anchored and pixel-space feeds are the
         // navigation cube, the corner axis cross and on-screen text,
-        // which belong to the viewport rather than to the model. The
-        // scene-camera feeds stay -- those are in-scene content.
+        // which belong to the viewport rather than to the model.
+        //
+        // Two kinds of feed are NOT chrome and stay in an export. The
+        // scene-camera feeds are in-scene content (editing overlays,
+        // dimensions). And a full-viewport feed that is not pixel-space
+        // is the foreground root: the front-root graphs view providers
+        // publish, which is where the scalar colour bars live (FEM's
+        // post-processing legend, Mesh curvature, Inspection). A legend
+        // is what makes the exported colours mean anything, so an export
+        // of a coloured result without it is the wrong picture -- and
+        // the Coin path this stands in for always kept it.
         const bool skipChrome = dumpPending && !pendingDump.overlays;
         int slot = 0;
         for (const auto &ov : overlays) {
-            if (skipChrome && !ov.second.anchor.sceneCamera)
+            const auto &ovAnchor = ov.second.anchor;
+            const bool isChrome =
+                !ovAnchor.sceneCamera
+                && (ovAnchor.corner != Render::OverlayAnchor::FullViewport
+                    || ovAnchor.pixelSpace);
+            if (skipChrome && isChrome)
                 continue;
             if (slot >= BGFXView::NumOverlayViews) {
                 static bool warned = false;
