@@ -1267,3 +1267,99 @@ passed, purely because the member is read after the XML pass and so after
 `ShapeMaterial` had done the damage: **an encoding that changes only *when*
 a value arrives can be the difference between a passing and a failing
 restore**, so a restore probe has to exercise both.
+
+## 8. PBR mode: the same arrays, reinterpreted
+
+Decided by the user 2026-08-13: extend `ShapeAppearance` with a bool that
+toggles the list between the Phong reading it has always had and a PBR
+reading. It stays efficient because of the storage design above -- no new
+field arrays, no document format change. "Newer software reinterprets
+those fields."
+
+### 8.1 The mapping
+
+| array        | Phong reading        | PBR reading                        |
+|--------------|----------------------|------------------------------------|
+| `_diffuse`   | diffuse + opacity    | base colour + opacity (unchanged)  |
+| `_shininess` | shininess            | roughness, full float precision    |
+| `_specular`  | specular colour      | F0 tint, metallic in the ALPHA     |
+| `_emissive`  | emissive             | emissive (unchanged)               |
+| `_ambient`   | ambient              | no PBR meaning, ignored            |
+
+Metallic rides the specular alpha (user-picked over an ambient channel).
+The legacy alpha-convention flip applies to every colour field's alpha
+symmetrically on save and restore, so it round-trips; the one thing that
+must never happen is special-casing that alpha out of the conversion.
+8-bit quantization on the way through a document is accepted (glTF's own
+factors are 8-bit textures at heart). Roughness in the float slot is
+exact.
+
+### 8.2 Mode defaults, and why they differ
+
+The Phong default specular is STEEL-ish with alpha 1 -- read as PBR that
+would spell a fully metallic surface. So in PBR mode an EMPTY `_specular`
+field reads as white tint with metallic 0, and an empty `_shininess`
+slot as roughness 0.5 (`specularDefault()` / `shininessDefault()`). The
+collapse baselines follow the mode, deterministically, because the mode
+is part of the serialized identity; growth (`setSize`, `setField` on an
+empty list) fills with the mode's own defaults so a PBR list never
+materializes metal it was not given.
+
+### 8.3 Serialization
+
+- Binary field stream: bit 10 of the `uint16` field mask (`FieldPBR`).
+  A bit has no payload; old readers only test the bits they know.
+- XML field form: a `pbr="1"` attribute beside `fields="1"`. An
+  attribute is ignored by old readers; a new KEY LINE in the char stream
+  would throw "unknown material field" on old fork builds.
+- The compatible encodings (schema < 6 stream and inline XML) cannot
+  carry the flag, so they are written as the PHONG DERIVATION
+  (`getPhongMaterial()`): diffuse STAYS the base colour (the bgfx PBR
+  path reads its base colour out of the diffuse slot, so zeroing a
+  metal's diffuse would shade it black there -- and a Phong metal shown
+  as a shiny colour is the better degradation anyway), specular =
+  mix(0.04 * tint, base, metallic), shininess from the roughness by the
+  inverse of the Blinn-Phong-to-GGX fit (`Material::roughnessToShininess`,
+  saturating below roughness ~0.124). Old builds see the look the values
+  most nearly mean; re-saving there keeps values, drops the mode.
+- Every restore path that cannot state a mode resets it to Phong.
+- `isSame`/`Copy`/`Paste` carry the bool; the mask bit / attribute keeps
+  a PBR list from ever eliding against a same-valued Phong one under the
+  shared-default scheme.
+
+### 8.4 Consumers
+
+- **Coin GL leg**: the SoMaterial arrays always carry the Phong reading
+  (`applyShapeAppearance` and the base class push convert through
+  `getPhongMaterial`), so plain GL display is sensible everywhere. With
+  the diffuse staying the base colour, the cheap diffuse-only colour
+  path serves PBR lists whose other fields are uniform -- metals
+  included -- and the instancing color-variant path keeps working.
+- **The mirrors stay raw**: `ShapeMaterial.mirrorValue(getMaterial(0))`
+  writes back into the appearance on change; a derived mirror would
+  quietly convert the stored values.
+- **bgfx, uniform leg**: `updateRenderMaterial()` feeds the appearance's
+  entry-0 metallic/roughness into the `SoFCRenderMaterial` capture node.
+  A PBR-mode appearance BEATS the `Render_Metallic`/`Render_Roughness`
+  dynamic properties (user decision: they predate it as the only way to
+  state these; effect params -- water/glass/fire/... -- are untouched).
+  The renderer's existing per-object override path does the rest
+  unchanged. Roughness is floored at the shader clamp 0.02 because the
+  renderer reads <= 0 as unset.
+- **bgfx, per-face leg**: NOT LANDED. Per-face metallic cannot ride
+  SoMaterial (SbColor drops alpha at the node), so it needs
+  metallic/roughness arrays on the coin fork's Ex element, baked into
+  the existing streams (the emissive stream's low byte is a constant FF
+  today = free; the specular low byte carries roughness at the same
+  8-bit quantization shininess uses). Until then a per-face PBR
+  appearance renders with entry-0 uniform PBR plus derived-Phong
+  per-face streams.
+- **glTF/STEP and the dialogs/Python**: planned; glTF import/export in
+  PBR mode becomes exact (retiring the Phong->PBR->Phong
+  approximation), STEP export converts through `getPhongMaterial`.
+
+### 8.5 Landed 2026-08-13
+
+Property core + conversions + gtests: `dd6199ced7` (8 new tests in
+`tests/src/App/PropertyMaterialList.cpp`, all 38 green). Coin GL leg
+derivation and the uniform bgfx leg: the commit following it.
