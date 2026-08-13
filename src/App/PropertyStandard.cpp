@@ -3124,9 +3124,9 @@ void PropertyMaterialList::normalize()
     else {
         collapseField(_ambient, def.ambientColor);
         collapseField(_diffuse, storedDiffuse(def));
-        collapseField(_specular, def.specularColor);
+        collapseField(_specular, specularDefault());
         collapseField(_emissive, def.emissiveColor);
-        collapseField(_shininess, def.shininess);
+        collapseField(_shininess, shininessDefault());
         collapseField(_image, def.image);
         collapseField(_imagePath, def.imagePath);
         collapseField(_uuid, def.uuid);
@@ -3156,6 +3156,151 @@ bool PropertyMaterialList::variesOnlyInDiffuse() const
     return _ambient.size() <= 1 && _specular.size() <= 1 && _emissive.size() <= 1
         && _shininess.size() <= 1 && _type.size() <= 1
         && _image.size() <= 1 && _imagePath.size() <= 1 && _uuid.size() <= 1;
+}
+
+//**************************************************************************
+// PBR mode
+
+const Color &PropertyMaterialList::specularDefault() const
+{
+    // White F0 tint, metallic 0 in the alpha: the natural unset PBR
+    // surface. The Phong default's alpha of one would read as full metal.
+    static const Color pbrDef(1.0f, 1.0f, 1.0f, 0.0f);
+    return _pbr ? pbrDef : defaultMaterial().specularColor;
+}
+
+float PropertyMaterialList::shininessDefault() const
+{
+    return _pbr ? 0.5f : defaultMaterial().shininess;
+}
+
+void PropertyMaterialList::requirePBR() const
+{
+    if (!_pbr)
+        throw Base::RuntimeError("material list is not in PBR mode");
+}
+
+void PropertyMaterialList::setPBR(bool enable)
+{
+    if (_pbr == enable)
+        return;
+    atomic_change guard(*this);
+    // The collapse baselines follow the mode
+    touchFields();
+    _pbr = enable;
+    guard.tryInvoke();
+}
+
+float PropertyMaterialList::getMetallic(int idx) const
+{
+    if (!_pbr)
+        return 0.0f;  // the Phong model has no metals
+    return fieldAt(_specular, idx, specularDefault()).a;
+}
+
+float PropertyMaterialList::getRoughness(int idx) const
+{
+    const float value = fieldAt(_shininess, idx, shininessDefault());
+    return _pbr ? value : Material::shininessToRoughness(value);
+}
+
+void PropertyMaterialList::setMetallicValues(const std::vector<float> &values)
+{
+    // The alphas of the specular field, exactly as setTransparencies works
+    // the diffuse alphas: empty is back-to-default, 1 uniform, N per entry,
+    // and every entry's tint rgb stays what it was.
+    requirePBR();
+    const Color def = specularDefault();
+    const int newCount = static_cast<int>(values.size());
+    std::vector<Color> colors = _specular;
+    if (newCount == 0 || newCount == 1) {
+        const float alpha = newCount ? values[0] : def.a;
+        if (colors.empty())
+            colors.push_back(def);
+        for (auto &color : colors)
+            color.a = alpha;
+    }
+    else {
+        colors.resize(newCount, fieldAt(_specular, 0, def));
+        for (int i = 0; i < newCount; ++i)
+            colors[i].a = values[i];
+    }
+    setField(_specular, colors, def);
+}
+
+void PropertyMaterialList::setRoughnessValues(const std::vector<float> &values)
+{
+    requirePBR();
+    setField(_shininess, values, shininessDefault());
+}
+
+void PropertyMaterialList::setMetallic(int idx, float value)
+{
+    requirePBR();
+    Color color = getSpecularColor(idx < 0 || idx >= _count ? 0 : idx);
+    color.a = value;
+    setFieldValue(_specular, idx, color, specularDefault());
+}
+
+void PropertyMaterialList::setRoughness(int idx, float value)
+{
+    requirePBR();
+    setFieldValue(_shininess, idx, value, shininessDefault());
+}
+
+void PropertyMaterialList::setMetallic(float value)
+{
+    requirePBR();
+    if (_specular.size() <= 1) {
+        Color color = fieldAt(_specular, 0, specularDefault());
+        color.a = value;
+        setUniformField(_specular, color, specularDefault());
+        return;
+    }
+    // Per-entry tints: only the alphas move
+    bool changed = false;
+    for (const auto &color : _specular) {
+        if (color.a != value) {
+            changed = true;
+            break;
+        }
+    }
+    if (!changed)
+        return;
+    atomic_change guard(*this);
+    touchFields();
+    for (auto &color : _specular)
+        color.a = value;
+    normalize();
+    guard.tryInvoke();
+}
+
+void PropertyMaterialList::setRoughness(float value)
+{
+    requirePBR();
+    setUniformField(_shininess, value, shininessDefault());
+}
+
+Material PropertyMaterialList::getPhongMaterial(int idx) const
+{
+    Material mat = getMaterial(idx);
+    if (!_pbr)
+        return mat;
+    const Color base = mat.diffuseColor;
+    const Color tint = mat.specularColor;
+    const float metallic = tint.a;
+    // The diffuse stays the base colour, deliberately: the bgfx PBR path
+    // reads its base colour out of the diffuse slot, so zeroing a metal's
+    // diffuse here would shade it black there -- and a Phong metal shown
+    // as a shiny colour is the better degradation anyway. The specular is
+    // the F0 a PBR surface most nearly means: a metal carries its colour
+    // there, a dielectric 0.04 scaled by the tint.
+    auto mix = [metallic](float dielectric, float metal) {
+        return 0.04f * dielectric * (1.0f - metallic) + metal * metallic;
+    };
+    mat.specularColor.set(mix(tint.r, base.r), mix(tint.g, base.g), mix(tint.b, base.b));
+    mat.shininess = Material::roughnessToShininess(mat.shininess);
+    return mat;
 }
 
 void PropertyMaterialList::restoreValues(std::vector<Material> &&values, bool legacy)
@@ -3243,7 +3388,11 @@ void PropertyMaterialList::applyRestoredTransparency(const std::vector<float> &t
 
 void PropertyMaterialList::setSize(int newSize)
 {
-    setSize(newSize, defaultMaterial());
+    // Grow with what an unset entry reads as, which follows the mode
+    Material def = defaultMaterial();
+    def.specularColor = specularDefault();
+    def.shininess = shininessDefault();
+    setSize(newSize, def);
 }
 
 void PropertyMaterialList::setSize(int newSize, const Material &def)
@@ -3258,9 +3407,9 @@ void PropertyMaterialList::setSize(int newSize, const Material &def)
     const Material &zero = defaultMaterial();
     resizeField(_ambient, _count, newSize, def.ambientColor, zero.ambientColor);
     resizeField(_diffuse, _count, newSize, storedDiffuse(def), storedDiffuse(zero));
-    resizeField(_specular, _count, newSize, def.specularColor, zero.specularColor);
+    resizeField(_specular, _count, newSize, def.specularColor, specularDefault());
     resizeField(_emissive, _count, newSize, def.emissiveColor, zero.emissiveColor);
-    resizeField(_shininess, _count, newSize, def.shininess, zero.shininess);
+    resizeField(_shininess, _count, newSize, def.shininess, shininessDefault());
     resizeField(_image, _count, newSize, def.image, zero.image);
     resizeField(_imagePath, _count, newSize, def.imagePath, zero.imagePath);
     resizeField(_uuid, _count, newSize, def.uuid, zero.uuid);
@@ -3286,9 +3435,9 @@ Material PropertyMaterialList::getMaterial(int idx) const
                 fieldAt(_type, idx, static_cast<int8_t>(def.getType()))));
     mat.ambientColor = fieldAt(_ambient, idx, def.ambientColor);
     mat.diffuseColor = fieldAt(_diffuse, idx, storedDiffuse(def));
-    mat.specularColor = fieldAt(_specular, idx, def.specularColor);
+    mat.specularColor = fieldAt(_specular, idx, specularDefault());
     mat.emissiveColor = fieldAt(_emissive, idx, def.emissiveColor);
-    mat.shininess = fieldAt(_shininess, idx, def.shininess);
+    mat.shininess = fieldAt(_shininess, idx, shininessDefault());
     // One quantity, two slots: the material handed out is always consistent,
     // whatever inconsistent pair was once handed in.
     mat.transparency = mat.diffuseColor.transparency();
@@ -3371,9 +3520,9 @@ void PropertyMaterialList::set1Value(int idx, const Material &mat)
         const Material &def = defaultMaterial();
         setFieldAt(_ambient, idx, _count, mat.ambientColor, def.ambientColor);
         setFieldAt(_diffuse, idx, _count, storedDiffuse(mat), storedDiffuse(def));
-        setFieldAt(_specular, idx, _count, mat.specularColor, def.specularColor);
+        setFieldAt(_specular, idx, _count, mat.specularColor, specularDefault());
         setFieldAt(_emissive, idx, _count, mat.emissiveColor, def.emissiveColor);
-        setFieldAt(_shininess, idx, _count, mat.shininess, def.shininess);
+        setFieldAt(_shininess, idx, _count, mat.shininess, shininessDefault());
         setFieldAt(_image, idx, _count, mat.image, def.image);
         setFieldAt(_imagePath, idx, _count, mat.imagePath, def.imagePath);
         setFieldAt(_uuid, idx, _count, mat.uuid, def.uuid);
@@ -3399,7 +3548,7 @@ Color PropertyMaterialList::getDiffuseColor(int idx) const
 
 Color PropertyMaterialList::getSpecularColor(int idx) const
 {
-    return fieldAt(_specular, idx, defaultMaterial().specularColor);
+    return fieldAt(_specular, idx, specularDefault());
 }
 
 Color PropertyMaterialList::getEmissiveColor(int idx) const
@@ -3409,7 +3558,7 @@ Color PropertyMaterialList::getEmissiveColor(int idx) const
 
 float PropertyMaterialList::getShininess(int idx) const
 {
-    return fieldAt(_shininess, idx, defaultMaterial().shininess);
+    return fieldAt(_shininess, idx, shininessDefault());
 }
 
 float PropertyMaterialList::getTransparency(int idx) const
@@ -3461,8 +3610,12 @@ void PropertyMaterialList::setField(std::vector<T> &field, const std::vector<T> 
         // the others, so the others must not change meaning -- and for a
         // uniform field, extending its own value keeps it stored as one
         // element where a default fill would materialise N of them and make
-        // the appearance "vary" in fields nobody set.
-        setSize(newCount, _count ? getMaterial(_count - 1) : defaultMaterial());
+        // the appearance "vary" in fields nobody set. An empty list grows
+        // with what its entries read as, which follows the mode.
+        if (_count)
+            setSize(newCount, getMaterial(_count - 1));
+        else
+            setSize(newCount);
     }
     touchFields();
     field = values;
@@ -3482,7 +3635,7 @@ void PropertyMaterialList::setDiffuseColors(const std::vector<Color> &colors)
 
 void PropertyMaterialList::setSpecularColors(const std::vector<Color> &colors)
 {
-    setField(_specular, colors, defaultMaterial().specularColor);
+    setField(_specular, colors, specularDefault());
 }
 
 void PropertyMaterialList::setEmissiveColors(const std::vector<Color> &colors)
@@ -3492,7 +3645,7 @@ void PropertyMaterialList::setEmissiveColors(const std::vector<Color> &colors)
 
 void PropertyMaterialList::setShininessValues(const std::vector<float> &values)
 {
-    setField(_shininess, values, defaultMaterial().shininess);
+    setField(_shininess, values, shininessDefault());
 }
 
 void PropertyMaterialList::setTransparencies(const std::vector<float> &values)
@@ -3571,7 +3724,7 @@ void PropertyMaterialList::setDiffuseColor(int idx, const Color &col)
 
 void PropertyMaterialList::setSpecularColor(int idx, const Color &col)
 {
-    setFieldValue(_specular, idx, col, defaultMaterial().specularColor);
+    setFieldValue(_specular, idx, col, specularDefault());
 }
 
 void PropertyMaterialList::setEmissiveColor(int idx, const Color &col)
@@ -3581,7 +3734,7 @@ void PropertyMaterialList::setEmissiveColor(int idx, const Color &col)
 
 void PropertyMaterialList::setShininess(int idx, float value)
 {
-    setFieldValue(_shininess, idx, value, defaultMaterial().shininess);
+    setFieldValue(_shininess, idx, value, shininessDefault());
 }
 
 void PropertyMaterialList::setTransparency(int idx, float value)
@@ -3640,7 +3793,7 @@ void PropertyMaterialList::setDiffuseColor(const Color &col)
 
 void PropertyMaterialList::setSpecularColor(const Color &col)
 {
-    setUniformField(_specular, col, defaultMaterial().specularColor);
+    setUniformField(_specular, col, specularDefault());
 }
 
 void PropertyMaterialList::setEmissiveColor(const Color &col)
@@ -3650,7 +3803,7 @@ void PropertyMaterialList::setEmissiveColor(const Color &col)
 
 void PropertyMaterialList::setShininess(float value)
 {
-    setUniformField(_shininess, value, defaultMaterial().shininess);
+    setUniformField(_shininess, value, shininessDefault());
 }
 
 void PropertyMaterialList::setTransparency(float value)
@@ -3712,6 +3865,31 @@ PyObject *PropertyMaterialList::getPyObject()
 
 void PropertyMaterialList::setPyObject(PyObject *value)
 {
+    if (PyDict_Check(value)) {
+        // {"PBR": bool, "Materials": [Material, ...]}, either key alone:
+        // the one Python spelling the mode has. Reading stays a tuple of
+        // materials, so scripts that never state a mode never see one.
+        Py::Dict dict(value);
+        for (const auto &key : dict.keys()) {
+            const std::string name = Py::String(key).as_std_string("utf-8");
+            if (name != "PBR" && name != "Materials")
+                throw Base::TypeError("expected only 'PBR' and 'Materials' keys, not '"
+                                      + name + "'");
+        }
+        atomic_change guard(*this);
+        if (dict.hasKey("PBR"))
+            setPBR(PyObject_IsTrue(dict.getItem("PBR").ptr()) > 0);
+        if (dict.hasKey("Materials")) {
+            Py::Sequence seq(dict.getItem("Materials"));
+            std::vector<Material> values;
+            values.reserve(seq.size());
+            for (Py::sequence_index_type i = 0; i < seq.size(); ++i)
+                values.push_back(getPyValue(seq[i].ptr()));
+            setValues(std::move(values));
+        }
+        guard.tryInvoke();
+        return;
+    }
     try {
         setValue(getPyValue(value));
         return;
@@ -3792,6 +3970,22 @@ bool PropertyMaterialList::saveXML(Base::Writer &writer) const
 
     const bool convert = saveConverts();
     writer.Stream() << ">\n" << std::hex;
+    if (_pbr) {
+        // This encoding cannot state the mode, so it states the Phong
+        // derivation instead -- the same look an old build should show
+        for (int i = 0; i < _count; ++i) {
+            const Material mat = getPhongMaterial(i);
+            writer.Stream() << packedForSave(mat.ambientColor, convert)
+                            << ' ' << packedForSave(mat.diffuseColor, convert)
+                            << ' ' << packedForSave(mat.specularColor, convert)
+                            << ' ' << packedForSave(mat.emissiveColor, convert)
+                            << ' ' << mat.shininess
+                            << ' ' << mat.transparency
+                            << '\n';
+        }
+        writer.Stream() << std::dec;
+        return false;
+    }
     for (int i = 0; i < _count; ++i) {
         writer.Stream() << packedForSave(getAmbientColor(i), convert)
                         << ' ' << packedForSave(getDiffuseColor(i), convert)
@@ -3809,6 +4003,9 @@ void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
 {
     unsigned uCt = reader.getAttributeAsUnsigned("count");
     const bool convert = restoreConverts(reader);
+    // Absent everywhere but a field-encoded PBR list, so this also resets
+    // the mode when an old-era element is restored over a PBR property
+    _pbr = reader.getAttributeAsInteger("pbr", "0") != 0;
     if (reader.hasAttribute("fields")) {
         restoreFieldXML(reader, uCt);
         return;
@@ -3833,6 +4030,20 @@ void PropertyMaterialList::saveStream(Base::OutputStream &str) const
 {
     ensureNormalized();
     const bool convert = saveConverts();
+    if (_pbr) {
+        // As in saveXML's compatible branch: the Phong derivation, since
+        // the mode itself cannot travel here
+        for (int i = 0; i < _count; ++i) {
+            const Material mat = getPhongMaterial(i);
+            str << packedForSave(mat.ambientColor, convert);
+            str << packedForSave(mat.diffuseColor, convert);
+            str << packedForSave(mat.specularColor, convert);
+            str << packedForSave(mat.emissiveColor, convert);
+            str << mat.shininess;
+            str << mat.transparency;
+        }
+        return;
+    }
     for (int i = 0; i < _count; ++i) {
         str << packedForSave(getAmbientColor(i), convert);
         str << packedForSave(getDiffuseColor(i), convert);
@@ -3877,6 +4088,7 @@ void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
     // The generic hook, which no caller with a document reaches (this class
     // overrides RestoreDocFile); a bare stream states no version, and no
     // conversion is the reading that leaves its bytes meaning what they say.
+    _pbr = false;
     restoreValues(parseMaterialStream(str, uCt), false);
 }
 
@@ -3920,8 +4132,10 @@ void PropertyMaterialList::Restore(Base::XMLReader &reader)
     else if (reader.hasAttribute("count")) {
         restoreXML(reader);
     }
-    else if (getSize()) {
-        setSize(0);
+    else {
+        _pbr = false;
+        if (getSize())
+            setSize(0);
     }
 }
 
@@ -3956,6 +4170,8 @@ void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
         restoreFieldStream(str, uCt, legacy);
     }
     else {
+        // The compatible stream cannot state a mode: its values are Phong
+        _pbr = false;
         restoreValues(parseMaterialStream(str, uCt), legacy);
         // Version 3 is the colours we have always read, followed by three
         // strings per entry. Written by upstream, and by this fork when it
@@ -4009,6 +4225,10 @@ enum FieldBit {
     FieldImage = 1 << 7,
     FieldImagePath = 1 << 8,
     FieldUuid = 1 << 9,
+    /// Not a field: the list's PBR mode riding the mask. A bit has no
+    /// payload, so a reader that predates it skips nothing and loses
+    /// nothing -- it only tests the bits it knows.
+    FieldPBR = 1 << 10,
 };
 
 } // namespace
@@ -4029,6 +4249,7 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     if (!_image.empty())        mask |= FieldImage;
     if (!_imagePath.empty())    mask |= FieldImagePath;
     if (!_uuid.empty())         mask |= FieldUuid;
+    if (_pbr)                   mask |= FieldPBR;
     str << mask;
 
     // The per field encoding is this fork's own, but it is written into the
@@ -4087,6 +4308,9 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
 
     uint16_t mask = 0;
     str >> mask;
+    // Before the fields land: the mode decides what an absent field reads
+    // as when normalize() runs below
+    _pbr = (mask & FieldPBR) != 0;
 
     auto readColors = [&str, uCt](std::vector<Color> &field, bool present) {
         std::vector<Color>().swap(field);
@@ -4161,6 +4385,11 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
 
 bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
 {
+    // The mode is an attribute, not a key line in the char stream: an old
+    // fork build ignores an attribute it does not query but throws on an
+    // unknown field key
+    if (_pbr)
+        writer.Stream() << " pbr=\"1\"";
     writer.Stream() << " fields=\"1\">\n";
 
     const bool convert = saveConverts();
@@ -4333,7 +4562,7 @@ bool PropertyMaterialList::isSame(const Property &other) const
     if (&other == this)
         return true;
     auto list = Base::freecad_dynamic_cast<const PropertyMaterialList>(&other);
-    if (!list || list->_count != _count)
+    if (!list || list->_count != _count || list->_pbr != _pbr)
         return false;
     ensureNormalized();
     list->ensureNormalized();
@@ -4353,6 +4582,7 @@ Property *PropertyMaterialList::Copy() const
     ensureNormalized();
     PropertyMaterialList *p = new PropertyMaterialList();
     p->_count = _count;
+    p->_pbr = _pbr;
     p->_ambient = _ambient;
     p->_diffuse = _diffuse;
     p->_specular = _specular;
@@ -4373,6 +4603,7 @@ void PropertyMaterialList::Paste(const Property &from)
     touchFields();
     _touchList.clear();
     _count = other._count;
+    _pbr = other._pbr;
     _ambient = other._ambient;
     _diffuse = other._diffuse;
     _specular = other._specular;

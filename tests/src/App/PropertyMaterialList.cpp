@@ -26,6 +26,7 @@
 
 #include <App/Material.h>
 #include <App/PropertyStandard.h>
+#include <Base/Exception.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
 
@@ -818,4 +819,183 @@ TEST_F(PropertyMaterialListTest, aConvertedUniformListStillCollapses)
     // stored alpha, its complement.
     EXPECT_FLOAT_EQ(prop.getTransparency(2), 0.5F);
     EXPECT_FLOAT_EQ(prop.getDiffuseColor(2).a, 0.5F);
+}
+
+//**************************************************************************
+// PBR mode: the same arrays reinterpreted, the mode riding the encodings
+// that can carry it and converted out of the ones that cannot.
+
+TEST_F(PropertyMaterialListTest, pbrReadsTheSameSlotsItsOwnWay)
+{
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(3, redMaterial()));
+    // Phong mode: no metals, roughness derived from the shininess
+    EXPECT_FLOAT_EQ(prop.getMetallic(1), 0.0F);
+    EXPECT_FLOAT_EQ(prop.getRoughness(1),
+                    App::Material::shininessToRoughness(prop.getShininess(1)));
+
+    prop.setPBR(true);
+    ASSERT_TRUE(prop.isPBR());
+    // The unset fields read as the PBR defaults -- dielectric under a white
+    // tint at mid roughness -- NOT as the Phong default specular, whose
+    // alpha of one would spell full metal
+    EXPECT_FLOAT_EQ(prop.getMetallic(1), 0.0F);
+    EXPECT_FLOAT_EQ(prop.getRoughness(1), 0.5F);
+    EXPECT_EQ(prop.getSpecularColor(1).getPackedValue() >> 8, 0xffffffU);
+
+    prop.setMetallic(1, 1.0F);
+    prop.setRoughness(1, 0.25F);
+    EXPECT_FLOAT_EQ(prop.getMetallic(0), 0.0F);
+    EXPECT_FLOAT_EQ(prop.getMetallic(1), 1.0F);
+    EXPECT_FLOAT_EQ(prop.getRoughness(1), 0.25F);
+    // the same arrays, reinterpreted: the raw slots show the PBR values
+    EXPECT_FLOAT_EQ(prop.getSpecularColor(1).a, 1.0F);
+    EXPECT_FLOAT_EQ(prop.getShininess(1), 0.25F);
+}
+
+TEST_F(PropertyMaterialListTest, pbrSettersDemandTheMode)
+{
+    // In Phong mode the slots these writers land in mean something else; a
+    // caller holding a metallic value has decided the mode and must say so
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    EXPECT_THROW(prop.setMetallic(0.5F), Base::RuntimeError);
+    EXPECT_THROW(prop.setMetallic(0, 0.5F), Base::RuntimeError);
+    EXPECT_THROW(prop.setMetallicValues({0.1F, 0.2F}), Base::RuntimeError);
+    EXPECT_THROW(prop.setRoughness(0.5F), Base::RuntimeError);
+    EXPECT_THROW(prop.setRoughness(0, 0.5F), Base::RuntimeError);
+    EXPECT_THROW(prop.setRoughnessValues({0.1F, 0.2F}), Base::RuntimeError);
+
+    prop.setPBR(true);
+    prop.setMetallic(1.0F);
+    EXPECT_FLOAT_EQ(prop.getMetallic(1), 1.0F);
+}
+
+TEST_F(PropertyMaterialListTest, aPBRListGrowsDielectric)
+{
+    App::PropertyMaterialList prop;
+    prop.setPBR(true);
+    prop.setRoughnessValues({0.25F, 0.75F});
+    ASSERT_EQ(prop.getSize(), 2);
+    EXPECT_FLOAT_EQ(prop.getMetallic(0), 0.0F);
+
+    prop.setSize(4);
+    EXPECT_FLOAT_EQ(prop.getMetallic(3), 0.0F);
+    EXPECT_FLOAT_EQ(prop.getRoughness(3), 0.5F);
+    // and none of that materialised the untouched specular field
+    EXPECT_TRUE(prop.getSpecularColors().empty());
+}
+
+TEST_F(PropertyMaterialListTest, pbrRoundTripsTheFieldEncodings)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(3);
+    prop.setPBR(true);
+    prop.setDiffuseColors({packed(0xff0000ff), packed(0x00ff00ff), packed(0x0000ffff)});
+    prop.setMetallicValues({0.0F, 1.0F, 0.2F});
+    prop.setRoughnessValues({0.25F, 0.75F, 0.5F});
+
+    const std::string xml = saveToXML(prop, 6);
+    EXPECT_NE(xml.find("pbr=\"1\""), std::string::npos) << xml;
+
+    for (const bool binary : {false, true}) {
+        App::PropertyMaterialList restored;
+        if (binary) {
+            restoreDocFile(restored, saveDocFile(prop, 6));
+        }
+        else {
+            restoreFromXML(restored, xml);
+        }
+        ASSERT_TRUE(restored.isPBR());
+        // roughness is the float slot: full precision both ways
+        EXPECT_FLOAT_EQ(restored.getRoughness(0), 0.25F);
+        EXPECT_FLOAT_EQ(restored.getRoughness(1), 0.75F);
+        // metallic rides an 8-bit alpha: 0 and 1 are exact, anything else
+        // is within one step (the legacy alpha flip is float arithmetic)
+        EXPECT_FLOAT_EQ(restored.getMetallic(0), 0.0F);
+        EXPECT_FLOAT_EQ(restored.getMetallic(1), 1.0F);
+        EXPECT_NEAR(restored.getMetallic(2), 0.2F, ALPHA_STEP);
+        EXPECT_EQ(restored.getDiffuseColor(2).getPackedValue() >> 8, 0x0000ffU);
+    }
+}
+
+TEST_F(PropertyMaterialListTest, anOldSchemaSaveWritesThePhongDerivation)
+{
+    // The compatible encodings cannot state the mode, so they state the
+    // Phong look the values most nearly mean
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    prop.setPBR(true);
+    prop.setDiffuseColors({packed(0xff0000ff), packed(0x00ff00ff)});
+    prop.setMetallicValues({1.0F, 0.0F});
+    prop.setRoughnessValues({0.5F, 0.5F});
+
+    for (const bool binary : {false, true}) {
+        App::PropertyMaterialList restored;
+        if (binary) {
+            restoreDocFile(restored, saveDocFile(prop, 5));
+        }
+        else {
+            restoreFromXML(restored, saveToXML(prop, 5));
+        }
+        ASSERT_FALSE(restored.isPBR());
+        // the metal: its colour lands in the specular; the diffuse stays
+        // the base colour (see getPhongMaterial for why)
+        EXPECT_EQ(restored.getDiffuseColor(0).getPackedValue() >> 8, 0xff0000U);
+        EXPECT_EQ(restored.getSpecularColor(0).getPackedValue() >> 8, 0xff0000U);
+        // the dielectric keeps its diffuse and gets the 0.04-scaled tint
+        EXPECT_EQ(restored.getDiffuseColor(1).getPackedValue() >> 8, 0x00ff00U);
+        EXPECT_EQ(restored.getSpecularColor(1).getPackedValue() >> 8,
+                  App::Color(0.04F, 0.04F, 0.04F).getPackedValue() >> 8);
+        // and the shininess slots hold the converted roughness
+        EXPECT_NEAR(restored.getShininess(0),
+                    App::Material::roughnessToShininess(0.5F), 1e-6);
+    }
+}
+
+TEST_F(PropertyMaterialListTest, theModeIsPartOfTheSerialisedIdentity)
+{
+    // Two lists whose fields match byte for byte must not elide into one
+    // another across modes under the shared-default scheme
+    App::PropertyMaterialList phong;
+    phong.setValues(std::vector<App::Material>(10, redMaterial()));
+    App::PropertyMaterialList pbr;
+    pbr.setValues(std::vector<App::Material>(10, redMaterial()));
+    pbr.setPBR(true);
+
+    EXPECT_FALSE(phong.isSame(pbr));
+    EXPECT_NE(saveToXML(phong, 6), saveToXML(pbr, 6));
+    EXPECT_NE(saveDocFile(phong, 6), saveDocFile(pbr, 6));
+}
+
+TEST_F(PropertyMaterialListTest, copyAndPasteCarryTheMode)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    prop.setPBR(true);
+    prop.setMetallic(1.0F);
+
+    std::unique_ptr<App::Property> copy(prop.Copy());
+    App::PropertyMaterialList pasted;
+    pasted.Paste(*copy);
+    EXPECT_TRUE(pasted.isPBR());
+    EXPECT_FLOAT_EQ(pasted.getMetallic(0), 1.0F);
+    EXPECT_TRUE(pasted.isSame(prop));
+}
+
+TEST_F(PropertyMaterialListTest, aPhongEraRestoreResetsTheMode)
+{
+    // Restoring what an older document holds over a property currently in
+    // PBR mode must land in Phong mode, whichever encoding it arrives in
+    App::PropertyMaterialList prop;
+    prop.setSize(1);
+    prop.setPBR(true);
+    restoreFromXML(prop, opacityEraElement({{0xff0000ffU, 0.0F}}));
+    EXPECT_FALSE(prop.isPBR());
+
+    prop.setPBR(true);
+    App::PropertyMaterialList phong;
+    phong.setValues(std::vector<App::Material>(2, redMaterial()));
+    restoreDocFile(prop, saveDocFile(phong, 6));
+    EXPECT_FALSE(prop.isPBR());
 }

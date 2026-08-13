@@ -116,6 +116,19 @@ public:
     MaterialType getType() const
     { return _matType; }
 
+    /** @name Phong and PBR readings of the shininess slot
+     *
+     * The Blinn-Phong-to-GGX fit the bgfx backend has always used for
+     * materials that state no roughness, and its inverse. Coin's 0..1
+     * shininess maps to a GL exponent of s * 128, so the inverse saturates:
+     * a roughness below ~0.124 needs an exponent above 128 and converts to
+     * a shininess of 1.
+     */
+    //@{
+    static float shininessToRoughness(float shininess);
+    static float roughnessToShininess(float roughness);
+    //@}
+
     /** @name Properties */
     //@{
     Color ambientColor;  /**< Defines the ambient color. */

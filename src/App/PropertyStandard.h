@@ -1283,6 +1283,53 @@ public:
     /// Whether any entry names a texture or a material card
     bool hasTextureOrCard() const { return !_image.empty() || !_imagePath.empty() || !_uuid.empty(); }
 
+    /** @name PBR mode
+     *
+     * One bool for the whole list. When set, the same arrays are READ AS
+     * PBR quantities -- reinterpreted, not converted, so the storage cost
+     * and the document format do not change: the diffuse colour is the
+     * base colour (its alpha still the opacity), the shininess slot is
+     * the roughness at full float precision, the specular colour is the
+     * F0 tint with the metallic factor riding its alpha, and the emissive
+     * is unchanged. The ambient slot has no PBR meaning.
+     *
+     * An old build opening a PBR document finds the values in the Phong
+     * slots -- a degraded look, no data loss -- and re-saving there drops
+     * the mode, not the values. The compatible encodings cannot carry the
+     * flag at all, so an old-schema save writes the Phong derivation
+     * (getPhongMaterial()) in place of the raw slots.
+     */
+    //@{
+    bool isPBR() const { return _pbr; }
+    /// Flip the reading of the stored values; converts nothing
+    void setPBR(bool enable);
+    /// The metallic factor: the specular alpha. An unset field reads as 0
+    /// (dielectric) -- see specularDefault(). In Phong mode always 0.
+    float getMetallic(int idx) const;
+    /// The roughness: the shininess slot in PBR mode; in Phong mode the
+    /// Blinn-Phong derivation of the stored shininess.
+    float getRoughness(int idx) const;
+    /// The metallic/roughness writers demand PBR mode: in Phong mode the
+    /// slots they would land in mean something else, and a caller holding
+    /// a metallic value has decided the mode already.
+    void setMetallicValues(const std::vector<float> &values);
+    void setRoughnessValues(const std::vector<float> &values);
+    void setMetallic(int idx, float value);
+    void setRoughness(int idx, float value);
+    void setMetallic(float value);
+    void setRoughness(float value);
+    /** The Phong reading of one entry
+     *
+     * In Phong mode this is getMaterial(). In PBR mode it derives the
+     * classic slots: diffuse = base * (1 - metallic), specular =
+     * mix(0.04 * tint, base, metallic), shininess from the roughness;
+     * emissive and the strings carry over. Used by the compatible save
+     * encodings, the Coin GL display leg, and exporters to formats with
+     * no PBR terms.
+     */
+    Material getPhongMaterial(int idx) const;
+    //@}
+
     /** Whether the diffuse colour is the only field that varies per entry
      *
      * True for every appearance a plain colour list could have expressed --
@@ -1348,6 +1395,22 @@ private:
     /// Mark the fields as possibly denormal after a write
     void touchFields();
 
+    /** What an empty _specular / _shininess field reads as, per mode
+     *
+     * The Phong defaults are the default material's -- a near-white
+     * specular whose alpha is 1, which in PBR mode would read back as a
+     * fully metallic surface. So PBR mode reads an unset specular as a
+     * white F0 tint with metallic 0, and an unset shininess slot as a mid
+     * roughness. These are also the collapse baselines, so which values a
+     * field can elide follows the mode -- deterministically, because the
+     * mode itself is part of the serialized identity (the mask bit / the
+     * element attribute).
+     */
+    const Color &specularDefault() const;
+    float shininessDefault() const;
+    /// Throw unless the list is in PBR mode
+    void requirePBR() const;
+
     /** Land restored values, converting and merging what the file's era means
      *
      * \a values carry both slots exactly as the file states them. The stored
@@ -1386,6 +1449,8 @@ private:
     template<class T> void setUniformField(std::vector<T> &field, const T &value, const T &def);
 
     int _count {0};
+    /// The PBR reading of the fields; see the PBR mode block above
+    bool _pbr {false};
     std::vector<Color> _ambient;
     /** Diffuse colour AND transparency: the alpha is the entry's opacity
      *

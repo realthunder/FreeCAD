@@ -24,6 +24,8 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
+# include <cmath>
 # include <cstring>
 #endif
 
@@ -334,4 +336,17 @@ void Material::setType(const MaterialType MatType)
         transparency = 0.0000f;
         break;
     }
+}
+
+float Material::shininessToRoughness(float shininess)
+{
+    const float exponent = std::max(shininess, 0.0f) * 128.0f;
+    return std::min(std::sqrt(2.0f / (exponent + 2.0f)), 1.0f);
+}
+
+float Material::roughnessToShininess(float roughness)
+{
+    const float squared = std::max(roughness * roughness, 1e-6f);
+    const float exponent = 2.0f / squared - 2.0f;
+    return std::clamp(exponent / 128.0f, 0.0f, 1.0f);
 }
