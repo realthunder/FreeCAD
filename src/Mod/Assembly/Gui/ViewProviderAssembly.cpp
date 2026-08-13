@@ -1493,6 +1493,8 @@ void ViewProviderAssembly::applyIsolationRecursively(
         // fork does not have; the same preference is reachable through ViewParams.
         App::Color transparentColor;
         transparentColor.setPackedValue(Gui::ViewParams::getDefaultShapeColor());
+        // setTransparency means what it says since the alpha convention flip
+        // (Base/Color.h); before that this line quietly meant the opposite.
         transparentColor.setTransparency(trans);
         std::map<std::string, App::Color> colorMap;
         colorMap["Face"] = transparentColor;  // The "Face" wildcard targets all faces

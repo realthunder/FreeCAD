@@ -341,8 +341,8 @@ void FaceColors::onColorButtonChanged()
     if (!d->index.isEmpty()) {
         QColor color = d->ui->colorButton->color();
         for (int it : d->index) {
-            // alpha of App::Color is contrary to the one of QColor
-            d->perface[it].set(color.redF(), color.greenF(), color.blueF(), (1.0 - color.alphaF()));
+            // both alphas are alphas now; see Base/Color.h
+            d->perface[it].set(color.redF(), color.greenF(), color.blueF(), color.alphaF());
         }
         d->vp->DiffuseColor.setValues(d->perface);
         // new color has been applied, unselect so that users can see this
@@ -368,8 +368,7 @@ void FaceColors::onSelectionChanged(const Gui::SelectionChanges& msg)
             d->index.insert(index);
             const App::Color& faceColor = d->perface[index];
             QColor color;
-            // alpha of App::Color is contrary to the one of QColor
-            color.setRgbF(faceColor.r, faceColor.g, faceColor.b, (1.0 - faceColor.a));
+            color.setRgbF(faceColor.r, faceColor.g, faceColor.b, faceColor.a);
             d->ui->colorButton->setColor(color);
             selection_changed = true;
         }

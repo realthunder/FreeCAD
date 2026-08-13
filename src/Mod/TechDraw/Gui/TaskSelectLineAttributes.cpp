@@ -170,7 +170,7 @@ bool TaskSelectLineAttributes::accept()
 
     QColor qTemp = ui->cbColor->color();
     App::Color temp;
-    temp.set(qTemp.redF(), qTemp.greenF(), qTemp.blueF(), 1.0 - qTemp.alphaF());
+    temp.set(qTemp.redF(), qTemp.greenF(), qTemp.blueF(), qTemp.alphaF());
     activeAttributes->setColor(temp);
 
     double cascadeSpacing = ui->sbSpacing->value();

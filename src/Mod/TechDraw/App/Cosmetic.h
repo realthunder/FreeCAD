@@ -59,7 +59,7 @@ public:
     App::Color getColor() const { return m_color; }
     void setColor(App::Color color) { m_color = color; }
     QColor getQColor() const { return m_color.asValue<QColor>(); }
-    void setQColor(QColor qColor) { m_color.set(qColor.redF(), qColor.greenF(), qColor.blueF(), 1.0 - qColor.alphaF()); }
+    void setQColor(QColor qColor) { m_color.set(qColor.redF(), qColor.greenF(), qColor.blueF(), qColor.alphaF()); }
     bool getVisible() const { return m_visible; }
     void setVisible(bool viz) { m_visible = viz; }
     int getLineNumber() const { return m_lineNumber; }

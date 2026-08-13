@@ -1169,7 +1169,7 @@ void LinkView::setMaterial(int index, const App::Material *material) {
             return;
         }
         App::Color c = material->diffuseColor;
-        c.a = material->transparency;
+        c.setTransparency(material->transparency);
         pcLinkRoot->setColorOverride(c);
         for(int i=0;i<getSize();++i)
             setMaterial(i,nullptr);
@@ -1183,7 +1183,7 @@ void LinkView::setMaterial(int index, const App::Material *material) {
             return;
         }
         App::Color c = material->diffuseColor;
-        c.a = material->transparency;
+        c.setTransparency(material->transparency);
         if(info.pcRoot && info.pcRoot->isOfType(SoFCSelectionRoot::getClassTypeId()))
             static_cast<SoFCSelectionRoot*>(info.pcRoot.get())->setColorOverride(c);
     }
@@ -3691,7 +3691,7 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
     if(wildcard == "Face" || wildcard == "Face*" || wildcard.empty()) {
         if(wildcard.size()==4 || overrideMaterial) {
             App::Color c = shapeMaterial->diffuseColor;
-            c.a = shapeMaterial->transparency;
+            c.setTransparency(shapeMaterial->transparency);
             colors["Face"] = c;
             if(wildcard.size()==4)
                 return colors;
@@ -3733,7 +3733,7 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
         bool overridden = false;
         if(wildcard!=ViewProvider::hiddenMarker() && overrideMaterial) {
             auto color = shapeMaterial->diffuseColor;
-            color.a = shapeMaterial->transparency;
+            color.setTransparency(shapeMaterial->transparency);
             colors.emplace(wildcard,color);
             overridden = true;
         }
@@ -3753,7 +3753,7 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
                 break;
             if(!overridden && wildcard!=ViewProvider::hiddenMarker() && next->OverrideMaterial.getValue()) {
                 auto color = next->ShapeAppearance.getDiffuseColor(0);
-                color.a = next->ShapeAppearance.getTransparency(0);
+                color.setTransparency(next->ShapeAppearance.getTransparency(0));
                 colors.emplace(wildcard,color);
                 overridden = true;
             }
@@ -3780,7 +3780,7 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
                     // only two of the six fields are wanted, and the
                     // material list stores each one separately
                     auto color = materials.getDiffuseColor(i);
-                    color.a = materials.getTransparency(i);
+                    color.setTransparency(materials.getTransparency(i));
                     colors.emplace(std::to_string(i)+"."+wildcard,color);
                 }
             }
@@ -3937,7 +3937,7 @@ void ViewProviderLink::setElementColorsTo(
     if(hasFaceColor && shapeMaterial) {
         auto mat = shapeMaterial->getMaterial(0);
         mat.diffuseColor = faceColor;
-        mat.transparency = faceColor.a;
+        mat.transparency = faceColor.transparency();
         shapeMaterial->setStatus(App::Property::User3,true);
         shapeMaterial->setValue(mat);
         shapeMaterial->setStatus(App::Property::User3,false);

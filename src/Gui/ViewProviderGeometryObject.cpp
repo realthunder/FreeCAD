@@ -206,9 +206,16 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
         // base's setPyObject and Paste call setValue non-virtually and would
         // otherwise update the mirror without ever reaching the appearance.
         // Guarded, so the appearance mirroring back cannot ping-pong.
-        const Base::Color &c = ShapeColor.getValue();
+        //
+        // The rgb only: the entry's alpha is its opacity, Transparency's to
+        // move. With one store a whole-colour push would drag whatever alpha
+        // ShapeColor happens to hold over the object's transparency -- the
+        // old second store used to absorb exactly that.
+        Base::Color c = ShapeColor.getValue();
         pcShapeMaterial->diffuseColor.setValue(c.r, c.g, c.b);
-        if (c != ShapeAppearance.getDiffuseColor(0))
+        const Base::Color entry = ShapeAppearance.getDiffuseColor(0);
+        c.a = entry.a;
+        if (c != entry)
             ShapeAppearance.setDiffuseColor(c);
     }
     else if (prop == &ShapeMaterial) {
@@ -251,13 +258,12 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
         // so a per-face import that mirrored would throw away the very
         // colours it had just applied.
         if (ShapeAppearance.getDiffuseColors().size() <= 1) {
-            // The colour only. Alpha in a diffuse colour is that entry's
-            // transparency (which is where ViewProviderPartExt has always
-            // kept the per-face value), and ShapeColor has Transparency for
-            // that; importing it here would make the two disagree.
-            Base::Color color = ShapeAppearance.getDiffuseColor(0);
-            color.a = ShapeColor.getValue().a;
-            ShapeColor.mirrorValue(color);
+            // Alpha included: the appearance's diffuse alpha IS the entry's
+            // opacity, and a mirror carrying any other alpha stops being
+            // equal to it -- so the equality check in mirrorValue fires, the
+            // write announces, and the onChanged web pushes the stale alpha
+            // straight back into the appearance it was mirroring.
+            ShapeColor.mirrorValue(ShapeAppearance.getDiffuseColor(0));
             ShapeMaterial.mirrorValue(ShapeAppearance.getMaterial(0));
         }
         Gui::ColorUpdater::addObject(getObject());
@@ -282,8 +288,13 @@ TYPESYSTEM_SOURCE(Gui::PropertyShapeMaterial, App::PropertyMaterial)
 void PropertyShapeColor::setValue(const Base::Color &col)
 {
     App::PropertyColor::setValue(col);
-    if (_appearance)
-        _appearance->setDiffuseColor(col);
+    if (_appearance) {
+        // The rgb only; the entry's alpha is the object's transparency and
+        // moves through Transparency (see the onChanged push).
+        Base::Color c = col;
+        c.a = _appearance->getDiffuseColor(0).a;
+        _appearance->setDiffuseColor(c);
+    }
 }
 
 void PropertyShapeColor::setValue(float r, float g, float b, float a)
@@ -301,9 +312,14 @@ void PropertyShapeColor::setValue(uint32_t rgba)
 void PropertyShapeColor::applyToAppearance()
 {
     // A per-face appearance is the more specific value and already restored:
-    // leave it alone rather than collapse or overwrite its first entry.
-    if (_appearance && _appearance->getDiffuseColors().size() <= 1)
-        _appearance->setDiffuseColor(getValue());
+    // leave it alone rather than collapse or overwrite its first entry. The
+    // rgb only, as every ShapeColor push: an old document's transparency
+    // arrives through ShapeMaterial and Transparency, which restore later.
+    if (_appearance && _appearance->getDiffuseColors().size() <= 1) {
+        Base::Color c = getValue();
+        c.a = _appearance->getDiffuseColor(0).a;
+        _appearance->setDiffuseColor(c);
+    }
 }
 
 void PropertyShapeColor::Restore(Base::XMLReader &reader)
@@ -880,8 +896,10 @@ void ViewProviderGeometryObject::refreshAppearanceMirrors()
         Transparency.setValue(transparency);
     }
 
+    // Alpha included, for the reason onChanged's mirror block gives: any
+    // other alpha makes the mirror unequal to what it mirrors, and the
+    // announcement pushes that difference back into the appearance.
     Base::Color color = ShapeAppearance.getDiffuseColor(0);
-    color.a = ShapeColor.getValue().a;
     if (color != ShapeColor.getValue()) {
         Base::ObjectStatusLocker<App::Property::Status, App::Property>
                 guard(App::Property::NoModify, &ShapeColor);

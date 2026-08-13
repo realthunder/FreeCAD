@@ -1959,9 +1959,9 @@ static int checkSelectionContext(SoFCRenderCache::Material &material,
           return 1;
         if (ctx->colors.begin()->first < 0 && ctx->colors.size() == 1) {
           vcache->setFaceColors();
-          auto color = ctx->colors.begin()->second;
-          color.a = 1.0 - color.a;
-          uint32_t diffuse = color.getPackedValue();
+          // The override colour's alpha is an opacity, which is exactly what
+          // the packed material diffuse stores -- no conversion.
+          uint32_t diffuse = ctx->colors.begin()->second.getPackedValue();
           if (diffuse != material.diffuse || material.pervertexcolor) {
             material.diffuse = diffuse;
             material.pervertexcolor = false;
@@ -1974,9 +1974,7 @@ static int checkSelectionContext(SoFCRenderCache::Material &material,
         for (auto &v : ctx->colors) {
           if (v.first < 0)
             continue;
-          auto color = v.second;
-          color.a = 1.0 - color.a;
-          selcolors.emplace_back(v.first, color.getPackedValue());
+          selcolors.emplace_back(v.first, v.second.getPackedValue());
         }
         vcache->setFaceColors(selcolors);
         if ((material.pervertexcolor && !vcache->colorPerVertex())

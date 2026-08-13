@@ -100,9 +100,15 @@ public:
     void setAppearance(App::PropertyMaterialList *appearance,
                        const App::PropertyColor *shapeColor);
 
-    /** @name Reads, hiding the base ones by name */
+    /** @name Reads, overriding or hiding the base ones
+     *
+     * getValues() overrides -- App::PropertyColorList makes that one virtual
+     * so that a property whose colours live somewhere else can say so once
+     * and have the inherited restore paths follow. The rest hide, because
+     * PropertyListsT reads its member directly and cannot be told otherwise.
+     */
     //@{
-    const std::vector<Base::Color> &getValues() const;
+    const std::vector<Base::Color> &getValues() const override;
     const std::vector<Base::Color> &getValue() const { return getValues(); }
     const Base::Color &operator[](int idx) const { return getValues()[idx]; }
     int getSize() const override;
@@ -124,6 +130,7 @@ public:
     //@}
 
     unsigned int getMemSize() const override;
+    unsigned int getSaveSize(Base::Writer &writer) const override;
     bool isSame(const App::Property &other) const override;
     App::Property *Copy() const override;
     void Paste(const App::Property &from) override;
@@ -134,6 +141,10 @@ public:
     void Restore(Base::XMLReader &reader) override;
 
 protected:
+    /// Reinterpret an all-zero-alpha Python assignment written for the old
+    /// meaning of alpha; defined next to setPyObject, its only caller.
+    void guardLegacyAlpha(std::vector<Base::Color> &colors) const;
+
     /** The element name a colour list has always written
      *
      * A list's XML element is named after its type, so without this a

@@ -64,7 +64,7 @@ public:
     { _appearance = appearance; }
 
     void setValue(const Base::Color &col);
-    void setValue(float r, float g, float b, float a = 0.0F);
+    void setValue(float r, float g, float b, float a = 1.0F);
     void setValue(uint32_t rgba);
 
     /// Refresh the mirror from the appearance, without writing back. A value

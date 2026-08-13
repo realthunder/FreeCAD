@@ -292,7 +292,7 @@ static ColorVariant *lookupColorVariant(std::list<ColorVariant> &variants,
 }
 
 /// Find or build the variant of \a geom baking exactly the resolved
-/// per-face colors \a slice (diffuse rgb + transparency in alpha), and
+/// per-face colors \a slice (diffuse rgb + opacity in alpha), and
 /// take a reference on it.
 static ColorVariant *acquireColorVariant(InstGeometry &geom,
                                          const std::vector<App::Color> &slice)
@@ -316,7 +316,7 @@ static ColorVariant *acquireColorVariant(InstGeometry &geom,
     float *t = mat->transparency.startEditing();
     for (int i = 0; i < n; ++i) {
         dc[i].setValue(slice[i].r, slice[i].g, slice[i].b);
-        t[i] = slice[i].a;
+        t[i] = slice[i].transparency();
     }
     mat->diffuseColor.finishEditing();
     mat->transparency.finishEditing();
@@ -740,27 +740,91 @@ void PropertyDiffuseColor::setPyObject(PyObject *value)
     catch (...) {
     }
     if (single) {
-        setValues(std::vector<Base::Color>(1, color));
+        std::vector<Base::Color> colors(1, color);
+        guardLegacyAlpha(colors);
+        setValues(std::move(colors));
         return;
     }
-    // A sequence, through the list handling two levels up: PropertyListsT's
-    // own setPyObject would take the same non-virtual path again.
-    App::PropertyLists::setPyObject(value);
+    // A sequence, parsed by a plain colour list so the guard below sees the
+    // whole assignment at once. (Handing the object to the inherited
+    // setPyObject would write colour by colour, past any chance to judge it.)
+    App::PropertyColorList parsed;
+    parsed.App::PropertyColorList::setPyObject(value);
+    std::vector<Base::Color> colors = parsed.getValues();
+    guardLegacyAlpha(colors);
+    setValues(std::move(colors));
+}
+
+/** Catch a macro written for the old meaning of alpha
+ *
+ * A colour's alpha means opacity now (see Base/Color.h); it used to mean
+ * transparency, and every macro from that era spells "opaque" as 0.0 -- which
+ * today reads as invisible. An assignment in which EVERY alpha is exactly 0.0
+ * is therefore either such a macro or a deliberate attempt to make every face
+ * invisible through DiffuseColor; the first is common and the second has
+ * better spellings (Transparency = 100, or Visibility). So the guard assumes
+ * the macro, makes the colours opaque, and says so once per session.
+ *
+ * A genuine read-modify-write of an already invisible object presents the
+ * same all-zero alphas; that is what the current-state test excuses. Partial
+ * transparency (0.5 both ways), and anything mixed, is left exactly as given
+ * -- those values mean the same or cannot be judged, and guessing would be
+ * worse than either reading.
+ */
+void PropertyDiffuseColor::guardLegacyAlpha(std::vector<Base::Color> &colors) const
+{
+    if (colors.empty())
+        return;
+    for (const auto &color : colors) {
+        if (color.a != 0.0f)
+            return;
+    }
+    // Already fully transparent: the zeroes are this object's own state
+    // coming back, not a legacy macro's idea of opaque.
+    const auto &current = getValues();
+    if (!current.empty()) {
+        bool invisible = true;
+        for (const auto &color : current) {
+            if (color.a != 0.0f) {
+                invisible = false;
+                break;
+            }
+        }
+        if (invisible)
+            return;
+    }
+    static bool warned;
+    if (!warned) {
+        warned = true;
+        Base::Console().Warning(
+            "DiffuseColor: an assignment set every alpha to 0, the old spelling of "
+            "opaque, and was read as opaque. Alpha means opacity now (1 = opaque); "
+            "use Transparency or Visibility to hide an object.\n");
+    }
+    for (auto &color : colors)
+        color.a = 1.0f;
 }
 
 void PropertyDiffuseColor::Save(Base::Writer &writer) const
 {
-    if (!_appearance) {
+    // With the values: this is the name every reader that predates
+    // ShapeAppearance knows, so as long as the appearance says nothing a
+    // colour list cannot say, the document carries the face colours under
+    // both names and an older FreeCAD opens it with its colours intact. The
+    // alpha written here is a TRANSPARENCY, which is what those readers
+    // expect -- saveXML and saveStream below convert it.
+    //
+    // The cost is that a per-face import stores its colours twice. That is
+    // the price of the compatibility and it is paid deliberately.
+    if (!_appearance || _appearance->variesOnlyInDiffuse()) {
         App::PropertyColorList::Save(writer);
         return;
     }
-    // The colours are ShapeAppearance's, and it writes them itself. Writing
-    // them here as well would double the largest thing a per-face import
-    // saves, for a value the restore is about to overwrite anyway -- both
-    // names come back, and ShapeAppearance sorts after DiffuseColor. The
-    // element still goes out, so a document keeps a DiffuseColor of this
-    // type, which is what distinguishes it from an older one that carries
-    // the values.
+    // Without them: the appearance varies a field a colour list has no room
+    // for, so any copy written here would be a lossy second answer to the
+    // same question. The element still goes out, so a document keeps a
+    // DiffuseColor of this type, which is what distinguishes it from an
+    // older one that carries the values.
     writer.Stream() << writer.ind() << '<' << xmlName() << " file=\"\"/>\n";
 }
 
@@ -794,14 +858,14 @@ void PropertyDiffuseColor::restoreXML(Base::XMLReader &reader)
     // Whether alpha means opacity is a property of the file, not of the
     // element, so it is asked here as well -- the same question the inherited
     // archive-member path asks (App::PropertyColorList::RestoreDocFile).
-    bool opacity = Base::alphaIsOpacity(reader);
+    bool convert = !Base::alphaIsOpacity(reader);
     std::vector<Base::Color> values(count);
     auto &stream = reader.beginCharStream() >> std::hex;
     for (int i = 0; i < count; ++i) {
         uint32_t packed;
         stream >> packed;
         values[i].setPackedValue(packed);
-        if (opacity)
+        if (convert)
             values[i].a = 1.0F - values[i].a;
     }
     stream >> std::dec;
@@ -813,9 +877,13 @@ bool PropertyDiffuseColor::saveXML(Base::Writer &writer) const
 {
     if (!_appearance)
         return App::PropertyColorList::saveXML(writer);
+    const bool convert = !Base::writerAlphaIsOpacity();
     writer.Stream() << ">\n" << std::hex;
-    for (const auto &color : getValues())
+    for (auto color : getValues()) {
+        if (convert)
+            color.a = 1.0F - color.a;
         writer.Stream() << color.getPackedValue() << '\n';
+    }
     writer.Stream() << std::dec;
     return false;
 }
@@ -841,8 +909,24 @@ void PropertyDiffuseColor::saveStream(Base::OutputStream &str) const
         App::PropertyColorList::saveStream(str);
         return;
     }
-    for (const auto &color : getValues())
+    const bool convert = !Base::writerAlphaIsOpacity();
+    for (auto color : getValues()) {
+        if (convert)
+            color.a = 1.0F - color.a;
         str << color.getPackedValue();
+    }
+}
+
+unsigned int PropertyDiffuseColor::getSaveSize(Base::Writer &writer) const
+{
+    (void)writer;
+    // getMemSize() is deliberately 0 -- the colours are counted where they are
+    // stored -- but the inline-versus-archive rule reads it as the cost of
+    // writing this property, and now that the values do go out, that cost is
+    // real again.
+    if (!_appearance)
+        return App::PropertyColorList::getMemSize();
+    return static_cast<unsigned int>(getValues().size() * sizeof(uint32_t));
 }
 
 //**************************************************************************
@@ -1198,33 +1282,26 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
                     App::Property::User3, &ShapeColor);
             ViewProviderGeometryObject::onChanged(prop);
             App::Color c = ShapeColor.getValue();
-            c.a = Transparency.getValue()/100.0f;
+            c.setTransparency(Transparency.getValue()/100.0f);
             DiffuseColor.setValue(c);
             updateColors();
         }
         return;
     }
     else if (prop == &Transparency) {
-        const App::Material Mat = ShapeAppearance.getMaterial(0);
-        long value = (long)(100*Mat.transparency);
+        long value = (long)(100*ShapeAppearance.getTransparency(0));
         if (value != Transparency.getValue()) {
             float trans = Transparency.getValue()/100.0f;
-
-            App::PropertyContainer* parent = ShapeAppearance.getContainer();
-            ShapeAppearance.setContainer(nullptr);
+            // One write: a transparency IS the diffuse alphas now, so this
+            // both sets every face and announces once through the
+            // ShapeAppearance branch above. The old form had to detach the
+            // property from its container to write one of its two stores
+            // without the other seeing, then push DiffuseColor by hand --
+            // the duplication that store paid for, and the reason it is gone.
             ShapeAppearance.setTransparency(trans);
-            ShapeAppearance.setContainer(parent);
-
-            if(!prop->testStatus(App::Property::User3)) {
-                if(MapTransparency.getValue() || MappedColors.getSize()) {
-                    updateColors();
-                } else{
-                    auto colors = DiffuseColor.getValues();
-                    for (auto &c : colors)
-                        c.a = trans;
-                    DiffuseColor.setValues(colors);
-                }
-            }
+            if(!prop->testStatus(App::Property::User3)
+                    && (MapTransparency.getValue() || MappedColors.getSize()))
+                updateColors();
         }
     }
     else if (prop == &Lighting) {
@@ -1876,7 +1953,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
         int i=0;
         for (; i < size; i++) {
             ca[i].setValue(colors[i].r, colors[i].g, colors[i].b);
-            t[i] = colors[i].a;
+            t[i] = colors[i].transparency();
         }
         const auto &color = ShapeColor.getValue();
         float trans = ShapeAppearance.getTransparency(0);
@@ -1926,7 +2003,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
         diffuse.reserve(colors.size());
         for (const auto &m : colors) {
             App::Color c = m.diffuseColor;
-            c.a = m.transparency;
+            c.setTransparency(m.transparency);
             diffuse.push_back(c);
         }
         applyInstancedFaceColors(diffuse);
@@ -1994,7 +2071,7 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
 
     if(!element || !element[0]) {
         auto color = ShapeColor.getValue();
-        color.a = Transparency.getValue()/100.0f;
+        color.setTransparency(Transparency.getValue()/100.0f);
         ret["Face"] = color;
         ret["Edge"] = LineColor.getValue();
         ret["Vertex"] = PointColor.getValue();
@@ -2030,7 +2107,7 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
         auto size = DiffuseColor.getSize();
         if(element[4]=='*') {
             auto color = ShapeColor.getValue();
-            color.a = Transparency.getValue()/100.0f;
+            color.setTransparency(Transparency.getValue()/100.0f);
             bool singleColor = true;
             for(int i=0;i<size;++i) {
                 if(DiffuseColor[i]!=color)
@@ -2039,7 +2116,7 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
             }
             if(size && singleColor) {
                 color = DiffuseColor[0];
-                color.a = Transparency.getValue()/100.0f;
+                color.setTransparency(Transparency.getValue()/100.0f);
                 ret.clear();
             }
             ret["Face"] = color;
@@ -2050,7 +2127,7 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
             else
                 ret[element] = ShapeColor.getValue();
             if(size==1)
-                ret[element].a = Transparency.getValue()/100.0f;
+                ret[element].setTransparency(Transparency.getValue()/100.0f);
         }
     } else if (boost::starts_with(element,"Edge")) {
         auto size = LineColorArray.getSize();
@@ -2116,8 +2193,8 @@ void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color
                 touched = true;
                 ShapeColor.setValue(v.second);
             }
-            if(v.second.a*100 != Transparency.getValue()) {
-                Transparency.setValue(v.second.a*100);
+            if(v.second.transparency()*100 != Transparency.getValue()) {
+                Transparency.setValue(v.second.transparency()*100);
                 touched = true;
             }
         } else if(v.first == "Edge") {
@@ -2395,7 +2472,7 @@ static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&o
         if(vp && vp->OverrideMaterial.getValue()) {
             colorFound = true;
             color = vp->ShapeAppearance.getDiffuseColor(0);
-            color.a = vp->ShapeAppearance.getTransparency(0);
+            color.setTransparency(vp->ShapeAppearance.getTransparency(0));
             if(!link || !link->getElementCountValue())
                 return true;
         }
@@ -2415,7 +2492,7 @@ static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&o
                     vp->MaterialList.getSize()>index)
                 {
                     color = vp->MaterialList.getDiffuseColor(index);
-                    color.a = vp->MaterialList.getTransparency(index);
+                    color.setTransparency(vp->MaterialList.getTransparency(index));
                     return true;
                 }
                 if(colorFound)
@@ -2517,7 +2594,7 @@ static App::Color getElementColor(App::Color color,
             if(idx.first==type) {
                 if(prop.getSize()==1) {
                     color = prop.getValues()[0];
-                    color.a = trans;
+                    color.setTransparency(trans);
                 }
                 else if(idx.second<=prop.getSize())
                     return prop.getValues()[idx.second-1];
@@ -2528,7 +2605,7 @@ static App::Color getElementColor(App::Color color,
                 if(aidx>0) {
                     if(prop.getSize()==1) {
                         color = prop.getValues()[0];
-                        color.a = trans;
+                        color.setTransparency(trans);
                     }
                     else if(aidx<=prop.getSize())
                         return prop.getValues()[aidx-1];
@@ -2543,7 +2620,7 @@ std::vector<App::Color> ViewProviderPartExt::getShapeColors(const Part::TopoShap
         App::Color &defColor, App::Document *sourceDoc, bool linkOnly)
 {
     defColor.setPackedValue(Gui::ViewParams::getDefaultShapeColor());
-    defColor.a = 0;
+    defColor.a = 1.0f;  // opaque whatever the preference's alpha byte says
 
     if(!sourceDoc) {
         sourceDoc = App::GetApplication().getActiveDocument();
@@ -2569,7 +2646,7 @@ std::vector<App::Color> ViewProviderPartExt::getShapeColors(const Part::TopoShap
                 Gui::Application::Instance->getViewProvider(obj));
     if(vp) {
         defColor = vp->ShapeColor.getValue();
-        defColor.a = vp->Transparency.getValue()/100.0f;
+        defColor.setTransparency(vp->Transparency.getValue()/100.0f);
         return vp->DiffuseColor.getValues();
     }
 
@@ -2616,7 +2693,7 @@ struct ColorInfo {
             break;
         case TopAbs_FACE:
             defaultColor = vp->ShapeColor.getValue();
-            defaultColor.a = vp->Transparency.getValue()/100.0f;
+            defaultColor.setTransparency(vp->Transparency.getValue()/100.0f);
             mapColor = vp->MapFaceColor.getValue();
             break;
         default:
@@ -2750,7 +2827,7 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
             }
             auto color = getElementColor(info.defaultColor, shape, doc,info.type,mapped,caches);
             if(!MapTransparency.getValue())
-                color.a = trans;
+                color.setTransparency(trans);
             if(color != colors[i]) {
                 touched = true;
                 colors[i] = color;
@@ -3219,7 +3296,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     for (const auto &inst : instanced->instances)
         total += inst.geom->faceCount;
     App::Color base = ShapeColor.getValue();
-    base.a = ShapeAppearance.getTransparency(0);
+    base.setTransparency(ShapeAppearance.getTransparency(0));
     std::vector<App::Color> resolved(size_t(total), base);
     for (size_t i = 0; i < colors.size() && i < resolved.size(); ++i)
         resolved[i] = colors[i];
@@ -3273,7 +3350,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
                 inst.overrideMat->shininess.setIgnored(TRUE);
             }
             inst.overrideMat->diffuseColor.setValue(c.r, c.g, c.b);
-            inst.overrideMat->transparency.setValue(c.a);
+            inst.overrideMat->transparency.setValue(c.transparency());
         } else {
             ColorVariant *variant = acquireColorVariant(*inst.geom, slice);
             if (variant != inst.variant) {
