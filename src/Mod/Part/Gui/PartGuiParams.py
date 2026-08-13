@@ -58,7 +58,7 @@ Params = [
     ParamBool("EditOnTop", False),
     ParamInt("EditRecomputeWait", 300),
     ParamBool("AdjustCameraForNewFeature", True),
-    ParamHex("DefaultDatumColor", 0xFFD70099, proxy=ParamColor()),
+    ParamHex("DefaultDatumColor", 0xFFD70066, proxy=ParamColor()),
     ParamBool("RespectSystemDPI", False, on_change=True),
     ParamBool("ShapeInstancing", True, on_change=True,
        doc="Share the tessellation of repeated sub-shapes (same TopoDS_TShape)\n"

@@ -80,12 +80,12 @@ ViewProviderDatum::ViewProviderDatum()
     // The parameter is stored in 'PartDesign' for historical reason
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath (
             "User parameter:BaseApp/Preferences/Mod/PartDesign");
-    unsigned long shcol = hGrp->GetUnsigned ( "DefaultDatumColor", 0xFFD70099 );
+    unsigned long shcol = hGrp->GetUnsigned ( "DefaultDatumColor", 0xFFD70066 );
 
     App::Color col ( (uint32_t) shcol );
     ShapeColor.setValue ( col );
 
-    Transparency.setValue (col.a * 100);
+    Transparency.setValue (col.transparency() * 100);
 }
 
 ViewProviderDatum::~ViewProviderDatum()

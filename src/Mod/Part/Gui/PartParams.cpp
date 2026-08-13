@@ -142,7 +142,7 @@ public:
         funcs["EditRecomputeWait"] = &PartParamsP::updateEditRecomputeWait;
         AdjustCameraForNewFeature = this->handle->GetBool("AdjustCameraForNewFeature", true);
         funcs["AdjustCameraForNewFeature"] = &PartParamsP::updateAdjustCameraForNewFeature;
-        DefaultDatumColor = this->handle->GetUnsigned("DefaultDatumColor", 0xFFD70099);
+        DefaultDatumColor = this->handle->GetUnsigned("DefaultDatumColor", 0xFFD70066);
         funcs["DefaultDatumColor"] = &PartParamsP::updateDefaultDatumColor;
         RespectSystemDPI = this->handle->GetBool("RespectSystemDPI", false);
         funcs["RespectSystemDPI"] = &PartParamsP::updateRespectSystemDPI;
@@ -280,7 +280,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDefaultDatumColor(PartParamsP *self) {
-        self->DefaultDatumColor = self->handle->GetUnsigned("DefaultDatumColor", 0xFFD70099);
+        self->DefaultDatumColor = self->handle->GetUnsigned("DefaultDatumColor", 0xFFD70066);
     }
     // Auto generated code (Tools/params_utils.py:318)
     static void updateRespectSystemDPI(PartParamsP *self) {
@@ -904,7 +904,7 @@ const unsigned long & PartParams::getDefaultDatumColor() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const unsigned long & PartParams::defaultDefaultDatumColor() {
-    const static unsigned long def = 0xFFD70099;
+    const static unsigned long def = 0xFFD70066;
     return def;
 }
 

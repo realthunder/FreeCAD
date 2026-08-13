@@ -3152,12 +3152,44 @@ void Application::LoadParameters()
     if (mConfig.count("VendorCFGPrefix"))
         vendorPrefix = mConfig["VendorCFGPrefix"];
 
+    // The colour parameters an older config means differently: their alpha
+    // byte was read as a transparency, and since the convention flip
+    // (Base/Color.h) it is an opacity. Only these two -- every other colour
+    // preference was edited through ColorButton, which always stored a
+    // QColor alpha, so its bytes already mean opacity. Converted ONLY when a
+    // new vendor's config is first seeded from the previous vendor's below:
+    // the vendor rename is what marks the convention change, so a config
+    // that already has the new name is already in the new meaning.
+    auto convertLegacyConfigColours = [](const std::string &path) {
+        Base::Reference<ParameterManager> mgr = ParameterManager::Create();
+        if (mgr->LoadDocument(path.c_str()) != 1)
+            return;
+        bool changed = false;
+        auto flip = [&mgr, &changed](const char *group, const char *name) {
+            Base::Reference<ParameterGrp> grp = mgr->GetGroup(group);
+            // Stated in the file, not a default: two different presets
+            // coming back equal is the only way to tell without a lookup API.
+            unsigned long v = grp->GetUnsigned(name, 0);
+            if (v != grp->GetUnsigned(name, 1))
+                return;
+            grp->SetUnsigned(name, (v & ~0xFFUL) | (0xFF - (v & 0xFF)));
+            changed = true;
+        };
+        flip("BaseApp/Preferences/Mod/Part", "DefaultDatumColor");
+        flip("BaseApp/Preferences/Mod/PartDesign", "DefaultDatumColor");
+        flip("BaseApp/Preferences/Mod/Sketcher/General", "FaceColor");
+        if (changed)
+            mgr->SaveDocument(path.c_str());
+    };
+
     if (mConfig.find("UserParameter") == mConfig.end()) {
         std::string path = mConfig["UserConfigPath"] + vendorPrefix + "user.cfg";
         if (vendorPrefix.size() && !FileInfo(path).exists()) {
             FileInfo fi(mConfig["UserConfigPath"] + "user.cfg");
-            if (fi.exists())
+            if (fi.exists()) {
                 fi.copyTo(path.c_str());
+                convertLegacyConfigColours(path);
+            }
         }
         mConfig["UserParameter"] = path;
     }

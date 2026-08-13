@@ -580,11 +580,14 @@ ViewProviderSketch::ViewProviderSketch()
         this->Autoconstraints.setValue(hGrp->GetBool("AutoConstraints", true));
         this->AvoidRedundant.setValue(hGrp->GetBool("AvoidRedundantAutoconstraints", true));
 
-        unsigned long shcol = hGrp->GetUnsigned("FaceColor", 0x54abff80);
+        // The alpha byte is an opacity, like every colour preference since
+        // the convention flip (Base/Color.h); the default is the same 50%
+        // transparent blue it always was, stated the new way round.
+        unsigned long shcol = hGrp->GetUnsigned("FaceColor", 0x54abff7f);
         float r = ((shcol >> 24) & 0xff) / 255.0;
         float g = ((shcol >> 16) & 0xff) / 255.0;
         float b = ((shcol >> 8) & 0xff) / 255.0;
-        int t = 100 * (shcol & 0xff) / 255;
+        int t = 100 * (255 - (shcol & 0xff)) / 255;
         this->ShapeColor.setValue(App::Color(r, g, b));
         this->Transparency.setValue(t);
     }
