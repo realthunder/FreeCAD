@@ -1369,20 +1369,44 @@ materializes metal it was not given.
   definition). Found and fixed on the way: the untested Render_*
   export leg wrote the stored sRGB emissive floats straight into the
   linear glTF emissive factor -- every reimport would gamma-shift it.
-- **The Python read side (landed 2026-08-13)**: the mode rides the
-  material VALUES. `App::Material` carries a `pbr` tag -- part of its
-  equality, not of its storage -- and `getMaterial()` stamps the list's
-  mode on every value it hands out, so `ShapeAppearance[0].PBR` answers,
-  and `Metallic`/`Roughness` read mode-aware off the value (a Phong
-  value has no metals and derives its roughness). Assignment adopts the
-  materials' tags: a tuple read from one object carries its mode to the
-  next, a plain `Material()` list states Phong, mixing modes in one
-  assignment is a TypeError, and the dict's explicit `PBR` key wins over
-  the tags ({"PBR": x} alone stays the raw reinterpret). A partial
-  (indexed) write must match the list's mode. `Material(PBR=True, ...)`
-  seeds the PBR defaults -- white tint, metallic 0, roughness 0.5 --
-  before the explicit keywords land, because inheriting the Phong
-  default specular would spell full metal.
+- **The Python side (landed 2026-08-13)**: the mode rides the material
+  VALUES. `App::Material` carries a `pbr` tag -- part of its equality,
+  not of its storage -- and `getMaterial()` stamps the list's mode on
+  every value it hands out, so `ShapeAppearance[0].PBR` answers, and
+  `Metallic`/`Roughness` read mode-aware off the value (a Phong value
+  has no metals and derives its roughness).
+
+  On a value the mode is an ORDINARY ATTRIBUTE and its setter
+  CONVERTS -- `Material::setPBR`, the value-level twin of the list's
+  `convertPBR` -- so `mat.PBR = True` keeps the surface looking like
+  itself. Writing a PBR quantity converts too: `mat.Metallic = 1`
+  states a metal, and landing that number in the Phong slot it would
+  otherwise occupy only to have the next conversion throw it away is
+  worse than deciding the mode. Nothing demands the mode any more. The
+  raw reinterpret stays reachable, because setting the mode a value is
+  already in converts nothing: `Material(PBR=True)` then writing the
+  slots states factors the caller already holds. In the constructor the
+  mode applies FIRST whatever the keyword order, so the slots the other
+  keywords name mean what they were written for.
+
+  A LIST HOLDS ONE MODE, and a whole-list assignment states it through
+  the material it starts with; every further entry is converted to that
+  reading (`inMode`), as are an indexed write and a growth filler,
+  which cannot restate a whole list's mode. An empty assignment states
+  nothing and the mode it finds stands. So a tuple read from one object
+  carries its mode to the next, a plain `Material()` list is Phong, and
+  a list is never half one model and half the other. There is no dict
+  spelling of the mode: it would only shadow the integer-keyed dict
+  that every list property takes as an indexed write.
+
+  Two C++ paths deliberately do NOT restate the mode, because they
+  cannot express one. `applyWholeMaterial` stamps the appearance's
+  current mode on what `ShapeMaterial` writes back -- the compatibility
+  name is a plain material that sorts AFTER `ShapeAppearance`, so
+  without this, restoring a PBR document would convert it to Phong on
+  the way past. And the glTF importer tags the materials it builds
+  (`mat.pbr = true` beside the raw factors) rather than relying on a
+  separate `setPBR` call to arrive first.
 - **The dialogs (landed 2026-08-13)**: the appearance editor
   (`DlgMaterialProperties`) grew a shading-model row that toggles
   Phong/PBR through the new `convertPBR()` -- unlike `setPBR()` it
