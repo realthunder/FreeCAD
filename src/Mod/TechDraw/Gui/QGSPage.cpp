@@ -297,6 +297,10 @@ void QGSPage::addItemToParent(QGIView* item, QGIView* parent)
         addAnnoToParent(anno, parent);
         return;
     }
+    if (auto weld = dynamic_cast<QGIWeldSymbol*>(item)) {
+        addWeldToParent(weld, parent);
+        return;
+    }
 
     TechDraw::DrawView* feature = item->getViewObject();
     if (!feature) {
@@ -660,27 +664,27 @@ void QGSPage::addAnnoToParent(QGIRichAnno* anno, QGIView* parent)
 QGIView* QGSPage::addWeldSymbol(TechDraw::DrawWeldSymbol* weldFeat)
 {
     //    Base::Console().Message("QGSP::addWeldSymbol()\n");
-    QGIWeldSymbol* weldGroup = nullptr;
-    TechDraw::DrawView* parentDV = nullptr;
+    QGIWeldSymbol* weldGroup = new QGIWeldSymbol();
+    addItem(weldGroup);
 
-    App::DocumentObject* parentObj = weldFeat->Leader.getValue();
-    if (parentObj) {
-        parentDV = dynamic_cast<TechDraw::DrawView*>(parentObj);
-    }
-    else {
-        //        Base::Console().Message("QGSP::addWeldSymbol - no parent doc obj\n");
-    }
-    if (parentDV) {
-        QGIView* parentQV = findQViewForDocObj(parentObj);
-        QGILeaderLine* leadParent = dynamic_cast<QGILeaderLine*>(parentQV);
-        if (leadParent) {
-            weldGroup = new QGIWeldSymbol(leadParent);
-            weldGroup->setFeature(weldFeat);    //for QGIWS
-            weldGroup->setViewFeature(weldFeat);//for QGIV
-            weldGroup->updateView(true);
-        }
-    }
+    weldGroup->setFeature(weldFeat);    //for QGIWS
+    weldGroup->setViewFeature(weldFeat);//for QGIV
+
+    attachToParent(weldGroup);
+
+    weldGroup->updateView(true);
+
     return weldGroup;
+}
+
+void QGSPage::addWeldToParent(QGIWeldSymbol* weld, QGIView* parent)
+{
+    //a weld symbol has no position of its own - every point of it is measured from
+    //the leader it is drawn along, so it sits on the leader's origin
+    weld->setPos(parent->mapToScene(0., 0.));
+    parent->addToGroup(weld);
+    weld->setZValue(ZVALUE::DIMENSION);
+    weld->updateView(true);
 }
 
 //! draw every view inside the view it belongs to.

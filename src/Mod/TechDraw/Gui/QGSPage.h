@@ -68,6 +68,7 @@ class ViewProviderPage;
 class QGIViewBalloon;
 class QGILeaderLine;
 class QGIRichAnno;
+class QGIWeldSymbol;
 class QGITile;
 
 class TechDrawGuiExport QGSPage: public QGraphicsScene
@@ -115,6 +116,7 @@ public:
     void addDimToParent(QGIViewDimension* dim, QGIView* parent);
     void addLeaderToParent(QGILeaderLine* lead, QGIView* parent);
     void addAnnoToParent(QGIRichAnno* anno, QGIView* parent);
+    void addWeldToParent(QGIWeldSymbol* weld, QGIView* parent);
 
     std::vector<QGIView*> getViews() const;
 
