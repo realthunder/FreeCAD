@@ -29,6 +29,8 @@
 # include <QTextCursor>
 # include <QTextStream>
 # include <QTime>
+# include <QTimer>
+# include <deque>
 #endif
 
 #include <atomic>
@@ -375,7 +377,30 @@ public:
 
     ReportHighlighter::Paragraph pendingType;
     QStringList pendingMessage;
+
+    //! a line shown recently, and how many repeats of it are waiting to be shown
+    struct RecentLine
+    {
+        ReportHighlighter::Paragraph type;
+        QString text;
+        int held;
+    };
+    std::deque<RecentLine> recent;
+    QTimer* dupTimer = nullptr;
 };
+
+//! put the repeat count inside the line rather than after its newline
+static QString withRepeatCount(const QString& text, int count)
+{
+    int end = text.size();
+    while (end > 0
+           && (text.at(end - 1) == QLatin1Char('\n') || text.at(end - 1) == QLatin1Char('\r'))) {
+        --end;
+    }
+    QString result = text;
+    result.insert(end, QStringLiteral(" (x%1)").arg(count));
+    return result;
+}
 
 bool ReportOutput::Data::redirected_stdout = false;
 PyObject* ReportOutput::Data::default_stdout = nullptr;
@@ -400,6 +425,11 @@ ReportOutput::ReportOutput(QWidget* parent)
 {
     bLog = false;
     reportHl = new ReportHighlighter(this);
+
+    //nothing else will come along to flush a held line once a burst stops
+    d->dupTimer = new QTimer(this);
+    d->dupTimer->setSingleShot(true);
+    connect(d->dupTimer, &QTimer::timeout, this, &ReportOutput::flushDuplicates);
 
     restoreFont();
     setReadOnly(true);
@@ -505,76 +535,138 @@ void ReportOutput::customEvent ( QEvent* ev )
     // Appends the text stored in the event to the text view
     if ( ev->type() ==  CustomReportEvent::eventType() ) {
         CustomReportEvent* ce = static_cast<CustomReportEvent*>(ev);
-
-        bool showTimecode = ReportViewParams::getcheckShowReportTimecode();
-        QString text = ce->message();
-
-        // The time code can only be set when the cursor is at the block start
-        if (showTimecode && blockStart) {
-            QTime time = QTime::currentTime();
-            text.prepend(time.toString(QStringLiteral("hh:mm:ss  ")));
+        if (holdDuplicate(ce->messageType(), ce->message())) {
+            return;
         }
-        blockStart = text.endsWith(QLatin1Char('\n'));
+        appendReport(ce->messageType(), ce->message());
+    }
+}
 
-        bool flushed = false;
-        QTextDocument *document = this->document();
+//! true when this line repeats one of the last few shown and is being held back
+//!
+//! Only what is on screen is thinned out. This runs on the reader's side of
+//! SendLog's queued event, so the log file, the Python console and every other
+//! console observer have already been handed the message in full.
+bool ReportOutput::holdDuplicate(ReportHighlighter::Paragraph type, const QString& text)
+{
+    const int window = static_cast<int>(ReportViewParams::getDuplicateWindow());
+    if (window <= 0) {
+        return false;
+    }
 
-        // Try to batch process text input because text layout is an expensive
-        // operation
-        if (CustomReportEvent::counter > 1
-                && (d->pendingMessage.isEmpty()
-                    || d->pendingType == ce->messageType()))
-        {
-            d->pendingType = ce->messageType();
-            d->pendingMessage.append(text);
-            int maxCount = document->maximumBlockCount();
-            if (maxCount > 0
-                    && d->pendingMessage.size() + document->blockCount() > maxCount)
-            {
-                document->clear();
-                if (d->pendingMessage.size() > maxCount)
-                    d->pendingMessage.erase(d->pendingMessage.begin(),
-                            d->pendingMessage.begin() + d->pendingMessage.size() - maxCount);
-            }
-        }
-        else {
-            if (d->pendingMessage.size()) {
-                if (d->pendingType == ce->messageType()) {
-                    d->pendingMessage.append(text);
-                    text.clear();
+    for (auto& line : d->recent) {
+        if (line.type == type && line.text == text) {
+            ++line.held;
+            //timed from the first repeat, not the last, so a line repeating without
+            //pause still reports every DuplicateTimeout instead of never
+            if (!d->dupTimer->isActive()) {
+                const int timeout = static_cast<int>(ReportViewParams::getDuplicateTimeout());
+                if (timeout > 0) {
+                    d->dupTimer->start(timeout);
                 }
-                reportHl->setParagraphType(d->pendingType);
+            }
+            return true;
+        }
+    }
+
+    //a line that has to be shown is also what flushes whatever is being held, so
+    //the repeats stay in front of the line that ended them
+    flushDuplicates();
+
+    d->recent.push_back({type, text, 0});
+    while (static_cast<int>(d->recent.size()) > window) {
+        d->recent.pop_front();
+    }
+    return false;
+}
+
+//! show every held line, each carrying the number of repeats it stood in for
+//!
+//! Going through appendReport is what also writes out the batch queue, so the
+//! occurrence that was shown before the repeats started lands with them.
+void ReportOutput::flushDuplicates()
+{
+    d->dupTimer->stop();
+    for (auto& line : d->recent) {
+        if (line.held < 1) {
+            continue;
+        }
+        const int held = line.held;
+        line.held = 0;
+        appendReport(line.type, held > 1 ? withRepeatCount(line.text, held) : line.text);
+    }
+}
+
+void ReportOutput::appendReport(ReportHighlighter::Paragraph messageType, const QString& message)
+{
+    bool showTimecode = ReportViewParams::getcheckShowReportTimecode();
+    QString text = message;
+
+    // The time code can only be set when the cursor is at the block start
+    if (showTimecode && blockStart) {
+        QTime time = QTime::currentTime();
+        text.prepend(time.toString(QStringLiteral("hh:mm:ss  ")));
+    }
+    blockStart = text.endsWith(QLatin1Char('\n'));
+
+    bool flushed = false;
+    QTextDocument *document = this->document();
+
+    // Try to batch process text input because text layout is an expensive
+    // operation
+    if (CustomReportEvent::counter > 1
+            && (d->pendingMessage.isEmpty()
+                || d->pendingType == messageType))
+    {
+        d->pendingType = messageType;
+        d->pendingMessage.append(text);
+        int maxCount = document->maximumBlockCount();
+        if (maxCount > 0
+                && d->pendingMessage.size() + document->blockCount() > maxCount)
+        {
+            document->clear();
+            if (d->pendingMessage.size() > maxCount)
+                d->pendingMessage.erase(d->pendingMessage.begin(),
+                        d->pendingMessage.begin() + d->pendingMessage.size() - maxCount);
+        }
+    }
+    else {
+        if (d->pendingMessage.size()) {
+            if (d->pendingType == messageType) {
+                d->pendingMessage.append(text);
+                text.clear();
+            }
+            reportHl->setParagraphType(d->pendingType);
+            QTextCursor cursor(document);
+            cursor.beginEditBlock();
+            cursor.movePosition(QTextCursor::End);
+            cursor.insertText(d->pendingMessage.join(QString()));
+            cursor.endEditBlock();
+            d->pendingMessage.clear();
+            flushed = true;
+        }
+        if (text.size()) {
+            if (CustomReportEvent::counter > 1) {
+                d->pendingType = messageType;
+                d->pendingMessage.append(text);
+            }
+            else {
+                reportHl->setParagraphType(messageType);
                 QTextCursor cursor(document);
                 cursor.beginEditBlock();
                 cursor.movePosition(QTextCursor::End);
-                cursor.insertText(d->pendingMessage.join(QString()));
+                cursor.insertText(text);
                 cursor.endEditBlock();
-                d->pendingMessage.clear();
                 flushed = true;
             }
-            if (text.size()) {
-                if (CustomReportEvent::counter > 1) {
-                    d->pendingType = ce->messageType();
-                    d->pendingMessage.append(text);
-                }
-                else {
-                    reportHl->setParagraphType(ce->messageType());
-                    QTextCursor cursor(document);
-                    cursor.beginEditBlock();
-                    cursor.movePosition(QTextCursor::End);
-                    cursor.insertText(text);
-                    cursor.endEditBlock();
-                    flushed = true;
-                }
-            }
         }
+    }
 
-        if (flushed && gotoEnd) {
-            QTextCursor cursor(document);
-            cursor.movePosition(QTextCursor::End);
-            setTextCursor(cursor);
-            ensureCursorVisible();
-        }
+    if (flushed && gotoEnd) {
+        QTextCursor cursor(document);
+        cursor.movePosition(QTextCursor::End);
+        setTextCursor(cursor);
+        ensureCursorVisible();
     }
 }
 

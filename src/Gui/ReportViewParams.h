@@ -143,6 +143,38 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter DuplicateWindow
+    ///
+    /// How many of the most recently shown lines a new line is compared against
+    /// before it is shown. A line that repeats any of them is held back instead,
+    /// and shown once - carrying a repeat count if it arrived more than once -
+    /// when a different line has to be shown or DuplicateTimeout expires.
+    /// Set to 0 to show every line as it arrives.
+    /// This affects the Report view only. The log file, the Python console and
+    /// every other console observer still receive every message.
+    static const long & getDuplicateWindow();
+    static const long & defaultDuplicateWindow();
+    static void removeDuplicateWindow();
+    static void setDuplicateWindow(const long &v);
+    static const char *docDuplicateWindow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DuplicateTimeout
+    ///
+    /// Milliseconds a held duplicate line waits before it is shown anyway, timed
+    /// from the first repeat rather than the last, so a continuous storm still
+    /// reports at this interval. Set to 0 to hold until another line arrives.
+    static const long & getDuplicateTimeout();
+    static const long & defaultDuplicateTimeout();
+    static void removeDuplicateTimeout();
+    static void setDuplicateTimeout(const long &v);
+    static const char *docDuplicateTimeout();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter CommandRedirect
     ///
     /// Prefix for marking python command in message to be redirected to Python console

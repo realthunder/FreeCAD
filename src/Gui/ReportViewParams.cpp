@@ -51,6 +51,8 @@ public:
         signalParamChanged("checkShowReportViewOnCritical");
         signalParamChanged("checkShowReportTimecode");
         signalParamChanged("LogMessageSize");
+        signalParamChanged("DuplicateWindow");
+        signalParamChanged("DuplicateTimeout");
         signalParamChanged("CommandRedirect");
 
     // Auto generated code (Tools/params_utils.py:240)
@@ -62,6 +64,8 @@ public:
     bool checkShowReportViewOnCritical;
     bool checkShowReportTimecode;
     long LogMessageSize;
+    long DuplicateWindow;
+    long DuplicateTimeout;
     QString CommandRedirect;
 
     // Auto generated code (Tools/params_utils.py:253)
@@ -83,6 +87,10 @@ public:
         funcs["checkShowReportTimecode"] = &ReportViewParamsP::updatecheckShowReportTimecode;
         LogMessageSize = this->handle->GetInt("LogMessageSize", 0);
         funcs["LogMessageSize"] = &ReportViewParamsP::updateLogMessageSize;
+        DuplicateWindow = this->handle->GetInt("DuplicateWindow", 3);
+        funcs["DuplicateWindow"] = &ReportViewParamsP::updateDuplicateWindow;
+        DuplicateTimeout = this->handle->GetInt("DuplicateTimeout", 1000);
+        funcs["DuplicateTimeout"] = &ReportViewParamsP::updateDuplicateTimeout;
         CommandRedirect = QString::fromUtf8(this->handle->GetASCII("CommandRedirect", "").c_str());
         funcs["CommandRedirect"] = &ReportViewParamsP::updateCommandRedirect;
     }
@@ -132,6 +140,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLogMessageSize(ReportViewParamsP *self) {
         self->LogMessageSize = self->handle->GetInt("LogMessageSize", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDuplicateWindow(ReportViewParamsP *self) {
+        self->DuplicateWindow = self->handle->GetInt("DuplicateWindow", 3);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDuplicateTimeout(ReportViewParamsP *self) {
+        self->DuplicateTimeout = self->handle->GetInt("DuplicateTimeout", 1000);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCommandRedirect(ReportViewParamsP *self) {
@@ -350,6 +366,70 @@ void ReportViewParams::setLogMessageSize(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void ReportViewParams::removeLogMessageSize() {
     instance()->handle->RemoveInt("LogMessageSize");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ReportViewParams::docDuplicateWindow() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"How many of the most recently shown lines a new line is compared against\n"
+"before it is shown. A line that repeats any of them is held back instead,\n"
+"and shown once - carrying a repeat count if it arrived more than once -\n"
+"when a different line has to be shown or DuplicateTimeout expires.\n"
+"Set to 0 to show every line as it arrives.\n"
+"This affects the Report view only. The log file, the Python console and\n"
+"every other console observer still receive every message.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & ReportViewParams::getDuplicateWindow() {
+    return instance()->DuplicateWindow;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & ReportViewParams::defaultDuplicateWindow() {
+    const static long def = 3;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ReportViewParams::setDuplicateWindow(const long &v) {
+    instance()->handle->SetInt("DuplicateWindow",v);
+    instance()->DuplicateWindow = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ReportViewParams::removeDuplicateWindow() {
+    instance()->handle->RemoveInt("DuplicateWindow");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ReportViewParams::docDuplicateTimeout() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"Milliseconds a held duplicate line waits before it is shown anyway, timed\n"
+"from the first repeat rather than the last, so a continuous storm still\n"
+"reports at this interval. Set to 0 to hold until another line arrives.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & ReportViewParams::getDuplicateTimeout() {
+    return instance()->DuplicateTimeout;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & ReportViewParams::defaultDuplicateTimeout() {
+    const static long def = 1000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ReportViewParams::setDuplicateTimeout(const long &v) {
+    instance()->handle->SetInt("DuplicateTimeout",v);
+    instance()->DuplicateTimeout = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ReportViewParams::removeDuplicateTimeout() {
+    instance()->handle->RemoveInt("DuplicateTimeout");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

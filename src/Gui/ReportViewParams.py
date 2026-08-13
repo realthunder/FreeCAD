@@ -45,6 +45,18 @@ Params = [
     ParamBool("checkShowReportTimecode", True),
 
     ParamInt("LogMessageSize", 0),
+    ParamInt("DuplicateWindow", 3,
+        doc='How many of the most recently shown lines a new line is compared against\n'
+            'before it is shown. A line that repeats any of them is held back instead,\n'
+            'and shown once - carrying a repeat count if it arrived more than once -\n'
+            'when a different line has to be shown or DuplicateTimeout expires.\n'
+            'Set to 0 to show every line as it arrives.\n'
+            'This affects the Report view only. The log file, the Python console and\n'
+            'every other console observer still receive every message.'),
+    ParamInt("DuplicateTimeout", 1000,
+        doc='Milliseconds a held duplicate line waits before it is shown anyway, timed\n'
+            'from the first repeat rather than the last, so a continuous storm still\n'
+            'reports at this interval. Set to 0 to hold until another line arrives.'),
     ParamQString('CommandRedirect', '',
         doc='Prefix for marking python command in message to be redirected to Python console\n'
             'This is used as a debug help for output command from external libraries'),

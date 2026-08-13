@@ -172,6 +172,8 @@ protected:
     bool event(QEvent* event) override;
 
 public Q_SLOTS:
+    /** Show every duplicate line held back so far, with its repeat count. */
+    void flushDuplicates();
     /** Save the report messages into a file. */
     void onSaveAs();
     /** Toggles the report of errors. */
@@ -202,6 +204,11 @@ public Q_SLOTS:
     void onToggleGoToEnd();
 
 private:
+    /** Hold back a line that repeats one of the last few shown; true when held. */
+    bool holdDuplicate(ReportHighlighter::Paragraph type, const QString& text);
+    /** Put one line into the view, batching as the report view always has. */
+    void appendReport(ReportHighlighter::Paragraph messageType, const QString& message);
+
     class Data;
     Data* d;
     bool gotoEnd;
