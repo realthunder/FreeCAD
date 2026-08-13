@@ -668,8 +668,10 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     // shades emissive/specular/shininess from the v_color1/v_color2
     // stream instead of these scalars. Requires the stream upload to
     // actually be bindable (handle pool exhaustion leaves it invalid).
-    emissive[3] = (mat.perfacematerial && bgfx::isValid(mesh->mats))
-        ? 1.0f : 0.0f;
+    // 2 says the stream's two alpha slots carry the PBR factor pair
+    // (metallic, roughness) rather than a constant and the shininess.
+    emissive[3] = !(mat.perfacematerial && bgfx::isValid(mesh->mats))
+        ? 0.0f : mat.perfacepbr ? 2.0f : 1.0f;
     params[0] = mat.pervertexcolor ? 1.0f : 0.0f;
     // u_params.y: mesh program = lighting flag; line program = line
     // width in pixels; point program = point size in pixels (unused

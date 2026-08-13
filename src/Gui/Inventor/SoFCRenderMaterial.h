@@ -27,6 +27,7 @@
 #include <Inventor/fields/SoSFEnum.h>
 #include <Inventor/fields/SoSFFloat.h>
 #include <Inventor/fields/SoSFImage.h>
+#include <Inventor/fields/SoMFFloat.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoSubNode.h>
 #include <FCGlobal.h>
@@ -51,6 +52,21 @@ public:
 
     SoSFFloat metallic;   ///< 0..1 metalness, < 0 = unset
     SoSFFloat roughness;  ///< 0..1 roughness, < 0 = unset (derive from shininess)
+    /** Per-face form of the pair above (empty = the scalars apply)
+     *
+     * A per-face PBR appearance states a factor pair per face, and
+     * neither has a Coin material field to ride: the lazy element's
+     * per-face arrays are SbColor, which drops the alpha the metallic
+     * factor occupies in the stored material, and the shininess slot
+     * carries the Phong quantity. So the pair travels from here into
+     * SoFCPbrElement on traversal, and the render cache bakes it into
+     * the per-vertex material stream. Both fields are set or neither
+     * is; entry i is face i, a face past the end reads entry 0 (see
+     * SoFCPbrElement). The scalars stay the entry-0 values, so a
+     * consumer that ignores these arrays keeps the pre-feature look.
+     */
+    SoMFFloat metallics;
+    SoMFFloat roughnesses;
     /// The shapes form a water body: their closed volume becomes a
     /// scattering medium of the render engine's volumetric lighting
     /// pass (tinted by the material diffuse color), instead of an
@@ -130,6 +146,13 @@ public:
     /// instead of the single downward cone (off by default -- costs up
     /// to six cached tiles per light).
     SoSFBool lightShadowExtended;
+
+    /// Hands the per-face factor arrays to SoFCPbrElement. Everything
+    /// else on this node is read by the render cache's post callback
+    /// straight off the fields; the factor arrays need state because
+    /// their consumer is the shape traversal further down.
+    void callback(SoCallbackAction *action) override;
+    void doAction(SoAction *action) override;
 
 protected:
     ~SoFCRenderMaterial() override = default;

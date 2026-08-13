@@ -254,6 +254,15 @@ public:
     /// (< 0 = unset); only external backends consume them.
     float metallic;
     float roughness;
+    /// Per-face form of the pair, captured from the same node when a
+    /// PBR appearance states one factor pair per face (empty
+    /// otherwise). A whole-object draw shades from the mesh's baked
+    /// stream, which carries the same values; these serve the draws
+    /// that cannot -- a single-face draw resolves its face's pair into
+    /// the scalars above. Indexed like the arrays above, but padded
+    /// with entry 0 rather than clamped (see SoFCPbrElement).
+    COWVector<float> metallics;
+    COWVector<float> roughnesses;
     /// Water body flag/density captured from SoFCRenderMaterial: the
     /// shapes' closed volume becomes a scattering medium of the
     /// volumetric lighting pass (only external backends consume this).
@@ -420,6 +429,10 @@ public:
         if (metallic > other.metallic) return false;
         if (roughness < other.roughness) return true;
         if (roughness > other.roughness) return false;
+        if (metallics < other.metallics) return true;
+        if (metallics > other.metallics) return false;
+        if (roughnesses < other.roughnesses) return true;
+        if (roughnesses > other.roughnesses) return false;
         if (water < other.water) return true;
         if (water > other.water) return false;
         if (waterdensity < other.waterdensity) return true;

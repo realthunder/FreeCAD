@@ -127,14 +127,28 @@ public:
 
   /** Baked per-vertex material stream, 8 bytes per vertex: rgba8
    * emissive followed by rgb8 specular with the shininess (0..1)
-   * quantized into the last byte. Present only when the coin fork's
-   * extended lazy element carried per-face material arrays whose
-   * resolved values actually diverge (CoinLazyElementEx); null for
+   * quantized into the last byte -- or, when hasPbrMaterial(), the PBR
+   * factor pair in those two alpha slots instead. Present only when the
+   * coin fork's extended lazy element carried per-face material arrays
+   * whose resolved values actually diverge (CoinLazyElementEx), or a
+   * per-face PBR appearance carried factors (SoFCPbrElement); null for
    * every uniform-material cache. Only triangle vertices carry
    * values -- vertices referenced by lines/points alone hold zeros,
    * and line/point draws never shade with these fields.
    */
   const uint8_t * getMaterialArray(void) const;
+
+  /** Whether that stream's two alpha slots carry the PBR factor pair
+   *
+   * A per-face PBR appearance (SoFCPbrElement) states a metallic and a
+   * roughness per face, and neither has a material field to ride, so
+   * they take the stream's spare alpha slots: the metallic where the
+   * emissive alpha is otherwise a constant 0xff, the roughness where
+   * the shininess sits -- the Phong quantity the PBR shading branch
+   * does not read. A consumer must know which reading applies before
+   * it shades from the stream.
+   */
+  SbBool hasPbrMaterial(void) const;
 
   void setFaceColors(const SbFCVector<std::pair<int, uint32_t> > &colors = {});
 

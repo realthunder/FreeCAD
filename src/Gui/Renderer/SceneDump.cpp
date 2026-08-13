@@ -159,7 +159,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     carries the perfacematerial flag selecting it. A viewer older
 //     than this shades such draws with the material scalars, which is
 //     the pre-feature look.
-const uint32_t kVersion = 47;
+// 48: Per-face PBR -- Material carries the perfacepbr flag saying that
+//     the stream of v47 spends its two alpha slots on the metallic and
+//     roughness factors instead of a constant and the shininess. A
+//     viewer older than this reads the roughness slot as a shininess
+//     (and never the metallic), i.e. shades those faces as the uniform
+//     PBR object they were before.
+const uint32_t kVersion = 48;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -168,8 +174,9 @@ const uint32_t kVersion = 47;
 /// entries cached by older builds instead of letting them be misread.
 /// (4: a shader chunk carries the particle state step and its binary.
 ///  5: a mesh chunk may carry the per-face material stream, and a
-///     material chunk the perfacematerial flag.)
-const uint32_t kChunkVersion = 5;
+///     material chunk the perfacematerial flag.
+///  6: a material chunk carries the perfacepbr flag beside it.)
+const uint32_t kChunkVersion = 6;
 
 //////////////////////////////////////////////////////////////////////
 // Streamed config layout guards.
@@ -1285,6 +1292,8 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     // v47: per-face material — shade from the mesh's baked stream.
     // Older viewers use the scalars above, the pre-feature look.
     w.b(m.perfacematerial);
+    // v48: that stream's alpha slots carry the PBR factor pair.
+    w.b(m.perfacepbr);
 }
 
 void readMaterial(Reader &r, Material &m, const RefReader &refs,
@@ -1420,6 +1429,9 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
     // v47: per-face material. Absent means the scalars apply.
     if (version >= 47)
         m.perfacematerial = r.b();
+    // v48: the stream's PBR reading. Absent means the Phong one.
+    if (version >= 48)
+        m.perfacepbr = r.b();
 }
 
 //////////////////////////////////////////////////////////////////////

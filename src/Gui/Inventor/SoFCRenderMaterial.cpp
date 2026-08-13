@@ -22,7 +22,10 @@
 
 #include "PreCompiled.h"
 
+#include <Inventor/actions/SoCallbackAction.h>
+
 #include "SoFCRenderMaterial.h"
+#include "SoFCPbrElement.h"
 
 using namespace Gui;
 
@@ -38,6 +41,14 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_CONSTRUCTOR(SoFCRenderMaterial);
     SO_NODE_ADD_FIELD(metallic, (-1.0f));
     SO_NODE_ADD_FIELD(roughness, (-1.0f));
+    // Empty by default: the scalars above are the whole material until
+    // something states a per-face pair.
+    SO_NODE_ADD_FIELD(metallics, (0.0f));
+    SO_NODE_ADD_FIELD(roughnesses, (0.0f));
+    metallics.setNum(0);
+    metallics.setDefault(TRUE);
+    roughnesses.setNum(0);
+    roughnesses.setDefault(TRUE);
     SO_NODE_ADD_FIELD(water, (false));
     SO_NODE_ADD_FIELD(waterDensity, (0.0f));
     SO_NODE_ADD_FIELD(glass, (false));
@@ -61,6 +72,23 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_ADD_FIELD(lightRange, (0.0f));
     SO_NODE_ADD_FIELD(lightShadow, (false));
     SO_NODE_ADD_FIELD(lightShadowExtended, (false));
+}
+
+void SoFCRenderMaterial::callback(SoCallbackAction *action)
+{
+    doAction(action);
+}
+
+void SoFCRenderMaterial::doAction(SoAction *action)
+{
+    // Borrowed for the traversal, the way a material node's colour
+    // arrays are borrowed by the lazy element: the fields outlive the
+    // action, and a change to them re-runs it.
+    const int nm = metallics.getNum();
+    const int nr = roughnesses.getNum();
+    SoFCPbrElement::set(action->getState(), this,
+                        nm ? metallics.getValues(0) : nullptr, nm,
+                        nr ? roughnesses.getValues(0) : nullptr, nr);
 }
 
 SO_NODE_SOURCE(SoFCRenderTexture)

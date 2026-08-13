@@ -69,6 +69,7 @@
 #include "SoFCDetail.h"
 #include "CoinLazyElementEx.h"
 #include "SoFCDiffuseElement.h"
+#include "SoFCPbrElement.h"
 #include "SoFCZoomOffsetElement.h"
 #include "SoFCDisplayModeElement.h"
 
@@ -314,6 +315,7 @@ void SoFCRenderCache::initClass()
   SO_ENABLE(SoCallbackAction, SoShadowStyleElement);
   SoFCDiffuseElement::initClass();
   SoFCZoomOffsetElement::initClass();
+  SoFCPbrElement::initClass();
 }
 
 void SoFCRenderCache::resetNode()
@@ -324,6 +326,7 @@ void SoFCRenderCache::resetNode()
 void SoFCRenderCache::cleanup()
 {
   SoFCDiffuseElement::cleanup();
+  SoFCPbrElement::cleanup();
 }
 
 static inline std::bitset<32>
@@ -461,6 +464,8 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->emissives.reset();
   this->speculars.reset();
   this->shininesses.reset();
+  this->metallics.reset();
+  this->roughnesses.reset();
   this->texturematrices.clear();
   this->textures.clear();
   this->bumpmaps.clear();
@@ -1437,6 +1442,21 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
   auto material = static_cast<const Gui::SoFCRenderMaterial *>(node);
   PRIVATE(this)->material.metallic = material->metallic.getValue();
   PRIVATE(this)->material.roughness = material->roughness.getValue();
+  // The per-face pair the same node carries (empty unless a PBR
+  // appearance states one per face). Copied, not borrowed: a material
+  // outlives the traversal that captured it.
+  auto capturefactors = [](COWVector<float> &array, const SoMFFloat &field) {
+    array.reset();
+    const int num = field.getNum();
+    if (num <= 1)
+      return;
+    const float *values = field.getValues(0);
+    array.reserve(num);
+    for (int i = 0; i < num; ++i)
+      array.append(values[i]);
+  };
+  capturefactors(PRIVATE(this)->material.metallics, material->metallics);
+  capturefactors(PRIVATE(this)->material.roughnesses, material->roughnesses);
   PRIVATE(this)->material.water = material->water.getValue();
   PRIVATE(this)->material.waterdensity = material->waterDensity.getValue();
   PRIVATE(this)->material.glass = material->glass.getValue();

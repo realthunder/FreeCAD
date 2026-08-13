@@ -1001,6 +1001,14 @@ struct Material {
     /// the scalars below. Never set on partial draws — those resolve
     /// their face's values into the scalars at translate time.
     bool perfacematerial = false;
+    /// That stream's two alpha slots carry the PBR factor pair — the
+    /// metallic where the emissive alpha is otherwise a constant 1, the
+    /// roughness where the shininess sits — instead of a constant and
+    /// the shininess (a per-face PBR appearance). Meaningful only with
+    /// perfacematerial, and only the PBR shading branch reads them; the
+    /// Phong branch shades a per-face PBR object from the same stream's
+    /// colors, which are its Phong derivation.
+    bool perfacepbr = false;
     bool lighting = true;        ///< false = flat base color (no light model)
     bool twoside = false;
     bool culling = false;

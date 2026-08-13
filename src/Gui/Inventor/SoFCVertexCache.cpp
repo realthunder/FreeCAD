@@ -96,6 +96,7 @@
 #include "SoFCVertexArrayIndexer.h"
 #include "SoFCShapeInfo.h"
 #include "CoinLazyElementEx.h"
+#include "SoFCPbrElement.h"
 #include "COWData.h"
 #include "../ViewParams.h"
 
@@ -255,6 +256,18 @@ public:
     float emissivefallback[3];
     float specularfallback[3];
     float shininessfallback;
+
+    // Per-face PBR factor pair (SoFCPbrElement), which has no material
+    // field to ride. Present only for a per-face PBR appearance, and
+    // then the two spare alpha slots of the stream carry it: the
+    // emissive alpha (a constant 0xff otherwise) the metallic factor,
+    // the specular alpha the roughness in place of the shininess the
+    // PBR shading branch does not read. Indexing pads with entry 0,
+    // not by clamping -- see SoFCPbrElement.
+    const float * metallicptr = nullptr;
+    const float * roughnessptr = nullptr;
+    int nummetallic = 0;
+    int numroughness = 0;
 
     const SoMultiTextureCoordinateElement * multielem;
     SoState * state = nullptr;
@@ -518,6 +531,10 @@ public:
   /// uniform so far, 1 = divergent (array allocated).
   ByteArray materialarray;
   int matpervertex = 0;
+  /// The stream's two alpha slots carry the PBR factor pair (metallic
+  /// in the emissive alpha, roughness in the specular alpha) instead of
+  /// a constant and the shininess -- a per-face PBR appearance.
+  bool matpbr = false;
   uint32_t firstemissive = 0;
   uint32_t firstspecshine = 0;
 
@@ -677,6 +694,7 @@ SoFCVertexCache::SoFCVertexCache(SoFCVertexCache & prev)
   PRIVATE(this)->colorpervertex = PRIVATE(pprev)->colorpervertex;
   PRIVATE(this)->materialarray = PRIVATE(pprev)->materialarray;
   PRIVATE(this)->matpervertex = PRIVATE(pprev)->matpervertex;
+  PRIVATE(this)->matpbr = PRIVATE(pprev)->matpbr;
   PRIVATE(this)->firstemissive = PRIVATE(pprev)->firstemissive;
   PRIVATE(this)->firstspecshine = PRIVATE(pprev)->firstspecshine;
   PRIVATE(this)->hassolid = PRIVATE(pprev)->hassolid;
@@ -902,17 +920,32 @@ SoFCVertexCache::open(SoState * state)
 
   // Per-face material arrays of the coin fork's extended lazy element
   // (emissive/specular/shininess; ambient stays scalar -- nothing that
-  // consumes this stream shades with it). Resolved per vertex during
-  // the primitive callbacks exactly like the diffuse bake above, so
-  // faces sharing one material tuple keep sharing vertices and only a
-  // genuine divergence allocates anything.
+  // consumes this stream shades with it), plus the PBR factor pair,
+  // which has no material field to ride and comes down its own element
+  // (SoFCPbrElement, written by SoFCRenderMaterial) -- so it is there
+  // with or without the coin fork. Resolved per vertex during the
+  // primitive callbacks exactly like the diffuse bake above, so faces
+  // sharing one material tuple keep sharing vertices and only a genuine
+  // divergence allocates anything.
   PRIVATE(this)->matpervertex = 0;
-  if (Gui::CoinLazyElementEx::available()) {
+  PRIVATE(this)->matpbr = false;
+  {
     auto t = PRIVATE(this)->tmp;
-    t->numemissive = Gui::CoinLazyElementEx::getEmissive(state, &t->emissiveptr);
-    t->numspecular = Gui::CoinLazyElementEx::getSpecular(state, &t->specularptr);
-    t->numshininess = Gui::CoinLazyElementEx::getShininess(state, &t->shininessptr);
-    if (t->numemissive > 1 || t->numspecular > 1 || t->numshininess > 1) {
+    if (Gui::CoinLazyElementEx::available()) {
+      t->numemissive = Gui::CoinLazyElementEx::getEmissive(state, &t->emissiveptr);
+      t->numspecular = Gui::CoinLazyElementEx::getSpecular(state, &t->specularptr);
+      t->numshininess = Gui::CoinLazyElementEx::getShininess(state, &t->shininessptr);
+    }
+    const auto & pbr = SoFCPbrElement::get(state);
+    if (pbr.isPerFace() && (pbr.nummetallic > 1 || pbr.numroughness > 1)) {
+      t->metallicptr = pbr.metallic;
+      t->roughnessptr = pbr.roughness;
+      t->nummetallic = pbr.nummetallic;
+      t->numroughness = pbr.numroughness;
+      PRIVATE(this)->matpbr = true;
+    }
+    if (t->numemissive > 1 || t->numspecular > 1 || t->numshininess > 1
+        || PRIVATE(this)->matpbr) {
       if (t->numemissive == 0) {
         const SbColor & e = SoLazyElement::getEmissive(state);
         e.getValue(t->emissivefallback[0], t->emissivefallback[1],
@@ -1987,6 +2020,14 @@ SoFCVertexCache::getMaterialArray(void) const
     ? PRIVATE(this)->materialarray.getArrayPtr() : NULL;
 }
 
+SbBool
+SoFCVertexCache::hasPbrMaterial(void) const
+{
+  // Only meaningful about a stream that exists: values that never
+  // diverged allocate none, and then the reading is nobody's question.
+  return PRIVATE(this)->matpbr && PRIVATE(this)->materialarray;
+}
+
 int
 SoFCVertexCache::getNumTriangleIndices(void) const
 {
@@ -2410,12 +2451,28 @@ SoFCVertexCacheP::appendMaterial(uint32_t emissive, uint32_t specshine)
   this->materialarray.append(specshine & 0xff);
 }
 
+// The alpha byte of a stream entry: 0..1 quantized the way the packed
+// colors are, which is the precision the shininess slot has always had.
+static inline uint32_t
+packedFactor(float value)
+{
+  return uint32_t(SbClamp(value, 0.0f, 1.0f) * 255.0f + 0.5f);
+}
+
 uint32_t
 SoFCVertexCacheP::packedEmissive(int midx) const
 {
   const float * e = this->tmp->emissiveptr
     + 3 * SbClamp(midx, 0, this->tmp->numemissive-1);
-  return SbColor(e[0], e[1], e[2]).getPackedValue(0.0f);
+  uint32_t packed = SbColor(e[0], e[1], e[2]).getPackedValue(0.0f);
+  // The emissive alpha is a constant 0xff otherwise: in PBR mode it is
+  // where the metallic factor rides (nothing else can carry it).
+  if (this->matpbr) {
+    packed = (packed & 0xffffff00)
+      | packedFactor(this->tmp->metallicptr[
+          midx < this->tmp->nummetallic ? midx : 0]);
+  }
+  return packed;
 }
 
 uint32_t
@@ -2423,11 +2480,18 @@ SoFCVertexCacheP::packedSpecShine(int midx) const
 {
   const float * s = this->tmp->specularptr
     + 3 * SbClamp(midx, 0, this->tmp->numspecular-1);
+  uint32_t packed = SbColor(s[0], s[1], s[2]).getPackedValue(0.0f);
+  // In PBR mode the roughness takes the shininess slot, which the PBR
+  // shading branch does not read (and which the stored material spends
+  // on the roughness anyway).
+  if (this->matpbr) {
+    return (packed & 0xffffff00)
+      | packedFactor(this->tmp->roughnessptr[
+          midx < this->tmp->numroughness ? midx : 0]);
+  }
   float sh = this->tmp->shininessptr[
       SbClamp(midx, 0, this->tmp->numshininess-1)];
-  uint32_t packed = SbColor(s[0], s[1], s[2]).getPackedValue(0.0f);
-  return (packed & 0xffffff00)
-    | uint32_t(SbClamp(sh, 0.0f, 1.0f) * 255.0f + 0.5f);
+  return (packed & 0xffffff00) | packedFactor(sh);
 }
 
 void

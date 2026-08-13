@@ -1117,11 +1117,24 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             if (rmat.type == Render::Material::Triangle) {
                 const bool hasarrays = material.emissives.getNum()
                     || material.speculars.getNum()
-                    || material.shininesses.getNum();
+                    || material.shininesses.getNum()
+                    || material.metallics.getNum()
+                    || material.roughnesses.getNum();
                 if (ventry.partidx < 0) {
                     draw.material.perfacematerial =
                         hasarrays && mesh->materials != nullptr;
+                    // Which reading the stream's two alpha slots carry
+                    // is the bake's own answer, not this material's:
+                    // the cache that baked it is the authority.
+                    draw.material.perfacepbr =
+                        draw.material.perfacematerial
+                        && ventry.cache->hasPbrMaterial();
                 } else if (hasarrays) {
+                    // A single-face draw carries no stream, so its
+                    // face's values resolve into the scalars. The
+                    // colour arrays are as long as the shape has faces
+                    // (clamp); the PBR pair is as long as the
+                    // appearance (pad with entry 0).
                     const int p = ventry.partidx;
                     if (int n = material.emissives.getNum())
                         draw.material.emissive =
@@ -1132,6 +1145,10 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                     if (int n = material.shininesses.getNum())
                         draw.material.shininess =
                             material.shininesses[std::min(p, n - 1)];
+                    if (int n = material.metallics.getNum())
+                        draw.material.metallic = material.metallics[p < n ? p : 0];
+                    if (int n = material.roughnesses.getNum())
+                        draw.material.roughness = material.roughnesses[p < n ? p : 0];
                 }
             }
             draw.identity = ventry.identity;

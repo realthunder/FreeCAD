@@ -607,6 +607,12 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     // is approximated by its first entry until the per-face streams
     // carry the raw values.
     const bool pbr = ShapeAppearance.isPBR();
+    // Per-face factor pair, when the appearance's entries genuinely
+    // differ in it: neither factor has a Coin material field to ride
+    // (see SoFCPbrElement), so the arrays travel on the node below and
+    // the render cache bakes them into the per-vertex material stream.
+    std::vector<float> metallics;
+    std::vector<float> roughnesses;
     if (pbr) {
         metallic = ShapeAppearance.getMetallic(0);
         // The renderer reads a roughness <= 0 as unset (and derives from
@@ -615,6 +621,21 @@ void ViewProviderGeometryObject::updateRenderMaterial()
         roughness = ShapeAppearance.getRoughness(0);
         if (roughness < 0.02f)
             roughness = 0.02f;
+        const int count = ShapeAppearance.getSize();
+        bool varies = false;
+        for (int i = 1; i < count && !varies; ++i) {
+            varies = ShapeAppearance.getMetallic(i) != ShapeAppearance.getMetallic(0)
+                || ShapeAppearance.getRoughness(i) != ShapeAppearance.getRoughness(0);
+        }
+        if (varies) {
+            metallics.reserve(count);
+            roughnesses.reserve(count);
+            for (int i = 0; i < count; ++i) {
+                metallics.push_back(ShapeAppearance.getMetallic(i));
+                roughnesses.push_back(
+                        std::max(ShapeAppearance.getRoughness(i), 0.02f));
+            }
+        }
     }
     // Render_Water turns the object's closed shape into a water body of
     // the render engine's volumetric lighting pass (tinted by the shape
@@ -722,6 +743,21 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     }
     pcRenderMaterial->metallic = metallic;
     pcRenderMaterial->roughness = roughness;
+    // Rewritten only when they really change: every write notifies, and
+    // a notification off this node invalidates the render caches below.
+    auto syncFactors = [](SoMFFloat &field, const std::vector<float> &values) {
+        const int num = static_cast<int>(values.size());
+        if (field.getNum() == num
+                && (num == 0
+                    || std::equal(values.begin(), values.end(),
+                                  field.getValues(0))))
+            return;
+        field.setNum(num);   // setValues() grows but never shrinks
+        if (num)
+            field.setValues(0, num, values.data());
+    };
+    syncFactors(pcRenderMaterial->metallics, metallics);
+    syncFactors(pcRenderMaterial->roughnesses, roughnesses);
     pcRenderMaterial->water = water;
     pcRenderMaterial->waterDensity = waterDensity < 0.0f ? 0.0f
                                                          : waterDensity;

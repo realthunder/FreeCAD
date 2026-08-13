@@ -52,9 +52,11 @@ void main()
 	// Per-face material: u_matEmissive.w selects the baked stream
 	// (v_color1 = emissive, v_color2 = specular rgb + shininess in
 	// alpha, the same 0..1 scale as u_matSpecular.w) over the scalars.
-	vec3 matEmissive = mix(u_matEmissive.rgb, v_color1.rgb,
-	                       u_matEmissive.w);
-	vec4 matSpec = mix(u_matSpecular, v_color2, u_matEmissive.w);
+	// 2 means the same stream with the two alpha slots carrying the
+	// PBR factor pair instead (resolved with the factors below).
+	float perFace = step(0.5, u_matEmissive.w);
+	vec3 matEmissive = mix(u_matEmissive.rgb, v_color1.rgb, perFace);
+	vec4 matSpec = mix(u_matSpecular, v_color2, perFace);
 
 	vec3 n = normalize(v_normal);
 	// Geometric surface normal (before any bump perturbation), oriented toward
@@ -186,6 +188,26 @@ void main()
 	// roughness floor after the multiply).
 	float metal = u_pbrParams.y;
 	float rough = u_pbrParams.z;
+	// Per-face PBR (u_matEmissive.w = 2): the stream's two alpha slots
+	// carry the factor pair instead of a constant and the shininess.
+	if (u_matEmissive.w > 1.5)
+	{
+		if (u_pbrParams.x > 0.5)
+		{
+			metal = v_color1.a;
+			rough = max(v_color2.a, 0.02);
+		}
+		else
+		{
+			// A Phong frame reads that slot as a shininess, so
+			// give it the shininess the roughness means (the
+			// Blinn-Phong-to-GGX fit, inverted -- what the
+			// stored material's Phong derivation would hold).
+			float r = max(v_color2.a, 0.02);
+			matSpec.w = clamp((2.0 / (r * r) - 2.0) / 128.0,
+			                  0.0, 1.0);
+		}
+	}
 #ifdef TEXTURE
 	if (u_pbrParams.x > 1.5)
 	{

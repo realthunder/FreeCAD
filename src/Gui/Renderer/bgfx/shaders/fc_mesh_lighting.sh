@@ -14,7 +14,10 @@
  * u_matColor    : rgba diffuse; used when u_params.x == 0
  * u_matEmissive : rgb emissive add; w = per-face material flag (the
  *                 stock caller shades emissive/specular/shininess from
- *                 the v_color1/v_color2 stream instead of the scalars)
+ *                 the v_color1/v_color2 stream instead of the scalars;
+ *                 2 = that stream's two alpha slots carry the PBR
+ *                 factor pair, which the caller resolves into the
+ *                 metal/rough arguments below)
  * u_matSpecular : rgb specular, w = shininess (0..1 Coin convention)
  * u_params      : x = per-vertex color, y = lighting on, z = two-sided
  * u_pbrParams   : x = PBR branch on (2 = with a metallic-roughness
