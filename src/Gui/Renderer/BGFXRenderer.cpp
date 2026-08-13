@@ -26,6 +26,7 @@
 #include "MeshSource.h"
 #include "SceneLadder.h"
 #include "ProxyHierarchy.h"
+#include "CullBenefit.h"
 #include "MaskedOcclusion.h"
 #include "Simd4.h"
 #include "OcclusionCull.h"
@@ -14122,12 +14123,42 @@ public:
                 fprintf(stderr, "bgfx cull: %zu of %zu scene draws\n",
                         nculled, scene.size());
 
+            // The frame-level A/B (12.13): is the culling paying for
+            // itself on THIS scene and camera? The probe alternates
+            // stretches of frames with the whole occlusion block on
+            // and off and compares median frame cost -- the off arm
+            // skips the oracle entirely, so its frames cost what not
+            // deciding costs, which is the alternative actually on
+            // offer. Fed bgfx's cpuTimeFrame, the whole application
+            // frame: it lags the arm by one frame, which the arms'
+            // warm-up discards. The verdict gates nothing here beyond
+            // the probe's own arms; it is printed for the
+            // wire-or-delete decision to read.
+            bool benefitCull = true;
+            if (cullconf.enabled && cullconf.benefitProbe) {
+                if (!cullBenefitOn) {
+                    cullBenefit.reset();
+                    cullBenefitOn = true;
+                }
+                const bgfx::Stats *bs = bgfx::getStats();
+                if (bs && bs->cpuTimerFreq > 0)
+                    cullBenefit.frame(
+                            float(1000.0 * double(bs->cpuTimeFrame)
+                                  / double(bs->cpuTimerFreq)),
+                            double(bx::getHPCounter())
+                                / double(bx::getHPFrequency()));
+                benefitCull = cullBenefit.cullThisFrame();
+            }
+            else {
+                cullBenefitOn = false;
+            }
+
             // Occlusion culling (docs/FarFieldProxies.md §12), on top of
             // the frustum rejections just computed and into the same
             // mask. It runs under the same conditions for the same
             // reasons: a hidden-line frame reworks the fill submits
             // wholesale, so a mask over them means nothing.
-            if (cullconf.enabled) {
+            if (cullconf.enabled && benefitCull) {
                 const bgfx::Caps *caps = bgfx::getCaps();
                 culler.configure(cullconf);
                 if (cullBuiltVersion != cullSceneVersion
@@ -15921,6 +15952,23 @@ public:
                         unsigned(culler.hierarchy().nodes().size()),
                         cullBuildMs);
             }
+            // The A/B probe's readout (12.13), on the same cadence: the
+            // one number the wire-or-delete decision needs is `gain`,
+            // the fraction of the frame the whole occlusion block saves
+            // net of what it costs to decide. Negative means deciding
+            // costs more than not drawing saves.
+            if (due && cullconf.enabled && cullconf.benefitProbe) {
+                const auto rep = cullBenefit.report();
+                FC_RENDER_MSG(
+                        "render culling benefit: %s | culled %.2fms vs "
+                        "unculled %.2fms | gain %+.1f%% | probes %u%s "
+                        "(arm seen %u sampled %u)\n",
+                        rep.culling ? "WORTH IT" : "not worth it",
+                        rep.culledMs, rep.uncalledMs, rep.gain * 100.0f,
+                        rep.probes,
+                        rep.probing ? " (probing)" : "",
+                        rep.armSeen, rep.armSamples);
+            }
         }
 
         if (!hasScene && !scene.empty())
@@ -16570,6 +16618,12 @@ public:
     /// the culler keeps between frames is there to survive a latency
     /// this path does not have.
     Render::MaskedOccluderPass maskedCull;
+    /// The frame-level A/B probe over the whole occlusion block
+    /// (12.13, Render_OcclusionBenefitProbe). Holds its verdict and
+    /// arms across frames; reset on the probe's off->on edge so a
+    /// re-enabled probe is a fresh experiment.
+    Render::CullBenefitEstimator cullBenefit;
+    bool cullBenefitOn = false;
     /// Occlusion folded per SOURCE, for the level plan (occlusion as a
     /// memory mechanism): how many consecutive rendered frames EVERY
     /// draw of a source has been culled -- frustum or occlusion, with

@@ -1131,6 +1131,27 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter OcclusionBenefitProbe
+    ///
+    /// Measure whether the culling pays for itself on THIS scene and
+    /// camera (docs/FarFieldProxies.md 12.13): alternate stretches of
+    /// frames with the whole occlusion block on and off, compare median
+    /// frame cost, and print the verdict with the culling readout
+    /// (Render_LevelDebug cadence). The probe is an intervention -- its
+    /// off arm draws everything and pauses the hidden-streak demote
+    /// feed for those frames -- so it is a measuring instrument, not a
+    /// mode to leave on. The verdict gates nothing yet; it is the
+    /// number the wire-or-delete decision for CullBenefitEstimator
+    /// reads.
+    static const bool & getOcclusionBenefitProbe();
+    static const bool & defaultOcclusionBenefitProbe();
+    static void removeOcclusionBenefitProbe();
+    static void setOcclusionBenefitProbe(const bool &v);
+    static const char *docOcclusionBenefitProbe();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter AO
     ///
     /// Enable screen space ambient occlusion of the experimental render

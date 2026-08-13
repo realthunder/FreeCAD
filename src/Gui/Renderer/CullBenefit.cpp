@@ -151,5 +151,7 @@ CullBenefitReport CullBenefitEstimator::report() const
     r.probes = probes;
     r.probing = probing;
     r.culling = culling;
+    r.armSeen = seen;
+    r.armSamples = uint32_t(samples.size());
     return r;
 }

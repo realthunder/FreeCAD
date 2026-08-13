@@ -95,6 +95,7 @@ public:
     long OcclusionCoarseBuilds;
     long OcclusionCoarseBias;
     long OcclusionCoarseMemory;
+    bool OcclusionBenefitProbe;
     bool AO;
     bool Shadow;
     long AOMethod;
@@ -249,6 +250,8 @@ public:
         funcs["OcclusionCoarseBias"] = &RenderParamsP::updateOcclusionCoarseBias;
         OcclusionCoarseMemory = this->handle->GetInt("OcclusionCoarseMemory", 64);
         funcs["OcclusionCoarseMemory"] = &RenderParamsP::updateOcclusionCoarseMemory;
+        OcclusionBenefitProbe = this->handle->GetBool("OcclusionBenefitProbe", false);
+        funcs["OcclusionBenefitProbe"] = &RenderParamsP::updateOcclusionBenefitProbe;
         AO = this->handle->GetBool("AO", false);
         funcs["AO"] = &RenderParamsP::updateAO;
         Shadow = this->handle->GetBool("Shadow", true);
@@ -564,6 +567,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOcclusionCoarseMemory(RenderParamsP *self) {
         self->OcclusionCoarseMemory = self->handle->GetInt("OcclusionCoarseMemory", 64);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionBenefitProbe(RenderParamsP *self) {
+        self->OcclusionBenefitProbe = self->handle->GetBool("OcclusionBenefitProbe", false);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAO(RenderParamsP *self) {
@@ -2591,6 +2598,43 @@ void RenderParams::setOcclusionCoarseMemory(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeOcclusionCoarseMemory() {
     instance()->handle->RemoveInt("OcclusionCoarseMemory");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionBenefitProbe() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Measure whether the culling pays for itself on THIS scene and\n"
+"camera (docs/FarFieldProxies.md 12.13): alternate stretches of\n"
+"frames with the whole occlusion block on and off, compare median\n"
+"frame cost, and print the verdict with the culling readout\n"
+"(Render_LevelDebug cadence). The probe is an intervention -- its\n"
+"off arm draws everything and pauses the hidden-streak demote\n"
+"feed for those frames -- so it is a measuring instrument, not a\n"
+"mode to leave on. The verdict gates nothing yet; it is the\n"
+"number the wire-or-delete decision for CullBenefitEstimator\n"
+"reads.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusionBenefitProbe() {
+    return instance()->OcclusionBenefitProbe;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusionBenefitProbe() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionBenefitProbe(const bool &v) {
+    instance()->handle->SetBool("OcclusionBenefitProbe",v);
+    instance()->OcclusionBenefitProbe = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionBenefitProbe() {
+    instance()->handle->RemoveBool("OcclusionBenefitProbe");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

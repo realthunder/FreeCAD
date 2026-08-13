@@ -528,6 +528,16 @@ struct OcclusionCullConfig {
     /// What the hull cache may hold, in bytes.
     size_t coarseMemory = size_t(64) << 20;
 
+    /// Run the frame-level A/B probe (CullBenefit.h): alternate frames
+    /// with the whole cull block on and off, compare median frame
+    /// cost, and print the verdict on the culling readout cadence.
+    /// While a probe's off-arm runs, the oracle does not run at all --
+    /// the hidden-streak demote feed pauses with it, which over one
+    /// probe is a handful of frames. Measurement only: the verdict
+    /// does not yet gate anything by itself (12.13's wire-or-delete
+    /// decision reads it first).
+    bool benefitProbe = false;
+
     bool operator==(const OcclusionCullConfig &o) const {
         return enabled == o.enabled && visibleTtl == o.visibleTtl
             && budget == o.budget && minSubtree == o.minSubtree
@@ -548,7 +558,8 @@ struct OcclusionCullConfig {
             && coarseMinTriangles == o.coarseMinTriangles
             && coarseBuilds == o.coarseBuilds
             && coarseBias == o.coarseBias
-            && coarseMemory == o.coarseMemory;
+            && coarseMemory == o.coarseMemory
+            && benefitProbe == o.benefitProbe;
     }
     bool operator!=(const OcclusionCullConfig &o) const { return !(*this == o); }
 };

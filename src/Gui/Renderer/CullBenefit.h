@@ -109,6 +109,13 @@ struct CullBenefitReport {
     uint32_t probes = 0;
     bool probing = true;
     bool culling = false;
+    /// The current arm's progress, for the readout: an experiment
+    /// that is stuck reads as "probing" forever, and these two say
+    /// whether it is starved of frames (seen not rising) or fed
+    /// zero-cost frames it refuses to sample (seen rising, samples
+    /// not).
+    uint32_t armSeen = 0;
+    uint32_t armSamples = 0;
 };
 
 /// Runs the experiment and holds the verdict.

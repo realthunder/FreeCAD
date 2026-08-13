@@ -1369,6 +1369,9 @@ RendererBridge::translateOcclusionCullConfig(App::PropertyContainer * view)
     res.softwareSimd = viewParamOverride<App::PropertyBool>(
             view, "Render", "OcclusionSimd",
             RenderParams::getOcclusionSimd());
+    res.benefitProbe = viewParamOverride<App::PropertyBool>(
+            view, "Render", "OcclusionBenefitProbe",
+            RenderParams::getOcclusionBenefitProbe());
     // The granularity the question is asked at (section 12.17), and the
     // coarse occluder hulls (section 12.16) -- both the software
     // oracle's alone.

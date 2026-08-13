@@ -655,6 +655,17 @@ Params = [
         "the least recently used hulls are dropped. A dropped hull costs a\n"
         "rebuild when its occluder comes back into view, never\n"
         "correctness."),
+    ParamBool('OcclusionBenefitProbe',  False, title='Occlusion benefit probe',
+        doc="Measure whether the culling pays for itself on THIS scene and\n"
+        "camera (docs/FarFieldProxies.md 12.13): alternate stretches of\n"
+        "frames with the whole occlusion block on and off, compare median\n"
+        "frame cost, and print the verdict with the culling readout\n"
+        "(Render_LevelDebug cadence). The probe is an intervention -- its\n"
+        "off arm draws everything and pauses the hidden-streak demote\n"
+        "feed for those frames -- so it is a measuring instrument, not a\n"
+        "mode to leave on. The verdict gates nothing yet; it is the\n"
+        "number the wire-or-delete decision for CullBenefitEstimator\n"
+        "reads."),
     ParamBool('AO',  False, title='Ambient occlusion',
         doc="Enable screen space ambient occlusion of the experimental render\n"
         "engine (render cache mode 3 with a selected renderer type)."),
