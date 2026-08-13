@@ -3827,8 +3827,8 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
     // wrong questions -- they exist to keep the import path from
     // standing in for work already done.
     if (!underPressure) {
-        if (CoarseMeshTShape == cShape.TShape().get()
-            || ExactMeshTShape == cShape.TShape().get()) {
+        if ((meshLadder.coarseResolved || meshLadder.exactResident)
+            && meshLadder.anchor == cShape.TShape().get()) {
             return false;
         }
         auto d = pcObject ? pcObject->getDocument() : nullptr;
@@ -3884,18 +3884,10 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
                 return;
             }
             transferMeshLevels(meshed, cur);
-            CoarseMeshTShape = tsh;
-            // Climbing out of a pressure box: the object may be
-            // tessellated again, so the flag that sent it here is spent.
-            // The scale resets WITH the flags -- the worker meshed at
-            // the unscaled rung deflection, and a rebuild still asking
-            // scale-x coarser refuses that mesh and re-tessellates
-            // inline on the GUI thread, the stall the stand-in and the
-            // pool exist to avoid. One rung, one statement of it.
-            if (underPressure) {
-                MeshErrorScale = 1.0;
-                MeshErrorScaleExhausted = false;
-                MeshDecimationSpent = false;
+            if (meshLadder.anchor == tsh) {
+                meshLadder.coarseResolved = true;
+                if (underPressure)
+                    meshLadder.resetDescent();
             }
             FC_LOG(getFullName() << " stand-in resolved: coarse mesh in");
             updateVisual();
@@ -4370,6 +4362,18 @@ void ViewProviderPartExt::updateVisual()
     toposhape.setShape(toposhape.getShape().Located(aLoc), false);
     lineset ->seamIndices.setNum(0);
     registerShape(cachedShape, toposhape);
+    // The ladder state this object carries belongs to a shape, so a
+    // different TShape starts every claim over -- otherwise an edited
+    // object would inherit the coarseness the plan bought against a
+    // shape that is gone. THE one reset, placed before EVERY early
+    // return (the null path included): a claim that survives an early
+    // return can meet a recycled TShape address two shapes later, and
+    // the null install is the one path that frees the old TShape
+    // without installing a coexisting successor (see MeshLadderState
+    // in the header).
+    meshLadder.rebind(cachedShape.getShape().IsNull()
+                          ? nullptr
+                          : cachedShape.getShape().TShape().get());
     if (cachedShape.isNull()) {
         coords  ->point      .setNum(0);
         pcoords ->point      .setNum(0);
@@ -4384,25 +4388,6 @@ void ViewProviderPartExt::updateVisual()
         return;
     }
 
-    // The dynamic scale this object currently stands at (sec 13). It
-    // belongs to a shape, so a different TShape starts again at the
-    // rung -- otherwise an edited object would inherit the coarseness
-    // the plan bought against a shape that is gone. Checked BEFORE the
-    // stand-in gate below, which is the flags' first reader: judged
-    // after it, a recomputed shape arriving on an object the descent
-    // had boxed was drawn as a box on flags proved against the shape
-    // that no longer exists.
-    {
-        const void *scaleTShape = cachedShape.getShape().IsNull()
-            ? nullptr : cachedShape.getShape().TShape().get();
-        if (MeshErrorScaleTShape != scaleTShape) {
-            MeshErrorScaleTShape = scaleTShape;
-            MeshErrorScale = 1.0;
-            MeshErrorScaleExhausted = false;
-            MeshDecimationSpent = false;
-        }
-    }
-
     // Progressive import of an oversized part (sec 13): even the coarse
     // build of a many-face shape (or many-leaf compound) stalls the
     // GUI for seconds, and the import stall scales with the largest
@@ -4415,8 +4400,9 @@ void ViewProviderPartExt::updateVisual()
     // The box is the LAST step, not the first one past deflection:
     // it is taken only once decimation has been tried and has itself
     // stopped paying (see simplifyVisualInPlace at the end of the
-    // build, which is what sets MeshDecimationSpent).
-    if (buildCoarseStandIn(MeshErrorScaleExhausted && MeshDecimationSpent)) {
+    // build, which is what sets decimationSpent).
+    if (buildCoarseStandIn(meshLadder.scaleExhausted
+                           && meshLadder.decimationSpent)) {
         VisualTouched = false;
         setHighlightedFaces(DiffuseColor.getValues());
         setHighlightedEdges(LineColorArray.getValues());
@@ -4432,8 +4418,7 @@ void ViewProviderPartExt::updateVisual()
     // instanced build's per-leaf rungs would re-tessellate every leaf
     // inline -- the very stall the stand-in existed to avoid.
     bool instancedOk = false;
-    const bool standInResolved =
-        cachedShape.getShape().TShape().get() == CoarseMeshTShape;
+    const bool standInResolved = meshLadder.coarseResolved;
     // Scoped to the ATTEMPT alone: a failed instanced build still costs
     // its analysis, and lumping that into the flat fill below would
     // report the fallback as expensive rather than the try.
@@ -4547,25 +4532,19 @@ void ViewProviderPartExt::updateVisual()
         // The desktop refine already put this very TShape's exact
         // triangulation in place (sec 13): build at the display deviation
         // -- the mesher finds the finer mesh resident and keeps it -- and
-        // register at error 0. A different TShape is a new shape, and
-        // goes coarse-first again.
-        const bool exactResident =
-            !cShape.IsNull() && ExactMeshTShape == cShape.TShape().get();
-        if (!exactResident)
-            ExactMeshTShape = nullptr;
+        // register at error 0. The rebind at the top of updateVisual
+        // already started a different TShape over, so the claim is
+        // about this shape or it is gone.
+        const bool exactResident = meshLadder.exactResident;
         const int coarseLvl = exactResident
             ? -1 : coarseTessellationLevel(pcObject ? pcObject->getDocument() : nullptr);
-        // The dynamic-scale identity reset runs at the top of
-        // updateVisual, before the stand-in gate -- the flags' first
-        // reader -- so by here the scale and flags already belong to
-        // this TShape.
         double shapeDiag = 0.0;
         if (coarseLvl >= 0) {
             double dx = xMax - xMin, dy = yMax - yMin, dz = zMax - zMin;
             double diag = std::sqrt(dx * dx + dy * dy + dz * dz);
             shapeDiag = diag;
             if (diag > 0) {
-                const double scale = std::max(1.0, MeshErrorScale);
+                const double scale = std::max(1.0, meshLadder.errorScale);
                 deflection = meshLevelDeflection(diag, unsigned(coarseLvl))
                     * scale;
                 // The angular tolerance rides the same scale, clamped
@@ -4583,7 +4562,7 @@ void ViewProviderPartExt::updateVisual()
                          faceset, lineset, nodeset,
                          numTriangles, numNodes, numPoints, numNorms,
                          numFaces, numEdges, numLines,
-                         MeshErrorScaleExhausted);
+                         meshLadder.scaleExhausted);
 
         // The scene server can now re-tessellate this shape at a
         // coarser deviation when a viewer asks for a declared level of
@@ -4605,8 +4584,10 @@ void ViewProviderPartExt::updateVisual()
                 if (cur.IsNull() || cur.TShape().get() != tsh)
                     return;
                 transferMeshLevels(meshed, cur);
-                ExactMeshTShape = tsh;
-                ExactMeshCoarseError = builtError;
+                if (meshLadder.anchor == tsh) {
+                    meshLadder.exactResident = true;
+                    meshLadder.exactCoarseError = builtError;
+                }
                 updateVisual();
             };
         }
@@ -4618,7 +4599,7 @@ void ViewProviderPartExt::updateVisual()
         // coarse rung for display and keeps the exact one resident,
         // so the climb back is instant.
         std::function<void()> onDemote, onDowngrade;
-        if (exactResident && ExactMeshCoarseError > 0.0f) {
+        if (exactResident && meshLadder.exactCoarseError > 0.0f) {
             const void *tsh = cShape.TShape().get();
             onDemote = [this, tsh]() {
                 TopoDS_Shape cur = cachedShape.getShape();
@@ -4626,7 +4607,8 @@ void ViewProviderPartExt::updateVisual()
                     return;
                 if (!demoteMeshLevels(cur))
                     return;
-                ExactMeshTShape = nullptr;
+                if (meshLadder.anchor == tsh)
+                    meshLadder.exactResident = false;
                 updateVisual();
             };
             onDowngrade = [this, tsh]() {
@@ -4635,7 +4617,8 @@ void ViewProviderPartExt::updateVisual()
                     return;
                 if (!downgradeMeshLevels(cur))
                     return;
-                ExactMeshTShape = nullptr;
+                if (meshLadder.anchor == tsh)
+                    meshLadder.exactResident = false;
                 updateVisual();
             };
         }
@@ -4650,7 +4633,8 @@ void ViewProviderPartExt::updateVisual()
         if (builtError > 0.0f && levelScale > 1.0 && shapeDiag > 0.0) {
             scaledError = float(builtError * levelScale);
             const void *tsh = cShape.TShape().get();
-            const double nextScale = std::max(1.0, MeshErrorScale) * levelScale;
+            const double nextScale =
+                std::max(1.0, meshLadder.errorScale) * levelScale;
             const double nextDefl = deflection * levelScale;
             const double nextAng = std::min(AngDeflectionRads * levelScale,
                                             M_PI / 2.0);
@@ -4665,13 +4649,13 @@ void ViewProviderPartExt::updateVisual()
                 // nothing: only a representation that drops FACES does,
                 // and the bounding box is the one this class can build
                 // today. updateVisual takes that path off the flag.
-                if (MeshErrorScaleExhausted || (boxError > 0.0
-                                                && scaledError >= boxError)) {
+                if (meshLadder.scaleExhausted
+                    || (boxError > 0.0 && scaledError >= boxError)) {
                     // The scale still advances here, synchronously: no
                     // build can fail to land, and it is what grows the
                     // decimation rung's grid step over step.
-                    MeshErrorScale = nextScale;
-                    MeshErrorScaleExhausted = true;
+                    meshLadder.errorScale = nextScale;
+                    meshLadder.scaleExhausted = true;
                     updateVisual();
                     return;
                 }
@@ -4694,7 +4678,8 @@ void ViewProviderPartExt::updateVisual()
                         TopoDS_Shape live = cachedShape.getShape();
                         if (live.IsNull() || live.TShape().get() != tsh)
                             return;
-                        MeshErrorScale = nextScale;
+                        if (meshLadder.anchor == tsh)
+                            meshLadder.errorScale = nextScale;
                         const int before = meshLevelNodeCount(live);
                         transferMeshLevels(meshed, live);
                         demoteMeshLevels(live);
@@ -4703,8 +4688,9 @@ void ViewProviderPartExt::updateVisual()
                         // produce one? A shape of planar faces answers
                         // no at every deflection, and there is no point
                         // discovering that once per step.
-                        if (before > 0 && after * 10 >= before * 9)
-                            MeshErrorScaleExhausted = true;
+                        if (before > 0 && after * 10 >= before * 9
+                            && meshLadder.anchor == tsh)
+                            meshLadder.scaleExhausted = true;
                         updateVisual();
                     });
             };
@@ -4712,7 +4698,7 @@ void ViewProviderPartExt::updateVisual()
         registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
                                 builtError, exactDeflection, exactAngle,
                                 std::move(onExact), std::move(onDemote),
-                                exactResident ? ExactMeshCoarseError
+                                exactResident ? meshLadder.exactCoarseError
                                               : 0.0f,
                                 std::move(onDowngrade),
                                 pcObject ? pcObject->getDocument() : nullptr,
@@ -4730,16 +4716,16 @@ void ViewProviderPartExt::updateVisual()
         //
         // The grid is the error this rung already commits, in world
         // units: builtError is relative to the diagonal and carries
-        // MeshErrorScale, so each descent step clusters coarser than the
-        // last and the sequence terminates.
-        if (MeshErrorScaleExhausted && !MeshDecimationSpent
+        // the error scale, so each descent step clusters coarser than
+        // the last and the sequence terminates.
+        if (meshLadder.scaleExhausted && !meshLadder.decimationSpent
                 && builtError > 0.0f && shapeDiag > 0.0) {
             if (!simplifyVisualInPlace(double(builtError) * shapeDiag,
                                        shapeDiag, builtError)) {
                 // Decimation is spent too. The object keeps the mesh it
                 // has for now; the descent's next step finds the flag
                 // set and takes the box.
-                MeshDecimationSpent = true;
+                meshLadder.decimationSpent = true;
                 FC_LOG(getFullName()
                        << " decimation spent, bounding box is next");
             }

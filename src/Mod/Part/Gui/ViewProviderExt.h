@@ -300,7 +300,7 @@ protected:
                           int &numLines,
                           /// Whether the caller has already proved this
                           /// shape cannot be coarsened by tessellating
-                          /// it again (MeshErrorScaleExhausted). Such a
+                          /// it again (meshLadder.scaleExhausted). Such a
                           /// rebuild's deflection keeps doubling away
                           /// from a mesh that will never move, so the
                           /// tessellation call cannot achieve anything
@@ -339,59 +339,100 @@ protected:
     static void runDeferredVisualSlice();
     /// Post the next slice to the event loop (nothing if one is pending).
     static void scheduleDeferredVisualSlice(int delayMs = 0);
-    /// The TShape whose exact tessellation the desktop refine has
-    /// already transferred onto the flattened shape (sec 13): while the
-    /// current shape still is that one, updateVisual builds at the
-    /// full display deviation (the exact triangulation is resident --
-    /// meshing is a no-op) instead of going coarse-first again.
-    const void *ExactMeshTShape = nullptr;
-    /// The error of the coarse rung that refine kept resident beside
-    /// the exact one -- what a demotion under memory pressure falls
-    /// back to, and what the plan prices it by (sec 13 step 3).
-    float ExactMeshCoarseError = 0.0f;
-    /// The TShape whose coarse tessellation the refine pool has
-    /// already delivered behind a bounding-box stand-in (progressive
-    /// import of an oversized part): while the current shape still is
-    /// that one, updateVisual takes the ordinary coarse-first path --
-    /// the coarse triangulation is resident, meshing is a no-op --
-    /// instead of standing in again.
-    const void *CoarseMeshTShape = nullptr;
-    /// How much coarser than its ladder rung this object is currently
-    /// tessellated (sec 13, dynamic scale). 1 is the rung itself; the
-    /// level plan multiplies it by Render_LevelScale each time it
-    /// picks this object to free memory, so the descent is unbounded
-    /// and, above all, PER OBJECT -- the plan spends the cheapest
-    /// visible error in the scene, not a global coarseness. Reset
-    /// whenever the shape changes, since it describes a tessellation
-    /// of that shape and nothing else.
-    double MeshErrorScale = 1.0;
-    /// The TShape MeshErrorScale is about; a different one is a new
-    /// shape and starts again at its rung.
-    const void *MeshErrorScaleTShape = nullptr;
-    /// Set when a coarser re-tessellation came back no smaller than
-    /// what it replaced -- deflection has run out for this shape.
+    /// The coarse-first ladder's per-object state (sec 13). Every
+    /// member is a claim PROVED AGAINST ONE SHAPE, so they live behind
+    /// a single identity and a single reset: rebind() runs once per
+    /// updateVisual, right after the shape is installed and before any
+    /// early return, and wipes everything when the TShape moved.
     ///
-    /// It does for most mechanical geometry sooner than one would
-    /// think: a planar face is two triangles at any deflection, so a
-    /// shape whose faces are mostly flat cannot be coarsened by asking
-    /// BRepMesh for a bigger number. Measured on the rack model, a 4x
-    /// coarser tessellation removed only 19% of the primitives. Once
-    /// this is set the object stops paying for re-tessellations that
-    /// buy nothing and goes to a representation that actually drops
-    /// faces: decimation of the mesh it already has, and below that its
-    /// bounding box.
-    bool MeshErrorScaleExhausted = false;
-    /// Set when decimation in turn stopped removing enough to be worth
-    /// the rewrite (Render_SimplifyMinReduction) -- the rung below
-    /// deflection is spent too, and the next step is the bounding box.
-    ///
-    /// Separate from the flag above because the two are different
-    /// exhaustions with different next steps, and one flag doing both
-    /// jobs would send an object to its box the moment tessellation
-    /// saturated, which is exactly the step this rung exists to delay.
-    /// Cleared wherever MeshErrorScaleExhausted is: a shape that may be
-    /// tessellated again may be decimated again.
-    bool MeshDecimationSpent = false;
+    /// Why that placement is what makes the identity sound: `anchor`
+    /// is a weak address, never dereferenced, so a freed TShape's
+    /// address could in principle be recycled by a later allocation.
+    /// But rebind() always holds the address of the IMMEDIATELY
+    /// previous shape, and inside updateVisual the previous and the
+    /// incoming shape coexist (the new one is fetched before the old
+    /// reference is dropped), so the two addresses can never collide.
+    /// The old scheme -- three anchors reset at three different depths
+    /// of the build, some behind early returns -- had exactly that
+    /// hole: an object parked on its box never reached the exact-mesh
+    /// clear, and a recompute two shapes later could fake
+    /// exactResident on a recycled address.
+    struct MeshLadderState {
+        /// The TShape every claim below is about; compared, never
+        /// dereferenced.
+        const void *anchor = nullptr;
+        /// The desktop refine has transferred this shape's exact
+        /// tessellation onto the flattened shape: updateVisual builds
+        /// at the full display deviation (the exact triangulation is
+        /// resident -- meshing is a no-op) instead of going
+        /// coarse-first again.
+        bool exactResident = false;
+        /// The error of the coarse rung that refine kept resident
+        /// beside the exact one -- what a demotion under memory
+        /// pressure falls back to, and what the plan prices it by
+        /// (sec 13 step 3).
+        float exactCoarseError = 0.0f;
+        /// The refine pool has delivered this shape's coarse mesh
+        /// behind a bounding-box stand-in (progressive import of an
+        /// oversized part): updateVisual takes the ordinary
+        /// coarse-first path -- the coarse triangulation is resident,
+        /// meshing is a no-op -- instead of standing in again.
+        bool coarseResolved = false;
+        /// How much coarser than its ladder rung this object is
+        /// currently tessellated (sec 13, dynamic scale). 1 is the
+        /// rung itself; the level plan multiplies it by
+        /// Render_LevelScale each time it picks this object to free
+        /// memory, so the descent is unbounded and, above all, PER
+        /// OBJECT -- the plan spends the cheapest visible error in
+        /// the scene, not a global coarseness.
+        double errorScale = 1.0;
+        /// Set when a coarser re-tessellation came back no smaller
+        /// than what it replaced -- deflection has run out for this
+        /// shape. It does for most mechanical geometry sooner than
+        /// one would think: a planar face is two triangles at any
+        /// deflection (measured on the rack model, a 4x coarser
+        /// tessellation removed only 19% of the primitives). Once set
+        /// the object stops paying for re-tessellations that buy
+        /// nothing and goes to a representation that actually drops
+        /// faces: decimation of the mesh it already has, and below
+        /// that its bounding box.
+        bool scaleExhausted = false;
+        /// Set when decimation in turn stopped removing enough to be
+        /// worth the rewrite (Render_SimplifyMinReduction) -- the rung
+        /// below deflection is spent too, and the next step is the
+        /// bounding box. Separate from scaleExhausted because the two
+        /// are different exhaustions with different next steps, and
+        /// one flag doing both jobs would send an object to its box
+        /// the moment tessellation saturated, which is exactly the
+        /// step the decimation rung exists to delay. Cleared wherever
+        /// scaleExhausted is: a shape that may be tessellated again
+        /// may be decimated again.
+        bool decimationSpent = false;
+
+        /// THE reset: a different TShape starts every claim over.
+        void rebind(const void *tsh)
+        {
+            if (anchor == tsh)
+                return;
+            *this = MeshLadderState();
+            anchor = tsh;
+        }
+        /// Climbing out of a pressure box (the coarse mesh of a boxed
+        /// descent arrived): the object may be tessellated again, so
+        /// the flags that sent it to the box are spent. The scale
+        /// resets WITH the flags -- the worker meshed at the unscaled
+        /// rung deflection, and a rebuild still asking scale-x coarser
+        /// would refuse that mesh and re-tessellate inline on the GUI
+        /// thread, the stall the stand-in and the pool exist to avoid.
+        /// One rung, one statement of it.
+        void resetDescent()
+        {
+            errorScale = 1.0;
+            scaleExhausted = false;
+            decimationSpent = false;
+        }
+    };
+    MeshLadderState meshLadder;
     bool UpdatingColor;
     bool highlightFaceEdges = false;
 
