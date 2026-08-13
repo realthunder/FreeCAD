@@ -74,6 +74,26 @@ public:
     /// destructor
     ~ViewProviderPartExt() override;
 
+    /// Why the dynamic-scale descent stopped re-tessellating a shape.
+    /// The two non-No states are DIFFERENT CLAIMS, and one slot
+    /// carrying both is how a 63% became a 100% once already
+    /// (docs/SceneStreaming.md #13e):
+    /// - Proved: a coarser ask came back no smaller (after*10 >=
+    ///   before*9). Sound AT THE STEP THAT ESTABLISHED IT, and that
+    ///   is all: audited on the rack model (2026-08-13), one proved
+    ///   shape in five resumes shrinking at some coarser ask, so a
+    ///   skip keyed on this claim -- alone or combined with the
+    ///   redundancy check's finer-resident case -- denies a real
+    ///   coarsening ~20% of the time and is REFUTED. Do not build
+    ///   one without re-running that audit (MeshCallProbe counts
+    ///   both halves).
+    /// - BoxChosen: the plan stopped because the scaled error passed
+    ///   the box threshold. The shape may well still coarsen; same
+    ///   verdict, worse numbers (~50%).
+    /// Public because the call probe that audits the two populations
+    /// lives outside the class.
+    enum class ScaleSpent : unsigned char { No, BoxChosen, Proved };
+
     // Display properties
     App::PropertyFloatConstraint Deviation;
     App::PropertyBool ControlPoints;
@@ -298,15 +318,18 @@ protected:
                           int &numTriangles, int &numNodes, int &numPoints,
                           int &numNorms, int &numFaces, int &numEdges,
                           int &numLines,
-                          /// Whether the caller has already proved this
-                          /// shape cannot be coarsened by tessellating
-                          /// it again (meshLadder.scaleExhausted). Such a
-                          /// rebuild's deflection keeps doubling away
-                          /// from a mesh that will never move, so the
-                          /// tessellation call cannot achieve anything
-                          /// -- it is the caller's knowledge, and this
-                          /// function is static and cannot ask.
-                          bool tessellationSpent = false);
+                          /// Whether -- and on WHOSE authority -- the
+                          /// caller already knows re-tessellating this
+                          /// shape buys nothing (meshLadder.scaleSpent).
+                          /// A spent rebuild's deflection keeps doubling
+                          /// away from a mesh that will never move, so
+                          /// the call cannot achieve anything -- it is
+                          /// the caller's knowledge, and this function
+                          /// is static and cannot ask. The distinction
+                          /// between the two spent states is what the
+                          /// call probe audits before any skip may act
+                          /// on it.
+                          ScaleSpent tessellationSpent = ScaleSpent::No);
 
     bool VisualTouched;
     bool NormalsFromUV;
@@ -386,26 +409,30 @@ protected:
         /// OBJECT -- the plan spends the cheapest visible error in
         /// the scene, not a global coarseness.
         double errorScale = 1.0;
-        /// Set when a coarser re-tessellation came back no smaller
-        /// than what it replaced -- deflection has run out for this
-        /// shape. It does for most mechanical geometry sooner than
-        /// one would think: a planar face is two triangles at any
-        /// deflection (measured on the rack model, a 4x coarser
-        /// tessellation removed only 19% of the primitives). Once set
-        /// the object stops paying for re-tessellations that buy
-        /// nothing and goes to a representation that actually drops
-        /// faces: decimation of the mesh it already has, and below
-        /// that its bounding box.
-        bool scaleExhausted = false;
+        /// Non-No when deflection has run out for this shape and the
+        /// descent stops re-tessellating. It does for most mechanical
+        /// geometry sooner than one would think: a planar face is two
+        /// triangles at any deflection (measured on the rack model, a
+        /// 4x coarser tessellation removed only 19% of the
+        /// primitives). Once set the object stops paying for
+        /// re-tessellations that buy nothing and goes to a
+        /// representation that actually drops faces: decimation of
+        /// the mesh it already has, and below that its bounding box.
+        /// The VALUE says which claim stopped it -- a measured proof
+        /// or a mere box choice (see ScaleSpent); the behaviour here
+        /// is the same for both, but what a skip may safely do with
+        /// each is not. Proved is never downgraded to BoxChosen: a
+        /// proof outlives the plan's pricing.
+        ScaleSpent scaleSpent = ScaleSpent::No;
         /// Set when decimation in turn stopped removing enough to be
         /// worth the rewrite (Render_SimplifyMinReduction) -- the rung
         /// below deflection is spent too, and the next step is the
-        /// bounding box. Separate from scaleExhausted because the two
+        /// bounding box. Separate from scaleSpent because the two
         /// are different exhaustions with different next steps, and
         /// one flag doing both jobs would send an object to its box
         /// the moment tessellation saturated, which is exactly the
         /// step the decimation rung exists to delay. Cleared wherever
-        /// scaleExhausted is: a shape that may be tessellated again
+        /// scaleSpent is: a shape that may be tessellated again
         /// may be decimated again.
         bool decimationSpent = false;
 
@@ -428,7 +455,7 @@ protected:
         void resetDescent()
         {
             errorScale = 1.0;
-            scaleExhausted = false;
+            scaleSpent = ScaleSpent::No;
             decimationSpent = false;
         }
     };

@@ -384,14 +384,52 @@ struct MeshCallProbe {
         /// call. One sample, but it says the direction and the size.
         double worstRatio = 0, worstCurrent = 0, worstRequired = 0;
         /// Of those refusals, how many were on an object whose
-        /// tessellation is already SPENT -- one the descent has already
-        /// proved cannot coarsen further, and whose ask therefore keeps
+        /// tessellation is already SPENT -- one whose descent has
+        /// stopped re-tessellating, and whose ask therefore keeps
         /// doubling away from a mesh that will never move again
         /// (ViewProviderExt onScaleDown, "re-tessellating buys
-        /// nothing"). If this tracks `too fine`, the refusal is not a
+        /// nothing"). If these track `too fine`, the refusal is not a
         /// deflection question at all: it is a call nobody should be
-        /// making.
-        std::size_t refusedSpent = 0;
+        /// making. Counted PER CLAIM, because only one of the two is a
+        /// proof: a Proved object's call is free to skip (a coarser
+        /// mesh was measured not to exist), while a BoxChosen object
+        /// may still coarsen, so skipping there pins memory exactly
+        /// the way accept-finer did (753/3381). The split is what
+        /// decides how much of the refusal mass a safe skip can claim.
+        std::size_t refusedSpentProved = 0;
+        std::size_t refusedSpentBox = 0;
+        /// The other half of the same audit: calls on a spent object
+        /// that REBUILT anyway. For a skip keyed on the claim rather
+        /// than on the redundancy check, every one of these is a
+        /// rebuild the skip would have wrongly suppressed -- the WRONG
+        /// column of that skip, and the number that decides whether
+        /// `Proved` is actually a proof about future calls or only
+        /// about the one that established it.
+        /// MEASURED (rack model audits, 2026-08-13): 395 and 426
+        /// proved rebuilds against 1548 and 1689 claims over two runs
+        /// -- the flag-only skip is refuted at ~20% WRONG.
+        std::size_t rebuiltSpentProved = 0;
+        std::size_t rebuiltSpentBox = 0;
+        /// The same two cells restricted to calls the check had
+        /// refused ONLY because the resident mesh is finer than the
+        /// ask (TooFine). This is the audit of the COMBINED rule --
+        /// skip when the check's one unprovable case coincides with
+        /// the descent's proof -- which survives residency changes
+        /// the flag alone cannot see: a call whose verdict was
+        /// NoTriangulation or TooCoarse (a demote dropped the rung)
+        /// is still made under the combined rule, so its rebuild is
+        /// not wrongly suppressed and must not be counted against it.
+        /// MEASURED (rack model audit, 2026-08-13): 422 of the 426
+        /// proved rebuilds WERE finer-only -- the combined rule is
+        /// refuted by the same 20% that killed the flag-only skip.
+        /// The proof is sound at the step that established it and
+        /// LEAKY as a permanent claim: as the ask keeps doubling, one
+        /// proved shape in five resumes shrinking at some coarser
+        /// deflection, and those rebuilds are real memory the skip
+        /// would forgo. No spent-keyed skip ships; these counters
+        /// stay as the guard that keeps that conclusion measured.
+        std::size_t finerRebuiltProved = 0;
+        std::size_t finerRebuiltBox = 0;
     };
     static Stats &stats()
     {
@@ -405,8 +443,9 @@ struct MeshCallProbe {
     /// What the redundancy check said about the call being made anyway,
     /// so this can score the check against the only authority there is.
     MeshVerdict verdict;
-    /// Whether the object had already proved it cannot coarsen.
-    bool spent = false;
+    /// Whether -- and on whose authority -- the object's descent had
+    /// already stopped re-tessellating (proof vs box choice).
+    ViewProviderPartExt::ScaleSpent spent = ViewProviderPartExt::ScaleSpent::No;
     int trisBefore = 0, facesBefore = 0, facesTotal = 0;
     double residentMin = 0.0, residentMax = 0.0;
     std::chrono::high_resolution_clock::time_point start;
@@ -434,7 +473,8 @@ struct MeshCallProbe {
     }
 
     MeshCallProbe(const TopoDS_Shape &s, double deflection,
-                  const MeshVerdict &v, bool tessellationSpent)
+                  const MeshVerdict &v,
+                  ViewProviderPartExt::ScaleSpent tessellationSpent)
         : shape(s), asked(deflection), active(levelDebugOn()), verdict(v),
           spent(tessellationSpent)
     {
@@ -465,6 +505,16 @@ struct MeshCallProbe {
             st.lastAsked = asked;
             st.lastResidentMin = residentMin;
             st.lastResidentMax = residentMax;
+            if (spent == ViewProviderPartExt::ScaleSpent::Proved) {
+                ++st.rebuiltSpentProved;
+                if (verdict.why == MeshRefusal::TooFine)
+                    ++st.finerRebuiltProved;
+            }
+            else if (spent == ViewProviderPartExt::ScaleSpent::BoxChosen) {
+                ++st.rebuiltSpentBox;
+                if (verdict.why == MeshRefusal::TooFine)
+                    ++st.finerRebuiltBox;
+            }
         }
         else
             st.timeValidated += elapsed;
@@ -477,8 +527,10 @@ struct MeshCallProbe {
             // is costing the saving, rather than that some reason is.
             ++st.missed;
             ++st.refused[std::size_t(verdict.why)];
-            if (spent)
-                ++st.refusedSpent;
+            if (spent == ViewProviderPartExt::ScaleSpent::Proved)
+                ++st.refusedSpentProved;
+            else if (spent == ViewProviderPartExt::ScaleSpent::BoxChosen)
+                ++st.refusedSpentBox;
             if (verdict.required > 0.0) {
                 const double ratio = verdict.current / verdict.required;
                 const double off = ratio > 1.0 ? ratio : 1.0 / std::max(ratio, 1e-9);
@@ -586,8 +638,10 @@ struct VisualSplitReporter {
             Base::Console().Message(
                 "visual build: unclaimed by reason -- no faces %zu, no "
                 "triangulation %zu, too coarse %zu, too fine %zu, bad "
-                "indices %zu, free edge %zu; %zu of them on an object "
-                "whose tessellation was already SPENT; widest deflection "
+                "indices %zu, free edge %zu; on SPENT objects %zu by "
+                "proof + %zu by box choice, and spent calls that REBUILT "
+                "anyway: %zu proved (%zu with only a finer resident) + "
+                "%zu box (%zu finer); widest deflection "
                 "miss %.6f vs %.6f required (x%.2f)\n",
                 ms.refused[std::size_t(MeshRefusal::NoFaces)],
                 ms.refused[std::size_t(MeshRefusal::NoTriangulation)],
@@ -595,7 +649,9 @@ struct VisualSplitReporter {
                 ms.refused[std::size_t(MeshRefusal::TooFine)],
                 ms.refused[std::size_t(MeshRefusal::BadIndices)],
                 ms.refused[std::size_t(MeshRefusal::FreeEdge)],
-                ms.refusedSpent,
+                ms.refusedSpentProved, ms.refusedSpentBox,
+                ms.rebuiltSpentProved, ms.finerRebuiltProved,
+                ms.rebuiltSpentBox, ms.finerRebuiltBox,
                 ms.worstCurrent, ms.worstRequired, ms.worstRatio);
         }
         if (ms.calls || ms.checks)
@@ -4417,7 +4473,7 @@ void ViewProviderPartExt::updateVisual()
     // it is taken only once decimation has been tried and has itself
     // stopped paying (see simplifyVisualInPlace at the end of the
     // build, which is what sets decimationSpent).
-    if (buildCoarseStandIn(meshLadder.scaleExhausted
+    if (buildCoarseStandIn(meshLadder.scaleSpent != ScaleSpent::No
                            && meshLadder.decimationSpent)) {
         VisualTouched = false;
         setHighlightedFaces(DiffuseColor.getValues());
@@ -4578,7 +4634,7 @@ void ViewProviderPartExt::updateVisual()
                          faceset, lineset, nodeset,
                          numTriangles, numNodes, numPoints, numNorms,
                          numFaces, numEdges, numLines,
-                         meshLadder.scaleExhausted);
+                         meshLadder.scaleSpent);
 
         // The scene server can now re-tessellate this shape at a
         // coarser deviation when a viewer asks for a declared level of
@@ -4665,13 +4721,16 @@ void ViewProviderPartExt::updateVisual()
                 // nothing: only a representation that drops FACES does,
                 // and the bounding box is the one this class can build
                 // today. updateVisual takes that path off the flag.
-                if (meshLadder.scaleExhausted
+                if (meshLadder.scaleSpent != ScaleSpent::No
                     || (boxError > 0.0 && scaledError >= boxError)) {
                     // The scale still advances here, synchronously: no
                     // build can fail to land, and it is what grows the
                     // decimation rung's grid step over step.
                     meshLadder.errorScale = nextScale;
-                    meshLadder.scaleExhausted = true;
+                    // The threshold is a CHOICE, not a proof, and must
+                    // not overwrite one: a Proved shape stays Proved.
+                    if (meshLadder.scaleSpent == ScaleSpent::No)
+                        meshLadder.scaleSpent = ScaleSpent::BoxChosen;
                     updateVisual();
                     return;
                 }
@@ -4706,7 +4765,7 @@ void ViewProviderPartExt::updateVisual()
                         // discovering that once per step.
                         if (before > 0 && after * 10 >= before * 9
                             && meshLadder.anchor == tsh)
-                            meshLadder.scaleExhausted = true;
+                            meshLadder.scaleSpent = ScaleSpent::Proved;
                         updateVisual();
                     });
             };
@@ -4734,7 +4793,8 @@ void ViewProviderPartExt::updateVisual()
         // units: builtError is relative to the diagonal and carries
         // the error scale, so each descent step clusters coarser than
         // the last and the sequence terminates.
-        if (meshLadder.scaleExhausted && !meshLadder.decimationSpent
+        if (meshLadder.scaleSpent != ScaleSpent::No
+                && !meshLadder.decimationSpent
                 && builtError > 0.0f && shapeDiag > 0.0) {
             if (!simplifyVisualInPlace(double(builtError) * shapeDiag,
                                        shapeDiag, builtError)) {
@@ -4780,7 +4840,7 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         SoBrepPointSet *nodeset,
         int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
         int &numFaces, int &numEdges, int &numLines,
-        bool tessellationSpent)
+        ScaleSpent tessellationSpent)
 {
     std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
     TopLoc_Location aLoc;
