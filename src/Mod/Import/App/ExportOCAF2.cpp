@@ -302,73 +302,95 @@ void ExportOCAF2::setupObject(TDF_Label label,
     // varies -- per-face colours alone keep riding the colour labels.
     if (getShapeAppearance) {
         std::vector<App::Material> faceMats;
-        if (getShapeAppearance(obj, faceMats) && faceMats.size() > 1) {
+        if (getShapeAppearance(obj, faceMats) && !faceMats.empty()) {
             Handle(XCAFDoc_VisMaterialTool) aMatTool =
                 XCAFDoc_DocumentTool::VisMaterialTool(pDoc->Main());
 
-            // The OCCT 7.3 sub-shape workaround, as in the colour loop.
-            Handle(XCAFDoc_ShapeMapTool) mapTool;
-            if (!label.FindAttribute(XCAFDoc_ShapeMapTool::GetID(), mapTool)) {
-                TopoDS_Shape aShape = aShapeTool->GetShape(label);
-                if (!aShape.IsNull()) {
-                    mapTool = XCAFDoc_ShapeMapTool::Set(label);
-                    mapTool->SetShape(aShape);
+            auto makeVisMat = [&](const App::Material& m) -> Handle(XCAFDoc_VisMaterial) {
+                Handle(XCAFDoc_VisMaterial) visMat = new XCAFDoc_VisMaterial;
+                XCAFDoc_VisMaterialCommon common;
+                common.IsDefined = Standard_True;
+                common.AmbientColor = Tools::convertColor(m.ambientColor).GetRGB();
+                common.DiffuseColor = Tools::convertColor(m.diffuseColor).GetRGB();
+                common.SpecularColor = Tools::convertColor(m.specularColor).GetRGB();
+                common.EmissiveColor = Tools::convertColor(m.emissiveColor).GetRGB();
+                common.Shininess = m.shininess;
+                common.Transparency = m.transparency;
+                visMat->SetCommonMaterial(common);
+                if (objPbr.IsDefined) {
+                    // Keep the object's factors and textures; the fields
+                    // the appearance owns override.
+                    XCAFDoc_VisMaterialPBR pbr = objPbr;
+                    App::Color base = m.diffuseColor;
+                    base.a = 1.0f - m.transparency;
+                    pbr.BaseColor = Tools::convertColor(base);
+                    pbr.EmissiveFactor.SetValues(m.emissiveColor.r,
+                                                 m.emissiveColor.g,
+                                                 m.emissiveColor.b);
+                    visMat->SetPbrMaterial(pbr);
+                }
+                return visMat;
+            };
+
+            bool uniform = true;
+            for (size_t i = 1; i < faceMats.size(); ++i) {
+                if (!(faceMats[i] == faceMats[0])) {
+                    uniform = false;
+                    break;
                 }
             }
+            if (uniform) {
+                // A whole-object material (the uniform-emissive case):
+                // one material on the object label, no face sub shapes.
+                std::string matName(obj->getNameInDocument());
+                matName += "_mat";
+                TDF_Label matLabel = aMatTool->AddMaterial(
+                    makeVisMat(faceMats[0]), TCollection_AsciiString(matName.c_str()));
+                aMatTool->SetShapeMaterial(label, matLabel);
+            }
+            else {
+                // The OCCT 7.3 sub-shape workaround, as in the colour loop.
+                Handle(XCAFDoc_ShapeMapTool) mapTool;
+                if (!label.FindAttribute(XCAFDoc_ShapeMapTool::GetID(), mapTool)) {
+                    TopoDS_Shape aShape = aShapeTool->GetShape(label);
+                    if (!aShape.IsNull()) {
+                        mapTool = XCAFDoc_ShapeMapTool::Set(label);
+                        mapTool->SetShape(aShape);
+                    }
+                }
 
-            std::vector<std::pair<App::Material, TDF_Label>> matLabels;
-            int numFaces = (int)shape.countSubShapes(TopAbs_FACE);
-            int count = std::min(numFaces, (int)faceMats.size());
-            for (int i = 0; i < count; ++i) {
-                const App::Material& m = faceMats[i];
-                TDF_Label matLabel;
-                for (auto& v : matLabels) {
-                    if (v.first == m) {
-                        matLabel = v.second;
-                        break;
+                std::vector<std::pair<App::Material, TDF_Label>> matLabels;
+                int numFaces = (int)shape.countSubShapes(TopAbs_FACE);
+                int count = std::min(numFaces, (int)faceMats.size());
+                for (int i = 0; i < count; ++i) {
+                    const App::Material& m = faceMats[i];
+                    TDF_Label matLabel;
+                    for (auto& v : matLabels) {
+                        if (v.first == m) {
+                            matLabel = v.second;
+                            break;
+                        }
                     }
-                }
-                if (matLabel.IsNull()) {
-                    Handle(XCAFDoc_VisMaterial) visMat = new XCAFDoc_VisMaterial;
-                    XCAFDoc_VisMaterialCommon common;
-                    common.IsDefined = Standard_True;
-                    common.AmbientColor = Tools::convertColor(m.ambientColor).GetRGB();
-                    common.DiffuseColor = Tools::convertColor(m.diffuseColor).GetRGB();
-                    common.SpecularColor = Tools::convertColor(m.specularColor).GetRGB();
-                    common.EmissiveColor = Tools::convertColor(m.emissiveColor).GetRGB();
-                    common.Shininess = m.shininess;
-                    common.Transparency = m.transparency;
-                    visMat->SetCommonMaterial(common);
-                    if (objPbr.IsDefined) {
-                        // Keep the object's factors and textures; the fields
-                        // the appearance owns override per face.
-                        XCAFDoc_VisMaterialPBR pbr = objPbr;
-                        App::Color base = m.diffuseColor;
-                        base.a = 1.0f - m.transparency;
-                        pbr.BaseColor = Tools::convertColor(base);
-                        pbr.EmissiveFactor.SetValues(m.emissiveColor.r,
-                                                     m.emissiveColor.g,
-                                                     m.emissiveColor.b);
-                        visMat->SetPbrMaterial(pbr);
+                    if (matLabel.IsNull()) {
+                        std::string matName(obj->getNameInDocument());
+                        matName += "_mat";
+                        matName += std::to_string(matLabels.size() + 1);
+                        matLabel = aMatTool->AddMaterial(
+                            makeVisMat(m), TCollection_AsciiString(matName.c_str()));
+                        matLabels.emplace_back(m, matLabel);
                     }
-                    std::string matName(obj->getNameInDocument());
-                    matName += "_mat";
-                    matName += std::to_string(matLabels.size() + 1);
-                    matLabel =
-                        aMatTool->AddMaterial(visMat, TCollection_AsciiString(matName.c_str()));
-                    matLabels.emplace_back(m, matLabel);
+                    auto faceShape = shape.getSubShape(TopAbs_FACE, i + 1);
+                    if (faceShape.IsNull()) {
+                        continue;
+                    }
+                    TDF_Label subLabel = aShapeTool->AddSubShape(label, faceShape);
+                    if (subLabel.IsNull()) {
+                        FC_WARN("Failed to add face " << (i + 1) << " of "
+                                                      << obj->getFullName());
+                        continue;
+                    }
+                    aMatTool->SetShapeMaterial(subLabel, matLabel);
                 }
-                auto faceShape = shape.getSubShape(TopAbs_FACE, i + 1);
-                if (faceShape.IsNull()) {
-                    continue;
-                }
-                TDF_Label subLabel = aShapeTool->AddSubShape(label, faceShape);
-                if (subLabel.IsNull()) {
-                    FC_WARN("Failed to add face " << (i + 1) << " of "
-                                                  << obj->getFullName());
-                    continue;
-                }
-                aMatTool->SetShapeMaterial(subLabel, matLabel);
             }
         }
     }

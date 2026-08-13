@@ -860,11 +860,26 @@ through the split path with its textures. Deviations from the sketch:
 - Known limits, accepted: specular does not round-trip exactly (a
   Common-only material is converted Phong-to-PBR on write and back on
   read; dominant channel and magnitude survive, the exact value does
-  not); a glTF whose faces all share one emissive stays on the
-  colour+Render_* path, so that uniform emissive still does not reach
-  `ShapeAppearance`; ambient is OCCT's conversion default, so a mesh
-  with materials on some faces and none on others reads as ambient
-  variance and takes the material path harmlessly.
+  not -- exactness would need KHR_materials_specular, which OCCT's
+  glTF code does not know at all); ambient is OCCT's conversion
+  default (glTF has no ambient), so a mesh with materials on some
+  faces and none on others reads as ambient variance and takes the
+  material path harmlessly.
+- **Lifted 2026-08-13: uniform emissive.** The variance gate first
+  shipped dropping a uniform emissive (all faces one lit material) to
+  avoid re-skinning ordinary imports. That lost light with no other
+  channel to carry it -- emissive is the one common field with an
+  unambiguous default (black) whose non-default value is always
+  meaningful. The gate now also accepts a uniform lit emissive:
+  import falls back to the shape label's material when no face label
+  carries one (a single-primitive mesh, or a whole-object style
+  merged by our own exporter), the Gui importer still collapses the
+  uniform list to a single entry, and export writes one visualization
+  material on the object label whenever entry 0's emissive is lit
+  even though the appearance varies only in diffuse. Uniform specular
+  and shininess still keep the colour path -- they only re-skin what
+  the default look approximates. Verified: emissive 0.9/0.3/0.1
+  imports and round-trips bit-exact through glb.
 
 ### Stage 5 -- STEP, both directions
 

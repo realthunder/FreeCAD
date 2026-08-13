@@ -487,6 +487,24 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
     // representation -- glTF materials are PBR, and OCCT owns that
     // conversion. Materials are shared between labels, so convert each
     // handle once.
+    auto convert = [](const Handle(XCAFDoc_VisMaterial)& visMat) -> App::Material {
+        App::Material mat(App::Material::DEFAULT);
+        XCAFDoc_VisMaterialCommon common = visMat->HasCommonMaterial()
+            ? visMat->CommonMaterial()
+            : visMat->ConvertToCommonMaterial();
+        if (common.IsDefined) {
+            mat.ambientColor = Tools::convertColor(Quantity_ColorRGBA(common.AmbientColor));
+            mat.specularColor = Tools::convertColor(Quantity_ColorRGBA(common.SpecularColor));
+            mat.emissiveColor = Tools::convertColor(Quantity_ColorRGBA(common.EmissiveColor));
+            mat.shininess = common.Shininess;
+        }
+        return mat;
+    };
+    auto hasEmissive = [](const App::Material& mat) {
+        return mat.emissiveColor.r > 0.004f || mat.emissiveColor.g > 0.004f
+            || mat.emissiveColor.b > 0.004f;
+    };
+
     std::vector<App::Material> mats;
     std::unordered_map<const XCAFDoc_VisMaterial*, App::Material> converted;
     bool found = false;
@@ -506,15 +524,7 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
             mat = it->second;
         }
         else {
-            XCAFDoc_VisMaterialCommon common = visMat->HasCommonMaterial()
-                ? visMat->CommonMaterial()
-                : visMat->ConvertToCommonMaterial();
-            if (common.IsDefined) {
-                mat.ambientColor = Tools::convertColor(Quantity_ColorRGBA(common.AmbientColor));
-                mat.specularColor = Tools::convertColor(Quantity_ColorRGBA(common.SpecularColor));
-                mat.emissiveColor = Tools::convertColor(Quantity_ColorRGBA(common.EmissiveColor));
-                mat.shininess = common.Shininess;
-            }
+            mat = convert(visMat);
             converted.emplace(visMat.get(), mat);
         }
         if (mats.empty()) {
@@ -529,11 +539,34 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
         }
     }
     if (!found) {
-        return false;
+        // No face label carries a material: a single-primitive mesh (or a
+        // whole-object style merged by our own exporter) has it on the
+        // shape label itself. Only its emissive matters -- see below.
+        Handle(XCAFDoc_VisMaterial) visMat = aMaterialTool->GetShapeMaterial(label);
+        if (visMat.IsNull() || visMat->IsEmpty()) {
+            TDF_Label ref;
+            if (XCAFDoc_ShapeTool::IsReference(label)
+                && XCAFDoc_ShapeTool::GetReferredShape(label, ref)) {
+                visMat = aMaterialTool->GetShapeMaterial(ref);
+            }
+        }
+        if (!visMat.IsNull() && !visMat->IsEmpty()) {
+            App::Material mat = convert(visMat);
+            if (hasEmissive(mat)) {
+                mats.assign(numFaces, mat);
+                found = true;
+            }
+        }
+        if (!found) {
+            return false;
+        }
     }
 
-    // Only meaningful when a field a colour list cannot carry varies
-    // across the faces; a uniform appearance keeps the colour path.
+    // Meaningful when a field a colour list cannot carry varies across
+    // the faces -- or when a uniform emissive is lit at all: emissive has
+    // an unambiguous default (black) and no other property carries it, so
+    // dropping it loses light, while a uniform specular or shininess only
+    // re-skins what the default look already approximates.
     bool varies = false;
     for (int idx = 1; idx < numFaces; ++idx) {
         if (mats[idx].ambientColor != mats[0].ambientColor
@@ -544,7 +577,7 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
             break;
         }
     }
-    if (!varies) {
+    if (!varies && !hasEmissive(mats[0])) {
         return false;
     }
 

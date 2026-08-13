@@ -663,12 +663,18 @@ private:
 
     static bool getShapeAppearance(App::DocumentObject* obj, std::vector<App::Material>& mats)
     {
-        // Per-face whole materials, only when the appearance says
-        // something the colour labels cannot: a field beyond diffuse
-        // varying across the faces.
+        // Whole materials, only when the appearance says something the
+        // colour labels cannot: a field beyond diffuse varying across the
+        // faces, or a uniform emissive that is lit at all (no other
+        // export channel carries emissive).
         auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
             Gui::Application::Instance->getViewProvider(obj));
-        if (!vp || vp->ShapeAppearance.variesOnlyInDiffuse()) {
+        if (!vp) {
+            return false;
+        }
+        const App::Color e = vp->ShapeAppearance.getEmissiveColor(0);
+        bool emissive = e.r > 0.004f || e.g > 0.004f || e.b > 0.004f;
+        if (vp->ShapeAppearance.variesOnlyInDiffuse() && !emissive) {
             return false;
         }
         int count = vp->ShapeAppearance.getSize();
@@ -676,7 +682,7 @@ private:
         for (int i = 0; i < count; ++i) {
             mats.push_back(vp->ShapeAppearance.getMaterial(i));
         }
-        return mats.size() > 1;
+        return !mats.empty();
     }
 
     static bool getRenderMaterial(App::DocumentObject* obj, Import::RenderMaterial& mat)
