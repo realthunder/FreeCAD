@@ -1688,12 +1688,15 @@ bool GeometryUtils::isLine(TopoDS_Edge occEdge)
     Base::Vector3d vs = DrawUtil::toVector3d(s);
     Base::Vector3d ve = DrawUtil::toVector3d(e);
     double endLength = (vs - ve).Length();
-    int low = 0;
-    int high = spline->NbPoles() - 1;
+    //OCC arrays are 1-based.  Poles() assigns over our array, and since OCCT 8
+    //that assignment carries the source bounds with it, so a 0-based array here
+    //silently becomes 1-based and every access below throws.
+    int low = 1;
+    int high = spline->NbPoles();
     TColgp_Array1OfPnt poles(low, high);
     spline->Poles(poles);
     double lenTotal = 0.0;
-    for (int i = 0; i < high; i++) {
+    for (int i = low; i < high; i++) {
         gp_Pnt p1 = poles(i);
         Base::Vector3d v1 = DrawUtil::toVector3d(p1);
         gp_Pnt p2 = poles(i+1);
