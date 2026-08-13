@@ -279,6 +279,14 @@ def run():
         v.Render_LevelDebug = True
         if RELEASE != "":
             v.Render_LevelPressureRelease = float(RELEASE)
+        # The cull hidden-share line ("render culling: instances hidden
+        # ...") is gated behind the per-view timing switch, and the
+        # saved document pins it false -- the 2026-08-13 A/B/C arms ran
+        # without it and could not prove the culling did anything at
+        # all. Occlusion arms only: the switch is itself an
+        # intervention, so the baseline arm stays clean.
+        if OCCLUSION:
+            v.RenderDebug_Timing = True
 
         # Gate 3: the camera is placed ONCE and never touched again.
         v.viewIsometric()
