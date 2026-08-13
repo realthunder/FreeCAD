@@ -3340,6 +3340,9 @@ it**, and audit the two populations separately: the prize is whatever
 share of the 2787 is the first kind, and it is claimable with no memory
 cost at all.
 
+*(Done, and the audit went the other way: the proof does not survive
+the descent, and no spent-keyed skip ships -- see 13g.)*
+
 ### 13f -- corrections from a code review, and the re-taken number
 
 A full review of this workstream (2026-08-12) found five defects; four
@@ -3410,8 +3413,69 @@ ending in a wrong render or an inline GUI-thread re-tessellation:
   synchronous commit, since nothing can fail to land there and the
   advancing scale is what grows the decimation grid.
 
-Still open from the same review, in likely severity order: the worker's
-`meshedCopy` can race GUI-thread triangulation mutation (needs TSan on
-a mass descent before surgery); the three TShape identity anchors are
-raw addresses reset at three different sites (an address reuse can fake
-`exactResident`); the decimated rung zeroes texture coordinates.
+The review's still-open list has since been worked off (2026-08-13):
+TSan on a mass-descent churn harness showed the `meshedCopy` race never
+fires (what fired instead was OCCT's B-spline `Resolution` lazy cache,
+fixed in the OCCT fork with atomics); the three raw TShape anchors are
+one `MeshLadderState` with one rebind; the decimated rung interpolates
+texture coordinates instead of zeroing them.
+
+### 13g -- the flag split, audited: the proof does not survive the descent
+
+13e ended with a plan: split `MeshErrorScaleExhausted` into its two
+claims, audit them separately, and skip the tessellation call only for
+the population whose exhaustion is a PROOF -- that share was to be
+"claimable with no memory cost at all". The split shipped
+(`MeshLadderState::scaleSpent`, a three-state enum: `No` / `BoxChosen`
+/ `Proved`, with `Proved` never downgraded by a later box choice), and
+`MeshCallProbe` learned to count BOTH halves of the audit per claim:
+the refusals that proved redundant (the skip's prize) and the calls on
+spent objects that rebuilt anyway (the skip's WRONG column, which the
+prize-only counter of 13e could never see).
+
+Audited on the rack model (audit arm, skip off, 64MB, real GPU, two
+runs -- one converged at 429s, one not converged at 600s; only
+per-call arithmetic is compared across them):
+
+| calls on SPENT objects | run 1 | run 2 |
+|---|---|---|
+| refused, and the call proved redundant: `Proved` | 1548 | 1689 |
+| ... `BoxChosen` | 570 | 568 |
+| REBUILT anyway: `Proved` | **395** | **426** |
+| ... of those, verdict was finer-resident only | (not counted) | **422** |
+| ... `BoxChosen` | 592 | 579 |
+
+Three verdicts, one worse than the next:
+
+- **The flag-only skip is refuted.** ~20% of the calls on `Proved`
+  objects rebuild the mesh -- the same rate that convicted accept-finer
+  (753/3381 = 22%).
+- **The combined rule is refuted by the same number.** The rescue
+  hypothesis was that those rebuilds came from residency changes the
+  redundancy check would still catch (`NoTriangulation`, `TooCoarse`
+  after a demote dropped the rung), so skipping only on *finer-resident
+  refusal AND proof* would be safe. Run 2's cross says no: 422 of the
+  426 proved rebuilds were finer-resident cases -- precisely the calls
+  the combined rule would have suppressed.
+- **The proof itself is the defect.** `after*10 >= before*9` is sound
+  at the step that establishes it and leaky as a permanent claim: as
+  the ask keeps doubling past that step, one proved shape in five
+  RESUMES shrinking at some coarser deflection. Those rebuilds are not
+  audit noise; they are OCCT reclaiming real memory on objects the
+  ladder had declared exhausted. A skip would not have saved wasted
+  work -- it would have forgone the reclaim.
+
+So: no spent-keyed skip ships, the shipped strict check
+(`Render_MeshSkipRedundant`, WRONG 0 in both runs again) remains the
+whole of 13e's claim, and the counters stay in `MeshCallProbe` as the
+guard that keeps this conclusion measured rather than remembered.
+
+What the audit leaves on the table, stated so it is not rediscovered
+as a surprise: the residual validated-only calls on spent objects cost
+~1.7-1.9s of GUI time per mass descent (~1700 calls at ~1.1ms), and
+the descent currently strands the one-in-five late coarsening because
+`Proved` is permanent until a climb resets it. Re-proving per step
+(clearing `Proved` when the scale advances) would capture those
+coarsenings at the price of resuming the ~80% futile re-tessellations
+the flag exists to stop -- pool-side at ~26ms each, not GUI-side. That
+is a trade to be measured, not assumed, and nothing here decides it.
