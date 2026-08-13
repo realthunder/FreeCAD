@@ -268,6 +268,9 @@ struct ImportOCAF2::ColorInfo {
     Part::TopoShape tshape;
     std::vector<App::Color> faceColors;
     std::vector<App::Color> edgeColors;
+    /// One whole material per face; filled by scanFaceMaterials only when
+    /// a field beyond diffuse varies across the faces
+    std::vector<App::Material> faceMaterials;
     App::Color faceColor;
     App::Color edgeColor;
     bool hasFaceColor = false;
@@ -468,6 +471,96 @@ void ImportOCAF2::scanElementColors(TDF_Label label,
     }
 }
 
+bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const Info& info)
+{
+    Part::TopoShape& tshape = colors.tshape;
+    TDF_LabelSequence seq;
+    if (label.IsNull() || aMaterialTool.IsNull() || !aShapeTool->GetSubShapes(label, seq)) {
+        return false;
+    }
+    int numFaces = (int)tshape.countSubShapes(TopAbs_FACE);
+    if (!numFaces) {
+        return false;
+    }
+
+    // The fields beyond diffuse come from the material's common (Phong)
+    // representation -- glTF materials are PBR, and OCCT owns that
+    // conversion. Materials are shared between labels, so convert each
+    // handle once.
+    std::vector<App::Material> mats;
+    std::unordered_map<const XCAFDoc_VisMaterial*, App::Material> converted;
+    bool found = false;
+    for (int i = 1; i <= seq.Length(); ++i) {
+        TDF_Label l = seq.Value(i);
+        TopoDS_Shape subShape = aShapeTool->GetShape(l);
+        if (subShape.IsNull() || !TopExp_Explorer(subShape, TopAbs_FACE).More()) {
+            continue;
+        }
+        Handle(XCAFDoc_VisMaterial) visMat = aMaterialTool->GetShapeMaterial(l);
+        if (visMat.IsNull() || visMat->IsEmpty()) {
+            continue;
+        }
+        App::Material mat(App::Material::DEFAULT);
+        auto it = converted.find(visMat.get());
+        if (it != converted.end()) {
+            mat = it->second;
+        }
+        else {
+            XCAFDoc_VisMaterialCommon common = visMat->HasCommonMaterial()
+                ? visMat->CommonMaterial()
+                : visMat->ConvertToCommonMaterial();
+            if (common.IsDefined) {
+                mat.ambientColor = Tools::convertColor(Quantity_ColorRGBA(common.AmbientColor));
+                mat.specularColor = Tools::convertColor(Quantity_ColorRGBA(common.SpecularColor));
+                mat.emissiveColor = Tools::convertColor(Quantity_ColorRGBA(common.EmissiveColor));
+                mat.shininess = common.Shininess;
+            }
+            converted.emplace(visMat.get(), mat);
+        }
+        if (mats.empty()) {
+            mats.assign(numFaces, App::Material(App::Material::DEFAULT));
+        }
+        for (TopExp_Explorer exp(subShape, TopAbs_FACE); exp.More(); exp.Next()) {
+            int idx = tshape.findShape(exp.Current()) - 1;
+            if (idx >= 0 && idx < numFaces) {
+                mats[idx] = mat;
+                found = true;
+            }
+        }
+    }
+    if (!found) {
+        return false;
+    }
+
+    // Only meaningful when a field a colour list cannot carry varies
+    // across the faces; a uniform appearance keeps the colour path.
+    bool varies = false;
+    for (int idx = 1; idx < numFaces; ++idx) {
+        if (mats[idx].ambientColor != mats[0].ambientColor
+            || mats[idx].specularColor != mats[0].specularColor
+            || mats[idx].emissiveColor != mats[0].emissiveColor
+            || mats[idx].shininess != mats[0].shininess) {
+            varies = true;
+            break;
+        }
+    }
+    if (!varies) {
+        return false;
+    }
+
+    // Diffuse and transparency ride the resolved face colours (the reader
+    // mirrors each material's base colour into the colour labels, and a
+    // colour label overrides).
+    for (int idx = 0; idx < numFaces; ++idx) {
+        App::Color c = (int)colors.faceColors.size() > idx ? colors.faceColors[idx]
+                                                           : info.faceColor;
+        mats[idx].diffuseColor = c;
+        mats[idx].transparency = 1.0f - c.a;
+    }
+    colors.faceMaterials = std::move(mats);
+    return true;
+}
+
 // glTF meshes may carry a distinct visualization material per face
 // (each glTF primitive imports as one face). A single object holds a
 // single Render_* material set, so when the face sub shape labels
@@ -607,6 +700,8 @@ bool ImportOCAF2::createObject(App::Document* doc,
     colors.hasFaceColor = info.hasFaceColor;
     colors.hasEdgeColor = info.hasEdgeColor;
 
+    scanFaceMaterials(label, colors, info);
+
     MaterialGroups matGroups;
     scanMaterialGroups(label, tshape, matGroups);
     if (matGroups.split) {
@@ -622,6 +717,7 @@ bool ImportOCAF2::createObject(App::Document* doc,
                 TopoDS_Compound comp;
                 builder.MakeCompound(comp);
                 std::vector<App::Color> childColors;
+                std::vector<App::Material> childMats;
                 for (int idx = 0; idx < numFaces; ++idx) {
                     if (faceGroup[idx] != g) {
                         continue;
@@ -630,6 +726,9 @@ bool ImportOCAF2::createObject(App::Document* doc,
                     childColors.push_back((int)colors.faceColors.size() > idx
                                               ? colors.faceColors[idx]
                                               : info.faceColor);
+                    if (!colors.faceMaterials.empty()) {
+                        childMats.push_back(colors.faceMaterials[idx]);
+                    }
                 }
                 if (childColors.empty()) {
                     continue;
@@ -642,7 +741,15 @@ bool ImportOCAF2::createObject(App::Document* doc,
                 }
                 applyFaceColors(child, {info.faceColor});
                 applyEdgeColors(child, {info.edgeColor});
-                applyFaceColors(child, childColors);
+                if (!childMats.empty()) {
+                    // The group shares its Render_* material, but the common
+                    // fields (emissive above all) may still differ inside it
+                    // -- they are not part of the grouping key.
+                    applyFaceMaterials(child, childMats);
+                }
+                else {
+                    applyFaceColors(child, childColors);
+                }
                 if (g > 0) {
                     applyRenderMaterial(child, groupMats[g - 1]);
                 }
@@ -662,7 +769,9 @@ bool ImportOCAF2::createObject(App::Document* doc,
 
     applyFaceColors(feature,{info.faceColor});
     applyEdgeColors(feature,{info.edgeColor});
-    if(colors.faceColors.size())
+    if (!colors.faceMaterials.empty())
+        applyFaceMaterials(feature, colors.faceMaterials);
+    else if(colors.faceColors.size())
         applyFaceColors(feature,colors.faceColors);
     if(colors.edgeColors.size())
         applyEdgeColors(feature,colors.edgeColors);
@@ -1307,6 +1416,8 @@ int ImportOCAF2::analyzeObject(TDF_Label label, const TopoDS_Shape& shape)
     mergeColor(hasFaceColors, info.faceColor, colors.faceColors);
     mergeColor(hasEdgeColors, info.edgeColor, colors.edgeColors);
 
+    scanFaceMaterials(label, colors, info);
+
     std::string internalName = colors.tshape.shapeName();
     RenderMaterial rmat;
     getRenderMaterial(label, rmat);
@@ -1321,6 +1432,7 @@ int ImportOCAF2::analyzeObject(TDF_Label label, const TopoDS_Shape& shape)
     op.hasEdgeColor = info.hasEdgeColor;
     op.faceColors = std::move(colors.faceColors);
     op.edgeColors = std::move(colors.edgeColors);
+    op.faceMaterials = std::move(colors.faceMaterials);
     op.material = std::move(rmat);
     return node;
 }
@@ -1737,7 +1849,10 @@ void ImportOCAF2::applyOp(ProgOp& op, int index)
         feature->Shape.setValue(op.shape);
         applyFaceColors(feature, {op.faceColor});
         applyEdgeColors(feature, {op.edgeColor});
-        if (!op.faceColors.empty()) {
+        if (!op.faceMaterials.empty()) {
+            applyFaceMaterials(feature, op.faceMaterials);
+        }
+        else if (!op.faceColors.empty()) {
             applyFaceColors(feature, op.faceColors);
         }
         if (!op.edgeColors.empty()) {

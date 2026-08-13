@@ -60,6 +60,26 @@ void ImportOCAFGui::applyFaceColors(Part::Feature* part, const std::vector<App::
     }
 }
 
+void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
+                                       const std::vector<App::Material>& mats)
+{
+    auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
+        Gui::Application::Instance->getViewProvider(part));
+    if (!vp || mats.empty()) {
+        return;
+    }
+    // Collapse a uniform list to one entry: a single-entry appearance is
+    // the whole-object form, whose scalar path every consumer handles.
+    if (std::all_of(mats.begin() + 1, mats.end(), [&](const App::Material& m) {
+            return m == mats[0];
+        })) {
+        vp->ShapeAppearance.setValue(mats[0]);
+    }
+    else {
+        vp->ShapeAppearance.setValues(mats);
+    }
+}
+
 void ImportOCAFGui::applyEdgeColors(Part::Feature* part, const std::vector<App::Color>& colors)
 {
     auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(

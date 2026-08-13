@@ -39,6 +39,7 @@
 #include <XCAFDoc_VisMaterial.hxx>
 #include <XCAFDoc_VisMaterialTool.hxx>
 
+#include <App/Material.h>
 #include <Base/Placement.h>
 #include <Base/Sequencer.h>
 #include <Mod/Part/App/TopoShape.h>
@@ -265,6 +266,7 @@ private:
         bool hasEdgeColor = false;
         std::vector<App::Color> faceColors;
         std::vector<App::Color> edgeColors;
+        std::vector<App::Material> faceMaterials;
         RenderMaterial material;
         // Group
         App::Color groupColor;
@@ -285,6 +287,12 @@ private:
                            bool& hasFaceColors,
                            bool& hasEdgeColors);
     void scanMaterialGroups(TDF_Label label, Part::TopoShape& tshape, MaterialGroups& groups);
+    /// Resolve each face label's visualization material into a whole
+    /// App::Material entry (diffuse from the already-resolved face
+    /// colours). Fills colors.faceMaterials and returns true only when a
+    /// field other than diffuse varies from face to face -- the case a
+    /// colour list cannot carry.
+    bool scanFaceMaterials(TDF_Label label, ColorInfo& colors, const Info& info);
 
     int newProgOp(ProgOp::Type type);
     int resolveOp(int node) const;
@@ -345,6 +353,11 @@ private:
     virtual void applyEdgeColors(Part::Feature*, const std::vector<App::Color>&)
     {}
     virtual void applyFaceColors(Part::Feature*, const std::vector<App::Color>&)
+    {}
+    /// Per-face whole materials (glTF visualization materials whose
+    /// fields beyond diffuse vary across faces); the Gui importer puts
+    /// them into the view provider's ShapeAppearance.
+    virtual void applyFaceMaterials(Part::Feature*, const std::vector<App::Material>&)
     {}
     virtual void applyElementColors(App::DocumentObject*, const std::map<std::string, App::Color>&)
     {}
