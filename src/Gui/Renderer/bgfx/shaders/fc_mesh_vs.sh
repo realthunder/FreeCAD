@@ -87,6 +87,8 @@ void main()
 	v_normal = mul(u_view, vec4(mul(model, vec4(a_normal, 0.0)).xyz,
 	                            0.0)).xyz;
 	v_color0 = u_instParams.x > 0.5 ? a_color0 : i_data4;
+	v_color1 = a_color1;
+	v_color2 = a_color2;
 	v_vpos = mul(u_view, wpos).xyz;
 	gl_Position.z += (u_params.w + fcPolygonOffsetSlope(v_vpos, v_normal))
 		* gl_Position.w;
@@ -98,6 +100,11 @@ void main()
 	gl_Position = mul(u_modelViewProj, vec4(a_position, 1.0));
 	v_normal = mul(u_modelView, vec4(a_normal, 0.0)).xyz;
 	v_color0 = a_color0;
+	// Per-face material stream (bound only for meshes that carry one;
+	// elsewhere the attributes read the API default, and the fragment
+	// stage multiplies them out — u_matEmissive.w selects).
+	v_color1 = a_color1;
+	v_color2 = a_color2;
 #ifdef TEXTURE
 	// GL texture matrix on (s, t, 0, 1); the per-fragment projective
 	// divide collapses to a per-vertex one (exact for affine matrices).

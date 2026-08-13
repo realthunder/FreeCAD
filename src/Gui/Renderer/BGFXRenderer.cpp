@@ -32,6 +32,8 @@ bgfx::VertexLayout SceneVertex::ms_layout;
 bool SceneVertex::ms_initialized = false;
 bgfx::VertexLayout ColorVertex::ms_layout;
 bool ColorVertex::ms_initialized = false;
+bgfx::VertexLayout MatVertex::ms_layout;
+bool MatVertex::ms_initialized = false;
 bgfx::VertexLayout TransientVertex::ms_layout;
 bool TransientVertex::ms_initialized = false;
 bgfx::VertexLayout PointVertex::ms_layout;

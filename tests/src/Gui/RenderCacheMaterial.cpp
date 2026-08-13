@@ -28,6 +28,8 @@
 #include <Gui/Inventor/SoFCVertexCache.h>
 #include <Gui/Inventor/SoFCRenderCache.h>
 #include <Gui/Inventor/SoFCRenderCacheManager.h>
+#include <Gui/Inventor/SoFCRendererBridge.h>
+#include <Gui/Renderer/Renderer.h>
 
 namespace {
 
@@ -109,6 +111,43 @@ protected:
         return nullptr;
     }
 
+    // The vertex cache behind that draw (stage 3: carries the baked
+    // per-face material stream).
+    SoFCVertexCache* triangleVertexCache()
+    {
+        manager.traverse(root, SbViewportRegion(256, 256));
+        SoFCRenderCache* cache = manager.getSceneCache();
+        if (!cache) {
+            return nullptr;
+        }
+        for (const auto& entry : cache->getVertexCaches(true)) {
+            if (entry.first.type == SoFCRenderCache::Material::Triangle
+                && !entry.second.empty()) {
+                return entry.second[0].cache;
+            }
+        }
+        return nullptr;
+    }
+
+    // Assert one vertex's 8 stream bytes spell face \a f's material.
+    static void expectVertexMaterial(const uint8_t* mats, int32_t v, int f)
+    {
+        const uint32_t emissive =
+            packed(kEmissive[f][0], kEmissive[f][1], kEmissive[f][2]);
+        const uint32_t specular =
+            packed(kSpecular[f][0], kSpecular[f][1], kSpecular[f][2]);
+        const auto shin = uint8_t(kShininess[f] * 255.0F + 0.5F);
+        const uint8_t* p = mats + size_t(v) * 8;
+        EXPECT_EQ(p[0], (emissive >> 24) & 0xff) << "vertex " << v;
+        EXPECT_EQ(p[1], (emissive >> 16) & 0xff) << "vertex " << v;
+        EXPECT_EQ(p[2], (emissive >> 8) & 0xff) << "vertex " << v;
+        EXPECT_EQ(p[3], 0xff) << "vertex " << v;
+        EXPECT_EQ(p[4], (specular >> 24) & 0xff) << "vertex " << v;
+        EXPECT_EQ(p[5], (specular >> 16) & 0xff) << "vertex " << v;
+        EXPECT_EQ(p[6], (specular >> 8) & 0xff) << "vertex " << v;
+        EXPECT_EQ(p[7], shin) << "vertex " << v;
+    }
+
     SoFCRenderCacheManager manager;
     SoSeparator* root = nullptr;
     SoMaterial* material = nullptr;
@@ -146,6 +185,102 @@ TEST_F(RenderCacheMaterial, CapturesPerFaceArrays)
     }
 }
 
+// Stage 3: the vertex cache bakes the resolved per-face values as a
+// per-vertex stream (8 bytes: rgba8 emissive + rgb8 specular with the
+// quantized shininess in the last byte), splitting vertices shared
+// between faces of different materials -- the same mechanism as the
+// per-face diffuse bake.
+TEST_F(RenderCacheMaterial, BakesPerFaceMaterialStream)
+{
+    if (!Gui::CoinLazyElementEx::available()) {
+        GTEST_SKIP() << "coin_lazyex_* not present in this libCoin";
+    }
+
+    SoFCVertexCache* vcache = triangleVertexCache();
+    ASSERT_NE(vcache, nullptr);
+    const uint8_t* mats = vcache->getMaterialArray();
+    ASSERT_NE(mats, nullptr);
+
+    // Each face is one triangle, so triangle i shades with face i's
+    // material -- every vertex of triangle i, including positions the
+    // faces share (the dedup key must have split those).
+    ASSERT_EQ(vcache->getNumTriangleIndices(), 9);
+    const GLint* idx = vcache->getTriangleIndices();
+    for (int tri = 0; tri < 3; ++tri) {
+        for (int c = 0; c < 3; ++c) {
+            expectVertexMaterial(mats, idx[tri * 3 + c], tri);
+        }
+    }
+}
+
+// Stage 3, bridge side: a whole triangle draw of such a cache is
+// flagged perfacematerial and hands the stream through MeshData.
+TEST_F(RenderCacheMaterial, BridgeMarksPerFaceDraw)
+{
+    if (!Gui::CoinLazyElementEx::available()) {
+        GTEST_SKIP() << "coin_lazyex_* not present in this libCoin";
+    }
+
+    manager.traverse(root, SbViewportRegion(256, 256));
+    SoFCRenderCache* cache = manager.getSceneCache();
+    ASSERT_NE(cache, nullptr);
+    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true));
+    const Render::DrawCall* triangle = nullptr;
+    for (const auto& d : draws) {
+        if (d.material.type == Render::Material::Triangle) {
+            triangle = &d;
+            break;
+        }
+    }
+    ASSERT_NE(triangle, nullptr);
+    EXPECT_TRUE(triangle->material.perfacematerial);
+    ASSERT_NE(triangle->mesh, nullptr);
+    ASSERT_NE(triangle->mesh->materials, nullptr);
+    ASSERT_EQ(triangle->mesh->numTriangleIndices, 9);
+    for (int tri = 0; tri < 3; ++tri) {
+        for (int c = 0; c < 3; ++c) {
+            expectVertexMaterial(triangle->mesh->materials,
+                                 triangle->mesh->triangleIndices[tri * 3 + c],
+                                 tri);
+        }
+    }
+    // the scalars still carry entry 0 for consumers without the stream
+    EXPECT_EQ(triangle->material.emissive, kEmissive[0].getPackedValue(0.0F));
+    EXPECT_EQ(triangle->material.specular, kSpecular[0].getPackedValue(0.0F));
+}
+
+// Per-face arrays whose resolved values never actually diverge (three
+// identical entries) must not allocate a stream: the object shades from
+// the scalars like any uniform one.
+TEST_F(RenderCacheMaterial, SameValuedArraysStayUniform)
+{
+    if (!Gui::CoinLazyElementEx::available()) {
+        GTEST_SKIP() << "coin_lazyex_* not present in this libCoin";
+    }
+
+    const SbColor emissives[3] = {kEmissive[0], kEmissive[0], kEmissive[0]};
+    const SbColor speculars[3] = {kSpecular[0], kSpecular[0], kSpecular[0]};
+    const float shininesses[3] = {kShininess[0], kShininess[0], kShininess[0]};
+    material->ambientColor.setValue(kAmbient[0]);
+    material->emissiveColor.setValues(0, 3, emissives);
+    material->specularColor.setValues(0, 3, speculars);
+    material->shininess.setValues(0, 3, shininesses);
+
+    SoFCVertexCache* vcache = triangleVertexCache();
+    ASSERT_NE(vcache, nullptr);
+    EXPECT_EQ(vcache->getMaterialArray(), nullptr);
+
+    SoFCRenderCache* cache = manager.getSceneCache();
+    ASSERT_NE(cache, nullptr);
+    auto draws = Gui::RendererBridge::translate(cache->getVertexCaches(true));
+    for (const auto& d : draws) {
+        if (d.material.type == Render::Material::Triangle) {
+            EXPECT_FALSE(d.material.perfacematerial);
+            EXPECT_EQ(d.mesh->materials, nullptr);
+        }
+    }
+}
+
 TEST_F(RenderCacheMaterial, UniformMaterialStaysScalar)
 {
     if (!Gui::CoinLazyElementEx::available()) {
@@ -167,6 +302,10 @@ TEST_F(RenderCacheMaterial, UniformMaterialStaysScalar)
     EXPECT_EQ(m->speculars.getNum(), 0);
     EXPECT_EQ(m->shininesses.getNum(), 0);
     EXPECT_EQ(m->ambient, kAmbient[0].getPackedValue());
+
+    SoFCVertexCache* vcache = triangleVertexCache();
+    ASSERT_NE(vcache, nullptr);
+    EXPECT_EQ(vcache->getMaterialArray(), nullptr);
 }
 
 TEST_F(RenderCacheMaterial, FallbackAgainstStockCoin)
@@ -187,6 +326,11 @@ TEST_F(RenderCacheMaterial, FallbackAgainstStockCoin)
     EXPECT_EQ(m->emissives.getNum(), 0);
     EXPECT_EQ(m->speculars.getNum(), 0);
     EXPECT_EQ(m->shininesses.getNum(), 0);
+
+    // and the stage-3 stream stays off too
+    SoFCVertexCache* vcache = triangleVertexCache();
+    ASSERT_NE(vcache, nullptr);
+    EXPECT_EQ(vcache->getMaterialArray(), nullptr);
 }
 
 }  // namespace

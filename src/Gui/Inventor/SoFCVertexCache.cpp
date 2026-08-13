@@ -95,6 +95,7 @@
 #include "SoFCVBO.h"
 #include "SoFCVertexArrayIndexer.h"
 #include "SoFCShapeInfo.h"
+#include "CoinLazyElementEx.h"
 #include "COWData.h"
 #include "../ViewParams.h"
 
@@ -177,6 +178,16 @@ public:
     SbVec4f texcoord0;
     SbVec2f bumpcoord;
     uint32_t color;
+    /// Packed per-face material of a triangle vertex when the extended
+    /// lazy element carries material arrays (matpervertex != 0):
+    /// emissive as 0xRRGGBBFF, and specular as 0xRRGGBBSS with the
+    /// shininess (0..1) quantized into the low byte. Zero otherwise --
+    /// including for line/point vertices, whose draws never shade with
+    /// these fields. Part of the dedup key like color: two faces
+    /// differing only in material must not share vertices, while faces
+    /// sharing a material tuple still do.
+    uint32_t emissive = 0;
+    uint32_t specshine = 0;
     int texcoordidx;
     int marker = -1;
 
@@ -188,7 +199,9 @@ public:
         (this->bumpcoord == v.bumpcoord) &&
         (this->texcoordidx == v.texcoordidx) &&
         (this->marker == v.marker) &&
-        (this->color == v.color);
+        (this->color == v.color) &&
+        (this->emissive == v.emissive) &&
+        (this->specshine == v.specshine);
     }
   };
 
@@ -196,6 +209,8 @@ public:
     unsigned long operator()(const Vertex &v) const {
       unsigned long seed = 0;
       hash_combine(seed, v.color);
+      hash_combine(seed, v.emissive);
+      hash_combine(seed, v.specshine);
       hash_combine(seed, v.vertex[0]);
       hash_combine(seed, v.vertex[1]);
       hash_combine(seed, v.vertex[2]);
@@ -226,6 +241,20 @@ public:
 
     int numdiffuse;
     int numtransp;
+
+    // Per-face material arrays of the extended lazy element (3 floats
+    // per emissive/specular entry). A field the element has no array
+    // for points at the fallback slot below holding the lazy element's
+    // scalar, so the bake indexes uniformly.
+    const float * emissiveptr = nullptr;
+    const float * specularptr = nullptr;
+    const float * shininessptr = nullptr;
+    int numemissive = 0;
+    int numspecular = 0;
+    int numshininess = 0;
+    float emissivefallback[3];
+    float specularfallback[3];
+    float shininessfallback;
 
     const SoMultiTextureCoordinateElement * multielem;
     SoState * state = nullptr;
@@ -382,6 +411,10 @@ public:
 
   void addVertex(const Vertex & v);
   void initColor(int n);
+  void initMaterial(int n);
+  void appendMaterial(uint32_t emissive, uint32_t specshine);
+  uint32_t packedEmissive(int midx) const;
+  uint32_t packedSpecShine(int midx) const;
 
   void close(SoState *);
   void finalizeTriangleIndexer();
@@ -476,6 +509,17 @@ public:
   bool flipnormal = false;
   int colorpervertex;
   uint32_t firstcolor;
+
+  /// Baked per-vertex material stream (8 bytes per vertex: rgba8
+  /// emissive, then rgb8 specular with quantized shininess in the last
+  /// byte), allocated only when the extended lazy element carried
+  /// per-face material arrays whose resolved values actually diverge.
+  /// matpervertex mirrors colorpervertex: 0 = off, -1 = capturing but
+  /// uniform so far, 1 = divergent (array allocated).
+  ByteArray materialarray;
+  int matpervertex = 0;
+  uint32_t firstemissive = 0;
+  uint32_t firstspecshine = 0;
 
   int lastenabled = -1;
   /// forceTexCoords field of the node: capture unit-0 texcoords even
@@ -631,6 +675,10 @@ SoFCVertexCache::SoFCVertexCache(SoFCVertexCache & prev)
   PRIVATE(this)->hastransp = PRIVATE(pprev)->hastransp;
   PRIVATE(this)->firstcolor = PRIVATE(pprev)->firstcolor;
   PRIVATE(this)->colorpervertex = PRIVATE(pprev)->colorpervertex;
+  PRIVATE(this)->materialarray = PRIVATE(pprev)->materialarray;
+  PRIVATE(this)->matpervertex = PRIVATE(pprev)->matpervertex;
+  PRIVATE(this)->firstemissive = PRIVATE(pprev)->firstemissive;
+  PRIVATE(this)->firstspecshine = PRIVATE(pprev)->firstspecshine;
   PRIVATE(this)->hassolid = PRIVATE(pprev)->hassolid;
   PRIVATE(this)->flipnormal = PRIVATE(pprev)->flipnormal;
 
@@ -852,6 +900,46 @@ SoFCVertexCache::open(SoState * state)
   }
   PRIVATE(this)->hastransp = (PRIVATE(this)->firstcolor & 0xff)!=0xff;
 
+  // Per-face material arrays of the coin fork's extended lazy element
+  // (emissive/specular/shininess; ambient stays scalar -- nothing that
+  // consumes this stream shades with it). Resolved per vertex during
+  // the primitive callbacks exactly like the diffuse bake above, so
+  // faces sharing one material tuple keep sharing vertices and only a
+  // genuine divergence allocates anything.
+  PRIVATE(this)->matpervertex = 0;
+  if (Gui::CoinLazyElementEx::available()) {
+    auto t = PRIVATE(this)->tmp;
+    t->numemissive = Gui::CoinLazyElementEx::getEmissive(state, &t->emissiveptr);
+    t->numspecular = Gui::CoinLazyElementEx::getSpecular(state, &t->specularptr);
+    t->numshininess = Gui::CoinLazyElementEx::getShininess(state, &t->shininessptr);
+    if (t->numemissive > 1 || t->numspecular > 1 || t->numshininess > 1) {
+      if (t->numemissive == 0) {
+        const SbColor & e = SoLazyElement::getEmissive(state);
+        e.getValue(t->emissivefallback[0], t->emissivefallback[1],
+                   t->emissivefallback[2]);
+        t->emissiveptr = t->emissivefallback;
+        t->numemissive = 1;
+      }
+      if (t->numspecular == 0) {
+        const SbColor & s = SoLazyElement::getSpecular(state);
+        s.getValue(t->specularfallback[0], t->specularfallback[1],
+                   t->specularfallback[2]);
+        t->specularptr = t->specularfallback;
+        t->numspecular = 1;
+      }
+      if (t->numshininess == 0) {
+        t->shininessfallback = SoLazyElement::getShininess(state);
+        t->shininessptr = &t->shininessfallback;
+        t->numshininess = 1;
+      }
+      PRIVATE(this)->matpervertex = -1;
+      PRIVATE(this)->firstemissive = PRIVATE(this)->packedEmissive(0);
+      PRIVATE(this)->firstspecshine = PRIVATE(this)->packedSpecShine(0);
+      if (prev)
+        PRIVATE(this)->materialarray.init(PRIVATE(prev)->materialarray);
+    }
+  }
+
   // set up for multi texturing
   PRIVATE(this)->lastenabled = -1;
   SoMultiTextureEnabledElement::getEnabledUnits(state, PRIVATE(this)->lastenabled);
@@ -928,6 +1016,11 @@ SoFCVertexCacheP::close(SoState * state)
     this->lineindexer->close();
   if (this->pointindexer)
     this->pointindexer->close();
+
+  // A material capture whose resolved values never diverged is a
+  // uniform object; the scalars on the render-cache material carry it.
+  if (this->matpervertex < 0)
+    this->matpervertex = 0;
 
   finalizeTriangleIndexer();
 
@@ -1551,6 +1644,16 @@ SoFCVertexCache::addTriangle(const SoPrimitiveVertex * v0,
       PRIVATE(this)->hastransp = (PRIVATE(this)->hastransp || (v.color&0xff) != 0xff);
     }
 
+    if (PRIVATE(this)->matpervertex != 0) {
+      int midx = vp[i]->getMaterialIndex();
+      v.emissive = PRIVATE(this)->packedEmissive(midx);
+      v.specshine = PRIVATE(this)->packedSpecShine(midx);
+      if (PRIVATE(this)->matpervertex < 0
+          && (v.emissive != PRIVATE(this)->firstemissive
+              || v.specshine != PRIVATE(this)->firstspecshine))
+        PRIVATE(this)->matpervertex = 1;
+    }
+
     const SoDetail * d = vp[i]->getDetail();
 
     if (d && d->isOfType(SoFaceDetail::getClassTypeId()) && pointdetailidx) {
@@ -1877,6 +1980,13 @@ SoFCVertexCache::getColorArray(void) const
   return PRIVATE(this)->colorarray ? PRIVATE(this)->colorarray.getArrayPtr() : NULL;
 }
 
+const uint8_t *
+SoFCVertexCache::getMaterialArray(void) const
+{
+  return PRIVATE(this)->materialarray
+    ? PRIVATE(this)->materialarray.getArrayPtr() : NULL;
+}
+
 int
 SoFCVertexCache::getNumTriangleIndices(void) const
 {
@@ -1909,6 +2019,7 @@ SoFCVertexCache::copyArrayRefs(void) const
     Vec3Array vertex, normal;
     Vec4Array texcoord;
     ByteArray color;
+    ByteArray material;
     SbFCVector<SoFCVertexArrayIndexer::IndexArray> indices;
   };
   auto refs = std::allocate_shared<Refs>(SoFCAllocator<Refs>());
@@ -1916,6 +2027,7 @@ SoFCVertexCache::copyArrayRefs(void) const
   refs->normal = PRIVATE(this)->normalarray;
   refs->texcoord = PRIVATE(this)->texcoord0array;
   refs->color = PRIVATE(this)->colorarray;
+  refs->material = PRIVATE(this)->materialarray;
   for (auto indexer : {PRIVATE(this)->triangleindexer,
                        PRIVATE(this)->lineindexer,
                        PRIVATE(this)->pointindexer,
@@ -2279,6 +2391,46 @@ SoFCVertexCacheP::initColor(int n)
 }
 
 void
+SoFCVertexCacheP::initMaterial(int n)
+{
+  for (int i=0; i<n; i+=8)
+    appendMaterial(this->firstemissive, this->firstspecshine);
+}
+
+void
+SoFCVertexCacheP::appendMaterial(uint32_t emissive, uint32_t specshine)
+{
+  this->materialarray.append((emissive >> 24) & 0xff);
+  this->materialarray.append((emissive >> 16) & 0xff);
+  this->materialarray.append((emissive >> 8) & 0xff);
+  this->materialarray.append(emissive & 0xff);
+  this->materialarray.append((specshine >> 24) & 0xff);
+  this->materialarray.append((specshine >> 16) & 0xff);
+  this->materialarray.append((specshine >> 8) & 0xff);
+  this->materialarray.append(specshine & 0xff);
+}
+
+uint32_t
+SoFCVertexCacheP::packedEmissive(int midx) const
+{
+  const float * e = this->tmp->emissiveptr
+    + 3 * SbClamp(midx, 0, this->tmp->numemissive-1);
+  return SbColor(e[0], e[1], e[2]).getPackedValue(0.0f);
+}
+
+uint32_t
+SoFCVertexCacheP::packedSpecShine(int midx) const
+{
+  const float * s = this->tmp->specularptr
+    + 3 * SbClamp(midx, 0, this->tmp->numspecular-1);
+  float sh = this->tmp->shininessptr[
+      SbClamp(midx, 0, this->tmp->numshininess-1)];
+  uint32_t packed = SbColor(s[0], s[1], s[2]).getPackedValue(0.0f);
+  return (packed & 0xffffff00)
+    | uint32_t(SbClamp(sh, 0.0f, 1.0f) * 255.0f + 0.5f);
+}
+
+void
 SoFCVertexCacheP::addVertex(const Vertex & v)
 {
   this->vertexarray.append(v.vertex);
@@ -2300,6 +2452,12 @@ SoFCVertexCacheP::addVertex(const Vertex & v)
     this->colorarray.append(g);
     this->colorarray.append(b);
     this->colorarray.append(a);
+  }
+
+  if (this->matpervertex > 0) {
+    if (!this->materialarray)
+      initMaterial(this->vertexarray.getLength()*8 - 8);
+    appendMaterial(v.emissive, v.specshine);
   }
 }
 
@@ -2773,6 +2931,10 @@ SoFCVertexCacheP::canMergeWith(const VertexCacheEntry & other_entry)
       || (this->colorarray && !other->colorarray))
     return false;
 
+  if ((!this->materialarray && other->materialarray)
+      || (this->materialarray && !other->materialarray))
+    return false;
+
   if (this->multitexarray.size() != other->multitexarray.size())
     return false;
 
@@ -2958,6 +3120,8 @@ SoFCVertexCacheP::mergeTo(bool first,
     pvcache->bumpcoordarray.append(this->bumpcoordarray);
   if (pvcache->colorarray)
     pvcache->colorarray.append(this->colorarray);
+  if (pvcache->materialarray)
+    pvcache->materialarray.append(this->materialarray);
   int i = -1;
   for (auto & entry : pvcache->multitexarray) {
     ++i;

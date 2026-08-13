@@ -2602,7 +2602,10 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
         if (material.lightmodel != SoLazyElement::BASE_COLOR && detail) {
           material.emissive = color | 0xff;
           makeDistinctColor(material.emissive, material.emissive, material.diffuse);
-        } 
+          // the scalar override is the authority now (consumers treat a
+          // present array as authoritative for its channel)
+          material.emissives.reset();
+        }
         uint32_t c = material.diffuse;
         material.diffuse = color | (material.diffuse & 0xff);
         makeDistinctColor(material.diffuse, material.diffuse, c);
@@ -2819,8 +2822,10 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
             material.diffuse = (material.diffuse & ~0xff) | std::max(a, col&0xff);
           }
           makeDistinctColor(material.diffuse, material.diffuse, col);
-          if (material.lightmodel != SoLazyElement::BASE_COLOR)
+          if (material.lightmodel != SoLazyElement::BASE_COLOR) {
             material.emissive = material.diffuse | 0xff;
+            material.emissives.reset();
+          }
         }
         break;
       }

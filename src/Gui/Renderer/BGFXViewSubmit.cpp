@@ -256,6 +256,9 @@ bool BGFXView::submitInstanced(const Render::DrawCall &draw, const float *data,
     unpackColor(mat.emissive, emissive);
     unpackColor(mat.specular, specular);
     specular[3] = mat.shininess;
+    // Never per-face material here: those draws are excluded from
+    // instancing, and the flag must not leak from a previous draw.
+    emissive[3] = 0.0f;
     // The fragment stage always reads v_color0 in the instanced
     // path — the vertex stage selects the per-vertex stream or the
     // per-instance color by u_instParams.x.
@@ -661,6 +664,12 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     unpackColor(mat.emissive, emissive);
     unpackColor(mat.specular, specular);
     specular[3] = mat.shininess;
+    // u_matEmissive.w: per-face material flag — the fragment stage
+    // shades emissive/specular/shininess from the v_color1/v_color2
+    // stream instead of these scalars. Requires the stream upload to
+    // actually be bindable (handle pool exhaustion leaves it invalid).
+    emissive[3] = (mat.perfacematerial && bgfx::isValid(mesh->mats))
+        ? 1.0f : 0.0f;
     params[0] = mat.pervertexcolor ? 1.0f : 0.0f;
     // u_params.y: mesh program = lighting flag; line program = line
     // width in pixels; point program = point size in pixels (unused

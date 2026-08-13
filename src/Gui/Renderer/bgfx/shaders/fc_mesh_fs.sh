@@ -49,6 +49,12 @@ void main()
 #endif
 
 	vec4 base = mix(u_matColor, v_color0, u_params.x);
+	// Per-face material: u_matEmissive.w selects the baked stream
+	// (v_color1 = emissive, v_color2 = specular rgb + shininess in
+	// alpha, the same 0..1 scale as u_matSpecular.w) over the scalars.
+	vec3 matEmissive = mix(u_matEmissive.rgb, v_color1.rgb,
+	                       u_matEmissive.w);
+	vec4 matSpec = mix(u_matSpecular, v_color2, u_matEmissive.w);
 
 	vec3 n = normalize(v_normal);
 	// Geometric surface normal (before any bump perturbation), oriented toward
@@ -190,7 +196,7 @@ void main()
 #endif
 
 	vec4 lit = fcShadeFragment(base, n, geoN, v_vpos, gl_FragCoord.xy,
-	                           occ, metal, rough);
+	                           occ, metal, rough, matEmissive, matSpec);
 	vec3 color = lit.rgb;
 	float alpha = lit.a;
 

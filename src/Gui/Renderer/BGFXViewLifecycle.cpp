@@ -1154,6 +1154,11 @@ void BGFXView::setMeshVertexBuffers(GpuMesh *gpu, const Render::MeshData &mesh)
     bgfx::setVertexBuffer(1, bgfx::isValid(gpu->color)
                                  ? gpu->color
                                  : whiteColors(mesh.numVertices));
+    // Per-face material stream, bound only when the mesh carries one:
+    // draws without it leave a_color1/a_color2 unbound, and the shader
+    // only reads them when u_matEmissive.w flags the stream in.
+    if (bgfx::isValid(gpu->mats))
+        bgfx::setVertexBuffer(3, gpu->mats);
 }
 
 void BGFXView::collectMeshes()

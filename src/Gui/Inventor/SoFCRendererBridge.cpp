@@ -168,6 +168,7 @@ translateCache(SoFCVertexCache * cache)
     mesh->positions = reinterpret_cast<const float *>(cache->getVertexArray());
     mesh->normals = reinterpret_cast<const float *>(cache->getNormalArray());
     mesh->colors = cache->getColorArray();
+    mesh->materials = cache->getMaterialArray();
 
     static_assert(sizeof(GLint) == sizeof(int32_t), "GLint size mismatch");
     mesh->numTriangleIndices = cache->getNumTriangleIndices();
@@ -292,6 +293,7 @@ bool meshMatchesCache(CacheMeshData & mesh, SoFCVertexCache * cache)
     if (mesh.positions != reinterpret_cast<const float *>(cache->getVertexArray())
             || mesh.normals != reinterpret_cast<const float *>(cache->getNormalArray())
             || mesh.colors != cache->getColorArray()
+            || mesh.materials != cache->getMaterialArray()
             || mesh.texCoords
                    != reinterpret_cast<const float *>(cache->getTexCoordArray()))
         return false;
@@ -362,6 +364,7 @@ void verifyMeshReuse(const CacheMeshData & kept, SoFCVertexCache * cache)
     else if (kept.positions != fresh->positions)            bad = "positions";
     else if (kept.normals != fresh->normals)                bad = "normals";
     else if (kept.colors != fresh->colors)                  bad = "colors";
+    else if (kept.materials != fresh->materials)            bad = "materials";
     else if (kept.texCoords != fresh->texCoords)            bad = "texture coordinates";
     else if (kept.numTriangleIndices != fresh->numTriangleIndices
              || kept.triangleIndices != fresh->triangleIndices)
@@ -1103,6 +1106,34 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             draw.partIndex = ventry.partidx;
             draw.indexStart = indexStart;
             draw.indexCount = indexCount;
+
+            // Per-face material (SoFCRenderCache::Material array form,
+            // captured from the coin fork's extended lazy element). A
+            // present array is authoritative for its channel — an
+            // override that replaced a scalar dropped it. A whole draw
+            // shades from the mesh's baked material stream; a partial
+            // (single-face) draw resolves its face's values into the
+            // scalars here, since it draws without the stream flag.
+            if (rmat.type == Render::Material::Triangle) {
+                const bool hasarrays = material.emissives.getNum()
+                    || material.speculars.getNum()
+                    || material.shininesses.getNum();
+                if (ventry.partidx < 0) {
+                    draw.material.perfacematerial =
+                        hasarrays && mesh->materials != nullptr;
+                } else if (hasarrays) {
+                    const int p = ventry.partidx;
+                    if (int n = material.emissives.getNum())
+                        draw.material.emissive =
+                            material.emissives[std::min(p, n - 1)];
+                    if (int n = material.speculars.getNum())
+                        draw.material.specular =
+                            material.speculars[std::min(p, n - 1)];
+                    if (int n = material.shininesses.getNum())
+                        draw.material.shininess =
+                            material.shininesses[std::min(p, n - 1)];
+                }
+            }
             draw.identity = ventry.identity;
             if (!ventry.identity) {
                 static_assert(sizeof(draw.model) == sizeof(SbMat),

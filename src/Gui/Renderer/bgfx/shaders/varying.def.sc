@@ -1,4 +1,6 @@
 vec4 v_color0  : COLOR0;
+vec4 v_color1  : COLOR1;
+vec4 v_color2  : COLOR2;
 vec3 v_normal  : NORMAL;
 vec3 v_wpos    : TEXCOORD0;
 vec2 v_dist    : TEXCOORD1;
@@ -8,6 +10,8 @@ vec3 v_vpos    : TEXCOORD3;
 vec3 a_position : POSITION;
 vec3 a_normal   : NORMAL;
 vec4 a_color0   : COLOR0;
+vec4 a_color1   : COLOR1;
+vec4 a_color2   : COLOR2;
 vec2 a_texcoord0 : TEXCOORD0;
 
 vec4 i_data0    : TEXCOORD31;

@@ -964,6 +964,35 @@ struct ColorVertex
 };
 
 
+// Fourth vertex stream of the mesh programs: the per-face material
+// bake (MeshData::materials) as two rgba8 attributes — Color1 the
+// emissive, Color2 the specular with quantized shininess in alpha.
+// Bound only for meshes that carry the stream; every other mesh-program
+// draw leaves the attributes unbound, which bgfx resolves to the GL
+// default attribute — finite values the shader multiplies out, since
+// it selects the stream over the material scalars by u_matEmissive.w.
+struct MatVertex
+{
+    uint32_t emissive;
+    uint32_t specshine;
+
+    static void init()
+    {
+        if (ms_initialized)
+            return;
+        ms_initialized = true;
+        ms_layout
+            .begin()
+            .add(bgfx::Attrib::Color1, 4, bgfx::AttribType::Uint8, true)
+            .add(bgfx::Attrib::Color2, 4, bgfx::AttribType::Uint8, true)
+            .end();
+    };
+
+    static bgfx::VertexLayout ms_layout;
+    static bool ms_initialized;
+};
+
+
 // Interleaved position + normal + rgba8 vertex of the TRANSIENT draws
 // (background gradient, shadow ground quad): one-off buffers where a
 // separate color stream would buy nothing. The mesh programs source
@@ -1386,6 +1415,11 @@ struct GpuMesh
     /// Per-vertex rgba8 color stream; invalid when the cache carries no
     /// baked colors (the shared white buffer is bound instead).
     bgfx::VertexBufferHandle color = BGFX_INVALID_HANDLE;
+    /// Per-vertex material stream (MeshData::materials, 8 bytes per
+    /// vertex); invalid for uniform-material meshes, and then simply
+    /// not bound — the shader only reads it when the draw's material
+    /// sets perfacematerial.
+    bgfx::VertexBufferHandle mats = BGFX_INVALID_HANDLE;
     /// Per-segment instance data (endpoints + colors) feeding the
     /// quad-expanded thick line path; invalid without instancing support.
     bgfx::VertexBufferHandle lineInst = BGFX_INVALID_HANDLE;
@@ -1411,7 +1445,7 @@ struct GpuMesh
     void destroy()
     {
         geom = nullptr;
-        for (auto vb : {&color, &lineInst, &pointInst, &lineNoSeamInst}) {
+        for (auto vb : {&color, &mats, &lineInst, &pointInst, &lineNoSeamInst}) {
             if (bgfx::isValid(*vb)) {
                 bgfx::destroy(*vb);
                 *vb = BGFX_INVALID_HANDLE;
@@ -1429,6 +1463,14 @@ struct GpuMesh
                 bgfx::copy(mesh.colors, uint32_t(mesh.numVertices) * 4),
                 ColorVertex::ms_layout);
             track(size_t(mesh.numVertices) * 4);
+        }
+
+        if (mesh.materials) {
+            MatVertex::init();
+            mats = bgfx::createVertexBuffer(
+                bgfx::copy(mesh.materials, uint32_t(mesh.numVertices) * 8),
+                MatVertex::ms_layout);
+            track(size_t(mesh.numVertices) * 8);
         }
 
         if (mesh.numLineIndices > 1

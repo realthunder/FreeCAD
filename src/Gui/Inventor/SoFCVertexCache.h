@@ -125,6 +125,17 @@ public:
   const SbVec2f * getBumpCoordArray(void) const;
   const uint8_t * getColorArray(void) const;
 
+  /** Baked per-vertex material stream, 8 bytes per vertex: rgba8
+   * emissive followed by rgb8 specular with the shininess (0..1)
+   * quantized into the last byte. Present only when the coin fork's
+   * extended lazy element carried per-face material arrays whose
+   * resolved values actually diverge (CoinLazyElementEx); null for
+   * every uniform-material cache. Only triangle vertices carry
+   * values -- vertices referenced by lines/points alone hold zeros,
+   * and line/point draws never shade with these fields.
+   */
+  const uint8_t * getMaterialArray(void) const;
+
   void setFaceColors(const SbFCVector<std::pair<int, uint32_t> > &colors = {});
 
   int getNumTriangleIndices(void) const;

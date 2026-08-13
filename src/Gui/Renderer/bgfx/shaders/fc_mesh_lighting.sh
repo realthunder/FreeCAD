@@ -12,7 +12,9 @@
  * engine records with the draw.
  *
  * u_matColor    : rgba diffuse; used when u_params.x == 0
- * u_matEmissive : rgb emissive add
+ * u_matEmissive : rgb emissive add; w = per-face material flag (the
+ *                 stock caller shades emissive/specular/shininess from
+ *                 the v_color1/v_color2 stream instead of the scalars)
  * u_matSpecular : rgb specular, w = shininess (0..1 Coin convention)
  * u_params      : x = per-vertex color, y = lighting on, z = two-sided
  * u_pbrParams   : x = PBR branch on (2 = with a metallic-roughness
@@ -137,9 +139,15 @@ float fc_shadowTap(vec2 uv, float z)
  *   metal, rough : PBR factors, the metallic-roughness map already
  *           folded in by the caller (pass u_pbrParams.y / .z without
  *           one)
+ *   matEmissive, matSpec : the draw's emissive rgb and specular
+ *           rgb + shininess-in-w. The stock caller resolves them from
+ *           the scalars or the per-face stream (u_matEmissive.w); the
+ *           trailing overload below fills in the scalars for callers
+ *           written before the stream existed (user shaders).
  */
 vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
-                     vec2 fragCoord, float occ, float metal, float rough)
+                     vec2 fragCoord, float occ, float metal, float rough,
+                     vec3 matEmissive, vec4 matSpec)
 {
 	vec3 color = base.rgb;
 
@@ -372,7 +380,7 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			}
 
 			vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
-			float shininess = max(u_matSpecular.w * 128.0, 1.0);
+			float shininess = max(matSpec.w * 128.0, 1.0);
 			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
 			float hspec = pow(max(abs(n.z), 0.0), shininess);
 
@@ -387,8 +395,8 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 					* (vec3_splat(0.2 * occ * ao + 0.8 * hdl)
 					+ u_lightColor.rgb * shadowTint
 						* (ndl * shadow))
-				+ u_matSpecular.rgb * (hspec * 0.75)
-				+ u_matSpecular.rgb * u_lightColor.rgb
+				+ matSpec.rgb * (hspec * 0.75)
+				+ matSpec.rgb * u_lightColor.rgb
 					* shadowTint * (spec * 0.75 * shadow);
 		}
 		else
@@ -405,11 +413,11 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			else
 				ndl = max(ndl, 0.0);
 
-			float shininess = max(u_matSpecular.w * 128.0, 1.0);
+			float shininess = max(matSpec.w * 128.0, 1.0);
 			float spec = pow(max(abs(n.z), 0.0), shininess);
 
 			color = (base.rgb * (0.2 * occ + 0.8 * ndl)
-				+ u_matSpecular.rgb * (spec * 0.75)) * ao;
+				+ matSpec.rgb * (spec * 0.75)) * ao;
 		}
 
 		// Local effect lights (fire flames, Render_Light bulbs):
@@ -544,15 +552,27 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 				}
 			}
 			vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
-			float shininess = max(u_matSpecular.w * 128.0, 1.0);
+			float shininess = max(matSpec.w * 128.0, 1.0);
 			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
 			color += base.rgb * u_localLightColor[fi].rgb
 					* (ndl * att)
-				+ u_matSpecular.rgb * u_localLightColor[fi].rgb
+				+ matSpec.rgb * u_localLightColor[fi].rgb
 					* (spec * att * 0.75);
 		}
 	}
 
-	color += u_matEmissive.rgb;
+	color += matEmissive;
 	return vec4(color, base.a);
+}
+
+// Scalar-material overload: the signature user material-stage shaders
+// were written against (fc_user_lighting.sh). Per-face material draws
+// carrying a user shader shade with the scalars, like every other
+// consumer that predates the stream.
+vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
+                     vec2 fragCoord, float occ, float metal, float rough)
+{
+	return fcShadeFragment(base, n, geoN, vpos, fragCoord, occ,
+	                       metal, rough,
+	                       u_matEmissive.rgb, u_matSpecular);
 }

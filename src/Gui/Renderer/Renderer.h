@@ -87,6 +87,12 @@ struct MeshData {
     const float *positions = nullptr;   ///< xyz per vertex, never null
     const float *normals = nullptr;     ///< xyz per vertex, may be null
     const uint8_t *colors = nullptr;    ///< rgba8 per vertex, may be null
+    /// Per-vertex material stream of a per-face-material cache, 8 bytes
+    /// per vertex: rgba8 emissive, then rgb8 specular with the
+    /// shininess (0..1) quantized in the last byte. Null for uniform
+    /// objects (then the Material scalars apply). Draws consume it only
+    /// when their material sets perfacematerial.
+    const uint8_t *materials = nullptr;
 
     const int32_t *triangleIndices = nullptr;
     int numTriangleIndices = 0;
@@ -988,6 +994,13 @@ struct Material {
     bool depthtest = true;
     bool depthwrite = true;
     bool pervertexcolor = false;
+    /// Whole triangle draw of a cache whose mesh carries the per-face
+    /// material stream (MeshData::materials), with the material arrays
+    /// still authoritative (no scalar override on top): the backend
+    /// shades emissive/specular/shininess from the stream instead of
+    /// the scalars below. Never set on partial draws — those resolve
+    /// their face's values into the scalars at translate time.
+    bool perfacematerial = false;
     bool lighting = true;        ///< false = flat base color (no light model)
     bool twoside = false;
     bool culling = false;

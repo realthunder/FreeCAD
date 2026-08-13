@@ -154,15 +154,22 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     sized from the scene bounding box alone. A viewer older than this
 //     keeps doing that, i.e. ignores an explicitly sized or moved
 //     ground rather than misplacing one.
-const uint32_t kVersion = 46;
+// 47: Per-face material -- a mesh chunk may carry the baked
+//     emissive/specular/shininess stream (flags bit 8) and Material
+//     carries the perfacematerial flag selecting it. A viewer older
+//     than this shades such draws with the material scalars, which is
+//     the pre-feature look.
+const uint32_t kVersion = 47;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
 /// part of what the content key hashes: bump it whenever a chunk's own
 /// layout changes and every key changes with it, which retires the
 /// entries cached by older builds instead of letting them be misread.
-/// (4: a shader chunk carries the particle state step and its binary.)
-const uint32_t kChunkVersion = 4;
+/// (4: a shader chunk carries the particle state step and its binary.
+///  5: a mesh chunk may carry the per-face material stream, and a
+///     material chunk the perfacematerial flag.)
+const uint32_t kChunkVersion = 5;
 
 //////////////////////////////////////////////////////////////////////
 // Streamed config layout guards.
@@ -356,7 +363,7 @@ void writeMeshChunk(Writer &w, const MeshData &m)
     w.u32(kChunkVersion);
     w.i32(m.numVertices);
     uint8_t flags = (m.normals ? 1 : 0) | (m.colors ? 2 : 0)
-        | (m.texCoords ? 4 : 0);
+        | (m.texCoords ? 4 : 0) | (m.materials ? 8 : 0);
     w.u8(flags);
     w.raw(m.positions, size_t(m.numVertices) * 3 * sizeof(float));
     if (m.normals)
@@ -365,6 +372,8 @@ void writeMeshChunk(Writer &w, const MeshData &m)
         w.raw(m.colors, size_t(m.numVertices) * 4);
     if (m.texCoords)
         w.raw(m.texCoords, size_t(m.numVertices) * 4 * sizeof(float));
+    if (m.materials)
+        w.raw(m.materials, size_t(m.numVertices) * 8);
 
     auto indices = [&](const int32_t *v, int n) {
         w.i32(v ? n : 0);
@@ -571,6 +580,11 @@ void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
         mesh->uvStore.resize(nv * 4);
         r.floats(mesh->uvStore.data(), nv * 4);
         mesh->texCoords = mesh->uvStore.data();
+    }
+    if (flags & 8) {
+        mesh->matStore.resize(nv * 8);
+        r.raw(mesh->matStore.data(), nv * 8);
+        mesh->materials = mesh->matStore.data();
     }
 
     auto indices = [&](std::vector<int32_t> &store, const int32_t *&ptr,
@@ -1268,6 +1282,9 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     // v45: SoDrawStyleElement, which is how the Tessellation draw style
     // arrives. Older viewers draw the faces filled, i.e. as Shaded.
     w.u8(m.drawstyle);
+    // v47: per-face material — shade from the mesh's baked stream.
+    // Older viewers use the scalars above, the pre-feature look.
+    w.b(m.perfacematerial);
 }
 
 void readMaterial(Reader &r, Material &m, const RefReader &refs,
@@ -1400,6 +1417,9 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
     // style but Tessellation asks for anyway.
     if (version >= 45)
         m.drawstyle = r.u8();
+    // v47: per-face material. Absent means the scalars apply.
+    if (version >= 47)
+        m.perfacematerial = r.b();
 }
 
 //////////////////////////////////////////////////////////////////////

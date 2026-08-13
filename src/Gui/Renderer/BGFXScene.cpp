@@ -411,7 +411,11 @@ bool BGFXRenderer::Private::instancableDraw(const Render::DrawCall &d)
         && !m.cloud
         && !m.fire
         && !m.usershader
-        && !m.faceoutline;
+        && !m.faceoutline
+        // Per-face-material draws keep per-draw submits: the instanced
+        // path forces the flag off (PartGui flattens such shapes out of
+        // TShape sharing anyway, so groups of two never form).
+        && !m.perfacematerial;
 }
 
 void BGFXRenderer::Private::buildInstanceGroups()
