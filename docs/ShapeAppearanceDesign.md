@@ -815,6 +815,57 @@ missing.
 - Verify by round-tripping a multi-material glTF out and back in, comparing
   materials per face rather than pixels.
 
+**Landed 2026-08-13** (`5d49c2cde7` + `08ce05a07d` + `f9c4c1d667`),
+verified by a GUI probe: a hand-built three-primitive glTF (shared
+metallic/roughness so nothing splits, per-primitive base colour and
+emissive) imports to a single feature whose `ShapeAppearance` varies per
+face, reaches the Coin material arrays, renders per-face in the bgfx leg
+(distinct emissive channels; the plain Coin leg shows the uniform
+`emissive[0]`, by design), and survives a glb export/import round trip
+with diffuse and emissive bit-exact. CesiumMilkTruck still imports
+through the split path with its textures. Deviations from the sketch:
+
+- **The producer came first, and it was the missing half of stage 3.**
+  Nothing had ever fed the per-face `SoMaterial` arrays from a real
+  document: every apply site pushed `DiffuseColor`'s colour vector, and
+  the whole-material overload of `setHighlightedFaces` had no caller.
+  `applyShapeAppearance()` now dispatches on `variesOnlyInDiffuse()`;
+  the material overload gained the per-face shininess/transparency
+  arrays it never filled, and the divergence check that blocks
+  instancing now includes shininess. The colour path pushes the
+  non-diffuse scalars from entry 0 unconditionally (compare-and-set) --
+  the base class only does it for a single-ENTRY appearance, so a
+  multi-entry appearance with uniform extra fields would otherwise
+  never reach the node.
+- **Import is gated on variance, not presence.** Every glTF material
+  converts to common (Phong) fields, so carrying them wholesale would
+  re-skin every glTF import with OCCT's conversion of its uniform
+  material. `scanFaceMaterials` builds the per-face vector but keeps it
+  only when a field beyond diffuse *varies* across the faces; a uniform
+  appearance keeps the colour path (and the whole-object Render_* PBR
+  properties keep carrying the uniform case, as before). Diffuse and
+  transparency ride the already-resolved colour labels; the other
+  fields come from `ConvertToCommonMaterial()`.
+- **The split path stays.** Materials differing in factors or textures
+  still split one feature per material group -- Render_* is per-object
+  and that was the point of the split -- but the common fields, above
+  all emissive, which is deliberately not part of the grouping key, now
+  ride per face *within* a group instead of being dropped.
+- **Export inherits the object's PBR into the per-face materials.** One
+  `XCAFDoc_VisMaterial` per distinct appearance entry, attached to face
+  sub-shape labels (colour labels unchanged alongside); when the object
+  carries Render_* PBR, its factors and textures are copied into each
+  face material with base colour and emissive overridden, so a per-face
+  appearance does not silently strip the textures.
+- Known limits, accepted: specular does not round-trip exactly (a
+  Common-only material is converted Phong-to-PBR on write and back on
+  read; dominant channel and magnitude survive, the exact value does
+  not); a glTF whose faces all share one emissive stays on the
+  colour+Render_* path, so that uniform emissive still does not reach
+  `ShapeAppearance`; ambient is OCCT's conversion default, so a mesh
+  with materials on some faces and none on others reads as ambient
+  variance and takes the material path harmlessly.
+
 ### Stage 5 -- STEP, both directions
 
 Feasible on both ends. OCCT already has every primitive; the reader simply
