@@ -719,6 +719,80 @@ material index per primitive resolved in the shader.
 - Verify with the A/B harness against the glr and Coin legs, remembering
   that only bgfx is expected to show per-face specular.
 
+**Landed 2026-08-13**, verified headless by the stage-3 tests in
+`tests/src/Gui/RenderCacheMaterial.cpp` (stream baked and split per
+face, bridge flags the draw, uniform and same-valued-array scenes stay
+scalar) plus a GUI render probe. Deviations from the sketch above, each
+forced by reading the consumers:
+
+- **Values are baked as a vertex stream, not a table plus per-primitive
+  index.** Three code facts closed that door: the vertex dedup key
+  (`SoFCVertexCacheP::Vertex`) has no part id, so vertices are shared
+  *across* faces and any downstream expansion by part table would be
+  ambiguous -- the resolution has to join the bake and the key, exactly
+  like diffuse; WebGL2 has no `gl_PrimitiveID`, so a "per-primitive
+  index resolved in the shader" arrives as a vertex attribute anyway;
+  and the backend's GPU mesh cache is keyed by `cacheId`, so a stream
+  must be a pure function of cache content, which a Material-side table
+  is not (one shared cache can sit under two material contexts). Baked
+  values also keep vertices shared between faces whose material *tuples*
+  match, where an index would split them.
+- **The stream is 8 bytes per vertex, not 16: ambient stays
+  scalar-only.** No bgfx shading term reads `Material::ambient` (the
+  headlight/PBR paths have no material-ambient; AO modulates light, not
+  material), so a per-face ambient would be dead weight in every vertex.
+  The stage-2 capture still carries the ambient array on the render-cache
+  Material for any future consumer. Layout: rgba8 emissive, then rgb8
+  specular with shininess (0..1) quantized into the alpha -- the same
+  slot `u_matSpecular.w` already uses.
+- **`SoFCVertexCache` does the bake** (`getMaterialArray()`), reading
+  the Ex element through `Gui::CoinLazyElementEx` at `open()` and
+  resolving per `getMaterialIndex()` in the triangle callback, with the
+  `colorpervertex` divergence pattern (`matpervertex`: capture enabled
+  only when an array is genuinely present, array allocated only when
+  resolved values actually diverge). Line/point vertices hold zeros --
+  their draws never shade with these fields -- which costs a split only
+  where a line vertex would have deduped against a face vertex.
+- **Draw-level selection, not batch-level.** `Render::Material` gains
+  one bool (`perfacematerial`), set per draw in the bridge: whole
+  triangle draws of a stream-carrying mesh with the Material arrays
+  still authoritative shade from the stream; partial (single-face)
+  draws resolve `arrays[partidx]` into their scalars at translate time.
+  "Authoritative" is the stage-2 invariant -- an override that replaces
+  a scalar drops its array -- which the two highlight-tint sites in
+  `buildHighlightCache` now honor too (`emissives.reset()` after
+  writing the tint), so a preselected face keeps its per-face specular
+  but shows the tint emissive.
+- **The backend rides the color-stream pattern, minus the fallback
+  buffer.** A fourth vertex stream (`MatVertex`: `Color1` emissive,
+  `Color2` specular+shininess) bound only when the mesh carries one;
+  the flag travels in the previously unused `u_matEmissive.w`, and the
+  shader resolves `mix(scalar, stream, flag)` once -- no program
+  permutations. Draws without the stream leave the attributes unbound,
+  which bgfx's GL path resolves to the constant default attribute --
+  finite values the mix multiplies out (checked in
+  `renderer_gl.cpp`'s `bindAttributesEnd`). `fcShadeFragment` gained
+  the resolved emissive/specular as parameters, with a trailing
+  overload keeping the exact signature user material-stage shaders
+  were written against (they shade per-face draws with the scalars).
+- **Per-face-material draws are excluded from instancing**
+  (`instancableDraw`), consistent with the TShape policy that already
+  flattens per-face material divergence out of sharing (see
+  docs/TShapeRenderCache.md §5) -- groups of two would never form.
+- **Streaming**: the mesh chunk carries the stream behind a new flags
+  bit and Material the flag byte (`kVersion` 47, `kChunkVersion` 5).
+  The wasm viewer links the same backend, so nothing browser-specific
+  changed. Generated coarse levels (MeshSimplify) drop the stream; the
+  submit falls back to scalars when the upload is absent, so coarse
+  rungs degrade to the uniform look instead of breaking.
+- Known limits, accepted: under PBR the auto-roughness derives from the
+  scalar shininess per draw (per-face shininess only shades the
+  Blinn-Phong paths); per-face shininess is quantized to 8 bits (a step
+  of 0.5 in GL-exponent terms at the top of the range); merge behaviour
+  (risk 3) is unchanged for uniform scenes by the stage-2 bit-identical
+  guarantee, and a per-face-material batch fragments exactly as a
+  per-face-colour one already does.
+
 ### Stage 4 -- glTF, both directions
 
 The format and OCCT both support this fully; only FreeCAD's wiring is
