@@ -159,11 +159,11 @@ public:
 
     /** @name PBR readings of one material value
      *
-     * Meaningful when \a pbr is set; the getters degrade gracefully on a
-     * Phong value (no metals, roughness derived from the shininess), the
-     * setters throw on one, exactly as the list property's do: the slots
-     * they would land in mean something else there, and a caller holding
-     * a metallic value has decided the mode already.
+     * The getters degrade gracefully on a Phong value: no metals, and the
+     * roughness derived from the shininess. The setters state a PBR
+     * quantity, so on a Phong value they convert it first through
+     * setPBR() rather than landing a number in a slot that means
+     * something else -- writing a metallic factor is deciding the mode.
      */
     //@{
     float getMetallic() const;
@@ -171,6 +171,16 @@ public:
     void setMetallic(float value);
     void setRoughness(float value);
     //@}
+
+    /** Switch the reading, converting the values so the look survives
+     *
+     * The value-level counterpart of PropertyMaterialList::convertPBR:
+     * pbrToPhong one way, phongToPbr the other, and nothing at all when
+     * the mode already matches. This is what setting the mode means
+     * everywhere a material value is edited -- assign the flag directly
+     * (\a pbr) only to state what raw slots already hold.
+     */
+    void setPBR(bool enable);
 
     /** @name Properties */
     //@{

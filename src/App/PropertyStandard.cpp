@@ -3180,6 +3180,15 @@ void PropertyMaterialList::requirePBR() const
         throw Base::RuntimeError("material list is not in PBR mode");
 }
 
+Material PropertyMaterialList::inMode(const Material &mat) const
+{
+    if (mat.pbr == _pbr)
+        return mat;
+    Material converted = mat;
+    converted.setPBR(_pbr);
+    return converted;
+}
+
 void PropertyMaterialList::setPBR(bool enable)
 {
     if (_pbr == enable)
@@ -3201,9 +3210,13 @@ void PropertyMaterialList::convertPBR(bool enable)
     // collapses whatever stays uniform afterwards.
     std::vector<Material> values;
     values.reserve(_count);
-    for (int i = 0; i < _count; ++i)
-        values.push_back(enable ? Material::phongToPbr(getMaterial(i))
-                                : getPhongMaterial(i));
+    for (int i = 0; i < _count; ++i) {
+        // Tagged with the mode they are in, so the conversion is the
+        // value's own; setValues below then reads the new mode off them
+        Material mat = getMaterial(i);
+        mat.setPBR(enable);
+        values.push_back(mat);
+    }
     setPBR(enable);
     setValues(std::move(values));
     guard.tryInvoke();
@@ -3393,20 +3406,26 @@ void PropertyMaterialList::applyRestoredTransparency(const std::vector<float> &t
 
 void PropertyMaterialList::setSize(int newSize)
 {
-    // Grow with what an unset entry reads as, which follows the mode
+    // Grow with what an unset entry reads as, which follows the mode --
+    // and say so, because these slots are already in this list's reading:
+    // converting them again would state the mode's own default twice over
     Material def = defaultMaterial();
     def.specularColor = specularDefault();
     def.shininess = shininessDefault();
+    def.pbr = _pbr;
     setSize(newSize, def);
 }
 
-void PropertyMaterialList::setSize(int newSize, const Material &def)
+void PropertyMaterialList::setSize(int newSize, const Material &fill)
 {
     if (newSize == _count)
         return;
     if (newSize < 0)
         throw Base::ValueError("negative list size");
 
+    // Growth fills entries of this list, so the filler reads as this list
+    // does; only a whole-list assignment restates the mode
+    const Material def = inMode(fill);
     atomic_change guard(*this);
     touchFields();
     const Material &zero = defaultMaterial();
@@ -3468,6 +3487,12 @@ void PropertyMaterialList::setValues(std::vector<Material> &&values)
 void PropertyMaterialList::setValues(const std::vector<Material> &values)
 {
     atomic_change guard(*this);
+    // The list holds ONE mode, and an assignment states it through the
+    // material it starts with; the rest are converted to that reading
+    // rather than landing their slots under the wrong one. An empty
+    // assignment states nothing, so the mode it finds stands.
+    if (!values.empty())
+        setPBR(values.front().pbr);
     touchFields();
     _touchList.clear();
     _count = static_cast<int>(values.size());
@@ -3490,7 +3515,8 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
         _imagePath.reserve(_count);
         _uuid.reserve(_count);
         _type.reserve(_count);
-        for (const auto &mat : values) {
+        for (const auto &value : values) {
+            const Material mat = inMode(value);
             _ambient.push_back(mat.ambientColor);
             _diffuse.push_back(storedDiffuse(mat));
             _specular.push_back(mat.specularColor);
@@ -3509,11 +3535,14 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
     guard.tryInvoke();
 }
 
-void PropertyMaterialList::set1Value(int idx, const Material &mat)
+void PropertyMaterialList::set1Value(int idx, const Material &value)
 {
     if (idx < -1 || idx > _count)
         throw Base::RuntimeError("index out of bound");
 
+    // One entry cannot restate the whole list's mode, so it is converted
+    // to it instead
+    const Material mat = inMode(value);
     atomic_change guard(*this, false);
     if (idx == -1 || idx == _count) {
         guard.aboutToChange();
@@ -3916,62 +3945,11 @@ PyObject *PropertyMaterialList::getPyObject()
     return Py::new_reference_to(tuple);
 }
 
-namespace {
-// The mode an assignment of tagged material values states: unanimous or an
-// error. An empty assignment states nothing and keeps the mode it finds.
-bool materialsMode(const std::vector<Material> &values, bool fallback)
-{
-    if (values.empty())
-        return fallback;
-    const bool mode = values.front().pbr;
-    for (const auto &mat : values) {
-        if (mat.pbr != mode)
-            throw Base::TypeError("cannot mix Phong and PBR materials in one assignment");
-    }
-    return mode;
-}
-}
-
 void PropertyMaterialList::setPyObject(PyObject *value)
 {
-    if (PyDict_Check(value)) {
-        // {"PBR": bool, "Materials": [Material, ...]}, either key alone:
-        // the explicit spelling of the mode. An assignment of bare
-        // materials adopts their tags instead (see setPyValues), so the
-        // dict's key is what wins over them when both are stated.
-        Py::Dict dict(value);
-        for (const auto &key : dict.keys()) {
-            const std::string name = Py::String(key).as_std_string("utf-8");
-            if (name != "PBR" && name != "Materials")
-                throw Base::TypeError("expected only 'PBR' and 'Materials' keys, not '"
-                                      + name + "'");
-        }
-        // Everything that can throw happens before the change is signalled
-        const bool haveValues = dict.hasKey("Materials");
-        const bool haveMode = dict.hasKey("PBR");
-        std::vector<Material> values;
-        if (haveValues) {
-            Py::Sequence seq(dict.getItem("Materials"));
-            values.reserve(seq.size());
-            for (Py::sequence_index_type i = 0; i < seq.size(); ++i)
-                values.push_back(getPyValue(seq[i].ptr()));
-        }
-        const bool mode = haveMode ? PyObject_IsTrue(dict.getItem("PBR").ptr()) > 0
-                                   : materialsMode(values, _pbr);
-        atomic_change guard(*this);
-        setPBR(mode);
-        if (haveValues)
-            setValues(std::move(values));
-        guard.tryInvoke();
-        return;
-    }
     if (PyObject_TypeCheck(value, &(MaterialPy::Type))) {
-        // One material assigned to the whole list states its own mode
-        const Material mat = *static_cast<MaterialPy*>(value)->getMaterialPtr();
-        atomic_change guard(*this);
-        setPBR(mat.pbr);
-        setValue(mat);
-        guard.tryInvoke();
+        // One material for the whole list, mode and all
+        setValue(*static_cast<MaterialPy*>(value)->getMaterialPtr());
         return;
     }
     PropertyLists::setPyObject(value);
@@ -3990,28 +3968,18 @@ Material PropertyMaterialList::getPyValue(PyObject *value) const {
 void PropertyMaterialList::setPyValues(const std::vector<PyObject*> &vals,
                                        const std::vector<int> &indices)
 {
+    // Values first: getPyValue throws on anything that is not a material,
+    // and it must throw before the change is signalled
     std::vector<Material> values;
     values.reserve(vals.size());
     for (auto *item : vals)
         values.push_back(getPyValue(item));
     if (indices.empty()) {
-        // A whole-list assignment adopts the materials' mode, so a tuple
-        // read from one object carries its mode to the next
-        const bool mode = materialsMode(values, _pbr);
-        atomic_change guard(*this);
-        setPBR(mode);
+        // A whole-list assignment restates the mode from its first entry
         setValues(std::move(values));
-        guard.tryInvoke();
         return;
     }
     assert(vals.size() == indices.size());
-    // A partial write cannot restate the whole list's mode; validate every
-    // entry before writing any
-    for (const auto &mat : values) {
-        if (mat.pbr != _pbr)
-            throw Base::TypeError(mat.pbr ? "cannot write a PBR material into a Phong list"
-                                          : "cannot write a Phong material into a PBR list");
-    }
     atomic_change guard(*this);
     int i = 0;
     for (auto index : indices)

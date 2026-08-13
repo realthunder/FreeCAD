@@ -59,16 +59,14 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
     }
 
     try {
-        // The mode first, whatever the keyword order: the factor setters
-        // demand it, and a PBR construction must not inherit the Phong
-        // default slots -- the default specular's alpha of one would read
-        // as full metal. Seed the PBR defaults and let the explicit
-        // keywords override them.
-        if (pbr && PyObject_IsTrue(pbr) > 0) {
-            Material* mat = getMaterialPtr();
-            mat->pbr = true;
-            mat->specularColor.set(1.0f, 1.0f, 1.0f, 0.0f);
-            mat->shininess = 0.5f;
+        // The mode first, whatever the keyword order: it converts, so the
+        // slots the other keywords name have to mean what the caller
+        // wrote them for. PBR=True on the fresh default converts it --
+        // white tint, metallic 0, the default look's roughness -- rather
+        // than inheriting the Phong specular, whose alpha of one would
+        // read as full metal.
+        if (pbr) {
+            setPBR(Py::Boolean(pbr));
         }
 
         if (diffuse) {
@@ -242,7 +240,9 @@ Py::Boolean MaterialPy::getPBR() const
 
 void MaterialPy::setPBR(Py::Boolean arg)
 {
-    getMaterialPtr()->pbr = arg;
+    // Converting, like every other way of editing this value: the surface
+    // keeps looking like itself in the other model
+    getMaterialPtr()->setPBR(arg);
 }
 
 Py::Float MaterialPy::getMetallic() const
@@ -252,14 +252,7 @@ Py::Float MaterialPy::getMetallic() const
 
 void MaterialPy::setMetallic(Py::Float arg)
 {
-    // The generated glue reports any C++ exception as "unknown"; keep the
-    // not-in-PBR-mode message
-    try {
-        getMaterialPtr()->setMetallic(arg);
-    }
-    catch (const Base::Exception& e) {
-        throw Py::RuntimeError(e.what());
-    }
+    getMaterialPtr()->setMetallic(arg);
 }
 
 Py::Float MaterialPy::getRoughness() const
@@ -269,12 +262,7 @@ Py::Float MaterialPy::getRoughness() const
 
 void MaterialPy::setRoughness(Py::Float arg)
 {
-    try {
-        getMaterialPtr()->setRoughness(arg);
-    }
-    catch (const Base::Exception& e) {
-        throw Py::RuntimeError(e.what());
-    }
+    getMaterialPtr()->setRoughness(arg);
 }
 
 PyObject *MaterialPy::getCustomAttributes(const char* /*attr*/) const

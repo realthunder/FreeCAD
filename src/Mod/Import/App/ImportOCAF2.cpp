@@ -549,6 +549,10 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
             // defaults, so they cost no storage.
             App::Material mat;
             const XCAFDoc_VisMaterialPBR& pbr = visMat->PbrMaterial();
+            // Tagged, not converted: the slots below ARE the PBR reading,
+            // and the tag is what carries that to the appearance the
+            // values are assigned to.
+            mat.pbr = true;
             mat.specularColor.set(1.0f, 1.0f, 1.0f);
             mat.specularColor.a = pbr.Metallic;
             mat.shininess = pbr.Roughness;
@@ -582,6 +586,7 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
     App::Material defMat(App::Material::DEFAULT);
     if (allPbr) {
         defMat = App::Material();
+        defMat.pbr = true;
         defMat.specularColor.set(1.0f, 1.0f, 1.0f);
         defMat.specularColor.a = 0.0f;
         defMat.shininess = 0.5f;

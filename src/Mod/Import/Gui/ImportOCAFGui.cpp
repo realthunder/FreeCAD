@@ -68,8 +68,9 @@ void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
     if (!vp || mats.empty()) {
         return;
     }
-    // The mode first: the values land under the reading they were built
-    // for (and the collapse baselines follow the mode).
+    // The mode first, so the collapse baselines follow it while the values
+    // land. The materials carry the same tag, so the assignment below
+    // restates it rather than converting them away.
     vp->ShapeAppearance.setPBR(pbr);
     // Collapse a uniform list to one entry: a single-entry appearance is
     // the whole-object form, whose scalar path every consumer handles.

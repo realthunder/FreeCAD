@@ -1032,9 +1032,87 @@ TEST_F(PropertyMaterialListTest, materialValuesCarryTheMode)
     EXPECT_FLOAT_EQ(phong.getMetallic(), 0.0F);
     EXPECT_FLOAT_EQ(phong.getRoughness(),
                     App::Material::shininessToRoughness(phong.shininess));
-    // the factor writers demand the mode, as the list's do
-    EXPECT_THROW(phong.setMetallic(0.5F), Base::RuntimeError);
-    EXPECT_THROW(phong.setRoughness(0.5F), Base::RuntimeError);
+}
+
+TEST_F(PropertyMaterialListTest, aValueConvertsWhenItsModeIsSet)
+{
+    // The mode is an attribute of the value like any other, and setting it
+    // converts: the surface keeps looking like itself in the other model
+    App::Material mat = redMaterial();
+    mat.shininess = 0.9F;
+    const App::Color base = mat.diffuseColor;
+
+    mat.setPBR(true);
+    EXPECT_TRUE(mat.pbr);
+    EXPECT_EQ(mat.diffuseColor.getPackedValue(), base.getPackedValue());
+    EXPECT_FLOAT_EQ(mat.getMetallic(), 0.0F);
+    EXPECT_FLOAT_EQ(mat.getRoughness(), App::Material::shininessToRoughness(0.9F));
+    EXPECT_EQ(mat.specularColor.getPackedValue() >> 8, 0xffffffU);
+
+    mat.setPBR(false);
+    EXPECT_FALSE(mat.pbr);
+    EXPECT_NEAR(mat.shininess, 0.9F, 1e-6);
+    EXPECT_EQ(mat.diffuseColor.getPackedValue(), base.getPackedValue());
+
+    // and stating a PBR quantity decides the mode rather than landing a
+    // number in a slot that means something else
+    App::Material metal = redMaterial();
+    metal.setMetallic(1.0F);
+    EXPECT_TRUE(metal.pbr);
+    EXPECT_FLOAT_EQ(metal.getMetallic(), 1.0F);
+    App::Material rough = redMaterial();
+    rough.setRoughness(0.25F);
+    EXPECT_TRUE(rough.pbr);
+    EXPECT_FLOAT_EQ(rough.getRoughness(), 0.25F);
+}
+
+TEST_F(PropertyMaterialListTest, theListTakesItsModeFromTheFirstMaterialAssigned)
+{
+    // A list holds ONE mode. A whole-list assignment states it through the
+    // material it starts with, and every further entry is converted to
+    // that reading rather than stored under the wrong one.
+    App::Material pbrMat = redMaterial();
+    pbrMat.setPBR(true);
+    pbrMat.setMetallic(1.0F);
+    pbrMat.setRoughness(0.25F);
+    App::Material phongMat = redMaterial();
+    phongMat.shininess = 0.9F;
+
+    App::PropertyMaterialList prop;
+    prop.setValues({pbrMat, phongMat});
+    ASSERT_TRUE(prop.isPBR());
+    EXPECT_FLOAT_EQ(prop.getMetallic(0), 1.0F);
+    // the Phong straggler converted: dielectric at the fitted roughness
+    EXPECT_FLOAT_EQ(prop.getMetallic(1), 0.0F);
+    EXPECT_FLOAT_EQ(prop.getRoughness(1), App::Material::shininessToRoughness(0.9F));
+    EXPECT_TRUE(prop.getMaterial(1).pbr);
+
+    // the other way round, and a single value states the mode too
+    prop.setValue(phongMat);
+    ASSERT_FALSE(prop.isPBR());
+    EXPECT_NEAR(prop.getShininess(0), 0.9F, 1e-6);
+
+    // one entry cannot restate the mode, so it is converted into the list
+    prop.setValues({phongMat, phongMat});
+    prop.set1Value(1, pbrMat);
+    EXPECT_FALSE(prop.isPBR());
+    EXPECT_NEAR(prop.getShininess(1),
+                App::Material::roughnessToShininess(0.25F), 1e-6);
+    // the metal's colour lands in the specular, as the Phong derivation says
+    EXPECT_EQ(prop.getSpecularColor(1).getPackedValue() >> 8,
+              prop.getDiffuseColor(1).getPackedValue() >> 8);
+
+    // growth fills entries of THIS list, so the filler converts as well
+    App::PropertyMaterialList grown;
+    grown.setValue(pbrMat);
+    ASSERT_TRUE(grown.isPBR());
+    grown.setSize(3, phongMat);
+    EXPECT_TRUE(grown.isPBR());
+    EXPECT_FLOAT_EQ(grown.getRoughness(2), App::Material::shininessToRoughness(0.9F));
+
+    // an empty assignment states nothing: the mode it finds stands
+    grown.setValues({});
+    EXPECT_TRUE(grown.isPBR());
 }
 
 TEST_F(PropertyMaterialListTest, convertPBRKeepsTheLook)

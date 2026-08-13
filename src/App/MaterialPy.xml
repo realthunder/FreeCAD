@@ -67,10 +67,14 @@ Satin, Metalized, Neon GNC, Chrome, Aluminium, Obsidian, Neon PHC, Jade, Ruby or
                 <UserDocu>
 Whether the values carry the PBR reading rather than the Phong one:
 DiffuseColor is the base colour, Shininess the roughness, SpecularColor
-the F0 tint with the metallic factor in its alpha. Materials read from a
-ShapeAppearance list are tagged with the list's mode, and assigning
-materials back adopts their tag. Setting this flag reinterprets the
-values without converting them.
+the F0 tint with the metallic factor in its alpha.
+
+Setting it CONVERTS the values, so the surface keeps looking like itself
+in the other model; only the specular colour, which Phong alone can
+state, is lost on the way back. Materials read from a ShapeAppearance
+list carry the list's mode, and assigning materials to one gives it the
+mode of the first -- the list holds a single mode, so any further entry
+is converted to it.
                 </UserDocu>
             </Documentation>
             <Parameter Name="PBR" Type="Boolean"/>
@@ -79,7 +83,8 @@ values without converting them.
             <Documentation>
                 <UserDocu>
 The metallic factor, riding the specular alpha. Reads 0 on a Phong
-material; writing demands PBR mode.
+material, which has no metals; writing one converts the material to PBR
+first, since stating a metallic factor decides the mode.
                 </UserDocu>
             </Documentation>
             <Parameter Name="Metallic" Type="Float"/>
@@ -88,7 +93,8 @@ material; writing demands PBR mode.
             <Documentation>
                 <UserDocu>
 The roughness. On a Phong material it reads as the Blinn-Phong
-derivation of the shininess; writing demands PBR mode.
+derivation of the shininess; writing one converts the material to PBR
+first, as Metallic does.
                 </UserDocu>
             </Documentation>
             <Parameter Name="Roughness" Type="Float"/>

@@ -174,8 +174,15 @@ namespace {
  * per-face colours -- which is every document written before ShapeAppearance,
  * since ShapeMaterial sorts after DiffuseColor -- throws those colours away.
  */
-void applyWholeMaterial(App::PropertyMaterialList &appearance, const App::Material &mat)
+void applyWholeMaterial(App::PropertyMaterialList &appearance, const App::Material &value)
 {
+    // ShapeMaterial cannot state a shading model -- it is a plain material
+    // and its serialised form has no room for one -- so it must never
+    // restate the appearance's. Without this the compatibility name would
+    // convert a PBR appearance to Phong just by being restored after it
+    // (it sorts later), or by an old macro writing through it.
+    App::Material mat = value;
+    mat.pbr = appearance.isPBR();
     if (appearance.getDiffuseColors().size() <= 1) {
         appearance.setValue(mat);
         return;

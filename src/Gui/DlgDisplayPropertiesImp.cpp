@@ -389,10 +389,9 @@ void DlgDisplayPropertiesImp::onChangeMaterialActivated(int index)
 
     for (auto it : Provider) {
         if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(it->getPropertyByName("ShapeAppearance"))) {
-            // The presets are Phong definitions, and a value write alone
-            // deliberately keeps the list's mode -- so state it, or a PBR
-            // appearance would read the preset's slots its own way
-            prop->setPBR(false);
+            // The presets are Phong definitions and say so, so this puts a
+            // PBR appearance back into Phong mode rather than leaving it to
+            // read the preset's slots its own way
             prop->setValue(mat);
         }
     }

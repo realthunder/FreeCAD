@@ -29,8 +29,6 @@
 # include <cstring>
 #endif
 
-#include <Base/Exception.h>
-
 #include "Material.h"
 
 using namespace App;
@@ -379,6 +377,13 @@ Material Material::phongToPbr(const Material& classic)
     return mat;
 }
 
+void Material::setPBR(bool enable)
+{
+    if (pbr == enable)
+        return;
+    *this = enable ? phongToPbr(*this) : pbrToPhong(*this);
+}
+
 float Material::getMetallic() const
 {
     return pbr ? specularColor.a : 0.0f;  // the Phong model has no metals
@@ -391,14 +396,15 @@ float Material::getRoughness() const
 
 void Material::setMetallic(float value)
 {
-    if (!pbr)
-        throw Base::RuntimeError("material is not in PBR mode");
+    // Stating a metallic factor decides the mode: the Phong slot this
+    // lands in means something else, and a value written there would be
+    // thrown away by the conversion the moment the mode was switched.
+    setPBR(true);
     specularColor.a = value;
 }
 
 void Material::setRoughness(float value)
 {
-    if (!pbr)
-        throw Base::RuntimeError("material is not in PBR mode");
+    setPBR(true);
     shininess = value;
 }

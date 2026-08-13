@@ -1430,6 +1430,15 @@ private:
     float shininessDefault() const;
     /// Throw unless the list is in PBR mode
     void requirePBR() const;
+    /** One material as this list reads it
+     *
+     * The list holds a single mode for every entry, so a material written
+     * into it under the other reading is converted rather than stored raw
+     * -- its slots would mean something else here. A whole-list
+     * assignment states the mode first (from its first entry), so this
+     * converts only what disagrees with it.
+     */
+    Material inMode(const Material &mat) const;
 
     /** Land restored values, converting and merging what the file's era means
      *
