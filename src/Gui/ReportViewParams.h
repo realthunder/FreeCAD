@@ -71,7 +71,7 @@ public:
     static boost::signals2::signal<void (const char*)> &signalParamChanged();
     static void signalAll();
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnWarning
     static const bool & getcheckShowReportViewOnWarning();
@@ -81,7 +81,7 @@ public:
     static const char *doccheckShowReportViewOnWarning();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnError
     static const bool & getcheckShowReportViewOnError();
@@ -91,7 +91,7 @@ public:
     static const char *doccheckShowReportViewOnError();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnNormalMessage
     static const bool & getcheckShowReportViewOnNormalMessage();
@@ -101,7 +101,7 @@ public:
     static const char *doccheckShowReportViewOnNormalMessage();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnLogMessage
     static const bool & getcheckShowReportViewOnLogMessage();
@@ -111,7 +111,7 @@ public:
     static const char *doccheckShowReportViewOnLogMessage();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportViewOnCritical
     static const bool & getcheckShowReportViewOnCritical();
@@ -121,7 +121,7 @@ public:
     static const char *doccheckShowReportViewOnCritical();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter checkShowReportTimecode
     static const bool & getcheckShowReportTimecode();
@@ -131,7 +131,7 @@ public:
     static const char *doccheckShowReportTimecode();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter LogMessageSize
     static const long & getLogMessageSize();
@@ -141,7 +141,7 @@ public:
     static const char *docLogMessageSize();
     //@}
 
-    // Auto generated code (Tools/params_utils.py:138)
+    // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter CommandRedirect
     ///
@@ -154,7 +154,7 @@ public:
     static const char *docCommandRedirect();
     //@}
 
-// Auto generated code (Tools/params_utils.py:178)
+// Auto generated code (Tools/params_utils.py:179)
 }; // class ReportViewParams
 } // namespace Gui
 //[[[end]]]
