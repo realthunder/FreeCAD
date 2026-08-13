@@ -1354,12 +1354,31 @@ materializes metal it was not given.
   8-bit quantization shininess uses). Until then a per-face PBR
   appearance renders with entry-0 uniform PBR plus derived-Phong
   per-face streams.
-- **glTF/STEP and the dialogs/Python**: planned; glTF import/export in
-  PBR mode becomes exact (retiring the Phong->PBR->Phong
-  approximation), STEP export converts through `getPhongMaterial`.
+- **glTF, exact both ways (landed 2026-08-13)**: when every material a
+  label uses has the PBR definition (glTF always), import stores the
+  raw factors -- metallic into the specular alpha under a white tint,
+  roughness into the shininess slot -- and the appearance goes PBR
+  mode; a PBR list is always meaningful (no variance gate), since its
+  factors have no colour-label channel. The emissive still reads
+  through OCCT's Common conversion, keeping the stage-4 colour-space
+  conventions and their verified round trip. Export writes the PBR
+  part of the VisMaterial from the raw slots and the Common part from
+  `pbrToPhong` -- which is what the STEP writer's reflectance model
+  picks up, so STEP export converts to Phong with no code of its own.
+  STEP import stays Phong mode (reflectance materials have no PBR
+  definition). Found and fixed on the way: the untested Render_*
+  export leg wrote the stored sRGB emissive floats straight into the
+  linear glTF emissive factor -- every reimport would gamma-shift it.
+- **The dialogs and the Python read side**: planned (the dict setter
+  landed with the core).
 
 ### 8.5 Landed 2026-08-13
 
-Property core + conversions + gtests: `dd6199ced7` (8 new tests in
-`tests/src/App/PropertyMaterialList.cpp`, all 38 green). Coin GL leg
-derivation and the uniform bgfx leg: the commit following it.
+Property core + conversions + dict setter + gtests: `75fbed77ef`
+(8 new tests in `tests/src/App/PropertyMaterialList.cpp`, all 38
+green). Coin GL leg derivation + uniform bgfx leg: `5759df0e46`
+(three-box pixel probe: appearance-PBR == Render_* leg, != Phong leg).
+glTF exact + STEP conversion: the commit following this doc's update;
+verified by the updated probe battery in `~/works/sw/models/perface/`
+(data/uniform/step-export/step-import/truck, all PASS -- data_probe now
+asserts the raw factors exactly).
