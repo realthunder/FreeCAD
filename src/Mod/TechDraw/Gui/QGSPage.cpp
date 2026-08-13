@@ -22,7 +22,9 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include <QDomDocument>
 #include <QFile>
@@ -699,33 +701,48 @@ void QGSPage::setViewParents()
     //Order matters, and it is not free to choose. A view has to be settled inside its
     //own parent before anything that hangs off it is placed against it, because
     //addDimToParent and friends measure the offset in the parent's frame - and that
-    //frame moves when the parent is itself handed to a collection. Collection members
-    //are therefore claimed first, which is the order the old five passes ran in
-    //(setCollectionGroups ahead of setDimensionGroups and the rest).
+    //frame moves when the parent is itself handed to a collection.
     //
-    //Ordering by a computed "how many views deep is this" is the general form of the
-    //same rule and is probably where this should end up. It is not done here only
-    //because it has not been measured honestly: a section view is computed on a
-    //background thread, so a page exported right after it opens can be half drawn -
-    //the same binary gave Page006 of scanner.FCStd 315 paths on one run and 171 on the
-    //next. Settle the page before believing any before/after drawing diff.
-    const std::vector<QGIView*> unparented = collectUnparented();
-    for (auto& item : unparented) {
-        if (item->parentItem()) {
-            continue;
-        }
-        if (dynamic_cast<QGIViewCollection*>(findParent(item))) {
-            attachToParent(item);
-        }
-    }
+    //How deep a view is drawn says exactly that, and says it for a chain of any length
+    //rather than only for the collection-then-everything-else case the old repair
+    //passes covered: a dimension on a view inside a collection is two deep, and has to
+    //wait for both.
+    std::vector<QGIView*> unparented = collectUnparented();
 
-    //then everything that hangs off a view: dimensions, balloons, leaders, annotations
+    std::vector<std::pair<int, QGIView*>> byDepth;
+    byDepth.reserve(unparented.size());
     for (auto& item : unparented) {
+        byDepth.emplace_back(parentDepth(item), item);
+    }
+    //stable, so views at the same depth keep the order the scene handed them to us
+    std::stable_sort(byDepth.begin(), byDepth.end(),
+                     [](const std::pair<int, QGIView*>& first,
+                        const std::pair<int, QGIView*>& second) {
+                         return first.first < second.first;
+                     });
+
+    for (auto& entry : byDepth) {
+        QGIView* item = entry.second;
         if (item->parentItem()) {
             continue;
         }
         attachToParent(item);
     }
+}
+
+//! how many views deep this one is drawn - 0 for a view that sits on the page itself
+int QGSPage::parentDepth(QGIView* view) const
+{
+    //a document can name a parentage that loops (nothing stops a link cycle), so the
+    //walk is bounded by the number of views there are to walk through
+    const std::size_t limit = getViews().size();
+    int depth = 0;
+    for (QGIView* parent = findParent(view); parent; parent = findParent(parent)) {
+        if (static_cast<std::size_t>(++depth) > limit) {
+            break;
+        }
+    }
+    return depth;
 }
 
 //! the views in the scene that are not drawn inside anything yet

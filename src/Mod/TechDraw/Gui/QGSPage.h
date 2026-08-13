@@ -143,6 +143,7 @@ public:
     void postProcessXml(QTemporaryFile& temporaryFile, QString filename, QString pagename);
 
     void setViewParents();
+    int parentDepth(QGIView* view) const;
     void attachToParent(QGIView* item);
     void addItemToParent(QGIView* item, QGIView* parent);
     std::vector<QGIView*> collectUnparented() const;
