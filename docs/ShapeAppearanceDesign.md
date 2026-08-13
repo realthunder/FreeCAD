@@ -1369,8 +1369,39 @@ materializes metal it was not given.
   definition). Found and fixed on the way: the untested Render_*
   export leg wrote the stored sRGB emissive floats straight into the
   linear glTF emissive factor -- every reimport would gamma-shift it.
-- **The dialogs and the Python read side**: planned (the dict setter
-  landed with the core).
+- **The Python read side (landed 2026-08-13)**: the mode rides the
+  material VALUES. `App::Material` carries a `pbr` tag -- part of its
+  equality, not of its storage -- and `getMaterial()` stamps the list's
+  mode on every value it hands out, so `ShapeAppearance[0].PBR` answers,
+  and `Metallic`/`Roughness` read mode-aware off the value (a Phong
+  value has no metals and derives its roughness). Assignment adopts the
+  materials' tags: a tuple read from one object carries its mode to the
+  next, a plain `Material()` list states Phong, mixing modes in one
+  assignment is a TypeError, and the dict's explicit `PBR` key wins over
+  the tags ({"PBR": x} alone stays the raw reinterpret). A partial
+  (indexed) write must match the list's mode. `Material(PBR=True, ...)`
+  seeds the PBR defaults -- white tint, metallic 0, roughness 0.5 --
+  before the explicit keywords land, because inheriting the Phong
+  default specular would spell full metal.
+- **The dialogs (landed 2026-08-13)**: the appearance editor
+  (`DlgMaterialProperties`) grew a shading-model row that toggles
+  Phong/PBR through the new `convertPBR()` -- unlike `setPBR()` it
+  converts the stored values per entry so the look survives (toward
+  Phong via `getPhongMaterial`, toward PBR via `Material::phongToPbr`:
+  dielectric, roughness from the shininess fit; the specular colour is
+  the one thing a round trip forgets). In PBR view the diffuse button is
+  the base colour, the specular button the F0 tint, metallic/roughness
+  are spin rows, and ambient/shininess hide. Edits apply as committed
+  (spin steps, colour picks -- keyboard tracking off) so the 3D view
+  answers live; OK keeps, Cancel restores per-property snapshots. Colour
+  edits write rgb only (`setDiffuseRGB`/`setSpecularRGB`): the diffuse
+  alpha is the opacity and the PBR specular alpha the metallic, which
+  the old whole-colour writes silently wiped. The editor also handles a
+  plain `PropertyMaterial` again (the colour-plot `TextureMaterial`
+  path had been dead: every handler cast to the list type only), and
+  the display dialog's preset combo now states Phong mode explicitly --
+  a value write alone deliberately keeps the mode, so picking a preset
+  on a PBR appearance used to leave the flag behind.
 
 ### 8.5 Landed 2026-08-13
 
@@ -1382,3 +1413,10 @@ glTF exact + STEP conversion: the commit following this doc's update;
 verified by the updated probe battery in `~/works/sw/models/perface/`
 (data/uniform/step-export/step-import/truck, all PASS -- data_probe now
 asserts the raw factors exactly).
+
+Python read side (value tags, MaterialPy PBR/Metallic/Roughness, the
+assignment mode rules, convertPBR, the rgb-only field writes) and the
+two dialogs: the commits following this doc's update. Verified three
+ways: 41/41 gtests (3 new), a 16-check FreeCADCmd probe of the Python
+bridge, and a 21-check xvfb GUI smoke that drives Std_SetAppearance's
+real dialogs through a cancel-revert round and an OK-keep round.
