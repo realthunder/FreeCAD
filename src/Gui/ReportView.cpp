@@ -394,7 +394,10 @@ public:
     {
         ReportHighlighter::Paragraph type;
         std::size_t key;
-        //! the held messages themselves, so the collapsed line can be expanded
+        //! the first message held, shown in place of the rest
+        QString exemplar;
+        //! every held message, carrying the time it arrived rather than the time
+        //! the fold is opened, which is the only time a reader can act on
         QStringList folded;
         //! how many were held, which exceeds folded.size() once the cap is hit
         int held;
@@ -408,6 +411,15 @@ public:
 //! A storm is unbounded and these are held in memory, so the count keeps rising
 //! after the buffer stops growing and the expansion says what it could not keep.
 static const int foldedBufferLimit = 200;
+
+//! stamp a message with the time it arrived, as the view stamps what it shows
+static QString withTimecode(const QString& text)
+{
+    if (!ReportViewParams::getcheckShowReportTimecode()) {
+        return text;
+    }
+    return QTime::currentTime().toString(QStringLiteral("hh:mm:ss  ")) + text;
+}
 
 //! put the repeat count inside the line rather than after its newline
 //!
@@ -584,8 +596,11 @@ bool ReportOutput::holdDuplicate(ReportHighlighter::Paragraph type, const QStrin
     for (auto& line : d->recent) {
         if (line.type == type && line.key == key) {
             ++line.held;
+            if (line.exemplar.isEmpty()) {
+                line.exemplar = text;
+            }
             if (line.folded.size() < foldedBufferLimit) {
-                line.folded.append(text);
+                line.folded.append(withTimecode(text));
             }
             //timed from the first repeat, not the last, so a line repeating without
             //pause still reports every DuplicateTimeout instead of never
@@ -603,7 +618,7 @@ bool ReportOutput::holdDuplicate(ReportHighlighter::Paragraph type, const QStrin
     //the repeats stay in front of the line that ended them
     flushDuplicates();
 
-    d->recent.push_back({type, key, {}, 0});
+    d->recent.push_back({type, key, {}, {}, 0});
     while (static_cast<int>(d->recent.size()) > window) {
         d->recent.pop_front();
     }
@@ -618,15 +633,17 @@ void ReportOutput::flushDuplicates()
 {
     d->dupTimer->stop();
     for (auto& line : d->recent) {
-        if (line.held < 1 || line.folded.isEmpty()) {
+        if (line.held < 1 || line.exemplar.isEmpty()) {
             continue;
         }
         const int held = line.held;
         //the first one queued speaks for the rest: they only differ where a digit
-        //differs, which is what they were keyed to ignore
-        const QString shown = line.folded.first();
+        //differs, which is what they were keyed to ignore. It is the unstamped copy
+        //- appendReport stamps what it shows.
+        const QString shown = line.exemplar;
         QStringList folded = line.folded;
         line.held = 0;
+        line.exemplar.clear();
         line.folded.clear();
 
         //always counted, including (x1): without it a line that arrived exactly
