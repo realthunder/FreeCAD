@@ -27,12 +27,15 @@
 #include <locale>
 #include <iomanip>
 
+#include <Build/Version.h>
+
 #include "Writer.h"
 #include "Base64.h"
 #include "Base64Filter.h"
 #include "Exception.h"
 #include "FileInfo.h"
 #include "Persistence.h"
+#include "ProgramVersion.h"
 #include "Stream.h"
 #include "Tools.h"
 
@@ -41,6 +44,15 @@
 using namespace Base;
 using namespace std;
 using namespace zipios;
+
+bool Base::writerAlphaIsOpacity()
+{
+    // The release this build calls itself, which is what it stamps into the
+    // ProgramVersion attribute of every document it writes -- so it is also
+    // what a later reader will judge those documents by.
+    static const bool opacity = alphaIsOpacity(FCVersionMajor "." FCVersionMinor);
+    return opacity;
+}
 
 // boost iostream filter to escape ']]>' in text file saved into CDATA section.
 // It does not check if the character is valid utf8 or not.

@@ -127,26 +127,41 @@ inline ReleaseNumber getReleaseNumber(std::string_view str)
 /** Whether a document's colours mean opacity by their alpha component.
  *
  * Upstream inverted the meaning at 1.1: before that release the component
- * held transparency, and a 1.1 reader converts an older file on the way in.
- * This fork kept the older convention, where a face colour's alpha IS that
- * face's transparency, so the conversion it needs is the same arithmetic in
- * the opposite direction -- applied to files newer than the change, not older.
+ * held transparency, and from 1.1 it holds opacity. This fork now means
+ * opacity in memory too, so a file older than the change has to be converted
+ * on the way in -- which is upstream's own rule, and this answers it.
  *
- * A version this cannot read is answered with no, not yes: leaving a colour
- * as the file states it is what every release before the change did, and is
- * the answer that cannot corrupt a document nobody converted.
+ * A version this cannot read is answered with no, so an unreadable version is
+ * treated as the older convention. That is what every file predating the
+ * change actually is, and it is the answer that leaves a colour alone rather
+ * than inverting one that was already right.
  *
  * NOTE: the gate is the release number, and this fork's own is still 0.22
- * (PACKAGE_VERSION in the top level CMakeLists). Should the fork ever call
- * itself 1.1 or later, its own documents would start reading as opacity based
- * and every colour would come back inverted; a fork marker in the document
- * root would have to join this test before that can happen.
+ * (PACKAGE_VERSION in the top level CMakeLists), so the documents it writes
+ * are old-convention documents and it converts its own files on the way in.
+ * writerAlphaIsOpacity() below is the same question asked of this build, and
+ * the two move together the day PACKAGE_VERSION reaches 1.1.
  */
 inline bool alphaIsOpacity(std::string_view programVersion)
 {
     const ReleaseNumber release = getReleaseNumber(programVersion);
     return release.major > 1 || (release.major == 1 && release.minor >= 1);
 }
+
+/** Whether the documents THIS build writes mean opacity by a colour's alpha
+ *
+ * A document states the release that wrote it, so the convention it is in is
+ * this build's, not the reader's. False while PACKAGE_VERSION is below 1.1,
+ * which is why every colour is written back inverted: a file this fork wrote
+ * has to stay readable by the releases that already read its files, and by an
+ * upstream 1.1 reader, both of which take the alpha for a transparency.
+ *
+ * The day the fork calls itself 1.1 this turns true on its own, the writing
+ * conversion stops, and files written before then still convert on the way in
+ * because they still state the version that wrote them. Nothing else has to
+ * change with it.
+ */
+BaseExport bool writerAlphaIsOpacity();
 
 /// The same question asked of the document a reader is parsing
 BaseExport bool alphaIsOpacity(const XMLReader &reader);

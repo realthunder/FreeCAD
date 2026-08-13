@@ -70,6 +70,16 @@ TEST(ProgramVersion, anUnreadableVersionIsNotTreatedAsNewer)
     EXPECT_FALSE(Base::alphaIsOpacity("unknown"));
 }
 
+TEST(ProgramVersion, thisBuildStillWritesTheLegacyBytes)
+{
+    // The documents this build writes state its own release, which is below
+    // 1.1, so their colours must go out in the legacy convention -- alpha as
+    // transparency -- for that statement to stay true. The day the fork
+    // calls itself 1.1 this flips on its own and the writing conversion
+    // stops with it; this test failing IS that day's checklist.
+    EXPECT_FALSE(Base::writerAlphaIsOpacity());
+}
+
 TEST(ProgramVersion, upstreamsTableStillAnswersTheirWay)
 {
     // Ported unchanged, so their version-gated code compiles here. Kept
