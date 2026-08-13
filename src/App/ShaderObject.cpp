@@ -113,9 +113,9 @@ ShaderProgram::ShaderProgram()
             "changes the shape as well as the speed");
     ADD_PROPERTY_TYPE(EmitterWarmup, (0.0), "Emitter", Prop_None,
             "Seconds of simulation run from the reset state before a\n"
-            "frozen frame is drawn (RenderDebug_FreezeFrame). Gives a\n"
-            "deterministic capture settled motion instead of particles\n"
-            "at their spawn points");
+            "frozen frame is drawn (the DebugFreezeFrame render\n"
+            "parameter). Gives a deterministic capture settled motion\n"
+            "instead of particles at their spawn points");
 }
 
 // ----------------------------------------------------------------------------

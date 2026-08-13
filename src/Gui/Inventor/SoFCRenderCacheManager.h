@@ -209,6 +209,18 @@ GuiExport void applySectionHatchTexture(SoFCRenderCacheManager &manager);
 /// control channel still has somewhere to put an edit
 /// (docs/HeadlessServe.md §3.3).
 GuiExport void initRenderProperties(App::PropertyContainer *view);
+
+/// The per-container render property names that were retired to global
+/// RenderParams (debug/measurement switches, ladder tuning, occlusion
+/// culling, the GPU budget): a null-terminated list. Saved copies inside
+/// old documents shadowed the globals, so they are no longer read.
+GuiExport const char * const *legacyRenderPropertyNames();
+
+/// Remove any retired render properties (legacyRenderPropertyNames)
+/// still sitting on the container -- called after a view restores its
+/// saved properties, so old documents load compatibly and the dead
+/// override surface does not linger.
+GuiExport void stripLegacyRenderProperties(App::PropertyContainer *view);
 }
 
 #endif // GUI_SOFCRENDERCACHEMANAGER_H

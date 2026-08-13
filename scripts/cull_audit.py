@@ -222,6 +222,10 @@ def run():
         emit("re-fitted after convergence; camera fixed from here on")
 
         settle = float(os.environ.get("FC_SETTLE", "30"))
+        # Every knob below is a GLOBAL RenderParams parameter
+        # (2026-08-14); the per-view Render_*/RenderDebug_* copies were
+        # retired because saved overrides shadowed the globals.
+        rp = App.ParamGet("User parameter:BaseApp/Preferences/View/Render")
         # /!\ FC_NO_AUDIT=1 measures the frame WITHOUT the instrument.
         # The audit re-renders every scene draw into the id image
         # (ViewDebugScene), which on the rack model is ~12.7ms of CPU
@@ -234,7 +238,7 @@ def run():
         # for a while and every frame timing this workstream quoted was
         # inflated ~3x on submit as a result.
         audit = os.environ.get("FC_NO_AUDIT", "") in ("", "0")
-        v.RenderDebug_CullAudit = audit
+        rp.SetBool("DebugCullAudit", audit)
         # Both arms announce themselves. Only the OFF arm used to, so a
         # run whose timings were inflated by the instrument said nothing
         # at all -- and silence reads as "clean" to whoever greps the log
@@ -266,7 +270,7 @@ def run():
         # rows, not timing rows.
         proxycut = os.environ.get("FC_PROXYCUT", "") not in ("", "0")
         if proxycut:
-            v.RenderDebug_ProxyCut = True
+            rp.SetBool("DebugProxyCut", True)
             emit("proxy-cut diagnostic ON -- it partitions every drawn "
                  "instance on the frames it reports, so FRAME TIMINGS IN "
                  "THIS RUN ARE NOT CLEAN")
@@ -279,44 +283,29 @@ def run():
         # bgfx's GL renderer reports no limit.
         budget_mb = int(os.environ.get("FC_GPU_BUDGET_MB", "0"))
         ceiling_mb = int(os.environ.get("FC_LEVEL_CEILING_MB", "0"))
-        # /!\ SET THE VIEW PROPERTY, NOT THE GLOBAL PARAMETER. Render_*
-        # are dynamic view properties and, where one exists, it WINS
-        # over the parameter of the same name -- so pinning the global
-        # GpuMemoryBudgetMB while the view carries its own 0 delivers
-        # nothing, silently, and the renderer reports "budget NONE"
-        # exactly as if the knob did not exist. Cost one run to find.
-        rp = App.ParamGet("User parameter:BaseApp/Preferences/View/Render")
+        # The global parameter is the only knob now: per-view Render_*
+        # copies of these were retired (2026-08-14) precisely because a
+        # view carrying its own value silently WON over the parameter --
+        # a saved 0 once made the renderer report "budget NONE" as if
+        # the knob did not exist. Cost one run to find.
         rp.SetBool("LevelDebug", True)
-        # addProperty is idempotent on the pre-created render set, so
-        # this both creates the property on a build that lacks it and
-        # returns the existing one otherwise. Without it a missing
-        # property is an AttributeError that aborts the whole block --
-        # which is how one run silently set no knobs at all.
-        v.addProperty("App::PropertyBool", "Render_LevelDebug")
-        v.Render_LevelDebug = True
-        v.addProperty("App::PropertyInteger", "Render_GpuMemoryBudgetMB")
-        v.addProperty("App::PropertyInteger", "Render_LevelCeilingSimulateMB")
         if budget_mb:
             rp.SetInt("GpuMemoryBudgetMB", budget_mb)
-            v.Render_GpuMemoryBudgetMB = budget_mb
             emit("GPU budget PINNED to %d MB -- simulating a model that "
                  "does not fit; the plan may downgrade displayed meshes"
                  % budget_mb)
         else:
             rp.SetInt("GpuMemoryBudgetMB", 0)
-            v.Render_GpuMemoryBudgetMB = 0
             emit("GPU budget automatic = NONE on OpenGL -- the downgrade "
                  "half of the level plan will not run in this row")
         if ceiling_mb:
             rp.SetInt("LevelCeilingSimulateMB", ceiling_mb)
-            v.Render_LevelCeilingSimulateMB = ceiling_mb
             emit("CPU memory ceiling SIMULATED at %d MB -- exact "
                  "re-tessellations will be refused" % ceiling_mb)
         else:
             rp.SetInt("LevelCeilingSimulateMB", 0)
-            v.Render_LevelCeilingSimulateMB = 0
 
-        v.RenderDebug_Timing = True
+        rp.SetBool("DebugTiming", True)
         # FC_TIGHT=1: also ask what a TIGHTER OCCLUDEE VOLUME would have
         # culled (#12.19). Off by default because its per-triangle arm
         # costs far more than a frame -- it runs only on the audit's
@@ -325,7 +314,7 @@ def run():
         # row whose clock matters.
         tight = os.environ.get("FC_TIGHT", "") not in ("", "0")
         if tight:
-            v.RenderDebug_CullBounds = True
+            rp.SetBool("DebugCullBounds", True)
             emit("tight-bound diagnostic ON -- timings in these rows are "
                  "NOT comparable with rows measured without it")
 
@@ -543,19 +532,19 @@ def run():
 
         # 1. Instrument validation: nothing masked, so over-cull must be 0.
         emit("--- validation: culling OFF, nothing may be reported over-culled")
-        v.Render_Occlusion = False
+        rp.SetBool("Occlusion", False)
         audit_row("culling off")
 
         # 2. A picture of the id image itself, for the eye. Saved once; a
         # screen of flat black here means the id pass drew nothing, which is
         # the same disease the guard above catches numerically.
         try:
-            v.RenderDebug_ViewMode = "InstanceId"
+            rp.SetInt("DebugViewMode", 11)  # InstanceId
             spin(min(settle, 10.0), v)
             shot = os.path.join(DIR, "id_image.png")
             v.saveImage(shot, 1600, 900, "Current")
             emit("id image written to %s" % shot)
-            v.RenderDebug_ViewMode = "Off"
+            rp.SetInt("DebugViewMode", 0)
             spin(3, v)
         except Exception as exc:
             emit("id image capture failed: %s" % exc)
@@ -621,33 +610,33 @@ def run():
             else:
                 ttl, _, confirm = spec.partition("/")
                 label = "ttl %s confirm %s" % (ttl, confirm or "-")
-            v.Render_Occlusion = False
+            rp.SetBool("Occlusion", False)
             spin(settle, v)
             a = os.path.join(DIR, "a_%s.png" % spec.replace("/", "_"))
             v.saveImage(a, 1600, 900, "Current")
-            v.Render_OcclusionSoftware = software
+            rp.SetBool("OcclusionSoftware", bool(software))
             if software:
                 if div:
-                    v.Render_OcclusionResolution = int(div)
+                    rp.SetInt("OcclusionResolution", int(div))
                 if tris:
-                    v.Render_OcclusionOccluderTris = int(tris)
+                    rp.SetInt("OcclusionOccluderTris", int(tris))
                 if thr:
-                    v.Render_OcclusionThreads = int(thr)
+                    rp.SetInt("OcclusionThreads", int(thr))
                 if simd:
-                    v.Render_OcclusionSimd = bool(int(simd))
+                    rp.SetBool("OcclusionSimd", bool(int(simd)))
                 if coarse:
-                    v.Render_OcclusionCoarse = bool(int(coarse))
+                    rp.SetBool("OcclusionCoarse", bool(int(coarse)))
                 if level:
-                    v.Render_OcclusionCoarseLevel = int(level)
+                    rp.SetInt("OcclusionCoarseLevel", int(level))
                 if bias:
-                    v.Render_OcclusionCoarseBias = int(bias)
+                    rp.SetInt("OcclusionCoarseBias", int(bias))
                 if perinst:
-                    v.Render_OcclusionPerInstance = bool(int(perinst))
+                    rp.SetBool("OcclusionPerInstance", bool(int(perinst)))
             else:
-                v.Render_OcclusionVisibleTtl = int(ttl)
+                rp.SetInt("OcclusionVisibleTtl", int(ttl))
                 if confirm:
-                    v.Render_OcclusionConfirm = int(confirm)
-            v.Render_Occlusion = True
+                    rp.SetInt("OcclusionConfirm", int(confirm))
+            rp.SetBool("Occlusion", True)
             audit_row(label)
             b = os.path.join(DIR, "b_%s.png" % spec.replace("/", "_"))
             v.saveImage(b, 1600, 900, "Current")
@@ -658,7 +647,7 @@ def run():
                 diff, big, total = r
                 emit("    picture: %d of %d px differ (%.4f%%), %d by >64"
                      % (diff, total, 100.0 * diff / total, big))
-        v.Render_Occlusion = False
+        rp.SetBool("Occlusion", False)
         emit("DONE")
     except Exception:
         emit("FAIL")

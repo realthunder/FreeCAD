@@ -34,9 +34,9 @@
 #     --log-file ~/gate.log scripts/interactivity_gate.py
 #
 # /!\ Verify the NVIDIA string in the log; llvmpipe is silent.
-# /!\ server_imported.FCStd carries SAVED per-view Render_* overrides
-#     that shadow the globals -- the budget is pinned on the VIEW here,
-#     after the view exists, like level_converge.py does.
+# The budget/debug knobs are GLOBAL RenderParams now (2026-08-14):
+#     saved per-view overrides no longer shadow them (old docs' copies
+#     are stripped on restore), so the budget is set once via ParamGet.
 #
 # FC_MODEL, FC_LOG, FC_OUT, FC_BUDGET_HIGH_MB (148), FC_BUDGET_LOW_MB
 # (64), FC_GAP_LIMIT_MS (200), FC_SETTLE_S (45), FC_MAX_WAIT (600),
@@ -277,11 +277,12 @@ def run():
 
         # ---- Camera (placed once), budget pinned high -------------------
         v = Gui.ActiveDocument.ActiveView
-        # The document restores SEVERAL saved 3D views, and the one that
-        # renders (whose per-view Render_* overrides the bridge reads)
-        # is not reliably ActiveView -- a run once wrote the drop to a
-        # non-rendering view and measured 600s of budget-148 plans. The
-        # overrides go to EVERY 3D view.
+        # The budget and debug knobs are globals now, but LevelTolerance
+        # is still a per-view display property, and the document restores
+        # SEVERAL saved 3D views: the rendering one is not reliably
+        # ActiveView (a run once wrote a per-view drop to a non-rendering
+        # view and measured 600s of nothing). Per-view writes therefore
+        # still go to EVERY 3D view.
         def views3d():
             try:
                 return list(Gui.ActiveDocument.mdiViewsOfType(
@@ -298,8 +299,6 @@ def run():
                     pass
             return n
         emit("overrides go to %d 3D view(s)" % len(views3d()))
-        override("Render_LevelDebug", True)
-        override("Render_GpuMemoryBudgetMB", HIGH)
         if TOL:
             override("Render_LevelTolerance", float(TOL))
             emit("refine tolerance pinned to %spx (climb %s)"
@@ -342,8 +341,8 @@ def run():
         # ---- Phase DROP -------------------------------------------------
         emit("dropping budget %d -> %d MB live" % (HIGH, LOW))
         t1 = time.time()
-        emit("drop written to %d view(s)"
-             % override("Render_GpuMemoryBudgetMB", LOW))
+        rp.SetInt("GpuMemoryBudgetMB", LOW)
+        emit("drop written to the global GpuMemoryBudgetMB parameter")
         window, quiet = [], 0
         while time.time() - t1 < MAX_WAIT:
             pump(0.5, v)

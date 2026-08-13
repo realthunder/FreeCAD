@@ -50,6 +50,27 @@ grandfathered and get absorbed by section 4.
 
 ---
 
+> **2026-08-14 revision: the fixed debug switches are GLOBAL parameters
+> now, not per-view properties.** Everything this document describes as a
+> `RenderDebug_<Switch>` view property -- ViewMode, FreezeFrame, Label,
+> Timing, Delta, Coverage, Occlusion, ProxyCut, ProxyGen, CullAudit,
+> CullBounds -- plus the occlusion-culling knobs (`Render_Occlusion*`),
+> the ladder tuning knobs (GpuMemoryBudgetMB, LevelDebug,
+> LevelCeilingSimulateMB, LevelPressureRelease, DowngradeLedger,
+> ClimbHardLimit, ClimbAdmitBatch, DescentOrderBatch, ShapeVertices,
+> PressureDropEdges, LoadDropElements) is read from the global
+> RenderParams only (`Preferences/View/Render`; the RenderDebug ones as
+> `Debug<Switch>`). The per-view copies were retired because documents
+> SAVE view properties: a model file carrying a stale override silently
+> shadowed whatever a measurement harness or the preferences set, and
+> that burned multiple measurement runs. Old files still load; the dead
+> properties are stripped on view restore
+> (`Gui::stripLegacyRenderProperties`). What REMAINS per-view is the
+> genuinely display-intent surface (the effects groups, CoarseTessellation,
+> LevelTolerance) and the **custom named shader parameters** of section
+> 2.5 -- any `RenderDebug_<name>` property outside the fixed list still
+> feeds a like-named `u_<name>` uniform, per view, as before.
+
 ## 2. The debug-parameter protocol
 
 ### 2.1 The existing spine (already implemented)

@@ -131,8 +131,8 @@ def run():
         v = Gui.ActiveDocument.ActiveView
         emit("opened %s: %d objects" % (MODEL, len(doc.Objects)))
 
-        v.Render_GpuMemoryBudgetMB = BUDGET
-        v.Render_LevelDebug = True
+        rp.SetInt("GpuMemoryBudgetMB", BUDGET)
+        rp.SetBool("LevelDebug", True)
 
         v.viewIsometric()
         Gui.SendMsgToActiveView("ViewFit")

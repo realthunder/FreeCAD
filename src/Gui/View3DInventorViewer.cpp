@@ -929,25 +929,29 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
     }
 
     // Render-debug capture burn-in (docs/RenderDebug.md §4.3): with
-    // RenderDebug_Label on, a corner label names the active debug view
-    // mode, the freeze state and every custom RenderDebug_* parameter
-    // value, so a captured frame documents its settings without its
-    // sidecar. Rides the overlay feed like the fps readout — the WASM
-    // viewer burns the same label into its own captures.
+    // the DebugLabel parameter on, a corner label names the active
+    // debug view mode, the freeze state and every custom RenderDebug_*
+    // parameter value, so a captured frame documents its settings
+    // without its sidecar. Rides the overlay feed like the fps readout
+    // -- the WASM viewer burns the same label into its own captures.
+    // The switches are global RenderParams; only the custom shader
+    // parameters still live on the view.
     std::string debugLabel;
     if (view) {
-        auto lbl = dynamic_cast<App::PropertyBool*>(
-                view->getPropertyByName("RenderDebug_Label"));
-        if (lbl && lbl->getValue()) {
+        if (RenderParams::getDebugLabel()) {
             std::ostringstream ss;
             ss << "RenderDebug ";
-            if (auto p = dynamic_cast<App::PropertyEnumeration*>(
-                    view->getPropertyByName("RenderDebug_ViewMode")))
-                ss << (p->isValid() ? p->getValueAsString() : "?");
-            if (auto p = dynamic_cast<App::PropertyBool*>(
-                    view->getPropertyByName("RenderDebug_FreezeFrame")))
-                if (p->getValue())
-                    ss << " freeze";
+            static const char* _viewModeNames[] =
+                {"Off", "Depth", "Normal", "AO", "Shadow", "ShadowTile",
+                 "Overdraw", "ShadowFilter", "UV", "Reflection",
+                 "ImpactMap", "InstanceId"};
+            const long mode = RenderParams::getDebugViewMode();
+            ss << (mode >= 0
+                    && mode < long(sizeof(_viewModeNames)
+                                   / sizeof(_viewModeNames[0]))
+                    ? _viewModeNames[mode] : "?");
+            if (RenderParams::getDebugFreezeFrame())
+                ss << " freeze";
             // Custom named parameters (the same set the bridge feeds as
             // uniforms), name=value.
             std::map<std::string, App::Property*> props;
@@ -3963,15 +3967,12 @@ void View3DInventorViewer::actualRedraw()
     }
 
     // The stage timers live deep in the publish pipeline, which knows
-    // nothing of views; the view that is drawing states whether they run.
-    if (auto view = _pimpl->view) {
-        if (auto prop = dynamic_cast<App::PropertyBool*>(
-                view->getPropertyByName("RenderDebug_Timing")))
-            RenderTiming::setEnabled(prop->getValue());
-        if (auto prop = dynamic_cast<App::PropertyBool*>(
-                view->getPropertyByName("RenderDebug_Delta")))
-            ScenePublishDelta::setLogging(prop->getValue());
-    }
+    // nothing of views; the drawing view applies the global switches
+    // here. Global on purpose: these are measurement state, and their
+    // old per-view copies saved inside documents shadowed the globals
+    // (a saved Timing=false once blanked a whole measurement run).
+    RenderTiming::setEnabled(RenderParams::getDebugTiming());
+    ScenePublishDelta::setLogging(RenderParams::getDebugDelta());
 
     switch (renderType) {
     case Native:
@@ -4326,15 +4327,9 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyFloat>(view, "LevelTolerance",
             RenderParams::docLevelTolerance(),
             RenderParams::getLevelTolerance());
-    _renderParam<App::PropertyInteger>(view, "GpuMemoryBudgetMB",
-            RenderParams::docGpuMemoryBudgetMB(),
-            RenderParams::getGpuMemoryBudgetMB());
-    _renderParam<App::PropertyBool>(view, "LevelDebug",
-            RenderParams::docLevelDebug(),
-            RenderParams::getLevelDebug());
-    _renderParam<App::PropertyInteger>(view, "LevelCeilingSimulateMB",
-            RenderParams::docLevelCeilingSimulateMB(),
-            RenderParams::getLevelCeilingSimulateMB());
+    // No per-view GpuMemoryBudgetMB, LevelDebug or LevelCeilingSimulateMB:
+    // those are machine-resource and measurement knobs, global RenderParams
+    // only (see stripLegacyRenderProperties for the full ruling).
     _renderParam<App::PropertyFloat>(view, "AORadius",
             RenderParams::docAORadius(), RenderParams::getAORadius());
     _renderParam<App::PropertyFloat>(view, "AOIntensity",
@@ -4478,223 +4473,85 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             RenderParams::docGroundReflectionIntensity(),
             RenderParams::getGroundReflectionIntensity());
 
-    // RenderDebug_* debugging knobs (docs/RenderDebug.md): materialized
-    // hidden -- not user settings; the property editor's 'Show all'
-    // reveals them, and scripts/the verification harness set them.
-    // Occlusion culling (docs/FarFieldProxies.md §12). Not a debug knob
-    // — it changes what a frame costs, not what it shows — so it lands
-    // in the Render group beside the other render settings, and its
-    // tuning parameters stay hidden next to it.
-    if (!view->getPropertyByName("Render_Occlusion")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "Render_Occlusion", "Render",
-                                         RenderParams::docOcclusion()));
-        prop->setValue(RenderParams::getOcclusion());
-    }
-    // Which oracle answers the occlusion question (section 12.12). Hidden
-    // beside the tuning parameters rather than shown with the switch
-    // above: it selects a mechanism, not an effect, and the two are
-    // meant to be indistinguishable in the image.
-    if (!view->getPropertyByName("Render_OcclusionSoftware")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "Render_OcclusionSoftware", "Render",
-                                         RenderParams::docOcclusionSoftware()));
-        prop->setValue(RenderParams::getOcclusionSoftware());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    // The software oracle's vector pre-pass (section 12.14). Hidden for the
-    // same reason: it changes what the pass costs, and is meant to leave
-    // the image alone.
-    if (!view->getPropertyByName("Render_OcclusionSimd")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "Render_OcclusionSimd", "Render",
-                                         RenderParams::docOcclusionSimd()));
-        prop->setValue(RenderParams::getOcclusionSimd());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    // The granularity the occlusion question is asked at (section 12.17).
-    if (!view->getPropertyByName("Render_OcclusionPerInstance")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "Render_OcclusionPerInstance",
-                                         "Render",
-                                         RenderParams::docOcclusionPerInstance()));
-        prop->setValue(RenderParams::getOcclusionPerInstance());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    // Coarse occluder hulls (section 12.16). Hidden with the rest of the
-    // software oracle's knobs: it changes what the pass rasterizes, and
-    // is meant to leave the image alone.
-    if (!view->getPropertyByName("Render_OcclusionCoarse")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "Render_OcclusionCoarse", "Render",
-                                         RenderParams::docOcclusionCoarse()));
-        prop->setValue(RenderParams::getOcclusionCoarse());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    {
-        static const struct { const char *name; long value;
-                              const char *(*doc)(); } _occlusionParams[] = {
-            {"Render_OcclusionVisibleTtl",
-             RenderParams::getOcclusionVisibleTtl(),
-             &RenderParams::docOcclusionVisibleTtl},
-            {"Render_OcclusionBudget", RenderParams::getOcclusionBudget(),
-             &RenderParams::docOcclusionBudget},
-            {"Render_OcclusionMinSubtree",
-             RenderParams::getOcclusionMinSubtree(),
-             &RenderParams::docOcclusionMinSubtree},
-            {"Render_OcclusionMaxHidden",
-             RenderParams::getOcclusionMaxHidden(),
-             &RenderParams::docOcclusionMaxHidden},
-            {"Render_OcclusionDepthPad",
-             RenderParams::getOcclusionDepthPad(),
-             &RenderParams::docOcclusionDepthPad},
-            {"Render_OcclusionConfirm",
-             RenderParams::getOcclusionConfirm(),
-             &RenderParams::docOcclusionConfirm},
-            // The software oracle's own knobs (section 12.12). The six above
-            // are read only by the hardware-query path.
-            {"Render_OcclusionOccluderTris",
-             RenderParams::getOcclusionOccluderTris(),
-             &RenderParams::docOcclusionOccluderTris},
-            {"Render_OcclusionMinOccluder",
-             RenderParams::getOcclusionMinOccluder(),
-             &RenderParams::docOcclusionMinOccluder},
-            {"Render_OcclusionResolution",
-             RenderParams::getOcclusionResolution(),
-             &RenderParams::docOcclusionResolution},
-            {"Render_OcclusionThreads",
-             RenderParams::getOcclusionThreads(),
-             &RenderParams::docOcclusionThreads},
-            // Occlusion feeding the level plan's downgrade sweep --
-            // occlusion as a memory mechanism.
-            {"Render_OcclusionDemoteStreak",
-             RenderParams::getOcclusionDemoteStreak(),
-             &RenderParams::docOcclusionDemoteStreak},
-            // What the coarse hulls are made of and how far they recede
-            // (section 12.16).
-            {"Render_OcclusionCoarseLevel",
-             RenderParams::getOcclusionCoarseLevel(),
-             &RenderParams::docOcclusionCoarseLevel},
-            {"Render_OcclusionCoarseMinTris",
-             RenderParams::getOcclusionCoarseMinTris(),
-             &RenderParams::docOcclusionCoarseMinTris},
-            {"Render_OcclusionCoarseBuilds",
-             RenderParams::getOcclusionCoarseBuilds(),
-             &RenderParams::docOcclusionCoarseBuilds},
-            {"Render_OcclusionCoarseBias",
-             RenderParams::getOcclusionCoarseBias(),
-             &RenderParams::docOcclusionCoarseBias},
-            {"Render_OcclusionCoarseMemory",
-             RenderParams::getOcclusionCoarseMemory(),
-             &RenderParams::docOcclusionCoarseMemory},
-        };
-        for (const auto &p : _occlusionParams) {
-            if (view->getPropertyByName(p.name))
-                continue;
-            auto prop = static_cast<App::PropertyInteger*>(
-                    view->addDynamicProperty("App::PropertyInteger", p.name,
-                                             "Render", p.doc()));
-            prop->setValue(p.value);
-            prop->setStatus(App::Property::Hidden, true);
-        }
-    }
-    if (!view->getPropertyByName("RenderDebug_ViewMode")) {
-        static const char* _debugViewModeEnums[] =
-            {"Off", "Depth", "Normal", "AO", "Shadow", "ShadowTile",
-             "Overdraw", "ShadowFilter", "UV", "Reflection",
-             "ImpactMap", "InstanceId", nullptr};
-        auto prop = static_cast<App::PropertyEnumeration*>(
-                view->addDynamicProperty("App::PropertyEnumeration",
-                                         "RenderDebug_ViewMode", "RenderDebug",
-                                         RenderParams::docDebugViewMode()));
-        prop->setEnums(_debugViewModeEnums);
-        prop->setValue(long(RenderParams::getDebugViewMode()));
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_FreezeFrame")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_FreezeFrame", "RenderDebug",
-                                         RenderParams::docDebugFreezeFrame()));
-        prop->setValue(RenderParams::getDebugFreezeFrame());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_Label")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_Label", "RenderDebug",
-                                         RenderParams::docDebugLabel()));
-        prop->setValue(RenderParams::getDebugLabel());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_Timing")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_Timing", "RenderDebug",
-                                         RenderParams::docDebugTiming()));
-        prop->setValue(RenderParams::getDebugTiming());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_Delta")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_Delta", "RenderDebug",
-                                         RenderParams::docDebugDelta()));
-        prop->setValue(RenderParams::getDebugDelta());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_Coverage")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_Coverage", "RenderDebug",
-                                         RenderParams::docDebugCoverage()));
-        prop->setValue(RenderParams::getDebugCoverage());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_Occlusion")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_Occlusion", "RenderDebug",
-                                         RenderParams::docDebugOcclusion()));
-        prop->setValue(RenderParams::getDebugOcclusion());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_ProxyCut")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_ProxyCut", "RenderDebug",
-                                         RenderParams::docDebugProxyCut()));
-        prop->setValue(RenderParams::getDebugProxyCut());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_ProxyGen")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_ProxyGen", "RenderDebug",
-                                         RenderParams::docDebugProxyGen()));
-        prop->setValue(RenderParams::getDebugProxyGen());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_CullAudit")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_CullAudit", "RenderDebug",
-                                         RenderParams::docDebugCullAudit()));
-        prop->setValue(RenderParams::getDebugCullAudit());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_CullBounds")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_CullBounds", "RenderDebug",
-                                         RenderParams::docDebugCullBounds()));
-        prop->setValue(RenderParams::getDebugCullBounds());
-        prop->setStatus(App::Property::Hidden, true);
+    // No occlusion-culling and no RenderDebug_* switch properties: those
+    // are performance mechanisms and measurement state, global
+    // RenderParams only. They used to be materialized here (hidden), and
+    // documents that saved them shadowed the globals every measurement
+    // set -- see stripLegacyRenderProperties. Custom RenderDebug_<name>
+    // shader parameters (docs/RenderDebug.md sec 2.5) remain per-view: they
+    // are dynamically named, created by the user or a script, and no
+    // global parameter could stand in for them.
+}
+
+const char * const *Gui::legacyRenderPropertyNames()
+{
+    // The per-view render properties that were retired to global
+    // RenderParams (2026-08-14): debug and measurement switches, the
+    // ladder's tuning knobs, the occlusion-culling mechanism, and the
+    // GPU budget -- none express per-view display intent, and saved
+    // copies inside documents shadowed whatever the preferences or a
+    // measurement harness set globally. Old documents still carry them
+    // as saved dynamic properties; View3DInventor::Restore strips them
+    // after reading, so loading stays compatible and the dead surface
+    // does not linger in the property editor.
+    static const char * const names[] = {
+        "Render_GpuMemoryBudgetMB",
+        "Render_LevelDebug",
+        "Render_LevelCeilingSimulateMB",
+        "Render_Occlusion",
+        "Render_OcclusionSoftware",
+        "Render_OcclusionSimd",
+        "Render_OcclusionPerInstance",
+        "Render_OcclusionCoarse",
+        "Render_OcclusionVisibleTtl",
+        "Render_OcclusionBudget",
+        "Render_OcclusionMinSubtree",
+        "Render_OcclusionMaxHidden",
+        "Render_OcclusionDepthPad",
+        "Render_OcclusionConfirm",
+        "Render_OcclusionOccluderTris",
+        "Render_OcclusionMinOccluder",
+        "Render_OcclusionResolution",
+        "Render_OcclusionThreads",
+        "Render_OcclusionDemoteStreak",
+        "Render_OcclusionCoarseLevel",
+        "Render_OcclusionCoarseMinTris",
+        "Render_OcclusionCoarseBuilds",
+        "Render_OcclusionCoarseBias",
+        "Render_OcclusionCoarseMemory",
+        "Render_OcclusionBenefitProbe",
+        "Render_LevelPressureRelease",
+        "Render_DowngradeLedger",
+        "Render_ClimbHardLimit",
+        "Render_ClimbAdmitBatch",
+        "Render_DescentOrderBatch",
+        "Render_ShapeVertices",
+        "Render_PressureDropEdges",
+        "Render_LoadDropElements",
+        "RenderDebug_ViewMode",
+        "RenderDebug_FreezeFrame",
+        "RenderDebug_Label",
+        "RenderDebug_Timing",
+        "RenderDebug_Delta",
+        "RenderDebug_Coverage",
+        "RenderDebug_Occlusion",
+        "RenderDebug_ProxyCut",
+        "RenderDebug_ProxyGen",
+        "RenderDebug_CullAudit",
+        "RenderDebug_CullBounds",
+        nullptr,
+    };
+    return names;
+}
+
+void Gui::stripLegacyRenderProperties(App::PropertyContainer *view)
+{
+    if (!view)
+        return;
+    for (const char * const *name = legacyRenderPropertyNames(); *name;
+         ++name) {
+        if (view->getPropertyByName(*name))
+            view->removeDynamicProperty(*name);
     }
 }
 

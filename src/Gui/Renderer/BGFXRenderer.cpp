@@ -11426,7 +11426,7 @@ public:
                     // builds.
                     // Every order is now a worker job whose enqueue
                     // snapshots on the GUI thread, so one pass orders a
-                    // bounded batch (Render_DescentOrderBatch, the
+                    // bounded batch (the DescentOrderBatch parameter, the
                     // climb admission batch's mirror) and the replan
                     // after the batch lands takes the rest.
                     const size_t descentBatch =
@@ -11752,8 +11752,8 @@ public:
                             "%zu point + %zu line draws%s\n",
                             budget ? (std::to_string(budget / 1048576)
                                       + "MB").c_str()
-                                   : "NONE (GL reports no limit; set "
-                                     "Render_GpuMemoryBudgetMB to simulate)",
+                                   : "NONE (GL reports no limit; set the "
+                                     "GpuMemoryBudgetMB parameter to simulate)",
                             double(gpu.live) / 1048576.0,
                             double(gpu.total) / 1048576.0,
                             double(gpu.stale) / 1048576.0,
@@ -13407,7 +13407,7 @@ public:
                     RENDER_ERR("render cull audit: this backend cannot read "
                                "a texture back, so the audit cannot run "
                                "here. The id image itself still renders "
-                               "(RenderDebug_ViewMode 11) and can be "
+                               "(DebugViewMode 11) and can be "
                                "captured off the screen.");
                 }
             }
@@ -16920,7 +16920,7 @@ public:
     /// this path does not have.
     Render::MaskedOccluderPass maskedCull;
     /// The frame-level A/B probe over the whole occlusion block
-    /// (12.13, Render_OcclusionBenefitProbe). Holds its verdict and
+    /// (12.13, the OcclusionBenefitProbe parameter). Holds its verdict
     /// arms across frames; reset on the probe's off->on edge so a
     /// re-enabled probe is a fresh experiment.
     Render::CullBenefitEstimator cullBenefit;
@@ -17216,17 +17216,17 @@ public:
     /// of RenderParams). The default is the parameter's, so a viewer
     /// that never sets it still releases in steps rather than snapping.
     float levelPressureReleaseFrac = 0.5f;
-    /// Render_DowngradeLedger: the downgrade sweep's in-flight credit
+    /// DowngradeLedger parameter: the downgrade sweep's in-flight credit
     /// (Render::DowngradeLedger on the view); off restores the
     /// storming behaviour for comparison.
     bool downgradeLedgerOn = true;
-    /// Render_ClimbHardLimit / Render_ClimbAdmitBatch: the budget is
+    /// ClimbHardLimit / ClimbAdmitBatch parameters: the budget is
     /// an absolute ceiling for climbs -- none admitted at or over it
     /// (in-flight ones aborted through the de-want pass), batched
     /// admission under it.
     bool climbHardLimitOn = true;
     int climbAdmitBatch = 64;
-    /// Render_DescentOrderBatch: how many descents one plan pass may
+    /// DescentOrderBatch parameter: how many descents one plan pass may
     /// order (0 = uncapped); see planMeshDemotes' maxOrders.
     int descentOrderBatch = 64;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.

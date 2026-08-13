@@ -1380,152 +1380,103 @@ RendererBridge::shaderParamUniformName(const char * propName)
 }
 
 Render::OcclusionCullConfig
-RendererBridge::translateOcclusionCullConfig(App::PropertyContainer * view)
+RendererBridge::translateOcclusionCullConfig(App::PropertyContainer *)
 {
+    // Global parameters only, no per-view override: occlusion culling is
+    // a performance mechanism that is meant to leave the image alone, so
+    // there is no per-view display intent to express -- and its knobs
+    // saved inside a document's views were shadowing the globals every
+    // measurement arm set (a saved RenderDebug_Timing=false once blanked
+    // a whole A/B/C run the same way).
     Render::OcclusionCullConfig res;
-    res.enabled = viewParamOverride<App::PropertyBool>(
-            view, "Render", "Occlusion", RenderParams::getOcclusion());
-    // Clamped rather than trusted: these ride the same per-view property
-    // path as everything else here, so a script can set them to
-    // anything, and a zero budget or a zero hidden lifetime would turn a
-    // performance knob into missing geometry.
+    res.enabled = RenderParams::getOcclusion();
+    // Clamped rather than trusted: a script can still set the parameters
+    // to anything, and a zero budget or a zero hidden lifetime would
+    // turn a performance knob into missing geometry.
     auto atLeast = [](long v, long floor) {
         return uint32_t(v < floor ? floor : v);
     };
-    res.visibleTtl = atLeast(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "OcclusionVisibleTtl",
-            RenderParams::getOcclusionVisibleTtl()), 1);
-    res.budget = atLeast(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "OcclusionBudget",
-            RenderParams::getOcclusionBudget()), 1);
-    res.minSubtree = atLeast(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "OcclusionMinSubtree",
-            RenderParams::getOcclusionMinSubtree()), 1);
-    res.maxHiddenFrames = atLeast(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "OcclusionMaxHidden",
-            RenderParams::getOcclusionMaxHidden()), 1);
+    res.visibleTtl = atLeast(RenderParams::getOcclusionVisibleTtl(), 1);
+    res.budget = atLeast(RenderParams::getOcclusionBudget(), 1);
+    res.minSubtree = atLeast(RenderParams::getOcclusionMinSubtree(), 1);
+    res.maxHiddenFrames = atLeast(RenderParams::getOcclusionMaxHidden(), 1);
     // Zero is allowed here, unlike the others: it is the un-padded box
     // test, which is what the failure of §12.6 was, and being able to
     // ask for it back is what lets the padding be measured rather than
     // asserted.
-    res.depthPadLsb = float(atLeast(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "OcclusionDepthPad",
-            RenderParams::getOcclusionDepthPad()), 0));
+    res.depthPadLsb = float(atLeast(RenderParams::getOcclusionDepthPad(), 0));
     // At least one: zero confirmations would mean a node is skipped
     // without any answer having said so.
-    res.hiddenConfirm = atLeast(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "OcclusionConfirm",
-            RenderParams::getOcclusionConfirm()), 1);
+    res.hiddenConfirm = atLeast(RenderParams::getOcclusionConfirm(), 1);
     // The software oracle, and the three knobs that belong to it alone.
     // None of the ones above are read when it is on: they exist to
     // contain a latency it does not have (section 12.12).
-    res.software = viewParamOverride<App::PropertyBool>(
-            view, "Render", "OcclusionSoftware",
-            RenderParams::getOcclusionSoftware());
+    res.software = RenderParams::getOcclusionSoftware();
     // Zero is allowed: it is the occluder pass rasterizing nothing,
     // which culls nothing, and being able to ask for that is what makes
     // the pass ablatable rather than merely believed.
     res.occluderTriangles = uint32_t(std::max<long>(0,
-            viewParamOverride<App::PropertyInteger>(
-                    view, "Render", "OcclusionOccluderTris",
-                    RenderParams::getOcclusionOccluderTris())));
+            RenderParams::getOcclusionOccluderTris()));
     res.minOccluderPx = float(std::max<long>(0,
-            viewParamOverride<App::PropertyInteger>(
-                    view, "Render", "OcclusionMinOccluder",
-                    RenderParams::getOcclusionMinOccluder())));
-    res.softwareDivisor = atLeast(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "OcclusionResolution",
-            RenderParams::getOcclusionResolution()), 1);
+            RenderParams::getOcclusionMinOccluder()));
+    res.softwareDivisor = atLeast(RenderParams::getOcclusionResolution(), 1);
     // Zero is the automatic pick, so the floor is zero and not one.
     res.softwareThreads = uint32_t(std::max<long>(0,
-            viewParamOverride<App::PropertyInteger>(
-                    view, "Render", "OcclusionThreads",
-                    RenderParams::getOcclusionThreads())));
-    res.softwareSimd = viewParamOverride<App::PropertyBool>(
-            view, "Render", "OcclusionSimd",
-            RenderParams::getOcclusionSimd());
-    res.benefitProbe = viewParamOverride<App::PropertyBool>(
-            view, "Render", "OcclusionBenefitProbe",
-            RenderParams::getOcclusionBenefitProbe());
+            RenderParams::getOcclusionThreads()));
+    res.softwareSimd = RenderParams::getOcclusionSimd();
+    res.benefitProbe = RenderParams::getOcclusionBenefitProbe();
     // The granularity the question is asked at (section 12.17), and the
     // coarse occluder hulls (section 12.16) -- both the software
     // oracle's alone.
-    res.perInstance = viewParamOverride<App::PropertyBool>(
-            view, "Render", "OcclusionPerInstance",
-            RenderParams::getOcclusionPerInstance());
+    res.perInstance = RenderParams::getOcclusionPerInstance();
     // Occlusion feeding the level plan's downgrade sweep (occlusion as
     // a memory mechanism); 0 = never.
     res.demoteStreak = uint32_t(std::max<long>(0,
-            viewParamOverride<App::PropertyInteger>(
-                    view, "Render", "OcclusionDemoteStreak",
-                    RenderParams::getOcclusionDemoteStreak())));
-    res.coarseOccluders = viewParamOverride<App::PropertyBool>(
-            view, "Render", "OcclusionCoarse",
-            RenderParams::getOcclusionCoarse());
+            RenderParams::getOcclusionDemoteStreak()));
+    res.coarseOccluders = RenderParams::getOcclusionCoarse();
     res.coarseLevel = uint32_t(std::max<long>(0,
-            viewParamOverride<App::PropertyInteger>(
-                    view, "Render", "OcclusionCoarseLevel",
-                    RenderParams::getOcclusionCoarseLevel())));
+            RenderParams::getOcclusionCoarseLevel()));
     res.coarseMinTriangles = uint32_t(std::max<long>(0,
-            viewParamOverride<App::PropertyInteger>(
-                    view, "Render", "OcclusionCoarseMinTris",
-                    RenderParams::getOcclusionCoarseMinTris())));
+            RenderParams::getOcclusionCoarseMinTris()));
     // Zero is allowed: it is the cache frozen at what it holds, which is
     // how a measurement separates what the hulls do from what building
     // them costs.
     res.coarseBuilds = uint32_t(std::max<long>(0,
-            viewParamOverride<App::PropertyInteger>(
-                    view, "Render", "OcclusionCoarseBuilds",
-                    RenderParams::getOcclusionCoarseBuilds())));
+            RenderParams::getOcclusionCoarseBuilds()));
     // WARNING: Floored at zero rather than trusted. A negative bias would
     // pull every hull *towards* the camera, which invents occlusion --
     // the one failure this mechanism may not have.
     res.coarseBias = float(std::max<long>(0,
-            viewParamOverride<App::PropertyInteger>(
-                    view, "Render", "OcclusionCoarseBias",
-                    RenderParams::getOcclusionCoarseBias()))) / 100.0f;
+            RenderParams::getOcclusionCoarseBias())) / 100.0f;
     res.coarseMemory = size_t(std::max<long>(0,
-            viewParamOverride<App::PropertyInteger>(
-                    view, "Render", "OcclusionCoarseMemory",
-                    RenderParams::getOcclusionCoarseMemory()))) << 20;
+            RenderParams::getOcclusionCoarseMemory())) << 20;
     return res;
 }
 
 Render::RenderDebugConfig
 RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
 {
+    // The debug switches are global parameters only, no per-view
+    // override: they are measurement state, and a document that saved
+    // them inside its views held every later measurement hostage to
+    // what the file happened to carry (a saved RenderDebug_Timing=false
+    // once blanked a whole A/B/C occlusion run). Only the custom
+    // shader parameters below stay per-view -- they are dynamically
+    // named, so no global parameter could stand in for them.
     Render::RenderDebugConfig res;
-    res.viewMode = int(viewParamOverride<App::PropertyEnumeration>(
-            view, "RenderDebug", "ViewMode",
-            RenderParams::getDebugViewMode()));
-    res.freezeFrame = viewParamOverride<App::PropertyBool>(
-            view, "RenderDebug", "FreezeFrame",
-            RenderParams::getDebugFreezeFrame());
+    res.viewMode = int(RenderParams::getDebugViewMode());
+    res.freezeFrame = RenderParams::getDebugFreezeFrame();
     // The same switch as the pipeline stage timers, which the viewer
     // hands to RenderTiming directly: the backend's CPU-against-GPU
     // line is the continuation of that readout past submission, not a
     // separate thing to turn on (docs/FarFieldProxies.md §10.1).
-    res.frameTiming = viewParamOverride<App::PropertyBool>(
-            view, "RenderDebug", "Timing",
-            RenderParams::getDebugTiming());
-    res.occlusion = viewParamOverride<App::PropertyBool>(
-            view, "RenderDebug", "Occlusion",
-            RenderParams::getDebugOcclusion());
-    res.coverage = viewParamOverride<App::PropertyBool>(
-            view, "RenderDebug", "Coverage",
-            RenderParams::getDebugCoverage());
-    res.proxyCut = viewParamOverride<App::PropertyBool>(
-            view, "RenderDebug", "ProxyCut",
-            RenderParams::getDebugProxyCut());
-    res.proxyGen = viewParamOverride<App::PropertyBool>(
-            view, "RenderDebug", "ProxyGen",
-            RenderParams::getDebugProxyGen());
-    res.cullAudit = viewParamOverride<App::PropertyBool>(
-            view, "RenderDebug", "CullAudit",
-            RenderParams::getDebugCullAudit());
-    res.cullBounds = viewParamOverride<App::PropertyBool>(
-            view, "RenderDebug", "CullBounds",
-            RenderParams::getDebugCullBounds());
+    res.frameTiming = RenderParams::getDebugTiming();
+    res.occlusion = RenderParams::getDebugOcclusion();
+    res.coverage = RenderParams::getDebugCoverage();
+    res.proxyCut = RenderParams::getDebugProxyCut();
+    res.proxyGen = RenderParams::getDebugProxyGen();
+    res.cullAudit = RenderParams::getDebugCullAudit();
+    res.cullBounds = RenderParams::getDebugCullBounds();
 
     // Dynamic named shader parameters (docs/RenderDebug.md §2.5): every
     // further RenderDebug_* property becomes a like-named vec4(-array)
@@ -2133,76 +2084,67 @@ RendererBridge::translateLevelTolerance(App::PropertyContainer * view)
             RenderParams::getLevelTolerance()));
 }
 
+// The functions from here to translateGpuMemoryBudget read the GLOBAL
+// RenderParams only -- no per-view property override. They are the
+// ladder's tuning and measurement knobs, not display intent, and the
+// per-view copies that documents saved shadowed whatever the harness or
+// the user set globally (a saved Render_GpuMemoryBudgetMB once made a
+// budget read back as unset after a view restore). The view parameter
+// stays for interface stability; display-intent knobs around them
+// (LevelTolerance, CoarseTessellation, the effects) still override.
+
 float
-RendererBridge::translateLevelPressureRelease(App::PropertyContainer * view)
+RendererBridge::translateLevelPressureRelease(App::PropertyContainer *)
 {
-    return float(viewParamOverride<App::PropertyFloat>(
-            view, "Render", "LevelPressureRelease",
-            RenderParams::getLevelPressureRelease()));
+    return float(RenderParams::getLevelPressureRelease());
 }
 
 bool
-RendererBridge::translateLevelDebug(App::PropertyContainer * view)
+RendererBridge::translateLevelDebug(App::PropertyContainer *)
 {
-    return bool(viewParamOverride<App::PropertyBool>(
-            view, "Render", "LevelDebug",
-            RenderParams::getLevelDebug()));
+    return RenderParams::getLevelDebug();
 }
 
 bool
-RendererBridge::translateDowngradeLedger(App::PropertyContainer * view)
+RendererBridge::translateDowngradeLedger(App::PropertyContainer *)
 {
-    return bool(viewParamOverride<App::PropertyBool>(
-            view, "Render", "DowngradeLedger",
-            RenderParams::getDowngradeLedger()));
+    return RenderParams::getDowngradeLedger();
 }
 
 bool
-RendererBridge::translateClimbHardLimit(App::PropertyContainer * view)
+RendererBridge::translateClimbHardLimit(App::PropertyContainer *)
 {
-    return bool(viewParamOverride<App::PropertyBool>(
-            view, "Render", "ClimbHardLimit",
-            RenderParams::getClimbHardLimit()));
+    return RenderParams::getClimbHardLimit();
 }
 
 int
-RendererBridge::translateClimbAdmitBatch(App::PropertyContainer * view)
+RendererBridge::translateClimbAdmitBatch(App::PropertyContainer *)
 {
-    return int(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "ClimbAdmitBatch",
-            RenderParams::getClimbAdmitBatch()));
+    return int(RenderParams::getClimbAdmitBatch());
 }
 
 int
-RendererBridge::translateDescentOrderBatch(App::PropertyContainer * view)
+RendererBridge::translateDescentOrderBatch(App::PropertyContainer *)
 {
-    return int(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "DescentOrderBatch",
-            RenderParams::getDescentOrderBatch()));
+    return int(RenderParams::getDescentOrderBatch());
 }
 
 bool
-RendererBridge::translateShapeVertices(App::PropertyContainer * view)
+RendererBridge::translateShapeVertices(App::PropertyContainer *)
 {
-    return bool(viewParamOverride<App::PropertyBool>(
-            view, "Render", "ShapeVertices",
-            RenderParams::getShapeVertices()));
+    return RenderParams::getShapeVertices();
 }
 
 bool
-RendererBridge::translatePressureDropEdges(App::PropertyContainer * view)
+RendererBridge::translatePressureDropEdges(App::PropertyContainer *)
 {
-    return bool(viewParamOverride<App::PropertyBool>(
-            view, "Render", "PressureDropEdges",
-            RenderParams::getPressureDropEdges()));
+    return RenderParams::getPressureDropEdges();
 }
 
 bool
 RendererBridge::translateLoadDropElements(App::PropertyContainer * view)
 {
-    if (!viewParamOverride<App::PropertyBool>(
-                view, "Render", "LoadDropElements",
-                RenderParams::getLoadDropElements()))
+    if (!RenderParams::getLoadDropElements())
         return false;
 
     // Coarse-first must be on, because that is the arrival this makes
@@ -2264,33 +2206,27 @@ RendererBridge::translateLoadDropElements(App::PropertyContainer * view)
 }
 
 size_t
-RendererBridge::translateGpuMemoryBudget(App::PropertyContainer * view)
+RendererBridge::translateGpuMemoryBudget(App::PropertyContainer *)
 {
-    const long param = long(RenderParams::getGpuMemoryBudgetMB());
-    long mb = long(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "GpuMemoryBudgetMB", param));
-    // Which of the three links delivered the value, said once. A budget
-    // that arrives as 0 has three possible reasons -- the parameter is
-    // 0, a view property is overriding it with 0, or this translate is
-    // never called -- and the frame-side readout can distinguish none
-    // of them, having only the result.
+    // Global parameter only. This used to honor a per-view
+    // Render_GpuMemoryBudgetMB override, and documents that saved one
+    // shadowed whatever the harness or the preferences set -- a machine
+    // resource cap has no per-view intent to express in the first place.
+    const long mb = long(RenderParams::getGpuMemoryBudgetMB());
+    // Which value stands, said on change. A budget that arrives as 0
+    // has two possible reasons -- the parameter is 0, or this translate
+    // is never called -- and the frame-side readout can distinguish
+    // neither, having only the result.
     // On change, not once: a one-shot here fires on the first frame of
     // the document load, long before anything sets a budget, and then
     // reports "param 0" forever after -- which reads as "the parameter
     // did not arrive" when it simply had not been set yet.
     if (std::getenv("FC_LEVEL_DEBUG")) {
-        static long lastParam = -1;
         static long lastMb = -1;
-        if (param != lastParam || mb != lastMb) {
-            lastParam = param;
+        if (mb != lastMb) {
             lastMb = mb;
             Base::Console().Message(
-                "render levels: budget resolve: param %ldMB, view override %s "
-                "-> %ldMB\n", param,
-                viewPropOverride<App::PropertyInteger>(
-                    view, "Render", "GpuMemoryBudgetMB")
-                    ? "YES (the view property WINS over the parameter)" : "no",
-                mb);
+                "render levels: budget resolve: param %ldMB\n", mb);
         }
     }
     return mb > 0 ? size_t(mb) << 20 : 0;

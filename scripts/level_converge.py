@@ -270,23 +270,21 @@ def run():
         v = Gui.ActiveDocument.ActiveView
         emit("opened %s: %d objects" % (MODEL, len(doc.Objects)))
 
-        # /!\ Only params the render BRIDGE reads have view-property
-        # overrides. Render_SimplifyExhausted and friends are read by
-        # PartGui straight off RenderParams -- asking for them here
-        # raises AttributeError and takes the rest of this block with
-        # it, which is how an earlier harness died silently.
-        v.Render_GpuMemoryBudgetMB = BUDGET
-        v.Render_LevelDebug = True
+        # Global RenderParams (2026-08-14): the per-view Render_* copies
+        # of the ladder/debug knobs were retired -- saved overrides in
+        # the document shadowed whatever a harness set globally.
+        rp.SetInt("GpuMemoryBudgetMB", BUDGET)
+        rp.SetBool("LevelDebug", True)
         if RELEASE != "":
-            v.Render_LevelPressureRelease = float(RELEASE)
+            rp.SetFloat("LevelPressureRelease", float(RELEASE))
         # The cull hidden-share line ("render culling: instances hidden
-        # ...") is gated behind the per-view timing switch, and the
-        # saved document pins it false -- the 2026-08-13 A/B/C arms ran
-        # without it and could not prove the culling did anything at
-        # all. Occlusion arms only: the switch is itself an
-        # intervention, so the baseline arm stays clean.
+        # ...") is gated behind the timing switch -- the 2026-08-13
+        # A/B/C arms ran without it (a saved per-view override pinned it
+        # false) and could not prove the culling did anything at all.
+        # Occlusion arms only: the switch is itself an intervention, so
+        # the baseline arm stays clean.
         if OCCLUSION:
-            v.RenderDebug_Timing = True
+            rp.SetBool("DebugTiming", True)
 
         # Gate 3: the camera is placed ONCE and never touched again.
         v.viewIsometric()

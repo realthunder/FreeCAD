@@ -336,7 +336,8 @@ void refineLoop()
         // by the time it does, it may be somebody else's. The job is
         // dropped (its ask stands, so it is not retried into the same
         // wall); the observation flips the plans to demoting.
-        // The simulation knob (Render_LevelCeilingSimulateMB): raise
+        // The simulation knob (the LevelCeilingSimulateMB parameter):
+        // raise
         // the floor above whatever the machine actually has free, and
         // every exact build is refused exactly as it would be on a
         // machine that had run out -- which is the only way to exercise

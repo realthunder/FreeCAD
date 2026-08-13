@@ -73,6 +73,7 @@
 #include "NavigationStyle.h"
 #include "SoFCDB.h"
 #include "SoFCSelectionAction.h"
+#include "Inventor/SoFCRenderCacheManager.h"
 #include "SoFCVectorizeSVGAction.h"
 #include "View3DInventorExamples.h"
 #include "View3DInventorViewer.h"
@@ -1212,6 +1213,13 @@ void View3DInventor::Restore(Base::XMLReader &reader)
 {
     Base::StateLocker guard(_restoring);
     MDIView::Restore(reader);
+    // Old documents saved per-view copies of render properties that have
+    // since been retired to global RenderParams (debug switches, ladder
+    // tuning, the GPU budget). They restore fine as dynamic properties,
+    // but nothing reads them anymore and their values used to shadow the
+    // globals -- strip them so the dead surface does not linger or get
+    // re-saved.
+    stripLegacyRenderProperties(this);
 }
 
 void View3DInventor::onChanged(const App::Property *prop)
