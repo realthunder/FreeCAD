@@ -507,6 +507,12 @@ struct PlanDemoteStats {
     /// sources are out of reach, this says whether reaching them would
     /// be worth the work.
     uint64_t unreachableBytes = 0;
+    /// The unregistered share of unreachableBytes alone. The two
+    /// populations under the total want opposite fixes -- a source at
+    /// its true bottom is DONE, a tag nobody owns is a defect -- and a
+    /// combined figure once priced the defect at whatever the settled
+    /// scene happened to weigh.
+    uint64_t unregisteredBytes = 0;
     uint32_t tooBig = 0;       ///< over the margin, and pressure never reached it
     uint32_t offscreen = 0;    ///< free outright
     /// In the frustum but proven occluded (the caller's \a hiddenOf):

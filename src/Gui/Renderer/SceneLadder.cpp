@@ -1371,18 +1371,27 @@ std::vector<const void *> Render::planMeshDemotes(
             if (coarseErr <= 0.0f) {
                 // A source that armed no descent and a tag nobody owns
                 // are separate answers to "why can this not descend".
-                // Both are priced, because what decides whether either
-                // is worth fixing is the residency standing behind it,
-                // not how many there are.
+                // Both are priced -- and priced APART, because what
+                // decides whether either is worth fixing is the
+                // residency standing behind it, not how many there are.
+                const bool unowned = coarseErr < 0.0f;
                 if (stats) {
-                    ++(coarseErr < 0.0f ? stats->unregistered
-                                        : stats->noRung);
-                    if (charged.emplace(&mesh).second)
-                        stats->unreachableBytes += price(&mesh);
+                    ++(unowned ? stats->unregistered : stats->noRung);
+                    if (charged.emplace(&mesh).second) {
+                        // Once: the charged set is bytesOf's "at most
+                        // once per distinct mesh" guarantee.
+                        const uint64_t bytes = price(&mesh);
+                        stats->unreachableBytes += bytes;
+                        if (unowned)
+                            stats->unregisteredBytes += bytes;
+                    }
                 }
                 // Remembered as a non-candidate so the registry is
-                // asked once per source rather than once per draw.
-                index.emplace(mesh.sourceTag, size_t(-1));
+                // asked once per source rather than once per draw; the
+                // sentinel keeps which kind, for the later meshes of
+                // the same tag.
+                index.emplace(mesh.sourceTag,
+                              unowned ? size_t(-2) : size_t(-1));
                 continue;
             }
             found = index.emplace(mesh.sourceTag, cands.size()).first;
@@ -1392,11 +1401,15 @@ std::vector<const void *> Render::planMeshDemotes(
             cand.occluded = hiddenOf && hiddenOf(mesh.sourceTag);
             cands.push_back(cand);
         }
-        if (found->second == size_t(-1)) {
+        if (found->second >= size_t(-2)) {
             // A second mesh under the same unreachable tag still costs
             // its bytes; only the count is per source.
-            if (stats && charged.emplace(&mesh).second)
-                stats->unreachableBytes += price(&mesh);
+            if (stats && charged.emplace(&mesh).second) {
+                const uint64_t bytes = price(&mesh);
+                stats->unreachableBytes += bytes;
+                if (found->second == size_t(-2))
+                    stats->unregisteredBytes += bytes;
+            }
             continue;
         }
         DemoteCandidate &cand = cands[found->second];

@@ -4720,6 +4720,61 @@ public:
         uint32_t entries = 0;
         uint32_t staleEntries = 0;
     };
+    /// The allocator's books split by drawable class and recency --
+    /// what stands uploaded for triangles vs lines vs points, and how
+    /// much of each no recent frame has drawn. Face, line and point
+    /// drawables are separate caches, so an entry classifies by which
+    /// streams its geometry carries; a shared geometry is charged to
+    /// the first entry that names it. This exists because a 74MB gap
+    /// between uploaded and live had three candidate owners and no
+    /// meter that could name one.
+    struct ClassBytes {
+        uint64_t bytes = 0;      ///< everything this class holds
+        uint64_t undrawn = 0;    ///< ...of which no recent frame drew
+        uint32_t entries = 0;
+        uint32_t undrawnEntries = 0;
+    };
+    struct GpuBytesByClass {
+        ClassBytes tri, line, point, other;
+    };
+    GpuBytesByClass gpuBytesByClass() const
+    {
+        GpuBytesByClass out;
+        std::set<const GpuGeometry *> charged;
+        for (const auto &m : meshes) {
+            const GpuGeometry *g = m.second.geom;
+            uint64_t bytes = m.second.bytes;
+            if (g && charged.insert(g).second)
+                bytes += g->bytes;
+            ClassBytes &cls =
+                (g && bgfx::isValid(g->tri))         ? out.tri
+                : (g && bgfx::isValid(g->line))
+                      || bgfx::isValid(m.second.lineInst)  ? out.line
+                : (g && bgfx::isValid(g->point))
+                      || bgfx::isValid(m.second.pointInst) ? out.point
+                                                           : out.other;
+            cls.bytes += bytes;
+            ++cls.entries;
+            if (m.second.lastUsed + 2 < frame) {
+                cls.undrawn += bytes;
+                ++cls.undrawnEntries;
+            }
+        }
+        // Geometries no mesh references are in flight to collection;
+        // they have no class anymore and land in `other`.
+        for (const auto &g : geometries) {
+            if (charged.count(&g.second))
+                continue;
+            out.other.bytes += g.second.bytes;
+            ++out.other.entries;
+            if (g.second.lastUsed + 2 < frame) {
+                out.other.undrawn += g.second.bytes;
+                ++out.other.undrawnEntries;
+            }
+        }
+        return out;
+    }
+
     GpuBytes gpuBytes() const
     {
         GpuBytes out;
@@ -4767,11 +4822,23 @@ public:
     //    otherwise never meet the draw-time generation check and leak).
     //  - not kept: left the lists at a publish; the two-frame grace
     //    only spans in-flight frames.
-    void collectMeshes(const std::unordered_map<uint64_t, uint64_t> &kept)
+    //  - kept but gated (\a gatedOnly): published, current, and NOT
+    //    SUBMITTABLE -- every draw naming it is suppressed by the
+    //    element gates (sec 13b). Falls back to the recency grace,
+    //    which a gated mesh always fails, so its buffers retire two
+    //    frames after the gate closes and come back through an
+    //    ordinary on-demand upload when it lifts. This is 13b's
+    //    "suppressing the draw is all it takes to free the memory",
+    //    which publication-keyed retention had silently repealed:
+    //    74.5MB of gated edge buffers stood resident with the gate
+    //    firing on all 5909 of their draws every frame.
+    void collectMeshes(const std::unordered_map<uint64_t, uint64_t> &kept,
+                       const std::unordered_set<uint64_t> &gatedOnly)
     {
         for (auto it = meshes.begin(); it != meshes.end();) {
             auto pub = kept.find(it->first);
-            const bool stale = pub == kept.end()
+            const bool stale =
+                pub == kept.end() || gatedOnly.count(it->first)
                 ? it->second.lastUsed + 2 < frame
                 : (it->second.geom
                    && it->second.generation != pub->second);
@@ -11539,6 +11606,11 @@ public:
                     const float refineTolerance = levelPressure.update(
                         underPressure, accepted, levelPlanner.tolerance(), h,
                         levelPressureReleaseFrac);
+                    // The edge gate's latch (see pressureStanding): held
+                    // for as long as the ladder holds raised error, and
+                    // released with it -- the same statement about the
+                    // same scene, read where the gate can see it.
+                    pressureStanding = levelPressure.raisedPx > 0.0f;
                     // A release is a staircase, and a still camera over a
                     // quiet scene raises no event of its own -- so the
                     // step that just gave error back has to ask for the
@@ -11674,6 +11746,33 @@ public:
                                 ? " (RAISED BY PRESSURE)" : "",
                             pressWhy,
                             gateEligible, gatedPoints, gatedLines, gateWhy);
+                        // Who holds the uploaded bytes, by drawable
+                        // class, with the share no recent frame drew --
+                        // the gap between uploaded and live finally
+                        // attributed on the allocator's own books.
+                        if (view) {
+                            const BGFXView::GpuBytesByClass bc =
+                                view->gpuBytesByClass();
+                            auto part = [](const char *name,
+                                           const BGFXView::ClassBytes &c) {
+                                char b[128];
+                                snprintf(b, sizeof(b),
+                                         " %s %.1fMB/%u entries (undrawn "
+                                         "%.1fMB/%u) |",
+                                         name,
+                                         double(c.bytes) / 1048576.0,
+                                         c.entries,
+                                         double(c.undrawn) / 1048576.0,
+                                         c.undrawnEntries);
+                                return std::string(b);
+                            };
+                            Base::Console().Message(
+                                "render levels: uploaded by class:%s%s%s%s\n",
+                                part("tri", bc.tri).c_str(),
+                                part("line", bc.line).c_str(),
+                                part("point", bc.point).c_str(),
+                                part("other", bc.other).c_str());
+                        }
                         // Why a downgrade pass that ran refused
                         // everything. Printed only when it ran, so its
                         // absence is not mistaken for "no candidates".
@@ -11717,7 +11816,8 @@ public:
                                 "| offscreen %u | occluded %u | eligible %u "
                                 "| under pressure "
                                 "%u | unpriceable %u | want %.1fMB freed "
-                                "%.1fMB | out of reach %.1fMB | accepted "
+                                "%.1fMB | out of reach %.1fMB (unregistered "
+                                "%.1fMB) | accepted "
                                 "error %.2fpx\n",
                                 what, s.considered, s.noRung,
                                 s.unregistered, s.tooBig,
@@ -11726,6 +11826,7 @@ public:
                                 s.unpriceable, double(deficit) / 1048576.0,
                                 double(s.bytesFreed) / 1048576.0,
                                 double(s.unreachableBytes) / 1048576.0,
+                                double(s.unregisteredBytes) / 1048576.0,
                                 s.acceptedErrorPx);
                         };
                         reportPass("demote", dmStats, dmDeficit);
@@ -14525,11 +14626,13 @@ public:
         // the rack model the GPU/CPU ratio climbs to 8-12x as the faces
         // coarsen away, which is that signature and nothing else.
         //
-        // Suppressing a draw is enough to free the memory: the mesh
-        // stops advancing its lastUsed, so collectMeshes destroys its
-        // buffers within two frames and the live meter sees it fall. No
-        // rebuild, no re-tessellation, and the way back is one frame --
-        // which is why these are spent before any rung is given up.
+        // Suppressing a draw frees the memory, but no longer as a side
+        // effect: publication-keyed retention keeps every published
+        // mesh, so the gate walk below hands the collector the set
+        // whose draws are ALL suppressed (gatedOnlyMeshes), and those
+        // fall back to the recency grace they always fail. No rebuild,
+        // no re-tessellation, and the way back is one on-demand upload
+        // -- which is why these are spent before any rung is given up.
         //
         // WHICH draws, and the two conditions are different questions:
         //
@@ -14563,7 +14666,17 @@ public:
         // classes back until the load has let go and then let the
         // ordinary gates decide.
         const bool gateVertices = !shapeVerticesOn || loadDropElements;
-        const bool gateEdges = (pressureDropEdges && gpuOverBudget)
+        // gpuOverBudget ARMS the edge gate; pressureStanding HOLDS it.
+        // The collector retires what this gate suppresses, so the
+        // moment it fires the total falls back under budget -- a gate
+        // reading only the instantaneous bit would re-open into the
+        // very memory it just freed and oscillate with the collector
+        // (the period-4, 75MB wave, by another route). It stays shut
+        // until the ladder has released ALL raised error: edges are
+        // the cheapest thing to give up and therefore the last thing
+        // to take back.
+        const bool gateEdges =
+            (pressureDropEdges && (gpuOverBudget || pressureStanding))
             || loadDropElements;
         if (gateVertices || gateEdges) {
             for (const auto &d : scene) {
@@ -14592,11 +14705,32 @@ public:
         // times over -- the first reading had all three counters equal,
         // which is arithmetically impossible for a population split
         // between points and lines.
-        for (const auto &d : scene) {
-            if (!gatedForMemory(d))
-                continue;
-            ++(d.material.type == Render::Material::Point ? gatedPoints
-                                                          : gatedLines);
+        //
+        // The same walk decides what the gates hand the collector: a
+        // mesh EVERY scene draw of which is gated cannot be submitted,
+        // so keeping its buffers "because it is published" holds
+        // memory no frame can use -- measured at 74.5MB of edge
+        // buffers on the rack model's inside camera, uploaded through
+        // the gate's open moments and then retained forever. Meshes a
+        // single ungated draw still names are left alone: that draw's
+        // submission advances lastUsed and the recency grace never
+        // bites them.
+        gatedOnlyMeshes.clear();
+        {
+            std::unordered_set<uint64_t> submittable;
+            for (const auto &d : scene) {
+                if (!d.mesh)
+                    continue;
+                if (gatedForMemory(d)) {
+                    ++(d.material.type == Render::Material::Point
+                           ? gatedPoints : gatedLines);
+                    gatedOnlyMeshes.insert(d.mesh->cacheId);
+                }
+                else
+                    submittable.insert(d.mesh->cacheId);
+            }
+            for (uint64_t id : submittable)
+                gatedOnlyMeshes.erase(id);
         }
         // Both edges of the load gate, with what it cost on the frame
         // it crossed. The closing edge matters as much as the opening
@@ -15705,7 +15839,7 @@ public:
         }
 
         cpuMark(CpuPostSel);
-        view->collectMeshes(publishedMeshes());
+        view->collectMeshes(publishedMeshes(), gatedOnlyMeshes);
 
         // Anything that reached the discard view drew nothing: the pass
         // declaration above missed a case the submission side takes.
@@ -16608,6 +16742,11 @@ public:
     /// (generation moved: freed synchronously at the next collect,
     /// drawn or not, which is what makes a downgrade's free an EVENT
     /// the plan can trust) or when it leaves the scene at a publish.
+    /// One carve-out: a kept mesh whose every draw the element gates
+    /// suppress (gatedOnlyMeshes) is not submittable, and keeping the
+    /// unsubmittable is how 74.5MB of gated edge buffers came to stand
+    /// behind a 64MB budget -- it falls back to the recency rule
+    /// instead (collectMeshes).
     /// The two-frame TTL guess collected buffers the scene still drew
     /// on a longer-than-two-frame cadence and re-uploaded them
     /// forever: the measured 198-draw, 75MB, period-4 wave.
@@ -16991,11 +17130,28 @@ public:
     /// session on exactly that confusion. `eligible` separates "the
     /// rule refused" from "nobody classified anything".
     size_t gatedPoints = 0, gatedLines = 0, gateEligible = 0;
+    /// Meshes whose every scene draw the gates suppressed this frame
+    /// -- not submittable, so the collector must not keep them for
+    /// being published (see collectMeshes). Rebuilt each frame by the
+    /// gate walk; empty whenever no gate is active.
+    std::unordered_set<uint64_t> gatedOnlyMeshes;
     // Whether the last rendered frame stood over the GPU budget. Out
     // here because the edge gate reads it; only the desktop half ever
     // writes it (the budget crossing, which also wakes the planner), so
     // in the standalone build it stays false and says so honestly.
     bool gpuOverBudget = false;
+    // Whether the pressure controller still holds raised error
+    // (levelPressure.raisedPx > 0) -- the desktop plan mirrors it here
+    // because levelPressure is desktop-only while the edge gate is
+    // shared code. The gate LATCHES on this rather than following
+    // gpuOverBudget alone: once the collector retires gated edge
+    // buffers the total falls under budget, and a gate keyed to the
+    // instantaneous bit would re-open, re-upload the whole class, and
+    // hand the wave its period back -- eviction and gate coupled
+    // through the meter. The staircase's learned floor keeps this
+    // true at the settled state, so the latch inherits the ladder's
+    // own hysteresis instead of inventing a second one.
+    bool pressureStanding = false;
     // The load gate as of the last frame, so the crossing can be
     // reported. The plan readout below cannot carry it: that prints on
     // a camera settle, and a load can begin and end entirely between

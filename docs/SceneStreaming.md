@@ -2533,6 +2533,28 @@ unsubmitted mesh stops advancing its `lastUsed`, so `collectMeshes`
 destroys its buffers two frames later and 13a's `live` meter sees it
 fall. No rebuild, no re-tessellation, and the way back is one frame.
 
+*Amended for publication-keyed retention (13c.5), which repealed the
+mechanism above without anyone noticing: once "published" meant
+"resident", the gates kept suppressing draws while the collector kept
+their buffers -- measured on the rack model's inside camera as 74.5MB
+of edge buffers, all undrawn, standing behind a 64MB budget (the
+by-class meter attributed the whole uploaded-vs-live gap to them).
+Two deliberate changes restore the contract:*
+
+1. *The gate walk hands the collector the set of meshes whose every
+   scene draw it suppressed this frame; those fall back to the
+   recency grace and retire. A mesh any ungated draw still names
+   (on-top, highlight) is untouched -- that draw keeps it live.*
+2. *The pressure half of the edge gate LATCHES: `gpuOverBudget` arms
+   it, and it holds while the pressure controller still carries
+   raised error (`PressureTolerance::raisedPx > 0`). Following the
+   instantaneous over-budget bit alone would oscillate with the
+   collector -- retiring the gated buffers puts the total back under
+   budget, the gate would re-open into the memory it just freed, and
+   the period-4 wave returns by another route. Edges come back only
+   when the ladder has given back ALL raised error: the cheapest
+   thing to give up is the last thing taken back.*
+
 **MEASURED (rack model, 64 MB budget, first plan, same scene):**
 
 | | gate off | gate on |

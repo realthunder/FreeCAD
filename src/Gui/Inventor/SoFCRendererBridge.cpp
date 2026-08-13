@@ -55,6 +55,7 @@
 #include <Inventor/nodes/SoBumpMap.h>
 #include "SoFCRenderMaterial.h"
 #include "../Renderer/MeshSource.h"
+#include "../Renderer/ProxyHierarchy.h"
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoSpotLight.h>
 #include <Inventor/annex/FXViz/nodes/SoShadowDirectionalLight.h>
@@ -144,14 +145,39 @@ struct CacheMeshData : Render::MeshData {
 /// Render_LevelDebug is on, and reported at the end of translate().
 size_t s_unownedProtoTags = 0;
 size_t s_unownedOwnTags = 0;
-/// ...and by the node class behind them. A count says how much the
-/// ladder cannot reach; the class says who to go and ask, which is the
-/// difference between a number and a defect with an address.
-std::map<std::string, size_t> s_unownedByType;
+/// ...and by the node class behind them, with the bytes standing
+/// behind each. A count says how much the ladder cannot reach; the
+/// class says who to go and ask; the bytes say whether it is worth
+/// going -- the same population was once dismissed at 18.7MB from a
+/// counter that had no bytes column, and later stood behind most of
+/// an unreachable 74MB.
+struct UnownedClassTally {
+    size_t count = 0;
+    uint64_t bytes = 0;
+    int maxVertices = 0;
+};
+std::map<std::string, UnownedClassTally> s_unownedByType;
+/// The largest single unowned translations of the publish, so the
+/// report can name individuals: which shapes, how many vertices their
+/// arrays carry, and how few primitives those arrays are drawn as.
+struct UnownedSample {
+    std::string type;
+    uint64_t cacheId = 0;
+    uint32_t bytes = 0;
+    int numVertices = 0;
+    int points = 0;
+    int lines = 0;
+    int triangles = 0;
+};
+std::vector<UnownedSample> s_unownedTop;
 
 std::shared_ptr<CacheMeshData>
 translateCache(SoFCVertexCache * cache)
 {
+    // The node class of an unclaimed source tag, remembered until the
+    // mesh's arrays are filled in so the tally below can price it.
+    // Points at an SbName's storage, which outlives the type system.
+    const char *unownedType = nullptr;
     auto mesh = std::make_shared<CacheMeshData>();
     mesh->holder = cache;
     mesh->arrayRefs = cache->copyArrayRefs();
@@ -203,7 +229,7 @@ translateCache(SoFCVertexCache * cache)
                 && !registry.knows(mesh->sourceTag)) {
             ++(proto ? s_unownedProtoTags : s_unownedOwnTags);
             const SoNode *tagged = proto ? proto : node;
-            ++s_unownedByType[tagged->getTypeId().getName().getString()];
+            unownedType = tagged->getTypeId().getName().getString();
         }
     }
 
@@ -273,6 +299,36 @@ translateCache(SoFCVertexCache * cache)
         }
         mesh->lineIndices = mesh->partialLines.data();
         mesh->numLineIndices = int(mesh->partialLines.size());
+    }
+    if (unownedType) {
+        // Priced by the arrays as translated -- what an upload of this
+        // mesh costs -- not by what it draws: a cache may carry a
+        // full-size vertex array behind a handful of point indices,
+        // and the array is the memory.
+        const uint32_t bytes = Render::meshResidentBytes(mesh.get());
+        auto &tally = s_unownedByType[unownedType];
+        ++tally.count;
+        tally.bytes += bytes;
+        tally.maxVertices = std::max(tally.maxVertices, mesh->numVertices);
+        const size_t kTop = 8;
+        if (s_unownedTop.size() < kTop
+                || bytes > s_unownedTop.back().bytes) {
+            UnownedSample sample;
+            sample.type = unownedType;
+            sample.cacheId = mesh->cacheId;
+            sample.bytes = bytes;
+            sample.numVertices = mesh->numVertices;
+            sample.points = mesh->numPointIndices;
+            sample.lines = mesh->numLineIndices / 2;
+            sample.triangles = mesh->numTriangleIndices / 3;
+            s_unownedTop.push_back(std::move(sample));
+            std::sort(s_unownedTop.begin(), s_unownedTop.end(),
+                      [](const UnownedSample &a, const UnownedSample &b) {
+                          return a.bytes > b.bytes;
+                      });
+            if (s_unownedTop.size() > kTop)
+                s_unownedTop.resize(kTop);
+        }
     }
     return mesh;
 }
@@ -1185,8 +1241,11 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
     if (s_unownedProtoTags || s_unownedOwnTags) {
         std::string byType;
         for (const auto & t : s_unownedByType) {
-            char buf[128];
-            snprintf(buf, sizeof(buf), " %s:%zu", t.first.c_str(), t.second);
+            char buf[160];
+            snprintf(buf, sizeof(buf), " %s:%zu/%.1fMB(nv<=%d)",
+                     t.first.c_str(), t.second.count,
+                     double(t.second.bytes) / 1048576.0,
+                     t.second.maxVertices);
             byType += buf;
         }
         Base::Console().Message(
@@ -1194,8 +1253,24 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             "node %zu | from own node %zu -- these publish as exact and "
             "the ladder cannot climb or descend them; by node class:%s\n",
             s_unownedProtoTags, s_unownedOwnTags, byType.c_str());
+        // The individuals, largest first: a full-size vertex array
+        // drawn as a handful of points is only visible at this grain.
+        std::string top;
+        for (const auto & s : s_unownedTop) {
+            char buf[192];
+            snprintf(buf, sizeof(buf),
+                     " %s cache=%llx %.1fMB nv=%d pt=%d ln=%d tri=%d |",
+                     s.type.c_str(), (unsigned long long)s.cacheId,
+                     double(s.bytes) / 1048576.0, s.numVertices,
+                     s.points, s.lines, s.triangles);
+            top += buf;
+        }
+        if (!top.empty())
+            Base::Console().Message(
+                "render levels: largest unowned:%s\n", top.c_str());
         s_unownedProtoTags = s_unownedOwnTags = 0;
         s_unownedByType.clear();
+        s_unownedTop.clear();
     }
     return res;
 }
