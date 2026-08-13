@@ -138,8 +138,12 @@ void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
     Gui::WaitCursor wc;
     App::Document* doc = App::GetApplication().getDocument(name.c_str());
 
+    // Never mid-restore: the load's progress sequencer pumps the event
+    // loop, so this timer can now fire while a document is half-read,
+    // and an autosave of that state would "recover" a truncated file.
     if (doc && !doc->testStatus(App::Document::PartialDoc)
-            && !doc->testStatus(App::Document::TempDoc))
+            && !doc->testStatus(App::Document::TempDoc)
+            && !doc->testStatus(App::Document::Restoring))
     {
         // Set the document's current transient directory
         std::string dirName = doc->TransientDir.getValue();
