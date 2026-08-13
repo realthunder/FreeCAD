@@ -390,6 +390,10 @@ public:
 };
 
 //! put the repeat count inside the line rather than after its newline
+//!
+//! The count is how many repeats this line stands in for, not how many times the
+//! line occurred - the occurrence that was shown when the run started speaks for
+//! itself, so the counts across a run still add up to the number of messages sent.
 static QString withRepeatCount(const QString& text, int count)
 {
     int end = text.size();
@@ -593,7 +597,10 @@ void ReportOutput::flushDuplicates()
         }
         const int held = line.held;
         line.held = 0;
-        appendReport(line.type, held > 1 ? withRepeatCount(line.text, held) : line.text);
+        //always counted, including (x1): without it a line that arrived exactly
+        //twice comes out as a bare repeat, which reads as the suppression having
+        //done nothing at all
+        appendReport(line.type, withRepeatCount(line.text, held));
     }
 }
 

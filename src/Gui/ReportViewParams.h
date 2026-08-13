@@ -147,7 +147,7 @@ public:
     ///
     /// How many of the most recently shown lines a new line is compared against
     /// before it is shown. A line that repeats any of them is held back instead,
-    /// and shown once - carrying a repeat count if it arrived more than once -
+    /// and shown once - carrying (xN), the number of repeats it stands in for -
     /// when a different line has to be shown or DuplicateTimeout expires.
     /// Set to 0 to show every line as it arrives.
     /// This affects the Report view only. The log file, the Python console and

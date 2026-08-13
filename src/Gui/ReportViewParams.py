@@ -48,7 +48,7 @@ Params = [
     ParamInt("DuplicateWindow", 3,
         doc='How many of the most recently shown lines a new line is compared against\n'
             'before it is shown. A line that repeats any of them is held back instead,\n'
-            'and shown once - carrying a repeat count if it arrived more than once -\n'
+            'and shown once - carrying (xN), the number of repeats it stands in for -\n'
             'when a different line has to be shown or DuplicateTimeout expires.\n'
             'Set to 0 to show every line as it arrives.\n'
             'This affects the Report view only. The log file, the Python console and\n'
