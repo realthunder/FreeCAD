@@ -129,6 +129,20 @@ public:
     static float roughnessToShininess(float roughness);
     //@}
 
+    /** The Phong material a PBR-slot material most nearly means
+     *
+     * \a raw carries the material list's PBR readings in the classic
+     * slots: base colour in the diffuse, roughness in the shininess, the
+     * F0 tint in the specular with the metallic factor in its alpha. The
+     * diffuse stays the base colour -- the bgfx PBR path reads its base
+     * colour out of the diffuse slot, so zeroing a metal's diffuse here
+     * would shade it black there, and a Phong metal shown as a shiny
+     * colour is the better degradation anyway. The specular becomes the
+     * F0 the surface most nearly means: a metal carries its colour
+     * there, a dielectric 0.04 scaled by the tint.
+     */
+    static Material pbrToPhong(const Material& raw);
+
     /** @name Properties */
     //@{
     Color ambientColor;  /**< Defines the ambient color. */

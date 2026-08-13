@@ -3286,21 +3286,8 @@ Material PropertyMaterialList::getPhongMaterial(int idx) const
     Material mat = getMaterial(idx);
     if (!_pbr)
         return mat;
-    const Color base = mat.diffuseColor;
-    const Color tint = mat.specularColor;
-    const float metallic = tint.a;
-    // The diffuse stays the base colour, deliberately: the bgfx PBR path
-    // reads its base colour out of the diffuse slot, so zeroing a metal's
-    // diffuse here would shade it black there -- and a Phong metal shown
-    // as a shiny colour is the better degradation anyway. The specular is
-    // the F0 a PBR surface most nearly means: a metal carries its colour
-    // there, a dielectric 0.04 scaled by the tint.
-    auto mix = [metallic](float dielectric, float metal) {
-        return 0.04f * dielectric * (1.0f - metallic) + metal * metallic;
-    };
-    mat.specularColor.set(mix(tint.r, base.r), mix(tint.g, base.g), mix(tint.b, base.b));
-    mat.shininess = Material::roughnessToShininess(mat.shininess);
-    return mat;
+    // Why the diffuse stays the base colour: see Material::pbrToPhong
+    return Material::pbrToPhong(mat);
 }
 
 void PropertyMaterialList::restoreValues(std::vector<Material> &&values, bool legacy)

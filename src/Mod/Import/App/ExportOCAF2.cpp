@@ -32,6 +32,7 @@
 #include <TopoDS.hxx>
 #include <Standard_Version.hxx>
 #include <TDF_AttributeSequence.hxx>
+#include <Graphic3d_Vec3.hxx>
 #include <TDF_Label.hxx>
 #include <TDF_LabelSequence.hxx>
 #include <TDataStd_Name.hxx>
@@ -302,31 +303,58 @@ void ExportOCAF2::setupObject(TDF_Label label,
     // varies -- per-face colours alone keep riding the colour labels.
     if (getShapeAppearance) {
         std::vector<App::Material> faceMats;
-        if (getShapeAppearance(obj, faceMats) && !faceMats.empty()) {
+        bool pbrMats = false;
+        if (getShapeAppearance(obj, faceMats, pbrMats) && !faceMats.empty()) {
             Handle(XCAFDoc_VisMaterialTool) aMatTool =
                 XCAFDoc_DocumentTool::VisMaterialTool(pDoc->Main());
 
             auto makeVisMat = [&](const App::Material& m) -> Handle(XCAFDoc_VisMaterial) {
                 Handle(XCAFDoc_VisMaterial) visMat = new XCAFDoc_VisMaterial;
+                // A PBR-mode appearance carries raw PBR slots; the common
+                // (Phong) representation -- what STEP's reflectance model
+                // and Common-only readers get -- is its derivation.
+                const App::Material cm = pbrMats ? App::Material::pbrToPhong(m) : m;
                 XCAFDoc_VisMaterialCommon common;
                 common.IsDefined = Standard_True;
-                common.AmbientColor = Tools::convertColor(m.ambientColor).GetRGB();
-                common.DiffuseColor = Tools::convertColor(m.diffuseColor).GetRGB();
-                common.SpecularColor = Tools::convertColor(m.specularColor).GetRGB();
-                common.EmissiveColor = Tools::convertColor(m.emissiveColor).GetRGB();
-                common.Shininess = m.shininess;
-                common.Transparency = m.transparency;
+                common.AmbientColor = Tools::convertColor(cm.ambientColor).GetRGB();
+                common.DiffuseColor = Tools::convertColor(cm.diffuseColor).GetRGB();
+                common.SpecularColor = Tools::convertColor(cm.specularColor).GetRGB();
+                common.EmissiveColor = Tools::convertColor(cm.emissiveColor).GetRGB();
+                common.Shininess = cm.shininess;
+                common.Transparency = cm.transparency;
                 visMat->SetCommonMaterial(common);
-                if (objPbr.IsDefined) {
+                // The glTF emissive factor is linear; the stored colour is
+                // sRGB. Assigning the converted Quantity_Color is the same
+                // linear identity OCCT's own Common-to-PBR conversion uses
+                // -- raw SetValues of the stored floats would write sRGB
+                // values into a linear slot and gamma-shift every reimport.
+                auto emissiveFactor = [](const App::Color& c) {
+                    return Graphic3d_Vec3(
+                            Tools::convertColor(App::Color(c.r, c.g, c.b)).GetRGB());
+                };
+                if (pbrMats) {
+                    // The appearance's own PBR reading, exact. The object's
+                    // Render_* textures still ride along when defined; the
+                    // factors the appearance owns override them, as they do
+                    // in the renderer.
+                    XCAFDoc_VisMaterialPBR pbr = objPbr;
+                    pbr.IsDefined = Standard_True;
+                    App::Color base = m.diffuseColor;
+                    base.a = 1.0f - m.transparency;
+                    pbr.BaseColor = Tools::convertColor(base);
+                    pbr.Metallic = m.specularColor.a;
+                    pbr.Roughness = m.shininess;
+                    pbr.EmissiveFactor = emissiveFactor(m.emissiveColor);
+                    visMat->SetPbrMaterial(pbr);
+                }
+                else if (objPbr.IsDefined) {
                     // Keep the object's factors and textures; the fields
                     // the appearance owns override.
                     XCAFDoc_VisMaterialPBR pbr = objPbr;
                     App::Color base = m.diffuseColor;
                     base.a = 1.0f - m.transparency;
                     pbr.BaseColor = Tools::convertColor(base);
-                    pbr.EmissiveFactor.SetValues(m.emissiveColor.r,
-                                                 m.emissiveColor.g,
-                                                 m.emissiveColor.b);
+                    pbr.EmissiveFactor = emissiveFactor(m.emissiveColor);
                     visMat->SetPbrMaterial(pbr);
                 }
                 return visMat;

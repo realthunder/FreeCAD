@@ -350,3 +350,17 @@ float Material::roughnessToShininess(float roughness)
     const float exponent = 2.0f / squared - 2.0f;
     return std::clamp(exponent / 128.0f, 0.0f, 1.0f);
 }
+
+Material Material::pbrToPhong(const Material& raw)
+{
+    Material mat = raw;
+    const Color& base = raw.diffuseColor;
+    const Color& tint = raw.specularColor;
+    const float metallic = tint.a;
+    auto mix = [metallic](float dielectric, float metal) {
+        return 0.04f * dielectric * (1.0f - metallic) + metal * metallic;
+    };
+    mat.specularColor.set(mix(tint.r, base.r), mix(tint.g, base.g), mix(tint.b, base.b));
+    mat.shininess = roughnessToShininess(raw.shininess);
+    return mat;
+}

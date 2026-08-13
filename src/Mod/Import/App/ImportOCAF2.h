@@ -267,6 +267,8 @@ private:
         std::vector<App::Color> faceColors;
         std::vector<App::Color> edgeColors;
         std::vector<App::Material> faceMaterials;
+        /// faceMaterials carry raw PBR slots; see ColorInfo::pbrMaterials
+        bool pbrMaterials = false;
         RenderMaterial material;
         // Group
         App::Color groupColor;
@@ -357,7 +359,7 @@ private:
     /// Per-face whole materials (glTF visualization materials whose
     /// fields beyond diffuse vary across faces); the Gui importer puts
     /// them into the view provider's ShapeAppearance.
-    virtual void applyFaceMaterials(Part::Feature*, const std::vector<App::Material>&)
+    virtual void applyFaceMaterials(Part::Feature*, const std::vector<App::Material>&, bool /*pbr*/)
     {}
     virtual void applyElementColors(App::DocumentObject*, const std::map<std::string, App::Color>&)
     {}

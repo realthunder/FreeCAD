@@ -61,13 +61,16 @@ void ImportOCAFGui::applyFaceColors(Part::Feature* part, const std::vector<App::
 }
 
 void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
-                                       const std::vector<App::Material>& mats)
+                                       const std::vector<App::Material>& mats, bool pbr)
 {
     auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
         Gui::Application::Instance->getViewProvider(part));
     if (!vp || mats.empty()) {
         return;
     }
+    // The mode first: the values land under the reading they were built
+    // for (and the collapse baselines follow the mode).
+    vp->ShapeAppearance.setPBR(pbr);
     // Collapse a uniform list to one entry: a single-entry appearance is
     // the whole-object form, whose scalar path every consumer handles.
     if (std::all_of(mats.begin() + 1, mats.end(), [&](const App::Material& m) {

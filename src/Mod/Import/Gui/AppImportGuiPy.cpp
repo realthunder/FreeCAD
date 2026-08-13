@@ -661,25 +661,32 @@ private:
         return {};
     }
 
-    static bool getShapeAppearance(App::DocumentObject* obj, std::vector<App::Material>& mats)
+    static bool getShapeAppearance(App::DocumentObject* obj, std::vector<App::Material>& mats,
+                                   bool& pbr)
     {
         // Whole materials, only when the appearance says something the
         // colour labels cannot: a field beyond diffuse varying across the
         // faces, or a uniform emissive that is lit at all (no other
-        // export channel carries emissive).
+        // export channel carries emissive) -- or the PBR mode at all,
+        // whose metallic and roughness have no colour-label channel.
         auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
             Gui::Application::Instance->getViewProvider(obj));
         if (!vp) {
             return false;
         }
-        const App::Color e = vp->ShapeAppearance.getEmissiveColor(0);
-        bool emissive = e.r > 0.004f || e.g > 0.004f || e.b > 0.004f;
-        if (vp->ShapeAppearance.variesOnlyInDiffuse() && !emissive) {
-            return false;
+        pbr = vp->ShapeAppearance.isPBR();
+        if (!pbr) {
+            const App::Color e = vp->ShapeAppearance.getEmissiveColor(0);
+            bool emissive = e.r > 0.004f || e.g > 0.004f || e.b > 0.004f;
+            if (vp->ShapeAppearance.variesOnlyInDiffuse() && !emissive) {
+                return false;
+            }
         }
         int count = vp->ShapeAppearance.getSize();
         mats.reserve(count);
         for (int i = 0; i < count; ++i) {
+            // Raw slots either way; a PBR list's conversion happens at the
+            // writer, which needs both readings.
             mats.push_back(vp->ShapeAppearance.getMaterial(i));
         }
         return !mats.empty();

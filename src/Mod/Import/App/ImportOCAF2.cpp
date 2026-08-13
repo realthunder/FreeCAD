@@ -271,6 +271,9 @@ struct ImportOCAF2::ColorInfo {
     /// One whole material per face; filled by scanFaceMaterials only when
     /// a field beyond diffuse varies across the faces
     std::vector<App::Material> faceMaterials;
+    /// faceMaterials carry raw PBR slots (every contributing material had
+    /// the PBR definition) -- the appearance they land in goes PBR mode
+    bool pbrMaterials = false;
     App::Color faceColor;
     App::Color edgeColor;
     bool hasFaceColor = false;
@@ -483,11 +486,80 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
         return false;
     }
 
-    // The fields beyond diffuse come from the material's common (Phong)
-    // representation -- glTF materials are PBR, and OCCT owns that
-    // conversion. Materials are shared between labels, so convert each
-    // handle once.
-    auto convert = [](const Handle(XCAFDoc_VisMaterial)& visMat) -> App::Material {
+    // Gather first, convert after: which conversion applies depends on
+    // whether EVERY contributing material has the PBR definition. When
+    // all do (glTF -- the format is PBR by definition), the raw factors
+    // go into the appearance's PBR slots exactly and the list goes PBR
+    // mode; otherwise (STEP's reflectance materials above all) the
+    // common (Phong) representation, as always. One list, one mode.
+    std::vector<std::pair<int, Handle(XCAFDoc_VisMaterial)>> faceMatList;
+    for (int i = 1; i <= seq.Length(); ++i) {
+        TDF_Label l = seq.Value(i);
+        TopoDS_Shape subShape = aShapeTool->GetShape(l);
+        if (subShape.IsNull() || !TopExp_Explorer(subShape, TopAbs_FACE).More()) {
+            continue;
+        }
+        Handle(XCAFDoc_VisMaterial) visMat = aMaterialTool->GetShapeMaterial(l);
+        if (visMat.IsNull() || visMat->IsEmpty()) {
+            continue;
+        }
+        for (TopExp_Explorer exp(subShape, TopAbs_FACE); exp.More(); exp.Next()) {
+            int idx = tshape.findShape(exp.Current()) - 1;
+            if (idx >= 0 && idx < numFaces) {
+                faceMatList.emplace_back(idx, visMat);
+            }
+        }
+    }
+    Handle(XCAFDoc_VisMaterial) wholeMat;
+    if (faceMatList.empty()) {
+        // No face label carries a material: a single-primitive mesh (or a
+        // whole-object style merged by our own exporter) has it on the
+        // shape label itself.
+        wholeMat = aMaterialTool->GetShapeMaterial(label);
+        if (wholeMat.IsNull() || wholeMat->IsEmpty()) {
+            TDF_Label ref;
+            if (XCAFDoc_ShapeTool::IsReference(label)
+                && XCAFDoc_ShapeTool::GetReferredShape(label, ref)) {
+                wholeMat = aMaterialTool->GetShapeMaterial(ref);
+            }
+        }
+        if (wholeMat.IsNull() || wholeMat->IsEmpty()) {
+            return false;
+        }
+    }
+
+    bool allPbr = wholeMat.IsNull() || wholeMat->HasPbrMaterial();
+    for (const auto& v : faceMatList) {
+        if (!v.second->HasPbrMaterial()) {
+            allPbr = false;
+            break;
+        }
+    }
+
+    auto convert = [allPbr](const Handle(XCAFDoc_VisMaterial)& visMat) -> App::Material {
+        if (allPbr) {
+            // The raw factors: metallic into the specular alpha under a
+            // white tint, roughness into the shininess slot -- exact, no
+            // Phong approximation. The base colour rides the resolved
+            // face colours below, as always, and the emissive reads
+            // through the Common conversion exactly as it always has (the
+            // stage-4 colour-space conventions, and their verified round
+            // trip, hold unchanged). Material() rather than DEFAULT: its
+            // untouched fields equal the appearance property's own
+            // defaults, so they cost no storage.
+            App::Material mat;
+            const XCAFDoc_VisMaterialPBR& pbr = visMat->PbrMaterial();
+            mat.specularColor.set(1.0f, 1.0f, 1.0f);
+            mat.specularColor.a = pbr.Metallic;
+            mat.shininess = pbr.Roughness;
+            XCAFDoc_VisMaterialCommon common = visMat->HasCommonMaterial()
+                ? visMat->CommonMaterial()
+                : visMat->ConvertToCommonMaterial();
+            if (common.IsDefined) {
+                mat.emissiveColor = Tools::convertColor(Quantity_ColorRGBA(common.EmissiveColor));
+            }
+            return mat;
+        }
         App::Material mat(App::Material::DEFAULT);
         XCAFDoc_VisMaterialCommon common = visMat->HasCommonMaterial()
             ? visMat->CommonMaterial()
@@ -504,82 +576,62 @@ bool ImportOCAF2::scanFaceMaterials(TDF_Label label, ColorInfo& colors, const In
         return mat.emissiveColor.r > 0.004f || mat.emissiveColor.g > 0.004f
             || mat.emissiveColor.b > 0.004f;
     };
+    // What a face with no material of its own reads as, per mode: the PBR
+    // filler mirrors the appearance property's own unset reading (white
+    // tint, metallic 0, mid roughness) so a uniform run of it elides.
+    App::Material defMat(App::Material::DEFAULT);
+    if (allPbr) {
+        defMat = App::Material();
+        defMat.specularColor.set(1.0f, 1.0f, 1.0f);
+        defMat.specularColor.a = 0.0f;
+        defMat.shininess = 0.5f;
+    }
 
     std::vector<App::Material> mats;
-    std::unordered_map<const XCAFDoc_VisMaterial*, App::Material> converted;
-    bool found = false;
-    for (int i = 1; i <= seq.Length(); ++i) {
-        TDF_Label l = seq.Value(i);
-        TopoDS_Shape subShape = aShapeTool->GetShape(l);
-        if (subShape.IsNull() || !TopExp_Explorer(subShape, TopAbs_FACE).More()) {
-            continue;
-        }
-        Handle(XCAFDoc_VisMaterial) visMat = aMaterialTool->GetShapeMaterial(l);
-        if (visMat.IsNull() || visMat->IsEmpty()) {
-            continue;
-        }
-        App::Material mat(App::Material::DEFAULT);
-        auto it = converted.find(visMat.get());
-        if (it != converted.end()) {
-            mat = it->second;
-        }
-        else {
-            mat = convert(visMat);
-            converted.emplace(visMat.get(), mat);
-        }
-        if (mats.empty()) {
-            mats.assign(numFaces, App::Material(App::Material::DEFAULT));
-        }
-        for (TopExp_Explorer exp(subShape, TopAbs_FACE); exp.More(); exp.Next()) {
-            int idx = tshape.findShape(exp.Current()) - 1;
-            if (idx >= 0 && idx < numFaces) {
-                mats[idx] = mat;
-                found = true;
+    if (!faceMatList.empty()) {
+        mats.assign(numFaces, defMat);
+        std::unordered_map<const XCAFDoc_VisMaterial*, App::Material> converted;
+        for (const auto& v : faceMatList) {
+            auto it = converted.find(v.second.get());
+            if (it == converted.end()) {
+                it = converted.emplace(v.second.get(), convert(v.second)).first;
             }
+            mats[v.first] = it->second;
         }
     }
-    if (!found) {
-        // No face label carries a material: a single-primitive mesh (or a
-        // whole-object style merged by our own exporter) has it on the
-        // shape label itself. Only its emissive matters -- see below.
-        Handle(XCAFDoc_VisMaterial) visMat = aMaterialTool->GetShapeMaterial(label);
-        if (visMat.IsNull() || visMat->IsEmpty()) {
-            TDF_Label ref;
-            if (XCAFDoc_ShapeTool::IsReference(label)
-                && XCAFDoc_ShapeTool::GetReferredShape(label, ref)) {
-                visMat = aMaterialTool->GetShapeMaterial(ref);
+    else {
+        App::Material mat = convert(wholeMat);
+        // A Phong whole-object material matters only for its emissive --
+        // see the gate below. A PBR one always matters: its metallic and
+        // roughness are authored factors the renderer shades natively.
+        if (!allPbr && !hasEmissive(mat)) {
+            return false;
+        }
+        mats.assign(numFaces, mat);
+    }
+
+    // A Phong list is meaningful when a field a colour list cannot carry
+    // varies across the faces -- or when a uniform emissive is lit at
+    // all: emissive has an unambiguous default (black) and no other
+    // property carries it, so dropping it loses light, while a uniform
+    // specular or shininess only re-skins what the default look already
+    // approximates. A PBR list is always meaningful, as above.
+    if (!allPbr) {
+        bool varies = false;
+        for (int idx = 1; idx < numFaces; ++idx) {
+            if (mats[idx].ambientColor != mats[0].ambientColor
+                || mats[idx].specularColor != mats[0].specularColor
+                || mats[idx].emissiveColor != mats[0].emissiveColor
+                || mats[idx].shininess != mats[0].shininess) {
+                varies = true;
+                break;
             }
         }
-        if (!visMat.IsNull() && !visMat->IsEmpty()) {
-            App::Material mat = convert(visMat);
-            if (hasEmissive(mat)) {
-                mats.assign(numFaces, mat);
-                found = true;
-            }
-        }
-        if (!found) {
+        if (!varies && !hasEmissive(mats[0])) {
             return false;
         }
     }
-
-    // Meaningful when a field a colour list cannot carry varies across
-    // the faces -- or when a uniform emissive is lit at all: emissive has
-    // an unambiguous default (black) and no other property carries it, so
-    // dropping it loses light, while a uniform specular or shininess only
-    // re-skins what the default look already approximates.
-    bool varies = false;
-    for (int idx = 1; idx < numFaces; ++idx) {
-        if (mats[idx].ambientColor != mats[0].ambientColor
-            || mats[idx].specularColor != mats[0].specularColor
-            || mats[idx].emissiveColor != mats[0].emissiveColor
-            || mats[idx].shininess != mats[0].shininess) {
-            varies = true;
-            break;
-        }
-    }
-    if (!varies && !hasEmissive(mats[0])) {
-        return false;
-    }
+    colors.pbrMaterials = allPbr;
 
     // Diffuse and transparency ride the resolved face colours (the reader
     // mirrors each material's base colour into the colour labels, and a
@@ -778,7 +830,7 @@ bool ImportOCAF2::createObject(App::Document* doc,
                     // The group shares its Render_* material, but the common
                     // fields (emissive above all) may still differ inside it
                     // -- they are not part of the grouping key.
-                    applyFaceMaterials(child, childMats);
+                    applyFaceMaterials(child, childMats, colors.pbrMaterials);
                 }
                 else {
                     applyFaceColors(child, childColors);
@@ -803,7 +855,7 @@ bool ImportOCAF2::createObject(App::Document* doc,
     applyFaceColors(feature,{info.faceColor});
     applyEdgeColors(feature,{info.edgeColor});
     if (!colors.faceMaterials.empty())
-        applyFaceMaterials(feature, colors.faceMaterials);
+        applyFaceMaterials(feature, colors.faceMaterials, colors.pbrMaterials);
     else if(colors.faceColors.size())
         applyFaceColors(feature,colors.faceColors);
     if(colors.edgeColors.size())
@@ -1466,6 +1518,7 @@ int ImportOCAF2::analyzeObject(TDF_Label label, const TopoDS_Shape& shape)
     op.faceColors = std::move(colors.faceColors);
     op.edgeColors = std::move(colors.edgeColors);
     op.faceMaterials = std::move(colors.faceMaterials);
+    op.pbrMaterials = colors.pbrMaterials;
     op.material = std::move(rmat);
     return node;
 }
@@ -1883,7 +1936,7 @@ void ImportOCAF2::applyOp(ProgOp& op, int index)
         applyFaceColors(feature, {op.faceColor});
         applyEdgeColors(feature, {op.edgeColor});
         if (!op.faceMaterials.empty()) {
-            applyFaceMaterials(feature, op.faceMaterials);
+            applyFaceMaterials(feature, op.faceMaterials, op.pbrMaterials);
         }
         else if (!op.faceColors.empty()) {
             applyFaceColors(feature, op.faceColors);
