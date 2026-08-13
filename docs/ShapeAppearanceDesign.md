@@ -889,6 +889,44 @@ discards what it builds.
 - Verify against a STEP file exported from another CAD package with per-face
   finishes, not only against our own output.
 
+**Landed 2026-08-13** (occt `482e433ba5` + `4eb39a55d1` on LinkVibe-801,
+fcad WriterStep commit), verified by a GUI probe: a box with six
+per-face materials exports six `surface_style_reflectance_ambient_
+diffuse_specular` entities and re-imports with per-face shininess and
+specular factor exact; a textually mutated copy (exponents rewritten,
+foreign header) parses to the mutated values, so the reader takes
+foreign-authored files, not just our own bytes; a plain colored STEP
+(synth_small) imports unchanged. The FreeCAD import side needed
+nothing: the reader populates `XCAFDoc_VisMaterialTool` and stage 4's
+`scanFaceMaterials` picks it up. Deviations from the sketch:
+
+- **The reader gate is "any reflectance property", not
+  `IsMaterialConvertible()`.** That predicate demands all five
+  properties at once, which real writers rarely emit together;
+  `CreateXCAFMaterial()` fills what is missing with defaults. A style
+  carrying only colour+transparency still collapses to a colour, as
+  before.
+- **The writer needed two upstream bug fixes, not just the mode.**
+  `SetVisualMaterialMode(true)` acted on nothing: the style settings
+  collection never called `XCAFPrs_Style::SetMaterial` (document
+  materials were invisible to it), and the two reflectance entities
+  were half-registered in `RWStepAP214_ReadWriteModule` -- readable in
+  the switch but with no keyword constants, no typenum binds, no
+  `StepType` case and no `WriteStep` case, so they serialized as
+  `?()`. Both fixed; both are upstreaming candidates.
+- **`Init(Common)` now always defines the full reflectance model.**
+  It used to define each property behind ratio heuristics while
+  `CreateRenderingProperties()` writes the specular block only when
+  every property is defined at once -- most materials silently lost
+  specular and shininess on write. The explicit specular colour is
+  kept, so specular round-trips exactly; ambient degrades to a factor
+  of diffuse (STEP's model).
+- Known limits, accepted: STEP's reflectance model has no emissive, so
+  per-face emissive does not survive STEP (glTF carries it); ambient
+  is a scalar factor of the surface colour; all OCCT changes are
+  ABI-compatible body changes (a static helper and string constants,
+  no new members).
+
 ### What lands when
 
 Stage 1 alone is worth having: it removes the redundant property trio, and
