@@ -64,6 +64,8 @@ public:
     long GpuMemoryBudgetMB;
     double LevelTolerance;
     double LevelPressureRelease;
+    bool ClimbHardLimit;
+    long ClimbAdmitBatch;
     bool DowngradeLedger;
     long LevelCount;
     double LevelScale;
@@ -189,6 +191,10 @@ public:
         funcs["LevelTolerance"] = &RenderParamsP::updateLevelTolerance;
         LevelPressureRelease = this->handle->GetFloat("LevelPressureRelease", 0.5);
         funcs["LevelPressureRelease"] = &RenderParamsP::updateLevelPressureRelease;
+        ClimbHardLimit = this->handle->GetBool("ClimbHardLimit", true);
+        funcs["ClimbHardLimit"] = &RenderParamsP::updateClimbHardLimit;
+        ClimbAdmitBatch = this->handle->GetInt("ClimbAdmitBatch", 64);
+        funcs["ClimbAdmitBatch"] = &RenderParamsP::updateClimbAdmitBatch;
         DowngradeLedger = this->handle->GetBool("DowngradeLedger", true);
         funcs["DowngradeLedger"] = &RenderParamsP::updateDowngradeLedger;
         LevelCount = this->handle->GetInt("LevelCount", 8);
@@ -446,6 +452,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelPressureRelease(RenderParamsP *self) {
         self->LevelPressureRelease = self->handle->GetFloat("LevelPressureRelease", 0.5);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateClimbHardLimit(RenderParamsP *self) {
+        self->ClimbHardLimit = self->handle->GetBool("ClimbHardLimit", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateClimbAdmitBatch(RenderParamsP *self) {
+        self->ClimbAdmitBatch = self->handle->GetInt("ClimbAdmitBatch", 64);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDowngradeLedger(RenderParamsP *self) {
@@ -1393,6 +1407,80 @@ void RenderParams::setLevelPressureRelease(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelPressureRelease() {
     instance()->handle->RemoveFloat("LevelPressureRelease");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docClimbHardLimit() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Whether the GPU budget is an absolute ceiling for the level\n"
+"plan's climbs (docs/SceneStreaming.md #13c.5). With it on, a\n"
+"plan whose allocator-exact uploaded total stands at or above\n"
+"the budget admits NO refine and cancels every climb still in\n"
+"flight -- the existing de-want pass aborts them -- and below\n"
+"the ceiling climbs are admitted in small batches (Climb\n"
+"admission batch) so the total approaches the ceiling in\n"
+"verified steps instead of overshooting it in one plan. Judged\n"
+"against the uploaded TOTAL, not the two-frame live census: the\n"
+"census alternates under churn and is what let climbs land\n"
+"over budget. A crossing is bounded by one batch's bytes;\n"
+"per-climb pre-sizing needs rung-keyed GPU cache entries and is\n"
+"future work. Off restores unadmitted climbing.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getClimbHardLimit() {
+    return instance()->ClimbHardLimit;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultClimbHardLimit() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setClimbHardLimit(const bool &v) {
+    instance()->handle->SetBool("ClimbHardLimit",v);
+    instance()->ClimbHardLimit = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeClimbHardLimit() {
+    instance()->handle->RemoveBool("ClimbHardLimit");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docClimbAdmitBatch() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many refines one plan may admit while the hard climb\n"
+"limit is on and the uploaded total is under budget. Small\n"
+"keeps the possible overshoot small and lets the next plan\n"
+"re-check the allocator-exact total before admitting more;\n"
+"large climbs faster. The set is not ordered by need within a\n"
+"plan, but every plan re-evaluates the whole scene, so nothing\n"
+"starves across plans.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getClimbAdmitBatch() {
+    return instance()->ClimbAdmitBatch;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultClimbAdmitBatch() {
+    const static long def = 64;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setClimbAdmitBatch(const long &v) {
+    instance()->handle->SetInt("ClimbAdmitBatch",v);
+    instance()->ClimbAdmitBatch = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeClimbAdmitBatch() {
+    instance()->handle->RemoveInt("ClimbAdmitBatch");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

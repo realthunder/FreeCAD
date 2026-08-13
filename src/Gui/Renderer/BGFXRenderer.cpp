@@ -4723,8 +4723,13 @@ public:
     GpuBytes gpuBytes() const
     {
         GpuBytes out;
-        // The retention rule of collectMeshes, read the other way
-        // round: an entry it would keep is one the scene still wants.
+        // `live` is a recency CENSUS (touched within the two-frame
+        // in-flight window) kept for the readout; retention itself is
+        // publication-keyed (collectMeshes), so `stale` now reads as
+        // "resident but not recently drawn" -- kept rungs of culled or
+        // intermittently drawn objects -- not as garbage awaiting
+        // collection. The budget is judged on `total`, the
+        // allocator's books.
         auto tally = [&out, this](uint64_t bytes, uint64_t lastUsed) {
             out.total += bytes;
             ++out.entries;
@@ -4742,22 +4747,52 @@ public:
         return out;
     }
 
-    // Drop GPU buffers of caches/textures that no draw call referenced
-    // recently.
-    void collectMeshes()
+    // Retire GPU buffers by PUBLICATION, not by recency (sec 13c.5).
+    //
+    // The old rule -- collect whatever no draw touched for two frames
+    // -- was a guess about need, and it guessed wrong twice: it
+    // destroyed buffers of draws the scene still rendered on a
+    // longer-than-two-frame cadence (198 draws re-uploaded every 4th
+    // frame, ~75MB of standing churn, and a live meter flapping
+    // 45<->120MB on a quiet scene), and it DELAYED a downgrade's free
+    // past the next plan, which is the transient the whole storm
+    // chased. \a kept is the truth instead: what the published lists
+    // carry, at which generation.
+    //
+    //  - kept, generation current: never collected. Its bytes are the
+    //    scene's bytes; only a publish or a swap may free them.
+    //  - kept, generation moved: the rung was swapped -- destroy NOW,
+    //    drawn or not. This is what makes a free a synchronous event
+    //    on the allocator's books (a culled object's old rung would
+    //    otherwise never meet the draw-time generation check and leak).
+    //  - not kept: left the lists at a publish; the two-frame grace
+    //    only spans in-flight frames.
+    void collectMeshes(const std::unordered_map<uint64_t, uint64_t> &kept)
     {
         for (auto it = meshes.begin(); it != meshes.end();) {
-            if (it->second.lastUsed + 2 < frame) {
+            auto pub = kept.find(it->first);
+            const bool stale = pub == kept.end()
+                ? it->second.lastUsed + 2 < frame
+                : (it->second.geom
+                   && it->second.generation != pub->second);
+            if (stale) {
                 it->second.destroy();
                 it = meshes.erase(it);
             } else
                 ++it;
         }
-        // After the meshes: any geometry a surviving mesh references was
-        // touched this frame through it, so an aged geometry has no
-        // referencing mesh left and can go.
+        // Geometries are shared behind the meshes, so their rule is
+        // REFERENCE, not age: any geometry a surviving mesh points at
+        // stays with it; the rest are orphans of swaps and publishes
+        // and go after the same in-flight grace.
+        std::unordered_set<const GpuGeometry *> referenced;
+        referenced.reserve(meshes.size());
+        for (const auto &m : meshes)
+            if (m.second.geom)
+                referenced.insert(m.second.geom);
         for (auto it = geometries.begin(); it != geometries.end();) {
-            if (it->second.lastUsed + 2 < frame) {
+            if (!referenced.count(&it->second)
+                    && it->second.lastUsed + 2 < frame) {
                 it->second.destroy();
                 it = geometries.erase(it);
             } else
@@ -11350,13 +11385,19 @@ public:
                     // CPU RAM — the way back up is an instant
                     // re-activation through an ordinary refine.
                     const size_t gpuBudget = gpuBudgetBytes();
-                    // The live half, not the total: bytes the scene has
-                    // stopped referencing are already on their way out
-                    // through collectMeshes, and no further descent can
-                    // free them a second time. Judging the total is how
-                    // a plan that had just downgraded 2394 sources read
-                    // its own memory as having risen.
-                    const size_t gpuUsed = size_t(gpu.live);
+                    // The TOTAL -- the allocator's own books -- now
+                    // that publication-keyed collection (sec 13c.5)
+                    // made a free a synchronous event: a swapped rung
+                    // is destroyed at the next collect, drawn or not,
+                    // so the total no longer carries two-frame ghosts
+                    // of the plan's own applies. The live census that
+                    // replaced the total here once (a plan that had
+                    // just downgraded 2394 sources read its memory as
+                    // risen) alternated under any redraw cadence
+                    // longer than its two-frame window -- the measured
+                    // 45<->120MB wave on a still camera -- and a
+                    // controller fed by it chased its own sampling.
+                    const size_t gpuUsed = size_t(gpu.total);
                     if (gpuBudget && gpuUsed > gpuBudget) {
                         // ...minus what previous sweeps have already
                         // ordered freed but the meter has not admitted
@@ -11507,6 +11548,29 @@ public:
                     auto tags = Render::planMeshRefines(
                         scene, levelPlanner.viewMatrix(),
                         levelPlanner.projMatrix(), h, refineTolerance);
+
+                    // The hard ceiling (sec 13c.5): the budget is a
+                    // line climbs may not cross, judged against the
+                    // allocator-exact uploaded TOTAL -- the two-frame
+                    // live census alternates under churn, and feeding
+                    // the admission from it is what let climbs land
+                    // over budget. At or over the ceiling nothing is
+                    // admitted, and clearing the wanted set here makes
+                    // the de-want pass below abort every climb still
+                    // in flight. Under it, admission is batched: no
+                    // single plan may move the total by more than one
+                    // batch before the next plan re-reads the truth.
+                    // The batch is arbitrary WITHIN a plan (the set is
+                    // unordered), but every plan re-evaluates the
+                    // whole scene, so nothing starves across plans.
+                    if (climbHardLimitOn && gpuBudget && !tags.empty()) {
+                        if (gpu.total >= gpuBudget) {
+                            tags.clear();
+                        } else if (tags.size()
+                                   > size_t(climbAdmitBatch)) {
+                            tags.resize(size_t(climbAdmitBatch));
+                        }
+                    }
 
                     // Cancels next (§13 step 4): every coarse source
                     // this plan does not want is de-wanted — a queued
@@ -15641,7 +15705,7 @@ public:
         }
 
         cpuMark(CpuPostSel);
-        view->collectMeshes();
+        view->collectMeshes(publishedMeshes());
 
         // Anything that reached the discard view drew nothing: the pass
         // declaration above missed a case the submission side takes.
@@ -16535,6 +16599,38 @@ public:
     }
 
     Render::Background background;
+    /// Version stamp of the published SCENE -- bumped by setScene,
+    /// consumed by publishedMeshes() below.
+    uint64_t drawListVersion = 1;
+    /// cacheId -> generation of every mesh the published scene
+    /// carries: the collector's keep-set (sec 13c.5). A kept mesh is
+    /// never TTL-collected -- its buffers die at the rung swap
+    /// (generation moved: freed synchronously at the next collect,
+    /// drawn or not, which is what makes a downgrade's free an EVENT
+    /// the plan can trust) or when it leaves the scene at a publish.
+    /// The two-frame TTL guess collected buffers the scene still drew
+    /// on a longer-than-two-frame cadence and re-uploaded them
+    /// forever: the measured 198-draw, 75MB, period-4 wave.
+    ///
+    /// The SCENE only, deliberately: overlays, selections and the
+    /// highlight feed (NaviCube, show-on-top) draw every frame while
+    /// they are active, so the TTL never bites them and they need no
+    /// keep entry -- and the highlight churns per HOVER, which would
+    /// rebuild this map per mouse move if it were included. They stay
+    /// on the recency rule, ungoverned, for now.
+    std::unordered_map<uint64_t, uint64_t> publishedIds;
+    uint64_t publishedIdsVersion = 0;
+    const std::unordered_map<uint64_t, uint64_t> &publishedMeshes()
+    {
+        if (publishedIdsVersion == drawListVersion)
+            return publishedIds;
+        publishedIdsVersion = drawListVersion;
+        publishedIds.clear();
+        for (const auto &d : scene)
+            if (d.mesh)
+                publishedIds[d.mesh->cacheId] = d.mesh->generation;
+        return publishedIds;
+    }
     std::map<int, Render::DrawCallList> selections;
     // Overlay feeds keyed by producer id (Renderer::setOverlay); map
     // order assigns the (limited) overlay view slots deterministically.
@@ -16945,6 +17041,12 @@ public:
     /// (Render::DowngradeLedger on the view); off restores the
     /// storming behaviour for comparison.
     bool downgradeLedgerOn = true;
+    /// Render_ClimbHardLimit / Render_ClimbAdmitBatch: the budget is
+    /// an absolute ceiling for climbs -- none admitted at or over it
+    /// (in-flight ones aborted through the de-want pass), batched
+    /// admission under it.
+    bool climbHardLimitOn = true;
+    int climbAdmitBatch = 64;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
 
@@ -17123,6 +17225,7 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
 {
     dumpFeed("scene", 0, draws);
     pimpl->scene = std::move(draws);
+    ++pimpl->drawListVersion;
     pimpl->buildInstanceGroups();
     // The occlusion index is partitioned from this list, and a stale
     // partition would mask draws by the bounds of whatever used to
@@ -17572,6 +17675,12 @@ void BGFXRenderer::setLevelPressureRelease(float fraction)
 void BGFXRenderer::setDowngradeLedger(bool on)
 {
     pimpl->downgradeLedgerOn = on;
+}
+
+void BGFXRenderer::setClimbAdmission(bool hardLimit, int batch)
+{
+    pimpl->climbHardLimitOn = hardLimit;
+    pimpl->climbAdmitBatch = batch > 0 ? batch : 1;
 }
 #endif
 

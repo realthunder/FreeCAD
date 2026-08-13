@@ -113,6 +113,10 @@ SHADOW = os.environ.get("FC_SHADOW", "on") == "on"
 # arm restores the storming behaviour the ledger exists to kill, which
 # is the A/B this harness measures.
 LEDGER = os.environ.get("FC_LEDGER", "on") == "on"
+# The hard-ceiling climb admission (sec 13c.5): at or over the budget
+# no refine is admitted and in-flight climbs are aborted; under it,
+# batched admission. Off restores unadmitted climbing.
+CLIMB = os.environ.get("FC_CLIMB", "on") == "on"
 # fit: the whole-assembly camera every converge run so far has used.
 # inside: a perspective camera at the model centre (FarFieldProxies
 # 10.3) -- the camera the occlusion mechanism is planned against, where
@@ -245,9 +249,10 @@ def run():
         rp.SetInt("OcclusionDemoteStreak", 8 if FEED else 0)
         rp.SetBool("Shadow", SHADOW)
         rp.SetBool("DowngradeLedger", LEDGER)
+        rp.SetBool("ClimbHardLimit", CLIMB)
         emit("arm: simplify=%s merge=%s budget=%dMB release=%s meshskip=%s "
              "finer=%s occlusion=%s feed=%s camera=%s shadow=%s ledger=%s "
-             "conv=%d plans within %.0f%% (or %.0fs of silence)"
+             "climb=%s conv=%d plans within %.0f%% (or %.0fs of silence)"
              % (SIMPLIFY, MERGE, BUDGET, RELEASE or "default",
                 "off" if MESH_SKIP == "off" else "on",
                 "on" if MESH_FINER == "on" else "off",
@@ -255,6 +260,7 @@ def run():
                 "on" if FEED else "off", CAMERA,
                 "on" if SHADOW else "off",
                 "on" if LEDGER else "off",
+                "on" if CLIMB else "off",
                 CONV_PLANS, CONV_TOL, CONV_QUIET_S))
 
         Gui.getMainWindow().resize(1920, 1200)

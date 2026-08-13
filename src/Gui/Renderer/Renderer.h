@@ -1718,6 +1718,13 @@ public:
     /// credit against the next plans' deficits (Render_DowngradeLedger;
     /// see Render::DowngradeLedger for why a sweep without one storms).
     virtual void setDowngradeLedger(bool on) { (void)on; }
+    /// The hard-ceiling admission for climbs (Render_ClimbHardLimit /
+    /// Render_ClimbAdmitBatch): at or over the budget the plan admits
+    /// no refine and aborts those in flight; under it, climbs are
+    /// admitted in batches of \a batch so the allocator-exact total
+    /// approaches the ceiling in verified steps.
+    virtual void setClimbAdmission(bool hardLimit, int batch)
+    { (void)hardLimit; (void)batch; }
     /// The display gates of the memory response
     /// (docs/SceneStreaming.md #13b), pushed in like every other
     /// parameter -- this library knows nothing of RenderParams.

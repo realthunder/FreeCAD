@@ -249,6 +249,28 @@ Params = [
         "when what a rung costs on screen changes.\n"
         "Smaller gives quality back faster and risks the cycle; larger is\n"
         "gentler and slower. 0 or less restores the immediate snap."),
+    ParamBool('ClimbHardLimit',  True, title='Hard GPU budget for climbs',
+        doc="Whether the GPU budget is an absolute ceiling for the level\n"
+        "plan's climbs (docs/SceneStreaming.md #13c.5). With it on, a\n"
+        "plan whose allocator-exact uploaded total stands at or above\n"
+        "the budget admits NO refine and cancels every climb still in\n"
+        "flight -- the existing de-want pass aborts them -- and below\n"
+        "the ceiling climbs are admitted in small batches (Climb\n"
+        "admission batch) so the total approaches the ceiling in\n"
+        "verified steps instead of overshooting it in one plan. Judged\n"
+        "against the uploaded TOTAL, not the two-frame live census: the\n"
+        "census alternates under churn and is what let climbs land\n"
+        "over budget. A crossing is bounded by one batch's bytes;\n"
+        "per-climb pre-sizing needs rung-keyed GPU cache entries and is\n"
+        "future work. Off restores unadmitted climbing."),
+    ParamInt('ClimbAdmitBatch',  64, title='Climb admission batch',
+        doc="How many refines one plan may admit while the hard climb\n"
+        "limit is on and the uploaded total is under budget. Small\n"
+        "keeps the possible overshoot small and lets the next plan\n"
+        "re-check the allocator-exact total before admitting more;\n"
+        "large climbs faster. The set is not ordered by need within a\n"
+        "plan, but every plan re-evaluates the whole scene, so nothing\n"
+        "starves across plans."),
     ParamBool('DowngradeLedger',  True, title='Downgrade ledger',
         doc="Whether the GPU downgrade sweep carries its own unlanded\n"
         "orders as credit against the next plan's deficit\n"

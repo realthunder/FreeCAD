@@ -2083,6 +2083,22 @@ RendererBridge::translateDowngradeLedger(App::PropertyContainer * view)
 }
 
 bool
+RendererBridge::translateClimbHardLimit(App::PropertyContainer * view)
+{
+    return bool(viewParamOverride<App::PropertyBool>(
+            view, "Render", "ClimbHardLimit",
+            RenderParams::getClimbHardLimit()));
+}
+
+int
+RendererBridge::translateClimbAdmitBatch(App::PropertyContainer * view)
+{
+    return int(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "ClimbAdmitBatch",
+            RenderParams::getClimbAdmitBatch()));
+}
+
+bool
 RendererBridge::translateShapeVertices(App::PropertyContainer * view)
 {
     return bool(viewParamOverride<App::PropertyBool>(

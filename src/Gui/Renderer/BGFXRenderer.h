@@ -125,6 +125,7 @@ public:
     virtual void setLevelDebug(bool on) override;
     virtual void setLevelPressureRelease(float fraction) override;
     virtual void setDowngradeLedger(bool on) override;
+    virtual void setClimbAdmission(bool hardLimit, int batch) override;
 #endif
 
 #ifdef FC_RENDERER_STANDALONE

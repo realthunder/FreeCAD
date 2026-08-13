@@ -415,6 +415,48 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ClimbHardLimit
+    ///
+    /// Whether the GPU budget is an absolute ceiling for the level
+    /// plan's climbs (docs/SceneStreaming.md #13c.5). With it on, a
+    /// plan whose allocator-exact uploaded total stands at or above
+    /// the budget admits NO refine and cancels every climb still in
+    /// flight -- the existing de-want pass aborts them -- and below
+    /// the ceiling climbs are admitted in small batches (Climb
+    /// admission batch) so the total approaches the ceiling in
+    /// verified steps instead of overshooting it in one plan. Judged
+    /// against the uploaded TOTAL, not the two-frame live census: the
+    /// census alternates under churn and is what let climbs land
+    /// over budget. A crossing is bounded by one batch's bytes;
+    /// per-climb pre-sizing needs rung-keyed GPU cache entries and is
+    /// future work. Off restores unadmitted climbing.
+    static const bool & getClimbHardLimit();
+    static const bool & defaultClimbHardLimit();
+    static void removeClimbHardLimit();
+    static void setClimbHardLimit(const bool &v);
+    static const char *docClimbHardLimit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ClimbAdmitBatch
+    ///
+    /// How many refines one plan may admit while the hard climb
+    /// limit is on and the uploaded total is under budget. Small
+    /// keeps the possible overshoot small and lets the next plan
+    /// re-check the allocator-exact total before admitting more;
+    /// large climbs faster. The set is not ordered by need within a
+    /// plan, but every plan re-evaluates the whole scene, so nothing
+    /// starves across plans.
+    static const long & getClimbAdmitBatch();
+    static const long & defaultClimbAdmitBatch();
+    static void removeClimbAdmitBatch();
+    static void setClimbAdmitBatch(const long &v);
+    static const char *docClimbAdmitBatch();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter DowngradeLedger
     ///
     /// Whether the GPU downgrade sweep carries its own unlanded

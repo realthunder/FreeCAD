@@ -2468,6 +2468,11 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
     PRIVATE(this)->external->setDowngradeLedger(
         RendererBridge::translateDowngradeLedger(
             PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setClimbAdmission(
+        RendererBridge::translateClimbHardLimit(
+            PRIVATE(this)->externalview),
+        RendererBridge::translateClimbAdmitBatch(
+            PRIVATE(this)->externalview));
     PRIVATE(this)->external->setLevelDebug(
         RendererBridge::translateLevelDebug(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setElementGates(
