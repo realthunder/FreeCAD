@@ -50,6 +50,7 @@
 #include <Mod/Part/App/PartFeature.h>
 
 #include "ExportOCAF.h"
+#include "Tools.h"
 
 
 #if OCC_VERSION_HEX >= 0x070500
@@ -59,9 +60,11 @@
 #define OCC_COLOR_SPACE Quantity_TOC_RGB
 #endif
 
+// One conversion for the whole module, in Tools -- see the note in
+// ImportOCAF.cpp.
 static inline Quantity_ColorRGBA convertColor(const App::Color& c)
 {
-    return Quantity_ColorRGBA(Quantity_Color(c.r, c.g, c.b, OCC_COLOR_SPACE), 1.0 - c.a);
+    return Import::Tools::convertColor(c);
 }
 
 using namespace Import;

@@ -697,9 +697,7 @@ private:
         if (mat.valid) {
             mat.hasBaseColor = true;
             mat.baseColor = vp->ShapeColor.getValue();
-            // App::Color::a carries *transparency* in the importer color
-            // convention (Tools::convertColor inverts it to alpha).
-            mat.baseColor.a = float(vp->Transparency.getValue()) / 100.0f;
+            mat.baseColor.setTransparency(float(vp->Transparency.getValue()) / 100.0f);
         }
         return mat.valid;
     }

@@ -54,6 +54,7 @@
 #include <Mod/Part/App/FeatureCompound.h>
 
 #include "ImportOCAF.h"
+#include "Tools.h"
 
 
 #ifdef HAVE_TBB
@@ -71,14 +72,12 @@ using namespace Import;
 #define OCC_COLOR_SPACE Quantity_TOC_RGB
 #endif
 
+// One conversion for the whole module, in Tools -- upstream lost STEP
+// transparency for a release to a second copy of this drifting (their
+// issue #18575), so a local one is not merely redundant.
 static inline App::Color convertColor(const Quantity_ColorRGBA& c)
 {
-    Standard_Real r, g, b;
-    c.GetRGB().Values(r, g, b, OCC_COLOR_SPACE);
-    return App::Color(static_cast<float>(r),
-                      static_cast<float>(g),
-                      static_cast<float>(b),
-                      1.0f - static_cast<float>(c.Alpha()));
+    return Import::Tools::convertColor(c);
 }
 
 #define OCAF_KEEP_PLACEMENT

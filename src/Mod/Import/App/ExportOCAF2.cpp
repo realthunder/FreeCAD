@@ -68,8 +68,8 @@ using namespace Import;
 
 ExportOCAFOptions::ExportOCAFOptions()
 {
-    defaultColor.setPackedValue(0xCCCCCC00);
-    defaultColor.a = 0;
+    defaultColor.setPackedValue(0xCCCCCCFF);
+    defaultColor.a = 1.0f;  // opaque
 }
 
 ExportOCAF2::ExportOCAF2(Handle(TDocStd_Document) h, GetShapeColorsFunc func)
@@ -100,7 +100,7 @@ ExportOCAFOptions ExportOCAF2::customExportOptions()
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
     defaultOptions.defaultColor.setPackedValue(
         handle->GetUnsigned("DefaultShapeColor", defaultOptions.defaultColor.getPackedValue()));
-    defaultOptions.defaultColor.a = 0;
+    defaultOptions.defaultColor.a = 1.0f;  // opaque
 
     return defaultOptions;
 }
