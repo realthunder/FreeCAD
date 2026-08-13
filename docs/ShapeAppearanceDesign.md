@@ -87,7 +87,7 @@ For a 10,000-face solid, against storing this fork's 80-byte material whole:
 | case | whole materials | this design |
 |---|---|---|
 | uniform appearance | 800 KB | **16 B** (one colour, the only field that differs) |
-| STEP import, colour + alpha per face | 800 KB | **200 KB** (`_diffuse` 160 KB + `_transparency` 40 KB, rest empty) |
+| STEP import, colour + alpha per face | 800 KB | **160 KB** (`_diffuse` alone -- its alpha IS the transparency, rest empty) |
 | full per-face materials (glTF) | 800 KB | 800 KB |
 
 The uniform row is the one that matters most in practice and it is not a
@@ -115,6 +115,17 @@ None of it requires contiguous material storage. Upstream's own
 objects, so Python never sees internal storage and in-place mutation of
 `[0]` never wrote back even upstream. We construct each `Material` from the
 field arrays on access -- same observable behaviour, same cost.
+
+Since the alpha convention flip (section 7.9) the tuples agree with upstream
+1.1 numerically as well: a colour's fourth component is an opacity. The one
+divergence is deliberate: a Material's `DiffuseColor[3]` here reads
+`1 - Transparency` -- the truthful value -- where upstream reports the
+vestigial 1.0 their migration parked there. And one guard: a `DiffuseColor`
+assignment whose alphas are ALL exactly 0.0 -- the pre-flip spelling of
+opaque, which now spells invisible -- is read as opaque with a once-per-run
+warning, unless the object already was fully transparent
+(`PropertyDiffuseColor::guardLegacyAlpha`). Mixed and partial alphas pass
+through untouched.
 
 ### 4.2 C++
 
@@ -857,23 +868,48 @@ from.
    reading a document from **after** upstream inverted what a colour's alpha
    means -- is 7.9.
 
-### 7.9 The alpha component changed meaning at 1.1, in the other direction
+### 7.9 The alpha component: the fork adopted upstream's meaning
+
+*Rewritten 2026-08-13; the first landing kept the fork's old convention and
+converted 1.1 files the other way. That reading is gone.*
 
 ⭐ **Found reading their reader, not their writer.** Upstream carries
 `requiresAlphaConversion` on four property classes and a
 `readerRequiresAlphaConversion(reader)` that answers
 `Base::getVersion(reader.ProgramVersion) < v1_1`: **before 1.1 a colour's
-alpha component held transparency, and from 1.1 it holds opacity.** This
-fork's convention is the pre-1.1 one -- `Base::Color::a` IS transparency
-here, which is why a face colour's alpha is that face's transparency and why
-`ViewProviderPartExt::setHighlightedFaces` writes `colors[i].a` straight into
-Coin's `transparency` field.
+alpha component held transparency, and from 1.1 it holds opacity.**
 
-So the migration this fork needs is the same arithmetic aimed the other way:
-convert a document written **at or after** 1.1, leave everything older alone.
-`Base::alphaIsOpacity` (new `src/Base/ProgramVersion.h`) is that gate, and
-four restore paths ask it -- `PropertyColor`, `PropertyColorList`,
-`PropertyMaterial`, `PropertyMaterialList` -- the same four upstream converts.
+The fork now means opacity too, everywhere in memory -- decided after the
+audit found both conventions live in the tree at once (fork code writing
+transparency, ported upstream code writing opacity, one type, no marker; see
+the decision record in `Base/Color.h`). **Documents did not move**: every
+file this fork writes still stores transparency in the alpha byte, readable
+by every older build and by pre-1.1 upstream, so the conversion happens at
+the boundary in BOTH directions -- Restore converts legacy files (upstream's
+own rule), Save converts on the way out (`Base::writerAlphaIsOpacity`, false
+while `PACKAGE_VERSION` is below 1.1, self-correcting the day it is not).
+`Base::alphaIsOpacity` gates the read side, asked by the same four
+properties upstream converts -- `PropertyColor`, `PropertyColorList`,
+`PropertyMaterial`, `PropertyMaterialList` -- in both encodings each.
+
+The legacy `DiffuseColor` element goes further: while the appearance varies
+nothing but its diffuse field (`variesOnlyInDiffuse`), the element is written
+**with its values**, alpha as transparency, so a pre-ShapeAppearance FreeCAD
+still opens the file with its face colours. A per-face import pays for its
+colours twice in exchange; when the appearance holds what a colour list
+cannot say, the element is a placeholder and nothing lossy is written.
+
+And the storage collapsed behind it: **there is no `_transparency` array**.
+A face's transparency is `1 - _diffuse[i].a`, the invariant the two stores
+used to break -- the container-detach hack in the Transparency handler and
+the per-path choice of which store to render from both fell out. A whole
+`App::Material` still carries both slots, so composition picks one: **the
+transparency field wins** (their renderer reads only it; their migration
+parks 1.0 in the alpha). On restore the winner depends on the era -- a
+legacy file's two transparency-meaning slots merge by max (link override
+lists kept the truth in the field, old colour lists in the alpha, synced
+files in both), a 1.1 file's field is the sole truth -- see
+`PropertyMaterialList::restoreValues`.
 
 Three things this turned up, each of which would have failed silently:
 
@@ -895,15 +931,15 @@ Three things this turned up, each of which would have failed silently:
   paths would have worked anyway (a registered entry is served by the outer
   parser, which has the attribute), so this is another case of an encoding
   deciding whether a restore is correct.
-- ⭐ **For the material list the conversion is a move, not an inversion.**
+- ⭐ **For the material list the conversion is a merge, not an inversion.**
   Upstream renders per-entry transparency out of the `transparency` field and
   ignores the diffuse alpha entirely (`setHighlightedFaces` reads
   `materials[i].transparency`), and their own pre-1.1 migration writes 1.0
-  into that alpha for every entry. So the field is the value their file
-  means, and `applyOpacityConvention` moves it into the diffuse alpha where
-  this fork reads it; inverting the component instead would make every face
-  opaque and lose the per-face transparency. The other three colours are
-  inverted, being decorative on both sides but stored.
+  into that alpha for every entry -- so a 1.1 file's field is its truth and
+  inverting the component instead would make every face opaque. A legacy
+  file's truth may sit in either slot (see 7.9), hence the max-merge in
+  `restoreValues`. The other three colours are inverted either way, being
+  decorative on both sides but stored.
 
 ⭐⭐ **And the version was not the only thing missing: nothing derived the
 compatibility names.** A 1.0-or-later upstream document states no
@@ -925,21 +961,27 @@ never registered and never written, that `handleChangedPropertyName` restores
 an old `DiffuseColor` element into so that `onChanged` can later split its
 alpha out into `setTransparencies` -- has **no counterpart here and needs
 none**. It exists because their storage cannot hold what that alpha means;
-ours can, so the element restores straight into the property that names the
-appearance's diffuse field (1.1), and the alpha stays where the file put it.
+ours holds exactly that (the alpha IS the entry's opacity), so the element
+restores straight into the property that names the appearance's diffuse
+field (1.1), converted at the gate like every legacy colour.
 
-The same gate runs the other way for free: this fork's documents state
-`0.22R<rev>`, so a 1.1 reader classifies them as pre-1.1 and converts their
-colours correctly, without either side agreeing to anything. That holds only
-while the version number does -- one more reason the note in
-`Base/ProgramVersion.h` has to be read before `PACKAGE_VERSION` moves.
+The other direction still works for free: this fork's documents state
+`0.22R<rev>` and store transparency in the alpha, so a 1.1 reader classifies
+them as pre-1.1 and converts them correctly, without either side agreeing to
+anything. `Base::writerAlphaIsOpacity` is what keeps that true -- the writer
+converts back to the legacy bytes precisely so the stated version keeps
+describing them. Both halves move together the day `PACKAGE_VERSION` reaches
+1.1; the note in `Base/ProgramVersion.h` says how.
 
-Verified by `fcad-probes/upstream_alpha_probe.py`, which crafts the 1.1 file
-rather than writing one: their `version="3"` archive entry packed by hand,
-`ShapeColor` / `ShapeMaterial` / `DiffuseColor` removed as a 1.1 document has
-none, and `ProgramVersion` set in Document.xml. The control is the same bytes
-under this fork's own version, which must come back unconverted -- the gate
-is the release that wrote the document, not the encoding.
+Verified by `fcad-probes/upstream_alpha_probe.py`, which crafts BOTH eras'
+files rather than writing them: upstream's `version="3"` archive entry
+packed by hand at 1.1, and the same shapes packed the legacy way under this
+fork's own version. The sharpest check is convergence -- different bytes,
+different conversion, the same in-memory appearance -- since there is no
+longer any version whose colours are left alone. A version nothing
+recognises must take the legacy reading (fail closed: unreadable means old),
+and a round trip through this build's own writer must both return what was
+set and leave transparency-in-alpha bytes on disk.
 
 ### 7.8 What restore actually does, measured
 
