@@ -1346,14 +1346,49 @@ materializes metal it was not given.
   The renderer's existing per-object override path does the rest
   unchanged. Roughness is floored at the shader clamp 0.02 because the
   renderer reads <= 0 as unset.
-- **bgfx, per-face leg**: NOT LANDED. Per-face metallic cannot ride
-  SoMaterial (SbColor drops alpha at the node), so it needs
-  metallic/roughness arrays on the coin fork's Ex element, baked into
-  the existing streams (the emissive stream's low byte is a constant FF
-  today = free; the specular low byte carries roughness at the same
-  8-bit quantization shininess uses). Until then a per-face PBR
-  appearance renders with entry-0 uniform PBR plus derived-Phong
-  per-face streams.
+- **bgfx, per-face leg (landed 2026-08-13)**: the factor pair rides the
+  per-vertex material stream's two spare alpha slots -- the metallic
+  where the emissive alpha is a constant FF, the roughness where the
+  specular alpha carries the shininess that the PBR shading branch does
+  not read, at the 8-bit quantization that slot has always had. What it
+  does NOT ride is the coin fork. The sketch here had the arrays
+  extending `SoLazyElementEx`, but reading the consumer first says
+  otherwise: metallic and roughness are not Coin material fields, they
+  already come from a FreeCAD node (`SoFCRenderMaterial`, which carries
+  the uniform pair), and FreeCAD already defines its own elements on
+  the callback action (`SoFCDiffuseElement`). So the pair travels in
+  `SoFCPbrElement`, a FreeCAD element written by that node's
+  `doAction`, and the coin fork is untouched -- no coin rebuild, no
+  pivy rebuild, no feedstock lockstep.
+  - The producer is `updateRenderMaterial()`: a PBR appearance whose
+    entries genuinely differ in the pair fills `metallics`/`roughnesses`
+    on the node (each roughness floored at the shader clamp, like the
+    scalar), and clears them when they do not -- so a uniform PBR
+    object is what it was before. Indexing follows the APPEARANCE, not
+    the face count, so a face past the end reads ENTRY 0, the padding
+    rule `setHighlightedFaces` uses, rather than clamping to the last
+    entry the way the colour arrays (which are as long as the shape has
+    faces) do.
+  - `SoFCVertexCache` reads that element beside the lazy element's
+    arrays and bakes whichever reading applies. The pair alone
+    allocates the stream -- an appearance can differ per face in
+    nothing else -- and the existing divergence test still decides
+    whether a stream is needed at all.
+  - The draw states which reading its stream carries
+    (`Material::perfacepbr`), taken from the cache that baked it rather
+    than from the material, since the bake is the authority. The submit
+    lifts `u_matEmissive.w` from a flag to three states (0 = scalars,
+    1 = the Phong reading, 2 = the PBR one) and the fragment shader
+    resolves the pair into its metal/rough factors. With PBR shading
+    off for the frame that alpha would be read as a shininess, so the
+    Phong branch converts the roughness back through the inverse of the
+    Blinn-Phong-to-GGX fit -- the value the stored material's own Phong
+    derivation holds.
+  - A single-face draw carries no stream, so it resolves its face's
+    pair into the scalars, out of `Material::metallics`/`roughnesses` --
+    the array form captured beside the existing four.
+  - Scene dump v48 carries the flag: an older viewer reads the stream
+    the Phong way, which is the uniform-PBR look it showed before.
 - **glTF, exact both ways (landed 2026-08-13)**: when every material a
   label uses has the PBR definition (glTF always), import stores the
   raw factors -- metallic into the specular alpha under a white tint,
@@ -1444,3 +1479,22 @@ two dialogs: the commits following this doc's update. Verified three
 ways: 41/41 gtests (3 new), a 16-check FreeCADCmd probe of the Python
 bridge, and a 21-check xvfb GUI smoke that drives Std_SetAppearance's
 real dialogs through a cancel-revert round and an OK-keep round.
+
+Per-face streams (`SoFCPbrElement`, the bake, the draw flag, the
+shader, dump v48): the commits following this doc's update. Verified on
+the CPU side by 4 new tests in `tests/src/Gui/RenderCacheMaterial.cpp`
+(9/9 green, none of them skipping against a stock libCoin -- this leg
+does not use the fork) and, for the producer, by an 11-check xvfb scene
+probe (`~/works/sw/models/perface/perface_pbr_scene_probe.py`) that
+reads the node arrays a real view provider builds, across per-face,
+uniform-PBR and Phong appearances.
+
+**The GPU side is not verified by a picture**, and the reason is the
+harness, not the feature: in this box's xvfb runs, render-cache mode 3
+draws a frame that no material change reaches at all. Measured, not
+assumed -- a plain `ShapeColor` write shows the same default gray, and
+the SAME leg on the unmodified tree (stash, rebuild, rerun) renders the
+identical gray, while mode 0 renders the colour correctly. So the
+existing pixel-probe route
+(`~/works/sw/models/perface/perface_pbr_pixel_probe.py`, kept with its
+control legs) cannot judge this until that gap is closed.
