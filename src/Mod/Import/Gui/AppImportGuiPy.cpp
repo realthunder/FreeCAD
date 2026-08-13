@@ -78,6 +78,7 @@
 #include <Gui/WaitCursor.h>
 #include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/ViewProviderLink.h>
+#include <Mod/Part/Gui/ViewProvider.h>
 #include <Mod/Import/App/ExportOCAF2.h>
 #include <Mod/Import/App/ImportOCAF2.h>
 #include <Mod/Import/App/ReaderGltf.h>
@@ -660,6 +661,24 @@ private:
         return {};
     }
 
+    static bool getShapeAppearance(App::DocumentObject* obj, std::vector<App::Material>& mats)
+    {
+        // Per-face whole materials, only when the appearance says
+        // something the colour labels cannot: a field beyond diffuse
+        // varying across the faces.
+        auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
+            Gui::Application::Instance->getViewProvider(obj));
+        if (!vp || vp->ShapeAppearance.variesOnlyInDiffuse()) {
+            return false;
+        }
+        int count = vp->ShapeAppearance.getSize();
+        mats.reserve(count);
+        for (int i = 0; i < count; ++i) {
+            mats.push_back(vp->ShapeAppearance.getMaterial(i));
+        }
+        return mats.size() > 1;
+    }
+
     static bool getRenderMaterial(App::DocumentObject* obj, Import::RenderMaterial& mat)
     {
         // Per-object render engine settings (Render_* dynamic properties,
@@ -868,6 +887,7 @@ private:
 
             Import::ExportOCAF2 ocaf(hDoc, &getShapeColors);
             ocaf.setGetRenderMaterial(&getRenderMaterial);
+            ocaf.setGetShapeAppearance(&getShapeAppearance);
             if (!legacyExport || !ocaf.canFallback(objs)) {
                 ocaf.setExportOptions(Import::ExportOCAF2::customExportOptions());
                 ocaf.setExportHiddenObject(exportHidden);

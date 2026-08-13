@@ -33,6 +33,7 @@
 #include <TDF_LabelSequence.hxx>
 #include <TDocStd_Document.hxx>
 
+#include <App/Material.h>
 #include <Mod/Import/ImportGlobal.h>
 #include "RenderMaterial.h"
 #include "Tools.h"
@@ -67,12 +68,23 @@ public:
     /// from the view provider's Render_* dynamic properties. Return false
     /// when the object has none (no material is written then).
     using GetRenderMaterialFunc = std::function<bool(App::DocumentObject*, RenderMaterial&)>;
+    /// Resolve an object's per-face appearance as whole materials, one per
+    /// face, when a field beyond diffuse varies across the faces. Return
+    /// false when a colour list carries everything -- the colour labels
+    /// already say it then.
+    using GetShapeAppearanceFunc =
+        std::function<bool(App::DocumentObject*, std::vector<App::Material>&)>;
     explicit ExportOCAF2(Handle(TDocStd_Document) hDoc,
                          GetShapeColorsFunc func = GetShapeColorsFunc());
 
     void setGetRenderMaterial(GetRenderMaterialFunc func)
     {
         getRenderMaterial = std::move(func);
+    }
+
+    void setGetShapeAppearance(GetShapeAppearanceFunc func)
+    {
+        getShapeAppearance = std::move(func);
     }
 
     static ExportOCAFOptions customExportOptions();
@@ -120,6 +132,7 @@ private:
 
     GetShapeColorsFunc getShapeColors;
     GetRenderMaterialFunc getRenderMaterial;
+    GetShapeAppearanceFunc getShapeAppearance;
 
     ExportOCAFOptions options;
 };
