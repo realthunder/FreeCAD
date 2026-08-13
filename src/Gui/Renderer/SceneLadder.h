@@ -40,6 +40,7 @@
 /// share a policy.
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <string>
@@ -523,6 +524,11 @@ struct PlanDemoteStats {
     uint32_t eligible = 0;     ///< on screen and under the margin
     uint32_t underPressure = 0;///< over the margin, taken because the deficit demanded it
     uint32_t unpriceable = 0;  ///< no judgeable bounds, or the camera inside the box
+    /// Candidates the per-plan order cap (\a maxOrders) deferred to a
+    /// later pass. Not refused -- their hooks stand and the replan
+    /// re-finds them; reported so a capped pass never reads as
+    /// "covered everything".
+    uint32_t deferredByCap = 0;
     /// Bytes the selection gives back, in whatever currency the caller
     /// priced it in (planMeshDemotes' \a bytesOf) -- per distinct mesh,
     /// so an instanced source is not counted once per instance.
@@ -563,60 +569,125 @@ struct PlanDemoteStats {
 /// own transient is the storm. Credit that can never land -- shared
 /// geometry pinned by sources the sweep cannot reach -- expires, and
 /// the truth returns within the window.
+///
+/// The frame window is a SETTLE margin, not the expiry itself: an
+/// order now lands as a worker JOB (the descent builds on the refine
+/// pool, sec 13c), and its bytes cannot fall before the job does --
+/// which on a loaded pool is far past any frame count. So the credit
+/// stands until the JOBS THE ORDERS QUEUED have all settled (landed,
+/// refused, or purged -- the producer's monotonic settle counter says
+/// so), and only then does the kSettleFrames clock start on the
+/// remainder. Not "while any descent job is in flight": a busy ladder
+/// keeps some job queued for minutes on end, credit held on that never
+/// expired, and the phantom promises of orders that freed nothing (a
+/// decimation that came back "spent" keeps its mesh but was priced in
+/// full) accumulated until the sweep crawled 2MB-deficits against
+/// 33MB of standing excess. Expiring on frames alone was the opposite
+/// failure: the 418-order burst re-ordered the same memory from other
+/// sources the moment its 6 frames ran out.
 struct DowngradeLedger {
-    /// Bytes ordered freed whose landing has not yet been observed.
-    uint64_t promised = 0;
-    /// The live meter the outstanding order was judged against; only
-    /// falls below this observe landings, and it ratchets down with
-    /// them so a fall is never credited twice.
+    /// One sweep's promise, expiring on ITS OWN terms. An aggregate
+    /// promise cannot: while small follow-up orders keep flowing --
+    /// and a converging ladder orders every plan -- any shared horizon
+    /// is perpetually re-stamped, and the phantom credit of drops that
+    /// freed nothing (a "spent" decimation keeps its mesh; the second
+    /// tag of a shared pair is a structural no-op) accumulates until
+    /// the sweep crawls 2MB-deficits against 50MB of standing excess.
+    /// This is the "queue for downgrade" design stated plainly: each
+    /// order is retired by observed landings (oldest first) or written
+    /// off alone, once its own jobs have settled and its grace passed.
+    struct Order {
+        uint64_t bytes = 0;         ///< promise still unlanded
+        uint64_t frame = 0;         ///< rendered-frame stamp at order
+        uint64_t settleTarget = 0;  ///< producer settle count that says
+                                    ///< "this order's jobs are done"
+    };
+    std::deque<Order> orders;
+    /// The live meter the newest order was judged against; only falls
+    /// below this observe landings, and it ratchets down with them so
+    /// a fall is never credited twice.
     uint64_t liveAtOrder = 0;
-    /// Rendered-frame stamp of the most recent order.
-    uint64_t orderFrame = 0;
-    /// Write-off horizon: the 2-frame collection window, plus headroom
-    /// for the rebuilds to run between frames on the same thread.
+    /// Write-off horizon AFTER an order's jobs settled: the 2-frame
+    /// collection window, plus headroom for the landings to run
+    /// between frames on the same thread.
     static constexpr uint64_t kSettleFrames = 6;
 
-    /// Outstanding credit, after observing \a liveNow: falls since the
-    /// order settle the promise, kSettleFrames without full landing
-    /// write it off.
-    uint64_t outstanding(uint64_t liveNow, uint64_t frameNow)
+    /// Bytes still promised, for the readout.
+    uint64_t promised() const
     {
-        if (!promised)
-            return 0;
-        if (frameNow >= orderFrame + kSettleFrames) {
-            promised = 0;
-            return 0;
-        }
-        const uint64_t observed =
+        uint64_t sum = 0;
+        for (const Order &o : orders)
+            sum += o.bytes;
+        return sum;
+    }
+
+    /// Outstanding credit, after observing \a liveNow: falls since the
+    /// newest order retire promises oldest-first; an order whose jobs
+    /// have all settled (\a settleNow, the producer's monotonic
+    /// MeshSourceRegistry::descentSettleCount) and whose grace frames
+    /// have passed writes off what it still holds -- alone, however
+    /// many newer orders stand behind it.
+    uint64_t outstanding(uint64_t liveNow, uint64_t frameNow,
+                         uint64_t settleNow = 0)
+    {
+        // Landings first: a fall is real memory and must retire
+        // promises before any write-off invents a deficit.
+        uint64_t observed =
             liveAtOrder > liveNow ? liveAtOrder - liveNow : 0;
         if (observed) {
-            if (observed >= promised) {
-                promised = 0;
-                return 0;
-            }
-            promised -= observed;
             liveAtOrder = liveNow;
+            while (observed && !orders.empty()) {
+                Order &o = orders.front();
+                const uint64_t take = observed < o.bytes ? observed
+                                                         : o.bytes;
+                o.bytes -= take;
+                observed -= take;
+                if (!o.bytes)
+                    orders.pop_front();
+            }
         }
-        return promised;
+        // Expiry is per order: its own jobs settled, its own grace
+        // out. An order still being worked holds ITS horizon open (the
+        // restamp), so the grace effectively starts when its last job
+        // settles -- and a newer order's arrival changes nothing for
+        // an older one.
+        for (auto it = orders.begin(); it != orders.end();) {
+            if (settleNow < it->settleTarget) {
+                it->frame = frameNow;
+                ++it;
+            }
+            else if (frameNow >= it->frame + kSettleFrames) {
+                it = orders.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+        return promised();
     }
 
     /// The deficit the next sweep should act on: the raw excess minus
     /// what is already in flight. 0 holds the sweep this plan.
-    uint64_t deficit(uint64_t liveNow, uint64_t budget, uint64_t frameNow)
+    uint64_t deficit(uint64_t liveNow, uint64_t budget, uint64_t frameNow,
+                     uint64_t settleNow = 0)
     {
         const uint64_t raw = liveNow > budget ? liveNow - budget : 0;
-        const uint64_t credit = outstanding(liveNow, frameNow);
+        const uint64_t credit = outstanding(liveNow, frameNow, settleNow);
         return raw > credit ? raw - credit : 0;
     }
 
-    /// Record a sweep's order (its PlanDemoteStats::bytesFreed).
-    void order(uint64_t bytes, uint64_t liveNow, uint64_t frameNow)
+    /// Record a sweep's order: its PlanDemoteStats::bytesFreed, the
+    /// drops it requested, and the producer's settle count now. Each
+    /// drop enqueues at least one job, so settleNow + jobs is a LOWER
+    /// bound on "this order's jobs are done" -- erring toward expiring
+    /// a little early, the recoverable direction.
+    void order(uint64_t bytes, uint64_t liveNow, uint64_t frameNow,
+               uint64_t settleNow = 0, uint64_t jobs = 0)
     {
         if (!bytes)
             return;
-        promised += bytes;
+        orders.push_back({bytes, frameNow, settleNow + jobs});
         liveAtOrder = liveNow;
-        orderFrame = frameNow;
     }
 };
 
@@ -688,13 +759,22 @@ struct DowngradeLedger {
 /// conservative and hysteresed by the caller (frames-hidden streak):
 /// this pass acts on it without judgement, and a flapping verdict here
 /// is an upload/rebuild per flap.
+///
+/// \a maxOrders, when non-zero, caps how many drops one pass returns
+/// (free tier and priced tier together). Each order is now a worker
+/// job whose enqueue costs the GUI thread a snapshot, so an unbounded
+/// pass -- the measured 1500-order plans -- is itself a stall; the
+/// deferred candidates keep their hooks and the replan that follows
+/// the landed batch re-finds them. stats->bytesFreed counts only what
+/// was ordered, so the ledger's credit stays honest under the cap.
 RendererExport std::vector<const void *> planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
     const std::function<float(const void *)> &demoteErrOf,
     PlanDemoteStats *stats = nullptr, size_t deficitBytes = 0,
     const std::function<uint64_t(const MeshData *)> &bytesOf = {},
-    const std::function<bool(const void *)> &hiddenOf = {});
+    const std::function<bool(const void *)> &hiddenOf = {},
+    size_t maxOrders = 0);
 
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.

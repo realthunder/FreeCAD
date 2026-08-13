@@ -11424,6 +11424,13 @@ public:
                     // not miss — off screen, or coarse within half the
                     // tolerance — before spending anything on new
                     // builds.
+                    // Every order is now a worker job whose enqueue
+                    // snapshots on the GUI thread, so one pass orders a
+                    // bounded batch (Render_DescentOrderBatch, the
+                    // climb admission batch's mirror) and the replan
+                    // after the batch lands takes the rest.
+                    const size_t descentBatch =
+                        size_t(std::max(0, descentOrderBatch));
                     if (reg.memoryCeilingEpoch()) {
                         reg.dropHiddenLevels();
                         // How much RAM the observer wanted back (the
@@ -11441,10 +11448,15 @@ public:
                             [&reg](const void *t) {
                                 return reg.demoteError(t);
                             },
-                            &dmStats, dmDeficit = reg.memoryShortfall());
+                            &dmStats, dmDeficit = reg.memoryShortfall(),
+                            {}, {}, descentBatch);
                         nDemote = drops.size();
                         for (const void *tag : drops)
                             reg.requestDemote(tag);
+                        // A capped pass has not covered the ceiling;
+                        // replan once this batch has had its frames.
+                        if (dmStats.deferredByCap)
+                            levelPlanner.markDirty();
                     }
                     // The GPU budget's half (§13 step 3): over it,
                     // downgrade the *displayed* rung of what the
@@ -11479,8 +11491,15 @@ public:
                         // lands.
                         size_t deficit = gpuUsed - gpuBudget;
                         if (downgradeLedgerOn) {
+                            // The write-off horizon rides the ordered
+                            // jobs: an order's bytes cannot land
+                            // before its descent jobs do, so credit
+                            // stands until the settle counter says
+                            // those jobs have all had their chance,
+                            // and the frame window starts there.
                             deficit = size_t(view->dgLedger.deficit(
-                                gpuUsed, gpuBudget, view->frame));
+                                gpuUsed, gpuBudget, view->frame,
+                                reg.descentSettleCount()));
                             if (!deficit)
                                 dgHeld = gpuUsed - gpuBudget;
                         }
@@ -11521,7 +11540,7 @@ public:
                                 return view && m
                                     ? view->uploadedBytesOf(*m, &charge) : 0;
                             },
-                            hiddenOf);
+                            hiddenOf, descentBatch);
                         nDowngrade = drops.size();
                         for (const void *tag : drops)
                             reg.requestDowngrade(tag);
@@ -11530,7 +11549,9 @@ public:
                         // off the apply transient.
                         if (downgradeLedgerOn)
                             view->dgLedger.order(dgStats.bytesFreed,
-                                                 gpuUsed, view->frame);
+                                                 gpuUsed, view->frame,
+                                                 reg.descentSettleCount(),
+                                                 drops.size());
                         // One pass cannot know it freed enough: what it
                         // counted is what stands uploaded now, and the
                         // rung it swaps in takes some of it back. So
@@ -11815,7 +11836,8 @@ public:
                                 "screen and too big %u "
                                 "| offscreen %u | occluded %u | eligible %u "
                                 "| under pressure "
-                                "%u | unpriceable %u | want %.1fMB freed "
+                                "%u | unpriceable %u | deferred by cap %u "
+                                "| want %.1fMB freed "
                                 "%.1fMB | out of reach %.1fMB (unregistered "
                                 "%.1fMB) | accepted "
                                 "error %.2fpx\n",
@@ -11823,7 +11845,8 @@ public:
                                 s.unregistered, s.tooBig,
                                 s.offscreen, s.occludedFree, s.eligible,
                                 s.underPressure,
-                                s.unpriceable, double(deficit) / 1048576.0,
+                                s.unpriceable, s.deferredByCap,
+                                double(deficit) / 1048576.0,
                                 double(s.bytesFreed) / 1048576.0,
                                 double(s.unreachableBytes) / 1048576.0,
                                 double(s.unregisteredBytes) / 1048576.0,
@@ -11837,7 +11860,7 @@ public:
                                 "%.1fMB excess covered by %.1fMB still "
                                 "in flight\n",
                                 double(dgHeld) / 1048576.0,
-                                double(view->dgLedger.promised)
+                                double(view->dgLedger.promised())
                                     / 1048576.0);
                     }
                 });
@@ -17203,6 +17226,9 @@ public:
     /// admission under it.
     bool climbHardLimitOn = true;
     int climbAdmitBatch = 64;
+    /// Render_DescentOrderBatch: how many descents one plan pass may
+    /// order (0 = uncapped); see planMeshDemotes' maxOrders.
+    int descentOrderBatch = 64;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
 
@@ -17837,6 +17863,11 @@ void BGFXRenderer::setClimbAdmission(bool hardLimit, int batch)
 {
     pimpl->climbHardLimitOn = hardLimit;
     pimpl->climbAdmitBatch = batch > 0 ? batch : 1;
+}
+
+void BGFXRenderer::setDescentOrderBatch(int batch)
+{
+    pimpl->descentOrderBatch = batch > 0 ? batch : 0;
 }
 #endif
 

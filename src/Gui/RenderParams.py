@@ -271,6 +271,27 @@ Params = [
         "large climbs faster. The set is not ordered by need within a\n"
         "plan, but every plan re-evaluates the whole scene, so nothing\n"
         "starves across plans."),
+    ParamInt('LevelLandBudgetMS',  50, title='Level landing budget (ms)',
+        doc="How long one event-loop turn may spend landing finished\n"
+        "worker jobs (climb refines and descent coarsenings alike).\n"
+        "Landings arrive as queued events, and Qt delivers every\n"
+        "pending one in a single sweep -- a batch of 64 landings ran\n"
+        "back-to-back for measured 1-2.7s stretches in which no paint,\n"
+        "timer or input event was served. The pump runs landings until\n"
+        "this budget is spent, then yields the loop and reschedules;\n"
+        "a single landing larger than the budget still lands whole\n"
+        "(items are not sliceable). Small keeps the UI responsive\n"
+        "under a landing storm; large lands a converging scene sooner."),
+    ParamInt('DescentOrderBatch',  64, title='Descent order batch',
+        doc="How many descents (demotes/downgrades) one plan pass may\n"
+        "order, free tier and priced tier together; 0 removes the cap.\n"
+        "Each order enqueues a worker job -- the coarsening itself runs\n"
+        "on the refine pool -- but the enqueue snapshots the object's\n"
+        "display arrays on the GUI thread, so an unbounded pass (the\n"
+        "measured 1500-order plans) is itself a stall. Deferred\n"
+        "candidates keep their hooks and the replan after the batch\n"
+        "lands re-finds them, so nothing is refused, only paced -- the\n"
+        "climb admission batch's mirror."),
     ParamBool('DowngradeLedger',  True, title='Downgrade ledger',
         doc="Whether the GPU downgrade sweep carries its own unlanded\n"
         "orders as credit against the next plan's deficit\n"
@@ -286,8 +307,10 @@ Params = [
         "the storm, and the whole registry drained to its bottom rung\n"
         "while the settled memory was under budget all along.\n"
         "With the ledger, promised bytes hold the sweep until they are\n"
-        "observed landing or written off after a few frames; off\n"
-        "restores the storming behaviour for comparison."),
+        "observed landing or written off a few frames after the ordered\n"
+        "worker jobs have all drained (an order's bytes cannot land\n"
+        "before its descent job does); off restores the storming\n"
+        "behaviour for comparison."),
     ParamInt('LevelCount',  8, title='Ladder rung count',
         doc="How many rungs the fidelity ladder declares\n"
         "(docs/SceneStreaming.md #13). Rung n is tessellated at a\n"

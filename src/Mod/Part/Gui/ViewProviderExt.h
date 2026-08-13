@@ -55,6 +55,11 @@ class SoTextureCoordinate2;
 class SoMaterialBinding;
 class SoIndexedLineSet;
 
+namespace Render {
+struct SimplifiedMesh;
+struct SimplifyStats;
+}
+
 namespace PartGui {
 
 class SoBrepFaceSet;
@@ -356,6 +361,28 @@ protected:
     /// the box, which is the next step down.
     bool simplifyVisualInPlace(double cellSize, double shapeDiag,
                                float builtErrorNow);
+    /// Write a clustered rung back into the display nodes and restate
+    /// the published error -- the landing half of the decimation,
+    /// shared by the synchronous rebuild post-step and the worker
+    /// job's GUI landing. \a beforeTris is the input's triangle count
+    /// (the reduction judgement); false when the rung did not remove
+    /// enough to be worth the rewrite (the caller reads that as
+    /// "decimation is spent, the box is next").
+    bool applySimplifiedRung(const Render::SimplifiedMesh &rung,
+                             const Render::SimplifyStats &stats,
+                             size_t beforeTris, double cellSize,
+                             double shapeDiag, float builtErrorNow);
+    /// (Re-)register this object's shape with the level registry off
+    /// the context updateVisual stored in meshLadder -- the arming of
+    /// every climb/descent hook, callable from a worker landing
+    /// without paying updateVisual's rebuild.
+    void armMeshLevelSource();
+    /// One decimation descent step, the climb's shape (sec 13c):
+    /// snapshot the displayed arrays here on the GUI thread, cluster
+    /// them on the refine worker pool, land the node writes and the
+    /// re-arm back here. meshLadder.errorScale must already be
+    /// advanced to the step being taken.
+    void queueDecimationDescent();
 
     bool deferVisualForLoad();
     /// Build one slice of the parked visuals, then reschedule if any remain.
@@ -435,6 +462,17 @@ protected:
         /// scaleSpent is: a shape that may be tessellated again
         /// may be decimated again.
         bool decimationSpent = false;
+        /// The build context the arming of the level hooks needs
+        /// (armMeshLevelSource), stored by updateVisual so a worker
+        /// landing can re-register without paying the rebuild:
+        /// the shape's bbox diagonal, the coarse ladder rung it was
+        /// built for (-1 = exact), and the FULL display-formula
+        /// parameters (what the on-demand exact build uses). All
+        /// claims about `anchor`'s shape, reset with the rest.
+        double shapeDiag = 0.0;
+        int coarseLevel = -1;
+        double exactDefl = 0.0;
+        double exactAng = 0.0;
 
         /// THE reset: a different TShape starts every claim over.
         void rebind(const void *tsh)

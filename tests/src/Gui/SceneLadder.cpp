@@ -1640,5 +1640,102 @@ TEST(DowngradeLedger, followUpOrdersAccumulate)
     EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 13), 0u);
     // The full landing settles both orders.
     EXPECT_EQ(led.deficit(45 * MB, 64 * MB, 14), 0u);
-    EXPECT_EQ(led.promised, 0u);
+    EXPECT_EQ(led.promised(), 0u);
+}
+
+TEST(DowngradeLedger, unsettledOrdersHoldTheWriteOffHorizon)
+{
+    // An order now lands as worker jobs, and its bytes cannot fall
+    // before those jobs do -- on a loaded pool, far past any frame
+    // count. Until the producer's settle counter has advanced by the
+    // order's own size the credit must stand however many frames
+    // pass; the settle window starts only once they have all settled.
+    constexpr uint64_t MB = 1048576;
+    Render::DowngradeLedger led;
+    // The order queues 50 jobs at settle count 1000.
+    led.order(93 * MB, 157 * MB, 10, /*settleNow*/ 1000, /*jobs*/ 50);
+    // 100 frames later only 30 of them have settled: promise stands,
+    // the sweep is held to the transient's residual.
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 110, 1030), 8 * MB);
+    // All 50 settled by frame 110; the settle window runs from there,
+    // not from the order.
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 112, 1050), 8 * MB);
+    // ...and past it the unlanded remainder is written off into the
+    // truth -- the phantom promise of drops that freed nothing (a
+    // "spent" decimation keeps its mesh) must not shield the excess.
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB,
+                          110 + Render::DowngradeLedger::kSettleFrames,
+                          1050),
+              101 * MB);
+}
+
+TEST(DowngradeLedger, landingsStillCreditWhileJobsFly)
+{
+    // The hold does not defer the observations: falls credit the
+    // promise as they land, settled or not.
+    constexpr uint64_t MB = 1048576;
+    Render::DowngradeLedger led;
+    led.order(93 * MB, 157 * MB, 10, 1000, 50);
+    // Half the batch landed while the rest still queues: the fall is
+    // credited, the residual excess is actionable.
+    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 50, 1020), 0u);
+    // Everything lands, the scene settles under budget: nothing owed.
+    EXPECT_EQ(led.deficit(45 * MB, 64 * MB, 90, 1050), 0u);
+    EXPECT_EQ(led.promised(), 0u);
+}
+
+TEST(DowngradeLedger, anOldPhantomExpiresAloneUnderNewerOrders)
+{
+    // The failure the per-order books exist for: a converging ladder
+    // orders every plan, and an aggregate horizon re-stamped by each
+    // new order held EVERY phantom promise forever -- measured as the
+    // sweep crawling 2MB-deficits against 50MB of standing excess.
+    // Here the old order's unlanded promise expires on its own clock
+    // while the newer order, its jobs still working, holds on.
+    constexpr uint64_t MB = 1048576;
+    Render::DowngradeLedger led;
+    // Order A: 10 jobs from settle count 0 (target 10).
+    led.order(20 * MB, 100 * MB, 10, 0, 10);
+    // Order B: 10 jobs from settle count 5 (target 15).
+    led.order(20 * MB, 100 * MB, 20, 5, 10);
+    // Frame 200, 12 settles: A's jobs are done and its grace is long
+    // out -- its phantom writes off ALONE. B still works and holds.
+    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 200, 12), 16 * MB);
+    // B settles at frame 205; its own grace runs from the hold...
+    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 205, 15), 16 * MB);
+    // ...and closes on what it never landed.
+    EXPECT_EQ(led.deficit(100 * MB, 64 * MB,
+                          200 + Render::DowngradeLedger::kSettleFrames, 15),
+              36 * MB);
+}
+
+TEST(PlanMeshDemotes, theOrderCapDefersAndCountsWhatItDefers)
+{
+    // Ten droppable off-screen sources, a cap of 3: one pass orders
+    // three, reports seven deferred (nothing refused -- their hooks
+    // stand for the replan), and bytesFreed prices only what was
+    // ordered so the ledger's credit stays honest.
+    PlanCamera cam;
+    int tags[10];
+    Render::DrawCallList draws;
+    std::map<const void *, float> errs;
+    for (int i = 0; i < 10; ++i) {
+        draws.push_back(meshDraw(&tags[i], 0.0f, 500, float(i * 20),
+                                 -100, 5, 100));
+        errs[&tags[i]] = 0.03f;
+    }
+    Render::PlanDemoteStats stats;
+    auto out = Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                       2.0f, demoteErrs(errs), &stats, 0,
+                                       {}, {}, /*maxOrders*/ 3);
+    EXPECT_EQ(out.size(), 3u);
+    EXPECT_EQ(stats.deferredByCap, 7u);
+    EXPECT_EQ(stats.bytesFreed, 3u * 100u * kVertBytes);
+    // Uncapped control: all ten go in one pass.
+    Render::PlanDemoteStats all;
+    EXPECT_EQ(Render::planMeshDemotes(draws, cam.view, cam.proj, 1000.0f,
+                                      2.0f, demoteErrs(errs), &all)
+                  .size(),
+              10u);
+    EXPECT_EQ(all.deferredByCap, 0u);
 }

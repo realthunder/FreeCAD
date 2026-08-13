@@ -1316,7 +1316,8 @@ std::vector<const void *> Render::planMeshDemotes(
     const std::function<float(const void *)> &demoteErrOf,
     PlanDemoteStats *stats, size_t deficitBytes,
     const std::function<uint64_t(const MeshData *)> &bytesOf,
-    const std::function<bool(const void *)> &hiddenOf)
+    const std::function<bool(const void *)> &hiddenOf,
+    size_t maxOrders)
 {
     std::vector<const void *> out;
     if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f
@@ -1435,6 +1436,17 @@ std::vector<const void *> Render::planMeshDemotes(
     std::vector<const DemoteCandidate *> priced;
     uint64_t freed = 0;
     float accepted = 0.0f;
+    // The per-plan order cap: every order is a worker job whose
+    // enqueue costs the GUI thread a snapshot, so one pass is bounded
+    // and the replan after the batch lands takes the rest. The
+    // deferred are counted, not forgotten -- their hooks stand.
+    const auto capped = [&out, maxOrders, stats]() -> bool {
+        if (!maxOrders || out.size() < maxOrders)
+            return false;
+        if (stats)
+            ++stats->deferredByCap;
+        return true;
+    };
     for (const DemoteCandidate &cand : cands) {
         if (cand.unpriceable) {
             if (stats)
@@ -1447,6 +1459,8 @@ std::vector<const void *> Render::planMeshDemotes(
         // can see raising the climb's tolerance would trade visible
         // quality for invisible memory.
         if (cand.occluded) {
+            if (capped())
+                continue;
             if (stats)
                 ++stats->occludedFree;
             out.push_back(cand.tag);
@@ -1457,6 +1471,8 @@ std::vector<const void *> Render::planMeshDemotes(
             priced.push_back(&cand);
             continue;
         }
+        if (capped())
+            continue;
         if (stats)
             ++(cand.visible ? stats->eligible : stats->offscreen);
         out.push_back(cand.tag);
@@ -1479,6 +1495,8 @@ std::vector<const void *> Render::planMeshDemotes(
                 ++stats->tooBig;
             continue;
         }
+        if (capped())
+            continue;
         if (stats)
             ++stats->underPressure;
         out.push_back(cand->tag);

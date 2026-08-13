@@ -66,6 +66,8 @@ public:
     double LevelPressureRelease;
     bool ClimbHardLimit;
     long ClimbAdmitBatch;
+    long LevelLandBudgetMS;
+    long DescentOrderBatch;
     bool DowngradeLedger;
     long LevelCount;
     double LevelScale;
@@ -195,6 +197,10 @@ public:
         funcs["ClimbHardLimit"] = &RenderParamsP::updateClimbHardLimit;
         ClimbAdmitBatch = this->handle->GetInt("ClimbAdmitBatch", 64);
         funcs["ClimbAdmitBatch"] = &RenderParamsP::updateClimbAdmitBatch;
+        LevelLandBudgetMS = this->handle->GetInt("LevelLandBudgetMS", 50);
+        funcs["LevelLandBudgetMS"] = &RenderParamsP::updateLevelLandBudgetMS;
+        DescentOrderBatch = this->handle->GetInt("DescentOrderBatch", 64);
+        funcs["DescentOrderBatch"] = &RenderParamsP::updateDescentOrderBatch;
         DowngradeLedger = this->handle->GetBool("DowngradeLedger", true);
         funcs["DowngradeLedger"] = &RenderParamsP::updateDowngradeLedger;
         LevelCount = this->handle->GetInt("LevelCount", 8);
@@ -460,6 +466,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateClimbAdmitBatch(RenderParamsP *self) {
         self->ClimbAdmitBatch = self->handle->GetInt("ClimbAdmitBatch", 64);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelLandBudgetMS(RenderParamsP *self) {
+        self->LevelLandBudgetMS = self->handle->GetInt("LevelLandBudgetMS", 50);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDescentOrderBatch(RenderParamsP *self) {
+        self->DescentOrderBatch = self->handle->GetInt("DescentOrderBatch", 64);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDowngradeLedger(RenderParamsP *self) {
@@ -1484,6 +1498,79 @@ void RenderParams::removeClimbAdmitBatch() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelLandBudgetMS() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How long one event-loop turn may spend landing finished\n"
+"worker jobs (climb refines and descent coarsenings alike).\n"
+"Landings arrive as queued events, and Qt delivers every\n"
+"pending one in a single sweep -- a batch of 64 landings ran\n"
+"back-to-back for measured 1-2.7s stretches in which no paint,\n"
+"timer or input event was served. The pump runs landings until\n"
+"this budget is spent, then yields the loop and reschedules;\n"
+"a single landing larger than the budget still lands whole\n"
+"(items are not sliceable). Small keeps the UI responsive\n"
+"under a landing storm; large lands a converging scene sooner.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getLevelLandBudgetMS() {
+    return instance()->LevelLandBudgetMS;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultLevelLandBudgetMS() {
+    const static long def = 50;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelLandBudgetMS(const long &v) {
+    instance()->handle->SetInt("LevelLandBudgetMS",v);
+    instance()->LevelLandBudgetMS = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelLandBudgetMS() {
+    instance()->handle->RemoveInt("LevelLandBudgetMS");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDescentOrderBatch() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many descents (demotes/downgrades) one plan pass may\n"
+"order, free tier and priced tier together; 0 removes the cap.\n"
+"Each order enqueues a worker job -- the coarsening itself runs\n"
+"on the refine pool -- but the enqueue snapshots the object's\n"
+"display arrays on the GUI thread, so an unbounded pass (the\n"
+"measured 1500-order plans) is itself a stall. Deferred\n"
+"candidates keep their hooks and the replan after the batch\n"
+"lands re-finds them, so nothing is refused, only paced -- the\n"
+"climb admission batch's mirror.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getDescentOrderBatch() {
+    return instance()->DescentOrderBatch;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultDescentOrderBatch() {
+    const static long def = 64;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDescentOrderBatch(const long &v) {
+    instance()->handle->SetInt("DescentOrderBatch",v);
+    instance()->DescentOrderBatch = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDescentOrderBatch() {
+    instance()->handle->RemoveInt("DescentOrderBatch");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docDowngradeLedger() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Whether the GPU downgrade sweep carries its own unlanded\n"
@@ -1500,8 +1587,10 @@ const char *RenderParams::docDowngradeLedger() {
 "the storm, and the whole registry drained to its bottom rung\n"
 "while the settled memory was under budget all along.\n"
 "With the ledger, promised bytes hold the sweep until they are\n"
-"observed landing or written off after a few frames; off\n"
-"restores the storming behaviour for comparison.");
+"observed landing or written off a few frames after the ordered\n"
+"worker jobs have all drained (an order's bytes cannot land\n"
+"before its descent job does); off restores the storming\n"
+"behaviour for comparison.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)

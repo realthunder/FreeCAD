@@ -2473,6 +2473,9 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
             PRIVATE(this)->externalview),
         RendererBridge::translateClimbAdmitBatch(
             PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setDescentOrderBatch(
+        RendererBridge::translateDescentOrderBatch(
+            PRIVATE(this)->externalview));
     PRIVATE(this)->external->setLevelDebug(
         RendererBridge::translateLevelDebug(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setElementGates(

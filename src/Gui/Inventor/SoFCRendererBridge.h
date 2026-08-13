@@ -178,6 +178,7 @@ GuiExport bool translateLevelDebug(App::PropertyContainer * view);
 GuiExport bool translateDowngradeLedger(App::PropertyContainer * view);
 GuiExport bool translateClimbHardLimit(App::PropertyContainer * view);
 GuiExport int translateClimbAdmitBatch(App::PropertyContainer * view);
+GuiExport int translateDescentOrderBatch(App::PropertyContainer * view);
 GuiExport bool translateShapeVertices(App::PropertyContainer * view);
 GuiExport bool translatePressureDropEdges(App::PropertyContainer * view);
 /// Whether the element gates should suppress both classes outright

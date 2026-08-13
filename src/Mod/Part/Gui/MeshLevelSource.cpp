@@ -37,6 +37,7 @@
 #endif
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstdlib>
@@ -48,6 +49,7 @@
 #include <vector>
 
 #include <QCoreApplication>
+#include <QTimer>
 
 #include <App/PropertyStandard.h>
 #include <Gui/Application.h>
@@ -94,6 +96,18 @@ struct RefineJob {
     const void *tag = nullptr;
     LevelSourceStatePtr st;
     std::function<void(const TopoDS_Shape &)> apply;
+    /// The decimation descent's job body (sec 13c): runs on the worker
+    /// -- it owns a snapshot of the display arrays, never the nodes --
+    /// and returns the landing to marshal to the GUI thread, or null
+    /// when the rung refused. Set instead of st/apply.
+    std::function<std::function<void()>()> work;
+    /// A plan-ordered descent (the dynamic-scale re-tessellation or a
+    /// decimation job): counted in the registry's in-flight tally --
+    /// the downgrade ledger holds its credit open on it -- and queued
+    /// AHEAD of climbs: under the pressure that ordered it, freeing
+    /// memory outranks spending more (the climb hard gate refuses new
+    /// climbs anyway, but jobs already queued should not starve it).
+    bool descent = false;
 };
 
 std::mutex s_refineMutex;
@@ -158,6 +172,123 @@ bool debugCeilingHit()
     return ++builds == at;
 }
 
+/// Every descent job settles its in-flight count exactly once, on
+/// whichever exit it takes -- the ledger's write-off horizon rides it.
+void settleDescent(const RefineJob &job)
+{
+    if (job.descent)
+        Render::MeshSourceRegistry::instance().noteDescentSettled();
+}
+
+//////////////////////////////////////////////////////////////////////
+// The landing pump. A worker marshals its finished job to the GUI
+// thread with a queued invocation -- and Qt delivers EVERY pending
+// queued event in one sendPostedEvents sweep, so a batch of landings
+// (ClimbAdmitBatch refines, a DescentOrderBatch of coarsenings) ran
+// back-to-back inside a single event-loop turn: measured 1-2.7s
+// stretches in which no timer, paint or input event was served. The
+// pump gives each turn a time budget instead: landings queue here, a
+// zero-timer runs as many as the budget allows, and everything else
+// the loop owes gets its turn between reschedules.
+//
+// GUI thread only, all of it -- the workers reach it through one
+// queued hop that does nothing but enqueue.
+
+std::deque<std::function<void()>> s_landingQueue;
+/// Plan-ordered hook bodies deferred out of the plan callback (the
+/// pacing's other half): a sweep fires up to a batch of hooks in ONE
+/// callback, and running their bodies there -- a snapshot each for the
+/// decimation descents, a resident-rung rebuild each for the
+/// exact-resident downgrades -- measured 0.6-1.3s bursts. Keyed by the
+/// source's primary tag so an unregistration (the view provider's
+/// destructor among them) can purge what must not run on a dead owner.
+/// Each queued item counts in the registry's descent tally from
+/// enqueue to run/purge -- the ledger's horizon covers the deferral.
+struct GuiWorkItem {
+    const void *tag = nullptr;
+    std::function<void()> body;
+};
+std::deque<GuiWorkItem> s_guiWork;
+bool s_landingScheduled = false;
+
+void pumpLandings();
+
+void scheduleLandingPump()
+{
+    if (s_landingScheduled)
+        return;
+    s_landingScheduled = true;
+    QTimer::singleShot(0, QCoreApplication::instance(),
+                       []() { pumpLandings(); });
+}
+
+void pumpLandings()
+{
+    s_landingScheduled = false;
+    const double budget =
+        std::max(1L, Gui::RenderParams::getLevelLandBudgetMS()) / 1000.0;
+    const auto start = std::chrono::steady_clock::now();
+    auto spent = [&start, budget]() {
+        return std::chrono::duration<double>(
+                   std::chrono::steady_clock::now() - start).count()
+            >= budget;
+    };
+    // Landings first: they free memory and re-arm sources; the hook
+    // bodies behind them typically queue MORE work.
+    while (!s_landingQueue.empty()) {
+        auto fn = std::move(s_landingQueue.front());
+        s_landingQueue.pop_front();
+        fn();
+        if (spent())
+            break;
+    }
+    // At least one hook body per turn even when the budget went to
+    // landings: a steady landing stream must not starve the orders
+    // that free memory.
+    bool ranGui = false;
+    while (!s_guiWork.empty() && (!ranGui || !spent())) {
+        auto item = std::move(s_guiWork.front());
+        s_guiWork.pop_front();
+        item.body();
+        Render::MeshSourceRegistry::instance().noteDescentSettled();
+        ranGui = true;
+    }
+    if (!s_landingQueue.empty() || !s_guiWork.empty())
+        scheduleLandingPump();
+}
+
+/// Purge every deferred hook body queued under \a tag (the tag is
+/// being unregistered or re-registered); their in-flight counts settle
+/// here, unrun. GUI thread.
+void purgeLevelGuiWork(const void *tag)
+{
+    if (!tag || s_guiWork.empty())
+        return;
+    auto it = s_guiWork.begin();
+    while (it != s_guiWork.end()) {
+        if (it->tag == tag) {
+            it = s_guiWork.erase(it);
+            Render::MeshSourceRegistry::instance().noteDescentSettled();
+        }
+        else {
+            ++it;
+        }
+    }
+}
+
+/// Marshal \a fn from a worker to the paced GUI queue.
+void queueLandingFromWorker(std::function<void()> fn)
+{
+    auto payload = std::make_shared<std::function<void()>>(std::move(fn));
+    QMetaObject::invokeMethod(
+        QCoreApplication::instance(),
+        [payload]() {
+            s_landingQueue.push_back(std::move(*payload));
+            scheduleLandingPump();
+        },
+        Qt::QueuedConnection);
+}
+
 void refineLoop()
 {
     for (;;) {
@@ -168,8 +299,37 @@ void refineLoop()
             job = std::move(s_refineQueue.front());
             s_refineQueue.pop_front();
             auto it = s_refineTokens.find(job.tag);
-            if (it == s_refineTokens.end() || it->second != job.token)
-                continue;  // canceled while queued
+            if (it == s_refineTokens.end() || it->second != job.token) {
+                // canceled while queued
+                settleDescent(job);
+                continue;
+            }
+        }
+        if (job.work) {
+            // A decimation job clusters arrays it owns: no OCCT, no
+            // fresh tessellation, and NO memory-floor refusal -- it
+            // frees memory, and pressure is exactly when it runs.
+            std::function<void()> landing = job.work();
+            if (!landing) {
+                settleDescent(job);
+                continue;
+            }
+            auto payload = std::make_shared<
+                std::pair<RefineJob, std::function<void()>>>(
+                std::move(job), std::move(landing));
+            queueLandingFromWorker([payload]() {
+                settleDescent(payload->first);
+                {
+                    std::lock_guard<std::mutex> lock(s_refineMutex);
+                    auto it = s_refineTokens.find(payload->first.tag);
+                    if (it == s_refineTokens.end()
+                        || it->second != payload->first.token)
+                        return;
+                    s_refineTokens.erase(it);
+                }
+                payload->second();
+            });
+            continue;
         }
         // Pre-build ceiling estimate: a build started under a low
         // MemAvailable is a bad_alloc that has not happened yet — and
@@ -195,6 +355,7 @@ void refineLoop()
             // exactly as much as the floor is missing and no more.
             Render::MeshSourceRegistry::instance().observeMemoryCeiling(
                 floor - avail);
+            settleDescent(job);
             continue;
         }
         bool outOfMemory = false;
@@ -217,47 +378,56 @@ void refineLoop()
             const size_t now = Render::MemoryBudget::availableMemory();
             Render::MeshSourceRegistry::instance().observeMemoryCeiling(
                 now && now < floor ? floor - now : 0);
+            settleDescent(job);
             continue;
         }
-        if (meshed.IsNull())
+        if (meshed.IsNull()) {
+            settleDescent(job);
             continue;
+        }
         // The apply reads and writes live document geometry and Coin
         // nodes: GUI thread only. The token is re-checked there — the
         // marshalled hop is one more window for a cancellation.
         auto payload = std::make_shared<std::pair<RefineJob, TopoDS_Shape>>(
             std::move(job), std::move(meshed));
-        QMetaObject::invokeMethod(
-            QCoreApplication::instance(),
-            [payload]() {
-                {
-                    std::lock_guard<std::mutex> lock(s_refineMutex);
-                    auto it = s_refineTokens.find(payload->first.tag);
-                    if (it == s_refineTokens.end()
-                        || it->second != payload->first.token)
-                        return;
-                    // Consumed: the callback re-registers (at error 0),
-                    // but should that not happen, a second fire is not
-                    // an option either.
-                    s_refineTokens.erase(it);
-                }
-                payload->first.apply(payload->second);
-            },
-            Qt::QueuedConnection);
+        queueLandingFromWorker([payload]() {
+            settleDescent(payload->first);
+            {
+                std::lock_guard<std::mutex> lock(s_refineMutex);
+                auto it = s_refineTokens.find(payload->first.tag);
+                if (it == s_refineTokens.end()
+                    || it->second != payload->first.token)
+                    return;
+                // Consumed: the callback re-registers (at error 0),
+                // but should that not happen, a second fire is not
+                // an option either.
+                s_refineTokens.erase(it);
+            }
+            payload->first.apply(payload->second);
+        });
     }
 }
 
-void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
-                      std::function<void(const TopoDS_Shape &)> apply)
+void enqueueLevelJob(RefineJob &&job)
 {
     resolveMemFloor();
+    if (job.descent)
+        Render::MeshSourceRegistry::instance().noteDescentQueued();
     std::lock_guard<std::mutex> lock(s_refineMutex);
-    RefineJob job;
     job.token = ++s_refineCounter;
-    job.tag = tag;
-    job.st = st;
-    job.apply = std::move(apply);
-    s_refineTokens[tag] = job.token;
-    s_refineQueue.push_back(std::move(job));
+    s_refineTokens[job.tag] = job.token;
+    if (job.descent) {
+        // Ahead of the climbs, behind descents already queued: under
+        // the pressure that ordered it, freeing memory outranks
+        // spending more, and the plan's own order is kept among peers.
+        auto it = s_refineQueue.begin();
+        while (it != s_refineQueue.end() && it->descent)
+            ++it;
+        s_refineQueue.insert(it, std::move(job));
+    }
+    else {
+        s_refineQueue.push_back(std::move(job));
+    }
     if (s_refineThreads < refineThreadCap()) {
         ++s_refineThreads;
         std::thread(refineLoop).detach();
@@ -265,8 +435,28 @@ void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
     s_refineCv.notify_one();
 }
 
+void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
+                      std::function<void(const TopoDS_Shape &)> apply,
+                      bool descent = false)
+{
+    RefineJob job;
+    job.tag = tag;
+    job.st = st;
+    job.apply = std::move(apply);
+    job.descent = descent;
+    enqueueLevelJob(std::move(job));
+}
+
 void cancelExactRefine(const void *tag)
 {
+    // The worker token ONLY. The deferred hook bodies are NOT purged
+    // here: this cancel is also the climb's de-want leg, fired blindly
+    // by every plan over the coarse sources it no longer wants refined
+    // -- and purging then silently deleted the descent orders the SAME
+    // plan had just queued (measured: 1657 downgrade orders, 367
+    // landed effects, the ladder stuck 37MB over its budget with the
+    // pressure tolerance blown to 2128px). The bodies die with their
+    // OWNER instead: register/unregister purge explicitly.
     if (!tag)
         return;
     std::lock_guard<std::mutex> lock(s_refineMutex);
@@ -389,7 +579,29 @@ void PartGui::queueMeshLevelBuild(const void *tag,
     st->shape = shape;
     st->params.exactDeflection = deflection;
     st->params.exactAngle = angle;
-    queueExactRefine(tag, st, std::move(apply));
+    queueExactRefine(tag, st, std::move(apply), /*descent*/ true);
+}
+
+void PartGui::queueMeshDescentWork(const void *tag,
+                                   std::function<std::function<void()>()>
+                                       work)
+{
+    if (!tag || !work)
+        return;
+    RefineJob job;
+    job.tag = tag;
+    job.work = std::move(work);
+    job.descent = true;
+    enqueueLevelJob(std::move(job));
+}
+
+void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body)
+{
+    if (!body)
+        return;
+    Render::MeshSourceRegistry::instance().noteDescentQueued();
+    s_guiWork.push_back({tag, std::move(body)});
+    scheduleLandingPump();
 }
 
 void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
@@ -410,8 +622,12 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
     if (shape.IsNull() || (!faceTag && !lineTag))
         return;
     // Re-registration replaces the source, so whatever refine was in
-    // flight for the previous one is now building the wrong shape.
+    // flight for the previous one is now building the wrong shape --
+    // and the deferred hook bodies of the previous registration go
+    // with it (they capture the owner's state as it was).
     cancelExactRefine(faceTag ? faceTag : lineTag);
+    purgeLevelGuiWork(faceTag ? static_cast<const void *>(faceTag)
+                              : static_cast<const void *>(lineTag));
     // A degenerate shape cannot ladder; checked here so a registered
     // source always means "levels can be built".
     try {
@@ -541,6 +757,27 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
         }
         hooks.fallbackError = demoteError;
     }
+    // The ways DOWN are paced: a plan sweep fires up to a whole batch
+    // of these in one callback, and the bodies -- a snapshot each for
+    // the decimation descents, a resident-rung rebuild each for the
+    // exact-resident drops -- measured 0.6-1.3s of one event-loop turn
+    // when run in place. The hook itself becomes an enqueue onto the
+    // landing pump; the primary tag keys the purge that runs before
+    // the owner may die. The climb (refine) is not wrapped: it already
+    // only queues a worker job.
+    const void *primaryTag = faceTag ? static_cast<const void *>(faceTag)
+                                     : static_cast<const void *>(lineTag);
+    auto pace = [primaryTag](std::function<void()> fn)
+        -> std::function<void()> {
+        if (!fn)
+            return fn;
+        return [primaryTag, fn = std::move(fn)]() {
+            queueLevelGuiWork(primaryTag, fn);
+        };
+    };
+    hooks.demote = pace(std::move(hooks.demote));
+    hooks.downgrade = pace(std::move(hooks.downgrade));
+
     auto &reg = Render::MeshSourceRegistry::instance();
     if (faceTag)
         reg.add(faceTag, gen, builtError, hooks, origin);
@@ -551,6 +788,9 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
 void PartGui::unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag)
 {
     cancelExactRefine(faceTag ? faceTag : lineTag);
+    // Before the owner may die: the deferred bodies capture it.
+    purgeLevelGuiWork(faceTag ? static_cast<const void *>(faceTag)
+                              : static_cast<const void *>(lineTag));
     auto &reg = Render::MeshSourceRegistry::instance();
     if (faceTag)
         reg.remove(faceTag);

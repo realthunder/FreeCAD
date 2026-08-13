@@ -2173,6 +2173,14 @@ RendererBridge::translateClimbAdmitBatch(App::PropertyContainer * view)
             RenderParams::getClimbAdmitBatch()));
 }
 
+int
+RendererBridge::translateDescentOrderBatch(App::PropertyContainer * view)
+{
+    return int(viewParamOverride<App::PropertyInteger>(
+            view, "Render", "DescentOrderBatch",
+            RenderParams::getDescentOrderBatch()));
+}
+
 bool
 RendererBridge::translateShapeVertices(App::PropertyContainer * view)
 {

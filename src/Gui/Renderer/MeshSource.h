@@ -300,6 +300,40 @@ public:
     uint64_t memoryCeilingEpoch() const { return ceilingEpoch; }
     size_t memoryShortfall() const { return ceilingShortfall; }
 
+    /// Plan-ordered descent jobs (worker-side coarsenings: the
+    /// dynamic-scale re-tessellation and the decimation rung) currently
+    /// queued or running. The producer notes every enqueue and every
+    /// settlement -- landed, refused, or canceled; the pair must
+    /// balance. What the downgrade ledger holds its write-off horizon
+    /// open on: an order's bytes cannot land before its job does, so
+    /// expiring the credit on a frame count while the job still queues
+    /// re-orders the same memory from other sources -- the storm.
+    void noteDescentQueued()
+    {
+        descentJobs.fetch_add(1, std::memory_order_relaxed);
+    }
+    void noteDescentSettled()
+    {
+        descentJobs.fetch_sub(1, std::memory_order_relaxed);
+        descentSettles.fetch_add(1, std::memory_order_relaxed);
+    }
+    uint32_t descentInFlight() const
+    {
+        return descentJobs.load(std::memory_order_relaxed);
+    }
+    /// Monotonic count of settled descent jobs (landed, refused, or
+    /// purged) -- what the downgrade ledger judges an order's own
+    /// completion by: "the jobs this order queued have all settled" is
+    /// a statement this counter advancing by the order's size makes,
+    /// where a bare in-flight flag cannot (a busy ladder keeps SOME
+    /// job in flight for minutes, and credit held on that never
+    /// expires -- measured as a sweep crawling 2.3MB-deficits while
+    /// 33MB of excess stood).
+    uint64_t descentSettleCount() const
+    {
+        return descentSettles.load(std::memory_order_relaxed);
+    }
+
 private:
     struct Source {
         std::shared_ptr<Generator> gen;
@@ -318,6 +352,8 @@ private:
     std::unordered_map<std::string, const void *> keys;
     std::atomic<uint64_t> ceilingEpoch {0};
     std::atomic<size_t> ceilingShortfall {0};
+    std::atomic<uint32_t> descentJobs {0};
+    std::atomic<uint64_t> descentSettles {0};
     /// See generation(). Bumped by every add() and remove(), which are
     /// the only things that can change what publishedError() answers.
     std::atomic<uint32_t> registryGen {0};

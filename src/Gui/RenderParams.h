@@ -457,6 +457,47 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LevelLandBudgetMS
+    ///
+    /// How long one event-loop turn may spend landing finished
+    /// worker jobs (climb refines and descent coarsenings alike).
+    /// Landings arrive as queued events, and Qt delivers every
+    /// pending one in a single sweep -- a batch of 64 landings ran
+    /// back-to-back for measured 1-2.7s stretches in which no paint,
+    /// timer or input event was served. The pump runs landings until
+    /// this budget is spent, then yields the loop and reschedules;
+    /// a single landing larger than the budget still lands whole
+    /// (items are not sliceable). Small keeps the UI responsive
+    /// under a landing storm; large lands a converging scene sooner.
+    static const long & getLevelLandBudgetMS();
+    static const long & defaultLevelLandBudgetMS();
+    static void removeLevelLandBudgetMS();
+    static void setLevelLandBudgetMS(const long &v);
+    static const char *docLevelLandBudgetMS();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DescentOrderBatch
+    ///
+    /// How many descents (demotes/downgrades) one plan pass may
+    /// order, free tier and priced tier together; 0 removes the cap.
+    /// Each order enqueues a worker job -- the coarsening itself runs
+    /// on the refine pool -- but the enqueue snapshots the object's
+    /// display arrays on the GUI thread, so an unbounded pass (the
+    /// measured 1500-order plans) is itself a stall. Deferred
+    /// candidates keep their hooks and the replan after the batch
+    /// lands re-finds them, so nothing is refused, only paced -- the
+    /// climb admission batch's mirror.
+    static const long & getDescentOrderBatch();
+    static const long & defaultDescentOrderBatch();
+    static void removeDescentOrderBatch();
+    static void setDescentOrderBatch(const long &v);
+    static const char *docDescentOrderBatch();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter DowngradeLedger
     ///
     /// Whether the GPU downgrade sweep carries its own unlanded
@@ -473,8 +514,10 @@ public:
     /// the storm, and the whole registry drained to its bottom rung
     /// while the settled memory was under budget all along.
     /// With the ledger, promised bytes hold the sweep until they are
-    /// observed landing or written off after a few frames; off
-    /// restores the storming behaviour for comparison.
+    /// observed landing or written off a few frames after the ordered
+    /// worker jobs have all drained (an order's bytes cannot land
+    /// before its descent job does); off restores the storming
+    /// behaviour for comparison.
     static const bool & getDowngradeLedger();
     static const bool & defaultDowngradeLedger();
     static void removeDowngradeLedger();

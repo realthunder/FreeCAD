@@ -98,6 +98,7 @@
 #include <App/DocumentObserver.h>
 #include <App/MappedElement.h>
 #include <Base/Console.h>
+#include <Base/Sequencer.h>
 #include <Base/Parameter.h>
 #include <Base/TimeInfo.h>
 #include <Base/Tools.h>
@@ -684,6 +685,12 @@ struct DeferredVisuals {
     /// pumps events -- from which this slice's own timer can fire. The
     /// walk is not re-entrant: it holds an iterator into the map.
     bool running = false;
+    /// The drain's own progress indicator (KeepInteractive: it reports,
+    /// it does not take the window away). Created at the first slice
+    /// that can work, one step per parked visual popped, reset when the
+    /// last document's queue empties -- without it the longest phase of
+    /// a progressive load ran with a dead status bar.
+    std::unique_ptr<Base::SequencerLauncher> seq;
 };
 
 DeferredVisuals &deferredVisuals()
@@ -697,6 +704,11 @@ DeferredVisuals &deferredVisuals()
         App::GetApplication().signalDeleteDocument.connect(
                 [](const App::Document &doc) {
                     visuals.docs.erase(doc.getName());
+                    // The close that empties the drain also ends its
+                    // progress sequence, or the bar reports a stuck
+                    // "Building visuals..." forever.
+                    if (visuals.docs.empty())
+                        visuals.seq.reset();
                     if (Gui::Application::Instance)
                         Gui::Application::Instance->setBuildingVisuals(
                                 !visuals.docs.empty());
@@ -838,6 +850,50 @@ struct CoinMeshView {
         // they are -- a shape's vertices do not decimate.
         (void)nodeset;
         (void)pcoords;
+        return true;
+    }
+};
+
+/// A CoinMeshView the worker pool may read: the view's attribute
+/// pointers aim into the live Coin nodes, so the decimation job copies
+/// them out here, on the GUI thread, at enqueue. Everything the job
+/// touches afterwards is owned by this snapshot.
+struct OwnedMeshSnapshot {
+    std::vector<float> positions, normals, texCoords;
+    std::vector<int32_t> tris, lines;
+    Render::MeshData mesh;
+
+    bool build(const SoCoordinate3 *coords, const SoNormal *norm,
+               const SoBrepFaceSet *faceset, const SoBrepEdgeSet *lineset,
+               const SoBrepPointSet *nodeset, const SoCoordinate3 *pcoords,
+               const SoTextureCoordinate2 *texcoords)
+    {
+        CoinMeshView view;
+        if (!view.build(coords, norm, faceset, lineset, nodeset, pcoords,
+                        texcoords))
+            return false;
+        const int nv = view.mesh.numVertices;
+        positions.assign(view.mesh.positions,
+                         view.mesh.positions + size_t(nv) * 3);
+        if (view.mesh.normals)
+            normals.assign(view.mesh.normals,
+                           view.mesh.normals + size_t(nv) * 3);
+        if (view.mesh.texCoords)
+            texCoords.assign(view.mesh.texCoords,
+                             view.mesh.texCoords + size_t(nv) * 2);
+        tris = std::move(view.tris);
+        lines = std::move(view.lines);
+        // Copies the part tables; the array pointers are then rewired
+        // to the owned copies (stable under the shared_ptr the job
+        // holds -- nothing moves this struct after build).
+        mesh = view.mesh;
+        mesh.positions = positions.data();
+        mesh.normals = normals.empty() ? nullptr : normals.data();
+        mesh.texCoords = texCoords.empty() ? nullptr : texCoords.data();
+        mesh.triangleIndices = tris.data();
+        mesh.numTriangleIndices = int(tris.size());
+        mesh.lineIndices = lines.empty() ? nullptr : lines.data();
+        mesh.numLineIndices = int(lines.size());
         return true;
     }
 };
@@ -4001,11 +4057,22 @@ bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize,
     if (!Render::simplifyMesh(view.mesh, float(cellSize), out, opts, &stats))
         return false;
 
+    return applySimplifiedRung(out, stats, view.tris.size(), cellSize,
+                               shapeDiag, builtErrorNow);
+}
+
+bool ViewProviderPartExt::applySimplifiedRung(
+        const Render::SimplifiedMesh &out, const Render::SimplifyStats &stats,
+        size_t beforeIndexCount, double cellSize, double shapeDiag,
+        float builtErrorNow)
+{
+    if (!coords || !faceset)
+        return false;
     // Did it buy anything? The descent has a cheaper next step (the
     // bounding box), so a rung that barely removes triangles is worse
     // than useless -- it costs a rebuild and still holds the memory.
     // The caller reads false as "decimation is spent, take the box".
-    const size_t before = view.tris.size();
+    const size_t before = beforeIndexCount;
     const size_t after = out.triangleIndices.size();
     const double keepRatio =
         Gui::RenderParams::getSimplifyMinReduction() / 100.0;
@@ -4015,6 +4082,8 @@ bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize,
     const int nv = out.numVertices();
     if (nv <= 0 || out.triangleIndices.empty())
         return false;
+
+    const int beforeVertices = coords->point.getNum();
 
     // --- write the rung back into the display nodes -----------------
     coords->point.setNum(nv);
@@ -4169,7 +4238,7 @@ bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize,
             reg.setPublishedError(lineset, rungError);
         FC_LOG(getFullName() << " decimated rung: cell " << cellSize
                 << ", triangles " << (before / 3) << " -> " << (after / 3)
-                << ", vertices " << view.mesh.numVertices << " -> " << nv
+                << ", vertices " << beforeVertices << " -> " << nv
                 << ", displacement rms " << stats.rmsDisplacement
                 << " max " << stats.maxDisplacement
                 << ", published error " << rungError);
@@ -4177,11 +4246,275 @@ bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize,
     else {
         FC_LOG(getFullName() << " decimated rung: cell " << cellSize
                 << ", triangles " << (before / 3) << " -> " << (after / 3)
-                << ", vertices " << view.mesh.numVertices << " -> " << nv
+                << ", vertices " << beforeVertices << " -> " << nv
                 << ", max displacement " << stats.maxDisplacement
                 << " (rung NOT restated: no diagonal)");
     }
     return true;
+}
+
+void ViewProviderPartExt::armMeshLevelSource()
+{
+    TopoDS_Shape cShape = cachedShape.getShape();
+    if (cShape.IsNull() || meshLadder.anchor != cShape.TShape().get())
+        return;
+    const bool exactResident = meshLadder.exactResident;
+    const int coarseLvl = exactResident ? -1 : meshLadder.coarseLevel;
+    const double shapeDiag = meshLadder.shapeDiag;
+    const double exactDeflection = meshLadder.exactDefl;
+    const double exactAngle = meshLadder.exactAng;
+    // The rung this shape stands on, re-derived from the stored
+    // context exactly as updateVisual derived it at build time.
+    float builtError = 0.0f;
+    double deflection = exactDeflection;
+    double AngDeflectionRads = exactAngle;
+    if (coarseLvl >= 0 && shapeDiag > 0.0) {
+        const double scale = std::max(1.0, meshLadder.errorScale);
+        deflection = meshLevelDeflection(shapeDiag, unsigned(coarseLvl))
+            * scale;
+        AngDeflectionRads = std::min(
+            meshLevelAngle(unsigned(coarseLvl)) * scale, M_PI / 2.0);
+        builtError = float(scale / double(8u << unsigned(coarseLvl)));
+    }
+
+    // On a coarse desktop build the registration also carries the
+    // climb back to exact (sec 13): the worker meshes a copy at the
+    // display parameters and this callback -- GUI thread, and only
+    // while the registration is still the live one, which is what
+    // makes capturing `this` sound (the destructor unregisters) --
+    // transfers the triangulation onto the flattened shape and
+    // rebuilds through the ordinary visual path.
+    std::function<void(const TopoDS_Shape &)> onExact;
+    if (builtError > 0.0f) {
+        const void *tsh = cShape.TShape().get();
+        onExact = [this, tsh, builtError](const TopoDS_Shape &meshed) {
+            TopoDS_Shape cur = cachedShape.getShape();
+            if (cur.IsNull() || cur.TShape().get() != tsh)
+                return;
+            transferMeshLevels(meshed, cur);
+            if (meshLadder.anchor == tsh) {
+                meshLadder.exactResident = true;
+                meshLadder.exactCoarseError = builtError;
+            }
+            updateVisual();
+        };
+    }
+    // Exact by refine: the coarse triangulation never left the
+    // shape (transferMeshLevels keeps it), so both ways back down
+    // are armed (sec 13 step 3). The demote -- only ever under an
+    // observed CPU-memory ceiling -- drops the exact rung outright;
+    // the downgrade -- the GPU budget's -- merely re-activates the
+    // coarse rung for display and keeps the exact one resident,
+    // so the climb back is instant. Both are the CHEAP kind of
+    // descent (the coarse rung is already resident, the rebuild is a
+    // fill), so they stay synchronous.
+    std::function<void()> onDemote, onDowngrade;
+    if (exactResident && meshLadder.exactCoarseError > 0.0f) {
+        const void *tsh = cShape.TShape().get();
+        onDemote = [this, tsh]() {
+            TopoDS_Shape cur = cachedShape.getShape();
+            if (cur.IsNull() || cur.TShape().get() != tsh)
+                return;
+            if (!demoteMeshLevels(cur))
+                return;
+            if (meshLadder.anchor == tsh)
+                meshLadder.exactResident = false;
+            updateVisual();
+        };
+        onDowngrade = [this, tsh]() {
+            TopoDS_Shape cur = cachedShape.getShape();
+            if (cur.IsNull() || cur.TShape().get() != tsh)
+                return;
+            if (!downgradeMeshLevels(cur))
+                return;
+            if (meshLadder.anchor == tsh)
+                meshLadder.exactResident = false;
+            updateVisual();
+        };
+    }
+    // The dynamic-scale descent (sec 13): what this object can still
+    // give up once it is already showing its coarse rung and the
+    // budget is not met. Armed only on a coarse-built source with
+    // a scale to apply -- an exact-resident one has the ordinary
+    // demote/downgrade above, which is cheaper and comes first.
+    std::function<void()> onScaleDown;
+    float scaledError = 0.0f;
+    const double levelScale = Gui::RenderParams::getLevelScale();
+    if (builtError > 0.0f && levelScale > 1.0 && shapeDiag > 0.0) {
+        scaledError = float(builtError * levelScale);
+        const void *tsh = cShape.TShape().get();
+        const double nextScale =
+            std::max(1.0, meshLadder.errorScale) * levelScale;
+        const double nextDefl = deflection * levelScale;
+        const double nextAng = std::min(AngDeflectionRads * levelScale,
+                                        M_PI / 2.0);
+        const double boxError = Gui::RenderParams::getLevelScaleBoxError();
+        onScaleDown = [this, tsh, nextScale, nextDefl, nextAng,
+                       scaledError, boxError]() {
+            TopoDS_Shape cur = cachedShape.getShape();
+            if (cur.IsNull() || cur.TShape().get() != tsh)
+                return;
+            // Past the box error, or once deflection has proved it
+            // cannot coarsen this shape, re-tessellating buys
+            // nothing: only a representation that drops FACES does.
+            if (meshLadder.scaleSpent != ScaleSpent::No
+                || (boxError > 0.0 && scaledError >= boxError)) {
+                // The scale still advances here, synchronously: no
+                // build can fail to land, and it is what grows the
+                // decimation rung's grid step over step.
+                meshLadder.errorScale = nextScale;
+                // The threshold is a CHOICE, not a proof, and must
+                // not overwrite one: a Proved shape stays Proved.
+                if (meshLadder.scaleSpent == ScaleSpent::No)
+                    meshLadder.scaleSpent = ScaleSpent::BoxChosen;
+                if (meshLadder.decimationSpent) {
+                    // The bounding box -- 12 triangles, built inline:
+                    // the one visible descent cheap enough to stay
+                    // synchronous. updateVisual takes that path off
+                    // the flags.
+                    updateVisual();
+                    return;
+                }
+                // The decimation rung: the hook only ENQUEUES -- the
+                // clustering runs on the refine pool over a snapshot,
+                // and the landing rewrites the nodes and re-arms
+                // (sec 13c). Running it here, in the plan callback,
+                // froze the GUI for minutes when a live budget drop
+                // ordered hundreds of steps back-to-back.
+                queueDecimationDescent();
+                return;
+            }
+            // Otherwise mesh a copy coarser on the refine pool and
+            // adopt it: the transfer brings it in beside the finer
+            // rung and the demote, which keeps the fewest nodes,
+            // drops that rung and its edge polygons.
+            //
+            // The scale is committed in the APPLY, not here. A job
+            // the worker drops at its memory floor, or that a
+            // re-registration cancels, would otherwise leave the
+            // ladder's state one rung below the mesh still
+            // displayed -- and the exhaustion proof below never
+            // evaluated for that step.
+            queueMeshLevelBuild(
+                faceset ? static_cast<SoNode *>(faceset)
+                        : static_cast<SoNode *>(lineset),
+                cur, nextDefl, nextAng,
+                [this, tsh, nextScale](const TopoDS_Shape &meshed) {
+                    TopoDS_Shape live = cachedShape.getShape();
+                    if (live.IsNull() || live.TShape().get() != tsh)
+                        return;
+                    if (meshLadder.anchor == tsh)
+                        meshLadder.errorScale = nextScale;
+                    const int before = meshLevelNodeCount(live);
+                    transferMeshLevels(meshed, live);
+                    demoteMeshLevels(live);
+                    const int after = meshLevelNodeCount(live);
+                    // Did asking for a coarser mesh actually
+                    // produce one? A shape of planar faces answers
+                    // no at every deflection, and there is no point
+                    // discovering that once per step.
+                    if (before > 0 && after * 10 >= before * 9
+                        && meshLadder.anchor == tsh)
+                        meshLadder.scaleSpent = ScaleSpent::Proved;
+                    updateVisual();
+                });
+        };
+    }
+    registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
+                            builtError, exactDeflection, exactAngle,
+                            std::move(onExact), std::move(onDemote),
+                            exactResident ? meshLadder.exactCoarseError
+                                          : 0.0f,
+                            std::move(onDowngrade),
+                            pcObject ? pcObject->getDocument() : nullptr,
+                            "per-object", std::move(onScaleDown),
+                            scaledError);
+}
+
+void ViewProviderPartExt::queueDecimationDescent()
+{
+    TopoDS_Shape cur = cachedShape.getShape();
+    if (cur.IsNull() || meshLadder.anchor != cur.TShape().get())
+        return;
+    const double shapeDiag = meshLadder.shapeDiag;
+    const int coarseLvl = meshLadder.coarseLevel;
+    float builtError = 0.0f;
+    if (coarseLvl >= 0 && shapeDiag > 0.0) {
+        const double scale = std::max(1.0, meshLadder.errorScale);
+        builtError = float(scale / double(8u << unsigned(coarseLvl)));
+    }
+    const double cellSize = double(builtError) * shapeDiag;
+    // A rung that cannot run at all is decimation spent: the next
+    // order takes the box. Re-arming is what keeps the source
+    // reachable -- the order that got here consumed its hook.
+    auto spent = [this]() {
+        meshLadder.decimationSpent = true;
+        FC_LOG(getFullName() << " decimation spent, bounding box is next");
+        armMeshLevelSource();
+    };
+    if (!Gui::RenderParams::getSimplifyExhausted() || !(cellSize > 0.0)
+        || !coords || !faceset) {
+        spent();
+        return;
+    }
+    auto snap = std::make_shared<OwnedMeshSnapshot>();
+    if (!snap->build(coords, norm, faceset, lineset, nodeset, pcoords,
+                     texcoords)) {
+        spent();
+        return;
+    }
+    Render::SimplifyOptions opts;
+    opts.weldAcrossParts = Gui::RenderParams::getSimplifyMergeParts();
+    const void *tsh = meshLadder.anchor;
+    const size_t beforeIndexCount = snap->tris.size();
+    const float builtErrorNow = builtError;
+    const double diag = shapeDiag;
+    SoNode *tag = faceset ? static_cast<SoNode *>(faceset)
+                          : static_cast<SoNode *>(lineset);
+    queueMeshDescentWork(
+        tag,
+        [this, tsh, snap, cellSize, opts, beforeIndexCount, builtErrorNow,
+         diag]() -> std::function<void()> {
+            // The worker half: pure clustering over the snapshot.
+            auto out = std::make_shared<Render::SimplifiedMesh>();
+            auto stats = std::make_shared<Render::SimplifyStats>();
+            const bool ok = Render::simplifyMesh(snap->mesh, float(cellSize),
+                                                 *out, opts, stats.get());
+            // The landing half: node writes and the re-arm, marshalled
+            // to the GUI thread; it runs only while the registration
+            // that queued this is still the live one (the worker
+            // queue's token), which is what makes `this` sound here --
+            // the destructor unregisters, and unregistering cancels.
+            return [this, tsh, ok, out, stats, cellSize, beforeIndexCount,
+                    builtErrorNow, diag]() {
+                TopoDS_Shape live = cachedShape.getShape();
+                if (live.IsNull() || live.TShape().get() != tsh
+                    || meshLadder.anchor != tsh)
+                    return;
+                // Re-arm FIRST: the registration publishes the nominal
+                // rung error, and the apply's restatement (the
+                // measured one, setPublishedError) must land on top of
+                // it, not under it -- the order updateVisual ran.
+                armMeshLevelSource();
+                if (!ok
+                    || !applySimplifiedRung(*out, *stats, beforeIndexCount,
+                                            cellSize, diag, builtErrorNow)) {
+                    // Decimation is spent too. The object keeps the
+                    // mesh it has; the next order finds the flag set
+                    // and takes the box.
+                    meshLadder.decimationSpent = true;
+                    FC_LOG(getFullName()
+                           << " decimation spent, bounding box is next");
+                }
+                else {
+                    // The arrays under the highlight/selection state
+                    // were rewritten; re-apply like updateVisual does.
+                    setHighlightedFaces(DiffuseColor.getValues());
+                    setHighlightedEdges(LineColorArray.getValues());
+                    setHighlightedPoints(PointColorArray.getValue());
+                }
+            };
+        });
 }
 
 bool ViewProviderPartExt::deferVisualForLoad()
@@ -4275,6 +4608,20 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         return;
     }
 
+    // Say what this drain owes and how it is going -- the visual build
+    // is the longest phase of a progressive load, and it used to run
+    // with a dead status bar. Created here rather than at park time, so
+    // the total covers everything the load queued.
+    if (!visuals.seq) {
+        std::size_t total = 0;
+        for (const auto &e : visuals.docs)
+            total += e.second.pending.size();
+        if (total)
+            visuals.seq = std::make_unique<Base::SequencerLauncher>(
+                    "Building visuals...", total,
+                    Base::SequencerLauncher::KeepInteractive);
+    }
+
     // One budget for the slice, split evenly between the documents that can
     // use it: what has to stay bounded is the time before the event loop
     // gets its turn back, and that is per slice however many documents are
@@ -4331,6 +4678,8 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         while (!queue.pending.empty()) {
             auto obj = queue.pending.front().getObject();
             queue.pending.pop_front();
+            if (visuals.seq)
+                visuals.seq->next();
             auto vp = obj ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
                                 Gui::Application::Instance->getViewProvider(obj))
                           : nullptr;
@@ -4364,6 +4713,9 @@ void ViewProviderPartExt::runDeferredVisualSlice()
     // that empties the queue -- the frame after it is the first one that
     // may draw the elements the load gate was holding back.
     syncBuildingVisuals();
+
+    if (visuals.docs.empty())
+        visuals.seq.reset();
 
     if (more)
         scheduleDeferredVisualSlice();
@@ -4639,146 +4991,15 @@ void ViewProviderPartExt::updateVisual()
         // The scene server can now re-tessellate this shape at a
         // coarser deviation when a viewer asks for a declared level of
         // the meshes these nodes feed (MeshLevelSource.h). Re-runs
-        // replace the previous shape under the same node tags.
-        //
-        // On a coarse desktop build the registration also carries the
-        // climb back to exact (sec 13): the worker meshes a copy at the
-        // display parameters and this callback -- GUI thread, and only
-        // while the registration is still the live one, which is what
-        // makes capturing `this` sound (the destructor unregisters) --
-        // transfers the triangulation onto the flattened shape and
-        // rebuilds through the ordinary visual path.
-        std::function<void(const TopoDS_Shape &)> onExact;
-        if (builtError > 0.0f) {
-            const void *tsh = cShape.TShape().get();
-            onExact = [this, tsh, builtError](const TopoDS_Shape &meshed) {
-                TopoDS_Shape cur = cachedShape.getShape();
-                if (cur.IsNull() || cur.TShape().get() != tsh)
-                    return;
-                transferMeshLevels(meshed, cur);
-                if (meshLadder.anchor == tsh) {
-                    meshLadder.exactResident = true;
-                    meshLadder.exactCoarseError = builtError;
-                }
-                updateVisual();
-            };
-        }
-        // Exact by refine: the coarse triangulation never left the
-        // shape (transferMeshLevels keeps it), so both ways back down
-        // are armed (sec 13 step 3). The demote -- only ever under an
-        // observed CPU-memory ceiling -- drops the exact rung outright;
-        // the downgrade -- the GPU budget's -- merely re-activates the
-        // coarse rung for display and keeps the exact one resident,
-        // so the climb back is instant.
-        std::function<void()> onDemote, onDowngrade;
-        if (exactResident && meshLadder.exactCoarseError > 0.0f) {
-            const void *tsh = cShape.TShape().get();
-            onDemote = [this, tsh]() {
-                TopoDS_Shape cur = cachedShape.getShape();
-                if (cur.IsNull() || cur.TShape().get() != tsh)
-                    return;
-                if (!demoteMeshLevels(cur))
-                    return;
-                if (meshLadder.anchor == tsh)
-                    meshLadder.exactResident = false;
-                updateVisual();
-            };
-            onDowngrade = [this, tsh]() {
-                TopoDS_Shape cur = cachedShape.getShape();
-                if (cur.IsNull() || cur.TShape().get() != tsh)
-                    return;
-                if (!downgradeMeshLevels(cur))
-                    return;
-                if (meshLadder.anchor == tsh)
-                    meshLadder.exactResident = false;
-                updateVisual();
-            };
-        }
-        // The dynamic-scale descent (sec 13): what this object can still
-        // give up once it is already showing its coarse rung and the
-        // budget is not met. Armed only on a coarse-built source with
-        // a scale to apply -- an exact-resident one has the ordinary
-        // demote/downgrade above, which is cheaper and comes first.
-        std::function<void()> onScaleDown;
-        float scaledError = 0.0f;
-        const double levelScale = Gui::RenderParams::getLevelScale();
-        if (builtError > 0.0f && levelScale > 1.0 && shapeDiag > 0.0) {
-            scaledError = float(builtError * levelScale);
-            const void *tsh = cShape.TShape().get();
-            const double nextScale =
-                std::max(1.0, meshLadder.errorScale) * levelScale;
-            const double nextDefl = deflection * levelScale;
-            const double nextAng = std::min(AngDeflectionRads * levelScale,
-                                            M_PI / 2.0);
-            const double boxError = Gui::RenderParams::getLevelScaleBoxError();
-            onScaleDown = [this, tsh, nextScale, nextDefl, nextAng,
-                           scaledError, boxError]() {
-                TopoDS_Shape cur = cachedShape.getShape();
-                if (cur.IsNull() || cur.TShape().get() != tsh)
-                    return;
-                // Past the box error, or once deflection has proved it
-                // cannot coarsen this shape, re-tessellating buys
-                // nothing: only a representation that drops FACES does,
-                // and the bounding box is the one this class can build
-                // today. updateVisual takes that path off the flag.
-                if (meshLadder.scaleSpent != ScaleSpent::No
-                    || (boxError > 0.0 && scaledError >= boxError)) {
-                    // The scale still advances here, synchronously: no
-                    // build can fail to land, and it is what grows the
-                    // decimation rung's grid step over step.
-                    meshLadder.errorScale = nextScale;
-                    // The threshold is a CHOICE, not a proof, and must
-                    // not overwrite one: a Proved shape stays Proved.
-                    if (meshLadder.scaleSpent == ScaleSpent::No)
-                        meshLadder.scaleSpent = ScaleSpent::BoxChosen;
-                    updateVisual();
-                    return;
-                }
-                // Otherwise mesh a copy coarser on the refine pool and
-                // adopt it: the transfer brings it in beside the finer
-                // rung and the demote, which keeps the fewest nodes,
-                // drops that rung and its edge polygons.
-                //
-                // The scale is committed in the APPLY, not here. A job
-                // the worker drops at its memory floor, or that a
-                // re-registration cancels, would otherwise leave the
-                // ladder's state one rung below the mesh still
-                // displayed -- and the exhaustion proof below never
-                // evaluated for that step.
-                queueMeshLevelBuild(
-                    faceset ? static_cast<SoNode *>(faceset)
-                            : static_cast<SoNode *>(lineset),
-                    cur, nextDefl, nextAng,
-                    [this, tsh, nextScale](const TopoDS_Shape &meshed) {
-                        TopoDS_Shape live = cachedShape.getShape();
-                        if (live.IsNull() || live.TShape().get() != tsh)
-                            return;
-                        if (meshLadder.anchor == tsh)
-                            meshLadder.errorScale = nextScale;
-                        const int before = meshLevelNodeCount(live);
-                        transferMeshLevels(meshed, live);
-                        demoteMeshLevels(live);
-                        const int after = meshLevelNodeCount(live);
-                        // Did asking for a coarser mesh actually
-                        // produce one? A shape of planar faces answers
-                        // no at every deflection, and there is no point
-                        // discovering that once per step.
-                        if (before > 0 && after * 10 >= before * 9
-                            && meshLadder.anchor == tsh)
-                            meshLadder.scaleSpent = ScaleSpent::Proved;
-                        updateVisual();
-                    });
-            };
-        }
-        registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
-                                builtError, exactDeflection, exactAngle,
-                                std::move(onExact), std::move(onDemote),
-                                exactResident ? meshLadder.exactCoarseError
-                                              : 0.0f,
-                                std::move(onDowngrade),
-                                pcObject ? pcObject->getDocument() : nullptr,
-                                "per-object", std::move(onScaleDown),
-                                scaledError);
+        // replace the previous shape under the same node tags. The
+        // arming itself is armMeshLevelSource, off the context stored
+        // here -- so a worker landing can re-arm the next step without
+        // paying this function's rebuild.
+        meshLadder.shapeDiag = shapeDiag;
+        meshLadder.coarseLevel = coarseLvl;
+        meshLadder.exactDefl = exactDeflection;
+        meshLadder.exactAng = exactAngle;
+        armMeshLevelSource();
 
         // The rung between a spent tessellation and the bounding box
         // (docs/SceneStreaming.md #13c). Applied HERE, as a post-step of

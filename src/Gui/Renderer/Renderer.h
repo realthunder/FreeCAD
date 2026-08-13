@@ -1725,6 +1725,12 @@ public:
     /// approaches the ceiling in verified steps.
     virtual void setClimbAdmission(bool hardLimit, int batch)
     { (void)hardLimit; (void)batch; }
+    /// How many descents (demotes/downgrades) one plan pass may order
+    /// (Render_DescentOrderBatch, the climb batch's mirror): each
+    /// order enqueues a worker job but pays a GUI-thread snapshot at
+    /// the hook, so a pass is bounded and the replan after the batch
+    /// lands takes the rest. 0 or less removes the cap.
+    virtual void setDescentOrderBatch(int batch) { (void)batch; }
     /// The display gates of the memory response
     /// (docs/SceneStreaming.md #13b), pushed in like every other
     /// parameter -- this library knows nothing of RenderParams.

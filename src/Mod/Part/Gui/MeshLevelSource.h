@@ -164,6 +164,32 @@ void queueMeshLevelBuild(const void *tag, const TopoDS_Shape &shape,
                          double deflection, double angle,
                          std::function<void(const TopoDS_Shape &)> apply);
 
+/// Run \a work on the refine worker pool and its returned landing on
+/// the GUI thread -- the decimation rung's half of the same descent
+/// (sec 13c). \a work owns everything it reads (a SNAPSHOT of the
+/// display arrays, taken on the GUI thread at enqueue -- Coin nodes
+/// are not thread-safe here) and returns the landing closure, or null
+/// when the rung refused. The landing runs only while the tag's
+/// registration is still the live one (same token as the refine jobs:
+/// re-registering or unregistering the tag cancels), which is what
+/// makes capturing the view provider sound. Descent jobs are counted
+/// in MeshSourceRegistry::descentInFlight() from enqueue to
+/// settlement and run ahead of queued climbs.
+void queueMeshDescentWork(const void *tag,
+                          std::function<std::function<void()>()> work);
+
+/// Run \a body on the GUI thread under the landing pump's per-turn
+/// time budget instead of now. This is how a plan-ordered hook body
+/// leaves the plan callback: a sweep fires up to a whole batch of
+/// hooks in one callback, and their bodies -- a display-array
+/// snapshot, a resident-rung rebuild -- measured second-long bursts
+/// when run in place. Items are keyed by \a tag: unregistering or
+/// re-registering the tag purges what has not run (the bodies capture
+/// their view provider, and the destructor unregisters). Each item
+/// counts as an in-flight descent from enqueue to run/purge, so the
+/// downgrade ledger's write-off horizon covers the deferral.
+void queueLevelGuiWork(const void *tag, std::function<void()> body);
+
 /// The coarse-first tessellation level for display builds; negative
 /// means tessellate at the full display deviation as always. Resolved
 /// from the CoarseTessellation render parameter — per-view
