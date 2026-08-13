@@ -62,6 +62,16 @@ struct RendererExport SimplifiedMesh {
     /// when nothing non-seam survived; fill() maps both to "no seams".
     std::vector<int32_t> noSeamLineIndices;
 
+    /// Texture coordinates, 2 per vertex, carried through the
+    /// clustering the same way normals are -- averaged over the merged
+    /// vertices -- when the source mesh had them (user ruling: a
+    /// textured object on this rung keeps a recognizable texture
+    /// rather than one stretched texel). Averaging across a UV seam
+    /// smears, the same way averaged normals fold at a crease; both
+    /// are the rung's accepted error. Empty when the source carried
+    /// none.
+    std::vector<float> texCoords;
+
     /// The element tables, preserved index for index from the source
     /// mesh (empty when the source carried none): entry i of the output
     /// names the same element as entry i of the input, with an empty

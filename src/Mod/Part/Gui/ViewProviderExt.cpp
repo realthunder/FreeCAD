@@ -696,7 +696,8 @@ struct CoinMeshView {
     /// nothing to say about and which is not what holds a budget open.
     bool build(const SoCoordinate3 *coords, const SoNormal *norm,
                const SoBrepFaceSet *faceset, const SoBrepEdgeSet *lineset,
-               const SoBrepPointSet *nodeset, const SoCoordinate3 *pcoords)
+               const SoBrepPointSet *nodeset, const SoCoordinate3 *pcoords,
+               const SoTextureCoordinate2 *texcoords = nullptr)
     {
         const int nv = coords ? coords->point.getNum() : 0;
         const int nidx = faceset ? faceset->coordIndex.getNum() : 0;
@@ -709,6 +710,12 @@ struct CoinMeshView {
         if (norm && norm->vector.getNum() == nv)
             mesh.normals =
                 reinterpret_cast<const float *>(norm->vector.getValues(0));
+        // Present only when sized to the vertices: the build path zeroes
+        // this node to the coordinate count, so a mismatch is a node
+        // some other rewrite left behind, not per-vertex UVs.
+        if (texcoords && texcoords->point.getNum() == nv)
+            mesh.texCoords = reinterpret_cast<const float *>(
+                    texcoords->point.getValues(0));
 
         const int32_t *ci = faceset->coordIndex.getValues(0);
         tris.reserve(size_t(nidx / 4) * 3);
@@ -3916,7 +3923,8 @@ bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize,
         return false;
 
     CoinMeshView view;
-    if (!view.build(coords, norm, faceset, lineset, nodeset, pcoords))
+    if (!view.build(coords, norm, faceset, lineset, nodeset, pcoords,
+                    texcoords))
         return false;
 
     Render::SimplifyOptions opts;
@@ -3969,14 +3977,22 @@ bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize,
     }
 
     // Texture coordinates are per vertex and the vertices are new ones.
-    // Zeroed rather than dropped: the build path always sizes this to
-    // the coordinate count, and a shorter array is what a reader
-    // indexing by vertex would run off the end of.
+    // When the source carried them, the clustering carried them too
+    // (averaged over the merged vertices, MeshSimplify) -- a textured
+    // object on this rung keeps a recognizable texture instead of one
+    // stretched texel (user ruling). Zeroed otherwise, not dropped:
+    // the build path always sizes this node to the coordinate count,
+    // and a shorter array is what a reader indexing by vertex would
+    // run off the end of.
     if (texcoords) {
         texcoords->point.setNum(nv);
         SbVec2f *uv = texcoords->point.startEditing();
-        for (int i = 0; i < nv; ++i)
-            uv[i] = SbVec2f(0.0f, 0.0f);
+        if (int(out.texCoords.size()) == nv * 2)
+            std::memcpy(uv, out.texCoords.data(),
+                        size_t(nv) * 2 * sizeof(float));
+        else
+            for (int i = 0; i < nv; ++i)
+                uv[i] = SbVec2f(0.0f, 0.0f);
         texcoords->point.finishEditing();
     }
 

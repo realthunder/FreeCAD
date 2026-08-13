@@ -68,6 +68,7 @@ struct PosCluster {
 struct AttrCluster {
     double nx = 0.0, ny = 0.0, nz = 0.0;
     double cr = 0.0, cg = 0.0, cb = 0.0, ca = 0.0;
+    double tu = 0.0, tv = 0.0;
     uint32_t count = 0;
     int32_t index = -1;
 };
@@ -169,7 +170,7 @@ void SimplifiedMesh::fill(MeshData &mesh) const
     mesh.noSeamLineIndices =
         noSeamLineIndices.empty() ? nullptr : noSeamLineIndices.data();
     mesh.numNoSeamLineIndices = int(noSeamLineIndices.size());
-    mesh.texCoords = nullptr;
+    mesh.texCoords = texCoords.empty() ? nullptr : texCoords.data();
 }
 
 float Render::levelCellSize(const float *bbox, uint32_t level)
@@ -293,6 +294,7 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
     // positions it emits are the ones the full path would have emitted.
     const bool wantNormals = src.normals && !opts.trianglesOnly;
     const bool wantColors = src.colors && !opts.trianglesOnly;
+    const bool wantTexCoords = src.texCoords && !opts.trianglesOnly;
 
     const auto emitVertices = [&](std::map<Cell, AttrCluster> &local) {
         for (auto &entry : local) {
@@ -329,6 +331,12 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
                                    uint8_t(cl.cb * inv + 0.5),
                                    uint8_t(cl.ca * inv + 0.5)});
             }
+            if (wantTexCoords) {
+                const double inv = cl.count ? 1.0 / double(cl.count) : 0.0;
+                out.texCoords.insert(out.texCoords.end(),
+                                     {float(cl.tu * inv),
+                                      float(cl.tv * inv)});
+            }
         }
     };
 
@@ -355,6 +363,11 @@ bool Render::simplifyMesh(const MeshData &src, float cellSize,
                 cl.cg += c[1];
                 cl.cb += c[2];
                 cl.ca += c[3];
+            }
+            if (wantTexCoords) {
+                const float *t = src.texCoords + size_t(v) * 2;
+                cl.tu += t[0];
+                cl.tv += t[1];
             }
             ++cl.count;
         }
