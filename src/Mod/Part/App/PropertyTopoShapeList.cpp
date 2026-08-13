@@ -134,7 +134,7 @@ void PropertyTopoShapeList::setPyObject(PyObject *value)
             if (!PyObject_TypeCheck(item, &(TopoShapePy::Type))) {
                 std::string error = std::string("types in list must be 'Shape', not ");
                 error += item->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
 
             values[i] = *static_cast<TopoShapePy*>(item)->getTopoShapePtr();
@@ -148,7 +148,7 @@ void PropertyTopoShapeList::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be 'Shape' or list of 'Shape', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 

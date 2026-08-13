@@ -52,7 +52,6 @@ class QGIPrimPath;
 class QGITile;
 class QGIVertex;
 class QGCustomText;
-class QGILeaderLine;
 
 //*******************************************************************
 
@@ -63,7 +62,7 @@ class TechDrawGuiExport QGIWeldSymbol : public QGIView
 public:
     enum {Type = QGraphicsItem::UserType + 340};
 
-    explicit QGIWeldSymbol(QGILeaderLine* myParent = nullptr);
+    QGIWeldSymbol();
     ~QGIWeldSymbol() override = default;
 
     int type() const override { return Type;}
@@ -79,6 +78,8 @@ public:
 
     virtual TechDraw::DrawWeldSymbol* getFeature();
     virtual void setFeature(TechDraw::DrawWeldSymbol* feat);
+
+    TechDraw::DrawLeaderLine* getLeaderFeature() const;
 
     QPointF getTileOrigin();
     QPointF getKinkPoint();
@@ -109,15 +110,14 @@ protected:
     virtual QColor prefNormalColor();
     double prefArrowSize();
     double prefFontSize() const;
+    double leaderLineWidth() const;
 
     TechDraw::DrawWeldSymbol* m_weldFeat;
-    TechDraw::DrawLeaderLine* m_leadFeat;
     TechDraw::DrawTileWeld*   m_arrowFeat;
     TechDraw::DrawTileWeld*   m_otherFeat;
     std::string               m_arrowName;
     std::string               m_otherName;
 
-    QGILeaderLine* m_qgLead;
     QGCustomText* m_tailText;
     QGIPrimPath* m_fieldFlag;
     QGIVertex* m_allAround;

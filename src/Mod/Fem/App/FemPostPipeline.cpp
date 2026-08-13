@@ -160,7 +160,7 @@ void FemPostPipeline::read(Base::FileInfo File)
         readXMLFile<vtkDataSetReader>(File.filePath());
     }
     else {
-        throw Base::FileException("Unknown extension");
+        THROWM(Base::FileException, "Unknown extension")
     }
 }
 

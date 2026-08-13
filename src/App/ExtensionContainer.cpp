@@ -50,7 +50,7 @@ ExtensionContainer::~ExtensionContainer() {
 void ExtensionContainer::registerExtension(Base::Type extension, Extension* ext) {
 
     if(ext->getExtendedContainer() != this)
-        throw Base::ValueError("ExtensionContainer::registerExtension: Extension has not this as base object");
+        THROWM(Base::ValueError, "ExtensionContainer::registerExtension: Extension has not this as base object")
 
     //no duplicate extensions (including base classes)
     if(hasExtension(extension)) {
@@ -103,7 +103,7 @@ Extension* ExtensionContainer::getExtension(Base::Type t, bool derived, bool no_
         if(no_except)
             return nullptr;
         //if we arrive here we don't have anything matching
-        throw Base::TypeError("ExtensionContainer::getExtension: No extension of given type available");
+        THROWM(Base::TypeError, "ExtensionContainer::getExtension: No extension of given type available")
     }
     else if (result != _extensions.end()) {
         return result->second;
@@ -112,7 +112,7 @@ Extension* ExtensionContainer::getExtension(Base::Type t, bool derived, bool no_
         if(no_except)
             return nullptr;
         //if we arrive here we don't have anything matching
-        throw Base::TypeError("ExtensionContainer::getExtension: No extension of given type available");
+        THROWM(Base::TypeError, "ExtensionContainer::getExtension: No extension of given type available")
     }
 }
 
@@ -388,7 +388,7 @@ void ExtensionContainer::restoreExtensions(Base::XMLReader& reader) {
                 if (extension.isBad() || !extension.isDerivedFrom(App::Extension::getExtensionClassTypeId())) {
                     std::stringstream str;
                     str << "No extension found of type '" << Type << "'" << std::ends;
-                    throw Base::TypeError(str.str());
+                    THROWM(Base::TypeError, str.str())
                 }
 
                 //register the extension
@@ -398,7 +398,7 @@ void ExtensionContainer::restoreExtensions(Base::XMLReader& reader) {
                     delete ext;
                     std::stringstream str;
                     str << "Extension is not a python addable version: '" << Type << "'" << std::ends;
-                    throw Base::TypeError(str.str());
+                    THROWM(Base::TypeError, str.str())
                 }
 
                 ext->initExtension(this);

@@ -161,7 +161,7 @@ void DrawViewCollection::lockChildren()
     for (auto& v:Views.getValues()) {
         TechDraw::DrawView *view = dynamic_cast<TechDraw::DrawView *>(v);
         if (!view) {
-            throw Base::ValueError("DrawViewCollection::lockChildren bad View\n");
+            THROWM(Base::ValueError, "DrawViewCollection::lockChildren bad View\n")
         }
         view->handleXYLock();
     }
@@ -192,7 +192,7 @@ QRectF DrawViewCollection::getRect() const
     for (auto& v:Views.getValues()) {
         TechDraw::DrawView *view = dynamic_cast<TechDraw::DrawView *>(v);
         if (!view) {
-            throw Base::ValueError("DrawViewCollection::getRect bad View\n");
+            THROWM(Base::ValueError, "DrawViewCollection::getRect bad View\n")
         }
 
         result = result.united(view->getRect().translated(view->X.getValue(), view->Y.getValue()));

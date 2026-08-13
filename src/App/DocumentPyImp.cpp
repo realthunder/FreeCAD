@@ -281,7 +281,7 @@ PyObject*  DocumentPy::addObject(PyObject *args, PyObject *kwd)
         if (type.isBad()) {
             std::stringstream str;
             str << "'" << sType << "' is not a document object type";
-            throw Base::TypeError(str.str());
+            THROWM(Base::TypeError, str.str())
         }
         pcFtr = static_cast<DocumentObject*>(type.createInstance());
     }
@@ -699,7 +699,7 @@ PyObject*  DocumentPy::findObjects(PyObject *args, PyObject *kwds)
     if (type.isBad()) {
         std::stringstream str;
         str << "'" << sType << "' is not a document object type";
-        throw Base::TypeError(str.str());
+        THROWM(Base::TypeError, str.str())
     }
 
     std::vector<DocumentObject*> res;
@@ -870,7 +870,7 @@ PyObject* DocumentPy::getTempFileName(PyObject *args)
 
     PyObject *p = PyUnicode_DecodeUTF8(fileName.filePath().c_str(),fileName.filePath().size(),nullptr);
     if (!p) {
-        throw Base::UnicodeError("UTF8 conversion failure at PropertyString::getPyObject()");
+        THROWM(Base::UnicodeError, "UTF8 conversion failure at PropertyString::getPyObject()")
     }
     return p;
 }
@@ -1003,11 +1003,11 @@ PyObject* DocumentPy::reorderObjects(PyObject *args)
             for (Py::Sequence::iterator it = seq.begin(); it != seq.end(); ++it) {
                 PyObject* item = (*it).ptr();
                 if (!PyObject_TypeCheck(item, &App::DocumentObjectPy::Type))
-                    throw Base::TypeError("Expected document object inside sequence");
+                    THROWM(Base::TypeError, "Expected document object inside sequence")
                 objs.push_back(static_cast<App::DocumentObjectPy*>(item)->getDocumentObjectPtr());
             }
         } else
-            throw Base::TypeError("Expected first argument to be document object or sequence of document objects");
+            THROWM(Base::TypeError, "Expected first argument to be document object or sequence of document objects")
 
         getDocumentPtr()->reorderObjects(objs, 
                 static_cast<App::DocumentObjectPy*>(pybefore)->getDocumentObjectPtr());

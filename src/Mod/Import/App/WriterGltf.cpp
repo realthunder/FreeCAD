@@ -64,6 +64,6 @@ void WriterGltf::write(Handle(TDocStd_Document) hDoc) const  // NOLINT
     }
 #else
     boost::ignore_unused(hDoc);
-    throw Base::RuntimeError("gITF support requires OCCT 7.5.0 or later");
+    THROWM(Base::RuntimeError, "gITF support requires OCCT 7.5.0 or later")
 #endif
 }

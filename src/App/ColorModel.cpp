@@ -99,7 +99,7 @@ void ColorField::set (const ColorModel &rclModel, float fMin, float fMax, std::s
 {
     auto bounds = std::minmax(fMin, fMax);
     if (bounds.second <= bounds.first) {
-        throw Base::ValueError("Maximum must be higher than minimum");
+        THROWM(Base::ValueError, "Maximum must be higher than minimum")
     }
 
     this->fMin = bounds.first;
@@ -218,7 +218,7 @@ void ColorGradient::set (float fMin, float fMax, std::size_t usCt, ColorBarStyle
 {
     auto bounds = std::minmax(fMin, fMax);
     if (bounds.second <= bounds.first) {
-        throw Base::ValueError("Maximum must be higher than minimum");
+        THROWM(Base::ValueError, "Maximum must be higher than minimum")
     }
 
     profile.fMin = bounds.first;

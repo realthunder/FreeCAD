@@ -87,7 +87,7 @@ void DrawTileWeld::replaceFileIncluded(std::string newSymbolFile)
     if (tfi.isReadable()) {
         SymbolIncluded.setValue(newSymbolFile.c_str());
     } else {
-        throw Base::RuntimeError("Could not read the new symbol file");
+        THROWM(Base::RuntimeError, "Could not read the new symbol file")
     }
 }
 

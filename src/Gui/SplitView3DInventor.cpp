@@ -252,7 +252,7 @@ PyObject *AbstractSplitView::getPyObject()
 
 void AbstractSplitView::setPyObject(PyObject *)
 {
-    throw Base::AttributeError("Attribute is read-only");
+    THROWM(Base::AttributeError, "Attribute is read-only")
 }
 
 int AbstractSplitView::getSize()

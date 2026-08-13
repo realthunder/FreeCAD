@@ -543,7 +543,7 @@ void DrawViewPart::findFacesNew(const ExtractFaceParams &params,
         }
     }
     catch (Base::Exception& e) {
-        throw Base::RuntimeError(e.what());
+        THROWM(Base::RuntimeError, e.what())
     }
     params.progress->setProgress(5);
 
@@ -810,11 +810,11 @@ TechDraw::VertexPtr DrawViewPart::getVertex(std::string vertexName) const
     size_t iTarget = DrawUtil::getIndexFromName(vertexName);
     if (allVertex.empty()) {
         //should not happen
-        throw Base::IndexError("DVP::getVertex - No vertices found.");
+        THROWM(Base::IndexError, "DVP::getVertex - No vertices found.")
     }
     if (iTarget >= allVertex.size()) {
         //should not happen
-        throw Base::IndexError("DVP::getVertex - Vertex not found.");
+        THROWM(Base::IndexError, "DVP::getVertex - Vertex not found.")
     }
 
     return allVertex.at(iTarget);
@@ -827,11 +827,11 @@ TechDraw::BaseGeomPtr DrawViewPart::getEdge(std::string edgeName) const
     const std::vector<TechDraw::BaseGeomPtr>& geoms = getEdgeGeometry();
     if (geoms.empty()) {
         //should not happen
-        throw Base::IndexError("DVP::getEdge - No edges found.");
+        THROWM(Base::IndexError, "DVP::getEdge - No edges found.")
     }
     size_t iEdge = DrawUtil::getIndexFromName(edgeName);
     if ((unsigned)iEdge >= geoms.size()) {
-        throw Base::IndexError("DVP::getEdge - Edge not found.");
+        THROWM(Base::IndexError, "DVP::getEdge - Edge not found.")
     }
     return geoms.at(iEdge);
 }
@@ -844,11 +844,11 @@ TechDraw::FacePtr DrawViewPart::getFace(std::string faceName) const
     const std::vector<TechDraw::FacePtr>& faces = getFaceGeometry();
     if (faces.empty()) {
         //should not happen
-        throw Base::IndexError("DVP::getFace - No faces found.");
+        THROWM(Base::IndexError, "DVP::getFace - No faces found.")
     }
     size_t iFace = DrawUtil::getIndexFromName(faceName);
     if (iFace >= faces.size()) {
-        throw Base::IndexError("DVP::getFace - Face not found.");
+        THROWM(Base::IndexError, "DVP::getFace - Face not found.")
     }
     return faces.at(iFace);
 }
@@ -1468,7 +1468,7 @@ void DrawViewPart::resetReferenceVerts()
 GeometryObjectPtr DrawViewPart::getGeometryObject(bool noException) const
 {
     if (!noException && !m_geometryObject) {
-        throw Base::RuntimeError("No geometry");
+        THROWM(Base::RuntimeError, "No geometry")
     }
     return m_geometryObject;
 }

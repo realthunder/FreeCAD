@@ -159,7 +159,7 @@ TopoDS_Shape DrawComplexSection::makeCuttingTool(double dMax)
     //    Base::Console().Message("DCS::makeCuttingTool()\n");
     TopoDS_Wire profileWire = makeProfileWire();
     if (profileWire.IsNull()) {
-        throw Base::RuntimeError("Can not make wire from cutting tool (1)");
+        THROWM(Base::RuntimeError, "Can not make wire from cutting tool (1)")
     }
 
     if (debugSection()) {
@@ -290,13 +290,13 @@ void DrawComplexSection::makeSectionCut(const TopoDS_Shape& baseShape)
         ComplexParams params;
         params.sectionCS = getSectionCS();
         if (!canBuild(params.sectionCS, CuttingToolWireObject.getValue())) {
-            throw Base::RuntimeError("Profile is parallel to Section Normal");
+            THROWM(Base::RuntimeError, "Profile is parallel to Section Normal")
         }
 
         //get a vector that describes the profile's orientation
         params.profileWire = makeProfileWire();
         if (params.profileWire.IsNull()) {
-            throw Base::RuntimeError("Can not make wire from cutting tool (2)");
+            THROWM(Base::RuntimeError, "Can not make wire from cutting tool (2)")
         }
 
         m_alignWatcher.reset(new QFutureWatcher<void>());

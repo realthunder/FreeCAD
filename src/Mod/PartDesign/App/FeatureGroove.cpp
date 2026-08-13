@@ -157,7 +157,7 @@ App::DocumentObjectExecReturn *Groove::execute()
                 upToFace.move(invObjLoc);
             }
             else
-                throw Base::RuntimeError("ProfileBased: Groove up to first is not yet supported");
+                THROWM(Base::RuntimeError, "ProfileBased: Groove up to first is not yet supported")
 
             TopoShape supportface = getSupportFace();
             supportface.move(invObjLoc);
@@ -238,7 +238,7 @@ Groove::RevolMethod Groove::methodFromString(const std::string& methodStr)
     if (methodStr == "TwoAngles")
         return RevolMethod::TwoDimensions;
 
-    throw Base::ValueError("Groove:: No such method");
+    THROWM(Base::ValueError, "Groove:: No such method")
     return RevolMethod::Dimension;
 }
 
@@ -269,7 +269,7 @@ void Groove::generateRevolution(TopoShape& revol,
         }
 
         if (fabs(angleTotal) < Precision::Angular())
-            throw Base::ValueError("Cannot create a revolution with zero angle.");
+            THROWM(Base::ValueError, "Cannot create a revolution with zero angle.")
 
         TopoShape from = sketchshape;
         if (method == RevolMethod::TwoDimensions || midplane) {
@@ -286,13 +286,13 @@ void Groove::generateRevolution(TopoShape& revol,
         try {
             revol.makERevolve(from, axis, angleTotal);
         }catch(Standard_Failure &) {
-            throw Base::RuntimeError("ProfileBased: RevolMaker failed! Could not revolve the sketch!");
+            THROWM(Base::RuntimeError, "ProfileBased: RevolMaker failed! Could not revolve the sketch!")
         }
     }
     else {
         std::stringstream str;
         str << "ProfileBased: Internal error: Unknown method for generateGroove()";
-        throw Base::RuntimeError(str.str());
+        THROWM(Base::RuntimeError, str.str())
     }
 }
 
@@ -316,7 +316,7 @@ void Groove::generateRevolution(TopoShape& revol,
                             axis, Mode, Modify);
             RevolMaker.Perform(TopoDS::Face(TopoDS::Face(uptoface.getShape())));
             if (!RevolMaker.IsDone())
-                throw Base::RuntimeError("ProfileBased: Up to face: Could not revolve the sketch!");
+                THROWM(Base::RuntimeError, "ProfileBased: Up to face: Could not revolve the sketch!")
 
             revol.makEShape(RevolMaker, {base, profileshape, supportface}, Part::OpCodes::Revolve);
             if (Mode == RevolMode::None)
@@ -328,7 +328,7 @@ void Groove::generateRevolution(TopoShape& revol,
     else {
         std::stringstream str;
         str << "ProfileBased: Internal error: Unknown method for generateRevolution()";
-        throw Base::RuntimeError(str.str());
+        THROWM(Base::RuntimeError, str.str())
     }
 }
 

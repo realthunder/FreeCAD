@@ -972,7 +972,7 @@ void MeshKernel::Read(std::istream& rclIn)
 
                 // make sure to have valid indices
                 if (v1 >= uCtPts || v2 >= uCtPts || v3 >= uCtPts) {
-                    throw Base::BadFormatError("Invalid data structure");
+                    THROWM(Base::BadFormatError, "Invalid data structure")
                 }
 
                 it._aulPoints[0] = v1;
@@ -987,13 +987,13 @@ void MeshKernel::Read(std::istream& rclIn)
 
                 // make sure to have valid indices
                 if (v1 >= uCtFts && v1 < open_edge) {
-                    throw Base::BadFormatError("Invalid data structure");
+                    THROWM(Base::BadFormatError, "Invalid data structure")
                 }
                 if (v2 >= uCtFts && v2 < open_edge) {
-                    throw Base::BadFormatError("Invalid data structure");
+                    THROWM(Base::BadFormatError, "Invalid data structure")
                 }
                 if (v3 >= uCtFts && v3 < open_edge) {
-                    throw Base::BadFormatError("Invalid data structure");
+                    THROWM(Base::BadFormatError, "Invalid data structure")
                 }
 
                 if (v1 < open_edge) {
@@ -1028,7 +1028,7 @@ void MeshKernel::Read(std::istream& rclIn)
         }
         catch (std::exception&) {
             // Special handling of std::length_error
-            throw Base::BadFormatError("Reading from stream failed");
+            THROWM(Base::BadFormatError, "Reading from stream failed")
         }
     }
     else {
@@ -1089,10 +1089,10 @@ void MeshKernel::Read(std::istream& rclIn)
         for (auto& it : facetArray) {
             for (int i = 0; i < 3; i++) {
                 if (it._aulPoints[i] >= uCtPts) {
-                    throw Base::BadFormatError("Invalid data structure");
+                    THROWM(Base::BadFormatError, "Invalid data structure")
                 }
                 if (it._aulNeighbours[i] < FACET_INDEX_MAX && it._aulNeighbours[i] >= uCtFts) {
-                    throw Base::BadFormatError("Invalid data structure");
+                    THROWM(Base::BadFormatError, "Invalid data structure")
                 }
             }
         }

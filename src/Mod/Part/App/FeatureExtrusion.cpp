@@ -157,9 +157,9 @@ bool Extrusion::fetchAxisLink(const App::PropertyLinkSub& axisLink, Base::Vector
     }
 
     if (axEdge.IsNull())
-        throw Base::ValueError("DirLink shape is null");
+        THROWM(Base::ValueError, "DirLink shape is null")
     if (axEdge.ShapeType() != TopAbs_EDGE)
-        throw Base::TypeError("DirLink shape is not an edge");
+        THROWM(Base::TypeError, "DirLink shape is not an edge")
 
     BRepAdaptor_Curve crv(TopoDS::Edge(axEdge));
     gp_Pnt startpoint;
@@ -171,7 +171,7 @@ bool Extrusion::fetchAxisLink(const App::PropertyLinkSub& axisLink, Base::Vector
             std::swap(startpoint, endpoint);
     }
     else {
-        throw Base::TypeError("DirLink edge is not a line.");
+        THROWM(Base::TypeError, "DirLink edge is not a line.")
     }
     basepoint.Set(startpoint.X(), startpoint.Y(), startpoint.Z());
     gp_Vec vec = gp_Vec(startpoint, endpoint);
@@ -194,7 +194,7 @@ ExtrusionHelper::Parameters Extrusion::computeFinalParameters()
         Base::Vector3d base;
         fetched = fetchAxisLink(this->DirLink, base, dir);
         if (!fetched)
-            throw Base::ValueError("DirMode is set to use edge, but no edge is linked.");
+            THROWM(Base::ValueError, "DirMode is set to use edge, but no edge is linked.")
         this->Dir.setValue(dir);
     } break;
     case dmNormal:
@@ -202,10 +202,10 @@ ExtrusionHelper::Parameters Extrusion::computeFinalParameters()
         this->Dir.setValue(dir);
         break;
     default:
-        throw Base::ValueError("Unexpected enum value");
+        THROWM(Base::ValueError, "Unexpected enum value")
     }
     if (dir.Length() < Precision::Confusion())
-        throw Base::ValueError("Direction is zero-length");
+        THROWM(Base::ValueError, "Direction is zero-length")
     result.dir = gp_Dir(dir.x, dir.y, dir.z);
     if (this->Reversed.getValue())
         result.dir.Reverse();
@@ -223,22 +223,22 @@ ExtrusionHelper::Parameters Extrusion::computeFinalParameters()
     }
 
     if (fabs(result.lengthFwd + result.lengthRev) < Precision::Confusion())
-        throw Base::ValueError("Total length of extrusion is zero.");
+        THROWM(Base::ValueError, "Total length of extrusion is zero.")
 
     result.solid = this->Solid.getValue();
 
     result.taperAngleFwd = this->TaperAngle.getValue() * M_PI / 180.0;
     if (fabs(result.taperAngleFwd) > M_PI * 0.5 - Precision::Angular())
-        throw Base::ValueError("Magnitude of taper angle matches or exceeds 90 degrees. That is too much.");
+        THROWM(Base::ValueError, "Magnitude of taper angle matches or exceeds 90 degrees. That is too much.")
     result.taperAngleRev = this->TaperAngleRev.getValue() * M_PI / 180.0;
     if (fabs(result.taperAngleRev) > M_PI * 0.5 - Precision::Angular())
-        throw Base::ValueError("Magnitude of taper angle matches or exceeds 90 degrees. That is too much.");
+        THROWM(Base::ValueError, "Magnitude of taper angle matches or exceeds 90 degrees. That is too much.")
     result.innerTaperAngleFwd = this->TaperInnerAngle.getValue() * M_PI / 180.0;
     if (fabs(result.innerTaperAngleFwd) > M_PI * 0.5 - Precision::Angular() )
-        throw Base::ValueError("Magnitude of inner taper angle matches or exceeds 90 degrees. That is too much.");
+        THROWM(Base::ValueError, "Magnitude of inner taper angle matches or exceeds 90 degrees. That is too much.")
     result.innerTaperAngleRev = this->TaperInnerAngleRev.getValue() * M_PI / 180.0;
     if (fabs(result.innerTaperAngleRev) > M_PI * 0.5 - Precision::Angular() )
-        throw Base::ValueError("Magnitude of inner taper angle matches or exceeds 90 degrees. That is too much.");
+        THROWM(Base::ValueError, "Magnitude of inner taper angle matches or exceeds 90 degrees. That is too much.")
 
     result.faceMakerClass = this->FaceMakerClass.getValue();
 
@@ -252,7 +252,7 @@ Base::Vector3d Extrusion::calculateShapeNormal(const App::PropertyLink& shapeLin
     TopoDS_Shape sh = Feature::getShape(shapeLink.getValue(), nullptr, false, &mat, &docobj);
 
     if (!docobj)
-        throw Base::ValueError("calculateShapeNormal: link is empty");
+        THROWM(Base::ValueError, "calculateShapeNormal: link is empty")
 
     //special case for sketches and the like: no matter what shape they have, use their local Z axis.
     if (docobj->isDerivedFrom(Part::Part2DObject::getClassTypeId())) {
@@ -268,7 +268,7 @@ Base::Vector3d Extrusion::calculateShapeNormal(const App::PropertyLink& shapeLin
     //find plane
     BRepLib_FindSurface planeFinder(sh, -1, /*OnlyPlane=*/true);
     if (!planeFinder.Found())
-        throw Base::ValueError("Can't find normal direction, because the shape is not on a plane.");
+        THROWM(Base::ValueError, "Can't find normal direction, because the shape is not on a plane.")
 
     //find plane normal and return result.
     GeomAdaptor_Surface surf(planeFinder.Surface());
@@ -394,7 +394,7 @@ void FaceMakerExtrusion::Build()
     this->myShape = TopoDS_Shape();
     TopoDS_Shape inputShape;
     if (mySourceShapes.empty())
-        throw Base::ValueError("No input shapes!");
+        THROWM(Base::ValueError, "No input shapes!")
     if (mySourceShapes.size() == 1){
         inputShape = mySourceShapes[0].getShape();
     } else {

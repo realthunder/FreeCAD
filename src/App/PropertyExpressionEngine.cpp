@@ -440,14 +440,14 @@ ObjectIdentifier PropertyExpressionEngine::canonicalPath(const ObjectIdentifier 
 
     // Am I owned by a DocumentObject?
     if (!docObj)
-        throw Base::RuntimeError("PropertyExpressionEngine must be owned by a DocumentObject.");
+        THROWM(Base::RuntimeError, "PropertyExpressionEngine must be owned by a DocumentObject.")
 
     int ptype;
     Property * prop = p.getProperty(&ptype);
 
     // p pointing to a property...?
     if (!prop)
-        throw Base::RuntimeError(p.resolveErrorString().c_str());
+        THROWM(Base::RuntimeError, p.resolveErrorString().c_str())
 
     if(ptype)
         return p;
@@ -569,7 +569,7 @@ void PropertyExpressionEngine::setValue(const ObjectIdentifier & path, std::shar
     if (expr) {
         std::string error = validateExpression(usePath, expr);
         if (!error.empty())
-            throw Base::RuntimeError(error.c_str());
+            THROWM(Base::RuntimeError, error.c_str())
         AtomicPropertyChange signaller(*this);
         expressions[usePath] = ExpressionInfo(expr);
         expressionChanged(usePath);
@@ -620,7 +620,7 @@ void PropertyExpressionEngine::buildGraph(const ExpressionMap & exprs,
         if(option!=ExecuteAll) {
             auto prop = expr.first.getProperty();
             if(!prop)
-                throw Base::RuntimeError("Path does not resolve to a property.");
+                THROWM(Base::RuntimeError, "Path does not resolve to a property.")
             bool is_output = prop->testStatus(App::Property::Output)||(prop->getType()&App::Prop_Output);
             if((is_output && option==ExecuteNonOutput) || (!is_output && option==ExecuteOutput))
                 continue;
@@ -649,7 +649,7 @@ void PropertyExpressionEngine::buildGraph(const ExpressionMap & exprs,
     if (has_cycle) {
         std::string s =  revNodes[src].toString() + " reference creates a cyclic dependency.";
 
-        throw Base::RuntimeError(s.c_str());
+        THROWM(Base::RuntimeError, s.c_str())
     }
 }
 
@@ -694,7 +694,7 @@ DocumentObjectExecReturn *App::PropertyExpressionEngine::execute(ExecuteOption o
     DocumentObject * docObj = freecad_dynamic_cast<DocumentObject>(getContainer());
 
     if (!docObj)
-        throw Base::RuntimeError("PropertyExpressionEngine must be owned by a DocumentObject.");
+        THROWM(Base::RuntimeError, "PropertyExpressionEngine must be owned by a DocumentObject.")
 
     if (running)
         return DocumentObject::StdReturn;
@@ -747,13 +747,13 @@ DocumentObjectExecReturn *App::PropertyExpressionEngine::execute(ExecuteOption o
         Property * prop = it->getProperty();
 
         if (!prop)
-            throw Base::RuntimeError("Path does not resolve to a property.");
+            THROWM(Base::RuntimeError, "Path does not resolve to a property.")
 
         DocumentObject* parent = freecad_dynamic_cast<DocumentObject>(prop->getContainer());
 
         /* Make sure property belongs to the same container as this PropertyExpressionEngine */
         if (parent != docObj)
-            throw Base::RuntimeError("Invalid property owner.");
+            THROWM(Base::RuntimeError, "Invalid property owner.")
 
         /* Set value of property */
         App::any value;
@@ -775,11 +775,11 @@ DocumentObjectExecReturn *App::PropertyExpressionEngine::execute(ExecuteOption o
             std::ostringstream ss;
             ss << "Invalid type '" << value.type().name() << "'";
             ss << "\nin binding '" << it->toString() << "'";
-            throw Base::TypeError(ss.str().c_str());
+            THROWM(Base::TypeError, ss.str().c_str())
         }catch(std::exception &e) {
             std::ostringstream ss;
             ss << e.what() << "\nin binding '" << it->toString() << "'";
-            throw Base::RuntimeError(ss.str().c_str());
+            THROWM(Base::RuntimeError, ss.str().c_str())
         }
     }
     return DocumentObject::StdReturn;
@@ -941,7 +941,7 @@ PyObject *PropertyExpressionEngine::getPyObject()
 
 void PropertyExpressionEngine::setPyObject(PyObject *)
 {
-    throw Base::RuntimeError("Property is read-only");
+    THROWM(Base::RuntimeError, "Property is read-only")
 }
 
 /* The policy implemented in the following function is to auto erase binding in
@@ -995,7 +995,7 @@ bool PropertyExpressionEngine::adjustLink(const std::set<DocumentObject*> &inLis
             std::ostringstream ss;
             ss << "Failed to adjust link for " << owner->getFullName() << " in expression "
                 << v.second.expression->toString() << ": " << e.what();
-            throw Base::RuntimeError(ss.str());
+            THROWM(Base::RuntimeError, ss.str())
         }
     }
     return true;

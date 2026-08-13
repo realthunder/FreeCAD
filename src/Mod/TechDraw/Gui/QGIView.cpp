@@ -72,7 +72,6 @@ const float labelCaptionFudge = 0.2f;   // temp fiddle for devel
 QGIView::QGIView()
     :inherited(),
      viewObj(nullptr),
-     m_locked(false),
      m_innerView(false),
      m_multiselectActivated(false)
 {
@@ -166,11 +165,6 @@ QVariant QGIView::itemChange(GraphicsItemChange change, const QVariant &value)
 //    Base::Console().Message("QGIV::itemChange(%d)\n", change);
     if(change == ItemPositionChange && scene()) {
         newPos = value.toPointF();            //position within parent!
-        if(m_locked){
-            newPos.setX(pos().x());
-            newPos.setY(pos().y());
-            return newPos;
-        }
 
         TechDraw::DrawView *viewObj = getViewObject();
 

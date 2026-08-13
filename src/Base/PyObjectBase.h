@@ -513,7 +513,7 @@ inline PyObject * PyAsUnicodeObject(const char *str)
     Py_ssize_t len = Py_SAFE_DOWNCAST(strlen(str), size_t, Py_ssize_t);
     PyObject *p = PyUnicode_DecodeUTF8(str, len, nullptr);
     if (!p) {
-        throw Base::UnicodeError("UTF8 conversion failure at PyAsUnicodeString()");
+        THROWM(Base::UnicodeError, "UTF8 conversion failure at PyAsUnicodeString()")
     }
     return p;
 }
@@ -537,9 +537,9 @@ inline void PyTypeCheck(PyObject** ptr, PyTypeObject* type, const char* msg=null
         if (!msg) {
             std::stringstream str;
             str << "Type must be " << type->tp_name << " or None, not " << (*ptr)->ob_type->tp_name;
-            throw Base::TypeError(str.str());
+            THROWM(Base::TypeError, str.str())
         }
-        throw Base::TypeError(msg);
+        THROWM(Base::TypeError, msg)
     }
 }
 
@@ -550,7 +550,7 @@ inline void PyTypeCheck(PyObject** ptr, int (*method)(PyObject*), const char* ms
         return;
     }
     if (!method(*ptr)) {
-        throw Base::TypeError(msg);
+        THROWM(Base::TypeError, msg)
     }
 }
 

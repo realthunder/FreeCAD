@@ -922,7 +922,7 @@ void ViewProviderSketch::getCoordsOnSketchPlane(const SbVec3f& point, const SbVe
     // line
     Base::Vector3d R1(v1), RA(dir);
     if (fabs(RN * RA) < FLT_EPSILON)
-        throw Base::ZeroDivisionError("View direction is parallel to sketch plane");
+        THROWM(Base::ZeroDivisionError, "View direction is parallel to sketch plane")
     // intersection point on plane
     Base::Vector3d S = R1 + ((RN * (R0 - R1)) / (RN * RA)) * RA;
 

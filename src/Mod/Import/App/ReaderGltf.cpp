@@ -75,7 +75,7 @@ void ReaderGltf::read(Handle(TDocStd_Document) hDoc)
 
 #else
     boost::ignore_unused(hDoc);
-    throw Base::RuntimeError("gITF support requires OCCT 7.5.0 or later");
+    THROWM(Base::RuntimeError, "gITF support requires OCCT 7.5.0 or later")
 #endif
 }
 

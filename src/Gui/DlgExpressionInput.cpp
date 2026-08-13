@@ -180,7 +180,7 @@ void NumberRange::throwIfOutOfRange(const Base::Quantity& value) const
         QString maxStr = maxVal.getUserString();
         QString error = QStringLiteral("Value out of range (%1 out of [%2, %3])").arg(valStr, minStr, maxStr);
 
-        throw Base::ValueError(error.toStdString());
+        THROWM(Base::ValueError, error.toStdString())
     }
 }
 
@@ -233,7 +233,7 @@ void DlgExpressionInput::onTimer()
             std::string error = path.getDocumentObject()->ExpressionEngine.validateExpression(path, expr);
 
             if (!error.empty())
-                throw Base::RuntimeError(error.c_str());
+                THROWM(Base::RuntimeError, error.c_str())
 
             std::unique_ptr<Expression> result(expr->eval());
 
@@ -248,11 +248,11 @@ void DlgExpressionInput::onTimer()
                 QString msg = value.getUserString();
 
                 if (!value.isValid()) {
-                    throw Base::ValueError("Not a number");
+                    THROWM(Base::ValueError, "Not a number")
                 }
                 else if (!impliedUnit.isEmpty()) {
                     if (!value.getUnit().isEmpty() && value.getUnit() != impliedUnit)
-                        throw Base::UnitsMismatchError("Unit mismatch between result and required unit");
+                        THROWM(Base::UnitsMismatchError, "Unit mismatch between result and required unit")
 
                     value.setUnit(impliedUnit);
 

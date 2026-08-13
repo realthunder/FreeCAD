@@ -264,7 +264,7 @@ bool TechDraw::checkGeometryOccurences(StringVector subNames, GeomCountMap keyed
         auto itAccept = keyedMinimumCounts.find(currentKey);
         if (itAccept == keyedMinimumCounts.end()) {
             //not supposed to happen by this point
-            throw Base::IndexError("Dimension validation counts and geometry do not match");
+            THROWM(Base::IndexError, "Dimension validation counts and geometry do not match")
         }
         if (foundCount < keyedMinimumCounts[currentKey]) {
             //not enough of this type of geom to make a good dimension - ex 1 Vertex
@@ -351,7 +351,7 @@ GeomCountMap TechDraw::loadRequiredCounts(StringVector& acceptableGeometry,
                                           std::vector<int>& minimumCounts)
 {
     if (acceptableGeometry.size() != minimumCounts.size()) {
-        throw Base::IndexError("acceptableGeometry and minimum counts have different sizes.");
+        THROWM(Base::IndexError, "acceptableGeometry and minimum counts have different sizes.")
     }
 
     GeomCountMap result;
@@ -424,7 +424,7 @@ DimensionGeometryType TechDraw::isValidSingleEdge3d(DrawViewPart* dvp, Reference
 
     TopoDS_Shape refShape = ref.getGeometry();
     if (refShape.IsNull() || refShape.ShapeType() != TopAbs_EDGE) {
-        throw Base::RuntimeError("Geometry for reference is not an edge.");
+        THROWM(Base::RuntimeError, "Geometry for reference is not an edge.")
     }
 
     TopoDS_Edge occEdge = TopoDS::Edge(refShape);
@@ -473,7 +473,7 @@ DimensionGeometryType TechDraw::isValidMultiEdge(ReferenceVector refs)
     auto objFeat0(dynamic_cast<TechDraw::DrawViewPart*>(refs.at(0).getObject()));
     if (!objFeat0) {
         //probably redundant
-        throw Base::RuntimeError("Logic error in isValidMultiEdge");
+        THROWM(Base::RuntimeError, "Logic error in isValidMultiEdge")
     }
 
     //they all must start with "Edge"
@@ -582,7 +582,7 @@ DimensionGeometryType TechDraw::isValidVertexes(ReferenceVector refs)
     TechDraw::DrawViewPart* dvp(dynamic_cast<TechDraw::DrawViewPart*>(refs.front().getObject()));
     if (!dvp) {
         //probably redundant
-        throw Base::RuntimeError("Logic error in isValidMultiEdge");
+        THROWM(Base::RuntimeError, "Logic error in isValidMultiEdge")
     }
 
     if (refs.size() == 2) {

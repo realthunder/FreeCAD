@@ -125,7 +125,6 @@ public:
 
 
     void alignTo(QGraphicsItem*, const QString &alignment);
-    void setLocked(bool isLocked) { m_locked = isLocked; }
 
     QColor prefNormalColor(); //preference
     QColor getNormalColor() { return m_colNormal; }  //current setting
@@ -188,7 +187,6 @@ private:
     std::string viewName;
 
     QHash<QString, QGraphicsItem*> alignHash;
-    bool m_locked;
     bool m_innerView;                                                  //View is inside another View
     bool m_multiselectActivated;
 

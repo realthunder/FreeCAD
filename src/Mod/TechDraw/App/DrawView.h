@@ -29,6 +29,7 @@
 
 #include <App/DocumentObject.h>
 #include <App/FeaturePython.h>
+#include <App/PropertyLinks.h>
 #include <App/PropertyUnits.h>
 #include <Mod/TechDraw/TechDrawGlobal.h>
 
@@ -38,6 +39,7 @@ namespace TechDraw
 
 class DrawPage;
 class DrawViewClip;
+class DrawViewCollection;
 class DrawLeaderLine;
 /*class CosmeticVertex;*/
 
@@ -74,6 +76,16 @@ public:
 
     bool isInClip();
     DrawViewClip* getClipGroup();
+
+    //! the link naming the view that owns this one, for the types that have such a link.
+    //! Overriding it is all a view type needs to do to be drawn inside its owner.
+    virtual App::PropertyLink* getOwnerProperty() { return nullptr; }
+    //! the collection this view is a member of, if any
+    DrawViewCollection* getCollection() const;
+    //! the view this one is drawn inside: its owner if it has one, otherwise the
+    //! collection it belongs to. Answered from the document, so it does not depend on
+    //! anything having been drawn yet.
+    DrawView* claimParent() const;
 
     /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override {

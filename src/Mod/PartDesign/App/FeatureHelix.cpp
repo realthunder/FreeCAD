@@ -259,7 +259,7 @@ TopoDS_Shape Helix::generateHelixPath(double startOffset0)
     if (radius < Precision::Confusion()) {
         // in this case ensure that axis is not in the sketch plane
         if (fabs(axisVector * normal) < Precision::Confusion())
-            throw Base::ValueError("Error: Result is self intersecting");
+            THROWM(Base::ValueError, "Error: Result is self intersecting")
         radius = 1000.0; //fallback to radius 1000
     }
 

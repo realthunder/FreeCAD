@@ -61,10 +61,10 @@ std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<Part::TopoShap
 {
     App::DocumentObject* refObject = MirrorPlane.getValue();
     if (!refObject)
-        throw Base::ValueError("No mirror plane reference specified");
+        THROWM(Base::ValueError, "No mirror plane reference specified")
     std::vector<std::string> subStrings = MirrorPlane.getSubValues();
     if (subStrings.empty())
-        throw Base::ValueError("No mirror plane reference specified");
+        THROWM(Base::ValueError, "No mirror plane reference specified")
 
     gp_Pnt axbase;
     gp_Dir axdir;
@@ -104,21 +104,21 @@ std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<Part::TopoShap
         axdir = gp_Dir(dir.x, dir.y, dir.z);
     } else if (refObject->isDerivedFrom<Part::Feature>()) {
         if (subStrings[0].empty())
-            throw Base::ValueError("No direction reference specified");
+            THROWM(Base::ValueError, "No direction reference specified")
         Part::TopoShape baseShape = static_cast<Part::Feature*>(refObject)->Shape.getShape();
         // TODO: Check for multiple mirror planes?
         TopoDS_Shape shape = baseShape.getSubShape(subStrings[0].c_str());
         TopoDS_Face face = TopoDS::Face(shape);
         if (face.IsNull())
-            throw Base::ValueError("Failed to extract mirror plane");
+            THROWM(Base::ValueError, "Failed to extract mirror plane")
         BRepAdaptor_Surface adapt(face);
         if (adapt.GetType() != GeomAbs_Plane)
-            throw Base::TypeError("Mirror face must be planar");
+            THROWM(Base::TypeError, "Mirror face must be planar")
 
         axbase = getPointFromFace(face);
         axdir = adapt.Plane().Axis().Direction();
     } else {
-        throw Base::ValueError("Mirror plane reference must be a sketch axis, a face of a feature or a datum plane");
+        THROWM(Base::ValueError, "Mirror plane reference must be a sketch axis, a face of a feature or a datum plane")
     }
 
     TopLoc_Location invObjLoc = this->getLocation().Inverted();

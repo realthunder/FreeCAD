@@ -101,6 +101,14 @@ public:
      */
     bool titleBarToolBars() const;
 
+    /*! Put the keyboard on the menu bar, unfolding it first if it is folded
+     * behind the title bar logo: the first menu is highlighted, and the arrow
+     * keys walk the row from there without opening anything. This is what
+     * Std_ShowMenuBar and the Alt key both come down to. Returns false if
+     * there is no menu bar to show.
+     */
+    bool activateMenuBar();
+
     /*! Put the window chrome where MainWindow/CustomTitleBar and
      * MainWindow/TitleBarToolBars now say it goes. A preference pack -- which
      * is what a theme is -- carries both, so this is how a theme decides which

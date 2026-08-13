@@ -2156,7 +2156,7 @@ void MeshObject::addSegment(const std::vector<FacetIndex>& inds)
     unsigned long maxIndex = getKernel().CountFacets();
     for (FacetIndex it : inds) {
         if (it >= maxIndex) {
-            throw Base::IndexError("Index out of range");
+            THROWM(Base::IndexError, "Index out of range")
         }
     }
 

@@ -37,6 +37,8 @@
 #include <QTimer>
 #include <QTreeWidget>
 #include <QWidgetAction>
+#include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #endif
@@ -48,7 +50,9 @@
 #include "BitmapFactory.h"
 #include "MDIView.h"
 #include "MainWindow.h"
+#include "MessageCollapse.h"
 #include "NotificationBox.h"
+#include "ReportViewParams.h"
 
 #include "NotificationArea.h"
 
@@ -355,7 +359,9 @@ public:
     NotificationItem(Base::LogStyle notificationtype, QString notifiername, QString message)
         : notificationType(notificationtype),
           notifierName(std::move(notifiername)),
-          msg(std::move(message))
+          msg(std::move(message)),
+          msgKey(messageCollapseKey(
+              msg, static_cast<int>(ReportViewParams::getDuplicateKeyLength())))
     {}
 
     QVariant data(int column, int role) const override
@@ -408,8 +414,9 @@ public:
         repetitions++;
     }
 
-    bool isRepeated(Base::LogStyle notificationtype, const QString & notifiername, const QString & message ) const {
-        return (notificationType == notificationtype && notifierName == notifiername && msg == message);
+    //! same notifier, same level, and a message that only differs where digits do
+    bool isRepeated(Base::LogStyle notificationtype, const QString & notifiername, std::size_t key ) const {
+        return (notificationType == notificationtype && notifierName == notifiername && msgKey == key);
     }
 
     bool isType(Base::LogStyle notificationtype) const {
@@ -473,6 +480,7 @@ private:
     Base::LogStyle notificationType;
     QString notifierName;
     QString msg;
+    std::size_t msgKey;
 
     bool unread = true;   // item is unread in the Notification Area Widget
     bool notifying = true;// item is to be notified or being notified as non-intrusive message
@@ -649,22 +657,29 @@ public:
         deleteItem(count() - 1);
     }
 
-    /// checks if last notification is the same
-    bool isSameNotification(const QString& notifiername, const QString& message,
-                            Base::LogStyle level) const {
-        if(count() > 0) { // if not empty
-            //NOLINTNEXTLINE
-            auto item = static_cast<NotificationItem*>(getItem(0));
-            return item->isRepeated(level,notifiername,message);
+    /// the recent notification this one repeats, if any
+    ///
+    /// The most recent DuplicateWindow entries are searched, not just the last
+    /// one: messages that flood tend to take turns, and against a single slot
+    /// two alternating messages defeat the collapsing entirely. The Report view
+    /// keys and windows repeats the same way.
+    NotificationItem* findRepeated(const QString& notifiername, const QString& message,
+                                   Base::LogStyle level) const {
+        const int window = static_cast<int>(ReportViewParams::getDuplicateWindow());
+        if (window <= 0) {
+            return nullptr;
         }
-
-        return false;
-    }
-
-    void resetLastNotificationStatus() {
-        //NOLINTNEXTLINE
-        auto item = static_cast<NotificationItem*>(getItem(0));
-        item->addRepetition();
+        const std::size_t key = messageCollapseKey(
+            message, static_cast<int>(ReportViewParams::getDuplicateKeyLength()));
+        const int last = std::min<int>(window, static_cast<int>(count()));
+        for (int i = 0; i < last; ++i) {
+            //NOLINTNEXTLINE
+            auto item = static_cast<NotificationItem*>(getItem(i));
+            if (item->isRepeated(level, notifiername, key)) {
+                return item;
+            }
+        }
+        return nullptr;
     }
 
     /// pushes a notification item to the front
@@ -1064,7 +1079,7 @@ void NotificationArea::pushNotification(const QString& notifiername, const QStri
         na->deleteLastItem();
     }
 
-    auto repeated = na->isSameNotification(notifiername, message, level);
+    auto repeated = na->findRepeated(notifiername, message, level);
 
     if(!repeated) {
         auto itemptr = std::make_unique<NotificationItem>(level, notifiername, message);
@@ -1083,7 +1098,7 @@ void NotificationArea::pushNotification(const QString& notifiername, const QStri
         }
     }
     else {
-        na->resetLastNotificationStatus();
+        repeated->addRepetition();
     }
 
     // start or restart rate control (the timer is rearmed if not yet expired, expiration triggers

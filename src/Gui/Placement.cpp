@@ -796,7 +796,7 @@ void Placement::bindObject(App::PropertyPlacement * prop)
     if (prop) {
         obj = Base::freecad_dynamic_cast<App::DocumentObject>(prop->getContainer());
         if (!obj || !prop->hasName())
-            throw Base::RuntimeError("Invalid property binding for placement");
+            THROWM(Base::RuntimeError, "Invalid property binding for placement")
         selectionObjects.clear();
         handler.setPropertyName(prop->getName());
     }

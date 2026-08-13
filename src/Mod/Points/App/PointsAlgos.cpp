@@ -60,7 +60,7 @@ void PointsAlgos::Load(PointKernel& points, const char* FileName)
         LoadAscii(points, FileName);
     }
     else {
-        throw Base::RuntimeError("Unknown ending");
+        THROWM(Base::RuntimeError, "Unknown ending")
     }
 }
 
@@ -111,7 +111,7 @@ void PointsAlgos::LoadAscii(PointKernel& points, const char* FileName)
     }
     catch (...) {
         points.clear();
-        throw Base::BadFormatError("Reading in points failed.");
+        THROWM(Base::BadFormatError, "Reading in points failed.")
     }
 
     // now remove the last points from the kernel
@@ -752,7 +752,7 @@ std::size_t PlyReader::readHeader(std::istream& in,
         str >> kw;
         if (kw == "format") {
             if (list.size() != 3) {
-                throw Base::BadFormatError("Not a valid ply file");
+                THROWM(Base::BadFormatError, "Not a valid ply file")
             }
 
             std::string format_string = list[1];
@@ -769,16 +769,16 @@ std::size_t PlyReader::readHeader(std::istream& in,
             }
             else {
                 // wrong format version
-                throw Base::BadFormatError("Wrong format version");
+                THROWM(Base::BadFormatError, "Wrong format version")
             }
             if (version != "1.0") {
                 // wrong version
-                throw Base::BadFormatError("Wrong version number");
+                THROWM(Base::BadFormatError, "Wrong version number")
             }
         }
         else if (kw == "element") {
             if (list.size() != 3) {
-                throw Base::BadFormatError("Not a valid ply file");
+                THROWM(Base::BadFormatError, "Not a valid ply file")
             }
 
             std::string name = list[1];
@@ -800,7 +800,7 @@ std::size_t PlyReader::readHeader(std::istream& in,
         }
         else if (kw == "property") {
             if (list.size() < 3) {
-                throw Base::BadFormatError("Not a valid ply file");
+                THROWM(Base::BadFormatError, "Not a valid ply file")
             }
 
             std::string name = list.back();
@@ -843,7 +843,7 @@ std::size_t PlyReader::readHeader(std::istream& in,
                 }
                 else {
                     // no valid number type
-                    throw Base::BadFormatError("Not a valid number type");
+                    THROWM(Base::BadFormatError, "Not a valid number type")
                 }
 
                 if (element == "vertex") {
@@ -863,7 +863,7 @@ std::size_t PlyReader::readHeader(std::istream& in,
     }
 
     if (fields.size() != sizes.size() || fields.size() != types.size()) {
-        throw Base::BadFormatError("");
+        THROWM(Base::BadFormatError, "")
     }
 
     offset = 0;
@@ -948,7 +948,7 @@ void PlyReader::readBinary(bool swapByteOrder,
                     converters.push_back(convert_uint8);
                 }
                 else {
-                    throw Base::BadFormatError("Unexpected type");
+                    THROWM(Base::BadFormatError, "Unexpected type")
                 }
                 break;
             case 2:
@@ -959,7 +959,7 @@ void PlyReader::readBinary(bool swapByteOrder,
                     converters.push_back(convert_uint16);
                 }
                 else {
-                    throw Base::BadFormatError("Unexpected type");
+                    THROWM(Base::BadFormatError, "Unexpected type")
                 }
                 break;
             case 4:
@@ -973,7 +973,7 @@ void PlyReader::readBinary(bool swapByteOrder,
                     converters.push_back(convert_float32);
                 }
                 else {
-                    throw Base::BadFormatError("Unexpected type");
+                    THROWM(Base::BadFormatError, "Unexpected type")
                 }
                 break;
             case 8:
@@ -981,11 +981,11 @@ void PlyReader::readBinary(bool swapByteOrder,
                     converters.push_back(convert_float64);
                 }
                 else {
-                    throw Base::BadFormatError("Unexpected type");
+                    THROWM(Base::BadFormatError, "Unexpected type")
                 }
                 break;
             default:
-                throw Base::BadFormatError("Unexpected type");
+                THROWM(Base::BadFormatError, "Unexpected type")
         }
 
         neededSize += converters.back()->getSizeOf();
@@ -999,7 +999,7 @@ void PlyReader::readBinary(bool swapByteOrder,
         ulSize = buf->pubseekoff(0, std::ios::end, std::ios::in);
         buf->pubseekoff(ulCurr, std::ios::beg, std::ios::in);
         if (ulCurr + neededSize * static_cast<std::streamoff>(numPoints) > ulSize) {
-            throw Base::BadFormatError("File expects too many elements");
+            THROWM(Base::BadFormatError, "File expects too many elements")
         }
     }
 
@@ -1054,7 +1054,7 @@ void PcdReader::read(const std::string& filename)
             readBinary(true, istr, types, sizes, data);
         }
         else {
-            throw Base::BadFormatError("Failed to decompress binary data");
+            THROWM(Base::BadFormatError, "Failed to decompress binary data")
         }
     }
 
@@ -1246,7 +1246,7 @@ std::size_t PcdReader::readHeader(std::istream& in,
     std::size_t size = w * h;
     if (fields.size() != sizes.size() || fields.size() != types.size()
         || fields.size() != counts.size() || points != size) {
-        throw Base::BadFormatError("");
+        THROWM(Base::BadFormatError, "")
     }
 
     return points;
@@ -1310,7 +1310,7 @@ void PcdReader::readBinary(bool transpose,
                     converters.push_back(convert_uint8);
                 }
                 else {
-                    throw Base::BadFormatError("Unexpected type");
+                    THROWM(Base::BadFormatError, "Unexpected type")
                 }
                 break;
             case 2:
@@ -1321,7 +1321,7 @@ void PcdReader::readBinary(bool transpose,
                     converters.push_back(convert_uint16);
                 }
                 else {
-                    throw Base::BadFormatError("Unexpected type");
+                    THROWM(Base::BadFormatError, "Unexpected type")
                 }
                 break;
             case 4:
@@ -1335,7 +1335,7 @@ void PcdReader::readBinary(bool transpose,
                     converters.push_back(convert_float32);
                 }
                 else {
-                    throw Base::BadFormatError("Unexpected type");
+                    THROWM(Base::BadFormatError, "Unexpected type")
                 }
                 break;
             case 8:
@@ -1343,11 +1343,11 @@ void PcdReader::readBinary(bool transpose,
                     converters.push_back(convert_float64);
                 }
                 else {
-                    throw Base::BadFormatError("Unexpected type");
+                    THROWM(Base::BadFormatError, "Unexpected type")
                 }
                 break;
             default:
-                throw Base::BadFormatError("Unexpected type");
+                THROWM(Base::BadFormatError, "Unexpected type")
         }
 
         neededSize += converters.back()->getSizeOf();
@@ -1361,7 +1361,7 @@ void PcdReader::readBinary(bool transpose,
         ulSize = buf->pubseekoff(0, std::ios::end, std::ios::in);
         buf->pubseekoff(ulCurr, std::ios::beg, std::ios::in);
         if (ulCurr + neededSize * static_cast<std::streamoff>(numPoints) > ulSize) {
-            throw Base::BadFormatError("File expects too many elements");
+            THROWM(Base::BadFormatError, "File expects too many elements")
         }
     }
 
@@ -1627,7 +1627,7 @@ private:
                       const Base::Placement& plm)
     {
         if (proto.cnt_xyz != 3) {
-            throw Base::BadFormatError("Missing channels xyz");
+            THROWM(Base::BadFormatError, "Missing channels xyz")
         }
         unsigned count;
         unsigned cnt_pts = 0;
@@ -1790,7 +1790,7 @@ void E57Reader::read(const std::string& filename)
         throw;
     }
     catch (...) {
-        throw Base::BadFormatError("Reading E57 file failed");
+        THROWM(Base::BadFormatError, "Reading E57 file failed")
     }
 }
 

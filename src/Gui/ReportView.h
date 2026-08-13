@@ -35,6 +35,7 @@ class QTabWidget;
 
 namespace Gui {
 class PythonConsole;
+struct TextBlockData;
 namespace DockWnd {
 
 class ReportOutput;
@@ -164,6 +165,10 @@ public:
 protected:
     /** For internal use only */
     void customEvent ( QEvent* ev ) override;
+    /** Expands a collapsed line into the messages it stood in for */
+    void mousePressEvent(QMouseEvent* ev) override;
+    /** Points the cursor at a collapsed line */
+    void mouseMoveEvent(QMouseEvent* ev) override;
     /** Handles the change of style sheets */
     void changeEvent(QEvent *) override;
     /** Pops up the context menu with some extensions */
@@ -172,6 +177,8 @@ protected:
     bool event(QEvent* event) override;
 
 public Q_SLOTS:
+    /** Show every duplicate line held back so far, with its repeat count. */
+    void flushDuplicates();
     /** Save the report messages into a file. */
     void onSaveAs();
     /** Toggles the report of errors. */
@@ -202,6 +209,22 @@ public Q_SLOTS:
     void onToggleGoToEnd();
 
 private:
+    /** Hold back a line that repeats one of the last few shown; true when held. */
+    bool holdDuplicate(ReportHighlighter::Paragraph type, const QString& text);
+    /** Put one line into the view, batching as the report view always has.
+     * Passing the messages it stands in for makes it a collapsed line: it skips
+     * the batching so it gets a block of its own, and becomes expandable.
+     */
+    void appendReport(ReportHighlighter::Paragraph messageType, const QString& message,
+                      const QStringList* folded = nullptr);
+    /** Write out whatever the batching is holding. */
+    void writePending();
+    /** Hang the held messages on the line shown in their place. */
+    void keepFolded(const QTextBlock& block, ReportHighlighter::Paragraph type,
+                    const QStringList& folded);
+    /** The held messages behind the collapsed line at this point, if any. */
+    TextBlockData* foldedAt(const QPoint& pos) const;
+
     class Data;
     Data* d;
     bool gotoEnd;

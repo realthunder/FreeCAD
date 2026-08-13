@@ -248,7 +248,7 @@ private:
         TopoDS_Shape offsetShape = mkOffset.Shape();
 
         if (offsetShape.IsNull()) {
-            throw Base::CADKernelError("makeOffset2D: result of offsetting is null!");
+            THROWM(Base::CADKernelError, "makeOffset2D: result of offsetting is null!")
         }
 
         // Copying shape to fix strange orientation behavior, OCC7.0.0. See bug #2699

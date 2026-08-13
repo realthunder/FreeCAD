@@ -101,7 +101,7 @@ void SoFCOffscreenRenderer::writeToImageFile(const char* filename, const char* c
     if (image.isNull()) {
         std::stringstream str;
         str << "Cannot save null image.";
-        throw Base::ValueError(str.str());
+        THROWM(Base::ValueError, str.str())
     }
 
     Base::FileInfo file(filename);
@@ -130,7 +130,7 @@ void SoFCOffscreenRenderer::writeToImageFile(const char* filename, const char* c
         else {
             std::stringstream str;
             str << "Cannot open file '" << filename << "' for writing.";
-            throw Base::FileSystemError(str.str());
+            THROWM(Base::FileSystemError, str.str())
         }
     }
     else {
@@ -173,7 +173,7 @@ void SoFCOffscreenRenderer::writeToImageFile(const char* filename, const char* c
                     f.close();
                     std::stringstream str;
                     str << "Cannot save image to file '" << filename << "'.";
-                    throw Base::ValueError(str.str());
+                    THROWM(Base::ValueError, str.str())
                 }
             }
             else {

@@ -275,7 +275,7 @@ bool MeshInput::LoadFormat(std::istream& str, MeshIO::Format fmt)
         case MeshIO::NAS:
             return LoadNastran(str);
         default:
-            throw Base::FileException("Unsupported file format");
+            THROWM(Base::FileException, "Unsupported file format")
     }
 }
 
@@ -2069,7 +2069,7 @@ bool MeshOutput::SaveFormat(std::ostream& str, MeshIO::Format fmt) const
         case MeshIO::ASY:
             return SaveAsymptote(str);
         default:
-            throw Base::FileException("Unsupported file format");
+            THROWM(Base::FileException, "Unsupported file format")
     }
 }
 

@@ -229,6 +229,7 @@ SET(FreeCADBase_CPP_SRCS
     Console.cpp
     ConsoleObserver.cpp
     CoordinateSystem.cpp
+    CrashLog.cpp
     CoordinateSystemPyImp.cpp
     Debugger.cpp
     DualQuaternion.cpp
@@ -302,6 +303,7 @@ SET(FreeCADBase_HPP_SRCS
     ConsoleObserver.h
     Converter.h
     CoordinateSystem.h
+    CrashLog.h
     Debugger.h
     DualNumber.h
     DualQuaternion.h

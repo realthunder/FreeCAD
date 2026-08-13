@@ -104,7 +104,7 @@ Base::Quantity PropertyQuantity::createQuantityFromPy(PyObject *value)
     else {
         std::string error = std::string("wrong type as quantity: ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 
     return quant;
@@ -132,7 +132,7 @@ void PropertyQuantity::setPyObject(PyObject *value)
         }
 
         if (unit != _Unit)
-            throw Base::UnitsMismatchError("Not matching Unit!");
+            THROWM(Base::UnitsMismatchError, "Not matching Unit!")
 
         PropertyFloat::setValue(quant.getValue());
     }
@@ -252,7 +252,7 @@ void PropertyQuantityConstraint::setPyObject(PyObject *value)
     }
 
     if (unit != _Unit)
-        throw Base::UnitsMismatchError("Not matching Unit!");
+        THROWM(Base::UnitsMismatchError, "Not matching Unit!")
 
     PropertyFloat::setValue(quant.getValue()); // clazy:exclude=skipped-base-method
 }

@@ -1259,7 +1259,7 @@ private:
             else if (boost::iequals(style, "curved"))
                 s = TopoShape::FillingStyle_Curved;
             else if (!boost::iequals(style, "stretch"))
-                throw Base::ValueError("invalid style");
+                THROWM(Base::ValueError, "invalid style")
         }
         return shape2pyshape(TopoShape().makEBSplineFace(getPyShapes(obj),s,PyObject_IsTrue(keepBezier),op));
     }

@@ -294,7 +294,7 @@ bool TaskDlgFemConstraint::accept()
 
         Gui::Command::doCommand(Gui::Command::Doc, "App.ActiveDocument.recompute()");
         if (!ConstraintView->getObject()->isValid()) {
-            throw Base::RuntimeError(ConstraintView->getObject()->getStatusString());
+            THROWM(Base::RuntimeError, ConstraintView->getObject()->getStatusString())
         }
         Gui::Command::doCommand(Gui::Command::Gui, "Gui.activeDocument().resetEdit()");
         Gui::Command::commitCommand();

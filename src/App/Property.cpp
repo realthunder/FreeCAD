@@ -434,10 +434,10 @@ void PropertyListsBase::_setPyObject(PyObject *value) {
             const auto &item = *it;
             PyObject *key = item.first.ptr();
             if(!PyLong_Check(key))
-                throw Base::TypeError("expect key type to be integer");
+                THROWM(Base::TypeError, "expect key type to be integer")
             long idx = PyLong_AsLong(key);
             if(idx<-1 || idx>listSize)
-                throw Base::ValueError("index out of bound");
+                THROWM(Base::ValueError, "index out of bound")
             if(idx==-1 || idx==listSize) {
                 idx = listSize;
                 ++listSize;

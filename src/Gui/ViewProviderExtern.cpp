@@ -103,7 +103,7 @@ void ViewProviderExtern::setModeBySoInput(const char* name, SoInput &ivFileInput
         }
     }
     else {
-        throw Base::RuntimeError("No valid Inventor input");
+        THROWM(Base::RuntimeError, "No valid Inventor input")
     }
 
     return;

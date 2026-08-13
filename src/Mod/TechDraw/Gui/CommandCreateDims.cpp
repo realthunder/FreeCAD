@@ -1289,7 +1289,7 @@ void CmdTechDrawLandmarkDimension::activated(int iMsg)
 
     dim = dynamic_cast<TechDraw::LandmarkDimension*>(getDocument()->getObject(FeatName.c_str()));
     if (!dim) {
-        throw Base::TypeError("CmdTechDrawLandmarkDimension - dim not found\n");
+        THROWM(Base::TypeError, "CmdTechDrawLandmarkDimension - dim not found\n")
     }
     dim->References2D.setValues(refs2d, subs);
     dim->References3D.setValues(objects, subs);
@@ -1349,7 +1349,7 @@ DrawViewDimension* dimensionMaker(TechDraw::DrawViewPart* dvp,
     dim = Base::freecad_dynamic_cast<TechDraw::DrawViewDimension>(
             dvp->getDocument()->getObject(dimName.c_str()));
     if (!dim) {
-        throw Base::TypeError("CmdTechDrawNewDiameterDimension - dim not found\n");
+        THROWM(Base::TypeError, "CmdTechDrawNewDiameterDimension - dim not found\n")
     }
 
     Gui::cmdAppObjectArgs(dim, "translateLabel('DrawViewDimension', 'Dimension', '%s')", dimName);

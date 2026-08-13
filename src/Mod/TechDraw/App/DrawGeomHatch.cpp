@@ -151,7 +151,7 @@ void DrawGeomHatch::replacePatIncluded(std::string newHatchFileName)
     if (tfi.isReadable()) {
         PatIncluded.setValue(newHatchFileName.c_str());
     } else {
-        throw Base::RuntimeError("Could not read the new PAT file");
+        THROWM(Base::RuntimeError, "Could not read the new PAT file")
     }
 }
 
@@ -374,7 +374,7 @@ std::vector<LineSet> DrawGeomHatch::getTrimmedLines(DrawViewPart* source,
         for (auto& e: resultEdges) {
             TechDraw::BaseGeomPtr base = BaseGeom::baseFactory(e);
             if (!base) {
-                throw Base::ValueError("DGH::getTrimmedLines - baseFactory failed");
+                THROWM(Base::ValueError, "DGH::getTrimmedLines - baseFactory failed")
             }
             resultGeoms.push_back(base);
         }
@@ -530,7 +530,7 @@ std::vector<LineSet> DrawGeomHatch::getFaceOverlay(int fdx)
         for (auto& e: candidates) {
             TechDraw::BaseGeomPtr base = BaseGeom::baseFactory(e);
             if (!base) {
-                throw Base::ValueError("DGH::getFaceOverlay - baseFactory failed");
+                THROWM(Base::ValueError, "DGH::getFaceOverlay - baseFactory failed")
             }
             resultGeoms.push_back(base);
         }

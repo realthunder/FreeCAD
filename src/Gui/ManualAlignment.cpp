@@ -287,7 +287,7 @@ MovableGroup& MovableGroupModel::activeGroup()
 {
     // Make sure that the array is not empty
     if (this->_groups.empty())
-        throw Base::RuntimeError("Empty group");
+        THROWM(Base::RuntimeError, "Empty group")
     return *(this->_groups.begin());
 }
 
@@ -295,7 +295,7 @@ const MovableGroup& MovableGroupModel::activeGroup() const
 {
     // Make sure that the array is not empty
     if (this->_groups.empty())
-        throw Base::RuntimeError("Empty group");
+        THROWM(Base::RuntimeError, "Empty group")
     return this->_groups.front();
 }
 
@@ -323,7 +323,7 @@ int MovableGroupModel::count() const
 const MovableGroup& MovableGroupModel::getGroup(int i) const
 {
     if (i >= count())
-        throw Base::IndexError("Index out of range");
+        THROWM(Base::IndexError, "Index out of range")
     return this->_groups[i];
 }
 

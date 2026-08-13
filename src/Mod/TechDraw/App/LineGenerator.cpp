@@ -400,7 +400,7 @@ std::string LineGenerator::getBodyFromString(std::string inString)
     size_t firstDot = inString.find(".");
     if (firstDot == std::string::npos) {
         // something has gone very wrong if an entry in choices does not contain a dot.
-        throw Base::RuntimeError("Malformed standard name found.  Could not determine standards body.");
+        THROWM(Base::RuntimeError, "Malformed standard name found.  Could not determine standards body.")
     }
     return inString.substr(0, firstDot);
 }

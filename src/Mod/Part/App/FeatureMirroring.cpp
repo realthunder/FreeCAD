@@ -161,7 +161,7 @@ App::DocumentObjectExecReturn *Mirroring::execute()
             // reference is an app::link or a part::feature or some subobject
         } else {
             if (subStrings.size() > 1){
-                throw Base::ValueError(std::string(this->getFullLabel()) + ": Only 1 subobject is supported for Mirror Plane reference, either a plane face or a circle edge.");
+                THROWM(Base::ValueError, std::string(this->getFullLabel()) + ": Only 1 subobject is supported for Mirror Plane reference, either a plane face or a circle edge.")
 
             }
             auto linked = MirrorPlane.getValue();
@@ -187,7 +187,7 @@ App::DocumentObjectExecReturn *Mirroring::execute()
             int edgeCount = Part::TopoShape(shape).countSubShapes(TopAbs_EDGE);
 
             if (faceCount == 0 && edgeCount == 0) {
-                throw Base::ValueError(std::string(this->getFullLabel()) + ": Mirror plane reference must be a face of a feature or a plane object or a circle");
+                THROWM(Base::ValueError, std::string(this->getFullLabel()) + ": Mirror plane reference must be a face of a feature or a plane object or a circle")
             }
 
             TopoDS_Face face;
@@ -214,19 +214,19 @@ App::DocumentObjectExecReturn *Mirroring::execute()
             }
 
             if (isFace && face.IsNull()) { //ensure we have a good face to work with
-                throw Base::ValueError(std::string(this->getFullLabel()) + ": Failed to extract mirror plane because face is null");
+                THROWM(Base::ValueError, std::string(this->getFullLabel()) + ": Failed to extract mirror plane because face is null")
             }
             if (isEdge && edge.IsNull()){ //ensure we have a good edge to work with
-                throw Base::ValueError(std::string(this->getFullLabel()) + ": Failed to extract mirror plane because edge is null");
+                THROWM(Base::ValueError, std::string(this->getFullLabel()) + ": Failed to extract mirror plane because edge is null")
             }
             if (!isFace && !isEdge){
-                throw Base::ValueError(std::string(this->getFullLabel()) + ": Failed to extract mirror plane, unable to determine which face or edge to use.");
+                THROWM(Base::ValueError, std::string(this->getFullLabel()) + ": Failed to extract mirror plane, unable to determine which face or edge to use.")
             }
 
             if (isFace) {
                 BRepAdaptor_Surface adapt(face);
                 if (adapt.GetType() != GeomAbs_Plane)
-                    throw Base::TypeError(std::string(this->getFullLabel()) + ": Mirror plane face must be planar");
+                    THROWM(Base::TypeError, std::string(this->getFullLabel()) + ": Mirror plane face must be planar")
                 TopExp_Explorer exp;
                 exp.Init(face, TopAbs_VERTEX);
                 if (exp.More()) {
@@ -237,7 +237,7 @@ App::DocumentObjectExecReturn *Mirroring::execute()
                 if (isEdge){
                     BRepAdaptor_Curve curve(edge);
                     if (!(curve.GetType() == GeomAbs_Circle)) {
-                        throw Base::TypeError(std::string(this->getFullLabel()) + ": Only circle edge types are supported");
+                        THROWM(Base::TypeError, std::string(this->getFullLabel()) + ": Only circle edge types are supported")
                     }
                     gp_Circ circle = curve.Circle();
                     axdir = circle.Axis().Direction();

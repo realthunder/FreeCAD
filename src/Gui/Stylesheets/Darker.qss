@@ -2787,3 +2787,34 @@ CustomTitleBarWindow[backend="generic"] WindowDecorationButton#closeButton:press
   background-color: #C50F1F;
   color: White;
 }
+
+/* Start page file cards ----------------------------------------------------
+
+One reused widget paints every recent file and example card on the Start
+page; it is named thumbnailWidget and carries a "state" of "hovered" or
+"pressed". A dynamic property does not re-evaluate a style sheet on its
+own, so FileCardDelegate repolishes the widget whenever the state changes.
+
+The same 2px box the New File cards use, in the same colours -- those are
+the Start preferences FileCardBorderColor and FileCardSelectionColor, not
+the theme accent, which is why they are literals here.
+
+The border is present in every state and only changes colour. It must not
+appear only on hover: sizeHint() knows nothing about this box, so a border
+that comes and goes shifts the thumbnail and caption under the cursor and
+pushes the card past the item rect, which clips the edges.
+
+--------------------------------------------------------------------------- */
+
+QWidget#thumbnailWidget {
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+
+QWidget#thumbnailWidget[state="hovered"] {
+  border-color: #62A0EA;
+}
+
+QWidget#thumbnailWidget[state="pressed"] {
+  border-color: #26A269;
+}

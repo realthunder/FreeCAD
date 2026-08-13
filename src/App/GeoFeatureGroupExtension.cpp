@@ -61,7 +61,7 @@ GeoFeatureGroupExtension::~GeoFeatureGroupExtension() = default;
 void GeoFeatureGroupExtension::initExtension(ExtensionContainer* obj) {
 
     if(!obj->isDerivedFrom(App::GeoFeature::getClassTypeId()))
-        throw Base::RuntimeError("GeoFeatureGroupExtension can only be applied to GeoFeatures");
+        THROWM(Base::RuntimeError, "GeoFeatureGroupExtension can only be applied to GeoFeatures")
 
     App::GroupExtension::initExtension(obj);
 }
@@ -69,7 +69,7 @@ void GeoFeatureGroupExtension::initExtension(ExtensionContainer* obj) {
 PropertyPlacement& GeoFeatureGroupExtension::placement() {
 
     if(!getExtendedContainer())
-        throw Base::RuntimeError("GeoFeatureGroupExtension was not applied to GeoFeature");
+        THROWM(Base::RuntimeError, "GeoFeatureGroupExtension was not applied to GeoFeature")
 
     return static_cast<App::GeoFeature*>(getExtendedContainer())->Placement;
 }
@@ -113,7 +113,7 @@ DocumentObject* GeoFeatureGroupExtension::getGroupOfObject(const DocumentObject*
 Base::Placement GeoFeatureGroupExtension::globalGroupPlacement()
 {
     if (getExtendedObject()->isRecomputing()) {
-        throw Base::RuntimeError("Global placement cannot be calculated on recompute");
+        THROWM(Base::RuntimeError, "Global placement cannot be calculated on recompute")
     }
 
     std::unordered_set<GeoFeatureGroupExtension*> history;

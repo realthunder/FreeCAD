@@ -124,12 +124,12 @@ App::DocumentObjectExecReturn *MultiFuse::execute()
             TopTools_ListOfShape shapeArguments,shapeTools;
             const TopoDS_Shape& shape = s.front();
             if (shape.IsNull())
-                throw Base::RuntimeError("Input shape is null");
+                THROWM(Base::RuntimeError, "Input shape is null")
             shapeArguments.Append(shape);
 
             for (std::vector<TopoDS_Shape>::iterator it = s.begin()+1; it != s.end(); ++it) {
                 if (it->IsNull())
-                    throw Base::RuntimeError("Input shape is null");
+                    THROWM(Base::RuntimeError, "Input shape is null")
                 shapeTools.Append(*it);
             }
 
@@ -137,14 +137,14 @@ App::DocumentObjectExecReturn *MultiFuse::execute()
             mkFuse.SetTools(shapeTools);
             mkFuse.Build();
             if (!mkFuse.IsDone())
-                throw Base::RuntimeError("MultiFusion failed");
+                THROWM(Base::RuntimeError, "MultiFusion failed")
 
             TopoDS_Shape resShape = mkFuse.Shape();
             for (const auto & it : s) {
                 history.emplace_back(mkFuse, TopAbs_FACE, resShape, it);
             }
             if (resShape.IsNull())
-                throw Base::RuntimeError("Resulting shape is null");
+                THROWM(Base::RuntimeError, "Resulting shape is null")
 
             Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
                 .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Part/Boolean");
@@ -199,7 +199,7 @@ App::DocumentObjectExecReturn *MultiFuse::execute()
         }
     }
     else {
-        throw Base::CADKernelError("Not enough shape objects linked");
+        THROWM(Base::CADKernelError, "Not enough shape objects linked")
     }
 
 #else
@@ -221,7 +221,7 @@ App::DocumentObjectExecReturn *MultiFuse::execute()
     TopoShape res(0,getDocument()->getStringHasher());
     res.makEBoolean(Part::OpCodes::Fuse,shapes);
     if (res.isNull())
-        throw Base::RuntimeError("Resulting shape is null");
+        THROWM(Base::RuntimeError, "Resulting shape is null")
 
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/Part/Boolean");

@@ -382,7 +382,7 @@ std::weak_ptr<GeometryExtension> Geometry::getExtension(const Base::Type & type)
             return ext;
     }
 
-    throw Base::ValueError("No geometry extension of the requested type.");
+    THROWM(Base::ValueError, "No geometry extension of the requested type.")
 }
 
 std::weak_ptr<GeometryExtension> Geometry::getExtension(const std::string & name)
@@ -392,7 +392,7 @@ std::weak_ptr<GeometryExtension> Geometry::getExtension(const std::string & name
             return ext;
     }
 
-    throw Base::ValueError("No geometry extension with the requested name.");
+    THROWM(Base::ValueError, "No geometry extension with the requested name.")
 }
 
 std::weak_ptr<const GeometryExtension> Geometry::getExtension(const Base::Type & type) const
@@ -470,7 +470,7 @@ void Geometry::assignTag(const Part::Geometry * geo)
     if(geo->getTypeId() == this->getTypeId())
         this->tag = geo->tag;
     else
-        throw Base::TypeError("Geometry tag can not be assigned as geometry types do not match.");
+        THROWM(Base::TypeError, "Geometry tag can not be assigned as geometry types do not match.")
 }
 
 void Geometry::copyNonTag(const Part::Geometry * src)
@@ -1133,7 +1133,7 @@ GeomBezierCurve::GeomBezierCurve(const Handle(Geom_BezierCurve)& b)
 GeomBezierCurve::GeomBezierCurve( const std::vector<Base::Vector3d>& poles, const std::vector<double>& weights)
 {
     if (poles.size() != weights.size())
-        throw Base::ValueError("poles and weights mismatch");
+        THROWM(Base::ValueError, "poles and weights mismatch")
 
     TColgp_Array1OfPnt p(1,poles.size());
     TColStd_Array1OfReal w(1,poles.size());
@@ -1334,10 +1334,10 @@ GeomBSplineCurve::GeomBSplineCurve( const std::vector<Base::Vector3d>& poles, co
                   int degree, bool periodic, bool checkrational)
 {
     if (poles.size() != weights.size())
-        throw Base::ValueError("poles and weights mismatch");
+        THROWM(Base::ValueError, "poles and weights mismatch")
 
     if (knots.size() != multiplicities.size())
-        throw Base::ValueError("knots and multiplicities mismatch");
+        THROWM(Base::ValueError, "knots and multiplicities mismatch")
 
     TColgp_Array1OfPnt p(1,poles.size());
     TColStd_Array1OfReal w(1,poles.size());
@@ -1435,7 +1435,7 @@ void GeomBSplineCurve::workAroundOCCTBug(const std::vector<double>& weights)
 void GeomBSplineCurve::setPoles(const std::vector<Base::Vector3d>& poles, const std::vector<double>& weights)
 {
     if (poles.size() != weights.size())
-        throw Base::ValueError("poles and weights mismatch");
+        THROWM(Base::ValueError, "poles and weights mismatch")
 
     workAroundOCCTBug(weights);
 
@@ -1526,7 +1526,7 @@ void GeomBSplineCurve::setKnots(const std::vector<double>& knots)
 void GeomBSplineCurve::setKnots(const std::vector<double>& knots, const std::vector<int>& multiplicities)
 {
     if (knots.size() != multiplicities.size())
-        throw Base::ValueError("knots and multiplicities mismatch");
+        THROWM(Base::ValueError, "knots and multiplicities mismatch")
 
     Standard_Integer index=1;
 
@@ -2194,12 +2194,12 @@ unsigned int GeomTrimmedCurve::getMemSize () const
 
 void GeomTrimmedCurve::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomTrimmedCurve::Save");
+    THROWM(Base::NotImplementedError, "GeomTrimmedCurve::Save")
 }
 
 void GeomTrimmedCurve::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomTrimmedCurve::Restore");
+    THROWM(Base::NotImplementedError, "GeomTrimmedCurve::Restore")
 }
 
 PyObject *GeomTrimmedCurve::getPyObject()
@@ -4602,12 +4602,12 @@ unsigned int GeomOffsetCurve::getMemSize () const
 
 void GeomOffsetCurve::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomOffsetCurve::Save");
+    THROWM(Base::NotImplementedError, "GeomOffsetCurve::Save")
 }
 
 void GeomOffsetCurve::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomOffsetCurve::Restore");
+    THROWM(Base::NotImplementedError, "GeomOffsetCurve::Restore")
 }
 
 PyObject *GeomOffsetCurve::getPyObject()
@@ -4879,12 +4879,12 @@ unsigned int GeomBezierSurface::getMemSize () const
 
 void GeomBezierSurface::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomBezierSurface::Save");
+    THROWM(Base::NotImplementedError, "GeomBezierSurface::Save")
 }
 
 void GeomBezierSurface::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomBezierSurface::Restore");
+    THROWM(Base::NotImplementedError, "GeomBezierSurface::Restore")
 }
 
 PyObject *GeomBezierSurface::getPyObject()
@@ -5044,12 +5044,12 @@ unsigned int GeomBSplineSurface::getMemSize () const
 
 void GeomBSplineSurface::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomBSplineSurface::Save");
+    THROWM(Base::NotImplementedError, "GeomBSplineSurface::Save")
 }
 
 void GeomBSplineSurface::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomBSplineSurface::Restore");
+    THROWM(Base::NotImplementedError, "GeomBSplineSurface::Restore")
 }
 
 PyObject *GeomBSplineSurface::getPyObject()
@@ -5206,12 +5206,12 @@ unsigned int GeomCylinder::getMemSize () const
 
 void GeomCylinder::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomCylinder::Save");
+    THROWM(Base::NotImplementedError, "GeomCylinder::Save")
 }
 
 void GeomCylinder::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomCylinder::Restore");
+    THROWM(Base::NotImplementedError, "GeomCylinder::Restore")
 }
 
 PyObject *GeomCylinder::getPyObject()
@@ -5279,12 +5279,12 @@ unsigned int GeomCone::getMemSize () const
 
 void GeomCone::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomCone::Save");
+    THROWM(Base::NotImplementedError, "GeomCone::Save")
 }
 
 void GeomCone::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomCone::Restore");
+    THROWM(Base::NotImplementedError, "GeomCone::Restore")
 }
 
 PyObject *GeomCone::getPyObject()
@@ -5405,12 +5405,12 @@ unsigned int GeomToroid::getMemSize () const
 
 void GeomToroid::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomToroid::Save");
+    THROWM(Base::NotImplementedError, "GeomToroid::Save")
 }
 
 void GeomToroid::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomToroid::Restore");
+    THROWM(Base::NotImplementedError, "GeomToroid::Restore")
 }
 
 PyObject *GeomToroid::getPyObject()
@@ -5484,12 +5484,12 @@ unsigned int GeomSphere::getMemSize () const
 
 void GeomSphere::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomSphere::Save");
+    THROWM(Base::NotImplementedError, "GeomSphere::Save")
 }
 
 void GeomSphere::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomSphere::Restore");
+    THROWM(Base::NotImplementedError, "GeomSphere::Restore")
 }
 
 PyObject *GeomSphere::getPyObject()
@@ -5563,12 +5563,12 @@ unsigned int GeomPlane::getMemSize () const
 
 void GeomPlane::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomPlane::Save");
+    THROWM(Base::NotImplementedError, "GeomPlane::Save")
 }
 
 void GeomPlane::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomPlane::Restore");
+    THROWM(Base::NotImplementedError, "GeomPlane::Restore")
 }
 
 PyObject *GeomPlane::getPyObject()
@@ -5634,12 +5634,12 @@ unsigned int GeomOffsetSurface::getMemSize () const
 
 void GeomOffsetSurface::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomOffsetSurface::Save");
+    THROWM(Base::NotImplementedError, "GeomOffsetSurface::Save")
 }
 
 void GeomOffsetSurface::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomOffsetSurface::Restore");
+    THROWM(Base::NotImplementedError, "GeomOffsetSurface::Restore")
 }
 
 PyObject *GeomOffsetSurface::getPyObject()
@@ -5715,17 +5715,17 @@ Geometry *GeomPlateSurface::copy() const
 // Persistence implementer
 unsigned int GeomPlateSurface::getMemSize () const
 {
-    throw Base::NotImplementedError("GeomPlateSurface::getMemSize");
+    THROWM(Base::NotImplementedError, "GeomPlateSurface::getMemSize")
 }
 
 void GeomPlateSurface::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomPlateSurface::Save");
+    THROWM(Base::NotImplementedError, "GeomPlateSurface::Save")
 }
 
 void GeomPlateSurface::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomPlateSurface::Restore");
+    THROWM(Base::NotImplementedError, "GeomPlateSurface::Restore")
 }
 
 PyObject *GeomPlateSurface::getPyObject()
@@ -5777,12 +5777,12 @@ unsigned int GeomTrimmedSurface::getMemSize () const
 
 void GeomTrimmedSurface::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomTrimmedSurface::Save");
+    THROWM(Base::NotImplementedError, "GeomTrimmedSurface::Save")
 }
 
 void GeomTrimmedSurface::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomTrimmedSurface::Restore");
+    THROWM(Base::NotImplementedError, "GeomTrimmedSurface::Restore")
 }
 
 PyObject *GeomTrimmedSurface::getPyObject()
@@ -5897,12 +5897,12 @@ unsigned int GeomSurfaceOfRevolution::getMemSize () const
 
 void GeomSurfaceOfRevolution::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomSurfaceOfRevolution::Save");
+    THROWM(Base::NotImplementedError, "GeomSurfaceOfRevolution::Save")
 }
 
 void GeomSurfaceOfRevolution::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomSurfaceOfRevolution::Restore");
+    THROWM(Base::NotImplementedError, "GeomSurfaceOfRevolution::Restore")
 }
 
 PyObject *GeomSurfaceOfRevolution::getPyObject()
@@ -5953,12 +5953,12 @@ unsigned int GeomSurfaceOfExtrusion::getMemSize () const
 
 void GeomSurfaceOfExtrusion::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("GeomSurfaceOfExtrusion::Save");
+    THROWM(Base::NotImplementedError, "GeomSurfaceOfExtrusion::Save")
 }
 
 void GeomSurfaceOfExtrusion::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("GeomSurfaceOfExtrusion::Restore");
+    THROWM(Base::NotImplementedError, "GeomSurfaceOfExtrusion::Restore")
 }
 
 PyObject *GeomSurfaceOfExtrusion::getPyObject()
@@ -6144,7 +6144,7 @@ std::unique_ptr<GeomSurface> makeFromSurface(const Handle(Geom_Surface)& s, bool
 
     if (s.IsNull()) {
         if (!silent)
-            throw Base::ValueError("Null surface");
+            THROWM(Base::ValueError, "Null surface")
         return geoSurf;
     }
 
@@ -6199,7 +6199,7 @@ std::unique_ptr<GeomSurface> makeFromSurface(const Handle(Geom_Surface)& s, bool
     else if (!silent) {
         std::string err = "Unhandled surface type ";
         err += s->DynamicType()->Name();
-        throw Base::TypeError(err);
+        THROWM(Base::TypeError, err)
     }
 
     return geoSurf;
@@ -6308,7 +6308,7 @@ std::unique_ptr<GeomSurface> makeFromSurfaceAdaptor(const BRepAdaptor_Surface& a
             err += s->DynamicType()->Name();
         else
             err += " unknown";
-        throw Base::TypeError(err);
+        THROWM(Base::TypeError, err)
     }
 
     return geoSurf;
@@ -6321,7 +6321,7 @@ std::unique_ptr<GeomCurve> makeFromCurve(const Handle(Geom_Curve)& c, bool silen
 
     if (c.IsNull()) {
         if (!silent)
-            throw Base::ValueError("Null curve");
+            THROWM(Base::ValueError, "Null curve")
         return geoCurve;
     }
 
@@ -6367,7 +6367,7 @@ std::unique_ptr<GeomCurve> makeFromCurve(const Handle(Geom_Curve)& c, bool silen
     else if (!silent) {
         std::string err = "Unhandled curve type ";
         err += c->DynamicType()->Name();
-        throw Base::TypeError(err);
+        THROWM(Base::TypeError, err)
     }
 
     return geoCurve;
@@ -6377,7 +6377,7 @@ std::unique_ptr<GeomCurve> makeFromTrimmedCurve(const Handle(Geom_Curve)& c, dou
 {
     if (c.IsNull()) {
         if (!silent)
-            throw Base::ValueError("Null curve");
+            THROWM(Base::ValueError, "Null curve")
         return std::unique_ptr<GeomCurve>();
     }
 
@@ -6464,7 +6464,7 @@ std::unique_ptr<GeomCurve> makeFromTrimmedCurve(const Handle(Geom_Curve)& c, dou
     else if (!silent) {
         std::string err = "Unhandled curve type ";
         err += c->DynamicType()->Name();
-        throw Base::TypeError(err);
+        THROWM(Base::TypeError, err)
     }
 
     return std::unique_ptr<GeomCurve>();
@@ -6537,7 +6537,7 @@ std::unique_ptr<GeomCurve> makeFromCurveAdaptor(const Adaptor3d_Curve& adapt, bo
 
     if (!geoCurve) {
         if (!silent)
-            throw Base::TypeError("Unhandled curve type");
+            THROWM(Base::TypeError, "Unhandled curve type")
         return geoCurve;
     }
 

@@ -967,7 +967,7 @@ void Rotation::setEulerAngles(EulerSequence theOrder,
                               double theGamma)
 {
     if (theOrder == Invalid || theOrder >= EulerSequenceLast) {
-        throw Base::ValueError("invalid euler sequence");
+        THROWM(Base::ValueError, "invalid euler sequence")
     }
 
     EulerSequence_Parameters o = translateEulerSequence(theOrder);

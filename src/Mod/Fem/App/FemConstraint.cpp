@@ -477,7 +477,7 @@ const Base::Vector3d Constraint::getDirection(const App::PropertyLinkSub& direct
     if (!obj->isDerivedFrom<Part::Feature>()) {
         std::stringstream str;
         str << "Type is not a line, plane or Part object";
-        throw Base::TypeError(str.str());
+        THROWM(Base::TypeError, str.str())
     }
 
     std::vector<std::string> names = direction.getSubValues();
@@ -497,7 +497,7 @@ const Base::Vector3d Constraint::getDirection(const App::PropertyLinkSub& direct
     catch (Standard_Failure&) {
         std::stringstream str;
         str << "No such sub-element '" << subName << "'";
-        throw Base::AttributeError(str.str());
+        THROWM(Base::AttributeError, str.str())
     }
 
     return Fem::Tools::getDirectionFromShape(sh);

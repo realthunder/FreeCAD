@@ -90,7 +90,7 @@ using namespace TechDraw;
     std::stringstream ErrorMsg;
 
     if (geomName.empty()) {
-        throw Base::ValueError("getIndexFromName - empty geometry name");
+        THROWM(Base::ValueError, "getIndexFromName - empty geometry name")
     }
 
 
@@ -98,14 +98,14 @@ using namespace TechDraw;
         return int(std::stoi(what.str()));
     } else {
         ErrorMsg << "getIndexFromName: malformed geometry name - " << geomName;
-        throw Base::ValueError(ErrorMsg.str());
+        THROWM(Base::ValueError, ErrorMsg.str())
     }
 }
 
 std::string DrawUtil::getGeomTypeFromName(const std::string& geomName)
 {
     if (geomName.empty()) {
-        throw Base::ValueError("getGeomTypeFromName - empty geometry name");
+        THROWM(Base::ValueError, "getGeomTypeFromName - empty geometry name")
     }
 
     boost::regex re("^[a-zA-Z]*");//one or more letters at start of string
@@ -123,7 +123,7 @@ std::string DrawUtil::getGeomTypeFromName(const std::string& geomName)
         return what.str();//TODO: use std::stoi() in c++11
     } else {
         ErrorMsg << "In getGeomTypeFromName: malformed geometry name - " << geomName;
-        throw Base::ValueError(ErrorMsg.str());
+        THROWM(Base::ValueError, ErrorMsg.str())
     }
 }
 

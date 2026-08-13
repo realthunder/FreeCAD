@@ -472,7 +472,7 @@ void TopoShape::setPyObject(PyObject* obj)
     else {
         std::string error = std::string("type must be 'Shape', not ");
         error += obj->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -598,7 +598,7 @@ void TopoShape::read(const char *FileName)
         importBrep(File.filePath().c_str());
     }
     else{
-        throw Base::FileException("Unknown extension");
+        THROWM(Base::FileException, "Unknown extension")
     }
 }
 
@@ -646,7 +646,7 @@ void TopoShape::importIges(const char *FileName)
         // http://www.opencascade.org/org/forum/thread_20603/?forum=3
         aReader.SetReadVisible(Standard_True);
         if (aReader.ReadFile(encodeFilename(FileName).c_str()) != IFSelect_RetDone)
-            throw Base::FileException("Error in reading IGES");
+            THROWM(Base::FileException, "Error in reading IGES")
 
         Handle(Message_ProgressIndicator) pi = new ProgressIndicator(100);
 #if OCC_VERSION_HEX < 0x070500
@@ -670,7 +670,7 @@ void TopoShape::importIges(const char *FileName)
 #endif
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -679,7 +679,7 @@ void TopoShape::importStep(const char *FileName)
     try {
         STEPControl_Reader aReader;
         if (aReader.ReadFile(encodeFilename(FileName).c_str()) != IFSelect_RetDone)
-            throw Base::FileException("Error in reading STEP");
+            THROWM(Base::FileException, "Error in reading STEP")
 
         Handle(Message_ProgressIndicator) pi = new ProgressIndicator(100);
 #if OCC_VERSION_HEX < 0x070500
@@ -700,7 +700,7 @@ void TopoShape::importStep(const char *FileName)
 #endif
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -722,7 +722,7 @@ void TopoShape::importBrep(const char *FileName)
         setShape(aShape);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -749,10 +749,10 @@ void TopoShape::importBrep(std::istream& str, int indicator)
         setShape(aShape);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
     catch (const std::exception& e) {
-        throw Base::CADKernelError(e.what());
+        THROWM(Base::CADKernelError, e.what())
     }
 }
 
@@ -775,7 +775,7 @@ void TopoShape::importBinary(std::istream& str)
         this->_Shape.Orientation (anOrient);
     }
     catch (Standard_Failure&) {
-        throw Base::RuntimeError("Failed to read shape from binary stream");
+        THROWM(Base::RuntimeError, "Failed to read shape from binary stream")
     }
 }
 
@@ -799,7 +799,7 @@ void TopoShape::write(const char *FileName) const
         exportStl(File.filePath().c_str(), 0.01);
     }
     else{
-        throw Base::FileException("Unknown extension");
+        THROWM(Base::FileException, "Unknown extension")
     }
 }
 
@@ -817,10 +817,10 @@ void TopoShape::exportIges(const char *filename) const
         aWriter.AddShape(this->_Shape);
         aWriter.ComputeModel();
         if (aWriter.Write(encodeFilename(filename).c_str()) != IFSelect_RetDone)
-            throw Base::FileException("Writing of IGES failed");
+            THROWM(Base::FileException, "Writing of IGES failed")
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -845,7 +845,7 @@ void TopoShape::exportStep(const char *filename) const
 #endif
 
         if (aWriter.Transfer(this->_Shape, STEPControl_AsIs) != IFSelect_RetDone)
-            throw Base::FileException("Error in transferring STEP");
+            THROWM(Base::FileException, "Error in transferring STEP")
 
         APIHeaderSection_MakeHeader makeHeader(aWriter.Model());
         // Don't set name because STEP doesn't support UTF-8
@@ -856,13 +856,13 @@ void TopoShape::exportStep(const char *filename) const
         makeHeader.SetDescriptionValue(1, new TCollection_HAsciiString("FreeCAD Model"));
 
         if (aWriter.Write(encodeFilename(filename).c_str()) != IFSelect_RetDone)
-            throw Base::FileException("Writing of STEP failed");
+            THROWM(Base::FileException, "Writing of STEP failed")
 #if OCC_VERSION_HEX < 0x070500
         pi->EndScope();
 #endif
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -870,10 +870,10 @@ void TopoShape::exportBrep(const char *filename) const
 {
 #if OCC_VERSION_HEX >= 0x070600
     if (!BRepTools::Write(this->_Shape,encodeFilename(filename).c_str(), Standard_False, Standard_False, TopTools_FormatVersion_VERSION_1))
-        throw Base::FileException("Writing of BREP failed");
+        THROWM(Base::FileException, "Writing of BREP failed")
 #else
     if (!BRepTools::Write(this->_Shape,encodeFilename(filename).c_str()))
-        throw Base::FileException("Writing of BREP failed");
+        THROWM(Base::FileException, "Writing of BREP failed")
 #endif
 }
 
@@ -1496,7 +1496,7 @@ TopoDS_Shape TopoShape::cut(const std::vector<TopoDS_Shape>& shapes, Standard_Re
     shapeArguments.Append(this->_Shape);
     for (const auto & shape : shapes) {
         if (shape.IsNull())
-            throw Base::ValueError("Tool shape is null");
+            THROWM(Base::ValueError, "Tool shape is null")
         if (tolerance > 0.0)
             // workaround for http://dev.opencascade.org/index.php?q=node/1056#comment-520
             shapeTools.Append(BRepBuilderAPI_Copy(shape).Shape());
@@ -1510,7 +1510,7 @@ TopoDS_Shape TopoShape::cut(const std::vector<TopoDS_Shape>& shapes, Standard_Re
         mkCut.SetFuzzyValue(tolerance);
     mkCut.Build();
     if (!mkCut.IsDone())
-        throw Base::RuntimeError("Multi cut failed");
+        THROWM(Base::RuntimeError, "Multi cut failed")
 
     TopoDS_Shape resShape = mkCut.Shape();
     return makeShell(resShape);
@@ -1536,7 +1536,7 @@ TopoDS_Shape TopoShape::common(const std::vector<TopoDS_Shape>& shapes, Standard
     shapeArguments.Append(this->_Shape);
     for (const auto & shape : shapes) {
         if (shape.IsNull())
-            throw Base::ValueError("Tool shape is null");
+            THROWM(Base::ValueError, "Tool shape is null")
         if (tolerance > 0.0)
             // workaround for http://dev.opencascade.org/index.php?q=node/1056#comment-520
             shapeTools.Append(BRepBuilderAPI_Copy(shape).Shape());
@@ -1550,7 +1550,7 @@ TopoDS_Shape TopoShape::common(const std::vector<TopoDS_Shape>& shapes, Standard
         mkCommon.SetFuzzyValue(tolerance);
     mkCommon.Build();
     if (!mkCommon.IsDone())
-        throw Base::RuntimeError("Multi common failed");
+        THROWM(Base::RuntimeError, "Multi common failed")
 
     TopoDS_Shape resShape = mkCommon.Shape();
     return makeShell(resShape);
@@ -1590,7 +1590,7 @@ TopoDS_Shape TopoShape::fuse(const std::vector<TopoDS_Shape>& shapes, Standard_R
         mkFuse.SetFuzzyValue(tolerance);
     mkFuse.Build();
     if (!mkFuse.IsDone())
-        throw Base::RuntimeError("Multi fuse failed");
+        THROWM(Base::RuntimeError, "Multi fuse failed")
 
     TopoDS_Shape resShape = mkFuse.Shape();
     return makeShell(resShape);
@@ -1618,7 +1618,7 @@ TopoDS_Shape TopoShape::section(TopoDS_Shape shape, Standard_Boolean approximate
     mkSection.Approximation(approximate);
     mkSection.Build();
     if (!mkSection.IsDone())
-        throw Base::RuntimeError("Section failed");
+        THROWM(Base::RuntimeError, "Section failed")
     return mkSection.Shape();
 }
 
@@ -1636,7 +1636,7 @@ TopoDS_Shape TopoShape::section(const std::vector<TopoDS_Shape>& shapes,
     shapeArguments.Append(this->_Shape);
     for (const auto & shape : shapes) {
         if (shape.IsNull())
-            throw Base::ValueError("Tool shape is null");
+            THROWM(Base::ValueError, "Tool shape is null")
         if (tolerance > 0.0)
             // workaround for http://dev.opencascade.org/index.php?q=node/1056#comment-520
             shapeTools.Append(BRepBuilderAPI_Copy(shape).Shape());
@@ -1650,7 +1650,7 @@ TopoDS_Shape TopoShape::section(const std::vector<TopoDS_Shape>& shapes,
         mkSection.SetFuzzyValue(tolerance);
     mkSection.Build();
     if (!mkSection.IsDone())
-        throw Base::RuntimeError("Multi section failed");
+        THROWM(Base::RuntimeError, "Multi section failed")
 
     TopoDS_Shape resShape = mkSection.Shape();
     return resShape;
@@ -2429,7 +2429,7 @@ TopoDS_Shape TopoShape::makeOffsetShape(double offset, double tol, bool intersec
 TopoDS_Shape TopoShape::makeOffset2D(double offset, short joinType, bool fill, bool allowOpenResult, bool intersection) const
 {
     if (_Shape.IsNull())
-        throw Base::ValueError("makeOffset2D: input shape is null!");
+        THROWM(Base::ValueError, "makeOffset2D: input shape is null!")
 
     // OUTLINE OF MAKEOFFSET2D
     // * Prepare shapes to process
@@ -2510,12 +2510,12 @@ TopoDS_Shape TopoShape::makeOffset2D(double offset, short joinType, bool fill, b
                     haveFaces = true;
                 }break;
                 default:
-                    throw Base::TypeError("makeOffset2D: input shape is not an edge, wire or face or compound of those.");
+                    THROWM(Base::TypeError, "makeOffset2D: input shape is not an edge, wire or face or compound of those.")
                 break;
             }
         }
         if (haveWires && haveFaces)
-            throw Base::TypeError("makeOffset2D: collective offset of a mix of wires and faces is not supported");
+            THROWM(Base::TypeError, "makeOffset2D: collective offset of a mix of wires and faces is not supported")
         if (haveFaces)
             allowOpenResult = false;
 
@@ -2529,7 +2529,7 @@ TopoDS_Shape TopoShape::makeOffset2D(double offset, short joinType, bool fill, b
                 builder.Add(compoundSourceWires, w);
             BRepLib_FindSurface planefinder(compoundSourceWires, -1, Standard_True);
             if (!planefinder.Found())
-                throw Base::CADKernelError("makeOffset2D: wires are nonplanar or noncoplanar");
+                THROWM(Base::CADKernelError, "makeOffset2D: wires are nonplanar or noncoplanar")
             if (haveFaces){
                 //extract plane from first face (useful for preserving the plane of face precisely if dealing with only one face)
                 workingPlane = BRepAdaptor_Surface(TopoDS::Face(shapesToProcess[0])).Plane();
@@ -2556,7 +2556,7 @@ TopoDS_Shape TopoShape::makeOffset2D(double offset, short joinType, bool fill, b
                 throw;
             }
             catch (...) {
-                throw Base::CADKernelError("BRepOffsetAPI_MakeOffset has crashed! (Unknown exception caught)");
+                THROWM(Base::CADKernelError, "BRepOffsetAPI_MakeOffset has crashed! (Unknown exception caught)")
             }
             offsetShape = mkOffset.Shape();
 
@@ -2566,7 +2566,7 @@ TopoDS_Shape TopoShape::makeOffset2D(double offset, short joinType, bool fill, b
             }
 
             if (offsetShape.IsNull())
-                throw Base::CADKernelError("makeOffset2D: result of offsetting is null!");
+                THROWM(Base::CADKernelError, "makeOffset2D: result of offsetting is null!")
 
             //Copying shape to fix strange orientation behavior, OCC7.0.0. See bug #2699
             // https://www.freecad.org/tracker/view.php?id=2699
@@ -2586,7 +2586,7 @@ TopoDS_Shape TopoShape::makeOffset2D(double offset, short joinType, bool fill, b
         }
 
         if (offsetWires.empty())
-            throw Base::CADKernelError("makeOffset2D: offset result has no wires.");
+            THROWM(Base::CADKernelError, "makeOffset2D: offset result has no wires.")
 
         std::list<TopoDS_Wire> wiresForMakingFaces;
         if (!fill){
@@ -2601,7 +2601,7 @@ TopoDS_Shape TopoShape::makeOffset2D(double offset, short joinType, bool fill, b
         else {
             //fill offset
             if (fabs(offset) < Precision::Confusion())
-                throw Base::ValueError("makeOffset2D: offset distance is zero. Can't fill offset.");
+                THROWM(Base::ValueError, "makeOffset2D: offset distance is zero. Can't fill offset.")
 
             //filling offset. There are three major cases to consider:
             // 1. source wires and result wires are closed (simplest) -> make face
@@ -2638,7 +2638,7 @@ TopoDS_Shape TopoShape::makeOffset2D(double offset, short joinType, bool fill, b
 
                 //for now, only support offsetting one open wire -> there should be exactly two open wires for connecting
                 if (openWires.size() != 2)
-                    throw Base::CADKernelError("makeOffset2D: collective offset with filling of multiple wires is not supported yet.");
+                    THROWM(Base::CADKernelError, "makeOffset2D: collective offset with filling of multiple wires is not supported yet.")
 
                 TopoDS_Wire openWire1 = openWires.front();
                 TopoDS_Wire openWire2 = openWires.back();
@@ -2678,7 +2678,7 @@ TopoDS_Shape TopoShape::makeOffset2D(double offset, short joinType, bool fill, b
                     //orientation is as expected, nothing to do
                 }
                 else {
-                    throw Base::CADKernelError("makeOffset2D: fill offset: failed to establish open vertex relationship.");
+                    THROWM(Base::CADKernelError, "makeOffset2D: fill offset: failed to establish open vertex relationship.")
                 }
 
                 //now directions of open wires are aligned. Finally. make new wire!
@@ -2713,7 +2713,7 @@ TopoDS_Shape TopoShape::makeOffset2D(double offset, short joinType, bool fill, b
             }
             mkFace.Build();
             if (mkFace.Shape().IsNull())
-                throw Base::CADKernelError("makeOffset2D: making face failed (null shape returned).");
+                THROWM(Base::CADKernelError, "makeOffset2D: making face failed (null shape returned).")
             TopoDS_Shape result = mkFace.Shape();
             if (haveFaces && shapesToProcess.size() == 1)
                 result.Orientation(shapesToProcess[0].Orientation());
@@ -2765,7 +2765,7 @@ void TopoShape::transformGeometry(const Base::Matrix4D &rclMat)
         *this = makEGTransform(rclMat);
     }
     catch (const Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -3655,7 +3655,7 @@ TopoDS_Shape TopoShape::defeaturing(const std::vector<TopoDS_Shape>& s) const
         defeat.DumpErrors(aSStream);
         const std::string& resultstr = aSStream.str();
         const char* cstr2 = resultstr.c_str();
-        throw Base::RuntimeError(cstr2);
+        THROWM(Base::RuntimeError, cstr2)
     }
     return defeat.Shape();
 }

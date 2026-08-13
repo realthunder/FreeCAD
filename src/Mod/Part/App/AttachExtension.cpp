@@ -194,7 +194,7 @@ bool AttachExtension::positionBySupport()
 {
     _active = 0;
     if (!_props.attacher)
-        throw Base::RuntimeError("AttachExtension: can't positionBySupport, because no AttachEngine is set.");
+        THROWM(Base::RuntimeError, "AttachExtension: can't positionBySupport, because no AttachEngine is set.")
     Base::Placement plaOriginal = getPlacement().getValue();
     try {
         if (_props.attacher->mapMode == mmDeactivated)
@@ -263,7 +263,7 @@ App::DocumentObjectExecReturn *AttachExtension::extensionExecute()
             return new App::DocumentObjectExecReturn(e.what());*/
         // Convert OCC exceptions to Base::Exception
         } catch (Standard_Failure &e){
-            throw Base::RuntimeError(e.GetMessageString());
+            THROWM(Base::RuntimeError, e.GetMessageString())
 //            return new App::DocumentObjectExecReturn(e.GetMessageString());
         }
     }
@@ -397,7 +397,7 @@ App::PropertyPlacement& AttachExtension::getPlacement() const {
     auto pla = Base::freecad_dynamic_cast<App::PropertyPlacement>(
             getExtendedObject()->getPropertyByName("Placement"));
     if(!pla)
-        throw Base::RuntimeError("AttachExtension cannot find placement property");
+        THROWM(Base::RuntimeError, "AttachExtension cannot find placement property")
     return *pla;
 }
 

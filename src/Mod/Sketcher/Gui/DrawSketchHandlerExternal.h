@@ -295,7 +295,7 @@ public:
         if (msg.Type == Gui::SelectionChanges::AddSelection) {
             App::DocumentObject* obj = msg.Object.getObject();
             if (!obj) {
-                throw Base::ValueError("Sketcher: External geometry: Invalid object in selection");
+                THROWM(Base::ValueError, "Sketcher: External geometry: Invalid object in selection")
             }
 
             if (msg.Object.getOldElementName().empty()

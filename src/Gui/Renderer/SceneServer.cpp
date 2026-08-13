@@ -1373,11 +1373,15 @@ public:
         for (Conn *conn : conns) {
             if (conn->id == id) {
                 conn->kicked = true;
+#ifndef _WIN32
                 // Same wake as stopListening: without it a connection
                 // wedged in a send (bounded by SO_SNDTIMEO) or parked
                 // in poll would outlive the kick by up to that long.
+                // Guarded like every other socket call here — the
+                // listener itself is POSIX-only for now.
                 if (conn->fd >= 0)
                     ::shutdown(conn->fd, SHUT_RD);
+#endif
                 return true;
             }
         }

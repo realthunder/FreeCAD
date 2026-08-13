@@ -7518,9 +7518,9 @@ double num_change(char* yytext,char dez_delim,char grp_delim)
     errno = 0;
     ret_val = strtod( temp, nullptr );
     if (ret_val == 0 && errno == ERANGE)
-        throw Base::UnderflowError("Number underflow.");
+        THROWM(Base::UnderflowError, "Number underflow.")
     if (ret_val == HUGE_VAL || ret_val == -HUGE_VAL)
-        throw Base::OverflowError("Number overflow.");
+        THROWM(Base::OverflowError, "Number overflow.")
 
     return ret_val;
 }
@@ -7625,7 +7625,7 @@ Context::Context(const char *buf, std::size_t len,
         // there is no need for recursive parsing at the moment, as we never
         // evaluate during parsing. So we disable it, and use a static
         // ScannerBuffer to save memory allocation time.
-        throw Base::RuntimeError("Recursive parsing is not supported");
+        THROWM(Base::RuntimeError, "Recursive parsing is not supported")
     }
     IndentStack.resize(1,0);
     busy = true;

@@ -256,7 +256,7 @@ void Trajectory::generateTrajectory()
         }
     }
     catch (KDL::Error& e) {
-        throw Base::RuntimeError(e.Description());
+        THROWM(Base::RuntimeError, e.Description())
     }
 }
 

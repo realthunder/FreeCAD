@@ -257,7 +257,7 @@ App::DocumentObjectExecReturn* Edge2TracObject::execute()
                 }
 
                 default:
-                    throw Base::TypeError("Unknown Edge type in Robot::Edge2TracObject::execute()");
+                    THROWM(Base::TypeError, "Unknown Edge type in Robot::Edge2TracObject::execute()")
             }
         }
     }

@@ -362,7 +362,7 @@ private:
             pcDoc->setUndoMode(undoMode);
         }
         if (expired) {
-            throw Base::RuntimeError("Target document was closed during STEP import");
+            THROWM(Base::RuntimeError, "Target document was closed during STEP import")
         }
         if (readError) {
             std::rethrow_exception(readError);
@@ -416,7 +416,7 @@ private:
             error = e.GetMessageString() ? e.GetMessageString() : "OCCT failure";
         }
         if (docPtr.expired()) {
-            throw Base::RuntimeError("Target document was closed during STEP import");
+            THROWM(Base::RuntimeError, "Target document was closed during STEP import")
         }
         // the terminal recompute must still run with undo disabled (an
         // App::Part's origin creation, for one, records a transaction)

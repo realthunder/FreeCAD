@@ -155,7 +155,7 @@ void TaskRevolutionParameters::refresh()
         ui->revolveAngle2->bind(rev->Angle2);
     }
     else {
-        throw Base::TypeError("The object is neither a Groove nor a Revolution.");
+        THROWM(Base::TypeError, "The object is neither a Groove nor a Revolution.")
     }
 
     ui->checkBoxMidplane->setChecked(propMidPlane->getValue());
@@ -253,7 +253,7 @@ void TaskRevolutionParameters::fillAxisCombo(bool forceRefill)
 
         auto *pcFeat = Base::freecad_dynamic_cast<PartDesign::ProfileBased>(vp->getObject());
         if (!pcFeat)
-            throw Base::TypeError("The object is not ProfileBased.");
+            THROWM(Base::TypeError, "The object is not ProfileBased.")
 
         //add sketch axes
         if (auto *pcSketch = Base::freecad_dynamic_cast<Part::Part2DObject>(pcFeat->Profile.getValue())) {
@@ -675,16 +675,16 @@ void TaskRevolutionParameters::onModeChanged(int index)
 void TaskRevolutionParameters::getReferenceAxis(App::DocumentObject*& obj, std::vector<std::string>& sub) const
 {
     if (axesInList.empty())
-        throw Base::RuntimeError("Not initialized!");
+        THROWM(Base::RuntimeError, "Not initialized!")
 
     int num = ui->axis->currentIndex();
     const App::PropertyLinkSub &lnk = *(axesInList[num]);
     if (!lnk.getValue()) {
-        throw Base::RuntimeError("Still in reference selection mode; reference wasn't selected yet");
+        THROWM(Base::RuntimeError, "Still in reference selection mode; reference wasn't selected yet")
     } else {
         PartDesign::ProfileBased* pcRevolution = static_cast<PartDesign::ProfileBased*>(vp->getObject());
         if (!pcRevolution->getDocument()->isIn(lnk.getValue())){
-            throw Base::RuntimeError("Object was deleted");
+            THROWM(Base::RuntimeError, "Object was deleted")
         }
 
         obj = lnk.getValue();

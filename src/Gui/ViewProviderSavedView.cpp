@@ -210,10 +210,10 @@ void ViewProviderSavedView::apply(CaptureOptions options)
 
         auto obj = Base::freecad_dynamic_cast<App::SavedView>(getObject());
         if (!obj)
-            throw Base::RuntimeError("Not object attached");
+            THROWM(Base::RuntimeError, "Not object attached")
         auto view = Base::freecad_dynamic_cast<View3DInventor>(getActiveView());
         if (!view)
-            throw Base::RuntimeError("No 3D view");
+            THROWM(Base::RuntimeError, "No 3D view")
 
         checkOptions(obj, options);
 
@@ -372,10 +372,10 @@ void ViewProviderSavedView::capture(CaptureOptions options)
 
         auto obj = Base::freecad_dynamic_cast<App::SavedView>(getObject());
         if (!obj)
-            throw Base::RuntimeError("Not object attached");
+            THROWM(Base::RuntimeError, "Not object attached")
         auto view = Base::freecad_dynamic_cast<View3DInventor>(getActiveView());
         if (!view)
-            throw Base::RuntimeError("No 3D view");
+            THROWM(Base::RuntimeError, "No 3D view")
 
         checkOptions(obj, options);
 

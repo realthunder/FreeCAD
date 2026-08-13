@@ -3353,7 +3353,7 @@ void View3DInventorViewer::savePicture(int width, int height, int sample, const 
                                                       float(bgColor.alphaF())));
             }
             if (!renderer.render(root)) {
-                throw Base::RuntimeError("Offscreen rendering failed");
+                THROWM(Base::RuntimeError, "Offscreen rendering failed")
             }
 
             renderer.writeToImage(img);
@@ -3371,7 +3371,7 @@ void View3DInventorViewer::savePicture(int width, int height, int sample, const 
                                                     float(bgColor.blueF())));
             }
             if (!renderer.render(root)) {
-                throw Base::RuntimeError("Offscreen rendering failed");
+                THROWM(Base::RuntimeError, "Offscreen rendering failed")
             }
 
             renderer.writeToImage(img);
@@ -3620,14 +3620,14 @@ bool View3DInventorViewer::dumpToFile(SoNode* node, const char* filename, bool b
             vo = std::unique_ptr<SoVectorizeAction>(new SoVectorizePSAction());
         }
         else {
-            throw Base::ValueError("Not supported vector graphic");
+            THROWM(Base::ValueError, "Not supported vector graphic")
         }
 
         SoVectorOutput* out = vo->getOutput();
         if (!out || !out->openFile(filename)) {
             std::ostringstream a_out;
             a_out << "Cannot open file '" << filename << "'";
-            throw Base::FileSystemError(a_out.str());
+            THROWM(Base::FileSystemError, a_out.str())
         }
 
         saveGraphic(ps, col, vo.get());
@@ -5245,7 +5245,7 @@ SbVec3f View3DInventorViewer::getPointOnXYPlaneOfPlacement(const SbVec2s& pnt,
     SoCamera* pCam = this->getSoRenderManager()->getCamera();
 
     if (!pCam)
-        throw Base::RuntimeError("No camera node found");
+        THROWM(Base::RuntimeError, "No camera node found")
 
     SbViewVolume vol = pCam->getViewVolume();
     SbLine line;
@@ -5261,7 +5261,7 @@ SbVec3f View3DInventorViewer::getPointOnXYPlaneOfPlacement(const SbVec2s& pnt,
     if (xyPlane.intersect(line, pt))
         return pt;
 
-    throw Base::RuntimeError("No intersection found");
+    THROWM(Base::RuntimeError, "No intersection found")
 }
 
 SbVec3f View3DInventorViewer::getPointOnLine(const SbVec2s& pnt,

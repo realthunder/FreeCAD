@@ -145,7 +145,7 @@ Base::Matrix4D AbstractPolygonTriangulator::GetTransformToFitPlane() const
     }
 
     if (planeFit.Fit() >= FLOAT_MAX) {
-        throw Base::RuntimeError("Plane fit failed");
+        THROWM(Base::RuntimeError, "Plane fit failed")
     }
 
     Base::Vector3f bs = planeFit.GetBase();

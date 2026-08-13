@@ -54,11 +54,11 @@ int StepShape::read(const char* fileName)
     if (!fi.exists()) {
         std::stringstream str;
         str << "File '" << fileName << "' does not exist!";
-        throw Base::FileException(str.str().c_str());
+        THROWM(Base::FileException, str.str().c_str())
     }
 
     if (aReader.ReadFile((Standard_CString)fileName) != IFSelect_RetDone) {
-        throw Base::FileException("Cannot open STEP file");
+        THROWM(Base::FileException, "Cannot open STEP file")
     }
 
 

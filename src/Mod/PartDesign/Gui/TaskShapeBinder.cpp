@@ -399,7 +399,7 @@ bool TaskDlgShapeBinder::accept()
 
             Gui::cmdAppDocument(vp->getObject(), "recompute()");
             if (!vp->getObject()->isValid())
-                throw Base::RuntimeError(vp->getObject()->getStatusString());
+                THROWM(Base::RuntimeError, vp->getObject()->getStatusString())
             Gui::cmdGuiDocument(vp->getObject(), "resetEdit()");
             Gui::Command::commitCommand();
         }

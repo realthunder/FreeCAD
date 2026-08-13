@@ -665,7 +665,7 @@ App::DocumentObjectExecReturn* Feature::execute()
 
     App::DocumentObject* pcActual = Actual.getValue();
     if (!pcActual) {
-        throw Base::ValueError("No actual geometry to inspect specified");
+        THROWM(Base::ValueError, "No actual geometry to inspect specified")
     }
 
     InspectActualGeometry* actual = nullptr;
@@ -683,7 +683,7 @@ App::DocumentObjectExecReturn* Feature::execute()
         actual = new InspectActualShape(part->Shape.getShape());
     }
     else {
-        throw Base::TypeError("Unknown geometric type");
+        THROWM(Base::TypeError, "Unknown geometric type")
     }
 
     // clang-format off

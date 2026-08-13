@@ -28,6 +28,7 @@
 #include <QFileIconProvider>
 #include <QImageReader>
 #include <QPainter>
+#include <QStyle>
 #include <QStyleOptionViewItem>
 #include <QLabel>
 #include <QModelIndex>
@@ -111,9 +112,9 @@ void FileCardDelegate::paint(QPainter* painter,
     thumbnail->setFixedSize(thumbnailSize, thumbnailSize);
     thumbnail->setSizePolicy(QSizePolicy::Policy::Fixed, QSizePolicy::Policy::Fixed);
 
-    _widget->setProperty("state", QStringLiteral(""));
+    QString state;
     if (option.state & QStyle::State_Selected) {
-        _widget->setProperty("state", QStringLiteral("pressed"));
+        state = QStringLiteral("pressed");
         if (qApp->styleSheet().isEmpty()) {
             QColor color = getSelectionColor();
             _widget->setStyleSheet(QString::fromLatin1("QWidget#thumbnailWidget {"
@@ -127,7 +128,7 @@ void FileCardDelegate::paint(QPainter* painter,
         }
     }
     else if (option.state & QStyle::State_MouseOver) {
-        _widget->setProperty("state", QStringLiteral("hovered"));
+        state = QStringLiteral("hovered");
         if (qApp->styleSheet().isEmpty()) {
             QColor color = getBorderColor();
             _widget->setStyleSheet(QString::fromLatin1("QWidget#thumbnailWidget {"
@@ -149,6 +150,18 @@ void FileCardDelegate::paint(QPainter* painter,
                                    .arg(color.red())
                                    .arg(color.green())
                                    .arg(color.blue()));
+    }
+
+    // Setting a dynamic property does not re-evaluate the style sheet, so
+    // without this the [state="..."] rules the themes carry for
+    // thumbnailWidget would never take effect and a themed Start page would
+    // show no hover at all. One widget paints every card, so its current
+    // property is also the previous card's: repolish only when they differ,
+    // which keeps a run of same-state cards free of it.
+    if (_widget->property("state").toString() != state) {
+        _widget->setProperty("state", state);
+        _widget->style()->unpolish(_widget.get());
+        _widget->style()->polish(_widget.get());
     }
 
     auto elided =

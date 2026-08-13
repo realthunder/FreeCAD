@@ -275,13 +275,13 @@ std::vector<App::DocumentObject*> DlgScale::getShapesToScale() const
     QList<QTreeWidgetItem *> items = ui->treeWidget->selectedItems();
     App::Document* doc = App::GetApplication().getDocument(m_document.c_str());
     if (!doc)
-        throw Base::RuntimeError("Document lost");
+        THROWM(Base::RuntimeError, "Document lost")
 
     std::vector<App::DocumentObject*> objects;
     for (auto item : items) {
         App::DocumentObject* obj = doc->getObject(item->data(0, Qt::UserRole).toString().toUtf8());
         if (!obj)
-            throw Base::RuntimeError("Object not found");
+            THROWM(Base::RuntimeError, "Object not found")
         objects.push_back(obj);
     }
     return objects;
@@ -294,13 +294,13 @@ bool DlgScale::validate()
     QList<QTreeWidgetItem *> items = ui->treeWidget->selectedItems();
     App::Document* doc = App::GetApplication().getDocument(m_document.c_str());
     if (!doc)
-        throw Base::RuntimeError("Document lost");
+        THROWM(Base::RuntimeError, "Document lost")
 
     std::vector<App::DocumentObject*> objects;
     for (auto item : items) {
         App::DocumentObject* obj = doc->getObject(item->data(0, Qt::UserRole).toString().toUtf8());
         if (!obj)
-            throw Base::RuntimeError("Object not found");
+            THROWM(Base::RuntimeError, "Object not found")
         objects.push_back(obj);
     }
     return !objects.empty();

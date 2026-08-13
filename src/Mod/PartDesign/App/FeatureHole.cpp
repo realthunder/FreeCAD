@@ -744,7 +744,7 @@ void Hole::updateHoleCutParams()
         return;
 
     if (ThreadType.getValue() < 0) {
-        throw Base::IndexError("Thread type out of range");
+        THROWM(Base::IndexError, "Thread type out of range")
         return;
     }
 
@@ -755,7 +755,7 @@ void Hole::updateHoleCutParams()
     std::string threadTypeStr = ThreadType.getValueAsString();
     if (threadTypeStr == "ISOMetricProfile" || threadTypeStr == "ISOMetricFineProfile") {
         if (ThreadSize.getValue() < 0) {
-            throw Base::IndexError("Thread size out of range");
+            THROWM(Base::IndexError, "Thread size out of range")
             return;
         }
 
@@ -1006,7 +1006,7 @@ double Hole::getThreadRunout(int mode) const
         sf = 1.6;
         break;
     default:
-        throw Base::ValueError("Unsupported argument");
+        THROWM(Base::ValueError, "Unsupported argument")
     }
     for (auto it : ThreadRunout) {
         double p = it[0];
@@ -1024,10 +1024,10 @@ double Hole::getThreadPitch() const
     int threadType = ThreadType.getValue();
     int threadSize = ThreadSize.getValue();
     if (threadType < 0) {
-        throw Base::IndexError("Thread type out of range");
+        THROWM(Base::IndexError, "Thread type out of range")
     }
     if (threadSize < 0) {
-        throw Base::IndexError("Thread size out of range");
+        THROWM(Base::IndexError, "Thread size out of range")
     }
     return threadDescription[threadType][threadSize].pitch;
 }
@@ -1054,7 +1054,7 @@ void Hole::updateThreadDepthParam()
             ThreadDepth.setValue(Depth.getValue() - getThreadRunout());
         }
         else {
-            throw Base::RuntimeError("Unsupported thread depth type \n");
+            THROWM(Base::RuntimeError, "Unsupported thread depth type \n")
         }
     }
     else if (HoleDepth == "ThroughAll") {
@@ -1070,7 +1070,7 @@ void Hole::updateThreadDepthParam()
         }
     }
     else {
-        throw Base::RuntimeError("Unsupported depth type \n");
+        THROWM(Base::RuntimeError, "Unsupported depth type \n")
     }
 }
 
@@ -1084,10 +1084,10 @@ std::optional<double> Hole::determineDiameter() const
     int threadType = ThreadType.getValue();
     int threadSize = ThreadSize.getValue();
     if (threadType < 0) {
-        throw Base::IndexError("Thread type out of range");
+        THROWM(Base::IndexError, "Thread type out of range")
     }
     if (threadSize < 0) {
-        throw Base::IndexError("Thread size out of range");
+        THROWM(Base::IndexError, "Thread size out of range")
     }
     double diameter = threadDescription[threadType][threadSize].diameter;
     double pitch = threadDescription[threadType][threadSize].pitch;
@@ -1168,7 +1168,7 @@ std::optional<double> Hole::determineDiameter() const
                 }
                 break;
             default:
-                throw Base::IndexError("Thread fit out of range");
+                THROWM(Base::IndexError, "Thread fit out of range")
             }
         }
         else if (threadTypeStr == "UNC" || threadTypeStr == "UNF" || threadTypeStr == "UNEF") {
@@ -1219,7 +1219,7 @@ std::optional<double> Hole::determineDiameter() const
                 }
                 break;
             default:
-                throw Base::IndexError("Thread fit out of range");
+                THROWM(Base::IndexError, "Thread fit out of range")
             }
         }
         else {
@@ -1241,7 +1241,7 @@ std::optional<double> Hole::determineDiameter() const
                 }
                 break;
             default:
-                throw Base::IndexError("Thread fit out of range");
+                THROWM(Base::IndexError, "Thread fit out of range")
             }
         }
     }
@@ -2082,10 +2082,10 @@ TopoDS_Shape Hole::makeThread(const gp_Vec& xDir, const gp_Vec& zDir, double len
     int threadType = ThreadType.getValue();
     int threadSize = ThreadSize.getValue();
     if (threadType < 0) {
-        throw Base::IndexError(QT_TRANSLATE_NOOP("Exception", "Thread type out of range"));
+        THROWM(Base::IndexError, QT_TRANSLATE_NOOP("Exception", "Thread type out of range"))
     }
     if (threadSize < 0) {
-        throw Base::IndexError(QT_TRANSLATE_NOOP("Exception", "Thread size out of range"));
+        THROWM(Base::IndexError, QT_TRANSLATE_NOOP("Exception", "Thread size out of range"))
     }
 
     bool leftHanded = (bool)ThreadDirection.getValue();
@@ -2177,7 +2177,7 @@ TopoDS_Shape Hole::makeThread(const gp_Vec& xDir, const gp_Vec& zDir, double len
     mkPS.SetMode(true);  //This is for frenet
     mkPS.Add(threadWire);
     if (!mkPS.IsReady())
-        throw Base::CADKernelError(QT_TRANSLATE_NOOP("Exception", "Error: Thread could not be built"));
+        THROWM(Base::CADKernelError, QT_TRANSLATE_NOOP("Exception", "Error: Thread could not be built"))
     TopoDS_Shape shell = mkPS.Shape();
 
     // create faces at the ends of the pipe shell
@@ -2202,7 +2202,7 @@ TopoDS_Shape Hole::makeThread(const gp_Vec& xDir, const gp_Vec& zDir, double len
     BRepBuilderAPI_MakeSolid mkSolid;
     mkSolid.Add(TopoDS::Shell(sewer.SewedShape()));
     if (!mkSolid.IsDone())
-        throw Base::CADKernelError(QT_TRANSLATE_NOOP("Exception", "Error: Result is not a solid"));
+        THROWM(Base::CADKernelError, QT_TRANSLATE_NOOP("Exception", "Error: Result is not a solid"))
     TopoDS_Shape result = mkSolid.Shape();
 
     // check if the algorithm has confused the inside and outside of the solid
@@ -2339,7 +2339,7 @@ void from_json(const nlohmann::json& j, Hole::CutDimensionSet& t)
     else if (thread_type_string == "metricfine")
         t.thread_type = Hole::CutDimensionSet::MetricFine;
     else
-        throw Base::IndexError(std::string("Thread type '") + thread_type_string + "' unsupported");
+        THROWM(Base::IndexError, std::string("Thread type '") + thread_type_string + "' unsupported")
 
     std::string  cut_type_string = j["cut_type"].get<std::string>();
     if (cut_type_string == "counterbore") {
@@ -2353,7 +2353,7 @@ void from_json(const nlohmann::json& j, Hole::CutDimensionSet& t)
         t.angle = j["angle"].get<double>();
     }
     else
-        throw Base::IndexError(std::string("Cut type '") + cut_type_string + "' unsupported");
+        THROWM(Base::IndexError, std::string("Cut type '") + cut_type_string + "' unsupported")
 
     t.name = j["name"].get<std::string>();
 }

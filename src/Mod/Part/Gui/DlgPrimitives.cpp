@@ -172,7 +172,7 @@ public:
     {
         GC_MakeArcOfCircle arc(points[0], points[1], points[2]);
         if (!arc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(arc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(arc.Status()))
         Handle(Geom_TrimmedCurve) trim = arc.Value();
         Handle(Geom_Circle) circle = Handle(Geom_Circle)::DownCast(trim->BasisCurve());
 

@@ -605,17 +605,17 @@ void TaskHelixParameters::changeEvent(QEvent* e)
 void TaskHelixParameters::getReferenceAxis(App::DocumentObject*& obj, std::vector<std::string>& sub) const
 {
     if (axesInList.empty())
-        throw Base::RuntimeError("Not initialized!");
+        THROWM(Base::RuntimeError, "Not initialized!")
 
     int num = ui->axis->currentIndex();
     const App::PropertyLinkSub& lnk = *(axesInList.at(num));
     if (!lnk.getValue()) {
-        throw Base::RuntimeError("Still in reference selection mode; reference wasn't selected yet");
+        THROWM(Base::RuntimeError, "Still in reference selection mode; reference wasn't selected yet")
     }
     else {
         PartDesign::ProfileBased* pcRevolution = static_cast<PartDesign::ProfileBased*>(vp->getObject());
         if (!pcRevolution->getDocument()->isIn(lnk.getValue())) {
-            throw Base::RuntimeError("Object was deleted");
+            THROWM(Base::RuntimeError, "Object was deleted")
         }
 
         obj = lnk.getValue();

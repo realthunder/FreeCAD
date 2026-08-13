@@ -114,7 +114,7 @@ Part::TopoShape ReferenceEntry::asTopoShape() const
 //    Base::Console().Message("RE::asTopoShape()\n");
     TopoDS_Shape geom = getGeometry();
     if (geom.IsNull()) {
-        throw Base::RuntimeError("Dimension Reference has null geometry");
+        THROWM(Base::RuntimeError, "Dimension Reference has null geometry")
     }
     if (geom.ShapeType() == TopAbs_VERTEX) {
         TopoDS_Vertex vert = TopoDS::Vertex(geom);
@@ -124,7 +124,7 @@ Part::TopoShape ReferenceEntry::asTopoShape() const
         TopoDS_Edge edge = TopoDS::Edge(geom);
         return asTopoShapeEdge(edge);
     }
-    throw Base::RuntimeError("Dimension Reference has unsupported geometry");
+    THROWM(Base::RuntimeError, "Dimension Reference has unsupported geometry")
 }
 
 Part::TopoShape ReferenceEntry::asTopoShapeVertex(TopoDS_Vertex& vert) const

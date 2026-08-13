@@ -195,7 +195,7 @@ double DrawPage::getPageWidth() const
         return templ->getWidth();
     }
 
-    throw Base::RuntimeError("Template not set for Page");
+    THROWM(Base::RuntimeError, "Template not set for Page")
 }
 
 double DrawPage::getPageHeight() const
@@ -207,7 +207,7 @@ double DrawPage::getPageHeight() const
         return templ->getHeight();
     }
 
-    throw Base::RuntimeError("Template not set for Page");
+    THROWM(Base::RuntimeError, "Template not set for Page")
 }
 
 //orientation as text
@@ -220,7 +220,7 @@ const char* DrawPage::getPageOrientation() const
         TechDraw::DrawTemplate* templ = static_cast<TechDraw::DrawTemplate*>(obj);
         return templ->Orientation.getValueAsString();
     }
-    throw Base::RuntimeError("Template not set for Page");
+    THROWM(Base::RuntimeError, "Template not set for Page")
 }
 
 //orientation as 0(Portrait) or 1(Landscape)
@@ -232,7 +232,7 @@ int DrawPage::getOrientation() const
         TechDraw::DrawTemplate* templ = static_cast<TechDraw::DrawTemplate*>(obj);
         return templ->Orientation.getValue();
     }
-    throw Base::RuntimeError("Template not set for Page");
+    THROWM(Base::RuntimeError, "Template not set for Page")
 }
 
 int DrawPage::addView(App::DocumentObject* docObj)

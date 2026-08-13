@@ -206,14 +206,14 @@ void FeatureExtrude::generatePrism(TopoShape& prism,
         try {
             prism.makEPrism(sketchTopoShape, Ltotal*gp_Vec(dir)); // finite prism
         }catch(Standard_Failure &) {
-            throw Base::RuntimeError("FeatureExtrusion: Length: Could not extrude the sketch!");
+            THROWM(Base::RuntimeError, "FeatureExtrusion: Length: Could not extrude the sketch!")
         }
     }
     else {
         std::stringstream str;
         str << "FeatureExtrusion: Internal error: Unknown method '"
             << method << "' for generatePrism()";
-        throw Base::RuntimeError(str.str());
+        THROWM(Base::RuntimeError, str.str())
     }
 
 }

@@ -134,7 +134,7 @@ void SurfaceTriangulation::perform(int ksearch)
 void SurfaceTriangulation::perform(const std::vector<Base::Vector3f>& normals)
 {
     if (myPoints.size() != normals.size()) {
-        throw Base::RuntimeError("Number of points doesn't match with number of normals");
+        THROWM(Base::RuntimeError, "Number of points doesn't match with number of normals")
     }
 
     PointCloud<PointNormal>::Ptr cloud_with_normals(new PointCloud<PointNormal>);
@@ -261,7 +261,7 @@ void PoissonReconstruction::perform(int ksearch)
 void PoissonReconstruction::perform(const std::vector<Base::Vector3f>& normals)
 {
     if (myPoints.size() != normals.size()) {
-        throw Base::RuntimeError("Number of points doesn't match with number of normals");
+        THROWM(Base::RuntimeError, "Number of points doesn't match with number of normals")
     }
 
     PointCloud<PointNormal>::Ptr cloud_with_normals(new PointCloud<PointNormal>);
@@ -375,7 +375,7 @@ void GridReconstruction::perform(int ksearch)
 void GridReconstruction::perform(const std::vector<Base::Vector3f>& normals)
 {
     if (myPoints.size() != normals.size()) {
-        throw Base::RuntimeError("Number of points doesn't match with number of normals");
+        THROWM(Base::RuntimeError, "Number of points doesn't match with number of normals")
     }
 
     PointCloud<PointNormal>::Ptr cloud_with_normals(new PointCloud<PointNormal>);
@@ -436,7 +436,7 @@ ImageTriangulation::ImageTriangulation(int width,
 void ImageTriangulation::perform()
 {
     if (myPoints.size() != static_cast<std::size_t>(width * height)) {
-        throw Base::RuntimeError("Number of points doesn't match with given width and height");
+        THROWM(Base::RuntimeError, "Number of points doesn't match with given width and height")
     }
 
     // construct dataset
@@ -567,7 +567,7 @@ void Reen::MarchingCubesRBF::perform(int ksearch)
 void Reen::MarchingCubesRBF::perform(const std::vector<Base::Vector3f>& normals)
 {
     if (myPoints.size() != normals.size()) {
-        throw Base::RuntimeError("Number of points doesn't match with number of normals");
+        THROWM(Base::RuntimeError, "Number of points doesn't match with number of normals")
     }
 
     PointCloud<PointNormal>::Ptr cloud_with_normals(new PointCloud<PointNormal>);
@@ -678,7 +678,7 @@ void Reen::MarchingCubesHoppe::perform(int ksearch)
 void Reen::MarchingCubesHoppe::perform(const std::vector<Base::Vector3f>& normals)
 {
     if (myPoints.size() != normals.size()) {
-        throw Base::RuntimeError("Number of points doesn't match with number of normals");
+        THROWM(Base::RuntimeError, "Number of points doesn't match with number of normals")
     }
 
     PointCloud<PointNormal>::Ptr cloud_with_normals(new PointCloud<PointNormal>);
