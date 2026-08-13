@@ -52,6 +52,7 @@ public:
         signalParamChanged("checkShowReportTimecode");
         signalParamChanged("LogMessageSize");
         signalParamChanged("DuplicateWindow");
+        signalParamChanged("DuplicateKeyLength");
         signalParamChanged("DuplicateTimeout");
         signalParamChanged("CommandRedirect");
 
@@ -65,6 +66,7 @@ public:
     bool checkShowReportTimecode;
     long LogMessageSize;
     long DuplicateWindow;
+    long DuplicateKeyLength;
     long DuplicateTimeout;
     QString CommandRedirect;
 
@@ -89,6 +91,8 @@ public:
         funcs["LogMessageSize"] = &ReportViewParamsP::updateLogMessageSize;
         DuplicateWindow = this->handle->GetInt("DuplicateWindow", 3);
         funcs["DuplicateWindow"] = &ReportViewParamsP::updateDuplicateWindow;
+        DuplicateKeyLength = this->handle->GetInt("DuplicateKeyLength", 100);
+        funcs["DuplicateKeyLength"] = &ReportViewParamsP::updateDuplicateKeyLength;
         DuplicateTimeout = this->handle->GetInt("DuplicateTimeout", 1000);
         funcs["DuplicateTimeout"] = &ReportViewParamsP::updateDuplicateTimeout;
         CommandRedirect = QString::fromUtf8(this->handle->GetASCII("CommandRedirect", "").c_str());
@@ -144,6 +148,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDuplicateWindow(ReportViewParamsP *self) {
         self->DuplicateWindow = self->handle->GetInt("DuplicateWindow", 3);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDuplicateKeyLength(ReportViewParamsP *self) {
+        self->DuplicateKeyLength = self->handle->GetInt("DuplicateKeyLength", 100);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDuplicateTimeout(ReportViewParamsP *self) {
@@ -373,7 +381,8 @@ const char *ReportViewParams::docDuplicateWindow() {
     return QT_TRANSLATE_NOOP("ReportViewParams",
 "How many of the most recently shown lines a new line is compared against\n"
 "before it is shown. A line that repeats any of them is held back instead,\n"
-"and shown once - carrying (xN), the number of repeats it stands in for -\n"
+"and shown once - the first one held, carrying (xN) for the number it\n"
+"stands in for, and clickable to expand the ones that were kept back -\n"
 "when a different line has to be shown or DuplicateTimeout expires.\n"
 "Set to 0 to show every line as it arrives.\n"
 "This affects the Report view only. The log file, the Python console and\n"
@@ -400,6 +409,37 @@ void ReportViewParams::setDuplicateWindow(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void ReportViewParams::removeDuplicateWindow() {
     instance()->handle->RemoveInt("DuplicateWindow");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ReportViewParams::docDuplicateKeyLength() {
+    return QT_TRANSLATE_NOOP("ReportViewParams",
+"How many leading non-digit characters two messages must share to count\n"
+"as the same message. Digits are skipped rather than compared, so the same\n"
+"sentence carrying a different source line, element index or coordinate\n"
+"collapses into one entry instead of one entry per number.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & ReportViewParams::getDuplicateKeyLength() {
+    return instance()->DuplicateKeyLength;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & ReportViewParams::defaultDuplicateKeyLength() {
+    const static long def = 100;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ReportViewParams::setDuplicateKeyLength(const long &v) {
+    instance()->handle->SetInt("DuplicateKeyLength",v);
+    instance()->DuplicateKeyLength = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ReportViewParams::removeDuplicateKeyLength() {
+    instance()->handle->RemoveInt("DuplicateKeyLength");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

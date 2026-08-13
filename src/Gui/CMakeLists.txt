@@ -1345,6 +1345,7 @@ SET(FreeCADGui_SRCS
     InventorAll.h
     Macro.h
     MergeDocuments.h
+    MessageCollapse.h
     MetaTypes.h
     Notifications.h
     PreCompiled.cpp

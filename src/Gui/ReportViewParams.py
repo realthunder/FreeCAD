@@ -48,11 +48,17 @@ Params = [
     ParamInt("DuplicateWindow", 3,
         doc='How many of the most recently shown lines a new line is compared against\n'
             'before it is shown. A line that repeats any of them is held back instead,\n'
-            'and shown once - carrying (xN), the number of repeats it stands in for -\n'
+            'and shown once - the first one held, carrying (xN) for the number it\n'
+            'stands in for, and clickable to expand the ones that were kept back -\n'
             'when a different line has to be shown or DuplicateTimeout expires.\n'
             'Set to 0 to show every line as it arrives.\n'
             'This affects the Report view only. The log file, the Python console and\n'
             'every other console observer still receive every message.'),
+    ParamInt("DuplicateKeyLength", 100,
+        doc='How many leading non-digit characters two messages must share to count\n'
+            'as the same message. Digits are skipped rather than compared, so the same\n'
+            'sentence carrying a different source line, element index or coordinate\n'
+            'collapses into one entry instead of one entry per number.'),
     ParamInt("DuplicateTimeout", 1000,
         doc='Milliseconds a held duplicate line waits before it is shown anyway, timed\n'
             'from the first repeat rather than the last, so a continuous storm still\n'

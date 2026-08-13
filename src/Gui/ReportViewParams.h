@@ -147,7 +147,8 @@ public:
     ///
     /// How many of the most recently shown lines a new line is compared against
     /// before it is shown. A line that repeats any of them is held back instead,
-    /// and shown once - carrying (xN), the number of repeats it stands in for -
+    /// and shown once - the first one held, carrying (xN) for the number it
+    /// stands in for, and clickable to expand the ones that were kept back -
     /// when a different line has to be shown or DuplicateTimeout expires.
     /// Set to 0 to show every line as it arrives.
     /// This affects the Report view only. The log file, the Python console and
@@ -157,6 +158,21 @@ public:
     static void removeDuplicateWindow();
     static void setDuplicateWindow(const long &v);
     static const char *docDuplicateWindow();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DuplicateKeyLength
+    ///
+    /// How many leading non-digit characters two messages must share to count
+    /// as the same message. Digits are skipped rather than compared, so the same
+    /// sentence carrying a different source line, element index or coordinate
+    /// collapses into one entry instead of one entry per number.
+    static const long & getDuplicateKeyLength();
+    static const long & defaultDuplicateKeyLength();
+    static void removeDuplicateKeyLength();
+    static void setDuplicateKeyLength(const long &v);
+    static const char *docDuplicateKeyLength();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
