@@ -244,9 +244,12 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
             Transparency.setValue(value);
         // Only a single appearance can be pushed into the one Coin material
         // node; a per-face list is carried by the shape's own material arrays
-        // (ViewProviderPartExt), so leave the node alone in that case.
+        // (ViewProviderPartExt), so leave the node alone in that case. The
+        // node gets the Phong reading; the ShapeMaterial mirror below stays
+        // raw, because it writes back into the appearance and a derived
+        // mirror would quietly convert the stored values.
         if (ShapeAppearance.getSize() == 1)
-            setCoinAppearance(ShapeAppearance[0]);
+            setCoinAppearance(ShapeAppearance.getPhongMaterial(0));
         // Refresh the two compatibility names off the appearance. mirrorValue,
         // not setValue: these read from the store they would otherwise write
         // straight back into.
@@ -266,6 +269,9 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
             ShapeColor.mirrorValue(ShapeAppearance.getDiffuseColor(0));
             ShapeMaterial.mirrorValue(ShapeAppearance.getMaterial(0));
         }
+        // A PBR-mode appearance rides the render material node (its
+        // metallic/roughness), so it has to follow appearance changes too
+        updateRenderMaterial();
         Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &BoundingBox) {
@@ -588,6 +594,21 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     };
     float metallic = floatProp("Render_Metallic");
     float roughness = floatProp("Render_Roughness");
+    // A PBR-mode appearance is authored material data and beats the
+    // Render_* overrides, which predate it as the only way to state
+    // these. Entry 0 -- exact for a uniform appearance; a per-face one
+    // is approximated by its first entry until the per-face streams
+    // carry the raw values.
+    const bool pbr = ShapeAppearance.isPBR();
+    if (pbr) {
+        metallic = ShapeAppearance.getMetallic(0);
+        // The renderer reads a roughness <= 0 as unset (and derives from
+        // the shininess), so an authored mirror finish stops at the
+        // shader's own lower clamp instead
+        roughness = ShapeAppearance.getRoughness(0);
+        if (roughness < 0.02f)
+            roughness = 0.02f;
+    }
     // Render_Water turns the object's closed shape into a water body of
     // the render engine's volumetric lighting pass (tinted by the shape
     // color); Render_WaterDensity <= 0 = automatic.
@@ -676,7 +697,7 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     bool lightShadowExt = lightShadow && lightShadowExtProp
         && lightShadowExtProp->getValue();
 
-    if (metallic < 0.0f && roughness < 0.0f && !water && !glass
+    if (!pbr && metallic < 0.0f && roughness < 0.0f && !water && !glass
             && !cloud && !fire && !fountain && !light) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);

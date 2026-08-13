@@ -1919,6 +1919,9 @@ static bool materialsUnrepresentable(const std::vector<App::Material> &mats)
 
 void ViewProviderPartExt::applyShapeAppearance()
 {
+    // The colour path serves PBR mode too: the Phong reading keeps the
+    // diffuse as the base colour (see getPhongMaterial), so a list whose
+    // other fields are uniform is still a colour list here.
     if (ShapeAppearance.variesOnlyInDiffuse()) {
         setHighlightedFaces(DiffuseColor.getValues());
         return;
@@ -1927,7 +1930,7 @@ void ViewProviderPartExt::applyShapeAppearance()
     std::vector<App::Material> mats;
     mats.reserve(count);
     for (int i = 0; i < count; ++i)
-        mats.push_back(ShapeAppearance.getMaterial(i));
+        mats.push_back(ShapeAppearance.getPhongMaterial(i));
     setHighlightedFaces(mats);
 }
 
@@ -1964,7 +1967,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
     // reaches the node -- and so that any per-face arrays a previous
     // whole-material apply left there collapse back to scalars.
     {
-        const App::Material m = ShapeAppearance.getMaterial(0);
+        const App::Material m = ShapeAppearance.getPhongMaterial(0);
         const SbColor ambient(m.ambientColor.r, m.ambientColor.g, m.ambientColor.b);
         const SbColor specular(m.specularColor.r, m.specularColor.g, m.specularColor.b);
         const SbColor emissive(m.emissiveColor.r, m.emissiveColor.g, m.emissiveColor.b);
@@ -2039,7 +2042,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
     if (instanced) {
         // The uniform-valued non-diffuse components ride the object
         // material; diffuse+transparency partition the instances.
-        const App::Material m0 = colors.empty() ? ShapeAppearance.getMaterial(0) : colors[0];
+        const App::Material m0 = colors.empty() ? ShapeAppearance.getPhongMaterial(0) : colors[0];
         pcShapeMaterial->ambientColor.setValue(
             m0.ambientColor.r, m0.ambientColor.g, m0.ambientColor.b);
         pcShapeMaterial->specularColor.setValue(
