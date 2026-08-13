@@ -1265,15 +1265,17 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
     else if (prop == &DiffuseColor) {
         // Only a touch() reaches this now -- a write to DiffuseColor lands in
         // ShapeAppearance and is announced there, by the branch below.
-        setHighlightedFaces(DiffuseColor.getValues());
+        applyShapeAppearance();
         Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &ShapeAppearance) {
-        // The face colours changed, whichever name they arrived under. The
+        // The appearance changed, whichever name it arrived under. The
         // base class pushes a single appearance into the Coin material node;
         // a per-face one is carried by this view provider's own material
-        // arrays, which is what setHighlightedFaces fills in.
-        setHighlightedFaces(DiffuseColor.getValues());
+        // arrays, which is what applyShapeAppearance fills in -- colours
+        // alone while diffuse is the only varying field, whole materials
+        // once any other field varies per face.
+        applyShapeAppearance();
         Gui::ColorUpdater::addObject(getObject());
     }
     else if(prop == &ShapeColor) {
@@ -1908,10 +1910,25 @@ static bool materialsUnrepresentable(const std::vector<App::Material> &mats)
     for (size_t i = 1; i < mats.size(); ++i) {
         if (mats[i].ambientColor != mats[0].ambientColor
                 || mats[i].specularColor != mats[0].specularColor
-                || mats[i].emissiveColor != mats[0].emissiveColor)
+                || mats[i].emissiveColor != mats[0].emissiveColor
+                || mats[i].shininess != mats[0].shininess)
             return true;
     }
     return false;
+}
+
+void ViewProviderPartExt::applyShapeAppearance()
+{
+    if (ShapeAppearance.variesOnlyInDiffuse()) {
+        setHighlightedFaces(DiffuseColor.getValues());
+        return;
+    }
+    int count = ShapeAppearance.getSize();
+    std::vector<App::Material> mats;
+    mats.reserve(count);
+    for (int i = 0; i < count; ++i)
+        mats.push_back(ShapeAppearance.getMaterial(i));
+    setHighlightedFaces(mats);
 }
 
 void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& colors)
@@ -1939,6 +1956,31 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
 
     Gui::SoUpdateVBOAction action;
     action.apply(this->faceset);
+
+    // A colour vector varies diffuse+transparency only; the other fields
+    // come from the document appearance's entry 0. Pushed here, not only
+    // by the base class (which pushes a single-ENTRY appearance), so that
+    // a multi-entry appearance whose non-diffuse fields are uniform still
+    // reaches the node -- and so that any per-face arrays a previous
+    // whole-material apply left there collapse back to scalars.
+    {
+        const App::Material m = ShapeAppearance.getMaterial(0);
+        const SbColor ambient(m.ambientColor.r, m.ambientColor.g, m.ambientColor.b);
+        const SbColor specular(m.specularColor.r, m.specularColor.g, m.specularColor.b);
+        const SbColor emissive(m.emissiveColor.r, m.emissiveColor.g, m.emissiveColor.b);
+        if (pcShapeMaterial->ambientColor.getNum() != 1
+                || pcShapeMaterial->ambientColor[0] != ambient)
+            pcShapeMaterial->ambientColor.setValue(ambient);
+        if (pcShapeMaterial->specularColor.getNum() != 1
+                || pcShapeMaterial->specularColor[0] != specular)
+            pcShapeMaterial->specularColor.setValue(specular);
+        if (pcShapeMaterial->emissiveColor.getNum() != 1
+                || pcShapeMaterial->emissiveColor[0] != emissive)
+            pcShapeMaterial->emissiveColor.setValue(emissive);
+        if (pcShapeMaterial->shininess.getNum() != 1
+                || pcShapeMaterial->shininess[0] != m.shininess)
+            pcShapeMaterial->shininess.setValue(m.shininess);
+    }
 
     int size = static_cast<int>(colors.size());
     if (size > 1) {
@@ -1976,6 +2018,11 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
 
 void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& colors)
 {
+    // Not during a restore, for the same reason as the colour overload.
+    if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange)
+            && !App::Document::isAnyRestoring())
+        getObject()->touch(true);
+
     // Instanced representation: diffuse+transparency divergence goes
     // through the color-variant path; anything beyond that must bake
     // whole materials per face — rebuild flattened (the raised flag
@@ -1999,6 +2046,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
             m0.specularColor.r, m0.specularColor.g, m0.specularColor.b);
         pcShapeMaterial->emissiveColor.setValue(
             m0.emissiveColor.r, m0.emissiveColor.g, m0.emissiveColor.b);
+        pcShapeMaterial->shininess.setValue(m0.shininess);
         std::vector<App::Color> diffuse;
         diffuse.reserve(colors.size());
         for (const auto &m : colors) {
@@ -2009,6 +2057,9 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
         applyInstancedFaceColors(diffuse);
         return;
     }
+
+    Gui::SoUpdateVBOAction action;
+    action.apply(this->faceset);
 
     int size = static_cast<int>(colors.size());
     if (size > 1) {
@@ -2022,11 +2073,15 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
         pcShapeMaterial->ambientColor.setNum(numfaces);
         pcShapeMaterial->specularColor.setNum(numfaces);
         pcShapeMaterial->emissiveColor.setNum(numfaces);
+        pcShapeMaterial->shininess.setNum(numfaces);
+        pcShapeMaterial->transparency.setNum(numfaces);
 
         SbColor* dc = pcShapeMaterial->diffuseColor.startEditing();
         SbColor* ac = pcShapeMaterial->ambientColor.startEditing();
         SbColor* sc = pcShapeMaterial->specularColor.startEditing();
         SbColor* ec = pcShapeMaterial->emissiveColor.startEditing();
+        float* sh = pcShapeMaterial->shininess.startEditing();
+        float* tr = pcShapeMaterial->transparency.startEditing();
 
         int i=0;
         for (; i < size; i++) {
@@ -2034,6 +2089,8 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
             ac[i].setValue(colors[i].ambientColor.r, colors[i].ambientColor.g, colors[i].ambientColor.b);
             sc[i].setValue(colors[i].specularColor.r, colors[i].specularColor.g, colors[i].specularColor.b);
             ec[i].setValue(colors[i].emissiveColor.r, colors[i].emissiveColor.g, colors[i].emissiveColor.b);
+            sh[i] = colors[i].shininess;
+            tr[i] = colors[i].transparency;
         }
 
         const App::Material material = ShapeAppearance.getMaterial(0);
@@ -2042,12 +2099,16 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
             ac[i].setValue(material.ambientColor.r, material.ambientColor.g, material.ambientColor.b);
             sc[i].setValue(material.specularColor.r, material.specularColor.g, material.specularColor.b);
             ec[i].setValue(material.emissiveColor.r, material.emissiveColor.g, material.emissiveColor.b);
+            sh[i] = material.shininess;
+            tr[i] = material.transparency;
         }
 
         pcShapeMaterial->diffuseColor.finishEditing();
         pcShapeMaterial->ambientColor.finishEditing();
         pcShapeMaterial->specularColor.finishEditing();
         pcShapeMaterial->emissiveColor.finishEditing();
+        pcShapeMaterial->shininess.finishEditing();
+        pcShapeMaterial->transparency.finishEditing();
         return;
     }
 
@@ -2057,6 +2118,8 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
     pcShapeMaterial->ambientColor.setValue(material.ambientColor.r, material.ambientColor.g, material.ambientColor.b);
     pcShapeMaterial->specularColor.setValue(material.specularColor.r, material.specularColor.g, material.specularColor.b);
     pcShapeMaterial->emissiveColor.setValue(material.emissiveColor.r, material.emissiveColor.g, material.emissiveColor.b);
+    pcShapeMaterial->shininess.setValue(material.shininess);
+    pcShapeMaterial->transparency.setValue(material.transparency);
 }
 
 static inline App::PropertyLinkSub *getColoredElements(const App::DocumentObject *obj) {
@@ -2228,7 +2291,7 @@ void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color
 
 void ViewProviderPartExt::unsetHighlightedFaces()
 {
-    setHighlightedFaces(DiffuseColor.getValues());
+    applyShapeAppearance();
 }
 
 void ViewProviderPartExt::setHighlightedEdges(const std::vector<App::Color>& colors)
@@ -4005,7 +4068,7 @@ void ViewProviderPartExt::updateVisual()
     // and let the level plan run the coarse build on the refine pool.
     if (buildCoarseStandIn()) {
         VisualTouched = false;
-        setHighlightedFaces(DiffuseColor.getValues());
+        applyShapeAppearance();
         setHighlightedEdges(LineColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValue());
         return;
@@ -4040,7 +4103,7 @@ void ViewProviderPartExt::updateVisual()
     if (instancedOk) {
         VisualTouched = false;
         // The material has to be checked again (colors verified uniform)
-        setHighlightedFaces(DiffuseColor.getValues());
+        applyShapeAppearance();
         setHighlightedEdges(LineColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValue());
         return;
@@ -4233,7 +4296,7 @@ void ViewProviderPartExt::updateVisual()
     VisualTouched = false;
 
     // The material has to be checked again
-    setHighlightedFaces(DiffuseColor.getValues());
+    applyShapeAppearance();
     setHighlightedEdges(LineColorArray.getValues());
     setHighlightedPoints(PointColorArray.getValue());
 }
