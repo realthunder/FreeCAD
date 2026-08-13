@@ -2567,9 +2567,14 @@ void PropertyColor::setPyObject(PyObject *value)
 
 namespace {
 
-/** Turn a colour written by a reader whose alpha means opacity into one this
- * fork can read, where the component holds transparency (Base::alphaIsOpacity).
- * Nothing else about a colour changed, so this is the whole conversion.
+/** Swap a colour between the two meanings of its alpha component
+ *
+ * In memory the component is an opacity, as upstream defines it. In a document
+ * it is a transparency, in every file written before upstream 1.1 -- which
+ * includes every file this fork writes, since it still calls itself 0.22.
+ * Nothing else about a colour differs between the two, so this is the whole
+ * conversion, and it is its own inverse: the same call serves the way in and
+ * the way out, and only which side of Save/Restore it sits on says which.
  */
 void convertAlpha(Color &color)
 {
@@ -2584,12 +2589,50 @@ unsigned long convertPackedAlpha(unsigned long rgba)
     return (rgba & ~alphaMax) | (alphaMax - (rgba & alphaMax));
 }
 
+/// Whether colours read through this reader are in the other convention
+bool restoreConverts(const Base::XMLReader &reader)
+{
+    return !Base::alphaIsOpacity(reader);
+}
+
+/// The same for a property restoring from its own archive entry
+bool restoreConverts(const Base::Reader &reader)
+{
+    return !Base::alphaIsOpacity(reader);
+}
+
+/// Whether colours written by this build have to be converted on the way out
+bool saveConverts()
+{
+    return !Base::writerAlphaIsOpacity();
+}
+
+/// A colour's packed form as a document stores it
+uint32_t packedForSave(const Color &color, bool convert)
+{
+    unsigned long packed = color.getPackedValue();
+    return static_cast<uint32_t>(convert ? convertPackedAlpha(packed) : packed);
+}
+
+/// The diffuse colour a whole material stores: its transparency field is the
+/// truth and the alpha holds its complement (see the storage note in the
+/// header).
+Color storedDiffuse(const Material &mat)
+{
+    Color color = mat.diffuseColor;
+    color.setTransparency(mat.transparency);
+    return color;
+}
+
 } // namespace
 
 void PropertyColor::Save (Base::Writer &writer) const
 {
+    unsigned long rgba = _cCol.getPackedValue();
+    if (saveConverts())
+        rgba = convertPackedAlpha(rgba);
     writer.Stream() << writer.ind() << "<PropertyColor value=\""
-    <<  _cCol.getPackedValue() <<"\"/>\n";
+    <<  rgba <<"\"/>\n";
 }
 
 void PropertyColor::Restore(Base::XMLReader &reader)
@@ -2598,7 +2641,7 @@ void PropertyColor::Restore(Base::XMLReader &reader)
     reader.readElement("PropertyColor");
     // get the value of my Attribute
     unsigned long rgba = reader.getAttributeAsUnsigned("value");
-    if (Base::alphaIsOpacity(reader))
+    if (restoreConverts(reader))
         rgba = convertPackedAlpha(rgba);
     setValue(rgba);
 }
@@ -2685,9 +2728,14 @@ Color PropertyColorList::getPyValue(PyObject *item) const {
 
 bool PropertyColorList::saveXML(Base::Writer &writer) const
 {
+    const bool convert = saveConverts();
     writer.Stream() << ">\n" << std::hex;
-    for(const auto &c : _lValueList)
-        writer.Stream() << c.getPackedValue() << '\n';
+    for(const auto &c : _lValueList) {
+        unsigned long packed = c.getPackedValue();
+        if (convert)
+            packed = convertPackedAlpha(packed);
+        writer.Stream() << packed << '\n';
+    }
     writer.Stream() << std::dec;
     return false;
 }
@@ -2695,14 +2743,14 @@ bool PropertyColorList::saveXML(Base::Writer &writer) const
 void PropertyColorList::restoreXML(Base::XMLReader &reader)
 {
     int count = reader.getAttributeAsInteger("count");
-    bool opacity = Base::alphaIsOpacity(reader);
+    bool convert = restoreConverts(reader);
     std::vector<Color> values(count);
     auto &s = reader.beginCharStream() >> std::hex;
     for(int i=0;i<count;++i) {
         uint32_t v;
         s >> v;
         values[i].setPackedValue(v);
-        if (opacity)
+        if (convert)
             convertAlpha(values[i]);
     }
     s >> std::dec;
@@ -2715,9 +2763,14 @@ void PropertyColorList::RestoreDocFile(Base::Reader &reader)
     // The values arrive through restoreStream, which is handed a byte stream
     // and no document, so the conversion happens here rather than there --
     // and after the read, because the list is what gets converted, not the
-    // bytes. A list from a file this fork wrote is left alone.
+    // bytes.
+    //
+    // Note that this reads and writes through getValues()/setValues(), which
+    // is what lets it serve a subclass whose values live somewhere else --
+    // PropertyDiffuseColor keeps them in a ShapeAppearance. Both are virtual
+    // for that reason; see App::PropertyListsT::getValues.
     PropertyLists::RestoreDocFile(reader);
-    if (!Base::alphaIsOpacity(reader) || !getSize())
+    if (!restoreConverts(reader) || !getSize())
         return;
     std::vector<Color> values = getValues();
     for (auto &color : values)
@@ -2727,8 +2780,10 @@ void PropertyColorList::RestoreDocFile(Base::Reader &reader)
 
 void PropertyColorList::saveStream(Base::OutputStream &str) const
 {
+    const bool convert = saveConverts();
     for (auto it : _lValueList) {
-        str << it.getPackedValue();
+        unsigned long packed = it.getPackedValue();
+        str << static_cast<uint32_t>(convert ? convertPackedAlpha(packed) : packed);
     }
 }
 
@@ -2855,11 +2910,16 @@ void PropertyMaterial::setPyObject(PyObject *value)
 
 void PropertyMaterial::Save (Base::Writer &writer) const
 {
+    const bool convert = saveConverts();
+    auto packed = [convert](const Color &color) {
+        unsigned long value = color.getPackedValue();
+        return convert ? convertPackedAlpha(value) : value;
+    };
     writer.Stream() << writer.ind() << "<PropertyMaterial ambientColor=\""
-        <<  _cMat.ambientColor.getPackedValue()
-        << "\" diffuseColor=\""  <<  _cMat.diffuseColor.getPackedValue()
-        << "\" specularColor=\"" <<  _cMat.specularColor.getPackedValue()
-        << "\" emissiveColor=\"" <<  _cMat.emissiveColor.getPackedValue()
+        <<  packed(_cMat.ambientColor)
+        << "\" diffuseColor=\""  <<  packed(_cMat.diffuseColor)
+        << "\" specularColor=\"" <<  packed(_cMat.specularColor)
+        << "\" emissiveColor=\"" <<  packed(_cMat.emissiveColor)
         << "\" shininess=\""     <<  _cMat.shininess
         << "\" transparency=\""  <<  _cMat.transparency
         << "\"/>\n";
@@ -2879,7 +2939,7 @@ void PropertyMaterial::Restore(Base::XMLReader &reader)
     _cMat.transparency = (float)reader.getAttributeAsFloat("transparency");
     // Only the colours changed meaning; transparency is transparency in every
     // version that ever wrote this element.
-    if (Base::alphaIsOpacity(reader)) {
+    if (restoreConverts(reader)) {
         convertAlpha(_cMat.ambientColor);
         convertAlpha(_cMat.diffuseColor);
         convertAlpha(_cMat.specularColor);
@@ -3056,7 +3116,6 @@ void PropertyMaterialList::normalize()
         std::vector<Color>().swap(_specular);
         std::vector<Color>().swap(_emissive);
         std::vector<float>().swap(_shininess);
-        std::vector<float>().swap(_transparency);
         std::vector<std::string>().swap(_image);
         std::vector<std::string>().swap(_imagePath);
         std::vector<std::string>().swap(_uuid);
@@ -3064,11 +3123,10 @@ void PropertyMaterialList::normalize()
     }
     else {
         collapseField(_ambient, def.ambientColor);
-        collapseField(_diffuse, def.diffuseColor);
+        collapseField(_diffuse, storedDiffuse(def));
         collapseField(_specular, def.specularColor);
         collapseField(_emissive, def.emissiveColor);
         collapseField(_shininess, def.shininess);
-        collapseField(_transparency, def.transparency);
         collapseField(_image, def.image);
         collapseField(_imagePath, def.imagePath);
         collapseField(_uuid, def.uuid);
@@ -3088,34 +3146,99 @@ void PropertyMaterialList::ensureNormalized() const
         const_cast<PropertyMaterialList*>(this)->normalize();
 }
 
-void PropertyMaterialList::applyOpacityConvention()
+bool PropertyMaterialList::variesOnlyInDiffuse() const
 {
-    if (_count == 0)
-        return;
+    ensureNormalized();
+    // Normalised, so a field is 0, 1 or _count: anything above one is a field
+    // that genuinely differs from entry to entry. Per-entry transparency is
+    // the diffuse alpha, so it is variance a colour list CAN express and is
+    // deliberately not tested here.
+    return _ambient.size() <= 1 && _specular.size() <= 1 && _emissive.size() <= 1
+        && _shininess.size() <= 1 && _type.size() <= 1
+        && _image.size() <= 1 && _imagePath.size() <= 1 && _uuid.size() <= 1;
+}
 
+void PropertyMaterialList::restoreValues(std::vector<Material> &&values, bool legacy)
+{
     atomic_change guard(*this);
     touchFields();
-    // The diffuse alpha is where this fork reads a face's transparency. A
-    // release that means opacity by it does not: it renders per face
-    // transparency out of the transparency field and ignores the component
-    // entirely (their setHighlightedFaces takes materials[i].transparency).
-    // So the field is the value the file meant, and this moves it to where it
-    // will be read rather than inverting a component nobody set on purpose.
-    std::vector<Color> diffuse(_count);
-    for (int i = 0; i < _count; ++i) {
-        diffuse[i] = getDiffuseColor(i);
-        diffuse[i].a = getTransparency(i);
+    _touchList.clear();
+    _count = static_cast<int>(values.size());
+    std::vector<float> transparency;
+    std::vector<Color>().swap(_ambient);
+    std::vector<Color>().swap(_diffuse);
+    std::vector<Color>().swap(_specular);
+    std::vector<Color>().swap(_emissive);
+    std::vector<float>().swap(_shininess);
+    std::vector<std::string>().swap(_image);
+    std::vector<std::string>().swap(_imagePath);
+    std::vector<std::string>().swap(_uuid);
+    std::vector<int8_t>().swap(_type);
+    if (_count) {
+        _ambient.reserve(_count);
+        _diffuse.reserve(_count);
+        _specular.reserve(_count);
+        _emissive.reserve(_count);
+        _shininess.reserve(_count);
+        transparency.reserve(_count);
+        _image.reserve(_count);
+        _imagePath.reserve(_count);
+        _uuid.reserve(_count);
+        _type.reserve(_count);
+        for (auto &mat : values) {
+            // The diffuse alpha exactly as the file states it; which of the
+            // two slots is the entry's transparency is decided below, once
+            // the legacy conversion has made them comparable.
+            _ambient.push_back(mat.ambientColor);
+            _diffuse.push_back(mat.diffuseColor);
+            _specular.push_back(mat.specularColor);
+            _emissive.push_back(mat.emissiveColor);
+            _shininess.push_back(mat.shininess);
+            transparency.push_back(mat.transparency);
+            _image.push_back(std::move(mat.image));
+            _imagePath.push_back(std::move(mat.imagePath));
+            _uuid.push_back(std::move(mat.uuid));
+            _type.push_back(static_cast<int8_t>(mat.getType()));
+        }
+        if (legacy) {
+            // Every colour's alpha meant transparency: invert, as upstream's
+            // convertAlphaInMaterial does. For the diffuse this makes the
+            // alpha an opacity, so that the merge below can compare it with
+            // the field.
+            for (auto *field : {&_ambient, &_diffuse, &_specular, &_emissive}) {
+                for (auto &color : *field)
+                    convertAlpha(color);
+            }
+        }
+        applyRestoredTransparency(transparency, legacy);
+        normalize();
     }
-    _diffuse.swap(diffuse);
-    // The other three are decorative in both conventions -- no renderer on
-    // either side varies them per entry -- but they are stored, so they are
-    // converted rather than left to mean the opposite of what they say.
-    for (auto *field : {&_ambient, &_specular, &_emissive}) {
-        for (auto &color : *field)
-            convertAlpha(color);
+    else {
+        _normalized = true;
     }
-    normalize();
     guard.tryInvoke();
+}
+
+void PropertyMaterialList::applyRestoredTransparency(const std::vector<float> &transparency,
+                                                     bool legacy)
+{
+    if (transparency.empty() || _count == 0)
+        return;
+    // Sizes are 1 or _count, validated by every reader that fills the vector.
+    const std::size_t n = transparency.size();
+    expandField(_diffuse, _count, storedDiffuse(defaultMaterial()));
+    for (int i = 0; i < _count; ++i) {
+        const float field = transparency[n == 1 ? 0 : i];
+        float &alpha = _diffuse[i].a;
+        // See restoreValues: for a legacy file both slots were transparency
+        // and the larger of the two is the one that was actually written (the
+        // alpha arrives here already inverted, so it is min() of opacities);
+        // for a 1.1 file the field alone is the truth.
+        if (legacy)
+            alpha = std::min(alpha, 1.0F - field);
+        else
+            alpha = 1.0F - field;
+    }
 }
 
 void PropertyMaterialList::setSize(int newSize)
@@ -3134,11 +3257,10 @@ void PropertyMaterialList::setSize(int newSize, const Material &def)
     touchFields();
     const Material &zero = defaultMaterial();
     resizeField(_ambient, _count, newSize, def.ambientColor, zero.ambientColor);
-    resizeField(_diffuse, _count, newSize, def.diffuseColor, zero.diffuseColor);
+    resizeField(_diffuse, _count, newSize, storedDiffuse(def), storedDiffuse(zero));
     resizeField(_specular, _count, newSize, def.specularColor, zero.specularColor);
     resizeField(_emissive, _count, newSize, def.emissiveColor, zero.emissiveColor);
     resizeField(_shininess, _count, newSize, def.shininess, zero.shininess);
-    resizeField(_transparency, _count, newSize, def.transparency, zero.transparency);
     resizeField(_image, _count, newSize, def.image, zero.image);
     resizeField(_imagePath, _count, newSize, def.imagePath, zero.imagePath);
     resizeField(_uuid, _count, newSize, def.uuid, zero.uuid);
@@ -3163,11 +3285,13 @@ Material PropertyMaterialList::getMaterial(int idx) const
     mat.setType(static_cast<Material::MaterialType>(
                 fieldAt(_type, idx, static_cast<int8_t>(def.getType()))));
     mat.ambientColor = fieldAt(_ambient, idx, def.ambientColor);
-    mat.diffuseColor = fieldAt(_diffuse, idx, def.diffuseColor);
+    mat.diffuseColor = fieldAt(_diffuse, idx, storedDiffuse(def));
     mat.specularColor = fieldAt(_specular, idx, def.specularColor);
     mat.emissiveColor = fieldAt(_emissive, idx, def.emissiveColor);
     mat.shininess = fieldAt(_shininess, idx, def.shininess);
-    mat.transparency = fieldAt(_transparency, idx, def.transparency);
+    // One quantity, two slots: the material handed out is always consistent,
+    // whatever inconsistent pair was once handed in.
+    mat.transparency = mat.diffuseColor.transparency();
     mat.image = fieldAt(_image, idx, def.image);
     mat.imagePath = fieldAt(_imagePath, idx, def.imagePath);
     mat.uuid = fieldAt(_uuid, idx, def.uuid);
@@ -3195,7 +3319,6 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
     std::vector<Color>().swap(_specular);
     std::vector<Color>().swap(_emissive);
     std::vector<float>().swap(_shininess);
-    std::vector<float>().swap(_transparency);
     std::vector<std::string>().swap(_image);
     std::vector<std::string>().swap(_imagePath);
     std::vector<std::string>().swap(_uuid);
@@ -3206,18 +3329,16 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
         _specular.reserve(_count);
         _emissive.reserve(_count);
         _shininess.reserve(_count);
-        _transparency.reserve(_count);
         _image.reserve(_count);
         _imagePath.reserve(_count);
         _uuid.reserve(_count);
         _type.reserve(_count);
         for (const auto &mat : values) {
             _ambient.push_back(mat.ambientColor);
-            _diffuse.push_back(mat.diffuseColor);
+            _diffuse.push_back(storedDiffuse(mat));
             _specular.push_back(mat.specularColor);
             _emissive.push_back(mat.emissiveColor);
             _shininess.push_back(mat.shininess);
-            _transparency.push_back(mat.transparency);
             _image.push_back(mat.image);
             _imagePath.push_back(mat.imagePath);
             _uuid.push_back(mat.uuid);
@@ -3249,11 +3370,10 @@ void PropertyMaterialList::set1Value(int idx, const Material &mat)
         touchFields();
         const Material &def = defaultMaterial();
         setFieldAt(_ambient, idx, _count, mat.ambientColor, def.ambientColor);
-        setFieldAt(_diffuse, idx, _count, mat.diffuseColor, def.diffuseColor);
+        setFieldAt(_diffuse, idx, _count, storedDiffuse(mat), storedDiffuse(def));
         setFieldAt(_specular, idx, _count, mat.specularColor, def.specularColor);
         setFieldAt(_emissive, idx, _count, mat.emissiveColor, def.emissiveColor);
         setFieldAt(_shininess, idx, _count, mat.shininess, def.shininess);
-        setFieldAt(_transparency, idx, _count, mat.transparency, def.transparency);
         setFieldAt(_image, idx, _count, mat.image, def.image);
         setFieldAt(_imagePath, idx, _count, mat.imagePath, def.imagePath);
         setFieldAt(_uuid, idx, _count, mat.uuid, def.uuid);
@@ -3274,7 +3394,7 @@ Color PropertyMaterialList::getAmbientColor(int idx) const
 
 Color PropertyMaterialList::getDiffuseColor(int idx) const
 {
-    return fieldAt(_diffuse, idx, defaultMaterial().diffuseColor);
+    return fieldAt(_diffuse, idx, storedDiffuse(defaultMaterial()));
 }
 
 Color PropertyMaterialList::getSpecularColor(int idx) const
@@ -3294,7 +3414,8 @@ float PropertyMaterialList::getShininess(int idx) const
 
 float PropertyMaterialList::getTransparency(int idx) const
 {
-    return fieldAt(_transparency, idx, defaultMaterial().transparency);
+    // The complement of the diffuse alpha; there is no second store.
+    return getDiffuseColor(idx).transparency();
 }
 
 const std::string &PropertyMaterialList::getImage(int idx) const
@@ -3334,8 +3455,15 @@ void PropertyMaterialList::setField(std::vector<T> &field, const std::vector<T> 
         return;
     atomic_change guard(*this);
     const int newCount = static_cast<int>(values.size());
-    if (newCount != _count && (newCount > 1 || _count == 0))
-        setSize(newCount);
+    if (newCount != _count && (newCount > 1 || _count == 0)) {
+        // Growth extends the LAST entry's material, not the default: the
+        // caller is stating one field for N entries and saying nothing about
+        // the others, so the others must not change meaning -- and for a
+        // uniform field, extending its own value keeps it stored as one
+        // element where a default fill would materialise N of them and make
+        // the appearance "vary" in fields nobody set.
+        setSize(newCount, _count ? getMaterial(_count - 1) : defaultMaterial());
+    }
     touchFields();
     field = values;
     collapseField(field, def);
@@ -3349,7 +3477,7 @@ void PropertyMaterialList::setAmbientColors(const std::vector<Color> &colors)
 
 void PropertyMaterialList::setDiffuseColors(const std::vector<Color> &colors)
 {
-    setField(_diffuse, colors, defaultMaterial().diffuseColor);
+    setField(_diffuse, colors, storedDiffuse(defaultMaterial()));
 }
 
 void PropertyMaterialList::setSpecularColors(const std::vector<Color> &colors)
@@ -3369,7 +3497,27 @@ void PropertyMaterialList::setShininessValues(const std::vector<float> &values)
 
 void PropertyMaterialList::setTransparencies(const std::vector<float> &values)
 {
-    setField(_transparency, values, defaultMaterial().transparency);
+    // The alphas of the diffuse field, at the sizes the old float field
+    // accepted: empty is back-to-default, 1 is uniform, N per entry -- and a
+    // different N resizes the list, as assigning any field does. The rgb of
+    // every entry stays what it was; only the alphas move.
+    const Color def = storedDiffuse(defaultMaterial());
+    const int newCount = static_cast<int>(values.size());
+    std::vector<Color> colors = _diffuse;
+    if (newCount == 0 || newCount == 1) {
+        const float alpha = newCount ? 1.0F - values[0] : def.a;
+        if (colors.empty())
+            colors.push_back(def);
+        for (auto &color : colors)
+            color.a = alpha;
+    }
+    else {
+        // Per entry: the rgb comes along, from wherever the field has it.
+        colors.resize(newCount, fieldAt(_diffuse, 0, def));
+        for (int i = 0; i < newCount; ++i)
+            colors[i].setTransparency(values[i]);
+    }
+    setField(_diffuse, colors, def);
 }
 
 void PropertyMaterialList::setImages(const std::vector<std::string> &values)
@@ -3418,7 +3566,7 @@ void PropertyMaterialList::setAmbientColor(int idx, const Color &col)
 
 void PropertyMaterialList::setDiffuseColor(int idx, const Color &col)
 {
-    setFieldValue(_diffuse, idx, col, defaultMaterial().diffuseColor);
+    setFieldValue(_diffuse, idx, col, storedDiffuse(defaultMaterial()));
 }
 
 void PropertyMaterialList::setSpecularColor(int idx, const Color &col)
@@ -3438,7 +3586,12 @@ void PropertyMaterialList::setShininess(int idx, float value)
 
 void PropertyMaterialList::setTransparency(int idx, float value)
 {
-    setFieldValue(_transparency, idx, value, defaultMaterial().transparency);
+    // One entry's alpha: the same write as setDiffuseColor of that entry
+    // with only the alpha changed, and it shares that setter's growth and
+    // early-out behaviour.
+    Color color = getDiffuseColor(idx < 0 || idx >= _count ? 0 : idx);
+    color.setTransparency(value);
+    setFieldValue(_diffuse, idx, color, storedDiffuse(defaultMaterial()));
 }
 
 void PropertyMaterialList::setImage(int idx, const std::string &value)
@@ -3482,7 +3635,7 @@ void PropertyMaterialList::setAmbientColor(const Color &col)
 
 void PropertyMaterialList::setDiffuseColor(const Color &col)
 {
-    setUniformField(_diffuse, col, defaultMaterial().diffuseColor);
+    setUniformField(_diffuse, col, storedDiffuse(defaultMaterial()));
 }
 
 void PropertyMaterialList::setSpecularColor(const Color &col)
@@ -3502,7 +3655,30 @@ void PropertyMaterialList::setShininess(float value)
 
 void PropertyMaterialList::setTransparency(float value)
 {
-    setUniformField(_transparency, value, defaultMaterial().transparency);
+    // Every entry's alpha, leaving every entry's rgb alone -- which on a per
+    // face field is NOT a uniform write of one colour.
+    if (_diffuse.size() <= 1) {
+        Color color = fieldAt(_diffuse, 0, storedDiffuse(defaultMaterial()));
+        color.setTransparency(value);
+        setUniformField(_diffuse, color, storedDiffuse(defaultMaterial()));
+        return;
+    }
+    const float alpha = 1.0F - value;
+    bool changed = false;
+    for (const auto &color : _diffuse) {
+        if (color.a != alpha) {
+            changed = true;
+            break;
+        }
+    }
+    if (!changed)
+        return;
+    atomic_change guard(*this);
+    touchFields();
+    for (auto &color : _diffuse)
+        color.a = alpha;
+    normalize();
+    guard.tryInvoke();
 }
 
 //**************************************************************************
@@ -3580,7 +3756,7 @@ unsigned int PropertyMaterialList::getMemSize() const
     return static_cast<unsigned int>(
             (_ambient.size() + _diffuse.size() + _specular.size() + _emissive.size())
                 * sizeof(Color)
-            + (_shininess.size() + _transparency.size()) * sizeof(float)
+            + _shininess.size() * sizeof(float)
             + _type.size() * sizeof(int8_t)
             + stringsMemSize(_image) + stringsMemSize(_imagePath)
             + stringsMemSize(_uuid));
@@ -3614,12 +3790,13 @@ bool PropertyMaterialList::saveXML(Base::Writer &writer) const
     if (writer.getSchemaVersion() >= 6 || hasTextureOrCard())
         return saveFieldXML(writer);
 
+    const bool convert = saveConverts();
     writer.Stream() << ">\n" << std::hex;
     for (int i = 0; i < _count; ++i) {
-        writer.Stream() << getAmbientColor(i).getPackedValue()
-                        << ' ' << getDiffuseColor(i).getPackedValue()
-                        << ' ' << getSpecularColor(i).getPackedValue()
-                        << ' ' << getEmissiveColor(i).getPackedValue()
+        writer.Stream() << packedForSave(getAmbientColor(i), convert)
+                        << ' ' << packedForSave(getDiffuseColor(i), convert)
+                        << ' ' << packedForSave(getSpecularColor(i), convert)
+                        << ' ' << packedForSave(getEmissiveColor(i), convert)
                         << ' ' << getShininess(i)
                         << ' ' << getTransparency(i)
                         << '\n';
@@ -3631,6 +3808,7 @@ bool PropertyMaterialList::saveXML(Base::Writer &writer) const
 void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
 {
     unsigned uCt = reader.getAttributeAsUnsigned("count");
+    const bool convert = restoreConverts(reader);
     if (reader.hasAttribute("fields")) {
         restoreFieldXML(reader, uCt);
         return;
@@ -3648,25 +3826,29 @@ void PropertyMaterialList::restoreXML(Base::XMLReader &reader)
     }
     s >> std::dec;
     reader.endCharStream();
-    setValues(std::move(values));
-    if (Base::alphaIsOpacity(reader))
-        applyOpacityConvention();
+    restoreValues(std::move(values), convert);
 }
 
 void PropertyMaterialList::saveStream(Base::OutputStream &str) const
 {
     ensureNormalized();
+    const bool convert = saveConverts();
     for (int i = 0; i < _count; ++i) {
-        str << getAmbientColor(i).getPackedValue();
-        str << getDiffuseColor(i).getPackedValue();
-        str << getSpecularColor(i).getPackedValue();
-        str << getEmissiveColor(i).getPackedValue();
+        str << packedForSave(getAmbientColor(i), convert);
+        str << packedForSave(getDiffuseColor(i), convert);
+        str << packedForSave(getSpecularColor(i), convert);
+        str << packedForSave(getEmissiveColor(i), convert);
         str << getShininess(i);
         str << getTransparency(i);
     }
 }
 
-void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
+namespace {
+
+/// The compatible encoding's per-entry sequence, into whole materials whose
+/// slots hold exactly what the file states -- landed by restoreValues, which
+/// knows what the file's era means by them.
+std::vector<Material> parseMaterialStream(Base::InputStream &str, unsigned uCt)
 {
     std::vector<Material> values(uCt);
     uint32_t value; // must be 32 bit long
@@ -3685,7 +3867,17 @@ void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
         str >> valueF;
         it.transparency = valueF;
     }
-    setValues(std::move(values));
+    return values;
+}
+
+} // namespace
+
+void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
+{
+    // The generic hook, which no caller with a document reaches (this class
+    // overrides RestoreDocFile); a bare stream states no version, and no
+    // conversion is the reading that leaves its bytes meaning what they say.
+    restoreValues(parseMaterialStream(str, uCt), false);
 }
 
 /** The element, and whether it promises a second pass
@@ -3753,25 +3945,23 @@ void PropertyMaterialList::SaveDocFile(Base::Writer &writer) const
 
 void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
 {
+    // Asked of the reader that registered this entry: the entry itself is
+    // read after the XML pass and knows no document version.
+    const bool legacy = restoreConverts(reader);
     Base::InputStream str(reader, !boost::ends_with(reader.getFileName(), ".txt"));
     uint32_t uCt = 0;
     str >> uCt;
     if (uCt == FieldStreamMarker) {
         str >> uCt;
-        restoreFieldStream(str, uCt);
+        restoreFieldStream(str, uCt, legacy);
     }
     else {
-        restoreStream(str, uCt);
+        restoreValues(parseMaterialStream(str, uCt), legacy);
         // Version 3 is the colours we have always read, followed by three
         // strings per entry. Written by upstream, and by this fork when it
         // has any to write.
         if (_fileVersion >= 3) {
             restoreStringStream(str, uCt);
-        }
-        // Asked of the reader that registered this entry: the entry itself is
-        // read after the XML pass and knows no document version.
-        if (Base::alphaIsOpacity(reader)) {
-            applyOpacityConvention();
         }
     }
 }
@@ -3825,25 +4015,32 @@ enum FieldBit {
 
 void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
 {
+    // No FieldTransparency: the quantity rides the diffuse alpha (which the
+    // conversion below writes to disk AS a transparency). The bit is still
+    // understood on the way in, for the files written while it was a field
+    // of its own.
     uint16_t mask = 0;
     if (!_ambient.empty())      mask |= FieldAmbient;
     if (!_diffuse.empty())      mask |= FieldDiffuse;
     if (!_specular.empty())     mask |= FieldSpecular;
     if (!_emissive.empty())     mask |= FieldEmissive;
     if (!_shininess.empty())    mask |= FieldShininess;
-    if (!_transparency.empty()) mask |= FieldTransparency;
     if (!_type.empty())         mask |= FieldType;
     if (!_image.empty())        mask |= FieldImage;
     if (!_imagePath.empty())    mask |= FieldImagePath;
     if (!_uuid.empty())         mask |= FieldUuid;
     str << mask;
 
-    auto writeColors = [&str](const std::vector<Color> &field) {
+    // The per field encoding is this fork's own, but it is written into the
+    // same document as the compatible one and is read back by the same gate,
+    // so it stores colours the way that document stores them.
+    const bool convert = saveConverts();
+    auto writeColors = [&str, convert](const std::vector<Color> &field) {
         if (field.empty())
             return;
         str << static_cast<uint32_t>(field.size());
         for (const auto &col : field)
-            str << col.getPackedValue();
+            str << packedForSave(col, convert);
     };
     auto writeFloats = [&str](const std::vector<float> &field) {
         if (field.empty())
@@ -3858,7 +4055,6 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     writeColors(_specular);
     writeColors(_emissive);
     writeFloats(_shininess);
-    writeFloats(_transparency);
     if (!_type.empty()) {
         str << static_cast<uint32_t>(_type.size());
         for (int8_t value : _type)
@@ -3878,12 +4074,16 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     writeStrings(_uuid);
 }
 
-void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned uCt)
+void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned uCt, bool legacy)
 {
     atomic_change guard(*this);
     touchFields();
     _touchList.clear();
     _count = static_cast<int>(uCt);
+    // A run this fork stopped writing but read back from the files written
+    // while the quantity was a field of its own; merged into the diffuse
+    // alphas below.
+    std::vector<float> transparency;
 
     uint16_t mask = 0;
     str >> mask;
@@ -3921,7 +4121,7 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     readColors(_specular, (mask & FieldSpecular) != 0);
     readColors(_emissive, (mask & FieldEmissive) != 0);
     readFloats(_shininess, (mask & FieldShininess) != 0);
-    readFloats(_transparency, (mask & FieldTransparency) != 0);
+    readFloats(transparency, (mask & FieldTransparency) != 0);
     std::vector<int8_t>().swap(_type);
     if ((mask & FieldType) != 0) {
         uint32_t count = 0;
@@ -3947,7 +4147,15 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     readStrings(_image, (mask & FieldImage) != 0);
     readStrings(_imagePath, (mask & FieldImagePath) != 0);
     readStrings(_uuid, (mask & FieldUuid) != 0);
-    _normalized = true;
+    if (legacy) {
+        for (auto *field : {&_ambient, &_diffuse, &_specular, &_emissive}) {
+            for (auto &color : *field)
+                convertAlpha(color);
+        }
+    }
+    applyRestoredTransparency(transparency, legacy);
+    touchFields();
+    normalize();
     guard.tryInvoke();
 }
 
@@ -3955,12 +4163,13 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
 {
     writer.Stream() << " fields=\"1\">\n";
 
-    auto writeColors = [&writer](char key, const std::vector<Color> &field) {
+    const bool convert = saveConverts();
+    auto writeColors = [&writer, convert](char key, const std::vector<Color> &field) {
         if (field.empty())
             return;
         writer.Stream() << key << ' ' << field.size() << std::hex;
         for (const auto &col : field)
-            writer.Stream() << ' ' << col.getPackedValue();
+            writer.Stream() << ' ' << packedForSave(col, convert);
         writer.Stream() << std::dec << '\n';
     };
     // max_digits10, so that what is read back is the float that was written:
@@ -3982,7 +4191,6 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
     writeColors('s', _specular);
     writeColors('e', _emissive);
     writeFloats('h', _shininess);
-    writeFloats('t', _transparency);
     if (!_type.empty()) {
         writer.Stream() << "y " << _type.size();
         for (int8_t value : _type)
@@ -4018,16 +4226,18 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
 
 void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt)
 {
+    const bool legacy = restoreConverts(reader);
     atomic_change guard(*this);
     touchFields();
     _touchList.clear();
     _count = static_cast<int>(uCt);
+    // As in restoreFieldStream: read but no longer written.
+    std::vector<float> transparency;
     std::vector<Color>().swap(_ambient);
     std::vector<Color>().swap(_diffuse);
     std::vector<Color>().swap(_specular);
     std::vector<Color>().swap(_emissive);
     std::vector<float>().swap(_shininess);
-    std::vector<float>().swap(_transparency);
     std::vector<std::string>().swap(_image);
     std::vector<std::string>().swap(_imagePath);
     std::vector<std::string>().swap(_uuid);
@@ -4064,7 +4274,7 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
         case 's': readColors(_specular); break;
         case 'e': readColors(_emissive); break;
         case 'h': readFloats(_shininess); break;
-        case 't': readFloats(_transparency); break;
+        case 't': readFloats(transparency); break;
         case 'i':
         case 'p':
         case 'u': {
@@ -4099,7 +4309,15 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
         }
     }
     reader.endCharStream();
-    _normalized = true;
+    if (legacy) {
+        for (auto *field : {&_ambient, &_diffuse, &_specular, &_emissive}) {
+            for (auto &color : *field)
+                convertAlpha(color);
+        }
+    }
+    applyRestoredTransparency(transparency, legacy);
+    touchFields();
+    normalize();
     guard.tryInvoke();
 }
 
@@ -4124,7 +4342,6 @@ bool PropertyMaterialList::isSame(const Property &other) const
         && _specular == list->_specular
         && _emissive == list->_emissive
         && _shininess == list->_shininess
-        && _transparency == list->_transparency
         && _image == list->_image
         && _imagePath == list->_imagePath
         && _uuid == list->_uuid
@@ -4141,7 +4358,6 @@ Property *PropertyMaterialList::Copy() const
     p->_specular = _specular;
     p->_emissive = _emissive;
     p->_shininess = _shininess;
-    p->_transparency = _transparency;
     p->_image = _image;
     p->_imagePath = _imagePath;
     p->_uuid = _uuid;
@@ -4162,7 +4378,6 @@ void PropertyMaterialList::Paste(const Property &from)
     _specular = other._specular;
     _emissive = other._emissive;
     _shininess = other._shininess;
-    _transparency = other._transparency;
     _image = other._image;
     _imagePath = other._imagePath;
     _uuid = other._uuid;

@@ -64,10 +64,14 @@ App::Material fullyPaintedMaterial()
     App::Material mat;
     mat.ambientColor = packed(0x11223344);
     mat.diffuseColor = packed(0x55667788);
+    // Consistent, as the property enforces: the diffuse alpha is the
+    // transparency's complement, and both here are exact binary fractions so
+    // in-memory round trips compare bit for bit.
+    mat.diffuseColor.a = 0.75F;
+    mat.transparency = 0.25F;
     mat.specularColor = packed(0x99aabbcc);
     mat.emissiveColor = packed(0xddeeff00);
     mat.shininess = 0.75F;
-    mat.transparency = 0.25F;
     return mat;
 }
 
@@ -133,9 +137,9 @@ void restoreBinaryDocFile(App::PropertyMaterialList& prop, const std::string& da
 /** The archive entry a release that means opacity by alpha writes
  *
  * Byte by byte rather than through our own writer: the claim is about their
- * layout and their convention. Every colour is opaque -- alpha 0xff, which in
- * this fork's convention would read as invisible -- and each entry's
- * transparency is in the field that carries it.
+ * layout and their convention. Every colour is opaque -- alpha 0xff, the
+ * vestigial value their migration parks in it -- and each entry's
+ * transparency is in the field that carries it, which is their truth.
  */
 std::string opacityEraDocFile(const std::vector<std::pair<uint32_t, float>>& entries)
 {
@@ -186,6 +190,41 @@ void expectEntries(const App::PropertyMaterialList& prop,
     }
 }
 
+/// One 8-bit step of alpha, as a float
+constexpr float ALPHA_STEP = 1.0F / 255.0F;
+
+/** The same through a document, where an alpha is stored as a byte
+ *
+ * A colour's alpha crosses the on-disk boundary as a byte in the legacy
+ * convention -- packed, inverted, and inverted back on the way in -- so a
+ * float that is not an exact multiple of 1/255 returns one step off, and the
+ * transparency, its complement, moves with it. Everything else round trips
+ * exactly: rgb bytes are bytes both ways and the floats are printed at full
+ * precision.
+ */
+void expectEntriesQ8(const App::PropertyMaterialList& prop,
+                     const std::vector<App::Material>& expected)
+{
+    ASSERT_EQ(prop.getSize(), static_cast<int>(expected.size()));
+    for (int i = 0; i < prop.getSize(); ++i) {
+        const App::Material got = prop.getMaterial(i);
+        const App::Material& want = expected[i];
+        auto sameColor = [](const App::Color& g, const App::Color& w) {
+            return (g.getPackedValue() >> 8) == (w.getPackedValue() >> 8)
+                && std::abs(g.a - w.a) <= ALPHA_STEP;
+        };
+        EXPECT_TRUE(sameColor(got.ambientColor, want.ambientColor)) << "ambient " << i;
+        EXPECT_TRUE(sameColor(got.diffuseColor, want.diffuseColor)) << "diffuse " << i;
+        EXPECT_TRUE(sameColor(got.specularColor, want.specularColor)) << "specular " << i;
+        EXPECT_TRUE(sameColor(got.emissiveColor, want.emissiveColor)) << "emissive " << i;
+        EXPECT_NEAR(got.shininess, want.shininess, 1e-6) << "shininess " << i;
+        EXPECT_NEAR(got.transparency, want.transparency, ALPHA_STEP) << "transparency " << i;
+        EXPECT_EQ(got.image, want.image) << "image " << i;
+        EXPECT_EQ(got.imagePath, want.imagePath) << "imagePath " << i;
+        EXPECT_EQ(got.uuid, want.uuid) << "uuid " << i;
+    }
+}
+
 class PropertyMaterialListTest: public ::testing::Test
 {
 protected:
@@ -232,7 +271,6 @@ TEST_F(PropertyMaterialListTest, uniformListCollapsesToOneOfEachField)
     EXPECT_TRUE(prop.getSpecularColors().empty());
     EXPECT_TRUE(prop.getEmissiveColors().empty());
     EXPECT_TRUE(prop.getShininessValues().empty());
-    EXPECT_TRUE(prop.getTransparencies().empty());
     EXPECT_EQ(prop.getMemSize(), sizeof(App::Color));
 
     // and every entry still reads as that material
@@ -274,7 +312,9 @@ TEST_F(PropertyMaterialListTest, everyFieldCanVaryOnItsOwn)
 
     EXPECT_EQ(prop.getSize(), 4);
     EXPECT_EQ(prop.getAmbientColors().size(), 4U);
-    EXPECT_TRUE(prop.getDiffuseColors().empty());
+    // per-entry transparency IS per-entry diffuse alpha, so that field
+    // materialises with it
+    EXPECT_EQ(prop.getDiffuseColors().size(), 4U);
     EXPECT_TRUE(prop.getAmbientColor(1) == packed(0x11111111));
     EXPECT_TRUE(prop.getAmbientColor(0) == App::Material().ambientColor);
     EXPECT_TRUE(prop.getSpecularColor(2) == packed(0x22222222));
@@ -358,7 +398,7 @@ TEST_F(PropertyMaterialListTest, legacyXMLRoundTrip)
 
     App::PropertyMaterialList restored;
     restoreFromXML(restored, xml);
-    expectEntries(restored, values);
+    expectEntriesQ8(restored, values);
 }
 
 TEST_F(PropertyMaterialListTest, fieldXMLRoundTrip)
@@ -372,7 +412,7 @@ TEST_F(PropertyMaterialListTest, fieldXMLRoundTrip)
 
     App::PropertyMaterialList restored;
     restoreFromXML(restored, xml);
-    expectEntries(restored, values);
+    expectEntriesQ8(restored, values);
     // and it came back in the compact form, not spelled out
     EXPECT_EQ(restored.getMemSize(), prop.getMemSize());
 }
@@ -389,7 +429,7 @@ TEST_F(PropertyMaterialListTest, fieldXMLIsSmallForAUniformList)
     App::PropertyMaterialList restored;
     restoreFromXML(restored, compact);
     EXPECT_EQ(restored.getSize(), 2000);
-    EXPECT_TRUE(restored.getMaterial(1999) == fullyPaintedMaterial());
+    expectEntriesQ8(restored, std::vector<App::Material>(2000, fullyPaintedMaterial()));
 }
 
 TEST_F(PropertyMaterialListTest, legacyDocFileRoundTrip)
@@ -400,7 +440,7 @@ TEST_F(PropertyMaterialListTest, legacyDocFileRoundTrip)
 
     App::PropertyMaterialList restored;
     restoreDocFile(restored, saveDocFile(prop, 5));
-    expectEntries(restored, values);
+    expectEntriesQ8(restored, values);
 }
 
 TEST_F(PropertyMaterialListTest, fieldDocFileRoundTrip)
@@ -438,13 +478,16 @@ TEST_F(PropertyMaterialListTest, fieldDocFileCostsLittleWhenNothingCollapses)
 
     App::PropertyMaterialList restored;
     restoreDocFile(restored, compact);
-    expectEntries(restored, values);
+    expectEntriesQ8(restored, values);
 }
 
 TEST_F(PropertyMaterialListTest, aFileWrittenTheOldWayStillReadsBack)
 {
-    // what a document written by any other FreeCAD holds: one whole material
-    // per entry, in the order the packed colours have always been written
+    // What a legacy document holds: one whole material per entry, in the
+    // order the packed colours have always been written, alpha meaning
+    // transparency in both slots. The merge takes the larger of the two per
+    // entry (an unset slot never wins over a set one) and the colours
+    // convert to opacity on the way in.
     App::PropertyMaterialList prop;
     restoreFromXML(prop,
                    "<MaterialList count=\"2\" >\n"
@@ -453,9 +496,17 @@ TEST_F(PropertyMaterialListTest, aFileWrittenTheOldWayStillReadsBack)
                    "</MaterialList>\n");
 
     ASSERT_EQ(prop.getSize(), 2);
-    EXPECT_TRUE(prop.getMaterial(0) == fullyPaintedMaterial());
-    EXPECT_TRUE(prop.getDiffuseColor(1) == packed(0xff0000ff));
-    EXPECT_TRUE(prop.getAmbientColor(1) == packed(0));
+    // entry 0: diffuse alpha byte 0x88 says 0.533 transparent, the field
+    // says 0.25 -- the alpha slot wins the merge
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue() >> 8, 0x556677U);
+    EXPECT_NEAR(prop.getTransparency(0), 0x88 / 255.0F, ALPHA_STEP);
+    // its ambient converts from the legacy byte
+    EXPECT_NEAR(prop.getAmbientColor(0).a, 1.0F - 0x44 / 255.0F, ALPHA_STEP);
+    // entry 1: alpha 0xff was the legacy spelling of invisible
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue() >> 8, 0xff0000U);
+    EXPECT_NEAR(prop.getTransparency(1), 1.0F, ALPHA_STEP);
+    // an alpha of 0 was the legacy spelling of opaque
+    EXPECT_NEAR(prop.getAmbientColor(1).a, 1.0F, ALPHA_STEP);
 }
 
 TEST_F(PropertyMaterialListTest, equalListsSerialiseIdentically)
@@ -643,14 +694,17 @@ TEST_F(PropertyMaterialListTest, readsAFileLaidOutTheWayUpstreamWritesIt)
     putString("");
 
     App::PropertyMaterialList prop;
-    restoreFromXML(prop, "<MaterialList file=\"m.bin\" version=\"3\"/>\n");
-    std::istringstream stream(bytes);
-    Base::Reader reader(stream, "m.bin");
-    prop.RestoreDocFile(reader);
+    // Their layout comes with their era: the version says what the bytes
+    // mean, so the reader is wired the way a real document wires it.
+    restoreFromXML(prop, "<MaterialList file=\"m.bin\" version=\"3\"/>\n", "1.1R41234");
+    restoreBinaryDocFile(prop, bytes, "1.1R41234");
 
     ASSERT_EQ(prop.getSize(), 2);
-    EXPECT_TRUE(prop.getDiffuseColor(0) == packed(0xff0000ff));
-    EXPECT_TRUE(prop.getDiffuseColor(1) == packed(0x00ff00ff));
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue() >> 8, 0xff0000U);
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue() >> 8, 0x00ff00U);
+    // the transparency field is their truth; the alpha stores its complement
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 0.75F);
+    EXPECT_FLOAT_EQ(prop.getTransparency(1), 0.25F);
     EXPECT_FLOAT_EQ(prop.getShininess(1), 0.5F);
     EXPECT_EQ(prop.getImagePath(0), "/tex/one.png");
     EXPECT_EQ(prop.getUuid(0), "card-1");
@@ -661,14 +715,11 @@ TEST_F(PropertyMaterialListTest, readsAFileLaidOutTheWayUpstreamWritesIt)
 
 /** Reading a document from after the alpha component changed meaning
  *
- * 1.1 inverted it: before that release a colour's alpha held transparency,
- * which is still what it means here and why a face's diffuse alpha IS that
- * face's transparency. So a file from 1.1 or later has to be converted --
- * and for this property that means moving the transparency field into the
- * diffuse alpha, because that is the value their file meant (their own
- * renderer reads the field and ignores the component) and inverting the
- * component instead would make every face opaque.
- * docs/ShapeAppearanceDesign.md 7.9.
+ * The fork means opacity by the alpha now, as 1.1 does, so a 1.1 file's
+ * colours arrive without conversion -- but its per-entry transparency lives
+ * in the field their renderer reads, with a vestigial 1.0 in the alpha, so
+ * the field is taken as the truth and the stored alpha becomes its
+ * complement. docs/ShapeAppearanceDesign.md 7.9.
  */
 TEST_F(PropertyMaterialListTest, anOpacityEraFileHasItsTransparencyMoved)
 {
@@ -682,20 +733,24 @@ TEST_F(PropertyMaterialListTest, anOpacityEraFileHasItsTransparencyMoved)
     // the colour itself is untouched
     EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue() >> 8, 0xff0000U);
     EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue() >> 8, 0x00ff00U);
-    // and its alpha now says what the file's transparency field said
-    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 0.25F);
-    EXPECT_FLOAT_EQ(prop.getDiffuseColor(1).a, 0.75F);
+    // and its alpha is the transparency field's complement, not the file's
+    // vestigial 0xff
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 0.75F);
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(1).a, 0.25F);
     EXPECT_FLOAT_EQ(prop.getTransparency(0), 0.25F);
     EXPECT_FLOAT_EQ(prop.getTransparency(1), 0.75F);
-    // their opaque is 0xff; opaque here is zero
-    EXPECT_FLOAT_EQ(prop.getAmbientColor(0).a, 0.0F);
-    EXPECT_FLOAT_EQ(prop.getSpecularColor(1).a, 0.0F);
+    // their opaque is 0xff and so is ours: no conversion for their era
+    EXPECT_FLOAT_EQ(prop.getAmbientColor(0).a, 1.0F);
+    EXPECT_FLOAT_EQ(prop.getSpecularColor(1).a, 1.0F);
 }
 
-TEST_F(PropertyMaterialListTest, theSameBytesFromAnOlderFileAreLeftAlone)
+TEST_F(PropertyMaterialListTest, theSameBytesUnderAnOldVersionReadAsLegacy)
 {
     // The control, and the point of the whole gate: the encoding says nothing
-    // about the convention. Only the release that wrote the document does.
+    // about the convention, only the release that wrote the document does.
+    // Under a legacy version these bytes mean something else entirely: an
+    // alpha of 0xff was the legacy spelling of INVISIBLE, and the merge
+    // takes the larger of the two transparency-meaning slots.
     const std::vector<std::pair<uint32_t, float>> entries {{0xff0000ffU, 0.25F},
                                                            {0x00ff00ffU, 0.75F}};
     App::PropertyMaterialList prop;
@@ -703,29 +758,34 @@ TEST_F(PropertyMaterialListTest, theSameBytesFromAnOlderFileAreLeftAlone)
     restoreBinaryDocFile(prop, opacityEraDocFile(entries), "0.22R38472");
 
     ASSERT_EQ(prop.getSize(), 2);
-    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 1.0F);
-    EXPECT_FLOAT_EQ(prop.getAmbientColor(0).a, 1.0F);
-    EXPECT_FLOAT_EQ(prop.getTransparency(0), 0.25F);
+    // alpha slot says 1.0 transparent, the field says less: the alpha wins
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 0.0F);
+    EXPECT_FLOAT_EQ(prop.getTransparency(0), 1.0F);
+    // and the legacy ambient byte 0xff converts to invisible
+    EXPECT_FLOAT_EQ(prop.getAmbientColor(0).a, 0.0F);
 }
 
-TEST_F(PropertyMaterialListTest, aFileStatingNoVersionIsNotConverted)
+TEST_F(PropertyMaterialListTest, aFileStatingNoVersionReadsAsLegacy)
 {
     // 'pre-0.14' is the stand-in a reader fills in for a document with no
     // ProgramVersion attribute, and upstream's own table classifies it as
-    // newer than every release it knows.
+    // newer than every release it knows. Fail closed: unreadable means old,
+    // because the oldest files there are all predate the change.
     const std::vector<std::pair<uint32_t, float>> entries {{0xff0000ffU, 0.25F}};
     App::PropertyMaterialList prop;
     restoreFromXML(prop, "<MaterialList file=\"m.bin\" version=\"3\"/>\n", "pre-0.14");
     restoreBinaryDocFile(prop, opacityEraDocFile(entries), "pre-0.14");
 
     ASSERT_EQ(prop.getSize(), 1);
-    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 1.0F);
+    // the legacy reading of these bytes, as the test above spells out
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 0.0F);
 }
 
 TEST_F(PropertyMaterialListTest, theInlineEncodingIsConvertedToo)
 {
     // An inline list is read during the XML pass and an archive entry after
-    // it, and the two have disagreed about a restore before now.
+    // it, and the two have disagreed about a restore before now. Same file
+    // era as anOpacityEraFileHasItsTransparencyMoved, same answers.
     const std::vector<std::pair<uint32_t, float>> entries {{0xff0000ffU, 0.25F},
                                                            {0x00ff00ffU, 0.75F}};
     App::PropertyMaterialList prop;
@@ -733,9 +793,9 @@ TEST_F(PropertyMaterialListTest, theInlineEncodingIsConvertedToo)
 
     ASSERT_EQ(prop.getSize(), 2);
     EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue() >> 8, 0x00ff00U);
-    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 0.25F);
-    EXPECT_FLOAT_EQ(prop.getDiffuseColor(1).a, 0.75F);
-    EXPECT_FLOAT_EQ(prop.getAmbientColor(0).a, 0.0F);
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(0).a, 0.75F);
+    EXPECT_FLOAT_EQ(prop.getDiffuseColor(1).a, 0.25F);
+    EXPECT_FLOAT_EQ(prop.getAmbientColor(0).a, 1.0F);
 }
 
 TEST_F(PropertyMaterialListTest, aConvertedUniformListStillCollapses)
@@ -754,6 +814,8 @@ TEST_F(PropertyMaterialListTest, aConvertedUniformListStillCollapses)
     ASSERT_EQ(prop.getSize(), 3);
     EXPECT_EQ(prop.getDiffuseColors().size(), 1U);
     EXPECT_EQ(prop.getAmbientColors().size(), 1U);
-    EXPECT_EQ(prop.getTransparencies().size(), 1U);
+    // 0.5 either way round: the entry's transparency is 0.5 and so is the
+    // stored alpha, its complement.
+    EXPECT_FLOAT_EQ(prop.getTransparency(2), 0.5F);
     EXPECT_FLOAT_EQ(prop.getDiffuseColor(2).a, 0.5F);
 }

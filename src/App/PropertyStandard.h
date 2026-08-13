@@ -977,7 +977,8 @@ public:
     /** Sets the property
      */
     void setValue(const Color &col);
-    void setValue(float r, float g, float b, float a=0.0f);
+    /// Default alpha 1: a colour set without one is opaque (Base/Color.h)
+    void setValue(float r, float g, float b, float a=1.0f);
     void setValue(uint32_t rgba);
 
     /** This method returns a string representation of the property
@@ -1025,6 +1026,30 @@ public:
      * A more elaborate description of the destructor.
      */
     ~PropertyColorList() override;
+
+    /** The colours, which a subclass may keep somewhere else
+     *
+     * Virtual, where the same name on PropertyListsT is not, because a method
+     * of THIS class that reads the list has no way to know whether the
+     * property owns its storage. One subclass does not: the Part view
+     * provider's DiffuseColor is a name over a ShapeAppearance's diffuse
+     * field and holds nothing of its own. RestoreDocFile below reads and
+     * writes through this pair, so while the name was merely hidden it read
+     * the empty base vector and then stored that emptiness back -- silently
+     * emptying the face colours of every document it converted.
+     *
+     * Only the reads that go through here are covered. PropertyListsT binds
+     * its own getValues() statically and touches _lValueList directly in
+     * operator[], set1Value and setSize, so a redirecting subclass still has
+     * to override each of those; PropertyDiffuseColor does.
+     *
+     * Deliberately not virtual on PropertyListsT itself: eleven other list
+     * properties share that template and none of them has, or is likely to
+     * get, a subclass that redirects.
+     */
+    virtual const std::vector<Color> &getValues() const {
+        return PropertyListsT<Color>::getValues();
+    }
 
     PyObject *getPyObject(void) override;
 
@@ -1203,7 +1228,10 @@ public:
     const std::vector<Color> &getSpecularColors() const { return _specular; }
     const std::vector<Color> &getEmissiveColors() const { return _emissive; }
     const std::vector<float> &getShininessValues() const { return _shininess; }
-    const std::vector<float> &getTransparencies() const { return _transparency; }
+    // There is deliberately no getTransparencies(): a transparency is the
+    // complement of the diffuse alpha (see the storage note below), so there
+    // is no float array to hand back. Read getTransparency(i), or the diffuse
+    // colours.
     const std::vector<std::string> &getImages() const { return _image; }
     const std::vector<std::string> &getImagePaths() const { return _imagePath; }
     const std::vector<std::string> &getUuids() const { return _uuid; }
@@ -1255,6 +1283,18 @@ public:
     /// Whether any entry names a texture or a material card
     bool hasTextureOrCard() const { return !_image.empty() || !_imagePath.empty() || !_uuid.empty(); }
 
+    /** Whether the diffuse colour is the only field that varies per entry
+     *
+     * True for every appearance a plain colour list could have expressed --
+     * a per-face import, and anything uniform. It is the condition under which
+     * the compatibility name DiffuseColor can still be written out with its
+     * values, so that a reader which knows nothing about this property still
+     * gets the face colours. When it is false the appearance holds something
+     * a colour list cannot say, and writing a lossy copy would be worse than
+     * writing none.
+     */
+    bool variesOnlyInDiffuse() const;
+
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
 
@@ -1289,9 +1329,11 @@ protected:
     void restoreStream(Base::InputStream &s, unsigned count) override;
     void saveStream(Base::OutputStream &) const override;
 
-    /// The per field encoding, written only at a schema that admits it
+    /// The per field encoding, written only at a schema that admits it.
+    /// \a legacy on the readers: whether the file means transparency by a
+    /// colour's alpha (Base::alphaIsOpacity said no of its version).
     void saveFieldStream(Base::OutputStream &str) const;
-    void restoreFieldStream(Base::InputStream &str, unsigned count);
+    void restoreFieldStream(Base::InputStream &str, unsigned count, bool legacy);
     bool saveFieldXML(Base::Writer &writer) const;
     void restoreFieldXML(Base::XMLReader &reader, unsigned count);
 
@@ -1306,13 +1348,36 @@ private:
     /// Mark the fields as possibly denormal after a write
     void touchFields();
 
-    /** Re-read a list whose file means opacity by a colour's alpha
+    /** Land restored values, converting and merging what the file's era means
      *
-     * Only the compatible encoding can be in that state: the per field one is
-     * this fork's own and is never written by a release that inverted the
-     * component. See Base::alphaIsOpacity.
+     * \a values carry both slots exactly as the file states them. The stored
+     * diffuse alpha becomes the complement of the entry's transparency, whose
+     * truth depends on the era:
+     *
+     *  - \a legacy (before upstream 1.1, which is also every file this fork
+     *    writes): BOTH slots meant transparency. The released files split by
+     *    property -- a link override list's truth is the field, an old
+     *    DiffuseColor's the alpha -- and where both are set they were kept in
+     *    sync, so the merged truth is max(alpha, field): whichever of the two
+     *    transparencies was actually written survives, and an unset slot (0)
+     *    never wins over a set one.
+     *  - 1.1 or later: the field is the truth and the alpha is vestigial
+     *    (their own migration writes 1.0 into it), so the field alone is
+     *    taken and max() would be wrong -- an opacity cannot be compared
+     *    with a transparency.
+     *
+     * The other three colours convert by inversion in the legacy case, as
+     * upstream's convertAlphaInMaterial does.
      */
-    void applyOpacityConvention();
+    void restoreValues(std::vector<Material> &&values, bool legacy);
+
+    /** The same merge for the per field encoding's separate transparency run
+     *
+     * Runs after the colour fields are in place (and, in the legacy case,
+     * already inverted). Empty \a transparency means the file carried none:
+     * nothing to merge, the alphas stand.
+     */
+    void applyRestoredTransparency(const std::vector<float> &transparency, bool legacy);
 
     template<class T> void setField(std::vector<T> &field, const std::vector<T> &values,
                                     const T &def);
@@ -1322,11 +1387,30 @@ private:
 
     int _count {0};
     std::vector<Color> _ambient;
+    /** Diffuse colour AND transparency: the alpha is the entry's opacity
+     *
+     * There is no transparency array. A face's transparency and its diffuse
+     * alpha are one quantity twice, and while both were stored the two could
+     * be written independently and disagree -- and did, with a container
+     * detach hack and a per-path choice of which store to render from. So
+     * the property enforces the invariant instead of syncing it:
+     * getTransparency(i) IS 1 - _diffuse[i].a.
+     *
+     * A whole App::Material still carries both slots, so composition has to
+     * pick one: THE TRANSPARENCY FIELD WINS, and the diffuse alpha stored is
+     * its complement. Upstream data forces that choice -- their renderer
+     * reads only the field and their migration writes 1.0 into every diffuse
+     * alpha, so an upstream material's alpha is vestigial and its field is
+     * the truth. A caller composing a Material by hand must set
+     * .transparency, not .diffuseColor.a.
+     *
+     * On restore the same one-of-two choice is made per file era; see
+     * restoreValues.
+     */
     std::vector<Color> _diffuse;
     std::vector<Color> _specular;
     std::vector<Color> _emissive;
     std::vector<float> _shininess;
-    std::vector<float> _transparency;
     std::vector<std::string> _image;
     std::vector<std::string> _imagePath;
     std::vector<std::string> _uuid;
