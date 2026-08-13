@@ -353,9 +353,10 @@ void DlgDisplayPropertiesImp::onButtonUserDefinedMaterialClicked()
     std::vector<Gui::ViewProvider*> Provider = getSelection();
     DlgMaterialPropertiesImp dlg("ShapeAppearance", this);
     dlg.setViewProviders(Provider);
-    dlg.exec();
-
-    d->ui.buttonColor->setColor(dlg.diffuseColor());
+    // Cancel restores the appearance itself, and the ShapeColor mirror's
+    // change event has already resynced the button by then
+    if (dlg.exec() == QDialog::Accepted)
+        d->ui.buttonColor->setColor(dlg.diffuseColor());
 }
 
 /**
@@ -388,6 +389,10 @@ void DlgDisplayPropertiesImp::onChangeMaterialActivated(int index)
 
     for (auto it : Provider) {
         if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(it->getPropertyByName("ShapeAppearance"))) {
+            // The presets are Phong definitions, and a value write alone
+            // deliberately keeps the list's mode -- so state it, or a PBR
+            // appearance would read the preset's slots its own way
+            prop->setPBR(false);
             prop->setValue(mat);
         }
     }
