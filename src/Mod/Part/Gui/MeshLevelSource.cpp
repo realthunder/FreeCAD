@@ -52,6 +52,7 @@
 #include <QTimer>
 
 #include <App/PropertyStandard.h>
+#include <Base/Console.h>
 #include <Gui/Application.h>
 #include <Gui/RenderParams.h>
 #include <Gui/Renderer/MeshSource.h>
@@ -222,23 +223,54 @@ void scheduleLandingPump()
                        []() { pumpLandings(); });
 }
 
+/// What the landing pump actually spends, split by what it ran
+/// (LevelDebug narration). The <200ms interactivity gate fails on this
+/// pump's turns, and the visual-build split only covers the updateVisual
+/// inside the bodies -- without this line the difference between "the
+/// pump's items are the stall" and "the stall is somewhere else
+/// entirely" is not measurable. Reported like VisualSplitReporter: a
+/// cumulative delta line once 0.2s of pump time has accumulated, plus
+/// the worst single turn in the window, which is the number the gate's
+/// worst gap must be compared against.
+struct PumpAccount {
+    double landSec = 0, bodySec = 0, worstTurn = 0;
+    std::size_t turns = 0, landings = 0, bodies = 0;
+};
+static PumpAccount s_pumpAccount;
+
+/// Whether the level plan is narrating (same rule as the visual-build
+/// split in ViewProviderExt.cpp): the global parameter or the
+/// FC_LEVEL_DEBUG environment.
+static bool pumpDebugOn()
+{
+    static const bool env = std::getenv("FC_LEVEL_DEBUG") != nullptr;
+    return env || Gui::RenderParams::getLevelDebug();
+}
+
 void pumpLandings()
 {
     s_landingScheduled = false;
     const double budget =
         std::max(1L, Gui::RenderParams::getLevelLandBudgetMS()) / 1000.0;
     const auto start = std::chrono::steady_clock::now();
-    auto spent = [&start, budget]() {
-        return std::chrono::duration<double>(
-                   std::chrono::steady_clock::now() - start).count()
-            >= budget;
+    auto now = []() { return std::chrono::steady_clock::now(); };
+    auto since = [](std::chrono::steady_clock::time_point t0,
+                    std::chrono::steady_clock::time_point t1) {
+        return std::chrono::duration<double>(t1 - t0).count();
     };
+    auto spent = [&start, budget, &now, &since]() {
+        return since(start, now()) >= budget;
+    };
+    PumpAccount &acc = s_pumpAccount;
     // Landings first: they free memory and re-arm sources; the hook
     // bodies behind them typically queue MORE work.
     while (!s_landingQueue.empty()) {
         auto fn = std::move(s_landingQueue.front());
         s_landingQueue.pop_front();
+        auto t0 = now();
         fn();
+        acc.landSec += since(t0, now());
+        ++acc.landings;
         if (spent())
             break;
     }
@@ -249,9 +281,23 @@ void pumpLandings()
     while (!s_guiWork.empty() && (!ranGui || !spent())) {
         auto item = std::move(s_guiWork.front());
         s_guiWork.pop_front();
+        auto t0 = now();
         item.body();
+        acc.bodySec += since(t0, now());
+        ++acc.bodies;
         Render::MeshSourceRegistry::instance().noteDescentSettled();
         ranGui = true;
+    }
+    ++acc.turns;
+    acc.worstTurn = std::max(acc.worstTurn, since(start, now()));
+    const double total = acc.landSec + acc.bodySec;
+    if (total >= 0.2 && pumpDebugOn()) {
+        Base::Console().Message(
+            "landing pump: %zu turns spent %.3fs = landings %.3fs in %zu "
+            "+ hook bodies %.3fs in %zu; worst turn %.0fms (budget %.0fms)\n",
+            acc.turns, total, acc.landSec, acc.landings, acc.bodySec,
+            acc.bodies, acc.worstTurn * 1000.0, budget * 1000.0);
+        acc = PumpAccount{};
     }
     if (!s_landingQueue.empty() || !s_guiWork.empty())
         scheduleLandingPump();

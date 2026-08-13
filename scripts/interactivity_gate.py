@@ -64,6 +64,11 @@ SETTLE_S = float(os.environ.get("FC_SETTLE_S", "45"))
 MAX_WAIT = float(os.environ.get("FC_MAX_WAIT", "600"))
 CAMERA = os.environ.get("FC_CAMERA", "fit")
 TOL = os.environ.get("FC_TOL", "")
+# FC_TIMING=1 arms the render stage timers (DebugTiming) for frame-cost
+# attribution. Written BOTH ways on purpose: parameters persist in
+# user.cfg between runs, and a measurement switch left on by one run
+# poisons the next one's timings.
+TIMING = os.environ.get("FC_TIMING", "") not in ("", "0")
 TICK_MS = 25
 
 LINES = []
@@ -206,6 +211,7 @@ def run():
         rp.SetBool("DowngradeLedger", True)
         rp.SetBool("ClimbHardLimit", True)
         rp.SetBool("ProgressiveLoad", True)
+        rp.SetBool("DebugTiming", TIMING)
         # The user param file pins 64 on this box; the LOAD phase must
         # run at the HIGH budget or the descent starts inside the load.
         rp.SetInt("GpuMemoryBudgetMB", HIGH)
