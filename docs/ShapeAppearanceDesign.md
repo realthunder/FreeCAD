@@ -1,9 +1,11 @@
 # ShapeAppearance, compatible with upstream but not laid out like it
 
-Status: stage 1 storage, the ShapeAppearance property, and ShapeColor /
-ShapeMaterial as names over it all landed 2026-08-12, verified by
-fcad-probes/appearance_probe.py 19/19. What remains of stage 1 is the
-DiffuseColor accessor. Stages 2-5 are design.
+Status: stage 1 (storage, the ShapeAppearance property, the compatibility
+names, restore migration) landed 2026-08-12 with the alpha convention
+flip of 7.9 following 2026-08-13. Stage 2 (Coin carries per-face
+material to the render cache, ABI intact) landed 2026-08-13, verified by
+tests/src/Gui/RenderCacheMaterial.cpp on both the extended and the stock
+Coin. Stages 3-5 are design.
 Context: [UpstreamCoreSync.md](./UpstreamCoreSync.md) section 5.1, which
 records why the property exists and what it cost upstream.
 
@@ -654,6 +656,48 @@ Verify by reading the values back through the callback, not by looking at a
 picture: Coin's own output is expected to be unchanged at this stage. Also
 verify the fallback, by running against a stock Coin with the symbols
 absent.
+
+**Landed 2026-08-13** (coin `883456a76e` + the FreeCAD capture), verified
+both legs by `tests/src/Gui/RenderCacheMaterial.cpp` -- a
+`SoFCRenderCacheManager::traverse()` build over a PER_FACE scene with the
+materials read back out of `getVertexCaches()`, no GL context anywhere,
+plus a run against the pre-change libCoin for the fallback leg.
+Deviations from the sketch above, found by reading the consumer first:
+
+- **`SoLazyElementEx` derives from `SoLazyElement`, not
+  `SoGLLazyElement`, and is enabled on `SoCallbackAction` only.** The
+  render cache is built by a callback-action traversal, where the
+  element at the lazy stack index is plain `SoLazyElement`; the GL
+  substitution never runs there, and enabling a GL element on a non-GL
+  action would be wrong. `SoEnabledElementsList::enable` replaces a slot
+  when the new type derives from the occupant, and `SoAction` recreates
+  its state when the global enable counter moves, so installing after
+  actions already exist is sound.
+- **The C surface is `coin_lazyex_*`** (install + abi_version + one
+  getter per field over an opaque `SoState*`), bound by
+  `Gui::CoinLazyElementEx` with dlsym at `SoFCDB::init`. The element
+  class header stays internal to the coin tree; nothing in FreeCAD
+  includes it.
+- **Staleness is handled in the element, not the consumer.** The `Ex`
+  overrides of the scalar `set*Elt` virtuals drop the matching array, so
+  a later scalar writer (`SoVRMLMaterial`, a bare `setAmbient`) cannot
+  leave an earlier node's per-face array visible past it, and
+  `setMaterialsEx` change-detects per field on the owning node's id.
+- **Capture rides the existing points, no new flags.** The four arrays
+  land in `SoFCRenderCache::Material` as `COWVector`s (`ambients` /
+  `emissives` / `speculars` / `shininesses`, packed like their scalars,
+  empty unless genuinely per-face): captured in `Material::init(state)`
+  for state inherited from above the cache, and at the end of both
+  `setMaterial()` overloads -- post callbacks run after `doAction`, so
+  the element is already up to date there, with override and
+  inheritance semantics resolved, which is why no per-field flag test is
+  repeated. In `mergeMaterial` each array travels with its scalar under
+  the same `canSetMaterial` test, and the arrays extend `operator<` so a
+  per-face material never merges into a batch keyed on different
+  arrays. A uniform object's Material compares bit-identically to
+  before this stage, asserted by the test.
+- Read-only accessors added for the readback: `SoFCRenderer::getScene()`
+  and `SoFCRenderCacheManager::getSceneCache()`.
 
 ### Stage 3 -- bgfx renders it
 
