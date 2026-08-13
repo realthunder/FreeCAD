@@ -67,6 +67,7 @@
 #include "SoFCRenderMaterial.h"
 #include "SoFCVertexCache.h"
 #include "SoFCDetail.h"
+#include "CoinLazyElementEx.h"
 #include "SoFCDiffuseElement.h"
 #include "SoFCZoomOffsetElement.h"
 #include "SoFCDisplayModeElement.h"
@@ -361,6 +362,42 @@ getOverrideFlags(SoState * state)
   return res;
 }
 
+// Capture the array form of ambient/emissive/specular/shininess from
+// the coin fork's extended lazy element into the material (empty when
+// the extension is absent or a field holds only its scalar). The
+// element is the authority here: it has already resolved override and
+// inheritance semantics, exactly like the scalar reads next to the
+// call sites, so no per-field flag checks are repeated.
+static void
+captureMaterialArrays(SoFCRenderCache::_Material &m, SoState *state)
+{
+  auto capture = [state](COWVector<uint32_t> &array,
+                         int (*getter)(SoState *, const float **, uint64_t *)) {
+    const float *values = nullptr;
+    int num = getter(state, &values, nullptr);
+    array.reset();
+    if (num <= 1)
+      return;
+    array.reserve(num);
+    for (int i = 0; i < num; ++i) {
+      SbColor c(values[i*3], values[i*3+1], values[i*3+2]);
+      array.append(c.getPackedValue(0.0f));
+    }
+  };
+  capture(m.ambients, &Gui::CoinLazyElementEx::getAmbient);
+  capture(m.emissives, &Gui::CoinLazyElementEx::getEmissive);
+  capture(m.speculars, &Gui::CoinLazyElementEx::getSpecular);
+
+  const float *values = nullptr;
+  int num = Gui::CoinLazyElementEx::getShininess(state, &values, nullptr);
+  m.shininesses.reset();
+  if (num > 1) {
+    m.shininesses.reserve(num);
+    for (int i = 0; i < num; ++i)
+      m.shininesses.append(values[i]);
+  }
+}
+
 void
 SoFCRenderCache::_Material::init(SoState * state)
 {
@@ -420,6 +457,10 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->twoside = false;
   this->drawstyle = 0;
   this->shadowstyle = SoShadowStyleElement::CASTS_SHADOW_AND_SHADOWED; 
+  this->ambients.reset();
+  this->emissives.reset();
+  this->speculars.reset();
+  this->shininesses.reset();
   this->texturematrices.clear();
   this->textures.clear();
   this->bumpmaps.clear();
@@ -449,6 +490,8 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->specular = SoLazyElement::getSpecular(state).getPackedValue(t);
 
   this->shininess = SoLazyElement::getShininess(state);
+
+  captureMaterialArrays(*this, state);
 
   this->lightmodel = SoLazyElement::getLightModel(state);
 
@@ -637,6 +680,11 @@ SoFCRenderCache::setMaterial(SoState * state, const SoMaterial * material)
     m.specular = material->specularColor[0].getPackedValue(t);
   if (testMaterial(m, material, &SoMaterial::shininess, Material::FLAG_SHININESS, Material::FLAG_SHININESS))
     m.shininess = material->shininess[0];
+
+  // this runs in the node's post callback, after its doAction() updated
+  // the lazy element, so the element already holds the array form of
+  // whatever this node (or an override above it) contributed
+  captureMaterialArrays(m, state);
 }
 
 void
@@ -680,6 +728,8 @@ SoFCRenderCache::setMaterial(SoState * state, const SoVRMLMaterial * material)
   if (_testMaterial(m, material, &SoVRMLMaterial::shininess,
         Material::FLAG_SHININESS, Material::FLAG_SHININESS))
     m.shininess = material->shininess.getValue();
+
+  captureMaterialArrays(m, state);
 }
 
 void
@@ -888,10 +938,28 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
 
   copyMaterial(res, parent, &Material::materialbinding, Material::FLAG_MATERIAL_BINDING, Material::FLAG_MATERIAL_BINDING);
 
-  copyMaterial(res, parent, &Material::ambient, Material::FLAG_AMBIENT, Material::FLAG_AMBIENT);
-  copyMaterial(res, parent, &Material::emissive, Material::FLAG_EMISSIVE, Material::FLAG_EMISSIVE);
-  copyMaterial(res, parent, &Material::specular, Material::FLAG_SPECULAR, Material::FLAG_SPECULAR);
-  copyMaterial(res, parent, &Material::shininess, Material::FLAG_SHININESS, Material::FLAG_SHININESS);
+  // the array forms travel with their scalars: when the parent wins a
+  // field, its array (possibly empty) replaces the child's too
+  if (canSetMaterial(res, parent, Material::FLAG_AMBIENT, Material::FLAG_AMBIENT)) {
+    res.ambient = parent.ambient;
+    res.ambients = parent.ambients;
+    res.maskflags.set(Material::FLAG_AMBIENT);
+  }
+  if (canSetMaterial(res, parent, Material::FLAG_EMISSIVE, Material::FLAG_EMISSIVE)) {
+    res.emissive = parent.emissive;
+    res.emissives = parent.emissives;
+    res.maskflags.set(Material::FLAG_EMISSIVE);
+  }
+  if (canSetMaterial(res, parent, Material::FLAG_SPECULAR, Material::FLAG_SPECULAR)) {
+    res.specular = parent.specular;
+    res.speculars = parent.speculars;
+    res.maskflags.set(Material::FLAG_SPECULAR);
+  }
+  if (canSetMaterial(res, parent, Material::FLAG_SHININESS, Material::FLAG_SHININESS)) {
+    res.shininess = parent.shininess;
+    res.shininesses = parent.shininesses;
+    res.maskflags.set(Material::FLAG_SHININESS);
+  }
   copyMaterial(res, parent, &Material::drawstyle, Material::FLAG_DRAW_STYLE, Material::FLAG_DRAW_STYLE);
   copyMaterial(res, parent, &Material::lightmodel, Material::FLAG_LIGHT_MODEL, Material::FLAG_LIGHT_MODEL);
   copyMaterial(res, parent, &Material::shadowstyle, 0, Material::FLAG_SHADOW_STYLE);

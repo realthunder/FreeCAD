@@ -234,6 +234,16 @@ public:
     uint32_t ambient;
     uint32_t emissive;
     uint32_t specular;
+    /// Array form of ambient/emissive/specular/shininess, captured
+    /// from the coin fork's extended lazy element when a material node
+    /// holds them per face (packed colors, matching the scalars
+    /// above; empty = scalar only, which is every object until
+    /// something feeds per-face materials). Only external backends
+    /// will consume them; the GL path keeps reading the scalars.
+    COWVector<uint32_t> ambients;
+    COWVector<uint32_t> emissives;
+    COWVector<uint32_t> speculars;
+    COWVector<float> shininesses;
     uint32_t linepattern;
     uint32_t linecolor;
     uint32_t facecolor;
@@ -398,6 +408,14 @@ public:
         if (specular > other.specular) return false;
         if (shininess < other.shininess) return true;
         if (shininess > other.shininess) return false;
+        if (ambients < other.ambients) return true;
+        if (ambients > other.ambients) return false;
+        if (emissives < other.emissives) return true;
+        if (emissives > other.emissives) return false;
+        if (speculars < other.speculars) return true;
+        if (speculars > other.speculars) return false;
+        if (shininesses < other.shininesses) return true;
+        if (shininesses > other.shininesses) return false;
         if (metallic < other.metallic) return true;
         if (metallic > other.metallic) return false;
         if (roughness < other.roughness) return true;

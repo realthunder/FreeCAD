@@ -1215,6 +1215,12 @@ SoFCRendererP::pushDrawEntry(SbFCVector<DrawEntry> & draw_entries,
   return draw_entries.size();
 }
 
+const Gui::CoinPtr<SoFCRenderCache> &
+SoFCRenderer::getScene() const
+{
+  return PRIVATE(this)->scene;
+}
+
 void
 SoFCRenderer::setScene(const RenderCachePtr &cache)
 {

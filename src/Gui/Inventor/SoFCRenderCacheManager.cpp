@@ -2428,6 +2428,12 @@ SoFCRenderCacheManager::getSceneNodeId() const
   return PRIVATE(this)->sceneid;
 }
 
+SoFCRenderCache *
+SoFCRenderCacheManager::getSceneCache() const
+{
+  return PRIVATE(this)->renderer->getScene();
+}
+
 void
 SoFCRenderCacheManager::setHatchImage(const void *dataptr, int nc, int width, int height)
 {

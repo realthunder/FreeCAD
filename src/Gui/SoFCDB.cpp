@@ -82,6 +82,7 @@
 #include "Inventor/SoFCRenderCache.h"
 #include "Inventor/SoFCDisplayMode.h"
 #include "Inventor/SoFCShapeInfo.h"
+#include "Inventor/CoinLazyElementEx.h"
 #include "Inventor/SoAutoZoomTranslation.h"
 #include "Inventor/SoFCRenderMaterial.h"
 #include "Inventor/SoDrawingGrid.h"
@@ -114,6 +115,9 @@ SbBool Gui::SoFCDB::isInitialized()
 void Gui::SoFCDB::init()
 {
     SoInteraction                   ::init();
+    // bind the coin fork's extended lazy element if this Coin has it;
+    // the render cache then sees per-face material arrays
+    CoinLazyElementEx               ::install();
     RotTransDragger                 ::initClass();
     SoGLRenderActionElement         ::initClass();
     SoFCInteractiveElement          ::initClass();

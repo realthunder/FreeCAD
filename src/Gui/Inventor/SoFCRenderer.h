@@ -89,6 +89,10 @@ public:
 
   void setScene(const Gui::CoinPtr<SoFCRenderCache> & cache);
 
+  /// The scene cache last given to setScene(); null before the first
+  /// build. Read-only inspection (tests, external consumers).
+  const Gui::CoinPtr<SoFCRenderCache> & getScene() const;
+
   /// User shader programs captured from scene SoShaderProgram nodes by
   /// the render cache manager during the last cache rebuild; mirrored to
   /// the external backend each render (docs/RenderDebug.md §6).

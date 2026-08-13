@@ -1024,6 +1024,7 @@ SET(Inventor_CPP_SRCS
     Inventor/SmSwitchboard.cpp
     Inventor/SoFCVBO.cpp
     Inventor/SoFCVertexArrayIndexer.cpp
+    Inventor/CoinLazyElementEx.cpp
     Inventor/SoFCDiffuseElement.cpp
     Inventor/SoFCZoomOffsetElement.cpp
     Inventor/SoFCVertexCache.cpp
@@ -1084,6 +1085,7 @@ SET(Inventor_SRCS
     Inventor/SoFCVBO.h
     Inventor/SoFCVertexAttribute.h
     Inventor/SoFCVertexArrayIndexer.h
+    Inventor/CoinLazyElementEx.h
     Inventor/SoFCDiffuseElement.h
     Inventor/SoFCZoomOffsetElement.h
     Inventor/COWData.h
