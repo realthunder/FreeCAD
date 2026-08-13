@@ -999,3 +999,109 @@ TEST_F(PropertyMaterialListTest, aPhongEraRestoreResetsTheMode)
     restoreDocFile(prop, saveDocFile(phong, 6));
     EXPECT_FALSE(prop.isPBR());
 }
+
+TEST_F(PropertyMaterialListTest, materialValuesCarryTheMode)
+{
+    // Every material handed out is stamped with the list's mode, so whoever
+    // holds the value still knows which reading its slots are in -- and the
+    // tag is part of material equality, so a Phong value never quietly
+    // stands in for a PBR one
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(2, redMaterial()));
+    EXPECT_FALSE(prop.getMaterial(0).pbr);
+
+    prop.setPBR(true);
+    prop.setMetallic(1.0F);
+    prop.setRoughness(0.25F);
+    App::Material raw = prop.getMaterial(0);
+    EXPECT_TRUE(raw.pbr);
+    // the value-level readings agree with the list's
+    EXPECT_FLOAT_EQ(raw.getMetallic(), 1.0F);
+    EXPECT_FLOAT_EQ(raw.getRoughness(), 0.25F);
+    // the Phong derivation is a Phong value
+    EXPECT_FALSE(prop.getPhongMaterial(0).pbr);
+
+    // the tag alone tells the values apart
+    App::Material retagged = raw;
+    retagged.pbr = false;
+    EXPECT_NE(raw, retagged);
+
+    App::Material phong = redMaterial();
+    EXPECT_NE(raw, phong);
+    // a Phong value has no metals, and its roughness is the derivation
+    EXPECT_FLOAT_EQ(phong.getMetallic(), 0.0F);
+    EXPECT_FLOAT_EQ(phong.getRoughness(),
+                    App::Material::shininessToRoughness(phong.shininess));
+    // the factor writers demand the mode, as the list's do
+    EXPECT_THROW(phong.setMetallic(0.5F), Base::RuntimeError);
+    EXPECT_THROW(phong.setRoughness(0.5F), Base::RuntimeError);
+}
+
+TEST_F(PropertyMaterialListTest, convertPBRKeepsTheLook)
+{
+    // The editor's toggle: unlike setPBR it converts the stored values, so
+    // the surface keeps looking like itself in the other model
+    App::PropertyMaterialList prop;
+    prop.setValues(std::vector<App::Material>(3, redMaterial()));
+    prop.setShininess(0.9F);
+    prop.setDiffuseColor(1, packed(0x00ff00ff));
+    const App::Color diffuse0 = prop.getDiffuseColor(0);
+    const App::Color diffuse1 = prop.getDiffuseColor(1);
+
+    prop.convertPBR(true);
+    ASSERT_TRUE(prop.isPBR());
+    // base colour = the Phong diffuse, per entry
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), diffuse0.getPackedValue());
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue(), diffuse1.getPackedValue());
+    // a Phong surface converts dielectric, at the fitted roughness
+    EXPECT_FLOAT_EQ(prop.getMetallic(0), 0.0F);
+    EXPECT_FLOAT_EQ(prop.getRoughness(0), App::Material::shininessToRoughness(0.9F));
+    EXPECT_EQ(prop.getSpecularColor(0).getPackedValue() >> 8, 0xffffffU);
+
+    prop.convertPBR(false);
+    ASSERT_FALSE(prop.isPBR());
+    // the round trip keeps the look: diffuse and shininess return exactly
+    // (the fit is invertible over the Phong range) -- only the specular
+    // colour is forgotten, which Phong alone can state
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue(), diffuse1.getPackedValue());
+    EXPECT_NEAR(prop.getShininess(0), 0.9F, 1e-6);
+    EXPECT_EQ(prop.getSpecularColor(0).getPackedValue() >> 8,
+              App::Color(0.04F, 0.04F, 0.04F).getPackedValue() >> 8);
+
+    // a no-op when the mode already matches
+    const std::string before = saveToXML(prop, 6);
+    prop.convertPBR(false);
+    EXPECT_EQ(saveToXML(prop, 6), before);
+}
+
+TEST_F(PropertyMaterialListTest, rgbWritesLeaveTheAlphasAlone)
+{
+    // The dialog's colour edits: the diffuse alpha is the opacity and the
+    // PBR specular alpha the metallic, so a colour edit writes rgb only
+    App::PropertyMaterialList prop;
+    prop.setPBR(true);
+    prop.setSize(3);
+    prop.setTransparencies({0.0F, 0.5F, 0.25F});
+    prop.setMetallicValues({0.0F, 1.0F, 0.5F});
+
+    prop.setDiffuseRGB(packed(0x00ff00ff));
+    prop.setSpecularRGB(packed(0xff8000ff));
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(prop.getDiffuseColor(i).getPackedValue() >> 8, 0x00ff00U) << i;
+        EXPECT_EQ(prop.getSpecularColor(i).getPackedValue() >> 8, 0xff8000U) << i;
+    }
+    EXPECT_FLOAT_EQ(prop.getTransparency(1), 0.5F);
+    EXPECT_FLOAT_EQ(prop.getTransparency(2), 0.25F);
+    EXPECT_FLOAT_EQ(prop.getMetallic(0), 0.0F);
+    EXPECT_FLOAT_EQ(prop.getMetallic(1), 1.0F);
+    EXPECT_FLOAT_EQ(prop.getMetallic(2), 0.5F);
+
+    // on a collapsed field it stays collapsed
+    App::PropertyMaterialList uniform;
+    uniform.setSize(4);
+    uniform.setTransparency(0.5F);
+    uniform.setDiffuseRGB(packed(0x123456ff));
+    EXPECT_EQ(uniform.getDiffuseColors().size(), 1U);
+    EXPECT_FLOAT_EQ(uniform.getTransparency(3), 0.5F);
+    EXPECT_EQ(uniform.getDiffuseColor(3).getPackedValue() >> 8, 0x123456U);
+}

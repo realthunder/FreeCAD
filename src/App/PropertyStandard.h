@@ -1273,6 +1273,16 @@ public:
     void setDiffuseColor(const Color &col);
     void setSpecularColor(const Color &col);
     void setEmissiveColor(const Color &col);
+    /** Every entry's rgb, leaving every entry's alpha alone
+     *
+     * The colour edit a dialog makes: the diffuse alpha is the opacity,
+     * and in PBR mode the specular alpha is the metallic factor, so a
+     * uniform colour write would silently restate them.
+     */
+    //@{
+    void setDiffuseRGB(const Color &col);
+    void setSpecularRGB(const Color &col);
+    //@}
     void setShininess(float value);
     void setTransparency(float value);
     void setImage(const std::string &value);
@@ -1303,6 +1313,16 @@ public:
     bool isPBR() const { return _pbr; }
     /// Flip the reading of the stored values; converts nothing
     void setPBR(bool enable);
+    /** Flip the mode AND convert the stored values so the look survives
+     *
+     * The editor's toggle. Toward Phong every entry goes through
+     * getPhongMaterial(); toward PBR through Material::phongToPbr (base
+     * colour kept, roughness from the shininess fit, dielectric). A
+     * Phong-PBR-Phong round trip keeps the look but forgets the specular
+     * colour, which only Phong can state. One atomic change; a no-op
+     * when the mode already matches.
+     */
+    void convertPBR(bool enable);
     /// The metallic factor: the specular alpha. An unset field reads as 0
     /// (dielectric) -- see specularDefault(). In Phong mode always 0.
     float getMetallic(int idx) const;
@@ -1447,6 +1467,8 @@ private:
     template<class T> void setFieldValue(std::vector<T> &field, int idx, const T &value,
                                          const T &def);
     template<class T> void setUniformField(std::vector<T> &field, const T &value, const T &def);
+    /// The rgb-only write behind setDiffuseRGB / setSpecularRGB
+    void setFieldRGB(std::vector<Color> &field, const Color &col, const Color &def);
 
     int _count {0};
     /// The PBR reading of the fields; see the PBR mode block above

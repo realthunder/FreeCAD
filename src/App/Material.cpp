@@ -29,6 +29,8 @@
 # include <cstring>
 #endif
 
+#include <Base/Exception.h>
+
 #include "Material.h"
 
 using namespace App;
@@ -362,5 +364,41 @@ Material Material::pbrToPhong(const Material& raw)
     };
     mat.specularColor.set(mix(tint.r, base.r), mix(tint.g, base.g), mix(tint.b, base.b));
     mat.shininess = roughnessToShininess(raw.shininess);
+    mat.pbr = false;
     return mat;
+}
+
+Material Material::phongToPbr(const Material& classic)
+{
+    Material mat = classic;
+    // White tint, metallic 0: a Phong specular is an intensity, and every
+    // Phong surface is a dielectric as far as the model can say.
+    mat.specularColor.set(1.0f, 1.0f, 1.0f, 0.0f);
+    mat.shininess = shininessToRoughness(classic.shininess);
+    mat.pbr = true;
+    return mat;
+}
+
+float Material::getMetallic() const
+{
+    return pbr ? specularColor.a : 0.0f;  // the Phong model has no metals
+}
+
+float Material::getRoughness() const
+{
+    return pbr ? shininess : shininessToRoughness(shininess);
+}
+
+void Material::setMetallic(float value)
+{
+    if (!pbr)
+        throw Base::RuntimeError("material is not in PBR mode");
+    specularColor.a = value;
+}
+
+void Material::setRoughness(float value)
+{
+    if (!pbr)
+        throw Base::RuntimeError("material is not in PBR mode");
+    shininess = value;
 }

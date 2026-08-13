@@ -139,9 +139,38 @@ public:
      * would shade it black there, and a Phong metal shown as a shiny
      * colour is the better degradation anyway. The specular becomes the
      * F0 the surface most nearly means: a metal carries its colour
-     * there, a dielectric 0.04 scaled by the tint.
+     * there, a dielectric 0.04 scaled by the tint. The result is tagged
+     * Phong.
      */
     static Material pbrToPhong(const Material& raw);
+
+    /** The PBR material a Phong material most nearly means
+     *
+     * The inverse direction of pbrToPhong for the editor's mode toggle:
+     * the diffuse stays as the base colour, the shininess slot becomes
+     * the roughness by the fit above, and the surface reads dielectric --
+     * white F0 tint, metallic 0 -- because a Phong specular states an
+     * intensity, not a metal. Emissive and the identity strings carry
+     * over; the result is tagged PBR. Round-tripping through pbrToPhong
+     * keeps the look but forgets the specular colour, which Phong alone
+     * can state.
+     */
+    static Material phongToPbr(const Material& classic);
+
+    /** @name PBR readings of one material value
+     *
+     * Meaningful when \a pbr is set; the getters degrade gracefully on a
+     * Phong value (no metals, roughness derived from the shininess), the
+     * setters throw on one, exactly as the list property's do: the slots
+     * they would land in mean something else there, and a caller holding
+     * a metallic value has decided the mode already.
+     */
+    //@{
+    float getMetallic() const;
+    float getRoughness() const;
+    void setMetallic(float value);
+    void setRoughness(float value);
+    //@}
 
     /** @name Properties */
     //@{
@@ -165,6 +194,15 @@ public:
     std::string imagePath;
     std::string uuid;
     //@}
+    /** Which reading the slot values carry
+     *
+     * A value-level tag, not storage: PropertyMaterialList keeps the mode
+     * once for the whole list and stamps it on every material it hands
+     * out, so a script can see which reading the values it holds are in.
+     * Assigning materials back to a list adopts their tag; the dict
+     * spelling's explicit PBR key overrides it.
+     */
+    bool pbr = false;
     //@}
 
     bool operator==(const Material& m) const
@@ -176,7 +214,7 @@ public:
         if (!uuid.empty() && uuid == m.uuid) {
             return true;
         }
-        return _matType==m._matType && shininess==m.shininess &&
+        return _matType==m._matType && pbr==m.pbr && shininess==m.shininess &&
             transparency==m.transparency && ambientColor==m.ambientColor &&
             diffuseColor==m.diffuseColor && specularColor==m.specularColor &&
             emissiveColor==m.emissiveColor &&

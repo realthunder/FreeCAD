@@ -62,6 +62,37 @@ Satin, Metalized, Neon GNC, Chrome, Aluminium, Obsidian, Neon PHC, Jade, Ruby or
             </Documentation>
             <Parameter Name="Transparency" Type="Float"/>
         </Attribute>
+        <Attribute Name="PBR" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+Whether the values carry the PBR reading rather than the Phong one:
+DiffuseColor is the base colour, Shininess the roughness, SpecularColor
+the F0 tint with the metallic factor in its alpha. Materials read from a
+ShapeAppearance list are tagged with the list's mode, and assigning
+materials back adopts their tag. Setting this flag reinterprets the
+values without converting them.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="PBR" Type="Boolean"/>
+        </Attribute>
+        <Attribute Name="Metallic" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The metallic factor, riding the specular alpha. Reads 0 on a Phong
+material; writing demands PBR mode.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="Metallic" Type="Float"/>
+        </Attribute>
+        <Attribute Name="Roughness" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The roughness. On a Phong material it reads as the Blinn-Phong
+derivation of the shininess; writing demands PBR mode.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="Roughness" Type="Float"/>
+        </Attribute>
         <CustomAttributes />
     </PythonExport>
 </GenerateModel>

@@ -45,36 +45,70 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
     PyObject* emissive = nullptr;
     PyObject* shininess = nullptr;
     PyObject* transparency = nullptr;
-    static const std::array<const char *, 7> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
-                                                         "EmissiveColor", "Shininess", "Transparency", nullptr};
+    PyObject* pbr = nullptr;
+    PyObject* metallic = nullptr;
+    PyObject* roughness = nullptr;
+    static const std::array<const char *, 10> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
+                                                          "EmissiveColor", "Shininess", "Transparency",
+                                                          "PBR", "Metallic", "Roughness", nullptr};
 
-    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOO", kwds_colors,
-        &diffuse, &ambient, &specular, &emissive, &shininess, &transparency)) {
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOO", kwds_colors,
+        &diffuse, &ambient, &specular, &emissive, &shininess, &transparency,
+        &pbr, &metallic, &roughness)) {
         return -1;
     }
 
-    if (diffuse) {
-        setDiffuseColor(Py::Tuple(diffuse));
-    }
+    try {
+        // The mode first, whatever the keyword order: the factor setters
+        // demand it, and a PBR construction must not inherit the Phong
+        // default slots -- the default specular's alpha of one would read
+        // as full metal. Seed the PBR defaults and let the explicit
+        // keywords override them.
+        if (pbr && PyObject_IsTrue(pbr) > 0) {
+            Material* mat = getMaterialPtr();
+            mat->pbr = true;
+            mat->specularColor.set(1.0f, 1.0f, 1.0f, 0.0f);
+            mat->shininess = 0.5f;
+        }
 
-    if (ambient) {
-        setAmbientColor(Py::Tuple(ambient));
-    }
+        if (diffuse) {
+            setDiffuseColor(Py::Tuple(diffuse));
+        }
 
-    if (specular) {
-        setSpecularColor(Py::Tuple(specular));
-    }
+        if (ambient) {
+            setAmbientColor(Py::Tuple(ambient));
+        }
 
-    if (emissive) {
-        setEmissiveColor(Py::Tuple(emissive));
-    }
+        if (specular) {
+            setSpecularColor(Py::Tuple(specular));
+        }
 
-    if (shininess) {
-        setShininess(Py::Float(shininess));
-    }
+        if (emissive) {
+            setEmissiveColor(Py::Tuple(emissive));
+        }
 
-    if (transparency) {
-        setTransparency(Py::Float(transparency));
+        if (shininess) {
+            setShininess(Py::Float(shininess));
+        }
+
+        if (transparency) {
+            setTransparency(Py::Float(transparency));
+        }
+
+        if (metallic) {
+            setMetallic(Py::Float(metallic));
+        }
+
+        if (roughness) {
+            setRoughness(Py::Float(roughness));
+        }
+    }
+    catch (Base::Exception& e) {
+        e.setPyException();
+        return -1;
+    }
+    catch (const Py::Exception&) {
+        return -1;
     }
 
     return 0;
@@ -199,6 +233,48 @@ Py::Float MaterialPy::getTransparency() const
 void MaterialPy::setTransparency(Py::Float arg)
 {
     getMaterialPtr()->transparency = arg;
+}
+
+Py::Boolean MaterialPy::getPBR() const
+{
+    return Py::Boolean(getMaterialPtr()->pbr);
+}
+
+void MaterialPy::setPBR(Py::Boolean arg)
+{
+    getMaterialPtr()->pbr = arg;
+}
+
+Py::Float MaterialPy::getMetallic() const
+{
+    return Py::Float(getMaterialPtr()->getMetallic());
+}
+
+void MaterialPy::setMetallic(Py::Float arg)
+{
+    // The generated glue reports any C++ exception as "unknown"; keep the
+    // not-in-PBR-mode message
+    try {
+        getMaterialPtr()->setMetallic(arg);
+    }
+    catch (const Base::Exception& e) {
+        throw Py::RuntimeError(e.what());
+    }
+}
+
+Py::Float MaterialPy::getRoughness() const
+{
+    return Py::Float(getMaterialPtr()->getRoughness());
+}
+
+void MaterialPy::setRoughness(Py::Float arg)
+{
+    try {
+        getMaterialPtr()->setRoughness(arg);
+    }
+    catch (const Base::Exception& e) {
+        throw Py::RuntimeError(e.what());
+    }
 }
 
 PyObject *MaterialPy::getCustomAttributes(const char* /*attr*/) const
