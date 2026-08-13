@@ -43,6 +43,7 @@ public:
     ~DrawLeaderLine() override = default;
 
     App::PropertyLink         LeaderParent;
+    App::PropertyLink*        getOwnerProperty() override { return &LeaderParent; }
     App::PropertyVectorList   WayPoints;
     App::PropertyEnumeration  StartSymbol;
     App::PropertyEnumeration  EndSymbol;

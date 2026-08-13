@@ -99,7 +99,7 @@ void ViewProviderRichAnno::updateData(const App::Property* p)
 //        Base::Console().Message("VPRA::updateData(AnnoParent) - vpp: %X\n", getViewProviderPage());
         if (getViewProviderPage() &&
             getViewProviderPage()->getQGSPage()) {
-            getViewProviderPage()->getQGSPage()->setRichAnnoGroups();
+            getViewProviderPage()->getQGSPage()->setViewParents();
         }
     }
 

@@ -140,14 +140,10 @@ public:
     void saveSvg(QString filename);
     void postProcessXml(QTemporaryFile& temporaryFile, QString filename, QString pagename);
 
-    void placeInCollection(QGIView* item, TechDraw::DrawView* feature,
-                           QGIViewCollection* collection);
-    void adoptCollectionMembers(QGIViewCollection* collection);
-    void setCollectionGroups();
-    void setDimensionGroups();
-    void setBalloonGroups();
-    void setLeaderGroups();
-    void setRichAnnoGroups();
+    void setViewParents();
+    void attachToParent(QGIView* item);
+    void addItemToParent(QGIView* item, QGIView* parent);
+    std::vector<QGIView*> collectUnparented() const;
 
 protected:
     QColor getBackgroundColor();

@@ -124,13 +124,10 @@ void QGSPage::addChildrenToPage()
             }
         }
     }
-    //when restoring, it is possible for a Dimension to be loaded before the ViewPart it applies to
-    //therefore we need to make sure parentage of the graphics representation is set properly. bit of a kludge.
-    setCollectionGroups();
-    setDimensionGroups();
-    setBalloonGroups();
-    setLeaderGroups();
-    setRichAnnoGroups();
+    //a view can be attached before the view it is drawn inside of, and a view provider
+    //replayed on its own (progressive loading) arrives in no particular order at all, so
+    //parentage is only decidable once every item exists. Establish it in one pass here.
+    setViewParents();
 
     App::DocumentObject* obj = m_vpPage->getDrawPage()->Template.getValue();
     auto pageTemplate(dynamic_cast<TechDraw::DrawTemplate*>(obj));
@@ -252,77 +249,66 @@ int QGSPage::addQView(QGIView* view)
     if (!existing) {
         addItem(view);
 
-        // Find if it belongs to a parent
-        QGIView* parent = nullptr;
-        parent = findParent(view);
+        //a view with no parent is positioned on the page. attachToParent re-places it
+        //relative to its parent if it turns out to have one.
+        view->setPos(Rez::guiX(view->getViewObject()->X.getValue()),
+                     Rez::guiX(view->getViewObject()->Y.getValue() * -1));
+        attachToParent(view);
 
-        QPointF viewPos(Rez::guiX(view->getViewObject()->X.getValue()),
-                        Rez::guiX(view->getViewObject()->Y.getValue() * -1));
-
-        if (parent) {
-            // move child view to center of parent
-            QPointF posRef(0., 0.);
-            QPointF mapPos = view->mapToItem(parent, posRef);
-            view->moveBy(-mapPos.x(), -mapPos.y());
-
-            parent->addToGroup(view);
-        }
-
-        view->setPos(viewPos);
         view->updateView(true);
-
-        //findParent only looks upwards, so it can only work if the parent's item
-        //already exists. Look downwards too, or whichever item happens to be made
-        //first decides whether the other one is ever placed properly.
-        if (auto collection = dynamic_cast<QGIViewCollection*>(view)) {
-            adoptCollectionMembers(collection);
-        }
     }
     return 0;
 }
 
-//! Claim the members of a collection that are already in the scene. Their items were
-//! made before the collection's, so findParent found nothing for them and left them at
-//! the top of the scene - where their collection-relative X/Y lands them at the page
-//! origin instead of inside the collection.
-void QGSPage::adoptCollectionMembers(QGIViewCollection* collection)
+//! hand an item to the view it is drawn inside of, if that view has an item yet.
+//!
+//! Whether it does depends on the order the items happen to be made in, so this can
+//! legitimately do nothing - setViewParents() picks up whatever was missed once the
+//! whole page exists.
+void QGSPage::attachToParent(QGIView* item)
 {
-    auto feature = dynamic_cast<TechDraw::DrawViewCollection*>(collection->getViewObject());
+    QGIView* parent = findParent(item);
+    if (parent) {
+        addItemToParent(item, parent);
+    }
+}
+
+//! draw an item inside its parent, at the position its X/Y names in the parent's frame.
+void QGSPage::addItemToParent(QGIView* item, QGIView* parent)
+{
+    assert(item);
+    assert(parent);
+
+    //a dimension or a balloon is placed by where it already sits on the page, not by
+    //its X/Y - those are an offset from the thing it annotates
+    if (auto dim = dynamic_cast<QGIViewDimension*>(item)) {
+        addDimToParent(dim, parent);
+        return;
+    }
+    if (auto balloon = dynamic_cast<QGIViewBalloon*>(item)) {
+        addBalloonToParent(balloon, parent);
+        return;
+    }
+    if (auto leader = dynamic_cast<QGILeaderLine*>(item)) {
+        addLeaderToParent(leader, parent);
+        return;
+    }
+    if (auto anno = dynamic_cast<QGIRichAnno*>(item)) {
+        addAnnoToParent(anno, parent);
+        return;
+    }
+
+    TechDraw::DrawView* feature = item->getViewObject();
     if (!feature) {
         return;
     }
 
-    for (auto& member : feature->Views.getValues()) {
-        QGIView* item = findQViewForDocObj(member);
-        if (!item || item->group()) {
-            //not made yet - it will find us on its way in - or already parented
-            continue;
-        }
-        TechDraw::DrawView* memberFeature = item->getViewObject();
-        if (!memberFeature) {
-            continue;
-        }
-
-        placeInCollection(item, memberFeature, collection);
-    }
-}
-
-//! Move an orphaned view onto the spot its collection-relative X/Y names, and hand it
-//! to the collection.
-//!
-//! The order matters. addToGroup preserves the item's position on the page, so the
-//! position has to be right before the handover - and it cannot be fixed afterwards,
-//! because the group locks its anchor on the way in (QGIProjGroup::itemChange) and a
-//! locked QGIView refuses every later setPos (QGIView::itemChange). Doing it the other
-//! way round moves every member except the anchor, which is the one that decides where
-//! the group looks like it is.
-void QGSPage::placeInCollection(QGIView* item, TechDraw::DrawView* feature,
-                                QGIViewCollection* collection)
-{
-    //the item has no parent yet, so its position is its position on the page
-    item->setPos(collection->mapToScene(Rez::guiX(feature->X.getValue()),
-                                        Rez::guiX(feature->Y.getValue() * -1)));
-    collection->addToGroup(item);
+    //the item is still top level, so its position is its position on the page. Put it
+    //where its parent-relative X/Y names before the handover, since addToGroup preserves
+    //the position on the page rather than the position within the group.
+    item->setPos(parent->mapToScene(Rez::guiX(feature->X.getValue()),
+                                    Rez::guiX(feature->Y.getValue() * -1)));
+    parent->addToGroup(item);
 }
 
 int QGSPage::removeQView(QGIView* view)
@@ -547,12 +533,7 @@ QGIView* QGSPage::addViewBalloon(TechDraw::DrawViewBalloon* balloonFeat)
 
     vBalloon->setViewPartFeature(balloonFeat);
 
-    QGIView* parent = nullptr;
-    parent = findParent(vBalloon);
-
-    if (parent) {
-        addBalloonToParent(vBalloon, parent);
-    }
+    attachToParent(vBalloon);
 
     return vBalloon;
 }
@@ -616,13 +597,7 @@ QGIView* QGSPage::addViewDimension(TechDraw::DrawViewDimension* dimFeat)
 
     dimGroup->setViewPartFeature(dimFeat);
 
-    // Find if it belongs to a parent
-    QGIView* parent = nullptr;
-    parent = findParent(dimGroup);
-
-    if (parent) {
-        addDimToParent(dimGroup, parent);
-    }
+    attachToParent(dimGroup);
 
     return dimGroup;
 }
@@ -647,12 +622,7 @@ QGIView* QGSPage::addViewLeader(TechDraw::DrawLeaderLine* leaderFeat)
 
     leaderGroup->setLeaderFeature(leaderFeat);
 
-    QGIView* parent = nullptr;
-    parent = findParent(leaderGroup);
-
-    if (parent) {
-        addLeaderToParent(leaderGroup, parent);
-    }
+    attachToParent(leaderGroup);
 
     leaderGroup->updateView(true);
 
@@ -672,9 +642,7 @@ QGIView* QGSPage::addRichAnno(TechDraw::DrawRichAnno* richFeat)
     addItem(annoGroup);
     annoGroup->setViewFeature(richFeat);
 
-    QGIView* parent = findParent(annoGroup);
-    if (parent)
-        addAnnoToParent(annoGroup, parent);
+    attachToParent(annoGroup);
 
     annoGroup->updateView(true);
 
@@ -715,106 +683,57 @@ QGIView* QGSPage::addWeldSymbol(TechDraw::DrawWeldSymbol* weldFeat)
     return weldGroup;
 }
 
-void QGSPage::setDimensionGroups(void)
-{
-    const std::vector<QGIView*>& allItems = getViews();
-    int dimItemType = QGraphicsItem::UserType + 106;
-
-    for (auto& item : allItems) {
-        if (item->type() == dimItemType && !item->group()) {
-            QGIView* parent = findParent(item);
-            if (parent) {
-                QGIViewDimension* dim = dynamic_cast<QGIViewDimension*>(item);
-                addDimToParent(dim, parent);
-            }
-        }
-    }
-}
-
-void QGSPage::setBalloonGroups(void)
-{
-    const std::vector<QGIView*>& allItems = getViews();
-    int balloonItemType = QGraphicsItem::UserType + 140;
-
-    for (auto& item : allItems) {
-        if (item->type() == balloonItemType && !item->group()) {
-            QGIView* parent = findParent(item);
-            if (parent) {
-                QGIViewBalloon* balloon = dynamic_cast<QGIViewBalloon*>(item);
-                addBalloonToParent(balloon, parent);
-            }
-        }
-    }
-}
-
-void QGSPage::setLeaderGroups(void)
-{
-    //    Base::Console().Message("QGSP::setLeaderGroups()\n");
-    const std::vector<QGIView*>& allItems = getViews();
-    int leadItemType = QGraphicsItem::UserType + 232;
-
-    //make sure that qgileader belongs to correct parent.
-    //quite possibly redundant
-    for (auto& item : allItems) {
-        if (item->type() == leadItemType && !item->group()) {
-            QGIView* parent = findParent(item);
-            if (parent) {
-                QGILeaderLine* lead = dynamic_cast<QGILeaderLine*>(item);
-                addLeaderToParent(lead, parent);
-            }
-        }
-    }
-}
-
-void QGSPage::setRichAnnoGroups(void)
-{
-    //    Base::Console().Message("QGSP::setRichAnnoGroups()\n");
-    const std::vector<QGIView*>& allItems = getViews();
-    int annoItemType = QGraphicsItem::UserType + 233;
-
-    //make sure that qgirichanno belongs to correct parent.
-    for (auto& item : allItems) {
-        if (item->type() == annoItemType && !item->group()) {
-            QGIView* parent = findParent(item);
-            if (parent) {
-                QGIRichAnno* anno = dynamic_cast<QGIRichAnno*>(item);
-                addAnnoToParent(anno, parent);
-            }
-        }
-    }
-}
-
-//! A view that belongs to a collection is drawn as a child of the collection's item, so
-//! its X/Y are relative to the collection, not to the page. addQView can only establish
-//! that parentage if the collection's item already exists when the child's is made, and
-//! nothing puts it right afterwards - so a child made first stays at the top of the
-//! scene, where its collection-relative position lands it near the page origin. Which
-//! item is made first depends on the order the view providers are created, which is why
-//! a group can be in its proper place one time and off the sheet the next.
+//! draw every view inside the view it belongs to.
 //!
-//! Same hack as setDimensionGroups and friends above, for the same reason.
-void QGSPage::setCollectionGroups()
+//! An item can only be handed to its parent's item once that item exists, and the order
+//! the items are made in is not ours to choose - a dimension can be attached before the
+//! view it measures, and progressive loading replays view providers one at a time in no
+//! particular order. So parentage is settled here, once, when the whole page exists;
+//! whatever attachToParent already managed on the way in is left alone.
+void QGSPage::setViewParents()
 {
-    const std::vector<QGIView*> allItems = getViews();
-
-    for (auto& item : allItems) {
-        if (item->group()) {
-            //already has a parent
+    //Order matters, and it is not free to choose. A view has to be settled inside its
+    //own parent before anything that hangs off it is placed against it, because
+    //addDimToParent and friends measure the offset in the parent's frame - and that
+    //frame moves when the parent is itself handed to a collection. Collection members
+    //are therefore claimed first, which is the order the old five passes ran in
+    //(setCollectionGroups ahead of setDimensionGroups and the rest).
+    //
+    //Ordering by a computed "how many views deep is this" is the general form of the
+    //same rule and is probably where this should end up. It is not done here only
+    //because it has not been measured honestly: a section view is computed on a
+    //background thread, so a page exported right after it opens can be half drawn -
+    //the same binary gave Page006 of scanner.FCStd 315 paths on one run and 171 on the
+    //next. Settle the page before believing any before/after drawing diff.
+    const std::vector<QGIView*> unparented = collectUnparented();
+    for (auto& item : unparented) {
+        if (item->parentItem()) {
             continue;
         }
-        TechDraw::DrawView* feature = item->getViewObject();
-        if (!feature) {
-            continue;
+        if (dynamic_cast<QGIViewCollection*>(findParent(item))) {
+            attachToParent(item);
         }
-        auto collection = dynamic_cast<QGIViewCollection*>(findParent(item));
-        if (!collection) {
-            //not a member of a collection. dimensions and the like belong to a plain
-            //view and are handled by their own pass.
-            continue;
-        }
-
-        placeInCollection(item, feature, collection);
     }
+
+    //then everything that hangs off a view: dimensions, balloons, leaders, annotations
+    for (auto& item : unparented) {
+        if (item->parentItem()) {
+            continue;
+        }
+        attachToParent(item);
+    }
+}
+
+//! the views in the scene that are not drawn inside anything yet
+std::vector<QGIView*> QGSPage::collectUnparented() const
+{
+    std::vector<QGIView*> result;
+    for (auto& item : getViews()) {
+        if (!item->parentItem()) {
+            result.push_back(item);
+        }
+    }
+    return result;
 }
 
 //! find the graphic for a DocumentObject
@@ -848,101 +767,30 @@ QGIView* QGSPage::getQGIVByName(std::string name)
     return nullptr;
 }
 
-//find the parent of a QGIV based on the corresponding feature's parentage
+//! find the item a view should be drawn inside of.
+//!
+//! The document knows the answer - DrawView::claimParent() gives it without consulting
+//! the scene at all - so the only question here is whether that view has an item yet.
 QGIView* QGSPage::findParent(QGIView* view) const
 {
-    //    Base::Console().Message("QGSP::findParent(%s)\n", view->getViewName());
-    const std::vector<QGIView*> qviews = getViews();
     TechDraw::DrawView* myFeat = view->getViewObject();
+    if (!myFeat) {
+        return nullptr;
+    }
 
-    //If type is dimension we check references first
-    TechDraw::DrawViewDimension* dim = nullptr;
-    dim = dynamic_cast<TechDraw::DrawViewDimension*>(myFeat);
+    //a dimension has no owner link: it belongs to whatever it measures
+    auto dim = dynamic_cast<TechDraw::DrawViewDimension*>(myFeat);
     if (dim) {
         std::vector<App::DocumentObject*> objs = dim->References2D.getValues();
-
         if (!objs.empty()) {
-            std::vector<App::DocumentObject*> objs = dim->References2D.getValues();
-            // Attach the dimension to the first object's group
-            for (std::vector<QGIView*>::const_iterator it = qviews.begin(); it != qviews.end();
-                 ++it) {
-                if (strcmp((*it)->getViewName(), objs.at(0)->getNameInDocument()) == 0) {
-                    return *it;
-                }
+            QGIView* measured = findQViewForDocObj(objs.front());
+            if (measured) {
+                return measured;
             }
         }
     }
 
-    //If type is balloon we check references first
-    TechDraw::DrawViewBalloon* balloon = nullptr;
-    balloon = dynamic_cast<TechDraw::DrawViewBalloon*>(myFeat);
-
-    if (balloon) {
-        App::DocumentObject* obj = balloon->SourceView.getValue();
-
-        if (obj) {
-            // Attach the Balloon to the first object's group
-            for (std::vector<QGIView*>::const_iterator it = qviews.begin(); it != qviews.end();
-                 ++it) {
-                if (strcmp((*it)->getViewName(), obj->getNameInDocument()) == 0) {
-                    return *it;
-                }
-            }
-        }
-    }
-
-    //If type is LeaderLine we check LeaderParent
-    TechDraw::DrawLeaderLine* lead = nullptr;
-    lead = dynamic_cast<TechDraw::DrawLeaderLine*>(myFeat);
-
-    if (lead) {
-        App::DocumentObject* obj = lead->LeaderParent.getValue();
-        if (obj) {
-            std::string parentName = obj->getNameInDocument();
-            for (std::vector<QGIView*>::const_iterator it = qviews.begin(); it != qviews.end();
-                 ++it) {
-                if (strcmp((*it)->getViewName(), parentName.c_str()) == 0) {
-                    return *it;
-                }
-            }
-        }
-    }
-
-    //if type is a RichTextAnno we check AnnoParent
-    TechDraw::DrawRichAnno* anno = dynamic_cast<TechDraw::DrawRichAnno*>(myFeat);
-    if (anno) {
-        App::DocumentObject* obj = anno->AnnoParent.getValue();
-        if (obj) {
-            std::string parentName = obj->getNameInDocument();
-            for (std::vector<QGIView*>::const_iterator it = qviews.begin(); it != qviews.end();
-                 ++it) {
-                if (strcmp((*it)->getViewName(), parentName.c_str()) == 0) {
-                    return *it;
-                }
-            }
-        }
-    }
-
-    // Check if part of view collection
-    for (std::vector<QGIView*>::const_iterator it = qviews.begin(); it != qviews.end(); ++it) {
-        QGIViewCollection* grp = nullptr;
-        grp = dynamic_cast<QGIViewCollection*>(*it);
-        if (grp) {
-            TechDraw::DrawViewCollection* collection = nullptr;
-            collection = dynamic_cast<TechDraw::DrawViewCollection*>(grp->getViewObject());
-            if (collection) {
-                std::vector<App::DocumentObject*> objs = collection->Views.getValues();
-                for (std::vector<App::DocumentObject*>::iterator it = objs.begin();
-                     it != objs.end(); ++it) {
-                    if (strcmp(myFeat->getNameInDocument(), (*it)->getNameInDocument()) == 0)
-
-                        return grp;
-                }
-            }
-        }
-    }
-    // Not found a parent
-    return nullptr;
+    return findQViewForDocObj(myFeat->claimParent());
 }
 
 bool QGSPage::hasQView(App::DocumentObject* obj)
@@ -1032,8 +880,9 @@ void QGSPage::fixOrphans(bool force)
         if (!qv)
             attachView(dv);
     }
-    //an item made before its collection's item never got a parent. it has one now.
-    setCollectionGroups();
+    //the loop above can make an item before the item it is drawn inside of, so settle
+    //parentage now that they all exist. Nothing below creates a view.
+    setViewParents();
 
     // if qView doesn't have a Feature on this Page, delete it
     std::vector<QGIView*> qvss = getViews();
@@ -1088,7 +937,6 @@ void QGSPage::fixOrphans(bool force)
         }
     }
 
-    setRichAnnoGroups();//hack to fix QGIRA parentage;
 }
 
 bool QGSPage::orphanExists(const char* viewName, const std::vector<App::DocumentObject*>& list)

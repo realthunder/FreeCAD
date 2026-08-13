@@ -51,6 +51,7 @@ public:
     ~DrawViewBalloon() override;
 
     App::PropertyLink SourceView;
+    App::PropertyLink* getOwnerProperty() override { return &SourceView; }
     App::PropertyString Text;
     App::PropertyEnumeration EndType;
     App::PropertyEnumeration BubbleShape;
