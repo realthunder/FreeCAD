@@ -61,6 +61,7 @@ class DrawWeldSymbol;
 namespace TechDrawGui
 {
 class QGIView;
+class QGIViewCollection;
 class QGIViewDimension;
 class QGITemplate;
 class ViewProviderPage;
@@ -139,6 +140,10 @@ public:
     void saveSvg(QString filename);
     void postProcessXml(QTemporaryFile& temporaryFile, QString filename, QString pagename);
 
+    void placeInCollection(QGIView* item, TechDraw::DrawView* feature,
+                           QGIViewCollection* collection);
+    void adoptCollectionMembers(QGIViewCollection* collection);
+    void setCollectionGroups();
     void setDimensionGroups();
     void setBalloonGroups();
     void setLeaderGroups();

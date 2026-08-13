@@ -126,6 +126,7 @@ void QGSPage::addChildrenToPage()
     }
     //when restoring, it is possible for a Dimension to be loaded before the ViewPart it applies to
     //therefore we need to make sure parentage of the graphics representation is set properly. bit of a kludge.
+    setCollectionGroups();
     setDimensionGroups();
     setBalloonGroups();
     setLeaderGroups();
@@ -269,8 +270,59 @@ int QGSPage::addQView(QGIView* view)
 
         view->setPos(viewPos);
         view->updateView(true);
+
+        //findParent only looks upwards, so it can only work if the parent's item
+        //already exists. Look downwards too, or whichever item happens to be made
+        //first decides whether the other one is ever placed properly.
+        if (auto collection = dynamic_cast<QGIViewCollection*>(view)) {
+            adoptCollectionMembers(collection);
+        }
     }
     return 0;
+}
+
+//! Claim the members of a collection that are already in the scene. Their items were
+//! made before the collection's, so findParent found nothing for them and left them at
+//! the top of the scene - where their collection-relative X/Y lands them at the page
+//! origin instead of inside the collection.
+void QGSPage::adoptCollectionMembers(QGIViewCollection* collection)
+{
+    auto feature = dynamic_cast<TechDraw::DrawViewCollection*>(collection->getViewObject());
+    if (!feature) {
+        return;
+    }
+
+    for (auto& member : feature->Views.getValues()) {
+        QGIView* item = findQViewForDocObj(member);
+        if (!item || item->group()) {
+            //not made yet - it will find us on its way in - or already parented
+            continue;
+        }
+        TechDraw::DrawView* memberFeature = item->getViewObject();
+        if (!memberFeature) {
+            continue;
+        }
+
+        placeInCollection(item, memberFeature, collection);
+    }
+}
+
+//! Move an orphaned view onto the spot its collection-relative X/Y names, and hand it
+//! to the collection.
+//!
+//! The order matters. addToGroup preserves the item's position on the page, so the
+//! position has to be right before the handover - and it cannot be fixed afterwards,
+//! because the group locks its anchor on the way in (QGIProjGroup::itemChange) and a
+//! locked QGIView refuses every later setPos (QGIView::itemChange). Doing it the other
+//! way round moves every member except the anchor, which is the one that decides where
+//! the group looks like it is.
+void QGSPage::placeInCollection(QGIView* item, TechDraw::DrawView* feature,
+                                QGIViewCollection* collection)
+{
+    //the item has no parent yet, so its position is its position on the page
+    item->setPos(collection->mapToScene(Rez::guiX(feature->X.getValue()),
+                                        Rez::guiX(feature->Y.getValue() * -1)));
+    collection->addToGroup(item);
 }
 
 int QGSPage::removeQView(QGIView* view)
@@ -732,6 +784,39 @@ void QGSPage::setRichAnnoGroups(void)
     }
 }
 
+//! A view that belongs to a collection is drawn as a child of the collection's item, so
+//! its X/Y are relative to the collection, not to the page. addQView can only establish
+//! that parentage if the collection's item already exists when the child's is made, and
+//! nothing puts it right afterwards - so a child made first stays at the top of the
+//! scene, where its collection-relative position lands it near the page origin. Which
+//! item is made first depends on the order the view providers are created, which is why
+//! a group can be in its proper place one time and off the sheet the next.
+//!
+//! Same hack as setDimensionGroups and friends above, for the same reason.
+void QGSPage::setCollectionGroups()
+{
+    const std::vector<QGIView*> allItems = getViews();
+
+    for (auto& item : allItems) {
+        if (item->group()) {
+            //already has a parent
+            continue;
+        }
+        TechDraw::DrawView* feature = item->getViewObject();
+        if (!feature) {
+            continue;
+        }
+        auto collection = dynamic_cast<QGIViewCollection*>(findParent(item));
+        if (!collection) {
+            //not a member of a collection. dimensions and the like belong to a plain
+            //view and are handled by their own pass.
+            continue;
+        }
+
+        placeInCollection(item, feature, collection);
+    }
+}
+
 //! find the graphic for a DocumentObject
 QGIView* QGSPage::findQViewForDocObj(const App::DocumentObject* obj) const
 {
@@ -947,6 +1032,9 @@ void QGSPage::fixOrphans(bool force)
         if (!qv)
             attachView(dv);
     }
+    //an item made before its collection's item never got a parent. it has one now.
+    setCollectionGroups();
+
     // if qView doesn't have a Feature on this Page, delete it
     std::vector<QGIView*> qvss = getViews();
     // qvss may contain an item and its child item(s) and to avoid to access a deleted item a QPointer is needed
