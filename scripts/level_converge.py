@@ -54,7 +54,10 @@
 # fallback is silent.
 #
 # FC_MODEL, FC_GPU_BUDGET_MB, FC_SIMPLIFY (on|off), FC_MERGE (0|1),
-# FC_CONV_PLANS, FC_CONV_TOL, FC_MAX_WAIT, FC_OUT, FC_LOG.
+# FC_CONV_PLANS, FC_CONV_TOL, FC_MAX_WAIT, FC_OUT, FC_LOG,
+# FC_MESH_SKIP/FC_MESH_FINER (on|off), FC_OCCLUSION (on|off),
+# FC_FEED (on|off; off pins the demote streak to 0 so culling runs
+# with the downgrade feed alone disarmed), FC_CAMERA (fit|inside).
 import os
 import re
 import sys
@@ -89,6 +92,23 @@ MESH_SKIP = os.environ.get("FC_MESH_SKIP", "on")
 # many calls it skipped: it declines a coarsening, and a coarsening that
 # would have worked is memory the plan has to find elsewhere.
 MESH_FINER = os.environ.get("FC_MESH_FINER", "off")
+# The occlusion -> downgrade feed, measured LIVE (SceneStreaming 12.20):
+# the software oracle's settled hidden verdicts widen the GPU downgrade
+# sweep's free tier. FC_OCCLUSION arms the culling itself; FC_FEED arms
+# the feed alone -- a demote streak of 0 leaves culling on and the feed
+# off, which is the equal-everything-else arm this measurement needs.
+# The third arm (occlusion off entirely) is the baseline that also
+# prices the lastUsed accident: culled draws stop advancing lastUsed,
+# so with shadows off their GPU buffers are collected after two frames
+# whether or not any plan asked -- the on/off delta in uploaded at
+# equal budget is that accident's size.
+OCCLUSION = os.environ.get("FC_OCCLUSION", "off") == "on"
+FEED = os.environ.get("FC_FEED", "on") == "on"
+# fit: the whole-assembly camera every converge run so far has used.
+# inside: a perspective camera at the model centre (FarFieldProxies
+# 10.3) -- the camera the occlusion mechanism is planned against, where
+# a third of the instances are occluded rather than 99.9%.
+CAMERA = os.environ.get("FC_CAMERA", "fit")
 # How many consecutive quiet plans mean "settled". Two is not enough:
 # the descent alternates passes, so a single quiet plan happens mid-run.
 CONV_PLANS = int(os.environ.get("FC_CONV_PLANS", "4"))
@@ -106,6 +126,13 @@ PLAN = re.compile(
     r"(\d+) entries\) \| cpu resident ([0-9.]+)MB \| displayed coarse "
     r"(\d+) exact (\d+) \| plan: refine (\d+) demote (\d+) downgrade (\d+)"
     r".*?refine tolerance ([0-9.]+|inf|nan)px( \(RAISED BY PRESSURE\))?")
+
+# The downgrade sweep's own readout, where the feed's verdicts land:
+# `occluded` is PlanDemoteStats::occludedFree, sources granted the free
+# tier because the oracle proved them hidden for the whole streak.
+DGPASS = re.compile(
+    r"downgrade pass: considered (\d+).*?\| occluded (\d+) \|"
+    r".*?want ([0-9.]+)MB freed ([0-9.]+)MB")
 
 
 class Plan(object):
@@ -204,11 +231,17 @@ def run():
         # strict arm's and no line saying the arm had changed.
         rp.SetBool("MeshSkipRedundant", MESH_SKIP != "off")
         rp.SetBool("MeshSkipFinerResident", MESH_FINER == "on")
+        rp.SetBool("Occlusion", OCCLUSION)
+        rp.SetBool("OcclusionSoftware", True)
+        rp.SetInt("OcclusionDemoteStreak", 8 if FEED else 0)
         emit("arm: simplify=%s merge=%s budget=%dMB release=%s meshskip=%s "
-             "finer=%s conv=%d plans within %.0f%% (or %.0fs of silence)"
+             "finer=%s occlusion=%s feed=%s camera=%s "
+             "conv=%d plans within %.0f%% (or %.0fs of silence)"
              % (SIMPLIFY, MERGE, BUDGET, RELEASE or "default",
                 "off" if MESH_SKIP == "off" else "on",
                 "on" if MESH_FINER == "on" else "off",
+                "on" if OCCLUSION else "off",
+                "on" if FEED else "off", CAMERA,
                 CONV_PLANS, CONV_TOL, CONV_QUIET_S))
 
         Gui.getMainWindow().resize(1920, 1200)
@@ -232,12 +265,53 @@ def run():
         v.viewIsometric()
         Gui.SendMsgToActiveView("ViewFit")
         QtCore.QCoreApplication.processEvents()
+        if CAMERA == "inside":
+            # A perspective camera at the model centre, the cull_probe
+            # recipe verbatim (FarFieldProxies 10.3). The centre comes
+            # from the FITTED camera, never from o.Shape --
+            # DeferShapeLoad is on, and touching a shape would
+            # force-load every B-Rep in the document. An orthographic
+            # zoom does NOT get inside: it shrinks the view height
+            # without moving the camera.
+            import pivy.coin as coin
+            end = time.time() + 2
+            while time.time() < end:
+                try:
+                    v.redraw()
+                except Exception:
+                    pass
+                QtCore.QCoreApplication.processEvents()
+            cam = v.getCameraNode()
+            pos = cam.position.getValue()
+            fwd = cam.orientation.getValue().multVec(coin.SbVec3f(0, 0, -1))
+            dist = float(cam.focalDistance.getValue())
+            span = (float(cam.height.getValue())
+                    if hasattr(cam, "height") else dist)
+            centre = coin.SbVec3f(pos[0] + fwd[0] * dist,
+                                  pos[1] + fwd[1] * dist,
+                                  pos[2] + fwd[2] * dist)
+            v.setCameraType("Perspective")
+            QtCore.QCoreApplication.processEvents()
+            cam = v.getCameraNode()
+            cam.position.setValue(centre)
+            cam.orientation.setValue(
+                coin.SbRotation(coin.SbVec3f(0, 0, -1),
+                                coin.SbVec3f(fwd[0], fwd[1], fwd[2])))
+            cam.nearDistance.setValue(span * 1.0e-3)
+            cam.focalDistance.setValue(span * 0.25)
+            cam.farDistance.setValue(span * 4.0)
+            emit("inside camera at (%.1f %.1f %.1f), model span %.1f"
+                 % (centre[0], centre[1], centre[2], span))
 
         since = os.path.getsize(LOG) if os.path.exists(LOG) else 0
         window, total, start = [], 0, time.time()
         sawScene = False
         lastPlanAt = time.time()
         bySilence = False
+        # Whole-run work totals -- what converging COST, beside what it
+        # converged TO. The feed's verdicts land in dgOccluded.
+        churn = [0, 0, 0]
+        dgPasses, dgOccluded, dgFreed = 0, 0, 0.0
         while time.time() - start < MAX_WAIT:
             deadline = time.time() + 0.5
             while time.time() < deadline:
@@ -246,8 +320,14 @@ def run():
                 except Exception:
                     pass
                 QtCore.QCoreApplication.processEvents()
-            fresh, since = tail("render levels: gpu budget", since)
+            fresh, since = tail("render levels:", since)
             for ln in fresh:
+                dg = DGPASS.search(ln)
+                if dg:
+                    dgPasses += 1
+                    dgOccluded += int(dg.group(2))
+                    dgFreed += float(dg.group(4))
+                    continue
                 m = PLAN.search(ln)
                 if not m:
                     continue
@@ -261,6 +341,9 @@ def run():
                     continue
                 sawScene = True
                 lastPlanAt = time.time()
+                churn[0] += p.refine
+                churn[1] += p.demote
+                churn[2] += p.downgrade
                 window.append(p)
                 window[:] = window[-CONV_PLANS:]
             if settled(window):
@@ -296,6 +379,7 @@ def run():
                      "switched off, so this settled because nothing could "
                      "move, not because it converged" % infinite[-1].tol)
             live = sorted(p.live for p in window)
+            upl = sorted(p.uploaded for p in window)
             cpu = sorted(p.cpu for p in window)
             last = window[-1]
             emit("CONVERGED after %.0fs over %d quiet plans%s"
@@ -305,6 +389,13 @@ def run():
                     % (time.time() - lastPlanAt) if bySilence else ""))
             emit("  live gpu   %.1f MB  (min %.1f max %.1f)"
                  % (live[len(live) // 2], live[0], live[-1]))
+            # Uploaded beside live, because their GAP is a finding: a
+            # culled draw stops advancing lastUsed, so with shadows off
+            # its buffers are collected two frames later whether or not
+            # any plan asked -- the unmanaged accident the occlusion
+            # arms exist to price (uploaded falling under the same live
+            # is memory the collector took, not the plan).
+            emit("  uploaded   %.1f MB" % upl[len(upl) // 2])
             emit("  cpu resident %.1f MB" % cpu[len(cpu) // 2])
             emit("  displayed  coarse %d exact %d" % (last.coarse, last.exact))
             emit("  tolerance  %.2f px%s"
@@ -323,6 +414,10 @@ def run():
                     if last.live <= BUDGET
                     else "NOT met", BUDGET))
         # Whole-run counters, which are not plan state.
+        emit("  churn: refine %d demote %d downgrade %d over %d plans"
+             % (churn[0], churn[1], churn[2], total))
+        emit("  downgrade passes %d, occluded-free verdicts %d, "
+             "freed %.1fMB total" % (dgPasses, dgOccluded, dgFreed))
         try:
             body = open(LOG, errors="replace").read()
             emit("  boxes %d, decimated rungs %d"
