@@ -415,6 +415,33 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter DowngradeLedger
+    ///
+    /// Whether the GPU downgrade sweep carries its own unlanded
+    /// orders as credit against the next plan's deficit
+    /// (docs/SceneStreaming.md #13c.4). A downgrade frees exactly the
+    /// bytes it prices, but not WHEN the plan next looks: the swap
+    /// uploads the coarse rung immediately while the fine buffers
+    /// leave the live meter only after the collection window -- on a
+    /// heavy scene, seconds -- so a plan sampling mid-transition reads
+    /// old+new at once, computes a larger deficit than the one just
+    /// covered, and walks other sources further down. Measured on a
+    /// 5455-object model at 64MB with the camera inside the assembly:
+    /// single plans requesting 1500+ downgrades, live tripling during
+    /// the storm, and the whole registry drained to its bottom rung
+    /// while the settled memory was under budget all along.
+    /// With the ledger, promised bytes hold the sweep until they are
+    /// observed landing or written off after a few frames; off
+    /// restores the storming behaviour for comparison.
+    static const bool & getDowngradeLedger();
+    static const bool & defaultDowngradeLedger();
+    static void removeDowngradeLedger();
+    static void setDowngradeLedger(const bool &v);
+    static const char *docDowngradeLedger();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LevelCount
     ///
     /// How many rungs the fidelity ladder declares

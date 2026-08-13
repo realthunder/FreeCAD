@@ -1570,3 +1570,75 @@ TEST(PressureTolerance, aNewCameraForgetsWhatTheLastOneLearned)
     EXPECT_FLOAT_EQ(pt.raisedPx, 0.0f);
 }
 
+
+// The downgrade ledger (SceneLadder.h): the sweep's own unlanded
+// orders carried as credit, so a plan sampling the apply transient
+// does not re-correct off it. The numbers in the first two cases are
+// the measured storm itself: order 93MB at live 157, next plan reads
+// 165 (old+new double residency), and without the ledger the sweep
+// walked the registry to the bottom.
+TEST(DowngradeLedger, theTransientDoesNotRestateTheDeficit)
+{
+    constexpr uint64_t MB = 1048576;
+    Render::DowngradeLedger led;
+    led.order(93 * MB, 157 * MB, 10);
+    // live ROSE from the swap-in: nothing landed, the full promise
+    // stands, and the deficit is what the transient adds beyond the
+    // order -- 8MB, not the storm's 101.
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 12), 8 * MB);
+    // A rise never consumes credit: asked again, same answer.
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 13), 8 * MB);
+}
+
+TEST(DowngradeLedger, aLandingSettlesThePromiseOnce)
+{
+    constexpr uint64_t MB = 1048576;
+    Render::DowngradeLedger led;
+    led.order(93 * MB, 157 * MB, 10);
+    // The collapse lands everything: credit settles, and the scene
+    // now UNDER budget owes nothing.
+    EXPECT_EQ(led.deficit(45 * MB, 64 * MB, 12), 0u);
+    // No stale credit shields a genuinely new excess afterwards.
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 13), 101 * MB);
+}
+
+TEST(DowngradeLedger, aPartialLandingCreditsExactlyTheFall)
+{
+    constexpr uint64_t MB = 1048576;
+    Render::DowngradeLedger led;
+    led.order(93 * MB, 157 * MB, 10);
+    // Fell 57 of the 93: 36 outstanding, which covers the raw 36MB
+    // excess exactly -- the sweep holds.
+    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 12), 0u);
+    // The same fall is not credited twice: live unchanged, credit
+    // unchanged, still held.
+    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 13), 0u);
+}
+
+TEST(DowngradeLedger, anUnlandablePromiseExpiresIntoTheTruth)
+{
+    constexpr uint64_t MB = 1048576;
+    Render::DowngradeLedger led;
+    led.order(93 * MB, 157 * MB, 10);
+    // Shared-geometry pinning: nothing ever lands. Inside the settle
+    // window the sweep is held to the residual...
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 12), 8 * MB);
+    // ...and at the horizon the promise is written off and the raw
+    // excess is acted on again.
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB,
+                          10 + Render::DowngradeLedger::kSettleFrames),
+              101 * MB);
+}
+
+TEST(DowngradeLedger, followUpOrdersAccumulate)
+{
+    constexpr uint64_t MB = 1048576;
+    Render::DowngradeLedger led;
+    led.order(93 * MB, 157 * MB, 10);
+    led.order(8 * MB, 165 * MB, 12);
+    // 101MB in flight against a 101MB excess: held.
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 13), 0u);
+    // The full landing settles both orders.
+    EXPECT_EQ(led.deficit(45 * MB, 64 * MB, 14), 0u);
+    EXPECT_EQ(led.promised, 0u);
+}

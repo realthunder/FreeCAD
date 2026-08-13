@@ -124,6 +124,7 @@ public:
     virtual void setGpuMemoryBudget(size_t bytes) override;
     virtual void setLevelDebug(bool on) override;
     virtual void setLevelPressureRelease(float fraction) override;
+    virtual void setDowngradeLedger(bool on) override;
 #endif
 
 #ifdef FC_RENDERER_STANDALONE

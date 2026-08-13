@@ -528,6 +528,92 @@ struct PlanDemoteStats {
     float acceptedErrorPx = 0.0f;
 };
 
+/// The downgrade sweep's memory of its own unlanded orders -- what
+/// keeps the plan from storming (docs/SceneStreaming.md sec 13c.4).
+///
+/// The sweep's pricing is exact: it knows to the byte what each drop
+/// frees, and the readout shows it covering its deficit precisely.
+/// What it cannot know is WHEN the meter will admit it. A drop applies
+/// as a rebuild that uploads the coarse rung immediately, while the
+/// fine buffers it replaced stay in `live` until they have gone
+/// undrawn for the collection window -- and on a heavy scene that
+/// window is SECONDS of wall time, longer than the plan cadence. So
+/// the next plan, sampling mid-transition, reads old+new double
+/// residency, computes a LARGER deficit than the one just covered,
+/// and -- the previous sources' hooks being consumed -- walks other
+/// sources another rung down. Measured on the rack model at 64MB with
+/// the camera inside: single plans requesting 1500+ downgrades,
+/// live TRIPLING during the storm, the registry drained to
+/// `no fallback rung` 1700 while the true settled memory was 45MB --
+/// far UNDER the budget the storm was still chasing.
+///
+/// The ledger closes the loop: a sweep's promised bytes are carried as
+/// credit against the next deficits until they are OBSERVED landing
+/// (the live meter falling since the order -- each fall credited only
+/// once) or written off after kSettleFrames rendered frames (frames,
+/// not seconds, because collection is frame-clocked). A deficit fully
+/// covered by outstanding credit holds the sweep entirely: the orders
+/// already in flight are the correction, and re-correcting off their
+/// own transient is the storm. Credit that can never land -- shared
+/// geometry pinned by sources the sweep cannot reach -- expires, and
+/// the truth returns within the window.
+struct DowngradeLedger {
+    /// Bytes ordered freed whose landing has not yet been observed.
+    uint64_t promised = 0;
+    /// The live meter the outstanding order was judged against; only
+    /// falls below this observe landings, and it ratchets down with
+    /// them so a fall is never credited twice.
+    uint64_t liveAtOrder = 0;
+    /// Rendered-frame stamp of the most recent order.
+    uint64_t orderFrame = 0;
+    /// Write-off horizon: the 2-frame collection window, plus headroom
+    /// for the rebuilds to run between frames on the same thread.
+    static constexpr uint64_t kSettleFrames = 6;
+
+    /// Outstanding credit, after observing \a liveNow: falls since the
+    /// order settle the promise, kSettleFrames without full landing
+    /// write it off.
+    uint64_t outstanding(uint64_t liveNow, uint64_t frameNow)
+    {
+        if (!promised)
+            return 0;
+        if (frameNow >= orderFrame + kSettleFrames) {
+            promised = 0;
+            return 0;
+        }
+        const uint64_t observed =
+            liveAtOrder > liveNow ? liveAtOrder - liveNow : 0;
+        if (observed) {
+            if (observed >= promised) {
+                promised = 0;
+                return 0;
+            }
+            promised -= observed;
+            liveAtOrder = liveNow;
+        }
+        return promised;
+    }
+
+    /// The deficit the next sweep should act on: the raw excess minus
+    /// what is already in flight. 0 holds the sweep this plan.
+    uint64_t deficit(uint64_t liveNow, uint64_t budget, uint64_t frameNow)
+    {
+        const uint64_t raw = liveNow > budget ? liveNow - budget : 0;
+        const uint64_t credit = outstanding(liveNow, frameNow);
+        return raw > credit ? raw - credit : 0;
+    }
+
+    /// Record a sweep's order (its PlanDemoteStats::bytesFreed).
+    void order(uint64_t bytes, uint64_t liveNow, uint64_t frameNow)
+    {
+        if (!bytes)
+            return;
+        promised += bytes;
+        liveAtOrder = liveNow;
+        orderFrame = frameNow;
+    }
+};
+
 /// The way back down (sec 13 step 3), pure policy: among \a draws, the
 /// *exact*-resident sources (levelError 0) whose coarse rung -- its
 /// error answered by \a demoteErrOf, 0 = not demotable -- the camera can

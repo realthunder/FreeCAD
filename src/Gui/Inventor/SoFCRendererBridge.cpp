@@ -2075,6 +2075,14 @@ RendererBridge::translateLevelDebug(App::PropertyContainer * view)
 }
 
 bool
+RendererBridge::translateDowngradeLedger(App::PropertyContainer * view)
+{
+    return bool(viewParamOverride<App::PropertyBool>(
+            view, "Render", "DowngradeLedger",
+            RenderParams::getDowngradeLedger()));
+}
+
+bool
 RendererBridge::translateShapeVertices(App::PropertyContainer * view)
 {
     return bool(viewParamOverride<App::PropertyBool>(

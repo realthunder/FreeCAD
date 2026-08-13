@@ -9033,6 +9033,10 @@ public:
     // AO/prepass cache key: camera + viewport + AO params + prepass draw
     // set (see the aoRender hash in render()); 0 = never cached.
     uint64_t aoMapHash = 0;
+    // The GPU downgrade sweep's unlanded orders (SceneLadder.h): what
+    // keeps a plan that samples the apply transient from re-correcting
+    // off it. Per view, like the meters it reconciles.
+    Render::DowngradeLedger dgLedger;
     // Camera+viewport of the previous frame (medium-interval and
     // planar-reflection frame cache — see staticFrame in render()).
     uint64_t camFrameHash = 0;
@@ -11305,6 +11309,11 @@ public:
                     // drops would report a different number, since the
                     // upload accounting has not moved yet.
                     size_t dmDeficit = 0, dgDeficit = 0;
+                    // Raw excess a fully-credited ledger held the
+                    // downgrade sweep against, for the report: an
+                    // absent pass under standing pressure would
+                    // otherwise read as a broken sweep.
+                    size_t dgHeld = 0;
                     Render::PlanDemoteStats dmStats, dgStats;
                     // Demotions first (§13 step 3), and only ever under
                     // an observed CPU-memory ceiling: drop the hidden
@@ -11349,6 +11358,25 @@ public:
                     // its own memory as having risen.
                     const size_t gpuUsed = size_t(gpu.live);
                     if (gpuBudget && gpuUsed > gpuBudget) {
+                        // ...minus what previous sweeps have already
+                        // ordered freed but the meter has not admitted
+                        // yet: a drop's fine buffers leave `live` only
+                        // after the collection window, while its coarse
+                        // swap-in shows immediately, so a plan sampling
+                        // the transition reads old+new and would
+                        // re-correct off its own correction -- the
+                        // measured 1500-request storms. The ledger
+                        // (SceneLadder.h) holds the sweep while its
+                        // orders are in flight and expires what never
+                        // lands.
+                        size_t deficit = gpuUsed - gpuBudget;
+                        if (downgradeLedgerOn) {
+                            deficit = size_t(view->dgLedger.deficit(
+                                gpuUsed, gpuBudget, view->frame));
+                            if (!deficit)
+                                dgHeld = gpuUsed - gpuBudget;
+                        }
+                        if (deficit) {
                         // Priced in GPU bytes, because that is what the
                         // deficit is quoted in -- see uploadedBytesOf.
                         // The charge is per sweep, so a geometry shared
@@ -11379,7 +11407,7 @@ public:
                             [&reg](const void *t) {
                                 return reg.downgradeError(t);
                             },
-                            &dgStats, dgDeficit = gpuUsed - gpuBudget,
+                            &dgStats, dgDeficit = deficit,
                             [view, &charge](const Render::MeshData *m)
                                 -> uint64_t {
                                 return view && m
@@ -11389,6 +11417,12 @@ public:
                         nDowngrade = drops.size();
                         for (const void *tag : drops)
                             reg.requestDowngrade(tag);
+                        // What this sweep just promised, carried
+                        // against the deficits the next plans compute
+                        // off the apply transient.
+                        if (downgradeLedgerOn)
+                            view->dgLedger.order(dgStats.bytesFreed,
+                                                 gpuUsed, view->frame);
                         // One pass cannot know it freed enough: what it
                         // counted is what stands uploaded now, and the
                         // rung it swaps in takes some of it back. So
@@ -11400,6 +11434,7 @@ public:
                         // terminates.
                         if (nDowngrade)
                             levelPlanner.markDirty();
+                        }
                     }
 
                     // The climb, and it runs AFTER the descent on
@@ -11631,6 +11666,14 @@ public:
                         };
                         reportPass("demote", dmStats, dmDeficit);
                         reportPass("downgrade", dgStats, dgDeficit);
+                        if (dgHeld)
+                            Base::Console().Message(
+                                "render levels: downgrade pass HELD: "
+                                "%.1fMB excess covered by %.1fMB still "
+                                "in flight\n",
+                                double(dgHeld) / 1048576.0,
+                                double(view->dgLedger.promised)
+                                    / 1048576.0);
                     }
                 });
 
@@ -16898,6 +16941,10 @@ public:
     /// of RenderParams). The default is the parameter's, so a viewer
     /// that never sets it still releases in steps rather than snapping.
     float levelPressureReleaseFrac = 0.5f;
+    /// Render_DowngradeLedger: the downgrade sweep's in-flight credit
+    /// (Render::DowngradeLedger on the view); off restores the
+    /// storming behaviour for comparison.
+    bool downgradeLedgerOn = true;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
 
@@ -17520,6 +17567,11 @@ void BGFXRenderer::setLevelDebug(bool on)
 void BGFXRenderer::setLevelPressureRelease(float fraction)
 {
     pimpl->levelPressureReleaseFrac = fraction;
+}
+
+void BGFXRenderer::setDowngradeLedger(bool on)
+{
+    pimpl->downgradeLedgerOn = on;
 }
 #endif
 

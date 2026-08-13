@@ -64,6 +64,7 @@ public:
     long GpuMemoryBudgetMB;
     double LevelTolerance;
     double LevelPressureRelease;
+    bool DowngradeLedger;
     long LevelCount;
     double LevelScale;
     double LevelScaleBoxError;
@@ -188,6 +189,8 @@ public:
         funcs["LevelTolerance"] = &RenderParamsP::updateLevelTolerance;
         LevelPressureRelease = this->handle->GetFloat("LevelPressureRelease", 0.5);
         funcs["LevelPressureRelease"] = &RenderParamsP::updateLevelPressureRelease;
+        DowngradeLedger = this->handle->GetBool("DowngradeLedger", true);
+        funcs["DowngradeLedger"] = &RenderParamsP::updateDowngradeLedger;
         LevelCount = this->handle->GetInt("LevelCount", 8);
         funcs["LevelCount"] = &RenderParamsP::updateLevelCount;
         LevelScale = this->handle->GetFloat("LevelScale", 2.0);
@@ -443,6 +446,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelPressureRelease(RenderParamsP *self) {
         self->LevelPressureRelease = self->handle->GetFloat("LevelPressureRelease", 0.5);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDowngradeLedger(RenderParamsP *self) {
+        self->DowngradeLedger = self->handle->GetBool("DowngradeLedger", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelCount(RenderParamsP *self) {
@@ -1386,6 +1393,49 @@ void RenderParams::setLevelPressureRelease(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelPressureRelease() {
     instance()->handle->RemoveFloat("LevelPressureRelease");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDowngradeLedger() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Whether the GPU downgrade sweep carries its own unlanded\n"
+"orders as credit against the next plan's deficit\n"
+"(docs/SceneStreaming.md #13c.4). A downgrade frees exactly the\n"
+"bytes it prices, but not WHEN the plan next looks: the swap\n"
+"uploads the coarse rung immediately while the fine buffers\n"
+"leave the live meter only after the collection window -- on a\n"
+"heavy scene, seconds -- so a plan sampling mid-transition reads\n"
+"old+new at once, computes a larger deficit than the one just\n"
+"covered, and walks other sources further down. Measured on a\n"
+"5455-object model at 64MB with the camera inside the assembly:\n"
+"single plans requesting 1500+ downgrades, live tripling during\n"
+"the storm, and the whole registry drained to its bottom rung\n"
+"while the settled memory was under budget all along.\n"
+"With the ledger, promised bytes hold the sweep until they are\n"
+"observed landing or written off after a few frames; off\n"
+"restores the storming behaviour for comparison.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDowngradeLedger() {
+    return instance()->DowngradeLedger;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDowngradeLedger() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDowngradeLedger(const bool &v) {
+    instance()->handle->SetBool("DowngradeLedger",v);
+    instance()->DowngradeLedger = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDowngradeLedger() {
+    instance()->handle->RemoveBool("DowngradeLedger");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

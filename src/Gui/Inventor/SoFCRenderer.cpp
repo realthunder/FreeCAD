@@ -2465,6 +2465,9 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
     PRIVATE(this)->external->setLevelPressureRelease(
         RendererBridge::translateLevelPressureRelease(
             PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setDowngradeLedger(
+        RendererBridge::translateDowngradeLedger(
+            PRIVATE(this)->externalview));
     PRIVATE(this)->external->setLevelDebug(
         RendererBridge::translateLevelDebug(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setElementGates(

@@ -249,6 +249,23 @@ Params = [
         "when what a rung costs on screen changes.\n"
         "Smaller gives quality back faster and risks the cycle; larger is\n"
         "gentler and slower. 0 or less restores the immediate snap."),
+    ParamBool('DowngradeLedger',  True, title='Downgrade ledger',
+        doc="Whether the GPU downgrade sweep carries its own unlanded\n"
+        "orders as credit against the next plan's deficit\n"
+        "(docs/SceneStreaming.md #13c.4). A downgrade frees exactly the\n"
+        "bytes it prices, but not WHEN the plan next looks: the swap\n"
+        "uploads the coarse rung immediately while the fine buffers\n"
+        "leave the live meter only after the collection window -- on a\n"
+        "heavy scene, seconds -- so a plan sampling mid-transition reads\n"
+        "old+new at once, computes a larger deficit than the one just\n"
+        "covered, and walks other sources further down. Measured on a\n"
+        "5455-object model at 64MB with the camera inside the assembly:\n"
+        "single plans requesting 1500+ downgrades, live tripling during\n"
+        "the storm, and the whole registry drained to its bottom rung\n"
+        "while the settled memory was under budget all along.\n"
+        "With the ledger, promised bytes hold the sweep until they are\n"
+        "observed landing or written off after a few frames; off\n"
+        "restores the storming behaviour for comparison."),
     ParamInt('LevelCount',  8, title='Ladder rung count',
         doc="How many rungs the fidelity ladder declares\n"
         "(docs/SceneStreaming.md #13). Rung n is tessellated at a\n"

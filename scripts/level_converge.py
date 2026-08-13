@@ -104,6 +104,15 @@ MESH_FINER = os.environ.get("FC_MESH_FINER", "off")
 # equal budget is that accident's size.
 OCCLUSION = os.environ.get("FC_OCCLUSION", "off") == "on"
 FEED = os.environ.get("FC_FEED", "on") == "on"
+# The scene shadow map draws CASTERS, which frustum culling exempts by
+# design -- on the inside camera that is half the scene. Diagnosing the
+# 46<->122MB live bimodality needs this switchable (and always written:
+# it defaults ON and had never been pinned by this harness before).
+SHADOW = os.environ.get("FC_SHADOW", "on") == "on"
+# The downgrade sweep's in-flight-credit ledger (sec 13c.4). The off
+# arm restores the storming behaviour the ledger exists to kill, which
+# is the A/B this harness measures.
+LEDGER = os.environ.get("FC_LEDGER", "on") == "on"
 # fit: the whole-assembly camera every converge run so far has used.
 # inside: a perspective camera at the model centre (FarFieldProxies
 # 10.3) -- the camera the occlusion mechanism is planned against, where
@@ -234,14 +243,18 @@ def run():
         rp.SetBool("Occlusion", OCCLUSION)
         rp.SetBool("OcclusionSoftware", True)
         rp.SetInt("OcclusionDemoteStreak", 8 if FEED else 0)
+        rp.SetBool("Shadow", SHADOW)
+        rp.SetBool("DowngradeLedger", LEDGER)
         emit("arm: simplify=%s merge=%s budget=%dMB release=%s meshskip=%s "
-             "finer=%s occlusion=%s feed=%s camera=%s "
+             "finer=%s occlusion=%s feed=%s camera=%s shadow=%s ledger=%s "
              "conv=%d plans within %.0f%% (or %.0fs of silence)"
              % (SIMPLIFY, MERGE, BUDGET, RELEASE or "default",
                 "off" if MESH_SKIP == "off" else "on",
                 "on" if MESH_FINER == "on" else "off",
                 "on" if OCCLUSION else "off",
                 "on" if FEED else "off", CAMERA,
+                "on" if SHADOW else "off",
+                "on" if LEDGER else "off",
                 CONV_PLANS, CONV_TOL, CONV_QUIET_S))
 
         Gui.getMainWindow().resize(1920, 1200)

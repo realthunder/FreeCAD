@@ -1714,6 +1714,10 @@ public:
     /// 2px in one step, 946 objects re-tessellated at once, and the
     /// budget broke again. 0 or less restores that snap.
     virtual void setLevelPressureRelease(float fraction) { (void)fraction; }
+    /// Whether the GPU downgrade sweep carries its unlanded orders as
+    /// credit against the next plans' deficits (Render_DowngradeLedger;
+    /// see Render::DowngradeLedger for why a sweep without one storms).
+    virtual void setDowngradeLedger(bool on) { (void)on; }
     /// The display gates of the memory response
     /// (docs/SceneStreaming.md #13b), pushed in like every other
     /// parameter -- this library knows nothing of RenderParams.
