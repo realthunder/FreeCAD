@@ -31,12 +31,10 @@ namespace Gui
 /** This class provides a non-intrusive tip alike notification
  * dialog, which unlike QToolTip, is kept shown during a time.
  *
- * The notification is shown during minShowTime, unless pop out
- * (i.e. clicked inside the notification).
- *
- * The notification will show up to a maximum of displayTime. The
- * only event that closes the notification between minShowTime and
- * displayTime is a mouse button click (anywhere of the screen).
+ * The notification is shown up to a maximum of displayTime. The only
+ * event that closes it earlier is a mouse button click, anywhere on
+ * the screen: it is unasked-for and sits over the window the click is
+ * aimed at, so reaching for the mouse dismisses it.
  *
  * When displayTime is not provided, it is calculated based on the length
  * of the text.
@@ -64,8 +62,6 @@ public:
      * (see below options) and to prevent notifications for being shown if not active.
      * @param displayTime Time after which the notification will auto-close (unless it is closed by
      * an event, see class documentation above)
-     * @param minShowTime  Time during which the notification can only be made disappear by popping
-     * it out (clicking inside it).
      * @param options Different flag options:
      *  - HideIfReferenceWidgetDeactivated - Hides a notification if the main window becomes
      * inactive.
@@ -81,8 +77,7 @@ public:
      * @return returns whether the notification was shown or not
      */
     static bool showText(const QPoint& pos, const QString& text, QWidget* referenceWidget = nullptr,
-                         int displayTime = -1, unsigned int minShowTime = 0,
-                         Options options = Options::None, int width = 0);
+                         int displayTime = -1, Options options = Options::None, int width = 0);
     /// Hides a notification.
     static inline void hideText()
     {
