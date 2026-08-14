@@ -355,6 +355,20 @@ Params = [
         "items; the thousands of small landings in a budget drop stay\n"
         "on the cheap inline path rather than paying a snapshot, a\n"
         "queue hop and a second landing each."),
+    ParamInt('WorkerVertexCache',  1, title='Adopt worker-emitted vertex caches',
+        doc="Whether a scene publish adopts the vertex-cache content the\n"
+        "fill worker emitted at landing instead of re-capturing the\n"
+        "shape by traversal (docs/WorkerVertexCache.md). The capture\n"
+        "walks every triangle through a hash-dedup a second time to\n"
+        "rebuild exactly the arrays the fill already computed; with\n"
+        "this on, the worker emits those arrays next to the display\n"
+        "arrays and the publish installs them directly. Uniform-color\n"
+        "shapes only -- per-face colors, textures and marker sets fall\n"
+        "back to the traversal capture, as does any shape whose nodes\n"
+        "were touched after the landing registered the content. 0 is\n"
+        "off, 1 adopts, 2 adopts nothing but runs the traversal capture\n"
+        "and compares it against the worker's content, logging any\n"
+        "disagreement -- slow, for checking the emission, not for use."),
     ParamInt('CaptureBudgetMS',  50, title='Vertex capture budget per publish (ms)',
         doc="How long one scene publish may spend re-capturing changed\n"
         "shapes into vertex caches before the rest are deferred. The\n"

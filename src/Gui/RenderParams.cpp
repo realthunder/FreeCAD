@@ -71,6 +71,7 @@ public:
     bool MeshSkipLanded;
     bool VisualFillOnPool;
     long VisualFillMinFaces;
+    long WorkerVertexCache;
     long CaptureBudgetMS;
     long LevelSlowBuildMS;
     long DescentOrderBatch;
@@ -214,6 +215,8 @@ public:
         funcs["VisualFillOnPool"] = &RenderParamsP::updateVisualFillOnPool;
         VisualFillMinFaces = this->handle->GetInt("VisualFillMinFaces", 2000);
         funcs["VisualFillMinFaces"] = &RenderParamsP::updateVisualFillMinFaces;
+        WorkerVertexCache = this->handle->GetInt("WorkerVertexCache", 1);
+        funcs["WorkerVertexCache"] = &RenderParamsP::updateWorkerVertexCache;
         CaptureBudgetMS = this->handle->GetInt("CaptureBudgetMS", 50);
         funcs["CaptureBudgetMS"] = &RenderParamsP::updateCaptureBudgetMS;
         LevelSlowBuildMS = this->handle->GetInt("LevelSlowBuildMS", 200);
@@ -507,6 +510,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateVisualFillMinFaces(RenderParamsP *self) {
         self->VisualFillMinFaces = self->handle->GetInt("VisualFillMinFaces", 2000);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWorkerVertexCache(RenderParamsP *self) {
+        self->WorkerVertexCache = self->handle->GetInt("WorkerVertexCache", 1);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCaptureBudgetMS(RenderParamsP *self) {
@@ -1758,6 +1765,46 @@ void RenderParams::setVisualFillMinFaces(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeVisualFillMinFaces() {
     instance()->handle->RemoveInt("VisualFillMinFaces");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWorkerVertexCache() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Whether a scene publish adopts the vertex-cache content the\n"
+"fill worker emitted at landing instead of re-capturing the\n"
+"shape by traversal (docs/WorkerVertexCache.md). The capture\n"
+"walks every triangle through a hash-dedup a second time to\n"
+"rebuild exactly the arrays the fill already computed; with\n"
+"this on, the worker emits those arrays next to the display\n"
+"arrays and the publish installs them directly. Uniform-color\n"
+"shapes only -- per-face colors, textures and marker sets fall\n"
+"back to the traversal capture, as does any shape whose nodes\n"
+"were touched after the landing registered the content. 0 is\n"
+"off, 1 adopts, 2 adopts nothing but runs the traversal capture\n"
+"and compares it against the worker's content, logging any\n"
+"disagreement -- slow, for checking the emission, not for use.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getWorkerVertexCache() {
+    return instance()->WorkerVertexCache;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultWorkerVertexCache() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWorkerVertexCache(const long &v) {
+    instance()->handle->SetInt("WorkerVertexCache",v);
+    instance()->WorkerVertexCache = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWorkerVertexCache() {
+    instance()->handle->RemoveInt("WorkerVertexCache");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

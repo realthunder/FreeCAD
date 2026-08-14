@@ -32,6 +32,9 @@
 #include <Inventor/SbVec4f.h>
 #include <Inventor/SbVec2f.h>
 
+#include <memory>
+#include <string>
+
 #include "../InventorBase.h"
 #include "SoFCRenderCache.h"
 
@@ -72,6 +75,65 @@ public:
   /// cache: the equality-preserving capture then keeps the geometry
   /// arrays shared and only the baked color array detaches.
   static SoNode * getProtoNode(const SoNode * node);
+
+  /** Worker-emitted vertex cache content (docs/WorkerVertexCache.md).
+   *
+   * The plain-value mirror of what generatePrimitives + addTriangle/
+   * addLine/addPoint would build for one shape node: the first-seen-order
+   * deduplicated vertex/normal arrays and the index lists over them. A
+   * fill worker emits it off-thread; the landing registers it on the
+   * shape node (setPrebuilt), and the next render-cache capture installs
+   * it (installPrebuilt) instead of re-running the per-primitive
+   * traversal. Uniform-color content only: no baked color array, no
+   * texture coordinates -- installPrebuilt() rejects any state that
+   * needs them and the caller falls back to the traversal capture.
+   */
+  struct PrebuiltContent {
+    SbFCVector<SbVec3f> vertices;
+    SbFCVector<SbVec3f> normals;
+    /// Triangle corners, 3 entries per triangle; part offsets come from
+    /// the node's partIndex field at close(), same as the traversal.
+    SbFCVector<int32_t> triangleindices;
+    /// Line segment endpoints, 2 entries per segment...
+    SbFCVector<int32_t> lineindices;
+    /// ...and per segment the polyline ordinal it belongs to.
+    SbFCVector<int32_t> linepartindices;
+    /// Point indices, one per rendered point.
+    SbFCVector<int32_t> pointindices;
+    /// node->getNodeId() at registration; a later touch of the node
+    /// voids the entry.
+    SbFCUniqueId nodeid = 0;
+  };
+
+  /// Register worker-emitted content for \a node (GUI thread; replaces
+  /// any previous entry). A null content clears the entry.
+  static void setPrebuilt(const SoNode * node,
+                          std::shared_ptr<const PrebuiltContent> content);
+  /// Consume the registered content for \a node if its stamped node id
+  /// still matches, else drop and return null.
+  static std::shared_ptr<const PrebuiltContent>
+  takePrebuilt(const SoNode * node);
+
+  /** Install prebuilt content into this cache in place of the
+   * per-primitive capture. Call between open() and close() exactly
+   * where the traversal would have fed primitives. Returns false --
+   * with the cache still empty and open -- when the captured state is
+   * outside the prebuilt contract (per-face colors, texture units,
+   * bump coords, markers); the caller then continues with the normal
+   * traversal capture.
+   */
+  /// Whether the state captured by open() is inside the prebuilt
+  /// contract (uniform color, no texture units, no markers). Only
+  /// meaningful between open() and close().
+  bool prebuiltApplicable() const;
+
+  bool installPrebuilt(const PrebuiltContent & content);
+
+  /// Verify-mode check (Render WorkerVertexCache = 2): compare this
+  /// traversal-captured cache against worker-emitted content; on
+  /// mismatch returns false and appends a description to \a diff.
+  bool comparePrebuilt(const PrebuiltContent & content,
+                       std::string & diff) const;
 
   virtual SbBool isValid(const SoState * state) const;
 

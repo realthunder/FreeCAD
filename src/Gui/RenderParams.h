@@ -591,6 +591,30 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter WorkerVertexCache
+    ///
+    /// Whether a scene publish adopts the vertex-cache content the
+    /// fill worker emitted at landing instead of re-capturing the
+    /// shape by traversal (docs/WorkerVertexCache.md). The capture
+    /// walks every triangle through a hash-dedup a second time to
+    /// rebuild exactly the arrays the fill already computed; with
+    /// this on, the worker emits those arrays next to the display
+    /// arrays and the publish installs them directly. Uniform-color
+    /// shapes only -- per-face colors, textures and marker sets fall
+    /// back to the traversal capture, as does any shape whose nodes
+    /// were touched after the landing registered the content. 0 is
+    /// off, 1 adopts, 2 adopts nothing but runs the traversal capture
+    /// and compares it against the worker's content, logging any
+    /// disagreement -- slow, for checking the emission, not for use.
+    static const long & getWorkerVertexCache();
+    static const long & defaultWorkerVertexCache();
+    static void removeWorkerVertexCache();
+    static void setWorkerVertexCache(const long &v);
+    static const char *docWorkerVertexCache();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter CaptureBudgetMS
     ///
     /// How long one scene publish may spend re-capturing changed

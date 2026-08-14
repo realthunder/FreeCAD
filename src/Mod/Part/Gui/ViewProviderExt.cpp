@@ -118,6 +118,7 @@
 #include <Gui/ViewProviderLink.h>
 #include <Gui/TaskElementColors.h>
 #include <Gui/Inventor/SoFCShapeInfo.h>
+#include <Gui/Inventor/SoFCVertexCache.h>
 #include <Gui/InventorBase.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Control.h>
@@ -854,6 +855,18 @@ struct DeferredVisuals {
     /// a progressive load ran with a dead status bar.
     std::unique_ptr<Base::SequencerLauncher> seq;
 };
+
+/// The three drawables' worth of emitted vertex-cache content
+/// (docs/WorkerVertexCache.md).
+struct EmittedVCache {
+    std::shared_ptr<SoFCVertexCache::PrebuiltContent> face, line, point;
+};
+
+// The nested-struct definition must sit at PartGui scope, not inside
+// the anonymous namespace this section otherwise lives in.
+} // anonymous namespace
+struct ViewProviderPartExt::PendingVisualVCache : EmittedVCache {};
+namespace {
 
 /// True while the deferred-visual drain is the caller of updateVisual.
 /// The stand-in gate reads it (buildCoarseStandIn): a drain build of an
@@ -4451,6 +4464,15 @@ bool ViewProviderPartExt::applySimplifiedRung(
                 << ", max displacement " << stats.maxDisplacement
                 << " (rung NOT restated: no diagonal)");
     }
+
+    // The rewrite replaced the arrays any earlier emission mirrored;
+    // re-emit the vertex-cache content from the rung just written
+    // (docs/WorkerVertexCache.md). The rung is decimation-small, so
+    // this GUI-thread walk is proportional to what survived, and it
+    // is what lets the next publish adopt instead of re-capturing.
+    // The caller's epilogue registers the stash after its highlight
+    // re-apply.
+    emitVisualVertexCacheFromNodes();
     return true;
 }
 
@@ -4720,6 +4742,10 @@ void ViewProviderPartExt::queueDecimationDescent()
                     setHighlightedFaces(DiffuseColor.getValues());
                     setHighlightedEdges(LineColorArray.getValues());
                     setHighlightedPoints(PointColorArray.getValue());
+                    // ...and register the content the rewrite emitted
+                    // from the rung (docs/WorkerVertexCache.md), ids
+                    // stamped after that last touch.
+                    registerPendingVisualVertexCache();
                 }
             };
         });
@@ -5065,8 +5091,11 @@ void ViewProviderPartExt::updateVisual()
     // stand-in, the instanced build, the inline or the pooled fill --
     // it owns the display arrays from here: an in-flight pooled fill
     // queued by an earlier rebuild is superseded and must not land
-    // over what this one leaves (Render_VisualFillOnPool).
+    // over what this one leaves (Render_VisualFillOnPool). Same for a
+    // vertex-cache stash an aborted earlier epilogue left behind: it
+    // mirrors arrays this rebuild is about to replace.
     ++meshLadder.visualFillSeq;
+    pendingVCache.reset();
     if (cachedShape.isNull()) {
         coords  ->point      .setNum(0);
         pcoords ->point      .setNum(0);
@@ -5359,12 +5388,18 @@ void ViewProviderPartExt::updateVisual()
              << " Triangles:" << numTriangles << " IdxVec:" << numLines);
     VisualTouched = false;
 
-    // The material has to be checked again
-    Gui::ViewProvider::VisualBuildTimer highlightTimer(
-            Gui::ViewProvider::VisualHighlightTime, nullptr);
-    setHighlightedFaces(DiffuseColor.getValues());
-    setHighlightedEdges(LineColorArray.getValues());
-    setHighlightedPoints(PointColorArray.getValue());
+    {
+        // The material has to be checked again
+        Gui::ViewProvider::VisualBuildTimer highlightTimer(
+                Gui::ViewProvider::VisualHighlightTime, nullptr);
+        setHighlightedFaces(DiffuseColor.getValues());
+        setHighlightedEdges(LineColorArray.getValues());
+        setHighlightedPoints(PointColorArray.getValue());
+    }
+    // An inline decimation post-step above re-emitted vertex-cache
+    // content from the rung it wrote (docs/WorkerVertexCache.md);
+    // register it now that the last node touch of this rebuild is done.
+    registerPendingVisualVertexCache();
 }
 
 /// One rebuild's fill, detached from the display nodes (see the
@@ -5425,6 +5460,13 @@ struct ViewProviderPartExt::VisualFillData {
     int numTriangles = 0, numNodes = 0, numPoints = 0, numNorms = 0,
         numFaces = 0, numEdges = 0, numLines = 0;
     bool nodesAttachedOnly = false, linesAttachedOnly = false;
+
+    // -- worker-emitted vertex cache content -----------------------
+    // (docs/WorkerVertexCache.md) Built by the fill next to the display
+    // arrays when the pooled path asked for it; the landing stamps the
+    // node ids and registers them for the next publish to adopt.
+    bool emitVCache = false;
+    std::shared_ptr<SoFCVertexCache::PrebuiltContent> vcFace, vcLine, vcPoint;
 
     // -- the pooled path's bookkeeping -----------------------------
     bool failed = false;
@@ -6049,6 +6091,185 @@ void ViewProviderPartExt::fillVisualArrays(VisualFillData &data)
         }
         numLines = lineSetCoords.size();
     }
+
+    if (data.emitVCache)
+        emitVisualVertexCache(data);
+}
+
+namespace {
+
+/// The capture this replaces walks the primitives Coin generates from
+/// the display arrays and dedups vertices in first-seen order
+/// (SoFCVertexCache::addTriangle/addLine/addPoint). Replicate that
+/// walk over the same arrays. The dedup key is (position, normal):
+/// everything else in the capture's key -- color, texture
+/// coordinates, marker -- is constant under the uniform-color
+/// contract the adoption checks, and a constant key member cannot
+/// split vertices.
+EmittedVCache emitVCacheCore(const SbVec3f *verts,
+                             const SbVec3f *norms,
+                             const int32_t *faceIndex, std::size_t nFaceIndex,
+                             const int32_t *lineIndex, std::size_t nLineIndex,
+                             const SbVec3f *points, std::size_t nPoints)
+{
+    struct VKey {
+        SbVec3f pos;
+        SbVec3f normal;
+        bool operator==(const VKey &o) const {
+            return this->pos == o.pos && this->normal == o.normal;
+        }
+    };
+    struct VKeyHash {
+        std::size_t operator()(const VKey &k) const {
+            std::size_t seed = 0;
+            auto h = [&seed](float f) {
+                // std::hash<float> hashes -0.0f and 0.0f alike, matching
+                // the float equality the capture's dedup uses.
+                seed ^= std::hash<float>()(f) + 0x9e3779b9
+                        + (seed << 6) + (seed >> 2);
+            };
+            h(k.pos[0]); h(k.pos[1]); h(k.pos[2]);
+            h(k.normal[0]); h(k.normal[1]); h(k.normal[2]);
+            return seed;
+        }
+    };
+    typedef std::unordered_map<VKey, int32_t, VKeyHash> VertexMap;
+
+    EmittedVCache emitted;
+
+    // Triangles: coordIndex quads (v0 v1 v2 -1) in order; the normal is
+    // per-vertex-indexed off the same index (the norm node's array).
+    if (nFaceIndex && verts && norms) {
+        auto content = std::make_shared<SoFCVertexCache::PrebuiltContent>();
+        VertexMap vmap;
+        content->triangleindices.reserve(nFaceIndex / 4 * 3);
+        for (std::size_t i = 0; i + 3 < nFaceIndex; i += 4) {
+            for (int k = 0; k < 3; ++k) {
+                const int32_t idx = faceIndex[i + k];
+                VKey key{verts[idx], norms[idx]};
+                auto res = vmap.emplace(key,
+                        (int32_t)content->vertices.size());
+                if (res.second) {
+                    content->vertices.push_back(key.pos);
+                    content->normals.push_back(key.normal);
+                }
+                content->triangleindices.push_back(res.first->second);
+            }
+        }
+        emitted.face = std::move(content);
+    }
+
+    // Lines: -1-separated polylines; the capture sees one segment per
+    // consecutive pair, tagged with the polyline ordinal, and a
+    // constant normal (no normal node scopes over the edge root -- the
+    // cache's normal array is truncated at close, so none is emitted).
+    if (nLineIndex && verts) {
+        auto content = std::make_shared<SoFCVertexCache::PrebuiltContent>();
+        VertexMap vmap;
+        int32_t run = 0;
+        int32_t prev = -1;
+        for (std::size_t i = 0; i < nLineIndex; ++i) {
+            const int32_t v = lineIndex[i];
+            if (v < 0) {
+                ++run;
+                prev = -1;
+                continue;
+            }
+            if (prev >= 0) {
+                for (int32_t idx : {prev, v}) {
+                    VKey key{verts[idx], SbVec3f(0.f, 0.f, 0.f)};
+                    auto res = vmap.emplace(key,
+                            (int32_t)content->vertices.size());
+                    if (res.second)
+                        content->vertices.push_back(key.pos);
+                    content->lineindices.push_back(res.first->second);
+                }
+                content->linepartindices.push_back(run);
+            }
+            prev = v;
+        }
+        if (!content->lineindices.empty())
+            emitted.line = std::move(content);
+    }
+
+    // Points: every pcoords vertex in order, deduplicated by position
+    // (coincident vertices share one cache vertex, exactly as the
+    // capture merges them).
+    if (nPoints && points) {
+        auto content = std::make_shared<SoFCVertexCache::PrebuiltContent>();
+        VertexMap vmap;
+        content->pointindices.reserve(nPoints);
+        for (std::size_t i = 0; i < nPoints; ++i) {
+            VKey key{points[i], SbVec3f(0.f, 0.f, 0.f)};
+            auto res = vmap.emplace(key, (int32_t)content->vertices.size());
+            if (res.second)
+                content->vertices.push_back(key.pos);
+            content->pointindices.push_back(res.first->second);
+        }
+        emitted.point = std::move(content);
+    }
+
+    return emitted;
+}
+
+} // anonymous namespace
+
+void ViewProviderPartExt::emitVisualVertexCache(VisualFillData &data)
+{
+    EmittedVCache emitted = emitVCacheCore(
+            data.verts.data(), data.norms.data(),
+            data.faceIndex.data(), data.faceIndex.size(),
+            data.lineIndex.data(), data.lineIndex.size(),
+            data.points.data(), data.points.size());
+    data.vcFace = std::move(emitted.face);
+    data.vcLine = std::move(emitted.line);
+    data.vcPoint = std::move(emitted.point);
+}
+
+void ViewProviderPartExt::emitVisualVertexCacheFromNodes()
+{
+    if (Gui::RenderParams::getWorkerVertexCache() <= 0)
+        return;
+    if (!coords || !faceset)
+        return;
+    const SbVec3f *verts = coords->point.getValues(0);
+    const int nVerts = coords->point.getNum();
+    const SbVec3f *norms = norm ? norm->vector.getValues(0) : nullptr;
+    const int nNorms = norm ? norm->vector.getNum() : 0;
+    const int32_t *fi = faceset->coordIndex.getValues(0);
+    std::size_t nFi = faceset->coordIndex.getNum();
+    // The face dedup key needs per-vertex-indexed normals; without a
+    // matching normal array the traversal generates a normal cache this
+    // emission cannot mirror -- leave faces to the traversal capture.
+    if (nNorms != nVerts)
+        nFi = 0;
+    const int32_t *li = lineset ? lineset->coordIndex.getValues(0) : nullptr;
+    const std::size_t nLi = lineset ? lineset->coordIndex.getNum() : 0;
+    const SbVec3f *pts = pcoords ? pcoords->point.getValues(0) : nullptr;
+    const std::size_t nPts = pcoords ? pcoords->point.getNum() : 0;
+
+    EmittedVCache emitted =
+        emitVCacheCore(verts, norms, fi, nFi, li, nLi, pts, nPts);
+    if (!pendingVCache)
+        pendingVCache.reset(new PendingVisualVCache);
+    static_cast<EmittedVCache &>(*pendingVCache) = std::move(emitted);
+}
+
+void ViewProviderPartExt::registerPendingVisualVertexCache()
+{
+    if (!pendingVCache)
+        return;
+    auto reg = [](SoNode *node,
+                  std::shared_ptr<SoFCVertexCache::PrebuiltContent> &c) {
+        if (node && c) {
+            c->nodeid = node->getNodeId();
+            SoFCVertexCache::setPrebuilt(node, std::move(c));
+        }
+    };
+    reg(faceset, pendingVCache->face);
+    reg(lineset, pendingVCache->line);
+    reg(nodeset, pendingVCache->point);
+    pendingVCache.reset();
 }
 
 void ViewProviderPartExt::applyVisualFill(const VisualFillData &data,
@@ -6178,6 +6399,11 @@ bool ViewProviderPartExt::queueVisualFillOnPool(const TopoDS_Shape &cShape,
                                NormalsFromUV, meshLadder.scaleSpent,
                                &meshLadder, residentLanded, *data))
             return false;
+        // The worker also emits the vertex-cache content of the
+        // drawables (docs/WorkerVertexCache.md); the landing registers
+        // it for the next publish to adopt in place of the traversal
+        // capture. The param is read here on the GUI thread.
+        data->emitVCache = Gui::RenderParams::getWorkerVertexCache() > 0;
     }
     catch (const Standard_Failure &) {
         // The inline fill runs into the same failure under
@@ -6266,6 +6492,7 @@ bool ViewProviderPartExt::queueVisualFillOnPool(const TopoDS_Shape &cShape,
                 // build runs it (see updateVisual): a state that says
                 // "deflection is spent" must decimate what it just
                 // displayed or quietly undo the descent.
+                bool decimationRewrote = false;
                 if (meshLadder.scaleSpent != ScaleSpent::No
                     && !meshLadder.decimationSpent
                     && builtErrorNow > 0.0f && diag > 0.0) {
@@ -6275,6 +6502,8 @@ bool ViewProviderPartExt::queueVisualFillOnPool(const TopoDS_Shape &cShape,
                         FC_LOG(getFullName()
                                << " decimation spent, bounding box is next");
                     }
+                    else
+                        decimationRewrote = true;
                 }
                 {
                     Gui::ViewProvider::VisualBuildTimer highlightTimer(
@@ -6283,6 +6512,21 @@ bool ViewProviderPartExt::queueVisualFillOnPool(const TopoDS_Shape &cShape,
                     setHighlightedEdges(LineColorArray.getValues());
                     setHighlightedPoints(PointColorArray.getValue());
                 }
+                // Stash the worker-emitted content unless a decimation
+                // rewrite replaced the arrays it mirrors -- the rewrite
+                // (applySimplifiedRung) re-emitted from the final
+                // arrays into the same stash -- then register, id
+                // stamped LAST: any later touch of a node voids that
+                // node's entry at adoption.
+                if (!decimationRewrote
+                    && (data->vcFace || data->vcLine || data->vcPoint)) {
+                    if (!pendingVCache)
+                        pendingVCache.reset(new PendingVisualVCache);
+                    pendingVCache->face = std::move(data->vcFace);
+                    pendingVCache->line = std::move(data->vcLine);
+                    pendingVCache->point = std::move(data->vcPoint);
+                }
+                registerPendingVisualVertexCache();
                 if (levelDebugOn()
                     && Gui::RenderParams::getLevelSlowBuildMS() > 0) {
                     const double applySec = std::chrono::duration<double>(
@@ -6339,6 +6583,12 @@ void ViewProviderPartExt::enableFullSelectionHighlight(bool face, bool line, boo
 void ViewProviderPartExt::beforeDelete()
 {
     setStatus(Gui::Detach, true);
+    // Drop any worker-emitted vertex-cache content still waiting for a
+    // publish that will never come (docs/WorkerVertexCache.md) -- the
+    // registry must not hold arrays for nodes about to die.
+    SoFCVertexCache::setPrebuilt(faceset, nullptr);
+    SoFCVertexCache::setPrebuilt(lineset, nullptr);
+    SoFCVertexCache::setPrebuilt(nodeset, nullptr);
     inherited::beforeDelete();
     // clear coin nodes to free up some memory
     updateVisual();

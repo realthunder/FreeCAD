@@ -338,6 +338,12 @@ protected:
     /// Any thread: fill the detached arrays from the captured
     /// handles and the (immutable) topology of the captured shape.
     static void fillVisualArrays(VisualFillData &data);
+    /// Any thread, called by the fill when the pooled path asked for
+    /// it: emit the vertex-cache content of the three drawables next
+    /// to the display arrays (docs/WorkerVertexCache.md), for the
+    /// landing to register and the next publish to adopt in place of
+    /// the traversal capture.
+    static void emitVisualVertexCache(VisualFillData &data);
     /// GUI thread: write the filled arrays into the display nodes.
     static void applyVisualFill(const VisualFillData &data,
                           SoCoordinate3 *coords, SoCoordinate3 *pcoords,
@@ -437,6 +443,21 @@ protected:
     /// every climb/descent hook, callable from a worker landing
     /// without paying updateVisual's rebuild.
     void armMeshLevelSource();
+
+    /// Vertex-cache content waiting to be registered for the render
+    /// cache to adopt (docs/WorkerVertexCache.md): filled by the pooled
+    /// fill's landing from the worker's emission, or re-emitted from
+    /// the final node arrays after a decimation rewrite.
+    struct PendingVisualVCache;
+    std::unique_ptr<PendingVisualVCache> pendingVCache;
+    /// GUI thread, after an in-place rewrite of the display arrays
+    /// (a decimation rung): re-emit the vertex-cache content from the
+    /// node arrays as they now stand, into the pending stash.
+    void emitVisualVertexCacheFromNodes();
+    /// GUI thread, at the END of a rebuild epilogue (after the
+    /// highlight re-apply -- the node ids are stamped here, and any
+    /// later touch voids the entry): register the stashed content.
+    void registerPendingVisualVertexCache();
     /// One decimation descent step, the climb's shape (sec 13c):
     /// snapshot the displayed arrays here on the GUI thread, cluster
     /// them on the refine worker pool, land the node writes and the
