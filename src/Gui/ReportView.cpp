@@ -417,14 +417,7 @@ public:
     struct RecentLine
     {
         ReportHighlighter::Paragraph type;
-        std::size_t key;
-        //! the first message held, shown in place of the rest
-        QString exemplar;
-        //! every held message, carrying the time it arrived rather than the time
-        //! the fold is opened, which is the only time a reader can act on
-        QStringList folded;
-        //! how many were held, which exceeds folded.size() once the cap is hit
-        int held;
+        MessageFold fold;
     };
     std::deque<RecentLine> recent;
     QTimer* dupTimer = nullptr;
@@ -612,14 +605,8 @@ bool ReportOutput::holdDuplicate(ReportHighlighter::Paragraph type, const QStrin
         messageCollapseKey(text, static_cast<int>(ReportViewParams::getDuplicateKeyLength()));
 
     for (auto& line : d->recent) {
-        if (line.type == type && line.key == key) {
-            ++line.held;
-            if (line.exemplar.isEmpty()) {
-                line.exemplar = text;
-            }
-            if (line.folded.size() < messageFoldLimit) {
-                line.folded.append(withTimecode(text));
-            }
+        if (line.type == type && line.fold.key() == key) {
+            line.fold.add(text, withTimecode(text));
             //timed from the first repeat, not the last, so a line repeating without
             //pause still reports every DuplicateTimeout instead of never
             if (!d->dupTimer->isActive()) {
@@ -632,15 +619,40 @@ bool ReportOutput::holdDuplicate(ReportHighlighter::Paragraph type, const QStrin
         }
     }
 
-    //a line that has to be shown is also what flushes whatever is being held, so
-    //the repeats stay in front of the line that ended them
-    flushDuplicates();
-
-    d->recent.push_back({type, key, {}, {}, 0});
+    //An unrelated message does NOT end the holds. It used to, so that repeats
+    //stayed in front of the line that ended them - but the floods worth
+    //collapsing are mixed, and one message of another kind arriving between two
+    //repeats was enough to publish the hold at (x1) and start again. The timer
+    //is what ends a hold now, and the messages behind the fold carry the time
+    //each of them arrived, so nothing is lost by their line landing later.
+    d->recent.push_back({type, MessageFold(key)});
     while (static_cast<int>(d->recent.size()) > window) {
+        //whatever the line falling out of the window was holding still has to be
+        //shown: nothing else will ever look at it again
+        flushHeld(d->recent.front().type, d->recent.front().fold);
         d->recent.pop_front();
     }
     return false;
+}
+
+//! show one held line, carrying the number of repeats it stood in for
+void ReportOutput::flushHeld(ReportHighlighter::Paragraph type, MessageFold& fold)
+{
+    if (fold.isEmpty()) {
+        return;
+    }
+    const int held = fold.count();
+    //the first one queued speaks for the rest: they only differ where the key was
+    //not looking, which is what it was keyed to ignore. It is the unstamped copy -
+    //appendReport stamps what it shows.
+    const QString shown = fold.exemplar();
+    QStringList folded = fold.held();
+    fold.clear();
+
+    //always counted, including (x1): without it a line that arrived exactly
+    //twice comes out as a bare repeat, which reads as the suppression having
+    //done nothing at all
+    appendReport(type, withRepeatCount(shown, held), &folded);
 }
 
 //! show every held line, each carrying the number of repeats it stood in for
@@ -651,23 +663,7 @@ void ReportOutput::flushDuplicates()
 {
     d->dupTimer->stop();
     for (auto& line : d->recent) {
-        if (line.held < 1 || line.exemplar.isEmpty()) {
-            continue;
-        }
-        const int held = line.held;
-        //the first one queued speaks for the rest: they only differ where a digit
-        //differs, which is what they were keyed to ignore. It is the unstamped copy
-        //- appendReport stamps what it shows.
-        const QString shown = line.exemplar;
-        QStringList folded = line.folded;
-        line.held = 0;
-        line.exemplar.clear();
-        line.folded.clear();
-
-        //always counted, including (x1): without it a line that arrived exactly
-        //twice comes out as a bare repeat, which reads as the suppression having
-        //done nothing at all
-        appendReport(line.type, withRepeatCount(shown, held), &folded);
+        flushHeld(line.type, line.fold);
     }
 }
 

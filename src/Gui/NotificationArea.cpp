@@ -359,7 +359,7 @@ public:
         : notificationType(notificationtype),
           notifierName(std::move(notifiername)),
           msg(std::move(message)),
-          msgKey(messageCollapseKey(
+          fold(messageCollapseKey(
               msg, static_cast<int>(ReportViewParams::getDuplicateKeyLength())))
     {}
 
@@ -402,7 +402,7 @@ public:
             // A message standing in for others opens onto them when clicked. The
             // underline says so before the reader has tried it, as it does on the
             // Report view's collapsed lines.
-            if (column == 2 && !folded.isEmpty()) {
+            if (column == 2 && !fold.isEmpty()) {
                 font.setUnderline(true);
             }
 
@@ -416,14 +416,12 @@ public:
         unread = true;
         notifying = true;
         shown = false;
-        repetitions++;
 
         // What the repeats say is kept, not just how many there were: they are
-        // near-copies keyed on their digits being ignored, so the numbers they
-        // differ in are exactly what a reader opens the fold to see.
-        if (folded.size() < messageFoldLimit) {
-            folded.append(message);
-        }
+        // near-copies keyed on their differences being ignored, so what they
+        // differ in is exactly what a reader opens the fold to see.
+        fold.add(message);
+
         // Nothing has to be built for the fold to be offered, and building it for
         // every repeat in a storm would be work no one asked to see.
         setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
@@ -434,7 +432,7 @@ public:
 
     //! show the messages this one stands in for, or hide them again
     void toggleFold() {
-        if (folded.isEmpty()) {
+        if (fold.isEmpty()) {
             return;
         }
         if (isExpanded()) {
@@ -447,13 +445,14 @@ public:
 
     //! give the fold a child row per held message, once it is being looked at
     void buildFold() {
-        if (childCount() == folded.size()) {
+        const QStringList& held = fold.held();
+        if (childCount() == held.size()) {
             return;
         }
         qDeleteAll(takeChildren());
-        for (int i = 0; i < folded.size(); ++i) {
+        for (int i = 0; i < held.size(); ++i) {
             auto* child = new QTreeWidgetItem;  // NOLINT, the parent owns it
-            child->setText(2, messageFoldBranch(i, folded.size()) + folded.at(i));
+            child->setText(2, messageFoldBranch(i, held.size()) + held.at(i));
             // Not selectable: the context menu deletes every selected item in turn,
             // and a parent deleted while a child of its own is still in that list
             // leaves the loop holding a pointer the parent already freed.
@@ -464,7 +463,7 @@ public:
 
     //! same notifier, same level, and a message that only differs where digits do
     bool isRepeated(Base::LogStyle notificationtype, const QString & notifiername, std::size_t key ) const {
-        return (notificationType == notificationtype && notifierName == notifiername && msgKey == key);
+        return (notificationType == notificationtype && notifierName == notifiername && fold.key() == key);
     }
 
     //! the same message as another notification, by the same measure
@@ -473,7 +472,7 @@ public:
     //! fallen out of the search window when they arrived. Anywhere they are shown
     //! together, they are one message.
     bool isSameAs(const NotificationItem& other) const {
-        return isRepeated(other.notificationType, other.notifierName, other.msgKey);
+        return isRepeated(other.notificationType, other.notifierName, other.fold.key());
     }
 
     bool isType(Base::LogStyle notificationtype) const {
@@ -493,7 +492,7 @@ public:
     }
 
     int getRepetitions() const{
-        return repetitions;
+        return fold.count();
     }
 
     void setNotified() {
@@ -521,7 +520,7 @@ public:
     }
 
     QString getMessage() const {
-        return getMessage(repetitions + 1);
+        return getMessage(fold.count() + 1);
     }
 
     //! the message as it reads when it stands in for @a total messages
@@ -545,13 +544,11 @@ private:
     Base::LogStyle notificationType;
     QString notifierName;
     QString msg;
-    std::size_t msgKey;
-    QStringList folded;  // the repeats this one was shown in place of, capped
+    MessageFold fold;     // the repeats shown in place of, and what they were
 
     bool unread = true;   // item is unread in the Notification Area Widget
     bool notifying = true;// item is to be notified or being notified as non-intrusive message
     bool shown = false;   // item is already being notified (it is onScreen)
-    int repetitions = 0; // message appears n times in a row.
 };
 
 /** Drop menu Action containing the notifications widget.

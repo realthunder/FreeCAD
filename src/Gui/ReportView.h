@@ -28,6 +28,7 @@
 #include <QSyntaxHighlighter>
 
 #include "Window.h"
+#include "MessageCollapse.h"
 #include <FCGlobal.h>
 
 
@@ -216,6 +217,8 @@ private:
      */
     void appendReport(ReportHighlighter::Paragraph messageType, const QString& message,
                       const QStringList* folded = nullptr);
+    /** Show one held line, with the count of what it stands for; clears the fold. */
+    void flushHeld(ReportHighlighter::Paragraph type, MessageFold& fold);
     /** Write out whatever the batching is holding. */
     void writePending();
     /** Hang the held messages on the line shown in their place. */

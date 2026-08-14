@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <QChar>
 #include <QString>
+#include <QStringList>
 
 namespace Gui
 {
@@ -35,9 +36,15 @@ namespace Gui
  * Digits are skipped rather than compared, because the messages that arrive in
  * floods are the same sentence carrying a different number - a source line, an
  * element index, a coordinate - and a reader gains nothing from seeing each
- * variant. Only the first @a keyLength non-digit characters are keyed on, so a
- * long message is judged by its opening rather than by a tail that may hold the
- * one number that was not skipped.
+ * variant.
+ *
+ * The judgement is made on the message's first @a keyLength characters, and it
+ * is those characters that are counted, not the ones kept: a message dense in
+ * identifiers would otherwise be judged on a far longer stretch of itself than
+ * one made of words, which is precisely backwards. Five FreeCAD warnings that
+ * shared their first 101 characters keyed apart because skipping their digits
+ * carried the window on into the element hashes behind them - and a hash is
+ * mostly letters, so nothing was skipped there at all.
  *
  * FNV-1a. A collision costs one wrongly collapsed line and nothing else, so 64
  * bits is far more than this needs.
@@ -45,15 +52,13 @@ namespace Gui
 inline std::size_t messageCollapseKey(const QString& text, int keyLength)
 {
     std::size_t hash = 1469598103934665603ULL;
-    int taken = 0;
-    for (QChar chr : text) {
+    const int end = keyLength < text.size() ? keyLength : static_cast<int>(text.size());
+    for (int i = 0; i < end; ++i) {
+        const QChar chr = text.at(i);
         if (chr.isDigit()) {
             continue;
         }
         hash = (hash ^ chr.unicode()) * 1099511628211ULL;
-        if (++taken >= keyLength) {
-            break;
-        }
     }
     return hash;
 }
@@ -79,6 +84,98 @@ inline QString messageFoldBranch(int index, int count)
     return index + 1 < count ? QStringLiteral("\u251C\u2500 ")   // vertical and right
                              : QStringLiteral("\u2514\u2500 ");  // up and right
 }
+
+/** The messages one shown line stands in for.
+ *
+ * The Report view and the notification area each decide for themselves *when* a
+ * message is folded away - one holds a line back on a timer, the other merges on
+ * arrival - but what a fold *is* is the same in both, and was written twice
+ * before it was written here: a key, the first message held, the messages behind
+ * it up to a cap, and a count that keeps rising after the cap stops the buffer.
+ * Getting that wrong in one place and right in the other is the failure this
+ * exists to prevent.
+ */
+class MessageFold
+{
+public:
+    MessageFold() = default;
+    explicit MessageFold(std::size_t messageKey)
+        : foldKey(messageKey)
+    {}
+
+    /// what this fold judges "the same message" by
+    std::size_t key() const
+    {
+        return foldKey;
+    }
+
+    /// how many messages have been folded away behind the line, which is what
+    /// the line's count reports and is one less than the messages it speaks for
+    int count() const
+    {
+        return folded;
+    }
+
+    bool isEmpty() const
+    {
+        return folded == 0;
+    }
+
+    /// the first message folded in, which is the one shown in place of the rest
+    ///
+    /// They differ only where the key ignored a difference, so the first is as
+    /// good a witness as any and is the one that arrived soonest.
+    const QString& exemplar() const
+    {
+        return first;
+    }
+
+    /// the held messages, as they are to be shown when the fold is opened
+    const QStringList& held() const
+    {
+        return texts;
+    }
+
+    /** Fold one more message in.
+     *
+     * @param text the message itself, kept if it is the first
+     * @param display how it should read when the fold is opened - the Report view
+     * stamps it with the time it arrived, which is the one thing a reader opens a
+     * fold to establish and cannot recover afterwards
+     */
+    void add(const QString& text, const QString& display)
+    {
+        ++folded;
+        if (first.isEmpty()) {
+            first = text;
+        }
+        //a storm is unbounded and these are held in memory: the buffer stops
+        //growing while the count carries on, so an opened fold says less than the
+        //line promised rather than the process paying for a fold nobody opens
+        if (texts.size() < messageFoldLimit) {
+            texts.append(display);
+        }
+    }
+
+    void add(const QString& text)
+    {
+        add(text, text);
+    }
+
+    /// forget what is held, keeping the key: the line has been shown
+    void clear()
+    {
+        folded = 0;
+        first.clear();
+        texts.clear();
+    }
+
+private:
+    std::size_t foldKey = 0;
+    int folded = 0;
+    QString first;
+    QStringList texts;
+};
 
 }  // namespace Gui
 
