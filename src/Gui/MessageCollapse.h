@@ -58,6 +58,28 @@ inline std::size_t messageCollapseKey(const QString& text, int keyLength)
     return hash;
 }
 
+/** Ceiling on the messages kept behind one fold.
+ *
+ * A storm is unbounded and these are held in memory, so the repeat count keeps
+ * rising after the buffer stops growing and an opened fold says less than the
+ * count promised.
+ */
+inline constexpr int messageFoldLimit = 200;
+
+/** The branch a message revealed by opening a fold leads with.
+ *
+ * It marks the line as belonging to the one above it rather than to the log,
+ * which matters most where the two look alike: the messages behind a fold are
+ * near-copies of the line they were folded into.
+ */
+inline QString messageFoldBranch(int index, int count)
+{
+    //spelled out rather than written literally: the source encoding a compiler
+    //assumes for a non-ASCII byte is not something this has to depend on
+    return index + 1 < count ? QStringLiteral("\u251C\u2500 ")   // vertical and right
+                             : QStringLiteral("\u2514\u2500 ");  // up and right
+}
+
 }  // namespace Gui
 
 #endif  // GUI_MESSAGECOLLAPSE_H

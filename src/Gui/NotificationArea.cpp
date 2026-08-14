@@ -394,11 +394,17 @@ public:
         }
         else if (role == Qt::FontRole) {
             // Visualisation control of unread messages
-            static QFont font;
-            static QFont boldFont(font.family(), font.pointSize(), QFont::Bold);
+            QFont font;
 
             if (unread) {
-                return boldFont;
+                font.setBold(true);
+            }
+
+            // A message standing in for others opens onto them when clicked. The
+            // underline says so before the reader has tried it, as it does on the
+            // Report view's collapsed lines.
+            if (column == 2 && !folded.isEmpty()) {
+                font.setUnderline(true);
             }
 
             return font;
@@ -407,11 +413,54 @@ public:
         return {};
     }
 
-    void addRepetition() {
+    void addRepetition(const QString& message) {
         unread = true;
         notifying = true;
         shown = false;
         repetitions++;
+
+        // What the repeats say is kept, not just how many there were: they are
+        // near-copies keyed on their digits being ignored, so the numbers they
+        // differ in are exactly what a reader opens the fold to see.
+        if (folded.size() < messageFoldLimit) {
+            folded.append(message);
+        }
+        // Nothing has to be built for the fold to be offered, and building it for
+        // every repeat in a storm would be work no one asked to see.
+        setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+        if (isExpanded()) {
+            buildFold();
+        }
+    }
+
+    //! show the messages this one stands in for, or hide them again
+    void toggleFold() {
+        if (folded.isEmpty()) {
+            return;
+        }
+        if (isExpanded()) {
+            setExpanded(false);
+            return;
+        }
+        buildFold();
+        setExpanded(true);
+    }
+
+    //! give the fold a child row per held message, once it is being looked at
+    void buildFold() {
+        if (childCount() == folded.size()) {
+            return;
+        }
+        qDeleteAll(takeChildren());
+        for (int i = 0; i < folded.size(); ++i) {
+            auto* child = new QTreeWidgetItem;  // NOLINT, the parent owns it
+            child->setText(2, messageFoldBranch(i, folded.size()) + folded.at(i));
+            // Not selectable: the context menu deletes every selected item in turn,
+            // and a parent deleted while a child of its own is still in that list
+            // leaves the loop holding a pointer the parent already freed.
+            child->setFlags(Qt::ItemIsEnabled);
+            addChild(child);
+        }
     }
 
     //! same notifier, same level, and a message that only differs where digits do
@@ -481,6 +530,7 @@ private:
     QString notifierName;
     QString msg;
     std::size_t msgKey;
+    QStringList folded;  // the repeats this one was shown in place of, capped
 
     bool unread = true;   // item is unread in the Notification Area Widget
     bool notifying = true;// item is to be notified or being notified as non-intrusive message
@@ -722,6 +772,26 @@ protected:
 
         tableWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
         tableWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+
+        // clicking a message that stands in for others opens it onto them, and
+        // clicking it again closes it: the same fold the Report view offers
+        QObject::connect(tableWidget, &QTreeWidget::itemClicked,
+                         [](QTreeWidgetItem* item, int /*column*/) {
+                             if (item && !item->parent()) {
+                                 //NOLINTNEXTLINE
+                                 static_cast<NotificationItem*>(item)->toggleFold();
+                             }
+                         });
+
+        // the fold's rows are built only when it is opened, so the expander arrow
+        // - which opens it without going through the click above - has to build
+        // them too
+        QObject::connect(tableWidget, &QTreeWidget::itemExpanded, [](QTreeWidgetItem* item) {
+            if (item && !item->parent()) {
+                //NOLINTNEXTLINE
+                static_cast<NotificationItem*>(item)->buildFold();
+            }
+        });
 
 
         // context menu on any item (row) of the widget
@@ -1098,7 +1168,7 @@ void NotificationArea::pushNotification(const QString& notifiername, const QStri
         }
     }
     else {
-        repeated->addRepetition();
+        repeated->addRepetition(message);
     }
 
     // start or restart rate control (the timer is rearmed if not yet expired, expiration triggers
