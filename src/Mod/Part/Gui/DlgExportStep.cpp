@@ -62,7 +62,6 @@ DlgExportStep::DlgExportStep(QWidget* parent)
 
     Part::OCAF::ImportExportSettings settings;
     ui->checkBoxExportHiddenObj->setChecked(settings.getExportHiddenObject());
-    ui->checkBoxExportLegacy->setChecked(settings.getExportLegacy());
     ui->checkBoxKeepPlacement->setChecked(settings.getExportKeepPlacement());
 }
 
@@ -88,7 +87,6 @@ void DlgExportStep::saveSettings()
 
     // (h)STEP of Import module
     ui->checkBoxExportHiddenObj->onSave();
-    ui->checkBoxExportLegacy->onSave();
     ui->checkBoxKeepPlacement->onSave();
 }
 
@@ -109,14 +107,12 @@ void DlgExportStep::loadSettings()
 
     // (h)STEP of Import module
     ui->checkBoxExportHiddenObj->onRestore();
-    ui->checkBoxExportLegacy->onRestore();
     ui->checkBoxKeepPlacement->onRestore();
 }
 
 StepSettings DlgExportStep::getSettings() const
 {
     StepSettings set;
-    set.exportLegacy = ui->checkBoxExportLegacy->isChecked();
     set.exportHidden = ui->checkBoxExportHiddenObj->isChecked();
     set.keepPlacement = ui->checkBoxKeepPlacement->isChecked();
     return set;

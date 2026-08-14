@@ -192,7 +192,7 @@ def InitApplications():
         else:
             Log('Init:      Initializing ' + Dir + '(Init.py not found)... ignore\n')
 
-    def processMetadataFile(MetadataFile):
+    def processMetadataFile(Dir, MetadataFile, PathExtension):
         meta = FreeCAD.Metadata(MetadataFile)
         if not meta.supportsCurrentFreeCAD():
             Msg(f'NOTICE: {meta.Name} does not support this version of FreeCAD, so is being skipped\n')
@@ -212,68 +212,123 @@ def InitApplications():
                 PathExtension.append(subdirectory)
                 RunInitPy(subdirectory)
 
-    def tryProcessMetadataFile(MetadataFile):
+    def tryProcessMetadataFile(Dir, MetadataFile, PathExtension):
         try:
-            processMetadataFile(MetadataFile)
+            processMetadataFile(Dir, MetadataFile, PathExtension)
         except Exception as exc:
             Err(str(exc))
 
-    for Dir in ModDict.values():
-        if ((Dir != '') & (Dir != 'CVS') & (Dir != '__init__.py')):
-            stopFile = os.path.join(Dir, "ADDON_DISABLED")
-            if os.path.exists(stopFile):
-                Msg(f'NOTICE: Addon "{Dir}" disabled by presence of ADDON_DISABLED stopfile\n')
-                continue
-            sys.path.insert(0,Dir)
-            PathExtension.append(Dir)
-            MetadataFile = os.path.join(Dir, "package.xml")
-            if os.path.exists(MetadataFile):
-                tryProcessMetadataFile(MetadataFile)
-            else:
-                RunInitPy(Dir)
+    def InitApplication(Dir, PathExtension):
+        """Put one module directory on the search paths and run its Init.py -- or, for a
+        packaged addon, the Init.py of every workbench its package.xml declares. Each
+        directory added to the library search path is appended to PathExtension, which
+        the caller then hands to setupSearchPaths(). Returns False if Dir was skipped."""
+        if Dir in ('', 'CVS', '__init__.py'):
+            return False
+        stopFile = os.path.join(Dir, "ADDON_DISABLED")
+        if os.path.exists(stopFile):
+            Msg(f'NOTICE: Addon "{Dir}" disabled by presence of ADDON_DISABLED stopfile\n')
+            return False
+        sys.path.insert(0,Dir)
+        PathExtension.append(Dir)
+        MetadataFile = os.path.join(Dir, "package.xml")
+        if os.path.exists(MetadataFile):
+            tryProcessMetadataFile(Dir, MetadataFile, PathExtension)
+        else:
+            RunInitPy(Dir)
+        return True
 
-    extension_modules = []
+    def InitNamespacePackages():
+        """Import the init module of every freecad.* namespace package that does not have
+        it imported yet -- at startup that is all of them, later on it is whatever a live
+        addon installation has brought in."""
+        try:
+            import pkgutil
+            import importlib
+            import freecad
+        except ImportError as inst:
+            Err('During initialization the error "' + str(inst) + '" occurred\n')
+            return
 
-    try:
-        import pkgutil
-        import importlib
-        import freecad
         for _, freecad_module_name, freecad_module_ispkg in pkgutil.iter_modules(freecad.__path__, "freecad."):
-            if freecad_module_ispkg:
-                Log('Init: Initializing ' + freecad_module_name + '\n')
-                try:
-                    # Check for a stopfile
-                    stopFile = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", freecad_module_name[8:], "ADDON_DISABLED")
-                    if os.path.exists(stopFile):
-                        Msg(f'NOTICE: Addon "{freecad_module_name}" disabled by presence of ADDON_DISABLED stopfile\n')
+            if not freecad_module_ispkg or freecad_module_name + '.init' in sys.modules:
+                continue
+            try:
+                # Check for a stopfile
+                stopFile = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", freecad_module_name[8:], "ADDON_DISABLED")
+                if os.path.exists(stopFile):
+                    Msg(f'NOTICE: Addon "{freecad_module_name}" disabled by presence of ADDON_DISABLED stopfile\n')
+                    continue
+
+                # Make sure that package.xml (if present) does not exclude this version of FreeCAD
+                MetadataFile = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", freecad_module_name[8:], "package.xml")
+                if os.path.exists(MetadataFile):
+                    meta = FreeCAD.Metadata(MetadataFile)
+                    if not meta.supportsCurrentFreeCAD():
+                        Msg(f'NOTICE: Addon "{freecad_module_name}" does not support this version of FreeCAD, so is being skipped\n')
                         continue
 
-                    # Make sure that package.xml (if present) does not exclude this version of FreeCAD
-                    MetadataFile = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", freecad_module_name[8:], "package.xml")
-                    if os.path.exists(MetadataFile):
-                        meta = FreeCAD.Metadata(MetadataFile)
-                        if not meta.supportsCurrentFreeCAD():
-                            Msg(f'NOTICE: Addon "{freecad_module_name}" does not support this version of FreeCAD, so is being skipped\n')
-                            continue
+                Log('Init: Initializing ' + freecad_module_name + '\n')
+                freecad_module = importlib.import_module(freecad_module_name)
+                if any (module_name == 'init' for _, module_name, ispkg in pkgutil.iter_modules(freecad_module.__path__)):
+                    importlib.import_module(freecad_module_name + '.init')
+                    Log('Init: Initializing ' + freecad_module_name + '... done\n')
+                else:
+                    Log('Init: No init module found in ' + freecad_module_name + ', skipping\n')
+            except Exception as inst:
+                Err('During initialization the error "' + str(inst) + '" occurred in ' + freecad_module_name + '\n')
+                Err('-'*80+'\n')
+                Err(traceback.format_exc())
+                Err('-'*80+'\n')
+                Log('Init:      Initializing ' + freecad_module_name + '... failed\n')
+                Log('-'*80+'\n')
+                Log(traceback.format_exc())
+                Log('-'*80+'\n')
 
-                    freecad_module = importlib.import_module(freecad_module_name)
-                    extension_modules += [freecad_module_name]
-                    if any (module_name == 'init' for _, module_name, ispkg in pkgutil.iter_modules(freecad_module.__path__)):
-                        importlib.import_module(freecad_module_name + '.init')
-                        Log('Init: Initializing ' + freecad_module_name + '... done\n')
-                    else:
-                        Log('Init: No init module found in ' + freecad_module_name + ', skipping\n')
-                except Exception as inst:
-                    Err('During initialization the error "' + str(inst) + '" occurred in ' + freecad_module_name + '\n')
-                    Err('-'*80+'\n')
-                    Err(traceback.format_exc())
-                    Err('-'*80+'\n')
-                    Log('Init:      Initializing ' + freecad_module_name + '... failed\n')
-                    Log('-'*80+'\n')
-                    Log(traceback.format_exc())
-                    Log('-'*80+'\n')
-    except ImportError as inst:
-        Err('During initialization the error "' + str(inst) + '" occurred\n')
+    def initApplication(Dir):
+        """Bring one module directory into the already running session: put it on the
+        search paths, run its Init.py, and pick up any freecad.* namespace package it
+        ships. This is what lets a freshly installed addon be used without restarting
+        FreeCAD; startup does the same work through the loop below. In GUI mode call
+        FreeCADGui.initApplication() instead -- it does this and then the InitGui.py half.
+
+        Returns True if the directory was initialized, False if it was skipped: not a
+        directory, disabled by a stopfile, or already known to this session (re-running
+        an Init.py would register its import/export types a second time)."""
+        Dir = os.path.realpath(Dir)
+        if not os.path.isdir(Dir):
+            Err('Cannot initialize "' + Dir + '": not a module directory\n')
+            return False
+        if Dir in FreeCAD.__ModDirs__:
+            Log('Init: ' + Dir + ' is already initialized\n')
+            return False
+        NewPaths = []
+        if not InitApplication(Dir, NewPaths):
+            return False
+        FreeCAD.__ModDirs__.append(Dir)
+        # pkgutil.extend_path() walks sys.path once, when freecad/__init__.py is
+        # imported, so a module directory that appears later stays invisible to it
+        # until that walk is repeated.
+        try:
+            import pkgutil
+            import importlib
+            import freecad
+            importlib.invalidate_caches()
+            freecad.__path__ = pkgutil.extend_path(freecad.__path__, 'freecad')
+        except ImportError as inst:
+            Err('While initializing ' + Dir + ' the error "' + str(inst) + '" occurred\n')
+        InitNamespacePackages()
+        setupSearchPaths(NewPaths)
+        return True
+
+    # Keep the entry point alive past the "del(InitApplications)" below: the addon
+    # manager calls it to make a freshly installed addon usable without a restart.
+    FreeCAD.initApplication = initApplication
+
+    for Dir in ModDict.values():
+        InitApplication(Dir, PathExtension)
+
+    InitNamespacePackages()
 
     Log("Using "+ModDir+" as module path!\n")
     # In certain cases the PathExtension list can contain invalid strings. We concatenate them to a single string

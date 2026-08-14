@@ -145,6 +145,8 @@ StdCmdCloseAllWindows::StdCmdCloseAllWindows()
     sToolTipText  = QT_TR_NOOP("Close all windows");
     sWhatsThis    = "Std_CloseAllWindows";
     sStatusTip    = QT_TR_NOOP("Close all windows");
+    // Ctrl+W is QKeySequence::Close, taken by Std_CloseActiveWindow above.
+    sAccel        = "Ctrl+Shift+W";
     sPixmap       = "Std_CloseAllWindows";
     eType         = NoTransaction;
 }

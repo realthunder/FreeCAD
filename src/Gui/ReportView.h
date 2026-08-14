@@ -28,6 +28,7 @@
 #include <QSyntaxHighlighter>
 
 #include "Window.h"
+#include "MessageCollapse.h"
 #include <FCGlobal.h>
 
 
@@ -35,7 +36,6 @@ class QTabWidget;
 
 namespace Gui {
 class PythonConsole;
-struct TextBlockData;
 namespace DockWnd {
 
 class ReportOutput;
@@ -165,7 +165,7 @@ public:
 protected:
     /** For internal use only */
     void customEvent ( QEvent* ev ) override;
-    /** Expands a collapsed line into the messages it stood in for */
+    /** Folds or unfolds the messages a collapsed line stands in for */
     void mousePressEvent(QMouseEvent* ev) override;
     /** Points the cursor at a collapsed line */
     void mouseMoveEvent(QMouseEvent* ev) override;
@@ -217,13 +217,17 @@ private:
      */
     void appendReport(ReportHighlighter::Paragraph messageType, const QString& message,
                       const QStringList* folded = nullptr);
+    /** Show one held line, with the count of what it stands for; clears the fold. */
+    void flushHeld(ReportHighlighter::Paragraph type, MessageFold& fold);
     /** Write out whatever the batching is holding. */
     void writePending();
     /** Hang the held messages on the line shown in their place. */
     void keepFolded(const QTextBlock& block, ReportHighlighter::Paragraph type,
                     const QStringList& folded);
-    /** The held messages behind the collapsed line at this point, if any. */
-    TextBlockData* foldedAt(const QPoint& pos) const;
+    /** The collapsed line at this point, an invalid block when there is none. */
+    QTextBlock foldedBlockAt(const QPoint& pos) const;
+    /** Show the messages behind a collapsed line, or hide them again. */
+    void toggleFold(const QTextBlock& block);
 
     class Data;
     Data* d;

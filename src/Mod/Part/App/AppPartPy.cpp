@@ -377,7 +377,7 @@ Standard_Boolean showTopoShape(const char *key, int line, const TopoDS_Shape &s,
     if (!s.IsNull()) {
         char _name[256];
 #if OCC_VERSION_HEX >= 0x070800
-        snprintf(_name, sizeof(_name), "%s_%x_", name, std::hash<TopoDS_Shape>{}(s));
+        snprintf(_name, sizeof(_name), "%s_%zx_", name, std::hash<TopoDS_Shape>{}(s));
 #else
         snprintf(_name, sizeof(_name), "%s_%x_", name, s.HashCode(0xffff));
 #endif

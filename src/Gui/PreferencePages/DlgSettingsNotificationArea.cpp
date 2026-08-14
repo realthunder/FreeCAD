@@ -54,7 +54,6 @@ void DlgSettingsNotificationArea::saveSettings()
     ui->NotificationAreaEnabled->onSave();
     ui->NonIntrusiveNotificationsEnabled->onSave();
     ui->maxDuration->onSave();
-    ui->minDuration->onSave();
     ui->maxNotifications->onSave();
     ui->maxWidgetMessages->onSave();
     ui->autoRemoveUserNotifications->onSave();
@@ -70,7 +69,6 @@ void DlgSettingsNotificationArea::loadSettings()
     ui->NotificationAreaEnabled->onRestore();
     ui->NonIntrusiveNotificationsEnabled->onRestore();
     ui->maxDuration->onRestore();
-    ui->minDuration->onRestore();
     ui->maxNotifications->onRestore();
     ui->maxWidgetMessages->onRestore();
     ui->autoRemoveUserNotifications->onRestore();
@@ -85,8 +83,6 @@ void DlgSettingsNotificationArea::adaptUiToAreaEnabledState(bool enabled)
 {
     ui->NonIntrusiveNotificationsEnabled->setEnabled(enabled);
     ui->maxDuration->setEnabled(enabled);
-    ui->maxDuration->setEnabled(enabled);
-    ui->minDuration->setEnabled(enabled);
     ui->maxNotifications->setEnabled(enabled);
     ui->maxWidgetMessages->setEnabled(enabled);
     ui->autoRemoveUserNotifications->setEnabled(enabled);

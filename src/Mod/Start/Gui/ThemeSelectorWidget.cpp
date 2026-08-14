@@ -301,9 +301,9 @@ void ThemeSelectorWidget::themeChanged(const QString& packName)
     const unsigned long nonExistentColor = -1434171135;
     unsigned long longAccentColor1 = hGrp->GetUnsigned("ThemeAccentColor1", nonExistentColor);
     if (longAccentColor1 == nonExistentColor) {
-        hGrp->SetUnsigned("ThemeAccentColor1", Gui::Application::DefaultAccentColor);
-        hGrp->SetUnsigned("ThemeAccentColor2", Gui::Application::DefaultAccentColor);
-        hGrp->SetUnsigned("ThemeAccentColor3", Gui::Application::DefaultAccentColor);
+        hGrp->SetUnsigned("ThemeAccentColor1", Gui::Application::DefaultAccentColor1);
+        hGrp->SetUnsigned("ThemeAccentColor2", Gui::Application::DefaultAccentColor2);
+        hGrp->SetUnsigned("ThemeAccentColor3", Gui::Application::DefaultAccentColor3);
     }
 }
 

@@ -818,7 +818,6 @@ private:
                 auto stepSettings = dlg.getSettings();
                 options.setItem("exportHidden", Py::Boolean(stepSettings.exportHidden));
                 options.setItem("keepPlacement", Py::Boolean(stepSettings.keepPlacement));
-                options.setItem("legacy", Py::Boolean(stepSettings.exportLegacy));
             }
         }
 
@@ -861,8 +860,9 @@ private:
         Part::OCAF::ImportExportSettings settings;
 
         // still support old way
-        bool legacyExport = (pylegacy         == Py_None ? settings.getExportLegacy()
-                                                         : Base::asBoolean(pylegacy));
+        // The legacy exporter is retired and no longer preference-driven: it
+        // runs only when explicitly requested with legacy=True.
+        bool legacyExport = (pylegacy != Py_None && Base::asBoolean(pylegacy));
         bool exportHidden = (pyexportHidden   == Py_None ? settings.getExportHiddenObject()
                                                          : Base::asBoolean(pyexportHidden));
         bool keepPlacement = (pykeepPlacement == Py_None ? settings.getExportKeepPlacement()

@@ -26,6 +26,7 @@ that do dependency resolution, error handling, etc.). See AddonInstallerGUI and 
 classes for details."""
 
 import os
+import platform
 import sys
 from typing import List
 
@@ -469,16 +470,58 @@ class AddonInstallerGUI(QtCore.QObject):
         dlg.hide()
         self.finished.emit()
 
+    def _activate_addon(self) -> bool:
+        """Bring the addon into the running session, so it can be used without restarting
+        FreeCAD. Only a fresh installation can be activated: an update rewrites files this
+        session has already imported and Python cannot reliably reload those, so
+        FreeCAD.initApplication() refuses a directory the session already knows."""
+        if not hasattr(FreeCADGui, "initApplication"):
+            return False
+        self._add_vendored_python_paths()
+        path = os.path.join(self.installer.installation_path, self.addon_to_install.name)
+        try:
+            return FreeCADGui.initApplication(path)
+        except Exception as e:  # An addon's own init code can raise anything at all
+            FreeCAD.Console.PrintWarning(
+                translate(
+                    "AddonsInstaller",
+                    "Could not load {} into the running session: {}",
+                ).format(self.addon_to_install.name, str(e))
+                + "\n"
+            )
+            return False
+
+    @staticmethod
+    def _add_vendored_python_paths() -> None:
+        """Make the directories the dependency installer vendors Python packages into
+        importable. Startup puts them on sys.path only if they already exist, so the
+        first addon to pull in a dependency creates one that nothing can import from."""
+        base = os.path.join(FreeCAD.getUserAppDataDir(), "AdditionalPythonPackages")
+        major, minor, _ = platform.python_version_tuple()
+        for path in (os.path.join(base, f"py{major}{minor}"), base):
+            if os.path.isdir(path) and path not in sys.path:
+                sys.path.append(path)
+
     def _installation_succeeded(self):
         """Called if the installation was successful."""
+        activated = self._activate_addon()
+        if activated:
+            message = translate(
+                "AddonsInstaller", "{} was installed successfully, and is ready to use"
+            )
+        else:
+            message = translate("AddonsInstaller", "{} was installed successfully")
         QtWidgets.QMessageBox.information(
             utils.get_main_am_window(),
             translate("AddonsInstaller", "Success"),
-            translate("AddonsInstaller", "{} was installed successfully").format(
-                self.addon_to_install.name
-            ),
+            message.format(self.addon_to_install.name),
             QtWidgets.QMessageBox.Ok,
         )
+        if activated:
+            # Clears the PENDING_RESTART the installer set: there is nothing to wait for.
+            # Set after the dialog above, which is modal, so the installer thread has
+            # certainly finished its own set_status() by now.
+            self.addon_to_install.set_status(Addon.Status.NO_UPDATE_AVAILABLE)
         self.success.emit(self.addon_to_install)
         self.finished.emit()
 

@@ -648,7 +648,11 @@ True is returned if the operation succeeded, False otherwise.
         <UserDocu>This value is computed from the value of the underlying shape reference and the location.
 hashCode() -> int
 --
-Orientation is not taken into account.</UserDocu>
+Orientation is not taken into account.
+
+Built against OCCT 7.8 and later this returns the full 64-bit hash, and the
+optional upper bound argument is accepted but ignored, OCCT having replaced
+the bounded HashCode() with an unbounded std::hash.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="tessellate" Const="true">
