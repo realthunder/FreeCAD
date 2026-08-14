@@ -29,6 +29,7 @@
 #include "TaskView/TaskView.h"
 
 class QCheckBox;
+class QComboBox;
 class QDoubleSpinBox;
 class QLineEdit;
 
@@ -64,6 +65,11 @@ private:
     QDoubleSpinBox *metallicSpin = nullptr;
     QCheckBox *roughnessCheck = nullptr;
     QDoubleSpinBox *roughnessSpin = nullptr;
+    QCheckBox *finishCheck = nullptr;
+    QComboBox *finishCombo = nullptr;
+    QDoubleSpinBox *finishPitchSpin = nullptr;
+    QDoubleSpinBox *finishDepthSpin = nullptr;
+    QDoubleSpinBox *finishAngleSpin = nullptr;
     QCheckBox *waterCheck = nullptr;
     QDoubleSpinBox *waterDensitySpin = nullptr;
     QCheckBox *glassCheck = nullptr;
