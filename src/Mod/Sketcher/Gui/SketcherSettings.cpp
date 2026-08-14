@@ -31,6 +31,8 @@
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Gui/Command.h>
+#include <Gui/Workbench.h>
+#include <Gui/WorkbenchManager.h>
 
 #include "SketcherSettings.h"
 #include "ui_SketcherSettings.h"
@@ -80,6 +82,8 @@ void SketcherSettings::saveSettings()
     // Dimensioning constraints mode
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
+    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", true);
+    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", false);
     bool singleTool = true;
     bool SeparatedTools = false;
     int index = ui->dimensioningMode->currentIndex();
@@ -93,8 +97,20 @@ void SketcherSettings::saveSettings()
             SeparatedTools = true;
             break;
     }
+    const bool dimensioningChanged = singleTool != previousSingleTool
+        || SeparatedTools != previousSeparatedTools;
     hGrp->SetBool("SingleDimensioningTool", singleTool);
     hGrp->SetBool("SeparatedDimensioningTools", SeparatedTools);
+
+    // These two decide which dimensioning commands the Sketcher's toolbar and
+    // menu carry, and they are read by Workbench::setupToolBars() -- so the
+    // workbench only has to install its UI again, which is a good deal less
+    // than restarting the application.
+    if (dimensioningChanged) {
+        if (auto* workbench = Gui::WorkbenchManager::instance()->active()) {
+            workbench->activate();
+        }
+    }
 
     ui->radiusDiameterMode->setEnabled(index != 1);
 
@@ -140,22 +156,35 @@ void SketcherSettings::loadSettings()
     ui->checkBoxUnifiedCoincident->onRestore();
     ui->checkBoxHorVerAuto->onRestore();
 
-    // Dimensioning constraints mode
-    ui->dimensioningMode->clear();
-    ui->dimensioningMode->addItem(tr("Single tool"));
-    ui->dimensioningMode->addItem(tr("Separated tools"));
-    ui->dimensioningMode->addItem(tr("Both"));
+    // Dimensioning constraints mode.
+    //
+    // Signals stay blocked while the combo is rebuilt: clear() and the first
+    // addItem() both emit currentIndexChanged, and loadSettings() runs again
+    // every time the dialog reloads -- applying a preference pack does exactly
+    // that. The connection is made once, with Qt::UniqueConnection, because it
+    // used to be made here and so accumulated one duplicate per reload.
+    {
+        QSignalBlocker sigblk(ui->dimensioningMode);
+        ui->dimensioningMode->clear();
+        ui->dimensioningMode->addItem(tr("Single tool"));
+        ui->dimensioningMode->addItem(tr("Separated tools"));
+        ui->dimensioningMode->addItem(tr("Both"));
+    }
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
     bool singleTool = hGrp->GetBool("SingleDimensioningTool", true);
     bool SeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", false);
     int index = SeparatedTools ? (singleTool ? 2 : 1) : 0;
-    ui->dimensioningMode->setCurrentIndex(index);
+    {
+        QSignalBlocker sigblk(ui->dimensioningMode);
+        ui->dimensioningMode->setCurrentIndex(index);
+    }
     connect(ui->dimensioningMode,
             QOverload<int>::of(&QComboBox::currentIndexChanged),
             this,
-            &SketcherSettings::dimensioningModeChanged);
+            &SketcherSettings::dimensioningModeChanged,
+            Qt::UniqueConnection);
 
     ui->radiusDiameterMode->setEnabled(index != 1);
 
@@ -184,7 +213,6 @@ void SketcherSettings::loadSettings()
 void SketcherSettings::dimensioningModeChanged(int index)
 {
     ui->radiusDiameterMode->setEnabled(index != 1);
-    SketcherSettings::requireRestart();
 }
 
 /**

@@ -185,7 +185,6 @@ private:
     void showResetOptions();
     void restoreDefaults();
     void restorePageDefaults(PreferencesPageItem* item);
-    void restartIfRequired();
 
     void updatePageDependentLabels();
 
@@ -212,7 +211,6 @@ private:
     boost::signals2::scoped_connection connParam;
 
     ParameterGrp::handle hBackup;
-    bool restartRequired;
 
     /**< A name for our Qt::UserRole, used when storing user data in a list item */
     static const int GroupNameRole;
