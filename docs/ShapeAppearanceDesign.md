@@ -1,11 +1,9 @@
 # ShapeAppearance, compatible with upstream but not laid out like it
 
-Status: stage 1 (storage, the ShapeAppearance property, the compatibility
-names, restore migration) landed 2026-08-12 with the alpha convention
-flip of 7.9 following 2026-08-13. Stage 2 (Coin carries per-face
-material to the render cache, ABI intact) landed 2026-08-13, verified by
-tests/src/Gui/RenderCacheMaterial.cpp on both the extended and the stock
-Coin. Stages 3-5 are design.
+Status: stages 1-5 have landed (storage and the property 2026-08-12 with
+the alpha convention flip of 7.9 following; Coin carriage, bgfx
+rendering, glTF and STEP 2026-08-13), and section 8's PBR mode with
+them, per-face streams included. Section 9, surface finish, is design.
 Context: [UpstreamCoreSync.md](./UpstreamCoreSync.md) section 5.1, which
 records why the property exists and what it cost upstream.
 
@@ -1489,12 +1487,312 @@ probe (`~/works/sw/models/perface/perface_pbr_scene_probe.py`) that
 reads the node arrays a real view provider builds, across per-face,
 uniform-PBR and Phong appearances.
 
-**The GPU side is not verified by a picture**, and the reason is the
-harness, not the feature: in this box's xvfb runs, render-cache mode 3
-draws a frame that no material change reaches at all. Measured, not
-assumed -- a plain `ShapeColor` write shows the same default gray, and
-the SAME leg on the unmodified tree (stash, rebuild, rerun) renders the
-identical gray, while mode 0 renders the colour correctly. So the
-existing pixel-probe route
-(`~/works/sw/models/perface/perface_pbr_pixel_probe.py`, kept with its
-control legs) cannot judge this until that gap is closed.
+**The GPU side is verified by a picture too, 2026-08-14.** It was held up
+for a day by a harness fault that looked exactly like a renderer bug: in
+this box's xvfb runs, render-cache mode 3 drew a frame that no material
+change reached, on the modified and the unmodified tree alike. The cause
+was not the renderer but the `user.cfg` every probe launcher copies --
+`Matcap=1` with `MatcapTint=0` makes the bgfx shader draw one procedural
+studio material over the entire scene, which Coin ignores, hence modes
+0 and 2 looking right. With matcap forced off,
+`~/works/sw/models/perface/perface_pbr_pixel_probe.py` reads face 1 =
+75,12,11, face 3 = 181,29,27 and face 5 = 102,15,14, an exact match for
+its three appearance entries, and the entries are far enough apart that
+the control leg is live. No code changed. ⚠️ The lesson is a probe rule:
+a pixel probe must STATE the scene-wide render preferences it depends
+on, never inherit them.
+
+## 9. Surface finish: a new field array
+
+Decided by the user 2026-08-14. A machined surface finish -- knurled,
+brushed, blasted, turned -- is authored on the appearance itself, App
+side, as a **new per-field array** rather than as another reinterpretation
+of the existing ones. Per-face falls out for free: the appearance is
+already indexed per face, so a finish per face is a finish per entry and
+no new indexing, no new property and no new restore path is invented for
+it.
+
+This section is the **data model only**. Nothing renders from it yet;
+the render ladder is 9.7.
+
+### 9.1 Why a new field rather than another reinterpretation
+
+Section 8 got away with reinterpreting because every quantity PBR mode
+needed was already a scalar or a colour in the layout. A finish is not.
+It is a pattern **enum** plus three physical numbers, and there is no
+room left: the diffuse alpha is the opacity, the specular alpha the
+metallic, the shininess slot the roughness. `_ambient` is the only field
+with no PBR meaning, and it is a colour -- three 8-bit channels and an
+alpha, which can hold neither a pitch in millimetres nor an enum without
+becoming a private code.
+
+A second mode bit over the same arrays would also take the number of
+readings a stored value can be in from two to four, in the editor, in
+both exporters and in every conversion function. The per-field layout of
+section 3 exists precisely so that adding a field is the cheap move: an
+array nobody has set is size 0 and costs nothing, on every object in
+every existing document.
+
+### 9.2 The record on `App::Material`
+
+    struct SurfaceFinish {
+        enum Pattern : uint8_t {
+            None = 0, Knurl, KnurlStraight, Brushed, Blasted, Turned
+        };
+        uint8_t pattern = None;
+        float pitch = 0.0f;   // mm, feature spacing
+        float depth = 0.0f;   // mm, peak to valley
+        float angle = 0.0f;   // degrees, lay direction in the pattern frame
+
+        bool operator==(const SurfaceFinish &) const;
+        bool operator!=(const SurfaceFinish &) const;
+        bool isSet() const { return pattern != None; }
+    };
+
+carried as a public `SurfaceFinish finish;` beside `shininess` and
+`transparency`. Three choices worth stating:
+
+- **Millimetres and degrees, plain floats.** Pitch and depth are
+  physical: a 0.8 mm knurl is about 0.3 mm deep, a brushed lay is
+  microns. Storing the honest quantity is what lets the renderer decide
+  when a feature has dropped below the pixel footprint and should become
+  roughness instead of a normal (9.7). No `Quantity` -- every other
+  material field is a plain float and mm is the internal unit.
+- **The default record is all zeros**, which matters more than it looks.
+  It is what makes the array elide to empty for every existing document
+  and every material nobody has given a finish, so the shared-default
+  scheme of 1.3 keeps eliding byte-identically and this feature costs
+  nothing on a file that does not use it.
+- **`operator==` is load-bearing, not decoration.** `normalize()`
+  collapses a field to size 1 by comparing elements, so the record must
+  be comparable for the cardinality convention to work at all.
+
+Integration with the existing value semantics:
+
+- `Material::operator==` gains `finish == m.finish`. The `uuid`
+  short-circuit above it still wins, unchanged.
+- ⚠️ **`setType()` resets the finish to default.** It already rewrites
+  every colour and both floats with the preset's, and a preset like
+  STEEL states no finish; leaving a stale one behind is the same class
+  of bug as the `getMaterial()` ordering trap already recorded there
+  (the type goes on FIRST, then the fields).
+- `pbrToPhong`, `phongToPbr` and `setPBR` **carry the finish through
+  untouched**. A finish is a statement about the physical surface, not a
+  reading of the shading slots; it is orthogonal to the mode exactly the
+  way the emissive colour and the identity strings are.
+
+### 9.3 The list field
+
+    std::vector<SurfaceFinish> _finish;   // size 0, 1, or N
+
+obeying the same 0/1/N convention as every other field, with the
+accessors in the shape the others already have:
+
+    const std::vector<SurfaceFinish> &getFinishes() const;
+    SurfaceFinish getFinish(int idx) const;      // fieldAt, with the default
+    void setFinishes(const std::vector<SurfaceFinish> &values);
+    void setFinish(int idx, const SurfaceFinish &value);
+    void setFinish(const SurfaceFinish &value);  // every entry
+    bool hasFinish() const { return !_finish.empty(); }   // like hasTextureOrCard()
+
+and folded into `getMaterial` (laid in AFTER `setType`, like the rest),
+`setValues`, `set1Value`, `normalize`/`ensureNormalized`, `touchFields`,
+`getMemSize`, `isSame`, `Copy`/`Paste`.
+
+⭐ **One array of records, not four parallel scalar arrays.** The
+precedent supports it -- `_ambient` holds a 16-byte `Color`, not four
+float arrays -- and the four numbers genuinely co-vary: a face has one
+finish specification, and it is hard to construct a real part where the
+pitch varies per face while the pattern does not. Four arrays would
+quadruple the accessors, the mask bits and the serialization keys to buy
+an elision case that does not occur, and it would recreate by hand the
+"both set or neither" pairing that `SoFCPbrElement` had to invent for
+metallic and roughness (8.4). The cost of the choice is that a part
+varying only the lay angle per face stores 16 bytes an entry instead of
+4, which is the case nobody has.
+
+Two existing methods need a decision rather than a mechanical edit:
+
+- **`variesOnlyInDiffuse()` must answer false when `_finish` holds more
+  than one entry.** It gates whether the lossy compatibility
+  `DiffuseColor` copy is still honest (7.9), and a per-face finish is
+  something a colour list cannot say. A *uniform* finish leaves it true,
+  which is right: the compat copy only ever loses the finish, and
+  nothing that consumes it understands finishes anyway.
+- **`getPhongMaterial()` carries the finish through.** It derives the
+  classic shading slots; the finish is not one of them.
+
+### 9.4 Serialization, and the compatibility policy that governs it
+
+⭐ **The policy, stated by the user 2026-08-14 and general to this fork,
+not specific to this field.** This is a development version that has
+never been published, so:
+
+1. **We must read upstream's files.** Unchanged, and the whole restore
+   path of 1.2 and 7.3 stays.
+2. **We should be able to write a file upstream can open.** Lossless is
+   better -- open in upstream, open back here, nothing lost. Where a
+   datum cannot survive their format, keep the upstream-readable
+   encoding readable and let the **default save be our own format**,
+   which carries everything.
+3. **We owe our own older builds nothing.** A document written today
+   need not open in a build from last week. This retires the constraint
+   that shaped 8.3, where PBR mode rode an XML *attribute* specifically
+   because a new key line throws "unknown material field" on an older
+   fork build. That throw is no longer a reason to bend a format -- but
+   it is still a bug, and one that must be fixed before publication
+   rather than after, for the readers that will exist then (9.4.1).
+
+Note this sharpens 1.2 rather than contradicting it: 1.2 said upstream
+need not read our *default* save, and that still holds -- what item 2
+adds is that the compatible encoding must stay genuinely usable, not
+merely present.
+
+Against that, the three encodings:
+
+- **Binary field stream (schema >= 6, the default).** A new
+  `FieldFinish = 1 << 11` mask bit, and a run written as `pattern` in an
+  `int8` plus the three floats per entry -- the same shape `_type`
+  already uses for its int8 run. Where that run goes is 9.4.1.
+- **XML field form (schema >= 6, or when a string must survive).** A new
+  key `'f'`, one line, four tokens per entry. Under item 3 a plain key
+  line is fine and no attribute trick is needed; what the line's leading
+  number counts is 9.4.1.
+- **The compatible encodings (schema < 6, the upstream-readable ones).**
+  They cannot carry a finish and should not be made to. Upstream's stream
+  is fixed -- count, four packed colours, shininess and transparency,
+  then the `version="3"` pass of three strings -- and the only fields with
+  spare room are `image`, `imagePath` and `uuid`, whose meaning is
+  theirs. Smuggling a finish into a material-card identity would make two
+  appearances that are not equal compare equal, since `operator==`
+  short-circuits on `uuid` (7.3). So the finish is **dropped** in those
+  encodings, exactly as the PBR mode flag is (8.3), and the default save
+  carries it losslessly. Under item 2 that is the correct outcome: the
+  upstream-readable file stays readable and states the surface's colours
+  and shading honestly; only the finish, which upstream has no concept
+  of, is absent.
+
+`getMemSize()` and `getSaveSize()` pick up `_finish.size() *
+sizeof(SurfaceFinish)`.
+
+#### 9.4.1 Forward compatibility, which is the half the policy does not cover
+
+⭐ **Item 3 above is about the past; this is about the future, and it has
+to be paid for now.** The policy says we owe our own older builds
+nothing *today*, because there are none in the wild. The day there are,
+every field added after that point has to be skippable by the readers
+already shipped -- and neither encoding can do that as it stands.
+Fixing both is free right now and impossible later, so it belongs in
+this change rather than in the one that first needs it.
+
+**The binary stream is positional.** A reader consumes the runs in bit
+order, so it can only tolerate unknown fields that happen to sit at the
+tail. That holds for exactly one round of additions: append field A,
+then later field B, and a reader that knows A but not B still works only
+because B is last. A reader that knows neither, meeting a file that has
+both, is fine too. But it breaks the moment a field is ever inserted, or
+two lines of development each claim "the next bit", and it gives no way
+to drop a field.
+
+So **length-prefix each run**: keep the mask exactly as it is (it still
+carries the payload-free `FieldPBR` flag), and write each present field
+as its byte length followed by its payload. A reader that does not know
+a bit seeks past its run and continues, wherever the run sits. Writing
+the length means buffering the run into a scratch `Base::OutputStream`
+first, which is a few lines and costs 4 bytes per present field -- of
+which there are under a dozen.
+
+**The XML keyed form cannot be skipped at all**, and its `default:` case
+throws `FileException("unknown material field")`. Two changes, both
+small:
+
+1. **Skip unknown keys** instead of throwing: read the leading number,
+   discard that many whitespace tokens, continue. This is the change
+   that makes every future field additive, and it is worthless unless it
+   ships before the format is published.
+2. ⭐ **Define the leading number as the count of TOKENS that follow, not
+   of entries.** That sounds like a format change and is not: every
+   field written today -- packed colours, floats, int8 types, hex
+   strings -- writes exactly **one whitespace token per entry**, so for
+   all of them the two readings are the same number and not one byte on
+   the wire moves. It is what makes rule 1 work for a field whose
+   records are wider than one token, which the finish is the first of.
+   The reader divides by the stride it knows (4 for `'f'`) and applies
+   the existing 0/1/N check to the result; the skipper needs no stride
+   at all.
+
+The alternative for the finish alone would be four separate one-token
+keys, which needs neither change. It is rejected because it solves the
+problem only for records that decompose into scalars, and the next field
+may not -- while the two changes above solve it for every field this
+format will ever carry.
+
+Two things that are already forward-compatible and should stay that way:
+**XML attributes** (an unknown attribute is ignored, which is why `pbr`
+rides one) and **mask bits with no payload**. Prefer both for anything
+that is a flag rather than a run.
+
+### 9.5 Python
+
+Following the `Metallic`/`Roughness` precedent on `MaterialPy.xml` --
+scalar attributes rather than a dict:
+
+- `Finish` -- the pattern by name (`""`, `"knurl"`, `"knurl-straight"`,
+  `"brushed"`, `"blasted"`, `"turned"`), accepting an int as well on
+  assignment.
+- `FinishPitch`, `FinishDepth`, `FinishAngle` -- floats.
+
+No new property-level API is needed for per-face authoring:
+`ShapeAppearance` already hands out and takes back whole `Material`
+objects (4.1), so a per-face finish is written the way a per-face colour
+already is. Unlike the PBR flag (8.4) the finish does not interact with
+the list's single mode, so there is no `inMode`-style conversion on
+assignment: the record is copied verbatim whichever reading the list is
+in.
+
+### 9.6 Invariants
+
+- **`pattern == None` means the other three are meaningless**, and the
+  setters zero them, which is also what lets the record elide. A stored
+  record is therefore always either wholly unset or wholly meaningful.
+- **Setters clamp so that stored data is always renderable**: a non-None
+  pattern floors the pitch at a small positive minimum and the depth at
+  zero, and the angle wraps into [0, 180). Validating on the way in
+  keeps the renderer from having to defend itself against a divide by
+  zero it cannot report.
+- **The finish survives every mode conversion** (9.2), in both the value
+  and the list direction.
+
+### 9.7 What this stage deliberately excludes
+
+Everything that draws it, and it is a separate piece of work with its own
+verification:
+
+- The producer and carrier -- `updateRenderMaterial()`, new
+  `SoFCRenderMaterial` fields, and a `SoFCFinishElement` following the
+  `SoFCPbrElement` precedent (8.4), which is now the established way to
+  move a per-face scalar stream that is not a Coin material field.
+- The renderer ladder, in order: **per-object first** (four `Render_*`
+  style knobs through the path that already carries `Render_Metallic`,
+  which ships the whole shader library at almost no plumbing cost), then
+  **per-face** through a finish palette indexed by a per-vertex byte
+  rather than a fifth widening of the material stream, then **explicit
+  per-face projection frames** computed at tessellation time from the
+  OCCT surface type (plane gets its own axes, cylinder and cone their
+  axis and circumference), which is what turns a brushed or turned lay
+  from approximately right into manufacturing-correct.
+- The pattern coordinate is **object space**, so a scaled or instanced
+  copy keeps its finish attached to its geometry.
+- ⛔ **The surface parametrization UV is dropped, not deferred.** OCCT's
+  triangulation does carry UV nodes for every B-Rep face and
+  `ViewProviderExt.cpp:4469` copies them only for mesh-only faces, so it
+  is available -- but it is not metric (a cylinder's u is radians, a
+  NURBS patch's is arbitrary), it costs 8 bytes a vertex, and the
+  surfaces where it would beat an explicit frame are freeform faces
+  nobody specifies a knurl on.
+- Analytic filtering of the pattern against the pixel footprint, without
+  which a 0.3 mm pitch aliases into moire the moment the part is zoomed
+  to fit; anisotropic GGX, which real brushed metal wants and which
+  touches the shared lighting core for both the direct and the IBL
+  terms; the property editor rows; and any PMI or ISO 1302 semantics,
+  which is the rung above all of this.
