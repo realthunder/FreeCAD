@@ -342,7 +342,13 @@ protected:
                           /// because this function is static. Null (the
                           /// instanced-leaf and stand-in paths) never
                           /// classifies or skips on invariance.
-                          MeshLadderState *ladder = nullptr);
+                          MeshLadderState *ladder = nullptr,
+                          /// This fill is the display half of a landing
+                          /// (MeshLadderState::residentLanded): the
+                          /// caller just installed the triangulation to
+                          /// display, so the BRepMesh call would only
+                          /// validate it (Render_MeshSkipLanded).
+                          bool residentLanded = false);
 
     bool VisualTouched;
     bool NormalsFromUV;
@@ -493,6 +499,15 @@ protected:
             Varies,
         };
         MeshInvariance meshInvariance = MeshInvariance::Unknown;
+        /// One-shot: the NEXT updateVisual is the rebuild half of a
+        /// landing -- a transfer/demote/downgrade on this anchor's
+        /// shape just established the very triangulation the rebuild
+        /// is to display, so its BRepMesh call is validated-only by
+        /// construction: on every landing path the resident rung is
+        /// never coarser than the ask (Render_MeshSkipLanded).
+        /// Consumed by updateVisual before ANY early exit, so a stale
+        /// claim cannot outlive the one build it was made for.
+        bool residentLanded = false;
 
         /// THE reset: a different TShape starts every claim over.
         void rebind(const void *tsh)

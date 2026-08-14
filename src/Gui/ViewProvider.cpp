@@ -73,6 +73,7 @@ std::chrono::duration<double> ViewProvider::VisualMeshTime {0};
 std::chrono::duration<double> ViewProvider::VisualFillTime {0};
 std::chrono::duration<double> ViewProvider::VisualPrologueTime {0};
 std::chrono::duration<double> ViewProvider::VisualInstanceTime {0};
+std::chrono::duration<double> ViewProvider::VisualHighlightTime {0};
 std::size_t ViewProvider::VisualBuildCount = 0;
 
 ViewProvider::VisualBuildTimer::VisualBuildTimer(

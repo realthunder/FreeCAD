@@ -194,6 +194,13 @@ void queueMeshDescentWork(const void *tag,
 void queueLevelGuiWork(const void *tag, std::function<void()> body,
                        bool descent = true);
 
+/// Whether the caller is executing inside the landing pump's turn --
+/// diagnostic context for the slow-build attribution (a pump item, a
+/// drain slice and any other queued call all dispatch as the same
+/// meta-call to the application object, and naming which one a slow
+/// rebuild ran under is what the instruments could not do).
+bool inLandingPump();
+
 /// The coarse-first tessellation level for display builds; negative
 /// means tessellate at the full display deviation as always. Resolved
 /// from the CoarseTessellation render parameter — per-view

@@ -214,6 +214,11 @@ def run():
         # column measures anything.
         rp.SetBool("MeshSkipInvariant",
                    os.environ.get("FC_MESH_INVARIANT", "on") != "off")
+        # The landing rule, same two arms (FC_MESH_LANDED=off is the
+        # audit arm: claims scored, calls still made). Written BOTH
+        # ways because params persist between runs.
+        rp.SetBool("MeshSkipLanded",
+                   os.environ.get("FC_MESH_LANDED", "on") != "off")
         rp.SetBool("Occlusion", False)
         rp.SetBool("DowngradeLedger", True)
         rp.SetBool("ClimbHardLimit", True)

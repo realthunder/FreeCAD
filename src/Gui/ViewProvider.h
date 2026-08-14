@@ -137,6 +137,12 @@ public:
     /// representation -- the attempt, and the per-solid instance wiring
     /// when it succeeds.
     static std::chrono::duration<double> VisualInstanceTime;
+    /// Of VisualBuildTime, the share spent re-applying the per-element
+    /// colors after the fill (the setHighlighted* epilogue): array
+    /// writes proportional to the element count, and the trigger for
+    /// the material re-evaluation -- previously buried in the
+    /// unattributed remainder of the split.
+    static std::chrono::duration<double> VisualHighlightTime;
     static std::size_t VisualBuildCount;
 
     /// Scope guard adding to one of the accumulators above.

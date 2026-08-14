@@ -22,6 +22,10 @@
 
 #include "PreCompiled.h"
 
+#if defined(__linux__)
+# include <execinfo.h>
+#endif
+
 #ifndef _PreComp_
 # include <Bnd_Box.hxx>
 # include <BRep_Tool.hxx>
@@ -147,6 +151,10 @@ PROPERTY_SOURCE(PartGui::ViewProviderPartExt, Gui::ViewProviderGeometryObject)
 
 namespace PartGui {
 
+namespace {
+bool levelDebugOn();
+}
+
 // Private class used by ViewProviderExt to update its visual nodes up on
 // receiving SoGetBoundingBoxAction
 class SoFCCoordinate3: public SoCoordinate3
@@ -157,8 +165,18 @@ public:
         // the first repaint after a load traverses the whole scene, and
         // building on demand here would hand back the very stall the queue
         // exists to break up. It contributes nothing until its slice comes.
-        if (vp && vp->VisualTouched && !vp->VisualDeferred)
+        if (vp && vp->VisualTouched && !vp->VisualDeferred) {
+            // Named under the level debug flag: this on-demand build
+            // runs inside whatever traversal asked for the bbox, and
+            // the 1.8s giant rebuilds attributed to "the drain" turned
+            // out not to be drain builds at all -- whether THIS is the
+            // caller is exactly what the line answers.
+            if (levelDebugOn())
+                Base::Console().Message(
+                    "on-demand visual build (bbox) for %s\n",
+                    vp->getFullName().c_str());
             vp->updateVisual();
+        }
         SoCoordinate3::getBoundingBox(action);
     }
 
@@ -446,6 +464,15 @@ struct MeshCallProbe {
         std::size_t invariantSkipped = 0;
         std::size_t invariantRight = 0;
         std::size_t invariantWrong = 0;
+        /// The landing rule (Render_MeshSkipLanded), scored the same
+        /// two-sided way: skipped only counts with the skip ON;
+        /// right/wrong come from the audit arm (skip OFF, the claimed
+        /// call made anyway). WRONG would mean a rebuild whose caller
+        /// had just installed the triangulation and BRepMesh still
+        /// changed it -- a refutation of the landing argument itself.
+        std::size_t landedSkipped = 0;
+        std::size_t landedRight = 0;
+        std::size_t landedWrong = 0;
     };
     static Stats &stats()
     {
@@ -465,6 +492,8 @@ struct MeshCallProbe {
     /// The deflection-invariance rule claimed this call and it is being
     /// made anyway (the audit arm): score the claim in the destructor.
     bool invariantClaim = false;
+    /// Same audit arm for the landing rule (Render_MeshSkipLanded).
+    bool landedClaim = false;
     int trisBefore = 0, facesBefore = 0, facesTotal = 0;
     double residentMin = 0.0, residentMax = 0.0;
     std::chrono::high_resolution_clock::time_point start;
@@ -494,9 +523,11 @@ struct MeshCallProbe {
     MeshCallProbe(const TopoDS_Shape &s, double deflection,
                   const MeshVerdict &v,
                   ViewProviderPartExt::ScaleSpent tessellationSpent,
-                  bool invariantClaimed = false)
+                  bool invariantClaimed = false,
+                  bool landedClaimed = false)
         : shape(s), asked(deflection), active(levelDebugOn()), verdict(v),
-          spent(tessellationSpent), invariantClaim(invariantClaimed)
+          spent(tessellationSpent), invariantClaim(invariantClaimed),
+          landedClaim(landedClaimed)
     {
         if (!active)
             return;
@@ -521,6 +552,20 @@ struct MeshCallProbe {
             trisAfter != trisBefore || facesAfter != facesBefore;
         if (invariantClaim)
             ++(rebuilt ? st.invariantWrong : st.invariantRight);
+        if (landedClaim) {
+            ++(rebuilt ? st.landedWrong : st.landedRight);
+            // Every WRONG claim in full: the aggregate says the rule
+            // leaks, only the per-call evidence says WHERE, and the
+            // decision between "fix the claim" and "drop the rule"
+            // hangs on the pattern.
+            if (rebuilt)
+                Base::Console().Message(
+                    "landed claim WRONG: why %d asked %.6f resident "
+                    "%.6f..%.6f tris %d->%d faces %d->%d of %d\n",
+                    int(verdict.why), asked, residentMin, residentMax,
+                    trisBefore, trisAfter, facesBefore, facesAfter,
+                    facesTotal);
+        }
         if (rebuilt) {
             ++st.rebuilt;
             st.timeRebuilt += elapsed;
@@ -583,6 +628,7 @@ struct VisualSplitReporter {
     /// What was already reported, so each line describes its own window.
     struct Mark {
         double build = 0, mesh = 0, fill = 0, prologue = 0, instance = 0;
+        double highlight = 0;
         std::size_t count = 0;
     };
     static Mark &mark()
@@ -608,25 +654,31 @@ struct VisualSplitReporter {
         const double fill = VP::VisualFillTime.count() - m.fill;
         const double prologue = VP::VisualPrologueTime.count() - m.prologue;
         const double instance = VP::VisualInstanceTime.count() - m.instance;
+        const double highlight = VP::VisualHighlightTime.count() - m.highlight;
         const std::size_t count = VP::VisualBuildCount - m.count;
         m = Mark{VP::VisualBuildTime.count(), VP::VisualMeshTime.count(),
                  VP::VisualFillTime.count(), VP::VisualPrologueTime.count(),
-                 VP::VisualInstanceTime.count(), VP::VisualBuildCount};
+                 VP::VisualInstanceTime.count(),
+                 VP::VisualHighlightTime.count(), VP::VisualBuildCount};
         // The traversal is what a worker thread could take; the mesh is
-        // already on the refine pool; the prologue and the instancing
-        // are GUI-thread work that threading would not touch at all.
+        // already on the refine pool; the prologue, the instancing and
+        // the highlight epilogue are GUI-thread work that threading
+        // would not touch at all.
         const double traversal = fill - mesh;
+        const double rest =
+            build - traversal - mesh - prologue - instance - highlight;
         Base::Console().Message(
             "visual build: %zu builds in %.3fs = traversal %.3fs (%.0f%%) + "
             "mesh %.3fs (%.0f%%) + prologue %.3fs (%.0f%%) + instancing "
-            "%.3fs (%.0f%%) + unattributed %.3fs (%.0f%%)\n",
+            "%.3fs (%.0f%%) + highlight %.3fs (%.0f%%) + unattributed "
+            "%.3fs (%.0f%%)\n",
             count, build,
             traversal, 100.0 * traversal / build,
             mesh, 100.0 * mesh / build,
             prologue, 100.0 * prologue / build,
             instance, 100.0 * instance / build,
-            build - traversal - mesh - prologue - instance,
-            100.0 * (build - traversal - mesh - prologue - instance) / build);
+            highlight, 100.0 * highlight / build,
+            rest, 100.0 * rest / build);
         // What that mesh term actually was. Reported beside the split
         // rather than separately: the question "is the descent paying
         // to re-tessellate what the pool already built" is only ever
@@ -686,8 +738,87 @@ struct VisualSplitReporter {
                 "right %zu, WRONG %zu\n",
                 ms.invariantSkipped, ms.invariantRight, ms.invariantWrong);
         }
+        // The landing rule, same two arms (Render_MeshSkipLanded).
+        if (ms.landedSkipped || ms.landedRight || ms.landedWrong) {
+            Base::Console().Message(
+                "visual build: landed rule -- skipped %zu; audit "
+                "right %zu, WRONG %zu\n",
+                ms.landedSkipped, ms.landedRight, ms.landedWrong);
+        }
         if (ms.calls || ms.checks)
             ms = MeshCallProbe::Stats();
+    }
+};
+
+/// The single-build counterpart of VisualSplitReporter (#13d): one line
+/// naming the object, for any rebuild whose OWN cost passes
+/// Render_LevelSlowBuildMS. The aggregate split says where a mass
+/// descent's time goes; the landing pump's worst turn is one object's
+/// whole rebuild, and only a per-build line says what THAT object spent
+/// it on -- which is what decides how its rebuild gets split.
+struct SlowBuildProbe {
+    const Gui::ViewProviderDocumentObject *vp;
+    std::chrono::high_resolution_clock::time_point start;
+    double mesh, fill, prologue, instance, highlight;
+    /// Which ladder state decided this build's deflection, filled by
+    /// updateVisual once it has decided (empty on the paths that never
+    /// get there). The 2s builds were exact-deflection re-tessellations
+    /// of shapes holding no mesh at all, and WHY the build took the
+    /// exact branch is precisely what the time split cannot say.
+    std::string note;
+    explicit SlowBuildProbe(const Gui::ViewProviderDocumentObject *vp)
+        : vp(vp)
+        , start(std::chrono::high_resolution_clock::now())
+        , mesh(Gui::ViewProvider::VisualMeshTime.count())
+        , fill(Gui::ViewProvider::VisualFillTime.count())
+        , prologue(Gui::ViewProvider::VisualPrologueTime.count())
+        , instance(Gui::ViewProvider::VisualInstanceTime.count())
+        , highlight(Gui::ViewProvider::VisualHighlightTime.count())
+    {}
+    ~SlowBuildProbe()
+    {
+        if (!levelDebugOn())
+            return;
+        const long thresholdMS = Gui::RenderParams::getLevelSlowBuildMS();
+        if (thresholdMS <= 0)
+            return;
+        const double total = std::chrono::duration<double>(
+            std::chrono::high_resolution_clock::now() - start).count();
+        if (total * 1000.0 < double(thresholdMS))
+            return;
+        using VP = Gui::ViewProvider;
+        const double m = VP::VisualMeshTime.count() - mesh;
+        const double f = VP::VisualFillTime.count() - fill;
+        const double p = VP::VisualPrologueTime.count() - prologue;
+        const double i = VP::VisualInstanceTime.count() - instance;
+        const double h = VP::VisualHighlightTime.count() - highlight;
+        Base::Console().Message(
+            "slow visual build: %s %.3fs = traversal %.3f + mesh %.3f + "
+            "prologue %.3f + instancing %.3f + highlight %.3f + "
+            "unattributed %.3f%s%s\n",
+            vp->getFullName().c_str(), total, f - m, m, p, i, h,
+            total - (f - m) - m - p - i - h,
+            note.empty() ? "" : " | ", note.c_str());
+#if defined(__linux__)
+        // The callers, for a slow build no instrumented context owns
+        // (neither the drain nor the pump per the note): every queued
+        // path dispatches as the same meta-call to the application
+        // object, and only the stack says which code queued THIS one.
+        // Mangled names and library offsets are enough to name the
+        // family; this fires rarely (slow builds only) and only under
+        // the level debug flag that gates the whole probe.
+        if (note.find("drain 0 pump 0") != std::string::npos) {
+            void *frames[24];
+            const int n = ::backtrace(frames, 24);
+            char **symbols = ::backtrace_symbols(frames, n);
+            if (symbols) {
+                for (int fi = 0; fi < n; ++fi)
+                    Base::Console().Message("  slow build frame %d: %s\n",
+                                            fi, symbols[fi]);
+                free(symbols);
+            }
+        }
+#endif
     }
 };
 
@@ -723,6 +854,17 @@ struct DeferredVisuals {
     /// a progressive load ran with a dead status bar.
     std::unique_ptr<Base::SequencerLauncher> seq;
 };
+
+/// True while the deferred-visual drain is the caller of updateVisual.
+/// The stand-in gate reads it (buildCoarseStandIn): a drain build of an
+/// oversized bare shape is the LiveImport situation in every way that
+/// matters -- geometry arriving faster than it can be tessellated while
+/// the GUI is supposed to stay live -- but a plain .FCStd restore never
+/// carries the LiveImport status (only the STEP import path sets it),
+/// so the drain used to tessellate 20k-face compounds inline: measured
+/// 1.8s single builds, the worst per-item stalls of both the load and
+/// the drop phase.
+bool s_drainVisualBuild = false;
 
 DeferredVisuals &deferredVisuals()
 {
@@ -3889,7 +4031,9 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
                 buildVisualNodes(local, exactDefl, exactAng, normalsFromUV,
                                  coords, pcoords, norm, texcoords,
                                  faceset, lineset, nodeset,
-                                 nt, nn, np, nno, nf, ne, nl);
+                                 nt, nn, np, nno, nf, ne, nl,
+                                 ScaleSpent::No, nullptr,
+                                 /*residentLanded*/ true);
                 registerInstancedLevelEntry(local, true, builtError,
                                             coarseDefl, coarseAng,
                                             exactDefl, exactAng,
@@ -3922,7 +4066,8 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
         buildVisualNodes(local, coarseDefl, coarseAng, normalsFromUV,
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
-                         nt, nn, np, nno, nf, ne, nl);
+                         nt, nn, np, nno, nf, ne, nl,
+                         ScaleSpent::No, nullptr, /*residentLanded*/ true);
         registerInstancedLevelEntry(local, false, builtError,
                                     coarseDefl, coarseAng,
                                     exactDefl, exactAng, normalsFromUV,
@@ -3936,7 +4081,8 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
         buildVisualNodes(local, coarseDefl, coarseAng, normalsFromUV,
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
-                         nt, nn, np, nno, nf, ne, nl);
+                         nt, nn, np, nno, nf, ne, nl,
+                         ScaleSpent::No, nullptr, /*residentLanded*/ true);
         registerInstancedLevelEntry(local, false, builtError,
                                     coarseDefl, coarseAng,
                                     exactDefl, exactAng, normalsFromUV,
@@ -3981,8 +4127,16 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
             && meshLadder.anchor == cShape.TShape().get()) {
             return false;
         }
+        // The deferred-visual drain is the restore's LiveImport: same
+        // geometry-outrunning-the-tessellator situation, same fix. A
+        // plain .FCStd restore never sets LiveImport (only the STEP
+        // import path does), and without this the drain tessellated
+        // oversized compounds inline -- the measured 1.8s builds that
+        // were the worst per-item stalls of the whole gate run.
         auto d = pcObject ? pcObject->getDocument() : nullptr;
-        if (!d || !d->testStatus(App::Document::LiveImport)) {
+        if (!d
+            || (!d->testStatus(App::Document::LiveImport)
+                && !s_drainVisualBuild)) {
             return false;
         }
         if (long(cachedShape.countSubShapes(TopAbs_FACE)) <= deferFaces) {
@@ -4036,6 +4190,7 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
             transferMeshLevels(meshed, cur);
             if (meshLadder.anchor == tsh) {
                 meshLadder.coarseResolved = true;
+                meshLadder.residentLanded = true;
                 if (underPressure)
                     meshLadder.resetDescent();
             }
@@ -4326,6 +4481,7 @@ void ViewProviderPartExt::armMeshLevelSource()
             if (meshLadder.anchor == tsh) {
                 meshLadder.exactResident = true;
                 meshLadder.exactCoarseError = builtError;
+                meshLadder.residentLanded = true;
             }
             updateVisual();
         };
@@ -4348,8 +4504,10 @@ void ViewProviderPartExt::armMeshLevelSource()
                 return;
             if (!demoteMeshLevels(cur))
                 return;
-            if (meshLadder.anchor == tsh)
+            if (meshLadder.anchor == tsh) {
                 meshLadder.exactResident = false;
+                meshLadder.residentLanded = true;
+            }
             updateVisual();
         };
         onDowngrade = [this, tsh]() {
@@ -4358,8 +4516,10 @@ void ViewProviderPartExt::armMeshLevelSource()
                 return;
             if (!downgradeMeshLevels(cur))
                 return;
-            if (meshLadder.anchor == tsh)
+            if (meshLadder.anchor == tsh) {
                 meshLadder.exactResident = false;
+                meshLadder.residentLanded = true;
+            }
             updateVisual();
         };
     }
@@ -4447,6 +4607,8 @@ void ViewProviderPartExt::armMeshLevelSource()
                     if (before > 0 && after * 10 >= before * 9
                         && meshLadder.anchor == tsh)
                         meshLadder.scaleSpent = ScaleSpent::Proved;
+                    if (meshLadder.anchor == tsh)
+                        meshLadder.residentLanded = true;
                     updateVisual();
                 });
         };
@@ -4720,6 +4882,10 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                 // only when this slice is what built it, or the line would
                 // report work it never did.
                 if (vp->VisualTouched) {
+                    // Under the drain flag, so an oversized bare shape
+                    // may take the stand-in path instead of an inline
+                    // tessellation (see s_drainVisualBuild).
+                    Base::StateLocker drainBuild(s_drainVisualBuild);
                     vp->updateVisual();
                     ++queue.built;
                 }
@@ -4769,6 +4935,9 @@ void ViewProviderPartExt::updateVisual()
     // build timer so it is destroyed after it and sees this build's own
     // cost, and it reports on every exit path this function has.
     VisualSplitReporter splitReport;
+    // ...and where THIS build's went, if it was slow enough to matter
+    // on its own (a paced descent's turn is one object's rebuild).
+    SlowBuildProbe slowReport(this);
     // A restore or a live import runs this thousands of times inside another
     // stage's timing; the accumulator is what makes that share visible.
     Gui::ViewProvider::VisualBuildTimer buildTimer;
@@ -4829,6 +4998,12 @@ void ViewProviderPartExt::updateVisual()
     meshLadder.rebind(cachedShape.getShape().IsNull()
                           ? nullptr
                           : cachedShape.getShape().TShape().get());
+    // The landing claim covers exactly ONE rebuild -- consumed here,
+    // before every early exit, so a claim made for a build that took
+    // the stand-in or instanced path (or errored out) cannot leak
+    // into a later rebuild it knows nothing about.
+    const bool residentLanded = meshLadder.residentLanded;
+    meshLadder.residentLanded = false;
     if (cachedShape.isNull()) {
         coords  ->point      .setNum(0);
         pcoords ->point      .setNum(0);
@@ -4859,6 +5034,8 @@ void ViewProviderPartExt::updateVisual()
     if (buildCoarseStandIn(meshLadder.scaleSpent != ScaleSpent::No
                            && meshLadder.decimationSpent)) {
         VisualTouched = false;
+        Gui::ViewProvider::VisualBuildTimer highlightTimer(
+                Gui::ViewProvider::VisualHighlightTime, nullptr);
         setHighlightedFaces(DiffuseColor.getValues());
         setHighlightedEdges(LineColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValue());
@@ -4899,6 +5076,8 @@ void ViewProviderPartExt::updateVisual()
     if (instancedOk) {
         VisualTouched = false;
         // The material has to be checked again (colors verified uniform)
+        Gui::ViewProvider::VisualBuildTimer highlightTimer(
+                Gui::ViewProvider::VisualHighlightTime, nullptr);
         setHighlightedFaces(DiffuseColor.getValues());
         setHighlightedEdges(LineColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValue());
@@ -5012,12 +5191,27 @@ void ViewProviderPartExt::updateVisual()
             }
         }
 
+        if (levelDebugOn()
+            && Gui::RenderParams::getLevelSlowBuildMS() > 0) {
+            char buf[192];
+            snprintf(buf, sizeof(buf),
+                     "asked %.3f exactResident %d coarseLvl %d scale %.1f "
+                     "spent %d dec %d faces %d drain %d pump %d",
+                     deflection, int(exactResident), coarseLvl,
+                     meshLadder.errorScale, int(meshLadder.scaleSpent),
+                     int(meshLadder.decimationSpent),
+                     int(cachedShape.countSubShapes(TopAbs_FACE)),
+                     int(s_drainVisualBuild), int(inLandingPump()));
+            slowReport.note = buf;
+        }
+
         buildVisualNodes(cShape, deflection, AngDeflectionRads, NormalsFromUV,
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
                          numTriangles, numNodes, numPoints, numNorms,
                          numFaces, numEdges, numLines,
-                         meshLadder.scaleSpent, &meshLadder);
+                         meshLadder.scaleSpent, &meshLadder,
+                         residentLanded);
 
         // The scene server can now re-tessellate this shape at a
         // coarser deviation when a viewer asks for a declared level of
@@ -5078,6 +5272,8 @@ void ViewProviderPartExt::updateVisual()
     VisualTouched = false;
 
     // The material has to be checked again
+    Gui::ViewProvider::VisualBuildTimer highlightTimer(
+            Gui::ViewProvider::VisualHighlightTime, nullptr);
     setHighlightedFaces(DiffuseColor.getValues());
     setHighlightedEdges(LineColorArray.getValues());
     setHighlightedPoints(PointColorArray.getValue());
@@ -5092,7 +5288,8 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         SoBrepPointSet *nodeset,
         int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
         int &numFaces, int &numEdges, int &numLines,
-        ScaleSpent tessellationSpent, MeshLadderState *ladder)
+        ScaleSpent tessellationSpent, MeshLadderState *ladder,
+        bool residentLanded)
 {
     std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
     TopLoc_Location aLoc;
@@ -5141,6 +5338,7 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             const bool debugCheck = levelDebugOn();
             const bool skipRedundant = Gui::RenderParams::getMeshSkipRedundant();
             const bool skipInvariant = Gui::RenderParams::getMeshSkipInvariant();
+            const bool skipLanded = Gui::RenderParams::getMeshSkipLanded();
             MeshVerdict verdict;
             // With the feature off, the check still runs under the level
             // debug flag and its answer is scored against the real call
@@ -5230,8 +5428,30 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
                 if (debugCheck && skipInvariant && invariantSkip)
                     ++MeshCallProbe::stats().invariantSkipped;
             }
+            // The landing rule (Render_MeshSkipLanded): this fill is
+            // the display half of a landing -- the caller has just
+            // installed (transfer) or re-activated (demote/downgrade)
+            // the very triangulation the rebuild is to display, and on
+            // every landing path the resident rung is never coarser
+            // than the ask, so BRepMesh here can only validate. Keyed
+            // on the PATH of this one rebuild, not on any claim about
+            // the shape's history -- the exhaustion-proof leak that
+            // killed the spent-keyed skip does not reach it.
+            // A face with NO triangulation is claimed too: on a landing
+            // it is a face the same mesher just FAILED at these very
+            // parameters on the worker (the transfer moves every
+            // triangulation the copy got), and BRepMesh is
+            // deterministic, so the GUI-thread retry re-fails it --
+            // measured as ~1s validated-only calls re-failing the same
+            // faces on every landing of the biggest compounds. The
+            // audit arm scores these claims like every other.
+            const bool landedSkip =
+                residentLanded && (skipLanded || debugCheck);
+            if (debugCheck && skipLanded && landedSkip)
+                ++MeshCallProbe::stats().landedSkipped;
             if (!((skipRedundant && verdict.redundant())
-                  || (skipInvariant && invariantSkip))) {
+                  || (skipInvariant && invariantSkip)
+                  || (skipLanded && landedSkip))) {
                 // Behind the level debug flag, the probe says whether the
                 // call REBUILDS (triangle counts move) or merely
                 // validates, and what deflection it found resident
@@ -5241,7 +5461,8 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
                 // -- read its WRONG column there or not at all.
                 MeshCallProbe probe(cShape, deflection, verdict,
                                     tessellationSpent,
-                                    invariantSkip && !skipInvariant);
+                                    invariantSkip && !skipInvariant,
+                                    landedSkip && !skipLanded);
 #if OCC_VERSION_HEX >= 0x070500
                 IMeshTools_Parameters meshParams;
                 meshParams.Deflection = deflection;
@@ -5736,6 +5957,45 @@ ViewProviderPartExt::_getBoundingBox(const char *subname,
                                      const Gui::View3DInventorViewer *view,
                                      int depth) const
 {
+    // A bounds question must not BUILD THE VISUAL. It used to: a
+    // camera fit or animation start right after a load walked the
+    // whole scene through getSceneBoundBox, and every shape whose
+    // build was still pending tessellated inline -- measured 1.7-1.8s
+    // per 20k-face compound in one event-loop dispatch, the worst
+    // per-item stalls of the interactivity gate (the stack was
+    // viewIsometric -> findBoundingSphere -> here -> updateVisual).
+    // The geometry knows its bounds without a single triangle. The
+    // display nodes hold the shape in its LOCAL frame under the
+    // placement transform, so `transform` false strips the location
+    // exactly as the reset path strips pcTransform below.
+    // Sub-element queries keep the building path: they need the
+    // detail-path machinery of the node graph, and asking about one
+    // sub-element of a never-built shape is rare enough that the
+    // build is acceptable there.
+    if (VisualTouched && !(subname && subname[0])) {
+        try {
+            TopoDS_Shape shape = getShape().getShape();
+            if (!shape.IsNull()) {
+                if (!transform)
+                    shape = shape.Located(TopLoc_Location());
+                Bnd_Box bounds;
+                BRepBndLib::Add(shape, bounds);
+                bounds.SetGap(0.0);
+                if (!bounds.IsVoid()) {
+                    Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+                    bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+                    Base::BoundBox3d bbox(xMin, yMin, zMin,
+                                          xMax, yMax, zMax);
+                    if (mat)
+                        bbox = bbox.Transformed(*mat);
+                    return bbox;
+                }
+            }
+        }
+        catch (Standard_Failure &) {
+            // fall through to the building path below
+        }
+    }
     if (VisualTouched)
         const_cast<ViewProviderPartExt*>(this)->updateVisual();
     return inherited::_getBoundingBox(subname, mat, transform, view, depth);

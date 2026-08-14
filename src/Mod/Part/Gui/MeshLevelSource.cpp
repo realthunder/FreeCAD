@@ -53,6 +53,7 @@
 
 #include <App/PropertyStandard.h>
 #include <Base/Console.h>
+#include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/RenderParams.h>
 #include <Gui/Renderer/MeshSource.h>
@@ -250,9 +251,12 @@ static bool pumpDebugOn()
     return env || Gui::RenderParams::getLevelDebug();
 }
 
+bool s_inLandingPump = false;
+
 void pumpLandings()
 {
     s_landingScheduled = false;
+    Base::StateLocker pumping(s_inLandingPump);
     const double budget =
         std::max(1L, Gui::RenderParams::getLevelLandBudgetMS()) / 1000.0;
     const auto start = std::chrono::steady_clock::now();
@@ -657,6 +661,11 @@ void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
         Render::MeshSourceRegistry::instance().noteDescentQueued();
     s_guiWork.push_back({tag, std::move(body), descent});
     scheduleLandingPump();
+}
+
+bool PartGui::inLandingPump()
+{
+    return s_inLandingPump;
 }
 
 void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,

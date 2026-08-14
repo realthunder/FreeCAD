@@ -68,6 +68,8 @@ public:
     bool ClimbHardLimit;
     long ClimbAdmitBatch;
     long LevelLandBudgetMS;
+    bool MeshSkipLanded;
+    long LevelSlowBuildMS;
     long DescentOrderBatch;
     bool DowngradeLedger;
     long LevelCount;
@@ -203,6 +205,10 @@ public:
         funcs["ClimbAdmitBatch"] = &RenderParamsP::updateClimbAdmitBatch;
         LevelLandBudgetMS = this->handle->GetInt("LevelLandBudgetMS", 50);
         funcs["LevelLandBudgetMS"] = &RenderParamsP::updateLevelLandBudgetMS;
+        MeshSkipLanded = this->handle->GetBool("MeshSkipLanded", true);
+        funcs["MeshSkipLanded"] = &RenderParamsP::updateMeshSkipLanded;
+        LevelSlowBuildMS = this->handle->GetInt("LevelSlowBuildMS", 200);
+        funcs["LevelSlowBuildMS"] = &RenderParamsP::updateLevelSlowBuildMS;
         DescentOrderBatch = this->handle->GetInt("DescentOrderBatch", 64);
         funcs["DescentOrderBatch"] = &RenderParamsP::updateDescentOrderBatch;
         DowngradeLedger = this->handle->GetBool("DowngradeLedger", true);
@@ -480,6 +486,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelLandBudgetMS(RenderParamsP *self) {
         self->LevelLandBudgetMS = self->handle->GetInt("LevelLandBudgetMS", 50);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMeshSkipLanded(RenderParamsP *self) {
+        self->MeshSkipLanded = self->handle->GetBool("MeshSkipLanded", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelSlowBuildMS(RenderParamsP *self) {
+        self->LevelSlowBuildMS = self->handle->GetInt("LevelSlowBuildMS", 200);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDescentOrderBatch(RenderParamsP *self) {
@@ -1600,6 +1614,89 @@ void RenderParams::setLevelLandBudgetMS(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelLandBudgetMS() {
     instance()->handle->RemoveInt("LevelLandBudgetMS");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMeshSkipLanded() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Whether the rebuild half of a landing skips its OCCT mesh\n"
+"call. A worker landing (climb, scale-descent, stand-in\n"
+"resolution) or a demote/downgrade installs or re-activates the\n"
+"very triangulation the following rebuild displays, and on\n"
+"every such path the resident rung is never coarser than the\n"
+"ask -- BRepMesh there can only validate: measured 18.3s of a\n"
+"92s budget drop (991 validated-only calls, 0.1-0.8s each on\n"
+"large compounds), plus ~1s per landing of a giant re-FAILING\n"
+"the faces the worker's mesher had already failed. Keyed on\n"
+"the path of the one rebuild the landing just prepared, never\n"
+"on the shape's descent history (the exhaustion-proof leak\n"
+"that killed the spent-keyed skip does not reach a per-rebuild\n"
+"claim). Audited at 94 percent exact no-ops; the rest are\n"
+"BRepMesh re-meshing a few faces within ~5 percent of the\n"
+"triangle count in either direction -- perturbation of a rung\n"
+"the ladder chose to display, not reclaim forgone. The level\n"
+"debug flag scores the claim either way; read the 'landed\n"
+"rule' audit line before trusting a change here.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getMeshSkipLanded() {
+    return instance()->MeshSkipLanded;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultMeshSkipLanded() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMeshSkipLanded(const bool &v) {
+    instance()->handle->SetBool("MeshSkipLanded",v);
+    instance()->MeshSkipLanded = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMeshSkipLanded() {
+    instance()->handle->RemoveBool("MeshSkipLanded");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelSlowBuildMS() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"A visual rebuild whose own cost passes this many\n"
+"milliseconds reports its time split (traversal, mesh,\n"
+"prologue, instancing, highlight) on one line naming the\n"
+"object, under the level debug flag. The aggregate split says\n"
+"where a mass descent's time goes; the landing pump's worst\n"
+"turn is a single object's whole rebuild, and only a per-build\n"
+"line says what that object spent it on. The same threshold\n"
+"arms the slow-dispatch line in GUIApplication::notify, which\n"
+"names the receiver of any single event-loop dispatch this\n"
+"slow -- the net that catches a stall no timer above\n"
+"bracketed. 0 turns both lines off.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getLevelSlowBuildMS() {
+    return instance()->LevelSlowBuildMS;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultLevelSlowBuildMS() {
+    const static long def = 200;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelSlowBuildMS(const long &v) {
+    instance()->handle->SetInt("LevelSlowBuildMS",v);
+    instance()->LevelSlowBuildMS = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelSlowBuildMS() {
+    instance()->handle->RemoveInt("LevelSlowBuildMS");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

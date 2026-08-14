@@ -516,6 +516,57 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter MeshSkipLanded
+    ///
+    /// Whether the rebuild half of a landing skips its OCCT mesh
+    /// call. A worker landing (climb, scale-descent, stand-in
+    /// resolution) or a demote/downgrade installs or re-activates the
+    /// very triangulation the following rebuild displays, and on
+    /// every such path the resident rung is never coarser than the
+    /// ask -- BRepMesh there can only validate: measured 18.3s of a
+    /// 92s budget drop (991 validated-only calls, 0.1-0.8s each on
+    /// large compounds), plus ~1s per landing of a giant re-FAILING
+    /// the faces the worker's mesher had already failed. Keyed on
+    /// the path of the one rebuild the landing just prepared, never
+    /// on the shape's descent history (the exhaustion-proof leak
+    /// that killed the spent-keyed skip does not reach a per-rebuild
+    /// claim). Audited at 94 percent exact no-ops; the rest are
+    /// BRepMesh re-meshing a few faces within ~5 percent of the
+    /// triangle count in either direction -- perturbation of a rung
+    /// the ladder chose to display, not reclaim forgone. The level
+    /// debug flag scores the claim either way; read the 'landed
+    /// rule' audit line before trusting a change here.
+    static const bool & getMeshSkipLanded();
+    static const bool & defaultMeshSkipLanded();
+    static void removeMeshSkipLanded();
+    static void setMeshSkipLanded(const bool &v);
+    static const char *docMeshSkipLanded();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelSlowBuildMS
+    ///
+    /// A visual rebuild whose own cost passes this many
+    /// milliseconds reports its time split (traversal, mesh,
+    /// prologue, instancing, highlight) on one line naming the
+    /// object, under the level debug flag. The aggregate split says
+    /// where a mass descent's time goes; the landing pump's worst
+    /// turn is a single object's whole rebuild, and only a per-build
+    /// line says what that object spent it on. The same threshold
+    /// arms the slow-dispatch line in GUIApplication::notify, which
+    /// names the receiver of any single event-loop dispatch this
+    /// slow -- the net that catches a stall no timer above
+    /// bracketed. 0 turns both lines off.
+    static const long & getLevelSlowBuildMS();
+    static const long & defaultLevelSlowBuildMS();
+    static void removeLevelSlowBuildMS();
+    static void setLevelSlowBuildMS(const long &v);
+    static const char *docLevelSlowBuildMS();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter DescentOrderBatch
     ///
     /// How many descents (demotes/downgrades) one plan pass may

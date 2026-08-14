@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <chrono>
 # include <sstream>
 # include <QAbstractSpinBox>
 # include <QByteArray>
@@ -52,10 +53,67 @@
 #include "GuiApplication.h"
 #include "Application.h"
 #include "MainWindow.h"
+#include "RenderParams.h"
 #include "SpaceballEvent.h"
 
 
 using namespace Gui;
+
+namespace {
+/// Which single event-loop dispatch a GUI stall IS (armed by LevelDebug
+/// with Render_LevelSlowBuildMS as the threshold). The interactivity
+/// gate measures gaps between timer firings, and the landing pump and
+/// the visual builds time themselves -- but a measured gap larger than
+/// every measured turn means the stall is a dispatch nobody bracketed,
+/// and this is the one place every dispatch passes through.
+///
+/// Reported at EVERY nesting depth, depth on the line: a blocking
+/// script pumps the loop from inside its own dispatch (the measured
+/// case: a whole 180s harness ran as ONE outermost meta-call, and an
+/// outermost-only trace saw nothing inside it), so the innermost slow
+/// line is the owner and its ancestors are the pumps it ran under.
+///
+/// The receiver's identity is captured up front: an event handler may
+/// destroy its own receiver (a close, a deleteLater drain), so nothing
+/// may touch the pointer after the dispatch. The class name is a
+/// pointer into the static meta object and outlives the instance.
+struct SlowDispatchTrace {
+    static thread_local int depth;
+    const bool armed;
+    int myDepth = 0;
+    int eventType = 0;
+    const char *className = nullptr;
+    QString objectName;
+    std::chrono::steady_clock::time_point start;
+    SlowDispatchTrace(QObject *receiver, QEvent *event)
+        : armed(Gui::RenderParams::getLevelDebug()
+                && Gui::RenderParams::getLevelSlowBuildMS() > 0)
+    {
+        myDepth = depth++;
+        if (!armed)
+            return;
+        eventType = int(event->type());
+        className = receiver->metaObject()->className();
+        objectName = receiver->objectName();
+        start = std::chrono::steady_clock::now();
+    }
+    ~SlowDispatchTrace()
+    {
+        --depth;
+        if (!armed)
+            return;
+        const double ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start).count();
+        if (ms < double(Gui::RenderParams::getLevelSlowBuildMS()))
+            return;
+        Base::Console().Message(
+            "slow dispatch: depth %d %.0fms event %d to %s (%s)\n",
+            myDepth, ms, eventType, className,
+            objectName.isEmpty() ? "-" : qPrintable(objectName));
+    }
+};
+thread_local int SlowDispatchTrace::depth = 0;
+}
 
 GUIApplication::GUIApplication(int & argc, char ** argv)
     : GUIApplicationNativeEventAware(argc, argv)
@@ -76,6 +134,7 @@ bool GUIApplication::notify (QObject * receiver, QEvent * event)
             (int)event->type());
         return false;
     }
+    SlowDispatchTrace slowTrace(receiver, event);
     try {
         if (event->type() == Spaceball::ButtonEvent::ButtonEventType ||
             event->type() == Spaceball::MotionEvent::MotionEventType)
