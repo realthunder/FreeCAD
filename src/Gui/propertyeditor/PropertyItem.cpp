@@ -3450,6 +3450,18 @@ QVariant PropertyColorItem::editorData(QWidget *editor) const
 // --------------------------------------------------------------------
 
 namespace Gui { namespace PropertyEditor {
+    /** What one row of a material property holds, as the editor sees it
+     *
+     * The six colour/scalar fields are what the row EDITS. Everything
+     * after them is what the row must not DESTROY: an edit here is
+     * applied by restating the whole material through App.Material(...),
+     * so a field this struct does not carry is a field the first colour
+     * change silently drops -- which is how a PBR appearance used to be
+     * converted to Phong by having its diffuse colour picked.
+     *
+     * The colours keep their alpha for the same reason: in PBR mode the
+     * specular alpha IS the metallic factor.
+     */
     class Material
     {
     public:
@@ -3457,13 +3469,107 @@ namespace Gui { namespace PropertyEditor {
         QColor ambientColor;
         QColor specularColor;
         QColor emissiveColor;
-        float shininess;
-        float transparency;
+        float shininess = 0.0F;
+        float transparency = 0.0F;
+        /// The specular alpha, which a QColor cannot carry here:
+        /// Base::Color::asValue<QColor>() states rgb only, and in PBR
+        /// mode that alpha is the METALLIC factor. (The diffuse alpha
+        /// needs no such field -- it is the opacity, which transparency
+        /// above states and the generated call applies after the
+        /// colour.)
+        float specularAlpha = 1.0F;
+        /// Which reading the values above carry (App::Material::pbr)
+        bool pbr = false;
+        /// The surface finish, carried whole
+        App::SurfaceFinish finish;
+        /// Texture and material-card identity (upstream's fields)
+        QString image;
+        QString imagePath;
+        QString uuid;
     };
 }
 }
 
 Q_DECLARE_METATYPE(Gui::PropertyEditor::Material)
+
+namespace {
+
+/// A Python string literal for a field that may hold anything a path or
+/// a uuid can hold, quotes and backslashes included.
+QString pyString(const QString &value)
+{
+    QString escaped = value;
+    escaped.replace(QLatin1String("\\"), QLatin1String("\\\\"));
+    escaped.replace(QLatin1String("'"), QLatin1String("\\'"));
+    return QStringLiteral("'%1'").arg(escaped);
+}
+
+/** The App.Material(...) call that restates one material IN FULL
+ *
+ * An edit through a material row is applied by rebuilding the value from
+ * text, so every field the material holds has to appear here: what is
+ * left out is not left alone, it is reset to a fresh material's default.
+ * The colours carry their alpha (the diffuse alpha is the opacity, and
+ * in PBR mode the specular alpha is the metallic factor), and the mode
+ * comes first because setting it converts the values the rest then
+ * overwrite.
+ */
+QString materialCall(const Gui::PropertyEditor::Material &mat, int decimals)
+{
+    App::Color dc; dc.setValue<QColor>(mat.diffuseColor);
+    App::Color ac; ac.setValue<QColor>(mat.ambientColor);
+    App::Color sc; sc.setValue<QColor>(mat.specularColor);
+    App::Color ec; ec.setValue<QColor>(mat.emissiveColor);
+
+    return QStringLiteral(
+        "App.Material("
+        "PBR=%1,"
+        "DiffuseColor=(%2,%3,%4),"
+        "AmbientColor=(%5,%6,%7),"
+        "SpecularColor=(%8,%9,%10,%11),"
+        "EmissiveColor=(%12,%13,%14),"
+        "Shininess=(%15),"
+        "Transparency=(%16),"
+        "Finish=%17,"
+        "FinishPitch=(%18),"
+        "FinishDepth=(%19),"
+        "FinishAngle=(%20),"
+        "Image=%21,"
+        "ImagePath=%22,"
+        "Uuid=%23,"
+        ")")
+        .arg(mat.pbr ? QLatin1String("True") : QLatin1String("False"))
+        .arg(dc.r, 0, 'f', decimals)
+        .arg(dc.g, 0, 'f', decimals)
+        .arg(dc.b, 0, 'f', decimals)
+        .arg(ac.r, 0, 'f', decimals)
+        .arg(ac.g, 0, 'f', decimals)
+        .arg(ac.b, 0, 'f', decimals)
+        .arg(sc.r, 0, 'f', decimals)
+        .arg(sc.g, 0, 'f', decimals)
+        .arg(sc.b, 0, 'f', decimals)
+        // Not sc.a: the QColor above never carried one
+        .arg(mat.specularAlpha, 0, 'f', 4)
+        .arg(ec.r, 0, 'f', decimals)
+        .arg(ec.g, 0, 'f', decimals)
+        .arg(ec.b, 0, 'f', decimals)
+        .arg(mat.shininess, 0, 'f', decimals)
+        .arg(mat.transparency, 0, 'f', decimals)
+        .arg(pyString(QString::fromLatin1(
+                App::SurfaceFinish::patternName(mat.finish.pattern))))
+        // A finish is stated in millimetres of the real part, so its
+        // sizes are not the editor's display precision to round. Fixed
+        // notation, not 'g': 'g' writes a plain 0 for zero, and the
+        // Python setters take a float, not an int.
+        .arg(mat.finish.pitch, 0, 'f', 6)
+        .arg(mat.finish.depth, 0, 'f', 6)
+        .arg(mat.finish.angle, 0, 'f', 6)
+        .arg(pyString(mat.image))
+        .arg(pyString(mat.imagePath))
+        .arg(pyString(mat.uuid));
+}
+
+}  // namespace
 
 PROPERTYITEM_SOURCE(Gui::PropertyEditor::PropertyMaterialItem)
 
@@ -3697,6 +3803,14 @@ QVariant PropertyMaterialItem::value(const App::Property* prop) const
     mat.emissiveColor = value.emissiveColor.asValue<QColor>();
     mat.shininess = value.shininess;
     mat.transparency = value.transparency;
+    mat.specularAlpha = value.specularColor.a;
+    // Carried, not edited -- so that an edit of the six fields above
+    // does not restate the material without them (see materialCall).
+    mat.pbr = value.pbr;
+    mat.finish = value.finish;
+    mat.image = QString::fromStdString(value.image);
+    mat.imagePath = QString::fromStdString(value.imagePath);
+    mat.uuid = QString::fromStdString(value.uuid);
 
     return QVariant::fromValue<Material>(mat);
 }
@@ -3706,41 +3820,7 @@ void PropertyMaterialItem::setValue(const QVariant& value)
     if (hasExpression() || !value.canConvert<Material>())
         return;
 
-    auto mat = value.value<Material>();
-    App::Color dc; dc.setValue<QColor>(mat.diffuseColor);
-    App::Color ac; ac.setValue<QColor>(mat.ambientColor);
-    App::Color sc; sc.setValue<QColor>(mat.specularColor);
-    App::Color ec; ec.setValue<QColor>(mat.emissiveColor);
-    float s = mat.shininess;
-    float t = mat.transparency;
-
-    QString data = QStringLiteral(
-        "App.Material("
-        "DiffuseColor=(%1,%2,%3),"
-        "AmbientColor=(%4,%5,%6),"
-        "SpecularColor=(%7,%8,%9),"
-        "EmissiveColor=(%10,%11,%12),"
-        "Shininess=(%13),"
-        "Transparency=(%14),"
-        ")"
-    )
-    .arg(dc.r, 0, 'f', decimals())
-    .arg(dc.g, 0, 'f', decimals())
-    .arg(dc.b, 0, 'f', decimals())
-    .arg(ac.r, 0, 'f', decimals())
-    .arg(ac.g, 0, 'f', decimals())
-    .arg(ac.b, 0, 'f', decimals())
-    .arg(sc.r, 0, 'f', decimals())
-    .arg(sc.g, 0, 'f', decimals())
-    .arg(sc.b, 0, 'f', decimals())
-    .arg(ec.r, 0, 'f', decimals())
-    .arg(ec.g, 0, 'f', decimals())
-    .arg(ec.b, 0, 'f', decimals())
-    .arg(s, 0, 'f', decimals())
-    .arg(t, 0, 'f', decimals())
-    ;
-
-    setPropertyValue(data);
+    setPropertyValue(materialCall(value.value<Material>(), decimals()));
 }
 
 QWidget* PropertyMaterialItem::createEditor(QWidget* parent, const QObject* receiver, const char* method) const
@@ -4128,6 +4208,16 @@ QVariant PropertyMaterialListItem::value(const App::Property* prop) const
         mat.emissiveColor = materials->getEmissiveColor(i).asValue<QColor>();
         mat.shininess = materials->getShininess(i);
         mat.transparency = materials->getTransparency(i);
+        mat.specularAlpha = materials->getSpecularColor(i).a;
+        // The fields this row does not edit but must not drop: the
+        // mode is what makes the values above mean what they mean, and
+        // the rest is authored data no colour edit has any business
+        // clearing (docs/ShapeAppearanceDesign.md 9.7).
+        mat.pbr = materials->isPBR();
+        mat.finish = materials->getFinish(i);
+        mat.image = QString::fromStdString(materials->getImage(i));
+        mat.imagePath = QString::fromStdString(materials->getImagePath(i));
+        mat.uuid = QString::fromStdString(materials->getUuid(i));
 
         variantList << QVariant::fromValue<Material>(mat);
     }
@@ -4148,42 +4238,8 @@ void PropertyMaterialListItem::setValue(const QVariant& value)
     QTextStream str(&data);
     str << "(";
 
-    for (const auto & it : list) {
-        auto mat = it.value<Material>();
-        App::Color dc; dc.setValue<QColor>(mat.diffuseColor);
-        App::Color ac; ac.setValue<QColor>(mat.ambientColor);
-        App::Color sc; sc.setValue<QColor>(mat.specularColor);
-        App::Color ec; ec.setValue<QColor>(mat.emissiveColor);
-        float s = mat.shininess;
-        float t = mat.transparency;
-
-        QString item = QStringLiteral(
-            "App.Material("
-            "DiffuseColor=(%1,%2,%3),"
-            "AmbientColor=(%4,%5,%6),"
-            "SpecularColor=(%7,%8,%9),"
-            "EmissiveColor=(%10,%11,%12),"
-            "Shininess=(%13),"
-            "Transparency=(%14),"
-            ")"
-            )
-            .arg(dc.r, 0, 'f', decimals())
-            .arg(dc.g, 0, 'f', decimals())
-            .arg(dc.b, 0, 'f', decimals())
-            .arg(ac.r, 0, 'f', decimals())
-            .arg(ac.g, 0, 'f', decimals())
-            .arg(ac.b, 0, 'f', decimals())
-            .arg(sc.r, 0, 'f', decimals())
-            .arg(sc.g, 0, 'f', decimals())
-            .arg(sc.b, 0, 'f', decimals())
-            .arg(ec.r, 0, 'f', decimals())
-            .arg(ec.g, 0, 'f', decimals())
-            .arg(ec.b, 0, 'f', decimals())
-            .arg(s, 0, 'f', decimals())
-            .arg(t, 0, 'f', decimals())
-            ;
-        str << item << ", ";
-    }
+    for (const auto & it : list)
+        str << materialCall(it.value<Material>(), decimals()) << ", ";
 
     str << ")";
 

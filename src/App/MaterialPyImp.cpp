@@ -52,16 +52,21 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
     PyObject* finishPitch = nullptr;
     PyObject* finishDepth = nullptr;
     PyObject* finishAngle = nullptr;
-    static const std::array<const char *, 14> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
+    PyObject* image = nullptr;
+    PyObject* imagePath = nullptr;
+    PyObject* uuid = nullptr;
+    static const std::array<const char *, 17> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
                                                           "EmissiveColor", "Shininess", "Transparency",
                                                           "PBR", "Metallic", "Roughness",
                                                           "Finish", "FinishPitch", "FinishDepth",
-                                                          "FinishAngle", nullptr};
+                                                          "FinishAngle", "Image", "ImagePath",
+                                                          "Uuid", nullptr};
 
-    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOOOOOO", kwds_colors,
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOOOOOOOOO", kwds_colors,
         &diffuse, &ambient, &specular, &emissive, &shininess, &transparency,
         &pbr, &metallic, &roughness,
-        &finish, &finishPitch, &finishDepth, &finishAngle)) {
+        &finish, &finishPitch, &finishDepth, &finishAngle,
+        &image, &imagePath, &uuid)) {
         return -1;
     }
 
@@ -125,6 +130,21 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
 
         if (finishAngle) {
             setFinishAngle(Py::Float(finishAngle));
+        }
+
+        // Carried, not used (see the attribute docs): a material that
+        // arrived with one of these keeps it through anything that
+        // restates the material through this constructor.
+        if (image) {
+            setImage(Py::String(image));
+        }
+
+        if (imagePath) {
+            setImagePath(Py::String(imagePath));
+        }
+
+        if (uuid) {
+            setUuid(Py::String(uuid));
         }
     }
     catch (Base::Exception& e) {
@@ -337,6 +357,36 @@ Py::Float MaterialPy::getFinishAngle() const
 void MaterialPy::setFinishAngle(Py::Float arg)
 {
     getMaterialPtr()->finish.angle = static_cast<float>(arg);
+}
+
+Py::String MaterialPy::getImage() const
+{
+    return Py::String(getMaterialPtr()->image);
+}
+
+void MaterialPy::setImage(Py::String arg)
+{
+    getMaterialPtr()->image = static_cast<std::string>(arg);
+}
+
+Py::String MaterialPy::getImagePath() const
+{
+    return Py::String(getMaterialPtr()->imagePath);
+}
+
+void MaterialPy::setImagePath(Py::String arg)
+{
+    getMaterialPtr()->imagePath = static_cast<std::string>(arg);
+}
+
+Py::String MaterialPy::getUuid() const
+{
+    return Py::String(getMaterialPtr()->uuid);
+}
+
+void MaterialPy::setUuid(Py::String arg)
+{
+    getMaterialPtr()->uuid = static_cast<std::string>(arg);
 }
 
 PyObject *MaterialPy::getCustomAttributes(const char* /*attr*/) const
