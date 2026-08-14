@@ -1299,7 +1299,7 @@ PyObject*  TopoShapePy::ancestorsOfType(PyObject *args) const
         const TopTools_ListOfShape& ancestors = mapOfShapeShape.FindFromKey(shape);
 
         Py::List list;
-        std::set<Standard_Integer> hashes;
+        std::set<size_t> hashes;
         TopTools_ListIteratorOfListOfShape it(ancestors);
         std::vector<TopoShape> shapes;
         for (; it.More(); it.Next()) {
