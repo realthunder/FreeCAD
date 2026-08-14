@@ -46,6 +46,15 @@
 # include <unistd.h>
 #endif
 
+#if defined(__linux__)
+# include <atomic>
+# include <chrono>
+# include <thread>
+# include <csignal>
+# include <execinfo.h>
+# include <pthread.h>
+#endif
+
 #include <App/Application.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
@@ -60,6 +69,119 @@
 using namespace Gui;
 
 namespace {
+#if defined(__linux__)
+/// A mid-flight stack sampler for slow paint dispatches.
+///
+/// Every bracket inside the paint path -- renderScene's FrameOutside
+/// spans, the publish stage timers, the backend's own frame account --
+/// reports single-digit milliseconds while the paint dispatch above
+/// them reports hundreds, so the cost sits in code nobody bracketed,
+/// and only a stack taken WHILE the paint runs can name it. A watchdog
+/// thread watches the dispatch the tracer below armed; once the paint
+/// outlives the slow threshold the GUI thread is signalled and the
+/// handler writes a backtrace to stderr. Samples repeat once per
+/// threshold until the dispatch ends (capped), so a long paint yields
+/// a small profile rather than one guess.
+///
+/// Signal-context rules: the handler calls only write(),
+/// ::backtrace() and ::backtrace_symbols_fd() (both async-signal-safe
+/// in glibc once primed); the constructor primes the unwinder on the
+/// GUI thread first, so the handler never takes glibc's one-time init
+/// lock. The watchdog reads no RenderParams -- the arming dispatch
+/// snapshots the threshold into an atomic, so the worker touches only
+/// this struct's atomics.
+struct PaintSampler {
+    std::atomic<long long> startNs {0};
+    std::atomic<long long> thresholdMs {0};
+    std::atomic<int> taken {0};
+    pthread_t guiThread {};
+    static constexpr int maxSamples = 4;
+
+    static PaintSampler& instance()
+    {
+        static PaintSampler self;
+        return self;
+    }
+
+    static void onSignal(int)
+    {
+        static const char head[] = "slow paint sample:\n";
+        const ssize_t w = ::write(2, head, sizeof(head) - 1);
+        (void)w;
+        void* frames[48];
+        const int n = ::backtrace(frames, 48);
+        ::backtrace_symbols_fd(frames, n, 2);
+    }
+
+    PaintSampler()
+        : guiThread(::pthread_self())
+    {
+        // Prime the unwinder outside signal context (its first call
+        // initializes libgcc's unwind tables under a lock).
+        void* frames[2];
+        ::backtrace(frames, 2);
+        struct sigaction sa {};
+        sa.sa_handler = &onSignal;
+        ::sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+        ::sigaction(SIGRTMIN + 7, &sa, nullptr);
+        std::thread([this]() { run(); }).detach();
+    }
+
+    void run()
+    {
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+            const long long t0 = startNs.load(std::memory_order_acquire);
+            if (!t0)
+                continue;
+            const long long limit = thresholdMs.load(std::memory_order_relaxed);
+            if (limit <= 0)
+                continue;
+            const long long elapsedMs =
+                (std::chrono::duration_cast<std::chrono::nanoseconds>(
+                     std::chrono::steady_clock::now().time_since_epoch())
+                     .count()
+                 - t0)
+                / 1000000;
+            int had = taken.load(std::memory_order_relaxed);
+            if (had >= maxSamples || elapsedMs < limit * (had + 1))
+                continue;
+            // The CAS keeps one signal per due sample if the paint ends
+            // (and a new one arms) between the check and the kill.
+            if (taken.compare_exchange_strong(had, had + 1))
+                ::pthread_kill(guiThread, SIGRTMIN + 7);
+        }
+    }
+
+    /// Returns false when another paint already holds the sampler (a
+    /// nested paint keeps the outer clock running rather than resetting
+    /// it); the caller only disarms what it armed.
+    bool arm(long long limitMs)
+    {
+        long long expected = 0;
+        const long long now =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count();
+        // Threshold and count are only touched once this arm owns the
+        // sampler, or a nested paint would reset the outer one's cap.
+        thresholdMs.store(limitMs, std::memory_order_relaxed);
+        if (!startNs.compare_exchange_strong(expected, now,
+                                             std::memory_order_release,
+                                             std::memory_order_relaxed))
+            return false;
+        taken.store(0, std::memory_order_relaxed);
+        return true;
+    }
+
+    void disarm()
+    {
+        startNs.store(0, std::memory_order_release);
+    }
+};
+#endif
+
 /// Which single event-loop dispatch a GUI stall IS (armed by LevelDebug
 /// with Render_LevelSlowBuildMS as the threshold). The interactivity
 /// gate measures gaps between timer firings, and the landing pump and
@@ -82,6 +204,7 @@ struct SlowDispatchTrace {
     const bool armed;
     int myDepth = 0;
     int eventType = 0;
+    bool paintArmed = false;
     const char *className = nullptr;
     QString objectName;
     std::chrono::steady_clock::time_point start;
@@ -96,12 +219,25 @@ struct SlowDispatchTrace {
         className = receiver->metaObject()->className();
         objectName = receiver->objectName();
         start = std::chrono::steady_clock::now();
+#if defined(__linux__)
+        // Paint dispatches get the stack sampler: their cost has no
+        // in-code bracket left to name it (widget paints only run on
+        // the GUI thread, so pthread_self() in the ctor is the right
+        // thread to signal).
+        if (event->type() == QEvent::Paint)
+            paintArmed = PaintSampler::instance().arm(
+                Gui::RenderParams::getLevelSlowBuildMS());
+#endif
     }
     ~SlowDispatchTrace()
     {
         --depth;
         if (!armed)
             return;
+#if defined(__linux__)
+        if (paintArmed)
+            PaintSampler::instance().disarm();
+#endif
         const double ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - start).count();
         if (ms < double(Gui::RenderParams::getLevelSlowBuildMS()))
