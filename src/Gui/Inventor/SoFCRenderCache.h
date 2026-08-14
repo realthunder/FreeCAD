@@ -561,6 +561,7 @@ public:
       , partidx(other.partidx)
       , identity(other.identity)
       , resetmatrix(other.resetmatrix)
+      , incomplete(other.incomplete)
     {
       if (!other.identity)
         matrix = other.matrix;
@@ -574,6 +575,7 @@ public:
       , partidx(other.partidx)
       , identity(other.identity)
       , resetmatrix(other.resetmatrix)
+      , incomplete(other.incomplete)
       , bboxmemo(other.bboxmemo)
       , bboxfor(other.bboxfor)
     {
@@ -604,6 +606,13 @@ public:
     SbMatrix matrix;
     bool identity;
     bool resetmatrix;
+    /// The cache this entry was collected from had a sibling drawable
+    /// deferred by the publish's capture budget (isIncompleteHere).
+    /// Element-gate input (docs/SceneStreaming.md #13b): it is what
+    /// tells "this object's companion drawable has not arrived yet"
+    /// apart from "the display mode legitimately omits it". Preserved
+    /// verbatim by every entry copy up the merge/flatten/splice chain.
+    bool incomplete = false;
 
   private:
     mutable SbBox3f bboxmemo;
@@ -681,6 +690,24 @@ public:
    */
   bool isIncomplete() const;
   void setIncomplete();
+
+  /** Whether the deferral happened DIRECTLY under this cache: one of
+   * this cache's own shape drawables kept a stale cache or stayed out
+   * of the frame. Narrower than isIncomplete(), which the defer sets on
+   * the whole open ancestor stack: this one names the innermost cache
+   * only, so collecting it onto the cache's own entries
+   * (VertexCacheEntry::incomplete) marks just the affected object's
+   * drawables and not everything the publish walked.
+   */
+  bool isIncompleteHere() const;
+  void setIncompleteHere();
+
+  /// Whether this cache was opened at an SoFCSelectionRoot -- the
+  /// object boundary the entry keys (and so DrawCall::objectKey) are
+  /// built from. The defer walk marks incomplete-here up to and
+  /// including the nearest such cache, no further: the mark must cover
+  /// the whole object and only the object.
+  bool isSelectionRoot() const;
 
   void resetActionStateStackDepth();
 

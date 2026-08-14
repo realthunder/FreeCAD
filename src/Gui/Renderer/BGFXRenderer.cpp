@@ -11735,18 +11735,20 @@ public:
                         const size_t budget = gpuBudgetBytes();
                         // Why the gates are where they are, in the one
                         // order a reader would ask: the load gate
-                        // overrides both, then the standing pair. A
-                        // gate that fires for a reason it does not name
-                        // is the confusion this readout exists to end.
+                        // overrides the stages, then the staged latch,
+                        // then the params. A gate that fires for a
+                        // reason it does not name is the confusion
+                        // this readout exists to end.
                         const char *gateWhy =
                             loadDropElements
                                 ? " (LOADING: both dropped)"
-                            : shapeVerticesOn && !pressureDropEdges
-                                ? " (both gates OFF)"
-                            : !gpuOverBudget && pressureDropEdges
-                                    && shapeVerticesOn
-                                ? " (no pressure)"
-                                : "";
+                            : elemPressureStage >= 2 && pressureDropEdges
+                                ? " (pressure stage 2: points+lines dropped)"
+                            : elemPressureStage >= 1
+                                ? " (pressure stage 1: points dropped)"
+                            : !shapeVerticesOn
+                                ? " (points off by param)"
+                                : " (no pressure)";
                         // Where the pressure controller stands, and it
                         // has to say which of three things a raised
                         // tolerance means: still descending, walking
@@ -14685,69 +14687,127 @@ public:
         // no re-tessellation, and the way back is one on-demand upload
         // -- which is why these are spent before any rung is given up.
         //
-        // WHICH draws, and the two conditions are different questions:
+        // THE ELEMENT CONTRACT, strictly ordered:
         //
-        // - `attachedOnly` (from the producer, via OCCT topology) says
-        //   nothing in this drawable floats. A point cloud, a wire, a
-        //   sketch, a datum line is never suppressed, because nothing
-        //   else on screen would show it.
-        // - the thing that makes it redundant must ACTUALLY BE DRAWN:
-        //   a vertex is redundant because its edge is on screen, an
-        //   edge because its face is. This is also exactly what exempts
-        //   the display modes -- in Points mode the object has no line
-        //   draws and in Wireframe no triangle draws, so neither gate
-        //   can fire, with no display-mode plumbing in the renderer.
+        // - A FLOATING point or line set (attachedOnly false: it holds
+        //   a vertex no edge attaches, or an edge no face attaches)
+        //   ranks WITH THE FACES. It is the object; it is never gated
+        //   here.
+        // - An attached LINE set draws only while its object's face
+        //   set is shown and memory allows.
+        // - An attached POINT set draws only while its object's line
+        //   set is shown and memory allows.
+        // - Under pressure the classes are spent points -> lines ->
+        //   faces, and taken back faces -> lines -> points (the
+        //   staged latch below; faces move on the plan's cadence).
+        // - On-top and highlight draws are never gated: picking and
+        //   selection must look the same under pressure as without.
         //
-        // On-top and highlight draws are never gated: picking and
-        // selection must look the same under pressure as without it.
-        std::set<uint64_t> objectsWithLines, objectsWithTriangles;
+        // "Shown" is decided inside this frame, dependency-ordered:
+        // faces first, lines against the face verdict, points against
+        // the line verdict. An object with no companion draw AT ALL
+        // splits on objectIncomplete: a capture-budget-deferred
+        // companion is LATE and the dependent set waits for it, while
+        // an absent one is a display mode showing its own subject
+        // (Points/Wireframe), which cannot be allowed to show nothing.
+        // That split is what stops an adopted point or line cache from
+        // drawing frames ahead of the face set the publish budget held
+        // back -- the dots-first load storm.
+        std::set<uint64_t> objectsWithTriangles, objectsWithAttLines,
+            objectsWithFloatLines, incompleteObjects;
         gatedPoints = gatedLines = gateEligible = 0;
         for (const auto &d : scene) {
             if (d.mesh && d.mesh->attachedOnly)
                 ++gateEligible;
+            if (!d.objectKey)
+                continue;
+            if (d.objectIncomplete)
+                incompleteObjects.insert(d.objectKey);
+            if (d.material.ontop)
+                continue;
+            if (isTriangle(d))
+                objectsWithTriangles.insert(d.objectKey);
+            else if (d.material.type == Render::Material::Line)
+                (d.mesh && d.mesh->attachedOnly ? objectsWithAttLines
+                                                : objectsWithFloatLines)
+                    .insert(d.objectKey);
         }
-        // A document being loaded suppresses BOTH classes for as long
-        // as the load lasts, whatever the two standing gates say. It is
-        // the moment the tier is least able to afford them and least
-        // able to use them: the faces are arriving coarse-first and
-        // being replaced under the camera, nobody is inspecting a
-        // vertex of a model that is still half there, and every byte
-        // not uploaded now is one the arriving geometry gets instead.
-        // The way back is one frame, so it costs nothing to hold the
-        // classes back until the load has let go and then let the
-        // ordinary gates decide.
-        const bool gateVertices = !shapeVerticesOn || loadDropElements;
-        // gpuOverBudget ARMS the edge gate; pressureStanding HOLDS it.
-        // The collector retires what this gate suppresses, so the
-        // moment it fires the total falls back under budget -- a gate
-        // reading only the instantaneous bit would re-open into the
-        // very memory it just freed and oscillate with the collector
-        // (the period-4, 75MB wave, by another route). It stays shut
-        // until the ladder has released ALL raised error: edges are
-        // the cheapest thing to give up and therefore the last thing
-        // to take back.
-        const bool gateEdges =
-            (pressureDropEdges && (gpuOverBudget || pressureStanding))
-            || loadDropElements;
-        if (gateVertices || gateEdges) {
-            for (const auto &d : scene) {
-                if (!d.objectKey || d.material.ontop)
-                    continue;
-                if (d.material.type == Render::Material::Line)
-                    objectsWithLines.insert(d.objectKey);
-                else if (isTriangle(d))
-                    objectsWithTriangles.insert(d.objectKey);
+        // The staged pressure latch. gpuOverBudget ARMS a stage;
+        // pressureStanding HOLDS every armed stage: the collector
+        // retires what a stage suppresses, so the moment it fires the
+        // total falls back under budget, and a latch reading only the
+        // instantaneous bit would re-open into the memory it just
+        // freed and oscillate with the collector (the period-4, 75MB
+        // wave by another route). Escalation waits elemGateStagger
+        // frames so the collector's census can answer whether points
+        // alone were enough before the lines go too; release walks
+        // the same stairs backwards, one stage per stagger, and only
+        // once the ladder has given back ALL raised error -- the
+        // cheapest thing to give up is the last thing taken back.
+        {
+            const bool pressed = gpuOverBudget || pressureStanding;
+            if (gpuOverBudget) {
+                if (elemPressureStage == 0) {
+                    elemPressureStage = 1;
+                    elemStageFrames = 0;
+                }
+                else if (elemPressureStage == 1
+                         && ++elemStageFrames >= elemGateStagger) {
+                    elemPressureStage = 2;
+                    elemStageFrames = 0;
+                }
+            }
+            else if (!pressed && elemPressureStage > 0) {
+                if (++elemStageFrames >= elemGateStagger) {
+                    --elemPressureStage;
+                    elemStageFrames = 0;
+                }
+            }
+            else {
+                // Under budget but raised error still standing: hold
+                // every armed stage where it is.
+                elemStageFrames = 0;
             }
         }
+        // A document still arriving forces both drops for the load's
+        // duration (13b.1): it is the moment the tier can least afford
+        // the two classes and least use them, and the way back is one
+        // frame. ShapeVertices off keeps attached points dark outright
+        // (the pre-contract default); PressureDropEdges off exempts
+        // lines from the pressure stages (not from the load).
+        const bool dropPoints = !shapeVerticesOn || loadDropElements
+            || elemPressureStage >= 1;
+        const bool dropLines = loadDropElements
+            || (pressureDropEdges && elemPressureStage >= 2);
+        // The line-set verdict per object, which the point rule chains
+        // on: a gated line set gates the points that lean on it.
+        auto lineSetShown = [&](uint64_t obj) {
+            if (objectsWithFloatLines.count(obj))
+                return true;
+            if (!objectsWithAttLines.count(obj))
+                return false;
+            if (!objectsWithTriangles.count(obj))
+                return incompleteObjects.count(obj) == 0;
+            return !dropLines;
+        };
         auto gatedForMemory = [&](const Render::DrawCall &d) {
             if (!d.mesh || !d.mesh->attachedOnly || !d.objectKey
                     || d.material.ontop || d.material.highlightline)
                 return false;
-            if (d.material.type == Render::Material::Point)
-                return gateVertices && objectsWithLines.count(d.objectKey) > 0;
-            if (d.material.type == Render::Material::Line)
-                return gateEdges
-                    && objectsWithTriangles.count(d.objectKey) > 0;
+            if (d.material.type == Render::Material::Point) {
+                if (!objectsWithAttLines.count(d.objectKey)
+                        && !objectsWithFloatLines.count(d.objectKey))
+                    // No line set in the scene at all: a late companion
+                    // is waited for, Points mode draws its subject.
+                    return incompleteObjects.count(d.objectKey) != 0;
+                return dropPoints || !lineSetShown(d.objectKey);
+            }
+            if (d.material.type == Render::Material::Line) {
+                if (!objectsWithTriangles.count(d.objectKey))
+                    // The same split: late face set vs Wireframe.
+                    return incompleteObjects.count(d.objectKey) != 0;
+                return dropLines;
+            }
             return false;
         };
         // Tallied HERE, once per draw, and not inside the predicate:
@@ -17203,6 +17263,15 @@ public:
     // true at the settled state, so the latch inherits the ladder's
     // own hysteresis instead of inventing a second one.
     bool pressureStanding = false;
+    // The element contract's staged pressure latch (#13b): 0 = nothing
+    // dropped, 1 = attached points dropped, 2 = attached lines dropped
+    // too. Escalates points -> lines while over budget and releases
+    // lines -> points once the pressure has fully cleared, one stage
+    // per elemGateStagger frames, so the collector's census can answer
+    // whether the cheaper stage was enough before the next is spent.
+    int elemPressureStage = 0;
+    int elemStageFrames = 0;
+    int elemGateStagger = 15;
     // The load gate as of the last frame, so the crossing can be
     // reported. The plan readout below cannot carry it: that prints on
     // a camera settle, and a load can begin and end entirely between
@@ -17926,11 +17995,12 @@ void BGFXRenderer::setLevelBudgetDeadband(float fraction)
 #endif
 
 void BGFXRenderer::setElementGates(bool shapeVertices, bool pressureEdges,
-                                   bool loadingDrop)
+                                   bool loadingDrop, int staggerFrames)
 {
     pimpl->shapeVerticesOn = shapeVertices;
     pimpl->pressureDropEdges = pressureEdges;
     pimpl->loadDropElements = loadingDrop;
+    pimpl->elemGateStagger = staggerFrames > 0 ? staggerFrames : 1;
 }
 
 //////////////////////////////////////////////////////////////////////

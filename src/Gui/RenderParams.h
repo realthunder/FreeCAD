@@ -881,19 +881,22 @@ public:
     //@{
     /// Accessor for parameter ShapeVertices
     ///
-    /// Draw the vertex points that sit on the ends of a shape's
-    /// edges (docs/SceneStreaming.md #13b). Off by default: such a point
-    /// lands exactly on an edge that is already drawn, so it adds
-    /// nothing to look at -- and it is not cheap. A point costs the GPU
-    /// a 32-byte sprite instance record plus its index, roughly nine
-    /// times what the same point occupies in the heap, which is why a
-    /// CPU-currency measurement made them look negligible.
-    /// All or nothing per point set: it is skipped only when EVERY one
-    /// of its vertices is an edge endpoint. One floating vertex -- one
-    /// no edge touches, and every point of a point cloud -- and the
-    /// whole set draws, because nothing else would show it. Objects are
-    /// in practice all floating or none, so a per-vertex subset would
-    /// buy nothing and cost an index permutation.
+    /// Let the vertex points that sit on the ends of a shape's edges
+    /// draw under the element contract (docs/SceneStreaming.md #13b):
+    /// an attached point set draws only while its object's line set is
+    /// shown and memory allows, is the FIRST class dropped under
+    /// pressure and the LAST taken back. Off suppresses attached point
+    /// sets outright, memory or not.
+    /// A point is not cheap: it costs the GPU a 32-byte sprite instance
+    /// record plus its index, roughly nine times what it occupies in
+    /// the heap, which is why a CPU-currency measurement made them look
+    /// negligible.
+    /// All or nothing per point set, and only ATTACHED sets are ever
+    /// gated: one floating vertex -- one no edge touches, and every
+    /// point of a point cloud -- and the whole set ranks with the
+    /// faces, because nothing else would show it. Objects are in
+    /// practice all floating or none, so a per-vertex subset would buy
+    /// nothing and cost an index permutation.
     /// It never applies in the Points display mode, where the vertices
     /// are what the mode exists to show.
     /// Picking, pre-selection and selection highlighting are unaffected:
@@ -911,18 +914,22 @@ public:
     //@{
     /// Accessor for parameter PressureDropEdges
     ///
-    /// Stop drawing the edges that bound faces while the GPU memory
-    /// budget stands exceeded (docs/SceneStreaming.md #13b), and draw
-    /// them again as soon as it does not. Edge geometry is the GPU's
-    /// most expensive geometry per unit of screen information: a segment
-    /// is 8 bytes of index in the heap and those 8 bytes plus a 64-byte
-    /// quad-expansion instance record on the GPU.
-    /// All or nothing per edge set: it is skipped only when EVERY one
-    /// of its edges bounds a face, because those faces still draw and
-    /// their silhouettes still read. One floating edge -- a wire, a
-    /// sketch, a datum line, any edge no face uses -- and the whole set
-    /// draws: it is the object, and dropping it would show nothing at
-    /// all.
+    /// Let the pressure stages of the element contract
+    /// (docs/SceneStreaming.md #13b) stop drawing the edges that bound
+    /// faces. Under the contract an attached line set draws only while
+    /// its object's face set is shown and memory allows; pressure
+    /// spends the classes points -> lines -> faces and takes them back
+    /// in reverse, and this is the switch on the lines stage. Off
+    /// exempts line sets from the pressure stages (a loading document
+    /// still drops them).
+    /// Edge geometry is the GPU's most expensive geometry per unit of
+    /// screen information: a segment is 8 bytes of index in the heap
+    /// and those 8 bytes plus a 64-byte quad-expansion instance record
+    /// on the GPU.
+    /// All or nothing per edge set, attached sets only: one floating
+    /// edge -- a wire, a sketch, a datum line, any edge no face uses --
+    /// and the whole set ranks with the faces, because it is the
+    /// object, and dropping it would show nothing at all.
     /// It never applies in the Wireframe display mode, where the edges
     /// are what the mode exists to show.
     /// A display gate, not a residency change -- nothing is demoted and
@@ -934,6 +941,25 @@ public:
     static void removePressureDropEdges();
     static void setPressureDropEdges(const bool &v);
     static const char *docPressureDropEdges();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ElementGateStagger
+    ///
+    /// How many frames the element contract's pressure latch waits
+    /// between stages (docs/SceneStreaming.md #13b), both escalating
+    /// (points dropped, then lines if the budget is still exceeded) and
+    /// releasing (lines back, then points, once the ladder has given
+    /// back all raised error). The wait is what lets the buffer
+    /// collector's census answer whether the cheaper stage was enough
+    /// before the next one is spent, and what keeps the release from
+    /// re-opening into the memory the collector just freed.
+    static const long & getElementGateStagger();
+    static const long & defaultElementGateStagger();
+    static void removeElementGateStagger();
+    static void setElementGateStagger(const long &v);
+    static const char *docElementGateStagger();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -964,6 +990,11 @@ public:
     /// line or a point cloud draws throughout, because nothing else on
     /// screen would show it, and neither class is dropped in the mode
     /// that exists to show it.
+    /// Independent of this gate, the contract's dependency rule already
+    /// holds back an attached point or line set whose companion the
+    /// publish's capture budget deferred: an adopted vertex cache never
+    /// draws frames ahead of the face set it decorates, load gate or
+    /// not.
     /// Costs one frame to leave, like the pressure gate, so what it
     /// holds back comes straight back when the load lets go.
     /// Applies only where coarse-first is on (CoarseTessellation 0 or

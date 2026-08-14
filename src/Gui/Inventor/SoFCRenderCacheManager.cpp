@@ -2306,6 +2306,20 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
       }
       for (auto & opencache : self->stack)
         opencache->setIncomplete();
+      // The caches up to the object's selection root additionally
+      // record that the deferred shape is one of THEIR OWN: entries
+      // merged through a so-marked cache carry the mark out to the
+      // display (VertexCacheEntry::incomplete), so an adopted point or
+      // line set never draws ahead of a face set the budget held back
+      // (#13b). Up to the selection root and no further, because the
+      // root is where the object's sibling drawables -- possibly
+      // captured under nested caches of their own -- all pass through,
+      // and anything above it belongs to other objects.
+      for (auto it = self->stack.rbegin(); it != self->stack.rend(); ++it) {
+        (*it)->setIncompleteHere();
+        if ((*it)->isSelectionRoot())
+          break;
+      }
       ++self->deferredcount;
       return SoCallbackAction::PRUNE;
     }

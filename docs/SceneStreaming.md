@@ -2466,6 +2466,48 @@ segment, 9x per point -- so they are the first thing to give up when
 the budget cannot be met, and the last thing a triangle-count estimate
 would have flagged.
 
+**THE CONTRACT (2026-08-15 restatement -- supersedes the witness rule
+below).** Five rules, strictly followed:
+
+1. **Floating is a topological fact per element, all-or-nothing per
+   drawable.** A vertex floats if it attaches no edge; an edge floats
+   if it attaches no face. A set is attached-only iff NOTHING in it
+   floats (`attachedOnly`, computed by PartGui from OCCT ancestor
+   maps).
+2. **An attached point set draws only while its object's line set is
+   shown and there is memory.**
+3. **An attached line set draws only while its object's face set is
+   shown and there is memory.**
+4. **A floating point or line set ranks with the faces.** It is the
+   object; the element gates never touch it.
+5. **Under pressure the classes are spent points -> lines -> faces and
+   taken back faces -> lines -> points** (a staged latch,
+   `Render_ElementGateStagger` frames between stages; faces move on
+   the plan's cadence, and lines/points return only after the ladder
+   has given back all raised error).
+
+On-top and highlight draws stay outside the contract, as before.
+
+"Shown" is decided inside the frame, dependency-ordered: faces first,
+lines against the face verdict, points against the line verdict. An
+object with no companion draw at all splits on
+`DrawCall::objectIncomplete` (a per-object mark the capture-budget
+defer plants on the innermost cache up to the object's selection root,
+carried out on every sibling entry): a DEFERRED companion is late and
+the dependent set waits for it; an ABSENT one is a display mode
+showing its own subject -- Points and Wireframe keep their exemption,
+because a mode that exists to show these elements cannot be allowed to
+show nothing.
+
+This replaces the old direction of the witness rule ("suppress only if
+the companion is drawn"), which during a publish storm drew adopted
+point caches frames ahead of their budget-deferred face sets -- the
+dots-first load. Under the contract the dependency runs the other way:
+no witness, no draw, unless the object is complete and the absence is
+the mode's choice. `Render_ShapeVertices` now defaults ON and means
+"attached points participate per the contract"; OFF keeps them dark
+outright (the pre-contract default look).
+
 1. **Vertices attached to an edge need not draw at all**
    (`Render_ShapeVertices`, default off). Such a point lands exactly
    on the end of an edge that is already drawn: a 32-byte sprite

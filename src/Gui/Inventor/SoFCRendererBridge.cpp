@@ -1154,6 +1154,7 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             draw.material = rmat;
             draw.mesh = mesh;
             draw.objectKey = ventry.key ? ventry.key->hash() : 0;
+            draw.objectIncomplete = ventry.incomplete;
             // A key already in the map is already right, so the lookup is
             // the whole cost of a draw whose object has been seen before,
             // and the two string copies happen once per object rather
@@ -2145,6 +2146,12 @@ bool
 RendererBridge::translatePressureDropEdges(App::PropertyContainer *)
 {
     return RenderParams::getPressureDropEdges();
+}
+
+int
+RendererBridge::translateElementGateStagger(App::PropertyContainer *)
+{
+    return int(RenderParams::getElementGateStagger());
 }
 
 bool

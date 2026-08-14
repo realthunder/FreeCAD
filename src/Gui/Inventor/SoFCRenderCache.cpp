@@ -254,6 +254,9 @@ public:
   // Set when a shape below kept a stale vertex cache under the capture
   // budget; see SoFCRenderCache::isIncomplete().
   bool incomplete = false;
+  // Set when that shape is one of THIS cache's own drawables; see
+  // SoFCRenderCache::isIncompleteHere().
+  bool incompletehere = false;
 
   static FC_COIN_THREAD_LOCAL SoFCSelectionRoot::Stack RenderCacheStack;
 };
@@ -984,6 +987,24 @@ void
 SoFCRenderCache::setIncomplete()
 {
   PRIVATE(this)->incomplete = true;
+}
+
+bool
+SoFCRenderCache::isIncompleteHere() const
+{
+  return PRIVATE(this)->incompletehere;
+}
+
+void
+SoFCRenderCache::setIncompleteHere()
+{
+  PRIVATE(this)->incompletehere = true;
+}
+
+bool
+SoFCRenderCache::isSelectionRoot() const
+{
+  return PRIVATE(this)->selnode != nullptr;
 }
 
 SbBool
@@ -1897,6 +1918,12 @@ SoFCRenderCacheP::mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
       }
 
       ventries->emplace_back(vcache, childentry, key);
+      // Entries passing through a cache the defer marked belong to the
+      // deferring object (the mark stops at its selection root), so
+      // they pick the mark up here even when they were captured under a
+      // sibling nested cache the defer never opened.
+      if (this->incompletehere)
+        ventries->back().incomplete = true;
       ++slicecount;
       if (!identity && !childentry.resetmatrix) {
         if (!childentry.identity)
@@ -2132,6 +2159,11 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
                                          entry.identity,
                                          entry.resetmatrix,
                                          selfkey);
+        // The defer under the capture budget marked this cache: every
+        // sibling drawable of the deferred shape carries the mark out,
+        // so the display can tell an object whose companion drawable
+        // has not arrived from one whose mode omits it (#13b).
+        vcachemap[material].back().incomplete = PRIVATE(this)->incompletehere;
         PRIVATE(this)->facecount += vcache->getNumFaceParts();
       }
       if (entry.vcache->getNumLineIndices()) {
@@ -2149,6 +2181,11 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
                                          entry.identity,
                                          entry.resetmatrix,
                                          selfkey);
+        // The defer under the capture budget marked this cache: every
+        // sibling drawable of the deferred shape carries the mark out,
+        // so the display can tell an object whose companion drawable
+        // has not arrived from one whose mode omits it (#13b).
+        vcachemap[material].back().incomplete = PRIVATE(this)->incompletehere;
       }
       if (entry.vcache->getNumPointIndices()) {
         Material material = entry.material;
@@ -2165,6 +2202,11 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
                                          entry.identity,
                                          entry.resetmatrix,
                                          selfkey);
+        // The defer under the capture budget marked this cache: every
+        // sibling drawable of the deferred shape carries the mark out,
+        // so the display can tell an object whose companion drawable
+        // has not arrived from one whose mode omits it (#13b).
+        vcachemap[material].back().incomplete = PRIVATE(this)->incompletehere;
       }
       continue;
     }
@@ -2229,6 +2271,13 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
           assert(newentry.mergecount>0);
           newentry.key = std::allocate_shared<CacheKey>(SoFCAllocator<CacheKey>());
           newentry.key->forcePush(0x80000000 | newentry.cache->getCacheId());
+          // A merged entry stands for every member it covers, so it is
+          // incomplete if any of them was -- losing the mark here would
+          // let a draw-call merge unhide a companion-less drawable.
+          newentry.incomplete = false;
+          for (int j = idx; j < idx + newentry.mergecount
+                            && j < (int)v.second.size(); ++j)
+            newentry.incomplete |= v.second[j].incomplete;
           v.second.insert(v.second.begin()+idx, newentry);
           i = idx + newentry.mergecount;
         }

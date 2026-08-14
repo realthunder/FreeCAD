@@ -1396,6 +1396,15 @@ struct DrawCall {
     /// is never serialized: nothing on the wire ever claims to be the
     /// mesh it stands in for.
     bool standIn = false;
+    /// A companion drawable of this draw's object was deferred by the
+    /// publish's capture budget, so the object is on screen with part
+    /// of itself missing or stale. The element gates read it to tell
+    /// "the face/line set has not arrived yet" apart from "the display
+    /// mode legitimately omits it" (docs/SceneStreaming.md #13b): an
+    /// attached point or line set whose companion is merely late must
+    /// wait for it, not claim the mode exemption. Publish-transient
+    /// and desktop-only for now -- never serialized.
+    bool objectIncomplete = false;
 };
 
 typedef std::vector<DrawCall> DrawCallList;
@@ -1739,21 +1748,27 @@ public:
     /// direction acts. 0 restores the bare line and with it the
     /// boundary dither.
     virtual void setLevelBudgetDeadband(float fraction) { (void)fraction; }
-    /// The display gates of the memory response
-    /// (docs/SceneStreaming.md #13b), pushed in like every other
-    /// parameter -- this library knows nothing of RenderParams.
-    /// \a shapeVertices false suppresses point drawables whose every
-    /// vertex sits on an edge that is itself drawn; \a pressureEdges
-    /// true suppresses line drawables whose every edge bounds a drawn
-    /// face, and only while the GPU budget stands exceeded;
-    /// \a loadingDrop true suppresses both classes outright, and is
-    /// what a host asserts while a document is still arriving. Whether
-    /// a document is loading is a question only the host can answer, so
-    /// it is pushed as a state and not derived here. None of the three
-    /// ever touches an on-top or highlight draw.
+    /// The element contract's inputs (docs/SceneStreaming.md #13b),
+    /// pushed in like every other parameter -- this library knows
+    /// nothing of RenderParams. The contract itself lives in the
+    /// backend: an attached point set draws only while its object's
+    /// line set is shown and memory allows, an attached line set only
+    /// while its face set is shown and memory allows, floating sets
+    /// rank with the faces, and pressure spends points -> lines ->
+    /// faces, taking them back in reverse.
+    /// \a shapeVertices false suppresses attached point sets outright
+    /// instead of letting the contract decide; \a pressureEdges false
+    /// exempts attached line sets from the pressure stages;
+    /// \a loadingDrop true forces both drops while a document is still
+    /// arriving -- whether one is loading is a question only the host
+    /// can answer, so it is pushed as a state and not derived here.
+    /// \a staggerFrames is the frame wait between pressure stages,
+    /// escalating and releasing both. None of these ever touches an
+    /// on-top or highlight draw.
     virtual void setElementGates(bool shapeVertices, bool pressureEdges,
-                                 bool loadingDrop)
-    { (void)shapeVertices; (void)pressureEdges; (void)loadingDrop; }
+                                 bool loadingDrop, int staggerFrames)
+    { (void)shapeVertices; (void)pressureEdges; (void)loadingDrop;
+      (void)staggerFrames; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,

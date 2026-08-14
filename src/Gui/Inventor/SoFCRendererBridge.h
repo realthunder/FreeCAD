@@ -185,6 +185,9 @@ GuiExport int translateDescentOrderBatch(App::PropertyContainer * view);
 GuiExport float translateLevelBudgetDeadband(App::PropertyContainer * view);
 GuiExport bool translateShapeVertices(App::PropertyContainer * view);
 GuiExport bool translatePressureDropEdges(App::PropertyContainer * view);
+/// The frame wait between the element contract's pressure stages,
+/// escalating and releasing both (docs/SceneStreaming.md #13b).
+GuiExport int translateElementGateStagger(App::PropertyContainer * view);
 /// Whether the element gates should suppress both classes outright
 /// right now: Render_LoadDropElements is on, coarse-first is on, and
 /// some document is still arriving (docs/SceneStreaming.md #13b).

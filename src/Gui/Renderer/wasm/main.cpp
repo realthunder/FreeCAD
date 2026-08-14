@@ -2758,7 +2758,8 @@ static void applySnapshot(bool fit)
     // is the desktop's, where geometry arrives into a live view -- this
     // tier's scene arrives as a snapshot that is applied whole.
     s_renderer->setElementGates(s_shapeVertices, /*pressureEdges*/ true,
-                                /*loadingDrop*/ false);
+                                /*loadingDrop*/ false,
+                                /*staggerFrames*/ 15);
     s_renderer->setEffectResolution(s_snap.effectResolution);
     s_renderer->setSSAOResolution(s_snap.ssaoResolution);
     if (s_snap.hatch && !s_snap.hatch->pixels.empty())

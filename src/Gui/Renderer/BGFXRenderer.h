@@ -116,7 +116,7 @@ public:
     /// worth more on a phone than on the desktop, so the standalone
     /// viewer drives it from its URL parameters.
     virtual void setElementGates(bool shapeVertices, bool pressureEdges,
-                                 bool loadingDrop) override;
+                                 bool loadingDrop, int staggerFrames) override;
 
 #ifndef FC_RENDERER_STANDALONE
     virtual void setLevelTolerance(float px) override;

@@ -85,6 +85,7 @@ public:
     double SimplifyMinReduction;
     bool ShapeVertices;
     bool PressureDropEdges;
+    long ElementGateStagger;
     bool LoadDropElements;
     double EffectResolution;
     bool Occlusion;
@@ -239,10 +240,12 @@ public:
         funcs["SimplifyMergeParts"] = &RenderParamsP::updateSimplifyMergeParts;
         SimplifyMinReduction = this->handle->GetFloat("SimplifyMinReduction", 20.0);
         funcs["SimplifyMinReduction"] = &RenderParamsP::updateSimplifyMinReduction;
-        ShapeVertices = this->handle->GetBool("ShapeVertices", false);
+        ShapeVertices = this->handle->GetBool("ShapeVertices", true);
         funcs["ShapeVertices"] = &RenderParamsP::updateShapeVertices;
         PressureDropEdges = this->handle->GetBool("PressureDropEdges", true);
         funcs["PressureDropEdges"] = &RenderParamsP::updatePressureDropEdges;
+        ElementGateStagger = this->handle->GetInt("ElementGateStagger", 15);
+        funcs["ElementGateStagger"] = &RenderParamsP::updateElementGateStagger;
         LoadDropElements = this->handle->GetBool("LoadDropElements", true);
         funcs["LoadDropElements"] = &RenderParamsP::updateLoadDropElements;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
@@ -561,11 +564,15 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShapeVertices(RenderParamsP *self) {
-        self->ShapeVertices = self->handle->GetBool("ShapeVertices", false);
+        self->ShapeVertices = self->handle->GetBool("ShapeVertices", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePressureDropEdges(RenderParamsP *self) {
         self->PressureDropEdges = self->handle->GetBool("PressureDropEdges", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateElementGateStagger(RenderParamsP *self) {
+        self->ElementGateStagger = self->handle->GetInt("ElementGateStagger", 15);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLoadDropElements(RenderParamsP *self) {
@@ -2250,19 +2257,22 @@ void RenderParams::removeSimplifyMinReduction() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docShapeVertices() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Draw the vertex points that sit on the ends of a shape's\n"
-"edges (docs/SceneStreaming.md #13b). Off by default: such a point\n"
-"lands exactly on an edge that is already drawn, so it adds\n"
-"nothing to look at -- and it is not cheap. A point costs the GPU\n"
-"a 32-byte sprite instance record plus its index, roughly nine\n"
-"times what the same point occupies in the heap, which is why a\n"
-"CPU-currency measurement made them look negligible.\n"
-"All or nothing per point set: it is skipped only when EVERY one\n"
-"of its vertices is an edge endpoint. One floating vertex -- one\n"
-"no edge touches, and every point of a point cloud -- and the\n"
-"whole set draws, because nothing else would show it. Objects are\n"
-"in practice all floating or none, so a per-vertex subset would\n"
-"buy nothing and cost an index permutation.\n"
+"Let the vertex points that sit on the ends of a shape's edges\n"
+"draw under the element contract (docs/SceneStreaming.md #13b):\n"
+"an attached point set draws only while its object's line set is\n"
+"shown and memory allows, is the FIRST class dropped under\n"
+"pressure and the LAST taken back. Off suppresses attached point\n"
+"sets outright, memory or not.\n"
+"A point is not cheap: it costs the GPU a 32-byte sprite instance\n"
+"record plus its index, roughly nine times what it occupies in\n"
+"the heap, which is why a CPU-currency measurement made them look\n"
+"negligible.\n"
+"All or nothing per point set, and only ATTACHED sets are ever\n"
+"gated: one floating vertex -- one no edge touches, and every\n"
+"point of a point cloud -- and the whole set ranks with the\n"
+"faces, because nothing else would show it. Objects are in\n"
+"practice all floating or none, so a per-vertex subset would buy\n"
+"nothing and cost an index permutation.\n"
 "It never applies in the Points display mode, where the vertices\n"
 "are what the mode exists to show.\n"
 "Picking, pre-selection and selection highlighting are unaffected:\n"
@@ -2278,7 +2288,7 @@ const bool & RenderParams::getShapeVertices() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const bool & RenderParams::defaultShapeVertices() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 
@@ -2296,18 +2306,22 @@ void RenderParams::removeShapeVertices() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docPressureDropEdges() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Stop drawing the edges that bound faces while the GPU memory\n"
-"budget stands exceeded (docs/SceneStreaming.md #13b), and draw\n"
-"them again as soon as it does not. Edge geometry is the GPU's\n"
-"most expensive geometry per unit of screen information: a segment\n"
-"is 8 bytes of index in the heap and those 8 bytes plus a 64-byte\n"
-"quad-expansion instance record on the GPU.\n"
-"All or nothing per edge set: it is skipped only when EVERY one\n"
-"of its edges bounds a face, because those faces still draw and\n"
-"their silhouettes still read. One floating edge -- a wire, a\n"
-"sketch, a datum line, any edge no face uses -- and the whole set\n"
-"draws: it is the object, and dropping it would show nothing at\n"
-"all.\n"
+"Let the pressure stages of the element contract\n"
+"(docs/SceneStreaming.md #13b) stop drawing the edges that bound\n"
+"faces. Under the contract an attached line set draws only while\n"
+"its object's face set is shown and memory allows; pressure\n"
+"spends the classes points -> lines -> faces and takes them back\n"
+"in reverse, and this is the switch on the lines stage. Off\n"
+"exempts line sets from the pressure stages (a loading document\n"
+"still drops them).\n"
+"Edge geometry is the GPU's most expensive geometry per unit of\n"
+"screen information: a segment is 8 bytes of index in the heap\n"
+"and those 8 bytes plus a 64-byte quad-expansion instance record\n"
+"on the GPU.\n"
+"All or nothing per edge set, attached sets only: one floating\n"
+"edge -- a wire, a sketch, a datum line, any edge no face uses --\n"
+"and the whole set ranks with the faces, because it is the\n"
+"object, and dropping it would show nothing at all.\n"
 "It never applies in the Wireframe display mode, where the edges\n"
 "are what the mode exists to show.\n"
 "A display gate, not a residency change -- nothing is demoted and\n"
@@ -2339,6 +2353,41 @@ void RenderParams::removePressureDropEdges() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docElementGateStagger() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many frames the element contract's pressure latch waits\n"
+"between stages (docs/SceneStreaming.md #13b), both escalating\n"
+"(points dropped, then lines if the budget is still exceeded) and\n"
+"releasing (lines back, then points, once the ladder has given\n"
+"back all raised error). The wait is what lets the buffer\n"
+"collector's census answer whether the cheaper stage was enough\n"
+"before the next one is spent, and what keeps the release from\n"
+"re-opening into the memory the collector just freed.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getElementGateStagger() {
+    return instance()->ElementGateStagger;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultElementGateStagger() {
+    const static long def = 15;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setElementGateStagger(const long &v) {
+    instance()->handle->SetInt("ElementGateStagger",v);
+    instance()->ElementGateStagger = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeElementGateStagger() {
+    instance()->handle->RemoveInt("ElementGateStagger");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docLoadDropElements() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Stop drawing edges AND vertices for as long as a document is\n"
@@ -2365,6 +2414,11 @@ const char *RenderParams::docLoadDropElements() {
 "line or a point cloud draws throughout, because nothing else on\n"
 "screen would show it, and neither class is dropped in the mode\n"
 "that exists to show it.\n"
+"Independent of this gate, the contract's dependency rule already\n"
+"holds back an attached point or line set whose companion the\n"
+"publish's capture budget deferred: an adopted vertex cache never\n"
+"draws frames ahead of the face set it decorates, load gate or\n"
+"not.\n"
 "Costs one frame to leave, like the pressure gate, so what it\n"
 "holds back comes straight back when the load lets go.\n"
 "Applies only where coarse-first is on (CoarseTessellation 0 or\n"
