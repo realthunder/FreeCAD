@@ -41,7 +41,10 @@ Env:   FRAMES_DOC   save path (default
        FRAMES_PBR   "0" = Phong headlight instead of PBR + IBL, which is
                     what makes a FLAT face show its relief (part C)
        FRAMES_METAL / FRAMES_ROUGH / FRAMES_ENV
-                    material and environment staging
+                    material and environment staging (env intensity
+                    defaults to 1; it was 3 to compensate for the PBR
+                    branch having no ambient, and that crank flattened
+                    the relief)
 """
 import os, time, traceback
 import FreeCAD, FreeCADGui, Part
@@ -73,12 +76,17 @@ DUMP = os.environ.get("FRAMES_DUMP", "") == "1"
 METAL = float(os.environ.get("FRAMES_METAL", "1.0"))
 ROUGH = float(os.environ.get("FRAMES_ROUGH", "0.34"))
 # A metal has no diffuse term, so ALL of its brightness is reflected
-# environment -- and this renderer's specular IBL carries visibly less
-# energy than its diffuse irradiance does, so a metallic 1 part reads
-# far darker than a dielectric of the same albedo under the same sky.
-# Until that is chased down, the honest staging is to turn the light up
-# rather than to turn the metal off.
-ENVI = float(os.environ.get("FRAMES_ENV", "3.0"))
+# environment. This used to be 3: a metal read far darker than a
+# dielectric of the same albedo under the same sky, and turning the
+# light up was the honest staging while that was unexplained. It was
+# the PBR branch having no ambient term at all -- the scene ambient was
+# read only by Blinn-Phong -- so the one surface with nothing but the
+# environment to light it got nothing else. With that closed
+# (u_envAmbient, docs/RenderEngine.md 4) the crank is not needed, and
+# it was never free: it scales the diffuse irradiance too, which washes
+# out the very relief this demo is about. At 1 the knurl and the feed
+# marks read better than they ever did at 3.
+ENVI = float(os.environ.get("FRAMES_ENV", "1.0"))
 # WARNING: a FLAT face cannot show its relief under a smooth sky. Both
 # the diffuse and the specular response of a plane vary only with the
 # normal, and a small perturbation of it still lands on much the same
