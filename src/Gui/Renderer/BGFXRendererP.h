@@ -2651,6 +2651,7 @@ public:
         fn(s_texBump, LifeProgram);
         fn(u_bumpParams, LifeProgram);
         fn(u_finishParams, LifeProgram);
+        fn(u_frameParams, LifeProgram);
         fn(s_texEmissive, LifeProgram);
         fn(s_texOcclusion, LifeProgram);
         fn(s_texMetallicRoughness, LifeProgram);
@@ -3665,6 +3666,15 @@ public:
     /// draw uploads its whole palette, everything else uploads entry 0
     /// alone (which is all an unbound or zero index attribute reads).
     bgfx::UniformHandle u_finishParams = BGFX_INVALID_HANDLE;
+    /// The projection frames of the finish above (Material::frame and
+    /// Material::framepalette), THREE vec4 per entry: (origin, kind),
+    /// (axis, radius), (xdir, spare). Entry 0 is the draw's own frame,
+    /// and a draw whose faces differ fills the rest from its palette --
+    /// the same arrangement as u_finishParams, and an ARRAY for the
+    /// same reason. Kind 0 (unframed) is the triplanar projection, so
+    /// an unbound index attribute reads the behaviour that predates
+    /// frames.
+    bgfx::UniformHandle u_frameParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texEmissive = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texOcclusion = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texMetallicRoughness = BGFX_INVALID_HANDLE;

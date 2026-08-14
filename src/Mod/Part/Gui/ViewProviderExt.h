@@ -55,6 +55,8 @@ class SoTextureCoordinate2;
 class SoMaterialBinding;
 class SoIndexedLineSet;
 
+namespace Gui { class SoFCRenderMaterial; }
+
 namespace PartGui {
 
 class SoBrepFaceSet;
@@ -404,7 +406,17 @@ protected:
                           SoBrepPointSet *nodeset,
                           int &numTriangles, int &numNodes, int &numPoints,
                           int &numNorms, int &numFaces, int &numEdges,
-                          int &numLines);
+                          int &numLines,
+                          /** Where the per-face projection frames of a
+                           * surface finish go (faceProjectionFrame).
+                           * Optional because this is a static builder
+                           * several paths share, and only the ones that
+                           * build a PARTICULAR object's nodes have a
+                           * render material to write: the shared
+                           * instanced geometry and the bounding-box
+                           * stand-in do not, and their faces keep the
+                           * renderer's triplanar projection. */
+                          Gui::SoFCRenderMaterial *rendermat = nullptr);
 
     bool VisualTouched;
     bool NormalsFromUV;

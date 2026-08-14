@@ -15,12 +15,15 @@
  *   the way a machining operation is: a moved, scaled or instanced copy
  *   carries the same finish rather than one that swims as it is placed.
  *   v_opos/v_onrm carry the object-space position and normal.
- * - The height field is projected TRIPLANARLY (the object-space normal
- *   weights the three axis-aligned projections), which is the rung of
- *   the ladder this is: a knurl on a cylinder comes out plausible from
- *   any view but not manufacturing-correct, because the pattern does not
- *   yet know the cylinder's axis. Explicit per-face frames from the OCCT
- *   surface type are the rung above (docs/ShapeAppearanceDesign.md 9.7).
+ * - The height field is projected in the face's OWN FRAME when the
+ *   geometry could state one -- the plane the tool swept, or the axis
+ *   the part was turned about, read off the OCCT surface at tessellation
+ *   time and carried per face in u_frameParams. That is what makes a
+ *   straight knurl run along a cylinder's axis and turning marks centre
+ *   on it. A face with no analytic surface falls back to a TRIPLANAR
+ *   projection (the object-space normal weights three axis-aligned
+ *   guesses), which is plausible from any view but does not know the
+ *   geometry -- and is what every face got before frames existed.
  * - The normal is perturbed by Mikkelsen's surface gradient (2010,
  *   "Bump Mapping Unparametrized Surfaces on the GPU"): the height
  *   field's screen-space derivatives, taken from its ANALYTIC
@@ -61,6 +64,22 @@ vec4 fcFinishEntry(float index)
 	int i = int(clamp(index, 0.0, float(FC_FINISH_PALETTE - 1)));
 	return u_finishParams[i];
 }
+
+// The draw's PROJECTION FRAME palette: what the pattern above is laid
+// out ON. Three vec4 an entry -- (origin, kind), (axis, radius),
+// (xdir, spare) -- and the material stream's fourth byte (v_findex.y)
+// names a face's own. Must match Render::MaxFramePalette.
+//
+// kind 0 = unframed, and the frame the shader cannot use is the frame
+// it had before this existed: the triplanar projection below. That is
+// what an unbound index attribute, an overflowed palette and a face
+// whose surface is neither planar nor a surface of revolution all read.
+#define FC_FRAME_PALETTE 16
+uniform vec4 u_frameParams[FC_FRAME_PALETTE * 3];
+
+#define FC_FRAME_UNFRAMED 0.0
+#define FC_FRAME_PLANAR   1.0
+#define FC_FRAME_RADIAL   2.0
 
 #define FC_FINISH_KNURL           1.0
 #define FC_FINISH_KNURL_STRAIGHT  2.0
@@ -195,14 +214,125 @@ vec2 fcFinishPattern(vec2 p, float pattern, float pitch, float depth,
 	return vec2(g.x * ca - g.y * sa, g.x * sa + g.y * ca);
 }
 
+/// Rotate the shading normal by an object-space height gradient
+/// (Mikkelsen's surface gradient).
+///
+/// dh/dscreen comes from the ANALYTIC gradient through the chain rule,
+/// so the pattern is never sampled twice and never differenced -- the
+/// 2x2 quad granularity that would otherwise blur every crest is simply
+/// not in this path. dox/doy are dFdx/dFdy of opos, measured once by the
+/// caller because the filter needs them too.
+void fcFinishPerturb(vec3 g, vec3 opos, vec3 vpos, vec3 dox, vec3 doy,
+                     inout vec3 n)
+{
+	float dhdx = dot(g, dox);
+	float dhdy = dot(g, doy);
+	vec3 dpx = dFdx(vpos);
+	vec3 dpy = dFdy(vpos);
+	vec3 r1 = cross(dpy, n);
+	vec3 r2 = cross(n, dpx);
+	float det = dot(dpx, r1);
+	if (abs(det) < 1.0e-20)
+		return;
+	vec3 sg = sign(det) * (dhdx * r1 + dhdy * r2);
+	n = normalize(abs(det) * n - sg);
+}
+
+/// The object-space gradient of the height field over the face's own
+/// projection frame: the rung above the triplanar projection below.
+///
+/// A frame states what the machine knew -- the plane the tool swept, or
+/// the axis the part turned about -- so the pattern is laid ONCE, in one
+/// honest 2D coordinate, instead of being blended out of three
+/// axis-aligned guesses. The gradient comes back to object space through
+/// the transpose of that coordinate's own Jacobian, which is what keeps
+/// Mikkelsen's chain rule exact.
+///
+/// The frame's first coordinate is the surface's X direction and the
+/// second follows the right-hand rule about the axis, so a lay angle of
+/// zero means the same thing on both kinds: the pattern runs ALONG the
+/// axis of a turned face and along the plane's own X on a flat one.
+vec3 fcFinishFramed(vec3 opos, vec4 f0, vec4 f1, vec4 f2, float pattern,
+                    float pitch, float depth, float ca, float sa)
+{
+	vec3 origin = f0.xyz;
+	vec3 axis = normalize(f1.xyz);
+	vec3 xdir = normalize(f2.xyz - axis * dot(axis, f2.xyz));
+	vec3 ydir = cross(axis, xdir);
+	vec3 d = opos - origin;
+
+	if (f0.w < FC_FRAME_RADIAL - 0.5)
+	{
+		// Planar: the plane's own two axes, and the frame origin sets
+		// where a concentric pattern centres.
+		vec2 p = vec2(dot(d, xdir), dot(d, ydir));
+		vec2 g = fcFinishPattern(p, pattern, pitch, depth, ca, sa);
+		return g.x * xdir + g.y * ydir;
+	}
+
+	// Radial: the coordinate is (arc length about the axis, distance
+	// along it), which is what makes a straight knurl run along the axis
+	// and a turned lay run round it. Both are millimetres, so a pitch
+	// still means a pitch.
+	float z = dot(d, axis);
+	vec3 rvec = d - z * axis;
+	float r = length(rvec);
+	if (r < 1.0e-6)
+		return vec3(0.0, 0.0, 0.0);   // the axis itself has no direction
+	vec3 that = cross(axis, rvec / r);
+	float theta = atan2(dot(rvec, ydir), dot(rvec, xdir));
+
+	// KEY: the seam closes by construction. atan2 cuts at +-pi, where the
+	// arc length would jump by the whole circumference -- so the period
+	// is snapped to fit a WHOLE number of pattern cycles round the
+	// reference radius, which makes that jump an exact multiple of the
+	// pattern's own period and the pattern continuous across it. Real
+	// knurling tooling is chosen for the same reason and by the same
+	// arithmetic.
+	//
+	// The period is not always the pitch: a diamond knurl's two trains
+	// run at 45 degrees, so its period ALONG the arc is the pitch times
+	// root two, and snapping to the pitch would leave it mismatched by
+	// most of a diamond. This closes exactly at lay angle zero (and for
+	// the straight knurl at ninety); a lay laid over at some other angle
+	// meets itself the way a rolled one does.
+	float rref = f1.w > 1.0e-6 ? f1.w : r;
+	float period = pattern < 1.5 ? pitch * 1.41421356 : pitch;
+	float cycles = max(1.0, floor(FC_FINISH_TWOPI * rref / period + 0.5));
+	float k = cycles * period / FC_FINISH_TWOPI;   // arc per radian
+
+	// Turning is the one pattern whose meaning is fixed to the axis
+	// rather than to the lay: a lathe leaves feed marks running ROUND
+	// the work, whatever else is stated. It is a groove train across the
+	// axial coordinate, which is the straight knurl with the lay turned
+	// a quarter turn -- so turn it, rather than teaching the pattern
+	// library a second spelling of the same relief.
+	float p2pattern = pattern;
+	float pca = ca;
+	float psa = sa;
+	if (pattern > FC_FINISH_TURNED - 0.5)
+	{
+		p2pattern = FC_FINISH_KNURL_STRAIGHT;
+		pca = -sa;
+		psa = ca;
+	}
+
+	vec2 p = vec2(theta * k, z);
+	vec2 g = fcFinishPattern(p, p2pattern, pitch, depth, pca, psa);
+	// d(arc)/d(opos) = k * d(theta)/d(opos) = k * that / r, and
+	// d(z)/d(opos) = axis.
+	return g.x * (k / r) * that + g.y * axis;
+}
+
 /// Perturb the shading normal (view space) by the finish, and hand the
 /// part of it this pixel cannot resolve to the roughness.
 ///
 /// opos/onrm are the object-space position and normal, vpos the view-
 /// space position, params the palette entry this fragment's face names
-/// (fcFinishEntry). Does nothing at all when no finish is stated.
+/// (fcFinishEntry) and frameIndex the projection frame it names beside
+/// it. Does nothing at all when no finish is stated.
 void fcApplyFinish(vec3 opos, vec3 onrm, vec3 vpos, vec4 params,
-                   inout vec3 n, inout float rough)
+                   float frameIndex, inout vec3 n, inout float rough)
 {
 	float pattern = params.x;
 	if (pattern < 0.5 || pattern > FC_FINISH_LAST + 0.5)
@@ -232,6 +362,23 @@ void fcApplyFinish(vec3 opos, vec3 onrm, vec3 vpos, vec4 params,
 	if (vis <= 0.0)
 		return;
 
+	float ca = cos(params.w);
+	float sa = sin(params.w);
+	float d = depth * vis;
+
+	// The face's own projection frame, if the geometry could state one.
+	// Everything below this branch is the fallback it replaces.
+	int fi = int(clamp(frameIndex, 0.0, float(FC_FRAME_PALETTE - 1))) * 3;
+	vec4 f0 = u_frameParams[fi];
+	if (f0.w > 0.5)
+	{
+		vec3 gf = fcFinishFramed(opos, f0, u_frameParams[fi + 1],
+		                         u_frameParams[fi + 2], pattern, pitch,
+		                         d, ca, sa);
+		fcFinishPerturb(gf, opos, vpos, dox, doy, n);
+		return;
+	}
+
 	// Triplanar projection weights off the object-space normal. The
 	// interpolated (shading) normal rather than the facet one the
 	// derivatives would give: a tessellated cylinder would otherwise
@@ -243,9 +390,6 @@ void fcApplyFinish(vec3 opos, vec3 onrm, vec3 vpos, vec4 params,
 	float wsum = w.x + w.y + w.z;
 	w = wsum > 1.0e-8 ? w / wsum : vec3(0.0, 0.0, 1.0);
 
-	float ca = cos(params.w);
-	float sa = sin(params.w);
-	float d = depth * vis;
 	// The object-space gradient of the height field. Each plane
 	// contributes its 2D slope along that plane's two axes; the
 	// component along its own axis is zero, which is the standard
@@ -270,21 +414,7 @@ void fcApplyFinish(vec3 opos, vec3 onrm, vec3 vpos, vec4 params,
 		g += w.z * vec3(gz.x, gz.y, 0.0);
 	}
 
-	// Mikkelsen's surface gradient. dh/dscreen comes from the analytic
-	// gradient through the chain rule, so the pattern is never sampled
-	// twice and never differenced -- the 2x2 quad granularity that
-	// would otherwise blur every crest is simply not in this path.
-	float dhdx = dot(g, dox);
-	float dhdy = dot(g, doy);
-	vec3 dpx = dFdx(vpos);
-	vec3 dpy = dFdy(vpos);
-	vec3 r1 = cross(dpy, n);
-	vec3 r2 = cross(n, dpx);
-	float det = dot(dpx, r1);
-	if (abs(det) < 1.0e-20)
-		return;
-	vec3 sg = sign(det) * (dhdx * r1 + dhdy * r2);
-	n = normalize(abs(det) * n - sg);
+	fcFinishPerturb(g, opos, vpos, dox, doy, n);
 }
 
 #endif // FC_FINISH_SH

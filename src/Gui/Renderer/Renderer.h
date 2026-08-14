@@ -93,9 +93,10 @@ struct MeshData {
     /// Per-vertex material stream of a per-face-material cache, 12 bytes
     /// per vertex: rgba8 emissive, then rgb8 specular with the
     /// shininess (0..1) quantized in the last byte, then the surface
-    /// finish palette index (Material::finishpalette) in one byte with
-    /// three reserved after it. Null for uniform objects (then the
-    /// Material scalars apply). Draws consume it only when their
+    /// finish palette index (Material::finishpalette) in one byte, the
+    /// projection frame palette index (Material::framepalette) in the
+    /// next and two reserved after them. Null for uniform objects (then
+    /// the Material scalars apply). Draws consume it only when their
     /// material sets perfacematerial.
     const uint8_t *materials = nullptr;
 
@@ -1022,6 +1023,91 @@ struct FinishPalette {
     }
 };
 
+/// How many distinct projection frames one draw's palette may hold. As
+/// with MaxFinishPalette this is a shader contract (the uniform array is
+/// declared this long); a face whose frame does not fit falls back to
+/// entry 0, the first face's frame -- the same rule the finish palette
+/// follows. Frames are canonicalized hard before they are counted (see
+/// faceProjectionFrame), so the coplanar faces of a bracket and the
+/// coaxial cylinders of a stepped shaft each cost ONE entry, and a part
+/// that overflows sixteen is a part with sixteen genuinely different
+/// machining setups.
+static constexpr int MaxFramePalette = 16;
+
+/// The frame a face's surface finish is laid out in
+///
+/// Without one, a finish is projected TRIPLANARLY off the object-space
+/// normal, which is plausible from any angle but does not know the
+/// geometry: a straight knurl on a cylinder comes out with
+/// circumferential grooves, and turning marks centre on the object
+/// origin rather than on the axis that was turned. A frame states what
+/// the machine knew -- the plane's own axes, or the axis a cylinder or
+/// cone was turned about -- so the pattern is laid the way the tool
+/// laid it.
+///
+/// Produced from the OCCT surface at tessellation time (the Part view
+/// provider), which is the only place the analytic surface is still in
+/// hand; a face whose surface is neither planar nor a surface of
+/// revolution states Unframed and keeps the triplanar projection.
+struct SurfaceFrame {
+    enum Kind : uint8_t {
+        Unframed = 0,   ///< triplanar, as before frames existed
+        Planar = 1,     ///< pattern laid in the plane's own axes
+        Radial = 2,     ///< about an axis: cylinder, cone, revolution
+    };
+
+    uint8_t kind = Unframed;
+    /// Object-space origin: a point of the plane, or a point ON the axis
+    /// (canonicalized to the one nearest the object origin, so coaxial
+    /// faces share a frame).
+    float origin[3] = {0.0f, 0.0f, 0.0f};
+    /// Plane normal, or the axis of revolution. Unit length.
+    float axis[3] = {0.0f, 0.0f, 1.0f};
+    /// Where the frame's first coordinate points: the surface's own X
+    /// direction, so a lay angle means what the sketch or the turning
+    /// setup meant by it. Unit length and perpendicular to axis.
+    float xdir[3] = {1.0f, 0.0f, 0.0f};
+    /// Radial frames only: the reference radius in millimetres, which
+    /// fixes how many pattern periods fit around the circumference (see
+    /// the seam argument in fc_finish.sh). 0 = derive it per fragment.
+    float radius = 0.0f;
+
+    bool operator==(const SurfaceFrame &o) const {
+        return kind == o.kind && radius == o.radius
+            && std::equal(origin, origin + 3, o.origin)
+            && std::equal(axis, axis + 3, o.axis)
+            && std::equal(xdir, xdir + 3, o.xdir);
+    }
+    bool operator!=(const SurfaceFrame &o) const { return !(*this == o); }
+    /// Field by field, for the render cache's material ordering. Not a
+    /// memcmp: the struct has padding after `kind` that nothing writes.
+    bool operator<(const SurfaceFrame &o) const {
+        if (kind != o.kind) return kind < o.kind;
+        for (int i = 0; i < 3; ++i) {
+            if (origin[i] != o.origin[i]) return origin[i] < o.origin[i];
+            if (axis[i] != o.axis[i]) return axis[i] < o.axis[i];
+            if (xdir[i] != o.xdir[i]) return xdir[i] < o.xdir[i];
+        }
+        return radius < o.radius;
+    }
+};
+
+/// The distinct projection frames of one draw, indexed by the material
+/// stream's third slot, second byte. Immutable once published, like
+/// FinishPalette,
+/// and shared by pointer for the same batching reason.
+struct FramePalette {
+    /// At most MaxFramePalette entries. Entry 0 is the first face's
+    /// frame, which is what a draw with no stream -- an unbound index
+    /// attribute, or a mesh whose stream collapsed because every face
+    /// is framed alike -- resolves to.
+    std::vector<SurfaceFrame> entries;
+
+    bool operator==(const FramePalette &o) const {
+        return entries == o.entries;
+    }
+};
+
 /// Flattened per-draw render state, translated from the Coin-side material
 /// (SoFCRenderCache::Material). Colors are packed 0xRRGGBBAA.
 struct Material {
@@ -1160,6 +1246,22 @@ struct Material {
     /// translate time and carries no palette. Shared and immutable, so
     /// pointer identity is a batch key (like usershader).
     std::shared_ptr<const FinishPalette> finishpalette;
+
+    /// The frame the finish above is laid out in (Unframed = triplanar).
+    /// The draw's own, which is also what the backend uploads as palette
+    /// entry 0 -- so a partial draw that resolved one face's frame here
+    /// needs no palette, exactly as it needs none for the finish.
+    SurfaceFrame frame;
+
+    /// Per-face form of that frame (null = the frame above is the whole
+    /// story), indexed by the second byte of the material stream's third
+    /// slot. Same rules
+    /// as finishpalette: whole triangle draws with perfacematerial only,
+    /// shared and immutable, pointer identity is a batch key. Unlike the
+    /// finish this comes from the GEOMETRY rather than the appearance,
+    /// so it is published only when a finish is stated somewhere -- a
+    /// shape nobody finished must not pay for a stream it cannot use.
+    std::shared_ptr<const FramePalette> framepalette;
 
     /// Water body flag of a triangle draw (SoFCRenderMaterial, typically
     /// fed from a ViewProvider Render_Water property): while the

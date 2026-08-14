@@ -65,10 +65,13 @@ SoFCFinishElement::matches(const SoElement * element) const
 {
   const SoFCFinishElement * other =
     static_cast<const SoFCFinishElement *>(element);
-  // The node id identifies the values; the count distinguishes a per-face
-  // write from the same node's uniform one.
+  // The node id identifies the values; the counts distinguish a per-face
+  // write from the same node's uniform one, and a framed write from an
+  // unframed one -- the frames come and go with the finish that lays
+  // them out, and the cached stream has to be rebuilt when they do.
   return other->indices.nodeid == this->indices.nodeid
-      && other->indices.numindex == this->indices.numindex;
+      && other->indices.numindex == this->indices.numindex
+      && other->indices.numframeindex == this->indices.numframeindex;
 }
 
 SoElement *
@@ -83,27 +86,31 @@ SoFCFinishElement::copyMatchInfo(void) const
 
 void
 SoFCFinishElement::set(SoState * state, const SoNode * node,
-                       const int32_t * index, int numindex)
+                       const int32_t * index, int numindex,
+                       const int32_t * frameindex, int numframeindex)
 {
   SoFCFinishElement * elem = static_cast<SoFCFinishElement *>(
           SoElement::getElement(state, getClassStackIndex()));
   if (!elem)
     return;
-  if (numindex <= 0 || !index) {
+  if ((numindex <= 0 || !index) && (numframeindex <= 0 || !frameindex)) {
     // A node that states no per-face finish hides whatever an outer one
     // stated, the way a plain material node hides an outer one's arrays
     elem->indices.clear();
     return;
   }
-  elem->indices.index = index;
-  elem->indices.numindex = numindex;
+  elem->indices.index = numindex > 0 ? index : nullptr;
+  elem->indices.numindex = numindex > 0 && index ? numindex : 0;
+  elem->indices.frameindex = numframeindex > 0 ? frameindex : nullptr;
+  elem->indices.numframeindex =
+    numframeindex > 0 && frameindex ? numframeindex : 0;
   elem->indices.nodeid = node ? node->getNodeId() : 0;
 }
 
 const SoFCFinishElement::Indices &
 SoFCFinishElement::get(SoState * state)
 {
-  static const Indices empty { nullptr, 0, 0 };
+  static const Indices empty { nullptr, 0, nullptr, 0, 0 };
   // Only the render-cache traversal enables this element, and
   // getConstElement() asserts on a stack slot the action left empty --
   // so an action that does not carry it answers "no per-face finish"

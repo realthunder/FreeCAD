@@ -283,6 +283,15 @@ public:
     const int32_t * finishptr = nullptr;
     int numfinish = 0;
 
+    // Per-face PROJECTION FRAME index (SoFCFinishElement's second
+    // array), which rides the second byte of the stream's third
+    // slot. Geometry rather
+    // than appearance -- the plane's own axes, the axis a cylinder was
+    // turned about -- and present only while a finish exists to lay out
+    // in it. Same padding rule.
+    const int32_t * frameptr = nullptr;
+    int numframe = 0;
+
     const SoMultiTextureCoordinateElement * multielem;
     SoState * state = nullptr;
 
@@ -443,7 +452,7 @@ public:
                       uint32_t finishidx);
   uint32_t packedEmissive(int midx) const;
   uint32_t packedSpecShine(int midx) const;
-  uint32_t packedFinishIndex(int midx) const;
+  uint32_t packedFinishIndex(int midx, int partidx) const;
 
   void close(SoState *);
   void finalizeTriangleIndexer();
@@ -556,6 +565,13 @@ public:
   /// a per-face finish. Independent of matpbr: an appearance may state
   /// either, both or neither.
   bool matfinish = false;
+  /// The second byte of the stream's third slot carries a projection
+  /// frame palette index.
+  /// Independent of matfinish: the frames vary per face on a shape whose
+  /// finish is uniform (one knurl over a whole turned part is the
+  /// ordinary case), and that is exactly when the stream exists for the
+  /// frames alone.
+  bool matframe = false;
   uint32_t firstemissive = 0;
   uint32_t firstspecshine = 0;
   uint32_t firstfinishidx = 0;
@@ -718,6 +734,7 @@ SoFCVertexCache::SoFCVertexCache(SoFCVertexCache & prev)
   PRIVATE(this)->matpervertex = PRIVATE(pprev)->matpervertex;
   PRIVATE(this)->matpbr = PRIVATE(pprev)->matpbr;
   PRIVATE(this)->matfinish = PRIVATE(pprev)->matfinish;
+  PRIVATE(this)->matframe = PRIVATE(pprev)->matframe;
   PRIVATE(this)->firstemissive = PRIVATE(pprev)->firstemissive;
   PRIVATE(this)->firstspecshine = PRIVATE(pprev)->firstspecshine;
   PRIVATE(this)->firstfinishidx = PRIVATE(pprev)->firstfinishidx;
@@ -954,6 +971,7 @@ SoFCVertexCache::open(SoState * state)
   PRIVATE(this)->matpervertex = 0;
   PRIVATE(this)->matpbr = false;
   PRIVATE(this)->matfinish = false;
+  PRIVATE(this)->matframe = false;
   {
     auto t = PRIVATE(this)->tmp;
     if (Gui::CoinLazyElementEx::available()) {
@@ -978,8 +996,17 @@ SoFCVertexCache::open(SoState * state)
       t->numfinish = fin.numindex;
       PRIVATE(this)->matfinish = true;
     }
+    // The frames of the same element. A single frame for every face is
+    // the draw's own and needs no stream, exactly as a single finish
+    // does not.
+    if (fin.hasFrames() && fin.numframeindex > 1) {
+      t->frameptr = fin.frameindex;
+      t->numframe = fin.numframeindex;
+      PRIVATE(this)->matframe = true;
+    }
     if (t->numemissive > 1 || t->numspecular > 1 || t->numshininess > 1
-        || PRIVATE(this)->matpbr || PRIVATE(this)->matfinish) {
+        || PRIVATE(this)->matpbr || PRIVATE(this)->matfinish
+        || PRIVATE(this)->matframe) {
       if (t->numemissive == 0) {
         const SbColor & e = SoLazyElement::getEmissive(state);
         e.getValue(t->emissivefallback[0], t->emissivefallback[1],
@@ -1002,7 +1029,7 @@ SoFCVertexCache::open(SoState * state)
       PRIVATE(this)->matpervertex = -1;
       PRIVATE(this)->firstemissive = PRIVATE(this)->packedEmissive(0);
       PRIVATE(this)->firstspecshine = PRIVATE(this)->packedSpecShine(0);
-      PRIVATE(this)->firstfinishidx = PRIVATE(this)->packedFinishIndex(0);
+      PRIVATE(this)->firstfinishidx = PRIVATE(this)->packedFinishIndex(0, 0);
       if (prev)
         PRIVATE(this)->materialarray.init(PRIVATE(prev)->materialarray);
     }
@@ -1685,6 +1712,21 @@ SoFCVertexCache::addTriangle(const SoPrimitiveVertex * v0,
 
   const SoFaceDetail *fd = nullptr;
 
+  // KEY: the PART index, which is the face -- and which the shape keeps
+  // whatever the material binding is (SoBrepFaceSet increments it per
+  // part even while every part shares one material). The frame a face's
+  // finish is laid out in is a fact about the GEOMETRY, so it has to be
+  // indexed that way: the material index below answers 0 for every
+  // vertex of a uniformly coloured object, which would have handed the
+  // whole shape face 0's frame. -1 = no detail, and then the material
+  // index is the only answer there is.
+  int partidx = -1;
+  if (PRIVATE(this)->matframe) {
+    const SoDetail * fdetail = v0->getDetail();
+    if (fdetail && fdetail->isOfType(SoFaceDetail::getClassTypeId()))
+      partidx = static_cast<const SoFaceDetail *>(fdetail)->getPartIndex();
+  }
+
   for (int i = 0; i < 3; i++) {
     SoFCVertexCacheP::Vertex v;
     v.vertex = vp[i]->getPoint();
@@ -1716,7 +1758,8 @@ SoFCVertexCache::addTriangle(const SoPrimitiveVertex * v0,
       int midx = vp[i]->getMaterialIndex();
       v.emissive = PRIVATE(this)->packedEmissive(midx);
       v.specshine = PRIVATE(this)->packedSpecShine(midx);
-      v.finishidx = PRIVATE(this)->packedFinishIndex(midx);
+      v.finishidx = PRIVATE(this)->packedFinishIndex(
+              midx, partidx >= 0 ? partidx : midx);
       if (PRIVATE(this)->matpervertex < 0
           && (v.emissive != PRIVATE(this)->firstemissive
               || v.specshine != PRIVATE(this)->firstspecshine
@@ -2068,7 +2111,8 @@ SoFCVertexCache::hasPbrMaterial(void) const
 SbBool
 SoFCVertexCache::hasFinishMaterial(void) const
 {
-  return PRIVATE(this)->matfinish && PRIVATE(this)->materialarray;
+  return (PRIVATE(this)->matfinish || PRIVATE(this)->matframe)
+      && PRIVATE(this)->materialarray;
 }
 
 int
@@ -2494,11 +2538,13 @@ SoFCVertexCacheP::appendMaterial(uint32_t emissive, uint32_t specshine,
   this->materialarray.append((specshine >> 16) & 0xff);
   this->materialarray.append((specshine >> 8) & 0xff);
   this->materialarray.append(specshine & 0xff);
-  // The finish palette index, then three bytes nothing states yet: the
-  // stream is a vertex attribute, and a backend binds it as one rgba8
-  // whatever this fills in.
+  // The finish palette index, then the projection frame palette index
+  // beside it, then two bytes nothing states yet: the stream is a
+  // vertex attribute, and a backend binds it as one rgba8 whatever this
+  // fills in. Both indices ride the one uint32 packedFinishIndex()
+  // built, low byte first.
   this->materialarray.append(finishidx & 0xff);
-  this->materialarray.append(0);
+  this->materialarray.append((finishidx >> 8) & 0xff);
   this->materialarray.append(0);
   this->materialarray.append(0);
 }
@@ -2547,16 +2593,25 @@ SoFCVertexCacheP::packedSpecShine(int midx) const
 }
 
 uint32_t
-SoFCVertexCacheP::packedFinishIndex(int midx) const
+SoFCVertexCacheP::packedFinishIndex(int midx, int partidx) const
 {
-  // Nothing states a per-face finish: entry 0 of the palette is the
-  // draw material's own finish, which is exactly what a uniformly zero
-  // slot resolves to.
-  if (!this->matfinish)
-    return 0;
-  int32_t idx = this->tmp->finishptr[
-      midx < this->tmp->numfinish ? midx : 0];
-  return idx > 0 && idx < 256 ? uint32_t(idx) : 0;
+  // Nothing states either per-face array: entry 0 of both palettes is
+  // the draw material's own -- its finish, and the unframed frame --
+  // which is exactly what a uniformly zero slot resolves to.
+  uint32_t packed = 0;
+  if (this->matfinish) {
+    const int32_t idx = this->tmp->finishptr[
+        midx < this->tmp->numfinish ? midx : 0];
+    if (idx > 0 && idx < 256)
+      packed |= uint32_t(idx);
+  }
+  if (this->matframe) {
+    const int32_t idx = this->tmp->frameptr[
+        partidx > 0 && partidx < this->tmp->numframe ? partidx : 0];
+    if (idx > 0 && idx < 256)
+      packed |= uint32_t(idx) << 8;
+  }
+  return packed;
 }
 
 void

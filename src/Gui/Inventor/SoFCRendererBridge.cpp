@@ -794,6 +794,13 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         // decided per draw below (a partial draw resolves its face's
         // entry into the scalars instead).
         res.finishpalette = m.finishpalette;
+        // Entry 0 is the first face's frame, and it is the draw's own:
+        // a mesh whose material stream collapsed (every face framed
+        // alike, nothing else varying) carries no index to read, and
+        // the backend uploads this as entry 0 either way.
+        res.framepalette = m.framepalette;
+        if (m.framepalette && !m.framepalette->entries.empty())
+            res.frame = m.framepalette->entries.front();
         res.water = m.water;
         res.waterdensity = m.waterdensity;
         res.glass = m.glass;
@@ -1131,7 +1138,12 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                     || material.shininesses.getNum()
                     || material.metallics.getNum()
                     || material.roughnesses.getNum()
-                    || material.finishindices.getNum();
+                    || material.finishindices.getNum()
+                    // The frames too, and they are the only one of
+                    // these a UNIFORM appearance can state: a knurled
+                    // shaft has one material and still needs its
+                    // per-face frame index read.
+                    || material.frameindices.getNum();
                 if (ventry.partidx < 0) {
                     draw.material.perfacematerial =
                         hasarrays && mesh->materials != nullptr;
@@ -1177,6 +1189,18 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                         }
                     }
                     draw.material.finishpalette.reset();
+                    // The face's projection frame, resolved the same way
+                    // and for the same reason -- one face has one frame,
+                    // and the backend uploads a palette-less draw's own
+                    // frame as entry 0.
+                    const int nfr = material.frameindices.getNum();
+                    if (nfr && material.framepalette) {
+                        const auto &entries = material.framepalette->entries;
+                        const int32_t idx = material.frameindices[p < nfr ? p : 0];
+                        if (idx >= 0 && std::size_t(idx) < entries.size())
+                            draw.material.frame = entries[std::size_t(idx)];
+                    }
+                    draw.material.framepalette.reset();
                 }
             }
             draw.identity = ventry.identity;

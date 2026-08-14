@@ -2028,3 +2028,138 @@ because the property still held what it started with. A no-op verify
 looks exactly like a perfect one. The probe now sets a colour the
 material did not have and checks for it first: 10/10 with it, 9/10 the
 moment the command breaks.
+
+### 9.11 Landed 2026-08-14: rung 3, the finish is laid out in the face's own frame
+
+Rungs 1 and 2 gave a face a finish. This one gives it a FRAME. The
+pattern stops being projected triplanarly off the object-space normal
+and is laid out in the surface's own coordinates: a plane's axes, or the
+axis a cylinder or cone was turned about, read off the OCCT surface at
+tessellation time. That is the difference between a knurl that looks
+plausible from any angle and one that runs where the tool ran.
+
+**What it fixes.** 9.8 recorded the defect in as many words: "a straight
+knurl on a cylinder comes out with CIRCUMFERENTIAL grooves, because
+triplanar projection does not know the cylinder's axis." It does now.
+Turning marks likewise centred on the object origin rather than on the
+axis that was turned, which on a part whose axis is anywhere else is not
+a subtle error.
+
+**The route**, which is the per-face pair's again with one difference
+that decides everything else:
+
+`ViewProviderPartExt::buildVisualNodes` (the tessellation loop, the last
+place the analytic surface is in hand) -> `faceProjectionFrame` per face
+-> a deduplicated palette in `SoFCRenderMaterial::framePalette` /
+`frameIndices` -> `SoFCFinishElement`'s SECOND array -> `SoFCVertexCache`
+-> `Render::FramePalette` -> `u_frameParams[]` -> `fc_finish.sh`.
+
+KEY: **The frame is geometry, so it is indexed by the PART, not by the
+material.** The finish index rides `getMaterialIndex()`, which is correct
+for it -- a per-face finish only exists on a per-face appearance, and
+that binds materials per part. A frame exists on any analytic shape,
+including the ordinary uniformly-painted one, whose binding is OVERALL
+and whose material index is therefore 0 at every vertex. Indexing frames
+that way would have handed a whole knurled shaft its first face's frame.
+`SoFaceDetail::getPartIndex()` is the honest source: `SoBrepFaceSet`
+increments it per part whatever the binding is.
+
+KEY: **It cost nothing per vertex.** The material stream's third slot had
+the finish index in one byte and three reserved; the frame index took
+the second. So the stride stays 12 bytes, the dump's mesh chunk layout
+does not move, and a viewer older than this reads a zero there -- which
+is the unframed frame, i.e. the projection it already had. Scene dump
+v51 and chunk revision 9, both for the material record alone.
+
+**Two decisions in the shader.**
+
+KEY: (1) **The seam closes by construction.** A cylinder's angular
+coordinate cuts at +-pi, and a pattern laid on the raw arc length would
+mismatch across that cut by whatever fraction of a pitch the
+circumference is not a whole number of. So the period is snapped: the
+shader fits a WHOLE number of cycles round the reference radius and
+measures the arc in those, which makes the jump at the cut an exact
+multiple of the pitch. Real knurling tooling is chosen by the same
+arithmetic and for the same reason. The analytic gradient (9.8) is what
+makes this free -- the height field is never differenced, so the branch
+cut cannot produce a derivative spike either.
+
+KEY: (2) **Turning is fixed to the axis, not to the lay.** In a radial
+frame a lay angle of zero runs the pattern along the axis, which is what
+a knurl wants. A lathe's feed marks run round the work instead, whatever
+else is stated, so `turned` in a radial frame becomes the straight-knurl
+relief with the lay turned a quarter turn -- rather than teaching the
+pattern library a second spelling of one groove train.
+
+**Canonicalization is what keeps the palette small**, and it is the
+reason a cap of 16 is not a limitation in practice. The origin's
+component along the axis is dropped -- invisible for a plane (the
+pattern is laid IN it) and merely the axial phase for a radial one -- and
+the axis sign is fixed. So the coplanar faces of a bracket, the two
+sides of a plate, and the coaxial cylinders of a stepped shaft each cost
+ONE entry. A part that overflows sixteen has sixteen genuinely different
+machining setups; its overflow falls back to entry 0, the way an
+overflowing finish falls back to the object's own.
+
+**Entry 0 is the first face's frame, not the unframed one.** The
+tempting choice is the reverse -- reserve entry 0 for "no frame" so
+every fallback degrades to triplanar. It is wrong, and the case that
+shows it is the ordinary one: a shape every face of which is framed
+alike states one index at every vertex, so the per-vertex stream
+COLLAPSES (nothing varies, no array is allocated) and the draw reads
+entry 0 alone. Reserving it for the unframed frame would have lost the
+frame on exactly the parts that need it least ambiguously.
+
+**Excluded, and why.** Instanced draws and the bounding-box stand-in
+keep the triplanar projection: `buildVisualNodes` is a static builder
+several paths share, and only the ones building a particular object's
+nodes have a render material to write to. The frames themselves would be
+valid for an instanced mesh -- they are object-space, and instances
+differ only in the transform applied after -- so this is a plumbing gap,
+not a design limit. Also unchanged from 9.7: anisotropic GGX, PMI
+semantics, and the Diligent backend, which still ignores the finish
+entirely.
+
+**Verified by picture** (`scripts/demo-finish-frames.py`): a straight
+knurl, a diamond knurl, an off-centre faced disc and a cone, in PBR
+metal on real-GPU WSLg. With `FRAMES_OFF=1` -- the one-variable control,
+which clears the frame palette off the render material and changes
+nothing else -- the cylinder shows CIRCUMFERENTIAL bands, exactly the
+defect 9.8 named; with frames on the grooves run along the axis, the
+diamond wraps and closes, and the cone's pattern follows its taper.
+
+KEY: **the index itself was checked, not only the pictures.** Every face
+that came out looking right was a face whose frame index is ZERO -- the
+lateral surfaces -- which is what they would read even if the index
+never varied. What settles it is a shader that outputs the index as a
+colour: lateral faces red (0, radial), caps green (1, planar), which is
+the palette the producer built. Two real defects hid behind
+plausible-looking pictures until that ran:
+
+- WARNING: **the stream's second byte was written as a literal zero.**
+  `appendMaterial` filled the third slot with the finish index and three
+  constant zeros, so the frame index was dropped between the bake and
+  the buffer. Everything upstream measured correct.
+- WARNING: **frames must be indexed by the PART, not the material.** See
+  above; a uniform appearance binds materials OVERALL and answers 0 at
+  every vertex.
+
+Two staging facts, both about the renderer rather than about frames:
+
+- WARNING: **a FLAT face cannot show its relief under a smooth sky.** A
+  plane's diffuse and specular response both vary only with the normal,
+  and a small perturbation still lands on much the same environment, so
+  the caps read as plain however deep the pattern is cut -- pattern,
+  depth, tilt and material all changed with no effect on them. This is
+  9.8's saturation lesson in its general form. It is why the demo's
+  planar-frame case (the turned face centred on its axis) is NOT
+  demonstrated by the PBR picture; `FRAMES_PBR=0` is the staging meant
+  for it, and it currently blows out (see the next point).
+- WARNING: **PBR metal is underlit and the Phong path blows out.** A
+  metallic 1 part reads far darker than a dielectric of the same albedo
+  under the same environment, which is not what a specular IBL carrying
+  its energy would do; the demo compensates with
+  `Render_PBREnvIntensity` 3. Under the Phong headlight the same scene
+  goes to rainbow iridescence. Both are open, both are the lighting
+  path rather than the finish, and the Coin-to-bgfx light sync audit is
+  where they belong.

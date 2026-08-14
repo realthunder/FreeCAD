@@ -30,6 +30,10 @@
 # include <BRepBuilderAPI_MakeVertex.hxx>
 # include <BRepExtrema_DistShapeShape.hxx>
 # include <BRepMesh_IncrementalMesh.hxx>
+# include <BRepAdaptor_Surface.hxx>
+# include <gp_Cone.hxx>
+# include <gp_Cylinder.hxx>
+# include <gp_Pln.hxx>
 # include <gp_Trsf.hxx>
 # include <Precision.hxx>
 # include <Poly_Array1OfTriangle.hxx>
@@ -107,6 +111,7 @@
 #include <Gui/Utilities.h>
 #include <Gui/ViewProviderLink.h>
 #include <Gui/TaskElementColors.h>
+#include <Gui/Inventor/SoFCRenderMaterial.h>
 #include <Gui/Inventor/SoFCShapeInfo.h>
 #include <Gui/InventorBase.h>
 #include <Gui/BitmapFactory.h>
@@ -4013,6 +4018,124 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         scheduleDeferredVisualSlice();
 }
 
+namespace {
+
+/// The projection frame of one face, as the three SbVec4f the render
+/// material carries -- (origin, kind), (axis, radius), (xdir, spare),
+/// matching Render::SurfaceFrame.
+///
+/// A surface finish is a pattern the tool left, and the tool worked in
+/// the surface's own frame: a plane's axes, or the axis a cylinder or
+/// cone was turned about. Read here because this is the last place the
+/// analytic OCCT surface is in hand -- past this point there is only a
+/// triangle soup, and the renderer's fallback is to guess the frame from
+/// the object-space normal (fc_finish.sh's triplanar projection), which
+/// cannot know that a cylinder has an axis.
+///
+/// Answers false for a surface neither planar nor a surface of
+/// revolution -- a freeform patch has no frame worth stating, and no
+/// finish anyone specifies wants one.
+///
+/// WARNING: the frame is CANONICALIZED, and that is what keeps the palette
+/// small enough to be worth having: the origin's component along the
+/// axis is dropped for a plane (invisible: the pattern is in-plane) and
+/// set to the axis point nearest the object origin for a radial one
+/// (which only shifts the axial phase), and the axis sign is fixed. So
+/// coplanar faces, parallel faces and the coaxial cylinders of a stepped
+/// shaft all collapse onto one entry, rather than each spending one of
+/// the sixteen a draw may hold.
+bool faceProjectionFrame(const TopoDS_Face &face, SbVec4f out[3])
+{
+    TopLoc_Location loc;
+    if (BRep_Tool::Surface(face, loc).IsNull())
+        return false;   // purely triangulated: no analytic surface at all
+
+    gp_Pnt origin;
+    gp_Dir axis;
+    gp_Dir xdir;
+    float radius = 0.0f;
+    float kind = 0.0f;
+    try {
+        // Restricted to the face, so a cone's radius below is measured
+        // over the part of it this face actually is.
+        BRepAdaptor_Surface adapt(face);
+        switch (adapt.GetType()) {
+        case GeomAbs_Plane: {
+            const gp_Ax3 &pos = adapt.Plane().Position();
+            origin = pos.Location();
+            axis = pos.Direction();
+            xdir = pos.XDirection();
+            kind = 1.0f;    // Render::SurfaceFrame::Planar
+            break;
+        }
+        case GeomAbs_Cylinder: {
+            const gp_Cylinder cyl = adapt.Cylinder();
+            const gp_Ax3 &pos = cyl.Position();
+            origin = pos.Location();
+            axis = pos.Direction();
+            xdir = pos.XDirection();
+            radius = float(cyl.Radius());
+            kind = 2.0f;    // Render::SurfaceFrame::Radial
+            break;
+        }
+        case GeomAbs_Cone: {
+            const gp_Cone cone = adapt.Cone();
+            const gp_Ax3 &pos = cone.Position();
+            origin = pos.Location();
+            axis = pos.Direction();
+            xdir = pos.XDirection();
+            // R(v) = RefRadius + v * sin(semi-angle): the radius at the
+            // middle of the face, which is the circumference the pattern
+            // period is fitted to. A cone's is not constant, so the
+            // pattern stretches a little toward the wide end -- which is
+            // what a knurl rolled onto a taper actually does.
+            const double v = 0.5 * (adapt.FirstVParameter()
+                                    + adapt.LastVParameter());
+            radius = float(std::fabs(cone.RefRadius()
+                                     + v * std::sin(cone.SemiAngle())));
+            kind = 2.0f;
+            break;
+        }
+        default:
+            return false;
+        }
+    }
+    catch (const Standard_Failure &) {
+        return false;
+    }
+
+    gp_Vec vaxis(axis);
+    gp_Vec vx(xdir);
+    // Fix the axis sign so a face and its reversed twin -- the two sides
+    // of a plate, a cylinder met from either end -- share one entry.
+    const double a[3] = {vaxis.X(), vaxis.Y(), vaxis.Z()};
+    for (int i = 0; i < 3; ++i) {
+        if (std::fabs(a[i]) > 1.0e-9) {
+            if (a[i] < 0.0) {
+                vaxis.Reverse();
+                vx.Reverse();
+            }
+            break;
+        }
+    }
+    // Drop the component along the axis, which is the one component
+    // neither kind can show: a plane's pattern is laid IN the plane, so
+    // sliding the origin along its normal changes nothing, and a radial
+    // frame's origin only has to name a point ON the axis -- the nearest
+    // one to the object origin, which is what this leaves. Two faces
+    // that agree about everything visible now agree about the frame too.
+    gp_Vec vo(origin.X(), origin.Y(), origin.Z());
+    vo -= vaxis * vo.Dot(vaxis);
+
+    out[0].setValue(float(vo.X()), float(vo.Y()), float(vo.Z()), kind);
+    out[1].setValue(float(vaxis.X()), float(vaxis.Y()), float(vaxis.Z()),
+                    radius);
+    out[2].setValue(float(vx.X()), float(vx.Y()), float(vx.Z()), 0.0f);
+    return true;
+}
+
+} // anonymous namespace
+
 void ViewProviderPartExt::updateVisual()
 {
     if (!getObject()
@@ -4232,7 +4355,7 @@ void ViewProviderPartExt::updateVisual()
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
                          numTriangles, numNodes, numPoints, numNorms,
-                         numFaces, numEdges, numLines);
+                         numFaces, numEdges, numLines, pcRenderMaterial);
 
         // The scene server can now re-tessellate this shape at a
         // coarser deviation when a viewer asks for a declared level of
@@ -4328,7 +4451,8 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
         SoBrepPointSet *nodeset,
         int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
-        int &numFaces, int &numEdges, int &numLines)
+        int &numFaces, int &numEdges, int &numLines,
+        Gui::SoFCRenderMaterial *rendermat)
 {
     (void)nodeset;
     std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
@@ -4457,6 +4581,18 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         for (int i=0; texcoordArr && i < numNodes; i++)
             texcoordArr[i] = SbVec2f(0.0f, 0.0f);
 
+        // The projection frames a surface finish is laid out in, one
+        // entry per DISTINCT frame and one index per face (see
+        // faceProjectionFrame and SoFCRenderMaterial::framePalette).
+        // Entry 0 is the FIRST face's frame, following the finish
+        // palette's rule: a mesh whose per-vertex stream collapses --
+        // which is what happens when every face is framed alike, the
+        // ordinary case for a turned part -- carries no index to read,
+        // and entry 0 is what the backend gives it.
+        std::vector<SbVec4f> framePalette;
+        std::vector<int32_t> frameIndices(numFaces, 0);
+        bool anyFrame = false;
+
         int ii = 0,faceNodeOffset=0,faceTriaOffset=0;
         for (int i=1; i <= faceMap.Extent(); i++, ii++) {
             TopLoc_Location aLoc;
@@ -4481,6 +4617,40 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             int nbTriInFace   = mesh->NbTriangles();
             // check orientation
             TopAbs_Orientation orient = actFace.Orientation();
+
+            // The face's projection frame, deduplicated into the
+            // palette. An unclassifiable face states the UNFRAMED frame
+            // rather than being skipped, so that it keeps its place in
+            // the palette's indexing and shades triplanarly.
+            SbVec4f frame[3] = {SbVec4f(0.0f, 0.0f, 0.0f, 0.0f),
+                                SbVec4f(0.0f, 0.0f, 1.0f, 0.0f),
+                                SbVec4f(1.0f, 0.0f, 0.0f, 0.0f)};
+            if (ii < int(frameIndices.size())) {
+                if (faceProjectionFrame(actFace, frame))
+                    anyFrame = true;
+                int idx = -1;
+                for (std::size_t k = 0; k < framePalette.size() && idx < 0;
+                     k += 3) {
+                    if (framePalette[k] == frame[0]
+                            && framePalette[k + 1] == frame[1]
+                            && framePalette[k + 2] == frame[2])
+                        idx = int(k / 3);
+                }
+                if (idx < 0) {
+                    // Past the cap the face takes entry 0 -- the first
+                    // face's frame -- the way an overflowing finish
+                    // takes the object's own.
+                    if (framePalette.size() / 3
+                            >= std::size_t(Render::MaxFramePalette))
+                        idx = 0;
+                    else {
+                        idx = int(framePalette.size() / 3);
+                        framePalette.insert(framePalette.end(),
+                                            frame, frame + 3);
+                    }
+                }
+                frameIndices[ii] = idx;
+            }
 
             // purely triangulated faces carry authored texture coordinates
             // and normals in the stored mesh — use both as-is
@@ -4654,6 +4824,27 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             // counting up the per Face offsets
             faceNodeOffset += nbNodesInFace;
             faceTriaOffset += nbTriInFace;
+        }
+
+        // The frames reach the shapes only while a finish is stated
+        // somewhere -- SoFCRenderMaterial decides that, since the finish
+        // is the appearance's business and this is the geometry's.
+        if (rendermat) {
+            if (anyFrame) {
+                // setNum first: setValues grows a field but never
+                // shrinks one, and a re-tessellation may state fewer
+                // frames than the last one did.
+                rendermat->framePalette.setNum(int(framePalette.size()));
+                rendermat->framePalette.setValues(
+                        0, int(framePalette.size()), framePalette.data());
+                rendermat->frameIndices.setNum(int(frameIndices.size()));
+                rendermat->frameIndices.setValues(
+                        0, int(frameIndices.size()), frameIndices.data());
+            }
+            else {
+                rendermat->framePalette.setNum(0);
+                rendermat->frameIndices.setNum(0);
+            }
         }
 
         // handling of the free edges

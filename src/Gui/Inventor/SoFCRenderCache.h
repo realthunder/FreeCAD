@@ -42,6 +42,7 @@
 namespace Render {
 struct UserShader;
 struct FinishPalette;
+struct FramePalette;
 }
 
 class SoFCVertexCache;
@@ -282,6 +283,18 @@ public:
     /// rather than clamped (see SoFCFinishElement).
     std::shared_ptr<const Render::FinishPalette> finishpalette;
     COWVector<int32_t> finishindices;
+    /// The projection frame the finish is laid out in, captured from the
+    /// same node but derived from the GEOMETRY rather than from the
+    /// appearance -- the plane's own axes, or the axis a cylinder was
+    /// turned about (Render::SurfaceFrame). Unframed leaves the finish
+    /// projected triplanarly, which is what every shape without an
+    /// analytic surface, and every shape nobody finished, states.
+    /// Palette and index array follow the finish's rules exactly, down
+    /// to entry 0 being the whole draw's -- here the FIRST FACE's frame,
+    /// which is what a mesh whose stream collapsed (every face framed
+    /// alike) reads, and what a single-face draw resolves against.
+    std::shared_ptr<const Render::FramePalette> framepalette;
+    COWVector<int32_t> frameindices;
     /// Water body flag/density captured from SoFCRenderMaterial: the
     /// shapes' closed volume becomes a scattering medium of the
     /// volumetric lighting pass (only external backends consume this).
@@ -467,6 +480,10 @@ public:
         if (finishpalette.get() > other.finishpalette.get()) return false;
         if (finishindices < other.finishindices) return true;
         if (finishindices > other.finishindices) return false;
+        if (framepalette.get() < other.framepalette.get()) return true;
+        if (framepalette.get() > other.framepalette.get()) return false;
+        if (frameindices < other.frameindices) return true;
+        if (frameindices > other.frameindices) return false;
         if (water < other.water) return true;
         if (water > other.water) return false;
         if (waterdensity < other.waterdensity) return true;

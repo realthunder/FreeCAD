@@ -175,7 +175,14 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     per-face-finished object). A viewer older than this cannot read
 //     the stream at all, which is why the mesh chunk revision moves
 //     with it.
-const uint32_t kVersion = 50;
+// 51: Surface finish projection frames -- the material carries the frame
+//     each face's finish is laid out in (the plane's own axes, or the
+//     axis a cylinder was turned about), and the material stream's
+//     third slot names one in its SECOND byte. The stride does not
+//     change: that byte was reserved and read as zero, which is the
+//     unframed frame, so an older viewer draws the triplanar projection
+//     this replaces rather than misreading anything.
+const uint32_t kVersion = 51;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -189,8 +196,10 @@ const uint32_t kVersion = 50;
 ///  7: a material chunk carries the surface finish record.
 ///  8: the mesh chunk's material stream is 12 bytes a vertex (the
 ///     finish palette index in the third slot), and a material chunk
-///     carries the palette itself.)
-const uint32_t kChunkVersion = 8;
+///     carries the palette itself.
+///  9: a material chunk carries the surface finish's projection frame
+///     and the palette of frames its faces name.)
+const uint32_t kChunkVersion = 9;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1269,6 +1278,27 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
         w.f(entry.depth);
         w.f(entry.angle);
     }
+    // The projection frames the finish is laid out in (v51). The draw's
+    // own frame first -- which is what a reader takes when the palette
+    // is empty -- then the palette, whose entry 0 repeats it.
+    auto writeFrame = [&w](const SurfaceFrame &f) {
+        w.u8(f.kind);
+        for (int i = 0; i < 3; ++i)
+            w.f(f.origin[i]);
+        for (int i = 0; i < 3; ++i)
+            w.f(f.axis[i]);
+        for (int i = 0; i < 3; ++i)
+            w.f(f.xdir[i]);
+        w.f(f.radius);
+    };
+    writeFrame(m.frame);
+    const uint32_t numframe = m.framepalette
+        ? uint32_t(std::min(m.framepalette->entries.size(),
+                            size_t(MaxFramePalette)))
+        : 0;
+    w.u32(numframe);
+    for (uint32_t i = 0; i < numframe; ++i)
+        writeFrame(m.framepalette->entries[i]);
     w.b(m.water);
     w.f(m.waterdensity);
     w.b(m.glass);
@@ -1396,6 +1426,36 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
             }
             if (r.ok)
                 m.finishpalette = std::move(palette);
+        }
+    }
+    if (version >= 51) {
+        auto readFrame = [&r]() {
+            SurfaceFrame f;
+            const uint8_t kind = r.u8();
+            f.kind = kind <= SurfaceFrame::Radial ? kind
+                                                  : SurfaceFrame::Unframed;
+            for (int i = 0; i < 3; ++i)
+                f.origin[i] = r.f();
+            for (int i = 0; i < 3; ++i)
+                f.axis[i] = r.f();
+            for (int i = 0; i < 3; ++i)
+                f.xdir[i] = r.f();
+            f.radius = r.f();
+            return f;
+        };
+        m.frame = readFrame();
+        const uint32_t numframe = r.u32();
+        if (r.ok && numframe) {
+            auto palette = std::make_shared<FramePalette>();
+            palette->entries.reserve(
+                    std::min(numframe, uint32_t(MaxFramePalette)));
+            for (uint32_t i = 0; i < numframe && r.ok; ++i) {
+                const SurfaceFrame f = readFrame();
+                if (i < uint32_t(MaxFramePalette))
+                    palette->entries.push_back(f);
+            }
+            if (r.ok)
+                m.framepalette = std::move(palette);
         }
     }
     m.water = r.b();

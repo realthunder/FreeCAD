@@ -132,13 +132,14 @@ public:
    * rgba8 emissive followed by rgb8 specular with the shininess (0..1)
    * quantized into the last byte -- or, when hasPbrMaterial(), the PBR
    * factor pair in those two alpha slots instead -- and then the
-   * surface finish palette index in one byte with three reserved after
-   * it (hasFinishMaterial()). Present only when the coin fork's
+   * surface finish palette index in one byte, the projection frame
+   * palette index in the next and two reserved after them
+   * (hasFinishMaterial()). Present only when the coin fork's
    * extended lazy element carried per-face material arrays whose
    * resolved values actually diverge (CoinLazyElementEx), or a per-face
    * PBR appearance carried factors (SoFCPbrElement), or a per-face
-   * finish carried indices (SoFCFinishElement); null for every
-   * uniform-material cache. Only triangle vertices carry values --
+   * finish or projection frame carried indices (SoFCFinishElement);
+   * null for every uniform-material cache. Only triangle vertices carry values --
    * vertices referenced by lines/points alone hold zeros, and
    * line/point draws never shade with these fields.
    */
@@ -156,14 +157,18 @@ public:
    */
   SbBool hasPbrMaterial(void) const;
 
-  /** Whether that stream's third slot carries a finish palette index
+  /** Whether that stream's third slot carries the finish indices
    *
    * A per-face surface finish (SoFCFinishElement) is four numbers per
    * face, so what the stream carries is one index into the draw
-   * material's palette of the distinct finishes. False means every
-   * vertex reads index 0, which is the material's own finish -- the
-   * answer an unbound attribute gives too, so a consumer needs this
-   * only to decide whether the palette is worth uploading.
+   * material's palette of the distinct finishes -- and beside it, in
+   * the next byte, an index into its palette of the PROJECTION FRAMES
+   * those finishes are laid out in. Either may be the reason the slot
+   * exists: a uniformly finished shaft states one finish and a frame
+   * per face. False means every vertex reads index 0 in both, which is
+   * the material's own finish in its own frame -- the answer an unbound
+   * attribute gives too, so a consumer needs this only to decide
+   * whether the palettes are worth uploading.
    */
   SbBool hasFinishMaterial(void) const;
 

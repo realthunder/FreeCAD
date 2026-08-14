@@ -475,6 +475,8 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->roughnesses.reset();
   this->finishpalette.reset();
   this->finishindices.reset();
+  this->framepalette.reset();
+  this->frameindices.reset();
   this->texturematrices.clear();
   this->textures.clear();
   this->bumpmaps.clear();
@@ -1508,6 +1510,46 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
       const int32_t idx = indices[i];
       PRIVATE(this)->material.finishindices.append(
               idx > 0 && idx < num ? idx : 0);
+    }
+  }
+  // The projection frames the finish is laid out in. Three SbVec4f make
+  // one frame -- (origin, kind), (axis, radius), (xdir, spare) -- and
+  // entry 0 is the first face's, which is what a draw with no
+  // per-vertex stream to index with reads.
+  PRIVATE(this)->material.framepalette.reset();
+  PRIVATE(this)->material.frameindices.reset();
+  const int numframevalues = material->framePalette.getNum();
+  const int numframeindices = material->frameIndices.getNum();
+  if (numframevalues >= 3 && numframeindices > 0) {
+    auto palette = std::make_shared<Render::FramePalette>();
+    const SbVec4f *values = material->framePalette.getValues(0);
+    const int num = std::min(numframevalues / 3, Render::MaxFramePalette);
+    palette->entries.reserve(num);
+    for (int i = 0; i < num; ++i) {
+      Render::SurfaceFrame frame;
+      const SbVec4f &o = values[i * 3];
+      const SbVec4f &a = values[i * 3 + 1];
+      const SbVec4f &x = values[i * 3 + 2];
+      const float kind = o[3];
+      frame.kind = kind > 0.0f && kind < 256.0f
+          ? static_cast<uint8_t>(kind + 0.5f) : 0;
+      for (int k = 0; k < 3; ++k) {
+        frame.origin[k] = o[k];
+        frame.axis[k] = a[k];
+        frame.xdir[k] = x[k];
+      }
+      frame.radius = a[3];
+      palette->entries.push_back(frame);
+    }
+    if (!palette->entries.empty()) {
+      PRIVATE(this)->material.framepalette = std::move(palette);
+      const int32_t *indices = material->frameIndices.getValues(0);
+      PRIVATE(this)->material.frameindices.reserve(numframeindices);
+      for (int i = 0; i < numframeindices; ++i) {
+        const int32_t idx = indices[i];
+        PRIVATE(this)->material.frameindices.append(
+                idx > 0 && idx < num ? idx : 0);
+      }
     }
   }
   PRIVATE(this)->material.water = material->water.getValue();
@@ -2977,6 +3019,8 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
     bboxmaterial.usershader.reset();
     bboxmaterial.finishpalette.reset();
     bboxmaterial.finishindices.reset();
+    bboxmaterial.framepalette.reset();
+    bboxmaterial.frameindices.reset();
 
     res[bboxmaterial].emplace_back(cache, matrix, false, false, CacheKeyPtr());
   }

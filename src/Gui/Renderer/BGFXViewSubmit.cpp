@@ -171,6 +171,36 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
         }
     }
     bgfx::setUniform(u_finishParams, finishParams, numFinish);
+    // The projection frames that finish is laid out in. Uploaded on the
+    // same terms and only when a finish is actually shading: three vec4
+    // an entry, entry 0 being the draw's own -- which is what a mesh
+    // with no index stream reads, and what an unframed draw leaves at
+    // zero so the shader keeps its triplanar projection.
+    float frameParams[Render::MaxFramePalette][3][4] = {};
+    uint16_t numFrame = 3;
+    auto setFrame = [](float (&dst)[3][4], const Render::SurfaceFrame &f) {
+        if (f.kind == Render::SurfaceFrame::Unframed)
+            return;
+        for (int i = 0; i < 3; ++i) {
+            dst[0][i] = f.origin[i];
+            dst[1][i] = f.axis[i];
+            dst[2][i] = f.xdir[i];
+        }
+        dst[0][3] = float(f.kind);
+        dst[1][3] = f.radius;
+    };
+    if (finishOn) {
+        setFrame(frameParams[0], mat.frame);
+        if (mat.framepalette && mat.perfacematerial) {
+            const auto &entries = mat.framepalette->entries;
+            const size_t num = std::min(entries.size(),
+                                        size_t(Render::MaxFramePalette));
+            for (size_t i = 0; i < num; ++i)
+                setFrame(frameParams[i], entries[i]);
+            numFrame = Render::MaxFramePalette * 3;
+        }
+    }
+    bgfx::setUniform(u_frameParams, frameParams, numFrame);
     float matcapParams[4] = {matcapFrame ? 1.0f : 0.0f,
                              float(matcapPreset), matcapTint, 0.0f};
     bgfx::setUniform(u_matcapParams, matcapParams);

@@ -106,6 +106,34 @@ public:
      */
     SoMFVec4f finishPalette;
     SoMFInt32 finishIndices;
+    /** The projection frames the finish above is laid out in
+     *
+     * Where the finish says what was done to the surface, the frame says
+     * what the surface IS -- the plane's own axes, or the axis a
+     * cylinder or cone was turned about -- so a straight knurl runs
+     * along the axis and turning marks centre on it, rather than being
+     * projected triplanarly off the object-space normal.
+     *
+     * These come from the GEOMETRY, so the Part view provider writes
+     * them at tessellation time while the analytic OCCT surface is
+     * still in hand, and it writes them into these two fields alone --
+     * the appearance-derived fields above have a different writer, and
+     * neither touches the other's.
+     *
+     * Three SbVec4f make one frame: (origin, kind), (axis, radius),
+     * (xdir, spare), matching Render::SurfaceFrame. Entry 0 is the
+     * FIRST face's frame -- what a mesh carrying no per-vertex stream
+     * reads -- and a face whose surface could not be classified states
+     * the unframed frame, which shades triplanarly as before.
+     * frameIndices holds one entry index per face.
+     *
+     * Published to the shapes below (as SoFCFinishElement's second
+     * array) ONLY while a finish is stated somewhere, since a frame with
+     * no pattern to lay out would make every analytic shape in the
+     * document pay for a per-vertex stream it cannot use.
+     */
+    SoMFVec4f framePalette;
+    SoMFInt32 frameIndices;
     /// The shapes form a water body: their closed volume becomes a
     /// scattering medium of the render engine's volumetric lighting
     /// pass (tinted by the material diffuse color), instead of an

@@ -424,16 +424,25 @@ uniform-selected branch that costs nothing on a scene that states none.
   `Render_FinishAngle` dynamic ViewProvider properties. The authored one
   wins, the same way a PBR-mode appearance beats `Render_Metallic`. Both
   end up on `SoFCRenderMaterial` and travel the ordinary render-cache
-  route. Only entry 0 is read today; the per-face finish stream is the
-  rung above.
-- **Object space, triplanar**: the pattern is anchored to the geometry
-  (`v_opos`/`v_onrm`), so a moved, scaled or instanced copy carries the
-  same finish rather than one that swims as it is placed. The three
-  axis-aligned projections are blended by the object-space normal, which
-  makes a knurl on a cylinder plausible but not manufacturing-correct —
-  the pattern does not yet know the cylinder's axis. Explicit per-face
-  frames from the OCCT surface type are the next rung
-  (`docs/ShapeAppearanceDesign.md` 9.7).
+  route.
+- **Per face, through two palettes**: a finish is four numbers and a
+  frame is ten, so neither widens the per-vertex material stream. The
+  distinct finishes of an appearance become a `Render::FinishPalette`
+  and the distinct frames of the geometry a `Render::FramePalette`; what
+  the stream's third slot carries is one byte of index into each
+  (`docs/ShapeAppearanceDesign.md` 9.9 and 9.11). A draw with no stream
+  reads entry 0 of both.
+- **Object space, in the face's own frame**: the pattern is anchored to
+  the geometry (`v_opos`/`v_onrm`), so a moved, scaled or instanced copy
+  carries the same finish rather than one that swims as it is placed.
+  Where the geometry could state a frame - a plane's own axes, or the
+  axis a cylinder or cone was turned about, read off the OCCT surface at
+  tessellation time - the pattern is laid out in it, which is what makes
+  a straight knurl run along the axis and turning marks centre on it.
+  A face with no analytic surface falls back to the TRIPLANAR
+  projection: three axis-aligned projections blended by the object-space
+  normal, plausible from any view but ignorant of the geometry, and what
+  every face got before frames existed.
 - **No parametrization**: the shading normal is rotated by Mikkelsen's
   surface gradient, whose screen-space derivatives come from the
   pattern's *analytic* object-space gradient. No tangent frame, no UV,

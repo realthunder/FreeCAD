@@ -68,13 +68,21 @@ public:
   virtual SbBool matches(const SoElement * element) const;
   virtual SoElement * copyMatchInfo() const;
 
-  /// The borrowed index array.
+  /// The borrowed index arrays: one into the finish palette, one into
+  /// the palette of PROJECTION FRAMES the finish is laid out in. The
+  /// second is geometry rather than appearance -- the plane's own axes,
+  /// or the axis a cylinder was turned about -- and the writing node
+  /// states it only while a finish exists to lay out, so a shape nobody
+  /// finished never pays for the stream. Either array may be absent.
   struct Indices {
     const int32_t * index;
     int numindex;
+    const int32_t * frameindex;
+    int numframeindex;
     SbFCUniqueId nodeid;
 
     bool isPerFace() const { return numindex > 0; }
+    bool hasFrames() const { return numframeindex > 0; }
 
     /// Entry idx with the pad-with-entry-0 rule above (call only when
     /// isPerFace()). Clamped into a byte, which is what the stream slot
@@ -85,16 +93,29 @@ public:
       return value > 0 && value < 256 ? static_cast<uint8_t>(value) : 0;
     }
 
+    /// The frame index of face idx, same rule (call only when
+    /// hasFrames()).
+    uint8_t frameAt(int idx) const
+    {
+      int32_t value = this->frameindex[idx < this->numframeindex ? idx : 0];
+      return value > 0 && value < 256 ? static_cast<uint8_t>(value) : 0;
+    }
+
     void clear(void) {
       this->index = nullptr;
       this->numindex = 0;
+      this->frameindex = nullptr;
+      this->numframeindex = 0;
       this->nodeid = 0;
     }
   };
 
-  /// Borrow the index array from node's field; an empty array clears it.
+  /// Borrow the index arrays from node's fields; empty arrays clear
+  /// them, and either may be empty on its own.
   static void set(SoState * state, const SoNode * node,
-                  const int32_t * index, int numindex);
+                  const int32_t * index, int numindex,
+                  const int32_t * frameindex = nullptr,
+                  int numframeindex = 0);
   static const Indices & get(SoState * state);
 
 protected:

@@ -429,6 +429,14 @@ void BGFXView::init(bool keepShared)
     u_finishParams = bgfx::createUniform("u_finishParams",
                                          bgfx::UniformType::Vec4,
                                          Render::MaxFinishPalette);
+    // The projection frames that finish is laid out in: three vec4 per
+    // frame, entry 0 the draw's own. Kind 0 is the unframed frame --
+    // the triplanar projection that predates these -- so a zero upload
+    // reads as the old behaviour. Render::MaxFramePalette must match
+    // the shader's FC_FRAME_PALETTE.
+    u_frameParams = bgfx::createUniform("u_frameParams",
+                                        bgfx::UniformType::Vec4,
+                                        Render::MaxFramePalette * 3);
     // Emissive/occlusion material maps of the textured mesh programs
     // (units 4/5; u_texParams.zw flag their presence, the white
     // stand-in is never sampled).
