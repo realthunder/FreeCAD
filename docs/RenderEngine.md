@@ -405,9 +405,11 @@ both full at once.
 | `Render_Light` bulbs | `u_localLight` 4..7 | 4 | `Material::lightsource` draws, in `render()` |
 | scene light | `u_lightDir` etc. | 1 | `SoLightElement`, via `translateLightConfig` |
 
-**Coin lights** (`Render::ViewLightConfig`) are the viewer's headlight
-and backlight and any `SoDirectionalLight` / `SoPointLight` the
-traversal holds above the render-cache root. **Effect lights**
+**Coin lights** (`Render::ViewLightConfig`) are the viewer's rig --
+headlight, backlight, fill light -- and any `SoDirectionalLight` /
+`SoPointLight` the traversal holds above the render-cache root. The
+ambient of the same config is the `SoEnvironment` the viewer carries
+beside the fill light (§7). **Effect lights**
 (`u_localLight`, split in half by `kMediumSlots`) never come from the
 traversal at all: they are computed per frame from the draw materials,
 the fire half carrying the flame centroids with their clock flicker,
@@ -1251,7 +1253,8 @@ phone).
     ```python
     rm = Gui.ActiveDocument.ActiveView.getViewer().getSoRenderManager()
     root = rm.getSceneGraph()   # Separator: backlight, headlight,
-                                # camera, SoFCUnifiedSelection, ...
+                                # camera, viewerLightingRoot,
+                                # SoFCUnifiedSelection, ...
     root.insertChild(light, 3)  # after the camera = world coordinates
     ```
 
@@ -1266,20 +1269,32 @@ phone).
     ever matters: `u_viewLightColor[i].w` and `u_viewLightAtt[i].w`
     are both unread, which is exactly a cone (cutoff cosine, dropoff
     exponent) with `kind = 3` flagging it, so no new uniform array.
-  - **The viewer's lighting is behind upstream.** Upstream's
-    `DlgSettingsLightSources` is a superset of the fork's: it adds a
-    **fill light** (three-point lighting -- `SoDirectionalLight` in a
-    `SoTransformSeparator` whose rotation is `connectFrom` the camera
-    orientation) and an **`SoEnvironment` node** driven by
-    `AmbientLightColor` / `AmbientLightIntensity`. Porting it is
-    Gui-only work: `translateViewLightConfig` already carries any
-    plain directional light above the cache root, and the ambient
-    already reads `SoEnvironmentElement` -- the fork simply has no
-    such node, so it always sees Coin's default 0.2 grey.
   - The **specular** term still carries a 0.75 weight with no Coin
     counterpart. It did not show up in the ambient/diffuse parity
     measurements below, so whatever it costs is small, but it has not
     been measured on a strongly specular material.
+
+  **The viewer's rig, closed 2026-08-14.** The fork's viewer had two
+  lights (headlight, backlight) and no ambient node of its own, so
+  `SoEnvironmentElement` always read Coin's default 0.2 grey. It now
+  carries upstream's full rig: a **fill light** and an
+  **`SoEnvironment`**, both under a `viewerLightingRoot` group that
+  `setSceneGraph` inserts *after the camera* -- world space, but still
+  above the render-cache root, which is what lets a backend see them
+  (the bullet above). The fill light hangs in a `SoTransformSeparator`
+  under an `SoRotation` slaved to the camera's orientation
+  (`connectFrom`, re-slaved by `syncLightRotation` when `setCameraType`
+  swaps the camera node), so its direction stays camera-relative while
+  the geometry below is left alone. Preferences, all in the `View`
+  group beside the existing ones: `EnableFillLight` (**off** by
+  default in the fork, where upstream defaults it on -- the fork's
+  reference renders are lit by one light), `FillLightColor`,
+  `FillLightDirection`, `FillLightIntensity`, `AmbientLightColor`,
+  `AmbientLightIntensity` (default 20, i.e. Coin's own 0.2, so the node
+  alone changes nothing). The renderer side needed no change at all:
+  `translateViewLightConfig` already took any plain directional light,
+  the `getMatrix` unwinding already handled the transform separator,
+  and the ambient already read `SoEnvironmentElement`.
 
   **Ambient, closed 2026-08-14.** `Material::ambient` used to cross the
   bridge, get keyed into the bgfx material key, get streamed -- and

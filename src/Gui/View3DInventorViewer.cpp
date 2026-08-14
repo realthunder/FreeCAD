@@ -60,6 +60,7 @@
 # include <Inventor/nodes/SoCube.h>
 # include <Inventor/nodes/SoDirectionalLight.h>
 # include <Inventor/nodes/SoDrawStyle.h>
+# include <Inventor/nodes/SoEnvironment.h>
 # include <Inventor/nodes/SoEventCallback.h>
 # include <Inventor/nodes/SoFaceSet.h>
 # include <Inventor/nodes/SoIndexedFaceSet.h>
@@ -77,6 +78,7 @@
 # include <Inventor/nodes/SoSphere.h>
 # include <Inventor/nodes/SoSwitch.h>
 # include <Inventor/nodes/SoTransform.h>
+# include <Inventor/nodes/SoTransformSeparator.h>
 # include <Inventor/nodes/SoTranslation.h>
 # include <Inventor/events/SoMouseButtonEvent.h>
 # include <Inventor/nodes/SoTexture2.h>
@@ -1377,6 +1379,37 @@ void View3DInventorViewer::init()
     backlight->direction.setValue(-hl->direction.getValue());
     backlight->on.setValue(false); // by default off
 
+    // The third light of a three-point rig. Unlike the headlight it is not
+    // fixed to the eye: it lives after the camera, in world space, under a
+    // rotation slaved to the camera orientation, so its direction stays
+    // camera-relative while the geometry below it is not disturbed.
+    fillLight = new SoDirectionalLight();
+    fillLight->ref();
+    fillLight->setName("filllight");
+    fillLight->direction.setValue(-0.60F, -0.35F, -0.79F);
+    fillLight->intensity.setValue(0.6F);
+    fillLight->color.setValue(0.95F, 0.95F, 1.0F);
+    fillLight->on.setValue(false); // by default off
+
+    // Coin's own default (0.2 grey) until the preferences say otherwise, so
+    // simply having the node changes nothing.
+    environment = new SoEnvironment();
+    environment->ref();
+    environment->setName("environment");
+
+    lightRotation = new SoRotation;
+    lightRotation->ref();
+
+    auto threePointLightingSeparator = new SoTransformSeparator;
+    threePointLightingSeparator->addChild(lightRotation);
+    threePointLightingSeparator->addChild(fillLight);
+
+    viewerLightingRoot = new SoGroup;
+    viewerLightingRoot->ref();
+    viewerLightingRoot->setName("viewerLightingRoot");
+    viewerLightingRoot->addChild(threePointLightingSeparator);
+    viewerLightingRoot->addChild(environment);
+
     // Set up background scenegraph with image in it.
     backgroundroot = new SoSeparator;
     backgroundroot->ref();
@@ -1587,6 +1620,15 @@ View3DInventorViewer::~View3DInventorViewer()
     this->nonObjectGroup = nullptr;
     this->backlight->unref();
     this->backlight = nullptr;
+    this->viewerLightingRoot->unref();
+    this->viewerLightingRoot = nullptr;
+    this->lightRotation->rotation.disconnect();
+    this->lightRotation->unref();
+    this->lightRotation = nullptr;
+    this->fillLight->unref();
+    this->fillLight = nullptr;
+    this->environment->unref();
+    this->environment = nullptr;
 
     inventorSelection.reset(nullptr);
 
@@ -3191,6 +3233,26 @@ bool View3DInventorViewer::isBacklightEnabled() const
     return this->backlight->on.getValue();
 }
 
+SoDirectionalLight* View3DInventorViewer::getFillLight() const
+{
+    return this->fillLight;
+}
+
+void View3DInventorViewer::setFillLightEnabled(bool on)
+{
+    this->fillLight->on = on;
+}
+
+bool View3DInventorViewer::isFillLightEnabled() const
+{
+    return this->fillLight->on.getValue();
+}
+
+SoEnvironment* View3DInventorViewer::getEnvironment() const
+{
+    return this->environment;
+}
+
 void View3DInventorViewer::setSceneGraph(SoNode* root)
 {
     inherited::setSceneGraph(root);
@@ -3206,13 +3268,37 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
     //the geometry scene only
     SoNode* scene = this->getSoRenderManager()->getSceneGraph();
     if (scene && scene->getTypeId().isDerivedFrom(SoSeparator::getClassTypeId())) {
+        auto sceneroot = static_cast<SoSeparator*>(scene);
         sa.apply(scene);
         if (!sa.getPath()) {
-            static_cast<SoSeparator*>(scene)->insertChild(this->backlight, 0);
+            sceneroot->insertChild(this->backlight, 0);
+        }
+        // The fill light and the ambient environment go *after* the camera,
+        // in world space, but still above the render-cache root so the
+        // renderer backends see them too. The backlight and the headlight
+        // sit before the camera, which is what makes them eye-fixed.
+        sa.reset();
+        sa.setNode(this->viewerLightingRoot);
+        sa.apply(scene);
+        if (!sa.getPath()) {
+            // Anchored on the camera rather than on a fixed position: the
+            // scene root itself is swapped out by index when shadows are
+            // activated, so it is not something to count from.
+            int index = sceneroot->findChild(getSoRenderManager()->getCamera());
+            if (index >= 0) {
+                ++index;
+            }
+            else {
+                index = sceneroot->findChild(root);
+            }
+            sceneroot->insertChild(this->viewerLightingRoot,
+                                   index < 0 ? sceneroot->getNumChildren() : index);
         }
     }
 
     _pimpl->addRendererBoundsNode();
+
+    syncLightRotation();
 
     navigation->findBoundingSphere();
 }
@@ -3330,8 +3416,12 @@ void View3DInventorViewer::savePicture(int width, int height, int sample, const 
         root->addChild(lm);
     }
 
+    // The same rig as the on-screen scene root, in the same order: the
+    // eye-fixed lights before the camera, the world-space ones after it.
     root->addChild(getHeadlight());
+    root->addChild(getBacklight());
     root->addChild(camera);
+    root->addChild(viewerLightingRoot);
     auto gl = new SoCallback;
     gl->setCallback(setGLWidgetCB, this->getGLWidget());
     root->addChild(gl);
@@ -5608,18 +5698,32 @@ void View3DInventorViewer::setCameraType(SoType type)
 {
     inherited::setCameraType(type);
 
+    SoCamera* cam = this->getSoRenderManager()->getCamera();
+    if (!cam) {
+        return;
+    }
+
     if (type.isDerivedFrom(SoPerspectiveCamera::getClassTypeId())) {
         // When doing a viewAll() for an orthographic camera and switching
         // to perspective the scene looks completely strange because of the
         // heightAngle. Setting it to 45 deg also causes an issue with a too
         // close camera but we don't have this other ugly effect.
-        SoCamera* cam = this->getSoRenderManager()->getCamera();
-        if (!cam) {
-            return;
-        }
-
         static_cast<SoPerspectiveCamera*>(cam)->heightAngle = (float)(M_PI / 4.0);  // NOLINT
     }
+
+    // The camera node itself was just replaced, so the fill light's rotation
+    // has to be slaved to the new one.
+    syncLightRotation();
+}
+
+void View3DInventorViewer::syncLightRotation()
+{
+    SoCamera* cam = this->getSoRenderManager()->getCamera();
+    if (!cam) {
+        return;
+    }
+    lightRotation->rotation.disconnect();
+    lightRotation->rotation.connectFrom(&cam->orientation);
 }
 
 void View3DInventorViewer::moveCameraTo(const SbRotation& orientation, const SbVec3f& position, int duration)

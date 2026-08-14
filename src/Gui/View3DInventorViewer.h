@@ -61,6 +61,8 @@ class SoDetail;
 class SoShapeHints;
 class SoMaterial;
 class SoRotationXYZ;
+class SoRotation;
+class SoEnvironment;
 class SbSphereSheetProjector;
 class SoEventCallback;  // NOLINT
 class SbBox2s;
@@ -190,6 +192,14 @@ public:
     SoDirectionalLight* getBacklight() const;
     void setBacklightEnabled(bool on);
     bool isBacklightEnabled() const;
+    /// The third of the three-point rig: a fill light that tracks the camera.
+    SoDirectionalLight* getFillLight() const;
+    void setFillLightEnabled(bool on);
+    bool isFillLightEnabled() const;
+    /// Carries the scene's ambient light (GL's LIGHT_MODEL_AMBIENT).
+    SoEnvironment* getEnvironment() const;
+    /// Slave the fill light's rotation to the current camera's orientation.
+    void syncLightRotation();
     void setSceneGraph (SoNode *root) override;
     bool searchNode(SoNode*) const;
 
@@ -650,6 +660,13 @@ private:
     SoSeparator * backgroundroot;
     SoSeparator * foregroundroot;
     SoDirectionalLight* backlight;
+    SoDirectionalLight* fillLight;
+    SoEnvironment* environment;
+    // Sits between the camera and the scene root: the fill light (under a
+    // rotation slaved to the camera, so the rig tracks the view) and the
+    // ambient environment.
+    SoGroup* viewerLightingRoot;
+    SoRotation* lightRotation;
 
     // Scene graph root
     SoSeparator * pcViewProviderRoot;
