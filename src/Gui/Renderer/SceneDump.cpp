@@ -169,7 +169,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     pattern with its pitch, depth and lay angle, which the backend
 //     shades as a procedural normal perturbation. A viewer older than
 //     this draws the plain surface, i.e. the pre-feature look.
-const uint32_t kVersion = 49;
+// 50: Per-face surface finish -- the per-vertex material stream widens
+//     from 8 to 12 bytes, the third slot carrying an index into the
+//     draw material's new finish palette (the distinct finishes of a
+//     per-face-finished object). A viewer older than this cannot read
+//     the stream at all, which is why the mesh chunk revision moves
+//     with it.
+const uint32_t kVersion = 50;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -180,8 +186,16 @@ const uint32_t kVersion = 49;
 ///  5: a mesh chunk may carry the per-face material stream, and a
 ///     material chunk the perfacematerial flag.
 ///  6: a material chunk carries the perfacepbr flag beside it.
-///  7: a material chunk carries the surface finish record.)
-const uint32_t kChunkVersion = 7;
+///  7: a material chunk carries the surface finish record.
+///  8: the mesh chunk's material stream is 12 bytes a vertex (the
+///     finish palette index in the third slot), and a material chunk
+///     carries the palette itself.)
+const uint32_t kChunkVersion = 8;
+
+/// Bytes per vertex of MeshData::materials, whose layout Renderer.h
+/// documents. Named here because the stride is what a reader of an
+/// older dump would get wrong.
+const size_t kMaterialStride = MeshData::MaterialStride;
 
 //////////////////////////////////////////////////////////////////////
 // Streamed config layout guards.
@@ -385,7 +399,7 @@ void writeMeshChunk(Writer &w, const MeshData &m)
     if (m.texCoords)
         w.raw(m.texCoords, size_t(m.numVertices) * 4 * sizeof(float));
     if (m.materials)
-        w.raw(m.materials, size_t(m.numVertices) * 8);
+        w.raw(m.materials, size_t(m.numVertices) * kMaterialStride);
 
     auto indices = [&](const int32_t *v, int n) {
         w.i32(v ? n : 0);
@@ -594,8 +608,8 @@ void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
         mesh->texCoords = mesh->uvStore.data();
     }
     if (flags & 8) {
-        mesh->matStore.resize(nv * 8);
-        r.raw(mesh->matStore.data(), nv * 8);
+        mesh->matStore.resize(nv * kMaterialStride);
+        r.raw(mesh->matStore.data(), nv * kMaterialStride);
         mesh->materials = mesh->matStore.data();
     }
 
@@ -1241,6 +1255,20 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     w.f(m.finishpitch);
     w.f(m.finishdepth);
     w.f(m.finishangle);
+    // The finish palette (v50): entry 0 repeats the record above, so a
+    // draw without a per-face finish writes an empty one.
+    const uint32_t numfinish = m.finishpalette
+        ? uint32_t(std::min(m.finishpalette->entries.size(),
+                            size_t(MaxFinishPalette)))
+        : 0;
+    w.u32(numfinish);
+    for (uint32_t i = 0; i < numfinish; ++i) {
+        const auto &entry = m.finishpalette->entries[i];
+        w.u8(entry.pattern);
+        w.f(entry.pitch);
+        w.f(entry.depth);
+        w.f(entry.angle);
+    }
     w.b(m.water);
     w.f(m.waterdensity);
     w.b(m.glass);
@@ -1350,6 +1378,25 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
         m.finishpitch = r.f();
         m.finishdepth = r.f();
         m.finishangle = r.f();
+    }
+    if (version >= 50) {
+        const uint32_t numfinish = r.u32();
+        if (r.ok && numfinish) {
+            auto palette = std::make_shared<FinishPalette>();
+            palette->entries.reserve(
+                    std::min(numfinish, uint32_t(MaxFinishPalette)));
+            for (uint32_t i = 0; i < numfinish && r.ok; ++i) {
+                FinishPalette::Entry entry;
+                entry.pattern = r.u8();
+                entry.pitch = r.f();
+                entry.depth = r.f();
+                entry.angle = r.f();
+                if (i < uint32_t(MaxFinishPalette))
+                    palette->entries.push_back(entry);
+            }
+            if (r.ok)
+                m.finishpalette = std::move(palette);
+        }
     }
     m.water = r.b();
     m.waterdensity = r.f();

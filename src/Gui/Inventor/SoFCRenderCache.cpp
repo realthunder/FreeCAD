@@ -69,6 +69,7 @@
 #include "SoFCDetail.h"
 #include "CoinLazyElementEx.h"
 #include "SoFCDiffuseElement.h"
+#include "SoFCFinishElement.h"
 #include "SoFCPbrElement.h"
 #include "SoFCZoomOffsetElement.h"
 #include "SoFCDisplayModeElement.h"
@@ -316,6 +317,7 @@ void SoFCRenderCache::initClass()
   SoFCDiffuseElement::initClass();
   SoFCZoomOffsetElement::initClass();
   SoFCPbrElement::initClass();
+  SoFCFinishElement::initClass();
 }
 
 void SoFCRenderCache::resetNode()
@@ -327,6 +329,7 @@ void SoFCRenderCache::cleanup()
 {
   SoFCDiffuseElement::cleanup();
   SoFCPbrElement::cleanup();
+  SoFCFinishElement::cleanup();
 }
 
 static inline std::bitset<32>
@@ -470,6 +473,8 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->shininesses.reset();
   this->metallics.reset();
   this->roughnesses.reset();
+  this->finishpalette.reset();
+  this->finishindices.reset();
   this->texturematrices.clear();
   this->textures.clear();
   this->bumpmaps.clear();
@@ -1470,6 +1475,41 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
   PRIVATE(this)->material.finishpitch = material->finishPitch.getValue();
   PRIVATE(this)->material.finishdepth = material->finishDepth.getValue();
   PRIVATE(this)->material.finishangle = material->finishAngle.getValue();
+  // The per-face form: the palette of distinct finishes, and one index
+  // into it per face. Built once here rather than per draw, so every
+  // draw off this node shares the pointer -- which is what the batching
+  // comparison keys on.
+  PRIVATE(this)->material.finishpalette.reset();
+  PRIVATE(this)->material.finishindices.reset();
+  const int numpalette = material->finishPalette.getNum();
+  const int numindices = material->finishIndices.getNum();
+  if (numpalette > 1 && numindices > 0) {
+    auto palette = std::make_shared<Render::FinishPalette>();
+    const SbVec4f *entries = material->finishPalette.getValues(0);
+    const int num = std::min(numpalette, Render::MaxFinishPalette);
+    palette->entries.reserve(num);
+    for (int i = 0; i < num; ++i) {
+      Render::FinishPalette::Entry entry;
+      const float value = entries[i][0];
+      entry.pattern = value > 0.0f && value < 256.0f
+          ? static_cast<uint8_t>(value + 0.5f) : 0;
+      entry.pitch = entries[i][1];
+      entry.depth = entries[i][2];
+      entry.angle = entries[i][3];
+      palette->entries.push_back(entry);
+    }
+    PRIVATE(this)->material.finishpalette = std::move(palette);
+    const int32_t *indices = material->finishIndices.getValues(0);
+    PRIVATE(this)->material.finishindices.reserve(numindices);
+    for (int i = 0; i < numindices; ++i) {
+      // An index the palette cap dropped resolves to entry 0, the
+      // object's own finish (ViewProviderGeometryObject caps the same
+      // way, so this only catches a hand-built node).
+      const int32_t idx = indices[i];
+      PRIVATE(this)->material.finishindices.append(
+              idx > 0 && idx < num ? idx : 0);
+    }
+  }
   PRIVATE(this)->material.water = material->water.getValue();
   PRIVATE(this)->material.waterdensity = material->waterDensity.getValue();
   PRIVATE(this)->material.glass = material->glass.getValue();
@@ -2935,6 +2975,8 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
     bboxmaterial.metallicroughnessmaps.clear();
     bboxmaterial.texturematrices.clear();
     bboxmaterial.usershader.reset();
+    bboxmaterial.finishpalette.reset();
+    bboxmaterial.finishindices.reset();
 
     res[bboxmaterial].emplace_back(cache, matrix, false, false, CacheKeyPtr());
   }

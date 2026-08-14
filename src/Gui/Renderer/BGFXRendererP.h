@@ -965,8 +965,11 @@ struct ColorVertex
 
 
 // Fourth vertex stream of the mesh programs: the per-face material
-// bake (MeshData::materials) as two rgba8 attributes — Color1 the
-// emissive, Color2 the specular with quantized shininess in alpha.
+// bake (MeshData::materials) as three rgba8 attributes — Color1 the
+// emissive, Color2 the specular with quantized shininess in alpha, and
+// Color3 the surface finish palette index (Material::finishpalette) in
+// its first byte, UNNORMALIZED so the shader reads the index itself
+// rather than a fraction of 255.
 // Bound only for meshes that carry the stream; every other mesh-program
 // draw leaves the attributes unbound, which bgfx resolves to the GL
 // default attribute — finite values the shader multiplies out, since
@@ -975,6 +978,7 @@ struct MatVertex
 {
     uint32_t emissive;
     uint32_t specshine;
+    uint32_t finishidx;
 
     static void init()
     {
@@ -985,6 +989,7 @@ struct MatVertex
             .begin()
             .add(bgfx::Attrib::Color1, 4, bgfx::AttribType::Uint8, true)
             .add(bgfx::Attrib::Color2, 4, bgfx::AttribType::Uint8, true)
+            .add(bgfx::Attrib::Color3, 4, bgfx::AttribType::Uint8, false)
             .end();
     };
 
@@ -1468,9 +1473,10 @@ struct GpuMesh
         if (mesh.materials) {
             MatVertex::init();
             mats = bgfx::createVertexBuffer(
-                bgfx::copy(mesh.materials, uint32_t(mesh.numVertices) * 8),
+                bgfx::copy(mesh.materials,
+                           uint32_t(mesh.numVertices) * sizeof(MatVertex)),
                 MatVertex::ms_layout);
-            track(size_t(mesh.numVertices) * 8);
+            track(size_t(mesh.numVertices) * sizeof(MatVertex));
         }
 
         if (mesh.numLineIndices > 1
@@ -3655,6 +3661,9 @@ public:
     /// does not use it: a uniform-selected branch), y = pitch and
     /// z = depth in millimetres of object space, w = the lay angle in
     /// radians. Bound at every site that submits a mesh program.
+    /// An ARRAY of Render::MaxFinishPalette entries: a per-face-finished
+    /// draw uploads its whole palette, everything else uploads entry 0
+    /// alone (which is all an unbound or zero index attribute reads).
     bgfx::UniformHandle u_finishParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texEmissive = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texOcclusion = BGFX_INVALID_HANDLE;

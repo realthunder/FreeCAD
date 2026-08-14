@@ -68,6 +68,7 @@
 #include "SoFCSelection.h"
 #include "SoFCUnifiedSelection.h"
 #include "Inventor/SoFCRenderMaterial.h"
+#include "Renderer/Renderer.h"
 #include "View3DInventorViewer.h"
 
 
@@ -716,7 +717,12 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     // a uniform appearance, the first face's for a per-face one until
     // the per-face finish stream lands.
     App::SurfaceFinish finish = ShapeAppearance.getFinish(0);
-    if (!finish.isSet()) {
+    // An appearance that states a finish ANYWHERE is the authority for
+    // every face, not only for the faces it finished: a face left
+    // unfinished in a per-face appearance is a statement too, and letting
+    // the knobs fill it in would contradict the palette built below
+    // (whose entry 0 is what these scalars repeat).
+    if (!ShapeAppearance.hasFinish()) {
         // The pattern knob reads as a name (an enumeration the object
         // carries its own list for, or a plain string) or as the raw
         // Pattern value, so it can be stated from the property editor
@@ -755,6 +761,50 @@ void ViewProviderGeometryObject::updateRenderMaterial()
         }
     }
     applyFinishDefaults(finish);
+
+    // Per-face form of the finish, when the appearance's entries
+    // genuinely differ in it. Four numbers per face is three arrays more
+    // than a per-vertex stream should carry, so the distinct finishes
+    // become a PALETTE and each face carries one index into it (see
+    // SoFCFinishElement); entry 0 is what the scalars above repeat, so a
+    // consumer that ignores the palette keeps the per-object look.
+    std::vector<SbVec4f> palette;
+    std::vector<int32_t> finishIndices;
+    const std::vector<App::SurfaceFinish> &finishes = ShapeAppearance.getFinishes();
+    bool finishVaries = false;
+    for (std::size_t i = 1; i < finishes.size() && !finishVaries; ++i)
+        finishVaries = finishes[i] != finishes[0];
+    if (finishVaries) {
+        finishIndices.reserve(finishes.size());
+        for (const App::SurfaceFinish &entry : finishes) {
+            App::SurfaceFinish face = entry;
+            applyFinishDefaults(face);
+            const SbVec4f value(float(face.pattern), face.pitch, face.depth,
+                                face.angle);
+            int idx = -1;
+            for (std::size_t k = 0; k < palette.size() && idx < 0; ++k) {
+                if (palette[k] == value)
+                    idx = int(k);
+            }
+            if (idx < 0) {
+                // Past the cap the face falls back to entry 0 -- the
+                // object's own finish -- rather than to an arbitrary
+                // neighbour's. A part with more than this many distinct
+                // finishes is not a part anyone machined.
+                if (palette.size() >= std::size_t(Render::MaxFinishPalette))
+                    idx = 0;
+                else {
+                    palette.push_back(value);
+                    idx = int(palette.size()) - 1;
+                }
+            }
+            finishIndices.push_back(idx);
+        }
+    }
+    if (palette.size() < 2) {
+        palette.clear();
+        finishIndices.clear();
+    }
 
     // Render_Water turns the object's closed shape into a water body of
     // the render engine's volumetric lighting pass (tinted by the shape
@@ -845,6 +895,7 @@ void ViewProviderGeometryObject::updateRenderMaterial()
         && lightShadowExtProp->getValue();
 
     if (!pbr && metallic < 0.0f && roughness < 0.0f && !finish.isSet()
+            && palette.empty()
             && !water && !glass && !cloud && !fire && !fountain && !light) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);
@@ -881,6 +932,33 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     pcRenderMaterial->finishPitch = finish.pitch;
     pcRenderMaterial->finishDepth = finish.depth;
     pcRenderMaterial->finishAngle = finish.angle;
+    // Same "only when they really change" rule as the factor arrays: a
+    // write notifies, and a notification off this node invalidates the
+    // render caches below it.
+    auto syncPalette = [](SoMFVec4f &field, const std::vector<SbVec4f> &values) {
+        const int num = static_cast<int>(values.size());
+        if (field.getNum() == num
+                && (num == 0
+                    || std::equal(values.begin(), values.end(),
+                                  field.getValues(0))))
+            return;
+        field.setNum(num);
+        if (num)
+            field.setValues(0, num, values.data());
+    };
+    auto syncIndices = [](SoMFInt32 &field, const std::vector<int32_t> &values) {
+        const int num = static_cast<int>(values.size());
+        if (field.getNum() == num
+                && (num == 0
+                    || std::equal(values.begin(), values.end(),
+                                  field.getValues(0))))
+            return;
+        field.setNum(num);
+        if (num)
+            field.setValues(0, num, values.data());
+    };
+    syncPalette(pcRenderMaterial->finishPalette, palette);
+    syncIndices(pcRenderMaterial->finishIndices, finishIndices);
     pcRenderMaterial->water = water;
     pcRenderMaterial->waterDensity = waterDensity < 0.0f ? 0.0f
                                                          : waterDensity;

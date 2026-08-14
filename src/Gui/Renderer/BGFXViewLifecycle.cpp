@@ -423,8 +423,12 @@ void BGFXView::init(bool keepShared)
     // Machined surface finish of the mesh programs (all of them, not
     // just the textured ones: the pattern is procedural over object
     // space and needs no texture coordinates).
+    // An array: entry 0 is the draw's own finish, and a per-face-finished
+    // draw fills the rest with its palette (Render::MaxFinishPalette
+    // must match the shader's FC_FINISH_PALETTE).
     u_finishParams = bgfx::createUniform("u_finishParams",
-                                         bgfx::UniformType::Vec4);
+                                         bgfx::UniformType::Vec4,
+                                         Render::MaxFinishPalette);
     // Emissive/occlusion material maps of the textured mesh programs
     // (units 4/5; u_texParams.zw flag their presence, the white
     // stand-in is never sampled).

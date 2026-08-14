@@ -97,6 +97,7 @@ void main()
 	v_color0 = u_instParams.x > 0.5 ? a_color0 : i_data4;
 	v_color1 = a_color1;
 	v_color2 = a_color2;
+	v_findex = a_color3.x;
 	v_vpos = mul(u_view, wpos).xyz;
 	gl_Position.z += (u_params.w + fcPolygonOffsetSlope(v_vpos, v_normal))
 		* gl_Position.w;
@@ -113,6 +114,11 @@ void main()
 	// stage multiplies them out — u_matEmissive.w selects).
 	v_color1 = a_color1;
 	v_color2 = a_color2;
+	// The stream's third slot: the surface finish palette index, an
+	// integer 0..255 rather than a normalized byte (the attribute is
+	// unnormalized) — the same u_matEmissive.w gate decides whether the
+	// fragment stage reads it.
+	v_findex = a_color3.x;
 #ifdef TEXTURE
 	// GL texture matrix on (s, t, 0, 1); the per-fragment projective
 	// divide collapses to a per-vertex one (exact for affine matrices).

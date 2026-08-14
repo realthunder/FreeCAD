@@ -40,11 +40,27 @@
  * shader.
  */
 
-// x = pattern (App::SurfaceFinish::Pattern; 0 = none, and a value this
-// shader does not know shades as none, which is how a scene written by
-// a later build degrades), y = pitch and z = depth in millimetres of
+// The draw's finish PALETTE, entry 0 being the finish of the draw as a
+// whole. x = pattern (App::SurfaceFinish::Pattern; 0 = none, and a value
+// this shader does not know shades as none, which is how a scene written
+// by a later build degrades), y = pitch and z = depth in millimetres of
 // object space, w = the lay angle in radians.
-uniform vec4 u_finishParams;
+//
+// A per-face-finished draw states up to FC_FINISH_PALETTE entries and
+// every vertex carries the index of its own (the material stream's third
+// slot, v_findex); a uniformly finished one states entry 0 alone and
+// every vertex indexes it. Must match Render::MaxFinishPalette, which is
+// what the backend creates the uniform with.
+#define FC_FINISH_PALETTE 8
+uniform vec4 u_finishParams[FC_FINISH_PALETTE];
+
+/// The palette entry a vertex's index names, clamped into the array a
+/// mismatched or unbound index cannot then read past.
+vec4 fcFinishEntry(float index)
+{
+	int i = int(clamp(index, 0.0, float(FC_FINISH_PALETTE - 1)));
+	return u_finishParams[i];
+}
 
 #define FC_FINISH_KNURL           1.0
 #define FC_FINISH_KNURL_STRAIGHT  2.0
@@ -183,15 +199,16 @@ vec2 fcFinishPattern(vec2 p, float pattern, float pitch, float depth,
 /// part of it this pixel cannot resolve to the roughness.
 ///
 /// opos/onrm are the object-space position and normal, vpos the view-
-/// space position. Does nothing at all when no finish is stated.
-void fcApplyFinish(vec3 opos, vec3 onrm, vec3 vpos, inout vec3 n,
-                   inout float rough)
+/// space position, params the palette entry this fragment's face names
+/// (fcFinishEntry). Does nothing at all when no finish is stated.
+void fcApplyFinish(vec3 opos, vec3 onrm, vec3 vpos, vec4 params,
+                   inout vec3 n, inout float rough)
 {
-	float pattern = u_finishParams.x;
+	float pattern = params.x;
 	if (pattern < 0.5 || pattern > FC_FINISH_LAST + 0.5)
 		return;
-	float pitch = max(u_finishParams.y, 1.0e-6);
-	float depth = u_finishParams.z;
+	float pitch = max(params.y, 1.0e-6);
+	float depth = params.z;
 
 	// The pixel footprint, in object space and so in the units the
 	// pitch is stated in. It bounds the footprint in each of the three
@@ -226,8 +243,8 @@ void fcApplyFinish(vec3 opos, vec3 onrm, vec3 vpos, inout vec3 n,
 	float wsum = w.x + w.y + w.z;
 	w = wsum > 1.0e-8 ? w / wsum : vec3(0.0, 0.0, 1.0);
 
-	float ca = cos(u_finishParams.w);
-	float sa = sin(u_finishParams.w);
+	float ca = cos(params.w);
+	float sa = sin(params.w);
 	float d = depth * vis;
 	// The object-space gradient of the height field. Each plane
 	// contributes its 2D slope along that plane's two axes; the

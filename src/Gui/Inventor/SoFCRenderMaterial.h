@@ -29,6 +29,8 @@
 #include <Inventor/fields/SoSFImage.h>
 #include <Inventor/fields/SoSFInt32.h>
 #include <Inventor/fields/SoMFFloat.h>
+#include <Inventor/fields/SoMFInt32.h>
+#include <Inventor/fields/SoMFVec4f.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoSubNode.h>
 #include <FCGlobal.h>
@@ -84,6 +86,26 @@ public:
     SoSFFloat finishPitch;
     SoSFFloat finishDepth;
     SoSFFloat finishAngle;
+    /** Per-face form of the finish above (empty = the scalars apply)
+     *
+     * A finish is four numbers, so a per-face one would be four arrays --
+     * three more than a per-vertex stream should carry. Instead the
+     * distinct finishes the appearance holds form a PALETTE, and what
+     * travels per face is one index into it: finishPalette holds the
+     * entries as (pattern, pitch, depth, angle) exactly as the scalars
+     * above state them, and finishIndices holds one palette index per
+     * face. Both fields are set or neither is, and entry 0 of the
+     * palette is what the scalars repeat -- so a consumer that ignores
+     * them keeps the per-object look.
+     *
+     * finishIndices travels into SoFCFinishElement on traversal and is
+     * baked into the per-vertex material stream by the render cache; the
+     * palette is read straight off this node by the cache's post
+     * callback, since its consumer is the draw material rather than the
+     * shape below.
+     */
+    SoMFVec4f finishPalette;
+    SoMFInt32 finishIndices;
     /// The shapes form a water body: their closed volume becomes a
     /// scattering medium of the render engine's volumetric lighting
     /// pass (tinted by the material diffuse color), instead of an

@@ -1,4 +1,4 @@
-$input v_normal, v_color0, v_color1, v_color2, v_vpos, v_opos, v_onrm
+$input v_normal, v_color0, v_color1, v_color2, v_vpos, v_opos, v_onrm, v_findex
 
 /*
  * FreeCAD CAD-mesh fragment shader, unclipped variant (no discard, keeps

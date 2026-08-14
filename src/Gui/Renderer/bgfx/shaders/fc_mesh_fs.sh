@@ -221,7 +221,12 @@ void main()
 	// Machined surface finish (App::SurfaceFinish): the shading normal
 	// only, never the geometric one -- geoN answers which side of the
 	// body a face is on, and a knurl is not a side.
-	if (u_finishParams.x > 0.5)
+	// The palette entry this face names: the stream's third slot, or
+	// entry 0 (the draw's own finish) for a draw that does not consume
+	// the stream -- the same u_matEmissive.w gate the material fields
+	// above use, so an unbound attribute is never read.
+	vec4 finishParams = fcFinishEntry(v_findex * perFace);
+	if (finishParams.x > 0.5)
 	{
 		// The unresolvable part of the pattern comes back as
 		// roughness, which the Phong path spells as a shininess: give
@@ -232,7 +237,7 @@ void main()
 		float frough = phong
 			? sqrt(2.0 / (max(matSpec.w, 0.0) * 128.0 + 2.0))
 			: rough;
-		fcApplyFinish(v_opos, v_onrm, v_vpos, n, frough);
+		fcApplyFinish(v_opos, v_onrm, v_vpos, finishParams, n, frough);
 		if (phong)
 			matSpec.w = clamp((2.0 / (frough * frough) - 2.0)
 			                      / 128.0, 0.0, 1.0);

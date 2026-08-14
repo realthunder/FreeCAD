@@ -25,6 +25,7 @@
 #include <Inventor/actions/SoCallbackAction.h>
 
 #include "SoFCRenderMaterial.h"
+#include "SoFCFinishElement.h"
 #include "SoFCPbrElement.h"
 
 using namespace Gui;
@@ -53,6 +54,14 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_ADD_FIELD(finishPitch, (0.0f));
     SO_NODE_ADD_FIELD(finishDepth, (0.0f));
     SO_NODE_ADD_FIELD(finishAngle, (0.0f));
+    // Empty by default: the scalars above are the whole finish until
+    // something states one per face.
+    SO_NODE_ADD_FIELD(finishPalette, (SbVec4f(0.0f, 0.0f, 0.0f, 0.0f)));
+    SO_NODE_ADD_FIELD(finishIndices, (0));
+    finishPalette.setNum(0);
+    finishPalette.setDefault(TRUE);
+    finishIndices.setNum(0);
+    finishIndices.setDefault(TRUE);
     SO_NODE_ADD_FIELD(water, (false));
     SO_NODE_ADD_FIELD(waterDensity, (0.0f));
     SO_NODE_ADD_FIELD(glass, (false));
@@ -93,6 +102,12 @@ void SoFCRenderMaterial::doAction(SoAction *action)
     SoFCPbrElement::set(action->getState(), this,
                         nm ? metallics.getValues(0) : nullptr, nm,
                         nr ? roughnesses.getValues(0) : nullptr, nr);
+    // The palette stays here: its consumer is the draw material, which
+    // the render cache reads off this node. Only the per-face index
+    // array has to reach the shape traversal below.
+    const int nf = finishPalette.getNum() > 1 ? finishIndices.getNum() : 0;
+    SoFCFinishElement::set(action->getState(), this,
+                           nf ? finishIndices.getValues(0) : nullptr, nf);
 }
 
 SO_NODE_SOURCE(SoFCRenderTexture)

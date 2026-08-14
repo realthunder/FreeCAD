@@ -168,6 +168,9 @@ translateCache(SoFCVertexCache * cache)
     mesh->positions = reinterpret_cast<const float *>(cache->getVertexArray());
     mesh->normals = reinterpret_cast<const float *>(cache->getNormalArray());
     mesh->colors = cache->getColorArray();
+    static_assert(Render::MeshData::MaterialStride
+                      == SoFCVertexCache::MaterialStride,
+                  "material stream stride mismatch");
     mesh->materials = cache->getMaterialArray();
 
     static_assert(sizeof(GLint) == sizeof(int32_t), "GLint size mismatch");
@@ -787,6 +790,10 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         res.finishpitch = m.finishpitch;
         res.finishdepth = m.finishdepth;
         res.finishangle = m.finishangle;
+        // The palette rides along; whether a draw shades from it is
+        // decided per draw below (a partial draw resolves its face's
+        // entry into the scalars instead).
+        res.finishpalette = m.finishpalette;
         res.water = m.water;
         res.waterdensity = m.waterdensity;
         res.glass = m.glass;
@@ -1123,7 +1130,8 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                     || material.speculars.getNum()
                     || material.shininesses.getNum()
                     || material.metallics.getNum()
-                    || material.roughnesses.getNum();
+                    || material.roughnesses.getNum()
+                    || material.finishindices.getNum();
                 if (ventry.partidx < 0) {
                     draw.material.perfacematerial =
                         hasarrays && mesh->materials != nullptr;
@@ -1153,6 +1161,22 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                         draw.material.metallic = material.metallics[p < n ? p : 0];
                     if (int n = material.roughnesses.getNum())
                         draw.material.roughness = material.roughnesses[p < n ? p : 0];
+                    // A single-face draw carries no stream to index the
+                    // palette with, so its face's entry becomes the
+                    // draw's own finish and the palette goes away.
+                    const int n = material.finishindices.getNum();
+                    if (n && material.finishpalette) {
+                        const auto &entries = material.finishpalette->entries;
+                        const int32_t idx = material.finishindices[p < n ? p : 0];
+                        if (idx >= 0 && std::size_t(idx) < entries.size()) {
+                            const auto &entry = entries[std::size_t(idx)];
+                            draw.material.finish = entry.pattern;
+                            draw.material.finishpitch = entry.pitch;
+                            draw.material.finishdepth = entry.depth;
+                            draw.material.finishangle = entry.angle;
+                        }
+                    }
+                    draw.material.finishpalette.reset();
                 }
             }
             draw.identity = ventry.identity;

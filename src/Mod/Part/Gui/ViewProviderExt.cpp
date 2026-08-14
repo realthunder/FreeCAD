@@ -1921,7 +1921,13 @@ static bool materialsUnrepresentable(const std::vector<App::Material> &mats)
         if (mats[i].ambientColor != mats[0].ambientColor
                 || mats[i].specularColor != mats[0].specularColor
                 || mats[i].emissiveColor != mats[0].emissiveColor
-                || mats[i].shininess != mats[0].shininess)
+                || mats[i].shininess != mats[0].shininess
+                // A per-face surface finish is carried by the material
+                // index, which only means the face while the shape
+                // binds its materials per part -- an instanced
+                // representation states one material per instance and
+                // would quietly drop every face's finish but the first.
+                || mats[i].finish != mats[0].finish)
             return true;
     }
     return false;

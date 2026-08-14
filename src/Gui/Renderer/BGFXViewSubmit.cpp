@@ -135,15 +135,42 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
     // perturbed normal never moves a fragment anyway. A pattern this
     // build's shader does not know reaches it unchanged and shades as
     // none, the same way the cache passes one through.
-    float finishParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    if (mat.finish != 0 && mat.lighting && pass != PassDepthOnly
-            && mat.finishpitch > 0.0f && mat.finishdepth > 0.0f) {
-        finishParams[0] = float(mat.finish);
-        finishParams[1] = mat.finishpitch;
-        finishParams[2] = mat.finishdepth;
-        finishParams[3] = bx::toRad(mat.finishangle);
+    float finishParams[Render::MaxFinishPalette][4] = {};
+    uint16_t numFinish = 1;
+    const bool finishOn = mat.lighting && pass != PassDepthOnly;
+    auto setFinish = [](float (&dst)[4], uint8_t pattern, float pitch,
+                        float depth, float angle) {
+        if (pattern == 0 || pitch <= 0.0f || depth <= 0.0f)
+            return;
+        dst[0] = float(pattern);
+        dst[1] = pitch;
+        dst[2] = depth;
+        dst[3] = bx::toRad(angle);
+    };
+    if (finishOn) {
+        setFinish(finishParams[0], mat.finish, mat.finishpitch,
+                  mat.finishdepth, mat.finishangle);
+        // A per-face finish: the palette the vertex stream's index slot
+        // names. Uploaded whole (entries the palette does not fill stay
+        // zero, so a stale index from an earlier draw shades as none)
+        // and only for a draw that actually consumes the stream.
+        if (mat.finishpalette && mat.perfacematerial) {
+            const auto &entries = mat.finishpalette->entries;
+            const size_t num = std::min(entries.size(),
+                                        size_t(Render::MaxFinishPalette));
+            for (size_t i = 0; i < num; ++i) {
+                finishParams[i][0] = 0.0f;
+                finishParams[i][1] = 0.0f;
+                finishParams[i][2] = 0.0f;
+                finishParams[i][3] = 0.0f;
+                setFinish(finishParams[i], entries[i].pattern,
+                          entries[i].pitch, entries[i].depth,
+                          entries[i].angle);
+            }
+            numFinish = Render::MaxFinishPalette;
+        }
     }
-    bgfx::setUniform(u_finishParams, finishParams);
+    bgfx::setUniform(u_finishParams, finishParams, numFinish);
     float matcapParams[4] = {matcapFrame ? 1.0f : 0.0f,
                              float(matcapPreset), matcapTint, 0.0f};
     bgfx::setUniform(u_matcapParams, matcapParams);

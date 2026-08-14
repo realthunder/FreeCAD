@@ -125,16 +125,22 @@ public:
   const SbVec2f * getBumpCoordArray(void) const;
   const uint8_t * getColorArray(void) const;
 
-  /** Baked per-vertex material stream, 8 bytes per vertex: rgba8
-   * emissive followed by rgb8 specular with the shininess (0..1)
+  /// Bytes per vertex of the baked material stream below.
+  static const int MaterialStride = 12;
+
+  /** Baked per-vertex material stream, MaterialStride bytes per vertex:
+   * rgba8 emissive followed by rgb8 specular with the shininess (0..1)
    * quantized into the last byte -- or, when hasPbrMaterial(), the PBR
-   * factor pair in those two alpha slots instead. Present only when the
-   * coin fork's extended lazy element carried per-face material arrays
-   * whose resolved values actually diverge (CoinLazyElementEx), or a
-   * per-face PBR appearance carried factors (SoFCPbrElement); null for
-   * every uniform-material cache. Only triangle vertices carry
-   * values -- vertices referenced by lines/points alone hold zeros,
-   * and line/point draws never shade with these fields.
+   * factor pair in those two alpha slots instead -- and then the
+   * surface finish palette index in one byte with three reserved after
+   * it (hasFinishMaterial()). Present only when the coin fork's
+   * extended lazy element carried per-face material arrays whose
+   * resolved values actually diverge (CoinLazyElementEx), or a per-face
+   * PBR appearance carried factors (SoFCPbrElement), or a per-face
+   * finish carried indices (SoFCFinishElement); null for every
+   * uniform-material cache. Only triangle vertices carry values --
+   * vertices referenced by lines/points alone hold zeros, and
+   * line/point draws never shade with these fields.
    */
   const uint8_t * getMaterialArray(void) const;
 
@@ -149,6 +155,17 @@ public:
    * it shades from the stream.
    */
   SbBool hasPbrMaterial(void) const;
+
+  /** Whether that stream's third slot carries a finish palette index
+   *
+   * A per-face surface finish (SoFCFinishElement) is four numbers per
+   * face, so what the stream carries is one index into the draw
+   * material's palette of the distinct finishes. False means every
+   * vertex reads index 0, which is the material's own finish -- the
+   * answer an unbound attribute gives too, so a consumer needs this
+   * only to decide whether the palette is worth uploading.
+   */
+  SbBool hasFinishMaterial(void) const;
 
   void setFaceColors(const SbFCVector<std::pair<int, uint32_t> > &colors = {});
 

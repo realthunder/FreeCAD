@@ -87,11 +87,16 @@ struct MeshData {
     const float *positions = nullptr;   ///< xyz per vertex, never null
     const float *normals = nullptr;     ///< xyz per vertex, may be null
     const uint8_t *colors = nullptr;    ///< rgba8 per vertex, may be null
-    /// Per-vertex material stream of a per-face-material cache, 8 bytes
+    /// Bytes per vertex of the material stream below.
+    static constexpr int MaterialStride = 12;
+
+    /// Per-vertex material stream of a per-face-material cache, 12 bytes
     /// per vertex: rgba8 emissive, then rgb8 specular with the
-    /// shininess (0..1) quantized in the last byte. Null for uniform
-    /// objects (then the Material scalars apply). Draws consume it only
-    /// when their material sets perfacematerial.
+    /// shininess (0..1) quantized in the last byte, then the surface
+    /// finish palette index (Material::finishpalette) in one byte with
+    /// three reserved after it. Null for uniform objects (then the
+    /// Material scalars apply). Draws consume it only when their
+    /// material sets perfacematerial.
     const uint8_t *materials = nullptr;
 
     const int32_t *triangleIndices = nullptr;
@@ -981,6 +986,42 @@ struct PBRConfig {
     bool operator!=(const PBRConfig &o) const { return !(*this == o); }
 };
 
+/// How many distinct finishes one draw's palette may hold. The backend
+/// uploads the palette as a uniform array of this size, so it is a shader
+/// contract as much as a storage bound; a face whose finish does not fit
+/// falls back to entry 0 (the draw's own finish) at translate time.
+static constexpr int MaxFinishPalette = 8;
+
+/// The distinct surface finishes of one per-face-finished draw
+///
+/// A finish is four numbers, and per-face data rides the per-vertex
+/// material stream, where four more arrays would not fit any budget worth
+/// spending. So the finishes reduce to this palette and the stream carries
+/// a single index into it (MeshData::materials, third slot). Immutable
+/// once published: draws share one by pointer, which is also how the
+/// backend batches them.
+struct FinishPalette {
+    struct Entry {
+        uint8_t pattern = 0;    ///< App::SurfaceFinish::Pattern, 0 = none
+        float pitch = 0.0f;     ///< mm of object space, feature spacing
+        float depth = 0.0f;     ///< mm of object space, peak to valley
+        float angle = 0.0f;     ///< degrees, lay direction
+
+        bool operator==(const Entry &o) const {
+            return pattern == o.pattern && pitch == o.pitch
+                && depth == o.depth && angle == o.angle;
+        }
+    };
+
+    /// At most MaxFinishPalette entries; entry 0 repeats the material's
+    /// own finish scalars.
+    std::vector<Entry> entries;
+
+    bool operator==(const FinishPalette &o) const {
+        return entries == o.entries;
+    }
+};
+
 /// Flattened per-draw render state, translated from the Coin-side material
 /// (SoFCRenderCache::Material). Colors are packed 0xRRGGBBAA.
 struct Material {
@@ -1107,6 +1148,18 @@ struct Material {
     float finishpitch = 0.0f;
     float finishdepth = 0.0f;
     float finishangle = 0.0f;
+
+    /// Per-face form of that finish (null = the scalars above are the
+    /// whole story). A finish is four numbers, so a per-face one rides a
+    /// PALETTE of the distinct finishes plus one index per vertex in the
+    /// material stream's third slot — not four more per-face arrays.
+    /// Entry 0 is what the scalars repeat, which is what an unbound index
+    /// attribute (a mesh with no stream) resolves to. Meaningful on whole
+    /// triangle draws only, and only together with perfacematerial: a
+    /// partial draw resolves its face's entry into the scalars at
+    /// translate time and carries no palette. Shared and immutable, so
+    /// pointer identity is a batch key (like usershader).
+    std::shared_ptr<const FinishPalette> finishpalette;
 
     /// Water body flag of a triangle draw (SoFCRenderMaterial, typically
     /// fed from a ViewProvider Render_Water property): while the

@@ -1026,6 +1026,7 @@ SET(Inventor_CPP_SRCS
     Inventor/SoFCVertexArrayIndexer.cpp
     Inventor/CoinLazyElementEx.cpp
     Inventor/SoFCDiffuseElement.cpp
+    Inventor/SoFCFinishElement.cpp
     Inventor/SoFCPbrElement.cpp
     Inventor/SoFCZoomOffsetElement.cpp
     Inventor/SoFCVertexCache.cpp
@@ -1088,6 +1089,7 @@ SET(Inventor_SRCS
     Inventor/SoFCVertexArrayIndexer.h
     Inventor/CoinLazyElementEx.h
     Inventor/SoFCDiffuseElement.h
+    Inventor/SoFCFinishElement.h
     Inventor/SoFCPbrElement.h
     Inventor/SoFCZoomOffsetElement.h
     Inventor/COWData.h

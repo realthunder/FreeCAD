@@ -96,6 +96,7 @@
 #include "SoFCVertexArrayIndexer.h"
 #include "SoFCShapeInfo.h"
 #include "CoinLazyElementEx.h"
+#include "SoFCFinishElement.h"
 #include "SoFCPbrElement.h"
 #include "COWData.h"
 #include "../ViewParams.h"
@@ -189,6 +190,10 @@ public:
     /// sharing a material tuple still do.
     uint32_t emissive = 0;
     uint32_t specshine = 0;
+    /// Surface finish palette index of the same stream's third slot,
+    /// 0 when nothing states a per-face finish. Part of the dedup key
+    /// for the same reason the two above are.
+    uint32_t finishidx = 0;
     int texcoordidx;
     int marker = -1;
 
@@ -202,7 +207,8 @@ public:
         (this->marker == v.marker) &&
         (this->color == v.color) &&
         (this->emissive == v.emissive) &&
-        (this->specshine == v.specshine);
+        (this->specshine == v.specshine) &&
+        (this->finishidx == v.finishidx);
     }
   };
 
@@ -212,6 +218,7 @@ public:
       hash_combine(seed, v.color);
       hash_combine(seed, v.emissive);
       hash_combine(seed, v.specshine);
+      hash_combine(seed, v.finishidx);
       hash_combine(seed, v.vertex[0]);
       hash_combine(seed, v.vertex[1]);
       hash_combine(seed, v.vertex[2]);
@@ -268,6 +275,13 @@ public:
     const float * roughnessptr = nullptr;
     int nummetallic = 0;
     int numroughness = 0;
+
+    // Per-face surface finish (SoFCFinishElement), which is four numbers
+    // and so rides a palette the draw material carries: what is per face
+    // -- and therefore in this stream -- is one index into it. Indexing
+    // pads with entry 0, like the pair above.
+    const int32_t * finishptr = nullptr;
+    int numfinish = 0;
 
     const SoMultiTextureCoordinateElement * multielem;
     SoState * state = nullptr;
@@ -425,9 +439,11 @@ public:
   void addVertex(const Vertex & v);
   void initColor(int n);
   void initMaterial(int n);
-  void appendMaterial(uint32_t emissive, uint32_t specshine);
+  void appendMaterial(uint32_t emissive, uint32_t specshine,
+                      uint32_t finishidx);
   uint32_t packedEmissive(int midx) const;
   uint32_t packedSpecShine(int midx) const;
+  uint32_t packedFinishIndex(int midx) const;
 
   void close(SoState *);
   void finalizeTriangleIndexer();
@@ -523,9 +539,10 @@ public:
   int colorpervertex;
   uint32_t firstcolor;
 
-  /// Baked per-vertex material stream (8 bytes per vertex: rgba8
-  /// emissive, then rgb8 specular with quantized shininess in the last
-  /// byte), allocated only when the extended lazy element carried
+  /// Baked per-vertex material stream (MaterialStride bytes per vertex:
+  /// rgba8 emissive, then rgb8 specular with quantized shininess in the
+  /// last byte, then the surface finish palette index and three reserved
+  /// bytes), allocated only when the extended lazy element carried
   /// per-face material arrays whose resolved values actually diverge.
   /// matpervertex mirrors colorpervertex: 0 = off, -1 = capturing but
   /// uniform so far, 1 = divergent (array allocated).
@@ -535,8 +552,13 @@ public:
   /// in the emissive alpha, roughness in the specular alpha) instead of
   /// a constant and the shininess -- a per-face PBR appearance.
   bool matpbr = false;
+  /// The stream's third slot carries a surface finish palette index --
+  /// a per-face finish. Independent of matpbr: an appearance may state
+  /// either, both or neither.
+  bool matfinish = false;
   uint32_t firstemissive = 0;
   uint32_t firstspecshine = 0;
+  uint32_t firstfinishidx = 0;
 
   int lastenabled = -1;
   /// forceTexCoords field of the node: capture unit-0 texcoords even
@@ -695,8 +717,10 @@ SoFCVertexCache::SoFCVertexCache(SoFCVertexCache & prev)
   PRIVATE(this)->materialarray = PRIVATE(pprev)->materialarray;
   PRIVATE(this)->matpervertex = PRIVATE(pprev)->matpervertex;
   PRIVATE(this)->matpbr = PRIVATE(pprev)->matpbr;
+  PRIVATE(this)->matfinish = PRIVATE(pprev)->matfinish;
   PRIVATE(this)->firstemissive = PRIVATE(pprev)->firstemissive;
   PRIVATE(this)->firstspecshine = PRIVATE(pprev)->firstspecshine;
+  PRIVATE(this)->firstfinishidx = PRIVATE(pprev)->firstfinishidx;
   PRIVATE(this)->hassolid = PRIVATE(pprev)->hassolid;
   PRIVATE(this)->flipnormal = PRIVATE(pprev)->flipnormal;
 
@@ -929,6 +953,7 @@ SoFCVertexCache::open(SoState * state)
   // divergence allocates anything.
   PRIVATE(this)->matpervertex = 0;
   PRIVATE(this)->matpbr = false;
+  PRIVATE(this)->matfinish = false;
   {
     auto t = PRIVATE(this)->tmp;
     if (Gui::CoinLazyElementEx::available()) {
@@ -944,8 +969,17 @@ SoFCVertexCache::open(SoState * state)
       t->numroughness = pbr.numroughness;
       PRIVATE(this)->matpbr = true;
     }
+    // The per-face surface finish index (SoFCFinishElement), which the
+    // stream's third slot carries. Same rule: a single entry says the
+    // same thing the draw material's own finish already says.
+    const auto & fin = SoFCFinishElement::get(state);
+    if (fin.isPerFace() && fin.numindex > 1) {
+      t->finishptr = fin.index;
+      t->numfinish = fin.numindex;
+      PRIVATE(this)->matfinish = true;
+    }
     if (t->numemissive > 1 || t->numspecular > 1 || t->numshininess > 1
-        || PRIVATE(this)->matpbr) {
+        || PRIVATE(this)->matpbr || PRIVATE(this)->matfinish) {
       if (t->numemissive == 0) {
         const SbColor & e = SoLazyElement::getEmissive(state);
         e.getValue(t->emissivefallback[0], t->emissivefallback[1],
@@ -968,6 +1002,7 @@ SoFCVertexCache::open(SoState * state)
       PRIVATE(this)->matpervertex = -1;
       PRIVATE(this)->firstemissive = PRIVATE(this)->packedEmissive(0);
       PRIVATE(this)->firstspecshine = PRIVATE(this)->packedSpecShine(0);
+      PRIVATE(this)->firstfinishidx = PRIVATE(this)->packedFinishIndex(0);
       if (prev)
         PRIVATE(this)->materialarray.init(PRIVATE(prev)->materialarray);
     }
@@ -1681,9 +1716,11 @@ SoFCVertexCache::addTriangle(const SoPrimitiveVertex * v0,
       int midx = vp[i]->getMaterialIndex();
       v.emissive = PRIVATE(this)->packedEmissive(midx);
       v.specshine = PRIVATE(this)->packedSpecShine(midx);
+      v.finishidx = PRIVATE(this)->packedFinishIndex(midx);
       if (PRIVATE(this)->matpervertex < 0
           && (v.emissive != PRIVATE(this)->firstemissive
-              || v.specshine != PRIVATE(this)->firstspecshine))
+              || v.specshine != PRIVATE(this)->firstspecshine
+              || v.finishidx != PRIVATE(this)->firstfinishidx))
         PRIVATE(this)->matpervertex = 1;
     }
 
@@ -2026,6 +2063,12 @@ SoFCVertexCache::hasPbrMaterial(void) const
   // Only meaningful about a stream that exists: values that never
   // diverged allocate none, and then the reading is nobody's question.
   return PRIVATE(this)->matpbr && PRIVATE(this)->materialarray;
+}
+
+SbBool
+SoFCVertexCache::hasFinishMaterial(void) const
+{
+  return PRIVATE(this)->matfinish && PRIVATE(this)->materialarray;
 }
 
 int
@@ -2434,12 +2477,14 @@ SoFCVertexCacheP::initColor(int n)
 void
 SoFCVertexCacheP::initMaterial(int n)
 {
-  for (int i=0; i<n; i+=8)
-    appendMaterial(this->firstemissive, this->firstspecshine);
+  for (int i=0; i<n; i+=SoFCVertexCache::MaterialStride)
+    appendMaterial(this->firstemissive, this->firstspecshine,
+                   this->firstfinishidx);
 }
 
 void
-SoFCVertexCacheP::appendMaterial(uint32_t emissive, uint32_t specshine)
+SoFCVertexCacheP::appendMaterial(uint32_t emissive, uint32_t specshine,
+                                 uint32_t finishidx)
 {
   this->materialarray.append((emissive >> 24) & 0xff);
   this->materialarray.append((emissive >> 16) & 0xff);
@@ -2449,6 +2494,13 @@ SoFCVertexCacheP::appendMaterial(uint32_t emissive, uint32_t specshine)
   this->materialarray.append((specshine >> 16) & 0xff);
   this->materialarray.append((specshine >> 8) & 0xff);
   this->materialarray.append(specshine & 0xff);
+  // The finish palette index, then three bytes nothing states yet: the
+  // stream is a vertex attribute, and a backend binds it as one rgba8
+  // whatever this fills in.
+  this->materialarray.append(finishidx & 0xff);
+  this->materialarray.append(0);
+  this->materialarray.append(0);
+  this->materialarray.append(0);
 }
 
 // The alpha byte of a stream entry: 0..1 quantized the way the packed
@@ -2494,6 +2546,19 @@ SoFCVertexCacheP::packedSpecShine(int midx) const
   return (packed & 0xffffff00) | packedFactor(sh);
 }
 
+uint32_t
+SoFCVertexCacheP::packedFinishIndex(int midx) const
+{
+  // Nothing states a per-face finish: entry 0 of the palette is the
+  // draw material's own finish, which is exactly what a uniformly zero
+  // slot resolves to.
+  if (!this->matfinish)
+    return 0;
+  int32_t idx = this->tmp->finishptr[
+      midx < this->tmp->numfinish ? midx : 0];
+  return idx > 0 && idx < 256 ? uint32_t(idx) : 0;
+}
+
 void
 SoFCVertexCacheP::addVertex(const Vertex & v)
 {
@@ -2520,8 +2585,9 @@ SoFCVertexCacheP::addVertex(const Vertex & v)
 
   if (this->matpervertex > 0) {
     if (!this->materialarray)
-      initMaterial(this->vertexarray.getLength()*8 - 8);
-    appendMaterial(v.emissive, v.specshine);
+      initMaterial(this->vertexarray.getLength()*SoFCVertexCache::MaterialStride
+                   - SoFCVertexCache::MaterialStride);
+    appendMaterial(v.emissive, v.specshine, v.finishidx);
   }
 }
 

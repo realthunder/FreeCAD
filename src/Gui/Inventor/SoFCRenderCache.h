@@ -41,6 +41,7 @@
 
 namespace Render {
 struct UserShader;
+struct FinishPalette;
 }
 
 class SoFCVertexCache;
@@ -271,6 +272,16 @@ public:
     float finishpitch;
     float finishdepth;
     float finishangle;
+    /// Per-face form of the finish, captured from the same node: the
+    /// distinct finishes of the appearance as a palette, and one index
+    /// into it per face. A whole-object draw hands the palette to the
+    /// backend and shades from the index the mesh's baked stream
+    /// carries; a single-face draw, which has no stream, resolves its
+    /// face's entry into the scalars above. Entry 0 is what those
+    /// scalars repeat. Indexed like the PBR pair -- padded with entry 0
+    /// rather than clamped (see SoFCFinishElement).
+    std::shared_ptr<const Render::FinishPalette> finishpalette;
+    COWVector<int32_t> finishindices;
     /// Water body flag/density captured from SoFCRenderMaterial: the
     /// shapes' closed volume becomes a scattering medium of the
     /// volumetric lighting pass (only external backends consume this).
@@ -449,6 +460,13 @@ public:
         if (finishdepth > other.finishdepth) return false;
         if (finishangle < other.finishangle) return true;
         if (finishangle > other.finishangle) return false;
+        // Pointer identity: a palette is immutable once published and
+        // one node makes one, so two draws sharing a palette share the
+        // pointer (like usershader below).
+        if (finishpalette.get() < other.finishpalette.get()) return true;
+        if (finishpalette.get() > other.finishpalette.get()) return false;
+        if (finishindices < other.finishindices) return true;
+        if (finishindices > other.finishindices) return false;
         if (water < other.water) return true;
         if (water > other.water) return false;
         if (waterdensity < other.waterdensity) return true;
