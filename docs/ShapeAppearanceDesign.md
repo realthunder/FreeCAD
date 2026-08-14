@@ -1846,16 +1846,8 @@ verification:
   NURBS patch's is arbitrary), it costs 8 bytes a vertex, and the
   surfaces where it would beat an explicit frame are freeform faces
   nobody specifies a knurl on.
-- ⚠️ **The property editor's material row, which is lossy already.**
-  `PropertyMaterialListItem::setValue` rebuilds the whole list from
-  generated `App.Material(...)` text stating six fields, so an edit made
-  through that row drops everything else the list holds. That is not new
-  -- it already costs a PBR-mode appearance its mode (the generated call
-  names no PBR key, so the assignment restates the list as Phong) and
-  drops `image`/`imagePath`/`uuid` -- and a finish now joins the same
-  casualty list. Fixing it means carrying the extra fields through the
-  widget's own `Material` QVariant struct, which is a change to that
-  widget rather than to this feature, and it should fix all four at once.
+- ~~⚠️ **The property editor's material row, which is lossy already.**~~
+  Fixed 2026-08-14, all four at once -- see 9.10.
 - ~~Analytic filtering of the pattern against the pixel footprint~~ --
   landed with rung 1 instead (9.8): without it a 0.3 mm pitch aliases
   into moire the moment the part is zoomed to fit, which would have made
@@ -1935,3 +1927,104 @@ Known and correct at this rung: a straight knurl on a cylinder comes out
 with CIRCUMFERENTIAL grooves, because triplanar projection does not know
 the cylinder's axis. That is exactly what rung 3 (explicit per-face
 frames from the OCCT surface type) is for.
+
+### 9.9 Landed 2026-08-14: rung 2, the finish varies per face
+
+A finish is four numbers, so the per-face form is four arrays -- three
+more than the per-vertex material stream should carry, and the reason
+9.7 called for a palette rather than a fifth widening. What landed is
+exactly that: the distinct finishes an appearance holds become a
+`Render::FinishPalette` (capped at `Render::MaxFinishPalette` = 8, which
+is also the shader's `FC_FINISH_PALETTE`), and what travels per face is
+one byte of index into it.
+
+The route mirrors the per-face PBR pair one for one:
+`ViewProviderGeometryObject::updateRenderMaterial` builds the palette and
+the index array -> `SoFCRenderMaterial::finishPalette`/`finishIndices` ->
+`SoFCFinishElement` (indices only) -> `SoFCVertexCache` bakes them into
+the material stream's new third slot -> `SoFCRendererBridge` ->
+`Render::Material::finishpalette` -> `u_finishParams[]` -> `fc_finish.sh`.
+
+⭐ **The palette is the draw's, the index is the vertex's.** Only the
+index has to reach the shape, so only the index needs an element; the
+palette rides the draw material as a `shared_ptr<const FinishPalette>`,
+which is the `usershader` precedent -- immutable, shared, and its
+pointer is the batch key. A single-face draw carries no stream to index
+with, so it resolves its face's entry into the material scalars instead
+and drops the palette.
+
+**Costs.** The material stream widens 8 -> 12 bytes a vertex (rgba8
+emissive, rgb8 specular + shininess, then the index byte with three
+reserved), for the per-face-material meshes that carry one at all --
+bgfx allows four vertex streams and the mesh programs already use all
+four, so the index rides the existing material stream rather than a
+fifth. Scene dump v50 AND chunk revision 8: the stride is part of what
+the content key hashes. `u_finishParams` becomes an array; a draw
+without a palette uploads entry 0 alone, which is what an unbound index
+attribute reads anyway.
+
+**Two rules the pictures forced.**
+
+- ⚠️ An appearance that states a finish ANYWHERE is now the authority
+  for every face. Before, entry 0 being unset let the `Render_Finish*`
+  knobs fill in an object-wide finish, which would contradict a palette
+  whose entry 0 says "unfinished" -- and a face left bare in a per-face
+  appearance is a statement, not a gap.
+- ⚠️ A per-face finish disqualifies the instanced representation
+  (`materialsUnrepresentable`). Instancing partitions colour variants
+  and states ONE material per instance, so it would have kept the first
+  face's finish and silently dropped the rest.
+
+⚠️⚠️ **A picture of six patterns proves that they differ, not that each
+one landed where it was authored.** The first per-face picture looked
+wrong for an hour: several faces carried what looked like one pattern at
+different scales, which is also exactly what "every vertex reads entry
+0" looks like. Two things settled it -- `FACES_ONLY`, which finishes ONE
+face and leaves the rest bare (only the top faces patterned, so the
+index does name the face), and `FACES_DUMP`, which prints the palette
+and index array off the node. ⭐ The general form: **a demo that varies
+everything cannot localise a fault; keep a one-variable mode beside it.**
+And a demo must key its faces by DIRECTION rather than by OCCT's face
+numbering, which no reader of the picture can see -- in the object's own
+frame, so a turned copy shows the other three.
+
+**Verified by picture** (`scripts/demo-finish-faces.py`): one appearance,
+six faces, six finishes -- concentric turning marks on one face,
+knurl on the next, the unfinished face plainly plain. The knurled top
+face reads as a groove train rather than a diamond grid at a grazing
+angle, which is the analytic filter doing its job: the compressed axis
+falls below two pixels a feature and becomes roughness while the other
+survives.
+
+Still excluded, unchanged from 9.7: rung 3 (explicit per-face frames
+from the OCCT surface type), anisotropic GGX, and PMI semantics. The
+Diligent backend ignores the finish entirely.
+
+### 9.10 Landed 2026-08-14: the appearance row stops dropping things
+
+`PropertyMaterialListItem` applies an edit by restating the whole value
+through generated `App.Material(...)` text, and the text named six
+fields. So picking a colour in that row reset everything else each
+material held: the PBR mode (a PBR appearance came back Phong), the
+metallic factor riding the specular alpha, the surface finish, and
+`image`/`imagePath`/`uuid`. All four now travel through the widget's own
+`Material` struct and are restated with the rest -- and `App.Material`
+gained `Image`, `ImagePath` and `Uuid` (attributes and constructor
+keywords) so the identity strings have a spelling to travel in at all.
+
+⚠️ **`Base::Color::asValue<QColor>()` states rgb only.** The metallic
+factor lives in the specular alpha, so it cannot ride the widget's
+QColor and needs a float of its own beside it. The diffuse alpha needs
+no such field: it is the opacity, which `Transparency` states and the
+generated call applies after the colour.
+⚠️ **`%g` writes a plain `0` for zero**, and `MaterialPy`'s setters take
+a `Py::Float`, which refuses an int -- so a finish size of zero made the
+whole generated call raise. The sizes print in fixed notation.
+
+⭐⭐ **The check that caught it: assert the edit LANDED, not only that
+nothing was lost.** The generated call raised for the reason above, so
+nothing changed at all -- and every "field preserved" assertion passed,
+because the property still held what it started with. A no-op verify
+looks exactly like a perfect one. The probe now sets a colour the
+material did not have and checks for it first: 10/10 with it, 9/10 the
+moment the command breaks.
