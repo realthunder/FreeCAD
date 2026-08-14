@@ -3287,9 +3287,15 @@ QString Application::replaceVariablesInQss(QString qssText)
     // the Start wizard. A zero default painted all of them black on any
     // configuration that had not been through the Start wizard, which is the
     // only place that ever wrote the keys.
+    // Each slot has its own default, because the sheets give the three of them
+    // three different jobs -- see DefaultAccentColor1..3. One shared default
+    // collapsed focus onto hover and flattened every accent gradient.
     std::vector<std::pair<std::string, QString>> variables;
-    for (const char* name : {"ThemeAccentColor1", "ThemeAccentColor2", "ThemeAccentColor3"}) {
-        variables.emplace_back(name, asColor(hGrp->GetUnsigned(name, DefaultAccentColor)));
+    for (const auto& [name, fallback] :
+         {std::pair {"ThemeAccentColor1", DefaultAccentColor1},
+          std::pair {"ThemeAccentColor2", DefaultAccentColor2},
+          std::pair {"ThemeAccentColor3", DefaultAccentColor3}}) {
+        variables.emplace_back(name, asColor(hGrp->GetUnsigned(name, fallback)));
     }
 
     // Everything in Themes/Variables substitutes for @<name>, typed by how it
@@ -3322,7 +3328,7 @@ QString Application::replaceVariablesInQss(QString qssText)
     // Light.qss the pale one, Dark.qss the deep one -- which is knowledge only
     // the sheet has. A theme that defines either name itself wins; these are
     // only filled in where it did not.
-    const unsigned long accent = hGrp->GetUnsigned("ThemeAccentColor1", DefaultAccentColor);
+    const unsigned long accent = hGrp->GetUnsigned("ThemeAccentColor1", DefaultAccentColor1);
     auto blend = [accent](int towards, double ratio) {
         auto mix = [towards, ratio](unsigned long channel) {
             const double from = static_cast<double>(channel);
@@ -3362,6 +3368,34 @@ QString Application::replaceVariablesInQss(QString qssText)
 
 void Application::checkForDeprecatedSettings()
 {
+    // The Start wizard wrote all three accent slots with one shared color, and
+    // it wrote them for everyone who ever passed through it -- so the per-slot
+    // defaults (DefaultAccentColor1..3) can never reach an existing
+    // configuration, and focus keeps painting exactly what hover paints.
+    //
+    // Three identical accents is that wizard's signature, not a choice: the
+    // Theme page offers the slots separately and nothing else sets them
+    // together. Where the stored trio still matches the old shared value, give
+    // slots 2 and 3 the shades the sheets expect, following the scheme the
+    // preference packs record so a dark theme lifts rather than deepens.
+    ParameterGrp::handle hThemes =
+        App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Themes");
+    const bool untouchedTrio =
+        hThemes->GetUnsigned("ThemeAccentColor1", 0) == DefaultAccentColor1
+        && hThemes->GetUnsigned("ThemeAccentColor2", 0) == DefaultAccentColor1
+        && hThemes->GetUnsigned("ThemeAccentColor3", 0) == DefaultAccentColor1;
+    if (untouchedTrio) {
+        const bool dark = App::GetApplication()
+                              .GetParameterGroupByPath("User parameter:BaseApp/Preferences/"
+                                                       "MainWindow")
+                              ->GetASCII("ColorScheme")
+            == "Dark";
+        hThemes->SetUnsigned("ThemeAccentColor2",
+                             dark ? DefaultDarkAccentColor2 : DefaultAccentColor2);
+        hThemes->SetUnsigned("ThemeAccentColor3",
+                             dark ? DefaultDarkAccentColor3 : DefaultAccentColor3);
+    }
+
     // From 0.21, `FCBak` will be the intended default backup format
     bool makeBackups = App::GetApplication()
                            .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Document")

@@ -267,14 +267,36 @@ public:
      * the previous scheme. Widgets that set a palette of their own are kept.
      */
     static void refreshInheritedPalettes();
-    /** The accent color a stylesheet gets where the configuration names none.
+    /** @name The accent colors a stylesheet gets where the configuration names none.
      *
-     * FreeCAD's blue, #557BB6, packed with an opaque alpha the way the Themes
-     * parameters store it. The Theme preference page and the Start wizard both
-     * already carry this value; it is here so that everything that resolves
-     * @ThemeAccentColor* agrees on it.
+     * FreeCAD's blue and two shades of it, packed with an opaque alpha the way
+     * the Themes parameters store them. The Theme preference page and the Start
+     * wizard both carry these; they are here so that everything resolving
+     * @ThemeAccentColor* agrees.
+     *
+     * The shipped sheets use the three slots for three different jobs, so they
+     * must not be the same color -- which they were until the states they are
+     * supposed to tell apart all came out identical:
+     *
+     *  - 1 is the highlight, on nearly a hundred rules: hover, selected, checked.
+     *  - 2 is the engaged state: focus, pressed, a combo box that is open. It
+     *    is deeper than 1 so that focus reads as more than hover.
+     *  - 3 is only ever the far stop of a gradient whose near stop is 1, so it
+     *    is a slightly darker 1 and gives the gradient somewhere to go.
+     *
+     * A dark theme wants 2 lifted rather than deepened; its preference pack
+     * overrides these.
      */
-    static constexpr unsigned long DefaultAccentColor = 0x557BB6FFUL;
+    //@{
+    static constexpr unsigned long DefaultAccentColor1 = 0x557BB6FFUL;
+    static constexpr unsigned long DefaultAccentColor2 = 0x405C89FFUL;
+    static constexpr unsigned long DefaultAccentColor3 = 0x4B6CA0FFUL;
+    /// Slots 2 and 3 as a dark scheme wants them; the Dark pack carries the same values.
+    static constexpr unsigned long DefaultDarkAccentColor2 = 0x88A3CCFFUL;
+    static constexpr unsigned long DefaultDarkAccentColor3 = 0x466595FFUL;
+    /// Backwards-compatible spelling of DefaultAccentColor1.
+    static constexpr unsigned long DefaultAccentColor = DefaultAccentColor1;
+    //@}
     //@}
 
     /** @name User Commands */
