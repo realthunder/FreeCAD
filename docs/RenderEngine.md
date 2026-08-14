@@ -410,6 +410,43 @@ Two properties make this safe to be wrong about:
   channel (negative ids = normal-pass rendering with base
   suppression).
 
+### Surface finish (procedural machining relief)
+
+A `Render::Material` may carry an `App::SurfaceFinish` — the pattern the
+surface was machined with (diamond/straight knurl, brushed, blasted,
+turned) plus its pitch and depth **in millimetres** and a lay angle.
+`fc_finish.sh` shades it inside the CAD mesh fragment shader, one
+uniform-selected branch that costs nothing on a scene that states none.
+
+- **Source**: either authored on the appearance (`ShapeAppearance`'s
+  per-entry finish, which is per-face-capable storage) or stated by the
+  `Render_Finish` / `Render_FinishPitch` / `Render_FinishDepth` /
+  `Render_FinishAngle` dynamic ViewProvider properties. The authored one
+  wins, the same way a PBR-mode appearance beats `Render_Metallic`. Both
+  end up on `SoFCRenderMaterial` and travel the ordinary render-cache
+  route. Only entry 0 is read today; the per-face finish stream is the
+  rung above.
+- **Object space, triplanar**: the pattern is anchored to the geometry
+  (`v_opos`/`v_onrm`), so a moved, scaled or instanced copy carries the
+  same finish rather than one that swims as it is placed. The three
+  axis-aligned projections are blended by the object-space normal, which
+  makes a knurl on a cylinder plausible but not manufacturing-correct —
+  the pattern does not yet know the cylinder's axis. Explicit per-face
+  frames from the OCCT surface type are the next rung
+  (`docs/ShapeAppearanceDesign.md` 9.7).
+- **No parametrization**: the shading normal is rotated by Mikkelsen's
+  surface gradient, whose screen-space derivatives come from the
+  pattern's *analytic* object-space gradient. No tangent frame, no UV,
+  no per-draw matrix, and no differencing of the pattern itself (which
+  would blur every crest to the 2x2 quad).
+- **Filtered against the pixel footprint, and the remainder becomes
+  roughness**: features below ~2 px fade out, and the slope variance the
+  fade removes is added to the roughness (Toksvig) — a real 0.15 mm
+  brushed lay on a part zoomed to fit is *supposed* to read as a
+  direction-less sheen rather than as geometry. This is why the finish
+  is stated in physical units and not as a normalised amplitude. In the
+  Phong path the same quantity travels through the shininess slot.
+
 ### Environment (image based lighting)
 
 PBR shading (`Render_PBR`) is lit by a prefiltered environment cubemap

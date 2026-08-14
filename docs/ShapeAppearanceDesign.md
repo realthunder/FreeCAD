@@ -1856,9 +1856,82 @@ verification:
   casualty list. Fixing it means carrying the extra fields through the
   widget's own `Material` QVariant struct, which is a change to that
   widget rather than to this feature, and it should fix all four at once.
-- Analytic filtering of the pattern against the pixel footprint, without
-  which a 0.3 mm pitch aliases into moire the moment the part is zoomed
-  to fit; anisotropic GGX, which real brushed metal wants and which
-  touches the shared lighting core for both the direct and the IBL
-  terms; the property editor rows; and any PMI or ISO 1302 semantics,
-  which is the rung above all of this.
+- ~~Analytic filtering of the pattern against the pixel footprint~~ --
+  landed with rung 1 instead (9.8): without it a 0.3 mm pitch aliases
+  into moire the moment the part is zoomed to fit, which would have made
+  every honest value undemonstrable. Still excluded: anisotropic GGX,
+  which real brushed metal wants and which touches the shared lighting
+  core for both the direct and the IBL terms; and any PMI or ISO 1302
+  semantics, which is the rung above all of this.
+
+### 9.8 Landed 2026-08-14: rung 1, the per-object finish draws
+
+The producer, the carrier and the whole shader library, in the commits
+following this doc's update. `App::SurfaceFinish` now travels
+`ViewProviderGeometryObject::updateRenderMaterial` -> four new
+`SoFCRenderMaterial` fields -> `SoFCRenderCache::Material` (and its
+`operator<`) -> `SoFCRendererBridge` -> `Render::Material` ->
+`u_finishParams` -> `bgfx/shaders/fc_finish.sh`. Scene dump v49 and
+chunk revision 7 (materials ride content-keyed chunks, so the key has to
+move with the layout or a cached chunk is misread). Reachable from the
+Render settings task dialog, from a script, and from the appearance.
+
+**Both sources, with the authored one winning.** The appearance's own
+finish (entry 0) is the finish; the `Render_Finish` / `Render_FinishPitch`
+/ `Render_FinishDepth` / `Render_FinishAngle` knobs are how an appearance
+that carries none gets one -- the same precedence a PBR-mode appearance
+has over `Render_Metallic` (8.4). `Render_Finish` reads an enumeration,
+a plain string or the raw pattern value, so the dialog and a script do
+not have to agree on a spelling. A stated pattern with no size gets the
+size that pattern has on a real part (0.8 mm for a knurl), because the
+alternative -- `normalize()`'s 1e-4 mm floor -- is a finish nobody can
+see.
+
+⭐ **Three decisions carried the shader.** (1) The pattern lives in
+OBJECT space and rides two new varyings (`v_opos`/`v_onrm` =
+`a_position`/`a_normal`, which makes the instanced path free, since
+instances differ only in the transform applied after them). (2) The
+normal is perturbed by **Mikkelsen's surface gradient**, fed from the
+pattern's *analytic* object-space gradient through the chain rule
+(`dot(g, dFdx(opos))`) -- no UV, no tangent frame, no per-draw matrix,
+and the pattern is never differenced, so no crest is blurred to the 2x2
+quad. (3) Filtering is not a polish step but the thing that makes
+physical units usable: below ~2 px per feature the relief fades and its
+lost slope variance becomes roughness (Toksvig), which the Phong path
+receives through the shininess slot.
+
+⚠️ **A fragment shader's `$input` list may be a strict SUBSET of the
+vertex shader's `$output` list** -- `fs_fc_water`/`glass`/`groundrefl`/
+`bloom_emit` all pair with `vs_fc_mesh` and ignore the new varyings.
+The "bgfx requires the VS output list to exactly match the FS input
+list" comment in `fc_mesh_vs.sh` only binds the other direction, and
+that is what made adding varyings a local change rather than a sweep
+through every mesh-paired shader.
+⚠️ A NEW `*.sh` shader include only joins the build's dependency glob
+after a cmake RE-CONFIGURE; edits to it alone would otherwise not
+rebuild anything.
+
+**Verified by picture** (`scripts/demo-finish.py`, which states
+`Matcap=False` for the reason recorded in 8.5): five patterns, each
+authored both ways, all distinct and correct; and the "as machined"
+cylinders correctly show *only* the coarse patterns, the fine ones
+having collapsed into roughness at that camera distance.
+
+⚠️⚠️ **The first picture looked like two shader bugs and was neither.**
+Brushed came out flat white and blasted came out as black-and-white
+speckle. A depth sweep under two materials settled it: at metallic 0.9
+and roughness 0.25 a flat face saturates against the studio
+environment, and *a saturated highlight swallows relief* -- every tilt
+the pattern applies still lands on white, so only the steepest patterns
+(a knurl's 43 degree flanks) survived. Under a duller steel every
+pattern reads. Nothing in the shader changed; the demo's material did,
+and the one real defect the sweep did find was a default -- a blasted
+crater as deep as a third of its width reads as lunar, so that ratio
+went 0.35 -> 0.15. ⭐ The lesson generalises: **when verifying a shading
+feature, the test material must not be at the top of its range**, or the
+picture reports the material rather than the feature.
+
+Known and correct at this rung: a straight knurl on a cylinder comes out
+with CIRCUMFERENTIAL grooves, because triplanar projection does not know
+the cylinder's axis. That is exactly what rung 3 (explicit per-face
+frames from the OCCT surface type) is for.

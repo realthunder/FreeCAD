@@ -134,6 +134,22 @@ config struct the bridge fills. "Property" = per-view dynamic
   metallic/roughness/occlusion/emissive maps; view `Render_PBR*`;
   `RenderParams` `EnvIntensity`, `Roughness`, etc.
 
+### 3.1a Machined surface finish
+- **Shaders**: `fc_finish.sh`, called from `fc_mesh_fs.sh` (so every mesh
+  variant, opaque and OIT, textured or not).
+- **What**: a procedural knurl / brushed / blasted / turned relief over
+  object space (`v_opos`/`v_onrm`), triplanar-projected, perturbing the
+  shading normal through Mikkelsen's surface gradient from the pattern's
+  analytic gradient — no UV, no tangent frame, no per-draw matrix.
+  Filtered against the pixel footprint, with the slope variance the
+  filter removes handed to the roughness (or, in the Phong path, to the
+  shininess).
+- **Config**: none of its own — `u_finishParams` is per-draw, from
+  `Render::Material::finish*`.
+- **Controls**: the appearance's own `App::SurfaceFinish` (authored, and
+  it wins), else per-object `Render_Finish`, `Render_FinishPitch`,
+  `Render_FinishDepth`, `Render_FinishAngle`.
+
 ### 3.2 Bump / parallax
 - **Shaders**: `fc_mesh_fs.sh` (dFdx/dFdy tangent frame; only on textured
   meshes with a bump map).
