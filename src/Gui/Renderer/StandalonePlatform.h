@@ -31,13 +31,35 @@
 
 #ifdef FC_RENDERER_STANDALONE
 
+#include <chrono>
 #include <cstdio>
+#include <cstdint>
 #include <sstream>
 
 #include <bgfx/bgfx.h>
 #include <bx/string.h>
 
 class QOpenGLWidget;   // opaque: the standalone build passes nullptr
+
+/// Minimal QElapsedTimer stand-in: the warm-up timing (BGFXRendererLib::
+/// warmup) reports how long the context, the device and the shader
+/// programs took to come up, and it measures them with this. Only the
+/// two calls that code makes.
+class QElapsedTimer
+{
+public:
+    void start() { m_start = clock::now(); }
+    void restart() { m_start = clock::now(); }
+    int64_t nsecsElapsed() const
+    {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                   clock::now() - m_start).count();
+    }
+
+private:
+    using clock = std::chrono::steady_clock;
+    clock::time_point m_start = clock::now();
+};
 
 /// Minimal QColor stand-in: just the packed-rgb accessors render() reads.
 class QColor

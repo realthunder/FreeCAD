@@ -495,6 +495,11 @@ public:
     void makeCurrent() {}
     void doneCurrent() {}
     void freeFBO(int) {}
+    /// The standalone build owns its window, so there is no Qt context
+    /// or surface to time -- but warmup() reports these unconditionally,
+    /// and a zero is the true answer here rather than a placeholder.
+    double msContext = 0;
+    double msDevice = 0;
 #else
     /// Milliseconds the last prepare() spent building the GL context
     /// and its surface, and in bgfx::init. Zero when it had nothing to
