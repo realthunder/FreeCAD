@@ -2714,6 +2714,7 @@ public:
         fn(u_matEmissive, LifeProgram);
         fn(u_matSpecular, LifeProgram);
         fn(u_ambient, LifeProgram);
+        fn(u_envAmbient, LifeProgram);
         fn(u_params, LifeProgram);
         fn(u_polyOffset, LifeSized);
         fn(u_clipParams, LifeProgram);
@@ -3543,6 +3544,11 @@ public:
     // lighting, where the shader falls back to 0.2 * base and the old
     // 0.8 diffuse weight -- see ViewLightConfig::ambient.
     bgfx::UniformHandle u_ambient = BGFX_INVALID_HANDLE;
+    // The same ambient without the material factor: rgb = the traversal's
+    // global ambient alone, w = 1 when fed. The metallic/roughness branch
+    // takes it in this form, as a uniform-radiance environment, so that it
+    // reaches a metal (which has no diffuse to fold an ambient into).
+    bgfx::UniformHandle u_envAmbient = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_params = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_polyOffset = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_instParams = BGFX_INVALID_HANDLE;

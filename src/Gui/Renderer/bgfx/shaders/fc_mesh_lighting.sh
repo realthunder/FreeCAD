@@ -41,6 +41,12 @@ uniform vec4 u_matSpecular;
 // to stand in for Coin's ambient+diffuse and which an old scene dump
 // was drawn with.
 uniform vec4 u_ambient;
+// The same ambient WITHOUT the material factor: rgb = LIGHT_MODEL_AMBIENT
+// alone (SoEnvironment's colour times its intensity), w = 1 when fed.
+// The metallic/roughness branch wants it in this form -- there the
+// surface is stated by the BRDF, not by a Phong ambient colour -- and
+// takes it as a uniform-radiance environment.
+uniform vec4 u_envAmbient;
 uniform vec4 u_params;
 uniform vec4 u_pbrParams;
 // Matcap shading: x = enabled, y = preset (see fc_matcap.sh),
@@ -428,9 +434,28 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			float a004 = min(r4.x * r4.x, exp2(-9.28 * ndv))
 				* r4.x + r4.y;
 			vec2 ab = vec2(-1.04, 1.04) * a004 + r4.zw;
-			color = (kd * max(irr, vec3_splat(0.0))
-				+ pref * (f0 * ab.x + vec3_splat(ab.y)))
-				* (u_pbrParams.w * occ * ao) + direct;
+			vec3 envBrdf = f0 * ab.x + vec3_splat(ab.y);
+			// The scene ambient (Coin's LIGHT_MODEL_AMBIENT, i.e.
+			// SoEnvironment) taken for what it physically is here: a
+			// uniform-radiance environment. It therefore reaches the
+			// specular term as well as the diffuse one, which is the
+			// only form that reaches a METAL -- a metal has no diffuse
+			// at all, so an ambient folded into kd alone would leave it
+			// exactly as dark as before. It is the light-model
+			// quantity on its own, NOT the material's ambient colour
+			// times it the way Blinn-Phong wants: the BRDF here already
+			// states the surface, and the ambient slot of a material
+			// read as metallic/roughness means nothing.
+			//
+			// Deliberately outside u_pbrParams.w: that knob says how
+			// bright the user's environment map is, and this is a light
+			// beside it, not part of it.
+			vec3 ambRad = u_envAmbient.w > 0.5
+				? u_envAmbient.rgb : vec3_splat(0.0);
+			color = (kd * max(irr, vec3_splat(0.0)) + pref * envBrdf)
+					* (u_pbrParams.w * occ * ao)
+				+ (kd + envBrdf) * (ambRad * (occ * ao))
+				+ direct;
 		}
 		else
 		{

@@ -118,6 +118,17 @@ void BGFXView::setAmbientUniform(const Render::Material &mat)
     // 0.8 diffuse weight), which is what an old scene dump was drawn
     // with and has to keep being drawn with.
     bgfx::setUniform(u_ambient, amb);
+
+    // The metallic/roughness branch wants the light-model ambient on its
+    // own: there the surface is stated by the BRDF, so multiplying in a
+    // Phong ambient colour would state it twice -- and a material read as
+    // metallic/roughness has no meaningful ambient slot to read anyway.
+    float envAmb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    if (viewAmbientFed) {
+        unpackColor(viewAmbient, envAmb);
+        envAmb[3] = 1.0f;
+    }
+    bgfx::setUniform(u_envAmbient, envAmb);
 }
 
 void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,

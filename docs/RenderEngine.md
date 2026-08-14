@@ -436,10 +436,10 @@ budget, against the 224 vec4 an ES3/WebGL2 device has to guarantee:
 | `u_frameParams` (surface finish frame palette) | 48 |
 | `u_viewLight` + `u_viewLightColor` + `u_viewLightAtt` | 24 |
 | `u_localLight` + `u_localLightColor` | 16 |
-| `u_envSH`, `u_finishParams`, matrices, scalars | 31 |
-| **total** | **183** |
+| `u_envSH`, `u_finishParams`, matrices, scalars | 32 |
+| **total** | **184** |
 
-So 16 Coin lights would fit (207, 17 spare) and 32 would not (255).
+So 16 Coin lights would fit (208, 16 spare) and 32 would not (256).
 Note what that table says about where the room actually is: the effect
 lights cost 80 vec4 against the Coin lights' 24, and the single
 largest consumer in the shader is a shadow atlas sized for at most
@@ -544,6 +544,20 @@ the source changes:
   matrices for it (`fs_fc_env` reconstructs per-pixel world directions
   from `u_proj`/`u_invView`); orthographic cameras get a fixed 45°
   virtual field of view since they have no per-pixel ray fan.
+
+The scene's own ambient (Coin's `LIGHT_MODEL_AMBIENT`, i.e. the
+viewer's `SoEnvironment`, 3.2) joins that environment rather than the
+diffuse: `u_envAmbient` carries it as a uniform-radiance environment and
+the branch adds it to BOTH the irradiance and the prefiltered term.
+That is the only form which reaches a **metal** -- a metal has no
+diffuse at all, so an ambient folded into `kd` would leave it exactly as
+dark as before, which is what used to force `Render_PBREnvIntensity` up
+to 3 to make metal read (and washed everything else out on the way).
+Note the uniform is the light-model ambient *alone*, not Blinn-Phong's
+material-ambient-times-it: the BRDF already states the surface, and a
+material read as metallic/roughness has no meaningful ambient slot.
+`u_pbrParams.w` does not scale it -- that knob says how bright the
+user's environment map is, and this is a light beside it.
 
 Note that FreeCAD has no other environment mechanism to honor: Coin's
 `SoSceneTextureCubeMap` exists as a node class but is never instantiated

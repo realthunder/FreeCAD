@@ -580,6 +580,8 @@ void BGFXView::init(bool keepShared)
     u_matEmissive = bgfx::createUniform("u_matEmissive", bgfx::UniformType::Vec4);
     u_matSpecular = bgfx::createUniform("u_matSpecular", bgfx::UniformType::Vec4);
     u_ambient = bgfx::createUniform("u_ambient", bgfx::UniformType::Vec4);
+    u_envAmbient = bgfx::createUniform("u_envAmbient",
+                                       bgfx::UniformType::Vec4);
     u_params = bgfx::createUniform("u_params", bgfx::UniformType::Vec4);
     u_polyOffset = bgfx::createUniform("u_polyOffset",
                                        bgfx::UniformType::Vec4);
