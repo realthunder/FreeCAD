@@ -850,8 +850,8 @@ static constexpr int MaxViewLights = 8;
 /// Render_Light) supplies, with a shadow map, sun disc and ground of its
 /// own. These have none of that: they light, and nothing else.
 struct ViewLight {
-    /// The way the light travels, world space, normalized. For a
-    /// positional light this is unused.
+    /// The way the light travels, world space, normalized. Unused by a
+    /// plain positional light; a `spot` reads it as the cone axis.
     float direction[3] = {0.0f, 0.0f, -1.0f};
     /// World-space position of a positional (SoPointLight) light.
     float position[3] = {0.0f, 0.0f, 0.0f};
@@ -864,13 +864,27 @@ struct ViewLight {
     float attenuation[3] = {0.0f, 0.0f, 1.0f};
     uint32_t color = 0xffffffff;   ///< packed 0xRRGGBBAA
     float intensity = 1.0f;
+    /// An SoSpotLight past the one the scene light claims (the first is
+    /// taken by LightConfig, with the shadow map and the sun disc; these
+    /// have neither). A spot is `positional` as well -- it has a
+    /// position and Coin's distance attenuation applies to it -- with
+    /// `direction` as the cone axis on top.
+    bool spot = false;
+    /// Coin's SoSpotLight fields, kept in its units (cutOffAngle is the
+    /// cone's half angle in radians, dropOffRate the 0..1 field) so they
+    /// can be compared against the node they came from; the backend
+    /// converts, exactly as LightConfig's pair is converted.
+    float cutOffAngle = 0.785398f;
+    float dropOffRate = 0.0f;
 
     bool operator==(const ViewLight &o) const {
         return std::equal(direction, direction + 3, o.direction)
             && std::equal(position, position + 3, o.position)
             && positional == o.positional
             && std::equal(attenuation, attenuation + 3, o.attenuation)
-            && color == o.color && intensity == o.intensity;
+            && color == o.color && intensity == o.intensity
+            && spot == o.spot && cutOffAngle == o.cutOffAngle
+            && dropOffRate == o.dropOffRate;
     }
     bool operator!=(const ViewLight &o) const { return !(*this == o); }
 };

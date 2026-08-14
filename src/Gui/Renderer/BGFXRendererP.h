@@ -3797,11 +3797,17 @@ public:
     // as a stand-in, so the shader has one code path and no fallback
     // branch of its own.
     //   viewLightView[i]:   xyz = view-space direction the light travels
-    //                       (directional) or position (positional),
-    //                       w = 0 inactive, 1 directional, 2 positional
-    //   viewLightColorI[i]: rgb = color premultiplied by intensity
+    //                       (directional) or position (positional/spot),
+    //                       w = 0 inactive, 1 directional, 2 positional,
+    //                       3 spot, 4 a spot's cone slot
+    //   viewLightColorI[i]: rgb = color premultiplied by intensity,
+    //                       w = a spot's falloff exponent
     //   viewLightAtt[i]:    xyz = Coin's squared/linear/constant
-    //                       distance attenuation (positional only)
+    //                       distance attenuation (positional only),
+    //                       w = a spot's cone cutoff cosine
+    // A spot's axis does not fit in one slot, so it takes the next one
+    // whole (xyz = axis, w = 4) rather than a fourth uniform array --
+    // see the packing in BGFXFrame.cpp and docs/RenderEngine.md 3.2.
     static constexpr int kViewLights = Render::MaxViewLights;
     bgfx::UniformHandle u_viewLight = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_viewLightColor = BGFX_INVALID_HANDLE;

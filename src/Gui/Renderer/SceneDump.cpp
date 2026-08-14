@@ -194,7 +194,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     times this -- instead of a flat fraction of the diffuse. A v52
 //     snapshot has no such field and its `fed` still selects the
 //     legacy floor, so it renders as it did.
-const uint32_t kVersion = 53;
+// 54: A ViewLight may be a spot -- an SoSpotLight past the one the
+//     scene light claims, carrying Coin's cutOffAngle and dropOffRate
+//     beside the position and attenuation it already had. A v53
+//     snapshot has no such field and its lights read as the plain
+//     directional/positional ones they were, which is what a writer of
+//     that version could produce anyway.
+const uint32_t kVersion = 54;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -2936,6 +2942,10 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.floats(vl.attenuation, 3);
         w.u32(vl.color);
         w.f(vl.intensity);
+        // v54: the cone of a spot light.
+        w.b(vl.spot);
+        w.f(vl.cutOffAngle);
+        w.f(vl.dropOffRate);
     }
 
     const VolumetricConfig &vc = snap.volconf;
@@ -3329,6 +3339,11 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             r.floats(vl.attenuation, 3);
             vl.color = r.u32();
             vl.intensity = r.f();
+            if (version >= 54) {
+                vl.spot = r.b();
+                vl.cutOffAngle = r.f();
+                vl.dropOffRate = r.f();
+            }
             if (vlc.count < MaxViewLights)
                 vlc.lights[vlc.count++] = vl;
         }

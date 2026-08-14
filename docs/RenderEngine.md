@@ -458,6 +458,17 @@ The loop cost does not argue either way: active slots are packed from
 0 with the tail zeroed, so the shader stops at the first empty one and
 unused capacity is free.
 
+**A spot light spends two slots.** Its position, colour and
+attenuation already fill a slot's twelve floats; the cone's cutoff
+cosine and falloff exponent take the two spare `.w` components, and the
+axis -- three floats with nowhere left to go -- takes the following
+slot whole (`kind = 4`, which the shader shades as a light of zero
+colour so the loop walks past it). That is why the table above did not
+move: a fourth per-light array would have cost 8 vec4 in every frame,
+spot or not, and the same room can be borrowed from a capacity nothing
+fills. The packer never starts a spot in the last slot, so the
+shader's `i + 1` is always in range.
+
 ## 4. Draw model
 
 - `Render::DrawCall` = mesh reference (+ index sub-range), model
@@ -1275,14 +1286,25 @@ phone).
     Insert *before* the camera and the light's direction is fixed in
     eye space and tracks it, which is exactly how the headlight is
     built; *after* it, position and direction are plain world space.
-  - **`SoSpotLight` past the first is still dropped.** The first one
+  - **`SoSpotLight` past the first, closed 2026-08-14.** The first one
     is claimed as the scene light (with cone, shadow map, sun disc and
-    ground); the view-light path carries directional and positional
-    lights only, so a second spot has nowhere to go. Narrow -- nothing
-    in either tree builds a second one -- and cheap to close if it
-    ever matters: `u_viewLightColor[i].w` and `u_viewLightAtt[i].w`
-    are both unread, which is exactly a cone (cutoff cosine, dropoff
-    exponent) with `kind = 3` flagging it, so no new uniform array.
+    ground) and the walk stops there, so every spot after it is now an
+    ordinary view light with its cone and no map -- as is a second
+    `SoShadowDirectionalLight`, which falls through to the plain
+    directional branch. Which node the scene light took is decided by
+    the same walk in the same order under the same `on` filter, so the
+    two translators agree without either seeing the other.
+
+    The cone did **not** fit the two spare floats this section used to
+    promise. A spot needs its axis as well as its position, which is
+    three floats more than a slot holds, so `kind = 3` takes the
+    **next slot whole** (axis in xyz, `kind = 4` marking it a
+    continuation the shader shades as a light of zero colour). That
+    keeps the uniform budget exactly where it was -- the alternative,
+    a fourth per-light array, would have charged 8 vec4 of the 40
+    spare to every frame for something a scene almost never has. A
+    spot therefore costs two of the eight light slots, and the packer
+    never starts one in the last.
   - The **specular** term still carries a 0.75 weight with no Coin
     counterpart. It did not show up in the ambient/diffuse parity
     measurements below, so whatever it costs is small, but it has not

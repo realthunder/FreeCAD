@@ -93,11 +93,21 @@ uniform mat4 u_shadowMatrix;
 // added on top of the ambient floor by both lighting models.
 //   u_viewLight[i]      xyz = view-space direction the light travels
 //                       (directional) or its view-space position
-//                       (positional); w = 0 inactive, 1 directional,
-//                       2 positional
-//   u_viewLightColor[i] rgb = colour premultiplied by intensity
+//                       (positional/spot); w = 0 inactive,
+//                       1 directional, 2 positional, 3 spot,
+//                       4 a spot's cone slot (see below)
+//   u_viewLightColor[i] rgb = colour premultiplied by intensity;
+//                       w = a spot's falloff exponent
+//                       (dropOffRate * 128)
 //   u_viewLightAtt[i]   xyz = Coin's squared/linear/constant distance
-//                       attenuation (SoEnvironment::attenuation order)
+//                       attenuation (SoEnvironment::attenuation order);
+//                       w = a spot's cone cutoff cosine
+// A spot light (kind 3) is a positional light with a cone, and its axis
+// does not fit in the twelve floats a slot holds, so it takes the NEXT
+// slot whole: xyz = the view-space direction the light travels, w = 4
+// flagging it as a continuation rather than a light of its own. The
+// engine never packs a spot into the last slot, so reading i + 1 here is
+// always in range.
 // The engine always fills at least slot 0: a feed that carries no
 // lights of its own gets the fixed white headlight down the view axis
 // written in as a stand-in, so there is no "unlit" special case here.
@@ -124,6 +134,16 @@ bool fcViewLight(int i, vec3 vpos, out vec3 l, out vec3 lcol)
 		lcol = vec3_splat(0.0);
 		return false;
 	}
+	if (kind > 3.5)
+	{
+		// The cone slot of the spot light before this one: not a
+		// light, shaded as one of zero colour so the caller's loop
+		// walks past it. Costs one iteration of arithmetic on a
+		// black light, only in a frame that has a spot at all.
+		l = vec3(0.0, 0.0, 1.0);
+		lcol = vec3_splat(0.0);
+		return true;
+	}
 	if (kind > 1.5)
 	{
 		vec3 d = u_viewLight[i].xyz - vpos;
@@ -134,6 +154,22 @@ bool fcViewLight(int i, vec3 vpos, out vec3 l, out vec3 lcol)
 			+ u_viewLightAtt[i].z;
 		lcol = u_viewLightColor[i].rgb
 			* (denom > 0.0 ? 1.0 / denom : 1.0);
+		if (kind > 2.5)
+		{
+			// Spot cone, the same law the scene light's spot runs
+			// (GL's): outside the cutoff nothing, inside it a
+			// cosine raised to the falloff exponent. `l` points
+			// toward the light, the axis is the way it travels.
+			// The index is bounded for the compiler's sake --
+			// the packer already guarantees it, but an
+			// out-of-range dynamic index is undefined in GLSL
+			// even on a branch that never runs.
+			int ci = i + 1 < VIEW_LIGHTS ? i + 1 : i;
+			float cd = dot(-l, u_viewLight[ci].xyz);
+			lcol *= cd > u_viewLightAtt[i].w
+				? pow(max(cd, 1.0e-4), u_viewLightColor[i].w)
+				: 0.0;
+		}
 	}
 	else
 	{

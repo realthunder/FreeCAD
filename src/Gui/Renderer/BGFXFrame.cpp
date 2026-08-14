@@ -525,31 +525,62 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 out[j] = w[0] * vm[j] + w[1] * vm[4 + j]
                     + w[2] * vm[8 + j] + (point ? vm[12 + j] : 0.0f);
         };
+        auto unit = [](float *d) {
+            float len = std::sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+            if (len > 0.0f) {
+                for (int j = 0; j < 3; ++j)
+                    d[j] /= len;
+            }
+        };
         view->viewAmbientFed = viewlightconf.fed;
         view->viewAmbient = viewlightconf.ambient;
         int n = 0;
         if (viewlightconf.fed) {
-            for (int i = 0; i < viewlightconf.count
-                     && n < BGFXView::kViewLights; ++i) {
+            for (int i = 0; i < viewlightconf.count; ++i) {
                 const Render::ViewLight &l = viewlightconf.lights[i];
+                // A spot light spends TWO slots: its position, colour
+                // and attenuation fill a light's twelve floats already,
+                // and the cone axis is three more, so it goes in the
+                // whole of the following slot. That costs no uniform
+                // budget at all -- the alternative was a fourth
+                // per-light array, eight vec4 charged to every frame for
+                // something a scene almost never has (docs/
+                // RenderEngine.md 3.2). Both slots have to be free.
+                const int slots = l.spot ? 2 : 1;
+                if (n + slots > BGFXView::kViewLights)
+                    break;
                 toView(l.positional ? l.position : l.direction,
                        l.positional, view->viewLightView[n]);
-                if (!l.positional) {
-                    float *d = view->viewLightView[n];
-                    float len = std::sqrt(d[0]*d[0] + d[1]*d[1]
-                                          + d[2]*d[2]);
-                    if (len > 0.0f) {
-                        for (int j = 0; j < 3; ++j)
-                            d[j] /= len;
-                    }
-                }
-                view->viewLightView[n][3] = l.positional ? 2.0f : 1.0f;
+                if (!l.positional)
+                    unit(view->viewLightView[n]);
+                view->viewLightView[n][3] =
+                    l.spot ? 3.0f : (l.positional ? 2.0f : 1.0f);
                 unpackColor(l.color, view->viewLightColorI[n]);
                 for (int j = 0; j < 3; ++j) {
                     view->viewLightColorI[n][j] *= l.intensity;
                     view->viewLightAtt[n][j] = l.attenuation[j];
                 }
-                ++n;
+                if (l.spot) {
+                    // The cone rides the two floats the layout does not
+                    // otherwise use, converted the way the scene light's
+                    // pair above is: Coin's half angle to its cosine,
+                    // its 0..1 dropOffRate to a GL falloff exponent.
+                    view->viewLightAtt[n][3] =
+                        std::cos(bx::clamp(l.cutOffAngle, 0.01f, 1.55f));
+                    view->viewLightColorI[n][3] =
+                        bx::clamp(l.dropOffRate, 0.0f, 1.0f) * 128.0f;
+                    // The continuation slot: axis in xyz, kind 4, which
+                    // the shader shades as a light of zero colour so the
+                    // loop walks past it without a second exit test.
+                    toView(l.direction, false, view->viewLightView[n + 1]);
+                    unit(view->viewLightView[n + 1]);
+                    view->viewLightView[n + 1][3] = 4.0f;
+                    for (int j = 0; j < 4; ++j) {
+                        view->viewLightColorI[n + 1][j] = 0.0f;
+                        view->viewLightAtt[n + 1][j] = 0.0f;
+                    }
+                }
+                n += slots;
             }
         } else {
             view->viewLightView[0][0] = 0.0f;

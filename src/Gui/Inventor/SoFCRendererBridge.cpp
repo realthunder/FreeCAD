@@ -1886,9 +1886,16 @@ RendererBridge::translateViewLightConfig(SoState * state)
     // camera tracking costs nothing here -- it falls out of the same
     // matrix the scene light uses.
     //
-    // Exactly the complement of translateLightConfig: it claims
-    // SoShadowDirectionalLight and SoSpotLight for the single
-    // shadow-casting scene light, so those are the two skipped here.
+    // Exactly the complement of translateLightConfig: it takes the
+    // FIRST light of a shadow-casting type (SoShadowDirectionalLight or
+    // SoSpotLight) as the single scene light and stops there, so that
+    // one node -- and only that one -- is skipped here. Everything past
+    // it is an ordinary light: a further spot keeps its cone but gets no
+    // map, a further shadow directional falls through to the plain
+    // directional branch below. Which one the scene light claimed is
+    // decided by the same walk, in the same order, with the same `on`
+    // filter, so the two agree without either seeing the other.
+    bool sceneLightTaken = false;
     Render::ViewLightConfig res;
     res.fed = true;
     // GL's LIGHT_MODEL_AMBIENT, which Coin drives from SoEnvironment
@@ -1911,17 +1918,38 @@ RendererBridge::translateViewLightConfig(SoState * state)
         // light here is the whole of honoring it.
         if (!light->on.getValue())
             continue;
-        // The scene light's node types, claimed by translateLightConfig.
-        // SoShadowDirectionalLight derives from SoDirectionalLight, so
-        // it has to be rejected before the directional test below.
+        // The scene light's node types. Only the first such node is
+        // claimed (translateLightConfig breaks there); the rest are
+        // ordinary lights. SoShadowDirectionalLight derives from
+        // SoDirectionalLight, so this test has to come before the
+        // directional one below either way.
         if (node->isOfType(SoShadowDirectionalLight::getClassTypeId())
-                || node->isOfType(SoSpotLight::getClassTypeId()))
-            continue;
+                || node->isOfType(SoSpotLight::getClassTypeId())) {
+            if (!sceneLightTaken) {
+                sceneLightTaken = true;
+                continue;
+            }
+        }
 
         Render::ViewLight out;
         SbVec3f dir(0.0f, 0.0f, -1.0f);
         SbVec3f pos(0.0f, 0.0f, 0.0f);
-        if (node->isOfType(SoDirectionalLight::getClassTypeId())) {
+        if (node->isOfType(SoSpotLight::getClassTypeId())) {
+            // A spot is a positional light with a cone on top: same
+            // location and the same SoEnvironment attenuation, the
+            // direction read as the cone axis.
+            auto spot = static_cast<const SoSpotLight *>(light);
+            out.positional = true;
+            out.spot = true;
+            pos = spot->location.getValue();
+            dir = spot->direction.getValue();
+            out.cutOffAngle = spot->cutOffAngle.getValue();
+            out.dropOffRate = spot->dropOffRate.getValue();
+            const SbVec3f & att =
+                SoEnvironmentElement::getLightAttenuation(state);
+            for (int j = 0; j < 3; ++j)
+                out.attenuation[j] = att[j];
+        } else if (node->isOfType(SoDirectionalLight::getClassTypeId())) {
             dir = static_cast<const SoDirectionalLight *>(light)
                 ->direction.getValue();
         } else if (node->isOfType(SoPointLight::getClassTypeId())) {
