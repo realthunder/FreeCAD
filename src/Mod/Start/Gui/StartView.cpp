@@ -319,6 +319,9 @@ QPushButton* createNewButton(const NewButton& newButton)
         static_cast<int>(hGrp->GetInt("FileCardDescriptionLines", 2));  // NOLINT
 
     auto button = new CardButton();
+    // Named so applyFileCardStyle() can find the six of them again when the
+    // theme changes; nothing else keeps a handle on them.
+    button->setObjectName(QLatin1String("newFileCard"));
     auto mainLayout = new QHBoxLayout(button);
     auto iconLabel = new QLabel(button);
     mainLayout->addWidget(iconLabel);
@@ -497,18 +500,6 @@ void StartView::configureNewFileButtons(QLayout* layout) const
                                  tr("Create an architectural project"),
                                  QLatin1String(":/icons/BIMWorkbench.svg")});
 
-    auto hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Mod/Start");
-    if (hGrp->GetBool("FileCardUseStyleSheet", true)) {
-        QString style = fileCardStyle();
-        newEmptyFile->setStyleSheet(style);
-        openFile->setStyleSheet(style);
-        partDesign->setStyleSheet(style);
-        assembly->setStyleSheet(style);
-        draft->setStyleSheet(style);
-        arch->setStyleSheet(style);
-    }
-
     equalizeCardHeights({partDesign, assembly, draft, arch, newEmptyFile, openFile});
 
     // TODO: Ensure all of the required WBs are actually available
@@ -525,6 +516,36 @@ void StartView::configureNewFileButtons(QLayout* layout) const
     connect(assembly, &QPushButton::clicked, this, &StartView::newAssemblyFile);
     connect(draft, &QPushButton::clicked, this, &StartView::newDraftFile);
     connect(arch, &QPushButton::clicked, this, &StartView::newArchFile);
+
+    applyFileCardStyle();
+}
+
+/*!
+ * \brief Give the six New File cards their own style sheet, or take it away.
+ *
+ * fileCardStyle() yields nothing while a theme style sheet is loaded, so that
+ * the cards are painted as the theme paints a QPushButton. Deciding that once,
+ * at construction, was not enough: the Start page is built before the theme
+ * sheet is applied, so the cards kept the light #DDDDDD fallback for the rest
+ * of the session and stood out as near-white panels on a dark theme. Re-run it
+ * whenever the style changes.
+ */
+void StartView::applyFileCardStyle() const
+{
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Start");
+    if (!hGrp->GetBool("FileCardUseStyleSheet", true)) {
+        return;
+    }
+
+    const QString style = fileCardStyle();
+    for (auto* card : findChildren<QPushButton*>(QLatin1String("newFileCard"))) {
+        // Only when it differs: setStyleSheet() repolishes unconditionally,
+        // and this runs from a style-change notification.
+        if (card->styleSheet() != style) {
+            card->setStyleSheet(style);
+        }
+    }
 }
 
 QString StartView::fileCardStyle() const
@@ -790,6 +811,11 @@ void StartView::changeEvent(QEvent* event)
 {
     if (event->type() == QEvent::LanguageChange) {
         this->retranslateUi();
+    }
+    else if (event->type() == QEvent::StyleChange) {
+        // A theme was loaded or cleared: the cards' own sheet has to be
+        // reconsidered against it.
+        this->applyFileCardStyle();
     }
     Gui::MDIView::changeEvent(event);
 }
