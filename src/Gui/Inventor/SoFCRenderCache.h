@@ -671,6 +671,17 @@ public:
 
   SbBool isEmpty() const;
 
+  /** Whether a shape below this cache kept a stale vertex cache because
+   * the publish's capture budget ran out (Render CaptureBudgetMS). An
+   * incomplete cache renders fine -- every child entry is present, one
+   * of them a publish old -- but it must not be reused by the next
+   * traversal, or the pruning would freeze the stale child in for good:
+   * the manager treats it like a node-id mismatch. Sticky by design;
+   * the replacement cache built by the follow-up publish starts clean.
+   */
+  bool isIncomplete() const;
+  void setIncomplete();
+
   void resetActionStateStackDepth();
 
   void addTexture(SoState * state, const SoNode * texture);

@@ -179,6 +179,14 @@ public:
 
   SbFCUniqueId getSceneNodeId() const;
 
+  /** How many shapes the last publish left a frame stale under the
+   * capture budget (Render CaptureBudgetMS). Non-zero means the publish
+   * is not done: the caller owning the render loop should schedule
+   * another redraw, and each follow-up publish captures at least one
+   * more shape until this returns 0.
+   */
+  int getDeferredCaptureCount() const;
+
   void setHatchImage(const void *dataptr, int nc, int width, int height);
 
   void doLatePick(SoRayPickAction *action) const;

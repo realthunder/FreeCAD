@@ -71,6 +71,7 @@ public:
     bool MeshSkipLanded;
     bool VisualFillOnPool;
     long VisualFillMinFaces;
+    long CaptureBudgetMS;
     long LevelSlowBuildMS;
     long DescentOrderBatch;
     bool DowngradeLedger;
@@ -213,6 +214,8 @@ public:
         funcs["VisualFillOnPool"] = &RenderParamsP::updateVisualFillOnPool;
         VisualFillMinFaces = this->handle->GetInt("VisualFillMinFaces", 2000);
         funcs["VisualFillMinFaces"] = &RenderParamsP::updateVisualFillMinFaces;
+        CaptureBudgetMS = this->handle->GetInt("CaptureBudgetMS", 50);
+        funcs["CaptureBudgetMS"] = &RenderParamsP::updateCaptureBudgetMS;
         LevelSlowBuildMS = this->handle->GetInt("LevelSlowBuildMS", 200);
         funcs["LevelSlowBuildMS"] = &RenderParamsP::updateLevelSlowBuildMS;
         DescentOrderBatch = this->handle->GetInt("DescentOrderBatch", 64);
@@ -504,6 +507,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateVisualFillMinFaces(RenderParamsP *self) {
         self->VisualFillMinFaces = self->handle->GetInt("VisualFillMinFaces", 2000);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCaptureBudgetMS(RenderParamsP *self) {
+        self->CaptureBudgetMS = self->handle->GetInt("CaptureBudgetMS", 50);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelSlowBuildMS(RenderParamsP *self) {
@@ -1751,6 +1758,49 @@ void RenderParams::setVisualFillMinFaces(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeVisualFillMinFaces() {
     instance()->handle->RemoveInt("VisualFillMinFaces");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCaptureBudgetMS() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How long one scene publish may spend re-capturing changed\n"
+"shapes into vertex caches before the rest are deferred. The\n"
+"capture walks a changed shape's primitives one triangle at a\n"
+"time, and during a descent storm every landed batch pays that\n"
+"on the next paint: mid-paint stack samples put the capture at\n"
+"about half of 250-850ms publish frames. Once this budget is\n"
+"spent, each remaining changed shape keeps its previous vertex\n"
+"cache for this frame (a shape captured for the first time\n"
+"stays out of the frame entirely -- progressive appearance,\n"
+"same as a live import), the caches on its path are left\n"
+"unclosed for reuse, and another publish is scheduled; captured\n"
+"shapes turn valid and prune, so successive frames always make\n"
+"progress. The display is at worst a few frames stale in a\n"
+"scene that is churning anyway; a single changed object never\n"
+"comes near the budget. 0 captures everything in one frame,\n"
+"as before this parameter existed.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getCaptureBudgetMS() {
+    return instance()->CaptureBudgetMS;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultCaptureBudgetMS() {
+    const static long def = 50;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCaptureBudgetMS(const long &v) {
+    instance()->handle->SetInt("CaptureBudgetMS",v);
+    instance()->CaptureBudgetMS = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCaptureBudgetMS() {
+    instance()->handle->RemoveInt("CaptureBudgetMS");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

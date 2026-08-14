@@ -355,6 +355,23 @@ Params = [
         "items; the thousands of small landings in a budget drop stay\n"
         "on the cheap inline path rather than paying a snapshot, a\n"
         "queue hop and a second landing each."),
+    ParamInt('CaptureBudgetMS',  50, title='Vertex capture budget per publish (ms)',
+        doc="How long one scene publish may spend re-capturing changed\n"
+        "shapes into vertex caches before the rest are deferred. The\n"
+        "capture walks a changed shape's primitives one triangle at a\n"
+        "time, and during a descent storm every landed batch pays that\n"
+        "on the next paint: mid-paint stack samples put the capture at\n"
+        "about half of 250-850ms publish frames. Once this budget is\n"
+        "spent, each remaining changed shape keeps its previous vertex\n"
+        "cache for this frame (a shape captured for the first time\n"
+        "stays out of the frame entirely -- progressive appearance,\n"
+        "same as a live import), the caches on its path are left\n"
+        "unclosed for reuse, and another publish is scheduled; captured\n"
+        "shapes turn valid and prune, so successive frames always make\n"
+        "progress. The display is at worst a few frames stale in a\n"
+        "scene that is churning anyway; a single changed object never\n"
+        "comes near the budget. 0 captures everything in one frame,\n"
+        "as before this parameter existed."),
     ParamInt('LevelSlowBuildMS',  200, title='Slow visual build report (ms)',
         doc="A visual rebuild whose own cost passes this many\n"
         "milliseconds reports its time split (traversal, mesh,\n"

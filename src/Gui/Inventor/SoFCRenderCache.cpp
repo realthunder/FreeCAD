@@ -251,6 +251,9 @@ public:
   Material basematerial;
   bool resetmatrix;
   bool resetclip = false;
+  // Set when a shape below kept a stale vertex cache under the capture
+  // budget; see SoFCRenderCache::isIncomplete().
+  bool incomplete = false;
 
   static FC_COIN_THREAD_LOCAL SoFCSelectionRoot::Stack RenderCacheStack;
 };
@@ -969,6 +972,18 @@ SbFCUniqueId
 SoFCRenderCache::getNodeId() const
 {
   return PRIVATE(this)->nodeid;
+}
+
+bool
+SoFCRenderCache::isIncomplete() const
+{
+  return PRIVATE(this)->incomplete;
+}
+
+void
+SoFCRenderCache::setIncomplete()
+{
+  PRIVATE(this)->incomplete = true;
 }
 
 SbBool

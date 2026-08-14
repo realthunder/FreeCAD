@@ -4782,6 +4782,18 @@ void View3DInventorViewer::renderScene()
     if (_pimpl->renderer && _pimpl->renderer->needsRedraw())
         this->getSoRenderManager()->scheduleRedraw();
 
+    // A publish that spent its capture budget left shapes a frame stale
+    // (Render CaptureBudgetMS); keep publishing until none defer. Each
+    // follow-up publish captures at least one more shape, so this
+    // converges, and going through the normal redraw keeps the event
+    // loop serviced between passes -- which is the entire point.
+    if (selectionRoot) {
+        if (auto manager = selectionRoot->getRenderManager()) {
+            if (manager->getDeferredCaptureCount() > 0)
+                this->getSoRenderManager()->scheduleRedraw();
+        }
+    }
+
     // Immediately reschedule to get continuous animation.
     if (this->isAnimating()) {
         this->getSoRenderManager()->scheduleRedraw();

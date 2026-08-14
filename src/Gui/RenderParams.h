@@ -591,6 +591,33 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter CaptureBudgetMS
+    ///
+    /// How long one scene publish may spend re-capturing changed
+    /// shapes into vertex caches before the rest are deferred. The
+    /// capture walks a changed shape's primitives one triangle at a
+    /// time, and during a descent storm every landed batch pays that
+    /// on the next paint: mid-paint stack samples put the capture at
+    /// about half of 250-850ms publish frames. Once this budget is
+    /// spent, each remaining changed shape keeps its previous vertex
+    /// cache for this frame (a shape captured for the first time
+    /// stays out of the frame entirely -- progressive appearance,
+    /// same as a live import), the caches on its path are left
+    /// unclosed for reuse, and another publish is scheduled; captured
+    /// shapes turn valid and prune, so successive frames always make
+    /// progress. The display is at worst a few frames stale in a
+    /// scene that is churning anyway; a single changed object never
+    /// comes near the budget. 0 captures everything in one frame,
+    /// as before this parameter existed.
+    static const long & getCaptureBudgetMS();
+    static const long & defaultCaptureBudgetMS();
+    static void removeCaptureBudgetMS();
+    static void setCaptureBudgetMS(const long &v);
+    static const char *docCaptureBudgetMS();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LevelSlowBuildMS
     ///
     /// A visual rebuild whose own cost passes this many
