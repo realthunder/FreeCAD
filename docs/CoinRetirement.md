@@ -267,6 +267,43 @@ rejects by type. Everything keyed off the light — shadows, volumetric
 shafts, sun disc, ground reflection — has nothing to key off. It is not
 a redundant menu entry; it is where the light comes from.
 
+⚠️ **The backend had it backwards: it gated the light on the map**
+(found by the Coin-to-bgfx lighting audit, fixed 2026-08-14). The
+sentence this section opens with is the design, and the bridge
+implements it -- `LightConfig::shadow` is a field beside `valid`, and
+`translateLightConfig`'s own comment calls `Render_Shadow` "a
+convenience toggle to drop the shadow map while keeping the scene lit".
+The bgfx backend did the opposite. Every light uniform (direction,
+colour, intensity, spot position and cone) was computed *inside* the
+shadow-camera block in `BGFXFrame.cpp`, three levels deep in a gate on
+`m_shadow && bboxValid && lightconf.valid && lightconf.shadow`, and the
+shaders read one `shadowFrame` flag for both "a map exists" and "a
+scene light is fed". Three ways to lose the light, none of them about
+lighting:
+
+- `Render_Shadow` off -- the documented case, which did the one thing
+  its documentation promises it will not do.
+- A GPU whose caps carry no filterable shadow format: `m_shadow` is
+  only "shadow resources exist", so the scene silently lit by headlight
+  alone on the devices least able to afford being wrong about it.
+- A scene with no extent to fit a light camera to (`bboxValid`, or a
+  zero diagonal).
+
+In all three the frame fell back to the fixed white view-axis
+headlight. Split into `lightFrame` (a scene light is fed, from
+`LightConfig::valid` alone) and `shadowFrame` (a map was rendered),
+with the light resolved before and independently of the shadow camera.
+The sun disc moved to `lightFrame` too -- the sun belongs where the
+light is, with or without a map.
+
+Verified by staging a pure RED light through the `Render_Light`
+parameter path with `Render_Shadow` toggled and nothing else moving:
+before, the shadow-off leg had **zero** red pixels (all-grey headlight);
+after, the geometry is red-lit and only the shadow and its ground quad
+go away. A coloured light is what makes the two outcomes impossible to
+confuse -- the headlight is white, so "lit" and "lit by the scene
+light" separate on hue rather than on brightness.
+
 **The persistence surface, for when the removal does happen.** Three
 stores, and one hazard that turns out not to bite:
 

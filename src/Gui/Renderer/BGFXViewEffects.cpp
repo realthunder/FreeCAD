@@ -540,7 +540,7 @@ void BGFXView::submitWaterSurface(const Render::DrawCall &draw,
                      kMediumSlots);
     float lightDir[4] = {lightDirView[0], lightDirView[1],
                          lightDirView[2],
-                         shadowFrame ? 1.0f : 0.0f};
+                         lightFrame ? 1.0f : 0.0f};
     bgfx::setUniform(u_lightDir, lightDir);
     bgfx::setUniform(u_lightColor, lightColorI);
     bgfx::setTexture(0, s_texScene, sceneCopyTex);
@@ -678,7 +678,7 @@ void BGFXView::submitGlassSurface(const Render::DrawCall &draw, bool depthReject
     bgfx::setUniform(u_glassParams, glassParams);
     float lightDir[4] = {lightDirView[0], lightDirView[1],
                          lightDirView[2],
-                         shadowFrame ? 1.0f : 0.0f};
+                         lightFrame ? 1.0f : 0.0f};
     bgfx::setUniform(u_lightDir, lightDir);
     bgfx::setUniform(u_lightColor, lightColorI);
     bgfx::setTexture(0, s_texScene, sceneCopyTex);

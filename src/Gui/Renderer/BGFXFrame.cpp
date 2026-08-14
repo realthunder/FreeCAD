@@ -460,6 +460,56 @@ bool BGFXRenderer::Private::render(const QColor &col,
             && hiddenKeys.count(d.objectKey);
     };
 
+    // The scene light of the feed (the Shadow draw style's light, or
+    // the one Render_Light supplies), resolved into camera view space
+    // for the shaders. Independent of the shadow map below: a fed
+    // light lights the frame even when no map is rendered -- because
+    // Render_Shadow is off (documented as "drop the shadow map while
+    // keeping the scene lit"), because the caps carry no filterable
+    // shadow format, or because the scene has no extent to fit a light
+    // camera to. Computing it inside the shadow gate made all three of
+    // those silently fall back to the fixed headlight, dropping the
+    // light itself.
+    view->lightFrame = lightconf.valid;
+    if (lightconf.valid) {
+        const Render::LightConfig &light = lightconf;
+        bx::Vec3 dir = bx::normalize(
+            bx::Vec3(light.direction[0], light.direction[1],
+                     light.direction[2]));
+        const float *vm = reinterpret_cast<const float *>(viewMatrix);
+        float lv[3];
+        for (int j = 0; j < 3; ++j)
+            lv[j] = dir.x * vm[j] + dir.y * vm[4 + j]
+                + dir.z * vm[8 + j];
+        float ll = std::sqrt(lv[0]*lv[0] + lv[1]*lv[1] + lv[2]*lv[2]);
+        for (int j = 0; j < 3; ++j)
+            view->lightDirView[j] = ll > 0.0f ? lv[j] / ll : lv[j];
+        unpackColor(light.color, view->lightColorI);
+        for (int j = 0; j < 3; ++j)
+            view->lightColorI[j] *= light.intensity;
+        // Spot light: position in camera view space, cone cutoff
+        // cosine in w (-1 = directional), falloff exponent riding the
+        // light color's free channel.
+        if (light.spot) {
+            for (int j = 0; j < 3; ++j)
+                view->lightPosView[j] =
+                    light.position[0] * vm[j]
+                    + light.position[1] * vm[4 + j]
+                    + light.position[2] * vm[8 + j]
+                    + vm[12 + j];
+            view->lightPosView[3] =
+                std::cos(bx::clamp(light.cutOffAngle, 0.01f, 1.55f));
+            view->lightColorI[3] =
+                bx::clamp(light.dropOffRate, 0.0f, 1.0f) * 128.0f;
+        } else {
+            view->lightPosView[0] = 0.0f;
+            view->lightPosView[1] = 0.0f;
+            view->lightPosView[2] = 0.0f;
+            view->lightPosView[3] = -1.0f;
+            view->lightColorI[3] = 0.0f;
+        }
+    }
+
     // Shadow draw style: a light in the scene feed activates the
     // variance shadow map pass (only that style traverses one — the
     // viewer headlight lives outside the captured graph). The light
@@ -536,44 +586,6 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     0.5f, 0.5f, tz,   1.0f,
                 };
                 bx::mtxMul(view->shadowMtx, tmp2, crop);
-                // Light direction and color in camera view space.
-                const float *vm =
-                    reinterpret_cast<const float *>(viewMatrix);
-                float lv[3];
-                for (int j = 0; j < 3; ++j)
-                    lv[j] = dir.x * vm[j] + dir.y * vm[4 + j]
-                        + dir.z * vm[8 + j];
-                float ll = std::sqrt(lv[0]*lv[0] + lv[1]*lv[1]
-                                     + lv[2]*lv[2]);
-                for (int j = 0; j < 3; ++j)
-                    view->lightDirView[j] = ll > 0.0f ? lv[j] / ll
-                                                      : lv[j];
-                unpackColor(light.color, view->lightColorI);
-                for (int j = 0; j < 3; ++j)
-                    view->lightColorI[j] *= light.intensity;
-                // Spot light: position in camera view space, cone
-                // cutoff cosine in w (-1 = directional), falloff
-                // exponent riding the light color's free channel.
-                if (light.spot) {
-                    for (int j = 0; j < 3; ++j)
-                        view->lightPosView[j] =
-                            light.position[0] * vm[j]
-                            + light.position[1] * vm[4 + j]
-                            + light.position[2] * vm[8 + j]
-                            + vm[12 + j];
-                    view->lightPosView[3] =
-                        std::cos(bx::clamp(light.cutOffAngle,
-                                           0.01f, 1.55f));
-                    view->lightColorI[3] =
-                        bx::clamp(light.dropOffRate, 0.0f, 1.0f)
-                        * 128.0f;
-                } else {
-                    view->lightPosView[0] = 0.0f;
-                    view->lightPosView[1] = 0.0f;
-                    view->lightPosView[2] = 0.0f;
-                    view->lightPosView[3] = -1.0f;
-                    view->lightColorI[3] = 0.0f;
-                }
             }
         }
     }
@@ -2672,17 +2684,18 @@ bool BGFXRenderer::Private::render(const QColor &col,
     else
         view->submitBackground(background);
     // Visible sun along the directional scene light (needs the
-    // view-space light state the shadow section filled above).
+    // view-space light state the light section filled above -- the
+    // sun is where the light is, with or without a shadow map).
     if (getenv("FC_BGFX_DEBUG_FEED"))
         fprintf(stderr,
                 "bgfx sun: valid=%d spot=%d disc=%d size=%g frame=%d"
                 " dir=%g,%g,%g\n",
                 lightconf.valid, lightconf.spot, lightconf.sunDisc,
-                lightconf.sunDiscSize, view->shadowFrame,
+                lightconf.sunDiscSize, view->lightFrame,
                 view->lightDirView[0], view->lightDirView[1],
                 view->lightDirView[2]);
     if (lightconf.valid && !lightconf.spot && lightconf.sunDisc
-            && view->shadowFrame)
+            && view->lightFrame)
         view->submitSunDisc(lightconf.sunDiscSize);
     const float *viewMat = reinterpret_cast<const float *>(viewMatrix);
     view->viewMatrix = viewMat;

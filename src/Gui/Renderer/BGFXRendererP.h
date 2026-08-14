@@ -3710,6 +3710,12 @@ public:
     float shadowSpreadUv = 0.0f;
     float shadowSpreadMode = 0.0f;
     bool shadowFrame = false;  // shadows active this frame
+    // A scene light is fed this frame (LightConfig::valid): the light
+    // uniforms hold it and the shaders shade with it instead of the
+    // fixed headlight. Deliberately independent of shadowFrame -- the
+    // shadow map needs caps, a fitted scene bound and Render_Shadow,
+    // and losing any of those must dim the shadow, not the light.
+    bool lightFrame = false;
     bgfx::TextureHandle shadowTex = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle shadowTintTex = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle shadowTintFbo = BGFX_INVALID_HANDLE;

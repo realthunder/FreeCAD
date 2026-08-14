@@ -1164,3 +1164,33 @@ phone).
   contract is not a single color).
 - Per-draw texture slots for user shaders (custom images) are not yet
   bindable from the document model.
+- **Coin light state that never reaches a backend** (audited
+  2026-08-14; the one defect this audit found that was a bug rather
+  than a gap -- the scene light being gated on the shadow map -- is
+  fixed, see `docs/CoinRetirement.md` 3.4). What remains is by
+  omission: the feed carries at most one light and the model around it
+  is hard-coded.
+  - The viewer **headlight** is a plain `SoDirectionalLight`, which
+    `translateLightConfig` rejects by node type, and the backends
+    hard-code their own: white, full intensity, along -Z in view
+    space. `EnableHeadlight`, `HeadlightColor`, `HeadlightDirection`
+    and `HeadlightIntensity` therefore change what Coin draws and
+    nothing about what the renderer draws; `EnableHeadlight` off in
+    particular cannot be honoured at all. The same rejection hides the
+    viewer's **backlight**.
+  - **One light, maximum.** The bridge `break`s at the first
+    qualifying node, so a second scene light is dropped even though
+    `SoLightElement` accumulates up to eight. The engine's local
+    effect lights (`Render_Light` bulbs, fire flames) are a separate
+    private array, not Coin lights, and are unaffected.
+  - **`SoPointLight` and plain `SoDirectionalLight` are not translated
+    at all** -- only `SoShadowDirectionalLight` and `SoSpotLight`
+    qualify.
+  - **Material ambient is carried and then dropped.**
+    `Render::Material::ambient` is translated by the bridge, keyed
+    into the bgfx material key and streamed in the scene dump, but no
+    shader ever reads it: `fcShadeFragment` spends a literal 0.2 grey
+    floor instead. It is dead weight in the stream, and any
+    non-default ambient colour is a Coin/backend divergence.
+  - **`SoEnvironment` has no bridge at all**, so Coin's global ambient
+    intensity and colour are not represented.

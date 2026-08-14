@@ -206,18 +206,22 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
     bgfx::setUniform(u_matcapParams, matcapParams);
     bgfx::setTexture(1, s_texEnv, env);
 
-    // Shadow draw style: the scene light replaces the headlight
-    // for every lit draw of the frame; the VSM lookup runs only
-    // on receivers (the white stand-in reads as fully lit).
+    // The scene light replaces the headlight for every lit draw of
+    // the frame; the VSM lookup runs only on receivers (the white
+    // stand-in reads as fully lit), and only while a map was actually
+    // rendered -- a lit frame without one keeps the light and drops
+    // the shadow.
     float shadowParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     float lightDir[4] = {0.0f, 0.0f, -1.0f, 0.0f};
     bgfx::TextureHandle shadow = m_whiteTex;
-    if (shadowFrame) {
+    if (lightFrame) {
         lightDir[0] = lightDirView[0];
         lightDir[1] = lightDirView[1];
         lightDir[2] = lightDirView[2];
         lightDir[3] = 1.0f;
         bgfx::setUniform(u_lightColor, lightColorI);
+    }
+    if (shadowFrame) {
         bgfx::setUniform(u_shadowMatrix, shadowMtx);
         if ((mat.shadowstyle & 2) && pass != PassDepthOnly) {
             shadowParams[0] = 1.0f;
@@ -238,7 +242,7 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
     bgfx::setUniform(u_lightDir, lightDir);
     static const float noSpot[4] = {0.0f, 0.0f, 0.0f, -1.0f};
     bgfx::setUniform(u_lightPos,
-                     shadowFrame ? lightPosView : noSpot);
+                     lightFrame ? lightPosView : noSpot);
     bgfx::setUniform(u_shadowParams, shadowParams);
     // Local effect lights (fire flames + Render_Light bulbs):
     // frame-wide state computed in render() (zeroed w on inactive
@@ -336,7 +340,7 @@ bool BGFXView::submitInstanced(const Render::DrawCall &draw, const float *data,
     // per-instance color by u_instParams.x.
     params[0] = 1.0f;
     bool shaded = mat.lighting
-        || (shadowFrame && (mat.shadowstyle & 2));
+        || (lightFrame && (mat.shadowstyle & 2));
     // UI overlays (NaviCube faces, etc.) are flat chrome with baked
     // textures: light them uniformly so faces don't darken by angle.
     if (overlayView >= 0)
@@ -756,7 +760,7 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     // shades and shadows the ground with its own shaders regardless
     // of the light model.
     bool shaded = mat.lighting
-        || (shadowFrame && (mat.shadowstyle & 2));
+        || (lightFrame && (mat.shadowstyle & 2));
     // UI overlays render unlit (see the instanced path above).
     if (overlayView >= 0)
         shaded = false;
