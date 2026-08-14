@@ -689,13 +689,15 @@ public:
     }
 
     /// returns the total amount of notifications, errors and warnings currently stored
-    auto count() const
+    /// The return type is spelt out: hasRoomForMoreLines() above calls this, and a
+    /// deduced return type may not be used before the definition that deduces it.
+    qsizetype count() const
     {
         return tableWidget->topLevelItemCount() + pushedItems.count();
     }
 
     /// retrieves a pointer to a given notification from storage.
-    auto getItem(int index) const
+    QTreeWidgetItem* getItem(int index) const
     {
         if (index < pushedItems.count()) {
             return pushedItems.at(index);
