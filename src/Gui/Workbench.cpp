@@ -828,7 +828,7 @@ ToolBarItem* StdWorkbench::setupToolBars() const
     // File
     auto file = new ToolBarItem( root );
     file->setCommand("File");
-    *file << "Std_New" << "Std_Open" << "Std_Save";
+    *file << "Std_New" << "Std_Open" << "Std_Save" << "Std_CloseAllWindows";
 
     // Edit
     auto edit = new ToolBarItem( root );
