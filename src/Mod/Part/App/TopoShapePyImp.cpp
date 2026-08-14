@@ -1969,11 +1969,15 @@ PyObject* TopoShapePy::hashCode(PyObject *args) const
         return nullptr;
 
 #if OCC_VERSION_HEX >= 0x070800
-    int hc = std::hash<TopoDS_Shape>{}(getTopoShapePtr()->getShape());
+    // OCCT 7.8 replaced HashCode(upper), which returned a Standard_Integer
+    // in [1, upper], with std::hash, whose size_t result is unbounded. There
+    // is nothing left for 'upper' to clamp, so it is accepted and ignored
+    // rather than silently truncating the hash to fit it.
+    size_t hc = std::hash<TopoDS_Shape>{}(getTopoShapePtr()->getShape());
 #else
-    int hc = getTopoShapePtr()->getShape().HashCode(upper);
+    size_t hc = static_cast<size_t>(getTopoShapePtr()->getShape().HashCode(upper));
 #endif
-    return Py_BuildValue("i", hc);
+    return PyLong_FromSize_t(hc);
 }
 
 PyObject* TopoShapePy::tessellate(PyObject *args) const
