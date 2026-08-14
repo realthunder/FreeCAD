@@ -392,6 +392,70 @@ Two properties make this safe to be wrong about:
 
 `FC_BGFX_DEBUG_VIEWS=1` prints each block as it is handed out.
 
+### 3.2 The light budget
+
+Lights reach a frame down **two independent paths**, with separate
+capacities. Neither can consume the other's slots, and a scene can run
+both full at once.
+
+| | array | slots | fed from |
+|---|---|---|---|
+| Coin lights | `u_viewLight` | 8 | `SoLightElement`, via `translateViewLightConfig` |
+| fire flames | `u_localLight` 0..3 | 4 | fire body appearance slots, in `render()` |
+| `Render_Light` bulbs | `u_localLight` 4..7 | 4 | `Material::lightsource` draws, in `render()` |
+| scene light | `u_lightDir` etc. | 1 | `SoLightElement`, via `translateLightConfig` |
+
+**Coin lights** (`Render::ViewLightConfig`) are the viewer's headlight
+and backlight and any `SoDirectionalLight` / `SoPointLight` the
+traversal holds above the render-cache root. **Effect lights**
+(`u_localLight`, split in half by `kMediumSlots`) never come from the
+traversal at all: they are computed per frame from the draw materials,
+the fire half carrying the flame centroids with their clock flicker,
+the bulb half the light-source bodies and their shadow tiles. The
+**scene light** is the single shadow-casting one (the Shadow draw style
+or `Render_Light`), with a map, sun disc and ground of its own.
+
+⚠️ **Bloom is not a light.** A `lightsource` body feeds its emission
+into the bloom pass at `lightintensity`, but the illumination it casts
+on nearby surfaces is its bulb slot above. Turning bloom off removes
+the halo and changes no lighting.
+
+**Why 8 Coin lights, and what it would cost to raise.** Not a Coin
+limit: `SoLightElement::add` is an unbounded `SbList` append, and the
+familiar 8 is `SoGLLightIdElement::getMaxGLSources()`, i.e. a literal
+`glGetIntegerv(GL_MAX_LIGHTS)` binding Coin's own fixed-function
+renderer. This engine reads the element and drives its own shader, so
+that ceiling never applied to it. The real one is the fragment uniform
+budget, against the 224 vec4 an ES3/WebGL2 device has to guarantee:
+
+| | vec4 |
+|---|---|
+| `u_bulbShadowMtx` (16 bulb shadow tiles) | 64 |
+| `u_frameParams` (surface finish frame palette) | 48 |
+| `u_viewLight` + `u_viewLightColor` + `u_viewLightAtt` | 24 |
+| `u_localLight` + `u_localLightColor` | 16 |
+| `u_envSH`, `u_finishParams`, matrices, scalars | 31 |
+| **total** | **183** |
+
+So 16 Coin lights would fit (207, 17 spare) and 32 would not (255).
+Note what that table says about where the room actually is: the effect
+lights cost 80 vec4 against the Coin lights' 24, and the single
+largest consumer in the shader is a shadow atlas sized for at most
+four bulbs. Repacking a light is possible too -- one needs 10 floats
+(direction or position 3, colour 3, attenuation 3, kind 1) of the 12
+it occupies, and a directional light never uses the attenuation -- but
+that trades away the exact Coin attenuation the current layout keeps.
+
+Raising the cap is capacity for a producer that does not exist:
+upstream's three-point rig plus the scene light is four. And past 8,
+Coin's own compositing in cache mode 3 would still stop at
+`GL_MAX_LIGHTS`, so a ninth light becomes a bgfx-vs-Coin divergence of
+exactly the kind the ambient work removed.
+
+The loop cost does not argue either way: active slots are packed from
+0 with the tail zeroed, so the shader stops at the first empty one and
+unused capacity is free.
+
 ## 4. Draw model
 
 - `Render::DrawCall` = mesh reference (+ index sub-range), model
@@ -1197,7 +1261,21 @@ phone).
   - **`SoSpotLight` past the first is still dropped.** The first one
     is claimed as the scene light (with cone, shadow map, sun disc and
     ground); the view-light path carries directional and positional
-    lights only, so a second spot has nowhere to go.
+    lights only, so a second spot has nowhere to go. Narrow -- nothing
+    in either tree builds a second one -- and cheap to close if it
+    ever matters: `u_viewLightColor[i].w` and `u_viewLightAtt[i].w`
+    are both unread, which is exactly a cone (cutoff cosine, dropoff
+    exponent) with `kind = 3` flagging it, so no new uniform array.
+  - **The viewer's lighting is behind upstream.** Upstream's
+    `DlgSettingsLightSources` is a superset of the fork's: it adds a
+    **fill light** (three-point lighting -- `SoDirectionalLight` in a
+    `SoTransformSeparator` whose rotation is `connectFrom` the camera
+    orientation) and an **`SoEnvironment` node** driven by
+    `AmbientLightColor` / `AmbientLightIntensity`. Porting it is
+    Gui-only work: `translateViewLightConfig` already carries any
+    plain directional light above the cache root, and the ambient
+    already reads `SoEnvironmentElement` -- the fork simply has no
+    such node, so it always sees Coin's default 0.2 grey.
   - The **specular** term still carries a 0.75 weight with no Coin
     counterpart. It did not show up in the ambient/diffuse parity
     measurements below, so whatever it costs is small, but it has not

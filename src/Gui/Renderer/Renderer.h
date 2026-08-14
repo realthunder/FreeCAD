@@ -820,12 +820,23 @@ struct LightConfig {
     bool operator!=(const LightConfig &o) const { return !(*this == o); }
 };
 
-/// Maximum number of ordinary Coin lights carried per frame: Coin's own
-/// cap, so the feed never has to drop one. It fits the fragment
-/// shader's uniform budget with room left -- the mesh program totals
-/// 195 of the 224 vec4 an ES3/WebGL2 device has to guarantee with all
-/// eight, its two heavyweights being the bulb shadow matrices (64) and
-/// the surface finish frame palette (48).
+/// Maximum number of ordinary Coin lights carried per frame.
+///
+/// Eight matches what Coin's own renderer can draw, but that is not a
+/// constraint on this one and the number is not inherited from it:
+/// `SoLightElement` is an unbounded list, and the familiar 8 is
+/// `SoGLLightIdElement::getMaxGLSources()` -- `glGetIntegerv(
+/// GL_MAX_LIGHTS)`, binding fixed-function GL. This engine reads the
+/// element and shades it itself.
+///
+/// What bounds it here is the fragment uniform budget: the mesh
+/// program totals 183 of the 224 vec4 an ES3/WebGL2 device has to
+/// guarantee, so 16 would still fit and 32 would not. Eight is chosen
+/// because nothing produces more (upstream's three-point rig plus the
+/// scene light is four) and because past it Coin's own compositing
+/// would stop at GL_MAX_LIGHTS and diverge. See docs/RenderEngine.md
+/// 3.2 for the full budget, including the effect lights, which are a
+/// separate array with a separate capacity.
 ///
 /// Keep in step with VIEW_LIGHTS in bgfx/shaders/fc_mesh_lighting.sh,
 /// which cannot see this header (the same hand-paired arrangement as
