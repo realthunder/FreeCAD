@@ -2713,6 +2713,7 @@ public:
         fn(u_matColor, LifeProgram);
         fn(u_matEmissive, LifeProgram);
         fn(u_matSpecular, LifeProgram);
+        fn(u_ambient, LifeProgram);
         fn(u_params, LifeProgram);
         fn(u_polyOffset, LifeSized);
         fn(u_clipParams, LifeProgram);
@@ -2934,6 +2935,11 @@ public:
     /// ceiling. Call at every site submitting a vs_fc_mesh program;
     /// pass null (or a non-triangle material) to disable the term.
     void setPolygonOffsetUniform(const Render::Material *mat);
+    /// Set u_ambient for a draw: the ambient term Coin would give it,
+    /// which is the material's own ambient colour times the
+    /// traversal's global ambient. Falls back to the legacy flat floor
+    /// when the feed carries no Coin lighting.
+    void setAmbientUniform(const Render::Material &mat);
 
     /// Appearance/placement of one stencil outline.
     struct OutlineSpec {
@@ -3531,6 +3537,12 @@ public:
     bgfx::UniformHandle u_matColor = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matEmissive = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_matSpecular = BGFX_INVALID_HANDLE;
+    // The draw's ambient term: rgb = the colour to add outright
+    // (Material::ambient times the traversal's global ambient), w = 1.
+    // w = 0 is the legacy floor for a feed that carries no Coin
+    // lighting, where the shader falls back to 0.2 * base and the old
+    // 0.8 diffuse weight -- see ViewLightConfig::ambient.
+    bgfx::UniformHandle u_ambient = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_params = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_polyOffset = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_instParams = BGFX_INVALID_HANDLE;
@@ -3791,6 +3803,12 @@ public:
     float viewLightView[kViewLights][4] = {};
     float viewLightColorI[kViewLights][4] = {};
     float viewLightAtt[kViewLights][4] = {};
+    // The traversal's global ambient (ViewLightConfig::ambient) and
+    // whether the feed carried one at all. Per draw, the ambient term
+    // is this times the material's own ambient colour; unfed leaves
+    // every draw on the legacy flat floor.
+    uint32_t viewAmbient = 0x333333ff;
+    bool viewAmbientFed = false;
     float shadowMtx[16];       // camera view space -> shadow uv/depth
     // Cached shadow map: hash of the light camera + caster set of the
     // moments currently in shadowTex; the caster pass (and blur) only

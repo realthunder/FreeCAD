@@ -1891,6 +1891,14 @@ RendererBridge::translateViewLightConfig(SoState * state)
     // shadow-casting scene light, so those are the two skipped here.
     Render::ViewLightConfig res;
     res.fed = true;
+    // GL's LIGHT_MODEL_AMBIENT, which Coin drives from SoEnvironment
+    // (default 0.2 grey). A surface's ambient term is this times the
+    // material's own ambient colour.
+    {
+        SbColor amb = SoEnvironmentElement::getAmbientColor(state);
+        amb *= SoEnvironmentElement::getAmbientIntensity(state);
+        res.ambient = amb.getPackedValue(0.0f);
+    }
     const SoNodeList & lights = SoLightElement::getLights(state);
     for (int i = 0; i < lights.getLength(); ++i) {
         if (res.count >= Render::MaxViewLights)

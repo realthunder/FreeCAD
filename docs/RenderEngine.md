@@ -1198,13 +1198,37 @@ phone).
     is claimed as the scene light (with cone, shadow map, sun disc and
     ground); the view-light path carries directional and positional
     lights only, so a second spot has nowhere to go.
-  - **Material ambient is carried and then dropped.**
-    `Render::Material::ambient` is translated by the bridge, keyed
-    into the bgfx material key and streamed in the scene dump, but no
-    shader ever reads it: `fcShadeFragment` spends a literal 0.2 grey
-    floor instead. It is dead weight in the stream, and any
-    non-default ambient colour is a Coin/backend divergence.
-  - **`SoEnvironment` is read for light attenuation only**
-    (`getLightAttenuation`, for positional lights). Its ambient
-    intensity and colour still have no bridge, which is the other half
-    of the material-ambient gap above.
+  - The **specular** term still carries a 0.75 weight with no Coin
+    counterpart. It did not show up in the ambient/diffuse parity
+    measurements below, so whatever it costs is small, but it has not
+    been measured on a strongly specular material.
+
+  **Ambient, closed 2026-08-14.** `Material::ambient` used to cross the
+  bridge, get keyed into the bgfx material key, get streamed -- and
+  then be dropped, because `fcShadeFragment` spent a literal
+  `0.2 * base` instead. That fraction-of-the-diffuse floor has no
+  counterpart in Coin, whose ambient is the material's ambient colour
+  times `LIGHT_MODEL_AMBIENT` (`SoEnvironment`, default 0.2 grey),
+  added outright. The two coincide only when a material's ambient
+  equals its diffuse.
+
+  ⚠️ The fix is a pair, not a single term: the `0.2 / 0.8` split was
+  *tuned* -- the low diffuse weight paid for the high ambient, so the
+  two errors cancelled on lit surfaces and the divergence only showed
+  where light did not reach. Correcting the ambient alone would have
+  darkened every render. With Coin's ambient and a full-weight diffuse,
+  measured against cache-0 on the same scene (mean colour of the
+  object's pixels):
+
+  | | Coin | bgfx before | bgfx after |
+  |---|---|---|---|
+  | default material, headlight off | 10 | 40 | 10 |
+  | default material, headlight on | 133 | 138 | 133 |
+  | red ambient / grey diffuse, off | (50,0,0) | (30,30,30) | (49,0,0) |
+  | red ambient / grey diffuse, on | (142,93,93) | -- | (142,93,93) |
+
+  A feed that carries no Coin lighting (`ViewLightConfig::fed` false --
+  an old scene dump, a consumer predating v52) keeps the legacy floor
+  and its 0.8 diffuse weight, so old dumps render as they were drawn.
+  The PBR branch is untouched: image-based irradiance replaces the
+  ambient term there, which is the glTF semantics it follows.

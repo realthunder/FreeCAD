@@ -188,7 +188,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     for by a hard-coded white headlight. An older snapshot carries
 //     none, and its `fed` reads false, which is the flag that asks a
 //     backend for exactly that stand-in: old dumps render unchanged.
-const uint32_t kVersion = 52;
+// 53: ViewLightConfig also carries the traversal's global ambient
+//     (SoEnvironment ambientColor * ambientIntensity). With it the
+//     ambient term becomes Coin's -- the material's own ambient colour
+//     times this -- instead of a flat fraction of the diffuse. A v52
+//     snapshot has no such field and its `fed` still selects the
+//     legacy floor, so it renders as it did.
+const uint32_t kVersion = 53;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -2920,6 +2926,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     // `count` bounds the loop on both sides.
     const ViewLightConfig &vlc = snap.viewlightconf;
     w.b(vlc.fed);
+    w.u32(vlc.ambient);
     w.u32(uint32_t(vlc.count));
     for (int i = 0; i < vlc.count && i < MaxViewLights; ++i) {
         const ViewLight &vl = vlc.lights[i];
@@ -3307,6 +3314,8 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     if (version >= 52) {
         ViewLightConfig &vlc = snap.viewlightconf;
         vlc.fed = r.b();
+        if (version >= 53)
+            vlc.ambient = r.u32();
         int n = int(r.u32());
         // A writer with a larger MaxViewLights than this build must not
         // desync the stream: read every light it sent, keep the ones

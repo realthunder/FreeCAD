@@ -33,6 +33,14 @@
 uniform vec4 u_matColor;
 uniform vec4 u_matEmissive;
 uniform vec4 u_matSpecular;
+// The draw's ambient term. rgb = the colour to add outright, which is
+// Coin/GL's material ambient colour times LIGHT_MODEL_AMBIENT (the
+// engine multiplies the two). w = 1 for that; w = 0 means the feed
+// carried no Coin lighting and the legacy floor applies instead --
+// 0.2 * base with a 0.8 diffuse weight, the pair of fudges that used
+// to stand in for Coin's ambient+diffuse and which an old scene dump
+// was drawn with.
+uniform vec4 u_ambient;
 uniform vec4 u_params;
 uniform vec4 u_pbrParams;
 // Matcap shading: x = enabled, y = preset (see fc_matcap.sh),
@@ -432,6 +440,12 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			// white light along the view axis, which is what a
 			// single default headlight resolves to, so a stock
 			// scene shades exactly as before.
+			// Coin adds the ambient outright -- it is not a
+			// fraction of the diffuse and does not scale with any
+			// light -- and gives the diffuse full weight.
+			bool trueAmb = u_ambient.w > 0.5;
+			vec3 amb = trueAmb ? u_ambient.rgb : base.rgb * 0.2;
+			float dw = trueAmb ? 1.0 : 0.8;
 			vec3 vdiff = vec3_splat(0.0);
 			vec3 vspec = vec3_splat(0.0);
 			float shininess = max(matSpec.w * 128.0, 1.0);
@@ -450,7 +464,7 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 					ndl = max(ndl, 0.0);
 				vec3 h = normalize(vl + vec3(0.0, 0.0, 1.0));
 				float sp = pow(max(abs(dot(n, h)), 0.0), shininess);
-				vdiff += vlcol * (0.8 * ndl);
+				vdiff += vlcol * (dw * ndl);
 				vspec += vlcol * (sp * 0.75);
 			}
 
@@ -480,9 +494,9 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 				vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
 				float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
 
-				color = base.rgb
-						* (vec3_splat(0.2 * occ * ao) + vdiff
-						+ u_lightColor.rgb * shadowTint
+				color = amb * (occ * ao)
+					+ base.rgb
+						* (vdiff + u_lightColor.rgb * shadowTint
 							* (ndl * shadow))
 					+ matSpec.rgb * vspec
 					+ matSpec.rgb * u_lightColor.rgb
@@ -496,7 +510,7 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 				// nothing else lighting the scene, AO is the
 				// viewport's only depth cue and the shading would
 				// otherwise shrink to the 0.2 ambient floor.
-				color = (base.rgb * (vec3_splat(0.2 * occ) + vdiff)
+				color = (amb * occ + base.rgb * vdiff
 					+ matSpec.rgb * vspec) * ao;
 			}
 		}

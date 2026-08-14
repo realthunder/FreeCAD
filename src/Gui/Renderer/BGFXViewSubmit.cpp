@@ -97,6 +97,29 @@ void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
                  : m_whiteTex);
 }
 
+void BGFXView::setAmbientUniform(const Render::Material &mat)
+{
+    // GL's ambient term is the material's ambient colour times
+    // LIGHT_MODEL_AMBIENT (Coin: SoEnvironment), added outright -- it
+    // is not a fraction of the diffuse, and it does not scale with any
+    // light. Feeding it is what makes an ambient colour mean anything
+    // here; before, Material::ambient crossed the bridge and was
+    // dropped.
+    float amb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    if (viewAmbientFed) {
+        float m[4], g[4];
+        unpackColor(mat.ambient, m);
+        unpackColor(viewAmbient, g);
+        for (int i = 0; i < 3; ++i)
+            amb[i] = m[i] * g[i];
+        amb[3] = 1.0f;
+    }
+    // w = 0 leaves the shader on the legacy floor (0.2 * base with the
+    // 0.8 diffuse weight), which is what an old scene dump was drawn
+    // with and has to keep being drawn with.
+    bgfx::setUniform(u_ambient, amb);
+}
+
 void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
                            bool mapped, bool aoDraw)
 {
@@ -365,6 +388,7 @@ bool BGFXView::submitInstanced(const Render::DrawCall &draw, const float *data,
     bgfx::setUniform(u_matEmissive, emissive);
     bgfx::setUniform(u_matSpecular, specular);
     bgfx::setUniform(u_params, params);
+    setAmbientUniform(mat);
     setPolygonOffsetUniform(&mat);
     float instParams[4] = {mat.pervertexcolor ? 1.0f : 0.0f,
                            0.0f, 0.0f, 0.0f};
@@ -805,6 +829,7 @@ void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
     bgfx::setUniform(u_matEmissive, emissive);
     bgfx::setUniform(u_matSpecular, specular);
     bgfx::setUniform(u_params, params);
+    setAmbientUniform(mat);
     setPolygonOffsetUniform(&mat);
 
     // PBR branch of the mesh programs: every one of them carries the

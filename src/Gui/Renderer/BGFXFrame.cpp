@@ -525,6 +525,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 out[j] = w[0] * vm[j] + w[1] * vm[4 + j]
                     + w[2] * vm[8 + j] + (point ? vm[12 + j] : 0.0f);
         };
+        view->viewAmbientFed = viewlightconf.fed;
+        view->viewAmbient = viewlightconf.ambient;
         int n = 0;
         if (viewlightconf.fed) {
             for (int i = 0; i < viewlightconf.count

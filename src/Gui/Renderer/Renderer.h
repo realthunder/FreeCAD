@@ -879,8 +879,16 @@ struct ViewLightConfig {
     int count = 0;
     ViewLight lights[MaxViewLights];
 
+    /// The traversal's global ambient (SoEnvironment ambientColor times
+    /// ambientIntensity, default 0.2 grey), packed 0xRRGGBBAA. GL's
+    /// LIGHT_MODEL_AMBIENT: a surface's ambient term is this times the
+    /// material's own ambient colour, which is what Material::ambient
+    /// carries. Only meaningful while `fed` -- an unfed config leaves
+    /// backends on the flat grey floor they used before this existed.
+    uint32_t ambient = 0x333333ff;
+
     bool operator==(const ViewLightConfig &o) const {
-        if (fed != o.fed || count != o.count)
+        if (fed != o.fed || count != o.count || ambient != o.ambient)
             return false;
         for (int i = 0; i < count; ++i) {
             if (lights[i] != o.lights[i])
