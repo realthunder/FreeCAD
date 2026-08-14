@@ -47,6 +47,9 @@
 #include <Base/Tools.h>
 #include <zipios++/gzipoutputstream.h>
 
+#include <cstring>
+#include <Inventor/CoinFork.h>
+
 #include "SoFCDB.h"
 #include "Camera.h"
 #include "Flag.h"
@@ -109,6 +112,21 @@ static SoGroup *storage = nullptr;
 SbBool Gui::SoFCDB::isInitialized()
 {
     return init_done;
+}
+
+bool Gui::SoFCDB::hasForkFeature(const char* feature)
+{
+    if (!feature || !*feature)
+        return false;
+    const char* tags = coin_fork_features();
+    const std::size_t len = std::strlen(feature);
+    for (const char* p = tags; (p = std::strstr(p, feature)) != nullptr; p += len) {
+        const bool starts = (p == tags) || (p[-1] == ' ');
+        const bool ends = (p[len] == '\0') || (p[len] == ' ');
+        if (starts && ends)
+            return true;
+    }
+    return false;
 }
 
 void Gui::SoFCDB::init()

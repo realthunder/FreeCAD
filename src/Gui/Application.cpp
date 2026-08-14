@@ -44,6 +44,12 @@
 # include <QWindow>
 #endif
 
+#include <Inventor/CoinFork.h>
+
+#ifndef _WIN32
+# include <dlfcn.h>
+#endif
+
 // Qt6 removed the QtPlatformHeaders module; see the use site below for why the
 // workaround it provided is not carried over.
 # if QT_VERSION >= 0x050600 && QT_VERSION < 0x060000 && defined(Q_OS_WIN32)
@@ -2183,6 +2189,27 @@ void Application::initTypes()
 
 void Application::initOpenInventor()
 {
+    // The Coin fork ships a deliberately divergent ABI under its own binary
+    // name (libCoinRT). The rename keeps stock libCoin out; this check
+    // catches the remaining hazard: a stale build of the fork itself, where
+    // the loaded library's object layouts differ from the headers this
+    // binary was compiled against and every virtual call is a coin toss.
+    if (coin_fork_abi() != COIN_FORK_ABI_VERSION) {
+        const char *libpath = "<unknown>";
+#ifndef _WIN32
+        Dl_info info;
+        if (dladdr(reinterpret_cast<void*>(&coin_fork_abi), &info) && info.dli_fname)
+            libpath = info.dli_fname;
+#endif
+        Base::Console().Error(
+            "Coin library ABI mismatch: compiled against fork ABI %d, but the "
+            "loaded library (%s) reports ABI %d. Rebuild/reinstall the Coin "
+            "fork and anything linking it (pivy), then rebuild FreeCAD.\n",
+            COIN_FORK_ABI_VERSION, libpath, coin_fork_abi());
+        throw Base::RuntimeError("Coin library ABI mismatch, refusing to start "
+                                 "(see the log for the loaded library path)");
+    }
+
     // init the Inventor subsystem
     SoDB::init();
     SIM::Coin3D::Quarter::Quarter::init();
