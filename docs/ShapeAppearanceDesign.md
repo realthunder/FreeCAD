@@ -2155,11 +2155,66 @@ Two staging facts, both about the renderer rather than about frames:
   planar-frame case (the turned face centred on its axis) is NOT
   demonstrated by the PBR picture; `FRAMES_PBR=0` is the staging meant
   for it, and it currently blows out (see the next point).
-- WARNING: **PBR metal is underlit and the Phong path blows out.** A
-  metallic 1 part reads far darker than a dielectric of the same albedo
-  under the same environment, which is not what a specular IBL carrying
-  its energy would do; the demo compensates with
-  `Render_PBREnvIntensity` 3. Under the Phong headlight the same scene
-  goes to rainbow iridescence. Both are open, both are the lighting
-  path rather than the finish, and the Coin-to-bgfx light sync audit is
-  where they belong.
+- **PBR metal was underlit and the Phong path blew out** -- both
+  closed 2026-08-14, and both were the lighting path rather than the
+  finish, as suspected. The metal darkness was the PBR branch having
+  no ambient term at all: `u_ambient` was read only by Blinn-Phong, so
+  a metal -- which has no diffuse to be lit by -- had literally
+  nothing but the environment, and `Render_PBREnvIntensity` 3 was
+  standing in for the missing light while washing the relief out. The
+  scene ambient now enters that branch as a uniform-radiance
+  environment (`u_envAmbient`, added to the irradiance AND the
+  prefiltered term, `docs/RenderEngine.md` 4). This demo reads better
+  at `FRAMES_ENV=1` than it ever did at 3. The Phong blowout was the
+  tuned `0.2 ambient / 0.8 diffuse` pair, replaced by Coin's ambient at
+  full diffuse weight.
+
+  WARNING: one blowout is not a renderer defect and is worth stating because
+  every finish demo can walk into it: a **near-white Phong specular
+  saturates a flat face to paper white** and swallows the relief. The
+  obvious reading of "not a metal" -- specular colour near 1 -- is what
+  does it. Give Phong the same `F0` the PBR branch computes,
+  `mix(0.04, base, metallic)`, and the same plate shows its pattern.
+
+### 9.12 The finishes under both shading models
+
+`scripts/demo-finish-shading.py`. The three demos above are about what a
+finish IS. This one is about what it costs the two shading models the
+engine has, because a finish is a specular effect -- it perturbs the
+shading normal and coarsens the highlight -- and that is precisely the
+kind of authoring whose look does not carry between a
+metallic/roughness BRDF with an environment and a single-lobe
+Blinn-Phong under a headlight.
+
+One chart, six columns by two rows, captured TWICE with `Render_PBR` on
+and off and nothing else different between the frames
+(`SHADING_SHOT=shot.png` writes `shot-pbr.png` and `shot-phong.png`):
+
+- **Columns**: none (the control), knurl, knurl-straight, brushed,
+  blasted, turned. The control is what makes the rest readable --
+  whatever a column does that `none` does not is the finish, in that
+  model.
+- **Top row**: cylinders carrying the finish through the
+  `Render_Finish*` view properties at the pattern's own default pitch,
+  i.e. the size it really has on a part, which at a whole-part camera
+  distance is mostly finer than a pixel.
+- **Bottom row**: plates carrying it on the appearance itself at an
+  exaggerated pitch, so the relief resolves and the pattern geometry is
+  visible.
+
+Two things the pair of pictures settles:
+
+- **The sub-pixel half of a finish is NOT PBR-only.** What the filter
+  fades out below Nyquist it adds to the roughness, and the Phong path
+  converts its shininess to a roughness before the finish runs and back
+  after (`fc_mesh_fs.sh`), so a finish coarsens a Phong highlight
+  exactly as it coarsens a PBR one. The top row shows that with no
+  resolved relief anywhere in it.
+- **Both legs must be stated, or the A/B measures a default.** Each
+  part carries a Phong specular/shininess AND a
+  `Render_Metallic`/`Render_Roughness` pair describing the same
+  surface: the shininess is the exact inverse of the shader's own
+  shininess/roughness fit, and the specular colour is the same
+  `mix(0.04, base, metallic)` F0 the PBR branch computes. Set only one
+  of the two and the other model is being shown whatever the default
+  happened to be.
