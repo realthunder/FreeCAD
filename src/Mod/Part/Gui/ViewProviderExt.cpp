@@ -1621,6 +1621,10 @@ ViewProviderPartExt::ViewProviderPartExt()
 ViewProviderPartExt::~ViewProviderPartExt()
 {
     unregisterMeshLevelSource(faceset, lineset);
+    // The pooled visual fill keys its worker job on the coords node
+    // (its own token slot); the unregister above cannot cancel it,
+    // and its landing captures `this`.
+    cancelMeshLevelWork(coords);
     pcFaceBind->unref();
     pcLineBind->unref();
     pcPointBind->unref();
@@ -4271,6 +4275,11 @@ bool ViewProviderPartExt::applySimplifiedRung(
 
     const int beforeVertices = coords->point.getNum();
 
+    // This rewrite owns the arrays now: an in-flight pooled fill
+    // (Render_VisualFillOnPool) queued before it must not land its
+    // pre-decimation content over the rung.
+    ++meshLadder.visualFillSeq;
+
     // --- write the rung back into the display nodes -----------------
     coords->point.setNum(nv);
     std::memcpy(coords->point.startEditing(), out.positions.data(),
@@ -5004,6 +5013,12 @@ void ViewProviderPartExt::updateVisual()
     // into a later rebuild it knows nothing about.
     const bool residentLanded = meshLadder.residentLanded;
     meshLadder.residentLanded = false;
+    // Whatever path this rebuild takes below -- the null install, the
+    // stand-in, the instanced build, the inline or the pooled fill --
+    // it owns the display arrays from here: an in-flight pooled fill
+    // queued by an earlier rebuild is superseded and must not land
+    // over what this one leaves (Render_VisualFillOnPool).
+    ++meshLadder.visualFillSeq;
     if (cachedShape.isNull()) {
         coords  ->point      .setNum(0);
         pcoords ->point      .setNum(0);
@@ -5205,6 +5220,43 @@ void ViewProviderPartExt::updateVisual()
             slowReport.note = buf;
         }
 
+        // The scene server can now re-tessellate this shape at a
+        // coarser deviation when a viewer asks for a declared level of
+        // the meshes these nodes feed (MeshLevelSource.h). Re-runs
+        // replace the previous shape under the same node tags. The
+        // arming itself is armMeshLevelSource, off the context stored
+        // here -- so a worker landing can re-arm the next step without
+        // paying this function's rebuild. Stored BEFORE the fill (the
+        // values are this build's decisions either way): the pooled
+        // path below returns without filling, and its landing arms
+        // off this very context.
+        meshLadder.shapeDiag = shapeDiag;
+        meshLadder.coarseLevel = coarseLvl;
+        meshLadder.exactDefl = exactDeflection;
+        meshLadder.exactAng = exactAngle;
+
+        // The pooled fill (Render_VisualFillOnPool): a big landing
+        // rebuild captures here and fills on the refine pool -- the
+        // traversal fill was the landing pump's per-item floor
+        // (0.3-0.65s per 15-21k-face compound) once the mesh call
+        // learned to skip. Only pump items take it: an ordinary edit's
+        // rebuild stays inline, as does everything below the face
+        // threshold and the load-time drain (its giants have
+        // stand-ins).
+        const long fillMinFaces =
+            std::max(1L, Gui::RenderParams::getVisualFillMinFaces());
+        if (Gui::RenderParams::getVisualFillOnPool()
+            && inLandingPump() && !s_drainVisualBuild
+            && int(cachedShape.countSubShapes(TopAbs_FACE)) >= fillMinFaces
+            && queueVisualFillOnPool(cShape, deflection, AngDeflectionRads,
+                                     residentLanded, builtError, shapeDiag)) {
+            // The old arrays stay on display until the landing; the
+            // epilogue (arm, decimation post-step, highlight) lands
+            // with them.
+            VisualTouched = false;
+            return;
+        }
+
         buildVisualNodes(cShape, deflection, AngDeflectionRads, NormalsFromUV,
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
@@ -5212,18 +5264,6 @@ void ViewProviderPartExt::updateVisual()
                          numFaces, numEdges, numLines,
                          meshLadder.scaleSpent, &meshLadder,
                          residentLanded);
-
-        // The scene server can now re-tessellate this shape at a
-        // coarser deviation when a viewer asks for a declared level of
-        // the meshes these nodes feed (MeshLevelSource.h). Re-runs
-        // replace the previous shape under the same node tags. The
-        // arming itself is armMeshLevelSource, off the context stored
-        // here -- so a worker landing can re-arm the next step without
-        // paying this function's rebuild.
-        meshLadder.shapeDiag = shapeDiag;
-        meshLadder.coarseLevel = coarseLvl;
-        meshLadder.exactDefl = exactDeflection;
-        meshLadder.exactAng = exactAngle;
         armMeshLevelSource();
 
         // The rung between a spent tessellation and the bounding box
@@ -5279,30 +5319,80 @@ void ViewProviderPartExt::updateVisual()
     setHighlightedPoints(PointColorArray.getValue());
 }
 
-void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
+/// One rebuild's fill, detached from the display nodes (see the
+/// header declaration). The capture pins every handle the fill
+/// dereferences -- a triangulation demoted or replaced while a pooled
+/// job flies cannot be freed under it; the job then lands stale and
+/// loses to the generation check, but it never reads freed memory.
+/// The topology of `shape` itself is immutable at runtime (runtime
+/// mutation is only the triangulations and polygons attached to it),
+/// so the fill walks it freely on any thread.
+struct ViewProviderPartExt::VisualFillData {
+    // -- captured on the GUI thread --------------------------------
+    TopoDS_Shape shape;
+    double deflection = 0.0;
+    double angDeflectionRads = 0.0;
+    bool normalsFromUV = false;
+    /// The default-texture-coordinate projection frame (the shape's
+    /// own bounding box). Computed at capture: the bound reads the
+    /// resident triangulations, which are exactly the state another
+    /// thread may swap.
+    Standard_Real xMin = 0, yMin = 0, zMin = 0;
+    Standard_Real xMax = 0, yMax = 0, zMax = 0;
+    struct FaceMesh {
+        Handle(Poly_Triangulation) mesh;
+        TopLoc_Location loc;
+    };
+    /// Per face of the face map, in map order.
+    std::vector<FaceMesh> faceMeshes;
+    /// Per (face, edge) pair of the fill's own edge exploration --
+    /// every edge of every face, positional, no dedup (the fill
+    /// dedups) -- the polygon-on-triangulation against that face's
+    /// captured mesh.
+    std::vector<Handle(Poly_PolygonOnTriangulation)> facePolys;
+    /// Where each face's run starts in facePolys
+    /// (faceMeshes.size() + 1 entries, the last = facePolys.size()).
+    std::vector<size_t> facePolyStart;
+    struct EdgePoly {
+        Handle(Poly_Polygon3D) poly;
+        TopLoc_Location loc;
+    };
+    /// Per edge of the edge map, in map order; empty for edges that
+    /// belong to a face (their nodes come with the face mesh).
+    std::vector<EdgePoly> freeEdgePolys;
+    /// Edge -> one owning face, the free-edge/seam classification;
+    /// built during capture, read again by the fill.
+    std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher,
+                       Part::ShapeHasher> faceEdges;
+
+    // -- filled on the worker (or inline) --------------------------
+    std::vector<SbVec3f> verts;
+    std::vector<SbVec3f> norms;
+    std::vector<SbVec2f> texcoords;
+    std::vector<SbVec3f> points;
+    std::vector<int32_t> faceIndex;
+    std::vector<int32_t> partIndex;
+    std::vector<int32_t> lineIndex;
+    std::vector<int32_t> seamEdges;
+    int numTriangles = 0, numNodes = 0, numPoints = 0, numNorms = 0,
+        numFaces = 0, numEdges = 0, numLines = 0;
+    bool nodesAttachedOnly = false, linesAttachedOnly = false;
+
+    // -- the pooled path's bookkeeping -----------------------------
+    bool failed = false;
+    double captureSec = 0.0, workerSec = 0.0;
+};
+
+bool ViewProviderPartExt::captureVisualFill(const TopoDS_Shape &cShape,
         double deflection, double AngDeflectionRads,
         bool NormalsFromUV,
-        SoCoordinate3 *coords, SoCoordinate3 *pcoords,
-        SoNormal *norm, SoTextureCoordinate2 *texcoords,
-        SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
-        SoBrepPointSet *nodeset,
-        int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
-        int &numFaces, int &numEdges, int &numLines,
         ScaleSpent tessellationSpent, MeshLadderState *ladder,
-        bool residentLanded)
+        bool residentLanded, VisualFillData &data)
 {
-    std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
-    TopLoc_Location aLoc;
-
-    // Everything this function does, tessellation INCLUDED -- the mesh
-    // accumulator nests inside this one, and the reporter subtracts it
-    // to state the traversal alone (#13d). The traversal is the
-    // candidate for the refine pool: a pure OCCT walk that happens to
-    // write its results straight into the display nodes' arrays, and
-    // knowing its share is what says whether moving it is worth the
-    // threading it would cost.
-    Gui::ViewProvider::VisualBuildTimer fillTimer(
-            Gui::ViewProvider::VisualFillTime, nullptr);
+    data.shape = cShape;
+    data.deflection = deflection;
+    data.angDeflectionRads = AngDeflectionRads;
+    data.normalsFromUV = NormalsFromUV;
 
     {
         // The default-texture-coordinate projection frame comes from this
@@ -5311,8 +5401,8 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         Bnd_Box bounds;
         BRepBndLib::Add(cShape, bounds);
         bounds.SetGap(0.0);
-        Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
-        bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+        bounds.Get(data.xMin, data.yMin, data.zMin,
+                   data.xMax, data.yMax, data.zMax);
 
         {
             // Separated from the node building around it: a mesh already
@@ -5479,6 +5569,70 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         }
 
 
+        // The handle snapshot: everything the fill dereferences that
+        // another thread could swap -- the resident triangulation of
+        // each face, the polygon-on-triangulation of each (face,
+        // edge) pair, and the 3D polygon of each free edge. These
+        // lookups walk mutable representation lists on the TShape and
+        // so belong here; everything else the fill reads is immutable
+        // topology or geometry.
+        TopTools_IndexedMapOfShape faceMap;
+        TopExp::MapShapes(cShape, TopAbs_FACE, faceMap);
+        data.faceMeshes.reserve(faceMap.Extent());
+        data.facePolyStart.reserve(faceMap.Extent() + 1);
+        for (int i = 1; i <= faceMap.Extent(); i++) {
+            const TopoDS_Face &face = TopoDS::Face(faceMap(i));
+            VisualFillData::FaceMesh fm;
+            fm.mesh = Part::Tools::triangulationOfFace(
+                    face, fm.loc, deflection, AngDeflectionRads);
+            data.facePolyStart.push_back(data.facePolys.size());
+            TopExp_Explorer xp;
+            for (xp.Init(face, TopAbs_EDGE); xp.More(); xp.Next()) {
+                const TopoDS_Edge &edge = TopoDS::Edge(xp.Current());
+                data.faceEdges.emplace(edge, face);
+                data.facePolys.push_back(fm.mesh.IsNull()
+                        ? Handle(Poly_PolygonOnTriangulation)()
+                        : BRep_Tool::PolygonOnTriangulation(edge, fm.mesh,
+                                                            fm.loc));
+            }
+            data.faceMeshes.push_back(std::move(fm));
+        }
+        data.facePolyStart.push_back(data.facePolys.size());
+
+        TopTools_IndexedMapOfShape edgeMap;
+        TopExp::MapShapes(cShape, TopAbs_EDGE, edgeMap);
+        data.freeEdgePolys.resize(edgeMap.Extent());
+        for (int i = 1; i <= edgeMap.Extent(); i++) {
+            const TopoDS_Edge &edge = TopoDS::Edge(edgeMap(i));
+            // Note: The assumption that if for an edge BRep_Tool::Polygon3D
+            // returns a valid object is wrong. This e.g. happens for ruled
+            // surfaces which gets created by two edges or wires.
+            // So, we have to store the hashes of the edges associated to a face.
+            // If the hash of a given edge is not in this list we know it's really
+            // a free edge.
+            if (data.faceEdges.count(edge))
+                continue;
+            auto &ep = data.freeEdgePolys[i - 1];
+            ep.poly = Part::Tools::polygonOfEdge(edge, ep.loc, deflection,
+                                                 AngDeflectionRads);
+        }
+    }
+    return true;
+}
+
+void ViewProviderPartExt::fillVisualArrays(VisualFillData &data)
+{
+    const TopoDS_Shape &cShape = data.shape;
+    int &numTriangles = data.numTriangles;
+    int &numNodes = data.numNodes;
+    int &numPoints = data.numPoints;
+    int &numNorms = data.numNorms;
+    int &numFaces = data.numFaces;
+    int &numEdges = data.numEdges;
+    int &numLines = data.numLines;
+    const bool NormalsFromUV = data.normalsFromUV;
+
+    {
         // A face without a geometric surface is a purely triangulated one
         // (e.g. a glTF import); its stored UV nodes are real texture
         // coordinates, unlike the parametric UV nodes of a regular face.
@@ -5491,18 +5645,13 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         TopTools_IndexedMapOfShape faceMap;
         TopExp::MapShapes(cShape, TopAbs_FACE, faceMap);
         for (int i=1; i <= faceMap.Extent(); i++) {
-            TopoDS_Face face = TopoDS::Face(faceMap(i));
-            Handle (Poly_Triangulation) mesh = Part::Tools::triangulationOfFace(face, aLoc, deflection, AngDeflectionRads);
+            const Handle(Poly_Triangulation) &mesh = data.faceMeshes[i-1].mesh;
             // Note: we must also count empty faces
             if (!mesh.IsNull()) {
                 numTriangles += mesh->NbTriangles();
                 numNodes     += mesh->NbNodes();
                 numNorms     += mesh->NbNodes();
             }
-
-            TopExp_Explorer xp;
-            for (xp.Init(face,TopAbs_EDGE);xp.More();xp.Next())
-                faceEdges.emplace(xp.Current(), face);
             numFaces++;
         }
 
@@ -5513,8 +5662,7 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
          // key is the edge number, value the coord indexes. This is needed to keep the same order as the edges.
         std::map<int, std::vector<int32_t> > lineSetMap;
         std::set<int>          edgeIdxSet;
-        std::vector<int32_t>   edgeVector;
-        std::vector<int32_t>   seamEdges;
+        std::vector<int32_t>   &seamEdges = data.seamEdges;
 
         // count and index the edges
         for (int i=1; i <= edgeMap.Extent(); i++) {
@@ -5522,21 +5670,17 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             numEdges++;
 
             const TopoDS_Edge& aEdge = TopoDS::Edge(edgeMap(i));
-            TopLoc_Location aLoc;
 
-            // handling of the free edge that are not associated to a face
-            // Note: The assumption that if for an edge BRep_Tool::Polygon3D
-            // returns a valid object is wrong. This e.g. happens for ruled
-            // surfaces which gets created by two edges or wires.
-            // So, we have to store the hashes of the edges associated to a face.
-            // If the hash of a given edge is not in this list we know it's really
-            // a free edge.
-            auto it = faceEdges.find(aEdge);
-            if (it != faceEdges.end()) {
+            // free-edge/seam classification off the captured map (see
+            // the note in captureVisualFill for why Polygon3D alone
+            // cannot answer it)
+            auto it = data.faceEdges.find(aEdge);
+            if (it != data.faceEdges.end()) {
                 if (BRep_Tool::IsClosed(aEdge, it->second))
                     seamEdges.push_back(i-1);
             } else {
-                Handle(Poly_Polygon3D) aPoly = Part::Tools::polygonOfEdge(aEdge, aLoc, deflection, AngDeflectionRads);
+                const Handle(Poly_Polygon3D) &aPoly =
+                    data.freeEdgePolys[i-1].poly;
                 if (!aPoly.IsNull()) {
                     int nbNodesInEdge = aPoly->NbNodes();
                     numNodes += nbNodesInEdge;
@@ -5545,24 +5689,27 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         }
 
         // create memory for the nodes and indexes
-        coords  ->point      .setNum(numNodes);
-        norm    ->vector     .setNum(numNorms);
-        texcoords->point     .setNum(numNodes);
-        faceset ->coordIndex .setNum(numTriangles*4);
-        faceset ->partIndex  .setNum(numFaces);
+        data.verts.resize(numNodes);
+        data.norms.resize(numNorms);
+        data.texcoords.resize(numNodes);
+        data.faceIndex.resize(numTriangles*4);
+        data.partIndex.resize(numFaces);
         // get the raw memory for fast fill up
-        SbVec3f* verts = coords  ->point       .startEditing();
-        SbVec3f* norms = norm    ->vector      .startEditing();
-        SbVec2f* texcoordArr = numNodes > 0 ? texcoords->point.startEditing() : nullptr;
+        SbVec3f* verts = data.verts.data();
+        SbVec3f* norms = data.norms.data();
+        SbVec2f* texcoordArr = numNodes > 0 ? data.texcoords.data() : nullptr;
 
         // Default texture coordinates take the shape bounding box as the
         // projection frame, the largest dimension as the texel scale
         // (uniform across faces).
-        const SbVec3f bbMin((float)xMin, (float)yMin, (float)zMin);
-        float maxDim = (float)std::max({xMax - xMin, yMax - yMin, zMax - zMin});
+        const SbVec3f bbMin((float)data.xMin, (float)data.yMin,
+                            (float)data.zMin);
+        float maxDim = (float)std::max({data.xMax - data.xMin,
+                                        data.yMax - data.yMin,
+                                        data.zMax - data.zMin});
         float invMaxDim = maxDim > 0.0f ? 1.0f / maxDim : 0.0f;
-        int32_t* index = faceset ->coordIndex  .startEditing();
-        int32_t* parts = faceset ->partIndex   .startEditing();
+        int32_t* index = data.faceIndex.data();
+        int32_t* parts = data.partIndex.data();
 
         // preset the normal vector with null vector
         for (int i=0;i < numNorms;i++)
@@ -5572,10 +5719,10 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
 
         int ii = 0,faceNodeOffset=0,faceTriaOffset=0;
         for (int i=1; i <= faceMap.Extent(); i++, ii++) {
-            TopLoc_Location aLoc;
             const TopoDS_Face &actFace = TopoDS::Face(faceMap(i));
-            // get the mesh of the shape
-            Handle (Poly_Triangulation) mesh = Part::Tools::triangulationOfFace(actFace, aLoc, deflection, AngDeflectionRads);
+            // the captured mesh of this face
+            const Handle(Poly_Triangulation) &mesh = data.faceMeshes[i-1].mesh;
+            const TopLoc_Location &aLoc = data.faceMeshes[i-1].loc;
             if (mesh.IsNull()) {
                 parts[ii] = 0;
                 continue;
@@ -5696,16 +5843,17 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
 
             // handling the edges lying on this face
             TopExp_Explorer Exp;
-            for(Exp.Init(actFace,TopAbs_EDGE);Exp.More();Exp.Next()) {
+            size_t polyCursor = data.facePolyStart[i-1];
+            for(Exp.Init(actFace,TopAbs_EDGE);Exp.More();Exp.Next(),++polyCursor) {
                 const TopoDS_Edge &curEdge = TopoDS::Edge(Exp.Current());
                 // get the overall index of this edge
                 int edgeIndex = edgeMap.FindIndex(curEdge);
-                edgeVector.push_back((int32_t)edgeIndex-1);
                 // already processed this index ?
                 if (edgeIdxSet.find(edgeIndex)!=edgeIdxSet.end()) {
 
                     // this holds the indices of the edge's triangulation to the current polygon
-                    Handle(Poly_PolygonOnTriangulation) aPoly = BRep_Tool::PolygonOnTriangulation(curEdge, mesh, aLoc);
+                    const Handle(Poly_PolygonOnTriangulation) &aPoly =
+                        data.facePolys[polyCursor];
                     if (aPoly.IsNull())
                         continue; // polygon does not exist
 
@@ -5735,8 +5883,6 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
                     edgeIdxSet.erase(edgeIndex);
                 }
             }
-
-            edgeVector.push_back(-1);
 
             // Default texture coordinates for regular B-Rep faces:
             // nothing else in this pipeline generates UVs for them
@@ -5769,37 +5915,35 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             faceTriaOffset += nbTriInFace;
         }
 
-        // handling of the free edges
+        // handling of the free edges -- the polygons were captured
+        // (an edge that belongs to a face has no entry: its nodes
+        // came with the face mesh)
         for (int i=1; i <= edgeMap.Extent(); i++) {
-            const TopoDS_Edge& aEdge = TopoDS::Edge(edgeMap(i));
             Standard_Boolean identity = true;
             gp_Trsf myTransf;
-            TopLoc_Location aLoc;
 
-            // handling of the free edge that are not associated to a face
-            if (!faceEdges.count(aEdge)) {
-                Handle(Poly_Polygon3D) aPoly = Part::Tools::polygonOfEdge(aEdge, aLoc, deflection, AngDeflectionRads);
-                if (!aPoly.IsNull()) {
-                    if (!aLoc.IsIdentity()) {
-                        identity = false;
-                        myTransf = aLoc.Transformation();
-                    }
-
-                    const TColgp_Array1OfPnt& aNodes = aPoly->Nodes();
-                    int nbNodesInEdge = aPoly->NbNodes();
-
-                    gp_Pnt pnt;
-                    for (Standard_Integer j=1;j <= nbNodesInEdge;j++) {
-                        pnt = aNodes(j);
-                        if (!identity)
-                            pnt.Transform(myTransf);
-                        int index = faceNodeOffset+j-1;
-                        verts[index].setValue((float)(pnt.X()),(float)(pnt.Y()),(float)(pnt.Z()));
-                        lineSetMap[i].push_back(index);
-                    }
-
-                    faceNodeOffset += nbNodesInEdge;
+            const Handle(Poly_Polygon3D) &aPoly = data.freeEdgePolys[i-1].poly;
+            if (!aPoly.IsNull()) {
+                const TopLoc_Location &aLoc = data.freeEdgePolys[i-1].loc;
+                if (!aLoc.IsIdentity()) {
+                    identity = false;
+                    myTransf = aLoc.Transformation();
                 }
+
+                const TColgp_Array1OfPnt& aNodes = aPoly->Nodes();
+                int nbNodesInEdge = aPoly->NbNodes();
+
+                gp_Pnt pnt;
+                for (Standard_Integer j=1;j <= nbNodesInEdge;j++) {
+                    pnt = aNodes(j);
+                    if (!identity)
+                        pnt.Transform(myTransf);
+                    int index = faceNodeOffset+j-1;
+                    verts[index].setValue((float)(pnt.X()),(float)(pnt.Y()),(float)(pnt.Z()));
+                    lineSetMap[i].push_back(index);
+                }
+
+                faceNodeOffset += nbNodesInEdge;
             }
         }
 
@@ -5808,8 +5952,8 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         TopExp::MapShapes(cShape, TopAbs_VERTEX, vertexMap);
 
         numPoints = vertexMap.Extent();
-        pcoords->point.setNum(numPoints);
-        verts = pcoords->point.startEditing();
+        data.points.resize(numPoints);
+        verts = data.points.data();
 
         for (int i=0; i<numPoints; i++) {
             const TopoDS_Vertex& aVertex = TopoDS::Vertex(vertexMap(i+1));
@@ -5843,42 +5987,271 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             }
             return true;
         };
-        if (nodeset)
-            nodeset->attachedOnly = nothingFloats(TopAbs_VERTEX, TopAbs_EDGE);
-        if (lineset)
-            lineset->attachedOnly = nothingFloats(TopAbs_EDGE, TopAbs_FACE);
+        data.nodesAttachedOnly = nothingFloats(TopAbs_VERTEX, TopAbs_EDGE);
+        data.linesAttachedOnly = nothingFloats(TopAbs_EDGE, TopAbs_FACE);
 
         // normalize all normals
         for (int i = 0; i< numNorms ;i++)
             norms[i].normalize();
 
-        std::vector<int32_t> lineSetCoords;
+        std::vector<int32_t> &lineSetCoords = data.lineIndex;
         for (const auto & it : lineSetMap) {
             lineSetCoords.insert(lineSetCoords.end(), it.second.begin(), it.second.end());
             lineSetCoords.push_back(-1);
         }
-
-        // preset the index vector size
-        numLines =  lineSetCoords.size();
-        lineset ->coordIndex .setNum(numLines);
-        int32_t* lines = lineset ->coordIndex  .startEditing();
-
-        int l=0;
-        for (std::vector<int32_t>::const_iterator it=lineSetCoords.begin();it!=lineSetCoords.end();++it,l++)
-            lines[l] = *it;
-
-        // end the editing of the nodes
-        coords  ->point       .finishEditing();
-        pcoords ->point       .finishEditing();
-        norm    ->vector      .finishEditing();
-        if (texcoordArr)
-            texcoords->point  .finishEditing();
-        faceset ->coordIndex  .finishEditing();
-        faceset ->partIndex   .finishEditing();
-        lineset ->coordIndex  .finishEditing();
-        if (seamEdges.size())
-            lineset->seamIndices.setValues(0, seamEdges.size(), &seamEdges[0]);
+        numLines = lineSetCoords.size();
     }
+}
+
+void ViewProviderPartExt::applyVisualFill(const VisualFillData &data,
+        SoCoordinate3 *coords, SoCoordinate3 *pcoords,
+        SoNormal *norm, SoTextureCoordinate2 *texcoords,
+        SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
+        SoBrepPointSet *nodeset,
+        int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
+        int &numFaces, int &numEdges, int &numLines)
+{
+    numTriangles = data.numTriangles;
+    numNodes = data.numNodes;
+    numPoints = data.numPoints;
+    numNorms = data.numNorms;
+    numFaces = data.numFaces;
+    numEdges = data.numEdges;
+    numLines = data.numLines;
+
+    // The same setNum + startEditing/finishEditing bracket the inline
+    // fill always used (the finish is what notifies the render
+    // caches), just over a memcpy from the detached arrays instead of
+    // an in-place walk.
+    coords->point.setNum(data.numNodes);
+    SbVec3f *verts = coords->point.startEditing();
+    if (data.numNodes > 0)
+        memcpy(verts, data.verts.data(), data.numNodes * sizeof(SbVec3f));
+
+    norm->vector.setNum(data.numNorms);
+    SbVec3f *norms = norm->vector.startEditing();
+    if (data.numNorms > 0)
+        memcpy(norms, data.norms.data(), data.numNorms * sizeof(SbVec3f));
+
+    texcoords->point.setNum(data.numNodes);
+    if (data.numNodes > 0) {
+        memcpy(texcoords->point.startEditing(), data.texcoords.data(),
+               data.numNodes * sizeof(SbVec2f));
+        texcoords->point.finishEditing();
+    }
+
+    faceset->coordIndex.setNum(data.numTriangles * 4);
+    int32_t *index = faceset->coordIndex.startEditing();
+    if (data.numTriangles > 0)
+        memcpy(index, data.faceIndex.data(),
+               size_t(data.numTriangles) * 4 * sizeof(int32_t));
+
+    faceset->partIndex.setNum(data.numFaces);
+    int32_t *parts = faceset->partIndex.startEditing();
+    if (data.numFaces > 0)
+        memcpy(parts, data.partIndex.data(),
+               data.numFaces * sizeof(int32_t));
+
+    pcoords->point.setNum(data.numPoints);
+    SbVec3f *points = pcoords->point.startEditing();
+    if (data.numPoints > 0)
+        memcpy(points, data.points.data(),
+               data.numPoints * sizeof(SbVec3f));
+
+    if (nodeset)
+        nodeset->attachedOnly = data.nodesAttachedOnly;
+    if (lineset)
+        lineset->attachedOnly = data.linesAttachedOnly;
+
+    lineset->coordIndex.setNum(data.numLines);
+    int32_t *lines = lineset->coordIndex.startEditing();
+    if (data.numLines > 0)
+        memcpy(lines, data.lineIndex.data(),
+               data.numLines * sizeof(int32_t));
+
+    // end the editing of the nodes
+    coords  ->point       .finishEditing();
+    pcoords ->point       .finishEditing();
+    norm    ->vector      .finishEditing();
+    faceset ->coordIndex  .finishEditing();
+    faceset ->partIndex   .finishEditing();
+    lineset ->coordIndex  .finishEditing();
+    if (data.seamEdges.size())
+        lineset->seamIndices.setValues(0, data.seamEdges.size(),
+                                       data.seamEdges.data());
+}
+
+void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
+        double deflection, double AngDeflectionRads,
+        bool NormalsFromUV,
+        SoCoordinate3 *coords, SoCoordinate3 *pcoords,
+        SoNormal *norm, SoTextureCoordinate2 *texcoords,
+        SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
+        SoBrepPointSet *nodeset,
+        int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
+        int &numFaces, int &numEdges, int &numLines,
+        ScaleSpent tessellationSpent, MeshLadderState *ladder,
+        bool residentLanded)
+{
+    // Everything this function does, tessellation INCLUDED -- the mesh
+    // accumulator nests inside this one, and the reporter subtracts it
+    // to state the traversal alone (#13d). The capture/fill/apply
+    // split exists for the pooled path (Render_VisualFillOnPool);
+    // here all three run inline and the timing reads as it always
+    // did.
+    Gui::ViewProvider::VisualBuildTimer fillTimer(
+            Gui::ViewProvider::VisualFillTime, nullptr);
+
+    VisualFillData data;
+    if (!captureVisualFill(cShape, deflection, AngDeflectionRads,
+                           NormalsFromUV, tessellationSpent, ladder,
+                           residentLanded, data))
+        return;
+    fillVisualArrays(data);
+    applyVisualFill(data, coords, pcoords, norm, texcoords,
+                    faceset, lineset, nodeset,
+                    numTriangles, numNodes, numPoints, numNorms,
+                    numFaces, numEdges, numLines);
+}
+
+bool ViewProviderPartExt::queueVisualFillOnPool(const TopoDS_Shape &cShape,
+        double deflection, double angDeflectionRads, bool residentLanded,
+        float builtError, double shapeDiag)
+{
+    auto data = std::make_shared<VisualFillData>();
+    const auto capture0 = std::chrono::steady_clock::now();
+    try {
+        // The capture is GUI-thread traversal and reports as such --
+        // the slow-build line of a pooled rebuild shows exactly what
+        // the GUI still pays.
+        Gui::ViewProvider::VisualBuildTimer fillTimer(
+                Gui::ViewProvider::VisualFillTime, nullptr);
+        if (!captureVisualFill(cShape, deflection, angDeflectionRads,
+                               NormalsFromUV, meshLadder.scaleSpent,
+                               &meshLadder, residentLanded, *data))
+            return false;
+    }
+    catch (const Standard_Failure &) {
+        // The inline fill runs into the same failure under
+        // updateVisual's own catch, which is where it reports.
+        return false;
+    }
+    catch (const std::bad_alloc &) {
+        return false;
+    }
+    data->captureSec = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - capture0).count();
+
+    const void *tsh = cShape.TShape().get();
+    const unsigned seq = meshLadder.visualFillSeq;
+    const float builtErrorNow = builtError;
+    const double diag = shapeDiag;
+    queueMeshDescentWork(
+        // The coords node: this job family's OWN token slot. On the
+        // faceset tag it would supersede -- and be superseded by --
+        // the decimation and coarser-mesh jobs; on its own tag the
+        // only supersession is a newer fill for the same object,
+        // which is exactly the semantics the generation check wants.
+        coords,
+        [this, data, tsh, seq, builtErrorNow, diag]()
+                -> std::function<void()> {
+            // The worker half: the fill over the captured handles and
+            // the immutable topology -- no Coin nodes, no document.
+            const auto t0 = std::chrono::steady_clock::now();
+            try {
+                fillVisualArrays(*data);
+            }
+            catch (...) {
+                data->failed = true;
+            }
+            data->workerSec = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - t0).count();
+            // The landing half: array writes plus the epilogue the
+            // rebuild skipped. It runs only while the worker queue's
+            // token is live -- the destructor cancels the coords tag,
+            // which is what makes `this` sound -- and only while this
+            // fill is still the newest owner of the arrays.
+            return [this, data, tsh, seq, builtErrorNow, diag]() {
+                TopoDS_Shape live = cachedShape.getShape();
+                if (live.IsNull() || live.TShape().get() != tsh
+                    || meshLadder.anchor != tsh
+                    || meshLadder.visualFillSeq != seq)
+                    return;
+                if (data->failed) {
+                    // Keep the arrays on display; arming keeps the
+                    // object reachable so the plan can order again.
+                    armMeshLevelSource();
+                    return;
+                }
+                const auto apply0 = std::chrono::steady_clock::now();
+                Gui::ViewProvider::VisualBuildTimer buildTimer;
+                {
+                    // Prologue parity: updateVisual ran its own at
+                    // queue time, but the per-element selection and
+                    // highlight indices refer to the arrays being
+                    // replaced NOW.
+                    Gui::ViewProvider::VisualBuildTimer prologueTimer(
+                            Gui::ViewProvider::VisualPrologueTime, nullptr);
+                    Gui::SoUpdateVBOAction action;
+                    action.apply(this->faceset);
+                    Gui::SoSelectionElementAction saction(
+                            Gui::SoSelectionElementAction::None);
+                    saction.apply(this->faceset);
+                    saction.apply(this->lineset);
+                    saction.apply(this->nodeset);
+                    Gui::SoHighlightElementAction haction;
+                    haction.apply(this->faceset);
+                    haction.apply(this->lineset);
+                    haction.apply(this->nodeset);
+                }
+                int nt = 0, nn = 0, np = 0, nno = 0;
+                int nf = 0, ne = 0, nl = 0;
+                {
+                    Gui::ViewProvider::VisualBuildTimer fillTimer(
+                            Gui::ViewProvider::VisualFillTime, nullptr);
+                    applyVisualFill(*data, coords, pcoords, norm, texcoords,
+                                    faceset, lineset, nodeset,
+                                    nt, nn, np, nno, nf, ne, nl);
+                }
+                armMeshLevelSource();
+                // The decimation post-step, exactly as the inline
+                // build runs it (see updateVisual): a state that says
+                // "deflection is spent" must decimate what it just
+                // displayed or quietly undo the descent.
+                if (meshLadder.scaleSpent != ScaleSpent::No
+                    && !meshLadder.decimationSpent
+                    && builtErrorNow > 0.0f && diag > 0.0) {
+                    if (!simplifyVisualInPlace(double(builtErrorNow) * diag,
+                                               diag, builtErrorNow)) {
+                        meshLadder.decimationSpent = true;
+                        FC_LOG(getFullName()
+                               << " decimation spent, bounding box is next");
+                    }
+                }
+                {
+                    Gui::ViewProvider::VisualBuildTimer highlightTimer(
+                            Gui::ViewProvider::VisualHighlightTime, nullptr);
+                    setHighlightedFaces(DiffuseColor.getValues());
+                    setHighlightedEdges(LineColorArray.getValues());
+                    setHighlightedPoints(PointColorArray.getValue());
+                }
+                if (levelDebugOn()
+                    && Gui::RenderParams::getLevelSlowBuildMS() > 0) {
+                    const double applySec = std::chrono::duration<double>(
+                        std::chrono::steady_clock::now() - apply0).count();
+                    const double slow =
+                        Gui::RenderParams::getLevelSlowBuildMS() / 1000.0;
+                    if (data->captureSec + data->workerSec + applySec
+                            >= slow)
+                        Base::Console().Message(
+                            "pooled fill: %s capture %.3f + worker %.3f "
+                            "+ apply %.3f s, faces %d\n",
+                            getFullName().c_str(), data->captureSec,
+                            data->workerSec, applySec, data->numFaces);
+                }
+            };
+        });
+    return true;
 }
 
 void ViewProviderPartExt::forceUpdate(bool enable) {

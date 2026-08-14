@@ -219,6 +219,11 @@ def run():
         # ways because params persist between runs.
         rp.SetBool("MeshSkipLanded",
                    os.environ.get("FC_MESH_LANDED", "on") != "off")
+        # The pooled fill of big landing rebuilds, same two arms
+        # (FC_VISUAL_FILL=off is the baseline: every fill inline).
+        # Written BOTH ways because params persist between runs.
+        rp.SetBool("VisualFillOnPool",
+                   os.environ.get("FC_VISUAL_FILL", "on") != "off")
         rp.SetBool("Occlusion", False)
         rp.SetBool("DowngradeLedger", True)
         rp.SetBool("ClimbHardLimit", True)

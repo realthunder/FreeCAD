@@ -69,6 +69,8 @@ public:
     long ClimbAdmitBatch;
     long LevelLandBudgetMS;
     bool MeshSkipLanded;
+    bool VisualFillOnPool;
+    long VisualFillMinFaces;
     long LevelSlowBuildMS;
     long DescentOrderBatch;
     bool DowngradeLedger;
@@ -207,6 +209,10 @@ public:
         funcs["LevelLandBudgetMS"] = &RenderParamsP::updateLevelLandBudgetMS;
         MeshSkipLanded = this->handle->GetBool("MeshSkipLanded", true);
         funcs["MeshSkipLanded"] = &RenderParamsP::updateMeshSkipLanded;
+        VisualFillOnPool = this->handle->GetBool("VisualFillOnPool", true);
+        funcs["VisualFillOnPool"] = &RenderParamsP::updateVisualFillOnPool;
+        VisualFillMinFaces = this->handle->GetInt("VisualFillMinFaces", 2000);
+        funcs["VisualFillMinFaces"] = &RenderParamsP::updateVisualFillMinFaces;
         LevelSlowBuildMS = this->handle->GetInt("LevelSlowBuildMS", 200);
         funcs["LevelSlowBuildMS"] = &RenderParamsP::updateLevelSlowBuildMS;
         DescentOrderBatch = this->handle->GetInt("DescentOrderBatch", 64);
@@ -490,6 +496,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateMeshSkipLanded(RenderParamsP *self) {
         self->MeshSkipLanded = self->handle->GetBool("MeshSkipLanded", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateVisualFillOnPool(RenderParamsP *self) {
+        self->VisualFillOnPool = self->handle->GetBool("VisualFillOnPool", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateVisualFillMinFaces(RenderParamsP *self) {
+        self->VisualFillMinFaces = self->handle->GetInt("VisualFillMinFaces", 2000);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelSlowBuildMS(RenderParamsP *self) {
@@ -1659,6 +1673,84 @@ void RenderParams::setMeshSkipLanded(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeMeshSkipLanded() {
     instance()->handle->RemoveBool("MeshSkipLanded");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docVisualFillOnPool() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Whether the display-array fill of a big landing rebuild runs\n"
+"on the refine worker pool instead of the GUI thread. After the\n"
+"mesh call was skipped on landings (Skip mesh call on landing\n"
+"rebuilds), the traversal that copies the resident\n"
+"triangulations into the Coin arrays became the per-item floor\n"
+"of the landing pump: 0.3-0.65s per 15-21k-face compound,\n"
+"unsliceable, against a 200ms interactivity gate. With this on,\n"
+"the rebuild captures handles to the resident triangulations\n"
+"and edge polygons (the only state another thread may swap\n"
+"under it -- the topology itself is immutable at runtime),\n"
+"fills detached arrays on a worker, and lands them back through\n"
+"the landing pump as plain array writes. The landing is\n"
+"guarded by the shape identity and a per-object generation\n"
+"count, so a rebuild that ran for any other reason in between\n"
+"simply wins. Only rebuilds inside the landing pump with at\n"
+"least 'Minimum faces for a pooled fill' faces take this path;\n"
+"everything else fills inline exactly as before.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getVisualFillOnPool() {
+    return instance()->VisualFillOnPool;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultVisualFillOnPool() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setVisualFillOnPool(const bool &v) {
+    instance()->handle->SetBool("VisualFillOnPool",v);
+    instance()->VisualFillOnPool = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeVisualFillOnPool() {
+    instance()->handle->RemoveBool("VisualFillOnPool");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docVisualFillMinFaces() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many faces a landing rebuild must have before its\n"
+"array fill goes to the refine pool (Fill landing rebuilds on\n"
+"the refine pool). The fill measures ~30us per face on the\n"
+"reference model, so the default parks roughly the >60ms\n"
+"items; the thousands of small landings in a budget drop stay\n"
+"on the cheap inline path rather than paying a snapshot, a\n"
+"queue hop and a second landing each.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getVisualFillMinFaces() {
+    return instance()->VisualFillMinFaces;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultVisualFillMinFaces() {
+    const static long def = 2000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setVisualFillMinFaces(const long &v) {
+    instance()->handle->SetInt("VisualFillMinFaces",v);
+    instance()->VisualFillMinFaces = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeVisualFillMinFaces() {
+    instance()->handle->RemoveInt("VisualFillMinFaces");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

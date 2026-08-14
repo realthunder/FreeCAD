@@ -329,6 +329,32 @@ Params = [
         "the ladder chose to display, not reclaim forgone. The level\n"
         "debug flag scores the claim either way; read the 'landed\n"
         "rule' audit line before trusting a change here."),
+    ParamBool('VisualFillOnPool',  True, title='Fill landing rebuilds on the refine pool',
+        doc="Whether the display-array fill of a big landing rebuild runs\n"
+        "on the refine worker pool instead of the GUI thread. After the\n"
+        "mesh call was skipped on landings (Skip mesh call on landing\n"
+        "rebuilds), the traversal that copies the resident\n"
+        "triangulations into the Coin arrays became the per-item floor\n"
+        "of the landing pump: 0.3-0.65s per 15-21k-face compound,\n"
+        "unsliceable, against a 200ms interactivity gate. With this on,\n"
+        "the rebuild captures handles to the resident triangulations\n"
+        "and edge polygons (the only state another thread may swap\n"
+        "under it -- the topology itself is immutable at runtime),\n"
+        "fills detached arrays on a worker, and lands them back through\n"
+        "the landing pump as plain array writes. The landing is\n"
+        "guarded by the shape identity and a per-object generation\n"
+        "count, so a rebuild that ran for any other reason in between\n"
+        "simply wins. Only rebuilds inside the landing pump with at\n"
+        "least 'Minimum faces for a pooled fill' faces take this path;\n"
+        "everything else fills inline exactly as before."),
+    ParamInt('VisualFillMinFaces',  2000, title='Minimum faces for a pooled fill',
+        doc="How many faces a landing rebuild must have before its\n"
+        "array fill goes to the refine pool (Fill landing rebuilds on\n"
+        "the refine pool). The fill measures ~30us per face on the\n"
+        "reference model, so the default parks roughly the >60ms\n"
+        "items; the thousands of small landings in a budget drop stay\n"
+        "on the cheap inline path rather than paying a snapshot, a\n"
+        "queue hop and a second landing each."),
     ParamInt('LevelSlowBuildMS',  200, title='Slow visual build report (ms)',
         doc="A visual rebuild whose own cost passes this many\n"
         "milliseconds reports its time split (traversal, mesh,\n"

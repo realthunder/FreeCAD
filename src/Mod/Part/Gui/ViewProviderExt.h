@@ -314,6 +314,52 @@ protected:
                           SoBrepPointSet *nodeset);
 
     struct MeshLadderState;
+    /// One rebuild's fill, detached from the display nodes: the
+    /// GUI-captured handles to everything mutable the fill reads
+    /// (resident triangulations, edge polygons -- the topology
+    /// itself is immutable at runtime), and the plain arrays the
+    /// fill produces. Defined in the implementation file; the split
+    /// into capture/fill/apply below is what lets the fill of a big
+    /// landing rebuild run on the refine pool
+    /// (Render_VisualFillOnPool) with the capture and the apply
+    /// staying on the GUI thread.
+    struct VisualFillData;
+    /// GUI thread: the tessellation step (with its skip rules) and
+    /// the snapshot of every handle the fill dereferences. False when
+    /// the capture failed -- the caller falls back to the inline
+    /// fill.
+    static bool captureVisualFill(const TopoDS_Shape &cShape,
+                          double deflection, double angDeflectionRads,
+                          bool normalsFromUV,
+                          ScaleSpent tessellationSpent,
+                          MeshLadderState *ladder,
+                          bool residentLanded,
+                          VisualFillData &data);
+    /// Any thread: fill the detached arrays from the captured
+    /// handles and the (immutable) topology of the captured shape.
+    static void fillVisualArrays(VisualFillData &data);
+    /// GUI thread: write the filled arrays into the display nodes.
+    static void applyVisualFill(const VisualFillData &data,
+                          SoCoordinate3 *coords, SoCoordinate3 *pcoords,
+                          SoNormal *norm, SoTextureCoordinate2 *texcoords,
+                          SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
+                          SoBrepPointSet *nodeset,
+                          int &numTriangles, int &numNodes, int &numPoints,
+                          int &numNorms, int &numFaces, int &numEdges,
+                          int &numLines);
+    /// Queue this rebuild's fill on the refine pool
+    /// (Render_VisualFillOnPool): capture here, fill on a worker,
+    /// land the array writes plus the epilogue updateVisual would
+    /// have run (arm, decimation post-step, highlight re-apply)
+    /// through the landing pump. The landing is guarded by the shape
+    /// identity and meshLadder.visualFillSeq, and the worker token is
+    /// keyed on the coords node -- its own slot, so a pending fill
+    /// and a pending decimation or mesh job never cancel each other.
+    /// False when the capture failed; the caller fills inline then.
+    bool queueVisualFillOnPool(const TopoDS_Shape &cShape,
+                               double deflection, double angDeflectionRads,
+                               bool residentLanded,
+                               float builtError, double shapeDiag);
     static void buildVisualNodes(const TopoDS_Shape &cShape,
                           double deflection, double angDeflectionRads,
                           bool normalsFromUV,
@@ -508,6 +554,16 @@ protected:
         /// Consumed by updateVisual before ANY early exit, so a stale
         /// claim cannot outlive the one build it was made for.
         bool residentLanded = false;
+        /// Which rebuild owns the display arrays. Bumped by every
+        /// updateVisual that reaches its fill and by every decimation
+        /// rewrite; a pooled fill (Render_VisualFillOnPool) captures
+        /// the value at queue time and lands only while it still
+        /// matches -- any rebuild that ran in between simply wins,
+        /// and the stale arrays are dropped instead of applied over
+        /// newer ones. Reset with the rest on rebind; an in-flight
+        /// fill for the old shape is already dead by the anchor
+        /// check.
+        unsigned visualFillSeq = 0;
 
         /// THE reset: a different TShape starts every claim over.
         void rebind(const void *tsh)

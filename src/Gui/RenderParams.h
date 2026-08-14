@@ -545,6 +545,52 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter VisualFillOnPool
+    ///
+    /// Whether the display-array fill of a big landing rebuild runs
+    /// on the refine worker pool instead of the GUI thread. After the
+    /// mesh call was skipped on landings (Skip mesh call on landing
+    /// rebuilds), the traversal that copies the resident
+    /// triangulations into the Coin arrays became the per-item floor
+    /// of the landing pump: 0.3-0.65s per 15-21k-face compound,
+    /// unsliceable, against a 200ms interactivity gate. With this on,
+    /// the rebuild captures handles to the resident triangulations
+    /// and edge polygons (the only state another thread may swap
+    /// under it -- the topology itself is immutable at runtime),
+    /// fills detached arrays on a worker, and lands them back through
+    /// the landing pump as plain array writes. The landing is
+    /// guarded by the shape identity and a per-object generation
+    /// count, so a rebuild that ran for any other reason in between
+    /// simply wins. Only rebuilds inside the landing pump with at
+    /// least 'Minimum faces for a pooled fill' faces take this path;
+    /// everything else fills inline exactly as before.
+    static const bool & getVisualFillOnPool();
+    static const bool & defaultVisualFillOnPool();
+    static void removeVisualFillOnPool();
+    static void setVisualFillOnPool(const bool &v);
+    static const char *docVisualFillOnPool();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter VisualFillMinFaces
+    ///
+    /// How many faces a landing rebuild must have before its
+    /// array fill goes to the refine pool (Fill landing rebuilds on
+    /// the refine pool). The fill measures ~30us per face on the
+    /// reference model, so the default parks roughly the >60ms
+    /// items; the thousands of small landings in a budget drop stay
+    /// on the cheap inline path rather than paying a snapshot, a
+    /// queue hop and a second landing each.
+    static const long & getVisualFillMinFaces();
+    static const long & defaultVisualFillMinFaces();
+    static void removeVisualFillMinFaces();
+    static void setVisualFillMinFaces(const long &v);
+    static const char *docVisualFillMinFaces();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LevelSlowBuildMS
     ///
     /// A visual rebuild whose own cost passes this many

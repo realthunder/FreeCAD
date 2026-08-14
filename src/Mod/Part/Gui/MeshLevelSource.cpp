@@ -652,6 +652,11 @@ void PartGui::queueMeshDescentWork(const void *tag,
     enqueueLevelJob(std::move(job));
 }
 
+void PartGui::cancelMeshLevelWork(const void *tag)
+{
+    cancelExactRefine(tag);
+}
+
 void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
                                 bool descent)
 {

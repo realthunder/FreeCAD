@@ -178,6 +178,15 @@ void queueMeshLevelBuild(const void *tag, const TopoDS_Shape &shape,
 void queueMeshDescentWork(const void *tag,
                           std::function<std::function<void()>()> work);
 
+/// Cancel the pending worker job and un-run landing queued under \a
+/// tag, if any. For jobs whose tag is NOT a registration's primary
+/// tag -- the pooled visual fill keys its jobs on the coords node so
+/// they never collide with the decimation/mesh jobs on the faceset
+/// tag -- unregisterMeshLevelSource cannot cancel them, and the owner
+/// must do it here before it dies (the landing captures the view
+/// provider).
+void cancelMeshLevelWork(const void *tag);
+
 /// Run \a body on the GUI thread under the landing pump's per-turn
 /// time budget instead of now. This is how a plan-ordered hook body
 /// leaves the plan callback: a sweep fires up to a whole batch of
