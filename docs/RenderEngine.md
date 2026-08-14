@@ -1305,10 +1305,26 @@ phone).
     spare to every frame for something a scene almost never has. A
     spot therefore costs two of the eight light slots, and the packer
     never starts one in the last.
-  - The **specular** term still carries a 0.75 weight with no Coin
-    counterpart. It did not show up in the ambient/diffuse parity
-    measurements below, so whatever it costs is small, but it has not
-    been measured on a strongly specular material.
+  - **The specular 0.75, dropped 2026-08-14.** Measured against Coin at
+    last, and it was exactly what it looked like: a pure specular ball
+    peaked at **190** where GL's law saturates (255 x 0.75 = 191;
+    Coin's own 237 is a Gouraud sample of a saturating highlight, since
+    fixed-function shades the peak per vertex). The same measurement
+    found a second half to it -- the term had no `f` gate, GL's rule
+    that a highlight needs `N.L > 0`, and ran on `abs(dot(n, h))`, so a
+    broad lobe carried the specular past the terminator: **4x** Coin's
+    spill on to a ball's dark side at shininess 0.05 (+3300 px against
+    +826). Both are fixed on the Coin-fed branches, which now run GL's
+    equation as written: the peak reads 254 and the spill is gone
+    entirely (the dark side returns to its unlit baseline, where Coin
+    keeps its +826 of Gouraud smear). Highlights on strongly specular
+    materials are a third brighter than before, and that is the
+    correction, not a regression. Nothing moves on a stock appearance,
+    whose specular colour is black.
+
+    The **effect lights keep their 0.75** deliberately: a fire flame or
+    a `Render_Light` bulb has no light node behind it and no GL term to
+    match, so that weight is a tuned one rather than a parity claim.
 
   **The viewer's rig, closed 2026-08-14.** The fork's viewer had two
   lights (headlight, backlight) and no ambient node of its own, so

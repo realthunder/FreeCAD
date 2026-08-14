@@ -519,14 +519,29 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 				if (!fcViewLight(vi, vpos, vl, vlcol))
 					break;
 				float ndl = dot(n, vl);
-				if (u_params.z > 0.5)
-					ndl = abs(ndl);
-				else
-					ndl = max(ndl, 0.0);
 				vec3 h = normalize(vl + vec3(0.0, 0.0, 1.0));
-				float sp = pow(max(abs(dot(n, h)), 0.0), shininess);
+				float ndh = dot(n, h);
+				if (u_params.z > 0.5)
+				{
+					// Two-sided: GL shades a back face with the
+					// normal reversed, which negates both dots.
+					ndl = abs(ndl);
+					ndh = abs(ndh);
+				}
+				else
+				{
+					ndl = max(ndl, 0.0);
+					ndh = max(ndh, 0.0);
+				}
+				// GL's `f` factor: no highlight at all where the
+				// light does not reach the surface. Without it a
+				// broad lobe carries the specular straight past the
+				// terminator -- four times Coin's spill at
+				// shininess 0.05, measured on a ball lit across the
+				// view.
 				vdiff += vlcol * (dw * ndl);
-				vspec += vlcol * (sp * 0.75);
+				vspec += vlcol * (ndl > 0.0 ? pow(ndh, shininess)
+				                            : 0.0);
 			}
 
 			if (u_lightDir.w > 0.5)
@@ -548,12 +563,20 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 				// own shadow term.
 				vec3 l = -sceneL;
 				float ndl = dot(n, l);
-				if (u_params.z > 0.5)
-					ndl = abs(ndl);
-				else
-					ndl = max(ndl, 0.0);
 				vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
-				float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
+				float ndh = dot(n, h);
+				if (u_params.z > 0.5)
+				{
+					ndl = abs(ndl);
+					ndh = abs(ndh);
+				}
+				else
+				{
+					ndl = max(ndl, 0.0);
+					ndh = max(ndh, 0.0);
+				}
+				// Gated on the diffuse term like the lights above.
+				float spec = ndl > 0.0 ? pow(ndh, shininess) : 0.0;
 
 				color = amb * (occ * ao)
 					+ base.rgb
@@ -561,7 +584,7 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 							* (ndl * shadow))
 					+ matSpec.rgb * vspec
 					+ matSpec.rgb * u_lightColor.rgb
-						* shadowTint * (spec * 0.75 * shadow);
+						* shadowTint * (spec * shadow);
 			}
 			else
 			{
@@ -710,6 +733,13 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
 			float shininess = max(matSpec.w * 128.0, 1.0);
 			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
+			// The 0.75 the Coin-fed branches above dropped stays
+			// here on purpose: an effect light has no light node
+			// behind it and no GL term to match, so this weight is
+			// a tuned one (the fire and fountain scenes were lit
+			// with it), not a parity claim. Same for the ungated
+			// lobe -- these lights are already self-occluded by the
+			// geoN test above.
 			color += base.rgb * u_localLightColor[fi].rgb
 					* (ndl * att)
 				+ matSpec.rgb * u_localLightColor[fi].rgb
