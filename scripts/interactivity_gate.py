@@ -224,6 +224,14 @@ def run():
         # Written BOTH ways because params persist between runs.
         rp.SetBool("VisualFillOnPool",
                    os.environ.get("FC_VISUAL_FILL", "on") != "off")
+        # The worker-emitted vertex cache, adopted at publish instead of
+        # re-capturing the landed mesh by traversal (FC_WORKER_VCACHE=off
+        # is the baseline arm: every changed shape re-captured through
+        # generatePrimitives). Written BOTH ways because params persist
+        # between runs.
+        rp.SetInt("WorkerVertexCache",
+                  0 if os.environ.get("FC_WORKER_VCACHE", "on") == "off"
+                  else 1)
         rp.SetBool("Occlusion", False)
         rp.SetBool("DowngradeLedger", True)
         rp.SetBool("ClimbHardLimit", True)
@@ -233,9 +241,10 @@ def run():
         # run at the HIGH budget or the descent starts inside the load.
         rp.SetInt("GpuMemoryBudgetMB", HIGH)
         emit("arm: high=%dMB low=%dMB gap-limit=%.0fms camera=%s tick=%dms "
-             "skip-invariant=%s"
+             "skip-invariant=%s worker-vcache=%s"
              % (HIGH, LOW, GAP_LIMIT, CAMERA, TICK_MS,
-                os.environ.get("FC_MESH_INVARIANT", "on")))
+                os.environ.get("FC_MESH_INVARIANT", "on"),
+                os.environ.get("FC_WORKER_VCACHE", "on")))
 
         Gui.getMainWindow().resize(1920, 1200)
         # A killed instance loses the saved status-bar toggle
@@ -369,6 +378,7 @@ def run():
         rp.SetInt("GpuMemoryBudgetMB", LOW)
         emit("drop written to the global GpuMemoryBudgetMB parameter")
         window, quiet = [], 0
+        lastPlan = time.time()
         while time.time() - t1 < MAX_WAIT:
             pump(0.5, v)
             fresh, since = tail("render levels:", since)
@@ -376,6 +386,7 @@ def run():
                 m = PLAN.search(ln)
                 if not m:
                     continue
+                lastPlan = time.time()
                 live, entries = float(m.group(1)), int(m.group(2))
                 if entries == 0:
                     continue
@@ -394,6 +405,13 @@ def run():
             # budget) ends the phase.
             if (len(window) == 4 and all(mv == 0 for _, mv in window)
                     and 0 < window[-1][0] <= LOW * 1.15):
+                break
+            # A settled ladder stops planning ALTOGETHER (silence is a
+            # verdict): a run once sat 565s waiting for a 4th quiet plan
+            # that never came. Arrived + 30s of no plan lines = settled.
+            if (window and window[-1][0] <= LOW * 1.15
+                    and time.time() - lastPlan > 30.0):
+                emit("drop: settled by silence (no plan for 30s)")
                 break
         dropRep = sampler.phase()
         report_phase("drop", dropRep, time.time() - t1, gate=True)
