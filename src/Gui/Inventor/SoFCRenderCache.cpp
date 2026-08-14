@@ -422,6 +422,10 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->shininess = 0.f;
   this->metallic = -1.f;
   this->roughness = -1.f;
+  this->finish = 0;
+  this->finishpitch = 0.f;
+  this->finishdepth = 0.f;
+  this->finishangle = 0.f;
   this->water = false;
   this->waterdensity = 0.f;
   this->glass = false;
@@ -1457,6 +1461,15 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
   };
   capturefactors(PRIVATE(this)->material.metallics, material->metallics);
   capturefactors(PRIVATE(this)->material.roughnesses, material->roughnesses);
+  // The machined surface finish: a pattern this build does not know is
+  // captured unchanged and dropped by the backend, not here -- the node
+  // may state one a later build writes (App::SurfaceFinish::pattern).
+  int32_t pattern = material->finish.getValue();
+  PRIVATE(this)->material.finish = pattern > 0 && pattern < 256
+      ? static_cast<uint8_t>(pattern) : 0;
+  PRIVATE(this)->material.finishpitch = material->finishPitch.getValue();
+  PRIVATE(this)->material.finishdepth = material->finishDepth.getValue();
+  PRIVATE(this)->material.finishangle = material->finishAngle.getValue();
   PRIVATE(this)->material.water = material->water.getValue();
   PRIVATE(this)->material.waterdensity = material->waterDensity.getValue();
   PRIVATE(this)->material.glass = material->glass.getValue();

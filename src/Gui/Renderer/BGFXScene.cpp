@@ -435,9 +435,10 @@ void BGFXRenderer::Private::buildInstanceGroups()
         int numVertices, numTri;
         int start, count, part;
         float shininess, pofactor, pounits, metallic, roughness;
+        float finishpitch, finishdepth, finishangle;
         uint32_t emissive, specular, ambient, texBlend;
         uint8_t texModel, texWrapS, texWrapT, texComps;
-        uint8_t depthfunc, shadowstyle;
+        uint8_t depthfunc, shadowstyle, finish;
         uint8_t depthtest, depthwrite, pervertexcolor, lighting,
             twoside, culling, ccw, polygonoffset, solidshape,
             transparent;
@@ -490,6 +491,13 @@ void BGFXRenderer::Private::buildInstanceGroups()
         k.pounits = m.polygonoffsetunits;
         k.metallic = m.metallic;
         k.roughness = m.roughness;
+        // The finish rides a uniform, so instances sharing a batch have
+        // to share the whole record (the pattern coordinate itself is
+        // object space, which every instance of a geometry shares).
+        k.finish = m.finish;
+        k.finishpitch = m.finishpitch;
+        k.finishdepth = m.finishdepth;
+        k.finishangle = m.finishangle;
         k.emissive = m.emissive;
         k.specular = m.specular;
         k.ambient = m.ambient;

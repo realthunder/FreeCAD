@@ -129,6 +129,21 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
         bgfx::setUniform(u_envSH, envSH, kEnvSH);
     }
     bgfx::setUniform(u_pbrParams, pbrParams);
+    // Machined surface finish: a statement about how the surface shades,
+    // so an unlit draw and the depth-only pass leave it off: the depth
+    // prepass has to see the same geometry the beauty pass does, and a
+    // perturbed normal never moves a fragment anyway. A pattern this
+    // build's shader does not know reaches it unchanged and shades as
+    // none, the same way the cache passes one through.
+    float finishParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    if (mat.finish != 0 && mat.lighting && pass != PassDepthOnly
+            && mat.finishpitch > 0.0f && mat.finishdepth > 0.0f) {
+        finishParams[0] = float(mat.finish);
+        finishParams[1] = mat.finishpitch;
+        finishParams[2] = mat.finishdepth;
+        finishParams[3] = bx::toRad(mat.finishangle);
+    }
+    bgfx::setUniform(u_finishParams, finishParams);
     float matcapParams[4] = {matcapFrame ? 1.0f : 0.0f,
                              float(matcapPreset), matcapTint, 0.0f};
     bgfx::setUniform(u_matcapParams, matcapParams);

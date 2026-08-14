@@ -1,4 +1,4 @@
-$input v_normal, v_color0, v_color1, v_color2, v_texcoord0, v_vpos
+$input v_normal, v_color0, v_color1, v_color2, v_texcoord0, v_vpos, v_opos, v_onrm
 
 /*
  * Textured weighted-blended OIT accumulation variant of the CAD-mesh

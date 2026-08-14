@@ -49,6 +49,10 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     metallics.setDefault(TRUE);
     roughnesses.setNum(0);
     roughnesses.setDefault(TRUE);
+    SO_NODE_ADD_FIELD(finish, (0));
+    SO_NODE_ADD_FIELD(finishPitch, (0.0f));
+    SO_NODE_ADD_FIELD(finishDepth, (0.0f));
+    SO_NODE_ADD_FIELD(finishAngle, (0.0f));
     SO_NODE_ADD_FIELD(water, (false));
     SO_NODE_ADD_FIELD(waterDensity, (0.0f));
     SO_NODE_ADD_FIELD(glass, (false));

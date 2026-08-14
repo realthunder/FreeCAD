@@ -6,6 +6,8 @@ vec3 v_wpos    : TEXCOORD0;
 vec2 v_dist    : TEXCOORD1;
 vec2 v_texcoord0 : TEXCOORD2;
 vec3 v_vpos    : TEXCOORD3;
+vec3 v_opos    : TEXCOORD4;
+vec3 v_onrm    : TEXCOORD5;
 
 vec3 a_position : POSITION;
 vec3 a_normal   : NORMAL;

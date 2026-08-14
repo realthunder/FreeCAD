@@ -80,6 +80,14 @@ float fcPolygonOffsetSlope(vec3 vpos, vec3 vnormal)
 
 void main()
 {
+	// Object-space position and normal, for the procedural surface
+	// finish (fc_finish.sh): its pattern is anchored to the geometry
+	// rather than to the world, so an instanced or moved copy carries
+	// the same finish instead of one that swims as it is placed. The
+	// same in both variants: the model transform is exactly what they
+	// differ in, and it is applied after this.
+	v_opos = a_position;
+	v_onrm = a_normal;
 #ifdef INSTANCED
 	mat4 model = mtxFromCols(i_data0, i_data1, i_data2, i_data3);
 	vec4 wpos = mul(model, vec4(a_position, 1.0));

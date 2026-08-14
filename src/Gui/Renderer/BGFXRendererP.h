@@ -2644,6 +2644,7 @@ public:
         fn(u_envSH, LifeProgram);
         fn(s_texBump, LifeProgram);
         fn(u_bumpParams, LifeProgram);
+        fn(u_finishParams, LifeProgram);
         fn(s_texEmissive, LifeProgram);
         fn(s_texOcclusion, LifeProgram);
         fn(s_texMetallicRoughness, LifeProgram);
@@ -3648,6 +3649,13 @@ public:
     float pbrEnvIntensity = 1.0f;
     bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_bumpParams = BGFX_INVALID_HANDLE;
+    /// Machined surface finish of the draw being submitted
+    /// (Material::finish): x = the App::SurfaceFinish pattern (0 =
+    /// none, which is the whole cost of the feature on a scene that
+    /// does not use it: a uniform-selected branch), y = pitch and
+    /// z = depth in millimetres of object space, w = the lay angle in
+    /// radians. Bound at every site that submits a mesh program.
+    bgfx::UniformHandle u_finishParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texEmissive = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texOcclusion = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texMetallicRoughness = BGFX_INVALID_HANDLE;

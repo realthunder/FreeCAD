@@ -165,7 +165,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     viewer older than this reads the roughness slot as a shininess
 //     (and never the metallic), i.e. shades those faces as the uniform
 //     PBR object they were before.
-const uint32_t kVersion = 48;
+// 49: Machined surface finish -- Material carries the App::SurfaceFinish
+//     pattern with its pitch, depth and lay angle, which the backend
+//     shades as a procedural normal perturbation. A viewer older than
+//     this draws the plain surface, i.e. the pre-feature look.
+const uint32_t kVersion = 49;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -175,8 +179,9 @@ const uint32_t kVersion = 48;
 /// (4: a shader chunk carries the particle state step and its binary.
 ///  5: a mesh chunk may carry the per-face material stream, and a
 ///     material chunk the perfacematerial flag.
-///  6: a material chunk carries the perfacepbr flag beside it.)
-const uint32_t kChunkVersion = 6;
+///  6: a material chunk carries the perfacepbr flag beside it.
+///  7: a material chunk carries the surface finish record.)
+const uint32_t kChunkVersion = 7;
 
 //////////////////////////////////////////////////////////////////////
 // Streamed config layout guards.
@@ -1232,6 +1237,10 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     w.b(m.solidshape);
     w.f(m.metallic);
     w.f(m.roughness);
+    w.u8(m.finish);   // v49
+    w.f(m.finishpitch);
+    w.f(m.finishdepth);
+    w.f(m.finishangle);
     w.b(m.water);
     w.f(m.waterdensity);
     w.b(m.glass);
@@ -1336,6 +1345,12 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
     m.solidshape = r.b();
     m.metallic = r.f();
     m.roughness = r.f();
+    if (version >= 49) {
+        m.finish = r.u8();
+        m.finishpitch = r.f();
+        m.finishdepth = r.f();
+        m.finishangle = r.f();
+    }
     m.water = r.b();
     m.waterdensity = r.f();
     m.glass = r.b();

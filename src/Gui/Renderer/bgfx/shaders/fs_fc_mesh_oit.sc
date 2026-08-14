@@ -1,4 +1,4 @@
-$input v_normal, v_color0, v_color1, v_color2, v_vpos
+$input v_normal, v_color0, v_color1, v_color2, v_vpos, v_opos, v_onrm
 
 /*
  * Weighted-blended OIT accumulation variant of the CAD-mesh fragment

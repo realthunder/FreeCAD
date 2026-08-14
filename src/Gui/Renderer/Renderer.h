@@ -1090,6 +1090,24 @@ struct Material {
     float metallic = -1.0f;
     float roughness = -1.0f;
 
+    /// Machined surface finish of a triangle draw (App::SurfaceFinish,
+    /// carried by SoFCRenderMaterial, either authored on the appearance
+    /// or stated by the ViewProvider Render_Finish* properties): a
+    /// procedural pattern the backend shades as a perturbed normal, and
+    /// as added roughness once its features fall below the pixel
+    /// footprint. finish is the App::SurfaceFinish::Pattern value
+    /// (0 = none, and an unrecognized one shades as none); finishpitch
+    /// (feature spacing) and finishdepth (peak to valley) are in
+    /// millimetres of the draw's OBJECT space, so an instanced or scaled
+    /// copy keeps the finish attached to its geometry; finishangle is
+    /// the lay direction in degrees. Only meaningful while lighting is
+    /// on: a pattern is a shading fact, so the depth, shadow and
+    /// picking passes ignore it.
+    uint8_t finish = 0;
+    float finishpitch = 0.0f;
+    float finishdepth = 0.0f;
+    float finishangle = 0.0f;
+
     /// Water body flag of a triangle draw (SoFCRenderMaterial, typically
     /// fed from a ViewProvider Render_Water property): while the
     /// volumetric lighting pass is active, the draw's closed volume

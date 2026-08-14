@@ -1,4 +1,4 @@
-$input v_normal, v_color0, v_color1, v_color2, v_texcoord0, v_vpos, v_wpos
+$input v_normal, v_color0, v_color1, v_color2, v_texcoord0, v_vpos, v_wpos, v_opos, v_onrm
 
 /*
  * Textured + clip-plane (section) variant of the CAD-mesh fragment

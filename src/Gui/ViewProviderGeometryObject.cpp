@@ -469,6 +469,49 @@ bool loadTextureImage(const char *path, SoSFImage &field,
     return true;
 }
 
+// Fill in what a stated finish leaves unsaid: a pattern authored with no
+// pitch (or with the placeholder minimum App::SurfaceFinish::normalize()
+// floors an unstated one to) gets the size that pattern has on a real
+// part, and a depth that keeps its flank slopes machinable. Millimetres,
+// absolute rather than scaled to the model -- a finish is a physical
+// fact about the surface, and a 0.8 mm knurl stays 0.8 mm whether it is
+// cut on a thumbscrew or on a capstan.
+void applyFinishDefaults(App::SurfaceFinish &finish)
+{
+    float pitch = 0.0f;
+    float depthratio = 0.0f;
+    switch (finish.pattern) {
+        case App::SurfaceFinish::Knurl:
+        case App::SurfaceFinish::KnurlStraight:
+            pitch = 0.8f;   // a common medium diamond knurl
+            depthratio = 0.3f;
+            break;
+        case App::SurfaceFinish::Brushed:
+            pitch = 0.15f;  // fine scratch lay
+            depthratio = 0.1f;
+            break;
+        case App::SurfaceFinish::Blasted:
+            pitch = 0.12f;  // bead craters
+            // Shallow: a crater as deep as a third of its width reads
+            // as lunar rather than as blasted (measured against the
+            // depth sweep, 2026-08-14)
+            depthratio = 0.15f;
+            break;
+        case App::SurfaceFinish::Turned:
+            pitch = 0.25f;  // lathe feed marks
+            depthratio = 0.12f;
+            break;
+        default:
+            // None, or a pattern only a later build knows: nothing to
+            // default, and the backend draws neither
+            return;
+    }
+    if (finish.pitch <= App::SurfaceFinish::MinPitch)
+        finish.pitch = pitch;
+    if (finish.depth <= 0.0f)
+        finish.depth = finish.pitch * depthratio;
+}
+
 } // anonymous namespace
 
 void ViewProviderGeometryObject::updateRenderTexture()
@@ -665,6 +708,54 @@ void ViewProviderGeometryObject::updateRenderMaterial()
             }
         }
     }
+    // The machined surface finish (App::SurfaceFinish) the render engine
+    // shades as a procedural pattern. Authored material data beats the
+    // Render_* knobs here exactly as it does for the PBR pair above: an
+    // appearance that states a finish is the finish, and the knobs are
+    // how an appearance that carries none gets one. Entry 0 -- exact for
+    // a uniform appearance, the first face's for a per-face one until
+    // the per-face finish stream lands.
+    App::SurfaceFinish finish = ShapeAppearance.getFinish(0);
+    if (!finish.isSet()) {
+        // The pattern knob reads as a name (an enumeration the object
+        // carries its own list for, or a plain string) or as the raw
+        // Pattern value, so it can be stated from the property editor
+        // and from a script without either having to guess the other's
+        // spelling.
+        uint8_t pattern = App::SurfaceFinish::None;
+        App::Property *prop = getPropertyByName("Render_Finish");
+        if (auto enumprop =
+                Base::freecad_dynamic_cast<App::PropertyEnumeration>(prop)) {
+            if (enumprop->getEnum().isValid()) {
+                if (const char *name = enumprop->getValueAsString())
+                    pattern = App::SurfaceFinish::patternFromName(name);
+            }
+        }
+        else if (auto strprop =
+                     Base::freecad_dynamic_cast<App::PropertyString>(prop)) {
+            pattern = App::SurfaceFinish::patternFromName(strprop->getValue());
+        }
+        else if (auto intprop =
+                     Base::freecad_dynamic_cast<App::PropertyInteger>(prop)) {
+            long value = intprop->getValue();
+            if (value > 0 && value < App::SurfaceFinish::PatternCount)
+                pattern = static_cast<uint8_t>(value);
+        }
+        if (pattern != App::SurfaceFinish::None) {
+            finish.pattern = pattern;
+            // <= 0 = automatic, the convention every Render_* size knob
+            // follows (floatProp answers -1 for a property nobody added)
+            float value = floatProp("Render_FinishPitch");
+            finish.pitch = value > 0.0f ? value : 0.0f;
+            value = floatProp("Render_FinishDepth");
+            finish.depth = value > 0.0f ? value : 0.0f;
+            value = floatProp("Render_FinishAngle");
+            finish.angle = value > 0.0f ? value : 0.0f;
+            finish.normalize();
+        }
+    }
+    applyFinishDefaults(finish);
+
     // Render_Water turns the object's closed shape into a water body of
     // the render engine's volumetric lighting pass (tinted by the shape
     // color); Render_WaterDensity <= 0 = automatic.
@@ -753,8 +844,8 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     bool lightShadowExt = lightShadow && lightShadowExtProp
         && lightShadowExtProp->getValue();
 
-    if (!pbr && metallic < 0.0f && roughness < 0.0f && !water && !glass
-            && !cloud && !fire && !fountain && !light) {
+    if (!pbr && metallic < 0.0f && roughness < 0.0f && !finish.isSet()
+            && !water && !glass && !cloud && !fire && !fountain && !light) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);
             if (idx >= 0)
@@ -786,6 +877,10 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     };
     syncFactors(pcRenderMaterial->metallics, metallics);
     syncFactors(pcRenderMaterial->roughnesses, roughnesses);
+    pcRenderMaterial->finish = finish.pattern;
+    pcRenderMaterial->finishPitch = finish.pitch;
+    pcRenderMaterial->finishDepth = finish.depth;
+    pcRenderMaterial->finishAngle = finish.angle;
     pcRenderMaterial->water = water;
     pcRenderMaterial->waterDensity = waterDensity < 0.0f ? 0.0f
                                                          : waterDensity;

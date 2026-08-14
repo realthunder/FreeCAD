@@ -263,6 +263,14 @@ public:
     /// with entry 0 rather than clamped (see SoFCPbrElement).
     COWVector<float> metallics;
     COWVector<float> roughnesses;
+    /// Machined surface finish captured from SoFCRenderMaterial (0 =
+    /// none): the procedural pattern external backends shade over the
+    /// surface, with the pitch and depth in millimetres of object space
+    /// and the lay angle in degrees.
+    uint8_t finish;
+    float finishpitch;
+    float finishdepth;
+    float finishangle;
     /// Water body flag/density captured from SoFCRenderMaterial: the
     /// shapes' closed volume becomes a scattering medium of the
     /// volumetric lighting pass (only external backends consume this).
@@ -433,6 +441,14 @@ public:
         if (metallics > other.metallics) return false;
         if (roughnesses < other.roughnesses) return true;
         if (roughnesses > other.roughnesses) return false;
+        if (finish < other.finish) return true;
+        if (finish > other.finish) return false;
+        if (finishpitch < other.finishpitch) return true;
+        if (finishpitch > other.finishpitch) return false;
+        if (finishdepth < other.finishdepth) return true;
+        if (finishdepth > other.finishdepth) return false;
+        if (finishangle < other.finishangle) return true;
+        if (finishangle > other.finishangle) return false;
         if (water < other.water) return true;
         if (water > other.water) return false;
         if (waterdensity < other.waterdensity) return true;

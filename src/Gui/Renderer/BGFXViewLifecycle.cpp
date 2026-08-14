@@ -420,6 +420,11 @@ void BGFXView::init(bool keepShared)
                                     bgfx::UniformType::Sampler);
     u_bumpParams = bgfx::createUniform("u_bumpParams",
                                        bgfx::UniformType::Vec4);
+    // Machined surface finish of the mesh programs (all of them, not
+    // just the textured ones: the pattern is procedural over object
+    // space and needs no texture coordinates).
+    u_finishParams = bgfx::createUniform("u_finishParams",
+                                         bgfx::UniformType::Vec4);
     // Emissive/occlusion material maps of the textured mesh programs
     // (units 4/5; u_texParams.zw flag their presence, the white
     // stand-in is never sampled).

@@ -27,6 +27,7 @@
 #include <Inventor/fields/SoSFEnum.h>
 #include <Inventor/fields/SoSFFloat.h>
 #include <Inventor/fields/SoSFImage.h>
+#include <Inventor/fields/SoSFInt32.h>
 #include <Inventor/fields/SoMFFloat.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoSubNode.h>
@@ -67,6 +68,22 @@ public:
      */
     SoMFFloat metallics;
     SoMFFloat roughnesses;
+    /** Machined surface finish (App::SurfaceFinish) of the shapes
+     *
+     * The pattern the surface was given -- knurled, brushed, blasted,
+     * turned -- which external backends shade as a procedural normal
+     * perturbation that becomes plain roughness once its features fall
+     * below the pixel footprint. Fed either from a finish authored on
+     * the appearance or from the ViewProvider's Render_Finish*
+     * properties. finish is the App::SurfaceFinish::Pattern value, 0 =
+     * none; the pitch and depth are in millimetres of OBJECT space (a
+     * scaled or instanced copy keeps its finish attached to its
+     * geometry) and the angle is the lay direction in degrees.
+     */
+    SoSFInt32 finish;
+    SoSFFloat finishPitch;
+    SoSFFloat finishDepth;
+    SoSFFloat finishAngle;
     /// The shapes form a water body: their closed volume becomes a
     /// scattering medium of the render engine's volumetric lighting
     /// pass (tinted by the material diffuse color), instead of an

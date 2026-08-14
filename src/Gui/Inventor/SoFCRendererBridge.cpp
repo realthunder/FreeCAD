@@ -783,6 +783,10 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     if (res.type == Render::Material::Triangle) {
         res.metallic = m.metallic;
         res.roughness = m.roughness;
+        res.finish = m.finish;
+        res.finishpitch = m.finishpitch;
+        res.finishdepth = m.finishdepth;
+        res.finishangle = m.finishangle;
         res.water = m.water;
         res.waterdensity = m.waterdensity;
         res.glass = m.glass;

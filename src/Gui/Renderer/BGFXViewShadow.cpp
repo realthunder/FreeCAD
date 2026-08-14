@@ -71,8 +71,11 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     float pbrOff[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     bgfx::setUniform(u_pbrParams, pbrOff);
     // Backend geometry, not scene geometry: the ground stays lit the
-    // ordinary way even while the scene is matcap-shaded.
+    // ordinary way even while the scene is matcap-shaded, and carries
+    // no machined finish (a global uniform, so leaving it alone would
+    // knurl the ground with whatever the last scene draw stated).
     bgfx::setUniform(u_matcapParams, pbrOff);
+    bgfx::setUniform(u_finishParams, pbrOff);
     bgfx::setTexture(1, s_texEnv, m_dummyEnvTex);
     static const bool dbgvis =
         getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
