@@ -70,9 +70,6 @@ public:
     void setImportHiddenObject(bool);
     bool getImportHiddenObject() const;
 
-    void setExportLegacy(bool);
-    bool getExportLegacy() const;
-
     void setExportKeepPlacement(bool);
     bool getExportKeepPlacement() const;
 
@@ -84,9 +81,6 @@ public:
 
     void setReduceObjects(bool);
     bool getReduceObjects() const;
-
-    void setUseLegacyImporter(bool);
-    bool getUseLegacyImporter() const;
 
     void setShowProgress(bool);
     bool getShowProgress() const;

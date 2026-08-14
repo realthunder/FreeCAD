@@ -118,8 +118,10 @@ ImportOCAFOptions ImportOCAF2::customImportOptions()
     Part::OCAF::ImportExportSettings settings;
 
     ImportOCAFOptions defaultOptions;
+    // useLegacyImporter is deliberately not read from preferences: the legacy
+    // importer is retired and reachable only by explicitly passing legacy=True
+    // through the Python API, which calls setUseLegacyImporter() afterwards.
     defaultOptions.merge = settings.getReadShapeCompoundMode();
-    defaultOptions.useLegacyImporter = settings.getUseLegacyImporter();
     defaultOptions.useLinkGroup = settings.getUseLinkGroup();
     defaultOptions.useBaseName = settings.getUseBaseName();
     defaultOptions.importHidden = settings.getImportHiddenObject();

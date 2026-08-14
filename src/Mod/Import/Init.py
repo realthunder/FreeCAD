@@ -46,7 +46,6 @@ _checkParamBool(paramGetV,"ReadShapeCompoundMode",False)
 
 paramGetV = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Import")
 for p in (("UseAppPart",True),
-          ("UseLegacyImporter", False),
           ("UseBaseName",True),
           ("ImportHiddenObject",True),
           ("ExportHiddenObject",True),

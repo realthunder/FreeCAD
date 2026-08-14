@@ -276,8 +276,9 @@ private:
         // determine export options
         Part::OCAF::ImportExportSettings settings;
 
-        bool legacyExport = (pylegacy         == Py_None ? settings.getExportLegacy()
-                                                         : Base::asBoolean(pylegacy));
+        // The legacy exporter is retired and no longer preference-driven: it
+        // runs only when explicitly requested with legacy=True.
+        bool legacyExport = (pylegacy != Py_None && Base::asBoolean(pylegacy));
         bool exportHidden = (pyexportHidden   == Py_None ? settings.getExportHiddenObject()
                                                          : Base::asBoolean(pyexportHidden));
         bool keepPlacement = (pykeepPlacement == Py_None ? settings.getExportKeepPlacement()
