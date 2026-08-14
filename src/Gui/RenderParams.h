@@ -226,6 +226,44 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter MeshSkipInvariant
+    ///
+    /// Skip a tessellation call on a shape whose mesh provably cannot
+    /// depend on the deflection asked: every face planar, every edge
+    /// curve a straight line (docs/SceneStreaming.md #13e). A plane
+    /// deviates from its triangulation by zero and a straight edge
+    /// discretizes to its two endpoints at ANY deflection, so the call
+    /// would rebuild the identical mesh -- there is no ask, coarser or
+    /// finer, at which such a shape tessellates differently.
+    /// This is the geometric statement behind the measured descent
+    /// waste: most mechanical parts hit their floor immediately, and a
+    /// mass descent then pays ~19-38ms per object per step (56-60% of
+    /// all drop-phase mesh time on the rack model) for BRepMesh to
+    /// rebuild what cannot change. The empirical exhaustion proof the
+    /// ladder keeps (scaleSpent) cannot be used for a skip -- audited
+    /// twice, 14-20% of proved shapes resume coarsening at some later
+    /// ask, and those rebuilds reclaim real memory. The geometric rule
+    /// is immune to that leak: the shapes that resume are exactly the
+    /// curved ones it refuses to claim, and an all-linear mesh cannot
+    /// shrink, so no reclaim is ever forgone.
+    /// The classification walks surface and curve TYPES once per shape
+    /// and is cached; conservative on both counts (a trimmed or offset
+    /// plane, a straight b-spline, count as curved). The skip is also
+    /// refused while any face is missing its triangulation -- building
+    /// that is exactly the call's job.
+    /// With the level plan narrating and this OFF, the rule is still
+    /// evaluated and scored against every call it would have skipped --
+    /// read its WRONG column from that arm only; a run with the skip on
+    /// cannot score calls it never made.
+    static const bool & getMeshSkipInvariant();
+    static const bool & defaultMeshSkipInvariant();
+    static void removeMeshSkipInvariant();
+    static void setMeshSkipInvariant(const bool &v);
+    static const char *docMeshSkipInvariant();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter ProgressiveLoad
     ///
     /// Build the visual representation of a restored document after

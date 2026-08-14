@@ -207,6 +207,13 @@ def run():
         rp.SetBool("SimplifyMergeParts", False)
         rp.SetBool("MeshSkipRedundant", True)
         rp.SetBool("MeshSkipFinerResident", False)
+        # The deflection-invariance rule. Written BOTH ways (params
+        # persist): FC_MESH_INVARIANT=off is the AUDIT arm -- the rule
+        # is still evaluated under LevelDebug and scored against the
+        # call it would have skipped, which is the only arm whose WRONG
+        # column measures anything.
+        rp.SetBool("MeshSkipInvariant",
+                   os.environ.get("FC_MESH_INVARIANT", "on") != "off")
         rp.SetBool("Occlusion", False)
         rp.SetBool("DowngradeLedger", True)
         rp.SetBool("ClimbHardLimit", True)
@@ -215,8 +222,10 @@ def run():
         # The user param file pins 64 on this box; the LOAD phase must
         # run at the HIGH budget or the descent starts inside the load.
         rp.SetInt("GpuMemoryBudgetMB", HIGH)
-        emit("arm: high=%dMB low=%dMB gap-limit=%.0fms camera=%s tick=%dms"
-             % (HIGH, LOW, GAP_LIMIT, CAMERA, TICK_MS))
+        emit("arm: high=%dMB low=%dMB gap-limit=%.0fms camera=%s tick=%dms "
+             "skip-invariant=%s"
+             % (HIGH, LOW, GAP_LIMIT, CAMERA, TICK_MS,
+                os.environ.get("FC_MESH_INVARIANT", "on")))
 
         Gui.getMainWindow().resize(1920, 1200)
         # A killed instance loses the saved status-bar toggle

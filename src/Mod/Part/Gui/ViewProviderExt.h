@@ -313,6 +313,7 @@ protected:
                           SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
                           SoBrepPointSet *nodeset);
 
+    struct MeshLadderState;
     static void buildVisualNodes(const TopoDS_Shape &cShape,
                           double deflection, double angDeflectionRads,
                           bool normalsFromUV,
@@ -334,7 +335,14 @@ protected:
                           /// between the two spent states is what the
                           /// call probe audits before any skip may act
                           /// on it.
-                          ScaleSpent tessellationSpent = ScaleSpent::No);
+                          ScaleSpent tessellationSpent = ScaleSpent::No,
+                          /// The caller's ladder state, where the
+                          /// deflection-invariance classification is
+                          /// cached -- again the caller's knowledge,
+                          /// because this function is static. Null (the
+                          /// instanced-leaf and stand-in paths) never
+                          /// classifies or skips on invariance.
+                          MeshLadderState *ladder = nullptr);
 
     bool VisualTouched;
     bool NormalsFromUV;
@@ -473,6 +481,18 @@ protected:
         int coarseLevel = -1;
         double exactDefl = 0.0;
         double exactAng = 0.0;
+        /// Whether `anchor`'s tessellation provably cannot depend on
+        /// the deflection asked -- every face planar, every edge curve
+        /// a straight line (Render_MeshSkipInvariant). A statement
+        /// about the GEOMETRY, so it is computed once per anchor and
+        /// never invalidated short of rebind; Unknown means not yet
+        /// classified.
+        enum class MeshInvariance : unsigned char {
+            Unknown,
+            Invariant,
+            Varies,
+        };
+        MeshInvariance meshInvariance = MeshInvariance::Unknown;
 
         /// THE reset: a different TShape starts every claim over.
         void rebind(const void *tsh)

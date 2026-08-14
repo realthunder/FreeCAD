@@ -32,6 +32,9 @@
 # include <BRepMesh_Deflection.hxx>
 # include <BRepMesh_IncrementalMesh.hxx>
 # include <BRepMesh_ShapeTool.hxx>
+# include <Geom_Line.hxx>
+# include <Geom_Plane.hxx>
+# include <Geom_TrimmedCurve.hxx>
 # include <gp_Trsf.hxx>
 # include <Precision.hxx>
 # include <Poly_Array1OfTriangle.hxx>
@@ -431,6 +434,18 @@ struct MeshCallProbe {
         /// stay as the guard that keeps that conclusion measured.
         std::size_t finerRebuiltProved = 0;
         std::size_t finerRebuiltBox = 0;
+        /// The deflection-invariance rule (Render_MeshSkipInvariant),
+        /// scored the same two-sided way as everything above:
+        /// `invariantSkipped` counts only when the skip is ON and is
+        /// therefore vacuous as evidence; right/wrong come from the
+        /// audit arm (skip OFF, the claimed call made anyway and the
+        /// probe's rebuilt verdict compared). WRONG here would mean a
+        /// shape of planes and lines whose mesh moved with the
+        /// deflection -- a refutation of the geometry argument itself,
+        /// so it is the line to watch.
+        std::size_t invariantSkipped = 0;
+        std::size_t invariantRight = 0;
+        std::size_t invariantWrong = 0;
     };
     static Stats &stats()
     {
@@ -447,6 +462,9 @@ struct MeshCallProbe {
     /// Whether -- and on whose authority -- the object's descent had
     /// already stopped re-tessellating (proof vs box choice).
     ViewProviderPartExt::ScaleSpent spent = ViewProviderPartExt::ScaleSpent::No;
+    /// The deflection-invariance rule claimed this call and it is being
+    /// made anyway (the audit arm): score the claim in the destructor.
+    bool invariantClaim = false;
     int trisBefore = 0, facesBefore = 0, facesTotal = 0;
     double residentMin = 0.0, residentMax = 0.0;
     std::chrono::high_resolution_clock::time_point start;
@@ -475,9 +493,10 @@ struct MeshCallProbe {
 
     MeshCallProbe(const TopoDS_Shape &s, double deflection,
                   const MeshVerdict &v,
-                  ViewProviderPartExt::ScaleSpent tessellationSpent)
+                  ViewProviderPartExt::ScaleSpent tessellationSpent,
+                  bool invariantClaimed = false)
         : shape(s), asked(deflection), active(levelDebugOn()), verdict(v),
-          spent(tessellationSpent)
+          spent(tessellationSpent), invariantClaim(invariantClaimed)
     {
         if (!active)
             return;
@@ -500,6 +519,8 @@ struct MeshCallProbe {
             ++st.noTriangulation;
         const bool rebuilt =
             trisAfter != trisBefore || facesAfter != facesBefore;
+        if (invariantClaim)
+            ++(rebuilt ? st.invariantWrong : st.invariantRight);
         if (rebuilt) {
             ++st.rebuilt;
             st.timeRebuilt += elapsed;
@@ -654,6 +675,16 @@ struct VisualSplitReporter {
                 ms.rebuiltSpentProved, ms.finerRebuiltProved,
                 ms.rebuiltSpentBox, ms.finerRebuiltBox,
                 ms.worstCurrent, ms.worstRequired, ms.worstRatio);
+        }
+        // The invariance rule, both arms on one line. WRONG is
+        // meaningful only from the audit arm (skip off); skipped is
+        // only ever nonzero with the skip on.
+        if (ms.invariantSkipped || ms.invariantRight
+            || ms.invariantWrong) {
+            Base::Console().Message(
+                "visual build: invariant rule -- skipped %zu; audit "
+                "right %zu, WRONG %zu\n",
+                ms.invariantSkipped, ms.invariantRight, ms.invariantWrong);
         }
         if (ms.calls || ms.checks)
             ms = MeshCallProbe::Stats();
@@ -4986,7 +5017,7 @@ void ViewProviderPartExt::updateVisual()
                          faceset, lineset, nodeset,
                          numTriangles, numNodes, numPoints, numNorms,
                          numFaces, numEdges, numLines,
-                         meshLadder.scaleSpent);
+                         meshLadder.scaleSpent, &meshLadder);
 
         // The scene server can now re-tessellate this shape at a
         // coarser deviation when a viewer asks for a declared level of
@@ -5061,7 +5092,7 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         SoBrepPointSet *nodeset,
         int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
         int &numFaces, int &numEdges, int &numLines,
-        ScaleSpent tessellationSpent)
+        ScaleSpent tessellationSpent, MeshLadderState *ladder)
 {
     std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
     TopLoc_Location aLoc;
@@ -5109,12 +5140,13 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
                     Gui::ViewProvider::VisualMeshTime, nullptr);
             const bool debugCheck = levelDebugOn();
             const bool skipRedundant = Gui::RenderParams::getMeshSkipRedundant();
+            const bool skipInvariant = Gui::RenderParams::getMeshSkipInvariant();
             MeshVerdict verdict;
             // With the feature off, the check still runs under the level
             // debug flag and its answer is scored against the real call
             // below -- which is the only way "safe to skip" is ever more
             // than an argument.
-            if (skipRedundant || debugCheck) {
+            if (skipRedundant || skipInvariant || debugCheck) {
                 const auto checkStart =
                     std::chrono::high_resolution_clock::now();
                 verdict = tessellationIsRedundant(cShape, deflection,
@@ -5129,14 +5161,87 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
                         ++ms.skipped;
                 }
             }
-            if (!skipRedundant || !verdict.redundant()) {
+            // The deflection-invariance rule (Render_MeshSkipInvariant):
+            // a shape of planar faces and straight edges tessellates
+            // the SAME at every deflection -- a plane deviates from its
+            // triangulation by zero, a straight edge discretizes to its
+            // endpoints -- so a call refused only for a deflection
+            // mismatch, too fine or too coarse, would rebuild the
+            // identical mesh. Classified from geometry TYPES once per
+            // anchor, conservatively (anything not literally a plane or
+            // a line counts as curved); residency is re-checked per
+            // call, because a face with no triangulation is exactly
+            // what the call would build. Immune to the exhaustion
+            // proof's measured leak: the proved shapes that resume
+            // coarsening at a later ask are the curved ones this
+            // refuses to claim, and an all-linear mesh cannot shrink,
+            // so no reclaim is ever forgone.
+            const bool invariantCase =
+                (verdict.why == MeshRefusal::TooFine
+                 || verdict.why == MeshRefusal::TooCoarse)
+                && (skipInvariant || debugCheck) && ladder
+                && ladder->anchor == cShape.TShape().get();
+            bool invariantSkip = false;
+            if (invariantCase) {
+                using MI = MeshLadderState::MeshInvariance;
+                if (ladder->meshInvariance == MI::Unknown) {
+                    auto classify = [&cShape]() {
+                        for (TopExp_Explorer fx(cShape, TopAbs_FACE);
+                             fx.More(); fx.Next()) {
+                            TopLoc_Location loc;
+                            Handle(Geom_Surface) surf = BRep_Tool::Surface(
+                                    TopoDS::Face(fx.Current()), loc);
+                            if (surf.IsNull()
+                                || !surf->IsKind(STANDARD_TYPE(Geom_Plane)))
+                                return MI::Varies;
+                        }
+                        for (TopExp_Explorer ex(cShape, TopAbs_EDGE);
+                             ex.More(); ex.Next()) {
+                            const TopoDS_Edge &edge =
+                                TopoDS::Edge(ex.Current());
+                            if (BRep_Tool::Degenerated(edge))
+                                return MI::Varies;
+                            Standard_Real f = 0, l = 0;
+                            Handle(Geom_Curve) curve =
+                                BRep_Tool::Curve(edge, f, l);
+                            if (Handle(Geom_TrimmedCurve) trimmed =
+                                    Handle(Geom_TrimmedCurve)::DownCast(curve))
+                                curve = trimmed->BasisCurve();
+                            if (curve.IsNull()
+                                || !curve->IsKind(STANDARD_TYPE(Geom_Line)))
+                                return MI::Varies;
+                        }
+                        return MI::Invariant;
+                    };
+                    ladder->meshInvariance = classify();
+                }
+                if (ladder->meshInvariance == MI::Invariant) {
+                    invariantSkip = true;
+                    for (TopExp_Explorer fx(cShape, TopAbs_FACE); fx.More();
+                         fx.Next()) {
+                        TopLoc_Location loc;
+                        if (BRep_Tool::Triangulation(TopoDS::Face(fx.Current()),
+                                                     loc).IsNull()) {
+                            invariantSkip = false;
+                            break;
+                        }
+                    }
+                }
+                if (debugCheck && skipInvariant && invariantSkip)
+                    ++MeshCallProbe::stats().invariantSkipped;
+            }
+            if (!((skipRedundant && verdict.redundant())
+                  || (skipInvariant && invariantSkip))) {
                 // Behind the level debug flag, the probe says whether the
                 // call REBUILDS (triangle counts move) or merely
                 // validates, and what deflection it found resident
                 // against the one asked for. It walks every face twice
-                // more.
+                // more. The invariant claim rides along so the audit arm
+                // (skip off, the claimed call made anyway) can score it
+                // -- read its WRONG column there or not at all.
                 MeshCallProbe probe(cShape, deflection, verdict,
-                                    tessellationSpent);
+                                    tessellationSpent,
+                                    invariantSkip && !skipInvariant);
 #if OCC_VERSION_HEX >= 0x070500
                 IMeshTools_Parameters meshParams;
                 meshParams.Deflection = deflection;

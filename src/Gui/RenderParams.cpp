@@ -55,6 +55,7 @@ public:
     long CoarseDeferFaces;
     bool MeshSkipRedundant;
     bool MeshSkipFinerResident;
+    bool MeshSkipInvariant;
     bool ProgressiveLoad;
     long ProgressiveLoadBudgetMS;
     long LevelThreads;
@@ -175,6 +176,8 @@ public:
         funcs["MeshSkipRedundant"] = &RenderParamsP::updateMeshSkipRedundant;
         MeshSkipFinerResident = this->handle->GetBool("MeshSkipFinerResident", false);
         funcs["MeshSkipFinerResident"] = &RenderParamsP::updateMeshSkipFinerResident;
+        MeshSkipInvariant = this->handle->GetBool("MeshSkipInvariant", true);
+        funcs["MeshSkipInvariant"] = &RenderParamsP::updateMeshSkipInvariant;
         ProgressiveLoad = this->handle->GetBool("ProgressiveLoad", true);
         funcs["ProgressiveLoad"] = &RenderParamsP::updateProgressiveLoad;
         ProgressiveLoadBudgetMS = this->handle->GetInt("ProgressiveLoadBudgetMS", 100);
@@ -422,6 +425,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateMeshSkipFinerResident(RenderParamsP *self) {
         self->MeshSkipFinerResident = self->handle->GetBool("MeshSkipFinerResident", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMeshSkipInvariant(RenderParamsP *self) {
+        self->MeshSkipInvariant = self->handle->GetBool("MeshSkipInvariant", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateProgressiveLoad(RenderParamsP *self) {
@@ -1088,6 +1095,60 @@ void RenderParams::setMeshSkipFinerResident(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeMeshSkipFinerResident() {
     instance()->handle->RemoveBool("MeshSkipFinerResident");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMeshSkipInvariant() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Skip a tessellation call on a shape whose mesh provably cannot\n"
+"depend on the deflection asked: every face planar, every edge\n"
+"curve a straight line (docs/SceneStreaming.md #13e). A plane\n"
+"deviates from its triangulation by zero and a straight edge\n"
+"discretizes to its two endpoints at ANY deflection, so the call\n"
+"would rebuild the identical mesh -- there is no ask, coarser or\n"
+"finer, at which such a shape tessellates differently.\n"
+"This is the geometric statement behind the measured descent\n"
+"waste: most mechanical parts hit their floor immediately, and a\n"
+"mass descent then pays ~19-38ms per object per step (56-60% of\n"
+"all drop-phase mesh time on the rack model) for BRepMesh to\n"
+"rebuild what cannot change. The empirical exhaustion proof the\n"
+"ladder keeps (scaleSpent) cannot be used for a skip -- audited\n"
+"twice, 14-20% of proved shapes resume coarsening at some later\n"
+"ask, and those rebuilds reclaim real memory. The geometric rule\n"
+"is immune to that leak: the shapes that resume are exactly the\n"
+"curved ones it refuses to claim, and an all-linear mesh cannot\n"
+"shrink, so no reclaim is ever forgone.\n"
+"The classification walks surface and curve TYPES once per shape\n"
+"and is cached; conservative on both counts (a trimmed or offset\n"
+"plane, a straight b-spline, count as curved). The skip is also\n"
+"refused while any face is missing its triangulation -- building\n"
+"that is exactly the call's job.\n"
+"With the level plan narrating and this OFF, the rule is still\n"
+"evaluated and scored against every call it would have skipped --\n"
+"read its WRONG column from that arm only; a run with the skip on\n"
+"cannot score calls it never made.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getMeshSkipInvariant() {
+    return instance()->MeshSkipInvariant;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultMeshSkipInvariant() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMeshSkipInvariant(const bool &v) {
+    instance()->handle->SetBool("MeshSkipInvariant",v);
+    instance()->MeshSkipInvariant = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMeshSkipInvariant() {
+    instance()->handle->RemoveBool("MeshSkipInvariant");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
