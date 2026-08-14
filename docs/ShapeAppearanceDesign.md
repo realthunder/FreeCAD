@@ -1641,7 +1641,7 @@ never been published, so:
    because a new key line throws "unknown material field" on an older
    fork build. That throw is no longer a reason to bend a format -- but
    it is still a bug, and one that must be fixed before publication
-   rather than after, for the readers that will exist then (9.4.1).
+   rather than after, for the readers that will exist then (9.4.2).
 
 Note this sharpens 1.2 rather than contradicting it: 1.2 said upstream
 need not read our *default* save, and that still holds -- what item 2
@@ -1653,11 +1653,11 @@ Against that, the three encodings:
 - **Binary field stream (schema >= 6, the default).** A new
   `FieldFinish = 1 << 11` mask bit, and a run written as `pattern` in an
   `int8` plus the three floats per entry -- the same shape `_type`
-  already uses for its int8 run. Where that run goes is 9.4.1.
+  already uses for its int8 run. Where that run goes is 9.4.2.
 - **XML field form (schema >= 6, or when a string must survive).** A new
   key `'f'`, one line, four tokens per entry. Under item 3 a plain key
   line is fine and no attribute trick is needed; what the line's leading
-  number counts is 9.4.1.
+  number counts is 9.4.2.
 - **The compatible encodings (schema < 6, the upstream-readable ones).**
   They cannot carry a finish and should not be made to. Upstream's stream
   is fixed -- count, four packed colours, shininess and transparency,
@@ -1665,17 +1665,73 @@ Against that, the three encodings:
   spare room are `image`, `imagePath` and `uuid`, whose meaning is
   theirs. Smuggling a finish into a material-card identity would make two
   appearances that are not equal compare equal, since `operator==`
-  short-circuits on `uuid` (7.3). So the finish is **dropped** in those
-  encodings, exactly as the PBR mode flag is (8.3), and the default save
-  carries it losslessly. Under item 2 that is the correct outcome: the
-  upstream-readable file stays readable and states the surface's colours
-  and shading honestly; only the finish, which upstream has no concept
-  of, is absent.
+  short-circuits on `uuid` (7.3).
+
+  ⚠️ **And "the default save carries it" was not true as written.**
+  `SaveSchemaVersion` defaults to **5**, deliberately (`Document.cpp`
+  ~960: schema 6 is an incompatibility a user chooses per document, never
+  one inherited from a constructor), so the default save is a compatible
+  encoding and a finish would have vanished from every ordinary document.
+
+  An earlier draft answered that by forcing the fork's own encoding
+  whenever a list states a finish. That works and is lossless for us, but
+  it pays for the finish with the whole file's readability, which is not
+  the trade the policy asks for. **The answer is 9.4.1 instead: put the
+  finish in a property of its own and change none of these encodings.**
 
 `getMemSize()` and `getSaveSize()` pick up `_finish.size() *
 sizeof(SurfaceFinish)`.
 
-#### 9.4.1 Forward compatibility, which is the half the policy does not cover
+#### 9.4.1 A property of its own, and schema 5 becomes lossless both ways
+
+⭐ **The user's answer, and it is better than anything the encodings can
+do from the inside.** Pretend an older format kept the surface finish in
+a property beside the appearance, and that this one folded it into the
+material. Then write the file as though that migration were still in
+progress: the material list exactly as upstream has always read it, and
+the finish beside it under its own name, `ShapeFinish`
+(`App::PropertySurfaceFinishList`).
+
+**Why it works, verified rather than assumed.** `PropertyContainer::Restore`
+looks each saved property up by name; a name it does not find goes to
+`handleChangedPropertyName`, whose default body does nothing, and then
+`readEndElement("Property")` scans forward to the matching end tag
+(`Reader.cpp:330`), skipping whatever was inside -- a char stream, nested
+elements, an archive entry reference, anything. **The document format is
+built to ignore properties it does not know**, which is how properties get
+removed across versions. So upstream opens the file, reads the material
+list byte for byte as before, skips `ShapeFinish` whole, and has an
+appearance with no finishes. We read both and end up with everything.
+
+That is the lossless-both-ways case the policy asked for and that item 2
+had written off: **one file, readable by upstream, and readable back by us
+with nothing missing.** No encoding changed shape, no compatibility was
+traded, and `saveXML` / `SaveDocFile` / `getSaveSize` are exactly what
+they were before this feature.
+
+The rules that make it safe:
+
+- **It is not a second store.** `PropertySurfaceFinishList` holds a
+  `PropertyMaterialList*` and reads and writes that list's `_finish`
+  field; a finish IS part of a material, and two stores of one value is
+  the mistake this property spent 7.9 removing. The same shape
+  `PartGui::PropertyDiffuseColor` uses to be a name over the appearance's
+  diffuse field (1.1). A `Copy()` for the undo stack has no appearance to
+  name, so it carries detached values.
+- **It writes values only below schema 6**, where the material encoding
+  cannot state them. At 6 and above the appearance's own field form
+  carries the finish and the companion writes an empty element, so no
+  document ever holds the same finish twice.
+- **An empty element means "nothing stated", never "clear it".** At
+  schema 6 the appearance restores first -- `ShapeAppearance` sorts before
+  `ShapeFinish`, and `ShapeColor` and `ShapeMaterial` after both -- with
+  the finish already in it, and an empty companion must not wipe what it
+  just got. Same rule `DiffuseColor` needed for the same reason (1.1).
+- **Registered wherever `ShapeAppearance` is**: `ViewProviderGeometryObject`
+  and `ViewProviderLink`, hidden in the editor like `ShapeMaterial`, since
+  one datum must not be two rows.
+
+#### 9.4.2 Forward compatibility, which is the half the policy does not cover
 
 ⭐ **Item 3 above is about the past; this is about the future, and it has
 to be paid for now.** The policy says we owe our own older builds
@@ -1790,6 +1846,16 @@ verification:
   NURBS patch's is arbitrary), it costs 8 bytes a vertex, and the
   surfaces where it would beat an explicit frame are freeform faces
   nobody specifies a knurl on.
+- ⚠️ **The property editor's material row, which is lossy already.**
+  `PropertyMaterialListItem::setValue` rebuilds the whole list from
+  generated `App.Material(...)` text stating six fields, so an edit made
+  through that row drops everything else the list holds. That is not new
+  -- it already costs a PBR-mode appearance its mode (the generated call
+  names no PBR key, so the assignment restates the list as Phong) and
+  drops `image`/`imagePath`/`uuid` -- and a finish now joins the same
+  casualty list. Fixing it means carrying the extra fields through the
+  widget's own `Material` QVariant struct, which is a change to that
+  widget rather than to this feature, and it should fix all four at once.
 - Analytic filtering of the pattern against the pixel footprint, without
   which a 0.3 mm pitch aliases into moire the moment the part is zoomed
   to fit; anisotropic GGX, which real brushed metal wants and which

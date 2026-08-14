@@ -183,7 +183,16 @@ void applyWholeMaterial(App::PropertyMaterialList &appearance, const App::Materi
     // (it sorts later), or by an old macro writing through it.
     App::Material mat = value;
     mat.pbr = appearance.isPBR();
-    if (appearance.getDiffuseColors().size() <= 1) {
+    // A surface finish is the same case one field further on: ShapeMaterial's
+    // serialised form has no room for one either, so the value arriving here
+    // always states None -- and the single-entry path below REPLACES the list,
+    // which would wipe a finish the appearance had just restored (this name
+    // sorts after ShapeAppearance). Take the appearance's own.
+    mat.finish = appearance.getFinish(0);
+    // The whole-value path replaces the list, so it is only safe while the
+    // finish is uniform too; a per-face finish takes the field-by-field path
+    // below, which does not touch it at all.
+    if (appearance.getDiffuseColors().size() <= 1 && appearance.getFinishes().size() <= 1) {
         appearance.setValue(mat);
         return;
     }

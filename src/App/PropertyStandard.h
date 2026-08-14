@@ -1235,6 +1235,11 @@ public:
     const std::vector<std::string> &getImages() const { return _image; }
     const std::vector<std::string> &getImagePaths() const { return _imagePath; }
     const std::vector<std::string> &getUuids() const { return _uuid; }
+    /// Normalised first, so the "0, 1 or getSize()" rule above holds for a
+    /// caller that only ever reads -- normalisation is lazy, and a write
+    /// leaves the field denormal until something asks
+    const std::vector<SurfaceFinish> &getFinishes() const
+    { ensureNormalized(); return _finish; }
 
     Color getAmbientColor(int idx) const;
     Color getDiffuseColor(int idx) const;
@@ -1245,6 +1250,7 @@ public:
     const std::string &getImage(int idx) const;
     const std::string &getImagePath(int idx) const;
     const std::string &getUuid(int idx) const;
+    SurfaceFinish getFinish(int idx) const;
     Material::MaterialType getType(int idx) const;
 
     void setAmbientColors(const std::vector<Color> &colors);
@@ -1256,6 +1262,9 @@ public:
     void setImages(const std::vector<std::string> &values);
     void setImagePaths(const std::vector<std::string> &values);
     void setUuids(const std::vector<std::string> &values);
+    /// The records clamp on the way in (SurfaceFinish::normalize), so what
+    /// is stored is always something a consumer can draw
+    void setFinishes(const std::vector<SurfaceFinish> &values);
 
     /// Set one field of one entry, expanding that field alone if it has to
     void setAmbientColor(int idx, const Color &col);
@@ -1267,6 +1276,7 @@ public:
     void setImage(int idx, const std::string &value);
     void setImagePath(int idx, const std::string &value);
     void setUuid(int idx, const std::string &value);
+    void setFinish(int idx, const SurfaceFinish &value);
 
     /// Set one field for every entry, leaving the others alone
     void setAmbientColor(const Color &col);
@@ -1288,10 +1298,16 @@ public:
     void setImage(const std::string &value);
     void setImagePath(const std::string &value);
     void setUuid(const std::string &value);
+    void setFinish(const SurfaceFinish &value);
     //@}
 
     /// Whether any entry names a texture or a material card
     bool hasTextureOrCard() const { return !_image.empty() || !_imagePath.empty() || !_uuid.empty(); }
+    /// Whether any entry states a surface finish; the cheap gate for a
+    /// consumer that has nothing to do when none does. Normalised, so a
+    /// finish written and then cleared answers false rather than "there is
+    /// still an array there"
+    bool hasFinish() const { ensureNormalized(); return !_finish.empty(); }
 
     /** @name PBR mode
      *
@@ -1430,6 +1446,14 @@ private:
     float shininessDefault() const;
     /// Throw unless the list is in PBR mode
     void requirePBR() const;
+    /** Land a finish restored from the element beside this property's
+     *
+     * Held rather than applied on the spot because the two encodings land at
+     * different times: an archive entry is read long after the XML pass, and
+     * its restore CLEARS the finish field (the compatible stream cannot state
+     * one). So the value waits until the materials are in.
+     */
+    void applyPendingFinish();
     /** One material as this list reads it
      *
      * The list holds a single mode for every entry, so a material written
@@ -1517,6 +1541,18 @@ private:
      * as it always has. The per field encoding does carry it.
      */
     std::vector<int8_t> _type;
+    /** The surface finish, one record per entry rather than four arrays
+     *
+     * The four numbers co-vary -- a face has one finish specification --
+     * so splitting them would quadruple the accessors, the field mask bits
+     * and the serialized keys to buy an elision case that does not occur,
+     * and would have to re-state by hand the "all four or none" pairing a
+     * record gets for free. Not written by the compatible encodings, which
+     * have nowhere to put it.
+     */
+    std::vector<SurfaceFinish> _finish;
+    /// Restored from the companion element, waiting for the materials to land
+    std::vector<SurfaceFinish> _pendingFinish;
 
     /** Which shape the doc file being read is in
      *
@@ -1529,6 +1565,59 @@ private:
     mutable bool _normalized {true};
 };
 
+
+/** The surface finish of a material list, written as a property of its own
+ *
+ * A migration that never happened, written out as though it had: pretend an
+ * older format kept the surface finish in a property beside the appearance,
+ * and that this one folded it into the material. Then a document can state
+ * both, and both readings are honest.
+ *
+ * ⭐ What that buys is a save that is lossless BOTH ways at once, which no
+ * amount of cleverness inside PropertyMaterialList's own encodings could
+ * give: upstream reads the material element byte for byte as it always has
+ * and simply walks past this one (readElement skips elements whose name it
+ * did not ask for), while we read both and lose nothing.
+ *
+ * ⚠️ It is never a member of anything. PropertyMaterialList::Save builds one
+ * on the stack, hands it the finishes, writes it, and drops it; Restore does
+ * the mirror. That is deliberate: as a container property it would join the
+ * undo stack and snapshot bytes that ShapeAppearance's own Copy() already
+ * carries, and it would need a pointer back to the appearance whose values
+ * it really held -- a second store of one value, and a Copy() that could not
+ * honestly implement itself.
+ */
+class AppExport PropertySurfaceFinishList: public Property
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    PropertySurfaceFinishList();
+    ~PropertySurfaceFinishList() override;
+
+    const std::vector<SurfaceFinish> &getValues() const { return _values; }
+    void setValue(const std::vector<SurfaceFinish> &values) { _values = values; }
+    std::vector<SurfaceFinish> takeValues() { return std::move(_values); }
+
+    /// Restore from a reader ALREADY positioned on the element, which is how
+    /// the material list reads it: it has to look at the element to know
+    /// whether it is this one at all.
+    void RestoreHere(Base::XMLReader &reader);
+
+    PyObject *getPyObject() override;
+    void setPyObject(PyObject *) override;
+
+    void Save(Base::Writer &writer) const override;
+    void Restore(Base::XMLReader &reader) override;
+
+    Property *Copy() const override;
+    void Paste(const Property &from) override;
+    bool isSame(const Property &other) const override;
+    unsigned int getMemSize() const override;
+
+private:
+    std::vector<SurfaceFinish> _values;
+};
 
 /** Property for dynamic creation of a FreeCAD persistent object
  *

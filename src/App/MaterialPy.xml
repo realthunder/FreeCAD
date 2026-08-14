@@ -99,6 +99,41 @@ first, as Metallic does.
             </Documentation>
             <Parameter Name="Roughness" Type="Float"/>
         </Attribute>
+        <Attribute Name="Finish" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The surface finish pattern by name: "" (none), "knurl", "knurl-straight",
+"brushed", "blasted" or "turned". An unrecognised name reads back as "".
+
+A finish states what was done to the surface, not how it shades, so it
+survives every conversion between the Phong and PBR readings. Size it
+with FinishPitch, FinishDepth and FinishAngle; setting the pattern to ""
+clears all three.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="Finish" Type="String"/>
+        </Attribute>
+        <Attribute Name="FinishPitch" ReadOnly="false">
+            <Documentation>
+                <UserDocu>Surface finish feature spacing, in millimetres.</UserDocu>
+            </Documentation>
+            <Parameter Name="FinishPitch" Type="Float"/>
+        </Attribute>
+        <Attribute Name="FinishDepth" ReadOnly="false">
+            <Documentation>
+                <UserDocu>Surface finish peak to valley depth, in millimetres.</UserDocu>
+            </Documentation>
+            <Parameter Name="FinishDepth" Type="Float"/>
+        </Attribute>
+        <Attribute Name="FinishAngle" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+Surface finish lay direction in degrees, within the pattern frame. A lay
+has an axis rather than a direction, so the value wraps into [0, 180).
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="FinishAngle" Type="Float"/>
+        </Attribute>
         <CustomAttributes />
     </PythonExport>
 </GenerateModel>

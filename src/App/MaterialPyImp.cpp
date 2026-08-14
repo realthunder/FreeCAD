@@ -48,13 +48,20 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
     PyObject* pbr = nullptr;
     PyObject* metallic = nullptr;
     PyObject* roughness = nullptr;
-    static const std::array<const char *, 10> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
+    PyObject* finish = nullptr;
+    PyObject* finishPitch = nullptr;
+    PyObject* finishDepth = nullptr;
+    PyObject* finishAngle = nullptr;
+    static const std::array<const char *, 14> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
                                                           "EmissiveColor", "Shininess", "Transparency",
-                                                          "PBR", "Metallic", "Roughness", nullptr};
+                                                          "PBR", "Metallic", "Roughness",
+                                                          "Finish", "FinishPitch", "FinishDepth",
+                                                          "FinishAngle", nullptr};
 
-    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOO", kwds_colors,
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOOOOOO", kwds_colors,
         &diffuse, &ambient, &specular, &emissive, &shininess, &transparency,
-        &pbr, &metallic, &roughness)) {
+        &pbr, &metallic, &roughness,
+        &finish, &finishPitch, &finishDepth, &finishAngle)) {
         return -1;
     }
 
@@ -99,6 +106,25 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
 
         if (roughness) {
             setRoughness(Py::Float(roughness));
+        }
+
+        // The pattern first, whatever the keyword order, for the reason the
+        // size setters do not clamp: a pattern arriving after its numbers
+        // would clamp them, and a pattern of None would zero them.
+        if (finish) {
+            setFinish(Py::String(finish));
+        }
+
+        if (finishPitch) {
+            setFinishPitch(Py::Float(finishPitch));
+        }
+
+        if (finishDepth) {
+            setFinishDepth(Py::Float(finishDepth));
+        }
+
+        if (finishAngle) {
+            setFinishAngle(Py::Float(finishAngle));
         }
     }
     catch (Base::Exception& e) {
@@ -263,6 +289,54 @@ Py::Float MaterialPy::getRoughness() const
 void MaterialPy::setRoughness(Py::Float arg)
 {
     getMaterialPtr()->setRoughness(arg);
+}
+
+Py::String MaterialPy::getFinish() const
+{
+    return Py::String(SurfaceFinish::patternName(getMaterialPtr()->finish.pattern));
+}
+
+void MaterialPy::setFinish(Py::String arg)
+{
+    SurfaceFinish &finish = getMaterialPtr()->finish;
+    finish.pattern = SurfaceFinish::patternFromName(std::string(arg).c_str());
+    // Clearing the pattern clears what sized it, so that "no finish" is one
+    // state rather than a pattern of None carrying stale numbers
+    finish.normalize();
+}
+
+// The three size attributes deliberately do NOT clamp: normalize() zeroes
+// everything while the pattern is None, so clamping here would wipe a pitch
+// written before the pattern it belongs to. The clamp happens where the
+// value is stored (PropertyMaterialList) and when a pattern is set.
+Py::Float MaterialPy::getFinishPitch() const
+{
+    return Py::Float(getMaterialPtr()->finish.pitch);
+}
+
+void MaterialPy::setFinishPitch(Py::Float arg)
+{
+    getMaterialPtr()->finish.pitch = static_cast<float>(arg);
+}
+
+Py::Float MaterialPy::getFinishDepth() const
+{
+    return Py::Float(getMaterialPtr()->finish.depth);
+}
+
+void MaterialPy::setFinishDepth(Py::Float arg)
+{
+    getMaterialPtr()->finish.depth = static_cast<float>(arg);
+}
+
+Py::Float MaterialPy::getFinishAngle() const
+{
+    return Py::Float(getMaterialPtr()->finish.angle);
+}
+
+void MaterialPy::setFinishAngle(Py::Float arg)
+{
+    getMaterialPtr()->finish.angle = static_cast<float>(arg);
 }
 
 PyObject *MaterialPy::getCustomAttributes(const char* /*attr*/) const

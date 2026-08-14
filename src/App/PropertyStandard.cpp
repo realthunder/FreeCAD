@@ -2624,6 +2624,16 @@ Color storedDiffuse(const Material &mat)
     return color;
 }
 
+/// The finish a whole material stores: clamped, so that everything reading
+/// this property back gets a record it can actually draw, whatever a caller
+/// assembled by hand or a file happened to state
+SurfaceFinish storedFinish(const SurfaceFinish &finish)
+{
+    SurfaceFinish stored = finish;
+    stored.normalize();
+    return stored;
+}
+
 } // namespace
 
 void PropertyColor::Save (Base::Writer &writer) const
@@ -2922,7 +2932,19 @@ void PropertyMaterial::Save (Base::Writer &writer) const
         << "\" emissiveColor=\"" <<  packed(_cMat.emissiveColor)
         << "\" shininess=\""     <<  _cMat.shininess
         << "\" transparency=\""  <<  _cMat.transparency
-        << "\"/>\n";
+        << '"';
+    // Attributes, and only when there is one to state: an unfinished
+    // material writes exactly the bytes it always did, and a reader that
+    // knows nothing of finishes ignores what it does not query -- which is
+    // what makes an attribute the right carrier here (8.3, 9.4.2).
+    if (_cMat.finish.isSet()) {
+        writer.Stream() << " finish=\"" << unsigned(_cMat.finish.pattern)
+            << "\" finishPitch=\"" << _cMat.finish.pitch
+            << "\" finishDepth=\"" << _cMat.finish.depth
+            << "\" finishAngle=\"" << _cMat.finish.angle
+            << '"';
+    }
+    writer.Stream() << "/>\n";
 }
 
 void PropertyMaterial::Restore(Base::XMLReader &reader)
@@ -2937,6 +2959,12 @@ void PropertyMaterial::Restore(Base::XMLReader &reader)
     _cMat.emissiveColor.setPackedValue(reader.getAttributeAsUnsigned("emissiveColor"));
     _cMat.shininess = (float)reader.getAttributeAsFloat("shininess");
     _cMat.transparency = (float)reader.getAttributeAsFloat("transparency");
+    _cMat.finish.pattern =
+        (uint8_t)reader.getAttributeAsUnsigned("finish", "0");
+    _cMat.finish.pitch = (float)reader.getAttributeAsFloat("finishPitch", "0");
+    _cMat.finish.depth = (float)reader.getAttributeAsFloat("finishDepth", "0");
+    _cMat.finish.angle = (float)reader.getAttributeAsFloat("finishAngle", "0");
+    _cMat.finish.normalize();
     // Only the colours changed meaning; transparency is transparency in every
     // version that ever wrote this element.
     if (restoreConverts(reader)) {
@@ -3120,6 +3148,7 @@ void PropertyMaterialList::normalize()
         std::vector<std::string>().swap(_imagePath);
         std::vector<std::string>().swap(_uuid);
         std::vector<int8_t>().swap(_type);
+        std::vector<SurfaceFinish>().swap(_finish);
     }
     else {
         collapseField(_ambient, def.ambientColor);
@@ -3131,6 +3160,7 @@ void PropertyMaterialList::normalize()
         collapseField(_imagePath, def.imagePath);
         collapseField(_uuid, def.uuid);
         collapseField(_type, static_cast<int8_t>(def.getType()));
+        collapseField(_finish, def.finish);
     }
     _normalized = true;
 }
@@ -3155,7 +3185,8 @@ bool PropertyMaterialList::variesOnlyInDiffuse() const
     // deliberately not tested here.
     return _ambient.size() <= 1 && _specular.size() <= 1 && _emissive.size() <= 1
         && _shininess.size() <= 1 && _type.size() <= 1
-        && _image.size() <= 1 && _imagePath.size() <= 1 && _uuid.size() <= 1;
+        && _image.size() <= 1 && _imagePath.size() <= 1 && _uuid.size() <= 1
+        && _finish.size() <= 1;
 }
 
 //**************************************************************************
@@ -3337,6 +3368,10 @@ void PropertyMaterialList::restoreValues(std::vector<Material> &&values, bool le
     std::vector<std::string>().swap(_imagePath);
     std::vector<std::string>().swap(_uuid);
     std::vector<int8_t>().swap(_type);
+    // No _finish here: none of the encodings that come through this
+    // function can carry one, so every entry reads as unfinished -- which
+    // an empty field already says, at no cost.
+    std::vector<SurfaceFinish>().swap(_finish);
     if (_count) {
         _ambient.reserve(_count);
         _diffuse.reserve(_count);
@@ -3439,6 +3474,7 @@ void PropertyMaterialList::setSize(int newSize, const Material &fill)
     resizeField(_uuid, _count, newSize, def.uuid, zero.uuid);
     resizeField(_type, _count, newSize, static_cast<int8_t>(def.getType()),
                 static_cast<int8_t>(zero.getType()));
+    resizeField(_finish, _count, newSize, storedFinish(def.finish), zero.finish);
     _count = newSize;
     clearTouchList();
     guard.tryInvoke();
@@ -3468,6 +3504,7 @@ Material PropertyMaterialList::getMaterial(int idx) const
     mat.image = fieldAt(_image, idx, def.image);
     mat.imagePath = fieldAt(_imagePath, idx, def.imagePath);
     mat.uuid = fieldAt(_uuid, idx, def.uuid);
+    mat.finish = fieldAt(_finish, idx, def.finish);
     // Stamp the list's mode on the value, so whoever holds it still knows
     // which reading its slots are in
     mat.pbr = _pbr;
@@ -3505,6 +3542,7 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
     std::vector<std::string>().swap(_imagePath);
     std::vector<std::string>().swap(_uuid);
     std::vector<int8_t>().swap(_type);
+    std::vector<SurfaceFinish>().swap(_finish);
     if (_count) {
         _ambient.reserve(_count);
         _diffuse.reserve(_count);
@@ -3515,6 +3553,7 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
         _imagePath.reserve(_count);
         _uuid.reserve(_count);
         _type.reserve(_count);
+        _finish.reserve(_count);
         for (const auto &value : values) {
             const Material mat = inMode(value);
             _ambient.push_back(mat.ambientColor);
@@ -3526,6 +3565,7 @@ void PropertyMaterialList::setValues(const std::vector<Material> &values)
             _imagePath.push_back(mat.imagePath);
             _uuid.push_back(mat.uuid);
             _type.push_back(static_cast<int8_t>(mat.getType()));
+            _finish.push_back(storedFinish(mat.finish));
         }
         normalize();
     }
@@ -3565,6 +3605,7 @@ void PropertyMaterialList::set1Value(int idx, const Material &value)
         setFieldAt(_uuid, idx, _count, mat.uuid, def.uuid);
         setFieldAt(_type, idx, _count, static_cast<int8_t>(mat.getType()),
                    static_cast<int8_t>(def.getType()));
+        setFieldAt(_finish, idx, _count, storedFinish(mat.finish), def.finish);
     }
     _touchList.insert(idx);
     guard.tryInvoke();
@@ -3617,6 +3658,11 @@ const std::string &PropertyMaterialList::getImagePath(int idx) const
 const std::string &PropertyMaterialList::getUuid(int idx) const
 {
     return fieldAt(_uuid, idx, defaultMaterial().uuid);
+}
+
+SurfaceFinish PropertyMaterialList::getFinish(int idx) const
+{
+    return fieldAt(_finish, idx, defaultMaterial().finish);
 }
 
 Material::MaterialType PropertyMaterialList::getType(int idx) const
@@ -3725,6 +3771,15 @@ void PropertyMaterialList::setUuids(const std::vector<std::string> &values)
     setField(_uuid, values, defaultMaterial().uuid);
 }
 
+void PropertyMaterialList::setFinishes(const std::vector<SurfaceFinish> &values)
+{
+    std::vector<SurfaceFinish> clamped;
+    clamped.reserve(values.size());
+    for (const auto &value : values)
+        clamped.push_back(storedFinish(value));
+    setField(_finish, clamped, defaultMaterial().finish);
+}
+
 /// Write one entry of one field, growing the list if it names a new entry
 template<class T>
 void PropertyMaterialList::setFieldValue(std::vector<T> &field, int idx, const T &value,
@@ -3797,6 +3852,11 @@ void PropertyMaterialList::setImagePath(int idx, const std::string &value)
 void PropertyMaterialList::setUuid(int idx, const std::string &value)
 {
     setFieldValue(_uuid, idx, value, defaultMaterial().uuid);
+}
+
+void PropertyMaterialList::setFinish(int idx, const SurfaceFinish &value)
+{
+    setFieldValue(_finish, idx, storedFinish(value), defaultMaterial().finish);
 }
 
 /// Give every entry the same value for one field, and none of it to storage
@@ -3934,6 +3994,11 @@ void PropertyMaterialList::setUuid(const std::string &value)
     setUniformField(_uuid, value, defaultMaterial().uuid);
 }
 
+void PropertyMaterialList::setFinish(const SurfaceFinish &value)
+{
+    setUniformField(_finish, storedFinish(value), defaultMaterial().finish);
+}
+
 PyObject *PropertyMaterialList::getPyObject()
 {
     Py::Tuple tuple(getSize());
@@ -3995,6 +4060,7 @@ unsigned int PropertyMaterialList::getMemSize() const
                 * sizeof(Color)
             + _shininess.size() * sizeof(float)
             + _type.size() * sizeof(int8_t)
+            + _finish.size() * sizeof(SurfaceFinish)
             + stringsMemSize(_image) + stringsMemSize(_imagePath)
             + stringsMemSize(_uuid));
 }
@@ -4024,6 +4090,12 @@ bool PropertyMaterialList::saveXML(Base::Writer &writer) const
     // is fork-only at every schema -- upstream's reader looks for a file
     // attribute and ignores a count -- so there is nothing to lose by using
     // the encoding that can carry them, and data to lose by not.
+    //
+    // A surface finish deliberately does NOT force it. The compatible
+    // encodings cannot state one, and rather than give up their
+    // compatibility for it, the finish is written beside this property as
+    // its own -- see PropertySurfaceFinishList, and section 9.4 of
+    // docs/ShapeAppearanceDesign.md.
     if (writer.getSchemaVersion() >= 6 || hasTextureOrCard())
         return saveFieldXML(writer);
 
@@ -4163,6 +4235,21 @@ void PropertyMaterialList::restoreStream(Base::InputStream &str, unsigned uCt)
 void PropertyMaterialList::Save(Base::Writer &writer) const
 {
     ensureNormalized();
+    // ⭐ The finish goes out ahead of the material element, as an element of
+    // its own inside this property's -- as though an older format had kept it
+    // in a property beside the appearance and this one had merged it in.
+    // Below schema 6 the material encodings are upstream's and cannot state a
+    // finish; rather than give up their compatibility for it, this states it
+    // alongside. Upstream's reader asks for the material element by name and
+    // Base::XMLReader::readElement walks past any element that is not it, so
+    // the same file is theirs to open and ours to open back with nothing
+    // lost. At schema 6 and above the per field encoding carries the finish
+    // itself and nothing extra is written at all.
+    if (writer.getSchemaVersion() < 6 && !_finish.empty()) {
+        PropertySurfaceFinishList carrier;
+        carrier.setValue(_finish);
+        carrier.Save(writer);
+    }
     if (writer.getSchemaVersion() < 6 && hasTextureOrCard() && !writer.isForceXML()
             && canSaveStream(writer)) {
         writer.Stream() << writer.ind() << '<' << xmlName() << " file=\""
@@ -4179,16 +4266,40 @@ void PropertyMaterialList::Save(Base::Writer &writer) const
 
 void PropertyMaterialList::Restore(Base::XMLReader &reader)
 {
-    reader.readElement(xmlName());
+    _pendingFinish.clear();
+    // Scan to the material element exactly as readElement would -- callers do
+    // not all arrive positioned on it -- but notice the companion element if
+    // it comes past on the way (Save writes it ahead of the material one).
+    // ⚠️ Asking readElement for the companion BY NAME is not an option: when
+    // it is absent, that scan runs straight past the material element that is
+    // there, and the property restores as empty.
+    while (true) {
+        if (!reader.readNextElement()) {
+            // What readElement would have said, and equally non-fatal
+            Base::Console().Error("Document XML element '%s' not found\n", xmlName());
+            return;
+        }
+        if (strcmp(reader.localName(), xmlName()) == 0) {
+            break;
+        }
+        if (strcmp(reader.localName(), "SurfaceFinishList") == 0) {
+            PropertySurfaceFinishList carrier;
+            carrier.RestoreHere(reader);
+            _pendingFinish = carrier.takeValues();
+        }
+    }
     // Remembered for RestoreDocFile, which is called later and separately
     _fileVersion = reader.hasAttribute("version")
         ? static_cast<int>(reader.getAttributeAsInteger("version"))
         : 0;
     std::string file(reader.getAttribute("file", ""));
     if (!file.empty()) {
+        // The values arrive in RestoreDocFile, long after this returns, and
+        // that read clears the finish field -- so the finish waits for it
         reader.addFile(file.c_str(), this);
+        return;
     }
-    else if (reader.hasAttribute("count")) {
+    if (reader.hasAttribute("count")) {
         restoreXML(reader);
     }
     else {
@@ -4196,6 +4307,18 @@ void PropertyMaterialList::Restore(Base::XMLReader &reader)
         if (getSize())
             setSize(0);
     }
+    applyPendingFinish();
+}
+
+void PropertyMaterialList::applyPendingFinish()
+{
+    if (_pendingFinish.empty() || _count == 0) {
+        _pendingFinish.clear();
+        return;
+    }
+    std::vector<SurfaceFinish> finish;
+    finish.swap(_pendingFinish);
+    setFinishes(finish);
 }
 
 void PropertyMaterialList::SaveDocFile(Base::Writer &writer) const
@@ -4239,6 +4362,9 @@ void PropertyMaterialList::RestoreDocFile(Base::Reader &reader)
             restoreStringStream(str, uCt);
         }
     }
+    // Now that the materials are in: the finish read from the companion
+    // element back in Restore, which restoreValues above has just cleared
+    applyPendingFinish();
 }
 
 /// Upstream's second pass: image, imagePath and uuid, entry by entry
@@ -4288,7 +4414,51 @@ enum FieldBit {
     /// payload, so a reader that predates it skips nothing and loses
     /// nothing -- it only tests the bits it knows.
     FieldPBR = 1 << 10,
+    FieldFinish = 1 << 11,
 };
+
+/** How a run is built, stated ahead of every run
+ *
+ * The field bits say WHICH fields a file carries; this says HOW each run
+ * is shaped, and it is what lets a reader consume a run whose FIELD it does
+ * not know -- read it by its shape, drop the values, carry on with the
+ * rest. Without it the encoding is positional and only tolerates unknown
+ * fields that happen to sit last, which holds for exactly one round of
+ * additions. See docs/ShapeAppearanceDesign.md 9.4.2: this costs one byte
+ * per present field and cannot be added once a build is published.
+ */
+enum FieldRunType : uint8_t {
+    RunColors = 0,
+    RunFloats = 1,
+    RunInt8 = 2,
+    RunStrings = 3,
+    RunFinish = 4,
+};
+
+/// The records of one finish run. Shared by the material list's per field
+/// stream and by PropertySurfaceFinishList, so the two cannot drift apart.
+void writeFinishRecords(Base::OutputStream &str, const std::vector<SurfaceFinish> &field)
+{
+    for (const auto &value : field) {
+        str << value.pattern;
+        str << value.pitch;
+        str << value.depth;
+        str << value.angle;
+    }
+}
+
+void readFinishRecords(Base::InputStream &str, std::vector<SurfaceFinish> &field,
+                       uint32_t count)
+{
+    field.resize(count);
+    for (auto &value : field) {
+        str >> value.pattern;
+        str >> value.pitch;
+        str >> value.depth;
+        str >> value.angle;
+        value.normalize();
+    }
+}
 
 } // namespace
 
@@ -4308,24 +4478,33 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     if (!_image.empty())        mask |= FieldImage;
     if (!_imagePath.empty())    mask |= FieldImagePath;
     if (!_uuid.empty())         mask |= FieldUuid;
+    if (!_finish.empty())       mask |= FieldFinish;
     if (_pbr)                   mask |= FieldPBR;
     str << mask;
+
+    // Runs go out in ascending bit order and each states its shape first,
+    // so that a reader meeting a field bit it does not know can still step
+    // over the run (FieldRunType).
+    auto writeRunHead = [&str](uint8_t type, std::size_t size) {
+        str << type;
+        str << static_cast<uint32_t>(size);
+    };
 
     // The per field encoding is this fork's own, but it is written into the
     // same document as the compatible one and is read back by the same gate,
     // so it stores colours the way that document stores them.
     const bool convert = saveConverts();
-    auto writeColors = [&str, convert](const std::vector<Color> &field) {
+    auto writeColors = [&str, &writeRunHead, convert](const std::vector<Color> &field) {
         if (field.empty())
             return;
-        str << static_cast<uint32_t>(field.size());
+        writeRunHead(RunColors, field.size());
         for (const auto &col : field)
             str << packedForSave(col, convert);
     };
-    auto writeFloats = [&str](const std::vector<float> &field) {
+    auto writeFloats = [&str, &writeRunHead](const std::vector<float> &field) {
         if (field.empty())
             return;
-        str << static_cast<uint32_t>(field.size());
+        writeRunHead(RunFloats, field.size());
         for (float value : field)
             str << value;
     };
@@ -4336,22 +4515,26 @@ void PropertyMaterialList::saveFieldStream(Base::OutputStream &str) const
     writeColors(_emissive);
     writeFloats(_shininess);
     if (!_type.empty()) {
-        str << static_cast<uint32_t>(_type.size());
+        writeRunHead(RunInt8, _type.size());
         for (int8_t value : _type)
             str << value;
     }
     // std::string over this stream is already a length and its bytes, which
     // is the same shape upstream writes its strings in
-    auto writeStrings = [&str](const std::vector<std::string> &field) {
+    auto writeStrings = [&str, &writeRunHead](const std::vector<std::string> &field) {
         if (field.empty())
             return;
-        str << static_cast<uint32_t>(field.size());
+        writeRunHead(RunStrings, field.size());
         for (const auto &value : field)
             str << value;
     };
     writeStrings(_image);
     writeStrings(_imagePath);
     writeStrings(_uuid);
+    if (!_finish.empty()) {
+        writeRunHead(RunFinish, _finish.size());
+        writeFinishRecords(str, _finish);
+    }
 }
 
 void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned uCt, bool legacy)
@@ -4371,65 +4554,87 @@ void PropertyMaterialList::restoreFieldStream(Base::InputStream &str, unsigned u
     // as when normalize() runs below
     _pbr = (mask & FieldPBR) != 0;
 
-    auto readColors = [&str, uCt](std::vector<Color> &field, bool present) {
-        std::vector<Color>().swap(field);
-        if (!present)
-            return;
-        uint32_t count = 0;
-        str >> count;
-        if (count != 1 && count != uCt)
-            throw Base::FileException("material field length does not match the list");
-        field.resize(count);
-        uint32_t packed = 0;
-        for (auto &col : field) {
-            str >> packed;
-            col.setPackedValue(packed);
-        }
-    };
-    auto readFloats = [&str, uCt](std::vector<float> &field, bool present) {
-        std::vector<float>().swap(field);
-        if (!present)
-            return;
-        uint32_t count = 0;
-        str >> count;
-        if (count != 1 && count != uCt)
-            throw Base::FileException("material field length does not match the list");
-        field.resize(count);
-        for (auto &value : field)
-            str >> value;
-    };
-
-    readColors(_ambient, (mask & FieldAmbient) != 0);
-    readColors(_diffuse, (mask & FieldDiffuse) != 0);
-    readColors(_specular, (mask & FieldSpecular) != 0);
-    readColors(_emissive, (mask & FieldEmissive) != 0);
-    readFloats(_shininess, (mask & FieldShininess) != 0);
-    readFloats(transparency, (mask & FieldTransparency) != 0);
+    std::vector<Color>().swap(_ambient);
+    std::vector<Color>().swap(_diffuse);
+    std::vector<Color>().swap(_specular);
+    std::vector<Color>().swap(_emissive);
+    std::vector<float>().swap(_shininess);
+    std::vector<std::string>().swap(_image);
+    std::vector<std::string>().swap(_imagePath);
+    std::vector<std::string>().swap(_uuid);
     std::vector<int8_t>().swap(_type);
-    if ((mask & FieldType) != 0) {
+    std::vector<SurfaceFinish>().swap(_finish);
+
+    // Ascending bit order, which is the order they were written in, each run
+    // preceded by its shape. A bit this build does not know is a field added
+    // later: its run is read by that shape and dropped, so the fields around
+    // it still land (docs/ShapeAppearanceDesign.md 9.4.2).
+    for (uint32_t bit = 1; bit <= 0x8000U; bit <<= 1) {
+        if ((mask & bit) == 0 || bit == FieldPBR)
+            continue;   // FieldPBR is a flag: it has no run to read
+        uint8_t type = 0;
+        str >> type;
         uint32_t count = 0;
         str >> count;
         if (count != 1 && count != uCt)
             throw Base::FileException("material field length does not match the list");
-        _type.resize(count);
-        for (auto &value : _type)
-            str >> value;
+
+        std::vector<Color> colors;
+        std::vector<float> floats;
+        std::vector<int8_t> int8s;
+        std::vector<std::string> strings;
+        std::vector<SurfaceFinish> finishes;
+        switch (type) {
+        case RunColors: {
+            colors.resize(count);
+            uint32_t packed = 0;
+            for (auto &col : colors) {
+                str >> packed;
+                col.setPackedValue(packed);
+            }
+            break;
+        }
+        case RunFloats:
+            floats.resize(count);
+            for (auto &value : floats)
+                str >> value;
+            break;
+        case RunInt8:
+            int8s.resize(count);
+            for (auto &value : int8s)
+                str >> value;
+            break;
+        case RunStrings:
+            strings.resize(count);
+            for (auto &value : strings)
+                str >> value;
+            break;
+        case RunFinish:
+            readFinishRecords(str, finishes, count);
+            break;
+        default:
+            // An unknown SHAPE cannot be stepped over -- there is no way to
+            // tell where it ends. Stop reading rather than consume the rest
+            // of the stream as garbage; what has landed so far stands.
+            bit = 0x8000U;
+            continue;
+        }
+
+        switch (bit) {
+        case FieldAmbient: _ambient.swap(colors); break;
+        case FieldDiffuse: _diffuse.swap(colors); break;
+        case FieldSpecular: _specular.swap(colors); break;
+        case FieldEmissive: _emissive.swap(colors); break;
+        case FieldShininess: _shininess.swap(floats); break;
+        case FieldTransparency: transparency.swap(floats); break;
+        case FieldType: _type.swap(int8s); break;
+        case FieldImage: _image.swap(strings); break;
+        case FieldImagePath: _imagePath.swap(strings); break;
+        case FieldUuid: _uuid.swap(strings); break;
+        case FieldFinish: _finish.swap(finishes); break;
+        default: break;   // a field added later: read, and dropped
+        }
     }
-    auto readStrings = [&str, uCt](std::vector<std::string> &field, bool present) {
-        std::vector<std::string>().swap(field);
-        if (!present)
-            return;
-        uint32_t count = 0;
-        str >> count;
-        if (count != 1 && count != uCt)
-            throw Base::FileException("material field length does not match the list");
-        field.resize(count);
-        for (auto &value : field)
-            str >> value;
-    };
-    readStrings(_image, (mask & FieldImage) != 0);
-    readStrings(_imagePath, (mask & FieldImagePath) != 0);
-    readStrings(_uuid, (mask & FieldUuid) != 0);
     if (legacy) {
         for (auto *field : {&_ambient, &_diffuse, &_specular, &_emissive}) {
             for (auto &color : *field)
@@ -4509,6 +4714,23 @@ bool PropertyMaterialList::saveFieldXML(Base::Writer &writer) const
     writeStrings('i', _image);
     writeStrings('p', _imagePath);
     writeStrings('u', _uuid);
+    // Four tokens per entry, which is why the number after a key counts
+    // TOKENS and not entries: it is the only thing that lets a reader step
+    // over a key it does not know (9.4.2). Every other field writes one
+    // token per entry, so for them the two counts are the same number and
+    // nothing about their lines changed.
+    if (!_finish.empty()) {
+        const auto precision = writer.Stream().precision(9);
+        writer.Stream() << "f " << _finish.size() * 4;
+        for (const auto &value : _finish) {
+            writer.Stream() << ' ' << static_cast<unsigned>(value.pattern)
+                            << ' ' << value.pitch
+                            << ' ' << value.depth
+                            << ' ' << value.angle;
+        }
+        writer.Stream() << '\n';
+        writer.Stream().precision(precision);
+    }
     return false;
 }
 
@@ -4530,13 +4752,46 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
     std::vector<std::string>().swap(_imagePath);
     std::vector<std::string>().swap(_uuid);
     std::vector<int8_t>().swap(_type);
+    std::vector<SurfaceFinish>().swap(_finish);
 
     auto &s = reader.beginCharStream();
     std::string key;
     while (s >> key) {
-        unsigned count = 0;
-        if (!(s >> count))
+        // The number is the count of TOKENS that follow, so that a key this
+        // build does not know can still be stepped over. Every field but
+        // the finish writes one token per entry, where the two are the same
+        // number (docs/ShapeAppearanceDesign.md 9.4.2).
+        unsigned tokens = 0;
+        if (!(s >> tokens))
             break;
+
+        // How many tokens one entry of this field takes; 0 says the key was
+        // added by a later build. Decided BEFORE the length rules below, or
+        // a future field wider than one token would throw on them instead of
+        // being skipped -- which is the whole point of the token count.
+        unsigned stride = 0;
+        switch (key[0]) {
+        case 'a': case 'd': case 's': case 'e': case 'h': case 't':
+        case 'y': case 'i': case 'p': case 'u':
+            stride = 1;
+            break;
+        case 'f':
+            stride = 4;
+            break;
+        default:
+            break;
+        }
+        if (stride == 0) {
+            // Read it and drop it: a document from a later build must still
+            // open (docs/ShapeAppearanceDesign.md 9.4.2).
+            std::string token;
+            for (unsigned i = 0; i < tokens && (s >> token); ++i) {
+            }
+            continue;
+        }
+        if (tokens % stride != 0)
+            throw Base::FileException("material field length is not a whole number of entries");
+        const unsigned count = tokens / stride;
         if (count != 1 && count != uCt)
             throw Base::FileException("material field length does not match the list");
 
@@ -4592,8 +4847,18 @@ void PropertyMaterialList::restoreFieldXML(Base::XMLReader &reader, unsigned uCt
             }
             break;
         }
+        case 'f': {
+            _finish.resize(count);
+            unsigned pattern = 0;
+            for (auto &entry : _finish) {
+                s >> pattern >> entry.pitch >> entry.depth >> entry.angle;
+                entry.pattern = static_cast<uint8_t>(pattern);
+                entry.normalize();
+            }
+            break;
+        }
         default:
-            throw Base::FileException("unknown material field");
+            break;   // unreachable: an unknown key was skipped above
         }
     }
     reader.endCharStream();
@@ -4633,7 +4898,8 @@ bool PropertyMaterialList::isSame(const Property &other) const
         && _image == list->_image
         && _imagePath == list->_imagePath
         && _uuid == list->_uuid
-        && _type == list->_type;
+        && _type == list->_type
+        && _finish == list->_finish;
 }
 
 Property *PropertyMaterialList::Copy() const
@@ -4651,6 +4917,7 @@ Property *PropertyMaterialList::Copy() const
     p->_imagePath = _imagePath;
     p->_uuid = _uuid;
     p->_type = _type;
+    p->_finish = _finish;
     return p;
 }
 
@@ -4672,8 +4939,128 @@ void PropertyMaterialList::Paste(const Property &from)
     _imagePath = other._imagePath;
     _uuid = other._uuid;
     _type = other._type;
+    _finish = other._finish;
     _normalized = true;
     guard.tryInvoke();
+}
+
+//**************************************************************************
+// PropertySurfaceFinishList
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+TYPESYSTEM_SOURCE(App::PropertySurfaceFinishList, App::Property)
+
+PropertySurfaceFinishList::PropertySurfaceFinishList() = default;
+
+PropertySurfaceFinishList::~PropertySurfaceFinishList() = default;
+
+void PropertySurfaceFinishList::Save(Base::Writer &writer) const
+{
+    writer.Stream() << writer.ind() << "<SurfaceFinishList count=\""
+                    << _values.size() << "\">\n";
+    // max_digits10, so a value read back is the float that was written
+    const auto precision = writer.Stream().precision(9);
+    for (const auto &value : _values) {
+        writer.Stream() << static_cast<unsigned>(value.pattern)
+                        << ' ' << value.pitch
+                        << ' ' << value.depth
+                        << ' ' << value.angle << '\n';
+    }
+    writer.Stream().precision(precision);
+    writer.Stream() << writer.ind() << "</SurfaceFinishList>\n";
+}
+
+void PropertySurfaceFinishList::Restore(Base::XMLReader &reader)
+{
+    reader.readElement("SurfaceFinishList");
+    RestoreHere(reader);
+}
+
+void PropertySurfaceFinishList::RestoreHere(Base::XMLReader &reader)
+{
+    const unsigned count = reader.getAttributeAsUnsigned("count");
+    std::vector<SurfaceFinish> values(count);
+    if (count) {
+        auto &s = reader.beginCharStream();
+        for (auto &value : values) {
+            unsigned pattern = 0;
+            s >> pattern >> value.pitch >> value.depth >> value.angle;
+            value.pattern = static_cast<uint8_t>(pattern);
+            value.normalize();
+        }
+        reader.endCharStream();
+    }
+    reader.readEndElement("SurfaceFinishList");
+    _values.swap(values);
+}
+
+Property *PropertySurfaceFinishList::Copy() const
+{
+    auto *p = new PropertySurfaceFinishList();
+    p->_values = _values;
+    return p;
+}
+
+void PropertySurfaceFinishList::Paste(const Property &from)
+{
+    _values = dynamic_cast<const PropertySurfaceFinishList&>(from)._values;
+}
+
+bool PropertySurfaceFinishList::isSame(const Property &other) const
+{
+    if (&other == this)
+        return true;
+    auto list = Base::freecad_dynamic_cast<const PropertySurfaceFinishList>(&other);
+    return list && list->_values == _values;
+}
+
+unsigned int PropertySurfaceFinishList::getMemSize() const
+{
+    return static_cast<unsigned int>(_values.size() * sizeof(SurfaceFinish));
+}
+
+PyObject *PropertySurfaceFinishList::getPyObject()
+{
+    const std::vector<SurfaceFinish> &values = getValues();
+    Py::List list(static_cast<int>(values.size()));
+    int i = 0;
+    for (const auto &value : values) {
+        Py::Tuple entry(4);
+        entry.setItem(0, Py::String(SurfaceFinish::patternName(value.pattern)));
+        entry.setItem(1, Py::Float(value.pitch));
+        entry.setItem(2, Py::Float(value.depth));
+        entry.setItem(3, Py::Float(value.angle));
+        list[i++] = entry;
+    }
+    return Py::new_reference_to(list);
+}
+
+void PropertySurfaceFinishList::setPyObject(PyObject *value)
+{
+    if (!PySequence_Check(value))
+        throw Base::TypeError("a sequence of (pattern, pitch, depth, angle) is required");
+    Py::Sequence seq(value);
+    std::vector<SurfaceFinish> values;
+    values.reserve(seq.size());
+    for (int i = 0; i < seq.size(); ++i) {
+        Py::Sequence entry(seq[i].ptr());
+        if (entry.size() != 4)
+            throw Base::ValueError("a surface finish is (pattern, pitch, depth, angle)");
+        SurfaceFinish finish;
+        Py::Object pattern(entry[0].ptr());
+        // The pattern by name, as everywhere else it is spelled; an integer
+        // is taken too, which is what a round trip through a raw value does
+        finish.pattern = PyNumber_Check(pattern.ptr())
+            ? static_cast<uint8_t>(static_cast<long>(Py::Int(pattern)))
+            : SurfaceFinish::patternFromName(
+                    Py::String(pattern).as_std_string("utf-8").c_str());
+        finish.pitch = static_cast<float>(Py::Float(Py::Object(entry[1].ptr())));
+        finish.depth = static_cast<float>(Py::Float(Py::Object(entry[2].ptr())));
+        finish.angle = static_cast<float>(Py::Float(Py::Object(entry[3].ptr())));
+        finish.normalize();
+        values.push_back(finish);
+    }
+    setValue(values);
 }
 
 //**************************************************************************

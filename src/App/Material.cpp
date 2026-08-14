@@ -33,6 +33,68 @@
 
 using namespace App;
 
+namespace {
+
+/// Indexed by SurfaceFinish::Pattern; None is the empty name
+const char *finishPatternNames[] = {
+    "", "knurl", "knurl-straight", "brushed", "blasted", "turned"
+};
+
+static_assert(sizeof(finishPatternNames) / sizeof(finishPatternNames[0])
+                  == SurfaceFinish::PatternCount,
+              "every SurfaceFinish::Pattern needs a name");
+
+} // namespace
+
+//===========================================================================
+// SurfaceFinish
+//===========================================================================
+
+void SurfaceFinish::normalize()
+{
+    if (!isSet()) {
+        // Nothing else means anything without a pattern, and zeroing is
+        // what lets the record compare equal to the default and elide
+        *this = SurfaceFinish();
+        return;
+    }
+    if (!(pitch >= MinPitch)) {   // catches NaN too
+        pitch = MinPitch;
+    }
+    if (!(depth >= 0.0F)) {
+        depth = 0.0F;
+    }
+    if (!std::isfinite(angle)) {
+        angle = 0.0F;
+    }
+    else {
+        // A lay has an axis, not a direction: 190 degrees is 10 degrees
+        angle = std::fmod(angle, 180.0F);
+        if (angle < 0.0F) {
+            angle += 180.0F;
+        }
+    }
+}
+
+const char *SurfaceFinish::patternName(uint8_t pattern)
+{
+    // An unrecognised pattern (a document from a later build) has no name
+    // here; it is still stored and written back unchanged
+    return pattern < PatternCount ? finishPatternNames[pattern] : "";
+}
+
+uint8_t SurfaceFinish::patternFromName(const char *name)
+{
+    if (!name || !name[0]) {
+        return None;
+    }
+    for (uint8_t i = 1; i < PatternCount; ++i) {
+        if (std::strcmp(name, finishPatternNames[i]) == 0) {
+            return i;
+        }
+    }
+    return None;
+}
 
 //===========================================================================
 // Material
@@ -155,6 +217,13 @@ void Material::set(const char* MatName)
 void Material::setType(const MaterialType MatType)
 {
     _matType = MatType;
+    // A preset states the whole material and none of them states a finish,
+    // so a previous one must not survive -- the same rule the colours and
+    // both floats below already follow. USER_DEFINED states nothing and
+    // therefore changes nothing, here as in the switch.
+    if (MatType != USER_DEFINED) {
+        finish = SurfaceFinish();
+    }
     switch (MatType)
     {
     case BRASS:

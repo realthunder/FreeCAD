@@ -2257,6 +2257,7 @@ void Application::initTypes()
     App::PropertyColorList          ::init();
     App::PropertyMaterial           ::init();
     App::PropertyMaterialList       ::init();
+    App::PropertySurfaceFinishList  ::init();
     App::PropertyPath               ::init();
     App::PropertyFile               ::init();
     App::PropertyFileIncluded       ::init();

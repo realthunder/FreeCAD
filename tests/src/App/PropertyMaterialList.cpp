@@ -60,6 +60,28 @@ App::Material texturedMaterial()
     return mat;
 }
 
+App::SurfaceFinish knurlFinish()
+{
+    App::SurfaceFinish finish;
+    finish.pattern = App::SurfaceFinish::Knurl;
+    // mm. Short decimals, so they survive the doc file's 6-digit text form
+    // as well as the XML form's max_digits10
+    finish.pitch = 0.8F;
+    finish.depth = 0.3F;
+    finish.angle = 45.0F;
+    return finish;
+}
+
+App::SurfaceFinish brushedFinish()
+{
+    App::SurfaceFinish finish;
+    finish.pattern = App::SurfaceFinish::Brushed;
+    finish.pitch = 0.05F;
+    finish.depth = 0.002F;
+    finish.angle = 30.0F;
+    return finish;
+}
+
 App::Material fullyPaintedMaterial()
 {
     App::Material mat;
@@ -1182,4 +1204,318 @@ TEST_F(PropertyMaterialListTest, rgbWritesLeaveTheAlphasAlone)
     EXPECT_EQ(uniform.getDiffuseColors().size(), 1U);
     EXPECT_FLOAT_EQ(uniform.getTransparency(3), 0.5F);
     EXPECT_EQ(uniform.getDiffuseColor(3).getPackedValue() >> 8, 0x123456U);
+}
+
+//**************************************************************************
+// Surface finish (docs/ShapeAppearanceDesign.md section 9)
+
+TEST_F(PropertyMaterialListTest, aFinishCollapsesLikeEveryOtherField)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(6);
+    EXPECT_FALSE(prop.hasFinish());
+    EXPECT_EQ(prop.getFinishes().size(), 0U);   // unset costs nothing
+    EXPECT_EQ(prop.getFinish(3).pattern, App::SurfaceFinish::None);
+
+    prop.setFinish(brushedFinish());
+    EXPECT_TRUE(prop.hasFinish());
+    EXPECT_EQ(prop.getFinishes().size(), 1U);   // uniform: stored once
+    EXPECT_EQ(prop.getFinish(5).pattern, App::SurfaceFinish::Brushed);
+    EXPECT_TRUE(prop.variesOnlyInDiffuse());
+
+    prop.setFinish(2, knurlFinish());
+    EXPECT_EQ(prop.getFinishes().size(), 6U);
+    EXPECT_EQ(prop.getFinish(2).pattern, App::SurfaceFinish::Knurl);
+    EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::Brushed);
+    // a finish that varies is something a colour list cannot say
+    EXPECT_FALSE(prop.variesOnlyInDiffuse());
+
+    // and back: setting them all the same collapses again
+    prop.setFinish(2, brushedFinish());
+    EXPECT_EQ(prop.getFinishes().size(), 1U);
+    EXPECT_TRUE(prop.variesOnlyInDiffuse());
+
+    // clearing it empties the field rather than storing six Nones
+    prop.setFinish(App::SurfaceFinish());
+    EXPECT_FALSE(prop.hasFinish());
+    EXPECT_EQ(prop.getFinishes().size(), 0U);
+}
+
+TEST_F(PropertyMaterialListTest, aFinishIsClampedOnTheWayIn)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(1);
+
+    App::SurfaceFinish odd;
+    odd.pattern = App::SurfaceFinish::Turned;
+    odd.pitch = 0.0F;     // a zero pitch is a divisor, not a finish
+    odd.depth = -1.0F;
+    odd.angle = 190.0F;   // a lay has an axis, not a direction
+    prop.setFinish(0, odd);
+
+    const App::SurfaceFinish stored = prop.getFinish(0);
+    EXPECT_EQ(stored.pattern, App::SurfaceFinish::Turned);
+    EXPECT_FLOAT_EQ(stored.pitch, App::SurfaceFinish::MinPitch);
+    EXPECT_FLOAT_EQ(stored.depth, 0.0F);
+    EXPECT_FLOAT_EQ(stored.angle, 10.0F);
+
+    // no pattern means no numbers, so the record can elide
+    App::SurfaceFinish none;
+    none.pitch = 3.0F;
+    none.depth = 2.0F;
+    prop.setFinish(0, none);
+    EXPECT_FLOAT_EQ(prop.getFinish(0).pitch, 0.0F);
+    EXPECT_FALSE(prop.hasFinish());
+}
+
+TEST_F(PropertyMaterialListTest, aFinishRidesAWholeMaterialBothWays)
+{
+    App::Material mat = redMaterial();
+    mat.finish = knurlFinish();
+
+    App::PropertyMaterialList prop;
+    prop.setValues({mat, redMaterial()});
+    EXPECT_EQ(prop.getFinish(0).pattern, App::SurfaceFinish::Knurl);
+    EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::None);
+    EXPECT_EQ(prop.getMaterial(0).finish, knurlFinish());
+    EXPECT_EQ(prop.getMaterial(0), mat);   // equality includes the finish
+
+    // a preset states the whole material, and none of them states a finish
+    App::Material preset = mat;
+    preset.setType(App::Material::STEEL);
+    EXPECT_EQ(preset.finish.pattern, App::SurfaceFinish::None);
+    // ... but USER_DEFINED states nothing, here as for the colours
+    App::Material kept = mat;
+    kept.setType(App::Material::USER_DEFINED);
+    EXPECT_EQ(kept.finish, knurlFinish());
+}
+
+TEST_F(PropertyMaterialListTest, aFinishSurvivesTheModeConversions)
+{
+    // A finish is a statement about the surface, not a reading of the
+    // shading slots, so nothing about the mode may touch it
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    prop.setFinish(0, knurlFinish());
+    prop.setFinish(1, brushedFinish());
+
+    prop.convertPBR(true);
+    EXPECT_EQ(prop.getFinish(0), knurlFinish());
+    EXPECT_EQ(prop.getFinish(1), brushedFinish());
+    prop.convertPBR(false);
+    EXPECT_EQ(prop.getFinish(0), knurlFinish());
+
+    App::Material mat = redMaterial();
+    mat.finish = brushedFinish();
+    mat.setPBR(true);
+    EXPECT_EQ(mat.finish, brushedFinish());
+    EXPECT_EQ(App::Material::pbrToPhong(mat).finish, brushedFinish());
+    EXPECT_EQ(App::Material::phongToPbr(redMaterial()).finish.pattern,
+              App::SurfaceFinish::None);
+}
+
+TEST_F(PropertyMaterialListTest, aFinishRoundTripsBothCompactEncodings)
+{
+    App::PropertyMaterialList prop;
+    prop.setSize(3);
+    prop.setDiffuseColors({packed(0xff0000ff), packed(0x00ff00ff), packed(0x0000ffff)});
+    prop.setFinish(0, knurlFinish());
+    prop.setFinish(2, brushedFinish());
+
+    for (bool asXML : {true, false}) {
+        App::PropertyMaterialList back;
+        if (asXML) {
+            restoreFromXML(back, saveToXML(prop, 6));
+        }
+        else {
+            restoreDocFile(back, saveDocFile(prop, 6));
+        }
+        ASSERT_EQ(back.getSize(), 3) << asXML;
+        EXPECT_EQ(back.getFinish(0), knurlFinish()) << asXML;
+        EXPECT_EQ(back.getFinish(1).pattern, App::SurfaceFinish::None) << asXML;
+        EXPECT_EQ(back.getFinish(2), brushedFinish()) << asXML;
+        EXPECT_EQ(back.getDiffuseColor(1).getPackedValue(), 0x00ff00ffU) << asXML;
+        EXPECT_TRUE(back.isSame(prop)) << asXML;
+    }
+}
+
+TEST_F(PropertyMaterialListTest, aFinishRidesItsOwnElementBelowSchemaSix)
+{
+    // The material encodings below schema 6 are upstream's and cannot state a
+    // finish. Rather than give up their compatibility for it, the finish goes
+    // out as an element of its own beside them -- which upstream's reader
+    // walks past, since readElement skips elements it did not ask for.
+    App::PropertyMaterialList prop;
+    prop.setSize(3);
+    prop.setDiffuseColor(packed(0x804020ff));
+    const std::string plain = saveToXML(prop, 5);
+
+    prop.setFinish(0, knurlFinish());
+    prop.setFinish(2, brushedFinish());
+    const std::string xml = saveToXML(prop, 5);
+    EXPECT_NE(xml.find("<SurfaceFinishList count=\"3\""), std::string::npos) << xml;
+    // and the material element itself is untouched: the bytes upstream reads
+    // are the bytes it always read
+    const std::size_t closed = xml.find("</SurfaceFinishList>");
+    ASSERT_NE(closed, std::string::npos);
+    const std::string materialPart = xml.substr(xml.find('<', closed + 1));
+    EXPECT_EQ(materialPart, plain.substr(plain.find('<'))) << materialPart;
+
+    App::PropertyMaterialList back;
+    restoreFromXML(back, xml);
+    ASSERT_EQ(back.getSize(), 3);
+    EXPECT_EQ(back.getFinish(0), knurlFinish());
+    EXPECT_EQ(back.getFinish(1).pattern, App::SurfaceFinish::None);
+    EXPECT_EQ(back.getFinish(2), brushedFinish());
+    EXPECT_EQ(back.getDiffuseColor(0).getPackedValue(), 0x804020ffU);
+}
+
+TEST_F(PropertyMaterialListTest, nothingExtraIsWrittenAtSchemaSix)
+{
+    // At schema 6 the per field encoding states the finish itself, so there
+    // is no second element at all -- not an empty one.
+    App::PropertyMaterialList prop;
+    prop.setSize(2);
+    prop.setFinish(knurlFinish());
+
+    const std::string xml = saveToXML(prop, 6);
+    EXPECT_EQ(xml.find("SurfaceFinishList"), std::string::npos) << xml;
+
+    App::PropertyMaterialList back;
+    restoreFromXML(back, xml);
+    EXPECT_EQ(back.getFinish(1), knurlFinish());
+}
+
+TEST_F(PropertyMaterialListTest, anArchivedFinishWaitsForItsMaterials)
+{
+    // ⚠️ The archive entry is read long after the XML pass, and reading it
+    // CLEARS the finish field -- the compatible stream cannot state one. So
+    // the finish restored from the companion element has to wait for the
+    // materials rather than land when it was read.
+    App::PropertyMaterialList prop;
+    std::vector<App::Material> values {texturedMaterial(), redMaterial()};
+    values[1].finish = knurlFinish();   // the finish is part of the material
+    prop.setValues(values);
+
+    Base::StringWriter element;
+    element.setSchemaVersion(5);
+    element.setPreferBinary(true);
+    element.setForceXML(0);
+    prop.Save(element);
+    EXPECT_NE(element.getString().find("SurfaceFinishList"), std::string::npos);
+    EXPECT_NE(element.getString().find("file="), std::string::npos);
+
+    Base::StringWriter file;
+    file.setSchemaVersion(5);
+    file.setPreferBinary(true);
+    file.setForceXML(0);
+    prop.SaveDocFile(file);
+
+    App::PropertyMaterialList restored;
+    restoreFromXML(restored, element.getString());
+    std::istringstream stream(file.getString());
+    Base::Reader reader(stream, "material.bin");
+    restored.RestoreDocFile(reader);
+    expectEntries(restored, values);
+    EXPECT_EQ(restored.getFinish(1), knurlFinish());
+    EXPECT_EQ(restored.getFinish(0).pattern, App::SurfaceFinish::None);
+}
+
+TEST_F(PropertyMaterialListTest, aPlainMaterialPropertyCarriesTheFinishToo)
+{
+    // The single-value property is the other place a whole material is
+    // stored, and a field it silently dropped would be a trap waiting for
+    // whoever first stores a finish there.
+    App::Material mat = redMaterial();
+    mat.finish = knurlFinish();
+    App::PropertyMaterial prop;
+    prop.setValue(mat);
+
+    Base::StringWriter writer;
+    writer.setForceXML(1);
+    prop.Save(writer);
+    const std::string xml = writer.getString();
+    EXPECT_NE(xml.find("finish="), std::string::npos);
+
+    App::PropertyMaterial back;
+    std::string doc = R"(<?xml version="1.0" encoding="UTF-8"?><document>)" + xml + "</document>";
+    std::istringstream stream(doc);
+    Base::XMLReader reader("material.xml", stream);
+    back.Restore(reader);
+    EXPECT_EQ(back.getValue().finish, knurlFinish());
+
+    // and an unfinished material writes exactly the bytes it always did
+    App::PropertyMaterial plain;
+    plain.setValue(redMaterial());
+    Base::StringWriter plainWriter;
+    plainWriter.setForceXML(1);
+    plain.Save(plainWriter);
+    EXPECT_EQ(plainWriter.getString().find("finish="), std::string::npos);
+}
+
+TEST_F(PropertyMaterialListTest, aRunFromALaterBuildIsReadAndDropped)
+{
+    // Forward compatibility (docs/ShapeAppearanceDesign.md 9.4.1): a field
+    // added after this build must not make the document unreadable. Built
+    // by hand, because the claim is about bytes this writer cannot produce.
+    std::ostringstream file;
+    auto put = [&file](unsigned long value) { file << value << '\n'; };
+    put(0xffffffffUL);   // FieldStreamMarker: what follows is per field
+    put(2);              // entry count
+    // FieldDiffuse | FieldFinish | two fields this build has never heard of
+    put((1U << 1) | (1U << 11) | (1U << 12) | (1U << 14));
+    put(0);              // RunColors
+    put(2);
+    // A doc file read with no document version behind it reads as legacy, so
+    // the alpha byte means TRANSPARENCY here: 0 is opaque
+    put(0xff000000UL);
+    put(0x00ff0000UL);
+    put(4);              // RunFinish
+    put(2);
+    put(App::SurfaceFinish::Brushed);
+    file << 0.05F << '\n' << 0.002F << '\n' << 30.0F << '\n';
+    put(App::SurfaceFinish::Blasted);
+    file << 0.02F << '\n' << 0.004F << '\n' << 0.0F << '\n';
+    put(1);              // the first unknown field, shaped as floats
+    put(2);
+    file << 1.5F << '\n' << 2.5F << '\n';
+    put(3);              // the second, shaped as strings
+    put(1);
+    file << 5 << '\n' << "hello";   // an OutputStream string is a length and its bytes
+
+    App::PropertyMaterialList prop;
+    ASSERT_NO_THROW(restoreDocFile(prop, file.str()));
+    ASSERT_EQ(prop.getSize(), 2);
+    EXPECT_EQ(prop.getDiffuseColor(0).getPackedValue(), 0xff0000ffU);
+    EXPECT_EQ(prop.getDiffuseColor(1).getPackedValue(), 0x00ff00ffU);
+    EXPECT_EQ(prop.getFinish(0).pattern, App::SurfaceFinish::Brushed);
+    EXPECT_FLOAT_EQ(prop.getFinish(0).angle, 30.0F);
+    EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::Blasted);
+}
+
+TEST_F(PropertyMaterialListTest, aKeyFromALaterBuildIsSteppedOver)
+{
+    // The XML half of the same rule, and the sharper case: the unknown key
+    // sits BETWEEN two known ones, so it is skipped by its token count
+    // rather than by being last.
+    const std::string xml =
+        R"(<MaterialList count="3" fields="1">)"
+        "\n"
+        // alpha means transparency in a file this old, so 00 is opaque
+        "d 3 ff000000 00ff0000 0000ff00\n"
+        "z 6 1 2 3 4 5 6\n"          // a field added later, six tokens
+        "f 12 1 0.8 0.3 45 0 0 0 0 3 0.05 0.002 30\n"
+        "h 1 0.75\n"
+        "</MaterialList>";
+
+    App::PropertyMaterialList prop;
+    ASSERT_NO_THROW(restoreFromXML(prop, xml));
+    ASSERT_EQ(prop.getSize(), 3);
+    EXPECT_EQ(prop.getDiffuseColor(2).getPackedValue(), 0x0000ffffU);
+    EXPECT_FLOAT_EQ(prop.getShininess(0), 0.75F);
+    EXPECT_EQ(prop.getFinish(0).pattern, App::SurfaceFinish::Knurl);
+    EXPECT_FLOAT_EQ(prop.getFinish(0).pitch, 0.8F);
+    EXPECT_EQ(prop.getFinish(1).pattern, App::SurfaceFinish::None);
+    EXPECT_EQ(prop.getFinish(2).pattern, App::SurfaceFinish::Brushed);
+    EXPECT_FLOAT_EQ(prop.getFinish(2).angle, 30.0F);
 }
