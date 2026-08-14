@@ -323,10 +323,55 @@ view.saveRenderDump(path,
   harness can sweep buffer visualizations without touching view state.
 - **Sidecar metadata** (`<path>.json`): camera (position/orientation/type/
   scale), viewport size, backend type + renderer caps line, MSAA samples,
-  git describe, and the full set of active `Render_*`/`RenderDebug_*` values.
+  git describe, the full set of active `Render_*`/`RenderDebug_*` values,
+  and the **preferences those do not cover** (see below).
   A capture is thereby *reproducible*: the harness (or a human) can re-stage
   the exact frame from the sidecar alone. "I saw stipple once" becomes a
   checked-in test case.
+- **Why the preferences too.** A `Render_*` view property outranks the
+  parameter it was seeded from -- `_renderParam` materializes it once
+  when the renderer is selected and owns it after -- so the whole
+  `View/Render` group is covered by the property set above,
+  enumerations included (`AOMethod`, `MatcapPreset`, `WaterRippleType`
+  are materialized by hand beside the `_renderParam` calls, because the
+  generic helper cannot install the enum strings first).
+
+  What the properties do **not** cover is the viewer's own rig, which
+  has no property form at all: the lights, the scene ambient, the
+  background, the chrome that adds pixels to a capture, and the
+  `RenderCache` mode that decides whether a backend draws the frame in
+  the first place. Nor a view that never selected a renderer, which has
+  no `Render_*` properties to record. So the sidecar carries a
+  `preferences` object: the look-affecting subset of `View`, plus the
+  whole `View/Render` group beside it -- a parameter read against its
+  property is what says whether the property was merely seeded from it
+  or has since been overridden. Without this a sidecar can describe a
+  capture faithfully and still re-stage into a different picture, which
+  is how a stray scene-wide setting once passed for a renderer bug
+  (`docs/RenderEngine.md` 7).
+
+  ⚠️ Recording is not licence to write. Anything with a view property
+  is restaged **through the property**, never by moving the user's
+  global preference: the property is the per-view override that exists
+  for exactly this, and a preference write outlives the document and
+  the session. The verification harness is the one exception, and only
+  because it runs against a private throwaway config.
+
+  What goes out is what the config has **set**; a parameter still on its
+  built-in default does not appear, because that default lives in the
+  reading code, not in the group. Restaging into a fresh config -- what
+  `render-verify.sh` does -- is therefore exact, and restaging into a
+  config that has set a key this one left alone is best-effort.
+
+  Values are bucketed by parameter **type** (`bool`, `int`, `unsigned`,
+  `float`, `string`) rather than written flat, because a group is a set
+  of typed maps and JSON cannot tell an int from an unsigned. The two
+  are not interchangeable: `SetInt` on a key files it under `Integer`
+  while `GetUnsigned` goes on reading the untouched `Unsigned` entry
+  (measured -- `SetInt("BackgroundColor", 287454020)` then
+  `GetUnsigned` reads 0). Guessing the setter from the JSON value would
+  therefore replay every colour below `0x80000000` into the wrong slot
+  and leave the frame with its old background.
 
 `FC_BGFX_DEBUG_READBACK`'s stats (geometry-pixel count, average color) get the
 same treatment as a `getRenderStats()` Python call — cheap numeric

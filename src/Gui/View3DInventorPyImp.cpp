@@ -24,6 +24,7 @@
 
 #ifndef __InventorAll__
 # include "InventorAll.h"
+# include <set>
 # include <sstream>
 # include <QColor>
 # include <QDir>
@@ -767,6 +768,99 @@ static void writeRenderDumpSidecar(View3DInventor *view,
         }
     }
     root[QStringLiteral("properties")] = props;
+
+    // The parameters behind those properties, and the ones that never
+    // become properties at all.
+    //
+    // A Render_* view property outranks its parameter -- _renderParam
+    // materializes it once when the renderer is selected and owns it
+    // from then on -- so the whole View/Render group is already above,
+    // enumerations included (those are materialized by hand beside the
+    // _renderParam calls, since the generic helper cannot install the
+    // enum strings first).
+    //
+    // What is NOT: the viewer's own rig, which has no property form at
+    // all -- the lights, the scene ambient, the background, the chrome
+    // that adds pixels to a capture, and the render cache mode that
+    // decides whether a backend draws the frame in the first place.
+    // Nor a view that never selected a renderer, which has no Render_*
+    // properties to record. Without these a sidecar can describe a
+    // capture faithfully and still re-stage into a different picture.
+    // The View/Render group goes out beside them because a parameter
+    // read against its property is what says whether the property was
+    // merely seeded from it or has since been overridden.
+    //
+    // What is recorded is what the config has SET: a parameter still
+    // on its built-in default does not appear, because the default
+    // lives in the reading code and not in the group. Restaging into a
+    // fresh config (what the verification harness does) is therefore
+    // exact; restaging into a config that has set a key this one left
+    // alone is best-effort.
+    // Keyed by TYPE, not flat. A parameter group is a set of typed
+    // maps, and the types are not interchangeable: SetInt on a key
+    // files it under Integer while GetUnsigned goes on reading the
+    // untouched Unsigned entry (measured -- SetInt 287454020 then
+    // GetUnsigned reads 0). JSON cannot tell an int from an unsigned
+    // on its own, so a replayer guessing from the value would put
+    // every colour below 0x80000000 in the wrong slot; the bucket
+    // names the setter instead.
+    auto dumpGroup = [](const ParameterGrp::handle &grp,
+                        const std::set<std::string> *keep) {
+        QJsonObject obj;
+        auto want = [keep](const std::string &key) {
+            return !keep || keep->count(key) != 0;
+        };
+        auto bucket = [&obj, &want](const char *type, auto &&values,
+                                    auto &&convert) {
+            QJsonObject sub;
+            for (const auto &v : values) {
+                if (want(v.first))
+                    sub[QString::fromUtf8(v.first.c_str())] =
+                        convert(v.second);
+            }
+            if (!sub.isEmpty())
+                obj[QString::fromUtf8(type)] = sub;
+        };
+        bucket("bool", grp->GetBoolMap(),
+               [](bool v) { return QJsonValue(v); });
+        bucket("int", grp->GetIntMap(),
+               [](long v) { return QJsonValue(qint64(v)); });
+        bucket("unsigned", grp->GetUnsignedMap(),
+               [](unsigned long v) { return QJsonValue(qint64(v)); });
+        bucket("float", grp->GetFloatMap(),
+               [](double v) { return QJsonValue(v); });
+        bucket("string", grp->GetASCIIMap(), [](const std::string &v) {
+            return QJsonValue(QString::fromUtf8(v.c_str()));
+        });
+        return obj;
+    };
+    // The View group is mostly UI (navigation, cursors, dimensions), so
+    // only the keys that change what a frame looks like go out: the
+    // light rig and its ambient, the background, the chrome drawn over
+    // the scene, and the pipeline switches.
+    static const std::set<std::string> viewKeys = {
+        "RenderCache", "Orthographic", "UseVBO",
+        "TransparentObjectRenderType",
+        "EnableHeadlight", "HeadlightColor", "HeadlightDirection",
+        "HeadlightIntensity",
+        "EnableBacklight", "BacklightColor", "BacklightDirection",
+        "BacklightIntensity",
+        "EnableFillLight", "FillLightColor", "FillLightDirection",
+        "FillLightIntensity",
+        "AmbientLightColor", "AmbientLightIntensity",
+        "Gradient", "RadialGradient", "UseBackgroundColorMid",
+        "BackgroundColor", "BackgroundColor2", "BackgroundColor3",
+        "BackgroundColor4",
+        "ShowNaviCube", "CornerNaviCube", "CornerCoordSystem",
+        "CornerCoordSystemSize", "ShowAxisCross", "ShowFPS",
+    };
+    auto viewGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/View");
+    QJsonObject prefs;
+    prefs[QStringLiteral("View")] = dumpGroup(viewGrp, &viewKeys);
+    prefs[QStringLiteral("View/Render")] =
+        dumpGroup(viewGrp->GetGroup("Render"), nullptr);
+    root[QStringLiteral("preferences")] = prefs;
 
     QFile file(QString::fromUtf8((imagePath + ".json").c_str()));
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
