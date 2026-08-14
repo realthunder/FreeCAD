@@ -304,8 +304,27 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
     ViewProviderDragger::onChanged(prop);
 }
 
-TYPESYSTEM_SOURCE(Gui::PropertyShapeColor, App::PropertyColor)
-TYPESYSTEM_SOURCE(Gui::PropertyShapeMaterial, App::PropertyMaterial)
+// ⭐ Registered under a leading underscore, which is what marks a property
+// type as one container's own member rather than a value a user may add
+// (App::Property::isInternalType): both of these are names over
+// ShapeAppearance and are wired to it by the constructor below, so a
+// standalone instance -- all addDynamicProperty can make -- would be wired
+// to nothing. The C++ names are left alone; only the registered type name
+// carries the mark. Nothing reads the pre-underscore name: both types were
+// added during this development cycle, so no document anywhere states one.
+TYPESYSTEM_SOURCE_P(Gui::PropertyShapeColor)
+void Gui::PropertyShapeColor::init()
+{
+    initSubclass(Gui::PropertyShapeColor::classTypeId, "Gui::_PropertyShapeColor",
+                 "App::PropertyColor", &Gui::PropertyShapeColor::create);
+}
+
+TYPESYSTEM_SOURCE_P(Gui::PropertyShapeMaterial)
+void Gui::PropertyShapeMaterial::init()
+{
+    initSubclass(Gui::PropertyShapeMaterial::classTypeId, "Gui::_PropertyShapeMaterial",
+                 "App::PropertyMaterial", &Gui::PropertyShapeMaterial::create);
+}
 
 void PropertyShapeColor::setValue(const Base::Color &col)
 {

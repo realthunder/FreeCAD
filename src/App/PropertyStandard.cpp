@@ -4948,7 +4948,16 @@ void PropertyMaterialList::Paste(const Property &from)
 // PropertySurfaceFinishList
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-TYPESYSTEM_SOURCE(App::PropertySurfaceFinishList, App::Property)
+// Registered with a leading underscore: this is a serialization carrier the
+// material list builds on the stack, not a value a user may add
+// (App::Property::isInternalType).
+TYPESYSTEM_SOURCE_P(App::PropertySurfaceFinishList)
+void App::PropertySurfaceFinishList::init()
+{
+    initSubclass(App::PropertySurfaceFinishList::classTypeId,
+                 "App::_PropertySurfaceFinishList", "App::Property",
+                 &App::PropertySurfaceFinishList::create);
+}
 
 PropertySurfaceFinishList::PropertySurfaceFinishList() = default;
 

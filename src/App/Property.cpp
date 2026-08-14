@@ -25,6 +25,7 @@
 
 #ifndef _PreComp_
 #include <cassert>
+#include <cstring>
 #endif
 
 #include <atomic>
@@ -89,6 +90,17 @@ bool Property::hasName() const
 bool Property::isValidName(const char* name)
 {
     return name && name[0] != '\0';
+}
+
+bool Property::isInternalType(const char* typeName)
+{
+    if (!typeName || !typeName[0]) {
+        return false;
+    }
+    // The class name, not the namespace: "PartGui::_PropertyDiffuseColor"
+    const char* name = std::strrchr(typeName, ':');
+    name = name ? name + 1 : typeName;
+    return name[0] == '_';
 }
 
 void Property::SetRestoreError(const char * msg)

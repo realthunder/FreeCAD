@@ -69,6 +69,11 @@ DlgAddProperty::DlgAddProperty(QWidget* parent,
     Base::Type::getAllDerivedFrom(Base::Type::fromName("App::Property"),types);
     std::sort(types.begin(), types.end(), [](Base::Type a, Base::Type b) { return strcmp(a.getName(), b.getName()) < 0; });
     for(const auto &type : types) {
+        // Types that only work as one container's own member are not values a
+        // user may pick (App::Property::isInternalType); addDynamicProperty
+        // refuses them, so offering them here would only offer an error.
+        if (App::Property::isInternalType(type.getName()))
+            continue;
         bool filtered = false;
         for (auto &t : filters) {
             if (type.isDerivedFrom(t)) {

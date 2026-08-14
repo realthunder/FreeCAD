@@ -601,7 +601,17 @@ static bool shapeInstancingActive()
 //**************************************************************************
 // PropertyDiffuseColor -- a name over ShapeAppearance's diffuse field
 
-TYPESYSTEM_SOURCE(PartGui::PropertyDiffuseColor, App::PropertyColorList)
+// Registered with a leading underscore: this is a name over ShapeAppearance's
+// diffuse field, wired by the view provider to its own member, so it is not a
+// type a user may add (App::Property::isInternalType, and the note beside
+// Gui::PropertyShapeColor).
+TYPESYSTEM_SOURCE_P(PartGui::PropertyDiffuseColor)
+void PartGui::PropertyDiffuseColor::init()
+{
+    initSubclass(PartGui::PropertyDiffuseColor::classTypeId,
+                 "PartGui::_PropertyDiffuseColor", "App::PropertyColorList",
+                 &PartGui::PropertyDiffuseColor::create);
+}
 
 void PropertyDiffuseColor::setAppearance(App::PropertyMaterialList *appearance,
                                          const App::PropertyColor *shapeColor)

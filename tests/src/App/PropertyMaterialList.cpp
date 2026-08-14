@@ -1421,6 +1421,20 @@ TEST_F(PropertyMaterialListTest, anArchivedFinishWaitsForItsMaterials)
     EXPECT_EQ(restored.getFinish(0).pattern, App::SurfaceFinish::None);
 }
 
+TEST_F(PropertyMaterialListTest, internalPropertyTypesCannotBeAddedByAUser)
+{
+    // A type that only works as one container's member is marked by a leading
+    // underscore on its registered name, because Base::Type has nowhere to
+    // record such a thing
+    EXPECT_TRUE(App::Property::isInternalType("Gui::_PropertyShapeColor"));
+    EXPECT_TRUE(App::Property::isInternalType("App::_PropertySurfaceFinishList"));
+    EXPECT_TRUE(App::Property::isInternalType("_PropertyNoNamespace"));
+    EXPECT_FALSE(App::Property::isInternalType("App::PropertyMaterialList"));
+    EXPECT_FALSE(App::Property::isInternalType("App::PropertyFloat"));
+    EXPECT_FALSE(App::Property::isInternalType(""));
+    EXPECT_FALSE(App::Property::isInternalType(nullptr));
+}
+
 TEST_F(PropertyMaterialListTest, aPlainMaterialPropertyCarriesTheFinishToo)
 {
     // The single-value property is the other place a whole material is

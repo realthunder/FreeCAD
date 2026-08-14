@@ -186,6 +186,14 @@ Property* DynamicProperty::_addDynamicProperty(PropertyContainer &pc, const char
         FC_THROWM(Base::TypeError, "Invalid type "
                 << type << " for property " << pc.getFullName() << '.' << name);
     }
+    // A type that only works as one container's own member cannot be created
+    // standalone -- see Property::isInternalType. This is also the guard on
+    // the undo path: applying an undo of a dynamic property REMOVAL re-creates
+    // the property through this same function.
+    if (Property::isInternalType(propType.getName())) {
+        FC_THROWM(Base::TypeError, "Type " << propType.getName()
+                << " is internal and cannot be added as a property");
+    }
 
     void* propInstance = propType.createInstance();
     if (!propInstance) {
