@@ -2129,6 +2129,12 @@ RendererBridge::translateDescentOrderBatch(App::PropertyContainer *)
     return int(RenderParams::getDescentOrderBatch());
 }
 
+float
+RendererBridge::translateLevelBudgetDeadband(App::PropertyContainer *)
+{
+    return float(RenderParams::getLevelBudgetDeadband());
+}
+
 bool
 RendererBridge::translateShapeVertices(App::PropertyContainer *)
 {

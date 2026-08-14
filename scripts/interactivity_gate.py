@@ -369,7 +369,12 @@ def run():
                 live, entries = float(m.group(1)), int(m.group(2))
                 if entries == 0:
                     continue
-                moves = sum(int(m.group(i)) for i in (3, 4, 5))
+                # Quiet = no DESCENT moves. Refines are the ladder
+                # buying quality back; a stable under-budget run keeps
+                # climbing for a while and must not read as unsettled
+                # (a 58.8/64MB run once churned its whole 600s window
+                # on refine moves alone).
+                moves = sum(int(m.group(i)) for i in (4, 5))
                 window.append((live, moves))
                 window[:] = window[-4:]
             # Quiet alone is not settled: the ledger holds the sweep

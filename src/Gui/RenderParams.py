@@ -362,6 +362,26 @@ Params = [
         "assembly a 4x coarser tessellation removed only 19% of the\n"
         "primitives. 1 or less turns dynamic scaling off, and then a\n"
         "budget under what rung 0 costs cannot be honoured."),
+    ParamFloat('LevelBudgetDeadband',  0.03, title='GPU budget deadband',
+        doc="The rest band above the GPU memory budget, as a fraction of\n"
+        "it, inside which the level plan orders NO downgrades. The sweep\n"
+        "triggers only past budget*(1+this) and still corrects back to\n"
+        "the budget itself, so the band is hysteresis, not a higher\n"
+        "budget.\n"
+        "Without it an equilibrium that lands ON the budget line has\n"
+        "nowhere to rest: the plan orders 2-3 downgrades, the release\n"
+        "staircase re-wants the quality back, and the ladder dithers\n"
+        "0.2-0.4MB across the line for as long as the process lives --\n"
+        "measured on the rack model as the difference between a run\n"
+        "that settles in ~250s and one that churns its whole 600s\n"
+        "window. Climbs already stop AT the budget (Climb hard limit),\n"
+        "so inside the band neither direction acts and the plans go\n"
+        "genuinely quiet; pressure counts as standing there, which\n"
+        "keeps the raised tolerance and the edge gate latched exactly\n"
+        "as they were while the equilibrium was reached.\n"
+        "The band tolerates standing that fraction over the stated\n"
+        "budget (about 2MB at 64MB). 0 restores the bare line and with\n"
+        "it the dither."),
     ParamFloat('LevelScaleBoxError',  0.25, title='Level scale box error',
         doc="The scaled error at which an object stops being tessellated\n"
         "at all and is drawn as its bounding box (12 triangles whatever\n"

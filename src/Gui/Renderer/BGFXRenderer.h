@@ -127,6 +127,7 @@ public:
     virtual void setDowngradeLedger(bool on) override;
     virtual void setClimbAdmission(bool hardLimit, int batch) override;
     virtual void setDescentOrderBatch(int batch) override;
+    virtual void setLevelBudgetDeadband(float fraction) override;
 #endif
 
 #ifdef FC_RENDERER_STANDALONE

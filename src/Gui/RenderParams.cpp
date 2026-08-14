@@ -72,6 +72,7 @@ public:
     bool DowngradeLedger;
     long LevelCount;
     double LevelScale;
+    double LevelBudgetDeadband;
     double LevelScaleBoxError;
     bool SimplifyExhausted;
     bool SimplifyMergeParts;
@@ -210,6 +211,8 @@ public:
         funcs["LevelCount"] = &RenderParamsP::updateLevelCount;
         LevelScale = this->handle->GetFloat("LevelScale", 2.0);
         funcs["LevelScale"] = &RenderParamsP::updateLevelScale;
+        LevelBudgetDeadband = this->handle->GetFloat("LevelBudgetDeadband", 0.03);
+        funcs["LevelBudgetDeadband"] = &RenderParamsP::updateLevelBudgetDeadband;
         LevelScaleBoxError = this->handle->GetFloat("LevelScaleBoxError", 0.25);
         funcs["LevelScaleBoxError"] = &RenderParamsP::updateLevelScaleBoxError;
         SimplifyExhausted = this->handle->GetBool("SimplifyExhausted", true);
@@ -493,6 +496,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelScale(RenderParamsP *self) {
         self->LevelScale = self->handle->GetFloat("LevelScale", 2.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelBudgetDeadband(RenderParamsP *self) {
+        self->LevelBudgetDeadband = self->handle->GetFloat("LevelBudgetDeadband", 0.03);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLevelScaleBoxError(RenderParamsP *self) {
@@ -1749,6 +1756,52 @@ void RenderParams::setLevelScale(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeLevelScale() {
     instance()->handle->RemoveFloat("LevelScale");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelBudgetDeadband() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"The rest band above the GPU memory budget, as a fraction of\n"
+"it, inside which the level plan orders NO downgrades. The sweep\n"
+"triggers only past budget*(1+this) and still corrects back to\n"
+"the budget itself, so the band is hysteresis, not a higher\n"
+"budget.\n"
+"Without it an equilibrium that lands ON the budget line has\n"
+"nowhere to rest: the plan orders 2-3 downgrades, the release\n"
+"staircase re-wants the quality back, and the ladder dithers\n"
+"0.2-0.4MB across the line for as long as the process lives --\n"
+"measured on the rack model as the difference between a run\n"
+"that settles in ~250s and one that churns its whole 600s\n"
+"window. Climbs already stop AT the budget (Climb hard limit),\n"
+"so inside the band neither direction acts and the plans go\n"
+"genuinely quiet; pressure counts as standing there, which\n"
+"keeps the raised tolerance and the edge gate latched exactly\n"
+"as they were while the equilibrium was reached.\n"
+"The band tolerates standing that fraction over the stated\n"
+"budget (about 2MB at 64MB). 0 restores the bare line and with\n"
+"it the dither.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLevelBudgetDeadband() {
+    return instance()->LevelBudgetDeadband;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLevelBudgetDeadband() {
+    const static double def = 0.03;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelBudgetDeadband(const double &v) {
+    instance()->handle->SetFloat("LevelBudgetDeadband",v);
+    instance()->LevelBudgetDeadband = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelBudgetDeadband() {
+    instance()->handle->RemoveFloat("LevelBudgetDeadband");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

@@ -608,6 +608,36 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LevelBudgetDeadband
+    ///
+    /// The rest band above the GPU memory budget, as a fraction of
+    /// it, inside which the level plan orders NO downgrades. The sweep
+    /// triggers only past budget*(1+this) and still corrects back to
+    /// the budget itself, so the band is hysteresis, not a higher
+    /// budget.
+    /// Without it an equilibrium that lands ON the budget line has
+    /// nowhere to rest: the plan orders 2-3 downgrades, the release
+    /// staircase re-wants the quality back, and the ladder dithers
+    /// 0.2-0.4MB across the line for as long as the process lives --
+    /// measured on the rack model as the difference between a run
+    /// that settles in ~250s and one that churns its whole 600s
+    /// window. Climbs already stop AT the budget (Climb hard limit),
+    /// so inside the band neither direction acts and the plans go
+    /// genuinely quiet; pressure counts as standing there, which
+    /// keeps the raised tolerance and the edge gate latched exactly
+    /// as they were while the equilibrium was reached.
+    /// The band tolerates standing that fraction over the stated
+    /// budget (about 2MB at 64MB). 0 restores the bare line and with
+    /// it the dither.
+    static const double & getLevelBudgetDeadband();
+    static const double & defaultLevelBudgetDeadband();
+    static void removeLevelBudgetDeadband();
+    static void setLevelBudgetDeadband(const double &v);
+    static const char *docLevelBudgetDeadband();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LevelScaleBoxError
     ///
     /// The scaled error at which an object stops being tessellated

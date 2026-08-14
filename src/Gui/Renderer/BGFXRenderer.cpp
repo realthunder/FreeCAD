@@ -11477,7 +11477,23 @@ public:
                     // 45<->120MB wave on a still camera -- and a
                     // controller fed by it chased its own sampling.
                     const size_t gpuUsed = size_t(gpu.total);
-                    if (gpuBudget && gpuUsed > gpuBudget) {
+                    // The rest band (Render_LevelBudgetDeadband): the
+                    // sweep triggers only past budget*(1+deadband) and
+                    // corrects back to the budget, so an equilibrium
+                    // that lands just over the line may STAND -- climbs
+                    // already stop at the budget, and inside the band
+                    // neither direction acts. Correcting to the same
+                    // line the sweep triggers on is a dither: measured
+                    // 2-3 downgrades per plan forever when a converged
+                    // ladder sat 0.2-0.4MB over, deciding whether a
+                    // run settles or churns to its timeout. Pressure
+                    // still stands in the band (underPressure below
+                    // reads the bare budget), holding the raised
+                    // tolerance and the edge gate as they were.
+                    const size_t dgTrigger = gpuBudget
+                        + size_t(double(gpuBudget)
+                                 * double(levelBudgetDeadband));
+                    if (gpuBudget && gpuUsed > dgTrigger) {
                         // ...minus what previous sweeps have already
                         // ordered freed but the meter has not admitted
                         // yet: a drop's fine buffers leave `live` only
@@ -17229,6 +17245,11 @@ public:
     /// DescentOrderBatch parameter: how many descents one plan pass may
     /// order (0 = uncapped); see planMeshDemotes' maxOrders.
     int descentOrderBatch = 64;
+    /// LevelBudgetDeadband parameter: the rest band above the GPU
+    /// budget, as a fraction of it, inside which the downgrade sweep
+    /// does not trigger (it still corrects back to the budget when it
+    /// does). See the plan callback for the dither it removes.
+    float levelBudgetDeadband = 0.03f;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
 
@@ -17841,7 +17862,17 @@ bool BGFXRenderer::drivesMeshLevels() const
 
 void BGFXRenderer::setGpuMemoryBudget(size_t bytes)
 {
+    if (pimpl->gpuBudget == bytes)
+        return;
     pimpl->gpuBudget = bytes;
+#ifndef FC_RENDERER_STANDALONE
+    // A changed budget is a new question and the plan must be made to
+    // ask it. It used to be woken by its own boundary dither -- over
+    // budget, a sweep, a markDirty, forever -- and the deadband
+    // removed exactly that: a live budget drop on a still camera then
+    // slept unnoticed for a whole 600s measurement window.
+    pimpl->levelPlanner.markDirty();
+#endif
 }
 
 void BGFXRenderer::setLevelDebug(bool on)
@@ -17868,6 +17899,17 @@ void BGFXRenderer::setClimbAdmission(bool hardLimit, int batch)
 void BGFXRenderer::setDescentOrderBatch(int batch)
 {
     pimpl->descentOrderBatch = batch > 0 ? batch : 0;
+}
+
+void BGFXRenderer::setLevelBudgetDeadband(float fraction)
+{
+    const float band = fraction > 0.0f ? fraction : 0.0f;
+    if (pimpl->levelBudgetDeadband == band)
+        return;
+    pimpl->levelBudgetDeadband = band;
+    // Same staleness as the budget: narrowing the band can put the
+    // standing total outside it, and only a plan pass can act on that.
+    pimpl->levelPlanner.markDirty();
 }
 #endif
 

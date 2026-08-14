@@ -1731,6 +1731,14 @@ public:
     /// the hook, so a pass is bounded and the replan after the batch
     /// lands takes the rest. 0 or less removes the cap.
     virtual void setDescentOrderBatch(int batch) { (void)batch; }
+    /// The rest band above the GPU budget, as a fraction of it
+    /// (Render_LevelBudgetDeadband): the downgrade sweep triggers only
+    /// past budget*(1+fraction) and still corrects back to the budget,
+    /// so an equilibrium that lands just over the line may stand --
+    /// climbs already stop at the budget, and inside the band neither
+    /// direction acts. 0 restores the bare line and with it the
+    /// boundary dither.
+    virtual void setLevelBudgetDeadband(float fraction) { (void)fraction; }
     /// The display gates of the memory response
     /// (docs/SceneStreaming.md #13b), pushed in like every other
     /// parameter -- this library knows nothing of RenderParams.

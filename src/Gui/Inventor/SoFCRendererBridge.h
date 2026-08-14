@@ -179,6 +179,10 @@ GuiExport bool translateDowngradeLedger(App::PropertyContainer * view);
 GuiExport bool translateClimbHardLimit(App::PropertyContainer * view);
 GuiExport int translateClimbAdmitBatch(App::PropertyContainer * view);
 GuiExport int translateDescentOrderBatch(App::PropertyContainer * view);
+/// The rest band above the GPU budget inside which the downgrade sweep
+/// does not trigger (docs/SceneStreaming.md #13c.6) -- what lets an
+/// equilibrium that lands on the budget line stand instead of dither.
+GuiExport float translateLevelBudgetDeadband(App::PropertyContainer * view);
 GuiExport bool translateShapeVertices(App::PropertyContainer * view);
 GuiExport bool translatePressureDropEdges(App::PropertyContainer * view);
 /// Whether the element gates should suppress both classes outright
