@@ -185,10 +185,14 @@ void queueMeshDescentWork(const void *tag,
 /// snapshot, a resident-rung rebuild -- measured second-long bursts
 /// when run in place. Items are keyed by \a tag: unregistering or
 /// re-registering the tag purges what has not run (the bodies capture
-/// their view provider, and the destructor unregisters). Each item
-/// counts as an in-flight descent from enqueue to run/purge, so the
-/// downgrade ledger's write-off horizon covers the deferral.
-void queueLevelGuiWork(const void *tag, std::function<void()> body);
+/// their view provider, and the destructor unregisters). A descent
+/// item counts as an in-flight descent from enqueue to run/purge, so
+/// the downgrade ledger's write-off horizon covers the deferral; a
+/// climb body passes \a descent false, because the settle counter it
+/// would advance is what the ledger judges its ORDERS' completion by,
+/// and a climb settling is not a downgrade landing.
+void queueLevelGuiWork(const void *tag, std::function<void()> body,
+                       bool descent = true);
 
 /// The coarse-first tessellation level for display builds; negative
 /// means tessellate at the full display deviation as always. Resolved

@@ -208,6 +208,9 @@ std::deque<std::function<void()>> s_landingQueue;
 struct GuiWorkItem {
     const void *tag = nullptr;
     std::function<void()> body;
+    /// Whether the item counts in the registry's descent tally (a
+    /// paced climb body does not -- see queueLevelGuiWork).
+    bool descent = true;
 };
 std::deque<GuiWorkItem> s_guiWork;
 bool s_landingScheduled = false;
@@ -285,7 +288,8 @@ void pumpLandings()
         item.body();
         acc.bodySec += since(t0, now());
         ++acc.bodies;
-        Render::MeshSourceRegistry::instance().noteDescentSettled();
+        if (item.descent)
+            Render::MeshSourceRegistry::instance().noteDescentSettled();
         ranGui = true;
     }
     ++acc.turns;
@@ -313,8 +317,10 @@ void purgeLevelGuiWork(const void *tag)
     auto it = s_guiWork.begin();
     while (it != s_guiWork.end()) {
         if (it->tag == tag) {
+            const bool counted = it->descent;
             it = s_guiWork.erase(it);
-            Render::MeshSourceRegistry::instance().noteDescentSettled();
+            if (counted)
+                Render::MeshSourceRegistry::instance().noteDescentSettled();
         }
         else {
             ++it;
@@ -642,12 +648,14 @@ void PartGui::queueMeshDescentWork(const void *tag,
     enqueueLevelJob(std::move(job));
 }
 
-void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body)
+void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
+                                bool descent)
 {
     if (!body)
         return;
-    Render::MeshSourceRegistry::instance().noteDescentQueued();
-    s_guiWork.push_back({tag, std::move(body)});
+    if (descent)
+        Render::MeshSourceRegistry::instance().noteDescentQueued();
+    s_guiWork.push_back({tag, std::move(body), descent});
     scheduleLandingPump();
 }
 
@@ -723,16 +731,30 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
         const void *primary = faceTag ? faceTag : lineTag;
         auto fired = std::make_shared<std::atomic<bool>>(false);
         // The climb goes through the worker — unless a finer rung is
-        // still resident (a downgraded source): then the apply runs
-        // right here, GUI thread, with the live shape itself —
-        // transferMeshLevels reads same-shape as "activate the finest
-        // resident rung", no tessellation at all.
+        // still resident (a downgraded source): then the apply needs
+        // no tessellation at all -- transferMeshLevels reads same-shape
+        // as "activate the finest resident rung". It is still a full
+        // GUI rebuild, and a plan admits up to a whole climb batch in
+        // one callback, so the body is paced through the landing pump
+        // rather than run in place (a batch of these was the one
+        // rebuild path left outside the pump: measured as a 4.2s
+        // event-loop turn against the pump's worst 1.7s). The fired
+        // flag doubles as the cancel -- a de-want resets it and the
+        // queued body declines to run -- and the item is not a descent:
+        // the settle tally feeds the downgrade ledger.
         hooks.refine = [primary, st, fired,
                         apply = std::move(onExactBuilt)]() {
             if (fired->exchange(true))
                 return;
             if (meshLevelFinerResident(st->shape)) {
-                apply(st->shape);
+                queueLevelGuiWork(
+                    primary,
+                    [fired, st, apply]() {
+                        if (!fired->load())
+                            return;
+                        apply(st->shape);
+                    },
+                    /*descent*/ false);
                 return;
             }
             queueExactRefine(primary, st, apply);
