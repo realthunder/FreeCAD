@@ -3312,6 +3312,41 @@ QString Application::replaceVariablesInQss(QString qssText)
         }
     }
 
+    // Two derived shades of accent 1, for states that must not paint the same
+    // fill as a selection. Hover is the case that matters: a hovered row that
+    // reaches for @ThemeAccentColor1 is indistinguishable from a selected one,
+    // and the three accent parameters all default to the same color, so a
+    // sheet cannot tell them apart by reaching for accent 2 instead.
+    //
+    // Each sheet picks the shade that moves away from its own background --
+    // Light.qss the pale one, Dark.qss the deep one -- which is knowledge only
+    // the sheet has. A theme that defines either name itself wins; these are
+    // only filled in where it did not.
+    const unsigned long accent = hGrp->GetUnsigned("ThemeAccentColor1", DefaultAccentColor);
+    auto blend = [accent](int towards, double ratio) {
+        auto mix = [towards, ratio](unsigned long channel) {
+            const double from = static_cast<double>(channel);
+            return static_cast<int>(from + (towards - from) * ratio + 0.5);
+        };
+        // The parameter packs the color as 0xRRGGBBAA; alpha is dropped.
+        return QStringLiteral("#%1%2%3")
+            .arg(mix((accent >> 24) & 0xFF), 2, 16, QLatin1Char('0'))
+            .arg(mix((accent >> 16) & 0xFF), 2, 16, QLatin1Char('0'))
+            .arg(mix((accent >> 8) & 0xFF), 2, 16, QLatin1Char('0'))
+            .toUpper();
+    };
+    auto defined = [&variables](const char* name) {
+        return std::any_of(variables.begin(), variables.end(), [name](const auto& variable) {
+            return variable.first == name;
+        });
+    };
+    if (!defined("ThemeAccentColorLight")) {
+        variables.emplace_back("ThemeAccentColorLight", blend(0xFF, 0.45));
+    }
+    if (!defined("ThemeAccentColorDark")) {
+        variables.emplace_back("ThemeAccentColorDark", blend(0x00, 0.35));
+    }
+
     // Longest name first, or "@Accent" would eat the front of "@AccentDark".
     std::sort(variables.begin(), variables.end(), [](const auto& lhs, const auto& rhs) {
         return lhs.first.size() > rhs.first.size();

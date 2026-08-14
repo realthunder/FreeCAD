@@ -920,7 +920,7 @@ background-position: center center;
 
 QToolButton#qt_toolbar_ext_button:hover {
 /*background-image: url(qss:images_dark-light/more_light.svg);*/
-background-color: @ThemeAccentColor1;
+background-color: @ThemeAccentColorDark;
 }
 
 QToolButton#qt_toolbar_ext_button:on {
@@ -993,9 +993,10 @@ QAbstractSpinBox::down-arrow:hover {
   image: url(qss:images_dark-light/down_arrow_lighter.svg);
 }
 
+/* Same hover affordance as QComboBox: the resting border is already a
+   transparent 1px, so tinting it cannot move anything under the pointer. */
 QAbstractSpinBox:hover {
-  /*border: 1px solid @ThemeAccentColor1;
-  color: White;*/
+  border: 1px solid @ThemeAccentColor1;
 }
 
 QAbstractSpinBox:focus {
@@ -1239,8 +1240,11 @@ QToolButton:checked:disabled {
   outline: none;
 }
 
+/* Hover and checked must not paint the same fill, or a hovered button reads as
+   an active one. Hover on an unchecked button gets the deep shade, hover on a
+   checked one lifts the accent it already has. */
 QToolButton:checked:hover {
-  background-color: @ThemeAccentColor1;
+  background-color: @ThemeAccentColorLight;
   color: White;
 }
 
@@ -1254,7 +1258,7 @@ QToolButton:checked:selected {
 }
 
 QToolButton:hover {
-  background-color: @ThemeAccentColor1;
+  background-color: @ThemeAccentColorDark;
   color: White;
 }
 
@@ -1940,10 +1944,13 @@ QTabBar::tab:top:selected, QDockWidget QTabBar::tab:top:selected {
   border-right: 1px solid #696969;
   }
 
+/* A selected tab is marked by a 4px accent edge, so filling a hovered tab with
+   the accent itself made hover read as more selected than selection. The four
+   orientations below all use the deep shade instead. */
 QTabBar::tab:top:!selected:hover, QDockWidget QTabBar::tab:top:!selected:hover {
     /*border: 1px solid @ThemeAccentColor1;*/
   border: 0px solid @ThemeAccentColor1;
-  background-color: @ThemeAccentColor1;
+  background-color: @ThemeAccentColorDark;
   /* Fixes spyder-ide/spyder#9766 and #243 */
   padding-left: 3px;
   padding-right: 3px;
@@ -1973,7 +1980,7 @@ QTabBar::tab:bottom:selected, QDockWidget QTabBar::tab:bottom:selected {
 QTabBar::tab:bottom:!selected:hover, QDockWidget QTabBar::tab:bottom:!selected:hover {
 /*border: 1px solid @ThemeAccentColor1;*/
   border: 0px solid @ThemeAccentColor1;
-  background-color: @ThemeAccentColor1;
+  background-color: @ThemeAccentColorDark;
   /* Fixes spyder-ide/spyder#9766 and #243 */
   padding-left: 3px;
   padding-right: 3px;
@@ -1997,7 +2004,7 @@ QTabBar::tab:left:selected, QDockWidget QTabBar::tab:left:selected {
 
 QTabBar::tab:left:!selected:hover, QDockWidget QTabBar::tab:left:!selected:hover {
   border: 0px solid @ThemeAccentColor1;
-  background-color: @ThemeAccentColor1;
+  background-color: @ThemeAccentColorDark;
   /* Fixes different behavior #271 */
   margin-right: 0px;
   padding-right: -1px;
@@ -2021,7 +2028,7 @@ QTabBar::tab:right:selected, QDockWidget QTabBar::tab:right:selected {
 
 QTabBar::tab:right:!selected:hover, QDockWidget QTabBar::tab:right:!selected:hover {
   border: 0px solid @ThemeAccentColor1;
-  background-color: @ThemeAccentColor1;
+  background-color: @ThemeAccentColorDark;
   /* Fixes different behavior #271 */
   margin-left: 0px;
   padding-left: 0px;
@@ -2281,13 +2288,16 @@ QColumnView::item:selected:!active {
   background-color: #353535;
 }
 
+/* The deep shade, not the accent itself: :selected:active above paints the
+   accent, and a hovered row filled the same way is indistinguishable from a
+   selected one. */
 QTreeView::item:!selected:hover,
 QListView::item:!selected:hover,
 QTableView::item:!selected:hover,
 QColumnView::item:!selected:hover {
   outline: 0;
   color: White;
-  background-color: @ThemeAccentColor1;
+  background-color: @ThemeAccentColorDark;
 }
 
 QTableCornerButton::section {
