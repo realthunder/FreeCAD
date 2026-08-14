@@ -257,6 +257,12 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
     else {
         bgfx::setUniform(u_localLight, localLightView, kLocalLights);
     }
+    // The ordinary Coin lights. Overlays are UI chrome shaded flat
+    // (params.y = 0 below), so they never reach the lighting loop and
+    // do not need the zeroed-array treatment the effect lights get.
+    bgfx::setUniform(u_viewLight, viewLightView, kViewLights);
+    bgfx::setUniform(u_viewLightColor, viewLightColorI, kViewLights);
+    bgfx::setUniform(u_viewLightAtt, viewLightAtt, kViewLights);
     bgfx::setUniform(u_localLightColor, localLightColorI,
                      kLocalLights);
     // Bulb shadow tiles: matrices + atlas for the shadowed bulb

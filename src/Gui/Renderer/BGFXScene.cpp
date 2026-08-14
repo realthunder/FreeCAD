@@ -49,6 +49,7 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
     snap.pbrconf = pbrconf;
     snap.bumpconf = bumpconf;
     snap.lightconf = lightconf;
+    snap.viewlightconf = viewlightconf;
     snap.volconf = volconf;
     snap.waterconf = waterconf;
     snap.bloomconf = bloomconf;

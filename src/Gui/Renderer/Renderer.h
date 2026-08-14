@@ -820,6 +820,77 @@ struct LightConfig {
     bool operator!=(const LightConfig &o) const { return !(*this == o); }
 };
 
+/// Maximum number of ordinary Coin lights carried per frame: Coin's own
+/// cap, so the feed never has to drop one. It fits the fragment
+/// shader's uniform budget with room left -- the mesh program totals
+/// 195 of the 224 vec4 an ES3/WebGL2 device has to guarantee with all
+/// eight, its two heavyweights being the bulb shadow matrices (64) and
+/// the surface finish frame palette (48).
+///
+/// Keep in step with VIEW_LIGHTS in bgfx/shaders/fc_mesh_lighting.sh,
+/// which cannot see this header (the same hand-paired arrangement as
+/// LOCAL_LIGHTS / kLocalLights and BULB_SHADOW_TILES).
+static constexpr int MaxViewLights = 8;
+
+/// One ordinary light of the Coin traversal: the viewer's headlight and
+/// backlight, and any SoDirectionalLight / SoPointLight a document puts
+/// in the graph. Distinct from LightConfig, which is the *scene* light
+/// -- the single shadow-casting one the Shadow draw style (or
+/// Render_Light) supplies, with a shadow map, sun disc and ground of its
+/// own. These have none of that: they light, and nothing else.
+struct ViewLight {
+    /// The way the light travels, world space, normalized. For a
+    /// positional light this is unused.
+    float direction[3] = {0.0f, 0.0f, -1.0f};
+    /// World-space position of a positional (SoPointLight) light.
+    float position[3] = {0.0f, 0.0f, 0.0f};
+    bool positional = false;
+    /// Distance attenuation, in Coin's SoEnvironment::attenuation order
+    /// and units: squared, linear, constant (default 0, 0, 1 = none).
+    /// Kept in that order rather than re-sorted to the GL one so the
+    /// value can be compared against the node it came from. Positional
+    /// lights only -- a directional light has no distance.
+    float attenuation[3] = {0.0f, 0.0f, 1.0f};
+    uint32_t color = 0xffffffff;   ///< packed 0xRRGGBBAA
+    float intensity = 1.0f;
+
+    bool operator==(const ViewLight &o) const {
+        return std::equal(direction, direction + 3, o.direction)
+            && std::equal(position, position + 3, o.position)
+            && positional == o.positional
+            && std::equal(attenuation, attenuation + 3, o.attenuation)
+            && color == o.color && intensity == o.intensity;
+    }
+    bool operator!=(const ViewLight &o) const { return !(*this == o); }
+};
+
+/// The ordinary Coin lights of a frame (see ViewLight).
+///
+/// `fed` is what separates "the feed resolved the lighting and there is
+/// none" from "nothing filled this in". The first has to render dark --
+/// it is what EnableHeadlight off means, and honoring it is the point
+/// of carrying this at all. The second is an old scene dump or a
+/// consumer that predates the struct, and has to keep rendering the way
+/// it always did, so backends substitute their fixed white headlight
+/// down the view axis. Leaving `fed` false by default is what makes
+/// that the safe direction.
+struct ViewLightConfig {
+    bool fed = false;
+    int count = 0;
+    ViewLight lights[MaxViewLights];
+
+    bool operator==(const ViewLightConfig &o) const {
+        if (fed != o.fed || count != o.count)
+            return false;
+        for (int i = 0; i < count; ++i) {
+            if (lights[i] != o.lights[i])
+                return false;
+        }
+        return true;
+    }
+    bool operator!=(const ViewLightConfig &o) const { return !(*this == o); }
+};
+
 /// Per-frame volumetric lighting (light shaft) configuration (like
 /// AOConfig there is no GL-renderer counterpart). While enabled and a
 /// scene light with a shadow map is active (LightConfig::valid), the
@@ -1740,6 +1811,12 @@ public:
     virtual void setBumpConfig(const BumpConfig &config) { (void)config; }
     /// Per-frame scene light (Shadow draw style).
     virtual void setLightConfig(const LightConfig &config) { (void)config; }
+    /// Per-frame ordinary Coin lights (viewer headlight and backlight,
+    /// document SoDirectionalLight / SoPointLight). A backend that does
+    /// not implement this keeps its fixed headlight, which is also what
+    /// an unfed config asks for.
+    virtual void setViewLightConfig(const ViewLightConfig &config)
+    { (void)config; }
     /// Per-frame volumetric lighting (light shaft) configuration.
     virtual void setVolumetricConfig(const VolumetricConfig &config)
     { (void)config; }

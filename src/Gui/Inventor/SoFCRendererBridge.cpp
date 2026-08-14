@@ -57,8 +57,10 @@
 #include "SoFCRenderMaterial.h"
 #include "../Renderer/MeshSource.h"
 #include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoPointLight.h>
 #include <Inventor/nodes/SoSpotLight.h>
 #include <Inventor/annex/FXViz/nodes/SoShadowDirectionalLight.h>
+#include <Inventor/elements/SoEnvironmentElement.h>
 #include <Inventor/elements/SoLightElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/nodes/SoTexture2.h>
@@ -1869,6 +1871,81 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
     res.sunDiscSize = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "SunDiscSize",
             RenderParams::getSunDiscSize()));
+    return res;
+}
+
+Render::ViewLightConfig
+RendererBridge::translateViewLightConfig(SoState * state)
+{
+    // The ordinary lights of the traversal. The viewer's headlight and
+    // backlight are plain SoDirectionalLights sitting in the root
+    // *before* the camera, which is what makes a headlight a headlight:
+    // with no viewing transform on the state yet, its direction is
+    // fixed in eye space and the unwinding below hands the backend the
+    // world-space direction that currently corresponds to it. So the
+    // camera tracking costs nothing here -- it falls out of the same
+    // matrix the scene light uses.
+    //
+    // Exactly the complement of translateLightConfig: it claims
+    // SoShadowDirectionalLight and SoSpotLight for the single
+    // shadow-casting scene light, so those are the two skipped here.
+    Render::ViewLightConfig res;
+    res.fed = true;
+    const SoNodeList & lights = SoLightElement::getLights(state);
+    for (int i = 0; i < lights.getLength(); ++i) {
+        if (res.count >= Render::MaxViewLights)
+            break;
+        SoNode * node = lights[i];
+        if (!node || !node->isOfType(SoLight::getClassTypeId()))
+            continue;
+        auto light = static_cast<const SoLight *>(node);
+        // EnableHeadlight off is an `on` of FALSE, and dropping the
+        // light here is the whole of honoring it.
+        if (!light->on.getValue())
+            continue;
+        // The scene light's node types, claimed by translateLightConfig.
+        // SoShadowDirectionalLight derives from SoDirectionalLight, so
+        // it has to be rejected before the directional test below.
+        if (node->isOfType(SoShadowDirectionalLight::getClassTypeId())
+                || node->isOfType(SoSpotLight::getClassTypeId()))
+            continue;
+
+        Render::ViewLight out;
+        SbVec3f dir(0.0f, 0.0f, -1.0f);
+        SbVec3f pos(0.0f, 0.0f, 0.0f);
+        if (node->isOfType(SoDirectionalLight::getClassTypeId())) {
+            dir = static_cast<const SoDirectionalLight *>(light)
+                ->direction.getValue();
+        } else if (node->isOfType(SoPointLight::getClassTypeId())) {
+            auto point = static_cast<const SoPointLight *>(light);
+            out.positional = true;
+            pos = point->location.getValue();
+            // Coin keeps distance attenuation on SoEnvironment, not on
+            // the light, so it is a state read rather than a field.
+            const SbVec3f & att =
+                SoEnvironmentElement::getLightAttenuation(state);
+            for (int j = 0; j < 3; ++j)
+                out.attenuation[j] = att[j];
+        } else {
+            continue;
+        }
+        // Same view-reference unwinding as the scene light: the light
+        // element's matrices are model * viewing, and the backend wants
+        // world space because it re-applies its own view matrix.
+        SbMatrix mat = SoLightElement::getMatrix(state, i);
+        mat.multRight(SoViewingMatrixElement::get(state).inverse());
+        mat.multDirMatrix(dir, dir);
+        mat.multVecMatrix(pos, pos);
+        if (dir.length() > 0.0f)
+            dir.normalize();
+        for (int j = 0; j < 3; ++j) {
+            out.direction[j] = dir[j];
+            out.position[j] = pos[j];
+        }
+        out.color = light->color.getValue().getPackedValue(0.0f);
+        out.intensity = light->intensity.getValue();
+        res.lights[res.count++] = out;
+    }
     return res;
 }
 

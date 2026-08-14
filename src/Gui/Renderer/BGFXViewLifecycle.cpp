@@ -477,6 +477,15 @@ void BGFXView::init(bool keepShared)
     u_localLightColor = bgfx::createUniform("u_localLightColor",
                                            bgfx::UniformType::Vec4,
                                            kLocalLights);
+    u_viewLight = bgfx::createUniform("u_viewLight",
+                                      bgfx::UniformType::Vec4,
+                                      kViewLights);
+    u_viewLightColor = bgfx::createUniform("u_viewLightColor",
+                                           bgfx::UniformType::Vec4,
+                                           kViewLights);
+    u_viewLightAtt = bgfx::createUniform("u_viewLightAtt",
+                                         bgfx::UniformType::Vec4,
+                                         kViewLights);
     // EVSM: the moments store an exponential warp of the light
     // window depth (exp(c z), exp(c z)^2), which curbs VSM's light
     // bleeding at overlapping occluders. RG32F carries the classic

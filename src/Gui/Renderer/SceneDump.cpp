@@ -182,7 +182,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     change: that byte was reserved and read as zero, which is the
 //     unframed frame, so an older viewer draws the triplanar projection
 //     this replaces rather than misreading anything.
-const uint32_t kVersion = 51;
+// 52: The ordinary Coin lights (ViewLightConfig) -- the viewer's
+//     headlight and backlight and any document directional/point light,
+//     which until now never left the Coin side at all and were stood in
+//     for by a hard-coded white headlight. An older snapshot carries
+//     none, and its `fed` reads false, which is the flag that asks a
+//     backend for exactly that stand-in: old dumps render unchanged.
+const uint32_t kVersion = 52;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -2910,6 +2916,21 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
 
     writeLight(w, snap.lightconf, refs);
 
+    // v52: the ordinary Coin lights. Only the filled slots go out --
+    // `count` bounds the loop on both sides.
+    const ViewLightConfig &vlc = snap.viewlightconf;
+    w.b(vlc.fed);
+    w.u32(uint32_t(vlc.count));
+    for (int i = 0; i < vlc.count && i < MaxViewLights; ++i) {
+        const ViewLight &vl = vlc.lights[i];
+        w.floats(vl.direction, 3);
+        w.floats(vl.position, 3);
+        w.b(vl.positional);
+        w.floats(vl.attenuation, 3);
+        w.u32(vl.color);
+        w.f(vl.intensity);
+    }
+
     const VolumetricConfig &vc = snap.volconf;
     w.b(vc.enabled); w.f(vc.intensity); w.f(vc.density);
     w.b(vc.caustics); w.f(vc.causticsIntensity); w.f(vc.causticsScale);
@@ -3282,6 +3303,27 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.bumpconf.parallax = r.b();
 
     readLight(r, snap.lightconf, refs, version);
+
+    if (version >= 52) {
+        ViewLightConfig &vlc = snap.viewlightconf;
+        vlc.fed = r.b();
+        int n = int(r.u32());
+        // A writer with a larger MaxViewLights than this build must not
+        // desync the stream: read every light it sent, keep the ones
+        // there is room for.
+        vlc.count = 0;
+        for (int i = 0; i < n; ++i) {
+            ViewLight vl;
+            r.floats(vl.direction, 3);
+            r.floats(vl.position, 3);
+            vl.positional = r.b();
+            r.floats(vl.attenuation, 3);
+            vl.color = r.u32();
+            vl.intensity = r.f();
+            if (vlc.count < MaxViewLights)
+                vlc.lights[vlc.count++] = vl;
+        }
+    }
 
     VolumetricConfig &vc = snap.volconf;
     vc.enabled = r.b(); vc.intensity = r.f(); vc.density = r.f();

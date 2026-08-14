@@ -2863,6 +2863,7 @@ static void applySnapshot(bool fit)
     s_renderer->setPBRConfig(s_snap.pbrconf);
     s_renderer->setBumpConfig(s_snap.bumpconf);
     s_renderer->setLightConfig(s_snap.lightconf);
+    s_renderer->setViewLightConfig(s_snap.viewlightconf);
     s_renderer->setVolumetricConfig(s_snap.volconf);
     s_renderer->setWaterConfig(s_snap.waterconf);
     s_renderer->setBloomConfig(s_snap.bloomconf);

@@ -152,11 +152,21 @@ GuiExport Render::PreselHighlightConfig translateSelConfig();
 GuiExport Render::BumpConfig translateBumpConfig(App::PropertyContainer * view);
 
 /// Resolve the scene (shadow) light from the traversal state's light
-/// element; the viewer headlight is filtered out by node type. The
-/// ground receiver settings honor the view's Shadow_* dynamic properties
-/// (the Shadow draw style creates them) with ViewParams fallback.
+/// element; the viewer headlight is filtered out by node type -- it is
+/// an ordinary light, and translateViewLightConfig below is what carries
+/// it. The ground receiver settings honor the view's Shadow_* dynamic
+/// properties (the Shadow draw style creates them) with ViewParams
+/// fallback.
 GuiExport Render::LightConfig translateLightConfig(SoState * state,
                                                    App::PropertyContainer * view);
+
+/// Resolve the ordinary lights of the traversal -- the viewer's
+/// headlight and backlight, and any SoDirectionalLight / SoPointLight a
+/// document adds -- into the per-frame view-light config. Exactly the
+/// complement of translateLightConfig: the shadow-capable node types it
+/// claims for the scene light are the ones skipped here, so no light is
+/// counted twice and none is dropped.
+GuiExport Render::ViewLightConfig translateViewLightConfig(SoState * state);
 
 /// Resolve the per-frame autozoom scale from the traversal state's view
 /// volume (the exact SoAutoZoomTranslation::getScaleFactor math with a

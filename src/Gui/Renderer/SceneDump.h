@@ -98,6 +98,9 @@ struct SceneSnapshot {
     PBRConfig pbrconf;
     BumpConfig bumpconf;
     LightConfig lightconf;
+    /// v52; `fed` false on older snapshots, which is exactly what makes
+    /// them keep the fixed headlight they were rendered with.
+    ViewLightConfig viewlightconf;
     VolumetricConfig volconf;
     WaterConfig waterconf;
     BloomConfig bloomconf;      ///< v18; defaulted on older snapshots

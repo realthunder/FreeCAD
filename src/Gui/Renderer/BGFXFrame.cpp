@@ -510,6 +510,68 @@ bool BGFXRenderer::Private::render(const QColor &col,
         }
     }
 
+    // The ordinary Coin lights (headlight, backlight, document
+    // directional/point lights), world space in the feed, resolved to
+    // camera view space here. When the feed carries none the fixed
+    // white headlight down the view axis is written into slot 0
+    // instead: it is what this renderer has always drawn, so an old
+    // dump and a consumer that predates the config keep their look,
+    // and the shader gets one loop with no fallback branch.
+    {
+        const float *vm = reinterpret_cast<const float *>(viewMatrix);
+        auto toView = [vm](const float *w, bool point, float *out) {
+            // A direction ignores the translation; a position takes it.
+            for (int j = 0; j < 3; ++j)
+                out[j] = w[0] * vm[j] + w[1] * vm[4 + j]
+                    + w[2] * vm[8 + j] + (point ? vm[12 + j] : 0.0f);
+        };
+        int n = 0;
+        if (viewlightconf.fed) {
+            for (int i = 0; i < viewlightconf.count
+                     && n < BGFXView::kViewLights; ++i) {
+                const Render::ViewLight &l = viewlightconf.lights[i];
+                toView(l.positional ? l.position : l.direction,
+                       l.positional, view->viewLightView[n]);
+                if (!l.positional) {
+                    float *d = view->viewLightView[n];
+                    float len = std::sqrt(d[0]*d[0] + d[1]*d[1]
+                                          + d[2]*d[2]);
+                    if (len > 0.0f) {
+                        for (int j = 0; j < 3; ++j)
+                            d[j] /= len;
+                    }
+                }
+                view->viewLightView[n][3] = l.positional ? 2.0f : 1.0f;
+                unpackColor(l.color, view->viewLightColorI[n]);
+                for (int j = 0; j < 3; ++j) {
+                    view->viewLightColorI[n][j] *= l.intensity;
+                    view->viewLightAtt[n][j] = l.attenuation[j];
+                }
+                ++n;
+            }
+        } else {
+            view->viewLightView[0][0] = 0.0f;
+            view->viewLightView[0][1] = 0.0f;
+            view->viewLightView[0][2] = -1.0f;
+            view->viewLightView[0][3] = 1.0f;
+            for (int j = 0; j < 3; ++j) {
+                view->viewLightColorI[0][j] = 1.0f;
+                view->viewLightAtt[0][j] = 0.0f;
+            }
+            view->viewLightAtt[0][2] = 1.0f;
+            n = 1;
+        }
+        // Zero the tail so a slot left over from a previous frame
+        // cannot light this one.
+        for (int i = n; i < BGFXView::kViewLights; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                view->viewLightView[i][j] = 0.0f;
+                view->viewLightColorI[i][j] = 0.0f;
+                view->viewLightAtt[i][j] = 0.0f;
+            }
+        }
+    }
+
     // Shadow draw style: a light in the scene feed activates the
     // variance shadow map pass (only that style traverses one — the
     // viewer headlight lives outside the captured graph). The light

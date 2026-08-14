@@ -2580,6 +2580,8 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
     PRIVATE(this)->external->setLightConfig(
         RendererBridge::translateLightConfig(state,
                                              PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setViewLightConfig(
+        RendererBridge::translateViewLightConfig(state));
     PRIVATE(this)->external->setVolumetricConfig(
         RendererBridge::translateVolumetricConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setWaterConfig(

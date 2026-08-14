@@ -2628,6 +2628,9 @@ public:
         fn(u_evsm, LifeProgram);
         fn(u_localLight, LifeProgram);
         fn(u_localLightColor, LifeProgram);
+        fn(u_viewLight, LifeProgram);
+        fn(u_viewLightColor, LifeProgram);
+        fn(u_viewLightAtt, LifeProgram);
         fn(s_texBloom, LifeProgram);
         fn(u_bloomParams, LifeProgram);
         fn(u_bloomTexel, LifeProgram);
@@ -3767,6 +3770,27 @@ public:
     bgfx::UniformHandle u_localLightColor = BGFX_INVALID_HANDLE;
     float localLightView[kLocalLights][4] = {};
     float localLightColorI[kLocalLights][4] = {};
+    // The ordinary Coin lights of the frame (Render::ViewLightConfig:
+    // the viewer's headlight and backlight, document directional/point
+    // lights), resolved to camera view space. These replace what used
+    // to be a hard-coded white headlight down the view axis, and when
+    // the feed carries none -- an old scene dump, a consumer that
+    // predates the config -- that same headlight is written into slot 0
+    // as a stand-in, so the shader has one code path and no fallback
+    // branch of its own.
+    //   viewLightView[i]:   xyz = view-space direction the light travels
+    //                       (directional) or position (positional),
+    //                       w = 0 inactive, 1 directional, 2 positional
+    //   viewLightColorI[i]: rgb = color premultiplied by intensity
+    //   viewLightAtt[i]:    xyz = Coin's squared/linear/constant
+    //                       distance attenuation (positional only)
+    static constexpr int kViewLights = Render::MaxViewLights;
+    bgfx::UniformHandle u_viewLight = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_viewLightColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_viewLightAtt = BGFX_INVALID_HANDLE;
+    float viewLightView[kViewLights][4] = {};
+    float viewLightColorI[kViewLights][4] = {};
+    float viewLightAtt[kViewLights][4] = {};
     float shadowMtx[16];       // camera view space -> shadow uv/depth
     // Cached shadow map: hash of the light camera + caster set of the
     // moments currently in shadowTex; the caster pass (and blur) only
@@ -4296,6 +4320,7 @@ public:
     Render::PBRConfig pbrconf;
     Render::BumpConfig bumpconf;
     Render::LightConfig lightconf;
+    Render::ViewLightConfig viewlightconf;
     Render::VolumetricConfig volconf;
     Render::WaterConfig waterconf;
     Render::BloomConfig bloomconf;

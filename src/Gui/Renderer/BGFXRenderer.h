@@ -93,6 +93,7 @@ public:
     virtual void setPBRConfig(const PBRConfig &config) override;
     virtual void setBumpConfig(const BumpConfig &config) override;
     virtual void setLightConfig(const LightConfig &config) override;
+    virtual void setViewLightConfig(const ViewLightConfig &config) override;
     virtual void setVolumetricConfig(const VolumetricConfig &config) override;
     virtual void setWaterConfig(const WaterConfig &config) override;
     virtual void setBloomConfig(const BloomConfig &config) override;

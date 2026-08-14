@@ -477,6 +477,14 @@ void BGFXRenderer::setLightConfig(const LightConfig &config)
     }
 }
 
+void BGFXRenderer::setViewLightConfig(const ViewLightConfig &config)
+{
+    if (pimpl->viewlightconf != config) {
+        pimpl->viewlightconf = config;
+        pimpl->sceneDirty = true;
+    }
+}
+
 void BGFXRenderer::setVolumetricConfig(const VolumetricConfig &config)
 {
     if (pimpl->volconf != config) {

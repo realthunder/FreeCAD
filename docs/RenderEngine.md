@@ -1165,32 +1165,46 @@ phone).
 - Per-draw texture slots for user shaders (custom images) are not yet
   bindable from the document model.
 - **Coin light state that never reaches a backend** (audited
-  2026-08-14; the one defect this audit found that was a bug rather
-  than a gap -- the scene light being gated on the shadow map -- is
-  fixed, see `docs/CoinRetirement.md` 3.4). What remains is by
-  omission: the feed carries at most one light and the model around it
-  is hard-coded.
-  - The viewer **headlight** is a plain `SoDirectionalLight`, which
-    `translateLightConfig` rejects by node type, and the backends
-    hard-code their own: white, full intensity, along -Z in view
-    space. `EnableHeadlight`, `HeadlightColor`, `HeadlightDirection`
-    and `HeadlightIntensity` therefore change what Coin draws and
-    nothing about what the renderer draws; `EnableHeadlight` off in
-    particular cannot be honoured at all. The same rejection hides the
-    viewer's **backlight**.
-  - **One light, maximum.** The bridge `break`s at the first
-    qualifying node, so a second scene light is dropped even though
-    `SoLightElement` accumulates up to eight. The engine's local
-    effect lights (`Render_Light` bulbs, fire flames) are a separate
-    private array, not Coin lights, and are unaffected.
-  - **`SoPointLight` and plain `SoDirectionalLight` are not translated
-    at all** -- only `SoShadowDirectionalLight` and `SoSpotLight`
-    qualify.
+  2026-08-14). The audit's one outright bug -- the scene light being
+  gated on the shadow map -- is fixed, see `docs/CoinRetirement.md`
+  3.4, and the ordinary lights now cross as `Render::ViewLightConfig`
+  (`translateViewLightConfig`, up to Coin's own cap of eight, carried
+  in the scene dump from v52). What is left:
+  - ⚠️ **A light has to sit above the render-cache root.**
+    `translateViewLightConfig` reads `SoLightElement` from the frame
+    state at the renderer level, which sees only what was traversed
+    *above* the capture root. A light a ViewProvider puts in the
+    geometry graph is inside the captured subgraph and never appears
+    there -- the same boundary that forces the Shadow style's light
+    above the cache root (3.4). Carrying those would mean collecting
+    lights during cache capture, which is a feature, not a fix.
+
+    The real root is reachable from Python, so adding a light by hand
+    is a two-liner -- note that `getSceneGraph()`, on either the view
+    or the viewer, returns the `SoFCUnifiedSelection` *below* the
+    capture point and is the wrong handle:
+
+    ```python
+    rm = Gui.ActiveDocument.ActiveView.getViewer().getSoRenderManager()
+    root = rm.getSceneGraph()   # Separator: backlight, headlight,
+                                # camera, SoFCUnifiedSelection, ...
+    root.insertChild(light, 3)  # after the camera = world coordinates
+    ```
+
+    Insert *before* the camera and the light's direction is fixed in
+    eye space and tracks it, which is exactly how the headlight is
+    built; *after* it, position and direction are plain world space.
+  - **`SoSpotLight` past the first is still dropped.** The first one
+    is claimed as the scene light (with cone, shadow map, sun disc and
+    ground); the view-light path carries directional and positional
+    lights only, so a second spot has nowhere to go.
   - **Material ambient is carried and then dropped.**
     `Render::Material::ambient` is translated by the bridge, keyed
     into the bgfx material key and streamed in the scene dump, but no
     shader ever reads it: `fcShadeFragment` spends a literal 0.2 grey
     floor instead. It is dead weight in the stream, and any
     non-default ambient colour is a Coin/backend divergence.
-  - **`SoEnvironment` has no bridge at all**, so Coin's global ambient
-    intensity and colour are not represented.
+  - **`SoEnvironment` is read for light attenuation only**
+    (`getLightAttenuation`, for positional lights). Its ambient
+    intensity and colour still have no bridge, which is the other half
+    of the material-ambient gap above.
