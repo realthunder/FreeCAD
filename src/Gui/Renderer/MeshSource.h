@@ -308,31 +308,86 @@ public:
     /// open on: an order's bytes cannot land before its job does, so
     /// expiring the credit on a frame count while the job still queues
     /// re-orders the same memory from other sources -- the storm.
-    void noteDescentQueued()
+    ///
+    /// The optional GENERATION scopes that statement to one sweep's
+    /// order. A descent is no longer one job: a downgrade's hook body
+    /// queues a worker build, whose landing queues a pooled visual
+    /// fill, whose apply is when the bytes actually move -- and the
+    /// aggregate settle counter reaches any target long before the
+    /// tails of those chains do (measured as the ladder overshooting
+    /// a 64MB budget down to 44.7MB: credit written off early, the
+    /// sweep re-ordering from other sources while the first order's
+    /// fills were still in flight). Every enqueue made while a
+    /// generation is current -- the plan's order loop opens one, and
+    /// the landing pump re-enters the job's own while running it --
+    /// inherits it, so a generation drains exactly when the order's
+    /// transitive chain has.
+    void noteDescentQueued(uint64_t gen = 0)
     {
         descentJobs.fetch_add(1, std::memory_order_relaxed);
+        if (gen) {
+            std::lock_guard<std::mutex> lock(genMutex);
+            ++genOutstanding[gen];
+        }
     }
-    void noteDescentSettled()
+    void noteDescentSettled(uint64_t gen = 0)
     {
         descentJobs.fetch_sub(1, std::memory_order_relaxed);
         descentSettles.fetch_add(1, std::memory_order_relaxed);
+        if (gen) {
+            std::lock_guard<std::mutex> lock(genMutex);
+            auto it = genOutstanding.find(gen);
+            if (it != genOutstanding.end() && --it->second == 0)
+                genOutstanding.erase(it);
+        }
     }
     uint32_t descentInFlight() const
     {
         return descentJobs.load(std::memory_order_relaxed);
     }
     /// Monotonic count of settled descent jobs (landed, refused, or
-    /// purged) -- what the downgrade ledger judges an order's own
-    /// completion by: "the jobs this order queued have all settled" is
-    /// a statement this counter advancing by the order's size makes,
-    /// where a bare in-flight flag cannot (a busy ladder keeps SOME
-    /// job in flight for minutes, and credit held on that never
-    /// expires -- measured as a sweep crawling 2.3MB-deficits while
-    /// 33MB of excess stood).
+    /// purged), kept for the narration lines.
     uint64_t descentSettleCount() const
     {
         return descentSettles.load(std::memory_order_relaxed);
     }
+    /// A fresh generation for one sweep's orders (never 0).
+    uint64_t openDescentGeneration()
+    {
+        return descentGenCounter.fetch_add(1, std::memory_order_relaxed)
+            + 1;
+    }
+    /// Whether \a gen's transitive chain of jobs has drained. Gen 0 --
+    /// work queued outside any order -- reads as settled.
+    bool descentGenerationSettled(uint64_t gen) const
+    {
+        if (!gen)
+            return true;
+        std::lock_guard<std::mutex> lock(genMutex);
+        return genOutstanding.find(gen) == genOutstanding.end();
+    }
+    /// The generation new descent work inherits on this thread; the
+    /// producers read it at enqueue. GUI thread for all writers today,
+    /// thread-local so a worker-side settle cannot see a stale scope.
+    static uint64_t &currentDescentGeneration()
+    {
+        static thread_local uint64_t gen = 0;
+        return gen;
+    }
+    /// Scoped set/restore of currentDescentGeneration: the plan wraps
+    /// its order loop, the landing pump wraps each item it runs.
+    class DescentGenScope
+    {
+        uint64_t prev;
+
+    public:
+        explicit DescentGenScope(uint64_t gen)
+            : prev(currentDescentGeneration())
+        {
+            currentDescentGeneration() = gen;
+        }
+        ~DescentGenScope() { currentDescentGeneration() = prev; }
+    };
 
 private:
     struct Source {
@@ -354,6 +409,12 @@ private:
     std::atomic<size_t> ceilingShortfall {0};
     std::atomic<uint32_t> descentJobs {0};
     std::atomic<uint64_t> descentSettles {0};
+    std::atomic<uint64_t> descentGenCounter {0};
+    /// Per-generation outstanding job counts; an absent key is a
+    /// drained (or never-used) generation. Guarded by its own mutex:
+    /// settles come off the refine workers too.
+    mutable std::mutex genMutex;
+    std::unordered_map<uint64_t, uint32_t> genOutstanding;
     /// See generation(). Bumped by every add() and remove(), which are
     /// the only things that can change what publishedError() answers.
     std::atomic<uint32_t> registryGen {0};

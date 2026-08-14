@@ -1645,42 +1645,48 @@ TEST(DowngradeLedger, followUpOrdersAccumulate)
 
 TEST(DowngradeLedger, unsettledOrdersHoldTheWriteOffHorizon)
 {
-    // An order now lands as worker jobs, and its bytes cannot fall
-    // before those jobs do -- on a loaded pool, far past any frame
-    // count. Until the producer's settle counter has advanced by the
-    // order's own size the credit must stand however many frames
-    // pass; the settle window starts only once they have all settled.
+    // An order now lands as CHAINS of jobs (hook body -> worker build
+    // -> pooled fill -> apply), and its bytes cannot fall before its
+    // own descent generation drains -- on a loaded pool, far past any
+    // frame count. Until then the credit must stand however many
+    // frames pass; the settle window starts only once it has.
     constexpr uint64_t MB = 1048576;
     Render::DowngradeLedger led;
-    // The order queues 50 jobs at settle count 1000.
-    led.order(93 * MB, 157 * MB, 10, /*settleNow*/ 1000, /*jobs*/ 50);
-    // 100 frames later only 30 of them have settled: promise stands,
-    // the sweep is held to the transient's residual.
-    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 110, 1030), 8 * MB);
-    // All 50 settled by frame 110; the settle window runs from there,
-    // not from the order.
-    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 112, 1050), 8 * MB);
+    bool drained = false;
+    auto settled = [&drained](uint64_t gen) {
+        return gen != 7 || drained;
+    };
+    // The order's chains queue under generation 7.
+    led.order(93 * MB, 157 * MB, 10, /*gen*/ 7);
+    // 100 frames later the chain still works: promise stands, the
+    // sweep is held to the transient's residual.
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 110, settled), 8 * MB);
+    // The chain drains by frame 110; the settle window runs from
+    // there, not from the order.
+    drained = true;
+    EXPECT_EQ(led.deficit(165 * MB, 64 * MB, 112, settled), 8 * MB);
     // ...and past it the unlanded remainder is written off into the
     // truth -- the phantom promise of drops that freed nothing (a
     // "spent" decimation keeps its mesh) must not shield the excess.
     EXPECT_EQ(led.deficit(165 * MB, 64 * MB,
                           110 + Render::DowngradeLedger::kSettleFrames,
-                          1050),
+                          settled),
               101 * MB);
 }
 
 TEST(DowngradeLedger, landingsStillCreditWhileJobsFly)
 {
     // The hold does not defer the observations: falls credit the
-    // promise as they land, settled or not.
+    // promise as they land, drained or not.
     constexpr uint64_t MB = 1048576;
     Render::DowngradeLedger led;
-    led.order(93 * MB, 157 * MB, 10, 1000, 50);
+    auto flying = [](uint64_t) { return false; };
+    led.order(93 * MB, 157 * MB, 10, 7);
     // Half the batch landed while the rest still queues: the fall is
     // credited, the residual excess is actionable.
-    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 50, 1020), 0u);
+    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 50, flying), 0u);
     // Everything lands, the scene settles under budget: nothing owed.
-    EXPECT_EQ(led.deficit(45 * MB, 64 * MB, 90, 1050), 0u);
+    EXPECT_EQ(led.deficit(45 * MB, 64 * MB, 90, flying), 0u);
     EXPECT_EQ(led.promised(), 0u);
 }
 
@@ -1691,21 +1697,26 @@ TEST(DowngradeLedger, anOldPhantomExpiresAloneUnderNewerOrders)
     // new order held EVERY phantom promise forever -- measured as the
     // sweep crawling 2MB-deficits against 50MB of standing excess.
     // Here the old order's unlanded promise expires on its own clock
-    // while the newer order, its jobs still working, holds on.
+    // while the newer order, its chain still working, holds on.
     constexpr uint64_t MB = 1048576;
     Render::DowngradeLedger led;
-    // Order A: 10 jobs from settle count 0 (target 10).
-    led.order(20 * MB, 100 * MB, 10, 0, 10);
-    // Order B: 10 jobs from settle count 5 (target 15).
-    led.order(20 * MB, 100 * MB, 20, 5, 10);
-    // Frame 200, 12 settles: A's jobs are done and its grace is long
+    bool aDrained = false, bDrained = false;
+    auto settled = [&](uint64_t gen) {
+        return gen == 1 ? aDrained : bDrained;
+    };
+    led.order(20 * MB, 100 * MB, 10, /*gen*/ 1);
+    led.order(20 * MB, 100 * MB, 20, /*gen*/ 2);
+    // Frame 200: A's chain drained long ago and its grace is long
     // out -- its phantom writes off ALONE. B still works and holds.
-    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 200, 12), 16 * MB);
-    // B settles at frame 205; its own grace runs from the hold...
-    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 205, 15), 16 * MB);
+    aDrained = true;
+    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 200, settled), 16 * MB);
+    // B drains at frame 205; its own grace runs from the hold...
+    bDrained = true;
+    EXPECT_EQ(led.deficit(100 * MB, 64 * MB, 205, settled), 16 * MB);
     // ...and closes on what it never landed.
     EXPECT_EQ(led.deficit(100 * MB, 64 * MB,
-                          200 + Render::DowngradeLedger::kSettleFrames, 15),
+                          200 + Render::DowngradeLedger::kSettleFrames,
+                          settled),
               36 * MB);
 }
 

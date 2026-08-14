@@ -11508,14 +11508,16 @@ public:
                         size_t deficit = gpuUsed - gpuBudget;
                         if (downgradeLedgerOn) {
                             // The write-off horizon rides the ordered
-                            // jobs: an order's bytes cannot land
-                            // before its descent jobs do, so credit
-                            // stands until the settle counter says
-                            // those jobs have all had their chance,
-                            // and the frame window starts there.
+                            // chains: an order's bytes cannot land
+                            // before its descent generation drains,
+                            // so credit stands until the registry
+                            // says the last chained job settled, and
+                            // the frame window starts there.
                             deficit = size_t(view->dgLedger.deficit(
                                 gpuUsed, gpuBudget, view->frame,
-                                reg.descentSettleCount()));
+                                [&reg](uint64_t g) {
+                                    return reg.descentGenerationSettled(g);
+                                }));
                             if (!deficit)
                                 dgHeld = gpuUsed - gpuBudget;
                         }
@@ -11558,16 +11560,26 @@ public:
                             },
                             hiddenOf, descentBatch);
                         nDowngrade = drops.size();
-                        for (const void *tag : drops)
-                            reg.requestDowngrade(tag);
+                        // The generation every job this order's chains
+                        // queue will inherit: the hook bodies enqueue
+                        // right here (the pace wrapper), and the
+                        // landing pump re-enters it for the chained
+                        // worker builds and pooled fills.
+                        const uint64_t dgGen = drops.empty()
+                            ? 0 : reg.openDescentGeneration();
+                        {
+                            Render::MeshSourceRegistry::DescentGenScope
+                                scope(dgGen);
+                            for (const void *tag : drops)
+                                reg.requestDowngrade(tag);
+                        }
                         // What this sweep just promised, carried
                         // against the deficits the next plans compute
                         // off the apply transient.
                         if (downgradeLedgerOn)
                             view->dgLedger.order(dgStats.bytesFreed,
                                                  gpuUsed, view->frame,
-                                                 reg.descentSettleCount(),
-                                                 drops.size());
+                                                 dgGen);
                         // One pass cannot know it freed enough: what it
                         // counted is what stands uploaded now, and the
                         // rung it swaps in takes some of it back. So

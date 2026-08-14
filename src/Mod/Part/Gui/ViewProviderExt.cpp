@@ -866,6 +866,12 @@ struct DeferredVisuals {
 /// the drop phase.
 bool s_drainVisualBuild = false;
 
+/// True while a pump item runs the rebuild it deferred out of a
+/// landing (see the gate at the top of updateVisual): the re-entered
+/// updateVisual is inside the pump too, and without this it would
+/// defer itself forever.
+bool s_deferredVisualRun = false;
+
 DeferredVisuals &deferredVisuals()
 {
     static DeferredVisuals visuals;
@@ -4939,6 +4945,48 @@ void ViewProviderPartExt::updateVisual()
 
     if (deferVisualForLoad())
         return;
+
+    // A giant rebuild called from a pump item is deferred into its OWN
+    // pump item (Render_VisualFillOnPool): the landing that called this
+    // -- a climb's transfer, a demote's rung drop -- stays cheap, and
+    // the capture or build that follows gets its own budget-checked
+    // turn. Without this, a turn stacked small landings up to the
+    // budget and then one landing's inline giant capture on top:
+    // measured 9 landings and 757ms in one turn against a 50ms budget.
+    // Placed before the prologue and clearInstanced so the displayed
+    // representation -- instanced included -- stays intact for the
+    // turn or two until the item runs. The seq bump supersedes any
+    // in-flight pooled fill now, exactly as the full run would; the
+    // residentLanded claim is NOT consumed here, so the re-entered
+    // run finds it as this call did.
+    if (Gui::RenderParams::getVisualFillOnPool()
+        && inLandingPump() && !s_deferredVisualRun && !s_drainVisualBuild
+        && !cachedShape.isNull() && (faceset || lineset)
+        && long(cachedShape.countSubShapes(TopAbs_FACE))
+            >= std::max(1L, Gui::RenderParams::getVisualFillMinFaces())) {
+        ++meshLadder.visualFillSeq;
+        const void *tsh = cachedShape.getShape().TShape().get();
+        const unsigned seq = meshLadder.visualFillSeq;
+        queueLevelGuiWork(
+            faceset ? static_cast<const void *>(faceset)
+                    : static_cast<const void *>(lineset),
+            [this, tsh, seq]() {
+                // Sound while the item lives: unregister purges by the
+                // same primary tag before the owner may die. A newer
+                // rebuild or decimation rewrite moved the seq and owns
+                // the arrays now; a different TShape is a different
+                // shape's claim.
+                TopoDS_Shape live = cachedShape.getShape();
+                if (live.IsNull() || live.TShape().get() != tsh
+                    || meshLadder.visualFillSeq != seq)
+                    return;
+                Base::StateLocker deferred(s_deferredVisualRun);
+                updateVisual();
+            },
+            /*descent*/ true);
+        VisualTouched = false;
+        return;
+    }
 
     // Where a rebuild's time actually goes (#13d). Declared BEFORE the
     // build timer so it is destroyed after it and sees this build's own

@@ -110,6 +110,11 @@ struct RefineJob {
     /// memory outranks spending more (the climb hard gate refuses new
     /// climbs anyway, but jobs already queued should not starve it).
     bool descent = false;
+    /// The sweep order this job descends for (0 = none): inherited
+    /// from the thread-current generation at enqueue, re-entered
+    /// around the landing so chained enqueues inherit it too. What
+    /// the downgrade ledger's write-off horizon actually rides.
+    uint64_t gen = 0;
 };
 
 std::mutex s_refineMutex;
@@ -179,7 +184,7 @@ bool debugCeilingHit()
 void settleDescent(const RefineJob &job)
 {
     if (job.descent)
-        Render::MeshSourceRegistry::instance().noteDescentSettled();
+        Render::MeshSourceRegistry::instance().noteDescentSettled(job.gen);
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -196,7 +201,55 @@ void settleDescent(const RefineJob &job)
 // GUI thread only, all of it -- the workers reach it through one
 // queued hop that does nothing but enqueue.
 
-std::deque<std::function<void()>> s_landingQueue;
+/// A worker landing and the sweep order it descends for: the pump
+/// re-enters the generation while running it, so what the landing
+/// queues in turn (a pooled fill, a deferred rebuild) counts under
+/// the same order.
+struct LandingItem {
+    std::function<void()> fn;
+    uint64_t gen = 0;
+};
+std::deque<LandingItem> s_landingQueue;
+
+/// Spent pump items go to a reaper thread instead of destructing in
+/// the turn: a landing's closure owns the worker's payload -- the
+/// meshed TopoShape copy of an exact climb chief among it -- and
+/// freeing those measured 0.1-0.2s of a pump window on the GUI
+/// thread (the "frees" split in the pump line). Everything these
+/// closures own is safe to destroy off-thread: OCCT handles carry
+/// atomic refcounts, Coin nodes appear only as raw unowned pointers,
+/// and the detached fill arrays are plain memory.
+std::mutex s_reaperMutex;
+std::condition_variable s_reaperCv;
+std::deque<std::function<void()>> s_reaperQueue;
+bool s_reaperStarted = false;
+
+void reapOffThread(std::function<void()> &&fn)
+{
+    if (!fn)
+        return;
+    {
+        std::lock_guard<std::mutex> lock(s_reaperMutex);
+        s_reaperQueue.push_back(std::move(fn));
+        if (!s_reaperStarted) {
+            s_reaperStarted = true;
+            std::thread([]() {
+                for (;;) {
+                    std::deque<std::function<void()>> batch;
+                    {
+                        std::unique_lock<std::mutex> lock(s_reaperMutex);
+                        s_reaperCv.wait(
+                            lock, [] { return !s_reaperQueue.empty(); });
+                        batch.swap(s_reaperQueue);
+                    }
+                    // The destructions run here, unlocked.
+                    batch.clear();
+                }
+            }).detach();
+        }
+    }
+    s_reaperCv.notify_one();
+}
 /// Plan-ordered hook bodies deferred out of the plan callback (the
 /// pacing's other half): a sweep fires up to a batch of hooks in ONE
 /// callback, and running their bodies there -- a snapshot each for the
@@ -212,6 +265,8 @@ struct GuiWorkItem {
     /// Whether the item counts in the registry's descent tally (a
     /// paced climb body does not -- see queueLevelGuiWork).
     bool descent = true;
+    /// The sweep order this body descends for (see RefineJob::gen).
+    uint64_t gen = 0;
 };
 std::deque<GuiWorkItem> s_guiWork;
 bool s_landingScheduled = false;
@@ -238,6 +293,15 @@ void scheduleLandingPump()
 /// worst gap must be compared against.
 struct PumpAccount {
     double landSec = 0, bodySec = 0, worstTurn = 0;
+    /// The worst single item this window: a turn near budget plus one
+    /// oversized atom is the shape the gate fails on, and without this
+    /// number "the items are too big" and "too many items ran" read
+    /// the same.
+    double worstItem = 0;
+    /// What handing spent items to the reaper still costs the turn
+    /// (the destruction itself runs off-thread now; this measured
+    /// 0.1-0.2s per window when the frees ran inline).
+    double freeSec = 0;
     std::size_t turns = 0, landings = 0, bodies = 0;
 };
 static PumpAccount s_pumpAccount;
@@ -272,12 +336,23 @@ void pumpLandings()
     // Landings first: they free memory and re-arm sources; the hook
     // bodies behind them typically queue MORE work.
     while (!s_landingQueue.empty()) {
-        auto fn = std::move(s_landingQueue.front());
+        auto item = std::move(s_landingQueue.front());
         s_landingQueue.pop_front();
         auto t0 = now();
-        fn();
-        acc.landSec += since(t0, now());
+        {
+            // The landing's chained enqueues (a pooled fill, a
+            // deferred rebuild) inherit its sweep order -- the
+            // downgrade ledger's horizon rides the whole chain.
+            Render::MeshSourceRegistry::DescentGenScope scope(item.gen);
+            item.fn();
+        }
+        const double d = since(t0, now());
+        acc.landSec += d;
+        acc.worstItem = std::max(acc.worstItem, d);
         ++acc.landings;
+        auto f0 = now();
+        reapOffThread(std::move(item.fn));
+        acc.freeSec += since(f0, now());
         if (spent())
             break;
     }
@@ -289,11 +364,20 @@ void pumpLandings()
         auto item = std::move(s_guiWork.front());
         s_guiWork.pop_front();
         auto t0 = now();
-        item.body();
-        acc.bodySec += since(t0, now());
+        {
+            Render::MeshSourceRegistry::DescentGenScope scope(item.gen);
+            item.body();
+        }
+        const double d = since(t0, now());
+        acc.bodySec += d;
+        acc.worstItem = std::max(acc.worstItem, d);
         ++acc.bodies;
         if (item.descent)
-            Render::MeshSourceRegistry::instance().noteDescentSettled();
+            Render::MeshSourceRegistry::instance().noteDescentSettled(
+                item.gen);
+        auto f0 = now();
+        reapOffThread(std::move(item.body));
+        acc.freeSec += since(f0, now());
         ranGui = true;
     }
     ++acc.turns;
@@ -302,9 +386,11 @@ void pumpLandings()
     if (total >= 0.2 && pumpDebugOn()) {
         Base::Console().Message(
             "landing pump: %zu turns spent %.3fs = landings %.3fs in %zu "
-            "+ hook bodies %.3fs in %zu; worst turn %.0fms (budget %.0fms)\n",
+            "+ hook bodies %.3fs in %zu + frees %.3fs; worst turn %.0fms, "
+            "worst item %.0fms (budget %.0fms)\n",
             acc.turns, total, acc.landSec, acc.landings, acc.bodySec,
-            acc.bodies, acc.worstTurn * 1000.0, budget * 1000.0);
+            acc.bodies, acc.freeSec, acc.worstTurn * 1000.0,
+            acc.worstItem * 1000.0, budget * 1000.0);
         acc = PumpAccount{};
     }
     if (!s_landingQueue.empty() || !s_guiWork.empty())
@@ -322,9 +408,11 @@ void purgeLevelGuiWork(const void *tag)
     while (it != s_guiWork.end()) {
         if (it->tag == tag) {
             const bool counted = it->descent;
+            const uint64_t gen = it->gen;
             it = s_guiWork.erase(it);
             if (counted)
-                Render::MeshSourceRegistry::instance().noteDescentSettled();
+                Render::MeshSourceRegistry::instance().noteDescentSettled(
+                    gen);
         }
         else {
             ++it;
@@ -332,14 +420,15 @@ void purgeLevelGuiWork(const void *tag)
     }
 }
 
-/// Marshal \a fn from a worker to the paced GUI queue.
-void queueLandingFromWorker(std::function<void()> fn)
+/// Marshal \a fn from a worker to the paced GUI queue; \a gen is the
+/// sweep order the landing belongs to (RefineJob::gen).
+void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0)
 {
     auto payload = std::make_shared<std::function<void()>>(std::move(fn));
     QMetaObject::invokeMethod(
         QCoreApplication::instance(),
-        [payload]() {
-            s_landingQueue.push_back(std::move(*payload));
+        [payload, gen]() {
+            s_landingQueue.push_back({std::move(*payload), gen});
             scheduleLandingPump();
         },
         Qt::QueuedConnection);
@@ -373,6 +462,7 @@ void refineLoop()
             auto payload = std::make_shared<
                 std::pair<RefineJob, std::function<void()>>>(
                 std::move(job), std::move(landing));
+            const uint64_t gen = payload->first.gen;
             queueLandingFromWorker([payload]() {
                 settleDescent(payload->first);
                 {
@@ -384,7 +474,7 @@ void refineLoop()
                     s_refineTokens.erase(it);
                 }
                 payload->second();
-            });
+            }, gen);
             continue;
         }
         // Pre-build ceiling estimate: a build started under a low
@@ -447,6 +537,7 @@ void refineLoop()
         // marshalled hop is one more window for a cancellation.
         auto payload = std::make_shared<std::pair<RefineJob, TopoDS_Shape>>(
             std::move(job), std::move(meshed));
+        const uint64_t gen = payload->first.gen;
         queueLandingFromWorker([payload]() {
             settleDescent(payload->first);
             {
@@ -461,15 +552,18 @@ void refineLoop()
                 s_refineTokens.erase(it);
             }
             payload->first.apply(payload->second);
-        });
+        }, gen);
     }
 }
 
 void enqueueLevelJob(RefineJob &&job)
 {
     resolveMemFloor();
-    if (job.descent)
-        Render::MeshSourceRegistry::instance().noteDescentQueued();
+    if (job.descent) {
+        job.gen =
+            Render::MeshSourceRegistry::currentDescentGeneration();
+        Render::MeshSourceRegistry::instance().noteDescentQueued(job.gen);
+    }
     std::lock_guard<std::mutex> lock(s_refineMutex);
     job.token = ++s_refineCounter;
     s_refineTokens[job.tag] = job.token;
@@ -662,9 +756,12 @@ void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
 {
     if (!body)
         return;
-    if (descent)
-        Render::MeshSourceRegistry::instance().noteDescentQueued();
-    s_guiWork.push_back({tag, std::move(body), descent});
+    uint64_t gen = 0;
+    if (descent) {
+        gen = Render::MeshSourceRegistry::currentDescentGeneration();
+        Render::MeshSourceRegistry::instance().noteDescentQueued(gen);
+    }
+    s_guiWork.push_back({tag, std::move(body), descent, gen});
     scheduleLandingPump();
 }
 

@@ -571,20 +571,28 @@ struct PlanDemoteStats {
 /// the truth returns within the window.
 ///
 /// The frame window is a SETTLE margin, not the expiry itself: an
-/// order now lands as a worker JOB (the descent builds on the refine
-/// pool, sec 13c), and its bytes cannot fall before the job does --
-/// which on a loaded pool is far past any frame count. So the credit
-/// stands until the JOBS THE ORDERS QUEUED have all settled (landed,
-/// refused, or purged -- the producer's monotonic settle counter says
-/// so), and only then does the kSettleFrames clock start on the
-/// remainder. Not "while any descent job is in flight": a busy ladder
-/// keeps some job queued for minutes on end, credit held on that never
-/// expired, and the phantom promises of orders that freed nothing (a
-/// decimation that came back "spent" keeps its mesh but was priced in
-/// full) accumulated until the sweep crawled 2MB-deficits against
-/// 33MB of standing excess. Expiring on frames alone was the opposite
-/// failure: the 418-order burst re-ordered the same memory from other
-/// sources the moment its 6 frames ran out.
+/// order now lands as a CHAIN of jobs (the downgrade's hook body
+/// queues a worker build, whose landing queues a pooled visual fill,
+/// whose apply is when the bytes actually move -- sec 13c), and its
+/// bytes cannot fall before that chain drains -- which on a loaded
+/// pool is far past any frame count. So the credit stands until the
+/// order's own DESCENT GENERATION has drained (the producer counts
+/// every job the chain queues under the generation the sweep opened;
+/// MeshSourceRegistry::descentGenerationSettled says when the last
+/// one settled -- landed, refused, or purged), and only then does the
+/// kSettleFrames clock start on the remainder. Not "while any descent
+/// job is in flight": a busy ladder keeps some job queued for minutes
+/// on end, credit held on that never expired, and the phantom
+/// promises of orders that freed nothing (a decimation that came back
+/// "spent" keeps its mesh but was priced in full) accumulated until
+/// the sweep crawled 2MB-deficits against 33MB of standing excess.
+/// Expiring on frames alone was the opposite failure: the 418-order
+/// burst re-ordered the same memory from other sources the moment its
+/// 6 frames ran out. And a target on the AGGREGATE settle counter --
+/// "this order's jobs are done once the counter advances by the drop
+/// count" -- was met by the FIRST settles of every chain (the hook
+/// bodies, seconds before the fills), wrote the credit off early, and
+/// the re-orders overshot a 64MB budget down to 44.7MB settled.
 struct DowngradeLedger {
     /// One sweep's promise, expiring on ITS OWN terms. An aggregate
     /// promise cannot: while small follow-up orders keep flowing --
@@ -599,8 +607,9 @@ struct DowngradeLedger {
     struct Order {
         uint64_t bytes = 0;         ///< promise still unlanded
         uint64_t frame = 0;         ///< rendered-frame stamp at order
-        uint64_t settleTarget = 0;  ///< producer settle count that says
-                                    ///< "this order's jobs are done"
+        uint64_t gen = 0;           ///< the sweep's descent generation:
+                                    ///< drained means "this order's
+                                    ///< chain of jobs is done"
     };
     std::deque<Order> orders;
     /// The live meter the newest order was judged against; only falls
@@ -622,13 +631,15 @@ struct DowngradeLedger {
     }
 
     /// Outstanding credit, after observing \a liveNow: falls since the
-    /// newest order retire promises oldest-first; an order whose jobs
-    /// have all settled (\a settleNow, the producer's monotonic
-    /// MeshSourceRegistry::descentSettleCount) and whose grace frames
-    /// have passed writes off what it still holds -- alone, however
-    /// many newer orders stand behind it.
+    /// newest order retire promises oldest-first; an order whose
+    /// generation has drained (\a genSettled, normally
+    /// MeshSourceRegistry::descentGenerationSettled) and whose grace
+    /// frames have passed writes off what it still holds -- alone,
+    /// however many newer orders stand behind it. No predicate reads
+    /// every generation as drained (frame-only expiry).
     uint64_t outstanding(uint64_t liveNow, uint64_t frameNow,
-                         uint64_t settleNow = 0)
+                         const std::function<bool(uint64_t)> &genSettled
+                             = {})
     {
         // Landings first: a fall is real memory and must retire
         // promises before any write-off invents a deficit.
@@ -646,13 +657,13 @@ struct DowngradeLedger {
                     orders.pop_front();
             }
         }
-        // Expiry is per order: its own jobs settled, its own grace
+        // Expiry is per order: its own chain drained, its own grace
         // out. An order still being worked holds ITS horizon open (the
         // restamp), so the grace effectively starts when its last job
         // settles -- and a newer order's arrival changes nothing for
         // an older one.
         for (auto it = orders.begin(); it != orders.end();) {
-            if (settleNow < it->settleTarget) {
+            if (genSettled && !genSettled(it->gen)) {
                 it->frame = frameNow;
                 ++it;
             }
@@ -669,24 +680,24 @@ struct DowngradeLedger {
     /// The deficit the next sweep should act on: the raw excess minus
     /// what is already in flight. 0 holds the sweep this plan.
     uint64_t deficit(uint64_t liveNow, uint64_t budget, uint64_t frameNow,
-                     uint64_t settleNow = 0)
+                     const std::function<bool(uint64_t)> &genSettled = {})
     {
         const uint64_t raw = liveNow > budget ? liveNow - budget : 0;
-        const uint64_t credit = outstanding(liveNow, frameNow, settleNow);
+        const uint64_t credit = outstanding(liveNow, frameNow, genSettled);
         return raw > credit ? raw - credit : 0;
     }
 
-    /// Record a sweep's order: its PlanDemoteStats::bytesFreed, the
-    /// drops it requested, and the producer's settle count now. Each
-    /// drop enqueues at least one job, so settleNow + jobs is a LOWER
-    /// bound on "this order's jobs are done" -- erring toward expiring
-    /// a little early, the recoverable direction.
+    /// Record a sweep's order: its PlanDemoteStats::bytesFreed and the
+    /// descent generation the sweep opened around its requests --
+    /// every job the order's chains queue counts under it, so the
+    /// write-off horizon holds exactly while the order is still being
+    /// worked.
     void order(uint64_t bytes, uint64_t liveNow, uint64_t frameNow,
-               uint64_t settleNow = 0, uint64_t jobs = 0)
+               uint64_t gen = 0)
     {
         if (!bytes)
             return;
-        orders.push_back({bytes, frameNow, settleNow + jobs});
+        orders.push_back({bytes, frameNow, gen});
         liveAtOrder = liveNow;
     }
 };
