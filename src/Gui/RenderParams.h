@@ -975,14 +975,16 @@ public:
     /// model that is still half there, and every byte not uploaded to
     /// an edge instance buffer now is one the arriving geometry gets
     /// instead.
-    /// MEASURED: on a .FCStd open this currently suppresses NOTHING,
-    /// and not because it fails to fire. Progressive document load
-    /// parks every visual build and publishes the scene in one step
-    /// when the load is done, so the renderer holds an empty scene for
-    /// the whole load -- 0 drawables across 17.8s on a 5455-object
-    /// model. It is kept for the case that is still real, a live
-    /// progressive import, which builds its visuals inline as objects
-    /// appear; that case is not yet measured.
+    /// RE-MEASURED 2026-08-15, and the earlier reading no longer
+    /// holds. It used to suppress NOTHING on a .FCStd open: the load
+    /// parked every visual build and published in one step at the
+    /// end, so the renderer held an empty scene throughout -- 0
+    /// drawables across 17.8s on a 5455-object model. The publish is
+    /// incremental now, so the same open feeds the scene while the
+    /// drain runs and the gate has real work: on the same model it
+    /// climbs from 1123 to 5909 point and line draws suppressed, out
+    /// of 11818 eligible in a 17727-drawable scene, and both edges
+    /// are logged -- ON with an empty scene, OFF as the drain ends.
     /// It overrides both gates while it lasts -- vertices drop even
     /// with ShapeVertices on, edges drop with no pressure yet declared
     /// -- but it is subject to the same all-or-nothing classification

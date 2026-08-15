@@ -83,6 +83,17 @@ def emit(msg):
 PLAN = re.compile(
     r"live ([0-9.]+)MB \(uploaded [0-9.]+MB, [0-9.]+MB stale in \d+ of "
     r"(\d+) entries\).*?plan: refine (\d+) demote (\d+) downgrade (\d+)")
+# The element contract's own readout, carried on the same plan line:
+# how many drawables the gates COULD claim, how many they claimed, and
+# which of the three reasons it was. A contract that suppresses nothing
+# is a contract that was never exercised, and the arms differ only
+# here -- so this is read per phase, not per run.
+GATES = re.compile(
+    r"gates: eligible (\d+), suppressed (\d+) point \+ (\d+) line draws"
+    # The dependency split is optional so this still reads a log from
+    # a build without it -- an arm is not re-run to be re-read.
+    r"(?: \((\d+) by dependency\))?(?: \(([^)]*)\))?")
+TOLER = re.compile(r"refine tolerance ([0-9.]+)px")
 
 
 class Sampler(object):
@@ -180,6 +191,62 @@ def tail(marker, since):
         return (["(log unreadable: %s)" % exc], since)
 
 
+def gate_scan(name, a, b):
+    """What the contract did over one phase's slice of the log. Read
+    from byte offsets rather than from the live tail, because the tail
+    is consumed by the settle detector and a second reader of the same
+    cursor would see half the lines."""
+    try:
+        with open(LOG, errors="replace") as f:
+            f.seek(a)
+            body = f.read() if b <= a else f.read(b - a)
+    except Exception as exc:
+        emit("%s gates: log unreadable: %s" % (name, exc))
+        return
+    # The harness's own emit() goes through the console, so it lands in
+    # --log-file too: without this a scan re-reads the PREVIOUS phase's
+    # summary and reports its numbers as this phase's.
+    body = "\n".join(ln for ln in body.splitlines() if "GATE " not in ln)
+    pts, lns, elig, dep, why = [], [], [], [], {}
+    for m in GATES.finditer(body):
+        elig.append(int(m.group(1)))
+        pts.append(int(m.group(2)))
+        lns.append(int(m.group(3)))
+        if m.group(4) is not None:
+            dep.append(int(m.group(4)))
+        w = m.group(5) or "(unnamed)"
+        why[w] = why.get(w, 0) + 1
+    if not pts:
+        emit("%s gates: no plan readout in this window" % name)
+    else:
+        emit("%s gates: %d plans, eligible max %d | points suppressed "
+             "max %d last %d | lines suppressed max %d last %d"
+             % (name, len(pts), max(elig), max(pts), pts[-1],
+                max(lns), lns[-1]))
+        emit("%s gates: reasons %s"
+             % (name, ", ".join("%s x%d" % (k, v)
+                                for k, v in sorted(why.items()))))
+        # The dependency half on its own: how much of the suppression
+        # the companion rule accounts for, rather than pressure or the
+        # parameters. This is the half a streaming tier can only
+        # reproduce by carrying objectIncomplete on the wire.
+        if dep:
+            emit("%s gates: by dependency alone: max %d last %d, "
+                 "nonzero on %d of %d plans"
+                 % (name, max(dep), dep[-1],
+                    sum(1 for d in dep if d), len(dep)))
+    tols = [float(t) for t in TOLER.findall(body)]
+    if tols:
+        emit("%s gates: refine tolerance %.2f -> %.2fpx (max %.2f)"
+             % (name, tols[0], tols[-1], max(tols)))
+    # Both edges of the load gate print on their own line; there are
+    # only ever a handful, and whether the closing edge arrived is the
+    # failure this design has to rule out.
+    for ln in body.splitlines():
+        if "load gate" in ln or "element gate stage" in ln:
+            emit("%s gates: %s" % (name, ln.strip()[-160:]))
+
+
 def pump(seconds, view=None):
     end = time.time() + seconds
     while time.time() < end:
@@ -232,6 +299,28 @@ def run():
         rp.SetInt("WorkerVertexCache",
                   0 if os.environ.get("FC_WORKER_VCACHE", "on") == "off"
                   else 1)
+        # The element dependency contract (docs/SceneStreaming.md 13b):
+        # attached points draw only behind their lines, lines only
+        # behind their faces, and pressure spends points -> lines ->
+        # faces. FC_ELEMENT_GATE=off is the PRE-CONTRACT baseline arm:
+        # attached vertex points never draw at all (the old always-dark
+        # default) and line sets are exempt from the pressure stages.
+        # Written BOTH ways because params persist between runs.
+        # FC_ELEMENT_GATE sets both halves at once; FC_SHAPE_VERTICES
+        # and FC_PRESSURE_EDGES override either half on its own, which
+        # is what separates the two things the contract changed. The
+        # PRE-CONTRACT default is vertices off with the edge stage
+        # still on (FC_SHAPE_VERTICES=off alone) -- turning both off is
+        # a different arm, the one that isolates the edge gate.
+        gateOn = os.environ.get("FC_ELEMENT_GATE", "on") != "off"
+        half = os.environ.get("FC_SHAPE_VERTICES", "")
+        shapeVerts = gateOn if half == "" else half != "off"
+        half = os.environ.get("FC_PRESSURE_EDGES", "")
+        pressEdges = gateOn if half == "" else half != "off"
+        rp.SetBool("ShapeVertices", shapeVerts)
+        rp.SetBool("PressureDropEdges", pressEdges)
+        rp.SetInt("ElementGateStagger",
+                  int(os.environ.get("FC_GATE_STAGGER", "15")))
         rp.SetBool("Occlusion", False)
         rp.SetBool("DowngradeLedger", True)
         rp.SetBool("ClimbHardLimit", True)
@@ -241,10 +330,14 @@ def run():
         # run at the HIGH budget or the descent starts inside the load.
         rp.SetInt("GpuMemoryBudgetMB", HIGH)
         emit("arm: high=%dMB low=%dMB gap-limit=%.0fms camera=%s tick=%dms "
-             "skip-invariant=%s worker-vcache=%s"
+             "skip-invariant=%s worker-vcache=%s shape-vertices=%s "
+             "pressure-edges=%s stagger=%s"
              % (HIGH, LOW, GAP_LIMIT, CAMERA, TICK_MS,
                 os.environ.get("FC_MESH_INVARIANT", "on"),
-                os.environ.get("FC_WORKER_VCACHE", "on")))
+                os.environ.get("FC_WORKER_VCACHE", "on"),
+                "on" if shapeVerts else "off",
+                "on" if pressEdges else "off",
+                os.environ.get("FC_GATE_STAGGER", "15")))
 
         Gui.getMainWindow().resize(1920, 1200)
         # A killed instance loses the saved status-bar toggle
@@ -272,6 +365,13 @@ def run():
         sampler = Sampler()
         sampler.start()
         since = os.path.getsize(LOG) if os.path.exists(LOG) else 0
+        # Phase boundaries in the log, kept apart from the tail cursor
+        # so the gate scan can re-read a phase the settle detector has
+        # already consumed.
+        markStart = since
+
+        def logsize():
+            return os.path.getsize(LOG) if os.path.exists(LOG) else 0
 
         # ---- Phase LOAD -------------------------------------------------
         t0 = time.time()
@@ -295,8 +395,10 @@ def run():
             # deferred): stop once nothing new said anything for 10s.
             if time.time() - lastNew > 10.0:
                 break
+        markLoad = logsize()
         loadRep = sampler.phase()
         report_phase("load", loadRep, time.time() - t0, gate=True)
+        gate_scan("load", markStart, markLoad)
         emit("load: drain %s" % ("reported done" if drained
                                  else "never reported (quiet 10s)"))
         # The bar's liveness is its own verdict, apart from the gaps:
@@ -370,7 +472,12 @@ def run():
         # initial build.
         emit("settling %.0fs at %dMB..." % (SETTLE_S, HIGH))
         pump(SETTLE_S, v)
+        markSettle = logsize()
         sampler.phase()  # discard: the settle is not under test
+        # The settle is the contract AT REST -- the arm where the
+        # points-on default either costs memory or does not, with no
+        # pressure to confuse it. Not gated, but measured.
+        gate_scan("settle", markLoad, markSettle)
 
         # ---- Phase DROP -------------------------------------------------
         emit("dropping budget %d -> %d MB live" % (HIGH, LOW))
@@ -413,13 +520,45 @@ def run():
                     and time.time() - lastPlan > 30.0):
                 emit("drop: settled by silence (no plan for 30s)")
                 break
+        markDrop = logsize()
         dropRep = sampler.phase()
         report_phase("drop", dropRep, time.time() - t1, gate=True)
+        gate_scan("drop", markSettle, markDrop)
         if window:
             emit("drop: settled live %.1fMB against %dMB in %.0fs"
                  % (window[-1][0], LOW, time.time() - t1))
         else:
             emit("drop: NO PLAN OBSERVED -- not a measurement")
+
+        # ---- Phase RELEASE ----------------------------------------------
+        # Rule 5 of the element contract: the classes come back in
+        # reverse, one stage per stagger, once the ladder has given back
+        # the error pressure raised. The drop phase cannot see that --
+        # it ends the moment memory arrives, with the latch still at
+        # whatever stage got it there. A latch that never walks back
+        # leaves a settled scene permanently without its edges, which
+        # looks like a rendering bug and not like a memory policy, so
+        # the release gets its own window and its own readout.
+        REL_S = float(os.environ.get("FC_RELEASE_S", "0"))
+        if REL_S > 0:
+            # Hand the memory back first. A run that just keeps pumping
+            # at the low budget cannot see a release and cannot fail to:
+            # the scene settles AT the budget's edge, so the latch is
+            # still legitimately pressed and holding every stage is the
+            # correct answer, not evidence of anything. Restoring the
+            # high budget is the only state in which the walk-back is
+            # actually due, which makes its absence a real verdict.
+            if os.environ.get("FC_RELEASE_BUDGET", "high") != "hold":
+                rp.SetInt("GpuMemoryBudgetMB", HIGH)
+                emit("release: budget handed back %d -> %dMB" % (LOW, HIGH))
+            emit("watching %.0fs for the pressure latch to release..."
+                 % REL_S)
+            t2 = time.time()
+            pump(REL_S, v)
+            markRel = logsize()
+            relRep = sampler.phase()
+            report_phase("release", relRep, time.time() - t2, gate=False)
+            gate_scan("release", markDrop, markRel)
         emit("DONE")
     except Exception as exc:
         import traceback

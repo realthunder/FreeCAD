@@ -635,7 +635,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                         "coarse %zu exact %zu | plan: refine %zu demote %zu "
                         "downgrade %zu | cpu ceiling %s | refine tolerance "
                         "%.2fpx%s%s | gates: eligible %zu, suppressed "
-                        "%zu point + %zu line draws%s\n",
+                        "%zu point + %zu line draws (%zu by dependency)%s\n",
                         budget ? (std::to_string(budget / 1048576)
                                   + "MB").c_str()
                                : "NONE (GL reports no limit; set the "
@@ -652,7 +652,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
                         levelPressure.raisedPx > 0.0f
                             ? " (RAISED BY PRESSURE)" : "",
                         pressWhy,
-                        gateEligible, gatedPoints, gatedLines, gateWhy);
+                        gateEligible, gatedPoints, gatedLines,
+                        gatedByDependency, gateWhy);
                     // Who holds the uploaded bytes, by drawable
                     // class, with the share no recent frame drew --
                     // the gap between uploaded and live finally
@@ -3769,7 +3770,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // back -- the dots-first load storm.
     std::set<uint64_t> objectsWithTriangles, objectsWithAttLines,
         objectsWithFloatLines, incompleteObjects;
-    gatedPoints = gatedLines = gateEligible = 0;
+    gatedPoints = gatedLines = gateEligible = gatedByDependency = 0;
     for (const auto &d : scene) {
         if (d.mesh && d.mesh->attachedOnly)
             ++gateEligible;
@@ -3844,22 +3845,41 @@ bool BGFXRenderer::Private::render(const QColor &col,
             return incompleteObjects.count(obj) == 0;
         return !dropLines;
     };
-    auto gatedForMemory = [&](const Render::DrawCall &d) {
+    // `dependency`, when passed, comes back true if the DEPENDENCY
+    // rule alone held this draw back -- its companion class is absent
+    // and incomplete, or present and itself gated -- as opposed to
+    // the memory pressure and the parameters, which would have gated
+    // it whatever its companions were doing. The two are worth
+    // telling apart: the dependency half is the part that needs
+    // objectIncomplete carried to a tier, and a tier need not carry
+    // what never fires.
+    auto gatedForMemory = [&](const Render::DrawCall &d,
+                              bool *dependency = nullptr) {
         if (!d.mesh || !d.mesh->attachedOnly || !d.objectKey
                 || d.material.ontop || d.material.highlightline)
             return false;
         if (d.material.type == Render::Material::Point) {
             if (!objectsWithAttLines.count(d.objectKey)
-                    && !objectsWithFloatLines.count(d.objectKey))
+                    && !objectsWithFloatLines.count(d.objectKey)) {
                 // No line set in the scene at all: a late companion
                 // is waited for, Points mode draws its subject.
-                return incompleteObjects.count(d.objectKey) != 0;
+                const bool late = incompleteObjects.count(d.objectKey) != 0;
+                if (dependency)
+                    *dependency = late;
+                return late;
+            }
+            if (dependency)
+                *dependency = !dropPoints && !lineSetShown(d.objectKey);
             return dropPoints || !lineSetShown(d.objectKey);
         }
         if (d.material.type == Render::Material::Line) {
-            if (!objectsWithTriangles.count(d.objectKey))
+            if (!objectsWithTriangles.count(d.objectKey)) {
                 // The same split: late face set vs Wireframe.
-                return incompleteObjects.count(d.objectKey) != 0;
+                const bool late = incompleteObjects.count(d.objectKey) != 0;
+                if (dependency)
+                    *dependency = late;
+                return late;
+            }
             return dropLines;
         }
         return false;
@@ -3886,9 +3906,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
         for (const auto &d : scene) {
             if (!d.mesh)
                 continue;
-            if (gatedForMemory(d)) {
+            bool byDependency = false;
+            if (gatedForMemory(d, &byDependency)) {
                 ++(d.material.type == Render::Material::Point
                        ? gatedPoints : gatedLines);
+                if (byDependency)
+                    ++gatedByDependency;
                 gatedOnlyMeshes.insert(d.mesh->cacheId);
             }
             else
@@ -3916,6 +3939,26 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 loadDropElements ? "ON (a document is arriving)"
                                  : "OFF (loads finished)",
                 gateEligible, scene.size(), gatedPoints, gatedLines);
+    }
+    // Every edge of the pressure latch, for the same reason -- and
+    // this one needs its own line more than the load gate does. The
+    // latch's state was readable only from the plan readout, and a
+    // settled ladder STOPS PLANNING: the frames in which the release
+    // walks back are exactly the frames that print nothing, so the
+    // one question the staged design has to answer ("do the classes
+    // come back?") was the one question the log could not. Measured
+    // on the storm gate: 90s of settled run, not a single plan line.
+    if (elemPressureStage != elemStageSeen) {
+        const int from = elemStageSeen;
+        elemStageSeen = elemPressureStage;
+        if (levelDebug())
+            FC_RENDER_MSG(
+                "render levels: element gate stage %d -> %d (%s) -- "
+                "%zu point + %zu line draws suppressed this frame\n",
+                from, elemPressureStage,
+                elemPressureStage > from ? "escalating: points, then lines"
+                                         : "releasing: lines, then points",
+                gatedPoints, gatedLines);
     }
 
     // ⭐ The per-instance id image (docs/RenderDebug.md §2.3b, view

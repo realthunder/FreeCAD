@@ -2633,6 +2633,67 @@ objects to bounding boxes; with them on it settles at live 63.1MB /
 cpu 33.0MB with the tolerance back to 2.00px, holding far more real
 tessellation. The gates buy quality at a fixed budget.
 
+**GATE-MEASURED 2026-08-15 on the storm (`scripts/interactivity_gate.py`,
+real desktop, RTX 3060 verified, rack model 5455 objects, budget
+dropped 148 -> 64 MB live).** The contract had shipped unmeasured; this
+is the arm-vs-arm run it owed. `element-gate=off` is the ablation that
+removes the edge stage (`PressureDropEdges` off, `ShapeVertices` off),
+not the pre-contract default:
+
+| | contract on | edge stage off |
+|---|---|---|
+| suppressed at stage 2 | 5909 point + 5909 line | 5909 point + **0** line |
+| **peak accepted error** | **8.01px** | **1654.00px** |
+| error still standing at the end | 4.02px, releasing | 206.75px |
+| settled live | 63.1MB | 59.7MB |
+| gaps >= 200ms in the drop | 107-114 | 171 |
+
+The tolerance column is the verdict and it is not close: without the
+edge stage the ladder can only reach the budget by accepting ~200x the
+error, because the 5909 attached line sets it may not drop have to be
+paid for out of face quality. Convergence time is NOT a verdict here --
+the same arm converged in 48s, 57s and 82s across three runs, so the
+80s of the off arm sits inside its own spread. Quote the error, not the
+clock.
+
+**And the release path is a DEFECT, found by measuring it.** The
+escalation is fine (`stage 0 -> 1 -> 2` under load), but handing the
+memory back (64 -> 148 MB, latch at stage 2) produces this:
+
+| plan | live | accepted error | latch |
+|---|---|---|---|
+| recovering on the restored budget | 76.3MB | 2.00px | stage 2 |
+| **the frame the lines are re-admitted** | **202.8MB** | 1654.00px | stage 1 |
+| peak | 233.0MB | 1654.00px | stage 1 |
+| after re-escalating and re-descending | 82.6MB | 6.46px | stage 2 |
+
+Re-admitting the line class costs **~126MB on one frame** -- the whole
+settled scene again, and 55MB past the restored budget -- so the
+pressure controller slams the tolerance to its 1654px ceiling, the
+latch re-escalates, and the scene ends up WORSE than before it
+released: 6.46px at 82.6MB where it had held 2.00px at 76.3MB. The
+release also cost 104 event-loop gaps >= 200ms (worst 807ms), a second
+storm as expensive as the drop.
+
+The stagger was supposed to prevent exactly this ("what keeps the
+release from re-opening into the memory the collector just freed"), but
+a stagger only DELAYS the re-admission -- it never PRICES it. Nothing
+asks what the class costs before handing it back, and the answer here
+is 2x the budget. The fix belongs with the release decision: weigh the
+gated meshes' buffers (the collector already tracks them as
+`gatedOnlyMeshes`) against actual headroom, and re-admit incrementally
+rather than all 5909 draws on one frame -- the standing "incremental by
+default" rule. NOT yet fixed.
+
+WARNING: the latch's state was readable only from the plan line, and a
+settled ladder STOPS PLANNING -- so the release walks back over exactly
+the frames that print nothing. A first attempt watched 120s of settled
+run and saw no transition at all, which proves nothing either way. The
+stage crossings now log their own edges like the load gate does, and
+the release is only DUE once the memory is handed back: watching a
+scene that settled AT the budget's edge shows a correctly-held latch,
+not a stuck one.
+
 #### 13b.1 -- the load gate, and the phase that turned out to matter
 
 `Render_LoadDropElements` (default on) suppresses **both** classes for
@@ -2648,30 +2709,42 @@ subject to the same all-or-nothing classification and the same
 display-mode exemptions, so a wire, a sketch or a point cloud draws
 throughout. Leaving costs one frame, like the pressure gate.
 
-**MEASURED, and on the `.FCStd` open path it buys NOTHING -- because
-there is nothing on screen to suppress.** Rack model, 5455 objects,
-`Render_LevelDebug` on, both crossings and all ten intervening plan
-readouts logged:
+**MEASURED (2026-08-13), and on the `.FCStd` open path it bought
+NOTHING -- because there was nothing on screen to suppress.** Rack
+model, 5455 objects, `Render_LevelDebug` on, both crossings and all ten
+intervening plan readouts logged:
 
 | phase | wall | draws in the renderer's scene | eligible | suppressed |
 |---|---|---|---|---|
 | whole load, gate ON | 17.8s | **0** | 0 | 0 point + 0 line |
 | the frame it lifted | -- | 5952 (17727 draws) | 11818 | -- |
 
-`bgfx: scene consumed: 5952 draws, 1241 meshes` appears **once**,
-after the load, and the gate lifts on that same frame. A progressive
-load parks every visual build
-(`ViewProviderPartExt::deferVisualForLoad`) and publishes the scene in
-one step when it is done, so **the renderer holds an empty scene for
-the entire load**. A display gate cannot beat a mechanism that has
-already withheld all the geometry: the two are the same idea applied
-at different depths, and the deeper one got there first.
+`bgfx: scene consumed: 5952 draws, 1241 meshes` appeared **once**,
+after the load, and the gate lifted on that same frame. A progressive
+load parked every visual build
+(`ViewProviderPartExt::deferVisualForLoad`) and published the scene in
+one step when it was done, so the renderer held an empty scene for the
+entire load. A display gate cannot beat a mechanism that has already
+withheld all the geometry: the two are the same idea applied at
+different depths, and the deeper one got there first.
 
-So the feature is built, correct and inert on this path. It is kept
-because the case it was designed for is real elsewhere -- a **live
-progressive import** (`App::Document::LiveImport`) builds its visuals
-inline as objects appear, so its geometry does reach a live view while
-the document is still filling. **That case is NOT yet measured.**
+**RE-MEASURED 2026-08-15, and that null is GONE -- the publish is
+incremental now.** Same model, same harness, real desktop: the scene
+fills *while* the drain runs, so the gate has real work throughout,
+climbing as the geometry arrives.
+
+| phase | eligible | suppressed |
+|---|---|---|
+| early load | 2246 | 1123 point + 1123 line |
+| late load / drain | 7098 | 3549 point + 3549 line |
+| the frame it lifted | 11818 (17727 draws) | 5909 point + 0 line |
+
+The lesson is not that the earlier reading was wrong -- it was right
+about the build it measured. It is that **a null result against a
+mechanism that is itself under development expires**, and this one
+expired the moment incremental publish landed. The live progressive
+import (`App::Document::LiveImport`) is still unmeasured; it is no
+longer the only case that exercises the gate.
 
 Getting even the null result required fixing the predicate first.
 "A document is loading" reads naturally as the document status bits

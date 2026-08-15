@@ -7370,6 +7370,12 @@ public:
     /// session on exactly that confusion. `eligible` separates "the
     /// rule refused" from "nobody classified anything".
     size_t gatedPoints = 0, gatedLines = 0, gateEligible = 0;
+    /// Of those, the ones the DEPENDENCY rule alone held back: a
+    /// companion class that is late (its capture deferred) or itself
+    /// gated. Pressure and the parameters account for the rest. It is
+    /// the dependency half that a streaming tier has to carry
+    /// objectIncomplete on the wire to reproduce.
+    size_t gatedByDependency = 0;
     /// Meshes whose every scene draw the gates suppressed this frame
     /// -- not submittable, so the collector must not keep them for
     /// being published (see collectMeshes). Rebuilt each frame by the
@@ -7407,6 +7413,11 @@ public:
     // two settles -- the gate would do its whole job with nothing ever
     // saying it ran.
     bool loadDropSeen = false;
+    /// The same for the pressure latch, and for a sharper reason: the
+    /// plan readout is the only other place the stage appears, and a
+    /// settled ladder stops planning altogether -- so the release
+    /// walks back over frames that print nothing at all.
+    int elemStageSeen = 0;
 
     /// Whether the level plan narrates its decisions. Pushed in from
     /// the Gui bridge like the budget beside it -- this library knows
