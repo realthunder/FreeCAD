@@ -678,6 +678,14 @@ void BGFXRenderer::setSSAOResolution(float scale)
     _BGFXLib.ssaoResolution = std::min(std::max(scale, 0.25f), 1.0f);
 }
 
+// Outside the guard below: the narration it turns on is cross-tier and
+// the browser has no environment variable to reach it by. See the
+// declaration for what walling this one setter off cost.
+void BGFXRenderer::setLevelDebug(bool on)
+{
+    pimpl->levelDebugOn = on;
+}
+
 #ifndef FC_RENDERER_STANDALONE
 void BGFXRenderer::setLevelTolerance(float px)
 {
@@ -702,11 +710,6 @@ void BGFXRenderer::setGpuMemoryBudget(size_t bytes)
     // slept unnoticed for a whole 600s measurement window.
     pimpl->levelPlanner.markDirty();
 #endif
-}
-
-void BGFXRenderer::setLevelDebug(bool on)
-{
-    pimpl->levelDebugOn = on;
 }
 
 void BGFXRenderer::setLevelPressureRelease(float fraction)

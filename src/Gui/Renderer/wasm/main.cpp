@@ -2844,6 +2844,28 @@ static void autoFitCamera()
 /// a point cloud always draws.
 static bool s_shapeVertices = false;
 
+/// ?cavity=<0|1> -- screen-space cavity shading, ON here, which is the
+/// viewer's own choice and not a relay of the producer's. Same reason
+/// the desktop parameter flipped on: the element contract may withhold
+/// an object's edge and vertex sets, and cavity is what still draws a
+/// crease when no line does -- one fullscreen multiply over targets the
+/// prepass has already paid for, which is why it survives even the
+/// degraded tier that drops AO. The producer's tuning (valley, ridge,
+/// radius) is kept when the snapshot carried it; only the switch is the
+/// viewer's, so a scene from a build older than v42 -- which says
+/// nothing about cavity at all -- gets the same look as a current one.
+static bool s_cavity = true;
+
+/// ?leveldebug -- narrate the level plan and the element gates, which is
+/// the desktop's FC_LEVEL_DEBUG / Render_LevelDebug by another door
+/// (there is no environment to read here). Pushed with the per-snapshot
+/// settings rather than once at startup: set once at startup it was
+/// SILENTLY LOST -- every "render levels:" line this tier is written to
+/// print stayed dark, and the gate counters could not be read at all
+/// until the flag was forced. An instrument nobody has seen fire is not
+/// an instrument.
+static bool s_levelDebug = false;
+
 /// Feed the loaded snapshot to the renderer; a first load also fits
 /// the camera (streamed updates keep the user's).
 static void applySnapshot(bool fit)
@@ -2854,11 +2876,23 @@ static void applySnapshot(bool fit)
     markDirty();
     // One line per apply — the streamed updates were previously
     // silent, which made "did the page get the republish?" guesswork.
+    // ...including how many objects the publish says it holds only part
+    // of (SceneDump v55). Zero is the settled answer; a non-zero count
+    // is the producer's capture budget still draining, and the only
+    // evidence on this side that the mark travelled at all -- the gates
+    // that read it report separately, and cannot distinguish "the rule
+    // did not fire" from "the bit never arrived".
+    std::set<uint64_t> incomplete;
+    for (const auto &d : s_snap.scene) {
+        if (d.objectIncomplete)
+            incomplete.insert(d.objectKey);
+    }
     std::printf("fcviewer: apply snapshot: %zu draws, %zu post, "
-                "%zu splices%s\n",
+                "%zu splices, %zu objects incomplete%s\n",
                 s_snap.scene.size(),
                 s_snap.usershaderconf.shaders.size(),
                 s_snap.usershaderconf.splices.size(),
+                incomplete.size(),
                 fit ? " (fit)" : "");
     s_renderer->setBackground(s_snap.background);
     s_renderer->setHiddenLineConfig(s_snap.hlconfig);
@@ -2869,7 +2903,9 @@ static void applySnapshot(bool fit)
     s_renderer->setAOConfig(ao);
     // Cavity is one fullscreen multiply over targets the prepass
     // already paid for, so it survives the degraded tier that drops AO.
-    s_renderer->setCavityConfig(s_snap.cavityconf);
+    Render::CavityConfig cavity = s_snap.cavityconf;
+    cavity.enabled = s_cavity;
+    s_renderer->setCavityConfig(cavity);
     s_renderer->setMatcapConfig(s_snap.matcapconf);
     s_renderer->setPBRConfig(s_snap.pbrconf);
     s_renderer->setBumpConfig(s_snap.bumpconf);
@@ -2891,6 +2927,7 @@ static void applySnapshot(bool fit)
     s_renderer->setElementGates(s_shapeVertices, /*pressureEdges*/ true,
                                 /*loadingDrop*/ false,
                                 /*staggerFrames*/ 15);
+    s_renderer->setLevelDebug(s_levelDebug);
     s_renderer->setEffectResolution(s_snap.effectResolution);
     s_renderer->setSSAOResolution(s_snap.ssaoResolution);
     if (s_snap.hatch && !s_snap.hatch->pixels.empty())
@@ -6695,6 +6732,36 @@ int main()
             s_shapeVertices = on != 0;
             std::printf("fcviewer: shape vertices %s\n",
                         s_shapeVertices ? "ON" : "off");
+        }
+    }
+    // ?leveldebug -- narrate the level plan and the element gates, the
+    // desktop's FC_LEVEL_DEBUG / Render_LevelDebug by another door
+    // (there is no environment to read here). The gate counters and the
+    // element audit are computed on this tier whether or not anyone
+    // reads them, and until this there was no way to read them: the
+    // desktop prints through Base::Console and the browser half of
+    // FC_RENDER_MSG goes to the JS console, so the same lines land in
+    // devtools. Off by default -- the audit prints on every change of
+    // its verdict, which is chatty while a scene streams in.
+    if (EM_ASM_INT({
+            return new URLSearchParams(window.location.search)
+                .has('leveldebug') ? 1 : 0;
+        }) != 0) {
+        s_levelDebug = true;
+        std::printf("fcviewer: level debug ON\n");
+    }
+    // ?cavity=<0|1> -- see s_cavity. On unless asked otherwise, so the
+    // parameter exists to turn the pass OFF (and to A/B what it is
+    // standing in for when the contract withholds the edges).
+    {
+        const int on = EM_ASM_INT({
+            const v = new URLSearchParams(window.location.search)
+                .get('cavity');
+            return v === null ? -1 : ((v === '0' || v === 'false') ? 0 : 1);
+        });
+        if (on >= 0) {
+            s_cavity = on != 0;
+            std::printf("fcviewer: cavity %s\n", s_cavity ? "ON" : "off");
         }
     }
     // ?membudget=<MB> — pin the resident geometry budget (§6 phase 4b),

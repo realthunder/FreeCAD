@@ -4099,6 +4099,34 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 auditNoFaces, auditFloating, auditFloatingNoFaces,
                 auditFloatingDrawn);
     }
+    // The dependency rule's own edges. It is the half that needs
+    // objectIncomplete carried to a tier (SceneDump v55), so it is the
+    // half that has to be observable ON that tier: the desktop prints
+    // the counter with the level plan, and the browser has no plan.
+    // It reports the whole tally, not the dependency count alone, and
+    // fires on a change to any of it: `eligible` is what separates "the
+    // rule refused to hold anything" from "nobody classified anything",
+    // and a dependency counter that reads zero means opposite things in
+    // those two worlds. Reading zero next to a healthy eligible count is
+    // a verdict; reading it next to eligible zero is a broken wire.
+    if (gatedByDependency != gatedDepSeen || gatedPoints != gatedPointsSeen
+            || gatedLines != gatedLinesSeen
+            || gateEligible != gateEligibleSeen) {
+        const bool first = gatedDepSeen == kNeverReported;
+        const size_t from = first ? 0 : gatedDepSeen;
+        gatedDepSeen = gatedByDependency;
+        gatedPointsSeen = gatedPoints;
+        gatedLinesSeen = gatedLines;
+        gateEligibleSeen = gateEligible;
+        if (levelDebug())
+            FC_RENDER_MSG(
+                "render levels: element gates%s: %zu eligible, suppressed "
+                "%zu point + %zu line (%zu by dependency, was %zu; %zu by "
+                "coarse faces)\n",
+                first ? " (first frame)" : "",
+                gateEligible, gatedPoints, gatedLines, gatedByDependency,
+                from, gatedByCoarse);
+    }
     // Both edges of the load gate, with what it cost on the frame
     // it crossed. The closing edge matters as much as the opening
     // one: a gate that never lifts is the failure this design has

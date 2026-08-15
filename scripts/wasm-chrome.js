@@ -53,9 +53,15 @@ async function launch(opts = {}) {
               '--disable-backgrounding-occluded-windows',
               '--disable-renderer-backgrounding');
     env.DISPLAY = env.DISPLAY || ':0';
-    env.GALLIUM_DRIVER = 'd3d12';
-    env.MESA_LOADER_DRIVER_OVERRIDE = 'd3d12';
     env.LIBGL_ALWAYS_SOFTWARE = '0';
+    // The d3d12 steering is WSLg's, and /dev/dxg is what makes a host
+    // WSLg. On a machine with a GPU of its own, pointing Mesa at d3d12
+    // takes GL away rather than giving it -- so ask, rather than assume
+    // the box this harness was written on.
+    if (require('fs').existsSync('/dev/dxg')) {
+      env.GALLIUM_DRIVER = 'd3d12';
+      env.MESA_LOADER_DRIVER_OVERRIDE = 'd3d12';
+    }
     delete env.WAYLAND_DISPLAY;   // ozone-wayland composites without WebGL2
   }
   return puppeteer.launch({
@@ -126,7 +132,30 @@ async function drive(headless, url, shot) {
   if (errs.length) process.exit(1);
 }
 
-module.exports = {launch, probe, drive};
+/// Open a page, touch nothing, and print every console line it produced.
+///
+/// `drive` counts lines because it is asking whether the viewer went
+/// quiet; this prints them because the question is what they SAY. The
+/// viewer narrates through the browser half of FC_RENDER_MSG, so with
+/// ?leveldebug the renderer's own gate and level reporting lands here --
+/// which is the only way to read it on this tier, the desktop's console
+/// and --log-file being Gui-side.
+async function watch(headless, url, seconds, shot) {
+  const browser = await launch({headless});
+  const page = await browser.newPage();
+  await page.setViewport({width: 1024, height: 720});
+  const lines = [];
+  page.on('console', m => lines.push(m.text()));
+  page.on('pageerror', e => lines.push('PAGEERROR: ' + e.message));
+  await page.goto(url, {waitUntil: 'load', timeout: 60000});
+  await new Promise(r => setTimeout(r, seconds * 1000));
+  if (shot) await page.screenshot({path: shot});
+  await browser.close();
+  lines.forEach(l => console.log(l));
+  console.log(`--- ${lines.length} console lines over ${seconds}s`);
+}
+
+module.exports = {launch, probe, drive, watch};
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
@@ -136,9 +165,12 @@ if (require.main === module) {
   (async () => {
     if (cmd === 'probe') await probe(headless);
     else if (cmd === 'drive' && pos[1]) await drive(headless, pos[1], pos[2]);
+    else if (cmd === 'watch' && pos[1])
+      await watch(headless, pos[1], Number(pos[2] || 30), pos[3]);
     else {
       console.error('usage: node wasm-chrome.js probe [--headless]\n'
-                    + '       node wasm-chrome.js drive <url> [out.png] [--headless]');
+                    + '       node wasm-chrome.js drive <url> [out.png] [--headless]\n'
+                    + '       node wasm-chrome.js watch <url> [seconds] [out.png] [--headless]');
       process.exit(1);
     }
   })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

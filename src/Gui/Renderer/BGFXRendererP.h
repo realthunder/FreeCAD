@@ -7438,6 +7438,23 @@ public:
     /// Last reported violation totals, so the report is edge-triggered:
     /// the failure being chased lasts a handful of frames.
     size_t auditSeenNoFaces = 0, auditSeenCoarse = 0, auditSeenFloating = 0;
+    /// Likewise for the dependency rule, and it is the STREAMING tier
+    /// this exists for. The desktop reports the counter in the level
+    /// plan; the browser has no planner, so until this there was no
+    /// line anywhere saying the rule had fired -- and a gate that
+    /// cannot say whether it fired cannot be told apart from one that
+    /// is not wired, which this workstream has already spent a session
+    /// discovering. Edge-triggered like the audit beside it: a late
+    /// companion is late for a handful of frames.
+    /// Seeded to a value no tally can hold, so the FIRST frame always
+    /// reports. An edge-triggered counter that starts equal to its own
+    /// initial value says nothing at all when the answer is a flat zero
+    /// -- and "the rule held nothing back" and "the classification
+    /// never arrived" are exactly the two readings of a flat zero,
+    /// which is the confusion `eligible` exists to end.
+    static const size_t kNeverReported = size_t(-1);
+    size_t gatedDepSeen = kNeverReported, gatedPointsSeen = kNeverReported,
+        gatedLinesSeen = kNeverReported, gateEligibleSeen = kNeverReported;
     /// Meshes whose every scene draw the gates suppressed this frame
     /// -- not submittable, so the collector must not keep them for
     /// being published (see collectMeshes). Rebuilt each frame by the
