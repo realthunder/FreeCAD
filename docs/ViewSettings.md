@@ -201,14 +201,36 @@ A `Section_*` or `Light_*` property change reaches the panel through
 `Clipping::onViewPropertyChanged`, so a saved view or a script moves the
 widgets, and the clip plane widget follows.
 
-WARNING: **The panel and the dock are static state.** `Clipping::done()`
-(Escape in the panel) deletes the whole dock, and the deletion is
-deferred, so it drops `_DockWidget` and `_StackedWidget` immediately as
-well as clearing the per-view map. Leaving the statics to their
-QPointers meant a toggle before the event loop got to the deletion found
-a live dock and built a *second* panel for a view that already had one:
-both alive, both holding clip planes in that view's scene graph, and
-only the newer one reachable to switch them off again.
+### 7.1 Closing a panel
+
+The panel owns its view's clip planes -- a pick style and four
+`SoClipPlane`s in that view's scene graph -- so closing the panel is
+that view's clipping closing, and `Clipping::closePanel()` is the one
+path for it, whether it comes from Escape (`done()`), from the view
+being destroyed, or from the dock going away.
+
+**It closes one view's panel and nothing else's.** Every other view
+keeps its clipping and keeps its page in the dock. The dock is shared,
+so it goes only with the last panel in it, and a view whose panel was
+closed while another view kept the dock gets it back on the next toggle
+rather than toggling the dock away (`toggle()` only toggles for a view
+that already has a panel).
+
+Two things have to happen at once, and neither may wait for the widget
+to be collected:
+
+- The **clipping is taken away immediately** (`Private::detach()`,
+  idempotent, the null view being the "already done" mark). The page
+  deletion is deferred by a whole event loop turn, and until then the
+  view would go on being clipped by a panel the user has just closed.
+- The **page leaves the stack immediately**
+  (`QStackedWidget::removeWidget`) and the per-view map entry with it.
+  The map, the stack and the statics have to agree at every instant:
+  when they did not -- the map cleared while a doomed dock still stood
+  -- a toggle in that window built a *second* panel for a view that
+  already had one, both alive, both holding clip planes in that view's
+  scene graph, and only the newer one reachable to switch them off
+  again.
 
 ## 8. Traps
 

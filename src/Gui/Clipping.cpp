@@ -298,6 +298,7 @@ public:
     bool flipZ{false};
     SoTimerSensor* sensor{nullptr};
     bool busy{false};
+    bool closed{false};
     std::vector<StyleBinding> styles;
     // Set while the panel fills a widget from what the view already says.
     // Nothing is written back then: the value is where it came from, and
@@ -494,6 +495,23 @@ public:
             SbPlane pln = clip->plane.getValue();
             clip->plane.setValue(SbPlane(view->getViewDirection(),pln.getDistanceFromOrigin()));
         }
+    }
+
+    // Give the view its scene graph back. Idempotent, and the null view
+    // is what says it has already happened: the panel outlives this by
+    // however long the deferred deletion of its page takes, and nothing
+    // it does in that time may reach a view it no longer clips.
+    void detach()
+    {
+        if (!view)
+            return;
+        auxNode->removeChild(clipSwitch);
+        node->removeChild(pickStyle);
+        node->removeChild(clipX);
+        node->removeChild(clipY);
+        node->removeChild(clipZ);
+        node->removeChild(clipView);
+        view = nullptr;
     }
 
     void applyPlaneSize(double size)
@@ -766,15 +784,51 @@ static QPointer<QStackedWidget> _StackedWidget;
 static std::map<QObject*, QPointer<QScrollArea> > _Clippings;
 static bool _Inited = false;
 
+// The QScrollArea this panel is a page of, which is what the dock's
+// stack holds and what has to go when the panel does.
+QWidget *Clipping::stackPage() const
+{
+    auto parent = parentWidget();
+    return parent ? parent->parentWidget() : nullptr;
+}
+
+// Close this panel, and nothing else. The panel is per view and it owns
+// that view's clip planes, so closing it is one view's clipping closing:
+// every other view keeps its own, and its panel keeps standing. The dock
+// is shared, so it goes only with the last panel in it.
+void Clipping::closePanel()
+{
+    if (d->closed)
+        return;
+    d->closed = true;
+
+    if (d->view)
+        _Clippings.erase(d->view);
+    // Take the clipping away now rather than when the widget is
+    // collected: the deferred deletion below is a whole event loop turn,
+    // and until then the view would go on being clipped by a panel the
+    // user has just closed.
+    d->detach();
+
+    if (auto page = stackPage()) {
+        // Out of the stack first, so the count below is the truth and
+        // nothing can bind to a page that is on its way out.
+        if (_StackedWidget)
+            _StackedWidget->removeWidget(page);
+        page->deleteLater();
+    }
+    if (_StackedWidget && _StackedWidget->count() == 0) {
+        if (_DockWidget)
+            _DockWidget->deleteLater();
+        _DockWidget = nullptr;
+        _StackedWidget = nullptr;
+    }
+}
+
 void Clipping::onViewDestroyed(QObject *o)
 {
     _Clippings.erase(o);
-    auto parent = parentWidget();
-    if (parent) {
-        parent = parent->parentWidget();
-        if (parent)
-            parent->deleteLater();
-    }
+    closePanel();
 }
 
 static QWidget *bindView(Gui::View3DInventor *view)
@@ -827,34 +881,39 @@ void Clipping::toggle(View3DInventor *view)
         _DockWidget->show();
     }
 
+    // A view that closed its own panel while another view kept the dock
+    // is asking for its panel back, not for the dock to be toggled away
+    // again. Only a view that already has one gets the toggle.
+    auto it = _Clippings.find(view);
+    bool hadPanel = it != _Clippings.end() && it->second;
+
     auto widget = bindView(view);
-    if (widget && doToggle)
+    if (!widget)
+        return;
+    if (doToggle && hadPanel)
         _DockWidget->toggleViewAction()->activate(QAction::Trigger);
+    else if (!_DockWidget->isVisible())
+        _DockWidget->show();
 }
 
 /** Destroys the object and frees any allocated resources */
 Clipping::~Clipping()
 {
+    // Whatever took this panel away -- Escape, its view closing, the dock
+    // closing -- the map must not keep pointing at it, and the view must
+    // get its scene graph back if that has not happened already.
     if (d->view) {
-        d->auxNode->removeChild(d->clipSwitch);
-        d->node->removeChild(d->pickStyle);
-        d->node->removeChild(d->clipX);
-        d->node->removeChild(d->clipY);
-        d->node->removeChild(d->clipZ);
-        d->node->removeChild(d->clipView);
+        auto it = _Clippings.find(d->view);
+        if (it != _Clippings.end() && (!it->second || it->second->widget() == this))
+            _Clippings.erase(it);
     }
+    d->detach();
     d->ui.clipX->onSave();
     d->ui.clipY->onSave();
     d->ui.clipZ->onSave();
     d->ui.dirX->onSave();
     d->ui.dirY->onSave();
     d->ui.dirZ->onSave();
-    // Whatever took this panel away -- the dock closing, the stack page
-    // being deleted -- the view must stop being answered by it, or the
-    // next binding hands back a dead entry instead of building a panel.
-    auto it = _Clippings.find(d->view);
-    if (it != _Clippings.end() && (!it->second || it->second->widget() == this))
-        _Clippings.erase(it);
     delete d;
 }
 
@@ -896,19 +955,7 @@ void Clipping::setupConnections()
 
 void Clipping::done(int r)
 {
-    // Escape in the panel closes the whole dock, and the dock is what
-    // owns every panel in it -- but the deletion is deferred, so the two
-    // statics have to be dropped here rather than left to their
-    // QPointers. Otherwise a toggle before the event loop gets to the
-    // deletion finds a live dock and, with the map just cleared, builds a
-    // SECOND panel for a view that already has one: both alive, both
-    // holding clip planes in that view's scene graph, and only the newer
-    // one reachable to switch them off again.
-    if (_DockWidget)
-        _DockWidget->deleteLater();
-    _DockWidget = nullptr;
-    _StackedWidget = nullptr;
-    _Clippings.clear();
+    closePanel();
     QDialog::done(r);
 }
 

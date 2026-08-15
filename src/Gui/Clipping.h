@@ -160,6 +160,11 @@ public:
     void done(int) override;
 
 private:
+    /// Close this view's panel, leaving every other view's standing.
+    void closePanel();
+    /// The stack page (a QScrollArea) this panel sits in, if any.
+    QWidget *stackPage() const;
+
     class Private;
     Private* d;
 };
