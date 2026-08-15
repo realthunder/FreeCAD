@@ -108,6 +108,7 @@
 #include <App/Document.h>
 #include <App/DocumentObserver.h>
 #include <App/MappedElement.h>
+#include <map>
 #include <Base/Console.h>
 #include <Base/Sequencer.h>
 #include <Base/Parameter.h>
@@ -6777,11 +6778,41 @@ void ViewProviderPartExt::fillVisualArrays(VisualFillData &data)
                                        TopAbs_ShapeEnum in) {
             TopTools_IndexedDataMapOfShapeListOfShape ancestors;
             TopExp::MapShapesAndAncestors(cShape, of, in, ancestors);
-            if (ancestors.IsEmpty())
+            // MEASURED: thousands of point sets come out of here
+            // "floating" during a load and "attached" once settled, on
+            // the same objects -- so which of the two roads to false
+            // was taken is the whole question. An EMPTY map is "there
+            // is nothing here to judge", which is not the same claim as
+            // "something in here floats", and only the second one means
+            // the drawable must always draw.
+            if (ancestors.IsEmpty()) {
+                if (Gui::RenderParams::getLevelDebug()) {
+                    static std::map<int, size_t> empties;
+                    const size_t n = ++empties[int(of)];
+                    if ((n & (n - 1)) == 0)
+                        Base::Console().Message(
+                            "render levels: element class: %s ancestor map "
+                            "EMPTY -- cannot judge, answering 'floats' "
+                            "(x%zu)\n",
+                            of == TopAbs_VERTEX ? "VERTEX/EDGE"
+                                                : "EDGE/FACE", n);
+                }
                 return false;
+            }
             for (int i = 1; i <= ancestors.Extent(); ++i) {
-                if (ancestors.FindFromIndex(i).IsEmpty())
+                if (ancestors.FindFromIndex(i).IsEmpty()) {
+                    if (Gui::RenderParams::getLevelDebug()) {
+                        static std::map<int, size_t> floats;
+                        const size_t n = ++floats[int(of)];
+                        if ((n & (n - 1)) == 0)
+                            Base::Console().Message(
+                                "render levels: element class: %s a real "
+                                "floating element (x%zu)\n",
+                                of == TopAbs_VERTEX ? "VERTEX/EDGE"
+                                                    : "EDGE/FACE", n);
+                    }
                     return false;
+                }
             }
             return true;
         };

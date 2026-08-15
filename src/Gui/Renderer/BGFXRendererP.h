@@ -7430,6 +7430,11 @@ public:
     /// look identical here -- and the second one is a drawable that
     /// escapes every gate on the way in.
     size_t auditFloating = 0, auditFloatingNoFaces = 0;
+    /// ...and how many of those actually carry geometry. A
+    /// drawable published before its fill ran is submitted
+    /// EMPTY: it paints nothing, and counting it as a visible
+    /// dot turns a red herring into a diagnosis.
+    size_t auditFloatingDrawn = 0;
     /// Last reported violation totals, so the report is edge-triggered:
     /// the failure being chased lasts a handful of frames.
     size_t auditSeenNoFaces = 0, auditSeenCoarse = 0, auditSeenFloating = 0;

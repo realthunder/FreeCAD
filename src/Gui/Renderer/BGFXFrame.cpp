@@ -3782,7 +3782,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     gatedPoints = gatedLines = gateEligible = gatedByDependency = 0;
     gatedByCoarse = 0;
     auditDrawn = auditNoFaces = auditCoarse = 0;
-    auditFloating = auditFloatingNoFaces = 0;
+    auditFloating = auditFloatingNoFaces = auditFloatingDrawn = 0;
     for (const auto &d : scene) {
         if (d.mesh && d.mesh->attachedOnly)
             ++gateEligible;
@@ -4043,6 +4043,18 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 // be more different on screen.
                 if (!d.mesh->attachedOnly) {
                     ++auditFloating;
+                    // ...and of those, the ones that actually PUT
+                    // SOMETHING ON SCREEN. A drawable whose fill has
+                    // not run yet is submitted empty and paints
+                    // nothing, so counting submissions and calling
+                    // them visible dots is how a red herring gets
+                    // mistaken for a diagnosis.
+                    const bool hasGeom =
+                        d.material.type == Render::Material::Point
+                            ? d.mesh->numPointIndices > 0
+                            : d.mesh->numLineIndices > 0;
+                    if (hasGeom)
+                        ++auditFloatingDrawn;
                     if (!objectsWithTriangles.count(d.objectKey))
                         ++auditFloatingNoFaces;
                     submittable.insert(d.mesh->cacheId);
@@ -4081,10 +4093,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 "render levels: element audit frame %llu: %zu point/line "
                 "draws submitted | attached: %zu OVER COARSE FACES, %zu "
                 "with NO FACE SET | unclassified (floating or not yet "
-                "classified): %zu, of which %zu have NO FACE SET -- these "
-                "pass every gate\n",
+                "classified): %zu, of which %zu have NO FACE SET and %zu "
+                "actually CARRY GEOMETRY -- these pass every gate\n",
                 (unsigned long long)view->frame, auditDrawn, auditCoarse,
-                auditNoFaces, auditFloating, auditFloatingNoFaces);
+                auditNoFaces, auditFloating, auditFloatingNoFaces,
+                auditFloatingDrawn);
     }
     // Both edges of the load gate, with what it cost on the frame
     // it crossed. The closing edge matters as much as the opening
