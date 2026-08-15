@@ -65,3 +65,8 @@ files_to_translate.txt
 # so its contents are whatever platform configured last -- it was tracked
 # once with MSVC's __declspec in it, which no gcc build can compile
 /src/3rdParty/customtitlebarkit/include/customtitlebarkit/export.h
+
+# npm dependencies of the viewer's DOM UI layer: the WASM viewer build
+# runs `npm install` in the source tree (src/Gui/Renderer/wasm/CMakeLists.txt),
+# so this appears for anyone who builds it
+/src/Gui/Renderer/web/node_modules/

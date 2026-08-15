@@ -139,6 +139,62 @@ set_property(TARGET fcviewer APPEND PROPERTY
 
 set_target_properties(fcviewer PROPERTIES SUFFIX ".html")
 
+# --- the DOM UI layer (docs/ThinClient.md) --------------------------------
+#
+# The menu and the HUD card are a separate vite bundle under ../web, which
+# shell.html loads as `web/inspector.js`. The canvas deliberately does not
+# depend on it -- a page served without it 404s that one request and runs
+# bare -- and that is exactly why its absence is silent: the viewer comes
+# up looking like a viewer, just with no chrome, and the only evidence is
+# one console line. Building it here is what makes `cmake --build
+# build/wasm` produce the whole page instead of half of it.
+#
+# -DFCVIEWER_UI=OFF skips it, and the npm dependency with it.
+option(FCVIEWER_UI "Build the viewer's DOM UI bundle (needs npm)" ON)
+if(FCVIEWER_UI)
+    find_program(FCVIEWER_NPM npm)
+    if(FCVIEWER_NPM)
+        set(FCVIEWER_UI_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../web)
+        file(GLOB_RECURSE FCVIEWER_UI_FILES CONFIGURE_DEPENDS
+             ${FCVIEWER_UI_SRC}/src/*.ts ${FCVIEWER_UI_SRC}/src/*.tsx
+             ${FCVIEWER_UI_SRC}/src/*.css)
+        # Keyed on the manifest, so the install runs when the dependencies
+        # change and not on every build.
+        add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web-deps.stamp
+            COMMAND ${FCVIEWER_NPM} install --no-audit --no-fund
+            COMMAND ${CMAKE_COMMAND} -E touch
+                    ${CMAKE_CURRENT_BINARY_DIR}/web-deps.stamp
+            WORKING_DIRECTORY ${FCVIEWER_UI_SRC}
+            DEPENDS ${FCVIEWER_UI_SRC}/package.json
+            COMMENT "fcviewer UI: installing npm dependencies"
+            VERBATIM)
+        # --outDir keeps CMake authoritative about where the bundle lands,
+        # rather than the tree-relative path baked into vite.config.ts (which
+        # stays, so a bare `npm run build` still works on its own).
+        add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web/inspector.js
+            COMMAND ${FCVIEWER_NPM} run build --
+                    --outDir ${CMAKE_CURRENT_BINARY_DIR}/web --emptyOutDir
+            WORKING_DIRECTORY ${FCVIEWER_UI_SRC}
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/web-deps.stamp
+                    ${FCVIEWER_UI_FILES} ${FCVIEWER_UI_SRC}/vite.config.ts
+            COMMENT "fcviewer UI: building the DOM bundle (vite)"
+            VERBATIM)
+        add_custom_target(fcviewer_ui ALL
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/web/inspector.js)
+        # So that asking for the viewer gets the whole page, not just the
+        # canvas half of it.
+        add_dependencies(fcviewer fcviewer_ui)
+    else()
+        message(WARNING
+            "npm not found: the viewer's DOM UI (menu, HUD card) will not be "
+            "built, and the page will run bare -- shell.html 404s "
+            "web/inspector.js and logs 'fcviewer-ui: bundle failed to load'. "
+            "Pass -DFCVIEWER_UI=OFF to silence this.")
+    endif()
+endif()
+
 # Build stamp next to the bundle: the page reports it in the hello
 # handshake and the backend (FC_BGFX_VIEWER_BUILD pointing here) pushes
 # a reload to any open page whose stamp no longer matches — see

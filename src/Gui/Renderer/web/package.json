@@ -16,5 +16,8 @@
   },
   "dependencies": {
     "solid-js": "^1.9.0"
+  },
+  "overrides": {
+    "rollup": "npm:@rollup/wasm-node@^4"
   }
 }
