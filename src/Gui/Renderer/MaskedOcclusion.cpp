@@ -826,10 +826,12 @@ void MaskedDepth::emitTriangle(const float *pa, const float *pb,
     // 1, so this only ever fires on a perspective matrix with no usable
     // near plane.
     {
-        bool small = false;
+        // Not "small": rpcndr.h, pulled in by windows.h, defines that as a
+        // macro for char.
+        bool tiny = false;
         for (int i = 0; i < n; ++i)
-            small = small || poly[i].w < kMinW;
-        if (small) {
+            tiny = tiny || poly[i].w < kMinW;
+        if (tiny) {
             n = clipAgainst(poly, n, tmp, 0.0, 0.0, 0.0, 1.0);
             // clipAgainst's plane is w >= 0; nudge the survivors instead
             // of solving for w >= kMinW, which would move vertices.
