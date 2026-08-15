@@ -91,6 +91,11 @@ public:
   void setExternalRenderer(Render::Renderer *renderer,
                            App::PropertyContainer *view = nullptr);
 
+  /// The owning 3D view object, whose Section_* properties override the
+  /// section and clipping style. Told to the renderer whether or not a
+  /// backend is attached, since the internal GL pass honors them too.
+  void setViewObject(App::PropertyContainer *view);
+
   /// Route the scene feed to the backend's overlay feed instead (see
   /// SoFCRenderer::setExternalOverlay()): this manager then captures an
   /// overlay root (foreground superimposition, corner axis cross) and
@@ -203,7 +208,8 @@ namespace Gui
 /// property of how the document is drawn, not of a view: a publisher
 /// with no 3D view has to put the same image in its snapshot
 /// (docs/HeadlessServe.md §3.3).
-GuiExport void applySectionHatchTexture(SoFCRenderCacheManager &manager);
+GuiExport void applySectionHatchTexture(SoFCRenderCacheManager &manager,
+                                       App::PropertyContainer *view = nullptr);
 
 /// Materialize the Render_* dynamic properties that the per-frame config
 /// push reads as a per-container override of the global RenderParams
@@ -227,6 +233,18 @@ GuiExport void initRenderProperties(App::PropertyContainer *view);
 /// afterwards: Property::setStatusValue masks that bit out, so the only
 /// way to get it is to create the property again.)
 GuiExport void reseedLocalRenderProperties(App::PropertyContainer *view);
+
+/// The effective value of one section/clipping style key for \a view: its
+/// Section_* property if it has one, and the ViewParams preference
+/// otherwise. How a section is capped, hatched and filled is part of how a
+/// clipped model is meant to be read, so a view - and the saved view that
+/// restores it - can answer for it instead of moving everybody's default.
+/// A property here IS the override: it exists only where somebody chose
+/// one, which is also what makes it worth saving.
+GuiExport bool sectionStyle(App::PropertyContainer *view, const char *name, bool def);
+GuiExport double sectionStyle(App::PropertyContainer *view, const char *name, double def);
+GuiExport std::string sectionStyle(App::PropertyContainer *view, const char *name,
+                                   const std::string &def);
 }
 
 #endif // GUI_SOFCRENDERCACHEMANAGER_H

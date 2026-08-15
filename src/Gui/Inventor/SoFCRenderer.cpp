@@ -405,6 +405,24 @@ public:
 
   HatchTexture *hatchtexture = nullptr;
 
+  // The owning 3D view object, for the Section_* style overrides below.
+  // Held whether or not a backend is attached, since the internal GL pass
+  // honors them too.
+  App::PropertyContainer *viewobject = nullptr;
+  // The section/clipping style of the frame being drawn, snapshotted once
+  // per render() from the view's Section_* overrides and the preferences
+  // behind them. Snapshotted because these are read per draw entry, deep
+  // inside the loops below.
+  struct SectionStyle {
+    bool fill = false;
+    bool fillInvert = false;
+    bool fillGroup = false;
+    bool concave = false;
+    bool hatch = false;
+    double hatchScale = 1.0;
+  } section;
+  void updateSectionStyle();
+
   // Optional external render backend mirroring the scene/selection feeds.
   Render::Renderer *external = nullptr;
   // Owning 3D view of the external backend, for per-view dynamic property
@@ -619,7 +637,7 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
   auto clippers = next.clippers;
   if (this->shadowmapping
       || ((ViewParams::getNoSectionOnTop()
-          || (ViewParams::getSectionConcave() && clippers.getNum() > 1))
+          || (this->section.concave && clippers.getNum() > 1))
           && next.isOnTop()))
     clippers.clear();
 
@@ -1951,12 +1969,12 @@ SoFCRendererP::renderSection(SoGLRenderAction *action,
   int curpass = pass++;
 
   int numclip = this->material.clippers.getNum();
-  bool concave = ViewParams::getSectionConcave() && numclip > 1;
+  bool concave = this->section.concave && numclip > 1;
 
   if (this->depthwriteonly
       || curpass >= numclip
       || draw_entry.ventry->partidx >= 0
-      || (!ViewParams::getSectionFill() && !concave))
+      || (!this->section.fill && !concave))
     return curpass == 0;
 
   if (draw_entry.material->type != Material::Triangle) {
@@ -1979,7 +1997,7 @@ SoFCRendererP::renderSection(SoGLRenderAction *action,
       && !draw_entry.ventry->cache->hasSolid())
     return curpass == 0;
 
-  if (!concave && ViewParams::getSectionFillGroup()) {
+  if (!concave && this->section.fillGroup) {
     if (curpass != 0)
       return false;
     if (transp)
@@ -2047,7 +2065,7 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
   }
 
   int numclip = this->material.clippers.getNum();
-  bool concave = ViewParams::getSectionConcave() && numclip > 1;
+  bool concave = this->section.concave && numclip > 1;
 
   if (curpass == 0 && concave) {
     if (this->material.depthfunc != SoDepthBuffer::LESS)
@@ -2162,7 +2180,7 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
     matrix.multVecMatrix(v4, v4);
   }
 
-  if (ViewParams::getSectionFillInvert()) {
+  if (this->section.fillInvert) {
     auto col = this->material.diffuse;
     unsigned char r = (col >> 24) & 0xff;
     unsigned char g = (col >> 16) & 0xff;
@@ -2176,10 +2194,10 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
     glColor4ub(r, g, b, a);
   }
 
-  float hatchscale = std::max(1e-4, 0.3 * ViewParams::getSectionHatchTextureScale());
+  float hatchscale = std::max(1e-4, 0.3 * this->section.hatchScale);
 
   auto hatch = this->hatchtexture;
-  if (!ViewParams::getSectionHatchTextureEnable())
+  if (!this->section.hatch)
     hatch = nullptr;
   if (hatch) {
     pauseShadowRender(action->getState(), true);
@@ -2239,7 +2257,7 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
 
   glPopAttrib();
 
-  if (ViewParams::getSectionFillInvert()) {
+  if (this->section.fillInvert) {
     auto col = this->material.diffuse;
     unsigned char r = (col >> 24) & 0xff;
     unsigned char g = (col >> 16) & 0xff;
@@ -2287,7 +2305,7 @@ SoFCRendererP::renderOpaque(SoGLRenderAction * action,
     auto & draw_entry = draw_entries[idx];
     if (draw_entry.skip > 0
         && !this->shadowmapping
-        && ((!ViewParams::getSectionConcave() && !ViewParams::getNoSectionOnTop())
+        && ((!this->section.concave && !ViewParams::getNoSectionOnTop())
             || !draw_entry.material->clippers.getNum()))
       continue;
 
@@ -2325,7 +2343,7 @@ SoFCRendererP::renderOpaque(SoGLRenderAction * action,
     int n = 0;
     bool pushed = false;
     while (renderSection(action, draw_entry, n, pushed, false)) {
-      if (!ViewParams::getSectionConcave()
+      if (!this->section.concave
           && this->material.clippers.getNum() > 0
           && isValidBBox(draw_entry.bbox)
           && SoCullElement::cullTest(state, draw_entry.bbox, FALSE))
@@ -2473,7 +2491,7 @@ SoFCRendererP::renderTransparency(SoGLRenderAction * action,
         bool pushed = false;
         int n = 0;
         while (renderSection(action, draw_entry, n, pushed, true)) {
-          if (!ViewParams::getSectionConcave()
+          if (!this->section.concave
               && this->material.clippers.getNum() > 0
               && isValidBBox(draw_entry.bbox)
               && SoCullElement::cullTest(state, draw_entry.bbox, FALSE))
@@ -2563,7 +2581,7 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
     PRIVATE(this)->external->setHiddenLineConfig(
         RendererBridge::translateHiddenLineConfig(state));
     PRIVATE(this)->external->setSectionConfig(
-        RendererBridge::translateSectionConfig());
+        RendererBridge::translateSectionConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setAOConfig(
         RendererBridge::translateAOConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setCavityConfig(
@@ -2606,6 +2624,30 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
 }
 
 void
+SoFCRendererP::updateSectionStyle()
+{
+  this->section.fill = Gui::sectionStyle(this->viewobject, "Fill",
+                                         ViewParams::getSectionFill());
+  this->section.fillInvert = Gui::sectionStyle(this->viewobject, "FillInvert",
+                                               ViewParams::getSectionFillInvert());
+  this->section.fillGroup = Gui::sectionStyle(this->viewobject, "FillGroup",
+                                              ViewParams::getSectionFillGroup());
+  this->section.concave = Gui::sectionStyle(this->viewobject, "Concave",
+                                            ViewParams::getSectionConcave());
+  this->section.hatch = Gui::sectionStyle(this->viewobject, "Hatch",
+                                          ViewParams::getSectionHatchTextureEnable());
+  this->section.hatchScale = Gui::sectionStyle(this->viewobject, "HatchScale",
+                                               ViewParams::getSectionHatchTextureScale());
+}
+
+void
+SoFCRenderer::setViewObject(App::PropertyContainer * view)
+{
+  PRIVATE(this)->viewobject = view;
+  PRIVATE(this)->updateSectionStyle();
+}
+
+void
 SoFCRenderer::render(SoGLRenderAction * action)
 {
   // In overlay-capture mode this renderer only exists as a feed conduit:
@@ -2641,6 +2683,8 @@ SoFCRenderer::render(SoGLRenderAction * action)
   PRIVATE(this)->transpshadowmapping = PRIVATE(this)->shadowmapping && (shapestyleflags & 0x01000000);
 
   PRIVATE(this)->showHiddenLine = SoFCDisplayModeElement::showHiddenLines(state, &PRIVATE(this)->hiddenLineConfig);
+
+  PRIVATE(this)->updateSectionStyle();
 
   PRIVATE(this)->section_entries.clear();
   PRIVATE(this)->transp_section_entries.clear();

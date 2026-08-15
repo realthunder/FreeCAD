@@ -1470,6 +1470,9 @@ void View3DInventorViewer::init()
     selectionRoot = new Gui::SoFCUnifiedSelection();
     selectionRoot->applySettings();
     selectionRoot->setViewer(this);
+    // The view object answers for the section and clipping style this
+    // viewer draws with, wherever it carries a Section_* override.
+    selectionRoot->setViewObject(_pimpl->view);
 
     // set the ViewProvider root node
     pcViewProviderRoot = selectionRoot;
@@ -4891,6 +4894,42 @@ static bool _isLocalRenderProperty(const char *name)
     return false;
 }
 
+// The section/clipping style, which a view can answer for with a Section_*
+// property. Unlike the Render_* group nothing materializes these: a
+// property here exists only because somebody chose an override -- a saved
+// view restoring one, or a hand edit -- and the preference answers for
+// every view that has none. That is what keeps a clipped presentation from
+// moving the reader's own defaults when the document is opened.
+template<class PropT, class ValueT>
+static ValueT _sectionStyle(App::PropertyContainer *view, const char *name,
+                            const ValueT &def)
+{
+    if (!view)
+        return def;
+    char full[128];
+    snprintf(full, sizeof(full)-1, "Section_%s", name);
+    auto prop = view->getPropertyByName(full);
+    if (!prop || !prop->isDerivedFrom(PropT::getClassTypeId()))
+        return def;
+    return ValueT(static_cast<PropT*>(prop)->getValue());
+}
+
+bool Gui::sectionStyle(App::PropertyContainer *view, const char *name, bool def)
+{
+    return _sectionStyle<App::PropertyBool, bool>(view, name, def);
+}
+
+double Gui::sectionStyle(App::PropertyContainer *view, const char *name, double def)
+{
+    return _sectionStyle<App::PropertyFloat, double>(view, name, def);
+}
+
+std::string Gui::sectionStyle(App::PropertyContainer *view, const char *name,
+                              const std::string &def)
+{
+    return _sectionStyle<App::PropertyString, std::string>(view, name, def);
+}
+
 void Gui::reseedLocalRenderProperties(App::PropertyContainer *view)
 {
     if (!view)
@@ -8155,9 +8194,12 @@ void View3DInventorViewer::refreshRenderCache()
     }
 }
 
-void Gui::applySectionHatchTexture(SoFCRenderCacheManager &manager)
+void Gui::applySectionHatchTexture(SoFCRenderCacheManager &manager,
+                                   App::PropertyContainer *view)
 {
-    QString path = QString::fromUtf8(ViewParams::getSectionHatchTexture().c_str());
+    QString path = QString::fromUtf8(
+            Gui::sectionStyle(view, "HatchTexture",
+                              ViewParams::getSectionHatchTexture()).c_str());
     QDateTime date;
     auto &entry = _HatchTextures[path];
     if (!path.startsWith(QLatin1Char(':'))) {
@@ -8184,7 +8226,7 @@ void Gui::applySectionHatchTexture(SoFCRenderCacheManager &manager)
 void View3DInventorViewer::updateHatchTexture()
 {
     if (auto manager = selectionRoot->getRenderManager()) {
-        Gui::applySectionHatchTexture(*manager);
+        Gui::applySectionHatchTexture(*manager, _pimpl->view);
         redraw();
     }
 }

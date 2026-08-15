@@ -364,6 +364,11 @@ SoFCRenderCacheManager *SoFCUnifiedSelection::getRenderManager()
     return nullptr;
 }
 
+void SoFCUnifiedSelection::setViewObject(App::PropertyContainer *view)
+{
+    pimpl->manager.setViewObject(view);
+}
+
 void SoFCUnifiedSelection::setExternalRenderer(Render::Renderer *renderer,
                                                App::PropertyContainer *view)
 {

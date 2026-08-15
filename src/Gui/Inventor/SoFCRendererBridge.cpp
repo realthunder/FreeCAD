@@ -1266,15 +1266,20 @@ RendererBridge::translateHiddenLineConfig(SoState * state)
 }
 
 Render::SectionConfig
-RendererBridge::translateSectionConfig()
+RendererBridge::translateSectionConfig(App::PropertyContainer * view)
 {
     Render::SectionConfig res;
-    res.fill = ViewParams::getSectionFill();
-    res.fillInvert = ViewParams::getSectionFillInvert();
-    res.fillGroup = ViewParams::getSectionFillGroup();
-    res.concave = ViewParams::getSectionConcave();
-    res.hatchEnable = ViewParams::getSectionHatchTextureEnable();
-    res.hatchScale = float(ViewParams::getSectionHatchTextureScale());
+    res.fill = Gui::sectionStyle(view, "Fill", ViewParams::getSectionFill());
+    res.fillInvert = Gui::sectionStyle(view, "FillInvert",
+                                       ViewParams::getSectionFillInvert());
+    res.fillGroup = Gui::sectionStyle(view, "FillGroup",
+                                      ViewParams::getSectionFillGroup());
+    res.concave = Gui::sectionStyle(view, "Concave",
+                                    ViewParams::getSectionConcave());
+    res.hatchEnable = Gui::sectionStyle(view, "Hatch",
+                                        ViewParams::getSectionHatchTextureEnable());
+    res.hatchScale = float(Gui::sectionStyle(view, "HatchScale",
+                                             ViewParams::getSectionHatchTextureScale()));
     return res;
 }
 

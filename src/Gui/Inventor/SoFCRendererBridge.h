@@ -79,9 +79,10 @@ GuiExport Render::DrawCallList translate(
 /// (SoFCDisplayModeElement) into the backend-neutral per-frame config.
 GuiExport Render::HiddenLineConfig translateHiddenLineConfig(SoState * state);
 
-/// Resolve the section fill (cap) ViewParams into the backend-neutral
-/// per-frame config.
-GuiExport Render::SectionConfig translateSectionConfig();
+/// Resolve the section fill (cap) settings into the backend-neutral
+/// per-frame config: the view's Section_* overrides where it has them,
+/// and the ViewParams preferences behind them.
+GuiExport Render::SectionConfig translateSectionConfig(App::PropertyContainer * view);
 
 /// Resolve the ambient occlusion settings into the backend-neutral
 /// per-frame config: the view's Render_SSAO* dynamic properties when

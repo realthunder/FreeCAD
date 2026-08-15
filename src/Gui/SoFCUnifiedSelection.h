@@ -152,6 +152,9 @@ public:
     /// cache mode, so the backend can be (de)attached at any time. \a view
     /// optionally identifies the owning 3D view for per-view dynamic
     /// property overrides.
+    /// The owning 3D view object, for the per-view Section_* style
+    /// overrides the render cache manager resolves.
+    void setViewObject(App::PropertyContainer *view);
     void setExternalRenderer(Render::Renderer *renderer,
                              App::PropertyContainer *view = nullptr);
 

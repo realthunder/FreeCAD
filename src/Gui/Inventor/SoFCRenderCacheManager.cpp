@@ -827,6 +827,12 @@ SoFCRenderCacheManager::setExternalRenderer(Render::Renderer *renderer,
 }
 
 void
+SoFCRenderCacheManager::setViewObject(App::PropertyContainer *view)
+{
+  PRIVATE(this)->renderer->setViewObject(view);
+}
+
+void
 SoFCRenderCacheManager::setExternalOverlay(Render::Renderer *renderer,
                                            int id,
                                            const Render::OverlayAnchor &anchor)

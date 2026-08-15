@@ -64,6 +64,14 @@ public:
   void setExternalRenderer(Render::Renderer * renderer,
                            App::PropertyContainer * view = nullptr);
 
+  /// The owning 3D view object, whose Section_* properties can override
+  /// the section and clipping style this renderer draws with. Set
+  /// independently of any backend, since the internal GL pass honors the
+  /// same overrides. The style is snapshotted once per frame: it is read
+  /// deep inside the draw loops, where a property lookup per draw entry
+  /// would cost more than the setting is worth.
+  void setViewObject(App::PropertyContainer * view);
+
   /// Route this renderer's scene feed to an external backend's overlay
   /// feed instead of the main scene feed: setScene() translates the
   /// caches into Renderer::setOverlay(\a id, draws, \a anchor), while
