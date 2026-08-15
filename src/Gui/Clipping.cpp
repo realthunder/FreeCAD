@@ -1014,10 +1014,15 @@ void Clipping::onGroupBoxZToggled(bool on)
 void Clipping::on_checkBoxFill_toggled(bool on)
 {
     if (on && !d->populating && !ViewParams::isUsingRenderer()) {
+        // The render cache is no longer a setting anybody can see, so this
+        // no longer sends the user to a preference page to find it. It
+        // stays a question rather than becoming automatic because the
+        // answer switches the whole application's renderer, not this
+        // view's fill.
         int res = QMessageBox::question(Gui::getMainWindow(), tr("Clipping"),
-                tr("Cross section fill only works with 'Experiemental' render cache"
-                   " (Preferences -> Display -> Render cache).\n\n"
-                   "Do you want to enable it?"),
+                tr("Cross section fill needs the experimental renderer,"
+                   " which is not in use.\n\n"
+                   "Do you want to switch to it?"),
                 QMessageBox::Yes, QMessageBox::No|QMessageBox::No);
         if (res == QMessageBox::No) {
             d->ui.checkBoxFill->setChecked(false);

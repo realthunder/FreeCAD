@@ -77,16 +77,13 @@ DlgSettings3DViewImp::~DlgSettings3DViewImp() = default;
 void DlgSettings3DViewImp::saveSettings()
 {
     ui->comboAliasing->onSave();
-    ui->renderCache->onSave();
     ui->comboRenderer->onSave();
-    ui->comboTransparentRender->onSave();
     ui->boxMarkerSize->onSave();
     ui->CheckBox_CornerCoordSystem->onSave();
     ui->SpinBox_CornerCoordSystemSize->onSave();
     ui->CheckBox_ShowAxisCross->onSave();
     ui->CheckBox_ShowFPS->onSave();
     ui->CheckBox_use_SW_OpenGL->onSave();
-    ui->CheckBox_useVBO->onSave();
     ui->FloatSpinBox_EyeDistance->onSave();
     ui->checkBoxBacklight->onSave();
     ui->backlightColor->onSave();
@@ -107,7 +104,6 @@ void DlgSettings3DViewImp::loadSettings()
     ui->CheckBox_ShowAxisCross->onRestore();
     ui->CheckBox_ShowFPS->onRestore();
     ui->CheckBox_use_SW_OpenGL->onRestore();
-    ui->CheckBox_useVBO->onRestore();
     ui->FloatSpinBox_EyeDistance->onRestore();
     ui->checkBoxBacklight->onRestore();
     ui->backlightColor->onRestore();
@@ -119,9 +115,7 @@ void DlgSettings3DViewImp::loadSettings()
     ui->renderCacheMergeCount->onRestore();
     ui->renderCacheMergeCountMax->onRestore();
     ui->comboAliasing->onRestore();
-    ui->renderCache->onRestore();
 
-    ui->comboTransparentRender->onRestore();
     ui->checkBoxEnhancedPick->onRestore();
 
     ui->boxMarkerSize->addItem(tr("5px"), QVariant(5));
@@ -141,13 +135,13 @@ void DlgSettings3DViewImp::loadSettings()
         ui->comboRenderer->addItem(tr(type.c_str()), QByteArray(type.c_str()));
     ui->comboRenderer->onRestore();
 
-    auto checkComboRenderer = [this](int v) {
-        bool vis = ui->comboRenderer->count() > 1 && v == 3;
-        ui->comboRenderer->setVisible(vis);
-        ui->labelRenderer->setVisible(vis);
-    };
-    checkComboRenderer(ui->renderCache->currentIndex());
-    QObject::connect(ui->renderCache, QOverload<int>::of(&QComboBox::currentIndexChanged), checkComboRenderer);
+    // Which backend draws is still a choice, but only where a backend can
+    // draw at all. The render cache that decides that is no longer on this
+    // page, so ask the parameter rather than a widget.
+    bool showRenderer = ui->comboRenderer->count() > 1
+                        && ViewParams::isUsingRenderer();
+    ui->comboRenderer->setVisible(showRenderer);
+    ui->labelRenderer->setVisible(showRenderer);
 }
 
 /**

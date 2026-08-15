@@ -362,7 +362,14 @@ showing. And a Z clip is invisible to a camera pointing down Z: stage
 - Outside the Clipping panel there is no UI to create an override: a
   `Light_*` property appears only through a saved view, a script, or
   that panel.
-- `RenderCache` is to be demoted to a development-only setting. When
-  that happens `UseVBO` and `TransparentObjectRenderType` go with it --
-  they are the same kind of thing. Until then all three are simply
-  dropped from every capture path.
+- `RenderCache`, `UseVBO` and `TransparentObjectRenderType` are
+  **development-only settings**: they describe the machine and its
+  driver, never the document, so they are dropped from every capture
+  path and, since 2026-08-16, are not on the 3D View preference page
+  either. The parameters and every reader of them are unchanged -- this
+  removed the controls, not the modes -- so a config that has one keeps
+  drawing with it, and they are still set by hand or by script. The one
+  place the UI still switches the render cache is the Clipping panel's
+  offer to turn on the renderer when the section fill needs it, which is
+  also the only way left to reach the renderer from the UI (the default
+  is 0).
