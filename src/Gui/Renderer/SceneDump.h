@@ -69,6 +69,13 @@ struct LevelMeshes {
     /// Empty the rung stored under \a key, keeping the object (draws
     /// may still name it; the GPU cache sees the generation move).
     virtual void release(const std::string &key) = 0;
+    /// State the relative error the rung under \a key was built at.
+    /// The ladder knows it, but nothing downstream of the rung binder
+    /// can see the ladder -- every consumer reads the mesh it was
+    /// handed (MeshData::levelError) -- so an unstamped coarse rung
+    /// reads as the exact tessellation. The element gate's
+    /// coarse-faces rule asks exactly that question.
+    virtual void stampError(const std::string &key, float error) = 0;
 };
 
 struct SceneSnapshot {

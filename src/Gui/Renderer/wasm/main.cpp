@@ -4704,6 +4704,13 @@ static bool fillRung(Render::SceneSnapshot::DeferredChunk &entry, int rung,
     const std::string &key = Render::planRungKey(entry, size_t(rung));
     if (key.empty() || !entry.levelMeshes->fill(key, data, size))
         return false;
+    // A rung that does not say what it was built at is indistinguishable
+    // from the exact tessellation to everything past the binder, and the
+    // element gate's coarse-faces rule is one of those things: it holds
+    // an object's edges back while its FACES are still rough. Without
+    // this the browser's whole coarse half is structurally dead.
+    entry.levelMeshes->stampError(key, Render::planRungError(entry,
+                                                             size_t(rung)));
     // The identity parse is no longer outstanding either way — the
     // generic closure and this are two doors into the same store.
     entry.fill = nullptr;

@@ -847,6 +847,12 @@ public:
         slot->generation = gen + 1;
         return ok;
     }
+    void stampError(const std::string &key, float error) override
+    {
+        auto it = m_rungs.find(key);
+        if (it != m_rungs.end() && it->second)
+            it->second->levelError = error;
+    }
     void release(const std::string &key) override
     {
         auto it = m_rungs.find(key);
@@ -948,6 +954,17 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
                                                    version);
         const std::string key0 = entry.key;
         entry.levelMeshes = lm;
+        // The identity rung is the finest BUILT level (readMeshLevels
+        // leaves entry.key on it), and its error is what this mesh
+        // draws at -- nonzero whenever the producer published
+        // coarse-first. Carrying it onto the mesh is how the
+        // producer's own statement of coarseness survives the wire.
+        for (size_t i = entry.levels.size(); i-- > 0;) {
+            if (entry.levels[i].key == entry.key) {
+                mesh->levelError = entry.levels[i].error;
+                break;
+            }
+        }
         entry.fill = [lm, key0](SceneSnapshot &, const void *data,
                                 size_t size) {
             return lm->fill(key0, data, size);
