@@ -927,7 +927,7 @@ Params = [
         "Effect resolution drives only the costlier reflection re-render.\n"
         "1.0 renders the occlusion at full resolution; lower trades AO\n"
         "sharpness for speed."),
-    ParamBool('Cavity',  False, title='Cavity shading',
+    ParamBool('Cavity',  True, title='Cavity shading',
         doc="Enable screen space cavity (curvature) shading of the\n"
         "experimental render engine (render cache mode 3 with a selected\n"
         "renderer type). Darkens concave creases and convex ridges found\n"

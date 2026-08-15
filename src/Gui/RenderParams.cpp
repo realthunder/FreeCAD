@@ -329,7 +329,7 @@ public:
         funcs["AOIntensity"] = &RenderParamsP::updateAOIntensity;
         AOResolution = this->handle->GetFloat("AOResolution", 1.0);
         funcs["AOResolution"] = &RenderParamsP::updateAOResolution;
-        Cavity = this->handle->GetBool("Cavity", false);
+        Cavity = this->handle->GetBool("Cavity", true);
         funcs["Cavity"] = &RenderParamsP::updateCavity;
         CavityRadius = this->handle->GetFloat("CavityRadius", 1.0);
         funcs["CavityRadius"] = &RenderParamsP::updateCavityRadius;
@@ -761,7 +761,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCavity(RenderParamsP *self) {
-        self->Cavity = self->handle->GetBool("Cavity", false);
+        self->Cavity = self->handle->GetBool("Cavity", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCavityRadius(RenderParamsP *self) {
@@ -3728,7 +3728,7 @@ const bool & RenderParams::getCavity() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const bool & RenderParams::defaultCavity() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 
