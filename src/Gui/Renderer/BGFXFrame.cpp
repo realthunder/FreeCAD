@@ -604,6 +604,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
                             ? " (pressure stage 1: points dropped)"
                         : !shapeVerticesOn
                             ? " (points off by param)"
+                        // Said before "no pressure", because with the
+                        // coarseness rule in force that is the usual
+                        // reason a settled scene is undecorated and
+                        // "no pressure" would read as a contradiction
+                        // of the counts beside it.
+                        : gatedByCoarse
+                            ? " (faces still coarse: waiting for the "
+                              "exact rung)"
                             : " (no pressure)";
                     // Where the pressure controller stands, and it
                     // has to say which of three things a raised
@@ -635,7 +643,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
                         "coarse %zu exact %zu | plan: refine %zu demote %zu "
                         "downgrade %zu | cpu ceiling %s | refine tolerance "
                         "%.2fpx%s%s | gates: eligible %zu, suppressed "
-                        "%zu point + %zu line draws (%zu by dependency)%s\n",
+                        "%zu point + %zu line draws (%zu by dependency, "
+                        "%zu by coarse faces)%s\n",
                         budget ? (std::to_string(budget / 1048576)
                                   + "MB").c_str()
                                : "NONE (GL reports no limit; set the "
@@ -653,7 +662,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                             ? " (RAISED BY PRESSURE)" : "",
                         pressWhy,
                         gateEligible, gatedPoints, gatedLines,
-                        gatedByDependency, gateWhy);
+                        gatedByDependency, gatedByCoarse, gateWhy);
                     // Who holds the uploaded bytes, by drawable
                     // class, with the share no recent frame drew --
                     // the gap between uploaded and live finally
@@ -3769,8 +3778,11 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // drawing frames ahead of the face set the publish budget held
     // back -- the dots-first load storm.
     std::set<uint64_t> objectsWithTriangles, objectsWithAttLines,
-        objectsWithFloatLines, incompleteObjects;
+        objectsWithFloatLines, incompleteObjects, objectsCoarseFaces;
     gatedPoints = gatedLines = gateEligible = gatedByDependency = 0;
+    gatedByCoarse = 0;
+    auditDrawn = auditNoFaces = auditCoarse = 0;
+    auditFloating = auditFloatingNoFaces = 0;
     for (const auto &d : scene) {
         if (d.mesh && d.mesh->attachedOnly)
             ++gateEligible;
@@ -3780,8 +3792,15 @@ bool BGFXRenderer::Private::render(const QColor &col,
             incompleteObjects.insert(d.objectKey);
         if (d.material.ontop)
             continue;
-        if (isTriangle(d))
+        if (isTriangle(d)) {
             objectsWithTriangles.insert(d.objectKey);
+            // An object is coarse if ANY of its face meshes is: the
+            // decoration describes the whole object, and half of it
+            // being a rough rung is enough to make the description
+            // wrong. levelError is 0 only on the exact tessellation.
+            if (d.mesh && d.mesh->levelError > 0.0f)
+                objectsCoarseFaces.insert(d.objectKey);
+        }
         else if (d.material.type == Render::Material::Line)
             (d.mesh && d.mesh->attachedOnly ? objectsWithAttLines
                                             : objectsWithFloatLines)
@@ -3848,12 +3867,22 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 const uint64_t price = readmitBytes(
                     elemPressureStage >= 2 ? Render::Material::Line
                                            : Render::Material::Point);
+                // The budget accessors are the desktop's: the browser
+                // tier keeps its memory on the client ladder and never
+                // arms gpuOverBudget in the first place, so its latch
+                // never escalates and this branch never runs there.
+                // No budget to weigh it against means no reason to
+                // hold -- the gates exist to serve a budget.
+                uint64_t headroom = 0;
+                bool affordable = true;
+#ifndef FC_RENDERER_STANDALONE
                 const size_t budget = gpuBudgetBytes();
                 const uint64_t used = gpuUsedBytes();
-                const uint64_t headroom = budget > used ? budget - used : 0;
-                // No budget to weigh it against means no reason to
-                // hold: the gates exist to serve a budget.
-                const bool affordable = !budget || price <= headroom;
+                headroom = budget > used ? budget - used : 0;
+                affordable = !budget || price <= headroom;
+#else
+                (void)price;
+#endif
                 if (affordable) {
                     --elemPressureStage;
                     elemStageFrames = 0;
@@ -3900,7 +3929,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
             return false;
         if (!objectsWithTriangles.count(obj))
             return incompleteObjects.count(obj) == 0;
-        return !dropLines;
+        return !dropLines && !objectsCoarseFaces.count(obj);
     };
     // `dependency`, when passed, comes back true if the DEPENDENCY
     // rule alone held this draw back -- its companion class is absent
@@ -3937,7 +3966,17 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     *dependency = late;
                 return late;
             }
-            return dropLines;
+            // The COARSENESS half of the dependency: an edge set
+            // describes the shape its faces approximate, so drawing it
+            // over a rough rung decorates geometry that is not the
+            // answer yet -- and it is exactly what put edges and dots
+            // on screen the moment a load finished, with 61% of the
+            // model still coarse. Memory has nothing to do with it,
+            // which is why no pressure stage could express it.
+            const bool coarse = objectsCoarseFaces.count(d.objectKey) != 0;
+            if (dependency)
+                *dependency = coarse && !dropLines;
+            return dropLines || coarse;
         }
         return false;
     };
@@ -3969,13 +4008,83 @@ bool BGFXRenderer::Private::render(const QColor &col,
                        ? gatedPoints : gatedLines);
                 if (byDependency)
                     ++gatedByDependency;
+                // The coarseness half on its own, because it is the
+                // one a user reads off the screen: these are sets held
+                // back by unfinished geometry, not by memory.
+                if (d.objectKey && objectsCoarseFaces.count(d.objectKey))
+                    ++gatedByCoarse;
                 gatedOnlyMeshes.insert(d.mesh->cacheId);
+            }
+            // THE AUDIT: every attached point or line set this frame
+            // will actually submit, checked against the contract it is
+            // supposed to obey -- its faces present, and EXACT. A
+            // count of what the gate suppressed cannot answer "why is
+            // there a dot on screen"; only the surviving draws can,
+            // and they are the ones nobody was counting.
+            //
+            // Edge-triggered, because the failure being chased is a
+            // FLASH: a violation that lasts three frames is invisible
+            // to anything printed on the plan's cadence.
+            else if (d.mesh && d.objectKey
+                     && !d.material.ontop && !d.material.highlightline
+                     && (d.material.type == Render::Material::Point
+                         || d.material.type == Render::Material::Line)) {
+                ++auditDrawn;
+                // The population BOTH the gate and the first version
+                // of this audit were blind to: attachedOnly is false
+                // BY DEFAULT, meaning "the producer has not classified
+                // this", and an unclassified set is treated as
+                // floating -- never gated, always drawn. A drawable
+                // published before its attachment is known therefore
+                // draws over nothing at all, which is what a dots-only
+                // screen at the start of a load looks like. Counted
+                // separately because "floating" and "not classified
+                // yet" are indistinguishable in the flag and could not
+                // be more different on screen.
+                if (!d.mesh->attachedOnly) {
+                    ++auditFloating;
+                    if (!objectsWithTriangles.count(d.objectKey))
+                        ++auditFloatingNoFaces;
+                    submittable.insert(d.mesh->cacheId);
+                    continue;
+                }
+                if (!objectsWithTriangles.count(d.objectKey))
+                    // Drawn with NO face set in the scene at all: this
+                    // is the display-mode exemption firing. Legitimate
+                    // for a real Wireframe/Points object, and a
+                    // contract violation for an ordinary solid whose
+                    // faces merely have not arrived in this frame.
+                    ++auditNoFaces;
+                else if (objectsCoarseFaces.count(d.objectKey))
+                    ++auditCoarse;
+                submittable.insert(d.mesh->cacheId);
             }
             else
                 submittable.insert(d.mesh->cacheId);
         }
         for (uint64_t id : submittable)
             gatedOnlyMeshes.erase(id);
+    }
+    // The audit's verdict, on every change of it. A violation that
+    // appears for three frames and clears is exactly the "flash of all
+    // the edges just before it settles" a user reports and no
+    // plan-cadence readout can catch, so this prints on the crossing
+    // and prints the clearing too -- the frame number makes the two
+    // ends of a flash measurable.
+    if (auditNoFaces != auditSeenNoFaces || auditCoarse != auditSeenCoarse
+            || auditFloatingNoFaces != auditSeenFloating) {
+        auditSeenNoFaces = auditNoFaces;
+        auditSeenCoarse = auditCoarse;
+        auditSeenFloating = auditFloatingNoFaces;
+        if (levelDebug())
+            FC_RENDER_MSG(
+                "render levels: element audit frame %llu: %zu point/line "
+                "draws submitted | attached: %zu OVER COARSE FACES, %zu "
+                "with NO FACE SET | unclassified (floating or not yet "
+                "classified): %zu, of which %zu have NO FACE SET -- these "
+                "pass every gate\n",
+                (unsigned long long)view->frame, auditDrawn, auditCoarse,
+                auditNoFaces, auditFloating, auditFloatingNoFaces);
     }
     // Both edges of the load gate, with what it cost on the frame
     // it crossed. The closing edge matters as much as the opening

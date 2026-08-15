@@ -7410,6 +7410,29 @@ public:
     /// the dependency half that a streaming tier has to carry
     /// objectIncomplete on the wire to reproduce.
     size_t gatedByDependency = 0;
+    /// Of those, the ones whose object's FACES ARE STILL COARSE -- the
+    /// contract's rule that an edge or vertex set describes the shape
+    /// its faces approximate, so it waits for the exact rung. Nothing
+    /// to do with memory, and the reason a user sees dots and edges
+    /// over half-refined geometry when it is not enforced.
+    size_t gatedByCoarse = 0;
+    /// THE AUDIT (see the gate walk): attached point and line draws
+    /// this frame actually SUBMITS, and how many of them break the
+    /// contract -- drawn with no face set in the scene at all
+    /// (`auditNoFaces`, the display-mode exemption, legitimate only
+    /// for a real Wireframe/Points object) or over faces still on a
+    /// coarse rung (`auditCoarse`). Counting what the gate suppressed
+    /// can never explain a dot that IS on screen; these can.
+    size_t auditDrawn = 0, auditNoFaces = 0, auditCoarse = 0;
+    /// Point/line draws whose mesh is NOT classified attached, and the
+    /// share of those with no face set in the scene at all. The flag
+    /// is false by default, so "floating" and "not classified yet"
+    /// look identical here -- and the second one is a drawable that
+    /// escapes every gate on the way in.
+    size_t auditFloating = 0, auditFloatingNoFaces = 0;
+    /// Last reported violation totals, so the report is edge-triggered:
+    /// the failure being chased lasts a handful of frames.
+    size_t auditSeenNoFaces = 0, auditSeenCoarse = 0, auditSeenFloating = 0;
     /// Meshes whose every scene draw the gates suppressed this frame
     /// -- not submittable, so the collector must not keep them for
     /// being published (see collectMeshes). Rebuilt each frame by the

@@ -202,10 +202,26 @@ translateCache(SoFCVertexCache * cache)
         // the safe direction: a drawable nobody has judged is one
         // nothing else on screen may be standing in for.
         static const SbName attachedField("attachedOnly");
-        if (const SoField *f = node->getField(attachedField)) {
-            if (f->isOfType(SoSFBool::getClassTypeId()))
-                mesh->attachedOnly =
-                    static_cast<const SoSFBool *>(f)->getValue();
+        const SoField *f = node->getField(attachedField);
+        if (f && f->isOfType(SoSFBool::getClassTypeId()))
+            mesh->attachedOnly = static_cast<const SoSFBool *>(f)->getValue();
+        else if (std::getenv("FC_LEVEL_DEBUG")) {
+            // MEASURED: a load can put 5909 point and line draws on
+            // screen with no faces anywhere, every one of them
+            // unclassified -- so which node types arrive without the
+            // field is the difference between a producer that has not
+            // judged yet and one that cannot be asked. Downstream the
+            // two are identical (absent reads as false reads as
+            // floating), and only this side can tell them apart.
+            // Once per type: it is a fact about the producer, not
+            // about the frame.
+            static std::set<std::string> seen;
+            const std::string tname = node->getTypeId().getName().getString();
+            if (seen.insert(tname).second)
+                Base::Console().Message(
+                    "render levels: element class: node type %s carries no "
+                    "attachedOnly field -- its point/line draws pass every "
+                    "gate\n", tname.c_str());
         }
         // A producer running coarse-first registered what the display
         // tessellation itself is; the serializer places the mesh on
