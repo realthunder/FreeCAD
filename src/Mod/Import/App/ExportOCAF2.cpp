@@ -32,6 +32,7 @@
 #include <TopoDS.hxx>
 #include <Standard_Version.hxx>
 #include <TDF_AttributeSequence.hxx>
+#include <Graphic3d_Vec3.hxx>
 #include <TDF_Label.hxx>
 #include <TDF_LabelSequence.hxx>
 #include <TDataStd_Name.hxx>
@@ -68,8 +69,8 @@ using namespace Import;
 
 ExportOCAFOptions::ExportOCAFOptions()
 {
-    defaultColor.setPackedValue(0xCCCCCC00);
-    defaultColor.a = 0;
+    defaultColor.setPackedValue(0xCCCCCCFF);
+    defaultColor.a = 1.0f;  // opaque
 }
 
 ExportOCAF2::ExportOCAF2(Handle(TDocStd_Document) h, GetShapeColorsFunc func)
@@ -100,7 +101,7 @@ ExportOCAFOptions ExportOCAF2::customExportOptions()
         App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
     defaultOptions.defaultColor.setPackedValue(
         handle->GetUnsigned("DefaultShapeColor", defaultOptions.defaultColor.getPackedValue()));
-    defaultOptions.defaultColor.a = 0;
+    defaultOptions.defaultColor.a = 1.0f;  // opaque
 
     return defaultOptions;
 }
@@ -240,7 +241,10 @@ void ExportOCAF2::setupObject(TDF_Label label,
 
     // Per-object render (PBR) material: written as XCAFDoc_VisMaterial so
     // mesh formats (glTF) carry it; the factors/textures come from the
-    // view provider's Render_* dynamic properties.
+    // view provider's Render_* dynamic properties. Kept around: the
+    // per-face materials below inherit its factors and textures.
+    XCAFDoc_VisMaterialPBR objPbr;
+    objPbr.IsDefined = Standard_False;
     if (getRenderMaterial) {
         RenderMaterial rmat;
         if (getRenderMaterial(obj, rmat) && rmat.valid) {
@@ -288,6 +292,134 @@ void ExportOCAF2::setupObject(TDF_Label label,
             TDF_Label matLabel = aMatTool->AddMaterial(
                 visMat, TCollection_AsciiString(obj->getNameInDocument()));
             aMatTool->SetShapeMaterial(label, matLabel);
+            objPbr = pbr;
+        }
+    }
+
+    // Per-face appearance: one visualization material per distinct whole
+    // material, attached to the face sub-shape labels. RWGltf_CafWriter
+    // merges faces into primitives keyed by style, which is exactly how
+    // glTF expresses per-face materials. Only when a field beyond diffuse
+    // varies -- per-face colours alone keep riding the colour labels.
+    if (getShapeAppearance) {
+        std::vector<App::Material> faceMats;
+        bool pbrMats = false;
+        if (getShapeAppearance(obj, faceMats, pbrMats) && !faceMats.empty()) {
+            Handle(XCAFDoc_VisMaterialTool) aMatTool =
+                XCAFDoc_DocumentTool::VisMaterialTool(pDoc->Main());
+
+            auto makeVisMat = [&](const App::Material& m) -> Handle(XCAFDoc_VisMaterial) {
+                Handle(XCAFDoc_VisMaterial) visMat = new XCAFDoc_VisMaterial;
+                // A PBR-mode appearance carries raw PBR slots; the common
+                // (Phong) representation -- what STEP's reflectance model
+                // and Common-only readers get -- is its derivation.
+                const App::Material cm = pbrMats ? App::Material::pbrToPhong(m) : m;
+                XCAFDoc_VisMaterialCommon common;
+                common.IsDefined = Standard_True;
+                common.AmbientColor = Tools::convertColor(cm.ambientColor).GetRGB();
+                common.DiffuseColor = Tools::convertColor(cm.diffuseColor).GetRGB();
+                common.SpecularColor = Tools::convertColor(cm.specularColor).GetRGB();
+                common.EmissiveColor = Tools::convertColor(cm.emissiveColor).GetRGB();
+                common.Shininess = cm.shininess;
+                common.Transparency = cm.transparency;
+                visMat->SetCommonMaterial(common);
+                // The glTF emissive factor is linear; the stored colour is
+                // sRGB. Assigning the converted Quantity_Color is the same
+                // linear identity OCCT's own Common-to-PBR conversion uses
+                // -- raw SetValues of the stored floats would write sRGB
+                // values into a linear slot and gamma-shift every reimport.
+                auto emissiveFactor = [](const App::Color& c) {
+                    return Graphic3d_Vec3(
+                            Tools::convertColor(App::Color(c.r, c.g, c.b)).GetRGB());
+                };
+                if (pbrMats) {
+                    // The appearance's own PBR reading, exact. The object's
+                    // Render_* textures still ride along when defined; the
+                    // factors the appearance owns override them, as they do
+                    // in the renderer.
+                    XCAFDoc_VisMaterialPBR pbr = objPbr;
+                    pbr.IsDefined = Standard_True;
+                    App::Color base = m.diffuseColor;
+                    base.a = 1.0f - m.transparency;
+                    pbr.BaseColor = Tools::convertColor(base);
+                    pbr.Metallic = m.specularColor.a;
+                    pbr.Roughness = m.shininess;
+                    pbr.EmissiveFactor = emissiveFactor(m.emissiveColor);
+                    visMat->SetPbrMaterial(pbr);
+                }
+                else if (objPbr.IsDefined) {
+                    // Keep the object's factors and textures; the fields
+                    // the appearance owns override.
+                    XCAFDoc_VisMaterialPBR pbr = objPbr;
+                    App::Color base = m.diffuseColor;
+                    base.a = 1.0f - m.transparency;
+                    pbr.BaseColor = Tools::convertColor(base);
+                    pbr.EmissiveFactor = emissiveFactor(m.emissiveColor);
+                    visMat->SetPbrMaterial(pbr);
+                }
+                return visMat;
+            };
+
+            bool uniform = true;
+            for (size_t i = 1; i < faceMats.size(); ++i) {
+                if (!(faceMats[i] == faceMats[0])) {
+                    uniform = false;
+                    break;
+                }
+            }
+            if (uniform) {
+                // A whole-object material (the uniform-emissive case):
+                // one material on the object label, no face sub shapes.
+                std::string matName(obj->getNameInDocument());
+                matName += "_mat";
+                TDF_Label matLabel = aMatTool->AddMaterial(
+                    makeVisMat(faceMats[0]), TCollection_AsciiString(matName.c_str()));
+                aMatTool->SetShapeMaterial(label, matLabel);
+            }
+            else {
+                // The OCCT 7.3 sub-shape workaround, as in the colour loop.
+                Handle(XCAFDoc_ShapeMapTool) mapTool;
+                if (!label.FindAttribute(XCAFDoc_ShapeMapTool::GetID(), mapTool)) {
+                    TopoDS_Shape aShape = aShapeTool->GetShape(label);
+                    if (!aShape.IsNull()) {
+                        mapTool = XCAFDoc_ShapeMapTool::Set(label);
+                        mapTool->SetShape(aShape);
+                    }
+                }
+
+                std::vector<std::pair<App::Material, TDF_Label>> matLabels;
+                int numFaces = (int)shape.countSubShapes(TopAbs_FACE);
+                int count = std::min(numFaces, (int)faceMats.size());
+                for (int i = 0; i < count; ++i) {
+                    const App::Material& m = faceMats[i];
+                    TDF_Label matLabel;
+                    for (auto& v : matLabels) {
+                        if (v.first == m) {
+                            matLabel = v.second;
+                            break;
+                        }
+                    }
+                    if (matLabel.IsNull()) {
+                        std::string matName(obj->getNameInDocument());
+                        matName += "_mat";
+                        matName += std::to_string(matLabels.size() + 1);
+                        matLabel = aMatTool->AddMaterial(
+                            makeVisMat(m), TCollection_AsciiString(matName.c_str()));
+                        matLabels.emplace_back(m, matLabel);
+                    }
+                    auto faceShape = shape.getSubShape(TopAbs_FACE, i + 1);
+                    if (faceShape.IsNull()) {
+                        continue;
+                    }
+                    TDF_Label subLabel = aShapeTool->AddSubShape(label, faceShape);
+                    if (subLabel.IsNull()) {
+                        FC_WARN("Failed to add face " << (i + 1) << " of "
+                                                      << obj->getFullName());
+                        continue;
+                    }
+                    aMatTool->SetShapeMaterial(subLabel, matLabel);
+                }
+            }
         }
     }
 

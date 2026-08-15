@@ -50,6 +50,11 @@ if(BUILD_GUI)
 
     SET_BIN_DIR(FreeCADMain FreeCAD)
 
+    if(MSVC)
+        # The other half of the bin/FreeCAD.ilk collision -- see FreeCADMainPy.
+        target_link_options(FreeCADMain PRIVATE /INCREMENTAL:NO)
+    endif(MSVC)
+
     if(WIN32)
         INSTALL(TARGETS FreeCADMain
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -126,6 +131,26 @@ SET_BIN_DIR(FreeCADMainPy FreeCAD)
 SET_PYTHON_PREFIX_SUFFIX(FreeCADMainPy)
 
 if(WIN32)
+    # Name clash with target "FreeCADMain": both land in bin/ as "FreeCAD",
+    # so both linkers would write bin/FreeCAD.pdb and the second to finish
+    # wins. Same reasoning as FreeCADGuiPy below.
+    set_target_properties(FreeCADMainPy PROPERTIES PDB_NAME "FreeCADMainPy")
+    set_target_properties(FreeCADMainPy PROPERTIES PDB_NAME_DEBUG "FreeCADMainPy_d")
+endif(WIN32)
+
+if(MSVC)
+    # The incremental-link file is named after the OUTPUT file, not the PDB, so
+    # renaming the PDB above does not separate bin/FreeCAD.ilk -- FreeCAD.exe and
+    # FreeCAD.pyd still both write it. In a parallel build that is a race: the
+    # loser fails outright with LNK1104 (cannot open bin\FreeCAD.ilk), and the
+    # winner only ever finds an .ilk belonging to the other binary, discards it
+    # and links in full anyway. Measured on this fork, incremental linking is
+    # worth nothing to either -- 627 KB and 93 KB binaries, 3-5s either way -- so
+    # turn it off for both and let the .ilk stop existing.
+    target_link_options(FreeCADMainPy PRIVATE /INCREMENTAL:NO)
+endif(MSVC)
+
+if(WIN32)
     INSTALL(TARGETS FreeCADMainPy
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -152,9 +177,29 @@ if(BUILD_GUI)
     if(WIN32)
         # Name clash with target "FreeCADGui"
         # Must be called "FreeCADGuiPy_d" and "FreeCADGuiPy" to work so override default
+        # PDB_NAME covers every configuration; PDB_NAME_RELEASE alone left
+        # RelWithDebInfo and MinSizeRel back on the clashing default.
         set_target_properties(FreeCADGuiPy PROPERTIES PDB_NAME_DEBUG "FreeCADGuiPy_d")
-        set_target_properties(FreeCADGuiPy PROPERTIES PDB_NAME_RELEASE "FreeCADGuiPy")
+        set_target_properties(FreeCADGuiPy PROPERTIES PDB_NAME "FreeCADGuiPy")
     endif(WIN32)
+
+    if(MSVC)
+        # bin/FreeCADGui.ilk is the same collision as bin/FreeCAD.ilk, between
+        # this module and the FreeCADGui library -- but here it is expensive to
+        # get wrong: FreeCADGui is one of the heaviest links in the tree, 55s
+        # cold against 7.8s incremental, and /INCREMENTAL:NO on this target does
+        # not merely abstain, it DELETES the .ilk the library just wrote. So
+        # point this target's incremental state somewhere else instead.
+        #
+        # /ILK is undocumented but honoured by MSVC 14.44 (verified: the file
+        # appears under the given name and bin/FreeCADGui.ilk survives). Pairing
+        # it with /INCREMENTAL:NO picks the safe failure mode -- a linker that
+        # ignored /ILK would then delete bin/FreeCADGui.ilk, costing a full
+        # relink, rather than write it and race the library for the file.
+        target_link_options(FreeCADGuiPy PRIVATE
+            /INCREMENTAL:NO
+            "/ILK:$<TARGET_FILE_DIR:FreeCADGuiPy>/FreeCADGuiPy.ilk")
+    endif(MSVC)
 
     if(WIN32)
         INSTALL(TARGETS FreeCADGuiPy

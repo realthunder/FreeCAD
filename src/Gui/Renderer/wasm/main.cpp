@@ -436,6 +436,14 @@ EM_JS(void, fcviewer_install_control, (), {
     // The menu's HUD switch. Installed beside the control uplink because
     // it is the same kind of thing: a viewer state the DOM layer drives.
     window.fcviewerSetHud = function(on) { _fcviewer_set_hud(on ? 1 : 0); };
+    // The selection menu (docs/ThinClientUI.md): mode 0 single / 1 multi;
+    // filter 0 elements / 1 object / 2 face / 3 edge / 4 vertex.
+    window.fcviewerSetSelMode = function(m) {
+        _fcviewer_set_sel_mode(m | 0);
+    };
+    window.fcviewerSetPickFilter = function(f) {
+        _fcviewer_set_pick_filter(f | 0);
+    };
     // The menu's document switch (docs/MultiDocServe.md §6).
     window.fcviewerSwitchDoc = function(name) {
         var len = lengthBytesUTF8(name) + 1;
@@ -857,11 +865,37 @@ static float pickRadiusPx()
     return css * std::max(1.0f, s_dpr);
 }
 
+// Selection mode and pick filter, driven by the DOM layer's selection
+// menu (docs/ThinClientUI.md). Multi mode makes every plain click a
+// Ctrl-click; the filter restricts what a pick may land on (and what
+// hover preselects). Object mode picks any element but selects — and
+// preselects — the whole object.
+enum PickFilter {
+    FilterElements = 0,  ///< any sub-element (the default)
+    FilterObject   = 1,  ///< whole objects only
+    FilterFace     = 2,
+    FilterEdge     = 3,
+    FilterVertex   = 4,
+};
+static int s_selMode = 0;               // 0 = single, 1 = multi
+static int s_pickFilter = FilterElements;
+
+static bool pickFilterAllows(PickKind k)
+{
+    switch (s_pickFilter) {
+    case FilterFace:   return k == PickFace;
+    case FilterEdge:   return k == PickEdge;
+    case FilterVertex: return k == PickVertex;
+    default:           return true;
+    }
+}
+
 /// Nearest face (exact ray/triangle), edge and vertex (screen-space proximity
 /// within the pick radius) of the draw scene at canvas pixel (px, py), then
 /// resolve by the desktop's vertex > edge > face priority — a higher-priority
 /// element wins only when its hit is essentially as near the eye as the
-/// frontmost (SoFCUnifiedSelection::postProcessPickedList).
+/// frontmost (SoFCUnifiedSelection::postProcessPickedList). Draw kinds the
+/// pick filter forbids are not considered at all.
 static PickHit pickScene(float px, float py)
 {
     bx::Vec3 orig(bx::InitZero), rdir(bx::InitZero);
@@ -887,6 +921,8 @@ static PickHit pickScene(float px, float py)
 
         if (dc.material.type == Render::Material::Triangle
                 && dc.mesh->triangleIndices) {
+            if (!pickFilterAllows(PickFace))
+                continue;
             if (dc.bboxMin[0] <= dc.bboxMax[0]
                     && !rayHitsBBox(dc.bboxMin, dc.bboxMax, orig, rdir, faceRayT))
                 continue;
@@ -930,6 +966,8 @@ static PickHit pickScene(float px, float py)
         }
         else if (dc.material.type == Render::Material::Line
                 && dc.mesh->lineIndices) {
+            if (!pickFilterAllows(PickEdge))
+                continue;
             const int total = dc.mesh->numLineIndices;
             int start = dc.indexStart;
             int count = dc.indexCount ? dc.indexCount : total - start;
@@ -965,6 +1003,8 @@ static PickHit pickScene(float px, float py)
         }
         else if (dc.material.type == Render::Material::Point
                 && dc.mesh->pointIndices) {
+            if (!pickFilterAllows(PickVertex))
+                continue;
             const int total = dc.mesh->numPointIndices;
             int start = dc.indexStart;
             int count = dc.indexCount ? dc.indexCount : total - start;
@@ -1640,6 +1680,26 @@ static void applyHover(const PickHit &hit)
         return;
     }
     const auto &dc = s_snap.scene[size_t(hit.draw)];
+    if (s_pickFilter == FilterObject) {
+        // The filter says objects: preselect highlights the WHOLE object
+        // the hit belongs to — every pickable draw of it, whole range.
+        if (dc.objectKey == s_hoverKey && s_hoverPart == -1
+                && s_hoverKind == PickNone)
+            return;
+        s_hoverKey = dc.objectKey;
+        s_hoverPart = -1;
+        s_hoverKind = PickNone;
+        Render::DrawCallList draws;
+        for (const auto &odc : s_snap.scene) {
+            if (!odc.mesh || odc.objectKey != dc.objectKey
+                    || kindForDraw(odc) == PickNone)
+                continue;
+            draws.push_back(buildHiliteDraw(odc, -1, 0, 0,
+                                            s_snap.preselconf));
+        }
+        s_renderer->setHighlight(std::move(draws), false);
+        return;
+    }
     int partStart, partCount;
     int part = partForHit(dc, hit, partStart, partCount);
     if (dc.objectKey == s_hoverKey && part == s_hoverPart
@@ -1661,6 +1721,9 @@ static void applyHover(const PickHit &hit)
 // ignored while the client owns selection (see the snapshot replay).
 static const int kClientSelId = Render::SelIdSelected | 0x1;
 
+// kind == PickNone (with part == -1) means the WHOLE object is selected:
+// every pickable draw of that object highlights, and the DOM event carries
+// an empty `sub`. Sub-element items carry the element kind and part index.
 struct SelItem { uint64_t key; PickKind kind; int part; };
 static std::vector<SelItem> s_sel;
 
@@ -1679,7 +1742,10 @@ static void rebuildSelection()
         if (dcKind == PickNone)
             continue;
         for (const auto &it : s_sel) {
-            if (it.key != dc.objectKey || it.kind != dcKind)
+            if (it.key != dc.objectKey)
+                continue;
+            // A whole-object item matches every pickable draw of the object.
+            if (it.kind != PickNone && it.kind != dcKind)
                 continue;
             int partStart = 0, partCount = 0, part = it.part;
             const auto *parts = partsForKind(dc, dcKind);
@@ -1781,8 +1847,18 @@ static void emitSelectionEvent()
     fcviewer_selection_event(json.c_str());
 }
 
-/// Client-side select at canvas pixel: pick locally, update s_sel (Ctrl =
-/// toggle/extend, plain = replace), and show the highlight immediately.
+/// Client-side select at canvas pixel: pick locally, update s_sel, and show
+/// the highlight immediately.
+///
+/// Ctrl = multi-select: toggles the picked sub-element in/out of the set
+/// (adding a sub-element drops a whole-object item of the same object — the
+/// two are mutually exclusive). Shift (with or without Ctrl) selects the
+/// WHOLE object outright: the picked object's element items are dropped and
+/// its whole-object item put in their place, other objects' selections kept
+/// — the explicit promotion, needed because under Ctrl a re-click means
+/// deselect. Plain click replaces the selection and cycles: picking an
+/// already-selected sub-element promotes to the whole object; picking any
+/// sub-element of a whole-selected object narrows back to that sub-element.
 ///
 /// The selection is NOT synced to the backend here: an eager sync makes the
 /// backend re-pick and republish the whole scene, whose echo stalls right
@@ -1790,11 +1866,11 @@ static void emitSelectionEvent()
 /// when a modeling operation is added it will submit the accumulated selection
 /// batched together with the operation, so the backend only re-picks once, per
 /// client, at commit time (no per-tap sync delay, no cross-client interference).
-static void selectAt(float px, float py, bool ctrl)
+static void selectAt(float px, float py, bool ctrl, bool shift = false)
 {
     PickHit hit = pickScene(px, py);
     if (hit.draw < 0) {
-        if (!ctrl && !s_sel.empty()) {
+        if (!ctrl && !shift && !s_sel.empty()) {
             s_sel.clear();
             rebuildSelection();
             emitSelectionEvent();
@@ -1805,20 +1881,50 @@ static void selectAt(float px, float py, bool ctrl)
     int partStart, partCount;
     int part = partForHit(dc, hit, partStart, partCount);
     SelItem item{dc.objectKey, hit.kind, part};
-    if (ctrl) {
-        auto same = [&](const SelItem &s) {
-            return s.key == item.key && s.kind == item.kind
-                && s.part == item.part;
-        };
+    if (s_pickFilter == FilterObject)
+        item = SelItem{dc.objectKey, PickNone, -1};
+    // Multi mode is a sticky Ctrl: every plain click extends/toggles.
+    const bool multi = ctrl || s_selMode == 1;
+    auto same = [&](const SelItem &s) {
+        return s.key == item.key && s.kind == item.kind
+            && s.part == item.part;
+    };
+    auto wholeOfObject = [&](const SelItem &s) {
+        return s.key == item.key && s.kind == PickNone;
+    };
+    auto ofObject = [&](const SelItem &s) { return s.key == item.key; };
+    if (shift) {
+        s_sel.erase(std::remove_if(s_sel.begin(), s_sel.end(), ofObject),
+                    s_sel.end());
+        s_sel.push_back(SelItem{dc.objectKey, PickNone, -1});
+    }
+    else if (multi) {
         auto it = std::find_if(s_sel.begin(), s_sel.end(), same);
         if (it != s_sel.end())
             s_sel.erase(it);
-        else
+        else {
+            // A whole-object item and this object's element items are
+            // mutually exclusive, whichever way round the add goes.
+            if (item.kind == PickNone)
+                s_sel.erase(std::remove_if(s_sel.begin(), s_sel.end(),
+                                           ofObject),
+                            s_sel.end());
+            else
+                s_sel.erase(std::remove_if(s_sel.begin(), s_sel.end(),
+                                           wholeOfObject),
+                            s_sel.end());
             s_sel.push_back(item);
+        }
     }
     else {
+        const bool hadSub = std::any_of(s_sel.begin(), s_sel.end(), same);
+        const bool hadWhole = std::any_of(s_sel.begin(), s_sel.end(),
+                                          wholeOfObject);
         s_sel.clear();
-        s_sel.push_back(item);
+        if (hadSub && !hadWhole)
+            s_sel.push_back(SelItem{dc.objectKey, PickNone, -1});
+        else
+            s_sel.push_back(item);
     }
     rebuildSelection();
     emitSelectionEvent();
@@ -2125,7 +2231,7 @@ static void canvasPos(const EmscriptenMouseEvent *e, float &x, float &y)
 /// Resolve a click/tap at canvas pixel (px,py): the NaviCube claims it
 /// first (local orient, then rotate button), otherwise it is a scene pick
 /// sent to the desktop. Shared by the mouse-up and touch-tap paths.
-static void doTapPick(float px, float py, bool ctrl)
+static void doTapPick(float px, float py, bool ctrl, bool shift = false)
 {
     static const bool debugPick = EM_ASM_INT({
         return new URLSearchParams(window.location.search).has('debugpick')
@@ -2150,7 +2256,7 @@ static void doTapPick(float px, float py, bool ctrl)
     else {
         // Client-side select (instant); the backend is synced in the
         // background from the queued pick.
-        selectAt(px, py, ctrl);
+        selectAt(px, py, ctrl, shift);
     }
 }
 
@@ -2163,7 +2269,8 @@ static float s_lastTapX = 0.0f, s_lastTapY = 0.0f;
 /// after and near the first is a double = zoom-to-fit; otherwise a normal
 /// pick. Detected manually (not the dblclick event) so mouse and touch behave
 /// identically and the window is tunable.
-static void tapOrDouble(float clientX, float clientY, bool ctrl)
+static void tapOrDouble(float clientX, float clientY, bool ctrl,
+                        bool shift = false)
 {
     const double now = emscripten_get_now();
     if (now - s_lastTapMs < 450.0
@@ -2176,7 +2283,7 @@ static void tapOrDouble(float clientX, float clientY, bool ctrl)
     else {
         float px, py;
         clientToCanvas(clientX, clientY, px, py);
-        doTapPick(px, py, ctrl);
+        doTapPick(px, py, ctrl, shift);
         s_lastTapMs = now;
         s_lastTapX = clientX;
         s_lastTapY = clientY;
@@ -2254,7 +2361,9 @@ static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
     s_lastY = int(e->clientY);
     s_downX = s_lastX;
     s_downY = s_lastY;
-    s_clickOk = e->button == 0 && !e->shiftKey;
+    // Shift+left is grab-pan once it moves, but a motionless shift+click
+    // is the whole-object select — the slop check on move/up arbitrates.
+    s_clickOk = e->button == 0;
     // The cube geometry is about to move under any active hover tint.
     clearCubeHover();
     clearButtonHover();
@@ -2266,7 +2375,8 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
     s_dragging = false;
     if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 6
             && std::abs(int(e->clientY) - s_downY) <= 6) {
-        tapOrDouble(float(e->clientX), float(e->clientY), e->ctrlKey);
+        tapOrDouble(float(e->clientX), float(e->clientY), e->ctrlKey,
+                    e->shiftKey);
     }
     s_clickOk = false;
     return EM_TRUE;
@@ -2380,13 +2490,21 @@ static float s_tapX = 0.0f, s_tapY = 0.0f;
 // context menu then composes on top: by the time that menu opens, its target
 // is already showing.
 static const double kLoupeHoldMs = 350.0;
-// Refining lifts the pick off the fingertip so it stops covering what it is
-// aiming at. Applied at the first movement, not on engage — engaging must
-// highlight exactly what was pressed, or a hold would pick something the
-// user never touched.
-static const float kLoupeLift = 20.0f;
+// The pick sits this far above the contact point, from the moment the
+// loupe engages: the ring and its centre dot appear just past the
+// fingertip's outline, so the user watches the exact point being picked
+// instead of the finger covering it. (It used to engage at the press
+// point and lift only on the first movement; the always-visible cursor
+// won — aim is corrected by watching the ring, not by trusting the
+// press.) The distance is the streamed ViewParams::TouchLoupeLift, in
+// CSS px — zero is a deliberate "pick under the finger"; an older
+// backend's snapshot never writes the field and leaves the config's
+// default.
+static float loupeLiftPx()
+{
+    return std::max(0.0f, s_snap.preselconf.loupeLift);
+}
 static bool s_loupe = false;          // holding, with a live preselection
-static bool s_loupeLifted = false;    // refinement has started
 static float s_loupeX = 0.0f, s_loupeY = 0.0f;  // CSS px being picked
 // Which press a pending hold timer was armed for. A held finger emits no
 // events, so the threshold has to be a timer — and it is a timer rather than
@@ -2406,7 +2524,6 @@ static void cancelLoupe()
         markDirty();
     }
     s_loupe = false;
-    s_loupeLifted = false;
     ++s_loupeGen;
     fcviewer_loupe_mark(0, 0, 0, 0, 0);
 }
@@ -2437,6 +2554,8 @@ static void loupeHoldFired(void *arg)
     if (pickNaviCube(px, py, dir) || pickNaviButton(px, py) != NaviBtnNone)
         return;
     s_loupe = true;
+    // The pick point is above the fingertip from the start.
+    s_loupeY -= loupeLiftPx();
     loupePick();
 }
 
@@ -2533,12 +2652,8 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
     }
     else if (type == EMSCRIPTEN_EVENT_TOUCHMOVE && n == s_numTouch) {
         if (s_loupe && n == 1) {
-            // Refining, not orbiting: the drag moves the pick, and the first
-            // movement lifts it clear of the fingertip.
-            if (!s_loupeLifted) {
-                s_loupeLifted = true;
-                s_loupeY -= kLoupeLift;
-            }
+            // Refining, not orbiting: the drag moves the pick, which keeps
+            // its lift above the fingertip.
             s_loupeX += x[0] - s_touchX[0];
             s_loupeY += y[0] - s_touchY[0];
             // Adopt the new contact point BEFORE picking: the mark's
@@ -2741,9 +2856,14 @@ static void applySnapshot(bool fit)
     if (s_degraded)
         ao.enabled = false;
     s_renderer->setAOConfig(ao);
+    // Cavity is one fullscreen multiply over targets the prepass
+    // already paid for, so it survives the degraded tier that drops AO.
+    s_renderer->setCavityConfig(s_snap.cavityconf);
+    s_renderer->setMatcapConfig(s_snap.matcapconf);
     s_renderer->setPBRConfig(s_snap.pbrconf);
     s_renderer->setBumpConfig(s_snap.bumpconf);
     s_renderer->setLightConfig(s_snap.lightconf);
+    s_renderer->setViewLightConfig(s_snap.viewlightconf);
     s_renderer->setVolumetricConfig(s_snap.volconf);
     s_renderer->setWaterConfig(s_snap.waterconf);
     s_renderer->setBloomConfig(s_snap.bloomconf);
@@ -5925,6 +6045,28 @@ extern "C" EMSCRIPTEN_KEEPALIVE int fcviewer_control_send(const char *json)
         return 0;
     return emscripten_websocket_send_utf8_text(
                    s_ws, const_cast<char *>(json)) >= 0 ? 1 : 0;
+}
+
+/// Selection mode from the DOM layer's selection menu: 0 = single,
+/// 1 = multi (every click toggles/extends, the sticky Ctrl).
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_sel_mode(int mode)
+{
+    s_selMode = mode ? 1 : 0;
+}
+
+/// Pick filter from the selection menu (PickFilter values). The hover
+/// highlight may be showing something the new filter forbids — clear
+/// it; the next pointer move rebuilds it under the new rule. The
+/// selection itself is kept: a filter narrows what picks may land on
+/// from now on, it does not revoke what was already selected.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_set_pick_filter(int filter)
+{
+    if (filter < FilterElements || filter > FilterVertex)
+        filter = FilterElements;
+    if (filter == s_pickFilter)
+        return;
+    s_pickFilter = filter;
+    applyHover(PickHit{});
 }
 
 /// Switch this viewer to another served document, from the menu's

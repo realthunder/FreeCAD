@@ -122,6 +122,17 @@ std::vector<std::string> RendererFactory::types()
     return res;
 }
 
+bool RendererFactory::warmup(const std::string &type, QOpenGLWidget *widget,
+                             RendererLib::WarmupTiming *timing)
+{
+    if (type.empty() || type == "Default" || !widget)
+        return false;
+    auto it = rendererTypes().find(type);
+    if (it == rendererTypes().end())
+        return false;
+    return it->second->warmup(widget, type, timing);
+}
+
 std::unique_ptr<Renderer> RendererFactory::create(
         const std::string &type, QOpenGLWidget *widget, bool publishOnly)
 {

@@ -75,7 +75,7 @@ static TopoShape makeDraftUsingPipe(const std::vector<TopoShape> &_wires,
     std::vector<TopoShape> frontwires, backwires;
     
     if (_wires.size() < 2)
-        throw Base::CADKernelError("Not enough wire section");
+        THROWM(Base::CADKernelError, "Not enough wire section")
 
     std::vector<TopoShape> wires;
     wires.reserve(_wires.size());
@@ -107,7 +107,7 @@ static TopoShape makeDraftUsingPipe(const std::vector<TopoShape> &_wires,
         mkPS.Add(TopoDS::Wire(wire.getShape()));
 
     if (!mkPS.IsReady())
-        throw Base::CADKernelError("Shape could not be built");
+        THROWM(Base::CADKernelError, "Shape could not be built")
 
     TopoShape result(0,hasher);
     result.makEShape(mkPS,wires);
@@ -300,7 +300,7 @@ void ExtrusionHelper::makeDraft(const Parameters& params,
             throw;
         }
         catch (...) {
-            throw Base::CADKernelError("Unknown exception from BRepOffsetAPI_ThruSections");
+            THROWM(Base::CADKernelError, "Unknown exception from BRepOffsetAPI_ThruSections")
         }
     }
 }

@@ -78,7 +78,7 @@ bool FirewallPython::filter(const QByteArray& msg) const
     }
     catch (const Py::Exception&) {
         Base::PyException e;
-        throw Base::RuntimeError(e.what());
+        THROWM(Base::RuntimeError, e.what())
     }
 }
 

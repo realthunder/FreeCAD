@@ -170,7 +170,7 @@ Part::Part2DObject* ProfileBased::getVerifiedSketch(bool silent) const {
     }
 
     if (!silent && err) {
-        throw Base::RuntimeError(err);
+        THROWM(Base::RuntimeError, err)
     }
 
     return static_cast<Part::Part2DObject*>(result);
@@ -190,7 +190,7 @@ Part::Feature* ProfileBased::getVerifiedObject(bool silent) const {
     }
 
     if (!silent && err) {
-        throw Base::RuntimeError(err);
+        THROWM(Base::RuntimeError, err)
     }
 
     return static_cast<Part::Feature*>(result);
@@ -206,7 +206,7 @@ TopoShape ProfileBased::getVerifiedFace(bool silent,
     if(!obj || !obj->getNameInDocument()) {
         if(silent)
             return TopoShape();
-        throw Base::ValueError("No profile linked");
+        THROWM(Base::ValueError, "No profile linked")
     }
     const auto &subs = profile ? _subs : Profile.getSubValues();
     try {
@@ -237,7 +237,7 @@ TopoShape ProfileBased::getVerifiedFace(bool silent,
         if(shape.isNull()) {
             if (silent)
                 return shape;
-            throw Base::CADKernelError("Linked shape object is empty");
+            THROWM(Base::CADKernelError, "Linked shape object is empty")
         }
         TopoShape openshape;
         if(!shape.hasSubShape(TopAbs_FACE)) {
@@ -284,7 +284,7 @@ TopoShape ProfileBased::getVerifiedFace(bool silent,
         if(!count && !allowOpen) {
             if(silent)
                 return TopoShape();
-            throw Base::CADKernelError("Cannot make face from profile");
+            THROWM(Base::CADKernelError, "Cannot make face from profile")
         }
 
         if (doFit && (std::abs(Fit.getValue()) > Precision::Confusion()
@@ -396,7 +396,7 @@ TopoDS_Shape ProfileBased::getVerifiedFaceOld(bool silent) const {
     }
 
     if (!silent && err) {
-        throw Base::RuntimeError(err);
+        THROWM(Base::RuntimeError, err)
     }
 
     return TopoDS_Face();
@@ -425,20 +425,20 @@ std::vector<TopoDS_Wire> ProfileBased::getProfileWiresOld() const {
     std::vector<TopoDS_Wire> result;
 
     if (!Profile.getValue() || !Profile.getValue()->isDerivedFrom(Part::Feature::getClassTypeId()))
-        throw Base::TypeError("No valid profile linked");
+        THROWM(Base::TypeError, "No valid profile linked")
 
     TopoDS_Shape shape;
     if (Profile.getValue()->isDerivedFrom(Part::Part2DObject::getClassTypeId()))
         shape = Profile.getValue<Part::Part2DObject*>()->Shape.getValue();
     else {
         if (Profile.getSubValues().empty())
-            throw Base::ValueError("No valid subelement linked in Part::Feature");
+            THROWM(Base::ValueError, "No valid subelement linked in Part::Feature")
 
         shape = Profile.getValue<Part::Feature*>()->Shape.getShape().getSubShape(Profile.getSubValues().front().c_str());
     }
 
     if (shape.IsNull())
-        throw Base::ValueError("Linked shape object is empty");
+        THROWM(Base::ValueError, "Linked shape object is empty")
 
     // this is a workaround for an obscure OCC bug which leads to empty tessellations
     // for some faces. Making an explicit copy of the linked shape seems to fix it.
@@ -447,14 +447,14 @@ std::vector<TopoDS_Wire> ProfileBased::getProfileWiresOld() const {
     BRepBuilderAPI_Copy copy(shape);
     shape = copy.Shape();
     if (shape.IsNull())
-        throw Base::ValueError("Linked shape object is empty");
+        THROWM(Base::ValueError, "Linked shape object is empty")
 
     TopExp_Explorer ex;
     for (ex.Init(shape, TopAbs_WIRE); ex.More(); ex.Next()) {
         result.push_back(TopoDS::Wire(ex.Current()));
     }
     if (result.empty()) // there can be several wires
-        throw Base::ValueError("Linked shape object is not a wire");
+        THROWM(Base::ValueError, "Linked shape object is not a wire")
 
     return result;
 }
@@ -495,11 +495,11 @@ TopoShape ProfileBased::getSupportFace() const {
     if (!shape.isNull()) {
         gp_Pln pln;
         if (!shape.findPlane(pln))
-            throw Base::TypeError("No planar support face");
+            THROWM(Base::TypeError, "No planar support face")
         return shape;
     }
     if (!sketch)
-        throw Base::RuntimeError("No planar support face");
+        THROWM(Base::RuntimeError, "No planar support face")
     return Feature::makeShapeFromPlane(sketch);
 }
 
@@ -562,7 +562,7 @@ Part::Feature* ProfileBased::getBaseObject(bool silent) const
     }
 
     if (!silent && err) {
-        throw Base::RuntimeError(err);
+        THROWM(Base::RuntimeError, err)
     }
 
     return rv;
@@ -585,7 +585,7 @@ void ProfileBased::getUpToFaceFromLinkSub(TopoShape& upToFace,
     App::DocumentObject* ref = refFace.getValue();
 
     if (!ref)
-        throw Base::ValueError("SketchBased: No face selected");
+        THROWM(Base::ValueError, "SketchBased: No face selected")
 
     if (ref->isDerivedFrom<App::Plane>()) {
         upToFace = makeShapeFromPlane(ref);
@@ -595,7 +595,7 @@ void ProfileBased::getUpToFaceFromLinkSub(TopoShape& upToFace,
     const auto &subs = refFace.getSubValues();
     upToFace = Part::Feature::getTopoShape(ref, subs.size()?subs[0].c_str():nullptr,true);
     if (!upToFace.hasSubShape(TopAbs_FACE))
-        throw Base::ValueError("SketchBased: Up to face: Failed to extract face");
+        THROWM(Base::ValueError, "SketchBased: Up to face: Failed to extract face")
 }
 
 void ProfileBased::getUpToFace(TopoShape& upToFace,
@@ -609,7 +609,7 @@ void ProfileBased::getUpToFace(TopoShape& upToFace,
     if ((method == "UpToLast") || (method == "UpToFirst")) {
         std::vector<Part::cutFaces> cfaces = Part::findAllFacesCutBy(support, sketchshape, dir);
         if (cfaces.empty())
-            throw Base::ValueError("SketchBased: No faces found in this direction");
+            THROWM(Base::ValueError, "SketchBased: No faces found in this direction")
 
         // Find nearest/furthest face
         std::vector<Part::cutFaces>::const_iterator it, it_near, it_far;
@@ -625,7 +625,7 @@ void ProfileBased::getUpToFace(TopoShape& upToFace,
 
     if (upToFace.shapeType(true) != TopAbs_FACE) {
         if (!upToFace.hasSubShape(TopAbs_FACE))
-            throw Base::ValueError("SketchBased: Up to face: No face found");
+            THROWM(Base::ValueError, "SketchBased: Up to face: No face found")
         upToFace = upToFace.getSubTopoShape(TopAbs_FACE, 1);
     }
 
@@ -638,13 +638,13 @@ void ProfileBased::getUpToFace(TopoShape& upToFace,
 
     if (adapt2.GetType() == GeomAbs_Plane) {
         if (adapt1.Plane().Axis().IsNormal(adapt2.Plane().Axis(), Precision::Confusion()))
-            throw Base::ValueError("SketchBased: Up to face: Must not be parallel to extrusion direction!");
+            THROWM(Base::ValueError, "SketchBased: Up to face: Must not be parallel to extrusion direction!")
     }
 
     // We must measure from sketchshape, not supportface, here
     BRepExtrema_DistShapeShape distSS(sketchshape.getShape(), face);
     if (distSS.Value() < Precision::Confusion())
-        throw Base::ValueError("SketchBased: Up to face: Must not intersect sketch!");
+        THROWM(Base::ValueError, "SketchBased: Up to face: Must not intersect sketch!")
 }
 
 void ProfileBased::addOffsetToFace(TopoShape& upToFace, const gp_Dir& dir, double offset)
@@ -783,7 +783,7 @@ bool ProfileBased::checkLineCrossesFace(const gp_Lin& line, const TopoDS_Face& f
     TopoDS_Wire outerWire = ShapeAnalysis::OuterWire(face);
     BRepBuilderAPI_MakeEdge mkEdge(line);
     if (!mkEdge.IsDone())
-        throw Base::RuntimeError("Revolve: Unexpected OCE failure");
+        THROWM(Base::RuntimeError, "Revolve: Unexpected OCE failure")
     BRepAdaptor_Curve axis(TopoDS::Edge(mkEdge.Shape()));
 
     TopExp_Explorer ex;
@@ -1069,12 +1069,12 @@ void ProfileBased::getAxis(const App::DocumentObject * pcReferenceAxis, const st
         case ForbiddenAxis::NotPerpendicularWithNormal:
             // If perpendicular to the normal then it's parallel to the plane
             if (sketchplane.Axis().Direction().IsNormal(dir, Precision::Angular()))
-                throw Base::ValueError("Axis must not be parallel to the sketch plane");
+                THROWM(Base::ValueError, "Axis must not be parallel to the sketch plane")
             break;
         case ForbiddenAxis::NotParallelWithNormal:
             // If parallel with the normal then it's perpendicular to the plane
             if (sketchplane.Axis().Direction().IsParallel(dir, Precision::Angular()))
-                throw Base::ValueError("Axis must not be perpendicular to the sketch plane");
+                THROWM(Base::ValueError, "Axis must not be perpendicular to the sketch plane")
             break;
         default:
             break;
@@ -1159,7 +1159,7 @@ void ProfileBased::getAxis(const App::DocumentObject * pcReferenceAxis, const st
     else {
         refShape = refShape.getSubTopoShape(TopAbs_EDGE, 1, true);
         if (!refShape.isLinearEdge(&dir, &base))
-            throw Base::TypeError("Axis reference must be a linear or planar edge");
+            THROWM(Base::TypeError, "Axis reference must be a linear or planar edge")
     }
     verifyAxisFunc(checkAxis, sketchplane, gp_Dir(dir.x, dir.y, dir.z));
 }

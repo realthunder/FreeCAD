@@ -305,12 +305,29 @@ public:
         return value;
     }
 
+    /// Secret comparison that takes the same time whichever byte
+    /// first differs: `==` returns on the first mismatch, so how long
+    /// a refusal takes states how much of the token was right, and a
+    /// token can be guessed a byte at a time. The length is not part
+    /// of the secret (these are fixed-width hex), so an early out on
+    /// it is fine; the bytes are folded before anything is decided.
+    static bool secretEqual(const std::string &a, const std::string &b)
+    {
+        if (a.size() != b.size())
+            return false;
+        unsigned char diff = 0;
+        for (size_t i = 0; i < a.size(); ++i)
+            diff |= static_cast<unsigned char>(a[i] ^ b[i]);
+        return diff == 0;
+    }
+
     /// Whether a request carrying \a query may pass the door: open
     /// server, or a matching `?token=`.
     bool tokenOk(const std::string &query)
     {
         std::string secret = tokenNow();
-        return secret.empty() || queryValue(query, "token") == secret;
+        return secret.empty()
+            || secretEqual(queryValue(query, "token"), secret);
     }
 
     /// The live grant list (SceneServer.h, setGrants) — the door when
@@ -418,7 +435,7 @@ public:
         const SceneGrant *best = nullptr;
         int64_t bestScore = -1;
         for (const auto &g : list) {
-            if (!g.token.empty() && g.token != token)
+            if (!g.token.empty() && !secretEqual(g.token, token))
                 continue;
             if (!patternMatches(g.identity, identity)
                     || !patternMatches(g.client, client)
@@ -452,7 +469,8 @@ public:
         std::lock_guard<std::mutex> guard(tokenMutex);
         if (grantList.empty()) {
             Judgement out;
-            out.admitted = tokenSecret.empty() || token == tokenSecret;
+            out.admitted = tokenSecret.empty()
+                || secretEqual(token, tokenSecret);
             return out;
         }
         return judgeWith(grantList, token, identity, client, address);
@@ -807,6 +825,14 @@ public:
         g.previousKeys = std::move(g.currentKeys);
         g.currentKeys = std::move(g.pendingKeys);
         g.pendingKeys.clear();
+        sweepBlobs();
+    }
+
+    /// Drop from the store what no group names at all, and with each
+    /// dropped chunk the level memos that pointed at it. Called with
+    /// \a mutex held — from retireBlobs and from a group release.
+    void sweepBlobs()
+    {
         auto liveAnywhere = [this](const std::string &key) {
             for (const auto &entry : groups) {
                 const DocGroup &grp = entry.second;
@@ -1147,11 +1173,24 @@ public:
     std::mutex connMutex;
     std::vector<Conn *> conns;
     uint64_t connIdCounter = 0;   ///< guarded by connMutex
+    /// Pre-auth accept caps (acceptLoop): every accepted socket —
+    /// HTTP and WS alike — counts until its handler thread exits.
+    std::mutex acceptCountMutex;
+    int activeConns = 0;                       ///< guarded above
+    std::map<std::string, int> activeByIp;     ///< non-loopback only
+    static constexpr int kMaxConns = 128;
+    static constexpr int kMaxConnsPerIp = 16;
     std::condition_variable dumpCv;    ///< guarded by connMutex
     /// In-flight dumpFrame collection (one at a time).
     struct DumpCollect {
         uint32_t id = 0;
         size_t expected = 0;
+        /// The connections the request actually went to, each removed
+        /// by its one answer. Without it the request id is the whole
+        /// key: one viewer could answer N times and fill the
+        /// collection with its own frames, displacing the answers the
+        /// other viewers are still rendering.
+        std::set<uint64_t> awaited;
         std::vector<ViewerFrameDump> dumps;
     };
     DumpCollect *dumpCollect = nullptr;
@@ -1164,6 +1203,7 @@ public:
     struct LogCollect {
         uint32_t id = 0;
         size_t expected = 0;
+        std::set<uint64_t> awaited;   ///< as DumpCollect::awaited
         std::vector<std::string> logs;
     };
     LogCollect *logCollect = nullptr;
@@ -1333,6 +1373,15 @@ public:
         for (Conn *conn : conns) {
             if (conn->id == id) {
                 conn->kicked = true;
+#ifndef _WIN32
+                // Same wake as stopListening: without it a connection
+                // wedged in a send (bounded by SO_SNDTIMEO) or parked
+                // in poll would outlive the kick by up to that long.
+                // Guarded like every other socket call here — the
+                // listener itself is POSIX-only for now.
+                if (conn->fd >= 0)
+                    ::shutdown(conn->fd, SHUT_RD);
+#endif
                 return true;
             }
         }
@@ -1391,8 +1440,10 @@ public:
                       "{\"cmd\":\"dumpFrame\",\"id\":%u,\"mode\":%d}",
                       collect.id, mode);
         for (Conn *conn : conns) {
-            if (conn->viewer)
+            if (conn->viewer) {
                 conn->pendingText.push_back(msg);
+                collect.awaited.insert(conn->id);
+            }
         }
         dumpCv.wait_for(lock, std::chrono::milliseconds(timeoutMs),
                         [&collect]() {
@@ -1423,8 +1474,10 @@ public:
         std::snprintf(msg, sizeof(msg),
                       "{\"cmd\":\"dumpDecisions\",\"id\":%u}", collect.id);
         for (Conn *conn : conns) {
-            if (conn->viewer)
+            if (conn->viewer) {
                 conn->pendingText.push_back(msg);
+                collect.awaited.insert(conn->id);
+            }
         }
         dumpCv.wait_for(lock, std::chrono::milliseconds(timeoutMs),
                         [&collect]() {
@@ -1700,7 +1753,10 @@ public:
             listenFd = -1;
             return false;
         }
-        std::thread([this]() { acceptLoop(); }).detach();
+        // The fd travels by value: a fast stop()/start() may reuse the
+        // fd number for the new socket, and an old loop re-reading the
+        // member would accept on — and fight over — the new listener.
+        std::thread([this, fd = listenFd]() { acceptLoop(fd); }).detach();
         return true;
     }
 
@@ -1722,22 +1778,78 @@ public:
             started = false;
         }
         std::lock_guard<std::mutex> guard(connMutex);
-        for (Conn *conn : conns)
+        for (Conn *conn : conns) {
             conn->kicked = true;
+            // Wake a loop parked in poll() so the stop takes effect
+            // now, not a poll interval later. Read side only: the
+            // goodbye frames still go out on the intact write side.
+            if (conn->fd >= 0)
+                ::shutdown(conn->fd, SHUT_RD);
+        }
     }
 
-    void acceptLoop()
+    void acceptLoop(int acceptFd)
     {
         for (;;) {
-            int fd = ::accept(listenFd, nullptr, nullptr);
+            int fd = ::accept(acceptFd, nullptr, nullptr);
             if (fd < 0)
                 break;
+            // A peer that stops reading must not park its thread in
+            // ::send forever — with the buffers full the send returns
+            // after this instead, the loop sees the failure and the
+            // connection closes. This is also what makes a kick or a
+            // server stop effective against such a peer.
+            timeval sndTimeout = {};
+            sndTimeout.tv_sec = 20;
+            ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &sndTimeout,
+                         sizeof(sndTimeout));
+            // Pre-auth flood control: each connection may legitimately
+            // buffer tens of MiB (frame + fragment caps), and the door
+            // only judges after the WS handshake — with no cap a LAN
+            // or direct-mode peer could hold unbounded threads and
+            // memory. Loopback is exempt from the per-address cap: the
+            // tunnel front door (cloudflared) funnels every remote
+            // client through it, and the global cap still bounds it.
+            std::string ip;
+            {
+                sockaddr_in peer = {};
+                socklen_t plen = sizeof(peer);
+                if (::getpeername(fd, reinterpret_cast<sockaddr *>(&peer),
+                                  &plen) == 0) {
+                    char buf[64] = "";
+                    ::inet_ntop(AF_INET, &peer.sin_addr, buf, sizeof(buf));
+                    ip = buf;
+                }
+            }
+            const bool loopback = ip == "127.0.0.1" || ip == "::1";
+            {
+                std::lock_guard<std::mutex> guard(acceptCountMutex);
+                int perIp = 0;
+                auto it = activeByIp.find(ip);
+                if (it != activeByIp.end())
+                    perIp = it->second;
+                if (activeConns >= kMaxConns
+                        || (!loopback && perIp >= kMaxConnsPerIp)) {
+                    ::close(fd);
+                    continue;
+                }
+                ++activeConns;
+                if (!loopback)
+                    activeByIp[ip] = perIp + 1;
+            }
             // One thread per connection: a WebSocket client keeps its
             // connection for the whole session and must not starve the
             // HTTP fallback (or a second viewer).
-            std::thread([this, fd]() {
+            std::thread([this, fd, ip, loopback]() {
                 handle(fd);
                 ::close(fd);
+                std::lock_guard<std::mutex> guard(acceptCountMutex);
+                --activeConns;
+                if (!loopback) {
+                    auto it = activeByIp.find(ip);
+                    if (it != activeByIp.end() && --it->second <= 0)
+                        activeByIp.erase(it);
+                }
             }).detach();
         }
     }
@@ -2079,9 +2191,13 @@ public:
                 unknownDoc = true;
             std::vector<uint8_t> out;
             if (g) {
-                if (!s.empty() && clientVersion != ~uint64_t(0)
-                        && std::strtoull(s.c_str(), nullptr, 10)
-                               != g->ensureSession())
+                // A version without a session, or with another run's,
+                // names a publish that never happened here (the v35
+                // contract above) — treat as holding nothing.
+                if (clientVersion != ~uint64_t(0)
+                        && (s.empty()
+                            || std::strtoull(s.c_str(), nullptr, 10)
+                                   != g->ensureSession()))
                     clientVersion = 0;
                 out = payloadFor(*g, clientVersion);
             }
@@ -2224,8 +2340,8 @@ public:
             // A version stated without a session, or with one from
             // another run (or another document's stream), names a
             // publish that never happened on this stream.
-            if (!session.empty() && held != ~uint64_t(0)
-                    && (!conn.group
+            if (held != ~uint64_t(0)
+                    && (session.empty() || !conn.group
                         || std::strtoull(session.c_str(), nullptr, 10)
                                != conn.group->ensureSession()))
                 conn.sent = 0;
@@ -2285,20 +2401,13 @@ public:
             int r = ::poll(&p, 1, 200);
             if (r < 0)
                 return;
-            if (r > 0) {
-                char buf[65536];
-                ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
-                if (n <= 0)
-                    return;
-                inbuf.append(buf, size_t(n));
-                if (!consumeFrames(fd, conn, inbuf))
-                    return;
-            }
             // The host asked this connection closed (kickClient, a
             // server stop, or its own bad-token hello): drain what was
             // queued for it — a BadToken refusal rides there — then
             // say so, so a compliant viewer stops reconnecting, and
-            // hang up.
+            // hang up. Checked before the read: a kick shuts the read
+            // side down to wake the poll, so the recv below would see
+            // EOF and skip this farewell.
             {
                 bool kicked;
                 std::vector<std::string> texts;
@@ -2317,6 +2426,15 @@ public:
                     sendFrame(fd, 8, nullptr, 0);
                     return;
                 }
+            }
+            if (r > 0) {
+                char buf[65536];
+                ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+                if (n <= 0)
+                    return;
+                inbuf.append(buf, size_t(n));
+                if (!consumeFrames(fd, conn, inbuf))
+                    return;
             }
             std::vector<uint8_t> body;
             bool orphaned = false;
@@ -2693,7 +2811,7 @@ public:
         if (!conn.authorized)
             return;
         if (size > 0 && bytes[0] == 'D') {
-            handleFrameDump(bytes, size);
+            handleFrameDump(conn, bytes, size);
             return;
         }
         // A viewer's decision journal: 'L', u32 request id, u32 text
@@ -2705,7 +2823,8 @@ public:
             if (size < 9 + size_t(len))
                 return;
             std::lock_guard<std::mutex> guard(connMutex);
-            if (logCollect && logCollect->id == id) {
+            if (logCollect && logCollect->id == id
+                    && logCollect->awaited.erase(conn.id)) {
                 std::string log(
                     reinterpret_cast<const char *>(bytes) + 9, len);
                 // Attribution, when the hello offered a label
@@ -2724,7 +2843,8 @@ public:
     /// A viewer's dumpFrame answer: 'D', u32 request id, u32 metadata
     /// length, the metadata JSON, u32 width, u32 height, then
     /// width*height RGBA8 pixels (bottom-up rows) — all little-endian.
-    void handleFrameDump(const uint8_t *bytes, size_t size)
+    void handleFrameDump(Conn &conn, const uint8_t *bytes,
+                         size_t size)
     {
         auto u32At = [bytes](size_t off) {
             uint32_t v;
@@ -2752,7 +2872,8 @@ public:
                          bytes + off + size_t(dump.width) * dump.height * 4);
 
         std::lock_guard<std::mutex> guard(connMutex);
-        if (dumpCollect && dumpCollect->id == id) {
+        if (dumpCollect && dumpCollect->id == id
+                && dumpCollect->awaited.erase(conn.id)) {
             dumpCollect->dumps.push_back(std::move(dump));
             dumpCv.notify_all();
         }
@@ -3199,6 +3320,18 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
                                    return job.group == g;
                                }),
                 q.end());
+        // A closed document's chunk references must not pin the store
+        // for the process lifetime: clear its generations — a re-serve
+        // republishes — then drop what nothing names any more.
+        g->pendingKeys.clear();
+        g->currentKeys.clear();
+        g->previousKeys.clear();
+        // The level memos go with them: requestLevel early-returns on
+        // a recorded ask, so an entry outliving its purged job would
+        // answer 202 forever without ever building on a re-serve.
+        g->levelAsked.clear();
+        g->levelBuilt.clear();
+        pimpl->sweepBlobs();
     }
     {
         std::lock_guard<std::mutex> guard(pimpl->handlerMutex);

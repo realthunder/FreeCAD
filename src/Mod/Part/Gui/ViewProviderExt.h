@@ -60,6 +60,8 @@ struct SimplifiedMesh;
 struct SimplifyStats;
 }
 
+namespace Gui { class SoFCRenderMaterial; }
+
 namespace PartGui {
 
 class SoBrepFaceSet;
@@ -67,6 +69,106 @@ class SoBrepEdgeSet;
 class SoBrepPointSet;
 class SoFCCoordinate3;
 struct ShapeInstanceRep;
+
+/** DiffuseColor, whose storage is the object's ShapeAppearance
+ *
+ * The per-face colours are one datum and the appearance owns it. This keeps
+ * the familiar name, the file format, and every C++ and Python call site
+ * that says DiffuseColor, while reading and writing the appearance's diffuse
+ * field so that the two can never disagree.
+ *
+ * It costs nothing to read: the appearance stores one array per material
+ * field, so its diffuse field already IS a std::vector<Base::Color> and
+ * getValues() hands back a reference to it. Writes go through the
+ * appearance's setters, which is also where the change is announced -- a
+ * write here notifies ShapeAppearance, not DiffuseColor.
+ *
+ * The readers below hide the base ones by name rather than making them
+ * virtual; see docs/ShapeAppearanceDesign.md section 1.1 for why, and note
+ * that nothing may reach this through an App::PropertyColorList pointer
+ * (section 7.2). Everything that legitimately does go through a base
+ * pointer -- Save, Restore, Copy, Paste, get/setPyObject, getSize -- is
+ * virtual and overridden here.
+ */
+class PartGuiExport PropertyDiffuseColor : public App::PropertyColorList
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    /** Wire the storage
+     *
+     * \a appearance is where the colours live; \a shapeColor is the object
+     * colour that an empty assignment falls back to -- clearing the list has
+     * always meant "every face back to the object's colour", and a field the
+     * appearance stores as empty means the default material's colour
+     * instead. Both null until the owner wires them, and the property is a
+     * plain colour list until then.
+     */
+    void setAppearance(App::PropertyMaterialList *appearance,
+                       const App::PropertyColor *shapeColor);
+
+    /** @name Reads, overriding or hiding the base ones
+     *
+     * getValues() overrides -- App::PropertyColorList makes that one virtual
+     * so that a property whose colours live somewhere else can say so once
+     * and have the inherited restore paths follow. The rest hide, because
+     * PropertyListsT reads its member directly and cannot be told otherwise.
+     */
+    //@{
+    const std::vector<Base::Color> &getValues() const override;
+    const std::vector<Base::Color> &getValue() const { return getValues(); }
+    const Base::Color &operator[](int idx) const { return getValues()[idx]; }
+    int getSize() const override;
+    //@}
+
+    /** @name Writes
+     *
+     * setValues(ListT&&) is the funnel: every other write the base offers --
+     * setValue(colour), setValue(list), setValues(list), and the Python
+     * paths -- reaches it virtually, so overriding it covers them all.
+     */
+    //@{
+    using App::PropertyColorList::setValues;
+    void setValues(std::vector<Base::Color> &&colors) override;
+    void set1Value(int idx, const Base::Color &col) override;
+    using App::PropertyColorList::setSize;
+    void setSize(int newSize) override;
+    void setSize(int newSize, const Base::Color &def) override;
+    //@}
+
+    unsigned int getMemSize() const override;
+    unsigned int getSaveSize(Base::Writer &writer) const override;
+    bool isSame(const App::Property &other) const override;
+    App::Property *Copy() const override;
+    void Paste(const App::Property &from) override;
+    PyObject *getPyObject() override;
+    void setPyObject(PyObject *value) override;
+
+    void Save(Base::Writer &writer) const override;
+    void Restore(Base::XMLReader &reader) override;
+
+protected:
+    /// Reinterpret an all-zero-alpha Python assignment written for the old
+    /// meaning of alpha; defined next to setPyObject, its only caller.
+    void guardLegacyAlpha(std::vector<Base::Color> &colors) const;
+
+    /** The element name a colour list has always written
+     *
+     * A list's XML element is named after its type, so without this a
+     * document would say <DiffuseColor> where every older one says
+     * <ColorList> -- and the restore of those older ones, which reads the
+     * element by name, would fail.
+     */
+    const char *xmlName() const override { return "ColorList"; }
+    void restoreXML(Base::XMLReader &reader) override;
+    bool saveXML(Base::Writer &writer) const override;
+    void restoreStream(Base::InputStream &str, unsigned count) override;
+    void saveStream(Base::OutputStream &str) const override;
+
+private:
+    App::PropertyMaterialList *_appearance {nullptr};
+    const App::PropertyColor *_shapeColor {nullptr};
+};
 
 class PartGuiExport ViewProviderPartExt : public Gui::ViewProviderGeometryObject
 {
@@ -115,8 +217,9 @@ public:
     App::PropertyColor LineColor;
     App::PropertyMaterial LineMaterial;
     App::PropertyColorList LineColorArray;
-    // Faces (Gui::ViewProviderGeometryObject::ShapeColor and Gui::ViewProviderGeometryObject::ShapeMaterial apply)
-    App::PropertyColorList DiffuseColor;
+    // Faces (Gui::ViewProviderGeometryObject::ShapeColor and Gui::ViewProviderGeometryObject::ShapeAppearance apply)
+    /// A name over ShapeAppearance's diffuse field, not a second store
+    PropertyDiffuseColor DiffuseColor;
 
     App::PropertyColorList MappedColors;    
     App::PropertyBool MapFaceColor;    
@@ -162,6 +265,10 @@ public:
     void setHighlightedFaces(const std::vector<App::Color>& colors);
     void setHighlightedFaces(const std::vector<App::Material>& colors);
     void unsetHighlightedFaces();
+    /// Reapply the document appearance to the face material node: the
+    /// per-face colour path while diffuse is the only field that varies,
+    /// the whole-material path once any other field does.
+    void applyShapeAppearance();
     void setHighlightedEdges(const std::vector<App::Color>& colors);
     void unsetHighlightedEdges();
     void setHighlightedPoints(const std::vector<App::Color>& colors);
@@ -228,6 +335,12 @@ protected:
 protected:
     /// get called by the container whenever a property has been changed
     void onChanged(const App::Property* prop) override;
+    /// Restore a document written before DiffuseColor became a name over
+    /// ShapeAppearance: it kept its name and changed type, so it arrives
+    /// here, and the base would drop it without a word.
+    void handleChangedPropertyType(Base::XMLReader &reader,
+                                   const char *TypeName,
+                                   App::Property *prop) override;
 
     virtual bool hasBaseFeature() const;
 
@@ -352,7 +465,12 @@ protected:
                           SoBrepPointSet *nodeset,
                           int &numTriangles, int &numNodes, int &numPoints,
                           int &numNorms, int &numFaces, int &numEdges,
-                          int &numLines);
+                          int &numLines,
+                          /// Where the per-face projection frames the
+                          /// fill computed are stated; null on the
+                          /// paths that build no particular object's
+                          /// nodes (see buildVisualNodes).
+                          Gui::SoFCRenderMaterial *rendermat = nullptr);
     /// Queue this rebuild's fill on the refine pool
     /// (Render_VisualFillOnPool): capture here, fill on a worker,
     /// land the array writes plus the epilogue updateVisual would
@@ -400,7 +518,17 @@ protected:
                           /// caller just installed the triangulation to
                           /// display, so the BRepMesh call would only
                           /// validate it (Render_MeshSkipLanded).
-                          bool residentLanded = false);
+                          bool residentLanded = false,
+                          /** Where the per-face projection frames of a
+                           * surface finish go (faceProjectionFrame).
+                           * Optional because this is a static builder
+                           * several paths share, and only the ones that
+                           * build a PARTICULAR object's nodes have a
+                           * render material to write: the shared
+                           * instanced geometry and the bounding-box
+                           * stand-in do not, and their faces keep the
+                           * renderer's triplanar projection. */
+                          Gui::SoFCRenderMaterial *rendermat = nullptr);
 
     bool VisualTouched;
     bool NormalsFromUV;

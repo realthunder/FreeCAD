@@ -44,6 +44,14 @@ Settled in discussion:
   address must satisfy that entry — **a mismatch is denied by construction**, at the
   door, before any scene bytes. A `*` / `*` entry is the open invitation: anyone from
   anywhere.
+- **Which grant fields are boundaries.** Only two: the **token**, which is a secret,
+  and the **identity**, which the front door verified (§4). The **name** is self-declared
+  in the viewer's hello and the **address** is where the connection appears to come
+  from, so both narrow *who among the invited* a grant covers — they do not keep out
+  anyone holding the token, who can simply present another name. This is by
+  construction, not a gap to close: the name is a display label. Say so wherever a host
+  authors a grant (the panel's grant help does), and read a name-keyed ban as
+  housekeeping, not enforcement.
 - **Two lists.** The **persistent** list (`user.cfg`) is every grant ever issued, each
   with an enabled flag. The **live** list is what the door actually checks: seeded from
   the enabled persistent grants when sharing starts, and free to evolve at runtime.
@@ -215,6 +223,32 @@ How that lands on what the server already sends:
 everywhere with zero edge configuration: browser-cached through a quick tunnel,
 edge-cached automatically on a named zone (`.svg` is on the default list), and never
 stale because a changed asset is a new URL.
+
+### 5.2 The front door of record: the named tunnel on cad.thundereal.com
+
+Decided 2026-08-07: **the share's public door is the named tunnel** — Cloudflare tunnel
+`fc-share` carrying `cad.thundereal.com` to the serving process (`cloudflared tunnel run
+--url http://localhost:<port> fc-share`; cert in `~/.cloudflared/`, DNS CNAME on the
+zone). The quick tunnel stays as the no-account fallback, and both remain presets in the
+Share dialog's front-door chooser (§7.6): the bundled presets are **LAN**, **Quick
+tunnel**, and **thundereal** — the last being the own-door shape, public origin
+`https://cad.thundereal.com` with the identity door on. Presets are seeded lazily:
+`loadDoors()` answers the bundled three while `SceneShare/Doors` is empty and
+`DoorsSeeded` unset; they persist (and the flag is written) the first time the dialog
+saves, so a deliberately deleted preset stays deleted. An empty stored list on a fresh
+profile is therefore the working state, not a missing feature.
+
+Through this door a share link is **tokenless** and carries only the doc group:
+
+    https://cad.thundereal.com/fcviewer.html?doc=<DocName>
+
+Cloudflare Access authenticates the visitor (one-time PIN, Google, or GitHub — §4), the
+grant list authorizes: only an identity a grant covers gets scene bytes, everyone else is
+refused after login. The backend must be launched with `FC_SERVE_TRUST_PROXY=1` (tunnel
+doors force it for the session when started from the dialog) and serves the viewer bundle
+itself from `FC_BGFX_VIEWER_BUILD`, so the one hostname carries page, stream and blobs.
+Headless serves register no doc group by themselves — `Gui.serveDocument(doc)` (a
+Document object, not a name) is what puts `?doc=` on the map.
 
 ## 6. Open decisions
 

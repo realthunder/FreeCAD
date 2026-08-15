@@ -977,7 +977,8 @@ public:
     /** Sets the property
      */
     void setValue(const Color &col);
-    void setValue(float r, float g, float b, float a=0.0f);
+    /// Default alpha 1: a colour set without one is opaque (Base/Color.h)
+    void setValue(float r, float g, float b, float a=1.0f);
     void setValue(uint32_t rgba);
 
     /** This method returns a string representation of the property
@@ -1026,12 +1027,40 @@ public:
      */
     ~PropertyColorList() override;
 
+    /** The colours, which a subclass may keep somewhere else
+     *
+     * Virtual, where the same name on PropertyListsT is not, because a method
+     * of THIS class that reads the list has no way to know whether the
+     * property owns its storage. One subclass does not: the Part view
+     * provider's DiffuseColor is a name over a ShapeAppearance's diffuse
+     * field and holds nothing of its own. RestoreDocFile below reads and
+     * writes through this pair, so while the name was merely hidden it read
+     * the empty base vector and then stored that emptiness back -- silently
+     * emptying the face colours of every document it converted.
+     *
+     * Only the reads that go through here are covered. PropertyListsT binds
+     * its own getValues() statically and touches _lValueList directly in
+     * operator[], set1Value and setSize, so a redirecting subclass still has
+     * to override each of those; PropertyDiffuseColor does.
+     *
+     * Deliberately not virtual on PropertyListsT itself: eleven other list
+     * properties share that template and none of them has, or is likely to
+     * get, a subclass that redirects.
+     */
+    virtual const std::vector<Color> &getValues() const {
+        return PropertyListsT<Color>::getValues();
+    }
+
     PyObject *getPyObject(void) override;
-    
+
     Property *Copy(void) const override;
     void Paste(const Property &from) override;
 
     void interpolateValue(int index, const Color &from, const Color &to, float t) override;
+
+    /// Converts the alpha component of a document that means opacity by it;
+    /// see Base::alphaIsOpacity.
+    void RestoreDocFile(Base::Reader &reader) override;
 
 protected:
     Color getPyValue(PyObject *) const override;
@@ -1099,43 +1128,496 @@ private:
     Material _cMat;
 };
 
-/** Material properties
-*/
-class AppExport PropertyMaterialList : public PropertyListsT<Material>
+/** A list of materials, stored one field at a time
+ *
+ * A material list almost never varies in every field. An imported solid
+ * varies its diffuse colour, and sometimes its transparency, per face and
+ * holds a single value for everything else; an object with a uniform
+ * appearance holds a single value for all of them. Storing whole materials
+ * makes every entry pay for that variance: an App::Material is 80 bytes
+ * against a colour's 16, so a 10,000 face import spends 800 KB saying what
+ * 200 KB of colours and transparencies would have said.
+ *
+ * So the storage is one array per field, each independently sized:
+ *
+ *   - 0 -- every entry reads the field's default, and it costs nothing
+ *   - 1 -- one value shared by every entry
+ *   - N -- genuinely per entry
+ *
+ * getSize() is the logical entry count and is held separately, so a list of
+ * ten thousand identical materials is a handful of bytes. Nothing stores a
+ * whole App::Material, which is why getValues() has to build one per entry
+ * into a cache and operator[] returns by value; prefer the per field
+ * accessors, which read and write the storage directly.
+ *
+ * Collapsing a field to the smallest of those three sizes is not merely an
+ * optimisation. The shared-default scheme elides a property whose
+ * serialisation is byte-identical to its class default, so two appearances
+ * that are equal but serialise differently would silently fail to elide.
+ * Writing is therefore always from the normalised form; reading may assume
+ * it.
+ */
+class AppExport PropertyMaterialList : public PropertyLists,
+                                       public AtomicPropertyChangeInterface<PropertyMaterialList>
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    using atomic_change = AtomicPropertyChangeInterface<PropertyMaterialList>::AtomicPropertyChange;
+    friend atomic_change;
+
     bool canShareDefault() const override { return true; }
 
-    /**
-    * A constructor.
-    * A more elaborate description of the constructor.
-    */
     PropertyMaterialList();
-
-    /**
-    * A destructor.
-    * A more elaborate description of the destructor.
-    */
     ~PropertyMaterialList() override;
 
+    /// The material every entry of an empty field reads as
+    static const Material &defaultMaterial();
+
+    /** @name Whole material access
+     *
+     * The interface a material list has always had. Each of these composes
+     * or decomposes materials across the field arrays.
+     */
+    //@{
+    int getSize() const override { return _count; }
+    void setSize(int newSize) override;
+    void setSize(int newSize, const Material &def);
+
+    void setValue(const Material &mat);
+    void setValue(const std::vector<Material> &values = std::vector<Material>()) {
+        setValues(values);
+    }
+    void setValues(const std::vector<Material> &values);
+    void setValues(std::vector<Material> &&values);
+
+    /** There is deliberately no getValues()
+     *
+     * Every other list property hands back its storage; this one has no
+     * whole material to hand back, and the three ways of pretending
+     * otherwise are all worse than not offering it. A member cache would
+     * undo the layout -- the first caller grows a 10,000 entry list from
+     * 200 KB to a megabyte and keeps it there until the next write. A shared
+     * scratch buffer, the FC_STATIC idiom used elsewhere in this class of
+     * problem, makes `a.getValues() == b.getValues()` quietly compare one
+     * list with itself. Returning by value is safe but silently expensive at
+     * exactly the call sites that look cheapest.
+     *
+     * So the whole-list read is gone and the compiler says so. Read one
+     * entry with getMaterial(), or -- better -- read the one field you
+     * wanted through the per field accessors below, which touch no memory
+     * that is not already there.
+     */
+    Material operator[](int idx) const { return getMaterial(idx); }
+    Material getMaterial(int idx) const;
+    void set1Value(int idx, const Material &mat);
+    /// upstream's spelling of set1Value, so their call sites port unchanged
+    void setValue(int idx, const Material &mat) { set1Value(idx, mat); }
+    //@}
+
+    /** @name Per field access
+     *
+     * The getters hand back the raw field, whose size is 0, 1 or getSize()
+     * -- resolve a single entry with the indexed getter instead of assuming
+     * the array is as long as the list. The setters normalise, so a uniform
+     * vector handed to setDiffuseColors() collapses to one element.
+     */
+    //@{
+    const std::vector<Color> &getAmbientColors() const { return _ambient; }
+    const std::vector<Color> &getDiffuseColors() const { return _diffuse; }
+    const std::vector<Color> &getSpecularColors() const { return _specular; }
+    const std::vector<Color> &getEmissiveColors() const { return _emissive; }
+    const std::vector<float> &getShininessValues() const { return _shininess; }
+    // There is deliberately no getTransparencies(): a transparency is the
+    // complement of the diffuse alpha (see the storage note below), so there
+    // is no float array to hand back. Read getTransparency(i), or the diffuse
+    // colours.
+    const std::vector<std::string> &getImages() const { return _image; }
+    const std::vector<std::string> &getImagePaths() const { return _imagePath; }
+    const std::vector<std::string> &getUuids() const { return _uuid; }
+    /// Normalised first, so the "0, 1 or getSize()" rule above holds for a
+    /// caller that only ever reads -- normalisation is lazy, and a write
+    /// leaves the field denormal until something asks
+    const std::vector<SurfaceFinish> &getFinishes() const
+    { ensureNormalized(); return _finish; }
+
+    Color getAmbientColor(int idx) const;
+    Color getDiffuseColor(int idx) const;
+    Color getSpecularColor(int idx) const;
+    Color getEmissiveColor(int idx) const;
+    float getShininess(int idx) const;
+    float getTransparency(int idx) const;
+    const std::string &getImage(int idx) const;
+    const std::string &getImagePath(int idx) const;
+    const std::string &getUuid(int idx) const;
+    SurfaceFinish getFinish(int idx) const;
+    Material::MaterialType getType(int idx) const;
+
+    void setAmbientColors(const std::vector<Color> &colors);
+    void setDiffuseColors(const std::vector<Color> &colors);
+    void setSpecularColors(const std::vector<Color> &colors);
+    void setEmissiveColors(const std::vector<Color> &colors);
+    void setShininessValues(const std::vector<float> &values);
+    void setTransparencies(const std::vector<float> &values);
+    void setImages(const std::vector<std::string> &values);
+    void setImagePaths(const std::vector<std::string> &values);
+    void setUuids(const std::vector<std::string> &values);
+    /// The records clamp on the way in (SurfaceFinish::normalize), so what
+    /// is stored is always something a consumer can draw
+    void setFinishes(const std::vector<SurfaceFinish> &values);
+
+    /// Set one field of one entry, expanding that field alone if it has to
+    void setAmbientColor(int idx, const Color &col);
+    void setDiffuseColor(int idx, const Color &col);
+    void setSpecularColor(int idx, const Color &col);
+    void setEmissiveColor(int idx, const Color &col);
+    void setShininess(int idx, float value);
+    void setTransparency(int idx, float value);
+    void setImage(int idx, const std::string &value);
+    void setImagePath(int idx, const std::string &value);
+    void setUuid(int idx, const std::string &value);
+    void setFinish(int idx, const SurfaceFinish &value);
+
+    /// Set one field for every entry, leaving the others alone
+    void setAmbientColor(const Color &col);
+    void setDiffuseColor(const Color &col);
+    void setSpecularColor(const Color &col);
+    void setEmissiveColor(const Color &col);
+    /** Every entry's rgb, leaving every entry's alpha alone
+     *
+     * The colour edit a dialog makes: the diffuse alpha is the opacity,
+     * and in PBR mode the specular alpha is the metallic factor, so a
+     * uniform colour write would silently restate them.
+     */
+    //@{
+    void setDiffuseRGB(const Color &col);
+    void setSpecularRGB(const Color &col);
+    //@}
+    void setShininess(float value);
+    void setTransparency(float value);
+    void setImage(const std::string &value);
+    void setImagePath(const std::string &value);
+    void setUuid(const std::string &value);
+    void setFinish(const SurfaceFinish &value);
+    //@}
+
+    /// Whether any entry names a texture or a material card
+    bool hasTextureOrCard() const { return !_image.empty() || !_imagePath.empty() || !_uuid.empty(); }
+    /// Whether any entry states a surface finish; the cheap gate for a
+    /// consumer that has nothing to do when none does. Normalised, so a
+    /// finish written and then cleared answers false rather than "there is
+    /// still an array there"
+    bool hasFinish() const { ensureNormalized(); return !_finish.empty(); }
+
+    /** @name PBR mode
+     *
+     * One bool for the whole list. When set, the same arrays are READ AS
+     * PBR quantities -- reinterpreted, not converted, so the storage cost
+     * and the document format do not change: the diffuse colour is the
+     * base colour (its alpha still the opacity), the shininess slot is
+     * the roughness at full float precision, the specular colour is the
+     * F0 tint with the metallic factor riding its alpha, and the emissive
+     * is unchanged. The ambient slot has no PBR meaning.
+     *
+     * An old build opening a PBR document finds the values in the Phong
+     * slots -- a degraded look, no data loss -- and re-saving there drops
+     * the mode, not the values. The compatible encodings cannot carry the
+     * flag at all, so an old-schema save writes the Phong derivation
+     * (getPhongMaterial()) in place of the raw slots.
+     */
+    //@{
+    bool isPBR() const { return _pbr; }
+    /// Flip the reading of the stored values; converts nothing
+    void setPBR(bool enable);
+    /** Flip the mode AND convert the stored values so the look survives
+     *
+     * The editor's toggle. Toward Phong every entry goes through
+     * getPhongMaterial(); toward PBR through Material::phongToPbr (base
+     * colour kept, roughness from the shininess fit, dielectric). A
+     * Phong-PBR-Phong round trip keeps the look but forgets the specular
+     * colour, which only Phong can state. One atomic change; a no-op
+     * when the mode already matches.
+     */
+    void convertPBR(bool enable);
+    /// The metallic factor: the specular alpha. An unset field reads as 0
+    /// (dielectric) -- see specularDefault(). In Phong mode always 0.
+    float getMetallic(int idx) const;
+    /// The roughness: the shininess slot in PBR mode; in Phong mode the
+    /// Blinn-Phong derivation of the stored shininess.
+    float getRoughness(int idx) const;
+    /// The metallic/roughness writers demand PBR mode: in Phong mode the
+    /// slots they would land in mean something else, and a caller holding
+    /// a metallic value has decided the mode already.
+    void setMetallicValues(const std::vector<float> &values);
+    void setRoughnessValues(const std::vector<float> &values);
+    void setMetallic(int idx, float value);
+    void setRoughness(int idx, float value);
+    void setMetallic(float value);
+    void setRoughness(float value);
+    /** The Phong reading of one entry
+     *
+     * In Phong mode this is getMaterial(). In PBR mode it derives the
+     * classic slots: diffuse = base * (1 - metallic), specular =
+     * mix(0.04 * tint, base, metallic), shininess from the roughness;
+     * emissive and the strings carry over. Used by the compatible save
+     * encodings, the Coin GL display leg, and exporters to formats with
+     * no PBR terms.
+     */
+    Material getPhongMaterial(int idx) const;
+    //@}
+
+    /** Whether the diffuse colour is the only field that varies per entry
+     *
+     * True for every appearance a plain colour list could have expressed --
+     * a per-face import, and anything uniform. It is the condition under which
+     * the compatibility name DiffuseColor can still be written out with its
+     * values, so that a reader which knows nothing about this property still
+     * gets the face colours. When it is false the appearance holds something
+     * a colour list cannot say, and writing a lossy copy would be worse than
+     * writing none.
+     */
+    bool variesOnlyInDiffuse() const;
+
     PyObject *getPyObject() override;
+    void setPyObject(PyObject *) override;
 
     const char* getEditorName(void) const override;
     Property *Copy(void) const override;
     void Paste(const Property &from) override;
+    bool isSame(const Property &other) const override;
+    Property *copyBeforeChange() const override { return Copy(); }
+
+    /** The size of the storage, which is not the size of the list
+     *
+     * Content only, as every list property reports it, because the
+     * inline-versus-archive rule in PropertyLists::Save reads it as the cost
+     * of writing this property. See getSaveSize() for why that rule needs
+     * more than this number.
+     */
+    unsigned int getMemSize() const override;
+    unsigned int getSaveSize(Base::Writer &writer) const override;
+
+    void Save(Base::Writer &writer) const override;
+    void Restore(Base::XMLReader &reader) override;
+    void SaveDocFile(Base::Writer &writer) const override;
+    void RestoreDocFile(Base::Reader &reader) override;
 
 protected:
-    Material getPyValue(PyObject *) const override;
+    Material getPyValue(PyObject *) const;
+    void setPyValues(const std::vector<PyObject*> &vals, const std::vector<int> &indices) override;
 
     void restoreXML(Base::XMLReader &) override;
     bool saveXML(Base::Writer &) const override;
     bool canSaveStream(Base::Writer &) const override { return true; }
     void restoreStream(Base::InputStream &s, unsigned count) override;
     void saveStream(Base::OutputStream &) const override;
+
+    /// The per field encoding, written only at a schema that admits it.
+    /// \a legacy on the readers: whether the file means transparency by a
+    /// colour's alpha (Base::alphaIsOpacity said no of its version).
+    void saveFieldStream(Base::OutputStream &str) const;
+    void restoreFieldStream(Base::InputStream &str, unsigned count, bool legacy);
+    bool saveFieldXML(Base::Writer &writer) const;
+    void restoreFieldXML(Base::XMLReader &reader, unsigned count);
+
+    /// Upstream's second pass: three strings per entry, after the colours
+    void saveStringStream(Base::OutputStream &str) const;
+    void restoreStringStream(Base::InputStream &str, unsigned count);
+
+private:
+    /// Collapse every field to 0, 1 or _count. Idempotent, and lazy.
+    void ensureNormalized() const;
+    void normalize();
+    /// Mark the fields as possibly denormal after a write
+    void touchFields();
+
+    /** What an empty _specular / _shininess field reads as, per mode
+     *
+     * The Phong defaults are the default material's -- a near-white
+     * specular whose alpha is 1, which in PBR mode would read back as a
+     * fully metallic surface. So PBR mode reads an unset specular as a
+     * white F0 tint with metallic 0, and an unset shininess slot as a mid
+     * roughness. These are also the collapse baselines, so which values a
+     * field can elide follows the mode -- deterministically, because the
+     * mode itself is part of the serialized identity (the mask bit / the
+     * element attribute).
+     */
+    const Color &specularDefault() const;
+    float shininessDefault() const;
+    /// Throw unless the list is in PBR mode
+    void requirePBR() const;
+    /** Land a finish restored from the element beside this property's
+     *
+     * Held rather than applied on the spot because the two encodings land at
+     * different times: an archive entry is read long after the XML pass, and
+     * its restore CLEARS the finish field (the compatible stream cannot state
+     * one). So the value waits until the materials are in.
+     */
+    void applyPendingFinish();
+    /** One material as this list reads it
+     *
+     * The list holds a single mode for every entry, so a material written
+     * into it under the other reading is converted rather than stored raw
+     * -- its slots would mean something else here. A whole-list
+     * assignment states the mode first (from its first entry), so this
+     * converts only what disagrees with it.
+     */
+    Material inMode(const Material &mat) const;
+
+    /** Land restored values, converting and merging what the file's era means
+     *
+     * \a values carry both slots exactly as the file states them. The stored
+     * diffuse alpha becomes the complement of the entry's transparency, whose
+     * truth depends on the era:
+     *
+     *  - \a legacy (before upstream 1.1, which is also every file this fork
+     *    writes): BOTH slots meant transparency. The released files split by
+     *    property -- a link override list's truth is the field, an old
+     *    DiffuseColor's the alpha -- and where both are set they were kept in
+     *    sync, so the merged truth is max(alpha, field): whichever of the two
+     *    transparencies was actually written survives, and an unset slot (0)
+     *    never wins over a set one.
+     *  - 1.1 or later: the field is the truth and the alpha is vestigial
+     *    (their own migration writes 1.0 into it), so the field alone is
+     *    taken and max() would be wrong -- an opacity cannot be compared
+     *    with a transparency.
+     *
+     * The other three colours convert by inversion in the legacy case, as
+     * upstream's convertAlphaInMaterial does.
+     */
+    void restoreValues(std::vector<Material> &&values, bool legacy);
+
+    /** The same merge for the per field encoding's separate transparency run
+     *
+     * Runs after the colour fields are in place (and, in the legacy case,
+     * already inverted). Empty \a transparency means the file carried none:
+     * nothing to merge, the alphas stand.
+     */
+    void applyRestoredTransparency(const std::vector<float> &transparency, bool legacy);
+
+    template<class T> void setField(std::vector<T> &field, const std::vector<T> &values,
+                                    const T &def);
+    template<class T> void setFieldValue(std::vector<T> &field, int idx, const T &value,
+                                         const T &def);
+    template<class T> void setUniformField(std::vector<T> &field, const T &value, const T &def);
+    /// The rgb-only write behind setDiffuseRGB / setSpecularRGB
+    void setFieldRGB(std::vector<Color> &field, const Color &col, const Color &def);
+
+    int _count {0};
+    /// The PBR reading of the fields; see the PBR mode block above
+    bool _pbr {false};
+    std::vector<Color> _ambient;
+    /** Diffuse colour AND transparency: the alpha is the entry's opacity
+     *
+     * There is no transparency array. A face's transparency and its diffuse
+     * alpha are one quantity twice, and while both were stored the two could
+     * be written independently and disagree -- and did, with a container
+     * detach hack and a per-path choice of which store to render from. So
+     * the property enforces the invariant instead of syncing it:
+     * getTransparency(i) IS 1 - _diffuse[i].a.
+     *
+     * A whole App::Material still carries both slots, so composition has to
+     * pick one: THE TRANSPARENCY FIELD WINS, and the diffuse alpha stored is
+     * its complement. Upstream data forces that choice -- their renderer
+     * reads only the field and their migration writes 1.0 into every diffuse
+     * alpha, so an upstream material's alpha is vestigial and its field is
+     * the truth. A caller composing a Material by hand must set
+     * .transparency, not .diffuseColor.a.
+     *
+     * On restore the same one-of-two choice is made per file era; see
+     * restoreValues.
+     */
+    std::vector<Color> _diffuse;
+    std::vector<Color> _specular;
+    std::vector<Color> _emissive;
+    std::vector<float> _shininess;
+    std::vector<std::string> _image;
+    std::vector<std::string> _imagePath;
+    std::vector<std::string> _uuid;
+    /** Material::MaterialType, which operator== compares
+     *
+     * The compatible encoding has never carried it and still does not, so a
+     * list that goes through a schema 5 document comes back user-defined,
+     * as it always has. The per field encoding does carry it.
+     */
+    std::vector<int8_t> _type;
+    /** The surface finish, one record per entry rather than four arrays
+     *
+     * The four numbers co-vary -- a face has one finish specification --
+     * so splitting them would quadruple the accessors, the field mask bits
+     * and the serialized keys to buy an elision case that does not occur,
+     * and would have to re-state by hand the "all four or none" pairing a
+     * record gets for free. Not written by the compatible encodings, which
+     * have nowhere to put it.
+     */
+    std::vector<SurfaceFinish> _finish;
+    /// Restored from the companion element, waiting for the materials to land
+    std::vector<SurfaceFinish> _pendingFinish;
+
+    /** Which shape the doc file being read is in
+     *
+     * Upstream states it on the element as version="3" and it means the
+     * colours are followed by a second pass of strings. Absent, or on a
+     * file this fork wrote at schema 5, there is no second pass.
+     */
+    int _fileVersion {0};
+
+    mutable bool _normalized {true};
 };
 
+
+/** The surface finish of a material list, written as a property of its own
+ *
+ * A migration that never happened, written out as though it had: pretend an
+ * older format kept the surface finish in a property beside the appearance,
+ * and that this one folded it into the material. Then a document can state
+ * both, and both readings are honest.
+ *
+ * ⭐ What that buys is a save that is lossless BOTH ways at once, which no
+ * amount of cleverness inside PropertyMaterialList's own encodings could
+ * give: upstream reads the material element byte for byte as it always has
+ * and simply walks past this one (readElement skips elements whose name it
+ * did not ask for), while we read both and lose nothing.
+ *
+ * ⚠️ It is never a member of anything. PropertyMaterialList::Save builds one
+ * on the stack, hands it the finishes, writes it, and drops it; Restore does
+ * the mirror. That is deliberate: as a container property it would join the
+ * undo stack and snapshot bytes that ShapeAppearance's own Copy() already
+ * carries, and it would need a pointer back to the appearance whose values
+ * it really held -- a second store of one value, and a Copy() that could not
+ * honestly implement itself.
+ */
+class AppExport PropertySurfaceFinishList: public Property
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    PropertySurfaceFinishList();
+    ~PropertySurfaceFinishList() override;
+
+    const std::vector<SurfaceFinish> &getValues() const { return _values; }
+    void setValue(const std::vector<SurfaceFinish> &values) { _values = values; }
+    std::vector<SurfaceFinish> takeValues() { return std::move(_values); }
+
+    /// Restore from a reader ALREADY positioned on the element, which is how
+    /// the material list reads it: it has to look at the element to know
+    /// whether it is this one at all.
+    void RestoreHere(Base::XMLReader &reader);
+
+    PyObject *getPyObject() override;
+    void setPyObject(PyObject *) override;
+
+    void Save(Base::Writer &writer) const override;
+    void Restore(Base::XMLReader &reader) override;
+
+    Property *Copy() const override;
+    void Paste(const Property &from) override;
+    bool isSame(const Property &other) const override;
+    unsigned int getMemSize() const override;
+
+private:
+    std::vector<SurfaceFinish> _values;
+};
 
 /** Property for dynamic creation of a FreeCAD persistent object
  *

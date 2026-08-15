@@ -135,7 +135,7 @@ void Persistence::restoreFromStream(std::istream& stream)
     Base::XMLReader reader(zreader);
 
     if (!reader.isValid()) {
-        throw Base::ValueError("Unable to construct reader");
+        THROWM(Base::ValueError, "Unable to construct reader")
     }
 
     reader.readElement("Content");

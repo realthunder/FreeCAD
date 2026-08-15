@@ -96,7 +96,7 @@ void DrawViewImage::replaceImageIncluded(std::string newImageFile)
         ImageIncluded.setValue(newImageFile.c_str());
     }
     else {
-        throw Base::RuntimeError("Could not read the new image file");
+        THROWM(Base::RuntimeError, "Could not read the new image file")
     }
 }
 

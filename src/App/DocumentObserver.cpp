@@ -735,7 +735,7 @@ void SubObjectT::setPyObject(PyObject *pyobj)
 {
     try {
         if (!pyobj)
-            throw Base::ValueError("Invalid object");
+            THROWM(Base::ValueError, "Invalid object")
         if (PyObject_TypeCheck(pyobj, &App::DocumentObjectPy::Type)) {
             this->operator=(static_cast<App::DocumentObjectPy*>(pyobj)->getDocumentObjectPtr());
             return;
@@ -754,7 +754,7 @@ void SubObjectT::setPyObject(PyObject *pyobj)
         Base::PyException e;
     } catch (...) {
     }
-    throw Base::ValueError("Expect either document object or tuple(obj, subname)");
+    THROWM(Base::ValueError, "Expect either document object or tuple(obj, subname)")
 }
 // -----------------------------------------------------------------------------
 

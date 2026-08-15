@@ -58,10 +58,10 @@ std::list<gp_Trsf> Scaled::getTransformations(const std::vector<Part::TopoShape>
 {
     double factor = Factor.getValue();
     if (factor < Precision::Confusion())
-        throw Base::ValueError("Scaling factor too small");
+        THROWM(Base::ValueError, "Scaling factor too small")
     int occurrences = Occurrences.getValue();
     if (occurrences < 2)
-        throw Base::ValueError("At least two occurrences required");
+        THROWM(Base::ValueError, "At least two occurrences required")
 
     double f = (factor - 1.0) / double(occurrences - 1);
 

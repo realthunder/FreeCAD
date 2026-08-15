@@ -56,7 +56,6 @@
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_DataMapOfShapeReal.hxx>
-#include <TopTools_ListOfShape.hxx>
 #include <TopTools_MapOfShape.hxx>
 #include <TopoDS.hxx>
 
@@ -4218,7 +4217,7 @@ bool StdMeshers_Quadrangle_2D::check()
   return isOK;
 }
 
-/*//================================================================================
+//================================================================================
 /*!
  * \brief Finds vertices at the most sharp face corners
  *  \param [in] theFace - the FACE

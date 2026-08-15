@@ -294,7 +294,6 @@ SET(FreeCADApp_CPP_SRCS
     ApplicationPy.cpp
     AutoTransaction.cpp
     Branding.cpp
-    Color.cpp
     ColorModel.cpp
     MappedElement.cpp
     ComplexGeoData.cpp

@@ -255,15 +255,14 @@ void CmdTechDrawImage::activated(int iMsg)
         return;
     }
     std::string FeatName = getUniqueObjectName("Image",page);
-    fileName = Base::Tools::escapeEncodeFilename(fileName);
     openCommand(QT_TRANSLATE_NOOP("Command", "Create Image"));
     Gui::cmdAppDocument(page, std::ostringstream() << "addObject('TechDraw::DrawViewImage','" << FeatName << "')");
     auto feat = Base::freecad_dynamic_cast<TechDraw::DrawViewImage>(page->getDocument()->getObject(FeatName.c_str()));
     if (!feat) {
-        throw Base::TypeError("Feature not found");
+        THROWM(Base::TypeError, "Feature not found")
     }
     Gui::cmdAppObjectArgs(page, "translateLabel('DrawViewImage', 'Image', '%s')", FeatName);
-    Gui::cmdAppObjectArgs(feat, "ImageFile = '%s'", fileName.toUtf8().constData());
+    Gui::cmdAppObjectArgs(feat, "ImageFile = %s", Base::Tools::pythonLiteral(fileName));
     Gui::cmdAppObjectArgs(page, "addView(%s)", feat->getFullName(/*python*/true));
     updateActive();
     commitCommand();

@@ -26,8 +26,6 @@
 # pragma clang diagnostic ignored "-Wimport-preprocessor-directive-pedantic"
 #endif
 
-#include <Standard_Stream.hxx>
-
 #include <GEOMUtils.hxx>
 
 #include <Basics_OCCTVersion.hxx>
@@ -68,7 +66,6 @@
 #include <TopoDS_Iterator.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_MapOfShape.hxx>
-#include <TopTools_ListOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopTools_Array1OfShape.hxx>
 

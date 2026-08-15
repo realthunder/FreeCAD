@@ -115,7 +115,7 @@ void PropertyVector::setPyObject(PyObject *value)
         else if (PyLong_Check(item))
             cVec.x = (double)PyLong_AsLong(item);
         else
-            throw Base::TypeError("Not allowed type used in tuple (float expected)...");
+            THROWM(Base::TypeError, "Not allowed type used in tuple (float expected)...")
         // y
         item = PyTuple_GetItem(value,1);
         if (PyFloat_Check(item))
@@ -123,7 +123,7 @@ void PropertyVector::setPyObject(PyObject *value)
         else if (PyLong_Check(item))
             cVec.y = (double)PyLong_AsLong(item);
         else
-            throw Base::TypeError("Not allowed type used in tuple (float expected)...");
+            THROWM(Base::TypeError, "Not allowed type used in tuple (float expected)...")
         // z
         item = PyTuple_GetItem(value,2);
         if (PyFloat_Check(item))
@@ -131,13 +131,13 @@ void PropertyVector::setPyObject(PyObject *value)
         else if (PyLong_Check(item))
             cVec.z = (double)PyLong_AsLong(item);
         else
-            throw Base::TypeError("Not allowed type used in tuple (float expected)...");
+            THROWM(Base::TypeError, "Not allowed type used in tuple (float expected)...")
         setValue( cVec );
     }
     else {
         std::string error = std::string("type must be 'Vector' or tuple of three floats, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -550,7 +550,7 @@ void PropertyMatrix::setPyObject(PyObject *value)
                 else if (PyLong_Check(item))
                     cMatrix[x][y] = (double)PyLong_AsLong(item);
                 else
-                    throw Base::TypeError("Not allowed type used in matrix tuple (a number expected)...");
+                    THROWM(Base::TypeError, "Not allowed type used in matrix tuple (a number expected)...")
             }
         }
 
@@ -559,7 +559,7 @@ void PropertyMatrix::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be 'Matrix' or tuple of 16 float or int, not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -866,17 +866,17 @@ void PropertyPlacement::setPathValue(const ObjectIdentifier &path, const App::an
         rot.getYawPitchRoll(yaw, pitch, roll);
         if (index == 0) {
             if (angle < -180.0 || angle > 180.0)
-                throw Base::ValueError("Yaw angle is out of range [-180, +180]");
+                THROWM(Base::ValueError, "Yaw angle is out of range [-180, +180]")
             yaw = angle;
         }
         else if (index == 1) {
             if (angle < -90.0 || angle > 90.0)
-                throw Base::ValueError("Pitch angle is out of range [-90, +90]");
+                THROWM(Base::ValueError, "Pitch angle is out of range [-90, +90]")
             pitch = angle;
         }
         else if (index == 2) {
             if (angle < -180.0 || angle > 180.0)
-                throw Base::ValueError("Roll angle is out of range [-180, +180]");
+                THROWM(Base::ValueError, "Roll angle is out of range [-180, +180]")
             roll = angle;
         }
         rot.setYawPitchRoll(yaw, pitch, roll);
@@ -1046,7 +1046,7 @@ void PropertyPlacement::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be 'Matrix' or 'Placement', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -1480,7 +1480,7 @@ void PropertyRotation::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be 'Matrix' or 'Rotation', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 

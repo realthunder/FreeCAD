@@ -34,15 +34,16 @@
 #include <Mod/TechDraw/App/DrawTile.h>
 #include <Mod/TechDraw/App/DrawTileWeld.h>
 #include <Mod/TechDraw/App/DrawWeldSymbol.h>
+#include <Mod/TechDraw/App/LineGroup.h>
 
 #include "QGIWeldSymbol.h"
 #include "PreferencesGui.h"
 #include "QGCustomText.h"
-#include "QGILeaderLine.h"
 #include "QGIPrimPath.h"
 #include "QGITile.h"
 #include "QGIVertex.h"
-
+#include "Rez.h"
+#include "ViewProviderLeader.h"
 #include "ViewProviderWeld.h"
 #include "ZVALUE.h"
 
@@ -52,12 +53,10 @@ using namespace TechDrawGui;
 
 
 //**************************************************************
-QGIWeldSymbol::QGIWeldSymbol(QGILeaderLine* myParent) :
+QGIWeldSymbol::QGIWeldSymbol() :
     m_weldFeat(nullptr),
-    m_leadFeat(nullptr),
     m_arrowFeat(nullptr),
     m_otherFeat(nullptr),
-    m_qgLead(myParent),
     m_tailText(nullptr),
     m_fieldFlag(nullptr),
     m_allAround(nullptr),
@@ -71,8 +70,6 @@ QGIWeldSymbol::QGIWeldSymbol(QGILeaderLine* myParent) :
 
     setCacheMode(QGraphicsItem::NoCache);
 
-    setParentItem(m_qgLead);
-    m_leadFeat = m_qgLead->getFeature();
     setZValue(ZVALUE::DIMENSION);
 
     m_tailText = new QGCustomText();
@@ -149,6 +146,11 @@ void QGIWeldSymbol::draw()
     if (!isVisible()) {
         return;
     }
+    //every point of the symbol is measured from the leader, so there is nothing to
+    //draw until the document tells us which leader that is
+    if (!getLeaderFeature()) {
+        return;
+    }
     getTileFeats();
 
     removeQGITiles();
@@ -185,7 +187,7 @@ void QGIWeldSymbol::drawTile(TechDraw::DrawTileWeld* tileFeat)
     std::string fontName = vp->Font.getValue();
     int         fontSize = QGIView::exactFontSize(vp->Font.getValue(),
                                                   vp->TileFontSize.getValue());
-    double featScale = m_leadFeat->getScale();
+    double featScale = getLeaderFeature()->getScale();
 
     std::string tileTextL = tileFeat->LeftText.getValue();
     std::string tileTextR = tileFeat->RightText.getValue();
@@ -233,7 +235,7 @@ void QGIWeldSymbol::drawAllAround()
     m_allAround->setFill(Qt::NoBrush);
 //    m_allAround->setRadius(calculateFontPixelSize(getDimFontSize()));
     m_allAround->setRadius(PreferencesGui::dimFontSizePX());
-    double width = m_qgLead->getLineWidth();
+    double width = leaderLineWidth();
     m_allAround->setWidth(width);
     m_allAround->setZValue(ZVALUE::DIMENSION);
 }
@@ -311,7 +313,7 @@ void QGIWeldSymbol::drawFieldFlag()
         path.lineTo(flagPoints.at(i) * scale);
     }
 
-    double width = m_qgLead->getLineWidth();
+    double width = leaderLineWidth();
     m_fieldFlag->setWidth(width);
     m_fieldFlag->setZValue(ZVALUE::DIMENSION);
 
@@ -437,23 +439,47 @@ void QGIWeldSymbol::setPrettySel()
     m_tailText->setPrettySel();
 }
 
+//! the leader this symbol is drawn along.
+//!
+//! Asked of the document rather than of the item we are drawn inside of, so that the
+//! symbol can be built and drawn before its leader has an item at all.
+TechDraw::DrawLeaderLine* QGIWeldSymbol::getLeaderFeature() const
+{
+    if (!m_weldFeat) {
+        return nullptr;
+    }
+    return dynamic_cast<TechDraw::DrawLeaderLine*>(m_weldFeat->Leader.getValue());
+}
+
 QPointF QGIWeldSymbol::getTileOrigin()
 {
-    Base::Vector3d org = m_leadFeat->getTileOrigin();
+    auto leadFeat = getLeaderFeature();
+    if (!leadFeat) {
+        return QPointF();
+    }
+    Base::Vector3d org = leadFeat->getTileOrigin();
     QPointF result(org.x, org.y);
     return result;
 }
 
 QPointF QGIWeldSymbol::getKinkPoint()
 {
-    Base::Vector3d org = m_leadFeat->getKinkPoint();
+    auto leadFeat = getLeaderFeature();
+    if (!leadFeat) {
+        return QPointF();
+    }
+    Base::Vector3d org = leadFeat->getKinkPoint();
     QPointF result(org.x, org.y);
     return result;
 }
 
 QPointF QGIWeldSymbol::getTailPoint()
 {
-    Base::Vector3d org = m_leadFeat->getTailPoint();
+    auto leadFeat = getLeaderFeature();
+    if (!leadFeat) {
+        return QPointF();
+    }
+    Base::Vector3d org = leadFeat->getTailPoint();
     QPointF result(org.x, org.y);
     return result;
 }
@@ -485,6 +511,20 @@ double QGIWeldSymbol::prefArrowSize()
 double QGIWeldSymbol::prefFontSize() const
 {
     return Preferences::labelFontSizeMM();
+}
+
+//! the width the leader draws itself with - same answer QGILeaderLine::getLineWidth()
+//! gives, but without needing the leader's item to exist
+double QGIWeldSymbol::leaderLineWidth() const
+{
+    auto leadFeat = getLeaderFeature();
+    if (leadFeat) {
+        auto vp = dynamic_cast<ViewProviderLeader*>(getViewProvider(leadFeat));
+        if (vp) {
+            return Rez::guiX(vp->LineWidth.getValue());
+        }
+    }
+    return Rez::guiX(LineGroup::getDefaultWidth("Graphic"));
 }
 
 QRectF QGIWeldSymbol::boundingRect() const

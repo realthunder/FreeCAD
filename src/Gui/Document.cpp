@@ -178,6 +178,11 @@ struct DocumentP
     std::size_t _deferCount = 0;
     int _deferFileVersion = 0;
     int _deferDocSchema = 0;
+    /// Which release wrote the document, for the properties replayed later.
+    /// A colour's alpha means different things across it
+    /// (Base::alphaIsOpacity), so a reader that does not carry this reads
+    /// every colour in the parked record by the wrong convention.
+    std::string _deferProgramVersion;
     std::unique_ptr<std::istringstream> _deferStream;
     std::unique_ptr<Base::XMLReader> _deferReader;
     bool _deferVPs = false;       // this load parks its view providers
@@ -1650,9 +1655,9 @@ bool Document::saveAs()
                 Command::doCommand(Command::Doc,
                         "App.getDocument(\"%s\").SaveSchemaVersion = %d", DocName,
                         chosenCompact ? (int)App::Document::getCurrentSchemaVersion() : 5);
-            std::string escapedstr = Base::Tools::escapeEncodeFilename(fn).toUtf8().constData();
-            Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveAs(u\"%s\")"
-                                           , DocName, escapedstr.c_str());
+            std::string literal = Base::Tools::pythonLiteral(fn);
+            Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveAs(%s)"
+                                           , DocName, literal.c_str());
             // App::Document::saveAs() may modify the passed file name
             fi.setFile(QString::fromUtf8(d->_pcDocument->FileName.getValue()));
             setModified(false);
@@ -1755,9 +1760,9 @@ bool Document::saveCopy()
 
         // save as new file name
         Gui::WaitCursor wc;
-        QString pyfn = Base::Tools::escapeEncodeFilename(fn);
-        Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveCopy(\"%s\")"
-                                       , DocName, (const char*)pyfn.toUtf8());
+        std::string pyfn = Base::Tools::pythonLiteral(fn);
+        Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveCopy(%s)"
+                                       , DocName, pyfn.c_str());
 
         return true;
     }
@@ -2068,6 +2073,15 @@ void Document::RestoreDocFile(Base::Reader &reader)
     xmlReader.FileVersion = xmlReader.getAttributeAsInteger("FileVersion","");
     if(!xmlReader.FileVersion)
         xmlReader.FileVersion = reader.getFileVersion();
+    // This file states no program version of its own, and every property that
+    // has to know which release wrote the document lives HERE -- the colours
+    // and materials are view provider properties (Base::alphaIsOpacity). Left
+    // unset the string is empty, which classifies as "newer than anything
+    // named" and would convert colours in files that need no conversion.
+    if (auto parent = reader.getParent())
+        xmlReader.ProgramVersion = parent->ProgramVersion;
+    else if (d->_pcDocument)
+        xmlReader.ProgramVersion = d->_pcDocument->getProgramVersion();
 
     if(boost::ends_with(reader.getFileName(),FC_XML_GUI_POSTFIX)) {
         xmlReader.readElement("ViewProvider");
@@ -2122,6 +2136,7 @@ void Document::RestoreDocFile(Base::Reader &reader)
                 d->_deferBuf = "<ViewProviderData>";
                 d->_deferFileVersion = xmlReader.FileVersion;
                 d->_deferDocSchema = xmlReader.DocumentSchema;
+                d->_deferProgramVersion = xmlReader.ProgramVersion;
             }
             for (int i=0; i<Cnt; i++) {
                 int guard;
@@ -2410,6 +2425,7 @@ void Document::restoreCapturedViewProvider(const std::string &xml,
     Base::XMLReader reader("GuiDocument.xml", str);
     reader.FileVersion = archiveReader.FileVersion;
     reader.DocumentSchema = archiveReader.DocumentSchema;
+    reader.ProgramVersion = archiveReader.ProgramVersion;
     reader.readElement("ViewProvider");
     auto obj = d->_pcDocument->getObject(reader.getAttribute("name",""));
     if (obj && !getViewProvider(obj))
@@ -2480,8 +2496,22 @@ void Document::runDeferredRestoreSlice()
     // and from here on the document is live between slices -- see
     // DrainCursor.h for why neither phase may index the object array.
     if (!d->_deferCreate.ready()) {
+        // Phase one in the document's own order: its eager counterpart is
+        // slotNewObject() riding the create pass, which is that order.
         d->_deferCreate.snapshot(d->_pcDocument);
-        d->_deferFinish.snapshot(d->_pcDocument);
+        // Phase three is not. Eagerly, finishRestoring() rides
+        // signalFinishRestoreObject, which App::Document::afterRestore()
+        // emits from its *dependency-sorted* walk -- so an object's view
+        // provider is always finished before that of anything depending on
+        // it. Finish handlers rely on it: ViewProviderLink's reaches the
+        // linked objects' view providers, ViewProviderPart's applyColors()
+        // walks its children's. Creation order agrees with dependency order
+        // often enough to hide this, but not always -- what an
+        // afterRestore() created (an App::Part's Origin above all) lands at
+        // the end of the object array no matter what depends on it.
+        d->_deferFinish.snapshot(d->_pcDocument,
+                App::Document::getDependencyList(d->_pcDocument->getObjects(),
+                                                 App::Document::DepSort));
     }
     if (!d->_deferSeq) {
         const std::size_t total = d->_deferCreate.size()
@@ -2505,6 +2535,15 @@ void Document::runDeferredRestoreSlice()
     // restore when they were read eagerly, and each of them charges real
     // time per property when told otherwise.
     App::Document::RestoringScopeGuard restoringScope;
+    // And the half that isAnyRestoring() cannot say. Phase three drops the
+    // view provider's restore status before sweeping its properties, because
+    // with the guards on the handlers render nothing at all -- so they run
+    // here as they never ran eagerly: past afterRestore()'s purge, where a
+    // handler that writes back while rendering leaves the document needing a
+    // recompute merely because it was opened. The whole slice is inside the
+    // scope, not just that sweep: every phase of the drain is the file's own
+    // record being replayed, and none of it is an edit.
+    App::Document::RestoreDrainGuard drainScope(d->_pcDocument);
     try {
         // Phase zero: the parked shape archive entries
         // (docs/DocumentLoad.md §14). Serving them before any view
@@ -2553,6 +2592,7 @@ void Document::runDeferredRestoreSlice()
                     "GuiDocument.xml", *d->_deferStream);
             d->_deferReader->FileVersion = d->_deferFileVersion;
             d->_deferReader->DocumentSchema = d->_deferDocSchema;
+            d->_deferReader->ProgramVersion = d->_deferProgramVersion;
             d->_deferReader->readElement("ViewProviderData");
         }
         while (d->_deferCount) {
@@ -2760,6 +2800,24 @@ void Document::finishDeferredRestore()
     // What the drain rebuilt is the file's own record, not an edit; leave
     // the document as slotFinishRestoreDocument left it.
     setModified(d->_pcDocument->testStatus(App::Document::LinkStampChanged));
+
+    // The App side of the same statement, and the one that names names: what
+    // a handler tried to write into the document while the drain replayed it
+    // (App::Document::RestoreDrainGuard). Suppressed, so nothing here is the
+    // user's problem -- but a handler writing on a render is a bug of its
+    // own, and this is what points at it without a debugger.
+    const auto &drain = d->_pcDocument->getRestoreDrainReport();
+    if (drain.count) {
+        std::string names;
+        for (const auto &name : drain.names)
+            names += (names.empty() ? "" : ", ") + name;
+        if (drain.truncated)
+            names += ", ...";
+        FC_WARN("progressive restore " << d->_pcDocument->getName() << ": "
+                << drain.count << " document changes suppressed while replaying"
+                   " the view providers (" << names << ')');
+        d->_pcDocument->clearRestoreDrainReport();
+    }
 
     // Whatever the drain's phase zero did not get through is this document's
     // own business from here on -- see runDeferredServeSlice().
@@ -3083,6 +3141,10 @@ void Document::importObjects(const std::vector<App::DocumentObject*>& obj, Base:
     Base::XMLReader xmlReader(reader);
     xmlReader.readElement("Document");
     long scheme = xmlReader.getAttributeAsInteger("SchemaVersion");
+    // Imported objects come out of someone else's document, and its version
+    // is what says how to read their colours (Base::alphaIsOpacity).
+    if (auto parent = reader.getParent())
+        xmlReader.ProgramVersion = parent->ProgramVersion;
 
     // At this stage all the document objects and their associated view providers exist.
     // Now we must restore the properties of the view providers only.

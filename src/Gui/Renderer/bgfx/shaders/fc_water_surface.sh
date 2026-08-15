@@ -51,6 +51,7 @@ uniform vec4 u_waterAbsorb; // x=absorption, y=in-scatter, z=refl mode, w=refrac
 uniform vec4 u_shadowParams;
 // x = EVSM warp exponent (0 = plain VSM), y = plain-VSM light-bleed threshold.
 uniform vec4 u_evsm;
+#include "fc_shadow_tap.sh"   // the shared VSM/EVSM bound
 // Maps view space to shadow map uv (xy) + light-window depth (z).
 uniform mat4 u_shadowMatrix;
 // x = ambient ripple type (0 = directional waves, 1 = rain drops,
@@ -86,30 +87,7 @@ vec2 fc_rainHash2(vec2 cell)
 // parity for plain VSM, EVSM warp when the SmoothBorder blur is active).
 float fc_waterShadowTap(vec2 uv, float z)
 {
-	vec2 mo = texture2D(s_texShadow, uv).xy;
-	if (u_evsm.x < 0.5)
-	{
-		if (mo.x >= 0.9999)
-			return 1.0;
-		float lit = z <= mo.x ? 1.0 : 0.0;
-		float va = min(max(mo.y - mo.x * mo.x, 0.0)
-		                   + u_shadowParams.y,
-		               1.0);
-		float dd = mo.x - z;
-		float pmax = va / (va + dd * dd);
-		pmax *= smoothstep(u_evsm.y, 1.0, pmax);
-		return max(lit, pmax);
-	}
-	float p = exp(u_evsm.x * (z - u_shadowParams.z));
-	if (p > mo.x)
-	{
-		float va = max(mo.y - mo.x * mo.x,
-		               u_shadowParams.y * mo.x * mo.x);
-		float dd = p - mo.x;
-		float pmax = va / (va + dd * dd);
-		return clamp((pmax - 0.3) / 0.7, 0.0, 1.0);
-	}
-	return 1.0;
+	return fc_vsmVisibility(texture2D(s_texShadow, uv).xy, z);
 }
 
 // The stock water-surface shading: screen-space refraction with depth

@@ -840,7 +840,7 @@ void TaskExtrudeParameters::onReversedChanged(bool on)
 void TaskExtrudeParameters::getReferenceAxis(App::DocumentObject*& obj, std::vector<std::string>& sub) const
 {
     if (axesInList.empty())
-        throw Base::RuntimeError("Not initialized!");
+        THROWM(Base::RuntimeError, "Not initialized!")
 
     int num = ui->directionCB->currentIndex();
     const auto& objT = axesInList[num];
@@ -853,7 +853,7 @@ void TaskExtrudeParameters::getReferenceAxis(App::DocumentObject*& obj, std::vec
     else {
         obj = objT.getObject();
         if (!obj)
-            throw Base::RuntimeError("Object was deleted");
+            THROWM(Base::RuntimeError, "Object was deleted")
 
         if (objT.getSubName().size()) {
             sub.resize(1);

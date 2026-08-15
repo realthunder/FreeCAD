@@ -2075,6 +2075,7 @@ QToolBar > QToolButton {
     margin: 2px;
     padding: 2px;
     border-radius: 3px;
+    border: 1px solid transparent;
 }
 
 QToolBar > QToolButton:pressed {
@@ -2094,6 +2095,29 @@ QToolBar > QToolButton#qt_toolbutton_menubutton:hover,
 QToolBar > QToolButton#qt_toolbutton_menubutton:pressed,
 QToolBar > QToolButton#qt_toolbutton_menubutton:open {
     border: 1px solid #7cabf9;
+}
+
+/* Mouse-over lifts the icon a pixel and pressing pushes it a pixel down. The
+   top and bottom padding always add up to the button's own total, so no button
+   changes size and the toolbar never relayouts under the pointer. */
+QToolBar > QToolButton:hover {
+    padding-top: 1px;
+    padding-bottom: 3px;
+}
+
+QToolBar > QToolButton:pressed {
+    padding-top: 3px;
+    padding-bottom: 1px;
+}
+
+QToolBar > QToolButton#qt_toolbutton_menubutton:hover {
+    padding-top: 2px;
+    padding-bottom: 4px;
+}
+
+QToolBar > QToolButton#qt_toolbutton_menubutton:pressed {
+    padding-top: 4px;
+    padding-bottom: 2px;
 }
 
 QToolBar QToolButton::menu-button,
@@ -2491,3 +2515,87 @@ QTreeView::branch#groupsTreeView:closed:has-children:has-siblings  {
   QTreeView::branch#groupsTreeView:has-siblings:!adjoins-item  {
     border-image: none 0;
   }
+
+/*==================================================================================================
+CustomTitleBarWindow
+==================================================================================================*/
+
+/* The logo the menu bar folds behind. The icon comes from the theme in C++,
+   so only the chrome belongs here. */
+#titleBarLogo {
+  border: none;
+  background: transparent;
+  padding: 0px;
+  margin-left: 4px;
+  margin-right: 4px;
+}
+
+#titleBarLogo:hover {
+  background-color: @ThemeAccentColor1;
+}
+
+#titleBarLogo:pressed {
+  background-color: @ThemeAccentColor2;
+}
+
+/* Folded, the menu bar is an overlay drawn over the title bar rather than a
+   strip of its own, so it must not paint its own background. */
+QMenuBar[foldable="true"] {
+  background-color: transparent;
+}
+
+WindowDecorationButton {
+  background: transparent;
+  border: none;
+}
+
+WindowDecorationButton:hover {
+  background-color: @ThemeAccentColor1;
+}
+
+WindowDecorationButton:pressed {
+  background-color: @ThemeAccentColor2;
+}
+
+/* Only the generic backend draws its own close button, and the platform
+   convention it is imitating is a red one. */
+CustomTitleBarWindow[backend="generic"] WindowDecorationButton#closeButton:hover {
+  background-color: #E81123;
+  color: White;
+}
+
+CustomTitleBarWindow[backend="generic"] WindowDecorationButton#closeButton:pressed {
+  background-color: #C50F1F;
+  color: White;
+}
+
+/* Start page file cards ----------------------------------------------------
+
+One reused widget paints every recent file and example card on the Start
+page; it is named thumbnailWidget and carries a "state" of "hovered" or
+"pressed". A dynamic property does not re-evaluate a style sheet on its
+own, so FileCardDelegate repolishes the widget whenever the state changes.
+
+The same 2px box the New File cards use, in the same colours -- those are
+the Start preferences FileCardBorderColor and FileCardSelectionColor, not
+the theme accent, which is why they are literals here.
+
+The border is present in every state and only changes colour. It must not
+appear only on hover: sizeHint() knows nothing about this box, so a border
+that comes and goes shifts the thumbnail and caption under the cursor and
+pushes the card past the item rect, which clips the edges.
+
+--------------------------------------------------------------------------- */
+
+QWidget#thumbnailWidget {
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+
+QWidget#thumbnailWidget[state="hovered"] {
+  border-color: #62A0EA;
+}
+
+QWidget#thumbnailWidget[state="pressed"] {
+  border-color: #26A269;
+}

@@ -22,7 +22,11 @@
 
 #include "PreCompiled.h"
 
+#include <Inventor/actions/SoCallbackAction.h>
+
 #include "SoFCRenderMaterial.h"
+#include "SoFCFinishElement.h"
+#include "SoFCPbrElement.h"
 
 using namespace Gui;
 
@@ -38,6 +42,34 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_CONSTRUCTOR(SoFCRenderMaterial);
     SO_NODE_ADD_FIELD(metallic, (-1.0f));
     SO_NODE_ADD_FIELD(roughness, (-1.0f));
+    // Empty by default: the scalars above are the whole material until
+    // something states a per-face pair.
+    SO_NODE_ADD_FIELD(metallics, (0.0f));
+    SO_NODE_ADD_FIELD(roughnesses, (0.0f));
+    metallics.setNum(0);
+    metallics.setDefault(TRUE);
+    roughnesses.setNum(0);
+    roughnesses.setDefault(TRUE);
+    SO_NODE_ADD_FIELD(finish, (0));
+    SO_NODE_ADD_FIELD(finishPitch, (0.0f));
+    SO_NODE_ADD_FIELD(finishDepth, (0.0f));
+    SO_NODE_ADD_FIELD(finishAngle, (0.0f));
+    // Empty by default: the scalars above are the whole finish until
+    // something states one per face.
+    SO_NODE_ADD_FIELD(finishPalette, (SbVec4f(0.0f, 0.0f, 0.0f, 0.0f)));
+    SO_NODE_ADD_FIELD(finishIndices, (0));
+    finishPalette.setNum(0);
+    finishPalette.setDefault(TRUE);
+    finishIndices.setNum(0);
+    finishIndices.setDefault(TRUE);
+    // Likewise: no frame until the geometry states one, and then the
+    // finish above decides whether it is worth publishing.
+    SO_NODE_ADD_FIELD(framePalette, (SbVec4f(0.0f, 0.0f, 0.0f, 0.0f)));
+    SO_NODE_ADD_FIELD(frameIndices, (0));
+    framePalette.setNum(0);
+    framePalette.setDefault(TRUE);
+    frameIndices.setNum(0);
+    frameIndices.setDefault(TRUE);
     SO_NODE_ADD_FIELD(water, (false));
     SO_NODE_ADD_FIELD(waterDensity, (0.0f));
     SO_NODE_ADD_FIELD(glass, (false));
@@ -61,6 +93,40 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     SO_NODE_ADD_FIELD(lightRange, (0.0f));
     SO_NODE_ADD_FIELD(lightShadow, (false));
     SO_NODE_ADD_FIELD(lightShadowExtended, (false));
+}
+
+void SoFCRenderMaterial::callback(SoCallbackAction *action)
+{
+    doAction(action);
+}
+
+void SoFCRenderMaterial::doAction(SoAction *action)
+{
+    // Borrowed for the traversal, the way a material node's colour
+    // arrays are borrowed by the lazy element: the fields outlive the
+    // action, and a change to them re-runs it.
+    const int nm = metallics.getNum();
+    const int nr = roughnesses.getNum();
+    SoFCPbrElement::set(action->getState(), this,
+                        nm ? metallics.getValues(0) : nullptr, nm,
+                        nr ? roughnesses.getValues(0) : nullptr, nr);
+    // The palette stays here: its consumer is the draw material, which
+    // the render cache reads off this node. Only the per-face index
+    // array has to reach the shape traversal below.
+    const int nf = finishPalette.getNum() > 1 ? finishIndices.getNum() : 0;
+    // The frames are geometry, not appearance, so they are stated for
+    // every analytic shape whether or not anyone finished it -- and a
+    // frame with no pattern to lay out is nothing but a per-vertex
+    // stream the shape would carry for no reason. So they reach the
+    // traversal only while a finish is stated somewhere: entry 0's
+    // pattern (which is also what the Render_Finish knobs resolve into)
+    // or a per-face palette.
+    const bool hasfinish = finish.getValue() > 0 || nf > 0;
+    const int nfr = hasfinish && framePalette.getNum() >= 6
+        ? frameIndices.getNum() : 0;
+    SoFCFinishElement::set(action->getState(), this,
+                           nf ? finishIndices.getValues(0) : nullptr, nf,
+                           nfr ? frameIndices.getValues(0) : nullptr, nfr);
 }
 
 SO_NODE_SOURCE(SoFCRenderTexture)

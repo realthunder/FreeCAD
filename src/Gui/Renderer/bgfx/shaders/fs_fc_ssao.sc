@@ -14,6 +14,7 @@ $input v_texcoord0
  */
 
 #include <bgfx_shader.sh>
+#include "fc_prepass_read.sh"
 
 #define AO_SAMPLES 16
 
@@ -22,18 +23,6 @@ SAMPLER2D(s_texAONoise, 1);
 
 uniform vec4 u_aoParams;
 uniform vec4 u_aoKernel[AO_SAMPLES];
-
-vec3 octDecode(vec2 e)
-{
-	vec3 n = vec3(e, 1.0 - abs(e.x) - abs(e.y));
-	if (n.z < 0.0)
-	{
-		vec2 sn = vec2(n.x >= 0.0 ? 1.0 : -1.0,
-		               n.y >= 0.0 ? 1.0 : -1.0);
-		n.xy = (vec2_splat(1.0) - abs(n.yx)) * sn;
-	}
-	return normalize(n);
-}
 
 void main()
 {
@@ -44,22 +33,11 @@ void main()
 		return;
 	}
 
-	// GL projection: perspective has u_proj[2][3] == -1 (w = viewZ),
-	// orthographic has 0 (w = 1); both viewer down -z.
 	bool persp = u_proj[2][3] != 0.0;
 	float viewZ = nz.z;
-	vec2 ndc = v_texcoord0 * 2.0 - vec2_splat(1.0);
-	vec3 pos;
-	if (persp)
-		pos = vec3(viewZ * (ndc.x + u_proj[2][0]) / u_proj[0][0],
-		           viewZ * (ndc.y + u_proj[2][1]) / u_proj[1][1],
-		           -viewZ);
-	else
-		pos = vec3((ndc.x - u_proj[3][0]) / u_proj[0][0],
-		           (ndc.y - u_proj[3][1]) / u_proj[1][1],
-		           -viewZ);
+	vec3 pos = fc_prepassViewPos(v_texcoord0, viewZ, persp);
 
-	vec3 n = octDecode(nz.xy);
+	vec3 n = fc_octDecode(nz.xy);
 	// Per-pixel random rotation of the kernel from the tiled noise, plus a
 	// per-pixel radius jitter from the noise .z (a 4x4 Bayer dither). Azimuthal
 	// rotation alone leaves the RADIAL occlusion banding correlated across

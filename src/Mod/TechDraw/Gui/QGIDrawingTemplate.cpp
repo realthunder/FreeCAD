@@ -70,7 +70,7 @@ void QGIDrawingTemplate::draw()
 
     TechDraw::DrawParametricTemplate *tmplte = getParametricTemplate();
     if(!tmplte) {
-        throw Base::RuntimeError("Template Feuature not set for QGIDrawingTemplate");
+        THROWM(Base::RuntimeError, "Template Feuature not set for QGIDrawingTemplate")
     }
 
 

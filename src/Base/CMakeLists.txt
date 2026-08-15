@@ -225,9 +225,11 @@ SET(FreeCADBase_CPP_SRCS
     BindingManager.cpp
     BoundBoxPyImp.cpp
     Builder3D.cpp
+    Color.cpp
     Console.cpp
     ConsoleObserver.cpp
     CoordinateSystem.cpp
+    CrashLog.cpp
     CoordinateSystemPyImp.cpp
     Debugger.cpp
     DualQuaternion.cpp
@@ -296,10 +298,12 @@ SET(FreeCADBase_HPP_SRCS
     Bitmask.h
     BoundBox.h
     Builder3D.h
+    Color.h
     Console.h
     ConsoleObserver.h
     Converter.h
     CoordinateSystem.h
+    CrashLog.h
     Debugger.h
     DualNumber.h
     DualQuaternion.h
@@ -321,6 +325,7 @@ SET(FreeCADBase_HPP_SRCS
     Persistence.h
     Placement.h
     Precision.h
+    ProgramVersion.h
     ProgressIndicatorPy.h
     PyExport.h
     PyObjectBase.h

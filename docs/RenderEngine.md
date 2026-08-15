@@ -48,7 +48,7 @@ SoFCRenderer draw lists                    (Gui/Inventor/SoFCRenderer.*)
 Render::Renderer interface                 (Gui/Renderer/Renderer.h)
         │  RendererFactory: backends self-register by type string
         ▼
-BGFXRenderer                               (Gui/Renderer/BGFXRenderer.cpp)
+BGFXRenderer                               (Gui/Renderer/BGFXRendererP.h + BGFX*.cpp)
         │  pass sequence over shared framebuffer, per-frame configs,
         │  program/uniform/texture management, instancing
         ▼
@@ -61,9 +61,93 @@ calls `renderer->render(...)` first into the shared Qt GL context, then
 Coin's `SoGLRenderAction` traverses the (mostly pruned) scene graph on
 top for everything still Coin-owned.
 
+A frame the backend declines (`render()` returning false) is drawn
+entirely by Coin, and that is also what a broken stock shader pack
+falls back to. The programs load through `fcLoadProgram`
+(BGFXRenderer.cpp) rather than bgfx_utils' loader, which asserts on a
+missing `.bin` and then hands `createShader` a null block; a stage
+that will not load is reported and yields an invalid handle instead.
+Feature programs degrade individually (bgfx drops a submit with an
+invalid program), but if one of the core programs — mesh/flat, their
+clip and texture variants, the section caps, and the present pass in
+the standalone tier — is missing, `BGFXView::init()` reports the pack
+and tears the view back down, and every frame after that declines
+until `reloadShaders()` moves the shader generation.
+
+### Startup and backend lifetime
+
+The backend used to be built by the first 3D view, which put its whole
+cost (GL context, `bgfx::init`, device objects, every shader program) in
+front of the user's first **New Document**. It now comes up during the
+splash instead: `Gui::postMainWindowSetup` calls `RendererLib::warmup()`
+just before `mw.stopSplasher()`, gated on render-cache mode 3 and a
+non-empty renderer `Type`. `warmup()` is a default no-op on
+`RendererLib`, so a backend that has nothing to warm costs nothing.
+
+The bgfx implementation warms two distinct things, and both are needed:
+
+1. `prepare()`: the offscreen surface, the GL context and `bgfx::init`.
+2. The **programs**, by building a view (its own `init()`) and pumping
+   one `bgfx::frame()`. WARNING: creating a program is nearly free on
+   the API side; bgfx defers the real work to the frame submit, so
+   warming without a `bgfx::frame()` moves nothing.
+
+WARNING: **the warm view is kept alive for the life of the process.**
+`removeView()` of the last view calls `shutdown()`, so releasing the
+warm view tears the device back down and warms nothing, and frees the
+context out from under the `doneCurrent()` that follows, which
+segfaults in the startup path. The consequence is deliberate and worth
+knowing: **bgfx now stays up for the whole session** rather than going
+away when the last 3D view closes.
+
+WARNING: **Qt 6.4+ destroys and recreates a top-level's native window
+the first time a `QOpenGLWidget` appears under it.** The surface type
+changes from `RasterSurface` to `OpenGLSurface`
+(doc.qt.io/qt-6/qopenglwidget.html, "This behavior is new in Qt 6.4").
+In FreeCAD the 3D view is that first widget, so the *first* New Document
+made the main window vanish, taskbar entry included, and come back.
+The fix is one hidden 1x1 `QOpenGLWidget` named `GLSurfaceWarmup`,
+created in the `MainWindow` constructor where no native window exists
+yet; the renderer warm-up reuses it for its pixel format. It must be
+**kept**: constructing and destroying it takes the surface state back
+with it and the vanish returns unchanged.
+
+Measured with `fcad-probes/newdoc_delay_probe.py` (xvfb/llvmpipe debug
+build), seconds to the first three New Documents:
+
+| | doc 1 | doc 2 | doc 3 |
+| --- | --- | --- | --- |
+| before | 1.406 | 0.223 | 0.284 |
+| + `GLSurfaceWarmup` | 1.049 | 0.185 | 0.237 |
+| + device warm-up | 0.735 | 0.173 | 0.202 |
+| + programs (shipped) | **0.236** | 0.213 | 0.208 |
+
+The first document now costs what every later one does. The warm-up
+itself is 458 ms there (context 21, device 141, programs 5, flush 292)
+and **1015 ms on the real GPU** (Mesa d3d12 / RTX 3070 Ti: context 73,
+device 373, programs 6, flush 564), and 1102 ms with a cold driver
+shader cache, so the first launch after a build pays more. It is spent
+under the splash, which was already on screen for longer than that.
+
+WARNING: `getView()` calls `prepare()` again and `prepare()` zeroes its own
+timing counters on entry, so read them *before* `getView()` or the
+context and device phases both report 0.
+
+The attribution that settled where the time went: run the same probe
+with `Type=Default`. The plain-GL path was flat (0.103 / 0.092 / 0.088),
+which rules out document, `Gui::Document` and 3D-view construction and
+leaves the backend.
+
 ### Tiers
 
-The same `BGFXRenderer.cpp` compiles into three deployments:
+The engine is one private header, `BGFXRendererP.h` (class definitions,
+vertex/GPU cache structs, shared inline helpers), plus per-feature
+translation units — `BGFXRenderer.cpp` (public API, `BGFXRendererLibP`,
+shader pipeline), `BGFXFrame.cpp` (`Private::render()`: pass table, view
+config, submit loop, section caps), `BGFXScene.cpp` (scene feed,
+snapshot/publish, instance groups), and the `BGFXView*` files
+(`Lifecycle`, `Env`, `Shadow`, `Overlay`, `Particles`, `Effects`,
+`Submit`). The same sources compile into three deployments:
 
 | Tier | Definition | Scene source | Shaders |
 |---|---|---|---|
@@ -74,7 +158,9 @@ The same `BGFXRenderer.cpp` compiles into three deployments:
 `SceneDump` serializes the draw lists, materials, configs and the
 user-shader table (sources, parameters, compiled variants); the
 snapshot version gates format changes and the viewer self-reloads on a
-newer payload.
+newer payload. (Version numbers cited in this doc — v24, v26, v39, … —
+are the versions that introduced each lane; the current one is
+`kVersion` in `SceneDump.cpp`.)
 
 #### Out-of-band texture payloads (v26)
 
@@ -159,10 +245,19 @@ This is the browser-tier half of the content-addressed storage in
 lifetime follows the references) applied to the wire instead of the
 `.FCStd`.
 
-Textures are the leaf tier of a larger design: `docs/SceneStreaming.md`
-specifies the manifest tree (root → per-object → mesh/material/texture)
-and the delta sync that a thin client needs to serve big models, for
-which re-sending an unchanged scene on every publish is the wall.
+Textures are the leaf tier of a larger design, now implemented:
+`docs/SceneStreaming.md` specifies the manifest tree (root →
+per-object → mesh/material/texture) and the delta sync that a thin
+client needs to serve big models, for which re-sending an unchanged
+scene on every publish is the wall. The code lives in `SceneLadder`
+(per-object level rungs under CPU/GPU budgets), `MeshSimplify` /
+`MeshSource` (rung generation), and the snapshot's delta form
+(`manifestVersion`/`baseVersion` in `SceneDump`). The server side has
+likewise grown past a single-snapshot pipe: `SceneServer` serves
+multiple documents (`Gui.serveDocument` / `Gui.serveClients`) with
+per-endpoint access tokens, grants and a sharing roster — see
+`docs/MultiDocServe.md`, `docs/ShareAccess.md` and
+`docs/ThinClientUI.md` for that tier.
 
 ## 3. Frame anatomy
 
@@ -170,6 +265,9 @@ Each frame is a fixed sequence of bgfx views (`BGFXView::PassView`)
 sharing one framebuffer (auxiliary passes own theirs). Groups, in
 order:
 
+0. **Particle state** — stateful-particle simulation and impact-map
+   views (ping-pong FP textures, §5.8), first in id order ahead of the
+   scene groups.
 1. **Background** — clear, gradient quad (or the PBR environment
    itself, see below), optional sun disc.
 2. **Shadow block** — variance shadow map (EVSM moments) of the scene
@@ -185,8 +283,8 @@ order:
 6. **Reflection** — ground-reflection re-render of the opaque scene
    (mirrored camera), media composited in.
 7. **Beauty** — `ViewOpaque` (triangles, lines, points), stencil
-   section caps, hidden-line outlines, caustics splat, volumetric
-   upsample-apply.
+   section caps, cavity multiply, hidden-line outlines, caustics splat,
+   volumetric upsample-apply.
 8. **Water/glass surfaces** — scene-color copy, then the surface draws
    re-rendered with refraction/absorption/planar reflection.
 9. **Transparency** — WBOIT accumulation + fullscreen resolve (or
@@ -201,6 +299,57 @@ order:
 14. **Overlays** — up to 9 overlay feeds (NaviCube, axis cross, HUD
     text, rubberband...) via `Renderer::setOverlay`.
 15. **Present** — standalone tier only: copy to the default backbuffer.
+
+### Cavity (curvature) shading
+
+`ViewCavity` is one fullscreen multiply between the opaque passes and
+the outlines, enabled by `Render_Cavity`. It darkens concave creases
+(`Render_CavityValley`) and convex ridges (`Render_CavityRidge`) so
+surface shape reads independently of how the scene is lit — the
+inspection shading a workbench view wants. It reuses the AO block's
+geometry prepass, so it costs one extra pass, and it turns that prepass
+on by itself when ambient occlusion is off.
+
+Two things about it are deliberate:
+
+- **Curvature comes from the normal field, not from positions.** The
+  textbook estimator — each neighbour's signed distance from the centre
+  pixel's tangent plane — reads positions, which are piecewise linear
+  across a tessellation, so every facet boundary on a sphere or cylinder
+  registers as a crease and the surface ends up wearing its own triangle
+  grid. Interpolated normals stay smooth across those facets while still
+  jumping at a real edge, where the crease angle splits them.
+- **Both terms darken.** The pass multiplies the finished 8-bit scene
+  color and so cannot brighten past white; the ridge *highlight* other
+  workbench renderers add is not available without an HDR scene target.
+
+### Matcap shading
+
+`Render_Matcap` replaces the lit shading with a fixed studio welded to
+the camera, looked up by the fragment's view-space normal — a third
+branch in `fcShadeFragment` beside the headlight and PBR ones, so it
+overrides PBR while on. No lights and no shadow tap take part: a
+surface's shading then depends only on which way it faces the viewer,
+which is what makes form comparable between parts anywhere in the
+scene. Screen-space AO still multiplies in, because occlusion is not a
+light and contact darkening is a cue worth keeping.
+
+The presets (`Render_MatcapPreset`: studio, clay, metal, pearl) are
+computed analytically in `fc_matcap.sh` rather than sampled from matcap
+images. That is what lets the feature ship with no image assets to
+commit, install or fetch — the browser tier gets it with no bundle
+growth, at any resolution. `Render_MatcapTint` mixes each object's own
+color back in: 0 shades the scene as one uniform material, 1 keeps the
+assembly's color coding.
+
+Pair it with cavity: matcap gives every same-facing surface the same
+value, which is exactly when curvature darkening has to supply the
+edges.
+
+Fill-bound effect passes (AO, volumetrics, bloom, reflection…) can run
+below main resolution via the `Render_EffectResolution` view property
+(`BGFXRenderer::setEffectResolution`); the scene and line passes always
+render at full resolution.
 
 Determinism: every time-animated effect (water waves, caustics, fire,
 volumetric jitter, user shaders via `u_fcTime`) reads one shared
@@ -218,11 +367,19 @@ refused.
 
 A frame draws far less than the whole sequence, so each one **declares
 the passes it will use** and those are mapped onto the consecutive ids
-of a block sized to fit them (`markPass` / `mapPasses` / `vid`, from the
-same flags that configure the views). Enum order is draw order is
-bgfx's submission order, so compaction preserves the sequence. Blocks
-come from a granule pool and only grow, which keeps a viewer's ids
-still as its scene changes. A plain viewer needs 13 ids, so ~32 fit.
+of a block sized to fit them (`markPass` / `mapPasses` / `vid`). Enum
+order is draw order is bgfx's submission order, so compaction preserves
+the sequence. Blocks come from a granule pool and only grow, which
+keeps a viewer's ids still as its scene changes. A plain viewer needs
+13 ids, so ~32 fit.
+
+The declarations come from **one per-frame pass table** in `render()`:
+every pass states its liveness predicate exactly once, next to the
+closure that configures its bgfx view, and the mark phase, the
+view-config phase and the frame-level submit gates (`passLive`) all
+read the same entry — the three phases cannot drift apart, and a
+`PassView` added without a table entry reports itself once instead of
+silently discarding its draws.
 
 Two properties make this safe to be wrong about:
 
@@ -234,6 +391,83 @@ Two properties make this safe to be wrong about:
   for the frame with one message, the same answer as before.
 
 `FC_BGFX_DEBUG_VIEWS=1` prints each block as it is handed out.
+
+### 3.2 The light budget
+
+Lights reach a frame down **two independent paths**, with separate
+capacities. Neither can consume the other's slots, and a scene can run
+both full at once.
+
+| | array | slots | fed from |
+|---|---|---|---|
+| Coin lights | `u_viewLight` | 8 | `SoLightElement`, via `translateViewLightConfig` |
+| fire flames | `u_localLight` 0..3 | 4 | fire body appearance slots, in `render()` |
+| `Render_Light` bulbs | `u_localLight` 4..7 | 4 | `Material::lightsource` draws, in `render()` |
+| scene light | `u_lightDir` etc. | 1 | `SoLightElement`, via `translateLightConfig` |
+
+**Coin lights** (`Render::ViewLightConfig`) are the viewer's rig --
+headlight, backlight, fill light -- and any `SoDirectionalLight` /
+`SoPointLight` the traversal holds above the render-cache root. The
+ambient of the same config is the `SoEnvironment` the viewer carries
+beside the fill light (§7). **Effect lights**
+(`u_localLight`, split in half by `kMediumSlots`) never come from the
+traversal at all: they are computed per frame from the draw materials,
+the fire half carrying the flame centroids with their clock flicker,
+the bulb half the light-source bodies and their shadow tiles. The
+**scene light** is the single shadow-casting one (the Shadow draw style
+or `Render_Light`), with a map, sun disc and ground of its own.
+
+⚠️ **Bloom is not a light.** A `lightsource` body feeds its emission
+into the bloom pass at `lightintensity`, but the illumination it casts
+on nearby surfaces is its bulb slot above. Turning bloom off removes
+the halo and changes no lighting.
+
+**Why 8 Coin lights, and what it would cost to raise.** Not a Coin
+limit: `SoLightElement::add` is an unbounded `SbList` append, and the
+familiar 8 is `SoGLLightIdElement::getMaxGLSources()`, i.e. a literal
+`glGetIntegerv(GL_MAX_LIGHTS)` binding Coin's own fixed-function
+renderer. This engine reads the element and drives its own shader, so
+that ceiling never applied to it. The real one is the fragment uniform
+budget, against the 224 vec4 an ES3/WebGL2 device has to guarantee:
+
+| | vec4 |
+|---|---|
+| `u_bulbShadowMtx` (16 bulb shadow tiles) | 64 |
+| `u_frameParams` (surface finish frame palette) | 48 |
+| `u_viewLight` + `u_viewLightColor` + `u_viewLightAtt` | 24 |
+| `u_localLight` + `u_localLightColor` | 16 |
+| `u_envSH`, `u_finishParams`, matrices, scalars | 32 |
+| **total** | **184** |
+
+So 16 Coin lights would fit (208, 16 spare) and 32 would not (256).
+Note what that table says about where the room actually is: the effect
+lights cost 80 vec4 against the Coin lights' 24, and the single
+largest consumer in the shader is a shadow atlas sized for at most
+four bulbs. Repacking a light is possible too -- one needs 10 floats
+(direction or position 3, colour 3, attenuation 3, kind 1) of the 12
+it occupies, and a directional light never uses the attenuation -- but
+that trades away the exact Coin attenuation the current layout keeps.
+
+Raising the cap is capacity for a producer that does not exist:
+upstream's three-point rig plus the scene light is four. And past 8,
+Coin's own compositing in cache mode 3 would still stop at
+`GL_MAX_LIGHTS`, so a ninth light becomes a bgfx-vs-Coin divergence of
+exactly the kind the ambient work removed.
+
+The loop cost does not argue either way: active slots are packed from
+0 with the tail zeroed, so the shader stops at the first empty one and
+unused capacity is free.
+
+**A spot light spends two slots.** Its position, colour and
+attenuation already fill a slot's twelve floats; the cone's cutoff
+cosine and falloff exponent take the two spare `.w` components, and the
+axis -- three floats with nowhere left to go -- takes the following
+slot whole (`kind = 4`, which the shader shades as a light of zero
+colour so the loop walks past it). That is why the table above did not
+move: a fourth per-light array would have cost 8 vec4 in every frame,
+spot or not, and the same room can be borrowed from a capacity nothing
+fills. The packer never starts a spot in the last slot, so the
+shader's `i + 1` is always in range.
 
 ## 4. Draw model
 
@@ -252,6 +486,52 @@ Two properties make this safe to be wrong about:
   the base draw by key. The user-shader Appearance bindings reuse this
   channel (negative ids = normal-pass rendering with base
   suppression).
+
+### Surface finish (procedural machining relief)
+
+A `Render::Material` may carry an `App::SurfaceFinish` — the pattern the
+surface was machined with (diamond/straight knurl, brushed, blasted,
+turned) plus its pitch and depth **in millimetres** and a lay angle.
+`fc_finish.sh` shades it inside the CAD mesh fragment shader, one
+uniform-selected branch that costs nothing on a scene that states none.
+
+- **Source**: either authored on the appearance (`ShapeAppearance`'s
+  per-entry finish, which is per-face-capable storage) or stated by the
+  `Render_Finish` / `Render_FinishPitch` / `Render_FinishDepth` /
+  `Render_FinishAngle` dynamic ViewProvider properties. The authored one
+  wins, the same way a PBR-mode appearance beats `Render_Metallic`. Both
+  end up on `SoFCRenderMaterial` and travel the ordinary render-cache
+  route.
+- **Per face, through two palettes**: a finish is four numbers and a
+  frame is ten, so neither widens the per-vertex material stream. The
+  distinct finishes of an appearance become a `Render::FinishPalette`
+  and the distinct frames of the geometry a `Render::FramePalette`; what
+  the stream's third slot carries is one byte of index into each
+  (`docs/ShapeAppearanceDesign.md` 9.9 and 9.11). A draw with no stream
+  reads entry 0 of both.
+- **Object space, in the face's own frame**: the pattern is anchored to
+  the geometry (`v_opos`/`v_onrm`), so a moved, scaled or instanced copy
+  carries the same finish rather than one that swims as it is placed.
+  Where the geometry could state a frame - a plane's own axes, or the
+  axis a cylinder or cone was turned about, read off the OCCT surface at
+  tessellation time - the pattern is laid out in it, which is what makes
+  a straight knurl run along the axis and turning marks centre on it.
+  A face with no analytic surface falls back to the TRIPLANAR
+  projection: three axis-aligned projections blended by the object-space
+  normal, plausible from any view but ignorant of the geometry, and what
+  every face got before frames existed.
+- **No parametrization**: the shading normal is rotated by Mikkelsen's
+  surface gradient, whose screen-space derivatives come from the
+  pattern's *analytic* object-space gradient. No tangent frame, no UV,
+  no per-draw matrix, and no differencing of the pattern itself (which
+  would blur every crest to the 2x2 quad).
+- **Filtered against the pixel footprint, and the remainder becomes
+  roughness**: features below ~2 px fade out, and the slope variance the
+  fade removes is added to the roughness (Toksvig) — a real 0.15 mm
+  brushed lay on a part zoomed to fit is *supposed* to read as a
+  direction-less sheen rather than as geometry. This is why the finish
+  is stated in physical units and not as a normalised amplitude. In the
+  Phong path the same quantity travels through the shininess slot.
 
 ### Environment (image based lighting)
 
@@ -275,6 +555,20 @@ the source changes:
   matrices for it (`fs_fc_env` reconstructs per-pixel world directions
   from `u_proj`/`u_invView`); orthographic cameras get a fixed 45°
   virtual field of view since they have no per-pixel ray fan.
+
+The scene's own ambient (Coin's `LIGHT_MODEL_AMBIENT`, i.e. the
+viewer's `SoEnvironment`, 3.2) joins that environment rather than the
+diffuse: `u_envAmbient` carries it as a uniform-radiance environment and
+the branch adds it to BOTH the irradiance and the prefiltered term.
+That is the only form which reaches a **metal** -- a metal has no
+diffuse at all, so an ambient folded into `kd` would leave it exactly as
+dark as before, which is what used to force `Render_PBREnvIntensity` up
+to 3 to make metal read (and washed everything else out on the way).
+Note the uniform is the light-model ambient *alone*, not Blinn-Phong's
+material-ambient-times-it: the BRDF already states the surface, and a
+material read as metallic/roughness has no meaningful ambient slot.
+`u_pbrParams.w` does not scale it -- that knob says how bright the
+user's environment map is, and this is a light beside it.
 
 Note that FreeCAD has no other environment mechanism to honor: Coin's
 `SoSceneTextureCubeMap` exists as a node class but is never instantiated
@@ -478,7 +772,8 @@ absorbs changes):**
 | `u_matColor` | vec4 | material diffuse rgba (used when `u_params.x == 0`) |
 | `u_matEmissive` | vec4 | emissive rgb add |
 | `u_matSpecular` | vec4 | specular rgb, `.w` shininess (Coin 0..1) |
-| `u_params` | vec4 | `.x` per-vertex color, `.y` lighting on, `.z` two-sided, `.w` NDC depth bias (polygon-offset emulation) |
+| `u_params` | vec4 | `.x` per-vertex color, `.y` lighting on, `.z` two-sided, `.w` constant NDC depth bias — glPolygonOffset's `units * r` term |
+| `u_polyOffset` | vec4 | `.x` glPolygonOffset's `factor` (0 = no slope term), `.y` ceiling on the depth gradient the slope term tracks (NDC depth per NDC screen unit) |
 | `u_pbrParams` | vec4 | `.x` PBR branch (2 = with metallic-roughness map), `.y` metallic, `.z` roughness, `.w` environment intensity |
 | `u_envSH[9]` | vec4 | irradiance SH of the environment (Ramamoorthi form, world space) |
 | `u_lightDir` | vec4 | scene light direction, view space; `.w > 0.5` = shadowed scene light active (else headlight) |
@@ -759,9 +1054,9 @@ serving backend). The golden-image harness
 freeze-frame. Policy: every framework change lands with a suite, no
 throwaway probes (`docs/RenderDebug.md` §0).
 
-### 5.11 Effect library (design settled 2026-07-26, implementation pending)
+### 5.11 Effect library (design settled 2026-07-26, implemented)
 
-The built-in water / fire / fountain effects will be re-expressed as
+The built-in water / fire / fountain effects are re-expressed as
 pre-bundled user shaders — the real-world test of the whole framework
 and the template for adding effects later. Decisions:
 
@@ -817,8 +1112,9 @@ is just another folder. No bundled `.FCStd` library document.
 / `deactivate(look)`); the manifest schema is documented in that
 module. Manifest `viewProps` switch required boolean view toggles on
 at activation (e.g. `Render_WaterSurface`, which defaults off).
-Bundled so far: `water`, `fire` — both byte-identical to their stock
-`Render_*` treatments.
+Bundled: `water`, `fire`, `fountain`, `rain`, `sparks`, `waterjet` —
+the first three byte-identical to their stock `Render_*` treatments,
+the rest particle-first packages built on the same framework.
 
 **Persistence — copy on activation.** Activating an effect
 instantiates its `ShaderProgram`/`Shader` objects (and the binding
@@ -864,10 +1160,10 @@ Implementation order: water stage (identity program == stock water —
 **done** for both the emissive and scattering channels), packages +
 factory + `Enabled` (**done** — water, fire and fountain ship),
 particle companions (**done** — Embers / WaterSpray / Droplets,
-target-fit emitters). Rain ships as a **particle-only** package — no
-main-stage program at all, the enabled streak emitter is the whole
-treatment, demonstrating that the particle framework carries an
-effect by itself. The browser-tier splice transport is **done**
+target-fit emitters). Rain, `sparks` and `waterjet` ship as
+**particle-only** packages — no main-stage program at all, the enabled
+emitters are the whole treatment, demonstrating that the particle
+framework carries an effect by itself. The browser-tier splice transport is **done**
 (snapshot v24: assembled variants + viewer binaries in the shader
 table, adopted by source match). Instance-scope particle emitters are
 **done** (occurrence-fit seeds, particle-only effects bind at
@@ -952,10 +1248,132 @@ phone).
   the emitter actually occupies rather than its travel allowance.
 - Neighbour queries (SPH-class fluid) stay out of reach without
   compute shaders; see the §5.8 closing note.
-- Stages are currently `material` and `post`; the `water`/`volume`
-  stages and the shipped effect library are designed (§5.11) but not
-  yet implemented.
+- Stage names are fixed slots (`material`/`water`/`volume`/`particle`/
+  `post`) — there is no user-declared pass or render graph; an effect
+  cannot introduce a pass the engine does not already own.
 - WBOIT draws cannot take a user fragment program (the OIT output
   contract is not a single color).
 - Per-draw texture slots for user shaders (custom images) are not yet
   bindable from the document model.
+- **Coin light state that never reaches a backend** (audited
+  2026-08-14). The audit's one outright bug -- the scene light being
+  gated on the shadow map -- is fixed, see `docs/CoinRetirement.md`
+  3.4, and the ordinary lights now cross as `Render::ViewLightConfig`
+  (`translateViewLightConfig`, up to Coin's own cap of eight, carried
+  in the scene dump from v52). What is left:
+  - ⚠️ **A light has to sit above the render-cache root.**
+    `translateViewLightConfig` reads `SoLightElement` from the frame
+    state at the renderer level, which sees only what was traversed
+    *above* the capture root. A light a ViewProvider puts in the
+    geometry graph is inside the captured subgraph and never appears
+    there -- the same boundary that forces the Shadow style's light
+    above the cache root (3.4). Carrying those would mean collecting
+    lights during cache capture, which is a feature, not a fix.
+
+    The real root is reachable from Python, so adding a light by hand
+    is a two-liner -- note that `getSceneGraph()`, on either the view
+    or the viewer, returns the `SoFCUnifiedSelection` *below* the
+    capture point and is the wrong handle:
+
+    ```python
+    rm = Gui.ActiveDocument.ActiveView.getViewer().getSoRenderManager()
+    root = rm.getSceneGraph()   # Separator: backlight, headlight,
+                                # camera, viewerLightingRoot,
+                                # SoFCUnifiedSelection, ...
+    root.insertChild(light, 3)  # after the camera = world coordinates
+    ```
+
+    Insert *before* the camera and the light's direction is fixed in
+    eye space and tracks it, which is exactly how the headlight is
+    built; *after* it, position and direction are plain world space.
+  - **`SoSpotLight` past the first, closed 2026-08-14.** The first one
+    is claimed as the scene light (with cone, shadow map, sun disc and
+    ground) and the walk stops there, so every spot after it is now an
+    ordinary view light with its cone and no map -- as is a second
+    `SoShadowDirectionalLight`, which falls through to the plain
+    directional branch. Which node the scene light took is decided by
+    the same walk in the same order under the same `on` filter, so the
+    two translators agree without either seeing the other.
+
+    The cone did **not** fit the two spare floats this section used to
+    promise. A spot needs its axis as well as its position, which is
+    three floats more than a slot holds, so `kind = 3` takes the
+    **next slot whole** (axis in xyz, `kind = 4` marking it a
+    continuation the shader shades as a light of zero colour). That
+    keeps the uniform budget exactly where it was -- the alternative,
+    a fourth per-light array, would have charged 8 vec4 of the 40
+    spare to every frame for something a scene almost never has. A
+    spot therefore costs two of the eight light slots, and the packer
+    never starts one in the last.
+  - **The specular 0.75, dropped 2026-08-14.** Measured against Coin at
+    last, and it was exactly what it looked like: a pure specular ball
+    peaked at **190** where GL's law saturates (255 x 0.75 = 191;
+    Coin's own 237 is a Gouraud sample of a saturating highlight, since
+    fixed-function shades the peak per vertex). The same measurement
+    found a second half to it -- the term had no `f` gate, GL's rule
+    that a highlight needs `N.L > 0`, and ran on `abs(dot(n, h))`, so a
+    broad lobe carried the specular past the terminator: **4x** Coin's
+    spill on to a ball's dark side at shininess 0.05 (+3300 px against
+    +826). Both are fixed on the Coin-fed branches, which now run GL's
+    equation as written: the peak reads 254 and the spill is gone
+    entirely (the dark side returns to its unlit baseline, where Coin
+    keeps its +826 of Gouraud smear). Highlights on strongly specular
+    materials are a third brighter than before, and that is the
+    correction, not a regression. Nothing moves on a stock appearance,
+    whose specular colour is black.
+
+    The **effect lights keep their 0.75** deliberately: a fire flame or
+    a `Render_Light` bulb has no light node behind it and no GL term to
+    match, so that weight is a tuned one rather than a parity claim.
+
+  **The viewer's rig, closed 2026-08-14.** The fork's viewer had two
+  lights (headlight, backlight) and no ambient node of its own, so
+  `SoEnvironmentElement` always read Coin's default 0.2 grey. It now
+  carries upstream's full rig: a **fill light** and an
+  **`SoEnvironment`**, both under a `viewerLightingRoot` group that
+  `setSceneGraph` inserts *after the camera* -- world space, but still
+  above the render-cache root, which is what lets a backend see them
+  (the bullet above). The fill light hangs in a `SoTransformSeparator`
+  under an `SoRotation` slaved to the camera's orientation
+  (`connectFrom`, re-slaved by `syncLightRotation` when `setCameraType`
+  swaps the camera node), so its direction stays camera-relative while
+  the geometry below is left alone. Preferences, all in the `View`
+  group beside the existing ones: `EnableFillLight` (**off** by
+  default in the fork, where upstream defaults it on -- the fork's
+  reference renders are lit by one light), `FillLightColor`,
+  `FillLightDirection`, `FillLightIntensity`, `AmbientLightColor`,
+  `AmbientLightIntensity` (default 20, i.e. Coin's own 0.2, so the node
+  alone changes nothing). The renderer side needed no change at all:
+  `translateViewLightConfig` already took any plain directional light,
+  the `getMatrix` unwinding already handled the transform separator,
+  and the ambient already read `SoEnvironmentElement`.
+
+  **Ambient, closed 2026-08-14.** `Material::ambient` used to cross the
+  bridge, get keyed into the bgfx material key, get streamed -- and
+  then be dropped, because `fcShadeFragment` spent a literal
+  `0.2 * base` instead. That fraction-of-the-diffuse floor has no
+  counterpart in Coin, whose ambient is the material's ambient colour
+  times `LIGHT_MODEL_AMBIENT` (`SoEnvironment`, default 0.2 grey),
+  added outright. The two coincide only when a material's ambient
+  equals its diffuse.
+
+  ⚠️ The fix is a pair, not a single term: the `0.2 / 0.8` split was
+  *tuned* -- the low diffuse weight paid for the high ambient, so the
+  two errors cancelled on lit surfaces and the divergence only showed
+  where light did not reach. Correcting the ambient alone would have
+  darkened every render. With Coin's ambient and a full-weight diffuse,
+  measured against cache-0 on the same scene (mean colour of the
+  object's pixels):
+
+  | | Coin | bgfx before | bgfx after |
+  |---|---|---|---|
+  | default material, headlight off | 10 | 40 | 10 |
+  | default material, headlight on | 133 | 138 | 133 |
+  | red ambient / grey diffuse, off | (50,0,0) | (30,30,30) | (49,0,0) |
+  | red ambient / grey diffuse, on | (142,93,93) | -- | (142,93,93) |
+
+  A feed that carries no Coin lighting (`ViewLightConfig::fed` false --
+  an old scene dump, a consumer predating v52) keeps the legacy floor
+  and its 0.8 diffuse weight, so old dumps render as they were drawn.
+  The PBR branch is untouched: image-based irradiance replaces the
+  ambient term there, which is the glTF semantics it follows.

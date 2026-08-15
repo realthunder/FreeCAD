@@ -779,7 +779,7 @@ void ViewProvider::dragObject(App::DocumentObject* obj)
         return false;
     });
     if(!res)
-        throw Base::RuntimeError("Cannot drag object.");
+        THROWM(Base::RuntimeError, "Cannot drag object.")
 }
 
 bool ViewProvider::canDropObject(App::DocumentObject* obj) const
@@ -815,7 +815,7 @@ void ViewProvider::dropObject(App::DocumentObject* obj) {
     });
 
     if(!res)
-        throw Base::RuntimeError("Cannot drop object.");
+        THROWM(Base::RuntimeError, "Cannot drop object.")
 }
 
 bool ViewProvider::canDropObjectEx(App::DocumentObject* obj, App::DocumentObject *owner,

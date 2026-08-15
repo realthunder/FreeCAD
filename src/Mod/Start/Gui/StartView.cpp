@@ -24,14 +24,19 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <algorithm>
 #include <QApplication>
 #include <QCheckBox>
+#include <QFileInfo>
 #include <QFrame>
 #include <QGridLayout>
 #include <QLabel>
 #include <QListView>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QScrollArea>
+#include <QStyle>
+#include <QTextLayout>
 #include <QWidget>
 #include <QStackedWidget>
 #endif
@@ -64,6 +69,243 @@ struct NewButton
     QString iconPath;
 };
 
+// Formats several modules claim, so the user gets asked which one to import
+// with rather than silently getting whichever registered first.
+bool wantsImportChooser(const QString& extension)
+{
+    static const QStringList extensions {QStringLiteral("fcstd"),
+                                         QStringLiteral("stp"),
+                                         QStringLiteral("step"),
+                                         QStringLiteral("iges"),
+                                         QStringLiteral("igs")};
+    return extensions.contains(extension);
+}
+
+// An image is not a document to open but something to place into one, so it
+// takes a different route entirely -- see fileCardSelected().
+bool isImage(const QString& extension)
+{
+    static const QStringList extensions {QStringLiteral("bmp"),
+                                         QStringLiteral("cur"),
+                                         QStringLiteral("gif"),
+                                         QStringLiteral("ico"),
+                                         QStringLiteral("pbm"),
+                                         QStringLiteral("pgm"),
+                                         QStringLiteral("png"),
+                                         QStringLiteral("jpg"),
+                                         QStringLiteral("jpeg"),
+                                         QStringLiteral("ppm"),
+                                         QStringLiteral("svg"),
+                                         QStringLiteral("svgz"),
+                                         QStringLiteral("xbm"),
+                                         QStringLiteral("xpm")};
+    return extensions.contains(extension);
+}
+
+/*!
+ * \brief A wrapping label that never grows past \a maxLines, eliding instead.
+ *
+ * The alternative -- letting the text have all the lines it wants -- makes one
+ * long description raise the whole row of cards, so a single wordy translation
+ * costs every card vertical space. Capping keeps the grid regular and pays for
+ * it in the one place the text is actually too long. Nothing is lost: whenever
+ * the label elides, the full text becomes its tooltip.
+ *
+ * QLabel cannot do this itself. Qt::ElideRight is a QTextEdit/QTextLayout
+ * facility, and QLabel offers no eliding at all, so the last visible line is
+ * measured and shortened by hand.
+ */
+class DescriptionLabel: public QLabel
+{
+public:
+    DescriptionLabel(const QString& text, int maxLines, QWidget* parent)
+        : QLabel(parent)
+        , _full(text)
+        , _maxLines(std::max(1, maxLines))
+    {
+        setWordWrap(true);
+        QLabel::setText(text);
+    }
+
+    // Both size questions are capped rather than answered honestly: the point
+    // is that the layout above must never be asked for room beyond the cap.
+    QSize sizeHint() const override
+    {
+        QSize hint = QLabel::sizeHint();
+        hint.setHeight(std::min(hint.height(), capHeight()));
+        return hint;
+    }
+
+    int heightForWidth(int width) const override
+    {
+        return std::min(QLabel::heightForWidth(width), capHeight());
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        // Without this the label demands enough width for its longest word and
+        // drags the card wider. The card owns the width; the text fits into it.
+        QSize hint = QLabel::minimumSizeHint();
+        hint.setHeight(std::min(hint.height(), capHeight()));
+        hint.setWidth(0);
+        return hint;
+    }
+
+protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QLabel::resizeEvent(event);
+        applyElision();
+    }
+
+private:
+    int capHeight() const
+    {
+        return fontMetrics().lineSpacing() * _maxLines;
+    }
+
+    /*!
+     * The width the text really gets, which is not width().
+     *
+     * A QLabel draws inside its contents rect, less its margin, less an
+     * indent that defaults to "derive one from the frame". Eliding against
+     * the full widget width instead of this overshot by the few pixels a
+     * themed border costs, and the text that was supposed to fit on the last
+     * line wrapped onto one more -- which is the very thing being prevented.
+     * Mirrors what QLabel does to lay the text out in the first place.
+     */
+    int usableWidth() const
+    {
+        QRect area = contentsRect();
+        const int margins = margin();
+        area.adjust(margins, margins, -margins, -margins);
+
+        int textIndent = indent();
+        if (textIndent < 0 && frameWidth() > 0) {
+            textIndent = fontMetrics().horizontalAdvance(QLatin1Char('x')) / 2 - margins;
+        }
+        if (textIndent > 0) {
+            const Qt::Alignment align =
+                QStyle::visualAlignment(layoutDirection(), alignment());
+            if (align & Qt::AlignLeft) {
+                area.setLeft(area.left() + textIndent);
+            }
+            if (align & Qt::AlignRight) {
+                area.setRight(area.right() - textIndent);
+            }
+        }
+        return area.width();
+    }
+
+    /*!
+     * Lay the full text out at the current width and, if it runs past the
+     * last allowed line, replace that line's worth of text with an elided
+     * version of everything still to come.
+     */
+    void applyElision()
+    {
+        const int usable = usableWidth();
+        if (usable <= 0) {
+            return;
+        }
+
+        QString shown = _full;
+        QTextLayout layout(_full, font());
+        layout.beginLayout();
+        for (int line = 1;; ++line) {
+            QTextLine current = layout.createLine();
+            if (!current.isValid()) {
+                break;  // the whole text fitted
+            }
+            current.setLineWidth(usable);
+            if (line < _maxLines) {
+                continue;
+            }
+            // On the last allowed line: anything the layout would still put
+            // after it is overflow, so fold the remainder into this line.
+            if (layout.createLine().isValid()) {
+                shown = _full.left(current.textStart())
+                    + fontMetrics().elidedText(_full.mid(current.textStart()),
+                                               Qt::ElideRight,
+                                               usable);
+            }
+            break;
+        }
+        layout.endLayout();
+
+        // Guard against re-entry: setText() re-lays out, which resizes, which
+        // lands back here. Only an actual change may go through.
+        if (QLabel::text() != shown) {
+            QLabel::setText(shown);
+        }
+        setToolTip(shown == _full ? QString() : _full);
+    }
+
+    QString _full;
+    int _maxLines;
+};
+
+/*!
+ * \brief A push button that is as big as what is inside it.
+ *
+ * QPushButton::sizeHint() is computed from the button's own text and icon and
+ * never consults a layout set on it, so a card built out of child widgets
+ * reported 38x21 no matter what it contained. What kept the cards on screen at
+ * all was setMinimumHeight(), which is a floor and not a fit: the moment a
+ * description wrapped to one more line than that floor allowed, the extra line
+ * was simply cut off. Handing the three size questions to the layout makes the
+ * card as big as what it holds.
+ *
+ * DescriptionLabel is what keeps that from turning into unbounded growth, so
+ * in practice this no longer moves for long text. It still earns its place:
+ * a larger UI font or icon size used to clip the card just as silently.
+ */
+class CardButton: public QPushButton
+{
+public:
+    using QPushButton::QPushButton;
+
+    QSize sizeHint() const override
+    {
+        QLayout* content = layout();
+        if (!content) {
+            return QPushButton::sizeHint();
+        }
+
+        QSize hint = content->totalSizeHint();
+        // Settle the width first, because the height of wrapped text depends
+        // on it -- and settle it against the widget's own bounds, so a caller
+        // that fixed the width gets that width and the text is made to fit it
+        // rather than the other way round. Asking the layout for the height
+        // rather than reading the label's sizeHint matters: a wrapped QLabel
+        // reports a height for whatever width it happens to have at the time,
+        // which during the first pass is not yet the final one.
+        hint.setWidth(std::clamp(hint.width(), minimumWidth(), maximumWidth()));
+        if (content->hasHeightForWidth()) {
+            hint.setHeight(std::max(hint.height(), content->heightForWidth(hint.width())));
+        }
+        return hint.expandedTo(minimumSize()).boundedTo(maximumSize());
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        QLayout* content = layout();
+        return content ? content->totalMinimumSize() : QPushButton::minimumSizeHint();
+    }
+
+    bool hasHeightForWidth() const override
+    {
+        QLayout* content = layout();
+        return content && content->hasHeightForWidth();
+    }
+
+    int heightForWidth(int width) const override
+    {
+        QLayout* content = layout();
+        return content ? content->heightForWidth(width) : QPushButton::heightForWidth(width);
+    }
+};
+
 QPushButton* createNewButton(const NewButton& newButton)
 {
     auto hGrp = App::GetApplication().GetParameterGroupByPath(
@@ -71,32 +313,63 @@ QPushButton* createNewButton(const NewButton& newButton)
     const auto cardSpacing = static_cast<int>(hGrp->GetInt("FileCardSpacing", 25));       // NOLINT
     const auto newFileIconSize = static_cast<int>(hGrp->GetInt("NewFileIconSize", 48));   // NOLINT
     const auto cardLabelWith = static_cast<int>(hGrp->GetInt("FileCardLabelWith", 180));  // NOLINT
+    // How many lines a description may wrap to before it is elided. Two is
+    // what the card's height budget (icon + spacing) has always allowed.
+    const auto descriptionLines =
+        static_cast<int>(hGrp->GetInt("FileCardDescriptionLines", 2));  // NOLINT
 
-    auto button = new QPushButton();
+    auto button = new CardButton();
+    // Named so applyFileCardStyle() can find the six of them again when the
+    // theme changes; nothing else keeps a handle on them.
+    button->setObjectName(QLatin1String("newFileCard"));
     auto mainLayout = new QHBoxLayout(button);
     auto iconLabel = new QLabel(button);
     mainLayout->addWidget(iconLabel);
     QIcon baseIcon(newButton.iconPath);
-    iconLabel->setPixmap(baseIcon.pixmap(newFileIconSize, newFileIconSize));
     iconLabel->setPixmap(baseIcon.pixmap(newFileIconSize, newFileIconSize));
 
     auto textLayout = new QVBoxLayout;
     auto textLabelLine1 = new QLabel(button);
     textLabelLine1->setText(newButton.heading);
     textLabelLine1->setStyleSheet(QLatin1String("font-weight: bold;"));
-    auto textLabelLine2 = new QLabel(button);
-    textLabelLine2->setText(newButton.description);
-    textLabelLine2->setWordWrap(true);
+    auto textLabelLine2 = new DescriptionLabel(newButton.description, descriptionLines, button);
     textLayout->addWidget(textLabelLine1);
     textLayout->addWidget(textLabelLine2);
     textLayout->setSpacing(0);
-    mainLayout->addItem(textLayout);
-
-    mainLayout->addStretch();
+    // Stretch factor, where there used to be a trailing addStretch(): the
+    // spare width belongs to the text, not to an empty gap after it. With the
+    // gap taking it, the text column was only ever as wide as the heading --
+    // so "Open File", the shortest heading of the six, gave its much longer
+    // description the narrowest column of all and made it wrap to three lines
+    // while the card sat in a half-empty row.
+    mainLayout->addLayout(textLayout, 1);
 
     button->setMinimumHeight(newFileIconSize + cardSpacing);
-    button->setMinimumWidth(newFileIconSize + cardLabelWith);
+    // Fixed, not minimum: the cards form a grid, and a grid of cards that are
+    // each as wide as their own longest sentence is not one. The width is the
+    // budget the text has to live within -- it wraps into it, and elides if it
+    // still will not fit.
+    button->setFixedWidth(newFileIconSize + cardLabelWith);
     return button;
+}
+
+/*!
+ * \brief Give every card the height of the tallest one.
+ *
+ * FlowLayout hands each card exactly its own size hint, so any card that
+ * wanted a pixel more than its neighbours would stand out of the row.
+ * Descriptions can no longer cause that, but headings, icons and fonts still
+ * can, and a grid of cards is only tidy if the cards match.
+ */
+void equalizeCardHeights(const QList<QPushButton*>& cards)
+{
+    int tallest = 0;
+    for (auto* card : cards) {
+        tallest = std::max(tallest, card->sizeHint().height());
+    }
+    for (auto* card : cards) {
+        card->setMinimumHeight(tallest);
+    }
 }
 
 }  // namespace
@@ -227,17 +500,7 @@ void StartView::configureNewFileButtons(QLayout* layout) const
                                  tr("Create an architectural project"),
                                  QLatin1String(":/icons/BIMWorkbench.svg")});
 
-    auto hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/Mod/Start");
-    if (hGrp->GetBool("FileCardUseStyleSheet", true)) {
-        QString style = fileCardStyle();
-        newEmptyFile->setStyleSheet(style);
-        openFile->setStyleSheet(style);
-        partDesign->setStyleSheet(style);
-        assembly->setStyleSheet(style);
-        draft->setStyleSheet(style);
-        arch->setStyleSheet(style);
-    }
+    equalizeCardHeights({partDesign, assembly, draft, arch, newEmptyFile, openFile});
 
     // TODO: Ensure all of the required WBs are actually available
     layout->addWidget(partDesign);
@@ -253,6 +516,36 @@ void StartView::configureNewFileButtons(QLayout* layout) const
     connect(assembly, &QPushButton::clicked, this, &StartView::newAssemblyFile);
     connect(draft, &QPushButton::clicked, this, &StartView::newDraftFile);
     connect(arch, &QPushButton::clicked, this, &StartView::newArchFile);
+
+    applyFileCardStyle();
+}
+
+/*!
+ * \brief Give the six New File cards their own style sheet, or take it away.
+ *
+ * fileCardStyle() yields nothing while a theme style sheet is loaded, so that
+ * the cards are painted as the theme paints a QPushButton. Deciding that once,
+ * at construction, was not enough: the Start page is built before the theme
+ * sheet is applied, so the cards kept the light #DDDDDD fallback for the rest
+ * of the session and stood out as near-white panels on a dark theme. Re-run it
+ * whenever the style changes.
+ */
+void StartView::applyFileCardStyle() const
+{
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Start");
+    if (!hGrp->GetBool("FileCardUseStyleSheet", true)) {
+        return;
+    }
+
+    const QString style = fileCardStyle();
+    for (auto* card : findChildren<QPushButton*>(QLatin1String("newFileCard"))) {
+        // Only when it differs: setStyleSheet() repolishes unconditionally,
+        // and this runs from a style-change notification.
+        if (card->styleSheet() != style) {
+            card->setStyleSheet(style);
+        }
+    }
 }
 
 QString StartView::fileCardStyle() const
@@ -437,9 +730,44 @@ void StartView::postStart(PostStartBehavior behavior) const
 void StartView::fileCardSelected(const QModelIndex& index)
 {
     auto file = index.data(static_cast<int>(Start::DisplayedFilesModelRoles::path)).toString();
-    std::string escapedstr = Base::Tools::escapedUnicodeFromUtf8(file.toStdString().c_str());
-    escapedstr = Base::Tools::escapeEncodeFilename(escapedstr);
-    auto command = std::string("FreeCAD.loadFile('") + escapedstr + "')";
+    const std::string path = Base::Tools::pythonLiteral(file);
+    const QString extension = QFileInfo(file).suffix().toLower();
+
+    // Which module imports a given extension is a user preference, written by
+    // the import dialog as DefaultImport<ext>. Passing it on is what makes that
+    // choice stick; leaving it empty takes whichever module registered first.
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Start");
+    const std::string module = Base::Tools::pythonLiteral(QString::fromStdString(
+        hGrp->GetASCII(("DefaultImport" + extension.toStdString()).c_str(), "")));
+
+    std::string command;
+    if (isImage(extension)) {
+        // An image has no document of its own to open. The old web start page
+        // made one and inserted the image into it, and loadFile cannot: it
+        // would hand the file to a module's insert() with no document to
+        // insert into.
+        command = "FreeCAD.newDocument()\n"
+                  "FreeCADGui.insert("
+            + path
+            + ", FreeCAD.activeDocument().Name)\n"
+              "FreeCAD.activeDocument().recompute()\n"
+              "FreeCADGui.activeDocument().sendMsgToViews('ViewFit')\n";
+    }
+    else {
+        // FreeCADGui.loadFile, not FreeCAD.loadFile: the App-level one goes
+        // straight to <module>.openDocument(), which throws when that document
+        // is already open -- and a card for an open document is exactly what a
+        // user clicks by mistake. Gui::Application::open() looks for a document
+        // already holding this file path and reloads it instead (cc2f2151d5,
+        // which is why the old web start page's LoadMRU.py called the Gui one).
+        // It also does the rest of what opening from the UI means: dropping the
+        // empty untouched startup document, adding the file to the recent list,
+        // moving the file dialog's working directory, and fitting the view for
+        // an imported, non-FCStd file.
+        command = "FreeCADGui.loadFile(" + path + ", " + module
+            + (wantsImportChooser(extension) ? ", interactive=True" : "") + ")";
+    }
     try {
         Base::Interpreter().runString(command.c_str());
         postStart(PostStartBehavior::doNotSwitchWorkbench);
@@ -483,6 +811,11 @@ void StartView::changeEvent(QEvent* event)
 {
     if (event->type() == QEvent::LanguageChange) {
         this->retranslateUi();
+    }
+    else if (event->type() == QEvent::StyleChange) {
+        // A theme was loaded or cleared: the cards' own sheet has to be
+        // reconsidered against it.
+        this->applyFileCardStyle();
     }
     Gui::MDIView::changeEvent(event);
 }

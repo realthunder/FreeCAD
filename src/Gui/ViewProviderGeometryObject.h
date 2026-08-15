@@ -40,6 +40,85 @@ class SoShadowStyle;
 
 namespace Gui {
 
+/** ShapeColor, whose storage is the object's ShapeAppearance
+ *
+ * The diffuse colour is one datum and the appearance owns it. This keeps
+ * the familiar name, the property editor row and every call site that says
+ * vp->ShapeColor, while writing through to the appearance so that the two
+ * can never disagree.
+ *
+ * PropertyColor::getValue() returns a reference and is not virtual, so the
+ * inherited value is kept as a mirror of the appearance's entry 0 and every
+ * write refreshes it. The writers below hide the base ones by name, which
+ * is all that is needed: every call site reaches this through its own
+ * static type, and everything that goes through a Property base pointer --
+ * Save, Restore, Copy, Paste, get/setPyObject -- is already virtual.
+ */
+class GuiExport PropertyShapeColor : public App::PropertyColor
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    /// The appearance this colour lives in. Null until the owner wires it.
+    void setAppearance(App::PropertyMaterialList *appearance)
+    { _appearance = appearance; }
+
+    void setValue(const Base::Color &col);
+    void setValue(float r, float g, float b, float a = 1.0F);
+    void setValue(uint32_t rgba);
+
+    /// Refresh the mirror from the appearance, without writing back. A value
+    /// that has not moved is not written: PropertyColor::setValue announces
+    /// unconditionally, and every appearance change refreshes this.
+    void mirrorValue(const Base::Color &col)
+    { if (col != getValue()) App::PropertyColor::setValue(col); }
+
+    void Restore(Base::XMLReader &reader) override;
+
+    /** Fold a restored colour into the appearance
+     *
+     * Also the entry point for an old document's ShapeColor. Writes entry 0
+     * only when the appearance is not already carrying per-face colours:
+     * before this property existed, ShapeColor was the whole-object colour
+     * and DiffuseColor the per-face override, and they were allowed to
+     * disagree. DiffuseColor and ShapeAppearance both sort before ShapeColor,
+     * so by the time this runs the more specific value is already in place
+     * and must win.
+     */
+    void applyToAppearance();
+
+private:
+    App::PropertyMaterialList *_appearance {nullptr};
+};
+
+/** ShapeMaterial, kept as a name over the appearance
+ *
+ * Retired as a store: the appearance holds the material. Kept as a property
+ * so old macros and old documents that say ShapeMaterial still land
+ * somewhere, and hidden from the property editor so one datum does not
+ * appear as two rows.
+ */
+class GuiExport PropertyShapeMaterial : public App::PropertyMaterial
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    void setAppearance(App::PropertyMaterialList *appearance)
+    { _appearance = appearance; }
+
+    void setValue(const App::Material &mat);
+    /// See PropertyShapeColor::mirrorValue; same no-op rule
+    void mirrorValue(const App::Material &mat)
+    { if (!(mat == getValue())) App::PropertyMaterial::setValue(mat); }
+
+    void Restore(Base::XMLReader &reader) override;
+    /// See PropertyShapeColor::applyToAppearance; same ordering rule
+    void applyToAppearance();
+
+private:
+    App::PropertyMaterialList *_appearance {nullptr};
+};
+
 class SoFCSelection;
 class SoFCBoundingBox;
 class SoFCRenderMaterial;
@@ -64,9 +143,17 @@ public:
     ~ViewProviderGeometryObject() override;
 
     // Display properties
-    App::PropertyColor ShapeColor;
+    PropertyShapeColor ShapeColor;
     App::PropertyPercent Transparency;
-    App::PropertyMaterial ShapeMaterial;
+    /** The object's appearance, one entry per face or a single shared one
+     *
+     * Replaces the old ShapeMaterial. Storage is per field, so the common
+     * case of one appearance for the whole object costs one entry per field
+     * rather than one whole material (docs/ShapeAppearanceDesign.md).
+     */
+    App::PropertyMaterialList ShapeAppearance;
+    /// Retired store, kept as a name over the appearance (hidden in the editor)
+    PropertyShapeMaterial ShapeMaterial;
     App::PropertyBool BoundingBox;
 
     /**
@@ -94,6 +181,12 @@ public:
 
     void finishRestoring() override;
 
+    /** Re-derive ShapeColor, ShapeMaterial and Transparency from the
+     * appearance. A no-op for a document that states them; the whole
+     * migration for one that has only ShapeAppearance.
+     */
+    void refreshAppearanceMirrors();
+
     /**
      * Returns a list of picked points from the geometry under \a getRoot().
      * If \a pickAll is false (the default) only the intersection point closest to the camera will be picked, otherwise
@@ -115,6 +208,15 @@ public:
 protected:
     /// get called by the container whenever a property has been changed
     void onChanged(const App::Property* prop) override;
+    /// Restore a pre-ShapeAppearance document. ShapeColor and ShapeMaterial
+    /// kept their names but changed type, so they arrive here; the base does
+    /// nothing, which would drop the value.
+    void handleChangedPropertyType(Base::XMLReader &reader,
+                                   const char *TypeName,
+                                   App::Property *prop) override;
+
+    /// Push one whole material into the Coin material node
+    void setCoinAppearance(const App::Material &mat);
 
     virtual unsigned long getBoundColor() const;
     void updateBoundingBox();

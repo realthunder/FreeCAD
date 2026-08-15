@@ -198,7 +198,7 @@ void TaskCosVertex::startTracker()
     }
     else {
         //this is too harsh. but need to avoid restarting process
-        throw Base::RuntimeError("TechDrawNewLeader - tracker already active\n");
+        THROWM(Base::RuntimeError, "TechDrawNewLeader - tracker already active\n")
     }
     setEditCursor(Qt::CrossCursor);
     QString msg = tr("Left click to set a point");

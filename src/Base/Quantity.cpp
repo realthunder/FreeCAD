@@ -181,7 +181,7 @@ Quantity Quantity::operator/(double factor) const
 Quantity Quantity::pow(const Quantity& other) const
 {
     if (!other.myUnit.isEmpty()) {
-        throw Base::UnitsMismatchError("Quantity::pow(): exponent must not have a unit");
+        THROWM(Base::UnitsMismatchError, "Quantity::pow(): exponent must not have a unit")
     }
 
     return Quantity(std::pow(this->myValue, other.myValue),
@@ -196,7 +196,7 @@ Quantity Quantity::pow(double exp) const
 Quantity Quantity::concat(const Quantity &other) const
 {
     if (this->myUnit != other.myUnit)
-        throw Base::UnitsMismatchError("Quantity: Unit mismatch in concat operation");
+        THROWM(Base::UnitsMismatchError, "Quantity: Unit mismatch in concat operation")
     if(myValue >= 0.0)
         return Quantity(this->myValue + other.myValue,this->myUnit);
     else
@@ -206,14 +206,14 @@ Quantity Quantity::concat(const Quantity &other) const
 Quantity Quantity::operator+(const Quantity& other) const
 {
     if (!this->myUnit.isEmpty() && !other.myUnit.isEmpty() && this->myUnit != other.myUnit)
-        throw Base::UnitsMismatchError("Quantity::operator +(): Unit mismatch in plus operation");
+        THROWM(Base::UnitsMismatchError, "Quantity::operator +(): Unit mismatch in plus operation")
     return Quantity(this->myValue + other.myValue, this->myUnit.isEmpty() ? other.myUnit : this->myUnit);
 }
 
 Quantity& Quantity::operator+=(const Quantity& other)
 {
     if (!this->myUnit.isEmpty() && !other.myUnit.isEmpty() && this->myUnit != other.myUnit) {
-        throw Base::UnitsMismatchError("Quantity::operator +=(): Unit mismatch in plus operation");
+        THROWM(Base::UnitsMismatchError, "Quantity::operator +=(): Unit mismatch in plus operation")
     }
 
     myValue += other.myValue;
@@ -226,7 +226,7 @@ Quantity& Quantity::operator+=(const Quantity& other)
 Quantity Quantity::operator-(const Quantity& other) const
 {
     if (!this->myUnit.isEmpty() && !other.myUnit.isEmpty() && this->myUnit != other.myUnit) {
-        throw Base::UnitsMismatchError("Quantity::operator -(): Unit mismatch in minus operation");
+        THROWM(Base::UnitsMismatchError, "Quantity::operator -(): Unit mismatch in minus operation")
     }
 
     return Quantity(this->myValue - other.myValue, this->myUnit.isEmpty() ? other.myUnit : this->myUnit);
@@ -235,7 +235,7 @@ Quantity Quantity::operator-(const Quantity& other) const
 Quantity& Quantity::operator-=(const Quantity& other)
 {
     if (!this->myUnit.isEmpty() && !other.myUnit.isEmpty() && this->myUnit != other.myUnit) {
-        throw Base::UnitsMismatchError("Quantity::operator -=(): Unit mismatch in minus operation");
+        THROWM(Base::UnitsMismatchError, "Quantity::operator -=(): Unit mismatch in minus operation")
     }
 
     myValue -= other.myValue;
@@ -509,7 +509,7 @@ double num_change(char* yytext, char dez_delim, char grp_delim)
 // error func
 void Quantity_yyerror(const char* errorinfo)
 {
-    throw Base::ParserError(errorinfo);
+    THROWM(Base::ParserError, errorinfo)
 }
 
 #if defined(__clang__)

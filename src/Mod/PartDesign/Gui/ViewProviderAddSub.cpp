@@ -146,7 +146,7 @@ void ViewProviderAddSub::checkAddSubColor()
             color = App::Color((uint32_t)PartGui::PartParams::getPreviewAddColor());
     }
     // clamp transparency between 0.1 ~ 0.8
-    float t = std::max(0.1f, std::min(0.8f, 1.0f - color.a));
+    float t = std::max(0.1f, std::min(0.8f, color.transparency()));
     if (!PartGui::PartParams::getPreviewWithTransparency()) {
         t = 0.0f;
         previewGroup->priority = 0;

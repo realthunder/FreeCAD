@@ -95,6 +95,7 @@ protected:
     void firstStartWidgetDismissed();
 
     QString fileCardStyle() const;
+    void applyFileCardStyle() const;
 
 private:
     void retranslateUi();

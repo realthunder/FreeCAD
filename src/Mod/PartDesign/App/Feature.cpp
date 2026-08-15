@@ -157,7 +157,7 @@ const gp_Pnt Feature::getPointFromFace(const TopoDS_Face& f)
 
     // TODO: Other method, e.g. intersect X,Y,Z axis with the (unlimited?) face?
     // Or get a "corner" point if the face is limited?
-    throw Base::NotImplementedError("getPointFromFace(): Not implemented yet for this case");
+    THROWM(Base::NotImplementedError, "getPointFromFace(): Not implemented yet for this case")
 }
 
 Part::Feature* Feature::getBaseObject(bool silent) const {
@@ -178,7 +178,7 @@ Part::Feature* Feature::getBaseObject(bool silent) const {
 
     // If the function not in silent mode throw the exception describing the error
     if (!silent && err) {
-        throw Base::RuntimeError(err);
+        THROWM(Base::RuntimeError, err)
     }
 
     return BaseObject;
@@ -190,7 +190,7 @@ TopoShape Feature::getBaseShape(bool silent, bool force, bool checkSolid) const 
     if (NewSolid.getValue() && !force) {
         if (silent)
             return result;
-        throw Base::ValueError("No need base shape when creating new solid");
+        THROWM(Base::ValueError, "No need base shape when creating new solid")
     }
 
     const Part::Feature* BaseObject = getBaseObject(silent);
@@ -202,7 +202,7 @@ TopoShape Feature::getBaseShape(bool silent, bool force, bool checkSolid) const 
         if (!body) {
             if(silent)
                 return result;
-            throw Base::RuntimeError("Missing container body");
+            THROWM(Base::RuntimeError, "Missing container body")
         }
         if (body->BaseFeature.getValue() != BaseObject
                 && (BaseObject->isDerivedFrom<PartDesign::ShapeBinder>()
@@ -210,7 +210,7 @@ TopoShape Feature::getBaseShape(bool silent, bool force, bool checkSolid) const 
         {
             if(silent)
                 return result;
-            throw Base::ValueError("Base shape of shape binder cannot be used");
+            THROWM(Base::ValueError, "Base shape of shape binder cannot be used")
         }
     }
 
@@ -225,7 +225,7 @@ TopoShape Feature::getBaseShape(bool silent, bool force, bool checkSolid) const 
         if (silent)
             result = TopoShape();
         else
-            throw Base::ValueError("Base feature's shape is not a solid");
+            THROWM(Base::ValueError, "Base feature's shape is not a solid")
     }
     return result;
 }
@@ -237,7 +237,7 @@ const TopoDS_Shape& Feature::getBaseShapeOld() const {
         if (BaseObject->isDerivedFrom<PartDesign::ShapeBinder>() ||
             BaseObject->isDerivedFrom<Part::SubShapeBinder>())
         {
-            throw Base::ValueError("Base shape of shape binder cannot be used");
+            THROWM(Base::ValueError, "Base shape of shape binder cannot be used")
         }
     }
 
@@ -246,7 +246,7 @@ const TopoDS_Shape& Feature::getBaseShapeOld() const {
         throw Part::NullShapeException("Base feature's shape is invalid");
     TopExp_Explorer xp (result, TopAbs_SOLID);
     if (!xp.More())
-        throw Base::ValueError("Base feature's shape is not a solid");
+        THROWM(Base::ValueError, "Base feature's shape is not a solid")
 
     return result;
 }
@@ -270,10 +270,10 @@ bool Feature::isDatum(const App::DocumentObject* feature)
 gp_Pln Feature::makePlnFromPlane(const App::DocumentObject* obj)
 {
     if (!obj || !obj->getNameInDocument())
-        throw Base::ValueError("Feature: Null object");
+        THROWM(Base::ValueError, "Feature: Null object")
     auto propPlacement = Base::freecad_dynamic_cast<App::PropertyPlacement>(obj->getPropertyByName("Placement"));
     if (!propPlacement)
-        throw Base::ValueError("Feature: no placement found");
+        THROWM(Base::ValueError, "Feature: no placement found")
 
     Base::Vector3d pos = propPlacement->getValue().getPosition();
     Base::Rotation rot = propPlacement->getValue().getRotation();
@@ -286,7 +286,7 @@ TopoShape Feature::makeShapeFromPlane(const App::DocumentObject* obj)
 {
     BRepBuilderAPI_MakeFace builder(makePlnFromPlane(obj));
     if (!builder.IsDone())
-        throw Base::CADKernelError("Feature: Could not create shape from base plane");
+        THROWM(Base::CADKernelError, "Feature: Could not create shape from base plane")
 
     return TopoShape(obj->getID(), nullptr, builder.Shape());
 }
@@ -357,7 +357,7 @@ App::DocumentObjectExecReturn *Feature::recompute(void)
     try {
         std::unique_ptr<App::DocumentObjectExecReturn> ret(Part::Feature::recompute());
         if(ret)
-            throw Base::RuntimeError(ret->Why);
+            THROWM(Base::RuntimeError, ret->Why)
     } catch (Base::AbortException &) {
         throw;
     } catch (Base::Exception &e) {

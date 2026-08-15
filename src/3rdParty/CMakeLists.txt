@@ -10,10 +10,16 @@ if (BUILD_BGFX)
     # geometryv and texturev -- then fails to link with ~78 unresolved
     # externals. ELF default visibility exports everything regardless, which is
     # why only Windows sees it.
+    #
+    # This has to be a FORCEd cache entry, not a plain variable: bgfx's own
+    # CMakeLists.txt does set(BGFX_LIBRARY_TYPE "SHARED" CACHE STRING ...), and
+    # creating a cache entry REMOVES any normal variable of that name from the
+    # calling scope -- so on a fresh cache the plain value is discarded and the
+    # SHARED default wins, which is invisible until the link wall above.
     if (WIN32)
-        set(BGFX_LIBRARY_TYPE "STATIC")
+        set(BGFX_LIBRARY_TYPE "STATIC" CACHE STRING "" FORCE)
     else()
-        set(BGFX_LIBRARY_TYPE "SHARED")
+        set(BGFX_LIBRARY_TYPE "SHARED" CACHE STRING "" FORCE)
     endif()
     # example-common (bgfx_utils/entry, used by the renderer) is still built
     # via BGFX_BUILD_TOOLS; skip the ~50 example executables.
@@ -61,6 +67,14 @@ if (BUILD_DILIGENT)
     if (BUILD_DILIGENT_SAMPLES)
         add_subdirectory(Diligent/DiligentSamples)
     endif()
+endif()
+
+if (BUILD_GUI)
+    # Vendored verbatim from FreeCAD/FreeCAD#26766 (PaddleStroke:core_customtitlebar),
+    # CRLF and all, so a re-sync with that branch diffs to just what changed there.
+    # Local divergence is confined to the reversible-detach work needed for
+    # switching the title bar at run time; see HANDOFF_Todos.md.
+    add_subdirectory(customtitlebarkit)
 endif()
 
 add_subdirectory(lazy_loader)

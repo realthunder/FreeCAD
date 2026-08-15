@@ -539,7 +539,7 @@ PartDesignGui::ViewProviderTransformed *TaskTransformedParameters::getTopTransfo
     }
 
     if(!rv && !silent)
-        throw Base::RuntimeError("No Transformed object");
+        THROWM(Base::RuntimeError, "No Transformed object")
 
     return rv;
 }
@@ -777,9 +777,9 @@ void ComboLinks::clear()
 App::PropertyLinkSub &ComboLinks::getLink(int index) const
 {
     if (index < 0 || index > static_cast<int>(linksInList.size())-1)
-        throw Base::IndexError("ComboLinks::getLink:Index out of range");
+        THROWM(Base::IndexError, "ComboLinks::getLink:Index out of range")
     if (linksInList[index]->getValue() && doc && !(doc->isIn(linksInList[index]->getValue())))
-        throw Base::ValueError("Linked object is not in the document; it may have been deleted");
+        THROWM(Base::ValueError, "Linked object is not in the document; it may have been deleted")
     return *(linksInList[index]);
 }
 

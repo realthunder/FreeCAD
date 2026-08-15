@@ -88,7 +88,7 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
 {
     int occurrences = Occurrences.getValue();
     if (occurrences < 1)
-        throw Base::ValueError("At least one occurrence required");
+        THROWM(Base::ValueError, "At least one occurrence required")
 
     if (occurrences == 1)
         return {gp_Trsf()};
@@ -97,10 +97,10 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
 
     App::DocumentObject* refObject = Axis.getValue();
     if (!refObject)
-        throw Base::ValueError("No axis reference specified");
+        THROWM(Base::ValueError, "No axis reference specified")
     std::vector<std::string> subStrings = Axis.getSubValues();
     if (subStrings.empty())
-        throw Base::ValueError("No axis reference specified");
+        THROWM(Base::ValueError, "No axis reference specified")
 
     gp_Pnt axbase;
     gp_Dir axdir;
@@ -135,7 +135,7 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
         axdir = gp_Dir(d.x, d.y, d.z);
     } else if (refObject->isDerivedFrom<Part::Feature>()) {
         if (subStrings[0].empty())
-            throw Base::ValueError("No axis reference specified");
+            THROWM(Base::ValueError, "No axis reference specified")
         Part::Feature* refFeature = static_cast<Part::Feature*>(refObject);
         Part::TopoShape refShape = refFeature->Shape.getShape();
         TopoDS_Shape ref = refShape.getSubShape(subStrings[0].c_str());
@@ -143,7 +143,7 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
         if (ref.ShapeType() == TopAbs_EDGE) {
             TopoDS_Edge refEdge = TopoDS::Edge(ref);
             if (refEdge.IsNull())
-                throw Base::ValueError("Failed to extract axis edge");
+                THROWM(Base::ValueError, "Failed to extract axis edge")
             BRepAdaptor_Curve adapt(refEdge);
             if (adapt.GetType() == GeomAbs_Line) {
                 axbase = adapt.Line().Location();
@@ -152,13 +152,13 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
                 axbase = adapt.Circle().Location();
                 axdir = adapt.Circle().Axis().Direction();
             } else {
-                throw Base::TypeError("Rotation edge must be a straight line, circle or arc of circle");
+                THROWM(Base::TypeError, "Rotation edge must be a straight line, circle or arc of circle")
             }
          } else {
-            throw Base::TypeError("Axis reference must be an edge");
+            THROWM(Base::TypeError, "Axis reference must be an edge")
         }
     } else {
-        throw Base::TypeError("Axis reference must be edge of a feature or datum line");
+        THROWM(Base::TypeError, "Axis reference must be edge of a feature or datum line")
     }
     TopLoc_Location invObjLoc = this->getLocation().Inverted();
     axbase.Transform(invObjLoc.Transformation());
@@ -187,13 +187,13 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
             break;
 
         default:
-            throw Base::ValueError("Invalid mode");
+            THROWM(Base::ValueError, "Invalid mode")
     }
 
     double offset = Base::toRadians<double>(angle);
 
     if (offset < Precision::Angular())
-        throw Base::ValueError("Pattern angle too small");
+        THROWM(Base::ValueError, "Pattern angle too small")
 
     std::list<gp_Trsf> transformations;
     gp_Trsf trans;

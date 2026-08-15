@@ -57,6 +57,7 @@
 
 #include <App/Application.h>
 #include <Base/Console.h>
+#include <Base/CrashLog.h>
 #include <Base/Exception.h>
 
 #include "GuiApplication.h"
@@ -251,6 +252,59 @@ struct SlowDispatchTrace {
 thread_local int SlowDispatchTrace::depth = 0;
 }
 
+namespace
+{
+
+/** Record an exception that reached the event loop, in the run's crash log.
+ *
+ * Nothing should ever throw this far. notify() is the last boundary before Qt,
+ * and Qt frames cannot be unwound through safely, so every arrival here is a
+ * leak worth a record even when the application carries on afterwards.
+ * Severity separates the two cases: Fatal for the ones that mean the process is
+ * already damaged and is only still standing because a fault was turned into an
+ * exception, Caught for a leak that was survivable.
+ *
+ * Deliberately no stack walk. By the time a catch body runs the stack is
+ * already unwound, so walking it here would only ever describe notify() itself
+ * -- never where the exception came from. What does identify the origin is the
+ * exception's own file/line, which the THROWM family records at the throw site
+ * for free.
+ */
+void logNotifyException(Base::CrashLog::Severity severity,
+                        const char* type,
+                        const Base::Exception* exc,
+                        const char* what,
+                        QObject* receiver,
+                        QEvent* event)
+{
+    std::ostringstream headline;
+    headline << type;
+    if (what && *what) {
+        headline << ": " << what;
+    }
+    Base::CrashLog::Entry entry(severity, headline.str());
+
+    std::ostringstream where;
+    where << "  event type " << (event ? static_cast<int>(event->type()) : -1) << ", receiver "
+          << (receiver ? receiver->metaObject()->className() : "<null>");
+    if (receiver && !receiver->objectName().isEmpty()) {
+        where << " '" << receiver->objectName().toUtf8().constData() << '\'';
+    }
+    where << '\n';
+    entry.line(where.str());
+
+    // A bare `throw Base::Xxx(...)` leaves these empty, which is worth seeing
+    // as plainly as the alternative -- it says the throw site is unrecorded.
+    if (exc && !exc->getFile().empty()) {
+        std::ostringstream origin;
+        origin << "  thrown at " << exc->getFile() << ':' << exc->getLine() << " ("
+               << exc->getFunction() << ")\n";
+        entry.line(origin.str());
+    }
+}
+
+}  // namespace
+
 GUIApplication::GUIApplication(int & argc, char ** argv)
     : GUIApplicationNativeEventAware(argc, argv)
 {
@@ -279,23 +333,34 @@ bool GUIApplication::notify (QObject * receiver, QEvent * event)
             return QApplication::notify(receiver, event);
     }
     catch (const Base::AccessViolation &e) {
+        // Fatal: the process survived, but only because the fault was turned
+        // into an exception. Whatever it corrupted is still corrupted.
+        logNotifyException(Base::CrashLog::Severity::Fatal, "Base::AccessViolation", &e, e.what(), receiver, event);
         QMessageBox::critical(getMainWindow(), QObject::tr("Access violation"), QObject::tr(e.what()));
     } catch (const Base::SystemExitException &e) {
+        // Not a leak -- this is how a Python sys.exit() reaches the event loop.
         caughtException.reset(new Base::SystemExitException(e));
         qApp->exit(e.getExitCode());
         return true;
     }
     catch (const Base::Exception& e) {
+        // typeid, not getTypeId(): a Base::ValueError logged itself as
+        // "Base::Exception", because the exception classes do not all register
+        // a distinct type with the Base type system. typeid gives the dynamic
+        // type either way -- readable on MSVC, mangled but unambiguous on gcc.
+        logNotifyException(Base::CrashLog::Severity::Caught, typeid(e).name(), &e, e.what(), receiver, event);
         e.ReportException();
         Base::Console().Error("Unhandled Base::Exception caught in GUIApplication::notify\n");
     }
     catch (Py::Exception &) {
         Base::PyGILStateLocker lock;
         Base::PyException e;
+        logNotifyException(Base::CrashLog::Severity::Caught, "Py::Exception", &e, e.what(), receiver, event);
         e.ReportException();
         Base::Console().Error("Unhandled Python exception caught in GUIApplication::notify\n");
     }
     catch (const std::exception& e) {
+        logNotifyException(Base::CrashLog::Severity::Caught, "std::exception", nullptr, e.what(), receiver, event);
         Base::Console().Error("Unhandled std::exception caught in GUIApplication::notify.\n"
                               "The error message is: %s\n", e.what());
 #ifdef FC_DEBUG
@@ -303,6 +368,9 @@ bool GUIApplication::notify (QObject * receiver, QEvent * event)
 #endif
     }
     catch (...) {
+        // Nothing to ask for a message, so the event type below is all the
+        // context there is -- which is exactly why it is worth recording.
+        logNotifyException(Base::CrashLog::Severity::Caught, "unknown exception", nullptr, "", receiver, event);
         Base::Console().Error("Unhandled unknown exception caught in GUIApplication::notify.\n");
 #ifdef FC_DEBUG
         assert(0);

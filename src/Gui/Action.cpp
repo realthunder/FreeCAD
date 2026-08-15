@@ -27,6 +27,7 @@
 # include <QActionEvent>
 # include <QActionGroup>
 # include <QApplication>
+# include <QButtonGroup>
 # include <QCheckBox>
 # include <QClipboard>
 # if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
@@ -38,6 +39,7 @@
 # include <QMenu>
 # include <QMenuBar>
 # include <QMessageBox>
+# include <QRadioButton>
 # include <QRegularExpression>
 # include <QWindow>
 # include <QScreen>
@@ -69,6 +71,8 @@
 #include "Command.h"
 #include "CommandCompleter.h"
 #include "DlgUndoRedo.h"
+#include "DockWindowManager.h"
+#include "PreferencePackManager.h"
 #include "PreferencePages/DlgSettingsWorkbenchesImp.h"
 #include "Document.h"
 #include "EditorView.h"
@@ -177,8 +181,16 @@ void Action::setChecked(bool check, bool no_signal)
         } else {
             _action->setChecked(check);
         }
-        Q_EMIT actionChecked(check);
     }
+    // Emitted even when the action was already in that state. The
+    // buttons standing in for this action in menus (Action::addWidget)
+    // follow this signal and nothing else, and the action can reach the
+    // state without them: an exclusive QActionGroup unchecks its other
+    // members itself, so a shortcut that changes the mode leaves every
+    // one of them agreeing with the action and disagreeing with the
+    // button. A later sync would then have nothing to report and the
+    // stale tick would survive it.
+    Q_EMIT actionChecked(check);
 }
 
 bool Action::isChecked() const
@@ -496,17 +508,48 @@ Action::addCheckBox(QMenu *menu,
                     const QString &tooltip,
                     const QIcon &icon,
                     bool checked,
-                    QCheckBox **_checkbox)
+                    QCheckBox **_checkbox,
+                    const QString &shortcut)
 {
     auto checkbox = new QCheckBox(menu);
     checkbox->setText(txt);
     checkbox->setChecked(checked);
     if (_checkbox) *_checkbox = checkbox;
-    auto action = addWidget(menu, txt, tooltip, checkbox, false, icon);
+    auto action = addWidget(menu, txt, tooltip, checkbox, false, icon, shortcut);
     action->setCheckable(true);
     action->setChecked(checked);
+    // setChecked emits toggled itself, so forwarding toggled as well
+    // would deliver the state change twice -- and a command invoked
+    // twice per click is not always idempotent (Std_DrawStyleShadow
+    // reads its second call as "already in shadow mode" and toggles the
+    // light manipulator on entry).
     QObject::connect(checkbox, &QCheckBox::toggled, action, &QAction::setChecked);
-    QObject::connect(checkbox, &QCheckBox::toggled, action, &QAction::toggled);
+    return action;
+}
+
+QAction *
+Action::addRadioButton(QMenu *menu,
+                       const QString &txt,
+                       const QString &tooltip,
+                       const QIcon &icon,
+                       bool checked,
+                       QRadioButton **_radio,
+                       const QString &shortcut)
+{
+    auto radio = new QRadioButton(menu);
+    radio->setText(txt);
+    radio->setChecked(checked);
+    // Each entry is its own widget action with its own container, so the
+    // siblings Qt would auto-exclude against are not siblings. The caller
+    // puts them in a QButtonGroup instead; auto-exclusive would otherwise
+    // make each one individually un-uncheckable and collectively free.
+    radio->setAutoExclusive(false);
+    if (_radio) *_radio = radio;
+    auto action = addWidget(menu, txt, tooltip, radio, false, icon, shortcut);
+    action->setCheckable(true);
+    action->setChecked(checked);
+    // One connection, not two: see addCheckBox.
+    QObject::connect(radio, &QRadioButton::toggled, action, &QAction::setChecked);
     return action;
 }
 
@@ -537,7 +580,8 @@ Action::addWidget(QMenu *menu,
                   const QString &tooltip,
                   QWidget *w,
                   bool needLabel,
-                  const QIcon &icon)
+                  const QIcon &icon,
+                  const QString &shortcut)
 {
     QWidgetAction *wa = new QWidgetAction(menu);
     QWidget *widget = new QWidget(menu);
@@ -563,14 +607,33 @@ Action::addWidget(QMenu *menu,
     }
     layout->addWidget(w);
     layout->setContentsMargins(4,0,4,0);
-    if (!icon.isNull() || needLabel)
+    if (!icon.isNull() || needLabel || !shortcut.isEmpty())
         layout->addStretch();
+    if (!shortcut.isEmpty()) {
+        // A widget action draws none of the furniture a plain menu item
+        // gets for free, and the shortcut column is the piece that is
+        // missed: an entry that used to advertise its accelerator on the
+        // right should keep doing so. Dimmed and spaced like the style's
+        // own, so the row still reads as a menu row.
+        auto accel = new QLabel(widget);
+        accel->setText(shortcut);
+        accel->setEnabled(false);
+        accel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        layout->addSpacing(16);
+        layout->addWidget(accel);
+    }
     widget->setFocusProxy(w);
     widget->setFocusPolicy(Qt::TabFocus);
     w->installEventFilter(new MenuFocusEventFilter(menu, wa, w));
     w->setFocusPolicy(Qt::TabFocus);
     wa->setDefaultWidget(widget);
     wa->setToolTip(tooltip);
+    // A widget action's row is drawn by the widget, so QMenu never gets
+    // to render the action's tooltip over it: on the action alone the
+    // text is set and never seen. Put it on the container as well, which
+    // is the whole row -- children with no tooltip of their own let the
+    // help event propagate up to it.
+    widget->setToolTip(tooltip);
     // wa->setStatusTip(tooltip);
     wa->setVisible(true);
     wa->setText(txt);
@@ -599,6 +662,101 @@ ActionGroup::~ActionGroup()
     delete _group;
 }
 
+/**
+ * Fill \a menu with a group's actions, rendering every checkable one as a
+ * button widget action rather than a plain checkable entry.
+ *
+ * The point is that a widget action handles its own mouse events, so
+ * clicking one does not dismiss the menu — the list can be walked with
+ * the result visible under it instead of reopening the menu per try —
+ * and the state of every entry is visible at once rather than only the
+ * highlighted row's.
+ *
+ * An \a exclusive group gets radio buttons in a shared QButtonGroup,
+ * because that is what the group means: one draw style, one dock state.
+ * Checkboxes would advertise that any combination is available. A
+ * non-exclusive group keeps checkboxes.
+ *
+ * The button drives the action through its toggled signal (a
+ * signal-to-signal connection, so Gui::Action::onToggled runs and the
+ * command is invoked) and follows it back through Action::actionChecked,
+ * which is how a state set elsewhere reaches the menu.
+ */
+static void fillGroupMenu(QMenu *menu, const QList<QAction*> &actions,
+                          bool exclusive)
+{
+    QButtonGroup *group = nullptr;
+    if (exclusive) {
+        group = menu->findChild<QButtonGroup*>();
+        if (!group) {
+            group = new QButtonGroup(menu);
+            group->setExclusive(true);
+        }
+    }
+    for (auto action : actions) {
+        if (!action->isCheckable()) {
+            menu->addAction(action);
+            continue;
+        }
+        // A widget action draws none of a menu item's furniture, so the
+        // accelerator has to be passed along to be rendered.
+        const QString accel =
+            action->shortcut().toString(QKeySequence::NativeText);
+        QAbstractButton *button = nullptr;
+        QAction *wa = nullptr;
+        if (exclusive) {
+            QRadioButton *radio = nullptr;
+            wa = Action::addRadioButton(menu, action->text(), action->toolTip(),
+                                        action->icon(), action->isChecked(),
+                                        &radio, accel);
+            group->addButton(radio);
+            button = radio;
+        }
+        else {
+            QCheckBox *checkbox = nullptr;
+            wa = Action::addCheckBox(menu, action->text(), action->toolTip(),
+                                     action->icon(), action->isChecked(),
+                                     &checkbox, accel);
+            button = checkbox;
+        }
+        QObject::connect(wa, &QAction::toggled, action, &QAction::toggled);
+        // ⚠️ No dismissal here, deliberately. A row built as a widget
+        // action leaves the menu standing -- that is the point of the
+        // list being a menu of radio buttons at all: comparing Shaded
+        // against Flat Lines means trying them, and reopening the menu
+        // between attempts is what made them hard to compare. Normal
+        // menu items keep Qt's own behaviour and dismiss.
+        //
+        // A version of this closed the popup by hand and had to be
+        // taken out again: hiding the menus is only half of
+        // QMenuPrivate::hideUpToMenuBar, which also clears the menu
+        // bar's current action and leaves keyboard mode, so the menu bar
+        // went on believing its popup was up and swallowed the next
+        // click on it. If a row ever does need to dismiss, hand the
+        // popup a synthetic press beyond its own rect -- QMenu answers
+        // that with hideUpToMenuBar itself -- rather than hiding it.
+        // The row is a widget action now, so the command's own action is
+        // no longer in any menu -- and an action that belongs to no
+        // widget never receives QEvent::Shortcut, which would leave the
+        // accelerator advertised in the row dead. Associate it with the
+        // main window, which shows nothing for it and is where a
+        // window-context shortcut wants to live anyway. Once only: the
+        // menu is refilled on every toolbar rebuild, and a second
+        // association makes Qt call the shortcut ambiguous and drop it.
+        if (auto mainWindow = getMainWindow()) {
+            if (!action->associatedObjects().contains(mainWindow))
+                mainWindow->addAction(action);
+        }
+        if (auto parentAction = qobject_cast<Action*>(action->parent())) {
+            QObject::connect(parentAction, &Action::actionChecked, button,
+                [button](bool checked) {
+                    QSignalBlocker blocker(button);
+                    button->setChecked(checked);
+                });
+        }
+    }
+}
+
 static inline QToolButton *setupMenuToolButton(QWidget *w)
 {
     QToolButton* tb = w->findChildren<QToolButton*>().last();
@@ -624,7 +782,7 @@ void ActionGroup::addTo(QWidget *widget)
             auto item = qobject_cast<QMenu*>(widget)->addMenu(menu);
             item->setMenuRole(action()->menuRole());
             menu->setTitle(action()->text());
-            menu->addActions(actions());
+            fillGroupMenu(menu, actions(), isExclusive());
 
             QObject::connect(menu, &QMenu::aboutToShow, [this, menu]() {
                 Q_EMIT aboutToShow(menu);
@@ -638,23 +796,7 @@ void ActionGroup::addTo(QWidget *widget)
             widget->addAction(action());
             auto tb = setupMenuToolButton(widget);
             auto menu = new QMenu(widget);
-            for (auto action : actions()) {
-                if (!action->isCheckable()) {
-                    menu->addAction(action);
-                } else {
-                    QCheckBox *checkbox = nullptr;
-                    auto wa = addCheckBox(menu, action->text(), action->toolTip(),
-                            action->icon(), action->isChecked(), &checkbox);
-                    QObject::connect(wa, &QAction::toggled, action, &QAction::toggled);
-                    if (auto parentAction = qobject_cast<Action*>(action->parent())) {
-                        QObject::connect(parentAction, &Action::actionChecked, checkbox,
-                            [checkbox](bool checked) {
-                                QSignalBlocker blocker(checkbox);
-                                checkbox->setChecked(checked);
-                            });
-                    }
-                }
-            }
+            fillGroupMenu(menu, actions(), isExclusive());
             tb->setMenu(menu);
             ToolBarManager::getInstance()->checkToolBarIconSize(static_cast<QToolBar*>(widget));
 
@@ -695,6 +837,13 @@ void ActionGroup::setExclusive (bool check)
 bool ActionGroup::isExclusive() const
 {
     return groupAction()->isExclusive();
+}
+
+void ActionGroup::setExclusiveOptional(bool check)
+{
+    groupAction()->setExclusionPolicy(
+            check ? QActionGroup::ExclusionPolicy::ExclusiveOptional
+                  : QActionGroup::ExclusionPolicy::Exclusive);
 }
 
 void ActionGroup::setVisible( bool check )
@@ -925,6 +1074,13 @@ public:
         handle->SetBool("ShowTabBar", enable);
     }
 
+    /*! How much room the tab bar may ask for along the direction the tabs run,
+     * in pixels. 0 asks for as much as the tabs it holds actually need.
+     */
+    int tabBarMaxLength() {
+        return handle->GetInt("TabBarMaxLength", 0);
+    }
+
     void OnChange(Base::Subject<const char*> &, const char *reason)
     {
         if (!reason)
@@ -1005,7 +1161,8 @@ WorkbenchTabWidget::WorkbenchTabWidget(WorkbenchGroup* wb, QWidget* parent)
             if (!Name)
                 return;
             if (Param == this->group->_pimpl->handle) {
-                if (boost::equals(Name, "TabBarShowText") || boost::equals(Name, "ShowTabBar"))
+                if (boost::equals(Name, "TabBarShowText") || boost::equals(Name, "ShowTabBar")
+                        || boost::equals(Name, "TabBarMaxLength"))
                     timer.start(100);
             } else if (Param == this->group->_pimpl->hGeneral) {
                 if (boost::equals(Name, "ToolbarIconSize")
@@ -1018,6 +1175,11 @@ WorkbenchTabWidget::WorkbenchTabWidget(WorkbenchGroup* wb, QWidget* parent)
     connect(&timer, &QTimer::timeout, [this]() {
         group->workbenchListUpdated();
         setupVisibility();
+        // TabBarMaxLength changes nothing about the tabs themselves, only how
+        // much room they may ask for, so nothing above invalidates the layout.
+        updateGeometry();
+        if (auto toolbar = getToolBar())
+            toolbar->adjustSize();
     });
 
     timerCurrentChange.setSingleShot(true);
@@ -1028,6 +1190,35 @@ WorkbenchTabWidget::WorkbenchTabWidget(WorkbenchGroup* wb, QWidget* parent)
 
 WorkbenchTabWidget::~WorkbenchTabWidget()
 {
+}
+
+QSize WorkbenchTabWidget::sizeHint() const
+{
+    QSize size = QTabWidget::sizeHint();
+    if (!usesScrollButtons())
+        return size;
+
+    // QTabWidget bounds the tab bar's contribution to its size hint at 200px
+    // in each direction as soon as scroll buttons are in use, on the reasoning
+    // that the pages behind the tabs are what should decide how big the widget
+    // wants to be. There are no pages here -- the widget *is* the tab bar --
+    // so that cap is all there is, and it asks for room for about five
+    // workbenches however much the row has to give. Ask for the tabs we
+    // actually hold instead, up to Workbenches/TabBarMaxLength.
+    const QSize bar = tabBar()->sizeHint();
+    const bool vertical = tabPosition() == West || tabPosition() == East;
+    int wanted = vertical ? bar.height() : bar.width();
+    if (int limit = group->_pimpl->tabBarMaxLength())
+        wanted = std::min(wanted, limit);
+
+    const int grown = wanted - std::min(vertical ? bar.height() : bar.width(), 200);
+    if (grown > 0) {
+        if (vertical)
+            size.rheight() += grown;
+        else
+            size.rwidth() += grown;
+    }
+    return size;
 }
 
 QToolBar *WorkbenchTabWidget::getToolBar()
@@ -1114,11 +1305,22 @@ void WorkbenchTabWidget::updateWorkbenches()
         if (this->styleSheet().size())
             this->setStyleSheet(QString());
     } else if (this->styleSheet().isEmpty()) {
+        // These tabs carry an icon and no text. Left to the native metric the
+        // label is laid out with PM_TabBarTabHSpace/2 of space before the icon
+        // -- 12px against a 34px tab here -- which a tab shrunk by min-width
+        // has no room for, so the icon comes out pushed right and clipped by
+        // the tab border. Declaring the padding puts it in the middle of the
+        // box instead.
+        //
+        // The horizontal value is the vertical one + 1 on purpose: the tab ends
+        // up sized as icon + 2 + twice the vertical padding, so that is the
+        // figure that splits the leftover evenly. 4/5 keeps the tab the same
+        // size it had before, whatever the icon size is.
         this->setStyleSheet(
                 QStringLiteral("::tab:top,"
-                               "::tab:bottom {min-width: -1;}"
+                               "::tab:bottom {min-width: -1; padding: 4px 5px;}"
                                "::tab:left,"
-                               "::tab:right {min-height: -1;}"));
+                               "::tab:right {min-height: -1; padding: 5px 4px;}"));
     }
     int i=0;
     for (auto action : this->group->actions()) {
@@ -3080,6 +3282,18 @@ PresetsAction::~PresetsAction()
 {
     delete _menu;
     delete _undoMenu;
+    // _packMenu is a child of _menu, and went with it
+}
+
+namespace {
+// Both of these keep state that lives in parameters which have just been
+// rewritten underneath them, so they have to be told. PreferencePackManager
+// reloads the same two after applying a pack, for the same reason.
+void reloadWindowState()
+{
+    DockWindowManager::instance()->loadState();
+    ToolBarManager::getInstance()->restoreState();
+}
 }
 
 void PresetsAction::addTo ( QWidget * w )
@@ -3098,14 +3312,19 @@ void PresetsAction::addTo ( QWidget * w )
 }
 
 void PresetsAction::onAction(QAction *action) {
-    auto param = App::GetApplication().GetParameterSet(
-            action->data().toByteArray().constData());
+    bool revert = (QApplication::queryKeyboardModifiers() == Qt::ControlModifier);
+    auto pack = action->property("PreferencePack");
+    if (pack.isValid())
+        applyPreferencePack(pack.toString(), revert);
+    else
+        applyPreset(action->data().toByteArray(), action->text(), revert);
+}
+
+void PresetsAction::applyPreset(const QByteArray &name, const QString &title, bool revert)
+{
+    auto param = App::GetApplication().GetParameterSet(name.constData());
     if (param) {
-        bool revert = (QApplication::queryKeyboardModifiers() == Qt::ControlModifier);
-        QString title = action->text();
-        if (revert)
-            title = tr("Revert ") + title;
-        push(title);
+        push(revert ? tr("Revert %1").arg(title) : title);
         if (revert)
             App::GetApplication().GetUserParameter().revert(param.get());
         else {
@@ -3119,12 +3338,58 @@ void PresetsAction::onAction(QAction *action) {
     }
 }
 
+void PresetsAction::applyPreferencePack(const QString &name, bool revert)
+{
+    auto manager = Application::Instance->prefPackManager();
+    if (!revert) {
+        // No push() here: apply() does it, so that a theme picked on the Theme
+        // preferences page lands on this same stack rather than only in the
+        // backup files it writes beside it.
+        manager->apply(name.toStdString());
+        return;
+    }
+    // A pack has no un-apply of its own, but its .cfg is exactly the file
+    // ParameterGrp::revert() wants: it drops the keys still equal to the
+    // pack's, so they fall back to the coded defaults and anything the user
+    // changed since survives.
+    auto configFile = manager->configFileFor(name.toStdString());
+    if (configFile.empty())
+        return;
+    push(tr("Revert %1").arg(name));
+    App::GetApplication().GetUserParameter().revert(configFile.string().c_str());
+    reloadWindowState();
+}
+
 PresetsAction *PresetsAction::instance()
 {
+    // Called from PreferencePackManager, which is reachable before the command
+    // is registered and in a session with no command manager at all
+    if (!Application::Instance)
+        return nullptr;
     auto cmd = Application::Instance->commandManager().getCommandByName("Std_CmdPresets");
     if (cmd)
         return static_cast<PresetsAction*>(cmd->getAction());
     return nullptr;
+}
+
+QStringList PresetsAction::undoTitles() const
+{
+    QStringList titles;
+    for (auto it = _undos.rbegin(); it != _undos.rend(); ++it)
+        titles.append(it->first);
+    return titles;
+}
+
+QString PresetsAction::undo(int index)
+{
+    int i = (int)_undos.size() - 1 - index;
+    if (index < 0 || i < 0)
+        return QString();
+    QString title = _undos[i].first;
+    _undos[i].second->copyTo(&App::GetApplication().GetUserParameter());
+    _undos.resize(i);
+    reloadWindowState();
+    return title;
 }
 
 void PresetsAction::push(const QString &title)
@@ -3167,19 +3432,62 @@ void PresetsAction::onShowMenu()
         action->setData(QByteArray(v.first.c_str()));
     }
 
+    // Preference packs are the same idea as a preset -- a set of parameters
+    // laid over the user's -- kept in a different place, with their metadata
+    // in a package.xml instead of inside the file. Listing them here gives
+    // them the undo and the Ctrl + Click un-apply they have nowhere else.
+    QString packTip = tr("Click to apply the preference pack.\n"
+                         "Ctrl + Click to drop the settings it applied.");
+    if (!_packMenu) {
+        // Parented, unlike the undo menu below, and it matters: a submenu's
+        // action reaches onAction() through QMenu::triggered of its parent
+        // menu, and off the mouse path Qt finds that parent by walking
+        // parentWidget(). clear() does not take the submenu with it -- the
+        // action it is added by belongs to the submenu, not to _menu.
+        _packMenu = new QMenu(tr("Themes"), _menu);
+        _packMenu->setToolTipsVisible(true);
+    }
+    _packMenu->clear();
+    bool separated = false;
+    for (const auto &v : Application::Instance->prefPackManager()->preferencePacks()) {
+        auto name = QString::fromUtf8(v.first.c_str());
+        auto metadata = v.second.metadata();
+        // A theme is a pack too, but there are more of them than of everything
+        // else in this menu put together, and they have a preferences page of
+        // their own to be picked from. One entry for all of them, not nine.
+        QMenu *target = _packMenu;
+        if (metadata.type() != "Theme") {
+            target = _menu;
+            if (!separated) {
+                separated = true;
+                _menu->addSeparator();
+            }
+        }
+        auto action = new QAction(name, target);
+        QString t = QString::fromUtf8(metadata.description().c_str());
+        if (t.size())
+            t += QStringLiteral("\n\n");
+        t += packTip;
+        action->setToolTip(t);
+        action->setProperty("PreferencePack", name);
+        target->addAction(action);
+    }
+    if (!_packMenu->isEmpty()) {
+        _menu->addSeparator();
+        _menu->addMenu(_packMenu);
+    }
+
     if (_undos.size()) {
         _menu->addSeparator();
         if (!_undoMenu) {
             _undoMenu = new QMenu(tr("Undo"));
+            _undoMenu->setToolTipsVisible(true);
             QObject::connect(_undoMenu, &QMenu::aboutToShow, [this]() {
                 _undoMenu->clear();
-                for (int i=(int)_undos.size()-1; i>=0; --i) {
-                    _undoMenu->addAction(_undos[i].first, [this, i]() {
-                        if (i < (int)_undos.size()) {
-                            _undos[i].second->copyTo(&App::GetApplication().GetUserParameter());
-                            _undos.resize(i);
-                        }
-                    });
+                int index = 0;
+                for (const auto &title : undoTitles()) {
+                    _undoMenu->addAction(title, [this, index]() { undo(index); });
+                    ++index;
                 }
             });
         }

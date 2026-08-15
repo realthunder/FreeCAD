@@ -2589,6 +2589,12 @@ SoFCRenderCacheManager::getDeferredCaptureCount() const
   return PRIVATE(this)->deferredcount;
 }
 
+SoFCRenderCache *
+SoFCRenderCacheManager::getSceneCache() const
+{
+  return PRIVATE(this)->renderer->getScene();
+}
+
 void
 SoFCRenderCacheManager::setHatchImage(const void *dataptr, int nc, int width, int height)
 {

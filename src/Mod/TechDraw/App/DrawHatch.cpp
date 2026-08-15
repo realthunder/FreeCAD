@@ -169,7 +169,7 @@ void DrawHatch::replaceFileIncluded(std::string newHatchFileName)
     if (tfi.isReadable()) {
         SvgIncluded.setValue(newHatchFileName.c_str());
     } else {
-        throw Base::RuntimeError("Could not read the new svg file");
+        THROWM(Base::RuntimeError, "Could not read the new svg file")
     }
 }
 

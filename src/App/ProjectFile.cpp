@@ -625,7 +625,7 @@ void ProjectFile::readInputFileDirect(const std::string& name, std::ostream& str
 std::string ProjectFile::replaceInputFile(const std::string& name, std::istream& inp)
 {
     if (isDirectory()) {
-        throw Base::RuntimeError("ProjectFile: cannot rewrite a project saved as a directory");
+        THROWM(Base::RuntimeError, "ProjectFile: cannot rewrite a project saved as a directory")
     }
 
     // create a new zip file with the name '<zipfile>.<uuid>'
@@ -669,7 +669,7 @@ std::string ProjectFile::replaceInputFile(const std::string& name, std::istream&
 std::string ProjectFile::replaceInputFiles(const std::map<std::string, std::istream*>& inp)
 {
     if (isDirectory()) {
-        throw Base::RuntimeError("ProjectFile: cannot rewrite a project saved as a directory");
+        THROWM(Base::RuntimeError, "ProjectFile: cannot rewrite a project saved as a directory")
     }
 
     // create a new zip file with the name '<zipfile>.<uuid>'
@@ -716,7 +716,7 @@ std::string
 ProjectFile::replacePropertyFiles(const std::map<std::string, App::Property*>& props)
 {
     if (isDirectory()) {
-        throw Base::RuntimeError("ProjectFile: cannot rewrite a project saved as a directory");
+        THROWM(Base::RuntimeError, "ProjectFile: cannot rewrite a project saved as a directory")
     }
 
     // create a new zip file with the name '<zipfile>.<uuid>'
@@ -762,7 +762,7 @@ ProjectFile::replacePropertyFiles(const std::map<std::string, App::Property*>& p
 bool ProjectFile::replaceProjectFile(const std::string& name, bool keepfile)
 {
     if (isDirectory()) {
-        throw Base::RuntimeError("ProjectFile: cannot rewrite a project saved as a directory");
+        THROWM(Base::RuntimeError, "ProjectFile: cannot rewrite a project saved as a directory")
     }
 
     std::string uuid = Base::Uuid::createUuid();

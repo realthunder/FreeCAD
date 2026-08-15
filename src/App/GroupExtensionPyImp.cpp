@@ -110,7 +110,7 @@ PyObject* GroupExtensionPy::addObjects(PyObject *args) {
             if (!PyObject_TypeCheck(*item, &(DocumentObjectPy::Type))) {
                 std::string error = std::string("type in list must be 'DocumentObject', not ");
                 error += (*item)->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
 
             values[i] = static_cast<DocumentObjectPy*>(*item)->getDocumentObjectPtr();
@@ -127,7 +127,7 @@ PyObject* GroupExtensionPy::addObjects(PyObject *args) {
     
     std::string error = std::string("type must be list of 'DocumentObject', not ");
     error += object->ob_type->tp_name;
-    throw Base::TypeError(error);
+    THROWM(Base::TypeError, error)
 }
 
 PyObject* GroupExtensionPy::setObjects(PyObject *args) {
@@ -147,7 +147,7 @@ PyObject* GroupExtensionPy::setObjects(PyObject *args) {
             if (!PyObject_TypeCheck(*item, &(DocumentObjectPy::Type))) {
                 std::string error = std::string("type in list must be 'DocumentObject', not ");
                 error += (*item)->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
 
             values[i] = static_cast<DocumentObjectPy*>(*item)->getDocumentObjectPtr();
@@ -164,7 +164,7 @@ PyObject* GroupExtensionPy::setObjects(PyObject *args) {
     
     std::string error = std::string("type must be list of 'DocumentObject', not ");
     error += object->ob_type->tp_name;
-    throw Base::TypeError(error);
+    THROWM(Base::TypeError, error)
 }
 
 PyObject*  GroupExtensionPy::removeObject(PyObject *args)
@@ -210,7 +210,7 @@ PyObject* GroupExtensionPy::removeObjects(PyObject *args) {
             if (!PyObject_TypeCheck(*item, &(DocumentObjectPy::Type))) {
                 std::string error = std::string("type in list must be 'DocumentObject', not ");
                 error += (*item)->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
 
             values[i] = static_cast<DocumentObjectPy*>(*item)->getDocumentObjectPtr();
@@ -227,7 +227,7 @@ PyObject* GroupExtensionPy::removeObjects(PyObject *args) {
 
     std::string error = std::string("type must be list of 'DocumentObject', not ");
     error += object->ob_type->tp_name;
-    throw Base::TypeError(error);
+    THROWM(Base::TypeError, error)
 }
 
 PyObject*  GroupExtensionPy::removeObjectsFromDocument(PyObject *args)

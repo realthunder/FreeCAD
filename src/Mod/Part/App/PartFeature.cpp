@@ -1850,14 +1850,14 @@ void Feature::mergeShapeContents()
     switch (shapeType) {
     case TopAbs_VERTEX:
         if (!changed)
-            throw Base::CADKernelError("Reshaping vertex is not supported");
+            THROWM(Base::CADKernelError, "Reshaping vertex is not supported")
         break;
     case TopAbs_FACE:
         if (!changed) {
             if (shape.isPlanarFace())
                 shape.makEFace(shapes);
             else
-                throw Base::CADKernelError("Reshaping non-planar face is not supported");
+                THROWM(Base::CADKernelError, "Reshaping non-planar face is not supported")
         }
         break;
     case TopAbs_WIRE:
@@ -1866,7 +1866,7 @@ void Feature::mergeShapeContents()
         break;
     case TopAbs_EDGE:
         if (!changed)
-            throw Base::CADKernelError("Reshaping edge is not supported");
+            THROWM(Base::CADKernelError, "Reshaping edge is not supported")
         break;
     case TopAbs_SOLID:
         if (changed)

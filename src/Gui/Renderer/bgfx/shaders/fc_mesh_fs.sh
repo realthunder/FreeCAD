@@ -13,6 +13,7 @@
  */
 
 #include "fc_mesh_lighting.sh"
+#include "fc_finish.sh"
 
 #ifdef TEXTURE
 SAMPLER2D(s_texColor, 0);
@@ -49,6 +50,14 @@ void main()
 #endif
 
 	vec4 base = mix(u_matColor, v_color0, u_params.x);
+	// Per-face material: u_matEmissive.w selects the baked stream
+	// (v_color1 = emissive, v_color2 = specular rgb + shininess in
+	// alpha, the same 0..1 scale as u_matSpecular.w) over the scalars.
+	// 2 means the same stream with the two alpha slots carrying the
+	// PBR factor pair instead (resolved with the factors below).
+	float perFace = step(0.5, u_matEmissive.w);
+	vec3 matEmissive = mix(u_matEmissive.rgb, v_color1.rgb, perFace);
+	vec4 matSpec = mix(u_matSpecular, v_color2, perFace);
 
 	vec3 n = normalize(v_normal);
 	// Geometric surface normal (before any bump perturbation), oriented toward
@@ -180,6 +189,26 @@ void main()
 	// roughness floor after the multiply).
 	float metal = u_pbrParams.y;
 	float rough = u_pbrParams.z;
+	// Per-face PBR (u_matEmissive.w = 2): the stream's two alpha slots
+	// carry the factor pair instead of a constant and the shininess.
+	if (u_matEmissive.w > 1.5)
+	{
+		if (u_pbrParams.x > 0.5)
+		{
+			metal = v_color1.a;
+			rough = max(v_color2.a, 0.02);
+		}
+		else
+		{
+			// A Phong frame reads that slot as a shininess, so
+			// give it the shininess the roughness means (the
+			// Blinn-Phong-to-GGX fit, inverted -- what the
+			// stored material's Phong derivation would hold).
+			float r = max(v_color2.a, 0.02);
+			matSpec.w = clamp((2.0 / (r * r) - 2.0) / 128.0,
+			                  0.0, 1.0);
+		}
+	}
 #ifdef TEXTURE
 	if (u_pbrParams.x > 1.5)
 	{
@@ -189,8 +218,37 @@ void main()
 	}
 #endif
 
+	// Machined surface finish (App::SurfaceFinish): the shading normal
+	// only, never the geometric one -- geoN answers which side of the
+	// body a face is on, and a knurl is not a side.
+	// The palette entry this face names: the stream's third slot, or
+	// entry 0 (the draw's own finish) for a draw that does not consume
+	// the stream -- the same u_matEmissive.w gate the material fields
+	// above use, so an unbound attribute is never read.
+	vec2 finishSlot = v_findex * perFace;
+	vec4 finishParams = fcFinishEntry(finishSlot.x);
+	if (finishParams.x > 0.5)
+	{
+		// The unresolvable part of the pattern comes back as
+		// roughness, which the Phong path spells as a shininess: give
+		// it the roughness its shininess means, and take the answer
+		// back the same way, so a finish coarsens a Phong highlight
+		// exactly as it coarsens a PBR one.
+		bool phong = u_pbrParams.x < 0.5;
+		float frough = phong
+			? sqrt(2.0 / (max(matSpec.w, 0.0) * 128.0 + 2.0))
+			: rough;
+		fcApplyFinish(v_opos, v_onrm, v_vpos, finishParams,
+		              finishSlot.y, n, frough);
+		if (phong)
+			matSpec.w = clamp((2.0 / (frough * frough) - 2.0)
+			                      / 128.0, 0.0, 1.0);
+		else
+			rough = frough;
+	}
+
 	vec4 lit = fcShadeFragment(base, n, geoN, v_vpos, gl_FragCoord.xy,
-	                           occ, metal, rough);
+	                           occ, metal, rough, matEmissive, matSpec);
 	vec3 color = lit.rgb;
 	float alpha = lit.a;
 

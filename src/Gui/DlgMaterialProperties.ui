@@ -42,62 +42,83 @@
        <number>6</number>
       </property>
       <item row="0" column="0">
+       <widget class="QLabel" name="shadingModelLabel">
+        <property name="text">
+         <string>Shading model:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="shadingModel">
+        <item>
+         <property name="text">
+          <string>Phong</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>PBR (metallic-roughness)</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="1" column="0">
        <widget class="QLabel" name="textLabel2">
         <property name="text">
          <string>Ambient color:</string>
         </property>
        </widget>
       </item>
-      <item row="0" column="1">
+      <item row="1" column="1">
        <widget class="Gui::ColorButton" name="ambientColor">
         <property name="text">
          <string/>
         </property>
        </widget>
       </item>
-      <item row="1" column="0">
+      <item row="2" column="0">
        <widget class="QLabel" name="textLabel1">
         <property name="text">
          <string>Diffuse color:</string>
         </property>
        </widget>
       </item>
-      <item row="1" column="1">
+      <item row="2" column="1">
        <widget class="Gui::ColorButton" name="diffuseColor">
         <property name="text">
          <string/>
         </property>
        </widget>
       </item>
-      <item row="2" column="0">
+      <item row="3" column="0">
        <widget class="QLabel" name="label">
         <property name="text">
          <string>Emissive color:</string>
         </property>
        </widget>
       </item>
-      <item row="2" column="1">
+      <item row="3" column="1">
        <widget class="Gui::ColorButton" name="emissiveColor">
         <property name="text">
          <string/>
         </property>
        </widget>
       </item>
-      <item row="3" column="0">
+      <item row="4" column="0">
        <widget class="QLabel" name="textLabel3">
         <property name="text">
          <string>Specular color:</string>
         </property>
        </widget>
       </item>
-      <item row="3" column="1">
+      <item row="4" column="1">
        <widget class="Gui::ColorButton" name="specularColor">
         <property name="text">
          <string/>
         </property>
        </widget>
       </item>
-      <item row="4" column="0" colspan="2">
+      <item row="5" column="0" colspan="2">
        <layout class="QHBoxLayout">
         <property name="spacing">
          <number>6</number>
@@ -142,6 +163,119 @@
           <property name="suffix">
            <string notr="true">%</string>
           </property>
+          <property name="maximum">
+           <number>100</number>
+          </property>
+          <property name="singleStep">
+           <number>5</number>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="6" column="0" colspan="2">
+       <layout class="QHBoxLayout">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="metallicLabel">
+          <property name="text">
+           <string>Metallic:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer>
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Expanding</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>81</width>
+            <height>31</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="metallic">
+          <property name="suffix">
+           <string notr="true">%</string>
+          </property>
+          <property name="maximum">
+           <number>100</number>
+          </property>
+          <property name="singleStep">
+           <number>5</number>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="7" column="0" colspan="2">
+       <layout class="QHBoxLayout">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="roughnessLabel">
+          <property name="text">
+           <string>Roughness:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer>
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Expanding</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>81</width>
+            <height>31</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="roughness">
+          <property name="suffix">
+           <string notr="true">%</string>
+          </property>
+          <property name="maximum">
+           <number>100</number>
+          </property>
           <property name="singleStep">
            <number>5</number>
           </property>
@@ -155,7 +289,7 @@
    <item row="1" column="0">
     <widget class="QDialogButtonBox" name="buttonBox">
      <property name="standardButtons">
-      <set>QDialogButtonBox::Close</set>
+      <set>QDialogButtonBox::Ok|QDialogButtonBox::Cancel</set>
      </property>
     </widget>
    </item>
@@ -170,14 +304,33 @@
   </customwidget>
  </customwidgets>
  <tabstops>
+  <tabstop>shadingModel</tabstop>
   <tabstop>ambientColor</tabstop>
   <tabstop>diffuseColor</tabstop>
   <tabstop>emissiveColor</tabstop>
   <tabstop>specularColor</tabstop>
   <tabstop>shininess</tabstop>
+  <tabstop>metallic</tabstop>
+  <tabstop>roughness</tabstop>
  </tabstops>
  <resources/>
  <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>Gui::Dialog::DlgMaterialProperties</receiver>
+   <slot>accept()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>145</x>
+     <y>225</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>145</x>
+     <y>123</y>
+    </hint>
+   </hints>
+  </connection>
   <connection>
    <sender>buttonBox</sender>
    <signal>rejected()</signal>

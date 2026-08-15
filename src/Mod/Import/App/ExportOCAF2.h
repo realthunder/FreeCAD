@@ -33,6 +33,7 @@
 #include <TDF_LabelSequence.hxx>
 #include <TDocStd_Document.hxx>
 
+#include <App/Material.h>
 #include <Mod/Import/ImportGlobal.h>
 #include "RenderMaterial.h"
 #include "Tools.h"
@@ -67,12 +68,26 @@ public:
     /// from the view provider's Render_* dynamic properties. Return false
     /// when the object has none (no material is written then).
     using GetRenderMaterialFunc = std::function<bool(App::DocumentObject*, RenderMaterial&)>;
+    /// Resolve an object's per-face appearance as whole materials, one per
+    /// face, when a field beyond diffuse varies across the faces. Return
+    /// false when a colour list carries everything -- the colour labels
+    /// already say it then. \a pbr reports the appearance's PBR mode; the
+    /// slots then carry base colour / roughness / F0 tint with metallic in
+    /// the specular alpha, and the appearance always exports as materials
+    /// (metallic and roughness have no colour-label channel).
+    using GetShapeAppearanceFunc =
+        std::function<bool(App::DocumentObject*, std::vector<App::Material>&, bool& pbr)>;
     explicit ExportOCAF2(Handle(TDocStd_Document) hDoc,
                          GetShapeColorsFunc func = GetShapeColorsFunc());
 
     void setGetRenderMaterial(GetRenderMaterialFunc func)
     {
         getRenderMaterial = std::move(func);
+    }
+
+    void setGetShapeAppearance(GetShapeAppearanceFunc func)
+    {
+        getShapeAppearance = std::move(func);
     }
 
     static ExportOCAFOptions customExportOptions();
@@ -120,6 +135,7 @@ private:
 
     GetShapeColorsFunc getShapeColors;
     GetRenderMaterialFunc getRenderMaterial;
+    GetShapeAppearanceFunc getShapeAppearance;
 
     ExportOCAFOptions options;
 };

@@ -384,42 +384,57 @@ static LONG __stdcall MyCrashHandlerExceptionFilter(EXCEPTION_POINTERS* pEx)
     __asm mov esp,eax; 
   } 
 #endif 
+  // Write the dump FIRST. Everything below it -- symbol loading for the stack
+  // walk, and the console -- is far more likely to fault or block than
+  // MiniDumpWriteDump is, and whatever runs first is what decides whether a
+  // dump exists at all. It used not to: see the ExpAddress note below.
+  bool bFailed = true;
+  HANDLE hFile;
+  hFile = CreateFileW(s_szMiniDumpFileName.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (hFile != INVALID_HANDLE_VALUE)
+  {
+    MINIDUMP_EXCEPTION_INFORMATION stMDEI;
+    stMDEI.ThreadId = GetCurrentThreadId();
+    stMDEI.ExceptionPointers = pEx;
+    // FALSE: the exception pointers are in *this* process. TRUE means they
+    // live in a separate debuggee, which is not the case for an in-process
+    // dump.
+    stMDEI.ClientPointers = false;
+    // try to create a miniDump:
+    if (s_pMDWD && s_pMDWD(
+      GetCurrentProcess(),
+      GetCurrentProcessId(),
+      hFile,
+      s_dumpTyp,
+      &stMDEI,
+      NULL,
+      NULL
+      ))
+    {
+      bFailed = false;  // succeeded
+    }
+    CloseHandle(hFile);
+  }
+
+  // Only now the expensive, fault-prone part.
   MyStackWalker sw;
   sw.ShowCallstack(GetCurrentThread(), pEx->ContextRecord);
   Base::Console().Log("*** Unhandled Exception!\n");
   Base::Console().Log("   ExpCode: 0x%8.8X\n", pEx->ExceptionRecord->ExceptionCode);
   Base::Console().Log("   ExpFlags: %d\n", pEx->ExceptionRecord->ExceptionFlags);
-  Base::Console().Log("   ExpAddress: 0x%8.8X\n", pEx->ExceptionRecord->ExceptionAddress);
+  // %p, not %X. ExceptionAddress is a PVOID, and Console() formats through
+  // fmt::sprintf, which -- unlike the printf this line was written for --
+  // validates the argument type: parse_printf_presentation_type() rejects a
+  // pointer for an integer conversion and report_error() throws. Thrown from
+  // inside an exception filter that is already handling an access violation,
+  // that killed the process here, which is why this handler has never
+  // produced a crash.dmp.
+  Base::Console().Log("   ExpAddress: %p\n", pEx->ExceptionRecord->ExceptionAddress);
 
-  bool bFailed = true; 
-  HANDLE hFile; 
-  hFile = CreateFileW(s_szMiniDumpFileName.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-  if (hFile != INVALID_HANDLE_VALUE) 
-  { 
-    MINIDUMP_EXCEPTION_INFORMATION stMDEI; 
-    stMDEI.ThreadId = GetCurrentThreadId(); 
-    stMDEI.ExceptionPointers = pEx; 
-    stMDEI.ClientPointers = true; 
-    // try to create a miniDump: 
-    if (s_pMDWD( 
-      GetCurrentProcess(), 
-      GetCurrentProcessId(), 
-      hFile, 
-      s_dumpTyp, 
-      &stMDEI, 
-      NULL, 
-      NULL 
-      )) 
-    { 
-      bFailed = false;  // succeeded 
-    } 
-    CloseHandle(hFile); 
-  } 
-
-  if (bFailed) 
-  { 
-    return EXCEPTION_CONTINUE_SEARCH; 
-  } 
+  if (bFailed)
+  {
+    return EXCEPTION_CONTINUE_SEARCH;
+  }
 
   // Optional display an error message 
   // FatalAppExit(-1, ("Application failed!")); 

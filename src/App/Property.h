@@ -143,6 +143,26 @@ public:
      */
     static bool isValidName(const char* name);
 
+    /** Whether a property TYPE name marks a type internal to a container
+     *
+     * ⭐ Some property types are not values a user may add: they only work as
+     * a member of one particular container, because they hold a reference to
+     * a sibling property whose storage they really are (Gui::PropertyShapeColor
+     * over the appearance, PartGui::PropertyDiffuseColor over its diffuse
+     * field). Created standalone -- which is exactly what addDynamicProperty
+     * does, and what an undo of a dynamic-property removal does again by
+     * re-creating it -- such a property is wired to nothing, and nothing will
+     * ever wire it: the owner does that in its own constructor, for its own
+     * member.
+     *
+     * The type system has nowhere to record that (Base::Type carries a name,
+     * a parent, a key and an instantiation method, and no flags), so the mark
+     * is the NAME: a type whose class name begins with an underscore is
+     * internal. Checked by DynamicProperty::addDynamicProperty and by the
+     * "add property" dialog, which is where user-created properties come from.
+     */
+    static bool isInternalType(const char* typeName);
+
     /** Return a fully qualified property name that include its own's name
      * @param python: if true, then return an expression for accessing this property in Python
      */
@@ -555,6 +575,20 @@ public:
     virtual void SaveDocFile (Base::Writer &writer) const override;
     virtual void RestoreDocFile(Base::Reader &reader) override;
 
+    /** What writing this property is about to cost, in bytes
+     *
+     * Save() weighs a list against the archive entry it would otherwise take
+     * out, and getMemSize() answers that for every list whose stored form is
+     * its written form. A list that stores itself more compactly than it
+     * writes itself -- PropertyMaterialList at a schema too old for the per
+     * field encoding -- has to say so here, or a list that is small in memory
+     * and enormous on disk lands inline in Document.xml.
+     */
+    virtual unsigned int getSaveSize(Base::Writer &writer) const {
+        (void)writer;
+        return getMemSize();
+    }
+
 protected:
     /** Returns the XML element name when saving into document XML
      *
@@ -684,7 +718,7 @@ public:
     virtual void set1Value(int index, const_reference value) {
         int size = getSize();
         if (index<-1 || index>size)
-            throw Base::RuntimeError("index out of bound");
+            THROWM(Base::RuntimeError, "index out of bound")
 
         atomic_change guard(*this, false);
         if (index==-1 || index == size) {

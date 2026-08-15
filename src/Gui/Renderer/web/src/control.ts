@@ -9,6 +9,11 @@ declare global {
     fcviewerControlSend?: (json: string) => boolean;
     /// Turn the renderer HUD on or off (main.cpp fcviewer_set_hud).
     fcviewerSetHud?: (on: boolean) => void;
+    /// Selection menu (main.cpp, docs/ThinClientUI.md): mode 0 single /
+    /// 1 multi; filter 0 elements / 1 object / 2 face / 3 edge /
+    /// 4 vertex.
+    fcviewerSetSelMode?: (mode: number) => void;
+    fcviewerSetPickFilter?: (filter: number) => void;
     /// Switch to another served document (main.cpp fcviewer_switch_doc,
     /// docs/MultiDocServe.md §6).
     fcviewerSwitchDoc?: (name: string) => void;

@@ -33,6 +33,7 @@
 #include <QComboBox>
 #include <QCompleter>
 #include <QKeySequence>
+#include <QStringList>
 #include <QTimer>
 
 #include <boost_signals2.hpp>
@@ -40,6 +41,7 @@
 class QLineEdit;
 class QWidgetAction;
 class QCheckBox;
+class QRadioButton;
 class QToolBar;
 class QSpinBox;
 
@@ -98,7 +100,20 @@ public:
                                 const QString &tooltip = QString(),
                                 const QIcon &icon = QIcon(),
                                 bool checked = false,
-                                QCheckBox **checkbox = nullptr);
+                                QCheckBox **checkbox = nullptr,
+                                const QString &shortcut = QString());
+
+    /// Like addCheckBox, but a radio button -- for a menu section that is
+    /// a pick-one list. Auto-exclusivity is off (each entry sits in its
+    /// own widget action, so they are not siblings); put them in a
+    /// QButtonGroup to make the choice exclusive.
+    static QAction *addRadioButton(QMenu *menu,
+                                   const QString &txt,
+                                   const QString &tooltip = QString(),
+                                   const QIcon &icon = QIcon(),
+                                   bool checked = false,
+                                   QRadioButton **radio = nullptr,
+                                   const QString &shortcut = QString());
 
     static QAction *addCheckBox(QMenu *menu,
                                 const QString &txt,
@@ -112,7 +127,10 @@ public:
                               const QString &tooltip,
                               QWidget *widget,
                               bool needLable = true,
-                              const QIcon &icon = QIcon());
+                              const QIcon &icon = QIcon(),
+                              /// Right-aligned accelerator text, as a
+                              /// plain menu item would show it.
+                              const QString &shortcut = QString());
 
     static QString createToolTip(QString helpText,
                                  const QString &title,
@@ -183,6 +201,17 @@ public:
     void setDisabled (bool);
     void setExclusive (bool);
     bool isExclusive() const;
+    /** Let the checked action be activated again.
+     *
+     * QAction::activate() drops a trigger on the checked member of a
+     * strictly exclusive group before emitting anything -- no toggled,
+     * no triggered -- so a repeat press of that entry's shortcut is
+     * silently nothing. With the optional policy the action unchecks
+     * itself instead, which the command can hear and act on (and put the
+     * tick back). The group stays exclusive either way: isExclusive()
+     * remains true, so menus still render it as radio buttons.
+     */
+    void setExclusiveOptional (bool);
     void setVisible (bool) override;
     void setIsMode(bool check) { _isMode = check; }
 
@@ -262,6 +291,8 @@ public:
         return action;
     }
     void setupVisibility();
+
+    QSize sizeHint() const override;
 
 protected:
     bool eventFilter(QObject *, QEvent *ev) override;
@@ -702,7 +733,15 @@ public:
     virtual ~PresetsAction();
     void addTo(QWidget * w);
     void popup(const QPoint &pt);
+    /// Remember the configuration as it is now, so that undo() can put it back
     void push(const QString &name);
+    /// What push() has remembered, newest first
+    QStringList undoTitles() const;
+    /** Restore the configuration as it was before the index'th entry of
+     * undoTitles(), dropping that entry and everything applied after it.
+     * Returns what was undone, or an empty string if there was nothing.
+     */
+    QString undo(int index = 0);
     static PresetsAction *instance();
 
 protected Q_SLOTS:
@@ -710,8 +749,12 @@ protected Q_SLOTS:
     void onAction(QAction *action);
 
 private:
+    void applyPreset(const QByteArray &name, const QString &title, bool revert);
+    void applyPreferencePack(const QString &name, bool revert);
+
     QMenu* _menu {nullptr};
     QMenu* _undoMenu {nullptr};
+    QMenu* _packMenu {nullptr};
     std::deque<std::pair<QString, ParameterGrp::handle>> _undos;
 };
 

@@ -264,7 +264,7 @@ void DocumentProtector::slotDeletedDocument(const App::Document& Doc)
 void DocumentProtector::validate()
 {
     if (!this->getDocument())
-        throw Base::ValueError("Handled document is null");
+        THROWM(Base::ValueError, "Handled document is null")
 }
 
 App::DocumentObject *DocumentProtector::addObject(const std::string& type, const std::string& name)
@@ -303,7 +303,7 @@ DocumentObjectProtector::~DocumentObjectProtector()
 void DocumentObjectProtector::validate()
 {
     if (!obj)
-        throw Base::ValueError("Handled document object is null");
+        THROWM(Base::ValueError, "Handled document object is null")
 }
 
 App::DocumentObject* DocumentObjectProtector::getObject() const

@@ -105,7 +105,7 @@ static void _assertCheck(int line, bool cond, const char *msg)
 {
     if (!cond) {
         _FC_ERR(__FILE__, line, "Assert failed: " << msg);
-        throw Base::RuntimeError("Assertion failed");
+        THROWM(Base::RuntimeError, "Assertion failed")
     }
 }
 

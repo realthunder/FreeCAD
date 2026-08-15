@@ -375,7 +375,7 @@ void fixSketchSupport (Sketcher::SketchObject* sketch)
     else if (sketchVector == Base::Vector3d(1,0,0))
         plane = origin->getYZ ();
     else {
-        throw Base::ValueError("Sketch plane cannot be migrated");
+        THROWM(Base::ValueError, "Sketch plane cannot be migrated")
     }
     assert (plane);
 

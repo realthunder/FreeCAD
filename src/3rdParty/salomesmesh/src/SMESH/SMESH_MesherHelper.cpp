@@ -52,7 +52,6 @@
 #include <TopExp_Explorer.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopTools_MapOfShape.hxx>
-#include <TopTools_MapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Pnt2d.hxx>

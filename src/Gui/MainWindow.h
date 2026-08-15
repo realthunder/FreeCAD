@@ -25,8 +25,9 @@
 #define GUI_MAINWINDOW_H
 
 #include <QEvent>
-#include <QMainWindow>
 #include <QMdiArea>
+
+#include <customtitlebarkit/CustomTitleBarWindow.h>
 
 #include "Window.h"
 
@@ -68,12 +69,53 @@ public:
  * a status bar and mainly a workspace for the MDI windows.
  * @author Werner Mayer
  */
-class GuiExport MainWindow : public QMainWindow
+class GuiExport MainWindow : public CustomTitleBarWindow
 {
     Q_OBJECT
     Q_PROPERTY(QString overrideIcons READ overrideIcons WRITE setOverrideIcons)
 
 public:
+    /// Whether the window is drawing its own title bar rather than the platform's.
+    bool isCustomTitleBar() const
+    {
+        return mode() == Mode::Custom;
+    }
+
+    /*! Switch the title bar between the platform's and our own, on the running
+     * window. Moves the menu bar and the two menu-bar toolbar areas to whichever
+     * of the two is now hosting them, and remembers the choice in
+     * MainWindow/CustomTitleBar.
+     */
+    void setCustomTitleBar(bool enable);
+
+    /*! Whether the custom title bar's menu bar is folded behind the logo button
+     * rather than laid out inline. Folding gives the row back to the toolbars
+     * at the cost of a hover; MainWindow/FoldTitleBarMenu, on by default.
+     */
+    bool foldTitleBarMenu() const;
+    void setFoldTitleBarMenu(bool enable);
+
+    /*! Whether the workbench toolbar belongs in the custom title bar rather
+     * than under the menu bar. MainWindow/TitleBarToolBars, on by default, and
+     * meaningless while the platform's title bar is in charge.
+     */
+    bool titleBarToolBars() const;
+
+    /*! Put the keyboard on the menu bar, unfolding it first if it is folded
+     * behind the title bar logo: the first menu is highlighted, and the arrow
+     * keys walk the row from there without opening anything. This is what
+     * Std_ShowMenuBar and the Alt key both come down to. Returns false if
+     * there is no menu bar to show.
+     */
+    bool activateMenuBar();
+
+    /*! Put the window chrome where MainWindow/CustomTitleBar and
+     * MainWindow/TitleBarToolBars now say it goes. A preference pack -- which
+     * is what a theme is -- carries both, so this is how a theme decides which
+     * title bar the window wears and what lives in it.
+     */
+    void applyTitleBarParams();
+
     enum ConfirmSaveResult {
         Cancel = 0,
         Save,
@@ -304,6 +346,13 @@ protected:
     void childEvent(QChildEvent *e) override;
 
 private:
+    /*! Fold the menu bar behind a logo button in the title bar, and tell the
+     * stylesheets which platform backend is drawing it. Called on every entry
+     * into custom mode -- the constructor's and the run-time switch's -- because
+     * the kit installs its own inline integration each time.
+     */
+    void setupTitleBarMenu();
+
     void setupDockWindows();
     bool setupSelectionView();
     bool setupReportView();

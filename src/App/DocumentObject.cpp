@@ -224,6 +224,12 @@ bool DocumentObject::recomputeFeature(bool recursive)
  */
 void DocumentObject::touch(bool noRecompute)
 {
+    // Replayed view work must not leave the document needing a recompute --
+    // see Document::RestoreDrainGuard, which is also where this is reported.
+    if (_pDoc && _pDoc->testStatus(Document::RestoreDrain)) {
+        _pDoc->reportRestoreDrainChange(this, nullptr);
+        return;
+    }
     if(!noRecompute) {
         StatusBits.set(ObjectStatus::Enforce);
         FC_TRACE("enforce recompute " << _revision << " " << getFullName());
@@ -620,7 +626,7 @@ bool _isInInListRecursive(const DocumentObject* act,
             return true;
         // if we reach the depth limit we have a cycle!
         if (depth <= 0) {
-            throw Base::BadGraphError("DocumentObject::isInInListRecursive(): cyclic dependency detected!");
+            THROWM(Base::BadGraphError, "DocumentObject::isInInListRecursive(): cyclic dependency detected!")
         }
 
         if (_isInInListRecursive(obj, checkObj, depth - 1))
@@ -663,7 +669,7 @@ bool _isInOutListRecursive(const DocumentObject* act,
             return true;
         // if we reach the depth limit we have a cycle!
         if (depth <= 0) {
-            throw Base::BadGraphError("DocumentObject::isInOutListRecursive(): cyclic dependency detected!");
+            THROWM(Base::BadGraphError, "DocumentObject::isInOutListRecursive(): cyclic dependency detected!")
         }
 
         if (_isInOutListRecursive(obj, checkObj, depth - 1))
@@ -831,26 +837,34 @@ void DocumentObject::onChanged(const Property* prop)
         _pDoc->signalRelabelObject(*this);
 
     // set object touched if it is an input property
-    if (!testStatus(ObjectStatus::NoTouch) 
-            && !(prop->getType() & Prop_Output) 
-            && !prop->testStatus(Property::Output)) 
+    if (!testStatus(ObjectStatus::NoTouch)
+            && !(prop->getType() & Prop_Output)
+            && !prop->testStatus(Property::Output))
     {
-        if(getDocument() && !getDocument()->testStatus(Document::Restoring) && prop->isTouched()) {
-            if(++_revision == 0)
-                ++_revision;
-            FC_TRACE("revision " << _revision << " " << prop->getFullName());
+        auto doc = getDocument();
+        // Same as touch() above: a write from replayed view work is a cache
+        // refresh arriving after the load, not an edit.
+        if (doc && doc->testStatus(Document::RestoreDrain)) {
+            doc->reportRestoreDrainChange(this, prop);
         }
+        else {
+            if(doc && !doc->testStatus(Document::Restoring) && prop->isTouched()) {
+                if(++_revision == 0)
+                    ++_revision;
+                FC_TRACE("revision " << _revision << " " << prop->getFullName());
+            }
 
-        if(!StatusBits.test(ObjectStatus::Touch)) {
-            FC_TRACE("touch '" << prop->getFullName());
-            StatusBits.set(ObjectStatus::Touch);
-        }
+            if(!StatusBits.test(ObjectStatus::Touch)) {
+                FC_TRACE("touch '" << prop->getFullName());
+                StatusBits.set(ObjectStatus::Touch);
+            }
 
-        // must execute on document recompute
-        if(!(prop->getType() & Prop_NoRecompute)
-                && !prop->testStatus(Property::NoRecompute))
-        {
-            StatusBits.set(ObjectStatus::Enforce);
+            // must execute on document recompute
+            if(!(prop->getType() & Prop_NoRecompute)
+                    && !prop->testStatus(Property::NoRecompute))
+            {
+                StatusBits.set(ObjectStatus::Enforce);
+            }
         }
     }
 

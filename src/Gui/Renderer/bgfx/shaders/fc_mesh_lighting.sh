@@ -12,7 +12,12 @@
  * engine records with the draw.
  *
  * u_matColor    : rgba diffuse; used when u_params.x == 0
- * u_matEmissive : rgb emissive add
+ * u_matEmissive : rgb emissive add; w = per-face material flag (the
+ *                 stock caller shades emissive/specular/shininess from
+ *                 the v_color1/v_color2 stream instead of the scalars;
+ *                 2 = that stream's two alpha slots carry the PBR
+ *                 factor pair, which the caller resolves into the
+ *                 metal/rough arguments below)
  * u_matSpecular : rgb specular, w = shininess (0..1 Coin convention)
  * u_params      : x = per-vertex color, y = lighting on, z = two-sided
  * u_pbrParams   : x = PBR branch on (2 = with a metallic-roughness
@@ -28,15 +33,35 @@
 uniform vec4 u_matColor;
 uniform vec4 u_matEmissive;
 uniform vec4 u_matSpecular;
+// The draw's ambient term. rgb = the colour to add outright, which is
+// Coin/GL's material ambient colour times LIGHT_MODEL_AMBIENT (the
+// engine multiplies the two). w = 1 for that; w = 0 means the feed
+// carried no Coin lighting and the legacy floor applies instead --
+// 0.2 * base with a 0.8 diffuse weight, the pair of fudges that used
+// to stand in for Coin's ambient+diffuse and which an old scene dump
+// was drawn with.
+uniform vec4 u_ambient;
+// The same ambient WITHOUT the material factor: rgb = LIGHT_MODEL_AMBIENT
+// alone (SoEnvironment's colour times its intensity), w = 1 when fed.
+// The metallic/roughness branch wants it in this form -- there the
+// surface is stated by the BRDF, not by a Phong ambient colour -- and
+// takes it as a uniform-radiance environment.
+uniform vec4 u_envAmbient;
 uniform vec4 u_params;
 uniform vec4 u_pbrParams;
+// Matcap shading: x = enabled, y = preset (see fc_matcap.sh),
+// z = how much the object's own color tints it (0 = one uniform
+// material for the whole scene). Overrides the PBR branch while on.
+uniform vec4 u_matcapParams;
 uniform vec4 u_envSH[9];
 SAMPLERCUBE(s_texEnv, 1);
 // Shadow draw style: a directional scene light replaces the headlight
 // (u_lightDir.w > 0.5; xyz = light direction in view space, the way the
 // light travels) and a variance shadow map attenuates its contribution.
 // u_shadowParams: x = this draw receives shadows, y = minimum variance,
-// z = depth bias, w unused. u_shadowMatrix maps view space to shadow
+// z = depth bias, w = the shadow-moment debug visualization
+// (FC_BGFX_DEBUG_SHADOW_VIS; read in fc_mesh_fs.sh).
+// u_shadowMatrix maps view space to shadow
 // map uv (xy) + light window depth (z). u_lightColor.rgb carries the
 // light color premultiplied by its intensity.
 SAMPLER2D(s_texShadow, 3);
@@ -59,7 +84,134 @@ uniform vec4 u_lightColor;
 // swidth * 0.001, the 0.1 spot factor folded in), w = kernel mode —
 // 0 single tap, 1 Coin's 4-tap dithered kernel, N >= 3 an N x N grid.
 uniform vec4 u_evsm;
+#include "fc_shadow_tap.sh"   // the shared VSM/EVSM bound (needs both above)
+#include "fc_matcap.sh"       // procedural matcaps (needs nothing but a normal)
 uniform mat4 u_shadowMatrix;
+// The ordinary Coin lights of the frame: the viewer's headlight and
+// backlight, and any SoDirectionalLight / SoPointLight the document
+// adds. Unshadowed (only the scene light above carries a map) and
+// added on top of the ambient floor by both lighting models.
+//   u_viewLight[i]      xyz = view-space direction the light travels
+//                       (directional) or its view-space position
+//                       (positional/spot); w = 0 inactive,
+//                       1 directional, 2 positional, 3 spot,
+//                       4 a spot's cone slot (see below)
+//   u_viewLightColor[i] rgb = colour premultiplied by intensity;
+//                       w = a spot's falloff exponent
+//                       (dropOffRate * 128)
+//   u_viewLightAtt[i]   xyz = Coin's squared/linear/constant distance
+//                       attenuation (SoEnvironment::attenuation order);
+//                       w = a spot's cone cutoff cosine
+// A spot light (kind 3) is a positional light with a cone, and its axis
+// does not fit in the twelve floats a slot holds, so it takes the NEXT
+// slot whole: xyz = the view-space direction the light travels, w = 4
+// flagging it as a continuation rather than a light of its own. The
+// engine never packs a spot into the last slot, so reading i + 1 here is
+// always in range.
+// The engine always fills at least slot 0: a feed that carries no
+// lights of its own gets the fixed white headlight down the view axis
+// written in as a stand-in, so there is no "unlit" special case here.
+// Active slots are packed from 0 and the tail is zeroed, which is what
+// lets the loops below stop at the first empty one.
+//
+// The count is Coin's own light cap, so nothing the traversal holds has
+// to be dropped. Keep in step with Render::MaxViewLights.
+#define VIEW_LIGHTS 8
+uniform vec4 u_viewLight[VIEW_LIGHTS];
+uniform vec4 u_viewLightColor[VIEW_LIGHTS];
+uniform vec4 u_viewLightAtt[VIEW_LIGHTS];
+
+/* The i-th ordinary light at a fragment: unit vector toward the light
+ * in view space, and its colour with distance attenuation already
+ * folded in. False for an inactive slot.
+ */
+bool fcViewLight(int i, vec3 vpos, out vec3 l, out vec3 lcol)
+{
+	float kind = u_viewLight[i].w;
+	if (kind < 0.5)
+	{
+		l = vec3(0.0, 0.0, 1.0);
+		lcol = vec3_splat(0.0);
+		return false;
+	}
+	if (kind > 3.5)
+	{
+		// The cone slot of the spot light before this one: not a
+		// light, shaded as one of zero colour so the caller's loop
+		// walks past it. Costs one iteration of arithmetic on a
+		// black light, only in a frame that has a spot at all.
+		l = vec3(0.0, 0.0, 1.0);
+		lcol = vec3_splat(0.0);
+		return true;
+	}
+	if (kind > 1.5)
+	{
+		vec3 d = u_viewLight[i].xyz - vpos;
+		float dist = length(d);
+		l = dist > 0.0 ? d / dist : vec3(0.0, 0.0, 1.0);
+		float denom = u_viewLightAtt[i].x * dist * dist
+			+ u_viewLightAtt[i].y * dist
+			+ u_viewLightAtt[i].z;
+		lcol = u_viewLightColor[i].rgb
+			* (denom > 0.0 ? 1.0 / denom : 1.0);
+		if (kind > 2.5)
+		{
+			// Spot cone, the same law the scene light's spot runs
+			// (GL's): outside the cutoff nothing, inside it a
+			// cosine raised to the falloff exponent. `l` points
+			// toward the light, the axis is the way it travels.
+			// The index is bounded for the compiler's sake --
+			// the packer already guarantees it, but an
+			// out-of-range dynamic index is undefined in GLSL
+			// even on a branch that never runs.
+			int ci = i + 1 < VIEW_LIGHTS ? i + 1 : i;
+			float cd = dot(-l, u_viewLight[ci].xyz);
+			lcol *= cd > u_viewLightAtt[i].w
+				? pow(max(cd, 1.0e-4), u_viewLightColor[i].w)
+				: 0.0;
+		}
+	}
+	else
+	{
+		l = -u_viewLight[i].xyz;
+		lcol = u_viewLightColor[i].rgb;
+	}
+	return true;
+}
+
+/* One light's contribution to the metallic/roughness branch: GGX with
+ * Karis' fast Smith-joint visibility and Schlick Fresnel. `l` points
+ * from the surface toward the light, view space; the view vector is
+ * +z. The specular term is clamped -- a facing plane sits exactly on
+ * the GGX peak (1 / pi a^2) under a light along the view axis, which
+ * would flash whole faces white at low roughness.
+ *
+ * The headlight used to have its own collapsed form here (L = V makes
+ * ndl = ndh = ndv and vdh = 1, so Fresnel reduces to f0). It is not a
+ * separate case any more, because it is not a separate light any more
+ * -- and the general form below reduces to exactly that collapsed one
+ * when L = V, visibility term included, so nothing changed by folding
+ * it in.
+ */
+vec3 fcPbrDirect(vec3 n, vec3 l, vec3 lcol, vec3 kd, vec3 f0,
+                 float a, float twoside)
+{
+	float ndv = max(n.z, 1.0e-4);
+	float ndl = dot(n, l);
+	if (twoside > 0.5)
+		ndl = abs(ndl);
+	ndl = max(ndl, 0.0);
+	vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
+	float ndh = max(dot(n, h), 0.0);
+	float vdh = max(h.z, 0.0);
+	float d = ndh * ndh * (a * a - 1.0) + 1.0;
+	float D = a * a / (3.14159265 * d * d);
+	float vis = 0.5 / max(mix(2.0 * ndl * ndv, ndl + ndv, a), 1.0e-4);
+	vec3 F = f0 + (vec3_splat(1.0) - f0)
+		* exp2((-5.55473 * vdh - 6.98316) * vdh);
+	return (kd * 0.31830989 + F * min(D * vis, 4.0))
+		* lcol * (ndl * 1.2);
+}
 // Local effect lights: unshadowed point lights added on top of
 // whatever lighting model runs (the usual engine effect-light shortcut
 // — no shadow map from them). The first half of the array carries the
@@ -107,36 +259,7 @@ SAMPLER2D(s_texAOScreen, 9);
 // like the caster.
 float fc_shadowTap(vec2 uv, float z)
 {
-	vec2 mo = texture2D(s_texShadow, uv).xy;
-	if (u_evsm.x < 0.5)
-	{
-		// Plain VSM, Coin SoShadowGroup parity (its VsmLookup):
-		// epsilon (u_shadowParams.y) adds to the variance outright
-		// and the threshold (u_evsm.y) smoothsteps the tail —
-		// moment interpolation across a depth gap makes the soft
-		// distance-growing penumbra of the GL Shadow style.
-		if (mo.x >= 0.9999)
-			return 1.0;
-		float lit = z <= mo.x ? 1.0 : 0.0;
-		float va = min(max(mo.y - mo.x * mo.x, 0.0)
-		                   + u_shadowParams.y,
-		               1.0);
-		float dd = mo.x - z;
-		float pmax = va / (va + dd * dd);
-		pmax *= smoothstep(u_evsm.y, 1.0, pmax);
-		return max(lit, pmax);
-	}
-	// EVSM: the variance floor scales with the warped moment.
-	float p = exp(u_evsm.x * (z - u_shadowParams.z));
-	if (p > mo.x)
-	{
-		float va = max(mo.y - mo.x * mo.x,
-		               u_shadowParams.y * mo.x * mo.x);
-		float dd = p - mo.x;
-		float pmax = va / (va + dd * dd);
-		return clamp((pmax - 0.3) / 0.7, 0.0, 1.0);
-	}
-	return 1.0;
+	return fc_vsmVisibility(texture2D(s_texShadow, uv).xy, z);
 }
 
 /* The full stock shading of one fragment: base color in, lit color +
@@ -158,9 +281,15 @@ float fc_shadowTap(vec2 uv, float z)
  *   metal, rough : PBR factors, the metallic-roughness map already
  *           folded in by the caller (pass u_pbrParams.y / .z without
  *           one)
+ *   matEmissive, matSpec : the draw's emissive rgb and specular
+ *           rgb + shininess-in-w. The stock caller resolves them from
+ *           the scalars or the per-face stream (u_matEmissive.w); the
+ *           trailing overload below fills in the scalars for callers
+ *           written before the stream existed (user shaders).
  */
 vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
-                     vec2 fragCoord, float occ, float metal, float rough)
+                     vec2 fragCoord, float occ, float metal, float rough,
+                     vec3 matEmissive, vec4 matSpec)
 {
 	vec3 color = base.rgb;
 
@@ -262,10 +391,25 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 
 	if (u_params.y > 0.5)
 	{
-		if (u_pbrParams.x > 0.5)
+		if (u_matcapParams.x > 0.5)
 		{
-			// Metallic/roughness BRDF: a white headlight down the
-			// view axis plus image based lighting from the fixed
+			// Matcap: the whole shading is a camera-fixed studio looked
+			// up by the view normal. No lights, no shadow tap -- that is
+			// the point, form reads the same wherever the scene light
+			// sits. Screen-space AO still applies: occlusion is not a
+			// light, and contact darkening is exactly the cue an
+			// inspection view wants kept.
+			if (u_params.z > 0.5 && n.z < 0.0)
+				n = -n;
+			vec3 mc = fc_matcap(u_matcapParams.y, n);
+			color = mix(mc, mc * base.rgb, u_matcapParams.z)
+				* (occ * ao);
+		}
+		else if (u_pbrParams.x > 0.5)
+		{
+			// Metallic/roughness BRDF: the ordinary Coin lights
+			// (the headlight and whatever else the traversal
+			// holds) plus image based lighting from the fixed
 			// world-space environment. Two-sided surfaces flip the
 			// normal toward the viewer; single-sided back faces go
 			// dark like the fixed-function headlight.
@@ -274,58 +418,32 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			float ndv = max(n.z, 1.0e-4);
 			vec3 f0 = mix(vec3_splat(0.04), base.rgb, metal);
 			vec3 kd = base.rgb * (1.0 - metal);
-
-			// Direct light: the headlight (L = V = +z: ndl = ndh =
-			// ndv and vdh = 1, so Fresnel collapses to f0), or the
-			// directional scene light of the Shadow draw style,
-			// shadowed, with Schlick Fresnel. GGX distribution with
-			// Karis' fast Smith-joint visibility; the specular term
-			// is clamped — facing planes sit exactly on the GGX
-			// peak (1 / pi a^2) under a headlight, which would
-			// flash whole faces white at low roughness.
 			float a = rough * rough;
-			// The unshadowed headlight always contributes (like
-			// the Blinn-Phong path: Coin's SoShadowGroup keeps
-			// the viewer headlight beside the shadow light). No
-			// AO on it: the headlight shines along the view ray,
-			// and a visible fragment is by definition unoccluded
-			// toward the camera ...
-			vec3 direct;
+
+			// The ordinary lights always contribute, and
+			// unshadowed (Coin's SoShadowGroup keeps them beside
+			// the shadow light the same way). No AO on them: the
+			// dominant one is the headlight, which shines along
+			// the view ray, and a visible fragment is by
+			// definition unoccluded toward the camera ...
+			vec3 direct = vec3_splat(0.0);
+			for (int vi = 0; vi < VIEW_LIGHTS; ++vi)
 			{
-				float d = ndv * ndv * (a * a - 1.0) + 1.0;
-				float D = a * a / (3.14159265 * d * d);
-				float vis = 0.25
-					/ max(ndv * (ndv * (1.0 - a) + a),
-					      1.0e-4);
-				direct = (kd * 0.31830989
-						+ f0 * min(D * vis, 4.0))
-					* (ndv * 1.2);
+				vec3 vl, vlcol;
+				// Active slots are packed from 0 with the tail
+				// zeroed, so the first empty one ends the list --
+				// eight slots cost what the scene actually uses.
+				if (!fcViewLight(vi, vpos, vl, vlcol))
+					break;
+				direct += fcPbrDirect(n, vl, vlcol, kd, f0, a,
+				                      u_params.z);
 			}
 			// ... and the shadowed scene light adds on top.
 			if (u_lightDir.w > 0.5)
-			{
-				vec3 l = -sceneL;
-				float ndl = dot(n, l);
-				if (u_params.z > 0.5)
-					ndl = abs(ndl);
-				ndl = max(ndl, 0.0);
-				vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
-				float ndh = max(dot(n, h), 0.0);
-				float vdh = max(h.z, 0.0);
-				float d = ndh * ndh * (a * a - 1.0) + 1.0;
-				float D = a * a / (3.14159265 * d * d);
-				float vis = 0.5
-					/ max(mix(2.0 * ndl * ndv, ndl + ndv,
-					          a),
-					      1.0e-4);
-				vec3 F = f0 + (vec3_splat(1.0) - f0)
-					* exp2((-5.55473 * vdh - 6.98316)
-					       * vdh);
-				direct += (kd * 0.31830989
-						+ F * min(D * vis, 4.0))
-					* u_lightColor.rgb * shadowTint
-					* (ndl * 1.2 * shadow);
-			}
+				direct += fcPbrDirect(n, -sceneL,
+				                      u_lightColor.rgb * shadowTint,
+				                      kd, f0, a, u_params.z)
+					* shadow;
 
 			// IBL in world space (the environment does not follow
 			// the camera): SH irradiance for the diffuse part, the
@@ -352,71 +470,133 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 			float a004 = min(r4.x * r4.x, exp2(-9.28 * ndv))
 				* r4.x + r4.y;
 			vec2 ab = vec2(-1.04, 1.04) * a004 + r4.zw;
-			color = (kd * max(irr, vec3_splat(0.0))
-				+ pref * (f0 * ab.x + vec3_splat(ab.y)))
-				* (u_pbrParams.w * occ * ao) + direct;
-		}
-		else if (u_lightDir.w > 0.5)
-		{
-			// Scene light (Shadow draw style), shadowed, on top
-			// of the unshadowed headlight: Coin's SoShadowGroup
-			// keeps the viewer headlight as an "other light"
-			// (the fork's viewer root always carries it), so
-			// replacing the headlight rendered much darker than
-			// the GL Shadow style.
-			vec3 l = -sceneL;
-			float ndl = dot(n, l);
-			float hdl = n.z;
-			if (u_params.z > 0.5)
-			{
-				ndl = abs(ndl);
-				hdl = abs(hdl);
-			}
-			else
-			{
-				ndl = max(ndl, 0.0);
-				hdl = max(hdl, 0.0);
-			}
-
-			vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
-			float shininess = max(u_matSpecular.w * 128.0, 1.0);
-			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
-			float hspec = pow(max(abs(n.z), 0.0), shininess);
-
-			// AO occludes only the true ambient floor. The
-			// headlight fill shines along the view ray — a
-			// visible fragment is by definition unoccluded toward
-			// the camera, so AO on it is wrong (it re-darkened
-			// bulb-lit contacts: the fill dominates viewer-facing
-			// surfaces). The scene light keeps its own shadow
-			// term.
-			color = base.rgb
-					* (vec3_splat(0.2 * occ * ao + 0.8 * hdl)
-					+ u_lightColor.rgb * shadowTint
-						* (ndl * shadow))
-				+ u_matSpecular.rgb * (hspec * 0.75)
-				+ u_matSpecular.rgb * u_lightColor.rgb
-					* shadowTint * (spec * 0.75 * shadow);
+			vec3 envBrdf = f0 * ab.x + vec3_splat(ab.y);
+			// The scene ambient (Coin's LIGHT_MODEL_AMBIENT, i.e.
+			// SoEnvironment) taken for what it physically is here: a
+			// uniform-radiance environment. It therefore reaches the
+			// specular term as well as the diffuse one, which is the
+			// only form that reaches a METAL -- a metal has no diffuse
+			// at all, so an ambient folded into kd alone would leave it
+			// exactly as dark as before. It is the light-model
+			// quantity on its own, NOT the material's ambient colour
+			// times it the way Blinn-Phong wants: the BRDF here already
+			// states the surface, and the ambient slot of a material
+			// read as metallic/roughness means nothing.
+			//
+			// Deliberately outside u_pbrParams.w: that knob says how
+			// bright the user's environment map is, and this is a light
+			// beside it, not part of it.
+			vec3 ambRad = u_envAmbient.w > 0.5
+				? u_envAmbient.rgb : vec3_splat(0.0);
+			color = (kd * max(irr, vec3_splat(0.0)) + pref * envBrdf)
+					* (u_pbrParams.w * occ * ao)
+				+ (kd + envBrdf) * (ambRad * (occ * ao))
+				+ direct;
 		}
 		else
 		{
-			// headlight along the view axis; AO deliberately
-			// covers the whole term here (matching the old
-			// fullscreen multiply) even though a headlight
-			// cannot be occluded — with no other light in this
-			// mode, AO is the viewport's only depth cue and
-			// would otherwise shrink to the 0.2 ambient floor.
-			float ndl = n.z;
-			if (u_params.z > 0.5)
-				ndl = abs(ndl);
+			// Blinn-Phong. The ordinary Coin lights first -- the
+			// headlight, plus the backlight and any document light
+			// the traversal holds. This used to be one hard-coded
+			// white light along the view axis, which is what a
+			// single default headlight resolves to, so a stock
+			// scene shades exactly as before.
+			// Coin adds the ambient outright -- it is not a
+			// fraction of the diffuse and does not scale with any
+			// light -- and gives the diffuse full weight.
+			bool trueAmb = u_ambient.w > 0.5;
+			vec3 amb = trueAmb ? u_ambient.rgb : base.rgb * 0.2;
+			float dw = trueAmb ? 1.0 : 0.8;
+			vec3 vdiff = vec3_splat(0.0);
+			vec3 vspec = vec3_splat(0.0);
+			float shininess = max(matSpec.w * 128.0, 1.0);
+			for (int vi = 0; vi < VIEW_LIGHTS; ++vi)
+			{
+				vec3 vl, vlcol;
+				// Active slots are packed from 0 with the tail
+				// zeroed, so the first empty one ends the list --
+				// eight slots cost what the scene actually uses.
+				if (!fcViewLight(vi, vpos, vl, vlcol))
+					break;
+				float ndl = dot(n, vl);
+				vec3 h = normalize(vl + vec3(0.0, 0.0, 1.0));
+				float ndh = dot(n, h);
+				if (u_params.z > 0.5)
+				{
+					// Two-sided: GL shades a back face with the
+					// normal reversed, which negates both dots.
+					ndl = abs(ndl);
+					ndh = abs(ndh);
+				}
+				else
+				{
+					ndl = max(ndl, 0.0);
+					ndh = max(ndh, 0.0);
+				}
+				// GL's `f` factor: no highlight at all where the
+				// light does not reach the surface. Without it a
+				// broad lobe carries the specular straight past the
+				// terminator -- four times Coin's spill at
+				// shininess 0.05, measured on a ball lit across the
+				// view.
+				vdiff += vlcol * (dw * ndl);
+				vspec += vlcol * (ndl > 0.0 ? pow(ndh, shininess)
+				                            : 0.0);
+			}
+
+			if (u_lightDir.w > 0.5)
+			{
+				// Scene light (Shadow draw style), shadowed, on top
+				// of the unshadowed ordinary lights: Coin's
+				// SoShadowGroup keeps the viewer headlight as an
+				// "other light" (the fork's viewer root always
+				// carries it), so replacing it rendered much darker
+				// than the GL Shadow style.
+				//
+				// AO occludes only the true ambient floor. The
+				// ordinary-light fill is dominated by the headlight,
+				// which shines along the view ray -- a visible
+				// fragment is by definition unoccluded toward the
+				// camera, so AO on it is wrong (it re-darkened
+				// bulb-lit contacts: the fill dominates
+				// viewer-facing surfaces). The scene light keeps its
+				// own shadow term.
+				vec3 l = -sceneL;
+				float ndl = dot(n, l);
+				vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
+				float ndh = dot(n, h);
+				if (u_params.z > 0.5)
+				{
+					ndl = abs(ndl);
+					ndh = abs(ndh);
+				}
+				else
+				{
+					ndl = max(ndl, 0.0);
+					ndh = max(ndh, 0.0);
+				}
+				// Gated on the diffuse term like the lights above.
+				float spec = ndl > 0.0 ? pow(ndh, shininess) : 0.0;
+
+				color = amb * (occ * ao)
+					+ base.rgb
+						* (vdiff + u_lightColor.rgb * shadowTint
+							* (ndl * shadow))
+					+ matSpec.rgb * vspec
+					+ matSpec.rgb * u_lightColor.rgb
+						* shadowTint * (spec * shadow);
+			}
 			else
-				ndl = max(ndl, 0.0);
-
-			float shininess = max(u_matSpecular.w * 128.0, 1.0);
-			float spec = pow(max(abs(n.z), 0.0), shininess);
-
-			color = (base.rgb * (0.2 * occ + 0.8 * ndl)
-				+ u_matSpecular.rgb * (spec * 0.75)) * ao;
+			{
+				// No scene light: AO deliberately covers the whole
+				// term here (matching the old fullscreen multiply)
+				// even though a headlight cannot be occluded -- with
+				// nothing else lighting the scene, AO is the
+				// viewport's only depth cue and the shading would
+				// otherwise shrink to the 0.2 ambient floor.
+				color = (amb * occ + base.rgb * vdiff
+					+ matSpec.rgb * vspec) * ao;
+			}
 		}
 
 		// Local effect lights (fire flames, Render_Light bulbs):
@@ -551,15 +731,34 @@ vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
 				}
 			}
 			vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
-			float shininess = max(u_matSpecular.w * 128.0, 1.0);
+			float shininess = max(matSpec.w * 128.0, 1.0);
 			float spec = pow(max(abs(dot(n, h)), 0.0), shininess);
+			// The 0.75 the Coin-fed branches above dropped stays
+			// here on purpose: an effect light has no light node
+			// behind it and no GL term to match, so this weight is
+			// a tuned one (the fire and fountain scenes were lit
+			// with it), not a parity claim. Same for the ungated
+			// lobe -- these lights are already self-occluded by the
+			// geoN test above.
 			color += base.rgb * u_localLightColor[fi].rgb
 					* (ndl * att)
-				+ u_matSpecular.rgb * u_localLightColor[fi].rgb
+				+ matSpec.rgb * u_localLightColor[fi].rgb
 					* (spec * att * 0.75);
 		}
 	}
 
-	color += u_matEmissive.rgb;
+	color += matEmissive;
 	return vec4(color, base.a);
+}
+
+// Scalar-material overload: the signature user material-stage shaders
+// were written against (fc_user_lighting.sh). Per-face material draws
+// carrying a user shader shade with the scalars, like every other
+// consumer that predates the stream.
+vec4 fcShadeFragment(vec4 base, vec3 n, vec3 geoN, vec3 vpos,
+                     vec2 fragCoord, float occ, float metal, float rough)
+{
+	return fcShadeFragment(base, n, geoN, vpos, fragCoord, occ,
+	                       metal, rough,
+	                       u_matEmissive.rgb, u_matSpecular);
 }

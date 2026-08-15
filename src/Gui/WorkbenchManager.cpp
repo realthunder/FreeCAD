@@ -77,7 +77,7 @@ Workbench* WorkbenchManager::createWorkbench (const std::string& name, const std
         if (!wb) {
             std::stringstream str;
             str << "'" << className << "' not a workbench type" << std::ends;
-            throw Base::TypeError(str.str());
+            THROWM(Base::TypeError, str.str())
         }
 
         wb->setName(name);

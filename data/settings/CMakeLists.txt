@@ -13,7 +13,10 @@ ADD_CUSTOM_TARGET(Conf_data ALL
 )
 
 if(NOT "${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
-    fc_copy_sources(Conf_data "${CMAKE_BINARY_DIR}/share/settings" ${Conf_Files})
+    # Application::getResourceDir() is CMAKE_INSTALL_DATADIR, which is "share"
+    # only where GNUInstallDirs says so -- MSVC builds use "data". Copying to a
+    # hard-coded "share" left the presets somewhere nothing reads on Windows.
+    fc_copy_sources(Conf_data "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_DATADIR}/settings" ${Conf_Files})
 endif()
 
 INSTALL(

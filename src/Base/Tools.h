@@ -139,6 +139,20 @@ inline T toDegrees(T r)
     return static_cast<T>((r / M_PI) * 180.0);
 }
 
+/** Transparency and the like are a percent in the property, a fraction in
+ * the scene graph. Upstream spells the two conversions this way, and every
+ * ported call site that touches a percentage expects them.
+ */
+inline float fromPercent(const long value)
+{
+    return std::roundf(static_cast<float>(value)) / 100.0F;
+}
+
+inline long toPercent(float value)
+{
+    return std::lround(100.0 * value);
+}
+
 template<class T>
 inline T fmod(T numerator, T denominator)
 {
@@ -349,6 +363,23 @@ struct BaseExport Tools
     static std::string escapeEncodeString(const std::string& s);
     static QString escapeEncodeFilename(const QString& s);
     static std::string escapeEncodeFilename(const std::string& s);
+
+    /**
+     * @brief pythonLiteral Render a string as Python source: a complete
+     * literal, quotes included, that evaluates back to exactly this string.
+     *
+     * Use this to put a value -- a file path above all -- into a command
+     * string handed to the interpreter, and do not add quotes of your own.
+     * It is written by Python itself, so unlike escapeEncodeString() and
+     * escapeEncodeFilename(), which escape only backslash and the two
+     * quotes, it also survives a newline or a tab in a file name (legal on
+     * Linux and macOS) and leaves nothing but ASCII behind.
+     *
+     * @param s String to render.
+     * @return A quoted Python literal; "''" if the string cannot be encoded.
+     */
+    static std::string pythonLiteral(const std::string& s);
+    static std::string pythonLiteral(const QString& s);
 
     /**
      * @brief toStdString Convert a QString into a UTF-8 encoded std::string.

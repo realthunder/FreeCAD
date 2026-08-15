@@ -609,6 +609,28 @@ Under `ProgressiveLoad`, a restore builds no view providers at all:
   buffer goes and phase three still runs over every object, which is
   what "falls back to defaults" has to mean — a view provider abandoned
   mid-drain is one that never shows.
+- **A slice may not modify the document, and now says so in one
+  place.** Phase three drops the view provider's restore status before
+  sweeping its properties, because with the guards on the handlers
+  render nothing at all — so they run here as they never ran eagerly:
+  past the purge. Eagerly `afterRestore()` purged each object right
+  before announcing it finished, and a recompute purges its own, so a
+  handler that writes back while it renders — a page template noting
+  the size of the SVG it just parsed — cost the eager path nothing.
+  The drain replays that same handler where no purge follows, and the
+  write sticks: the document needs a recompute because it was opened.
+  Marking the objects restoring again is not the alternative (that is
+  the state in which they render nothing); the scope says the other
+  half instead, *render, but do not write*. Every slice runs inside
+  `App::Document::RestoreDrainGuard` — status bit `RestoreDrain`,
+  honored by both touch paths of `DocumentObject` — and a change made
+  in it does not touch its object but does record its name. Chasing
+  these one workbench at a time does not converge, so the drain's
+  completion line names what tried: `N document changes suppressed
+  while replaying the view providers (Template.Width, ...)`. Writing
+  on a render is still a bug of its own — the three found this way are
+  below — and that line is what points at the next one without a
+  debugger.
 - **The rest of the Gui stays as quiet as the eager window kept it.**
   The tree does not connect its change signals or build items while the
   drain runs (`TreeWidget::onUpdateStatus` treats a draining document
@@ -635,6 +657,27 @@ lines, then a slow-updateData line):
   `afterRestore` purge left to clean it, so a document opened already
   modified and close prompted to save. The touch now skips during any
   restore (the eager path's touch was purged — net effect identical).
+
+The last three were found the same way, once a 606-object TechDraw
+document (`scanner.FCStd`) was drained and its touched set diffed
+against a serial load's — 214 objects against 204, the extra ten being
+eight `DrawSVGTemplate`s and two `App::Link`s, and nothing else:
+
+- `DrawSVGTemplate::processTemplate()` wrote `Width`/`Height`/
+  `Orientation` back on every render, from the SVG it had just parsed.
+  A cache refresh, not an edit, so it renders inside an
+  `ObjectStatus::NoTouch` locker now — which also fixes the eager-path
+  bug that merely *opening* a page marked the document modified. The
+  `onChanged(&Template)` caller keeps its touch: there the user really
+  did pick a different template file.
+- `App::Link::_LinkTouched` was declared `Prop_Hidden|Prop_NoPersist`.
+  Its own comment says the value is never read, only its change, as a
+  view provider notification — but without `Prop_Output` every
+  notification also touched the link.
+- The `signalChanged` lambda in `Link::monitorOnChangeCopyObjects()`
+  had no guards at all, while the copy-on-change *source* watcher in
+  `update()` doing the same job guards on `isAnyRestoring()`,
+  `NoTouch` and `Prop_Output`. It now has the same three.
 
 **Result** (MiSTer_objdefaults, RTX 3060, cache 3): open **10.6s →
 5.0s**, first paint 0.1–0.3s after open, worst stall ≤1.1s (was 2.5s

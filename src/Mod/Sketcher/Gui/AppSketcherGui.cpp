@@ -31,6 +31,7 @@
 #include <Gui/WidgetFactory.h>
 
 #include "PropertyConstraintListItem.h"
+#include "PropertyVisualLayerList.h"
 #include "SketcherSettings.h"
 #include "SoZoomTranslation.h"
 #include "ViewProviderPython.h"
@@ -136,6 +137,14 @@ PyMOD_INIT_FUNC(SketcherGui)
     SketcherGui::ViewProviderCustomPython ::init();
     SketcherGui::SoZoomTranslation ::initClass();
     SketcherGui::PropertyConstraintListItem ::init();
+    // Never registered, so its type stayed the default whose name is the
+    // literal "BadType" -- which is what a sketch's VisualLayerList has been
+    // written into every saved GuiDocument.xml as. Files already carrying
+    // that name no longer match the property once it has a real one, and
+    // ViewProviderSketch has no handleChangedPropertyType() to take them, so
+    // they fall back to the default layers once and are written correctly on
+    // the next save.
+    SketcherGui::PropertyVisualLayerList ::init();
     SketcherGui::ViewProviderSketchGeometryExtension ::init();
 
     (void)new Gui::PrefPageProducer<SketcherGui::SketcherSettings>(

@@ -106,7 +106,7 @@ void PropertyCosmeticVertexList::setPyObject(PyObject *value)
             if (!PyObject_TypeCheck(item, &(CosmeticVertexPy::Type))) {
                 std::string error = std::string("types in list must be 'CosmeticVertex', not ");
                 error += item->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
 
             values[i] = static_cast<CosmeticVertexPy*>(item)->getCosmeticVertexPtr();
@@ -121,7 +121,7 @@ void PropertyCosmeticVertexList::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be 'CosmeticVertex' or list of 'CosmeticVertex', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 

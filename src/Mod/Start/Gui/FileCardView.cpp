@@ -24,6 +24,10 @@
 #include "PreCompiled.h"
 #include "FileCardView.h"
 
+#ifndef _PreComp_
+#include <QMouseEvent>
+#endif
+
 #include <App/Application.h>
 #include "../App/DisplayedFilesModel.h"
 
@@ -46,6 +50,31 @@ FileCardView::FileCardView(QWidget* parent)
     setUniformItemSizes(true);
     setMouseTracking(true);
     setSpacing(20);
+}
+
+void FileCardView::mouseMoveEvent(QMouseEvent* event)
+{
+    QListView::mouseMoveEvent(event);
+    refreshHover();
+}
+
+void FileCardView::leaveEvent(QEvent* event)
+{
+    QListView::leaveEvent(event);
+    refreshHover();
+}
+
+void FileCardView::refreshHover()
+{
+    const QPersistentModelIndex under = indexAt(viewport()->mapFromGlobal(QCursor::pos()));
+    if (under == _hovered) {
+        return;
+    }
+    _hovered = under;
+    // Cheap enough to be worth the certainty: a start page holds a couple of
+    // dozen cards, and this runs only when the cursor crosses from one to
+    // another, not on every move within one.
+    viewport()->update();
 }
 
 int FileCardView::heightForWidth(int width) const

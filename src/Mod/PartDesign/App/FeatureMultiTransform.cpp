@@ -52,7 +52,7 @@ void MultiTransform::positionBySupport()
     std::vector<App::DocumentObject*> transFeatures = Transformations.getValues();
     for (auto f : transFeatures) {
         if (!(f->isDerivedFrom<PartDesign::Transformed>()))
-            throw Base::TypeError("Transformation features must be subclasses of Transformed");
+            THROWM(Base::TypeError, "Transformation features must be subclasses of Transformed")
         PartDesign::Transformed* transFeature = static_cast<PartDesign::Transformed*>(f);
         transFeature->Placement.setValue(this->Placement.getValue());
 
@@ -100,7 +100,7 @@ std::list<gp_Trsf> MultiTransform::getTransformations(const std::vector<Part::To
 
     for (f = transFeatures.begin(); f != transFeatures.end(); ++f) {
         if (!((*f)->isDerivedFrom<PartDesign::Transformed>()))
-            throw Base::TypeError("Transformation features must be subclasses of Transformed");
+            THROWM(Base::TypeError, "Transformation features must be subclasses of Transformed")
         PartDesign::Transformed* transFeature = static_cast<PartDesign::Transformed*>(*f);
         std::list<gp_Trsf> newTransformations = transFeature->getTransformations(originals);
 
@@ -129,9 +129,9 @@ std::list<gp_Trsf> MultiTransform::getTransformations(const std::vector<Part::To
                 // oldTransformations vector
 
                 if (newTransformations.empty())
-                    throw Base::ValueError("Number of occurrences must be a divisor of previous number of occurrences");
+                    THROWM(Base::ValueError, "Number of occurrences must be a divisor of previous number of occurrences")
                 if (oldTransformations.size() % newTransformations.size() != 0)
-                    throw Base::ValueError("Number of occurrences must be a divisor of previous number of occurrences");
+                    THROWM(Base::ValueError, "Number of occurrences must be a divisor of previous number of occurrences")
 
                 unsigned sliceLength = oldTransformations.size() / newTransformations.size();
                 std::list<gp_Trsf>::const_iterator ot = oldTransformations.begin();

@@ -45,36 +45,114 @@ int MaterialPy::PyInit(PyObject* args, PyObject* kwds)
     PyObject* emissive = nullptr;
     PyObject* shininess = nullptr;
     PyObject* transparency = nullptr;
-    static const std::array<const char *, 7> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
-                                                         "EmissiveColor", "Shininess", "Transparency", nullptr};
+    PyObject* pbr = nullptr;
+    PyObject* metallic = nullptr;
+    PyObject* roughness = nullptr;
+    PyObject* finish = nullptr;
+    PyObject* finishPitch = nullptr;
+    PyObject* finishDepth = nullptr;
+    PyObject* finishAngle = nullptr;
+    PyObject* image = nullptr;
+    PyObject* imagePath = nullptr;
+    PyObject* uuid = nullptr;
+    static const std::array<const char *, 17> kwds_colors{"DiffuseColor", "AmbientColor", "SpecularColor",
+                                                          "EmissiveColor", "Shininess", "Transparency",
+                                                          "PBR", "Metallic", "Roughness",
+                                                          "Finish", "FinishPitch", "FinishDepth",
+                                                          "FinishAngle", "Image", "ImagePath",
+                                                          "Uuid", nullptr};
 
-    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOO", kwds_colors,
-        &diffuse, &ambient, &specular, &emissive, &shininess, &transparency)) {
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "|OOOOOOOOOOOOOOOO", kwds_colors,
+        &diffuse, &ambient, &specular, &emissive, &shininess, &transparency,
+        &pbr, &metallic, &roughness,
+        &finish, &finishPitch, &finishDepth, &finishAngle,
+        &image, &imagePath, &uuid)) {
         return -1;
     }
 
-    if (diffuse) {
-        setDiffuseColor(Py::Tuple(diffuse));
-    }
+    try {
+        // The mode first, whatever the keyword order: it converts, so the
+        // slots the other keywords name have to mean what the caller
+        // wrote them for. PBR=True on the fresh default converts it --
+        // white tint, metallic 0, the default look's roughness -- rather
+        // than inheriting the Phong specular, whose alpha of one would
+        // read as full metal.
+        if (pbr) {
+            setPBR(Py::Boolean(pbr));
+        }
 
-    if (ambient) {
-        setAmbientColor(Py::Tuple(ambient));
-    }
+        if (diffuse) {
+            setDiffuseColor(Py::Tuple(diffuse));
+        }
 
-    if (specular) {
-        setSpecularColor(Py::Tuple(specular));
-    }
+        if (ambient) {
+            setAmbientColor(Py::Tuple(ambient));
+        }
 
-    if (emissive) {
-        setEmissiveColor(Py::Tuple(emissive));
-    }
+        if (specular) {
+            setSpecularColor(Py::Tuple(specular));
+        }
 
-    if (shininess) {
-        setShininess(Py::Float(shininess));
-    }
+        if (emissive) {
+            setEmissiveColor(Py::Tuple(emissive));
+        }
 
-    if (transparency) {
-        setTransparency(Py::Float(transparency));
+        if (shininess) {
+            setShininess(Py::Float(shininess));
+        }
+
+        if (transparency) {
+            setTransparency(Py::Float(transparency));
+        }
+
+        if (metallic) {
+            setMetallic(Py::Float(metallic));
+        }
+
+        if (roughness) {
+            setRoughness(Py::Float(roughness));
+        }
+
+        // The pattern first, whatever the keyword order, for the reason the
+        // size setters do not clamp: a pattern arriving after its numbers
+        // would clamp them, and a pattern of None would zero them.
+        if (finish) {
+            setFinish(Py::String(finish));
+        }
+
+        if (finishPitch) {
+            setFinishPitch(Py::Float(finishPitch));
+        }
+
+        if (finishDepth) {
+            setFinishDepth(Py::Float(finishDepth));
+        }
+
+        if (finishAngle) {
+            setFinishAngle(Py::Float(finishAngle));
+        }
+
+        // Carried, not used (see the attribute docs): a material that
+        // arrived with one of these keeps it through anything that
+        // restates the material through this constructor.
+        if (image) {
+            setImage(Py::String(image));
+        }
+
+        if (imagePath) {
+            setImagePath(Py::String(imagePath));
+        }
+
+        if (uuid) {
+            setUuid(Py::String(uuid));
+        }
+    }
+    catch (Base::Exception& e) {
+        e.setPyException();
+        return -1;
+    }
+    catch (const Py::Exception&) {
+        return -1;
     }
 
     return 0;
@@ -199,6 +277,116 @@ Py::Float MaterialPy::getTransparency() const
 void MaterialPy::setTransparency(Py::Float arg)
 {
     getMaterialPtr()->transparency = arg;
+}
+
+Py::Boolean MaterialPy::getPBR() const
+{
+    return Py::Boolean(getMaterialPtr()->pbr);
+}
+
+void MaterialPy::setPBR(Py::Boolean arg)
+{
+    // Converting, like every other way of editing this value: the surface
+    // keeps looking like itself in the other model
+    getMaterialPtr()->setPBR(arg);
+}
+
+Py::Float MaterialPy::getMetallic() const
+{
+    return Py::Float(getMaterialPtr()->getMetallic());
+}
+
+void MaterialPy::setMetallic(Py::Float arg)
+{
+    getMaterialPtr()->setMetallic(arg);
+}
+
+Py::Float MaterialPy::getRoughness() const
+{
+    return Py::Float(getMaterialPtr()->getRoughness());
+}
+
+void MaterialPy::setRoughness(Py::Float arg)
+{
+    getMaterialPtr()->setRoughness(arg);
+}
+
+Py::String MaterialPy::getFinish() const
+{
+    return Py::String(SurfaceFinish::patternName(getMaterialPtr()->finish.pattern));
+}
+
+void MaterialPy::setFinish(Py::String arg)
+{
+    SurfaceFinish &finish = getMaterialPtr()->finish;
+    finish.pattern = SurfaceFinish::patternFromName(std::string(arg).c_str());
+    // Clearing the pattern clears what sized it, so that "no finish" is one
+    // state rather than a pattern of None carrying stale numbers
+    finish.normalize();
+}
+
+// The three size attributes deliberately do NOT clamp: normalize() zeroes
+// everything while the pattern is None, so clamping here would wipe a pitch
+// written before the pattern it belongs to. The clamp happens where the
+// value is stored (PropertyMaterialList) and when a pattern is set.
+Py::Float MaterialPy::getFinishPitch() const
+{
+    return Py::Float(getMaterialPtr()->finish.pitch);
+}
+
+void MaterialPy::setFinishPitch(Py::Float arg)
+{
+    getMaterialPtr()->finish.pitch = static_cast<float>(arg);
+}
+
+Py::Float MaterialPy::getFinishDepth() const
+{
+    return Py::Float(getMaterialPtr()->finish.depth);
+}
+
+void MaterialPy::setFinishDepth(Py::Float arg)
+{
+    getMaterialPtr()->finish.depth = static_cast<float>(arg);
+}
+
+Py::Float MaterialPy::getFinishAngle() const
+{
+    return Py::Float(getMaterialPtr()->finish.angle);
+}
+
+void MaterialPy::setFinishAngle(Py::Float arg)
+{
+    getMaterialPtr()->finish.angle = static_cast<float>(arg);
+}
+
+Py::String MaterialPy::getImage() const
+{
+    return Py::String(getMaterialPtr()->image);
+}
+
+void MaterialPy::setImage(Py::String arg)
+{
+    getMaterialPtr()->image = static_cast<std::string>(arg);
+}
+
+Py::String MaterialPy::getImagePath() const
+{
+    return Py::String(getMaterialPtr()->imagePath);
+}
+
+void MaterialPy::setImagePath(Py::String arg)
+{
+    getMaterialPtr()->imagePath = static_cast<std::string>(arg);
+}
+
+Py::String MaterialPy::getUuid() const
+{
+    return Py::String(getMaterialPtr()->uuid);
+}
+
+void MaterialPy::setUuid(Py::String arg)
+{
+    getMaterialPtr()->uuid = static_cast<std::string>(arg);
 }
 
 PyObject *MaterialPy::getCustomAttributes(const char* /*attr*/) const

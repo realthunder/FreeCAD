@@ -25,6 +25,7 @@
 
 #ifndef _PreComp_
 #include <cassert>
+#include <cstring>
 #endif
 
 #include <atomic>
@@ -89,6 +90,17 @@ bool Property::hasName() const
 bool Property::isValidName(const char* name)
 {
     return name && name[0] != '\0';
+}
+
+bool Property::isInternalType(const char* typeName)
+{
+    if (!typeName || !typeName[0]) {
+        return false;
+    }
+    // The class name, not the namespace: "PartGui::_PropertyDiffuseColor"
+    const char* name = std::strrchr(typeName, ':');
+    name = name ? name + 1 : typeName;
+    return name[0] == '_';
 }
 
 void Property::SetRestoreError(const char * msg)
@@ -434,10 +446,10 @@ void PropertyListsBase::_setPyObject(PyObject *value) {
             const auto &item = *it;
             PyObject *key = item.first.ptr();
             if(!PyLong_Check(key))
-                throw Base::TypeError("expect key type to be integer");
+                THROWM(Base::TypeError, "expect key type to be integer")
             long idx = PyLong_AsLong(key);
             if(idx<-1 || idx>listSize)
-                throw Base::ValueError("index out of bound");
+                THROWM(Base::ValueError, "index out of bound")
             if(idx==-1 || idx==listSize) {
                 idx = listSize;
                 ++listSize;
@@ -518,7 +530,7 @@ void PropertyLists::Save (Base::Writer &writer) const
     // where the file branch would not have.
     const long inlineLimit = DocumentParams::getInlineListSize();
     if (writer.isForceXML() || !canSaveStream(writer)
-            || (inlineLimit > 0 && static_cast<long>(getMemSize()) <= inlineLimit)) {
+            || (inlineLimit > 0 && static_cast<long>(getSaveSize(writer)) <= inlineLimit)) {
         writer.Stream() << writer.ind() << '<' << element << " count=\"" <<  getSize() <<"\" ";
         if(!saveXML(writer))
             writer.Stream() << writer.ind() << "</" << element << ">\n";

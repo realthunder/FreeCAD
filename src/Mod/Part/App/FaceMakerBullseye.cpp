@@ -80,7 +80,7 @@ void FaceMakerBullseye::Build_Essence()
     //validity check
     for (TopoDS_Wire& w : myWires) {
         if (!BRep_Tool::IsClosed(w))
-            throw Base::ValueError("Wire is not closed.");
+            THROWM(Base::ValueError, "Wire is not closed.")
     }
 
 
@@ -98,7 +98,7 @@ void FaceMakerBullseye::Build_Essence()
         }
         BRepLib_FindSurface planeFinder(comp, -1, /*OnlyPlane=*/Standard_True);
         if (!planeFinder.Found())
-            throw Base::ValueError("Wires are not coplanar.");
+            THROWM(Base::ValueError, "Wires are not coplanar.")
         plane = GeomAdaptor_Surface(planeFinder.Surface()).Plane();
     }
 
@@ -220,7 +220,7 @@ FaceMakerBullseye::FaceDriller::hitTest(const TopoShape &shape) const
             hit = HitTest::HitOuter;
             break;
         default:
-            throw Base::ValueError(err);
+            THROWM(Base::ValueError, err)
         }
     }
     BRepClass_FaceClassifier cl(myFace, gp_Pnt2d(u,v), tol);
@@ -240,7 +240,7 @@ FaceMakerBullseye::FaceDriller::hitTest(const TopoShape &shape) const
     case TopAbs_OUT:
         return hit;
     default:
-        throw Base::ValueError(err);
+        THROWM(Base::ValueError, err)
     }
 
 }

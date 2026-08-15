@@ -76,7 +76,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     layoutRow->addWidget(DefaultDrawStyle);
     DefaultDrawStyle->setEntryName("DefaultDrawStyle");
     DefaultDrawStyle->setParamGrpPath("View");
-    for (int i=0; i<9; ++i) // Auto generated code (Tools/params_utils.py:1118)
+    for (int i=0; i<9; ++i) // Auto generated code (Tools/params_utils.py:1141)
         DefaultDrawStyle->addItem(QString());
     DefaultDrawStyle->setCurrentIndex(Gui::ViewParams::defaultDefaultDrawStyle());
 
@@ -176,7 +176,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     layoutRow->addWidget(SelectionLinePattern);
     SelectionLinePattern->setEntryName("SelectionLinePattern");
     SelectionLinePattern->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1168)
+    // Auto generated code (Tools/params_utils.py:1191)
     for (int i=1; i<SelectionLinePattern->count(); ++i) {
         if (SelectionLinePattern->itemData(i).toInt() == 0)
             SelectionLinePattern->setCurrentIndex(i);
@@ -241,7 +241,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     layoutRow->addWidget(HiddenLineSync);
     HiddenLineSync->setEntryName("HiddenLineSync");
     HiddenLineSync->setParamGrpPath("View");
-    for (int i=0; i<4; ++i) // Auto generated code (Tools/params_utils.py:1118)
+    for (int i=0; i<4; ++i) // Auto generated code (Tools/params_utils.py:1141)
         HiddenLineSync->addItem(QString());
     HiddenLineSync->setCurrentIndex(Gui::ViewParams::defaultHiddenLineSync());
 
@@ -358,7 +358,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     HiddenLineOutlineWidth->setValue(Gui::ViewParams::defaultHiddenLineOutlineWidth());
     HiddenLineOutlineWidth->setEntryName("HiddenLineOutlineWidth");
     HiddenLineOutlineWidth->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1212)
+    // Auto generated code (Tools/params_utils.py:1240)
     HiddenLineOutlineWidth->setMinimum(0.0);
     HiddenLineOutlineWidth->setMaximum(100.0);
     HiddenLineOutlineWidth->setSingleStep(0.5);
@@ -460,7 +460,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     layoutRow->addWidget(ShadowSync);
     ShadowSync->setEntryName("ShadowSync");
     ShadowSync->setParamGrpPath("View");
-    for (int i=0; i<4; ++i) // Auto generated code (Tools/params_utils.py:1118)
+    for (int i=0; i<4; ++i) // Auto generated code (Tools/params_utils.py:1141)
         ShadowSync->addItem(QString());
     ShadowSync->setCurrentIndex(Gui::ViewParams::defaultShadowSync());
 
@@ -550,7 +550,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     ShadowGroundScale->setValue(Gui::ViewParams::defaultShadowGroundScale());
     ShadowGroundScale->setEntryName("ShadowGroundScale");
     ShadowGroundScale->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1212)
+    // Auto generated code (Tools/params_utils.py:1240)
     ShadowGroundScale->setMinimum(0.0);
     ShadowGroundScale->setMaximum(10000000.0);
     ShadowGroundScale->setSingleStep(0.5);
@@ -567,7 +567,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     ShadowGroundTransparency->setValue(Gui::ViewParams::defaultShadowGroundTransparency());
     ShadowGroundTransparency->setEntryName("ShadowGroundTransparency");
     ShadowGroundTransparency->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1212)
+    // Auto generated code (Tools/params_utils.py:1240)
     ShadowGroundTransparency->setMinimum(0.0);
     ShadowGroundTransparency->setMaximum(1.0);
     ShadowGroundTransparency->setSingleStep(0.1);
@@ -597,7 +597,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     ShadowGroundTextureSize->setValue(Gui::ViewParams::defaultShadowGroundTextureSize());
     ShadowGroundTextureSize->setEntryName("ShadowGroundTextureSize");
     ShadowGroundTextureSize->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1212)
+    // Auto generated code (Tools/params_utils.py:1240)
     ShadowGroundTextureSize->setMinimum(0.0);
     ShadowGroundTextureSize->setMaximum(10000000.0);
     ShadowGroundTextureSize->setSingleStep(10.0);
@@ -648,7 +648,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     layoutRow->addWidget(ShadowDisplayMode);
     ShadowDisplayMode->setEntryName("ShadowDisplayMode");
     ShadowDisplayMode->setParamGrpPath("View");
-    for (int i=0; i<3; ++i) // Auto generated code (Tools/params_utils.py:1118)
+    for (int i=0; i<3; ++i) // Auto generated code (Tools/params_utils.py:1141)
         ShadowDisplayMode->addItem(QString());
     ShadowDisplayMode->setCurrentIndex(Gui::ViewParams::defaultShadowDisplayMode());
 
@@ -664,7 +664,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     ShadowPrecision->setValue(Gui::ViewParams::defaultShadowPrecision());
     ShadowPrecision->setEntryName("ShadowPrecision");
     ShadowPrecision->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1212)
+    // Auto generated code (Tools/params_utils.py:1240)
     ShadowPrecision->setMinimum(0.0);
     ShadowPrecision->setMaximum(1.0);
     ShadowPrecision->setSingleStep(0.1);
@@ -694,7 +694,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     ShadowSpreadSize->setValue(Gui::ViewParams::defaultShadowSpreadSize());
     ShadowSpreadSize->setEntryName("ShadowSpreadSize");
     ShadowSpreadSize->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1212)
+    // Auto generated code (Tools/params_utils.py:1240)
     ShadowSpreadSize->setMinimum(0);
     ShadowSpreadSize->setMaximum(10000000.0);
     ShadowSpreadSize->setSingleStep(500);
@@ -724,7 +724,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     ShadowEpsilon->setValue(Gui::ViewParams::defaultShadowEpsilon());
     ShadowEpsilon->setEntryName("ShadowEpsilon");
     ShadowEpsilon->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1212)
+    // Auto generated code (Tools/params_utils.py:1240)
     ShadowEpsilon->setMinimum(0.0);
     ShadowEpsilon->setMaximum(1.0);
     ShadowEpsilon->setSingleStep(1e-05);
@@ -742,7 +742,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     ShadowThreshold->setValue(Gui::ViewParams::defaultShadowThreshold());
     ShadowThreshold->setEntryName("ShadowThreshold");
     ShadowThreshold->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1212)
+    // Auto generated code (Tools/params_utils.py:1240)
     ShadowThreshold->setMinimum(0.0);
     ShadowThreshold->setMaximum(1.0);
     ShadowThreshold->setSingleStep(0.1);
@@ -759,7 +759,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     ShadowBoundBoxScale->setValue(Gui::ViewParams::defaultShadowBoundBoxScale());
     ShadowBoundBoxScale->setEntryName("ShadowBoundBoxScale");
     ShadowBoundBoxScale->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1212)
+    // Auto generated code (Tools/params_utils.py:1240)
     ShadowBoundBoxScale->setMinimum(0.0);
     ShadowBoundBoxScale->setMaximum(10000000.0);
     ShadowBoundBoxScale->setSingleStep(0.5);
@@ -776,7 +776,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     ShadowMaxDistance->setValue(Gui::ViewParams::defaultShadowMaxDistance());
     ShadowMaxDistance->setEntryName("ShadowMaxDistance");
     ShadowMaxDistance->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1212)
+    // Auto generated code (Tools/params_utils.py:1240)
     ShadowMaxDistance->setMinimum(0.0);
     ShadowMaxDistance->setMaximum(10000000.0);
     ShadowMaxDistance->setSingleStep(0.5);
@@ -926,30 +926,30 @@ void DlgSettingsDrawStyles::loadSettings()
 // Auto generated code (Tools/params_utils.py:679)
 void DlgSettingsDrawStyles::retranslateUi()
 {
-    setWindowTitle(QObject::tr("Draw styles"));
+    setWindowTitle(QObject::tr("Display styles"));
     groupGeneral->setTitle(QObject::tr("General"));
     DefaultDrawStyle->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docDefaultDrawStyle()));
-    labelDefaultDrawStyle->setText(QObject::tr("Default draw style"));
+    labelDefaultDrawStyle->setText(QObject::tr("Default display style"));
     labelDefaultDrawStyle->setToolTip(DefaultDrawStyle->toolTip());
-    // Auto generated code (Tools/params_utils.py:1143)
+    // Auto generated code (Tools/params_utils.py:1166)
     DefaultDrawStyle->setItemText(0, QObject::tr("As Is"));
-    DefaultDrawStyle->setItemData(0, QObject::tr("Draw style, normal display mode"), Qt::ToolTipRole);
+    DefaultDrawStyle->setItemData(0, QObject::tr("Display style, normal display mode"), Qt::ToolTipRole);
     DefaultDrawStyle->setItemText(1, QObject::tr("Points"));
-    DefaultDrawStyle->setItemData(1, QObject::tr("Draw style, show points only"), Qt::ToolTipRole);
+    DefaultDrawStyle->setItemData(1, QObject::tr("Display style, show points only"), Qt::ToolTipRole);
     DefaultDrawStyle->setItemText(2, QObject::tr("Wireframe"));
-    DefaultDrawStyle->setItemData(2, QObject::tr("Draw style, show wire frame only"), Qt::ToolTipRole);
+    DefaultDrawStyle->setItemData(2, QObject::tr("Display style, show wire frame only"), Qt::ToolTipRole);
     DefaultDrawStyle->setItemText(3, QObject::tr("Hidden Line"));
-    DefaultDrawStyle->setItemData(3, QObject::tr("Draw style, show hidden line by display object as transparent"), Qt::ToolTipRole);
+    DefaultDrawStyle->setItemData(3, QObject::tr("Display style, show hidden line by display object as transparent"), Qt::ToolTipRole);
     DefaultDrawStyle->setItemText(4, QObject::tr("No Shading"));
-    DefaultDrawStyle->setItemData(4, QObject::tr("Draw style, shading forced off"), Qt::ToolTipRole);
+    DefaultDrawStyle->setItemData(4, QObject::tr("Display style, shading forced off"), Qt::ToolTipRole);
     DefaultDrawStyle->setItemText(5, QObject::tr("Shaded"));
-    DefaultDrawStyle->setItemData(5, QObject::tr("Draw style, shading force on"), Qt::ToolTipRole);
+    DefaultDrawStyle->setItemData(5, QObject::tr("Display style, shading force on"), Qt::ToolTipRole);
     DefaultDrawStyle->setItemText(6, QObject::tr("Flat Lines"));
-    DefaultDrawStyle->setItemData(6, QObject::tr("Draw style, show both wire frame and face with shading"), Qt::ToolTipRole);
+    DefaultDrawStyle->setItemData(6, QObject::tr("Display style, show both wire frame and face with shading"), Qt::ToolTipRole);
     DefaultDrawStyle->setItemText(7, QObject::tr("Tessellation"));
-    DefaultDrawStyle->setItemData(7, QObject::tr("Draw style, show tessellation wire frame"), Qt::ToolTipRole);
+    DefaultDrawStyle->setItemData(7, QObject::tr("Display style, show tessellation wire frame"), Qt::ToolTipRole);
     DefaultDrawStyle->setItemText(8, QObject::tr("Shadow"));
-    DefaultDrawStyle->setItemData(8, QObject::tr("Draw style, drop shadows for the scene.\nClick this button while in shadow mode to toggle light manipulator"), Qt::ToolTipRole);
+    DefaultDrawStyle->setItemData(8, QObject::tr("Display style, drop shadows for the scene.\nClick this button while in shadow mode to toggle light manipulator"), Qt::ToolTipRole);
     ForceSolidSingleSideLighting->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docForceSolidSingleSideLighting()));
     ForceSolidSingleSideLighting->setText(QObject::tr("Force single side lighting on solid"));
     groupSelection->setTitle(QObject::tr("Selection"));
@@ -984,7 +984,7 @@ void DlgSettingsDrawStyles::retranslateUi()
     HiddenLineSync->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docHiddenLineSync()));
     labelHiddenLineSync->setText(QObject::tr("Synchronize"));
     labelHiddenLineSync->setToolTip(HiddenLineSync->toolTip());
-    // Auto generated code (Tools/params_utils.py:1143)
+    // Auto generated code (Tools/params_utils.py:1166)
     HiddenLineSync->setItemText(0, QObject::tr("None"));
     HiddenLineSync->setItemData(0, QObject::tr("No change to opened document"), Qt::ToolTipRole);
     HiddenLineSync->setItemText(1, QObject::tr("Apply to active view"));
@@ -1032,7 +1032,7 @@ void DlgSettingsDrawStyles::retranslateUi()
     ShadowSync->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowSync()));
     labelShadowSync->setText(QObject::tr("Synchronize"));
     labelShadowSync->setToolTip(ShadowSync->toolTip());
-    // Auto generated code (Tools/params_utils.py:1143)
+    // Auto generated code (Tools/params_utils.py:1166)
     ShadowSync->setItemText(0, QObject::tr("None"));
     ShadowSync->setItemData(0, QObject::tr("No change to opened document"), Qt::ToolTipRole);
     ShadowSync->setItemText(1, QObject::tr("Apply to active view"));
@@ -1078,7 +1078,7 @@ void DlgSettingsDrawStyles::retranslateUi()
     ShadowDisplayMode->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowDisplayMode()));
     labelShadowDisplayMode->setText(QObject::tr("Override display mode"));
     labelShadowDisplayMode->setToolTip(ShadowDisplayMode->toolTip());
-    // Auto generated code (Tools/params_utils.py:1143)
+    // Auto generated code (Tools/params_utils.py:1166)
     ShadowDisplayMode->setItemText(0, QObject::tr("Flat Lines"));
     ShadowDisplayMode->setItemText(1, QObject::tr("Shaded"));
     ShadowDisplayMode->setItemText(2, QObject::tr("As Is"));

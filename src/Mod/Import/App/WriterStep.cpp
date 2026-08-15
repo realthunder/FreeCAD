@@ -47,6 +47,10 @@ void WriterStep::write(Handle(TDocStd_Document) hDoc) const  // NOLINT
     std::string name8bit = Part::encodeFilename(utf8Name);
 
     STEPCAFControl_Writer writer;
+    // Styles carrying a visualization material (per-face ShapeAppearance,
+    // see ExportOCAF2) write surface_style_rendering_with_properties
+    // instead of collapsing to the colour.
+    writer.SetVisualMaterialMode(true);
     Part::Interface::writeStepAssembly(Part::Interface::Assembly::On);
     writer.Transfer(hDoc, STEPControl_AsIs);
 

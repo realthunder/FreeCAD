@@ -21,6 +21,10 @@
 #   FC_BUILD     build tree to launch (default unchanged), e.g. an
 #                optimized tree when what is being judged is frame cost
 #                rather than correctness
+#   FC_ARGS      extra FreeCAD arguments, word-split. --log-file <path>
+#                is the one worth knowing: startup Log messages (the
+#                render backend's warm-up timing among them) reach
+#                neither stdout nor a probe, which runs long after
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 SCENE=${1:-"$REPO/scripts/demo-water.py"}
@@ -67,6 +71,7 @@ setsid nohup env \
            echo "desktop wrapper: FreeCAD exited status $s at $(date -Is)"' \
   -- "$REPO/.conda/run.sh" "$FCBIN" \
   ${FC_USER_CFG:+--user-cfg "$FC_USER_CFG"} \
+  ${FC_ARGS:-} \
   "$SCENE" > "$LOG" 2>&1 </dev/null &
 disown
 echo "launched desktop FreeCAD (${FC_PLATFORM:-wayland}/${FC_GALLIUM:-d3d12}) -> $LOG"

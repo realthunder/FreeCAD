@@ -131,7 +131,7 @@ static App::SubObjectT addGroup(const char *type, const char *name, const QStrin
                 << "addObject('" << type << "','" << GroupName << "')");
         auto newgrp = App::GetApplication().getActiveDocument()->getObject(GroupName.c_str());
         if (!newgrp)
-            throw Base::RuntimeError("Failed to create object");
+            THROWM(Base::RuntimeError, "Failed to create object")
         cmdAppDocument(app, std::ostringstream() << "Tip = " << newgrp->getFullName(true));
         cmdAppObjectArgs(newgrp, "Label = u'%s'", label.toUtf8().constData());
 

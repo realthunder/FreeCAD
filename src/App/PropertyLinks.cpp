@@ -757,7 +757,7 @@ Property *PropertyLink::Copy() const
 void PropertyLink::Paste(const Property &from)
 {
     if (!from.isDerivedFrom(PropertyLink::getClassTypeId()))
-        throw Base::TypeError("Incompatible property to paste to");
+        THROWM(Base::TypeError, "Incompatible property to paste to")
 
     setValue(static_cast<const PropertyLink&>(from)._pcLink);
 }
@@ -898,7 +898,7 @@ void PropertyLinkList::set1Value(int idx, DocumentObject* const &value) {
     }
 
     if(!value || !value->isAttachedToDocument())
-        throw Base::ValueError("invalid document object");
+        THROWM(Base::ValueError, "invalid document object")
 
     _nameMap.clear();
 
@@ -1061,12 +1061,12 @@ void PropertyLinkList::Restore(Base::XMLReader &reader)
     int count = reader.getAttributeAsInteger("count");
     App::PropertyContainer* container = getContainer();
     if (!container)
-        throw Base::RuntimeError("Property is not part of a container");
+        THROWM(Base::RuntimeError, "Property is not part of a container")
     if (!container->isDerivedFrom<App::DocumentObject>()) {
         std::stringstream str;
         str << "Container is not a document object ("
             << container->getTypeId().getName() << ")";
-        throw Base::TypeError(str.str());
+        THROWM(Base::TypeError, str.str())
     }
 
     std::vector<DocumentObject*> values;
@@ -1136,7 +1136,7 @@ Property *PropertyLinkList::Copy() const
 void PropertyLinkList::Paste(const Property &from)
 {
     if(!from.isDerivedFrom(PropertyLinkList::getClassTypeId()))
-        throw Base::TypeError("Incompatible property to paste to");
+        THROWM(Base::TypeError, "Incompatible property to paste to")
 
     setValues(static_cast<const PropertyLinkList&>(from)._lValueList);
 }
@@ -1407,7 +1407,7 @@ void PropertyLinkSub::setPyObject(PyObject *value)
         if(seq.size() == 0)
             setValue(nullptr);
         else if(seq.size()!=2)
-            throw Base::TypeError("Expect input sequence of size 2");
+            THROWM(Base::TypeError, "Expect input sequence of size 2")
         else if (PyObject_TypeCheck(seq[0].ptr(), &(DocumentObjectPy::Type))) {
             DocumentObjectPy  *pcObj = static_cast<DocumentObjectPy*>(seq[0].ptr());
             static const char *errMsg = "type of second element in tuple must be str or sequence of str";
@@ -1424,20 +1424,20 @@ void PropertyLinkSub::setPyObject(PyObject *value)
                 unsigned int i=0;
                 for (Py::Sequence::iterator it = list.begin();it!=list.end();++it,++i) {
                     if(!(*it).isString())
-                        throw Base::TypeError(errMsg);
+                        THROWM(Base::TypeError, errMsg)
                     propString.setPyObject((*it).ptr());
                     vals[i] = propString.getValue();
                 }
                 setValue(pcObj->getDocumentObjectPtr(),std::move(vals));
             }
             else {
-                throw Base::TypeError(errMsg);
+                THROWM(Base::TypeError, errMsg)
             }
         }
         else {
             std::string error = std::string("type of first element in tuple must be 'DocumentObject', not ");
             error += seq[0].ptr()->ob_type->tp_name;
-            throw Base::TypeError(error);
+            THROWM(Base::TypeError, error)
         }
     }
     else if(Py_None == value) {
@@ -1446,7 +1446,7 @@ void PropertyLinkSub::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be 'DocumentObject', 'NoneType' or ('DocumentObject',['String',]) not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 
@@ -1987,7 +1987,7 @@ Property *PropertyLinkSub::Copy() const
 void PropertyLinkSub::Paste(const Property &from)
 {
     if(!from.isDerivedFrom(PropertyLinkSub::getClassTypeId()))
-        throw Base::TypeError("Incompatible property to paste to");
+        THROWM(Base::TypeError, "Incompatible property to paste to")
     auto &link = static_cast<const PropertyLinkSub&>(from);
     setValue(link._pcLinkSub, link._cSubList,
             std::vector<ShadowSub>(link._ShadowSubList));
@@ -2249,7 +2249,7 @@ void PropertyLinkSubList::setValues(const std::vector<DocumentObject*>& lValue, 
     }
 
     if (lValue.size() != lSubNames.size())
-        throw Base::ValueError("PropertyLinkSubList::setValues: size of subelements list != size of objects list");
+        THROWM(Base::ValueError, "PropertyLinkSubList::setValues: size of subelements list != size of objects list")
 
 #ifndef USE_OLD_DAG
     //maintain backlinks.
@@ -2302,7 +2302,7 @@ void PropertyLinkSubList::setValues(std::vector<DocumentObject*>&& lValue,
         verifyObject(obj, parent);
     }
     if (lValue.size() != lSubNames.size())
-        throw Base::ValueError("PropertyLinkSubList::setValues: size of subelements list != size of objects list");
+        THROWM(Base::ValueError, "PropertyLinkSubList::setValues: size of subelements list != size of objects list")
 
 #ifndef USE_OLD_DAG
     //maintain backlinks.
@@ -2538,7 +2538,7 @@ std::vector<PropertyLinkSubList::SubSet> PropertyLinkSubList::getSubListValues(b
 {
     std::vector<PropertyLinkSubList::SubSet> values;
     if (_lValueList.size() != _lSubList.size())
-        throw Base::ValueError("PropertyLinkSubList::getSubListValues: size of subelements list != size of objects list");
+        THROWM(Base::ValueError, "PropertyLinkSubList::getSubListValues: size of subelements list != size of objects list")
 
     assert(_ShadowSubList.size() == _lSubList.size());
 
@@ -2609,7 +2609,7 @@ void PropertyLinkSubList::setPyObject(PyObject *value)
         "Expects sequence of items of type DocObj, (DocObj,SubName), or (DocObj, (SubName,...))";
 
     if (!PyTuple_Check(value) && !PyList_Check(value))
-        throw Base::TypeError(errMsg);
+        THROWM(Base::TypeError, errMsg)
 
     Py::Sequence list(value);
     Py::Sequence::size_type size = list.size();
@@ -2633,13 +2633,13 @@ void PropertyLinkSubList::setPyObject(PyObject *value)
                     Py::Sequence list(seq[1]);
                     for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
                         if(!(*it).isString())
-                            throw Base::TypeError(errMsg);
+                            THROWM(Base::TypeError, errMsg)
                         values.push_back(obj);
                         propString.setPyObject((*it).ptr());
                         SubNames.emplace_back(propString.getValue());
                     }
                 } else
-                    throw Base::TypeError(errMsg);
+                    THROWM(Base::TypeError, errMsg)
             }
         } else if (PyObject_TypeCheck(*item, &(DocumentObjectPy::Type))) {
             DocumentObjectPy *pcObj;
@@ -2647,7 +2647,7 @@ void PropertyLinkSubList::setPyObject(PyObject *value)
             values.push_back(pcObj->getDocumentObjectPtr());
             SubNames.emplace_back();
         } else
-            throw Base::TypeError(errMsg);
+            THROWM(Base::TypeError, errMsg)
     }
     setValues(values,SubNames);
 }
@@ -3060,7 +3060,7 @@ Property *PropertyLinkSubList::Copy() const
 void PropertyLinkSubList::Paste(const Property &from)
 {
     if(!from.isDerivedFrom(PropertyLinkSubList::getClassTypeId()))
-        throw Base::TypeError("Incompatible property to paste to");
+        THROWM(Base::TypeError, "Incompatible property to paste to")
     auto &link = static_cast<const PropertyLinkSubList&>(from);
     setValues(link._lValueList, link._lSubList,
               std::vector<ShadowSub>(link._ShadowSubList));
@@ -3327,7 +3327,7 @@ public:
 
         const char *docPath = pDoc->getFileName();
         if(!docPath || *docPath==0)
-            throw Base::RuntimeError("Owner document not saved");
+            THROWM(Base::RuntimeError, "Owner document not saved")
 
         QFileInfo docInfo(QString::fromUtf8(docPath));
         QDir docDir(docInfo.absoluteDir());
@@ -3878,7 +3878,7 @@ void PropertyXLink::restoreLink(App::DocumentObject *lValue) {
 
     auto owner = dynamic_cast<DocumentObject*>(getContainer());
     if(!owner || !owner->isAttachedToDocument())
-        throw Base::RuntimeError("invalid container");
+        THROWM(Base::RuntimeError, "invalid container")
 
     bool touched = owner->isTouched();
     setFlag(LinkDetached,false);
@@ -3907,20 +3907,20 @@ void PropertyXLink::setValue(App::DocumentObject *lValue,
         std::vector<std::string> &&subs, std::vector<ShadowSub> &&shadows)
 {
     if(lValue && (!lValue->isAttachedToDocument() || !lValue->getDocument())) {
-        throw Base::ValueError("Invalid object");
+        THROWM(Base::ValueError, "Invalid object")
         return;
     }
 
     auto owner = dynamic_cast<DocumentObject*>(getContainer());
     if(!owner || !owner->isAttachedToDocument()) {
         if (lValue) {
-            throw Base::RuntimeError("invalid container");
+            THROWM(Base::RuntimeError, "invalid container")
         }
         return;
     }
 
     if(lValue == owner)
-        throw Base::ValueError("self linking");
+        THROWM(Base::ValueError, "self linking")
 
     aboutToSetValue();
 
@@ -3977,7 +3977,7 @@ void PropertyXLink::setValue(std::string &&filename, std::string &&name,
     }
     auto owner = dynamic_cast<DocumentObject*>(getContainer());
     if(!owner || !owner->isAttachedToDocument())
-        throw Base::RuntimeError("invalid container");
+        THROWM(Base::RuntimeError, "invalid container")
 
     DocumentObject *pObject=nullptr;
     DocInfoPtr info;
@@ -4154,7 +4154,7 @@ void PropertyXLink::setPathResolveMode(const char *mode)
             }
         }
     }
-    throw Base::ValueError("Invalid mode");
+    THROWM(Base::ValueError, "Invalid mode")
 }
 
 void PropertyXLink::setPathResolveMode(PathResolveMode mode)
@@ -4201,12 +4201,12 @@ std::string PropertyXLink::getFilePath(PathResolveMode mode) const
             return fileInfo.canonicalFilePath().toUtf8().constData();
     } else if (mode == PathResolveMode::Absolute
             || mode == PathResolveMode::Canonical) {
-        throw Base::RuntimeError("Fail to resolve path");
+        THROWM(Base::RuntimeError, "Fail to resolve path")
     } else
         return filename;
 
     if (!owner || !owner->getDocument())
-        throw Base::RuntimeError("No owner document");
+        THROWM(Base::RuntimeError, "No owner document")
 
     return DocInfo::getDocPath(filename.c_str(),owner->getDocument(),mode);
 }
@@ -4246,7 +4246,7 @@ void PropertyXLink::Save (Base::Writer &writer) const {
             const char *filename = _pcLink->getDocument()->getFileName();
             if(!filename || *filename == 0) {
                 FC_ERR("Linked document not saved for object " << _pcLink->getFullName());
-                throw Base::RuntimeError("Linked document not saved");
+                THROWM(Base::RuntimeError, "Linked document not saved")
             } else {
                 auto self = const_cast<PropertyXLink*>(this);
                 self->docInfo = DocInfo::get(filename,owner->getDocument(),self,_pcLink->getNameInDocument());
@@ -4546,7 +4546,7 @@ Property *PropertyXLink::Copy() const
 void PropertyXLink::Paste(const Property &from)
 {
     if(!from.isDerivedFrom(PropertyXLink::getClassTypeId()))
-        throw Base::TypeError("Incompatible property to paste to");
+        THROWM(Base::TypeError, "Incompatible property to paste to")
 
     const auto &other = static_cast<const PropertyXLink&>(from);
     if(!other.docName.empty()) {
@@ -4679,7 +4679,7 @@ void PropertyXLink::setPyObject(PyObject *value) {
     if(PySequence_Check(value)) {
         Py::Sequence seq(value);
         if(seq.size()!=2)
-            throw Base::ValueError("Expect input sequence of size 2");
+            THROWM(Base::ValueError, "Expect input sequence of size 2")
         std::vector<std::string> subs;
         Py::Object pyObj(seq[0].ptr());
         Py::Object pySub(seq[1].ptr());
@@ -4687,7 +4687,7 @@ void PropertyXLink::setPyObject(PyObject *value) {
             setValue(nullptr);
             return;
         } else if(!PyObject_TypeCheck(pyObj.ptr(), &DocumentObjectPy::Type))
-            throw Base::TypeError("Expect the first element to be of 'DocumentObject'");
+            THROWM(Base::TypeError, "Expect the first element to be of 'DocumentObject'")
         PropertyString propString;
         if(pySub.isString()) {
             propString.setPyObject(pySub.ptr());
@@ -4698,12 +4698,12 @@ void PropertyXLink::setPyObject(PyObject *value) {
             for(Py_ssize_t i=0;i<seq.size();++i) {
                 Py::Object sub(seq[i]);
                 if(!sub.isString())
-                    throw Base::TypeError("Expect only string inside second argument");
+                    THROWM(Base::TypeError, "Expect only string inside second argument")
                 propString.setPyObject(sub.ptr());
                 subs.push_back(propString.getStrValue());
             }
         }else
-            throw Base::TypeError("Expect the second element to be a string or sequence of string");
+            THROWM(Base::TypeError, "Expect the second element to be a string or sequence of string")
         setValue(static_cast<DocumentObjectPy*>(pyObj.ptr())->getDocumentObjectPtr(), std::move(subs));
     } else if(PyObject_TypeCheck(value, &(DocumentObjectPy::Type))) {
         setValue(static_cast<DocumentObjectPy*>(value)->getDocumentObjectPtr());
@@ -5009,7 +5009,7 @@ void PropertyXLinkSubList::set1Value(int idx,
                                      const std::vector<std::string> &SubList)
 {
     if(idx < -1 || idx > getSize())
-        throw Base::RuntimeError("index out of bound");
+        THROWM(Base::RuntimeError, "index out of bound")
 
     if(idx < 0 || idx+1 == getSize()) {
         if(SubList.empty()) {
@@ -5109,7 +5109,7 @@ void PropertyXLinkSubList::setPyObject(PyObject *value)
     catch (Base::TypeError&) {}
 
     if (!PyTuple_Check(value) && !PyList_Check(value))
-        throw Base::TypeError("Invalid type. Accepts (DocumentObject, (subname...)) or sequence of such type.");
+        THROWM(Base::TypeError, "Invalid type. Accepts (DocumentObject, (subname...)) or sequence of such type.")
     Py::Sequence seq(value);
     std::map<DocumentObject*, std::vector<std::string> > values;
     try {
@@ -5124,7 +5124,7 @@ void PropertyXLinkSubList::setPyObject(PyObject *value)
         }
     }
     catch(Base::Exception&){
-        throw Base::TypeError("Invalid type inside sequence. Must be type of (DocumentObject, (subname...))");
+        THROWM(Base::TypeError, "Invalid type inside sequence. Must be type of (DocumentObject, (subname...))")
     }
     setValues(std::move(values));
 }
@@ -5328,7 +5328,7 @@ Property *PropertyXLinkSubList::Copy() const
 void PropertyXLinkSubList::Paste(const Property &from)
 {
     if(!from.isDerivedFrom(PropertyXLinkSubList::getClassTypeId()))
-        throw Base::TypeError("Incompatible property to paste to");
+        THROWM(Base::TypeError, "Incompatible property to paste to")
 
     aboutToSetValue();
     _Links.clear();

@@ -549,7 +549,7 @@ void CmdTechDrawAnnotation::activated(int iMsg)
     auto feat = Base::freecad_dynamic_cast<TechDraw::DrawViewAnnotation>(
             page->getDocument()->getObject(FeatName.c_str()));
     if (!feat) {
-        throw Base::RuntimeError("Feature not created");
+        THROWM(Base::RuntimeError, "Feature not created")
     }
     Gui::cmdAppObjectArgs(feat, "translateLabel('DrawViewAnnotation', 'Annotation', '%s')", FeatName);
     Gui::cmdAppObjectArgs(page, "addView(%s)", feat->getFullName(/*python*/true));

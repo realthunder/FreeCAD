@@ -120,8 +120,24 @@ TaskCSysDragger::TaskCSysDragger(Gui::ViewProviderDocumentObject* vpObjectIn, Gu
   });
 }
 
+void TaskCSysDragger::closed()
+{
+  // The framework calls this the moment the dialog leaves the task panel,
+  // but only deletes it later: TaskView::removeDialog() ends in
+  // deleteLater(). Give the object back its ordinary drawing here rather
+  // than in the destructor, so that leaving edit mode takes effect at
+  // once. Left to the destructor, a caller that keeps working in the same
+  // call stack -- a macro that leaves edit and then renders -- goes on
+  // seeing the object drawn at the on-top transparency, because a
+  // deferred delete is only delivered once the stack unwinds to the event
+  // loop.
+  onToggleShowOnTop(false);
+}
+
 TaskCSysDragger::~TaskCSysDragger()
 {
+  // A no-op after closed(), which empties editObj; still here for the
+  // paths that delete a dialog without closing it first.
   onToggleShowOnTop(false);
 
   dragger->unref();

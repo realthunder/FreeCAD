@@ -42,6 +42,7 @@ public:
     ~DrawRichAnno() override = default;
 
     App::PropertyLink         AnnoParent;
+    App::PropertyLink*        getOwnerProperty() override { return &AnnoParent; }
     App::PropertyString       AnnoText;
     App::PropertyBool         ShowFrame;
     App::PropertyFloat        MaxWidth;

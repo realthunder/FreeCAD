@@ -1281,45 +1281,54 @@ QToolButton:selected {
   color: black;
 }
 
-QToolButton[popupMode="0"] {
-  /* Only for DelayedPopup */
-  padding-right: 20px;
+/* Mouse-over lifts the icon a pixel and pressing pushes it a pixel down. The
+   top and bottom padding always add up to 2px, so no button ever changes size
+   and the toolbar never relayouts under the pointer. */
+QToolBar QToolButton,
+QToolBar QToolButton:disabled,
+QToolBar QToolButton:checked,
+QToolBar QToolButton:checked:disabled {
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
+QToolBar QToolButton:hover,
+QToolBar QToolButton:checked:hover {
+  padding-top: 0px;
+  padding-bottom: 2px;
+}
+
+QToolBar QToolButton:pressed,
+QToolBar QToolButton:checked:pressed {
+  padding-top: 2px;
+  padding-bottom: 0px;
 }
 
 QToolButton[popupMode="1"] {
-  /* Only for MenuButtonPopup */
-  padding-right: 20px;
+  /* Only for MenuButtonPopup: reserve the ::menu-button strip declared below
+     and nothing more. */
+  padding-right: 1.3ex;
 }
 QToolButton[popupMode="0"]::menu-button {
   border: none;
-}
-
-QToolButton[popupMode="0"]::menu-button:hover {
-  border: none;
-  border-left: 2px solid #fe0000;
-  border-radius: 0px;
 }
 QToolButton[popupMode="1"]::menu-button {
   border: none;
 }
 
-QToolButton[popupMode="1"]::menu-button:hover {
-  border: none;
-  border-left: 2px solid #e5ff00;
-  border-radius: 0px;
-}
-
 QToolButton[popupMode="2"] {
-  /* Only for InstantPopup */
-  padding-right: 20px;
+  /* Only for InstantPopup: same strip, for the menu indicator. */
+  padding-right: 1.3ex;
 }
 
 QToolButton::menu-button {
   border-bottom: 0px solid #f6f6f6;
   border-radius: 2px;
-  /* 16px width + 4px for border = 20px allocated above */
-  width: 1.6ex;
-  padding: 2px;
+  /* 8px at the default UI font, expressed in ex so it keeps clearing the
+     arrow (1ex, and 1.2ex on :open/:hover) if that font changes. This is
+     what popupMode 1 and 2 reserve above. */
+  width: 1.3ex;
+  padding: 0px;
   border-radius: 2px;
   border: 0px #000000;
 }
@@ -2689,4 +2698,88 @@ QTreeView::branch#groupsTreeView:has-children:!has-siblings:closed  {
 
 QTreeView::branch#groupsTreeView:has-siblings:!adjoins-item  {
   border-image: none 0;
+}
+
+/*==================================================================================================
+CustomTitleBarWindow
+==================================================================================================*/
+
+/* The logo the menu bar folds behind. The icon comes from the theme in C++,
+   so only the chrome belongs here. */
+#titleBarLogo {
+  border: none;
+  background: transparent;
+  padding: 0px;
+  margin-left: 4px;
+  margin-right: 4px;
+}
+
+#titleBarLogo:hover {
+  background-color: @ThemeAccentColor1;
+}
+
+#titleBarLogo:pressed {
+  background-color: @ThemeAccentColor2;
+}
+
+/* Folded, the menu bar is an overlay drawn over the title bar rather than a
+   strip of its own, so it must not paint its own background. */
+QMenuBar[foldable="true"] {
+  background-color: transparent;
+}
+
+WindowDecorationButton {
+  background: transparent;
+  border: none;
+}
+
+WindowDecorationButton:hover {
+  background-color: @ThemeAccentColor1;
+}
+
+WindowDecorationButton:pressed {
+  background-color: @ThemeAccentColor2;
+}
+
+/* Only the generic backend draws its own close button, and the platform
+   convention it is imitating is a red one. */
+CustomTitleBarWindow[backend="generic"] WindowDecorationButton#closeButton:hover {
+  background-color: #E81123;
+  color: White;
+}
+
+CustomTitleBarWindow[backend="generic"] WindowDecorationButton#closeButton:pressed {
+  background-color: #C50F1F;
+  color: White;
+}
+
+/* Start page file cards ----------------------------------------------------
+
+One reused widget paints every recent file and example card on the Start
+page; it is named thumbnailWidget and carries a "state" of "hovered" or
+"pressed". A dynamic property does not re-evaluate a style sheet on its
+own, so FileCardDelegate repolishes the widget whenever the state changes.
+
+The same 2px box the New File cards use, in the same colours -- those are
+the Start preferences FileCardBorderColor and FileCardSelectionColor, not
+the theme accent, which is why they are literals here.
+
+The border is present in every state and only changes colour. It must not
+appear only on hover: sizeHint() knows nothing about this box, so a border
+that comes and goes shifts the thumbnail and caption under the cursor and
+pushes the card past the item rect, which clips the edges.
+
+--------------------------------------------------------------------------- */
+
+QWidget#thumbnailWidget {
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+
+QWidget#thumbnailWidget[state="hovered"] {
+  border-color: #62A0EA;
+}
+
+QWidget#thumbnailWidget[state="pressed"] {
+  border-color: #26A269;
 }

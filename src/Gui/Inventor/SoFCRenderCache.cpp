@@ -67,7 +67,10 @@
 #include "SoFCRenderMaterial.h"
 #include "SoFCVertexCache.h"
 #include "SoFCDetail.h"
+#include "CoinLazyElementEx.h"
 #include "SoFCDiffuseElement.h"
+#include "SoFCFinishElement.h"
+#include "SoFCPbrElement.h"
 #include "SoFCZoomOffsetElement.h"
 #include "SoFCDisplayModeElement.h"
 
@@ -319,6 +322,8 @@ void SoFCRenderCache::initClass()
   SO_ENABLE(SoCallbackAction, SoShadowStyleElement);
   SoFCDiffuseElement::initClass();
   SoFCZoomOffsetElement::initClass();
+  SoFCPbrElement::initClass();
+  SoFCFinishElement::initClass();
 }
 
 void SoFCRenderCache::resetNode()
@@ -329,6 +334,8 @@ void SoFCRenderCache::resetNode()
 void SoFCRenderCache::cleanup()
 {
   SoFCDiffuseElement::cleanup();
+  SoFCPbrElement::cleanup();
+  SoFCFinishElement::cleanup();
 }
 
 static inline std::bitset<32>
@@ -367,6 +374,42 @@ getOverrideFlags(SoState * state)
   return res;
 }
 
+// Capture the array form of ambient/emissive/specular/shininess from
+// the coin fork's extended lazy element into the material (empty when
+// the extension is absent or a field holds only its scalar). The
+// element is the authority here: it has already resolved override and
+// inheritance semantics, exactly like the scalar reads next to the
+// call sites, so no per-field flag checks are repeated.
+static void
+captureMaterialArrays(SoFCRenderCache::_Material &m, SoState *state)
+{
+  auto capture = [state](COWVector<uint32_t> &array,
+                         int (*getter)(SoState *, const float **, uint64_t *)) {
+    const float *values = nullptr;
+    int num = getter(state, &values, nullptr);
+    array.reset();
+    if (num <= 1)
+      return;
+    array.reserve(num);
+    for (int i = 0; i < num; ++i) {
+      SbColor c(values[i*3], values[i*3+1], values[i*3+2]);
+      array.append(c.getPackedValue(0.0f));
+    }
+  };
+  capture(m.ambients, &Gui::CoinLazyElementEx::getAmbient);
+  capture(m.emissives, &Gui::CoinLazyElementEx::getEmissive);
+  capture(m.speculars, &Gui::CoinLazyElementEx::getSpecular);
+
+  const float *values = nullptr;
+  int num = Gui::CoinLazyElementEx::getShininess(state, &values, nullptr);
+  m.shininesses.reset();
+  if (num > 1) {
+    m.shininesses.reserve(num);
+    for (int i = 0; i < num; ++i)
+      m.shininesses.append(values[i]);
+  }
+}
+
 void
 SoFCRenderCache::_Material::init(SoState * state)
 {
@@ -388,6 +431,10 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->shininess = 0.f;
   this->metallic = -1.f;
   this->roughness = -1.f;
+  this->finish = 0;
+  this->finishpitch = 0.f;
+  this->finishdepth = 0.f;
+  this->finishangle = 0.f;
   this->water = false;
   this->waterdensity = 0.f;
   this->glass = false;
@@ -426,6 +473,16 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->twoside = false;
   this->drawstyle = 0;
   this->shadowstyle = SoShadowStyleElement::CASTS_SHADOW_AND_SHADOWED; 
+  this->ambients.reset();
+  this->emissives.reset();
+  this->speculars.reset();
+  this->shininesses.reset();
+  this->metallics.reset();
+  this->roughnesses.reset();
+  this->finishpalette.reset();
+  this->finishindices.reset();
+  this->framepalette.reset();
+  this->frameindices.reset();
   this->texturematrices.clear();
   this->textures.clear();
   this->bumpmaps.clear();
@@ -455,6 +512,8 @@ SoFCRenderCache::_Material::init(SoState * state)
   this->specular = SoLazyElement::getSpecular(state).getPackedValue(t);
 
   this->shininess = SoLazyElement::getShininess(state);
+
+  captureMaterialArrays(*this, state);
 
   this->lightmodel = SoLazyElement::getLightModel(state);
 
@@ -643,6 +702,11 @@ SoFCRenderCache::setMaterial(SoState * state, const SoMaterial * material)
     m.specular = material->specularColor[0].getPackedValue(t);
   if (testMaterial(m, material, &SoMaterial::shininess, Material::FLAG_SHININESS, Material::FLAG_SHININESS))
     m.shininess = material->shininess[0];
+
+  // this runs in the node's post callback, after its doAction() updated
+  // the lazy element, so the element already holds the array form of
+  // whatever this node (or an override above it) contributed
+  captureMaterialArrays(m, state);
 }
 
 void
@@ -686,6 +750,8 @@ SoFCRenderCache::setMaterial(SoState * state, const SoVRMLMaterial * material)
   if (_testMaterial(m, material, &SoVRMLMaterial::shininess,
         Material::FLAG_SHININESS, Material::FLAG_SHININESS))
     m.shininess = material->shininess.getValue();
+
+  captureMaterialArrays(m, state);
 }
 
 void
@@ -894,10 +960,28 @@ SoFCRenderCacheP::mergeMaterial(const SbMatrix &matrix,
 
   copyMaterial(res, parent, &Material::materialbinding, Material::FLAG_MATERIAL_BINDING, Material::FLAG_MATERIAL_BINDING);
 
-  copyMaterial(res, parent, &Material::ambient, Material::FLAG_AMBIENT, Material::FLAG_AMBIENT);
-  copyMaterial(res, parent, &Material::emissive, Material::FLAG_EMISSIVE, Material::FLAG_EMISSIVE);
-  copyMaterial(res, parent, &Material::specular, Material::FLAG_SPECULAR, Material::FLAG_SPECULAR);
-  copyMaterial(res, parent, &Material::shininess, Material::FLAG_SHININESS, Material::FLAG_SHININESS);
+  // the array forms travel with their scalars: when the parent wins a
+  // field, its array (possibly empty) replaces the child's too
+  if (canSetMaterial(res, parent, Material::FLAG_AMBIENT, Material::FLAG_AMBIENT)) {
+    res.ambient = parent.ambient;
+    res.ambients = parent.ambients;
+    res.maskflags.set(Material::FLAG_AMBIENT);
+  }
+  if (canSetMaterial(res, parent, Material::FLAG_EMISSIVE, Material::FLAG_EMISSIVE)) {
+    res.emissive = parent.emissive;
+    res.emissives = parent.emissives;
+    res.maskflags.set(Material::FLAG_EMISSIVE);
+  }
+  if (canSetMaterial(res, parent, Material::FLAG_SPECULAR, Material::FLAG_SPECULAR)) {
+    res.specular = parent.specular;
+    res.speculars = parent.speculars;
+    res.maskflags.set(Material::FLAG_SPECULAR);
+  }
+  if (canSetMaterial(res, parent, Material::FLAG_SHININESS, Material::FLAG_SHININESS)) {
+    res.shininess = parent.shininess;
+    res.shininesses = parent.shininesses;
+    res.maskflags.set(Material::FLAG_SHININESS);
+  }
   copyMaterial(res, parent, &Material::drawstyle, Material::FLAG_DRAW_STYLE, Material::FLAG_DRAW_STYLE);
   copyMaterial(res, parent, &Material::lightmodel, Material::FLAG_LIGHT_MODEL, Material::FLAG_LIGHT_MODEL);
   copyMaterial(res, parent, &Material::shadowstyle, 0, Material::FLAG_SHADOW_STYLE);
@@ -1405,6 +1489,105 @@ SoFCRenderCache::addRenderMaterial(SoState * state, const SoNode * node)
   auto material = static_cast<const Gui::SoFCRenderMaterial *>(node);
   PRIVATE(this)->material.metallic = material->metallic.getValue();
   PRIVATE(this)->material.roughness = material->roughness.getValue();
+  // The per-face pair the same node carries (empty unless a PBR
+  // appearance states one per face). Copied, not borrowed: a material
+  // outlives the traversal that captured it.
+  auto capturefactors = [](COWVector<float> &array, const SoMFFloat &field) {
+    array.reset();
+    const int num = field.getNum();
+    if (num <= 1)
+      return;
+    const float *values = field.getValues(0);
+    array.reserve(num);
+    for (int i = 0; i < num; ++i)
+      array.append(values[i]);
+  };
+  capturefactors(PRIVATE(this)->material.metallics, material->metallics);
+  capturefactors(PRIVATE(this)->material.roughnesses, material->roughnesses);
+  // The machined surface finish: a pattern this build does not know is
+  // captured unchanged and dropped by the backend, not here -- the node
+  // may state one a later build writes (App::SurfaceFinish::pattern).
+  int32_t pattern = material->finish.getValue();
+  PRIVATE(this)->material.finish = pattern > 0 && pattern < 256
+      ? static_cast<uint8_t>(pattern) : 0;
+  PRIVATE(this)->material.finishpitch = material->finishPitch.getValue();
+  PRIVATE(this)->material.finishdepth = material->finishDepth.getValue();
+  PRIVATE(this)->material.finishangle = material->finishAngle.getValue();
+  // The per-face form: the palette of distinct finishes, and one index
+  // into it per face. Built once here rather than per draw, so every
+  // draw off this node shares the pointer -- which is what the batching
+  // comparison keys on.
+  PRIVATE(this)->material.finishpalette.reset();
+  PRIVATE(this)->material.finishindices.reset();
+  const int numpalette = material->finishPalette.getNum();
+  const int numindices = material->finishIndices.getNum();
+  if (numpalette > 1 && numindices > 0) {
+    auto palette = std::make_shared<Render::FinishPalette>();
+    const SbVec4f *entries = material->finishPalette.getValues(0);
+    const int num = std::min(numpalette, Render::MaxFinishPalette);
+    palette->entries.reserve(num);
+    for (int i = 0; i < num; ++i) {
+      Render::FinishPalette::Entry entry;
+      const float value = entries[i][0];
+      entry.pattern = value > 0.0f && value < 256.0f
+          ? static_cast<uint8_t>(value + 0.5f) : 0;
+      entry.pitch = entries[i][1];
+      entry.depth = entries[i][2];
+      entry.angle = entries[i][3];
+      palette->entries.push_back(entry);
+    }
+    PRIVATE(this)->material.finishpalette = std::move(palette);
+    const int32_t *indices = material->finishIndices.getValues(0);
+    PRIVATE(this)->material.finishindices.reserve(numindices);
+    for (int i = 0; i < numindices; ++i) {
+      // An index the palette cap dropped resolves to entry 0, the
+      // object's own finish (ViewProviderGeometryObject caps the same
+      // way, so this only catches a hand-built node).
+      const int32_t idx = indices[i];
+      PRIVATE(this)->material.finishindices.append(
+              idx > 0 && idx < num ? idx : 0);
+    }
+  }
+  // The projection frames the finish is laid out in. Three SbVec4f make
+  // one frame -- (origin, kind), (axis, radius), (xdir, spare) -- and
+  // entry 0 is the first face's, which is what a draw with no
+  // per-vertex stream to index with reads.
+  PRIVATE(this)->material.framepalette.reset();
+  PRIVATE(this)->material.frameindices.reset();
+  const int numframevalues = material->framePalette.getNum();
+  const int numframeindices = material->frameIndices.getNum();
+  if (numframevalues >= 3 && numframeindices > 0) {
+    auto palette = std::make_shared<Render::FramePalette>();
+    const SbVec4f *values = material->framePalette.getValues(0);
+    const int num = std::min(numframevalues / 3, Render::MaxFramePalette);
+    palette->entries.reserve(num);
+    for (int i = 0; i < num; ++i) {
+      Render::SurfaceFrame frame;
+      const SbVec4f &o = values[i * 3];
+      const SbVec4f &a = values[i * 3 + 1];
+      const SbVec4f &x = values[i * 3 + 2];
+      const float kind = o[3];
+      frame.kind = kind > 0.0f && kind < 256.0f
+          ? static_cast<uint8_t>(kind + 0.5f) : 0;
+      for (int k = 0; k < 3; ++k) {
+        frame.origin[k] = o[k];
+        frame.axis[k] = a[k];
+        frame.xdir[k] = x[k];
+      }
+      frame.radius = a[3];
+      palette->entries.push_back(frame);
+    }
+    if (!palette->entries.empty()) {
+      PRIVATE(this)->material.framepalette = std::move(palette);
+      const int32_t *indices = material->frameIndices.getValues(0);
+      PRIVATE(this)->material.frameindices.reserve(numframeindices);
+      for (int i = 0; i < numframeindices; ++i) {
+        const int32_t idx = indices[i];
+        PRIVATE(this)->material.frameindices.append(
+                idx > 0 && idx < num ? idx : 0);
+      }
+    }
+  }
   PRIVATE(this)->material.water = material->water.getValue();
   PRIVATE(this)->material.waterdensity = material->waterDensity.getValue();
   PRIVATE(this)->material.glass = material->glass.getValue();
@@ -2001,9 +2184,9 @@ static int checkSelectionContext(SoFCRenderCache::Material &material,
           return 1;
         if (ctx->colors.begin()->first < 0 && ctx->colors.size() == 1) {
           vcache->setFaceColors();
-          auto color = ctx->colors.begin()->second;
-          color.a = 1.0 - color.a;
-          uint32_t diffuse = color.getPackedValue();
+          // The override colour's alpha is an opacity, which is exactly what
+          // the packed material diffuse stores -- no conversion.
+          uint32_t diffuse = ctx->colors.begin()->second.getPackedValue();
           if (diffuse != material.diffuse || material.pervertexcolor) {
             material.diffuse = diffuse;
             material.pervertexcolor = false;
@@ -2016,9 +2199,7 @@ static int checkSelectionContext(SoFCRenderCache::Material &material,
         for (auto &v : ctx->colors) {
           if (v.first < 0)
             continue;
-          auto color = v.second;
-          color.a = 1.0 - color.a;
-          selcolors.emplace_back(v.first, color.getPackedValue());
+          selcolors.emplace_back(v.first, v.second.getPackedValue());
         }
         vcache->setFaceColors(selcolors);
         if ((material.pervertexcolor && !vcache->colorPerVertex())
@@ -2600,7 +2781,10 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
         if (material.lightmodel != SoLazyElement::BASE_COLOR && detail) {
           material.emissive = color | 0xff;
           makeDistinctColor(material.emissive, material.emissive, material.diffuse);
-        } 
+          // the scalar override is the authority now (consumers treat a
+          // present array as authoritative for its channel)
+          material.emissives.reset();
+        }
         uint32_t c = material.diffuse;
         material.diffuse = color | (material.diffuse & 0xff);
         makeDistinctColor(material.diffuse, material.diffuse, c);
@@ -2817,8 +3001,10 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
             material.diffuse = (material.diffuse & ~0xff) | std::max(a, col&0xff);
           }
           makeDistinctColor(material.diffuse, material.diffuse, col);
-          if (material.lightmodel != SoLazyElement::BASE_COLOR)
+          if (material.lightmodel != SoLazyElement::BASE_COLOR) {
             material.emissive = material.diffuse | 0xff;
+            material.emissives.reset();
+          }
         }
         break;
       }
@@ -2895,6 +3081,10 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
     bboxmaterial.metallicroughnessmaps.clear();
     bboxmaterial.texturematrices.clear();
     bboxmaterial.usershader.reset();
+    bboxmaterial.finishpalette.reset();
+    bboxmaterial.finishindices.reset();
+    bboxmaterial.framepalette.reset();
+    bboxmaterial.frameindices.reset();
 
     res[bboxmaterial].emplace_back(cache, matrix, false, false, CacheKeyPtr());
   }

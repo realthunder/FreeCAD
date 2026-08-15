@@ -97,16 +97,16 @@ SectionCut::SectionCut(QWidget* parent)
     // get all objects in the document
     auto docGui = Gui::Application::Instance->activeDocument();
     if (!docGui) {
-        throw Base::RuntimeError("SectionCut error: there is no document");
+        THROWM(Base::RuntimeError, "SectionCut error: there is no document")
     }
     doc = docGui->getDocument();
     if (!doc) {
-        throw Base::RuntimeError("SectionCut error: there is no document");
+        THROWM(Base::RuntimeError, "SectionCut error: there is no document")
     }
 
     std::vector<App::DocumentObject*> ObjectsList = doc->getObjects();
     if (ObjectsList.empty()) {
-        throw Base::RuntimeError("SectionCut error: there are no objects in the document");
+        THROWM(Base::RuntimeError, "SectionCut error: there are no objects in the document")
     }
 
     // now store those that are currently visible
@@ -926,10 +926,10 @@ void SectionCut::throwMissingObjectsError(bool isInitial)
     setGroupsDisabled();
 
     if (isInitial) {
-        throw Base::RuntimeError("There are no visible objects to be cut");
+        THROWM(Base::RuntimeError, "There are no visible objects to be cut")
     }
 
-    throw Base::RuntimeError("There are no objects in the document that can be cut");
+    THROWM(Base::RuntimeError, "There are no objects in the document that can be cut")
 }
 
 bool SectionCut::isCuttingEnabled() const
@@ -1012,7 +1012,7 @@ std::vector<App::DocumentObject*> createLinks(App::Document* doc, const std::vec
 
         auto pcLink = dynamic_cast<App::Link*>(doc->addObject("App::Link", newName.c_str()));
         if (!pcLink) {
-            throw Base::RuntimeError("'App::Link' could not be added");
+            THROWM(Base::RuntimeError, "'App::Link' could not be added")
         }
 
         // set the object to the created empty link object
@@ -1137,7 +1137,7 @@ std::tuple<Base::Vector3f, Base::Vector3f> SectionCut::adjustRanges()
     // we get its size by its bounding box
     SbBox3f CompoundBoundingBox = getViewBoundingBox();
     if (CompoundBoundingBox.isEmpty()) {  // NOLINT
-        throw Base::RuntimeError("SectionCut error: the CompoundBoundingBox is empty");
+        THROWM(Base::RuntimeError, "SectionCut error: the CompoundBoundingBox is empty")
     }
 
     // refresh all cut limits according to the new bounding box
@@ -2018,7 +2018,7 @@ Part::Box* SectionCut::findCutBox(const char* name) const
     if (auto obj = doc->getObject(name)) {
         auto pcBox = dynamic_cast<Part::Box*>(obj);
         if (!pcBox) {
-            throw Base::RuntimeError("SectionCut error: cut box is incorrectly named, cannot proceed");
+            THROWM(Base::RuntimeError, "SectionCut error: cut box is incorrectly named, cannot proceed")
         }
 
         return pcBox;

@@ -12,10 +12,13 @@ Staging comes from one of two sources:
 
 - **Manifest** (default): the RV_CAMERAS named standard views, staged as
   ``view<Name>()`` + ``fitAll()`` — deterministic for a fixed scene.
-- **Golden restage** (RV_GOLDEN set): cameras *and* render properties are
-  re-applied 1:1 from the golden captures' sidecar JSONs, so goldens stay
-  valid when property defaults change (§5 "sidecars are the test
-  manifest"). Output basenames mirror the golden's so diffing pairs up.
+- **Golden restage** (RV_GOLDEN set): cameras, render properties *and*
+  the recorded preferences are re-applied 1:1 from the golden captures'
+  sidecar JSONs, so goldens stay valid when defaults change (§5
+  "sidecars are the test manifest"). The preferences matter for what has
+  no property form -- the enumerations, and the viewer's light rig,
+  ambient, background and cache mode. Output basenames mirror the
+  golden's so diffing pairs up.
 
 Environment contract (all optional except RV_OUT):
   RV_OUT       capture output directory (required)
@@ -113,9 +116,52 @@ def apply_properties(v, props):
     return applied, failed
 
 
+PREF_SETTERS = {
+    "bool": ("SetBool", bool),
+    "int": ("SetInt", int),
+    "unsigned": ("SetUnsigned", int),
+    "float": ("SetFloat", float),
+    "string": ("SetString", str),
+}
+
+
+def apply_preferences(prefs):
+    """Re-apply a sidecar's preference groups, best-effort.
+
+    The sidecar records the parameters a Render_* view property does not
+    cover: the enumerations that never become properties (AOMethod,
+    MatcapPreset, WaterRippleType), and the viewer's own rig -- lights,
+    ambient, background, chrome, cache mode -- which has no property
+    form at all.
+
+    Values arrive bucketed by parameter type, because a group is a set
+    of typed maps and JSON cannot tell an int from an unsigned: writing
+    a colour back with SetInt files it under Integer while the reader
+    goes on taking the stale Unsigned one.
+    """
+    import FreeCAD
+
+    applied, failed = 0, []
+    for group, buckets in sorted(prefs.items()):
+        grp = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/" + group)
+        for typename, values in sorted(buckets.items()):
+            entry = PREF_SETTERS.get(typename)
+            if not entry:
+                failed.append("%s/<%s>" % (group, typename))
+                continue
+            setter, cast = entry
+            for name, value in sorted(values.items()):
+                try:
+                    getattr(grp, setter)(name, cast(value))
+                    applied += 1
+                except Exception:
+                    failed.append("%s/%s" % (group, name))
+    return applied, failed
+
+
 def golden_stagings():
-    """(prefix, camera-string, properties) per camera found in RV_GOLDEN,
-    read from the beauty (mode0) desktop-leg sidecars."""
+    """(prefix, camera-string, properties, preferences) per camera found
+    in RV_GOLDEN, read from the beauty (mode0) desktop-leg sidecars."""
     stagings = []
     for sidecar in sorted(glob.glob(os.path.join(GOLDEN, "*--mode0.png.json"))):
         base = os.path.basename(sidecar)
@@ -123,7 +169,9 @@ def golden_stagings():
             continue
         data = json.load(open(sidecar))
         prefix = re.sub(r"--mode0\.png\.json$", "", base)
-        stagings.append((prefix, data.get("camera", ""), data.get("properties", {})))
+        stagings.append((prefix, data.get("camera", ""),
+                         data.get("properties", {}),
+                         data.get("preferences", {})))
     return stagings
 
 
@@ -222,14 +270,20 @@ def stage_named(cam):
     return fn
 
 
-def stage_golden(prefix, camera, props):
+def stage_golden(prefix, camera, props, prefs):
     def fn():
         v = view()
+        # Preferences first, properties second: a Render_* view property
+        # outranks the parameter it was seeded from, so applying them
+        # the other way round would let a stale property win.
+        pref_applied, pref_failed = apply_preferences(prefs)
         applied, failed = apply_properties(v, props)
         if camera:
             v.setCamera(camera)
-        note("restaged %s (props %d applied%s)" % (
-            prefix, applied, ", failed: %s" % failed if failed else ""))
+        note("restaged %s (props %d applied%s; prefs %d applied%s)" % (
+            prefix, applied, ", failed: %s" % failed if failed else "",
+            pref_applied,
+            ", failed: %s" % pref_failed if pref_failed else ""))
     return fn
 
 
@@ -287,8 +341,8 @@ def build_steps():
             note("ABORT no *--mode0.png.json sidecars in golden dir " + GOLDEN)
             os._exit(1)
         note("restaging %d cameras from golden %s" % (len(stagings), GOLDEN))
-        for prefix, camera, props in stagings:
-            add_step(300, stage_golden(prefix, camera, props))
+        for prefix, camera, props, prefs in stagings:
+            add_step(300, stage_golden(prefix, camera, props, prefs))
             for m in MODES:
                 add_step(700 if m == MODES[0] else 200, capture(prefix, m))
     else:

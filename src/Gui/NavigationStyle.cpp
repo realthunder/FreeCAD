@@ -519,6 +519,17 @@ void NavigationStyle::findBoundingSphere() {
     // Find a bounding sphere for the scene
     SbBox3f box;
     viewer->getSceneBoundBox(box);
+    if (box.isEmpty()) {
+        // The scene is empty — which is what a viewer is built with, before
+        // any document. SbSphere's default constructor leaves itself
+        // uninitialized, and circumscribe() refuses an empty box (warning
+        // about it in a debug Coin, and computing a NaN centre from the
+        // inverted empty bounds in a release one), so state what an empty
+        // scene means rather than leave reorientCamera() reading whatever
+        // was on the stack.
+        boundingSphere.setValue(SbVec3f(0, 0, 0), 0);
+        return;
+    }
     boundingSphere.circumscribe(box);
 }
 

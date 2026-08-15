@@ -78,6 +78,7 @@
 #include <Gui/WaitCursor.h>
 #include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/ViewProviderLink.h>
+#include <Mod/Part/Gui/ViewProvider.h>
 #include <Mod/Import/App/ExportOCAF2.h>
 #include <Mod/Import/App/ImportOCAF2.h>
 #include <Mod/Import/App/ReaderGltf.h>
@@ -361,7 +362,7 @@ private:
             pcDoc->setUndoMode(undoMode);
         }
         if (expired) {
-            throw Base::RuntimeError("Target document was closed during STEP import");
+            THROWM(Base::RuntimeError, "Target document was closed during STEP import")
         }
         if (readError) {
             std::rethrow_exception(readError);
@@ -415,7 +416,7 @@ private:
             error = e.GetMessageString() ? e.GetMessageString() : "OCCT failure";
         }
         if (docPtr.expired()) {
-            throw Base::RuntimeError("Target document was closed during STEP import");
+            THROWM(Base::RuntimeError, "Target document was closed during STEP import")
         }
         // the terminal recompute must still run with undo disabled (an
         // App::Part's origin creation, for one, records a transaction)
@@ -660,6 +661,37 @@ private:
         return {};
     }
 
+    static bool getShapeAppearance(App::DocumentObject* obj, std::vector<App::Material>& mats,
+                                   bool& pbr)
+    {
+        // Whole materials, only when the appearance says something the
+        // colour labels cannot: a field beyond diffuse varying across the
+        // faces, or a uniform emissive that is lit at all (no other
+        // export channel carries emissive) -- or the PBR mode at all,
+        // whose metallic and roughness have no colour-label channel.
+        auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
+            Gui::Application::Instance->getViewProvider(obj));
+        if (!vp) {
+            return false;
+        }
+        pbr = vp->ShapeAppearance.isPBR();
+        if (!pbr) {
+            const App::Color e = vp->ShapeAppearance.getEmissiveColor(0);
+            bool emissive = e.r > 0.004f || e.g > 0.004f || e.b > 0.004f;
+            if (vp->ShapeAppearance.variesOnlyInDiffuse() && !emissive) {
+                return false;
+            }
+        }
+        int count = vp->ShapeAppearance.getSize();
+        mats.reserve(count);
+        for (int i = 0; i < count; ++i) {
+            // Raw slots either way; a PBR list's conversion happens at the
+            // writer, which needs both readings.
+            mats.push_back(vp->ShapeAppearance.getMaterial(i));
+        }
+        return !mats.empty();
+    }
+
     static bool getRenderMaterial(App::DocumentObject* obj, Import::RenderMaterial& mat)
     {
         // Per-object render engine settings (Render_* dynamic properties,
@@ -697,9 +729,7 @@ private:
         if (mat.valid) {
             mat.hasBaseColor = true;
             mat.baseColor = vp->ShapeColor.getValue();
-            // App::Color::a carries *transparency* in the importer color
-            // convention (Tools::convertColor inverts it to alpha).
-            mat.baseColor.a = float(vp->Transparency.getValue()) / 100.0f;
+            mat.baseColor.setTransparency(float(vp->Transparency.getValue()) / 100.0f);
         }
         return mat.valid;
     }
@@ -788,7 +818,6 @@ private:
                 auto stepSettings = dlg.getSettings();
                 options.setItem("exportHidden", Py::Boolean(stepSettings.exportHidden));
                 options.setItem("keepPlacement", Py::Boolean(stepSettings.keepPlacement));
-                options.setItem("legacy", Py::Boolean(stepSettings.exportLegacy));
             }
         }
 
@@ -831,8 +860,9 @@ private:
         Part::OCAF::ImportExportSettings settings;
 
         // still support old way
-        bool legacyExport = (pylegacy         == Py_None ? settings.getExportLegacy()
-                                                         : Base::asBoolean(pylegacy));
+        // The legacy exporter is retired and no longer preference-driven: it
+        // runs only when explicitly requested with legacy=True.
+        bool legacyExport = (pylegacy != Py_None && Base::asBoolean(pylegacy));
         bool exportHidden = (pyexportHidden   == Py_None ? settings.getExportHiddenObject()
                                                          : Base::asBoolean(pyexportHidden));
         bool keepPlacement = (pykeepPlacement == Py_None ? settings.getExportKeepPlacement()
@@ -870,6 +900,7 @@ private:
 
             Import::ExportOCAF2 ocaf(hDoc, &getShapeColors);
             ocaf.setGetRenderMaterial(&getRenderMaterial);
+            ocaf.setGetShapeAppearance(&getShapeAppearance);
             if (!legacyExport || !ocaf.canFallback(objs)) {
                 ocaf.setExportOptions(Import::ExportOCAF2::customExportOptions());
                 ocaf.setExportHiddenObject(exportHidden);

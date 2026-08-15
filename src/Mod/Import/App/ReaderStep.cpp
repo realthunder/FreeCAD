@@ -109,7 +109,7 @@ int ReaderStep::openAssemblyTree(Handle(TDocStd_Document) hDoc, int root)  // NO
     return 0;
 #else
     if (!stream) {
-        throw Base::RuntimeError("ReaderStep: no open stream");
+        THROWM(Base::RuntimeError, "ReaderStep: no open stream")
     }
     auto& s = *stream;
     nodes.clear();
@@ -161,10 +161,10 @@ void ReaderStep::transferComponentRange(Handle(TDocStd_Document) hDoc,  // NOLIN
     (void)first;
     (void)last;
     (void)results;
-    throw Base::RuntimeError("ReaderStep: streamed transfer requires OCCT 8");
+    THROWM(Base::RuntimeError, "ReaderStep: streamed transfer requires OCCT 8")
 #else
     if (!stream || stream->components.empty()) {
-        throw Base::RuntimeError("ReaderStep: no open component stream");
+        THROWM(Base::RuntimeError, "ReaderStep: no open component stream")
     }
     auto& s = *stream;
     Handle(NCollection_HSequence<Handle(Standard_Transient)>) batch =
@@ -180,7 +180,7 @@ void ReaderStep::transferComponentRange(Handle(TDocStd_Document) hDoc,  // NOLIN
     }
     s.reader.TransferComponents(batch, hDoc, s.scope->Next(double(batch->Size())));
     if (s.progress->UserBreak()) {
-        throw Base::AbortException("STEP import aborted by user");
+        THROWM(Base::AbortException, "STEP import aborted by user")
     }
     // Report what each component became, so the caller can tell which node of
     // the tree - and so which container - a new free shape belongs to.
@@ -200,15 +200,15 @@ void ReaderStep::transferRootRange(Handle(TDocStd_Document) hDoc, int first, int
     (void)hDoc;
     (void)first;
     (void)last;
-    throw Base::RuntimeError("ReaderStep: streamed transfer requires OCCT 8");
+    THROWM(Base::RuntimeError, "ReaderStep: streamed transfer requires OCCT 8")
 #else
     if (!stream) {
-        throw Base::RuntimeError("ReaderStep: no open stream");
+        THROWM(Base::RuntimeError, "ReaderStep: no open stream")
     }
     auto& s = *stream;
     s.reader.TransferRootRange(first, last, hDoc, s.scope->Next(double(last - first + 1)));
     if (s.progress->UserBreak()) {
-        throw Base::AbortException("STEP import aborted by user");
+        THROWM(Base::AbortException, "STEP import aborted by user")
     }
 #endif
 }
@@ -235,7 +235,7 @@ void ReaderStep::read(Handle(TDocStd_Document) hDoc)  // NOLINT
     opencascade::handle<Part::ProgressIndicator> pi = new Part::ProgressIndicator(100);
     aReader.Transfer(hDoc, pi->Start());
     if (pi->UserBreak()) {
-        throw Base::AbortException("STEP import aborted by user");
+        THROWM(Base::AbortException, "STEP import aborted by user")
     }
 #else
     Handle(Message_ProgressIndicator) pi = new Part::ProgressIndicator(100);

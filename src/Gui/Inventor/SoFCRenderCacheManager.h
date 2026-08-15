@@ -187,6 +187,11 @@ public:
    */
   int getDeferredCaptureCount() const;
 
+  /// The scene's root render cache as last built by render(), capture()
+  /// or traverse(); null before the first build. Read-only inspection
+  /// (tests, external consumers).
+  SoFCRenderCache * getSceneCache() const;
+
   void setHatchImage(const void *dataptr, int nc, int width, int height);
 
   void doLatePick(SoRayPickAction *action) const;

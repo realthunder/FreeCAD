@@ -33,6 +33,7 @@
 #   define RendererExport   FREECAD_DECL_IMPORT
 #endif
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <atomic>
@@ -86,6 +87,18 @@ struct MeshData {
     const float *positions = nullptr;   ///< xyz per vertex, never null
     const float *normals = nullptr;     ///< xyz per vertex, may be null
     const uint8_t *colors = nullptr;    ///< rgba8 per vertex, may be null
+    /// Bytes per vertex of the material stream below.
+    static constexpr int MaterialStride = 12;
+
+    /// Per-vertex material stream of a per-face-material cache, 12 bytes
+    /// per vertex: rgba8 emissive, then rgb8 specular with the
+    /// shininess (0..1) quantized in the last byte, then the surface
+    /// finish palette index (Material::finishpalette) in one byte, the
+    /// projection frame palette index (Material::framepalette) in the
+    /// next and two reserved after them. Null for uniform objects (then
+    /// the Material scalars apply). Draws consume it only when their
+    /// material sets perfacematerial.
+    const uint8_t *materials = nullptr;
 
     const int32_t *triangleIndices = nullptr;
     int numTriangleIndices = 0;
@@ -311,11 +324,14 @@ struct PreselHighlightConfig {
     bool faceOutline = true;       ///< ViewParams::ShowPreSelectedFaceOutline
     bool outlineOnly = true;       ///< NoPreSelFaceHighlightWithOutline (no fill)
     float pickRadius = 5.0f;       ///< ViewParams::PickRadius, screen pixels
+    /// ViewParams::TouchLoupeLift, CSS pixels: how far above the fingertip
+    /// the touch loupe picks (the WASM viewer's hold-to-preselect gesture).
+    float loupeLift = 28.0f;
 
     bool operator==(const PreselHighlightConfig &o) const {
         return color == o.color && outlineWidth == o.outlineWidth
             && faceOutline == o.faceOutline && outlineOnly == o.outlineOnly
-            && pickRadius == o.pickRadius;
+            && pickRadius == o.pickRadius && loupeLift == o.loupeLift;
     }
     bool operator!=(const PreselHighlightConfig &o) const {
         return !(*this == o);
@@ -562,6 +578,57 @@ struct OcclusionCullConfig {
             && benefitProbe == o.benefitProbe;
     }
     bool operator!=(const OcclusionCullConfig &o) const { return !(*this == o); }
+};
+
+/// Per-frame screen-space cavity (curvature) shading configuration —
+/// like AOConfig there is no GL-renderer counterpart. A curvature term
+/// read from the geometry prepass normals, multiplied onto the finished
+/// opaque scene: it states surface shape without depending on the
+/// lighting, which is what makes small features readable in an
+/// inspection view. Orthogonal to AOConfig — occlusion is a visibility
+/// integral over a world-space radius, cavity is a local second
+/// derivative over a screen-space one — and the two compose.
+struct CavityConfig {
+    bool enabled = false;    ///< cavity pass active
+    /// Darkening strength in concave creases (curvature > 0) and on
+    /// convex ridges (curvature < 0). Both darken: the pass multiplies
+    /// an 8-bit scene color, so it cannot brighten past white.
+    float valley = 1.0f;
+    float ridge = 0.5f;
+    /// Baseline the curvature is measured over, in pixels. Decides
+    /// which features the pass can see: at 1 it reads only what turns
+    /// within one pixel — hard creases, crisply, which is what stands in
+    /// for the edges the Shaded draw style does not draw — and widening
+    /// it brings broad curvature in at the cost of softening those
+    /// creases into bands of this width.
+    float radius = 1.0f;
+
+    bool operator==(const CavityConfig &o) const {
+        return enabled == o.enabled && valley == o.valley
+            && ridge == o.ridge && radius == o.radius;
+    }
+    bool operator!=(const CavityConfig &o) const { return !(*this == o); }
+};
+
+/// Per-frame matcap shading configuration — like AOConfig there is no
+/// GL-renderer counterpart. Replaces the scene lighting with a fixed
+/// studio attached to the camera, looked up by the view-space normal,
+/// so a surface's shading depends only on which way it faces the
+/// viewer. The presets are computed in the shader (no matcap images to
+/// ship, install or fetch on any tier). Overrides PBRConfig while on.
+struct MatcapConfig {
+    bool enabled = false;    ///< matcap shading active
+    /// Which procedural matcap: 0 studio, 1 clay, 2 metal, 3 pearl.
+    int preset = 0;
+    /// How much the object's own color tints the matcap, 0 to 1. Zero
+    /// shades every object as one uniform material.
+    float tint = 0.0f;
+
+    bool operator==(const MatcapConfig &o) const {
+        return enabled == o.enabled && preset == o.preset
+            && tint == o.tint;
+    }
+    bool operator!=(const MatcapConfig &o) const { return !(*this == o); }
 };
 
 /// Per-frame render debugging configuration (docs/RenderDebug.md).
@@ -877,6 +944,30 @@ struct LightConfig {
     /// own — a receiving quad under the scene bounds.
     bool ground = false;
     float groundScale = 2.0f;    ///< times the scene extent
+    /// Ground sizing and placement, matching what the Coin quad does
+    /// (View3DInventorViewer::Private::updateShadowGround):
+    ///
+    /// - `groundAuto` (ShadowGroundSizeAuto) picks `groundScale` times
+    ///   the largest scene dimension over the explicit half extents
+    ///   `groundSizeX` / `groundSizeY` (ShadowGroundSizeX/Y).
+    /// - `groundAutoPos` (ShadowGroundAutoPosition) puts the quad under
+    ///   the scene, **one unit below** the bounding box — Coin's
+    ///   `z = center.z - size.z/2 - 1`, a gap that keeps a model resting
+    ///   on z=0 from z-fighting its own shadow receiver. Otherwise the
+    ///   quad centre is `groundPos` outright.
+    /// - `groundMatrix` is ShadowGroundPlacement, applied to the four
+    ///   corners so the ground can be tilted. Coin applies it only in
+    ///   auto-position mode (where the placement reads as an offset);
+    ///   with an explicit position the placement *is* the position and
+    ///   the matrix is identity. Column-major, as the rest of the
+    ///   renderer's matrices.
+    bool groundAuto = true;
+    float groundSizeX = 100.0f;  ///< half extent when !groundAuto
+    float groundSizeY = 100.0f;
+    bool groundAutoPos = true;
+    float groundPos[3] = {0.0f, 0.0f, 0.0f};
+    float groundMatrix[16] = {1, 0, 0, 0, 0, 1, 0, 0,
+                              0, 0, 1, 0, 0, 0, 0, 1};
     uint32_t groundColor = 0x7d7d7dff;
     /// Ground texture (ShadowGroundTexture), modulated by the ground
     /// color and tiled every groundTextureSize world units
@@ -905,6 +996,70 @@ struct LightConfig {
     bool sunDisc = false;
     float sunDiscSize = 1.5f;  ///< angular radius in degrees
 
+    /// The ground quad's four corners in world space, wound as Coin
+    /// builds them (-x-y, +x-y, +x+y, -x+y). False when there is no
+    /// ground to draw, so a caller can use it as its own gate.
+    ///
+    /// One place, because there were three: the shadow pass, the
+    /// reflection pass and the scene bounds each recomputed the extent
+    /// from groundScale, and only one of them would have been updated
+    /// when the sizing gained cases.
+    /// \a halfOut, when given, receives the two half extents — the
+    /// texture spans need them separately, and they stop being equal as
+    /// soon as the size is set explicitly.
+    bool groundQuad(const float *bmin, const float *bmax,
+                    float corners[4][3], float *halfOut = nullptr) const
+    {
+        if (!valid || !ground || groundTransparency >= 1.0f)
+            return false;
+        float hx, hy;
+        if (groundAuto) {
+            const float scale = groundScale > 0.0f ? groundScale : 1.0f;
+            hx = hy = scale * std::max(bmax[0] - bmin[0],
+                                       std::max(bmax[1] - bmin[1],
+                                                bmax[2] - bmin[2]));
+        }
+        else {
+            hx = groundSizeX;
+            hy = groundSizeY;
+        }
+        if (hx <= 0.0f || hy <= 0.0f)
+            return false;
+        if (halfOut) {
+            halfOut[0] = hx;
+            halfOut[1] = hy;
+        }
+
+        float cx, cy, z;
+        if (groundAutoPos) {
+            cx = (bmin[0] + bmax[0]) * 0.5f;
+            cy = (bmin[1] + bmax[1]) * 0.5f;
+            // Coin's z = center.z - size.z/2 - 1: one unit *below* the
+            // box, not level with its floor. The gap is what keeps a
+            // model resting on z=0 out of a z-fight with the quad
+            // receiving its shadow.
+            z = bmin[2] - 1.0f;
+        }
+        else {
+            cx = groundPos[0];
+            cy = groundPos[1];
+            z = groundPos[2];
+        }
+
+        static const float xs[4] = {-1.0f, 1.0f, 1.0f, -1.0f};
+        static const float ys[4] = {-1.0f, -1.0f, 1.0f, 1.0f};
+        for (int i = 0; i < 4; ++i) {
+            const float p[3] = {cx + xs[i] * hx, cy + ys[i] * hy, z};
+            for (int r = 0; r < 3; ++r) {
+                corners[i][r] = groundMatrix[r] * p[0]
+                              + groundMatrix[4 + r] * p[1]
+                              + groundMatrix[8 + r] * p[2]
+                              + groundMatrix[12 + r];
+            }
+        }
+        return true;
+    }
+
     bool operator==(const LightConfig &o) const {
         return valid == o.valid && shadow == o.shadow && spot == o.spot
             && direction[0] == o.direction[0]
@@ -929,9 +1084,118 @@ struct LightConfig {
             && groundBumpMap == o.groundBumpMap
             && groundReflection == o.groundReflection
             && groundReflectionIntensity == o.groundReflectionIntensity
-            && sunDisc == o.sunDisc && sunDiscSize == o.sunDiscSize;
+            && sunDisc == o.sunDisc && sunDiscSize == o.sunDiscSize
+            && groundAuto == o.groundAuto
+            && groundSizeX == o.groundSizeX && groundSizeY == o.groundSizeY
+            && groundAutoPos == o.groundAutoPos
+            && std::equal(groundPos, groundPos + 3, o.groundPos)
+            && std::equal(groundMatrix, groundMatrix + 16, o.groundMatrix);
     }
     bool operator!=(const LightConfig &o) const { return !(*this == o); }
+};
+
+/// Maximum number of ordinary Coin lights carried per frame.
+///
+/// Eight matches what Coin's own renderer can draw, but that is not a
+/// constraint on this one and the number is not inherited from it:
+/// `SoLightElement` is an unbounded list, and the familiar 8 is
+/// `SoGLLightIdElement::getMaxGLSources()` -- `glGetIntegerv(
+/// GL_MAX_LIGHTS)`, binding fixed-function GL. This engine reads the
+/// element and shades it itself.
+///
+/// What bounds it here is the fragment uniform budget: the mesh
+/// program totals 183 of the 224 vec4 an ES3/WebGL2 device has to
+/// guarantee, so 16 would still fit and 32 would not. Eight is chosen
+/// because nothing produces more (upstream's three-point rig plus the
+/// scene light is four) and because past it Coin's own compositing
+/// would stop at GL_MAX_LIGHTS and diverge. See docs/RenderEngine.md
+/// 3.2 for the full budget, including the effect lights, which are a
+/// separate array with a separate capacity.
+///
+/// Keep in step with VIEW_LIGHTS in bgfx/shaders/fc_mesh_lighting.sh,
+/// which cannot see this header (the same hand-paired arrangement as
+/// LOCAL_LIGHTS / kLocalLights and BULB_SHADOW_TILES).
+static constexpr int MaxViewLights = 8;
+
+/// One ordinary light of the Coin traversal: the viewer's headlight and
+/// backlight, and any SoDirectionalLight / SoPointLight a document puts
+/// in the graph. Distinct from LightConfig, which is the *scene* light
+/// -- the single shadow-casting one the Shadow draw style (or
+/// Render_Light) supplies, with a shadow map, sun disc and ground of its
+/// own. These have none of that: they light, and nothing else.
+struct ViewLight {
+    /// The way the light travels, world space, normalized. Unused by a
+    /// plain positional light; a `spot` reads it as the cone axis.
+    float direction[3] = {0.0f, 0.0f, -1.0f};
+    /// World-space position of a positional (SoPointLight) light.
+    float position[3] = {0.0f, 0.0f, 0.0f};
+    bool positional = false;
+    /// Distance attenuation, in Coin's SoEnvironment::attenuation order
+    /// and units: squared, linear, constant (default 0, 0, 1 = none).
+    /// Kept in that order rather than re-sorted to the GL one so the
+    /// value can be compared against the node it came from. Positional
+    /// lights only -- a directional light has no distance.
+    float attenuation[3] = {0.0f, 0.0f, 1.0f};
+    uint32_t color = 0xffffffff;   ///< packed 0xRRGGBBAA
+    float intensity = 1.0f;
+    /// An SoSpotLight past the one the scene light claims (the first is
+    /// taken by LightConfig, with the shadow map and the sun disc; these
+    /// have neither). A spot is `positional` as well -- it has a
+    /// position and Coin's distance attenuation applies to it -- with
+    /// `direction` as the cone axis on top.
+    bool spot = false;
+    /// Coin's SoSpotLight fields, kept in its units (cutOffAngle is the
+    /// cone's half angle in radians, dropOffRate the 0..1 field) so they
+    /// can be compared against the node they came from; the backend
+    /// converts, exactly as LightConfig's pair is converted.
+    float cutOffAngle = 0.785398f;
+    float dropOffRate = 0.0f;
+
+    bool operator==(const ViewLight &o) const {
+        return std::equal(direction, direction + 3, o.direction)
+            && std::equal(position, position + 3, o.position)
+            && positional == o.positional
+            && std::equal(attenuation, attenuation + 3, o.attenuation)
+            && color == o.color && intensity == o.intensity
+            && spot == o.spot && cutOffAngle == o.cutOffAngle
+            && dropOffRate == o.dropOffRate;
+    }
+    bool operator!=(const ViewLight &o) const { return !(*this == o); }
+};
+
+/// The ordinary Coin lights of a frame (see ViewLight).
+///
+/// `fed` is what separates "the feed resolved the lighting and there is
+/// none" from "nothing filled this in". The first has to render dark --
+/// it is what EnableHeadlight off means, and honoring it is the point
+/// of carrying this at all. The second is an old scene dump or a
+/// consumer that predates the struct, and has to keep rendering the way
+/// it always did, so backends substitute their fixed white headlight
+/// down the view axis. Leaving `fed` false by default is what makes
+/// that the safe direction.
+struct ViewLightConfig {
+    bool fed = false;
+    int count = 0;
+    ViewLight lights[MaxViewLights];
+
+    /// The traversal's global ambient (SoEnvironment ambientColor times
+    /// ambientIntensity, default 0.2 grey), packed 0xRRGGBBAA. GL's
+    /// LIGHT_MODEL_AMBIENT: a surface's ambient term is this times the
+    /// material's own ambient colour, which is what Material::ambient
+    /// carries. Only meaningful while `fed` -- an unfed config leaves
+    /// backends on the flat grey floor they used before this existed.
+    uint32_t ambient = 0x333333ff;
+
+    bool operator==(const ViewLightConfig &o) const {
+        if (fed != o.fed || count != o.count || ambient != o.ambient)
+            return false;
+        for (int i = 0; i < count; ++i) {
+            if (lights[i] != o.lights[i])
+                return false;
+        }
+        return true;
+    }
+    bool operator!=(const ViewLightConfig &o) const { return !(*this == o); }
 };
 
 /// Per-frame volumetric lighting (light shaft) configuration (like
@@ -1101,6 +1365,127 @@ struct PBRConfig {
     bool operator!=(const PBRConfig &o) const { return !(*this == o); }
 };
 
+/// How many distinct finishes one draw's palette may hold. The backend
+/// uploads the palette as a uniform array of this size, so it is a shader
+/// contract as much as a storage bound; a face whose finish does not fit
+/// falls back to entry 0 (the draw's own finish) at translate time.
+static constexpr int MaxFinishPalette = 8;
+
+/// The distinct surface finishes of one per-face-finished draw
+///
+/// A finish is four numbers, and per-face data rides the per-vertex
+/// material stream, where four more arrays would not fit any budget worth
+/// spending. So the finishes reduce to this palette and the stream carries
+/// a single index into it (MeshData::materials, third slot). Immutable
+/// once published: draws share one by pointer, which is also how the
+/// backend batches them.
+struct FinishPalette {
+    struct Entry {
+        uint8_t pattern = 0;    ///< App::SurfaceFinish::Pattern, 0 = none
+        float pitch = 0.0f;     ///< mm of object space, feature spacing
+        float depth = 0.0f;     ///< mm of object space, peak to valley
+        float angle = 0.0f;     ///< degrees, lay direction
+
+        bool operator==(const Entry &o) const {
+            return pattern == o.pattern && pitch == o.pitch
+                && depth == o.depth && angle == o.angle;
+        }
+    };
+
+    /// At most MaxFinishPalette entries; entry 0 repeats the material's
+    /// own finish scalars.
+    std::vector<Entry> entries;
+
+    bool operator==(const FinishPalette &o) const {
+        return entries == o.entries;
+    }
+};
+
+/// How many distinct projection frames one draw's palette may hold. As
+/// with MaxFinishPalette this is a shader contract (the uniform array is
+/// declared this long); a face whose frame does not fit falls back to
+/// entry 0, the first face's frame -- the same rule the finish palette
+/// follows. Frames are canonicalized hard before they are counted (see
+/// faceProjectionFrame), so the coplanar faces of a bracket and the
+/// coaxial cylinders of a stepped shaft each cost ONE entry, and a part
+/// that overflows sixteen is a part with sixteen genuinely different
+/// machining setups.
+static constexpr int MaxFramePalette = 16;
+
+/// The frame a face's surface finish is laid out in
+///
+/// Without one, a finish is projected TRIPLANARLY off the object-space
+/// normal, which is plausible from any angle but does not know the
+/// geometry: a straight knurl on a cylinder comes out with
+/// circumferential grooves, and turning marks centre on the object
+/// origin rather than on the axis that was turned. A frame states what
+/// the machine knew -- the plane's own axes, or the axis a cylinder or
+/// cone was turned about -- so the pattern is laid the way the tool
+/// laid it.
+///
+/// Produced from the OCCT surface at tessellation time (the Part view
+/// provider), which is the only place the analytic surface is still in
+/// hand; a face whose surface is neither planar nor a surface of
+/// revolution states Unframed and keeps the triplanar projection.
+struct SurfaceFrame {
+    enum Kind : uint8_t {
+        Unframed = 0,   ///< triplanar, as before frames existed
+        Planar = 1,     ///< pattern laid in the plane's own axes
+        Radial = 2,     ///< about an axis: cylinder, cone, revolution
+    };
+
+    uint8_t kind = Unframed;
+    /// Object-space origin: a point of the plane, or a point ON the axis
+    /// (canonicalized to the one nearest the object origin, so coaxial
+    /// faces share a frame).
+    float origin[3] = {0.0f, 0.0f, 0.0f};
+    /// Plane normal, or the axis of revolution. Unit length.
+    float axis[3] = {0.0f, 0.0f, 1.0f};
+    /// Where the frame's first coordinate points: the surface's own X
+    /// direction, so a lay angle means what the sketch or the turning
+    /// setup meant by it. Unit length and perpendicular to axis.
+    float xdir[3] = {1.0f, 0.0f, 0.0f};
+    /// Radial frames only: the reference radius in millimetres, which
+    /// fixes how many pattern periods fit around the circumference (see
+    /// the seam argument in fc_finish.sh). 0 = derive it per fragment.
+    float radius = 0.0f;
+
+    bool operator==(const SurfaceFrame &o) const {
+        return kind == o.kind && radius == o.radius
+            && std::equal(origin, origin + 3, o.origin)
+            && std::equal(axis, axis + 3, o.axis)
+            && std::equal(xdir, xdir + 3, o.xdir);
+    }
+    bool operator!=(const SurfaceFrame &o) const { return !(*this == o); }
+    /// Field by field, for the render cache's material ordering. Not a
+    /// memcmp: the struct has padding after `kind` that nothing writes.
+    bool operator<(const SurfaceFrame &o) const {
+        if (kind != o.kind) return kind < o.kind;
+        for (int i = 0; i < 3; ++i) {
+            if (origin[i] != o.origin[i]) return origin[i] < o.origin[i];
+            if (axis[i] != o.axis[i]) return axis[i] < o.axis[i];
+            if (xdir[i] != o.xdir[i]) return xdir[i] < o.xdir[i];
+        }
+        return radius < o.radius;
+    }
+};
+
+/// The distinct projection frames of one draw, indexed by the material
+/// stream's third slot, second byte. Immutable once published, like
+/// FinishPalette,
+/// and shared by pointer for the same batching reason.
+struct FramePalette {
+    /// At most MaxFramePalette entries. Entry 0 is the first face's
+    /// frame, which is what a draw with no stream -- an unbound index
+    /// attribute, or a mesh whose stream collapsed because every face
+    /// is framed alike -- resolves to.
+    std::vector<SurfaceFrame> entries;
+
+    bool operator==(const FramePalette &o) const {
+        return entries == o.entries;
+    }
+};
+
 /// Flattened per-draw render state, translated from the Coin-side material
 /// (SoFCRenderCache::Material). Colors are packed 0xRRGGBBAA.
 struct Material {
@@ -1114,6 +1499,21 @@ struct Material {
     bool depthtest = true;
     bool depthwrite = true;
     bool pervertexcolor = false;
+    /// Whole triangle draw of a cache whose mesh carries the per-face
+    /// material stream (MeshData::materials), with the material arrays
+    /// still authoritative (no scalar override on top): the backend
+    /// shades emissive/specular/shininess from the stream instead of
+    /// the scalars below. Never set on partial draws — those resolve
+    /// their face's values into the scalars at translate time.
+    bool perfacematerial = false;
+    /// That stream's two alpha slots carry the PBR factor pair — the
+    /// metallic where the emissive alpha is otherwise a constant 1, the
+    /// roughness where the shininess sits — instead of a constant and
+    /// the shininess (a per-face PBR appearance). Meaningful only with
+    /// perfacematerial, and only the PBR shading branch reads them; the
+    /// Phong branch shades a per-face PBR object from the same stream's
+    /// colors, which are its Phong derivation.
+    bool perfacepbr = false;
     bool lighting = true;        ///< false = flat base color (no light model)
     bool twoside = false;
     bool culling = false;
@@ -1121,6 +1521,16 @@ struct Material {
     bool transparent = false;    ///< uniform-color / texture transparency
     bool ontop = false;          ///< render after (over) the normal scene
     bool polygonoffset = false;  ///< glPolygonOffset on filled triangles
+    /// SoDrawStyleElement::Style as the render cache captured it. The GL
+    /// renderer hands LINES/POINTS to glPolygonMode; no modern API has
+    /// that state, so the backend draws the primitives instead — see
+    /// BGFXView::submitTessellation. This is how the Tessellation draw
+    /// style arrives (SoFCUnifiedSelection overrides the element to
+    /// LINES for it), which is the only thing that sets it today.
+    enum DrawStyle : uint8_t {
+        DrawFilled = 0, DrawLines = 1, DrawPoints = 2, DrawInvisible = 3
+    };
+    uint8_t drawstyle = DrawFilled;
     uint32_t diffuse = 0xCCCCCCFF;
     uint32_t emissive = 0;
     uint32_t specular = 0;
@@ -1184,6 +1594,52 @@ struct Material {
     /// shading path is active.
     float metallic = -1.0f;
     float roughness = -1.0f;
+
+    /// Machined surface finish of a triangle draw (App::SurfaceFinish,
+    /// carried by SoFCRenderMaterial, either authored on the appearance
+    /// or stated by the ViewProvider Render_Finish* properties): a
+    /// procedural pattern the backend shades as a perturbed normal, and
+    /// as added roughness once its features fall below the pixel
+    /// footprint. finish is the App::SurfaceFinish::Pattern value
+    /// (0 = none, and an unrecognized one shades as none); finishpitch
+    /// (feature spacing) and finishdepth (peak to valley) are in
+    /// millimetres of the draw's OBJECT space, so an instanced or scaled
+    /// copy keeps the finish attached to its geometry; finishangle is
+    /// the lay direction in degrees. Only meaningful while lighting is
+    /// on: a pattern is a shading fact, so the depth, shadow and
+    /// picking passes ignore it.
+    uint8_t finish = 0;
+    float finishpitch = 0.0f;
+    float finishdepth = 0.0f;
+    float finishangle = 0.0f;
+
+    /// Per-face form of that finish (null = the scalars above are the
+    /// whole story). A finish is four numbers, so a per-face one rides a
+    /// PALETTE of the distinct finishes plus one index per vertex in the
+    /// material stream's third slot — not four more per-face arrays.
+    /// Entry 0 is what the scalars repeat, which is what an unbound index
+    /// attribute (a mesh with no stream) resolves to. Meaningful on whole
+    /// triangle draws only, and only together with perfacematerial: a
+    /// partial draw resolves its face's entry into the scalars at
+    /// translate time and carries no palette. Shared and immutable, so
+    /// pointer identity is a batch key (like usershader).
+    std::shared_ptr<const FinishPalette> finishpalette;
+
+    /// The frame the finish above is laid out in (Unframed = triplanar).
+    /// The draw's own, which is also what the backend uploads as palette
+    /// entry 0 -- so a partial draw that resolved one face's frame here
+    /// needs no palette, exactly as it needs none for the finish.
+    SurfaceFrame frame;
+
+    /// Per-face form of that frame (null = the frame above is the whole
+    /// story), indexed by the second byte of the material stream's third
+    /// slot. Same rules
+    /// as finishpalette: whole triangle draws with perfacematerial only,
+    /// shared and immutable, pointer identity is a batch key. Unlike the
+    /// finish this comes from the GEOMETRY rather than the appearance,
+    /// so it is published only when a finish is stated somewhere -- a
+    /// shape nobody finished must not pay for a stream it cannot use.
+    std::shared_ptr<const FramePalette> framepalette;
 
     /// Water body flag of a triangle draw (SoFCRenderMaterial, typically
     /// fed from a ViewProvider Render_Water property): while the
@@ -1486,6 +1942,27 @@ public:
     virtual bool render(const QColor &bg,
                         const void *viewMatrix,
                         const void *projMatrix) = 0;
+
+    /// Render one frame for an offscreen capture -- a screenshot or an
+    /// image export -- instead of the on-screen one. Two things differ
+    /// from render(): the frame is rendered at \a width x \a height
+    /// whatever the host widget's size is, and the finished image is
+    /// transferred into the framebuffer the caller has bound rather
+    /// than the widget's. Everything else is an ordinary frame with the
+    /// same feeds, and the matrices mean what they mean in render() --
+    /// build them for the capture's aspect ratio, not the widget's.
+    /// Returns false when the backend cannot capture (the default), in
+    /// which case the caller's own render path must draw the frame.
+    virtual bool renderOffscreen(const QColor &bg,
+                                 const void *viewMatrix,
+                                 const void *projMatrix,
+                                 int width, int height)
+    {
+        (void)bg; (void)viewMatrix; (void)projMatrix;
+        (void)width; (void)height;
+        return false;
+    }
+
     virtual bool boundBox(float &xmin, float &ymin, float &zmin,
                           float &xmax, float &ymax, float &zmax) = 0;
 
@@ -1620,6 +2097,12 @@ public:
     { (void)config; }
     /// Per-frame ambient occlusion configuration.
     virtual void setAOConfig(const AOConfig &config) { (void)config; }
+    /// Per-frame screen-space cavity (curvature) shading configuration.
+    virtual void setCavityConfig(const CavityConfig &config)
+    { (void)config; }
+    /// Per-frame matcap shading configuration.
+    virtual void setMatcapConfig(const MatcapConfig &config)
+    { (void)config; }
     /// Per-frame render debugging configuration (docs/RenderDebug.md).
     virtual void setRenderDebugConfig(const RenderDebugConfig &config)
     { (void)config; }
@@ -1648,6 +2131,12 @@ public:
     virtual void setBumpConfig(const BumpConfig &config) { (void)config; }
     /// Per-frame scene light (Shadow draw style).
     virtual void setLightConfig(const LightConfig &config) { (void)config; }
+    /// Per-frame ordinary Coin lights (viewer headlight and backlight,
+    /// document SoDirectionalLight / SoPointLight). A backend that does
+    /// not implement this keeps its fixed headlight, which is also what
+    /// an unfed config asks for.
+    virtual void setViewLightConfig(const ViewLightConfig &config)
+    { (void)config; }
     /// Per-frame volumetric lighting (light shaft) configuration.
     virtual void setVolumetricConfig(const VolumetricConfig &config)
     { (void)config; }
@@ -1832,6 +2321,32 @@ public:
     virtual std::unique_ptr<Renderer> create(
             const std::string &type, QOpenGLWidget *widget,
             bool publishOnly = false) const = 0;
+
+    /// Bring the backend up before anything asks it to draw.
+    ///
+    /// Backend startup is one-time and per process -- a GL context and
+    /// the device -- but it was paid by whoever created the first 3D
+    /// view, which made the first New Document of a session visibly
+    /// slower than every later one. A host that knows a backend will be
+    /// wanted can call this early instead; create() then finds the
+    /// device already up.
+    ///
+    /// \a widget supplies the pixel format to build the context from,
+    /// and need not be the widget that will eventually draw.
+    /// Returns false if the backend does not warm up, or could not --
+    /// in which case nothing is broken and create() will try again.
+    ///
+    /// Milliseconds per phase, so the host can report where the time
+    /// went rather than only that it was spent.
+    struct WarmupTiming {
+        double context = 0;   ///< graphics context and its surface
+        double device = 0;    ///< the backend device itself
+        double programs = 0;  ///< shader programs and render targets
+        double flush = 0;     ///< handing that work to the driver
+        double total = 0;
+    };
+    virtual bool warmup(QOpenGLWidget *, const std::string &,
+                        WarmupTiming * = nullptr) { return false; }
 };
 
 /// CPU accounting for the part of a frame that is *not* the renderer's.
@@ -1934,6 +2449,11 @@ public:
     static std::unique_ptr<Renderer> create(const std::string &type,
                                             QOpenGLWidget *widget,
                                             bool publishOnly = false);
+    /// Bring \a type's backend up ahead of the first create(), so that
+    /// the first 3D view of a session does not pay for it. See
+    /// RendererLib::warmup.
+    static bool warmup(const std::string &type, QOpenGLWidget *widget,
+                       RendererLib::WarmupTiming *timing = nullptr);
     static void registerLib(RendererLib *);
     static void setResourcePath(const std::string &path);
     static const std::string &resourcePath();

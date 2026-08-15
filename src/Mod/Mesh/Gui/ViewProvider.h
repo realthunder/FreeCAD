@@ -49,9 +49,13 @@ class SbVec2f;
 class SbBox2s;
 class SbPlane;
 
-namespace App
+namespace Base
 {
 class Color;
+}
+namespace App
+{
+using Color = Base::Color;
 class PropertyColorList;
 }  // namespace App
 
@@ -193,7 +197,7 @@ public:
     /*! The size of the array must be equal to the number of facets. */
     void setFacetTransparency(const std::vector<float>&);
     void resetFacetTransparency();
-    void highlightSegments(const std::vector<App::Color>&);
+    void highlightSegments(const std::vector<Base::Color>&);
     void setHighlightedSegments(bool);
     //@}
 
@@ -205,7 +209,7 @@ protected:
     /// get called by the container whenever a property has been changed
     void onChanged(const App::Property* prop) override;
     virtual void showOpenEdges(bool);
-    void setOpenEdgeColorFrom(const App::Color& col);
+    void setOpenEdgeColorFrom(const Base::Color& col);
     virtual void
     splitMesh(const MeshCore::MeshKernel& toolMesh, const Base::Vector3f& normal, SbBool inner);
     virtual void
@@ -227,11 +231,11 @@ protected:
     void setColorPerVertex(const App::PropertyColorList*);
     void setColorPerFace(const App::PropertyColorList*);
 
-    void setColorField(const std::vector<App::Color>&, SoMFColor&);
-    void setAmbientColor(const std::vector<App::Color>&);
-    void setDiffuseColor(const std::vector<App::Color>&);
-    void setSpecularColor(const std::vector<App::Color>&);
-    void setEmissiveColor(const std::vector<App::Color>&);
+    void setColorField(const std::vector<Base::Color>&, SoMFColor&);
+    void setAmbientColor(const std::vector<Base::Color>&);
+    void setDiffuseColor(const std::vector<Base::Color>&);
+    void setSpecularColor(const std::vector<Base::Color>&);
+    void setEmissiveColor(const std::vector<Base::Color>&);
 
     virtual SoShape* getShapeNode() const;
     virtual SoNode* getCoordNode() const;

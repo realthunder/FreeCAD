@@ -113,7 +113,7 @@ DlgPreferencesImp* DlgPreferencesImp::_activeDialog = nullptr;
  */
 DlgPreferencesImp::DlgPreferencesImp(QWidget* parent, Qt::WindowFlags fl)
     : QDialog(parent, fl), ui(new Ui_DlgPreferences),
-      invalidParameter(false), restartRequired(false)
+      invalidParameter(false)
 {
     ui->setupUi(this);
 
@@ -488,11 +488,9 @@ void DlgPreferencesImp::reject()
         if (res == QMessageBox::Cancel)
             return;
         if (res == QMessageBox::Yes) {
-            restartRequired = false;
             hBackup->copyTo(&App::GetApplication().GetUserParameter());
         }
     }
-    restartIfRequired();
     QDialog::reject();
 }
 
@@ -517,7 +515,6 @@ void DlgPreferencesImp::accept()
     
     if (!this->invalidParameter) {
         QDialog::accept();
-        restartIfRequired();
     }
 }
 
@@ -699,7 +696,6 @@ void DlgPreferencesImp::applyChanges()
             
             if (page) {
                 page->saveSettings();
-                restartRequired = restartRequired || page->isRestartRequired();
             }
         }
     }
@@ -711,38 +707,6 @@ void DlgPreferencesImp::applyChanges()
     if (saveParameter) {
         ParameterManager* parmgr = App::GetApplication().GetParameterSet("User parameter");
         parmgr->SaveDocument(App::Application::Config()["UserParameter"].c_str());
-    }
-}
-
-void DlgPreferencesImp::restartIfRequired()
-{
-    if (restartRequired) {
-        QMessageBox restartBox;
-
-        restartBox.setIcon(QMessageBox::Warning);
-        restartBox.setWindowTitle(tr("Restart required"));
-        restartBox.setText(tr("You must restart FreeCAD for changes to take effect."));
-        restartBox.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
-        restartBox.setDefaultButton(QMessageBox::Cancel);
-        auto okBtn = restartBox.button(QMessageBox::Ok);
-        auto cancelBtn = restartBox.button(QMessageBox::Cancel);
-        okBtn->setText(tr("Restart now"));
-        cancelBtn->setText(tr("Restart later"));
-
-        int exec = restartBox.exec();
-
-        if (exec == QMessageBox::Ok) {
-            //restart FreeCAD after a delay to give time to this dialog to close
-            const int ms = 1000;
-            QTimer::singleShot(ms, []()
-            {
-                QStringList args = QApplication::arguments();
-                args.pop_front();
-                if (getMainWindow()->close()) {
-                    QProcess::startDetached(QApplication::applicationFilePath(), args);
-                }
-            });
-        }
     }
 }
 

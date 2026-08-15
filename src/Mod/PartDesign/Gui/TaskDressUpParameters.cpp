@@ -734,7 +734,7 @@ Part::Feature* TaskDressUpParameters::getBase(void) const
 {
     auto DressUpView = getDressUpView();
     if(!DressUpView)
-        throw Base::RuntimeError("No view object");
+        THROWM(Base::RuntimeError, "No view object")
 
     PartDesign::DressUp* pcDressUp = static_cast<PartDesign::DressUp*>(DressUpView->getObject());
     // Unlikely but this may throw an exception in case we are started to edit an object which base feature

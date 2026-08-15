@@ -1647,7 +1647,7 @@ void Sheet::setAlias(CellAddress address, const std::string& alias)
             return;
         }
         else {
-            throw Base::ValueError("Alias already defined");
+            THROWM(Base::ValueError, "Alias already defined")
         }
     }
     else if (alias.empty()) {  // Empty?
@@ -1657,7 +1657,7 @@ void Sheet::setAlias(CellAddress address, const std::string& alias)
         cells.setAlias(address, alias);
     }
     else {
-        throw Base::ValueError("Invalid alias");
+        THROWM(Base::ValueError, "Invalid alias")
     }
 }
 
@@ -1824,11 +1824,11 @@ bool Sheet::hasCell(const std::vector<App::Range>& ranges) const
 std::string Sheet::getRow(int offset) const
 {
     if (currentRow < 0) {
-        throw Base::RuntimeError("No current row");
+        THROWM(Base::RuntimeError, "No current row")
     }
     int row = currentRow + offset;
     if (row < 0 || row > CellAddress::MAX_ROWS) {
-        throw Base::ValueError("Out of range");
+        THROWM(Base::ValueError, "Out of range")
     }
     return std::to_string(row + 1);
 }
@@ -1836,11 +1836,11 @@ std::string Sheet::getRow(int offset) const
 std::string Sheet::getColumn(int offset) const
 {
     if (currentCol < 0) {
-        throw Base::RuntimeError("No current column");
+        THROWM(Base::RuntimeError, "No current column")
     }
     int col = currentCol + offset;
     if (col < 0 || col > CellAddress::MAX_COLUMNS) {
-        throw Base::ValueError("Out of range");
+        THROWM(Base::ValueError, "Out of range")
     }
     if (col < 26) {
         char txt[2];

@@ -4309,15 +4309,20 @@ void TreeWidget::onUpdateStatus()
     ChangedObjects.clear();
     for(auto &v : pendingChanged) {
         auto obj = v.first;
+        // Look the object up before touching it. Nothing is purged from
+        // ChangedObjects when an object or a document goes away, so an entry
+        // here can name memory that is already freed -- the table lookup is a
+        // pointer compare, which is safe on one, while a dereference is not.
+        // Everything below needs the table entry anyway.
+        auto iter = ObjectTable.find(obj);
+        if(iter == ObjectTable.end())
+            continue;
+
         // Held for the drain, like this document's new objects above.
         if(!draining.empty() && draining.count(obj->getDocument())) {
             ChangedObjects[obj] |= v.second;
             continue;
         }
-
-        auto iter = ObjectTable.find(obj);
-        if(iter == ObjectTable.end())
-            continue;
 
         if(v.second.test(CS_Error) && obj->isError())
             errors.push_back(obj);

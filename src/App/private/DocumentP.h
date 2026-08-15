@@ -27,6 +27,7 @@
 #pragma warning( disable : 4834 )
 #endif
 
+#include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObserver.h>
 #include <App/StringHasher.h>
@@ -108,6 +109,11 @@ struct DocumentP
 
     // restored files
     std::set<std::string> files;
+
+    /// What was written to this document while it was in a
+    /// Document::RestoreDrainGuard, and therefore not touched. Reported once
+    /// by whoever opened the scope, then cleared.
+    Document::RestoreDrainReport drainReport;
 
     /// Where the last restore() spent its time, reported as one line when it
     /// finishes. Split by stage so a load can be attributed without a

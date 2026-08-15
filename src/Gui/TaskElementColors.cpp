@@ -233,7 +233,7 @@ public:
             }
             auto color = v.second;
             QColor c;
-            c.setRgbF(color.r,color.g,color.b,1.0-color.a);
+            c.setRgbF(color.r,color.g,color.b,color.a);
             px.fill(c);
             auto item = new QListWidgetItem(QIcon(px),
                     QString::fromUtf8(Data::oldElementName(v.first.c_str()).c_str()),
@@ -256,7 +256,7 @@ public:
             auto color = item->data(Qt::UserRole).value<QColor>();
             std::string sub = qPrintable(item->data(Qt::UserRole+1).value<QString>());
             info.emplace(qPrintable(item->data(Qt::UserRole+1).value<QString>()),
-                    App::Color(color.redF(),color.greenF(),color.blueF(),1.0-color.alphaF()));
+                    App::Color(color.redF(),color.greenF(),color.blueF(),color.alphaF()));
         }
         if(!App::GetApplication().getActiveTransaction())
             App::GetApplication().setActiveTransaction("Set colors");

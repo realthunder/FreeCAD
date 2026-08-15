@@ -152,7 +152,8 @@ def InitApplications():
             else:
                 Log('Init:      Initializing ' + Dir + '... done\n')
                 return True
-            Gui._setExecFile()
+            finally:
+                Gui._setExecFile()
         else:
             Log('Init:      Initializing ' + Dir + '(InitGui.py not found)... ignore\n')
         return False
@@ -185,7 +186,7 @@ def InitApplications():
                             Log(f"Failed to get handle to {classname} -- no icon\
                                 can be generated,\n check classname in package.xml\n")
                         else:
-                            GeneratePackageIcon(dir, subdirectory, workbench_metadata,
+                            GeneratePackageIcon(Dir, subdirectory, workbench_metadata,
                                                 wb_handle)
 
     def tryProcessMetadataFile(Dir, MetadataFile):
@@ -194,26 +195,41 @@ def InitApplications():
         except Exception as exc:
             Err(str(exc))
 
-    for Dir in ModDirs:
-        if (Dir != '') & (Dir != 'CVS') & (Dir != '__init__.py'):
-            stopFile = os.path.join(Dir, "ADDON_DISABLED")
-            if os.path.exists(stopFile):
-                Msg(f'NOTICE: Addon "{Dir}" disabled by presence of ADDON_DISABLED stopfile\n')
-                continue
-            MetadataFile = os.path.join(Dir, "package.xml")
-            if os.path.exists(MetadataFile):
-                tryProcessMetadataFile(Dir, MetadataFile)
-            else:
-                RunInitGuiPy(Dir)
-    Log("All modules with GUIs using InitGui.py are now initialized\n")
+    def InitApplication(Dir):
+        """Run the InitGui.py of one module directory -- or, for a packaged addon, that
+        of every workbench its package.xml declares. Returns False if Dir was skipped."""
+        if (Dir == '') | (Dir == 'CVS') | (Dir == '__init__.py'):
+            return False
+        stopFile = os.path.join(Dir, "ADDON_DISABLED")
+        if os.path.exists(stopFile):
+            Msg(f'NOTICE: Addon "{Dir}" disabled by presence of ADDON_DISABLED stopfile\n')
+            return False
+        MetadataFile = os.path.join(Dir, "package.xml")
+        if os.path.exists(MetadataFile):
+            tryProcessMetadataFile(Dir, MetadataFile)
+        else:
+            RunInitGuiPy(Dir)
+        return True
 
-    try:
-        import pkgutil
-        import importlib
-        import freecad
+    def InitNamespacePackages():
+        """Import the init_gui module of every freecad.* namespace package that does not
+        have it imported yet -- at startup that is all of them, later on it is whatever a
+        live addon installation has brought in."""
+        try:
+            import pkgutil
+            import importlib
+            import freecad
+        except ImportError as inst:
+            Err('During initialization the error "' + str(inst) + '" occurred\n')
+            return
+
         freecad.gui = FreeCADGui
         for _, freecad_module_name,\
             freecad_module_ispkg in pkgutil.iter_modules(freecad.__path__, "freecad."):
+            if not freecad_module_ispkg\
+                or freecad_module_name + '.init_gui' in sys.modules:
+                continue
+
             # Check for a stopfile
             stopFile = os.path.join(FreeCAD.getUserAppDataDir(), "Mod",
                                     freecad_module_name[8:], "ADDON_DISABLED")
@@ -228,29 +244,52 @@ def InitApplications():
                 if not meta.supportsCurrentFreeCAD():
                     continue
 
-            if freecad_module_ispkg:
-                Log('Init: Initializing ' + freecad_module_name + '\n')
-                try:
-                    freecad_module = importlib.import_module(freecad_module_name)
-                    if any (module_name == 'init_gui' for _, module_name,
-                            ispkg in pkgutil.iter_modules(freecad_module.__path__)):
-                        importlib.import_module(freecad_module_name + '.init_gui')
-                        Log('Init: Initializing ' + freecad_module_name + '... done\n')
-                    else:
-                        Log('Init: No init_gui module found in ' + freecad_module_name\
-                            + ', skipping\n')
-                except Exception as inst:
-                    Err('During initialization the error "' + str(inst) + '" occurred in '\
-                        + freecad_module_name + '\n')
-                    Err('-'*80+'\n')
-                    Err(traceback.format_exc())
-                    Err('-'*80+'\n')
-                    Log('Init:      Initializing ' + freecad_module_name + '... failed\n')
-                    Log('-'*80+'\n')
-                    Log(traceback.format_exc())
-                    Log('-'*80+'\n')
-    except ImportError as inst:
-        Err('During initialization the error "' + str(inst) + '" occurred\n')
+            Log('Init: Initializing ' + freecad_module_name + '\n')
+            try:
+                freecad_module = importlib.import_module(freecad_module_name)
+                if any (module_name == 'init_gui' for _, module_name,
+                        ispkg in pkgutil.iter_modules(freecad_module.__path__)):
+                    importlib.import_module(freecad_module_name + '.init_gui')
+                    Log('Init: Initializing ' + freecad_module_name + '... done\n')
+                else:
+                    Log('Init: No init_gui module found in ' + freecad_module_name\
+                        + ', skipping\n')
+            except Exception as inst:
+                Err('During initialization the error "' + str(inst) + '" occurred in '\
+                    + freecad_module_name + '\n')
+                Err('-'*80+'\n')
+                Err(traceback.format_exc())
+                Err('-'*80+'\n')
+                Log('Init:      Initializing ' + freecad_module_name + '... failed\n')
+                Log('-'*80+'\n')
+                Log(traceback.format_exc())
+                Log('-'*80+'\n')
+
+    def initApplication(Dir):
+        """Bring one module directory into the already running session, both halves: the
+        App one (search paths and Init.py) and then this one (InitGui.py, which is what
+        registers a workbench and its commands). This is what lets a freshly installed
+        addon be used without restarting FreeCAD; startup does the same work through the
+        loops below.
+
+        Returns True if the directory was initialized, False if it was skipped -- notably
+        when the session already knows it, since re-running an InitGui.py would register
+        its workbench and commands a second time."""
+        if not FreeCAD.initApplication(Dir):
+            return False
+        InitApplication(os.path.realpath(Dir))
+        InitNamespacePackages()
+        return True
+
+    # Keep the entry point alive past the "del InitApplications" below: the addon
+    # manager calls it to make a freshly installed addon usable without a restart.
+    FreeCADGui.initApplication = initApplication
+
+    for Dir in ModDirs:
+        InitApplication(Dir)
+    Log("All modules with GUIs using InitGui.py are now initialized\n")
+
+    InitNamespacePackages()
 
     Log("All modules with GUIs initialized using pkgutil are now initialized\n")
 

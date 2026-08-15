@@ -29,6 +29,11 @@
 # include <QTextCursor>
 # include <QTextStream>
 # include <QTime>
+# include <QTimer>
+# include <QMouseEvent>
+# include <QTextBlock>
+# include <QTextCharFormat>
+# include <deque>
 #endif
 
 #include <atomic>
@@ -45,6 +50,7 @@
 #include "PythonConsole.h"
 #include "PythonConsolePy.h"
 #include "Tools.h"
+#include "MessageCollapse.h"
 #include "ReportViewParams.h"
 #include "Command.h"
 
@@ -123,6 +129,16 @@ struct TextBlockData : public QTextBlockUserData
         ReportHighlighter::Paragraph type;
     };
     QVector<State> block;
+
+    //! the repeats this line was shown in place of, kept for expanding it
+    //!
+    //! They live on the block rather than in a map beside the view because the
+    //! view drops blocks off the top on its own (maximumBlockCount), and data
+    //! hung on the block goes when the block does.
+    QStringList folded;
+    ReportHighlighter::Paragraph foldedType = ReportHighlighter::Message;
+    //! how many blocks the open fold put after this one, zero while it is closed
+    int expanded = 0;
 };
 }
 
@@ -151,30 +167,51 @@ void ReportHighlighter::highlightBlock (const QString & text)
     TextBlockData::State b;
     b.length = text.length();
     b.type = this->type;
-    ud->block.append(b);
+    //a block is highlighted again whenever an edit touches it, and a state
+    //repeating the one before it spans nothing, so keep it out rather than let
+    //the vector grow by one on every rehighlight
+    if (ud->block.isEmpty() || ud->block.last().length != b.length
+        || ud->block.last().type != b.type) {
+        ud->block.append(b);
+    }
+
+    //a line standing in for others is underlined, so that it reads as something
+    //to click before the reader has hovered it
+    const bool foldable = !ud->folded.isEmpty();
 
     QVector<TextBlockData::State> block = ud->block;
     int start = 0;
     for (const auto & it : block) {
+        QTextCharFormat fmt;
+        bool formatted = true;
         switch (it.type)
         {
         case Message:
-            setFormat(start, it.length-start, txtCol);
+            fmt.setForeground(txtCol);
             break;
         case Warning:
-            setFormat(start, it.length-start, warnCol);
+            fmt.setForeground(warnCol);
             break;
         case Error:
-            setFormat(start, it.length-start, errCol);
+            fmt.setForeground(errCol);
             break;
         case LogText:
-            setFormat(start, it.length-start, logCol);
+            fmt.setForeground(logCol);
             break;
         case Critical:
-            setFormat(start, it.length-start, criticalCol);
+            fmt.setForeground(criticalCol);
             break;
         default:
+            formatted = false;
             break;
+        }
+
+        if (foldable) {
+            fmt.setFontUnderline(true);
+            formatted = true;
+        }
+        if (formatted) {
+            setFormat(start, it.length-start, fmt);
         }
 
         start = it.length;
@@ -375,7 +412,42 @@ public:
 
     ReportHighlighter::Paragraph pendingType;
     QStringList pendingMessage;
+
+    //! a line shown recently, and the repeats of it waiting to be shown
+    struct RecentLine
+    {
+        ReportHighlighter::Paragraph type;
+        MessageFold fold;
+    };
+    std::deque<RecentLine> recent;
+    QTimer* dupTimer = nullptr;
 };
+
+//! stamp a message with the time it arrived, as the view stamps what it shows
+static QString withTimecode(const QString& text)
+{
+    if (!ReportViewParams::getcheckShowReportTimecode()) {
+        return text;
+    }
+    return QTime::currentTime().toString(QStringLiteral("hh:mm:ss  ")) + text;
+}
+
+//! put the repeat count inside the line rather than after its newline
+//!
+//! The count is how many repeats this line stands in for, not how many times the
+//! line occurred - the occurrence that was shown when the run started speaks for
+//! itself, so the counts across a run still add up to the number of messages sent.
+static QString withRepeatCount(const QString& text, int count)
+{
+    int end = text.size();
+    while (end > 0
+           && (text.at(end - 1) == QLatin1Char('\n') || text.at(end - 1) == QLatin1Char('\r'))) {
+        --end;
+    }
+    QString result = text;
+    result.insert(end, QStringLiteral(" (x%1)").arg(count));
+    return result;
+}
 
 bool ReportOutput::Data::redirected_stdout = false;
 PyObject* ReportOutput::Data::default_stdout = nullptr;
@@ -400,6 +472,11 @@ ReportOutput::ReportOutput(QWidget* parent)
 {
     bLog = false;
     reportHl = new ReportHighlighter(this);
+
+    //nothing else will come along to flush a held line once a burst stops
+    d->dupTimer = new QTimer(this);
+    d->dupTimer->setSingleShot(true);
+    connect(d->dupTimer, &QTimer::timeout, this, &ReportOutput::flushDuplicates);
 
     restoreFont();
     setReadOnly(true);
@@ -505,79 +582,308 @@ void ReportOutput::customEvent ( QEvent* ev )
     // Appends the text stored in the event to the text view
     if ( ev->type() ==  CustomReportEvent::eventType() ) {
         CustomReportEvent* ce = static_cast<CustomReportEvent*>(ev);
-
-        bool showTimecode = ReportViewParams::getcheckShowReportTimecode();
-        QString text = ce->message();
-
-        // The time code can only be set when the cursor is at the block start
-        if (showTimecode && blockStart) {
-            QTime time = QTime::currentTime();
-            text.prepend(time.toString(QStringLiteral("hh:mm:ss  ")));
+        if (holdDuplicate(ce->messageType(), ce->message())) {
+            return;
         }
-        blockStart = text.endsWith(QLatin1Char('\n'));
+        appendReport(ce->messageType(), ce->message());
+    }
+}
 
-        bool flushed = false;
-        QTextDocument *document = this->document();
+//! true when this line repeats one of the last few shown and is being held back
+//!
+//! Only what is on screen is thinned out. This runs on the reader's side of
+//! SendLog's queued event, so the log file, the Python console and every other
+//! console observer have already been handed the message in full.
+bool ReportOutput::holdDuplicate(ReportHighlighter::Paragraph type, const QString& text)
+{
+    const int window = static_cast<int>(ReportViewParams::getDuplicateWindow());
+    if (window <= 0) {
+        return false;
+    }
 
-        // Try to batch process text input because text layout is an expensive
-        // operation
-        if (CustomReportEvent::counter > 1
-                && (d->pendingMessage.isEmpty()
-                    || d->pendingType == ce->messageType()))
-        {
-            d->pendingType = ce->messageType();
-            d->pendingMessage.append(text);
-            int maxCount = document->maximumBlockCount();
-            if (maxCount > 0
-                    && d->pendingMessage.size() + document->blockCount() > maxCount)
-            {
-                document->clear();
-                if (d->pendingMessage.size() > maxCount)
-                    d->pendingMessage.erase(d->pendingMessage.begin(),
-                            d->pendingMessage.begin() + d->pendingMessage.size() - maxCount);
-            }
-        }
-        else {
-            if (d->pendingMessage.size()) {
-                if (d->pendingType == ce->messageType()) {
-                    d->pendingMessage.append(text);
-                    text.clear();
-                }
-                reportHl->setParagraphType(d->pendingType);
-                QTextCursor cursor(document);
-                cursor.beginEditBlock();
-                cursor.movePosition(QTextCursor::End);
-                cursor.insertText(d->pendingMessage.join(QString()));
-                cursor.endEditBlock();
-                d->pendingMessage.clear();
-                flushed = true;
-            }
-            if (text.size()) {
-                if (CustomReportEvent::counter > 1) {
-                    d->pendingType = ce->messageType();
-                    d->pendingMessage.append(text);
-                }
-                else {
-                    reportHl->setParagraphType(ce->messageType());
-                    QTextCursor cursor(document);
-                    cursor.beginEditBlock();
-                    cursor.movePosition(QTextCursor::End);
-                    cursor.insertText(text);
-                    cursor.endEditBlock();
-                    flushed = true;
+    const std::size_t key =
+        messageCollapseKey(text, static_cast<int>(ReportViewParams::getDuplicateKeyLength()));
+
+    for (auto& line : d->recent) {
+        if (line.type == type && line.fold.key() == key) {
+            line.fold.add(text, withTimecode(text));
+            //timed from the first repeat, not the last, so a line repeating without
+            //pause still reports every DuplicateTimeout instead of never
+            if (!d->dupTimer->isActive()) {
+                const int timeout = static_cast<int>(ReportViewParams::getDuplicateTimeout());
+                if (timeout > 0) {
+                    d->dupTimer->start(timeout);
                 }
             }
+            return true;
         }
+    }
 
-        if (flushed && gotoEnd) {
-            QTextCursor cursor(document);
+    //An unrelated message does NOT end the holds. It used to, so that repeats
+    //stayed in front of the line that ended them - but the floods worth
+    //collapsing are mixed, and one message of another kind arriving between two
+    //repeats was enough to publish the hold at (x1) and start again. The timer
+    //is what ends a hold now, and the messages behind the fold carry the time
+    //each of them arrived, so nothing is lost by their line landing later.
+    d->recent.push_back({type, MessageFold(key)});
+    while (static_cast<int>(d->recent.size()) > window) {
+        //whatever the line falling out of the window was holding still has to be
+        //shown: nothing else will ever look at it again
+        flushHeld(d->recent.front().type, d->recent.front().fold);
+        d->recent.pop_front();
+    }
+    return false;
+}
+
+//! show one held line, carrying the number of repeats it stood in for
+void ReportOutput::flushHeld(ReportHighlighter::Paragraph type, MessageFold& fold)
+{
+    if (fold.isEmpty()) {
+        return;
+    }
+    const int held = fold.count();
+    //the first one queued speaks for the rest: they only differ where the key was
+    //not looking, which is what it was keyed to ignore. It is the unstamped copy -
+    //appendReport stamps what it shows.
+    const QString shown = fold.exemplar();
+    QStringList folded = fold.held();
+    fold.clear();
+
+    //always counted, including (x1): without it a line that arrived exactly
+    //twice comes out as a bare repeat, which reads as the suppression having
+    //done nothing at all
+    appendReport(type, withRepeatCount(shown, held), &folded);
+}
+
+//! show every held line, each carrying the number of repeats it stood in for
+//!
+//! Going through appendReport is what also writes out the batch queue, so the
+//! occurrence that was shown before the repeats started lands with them.
+void ReportOutput::flushDuplicates()
+{
+    d->dupTimer->stop();
+    for (auto& line : d->recent) {
+        flushHeld(line.type, line.fold);
+    }
+}
+
+//! write out whatever the batching is holding, so an ordered insert can follow
+void ReportOutput::writePending()
+{
+    if (d->pendingMessage.isEmpty()) {
+        return;
+    }
+    reportHl->setParagraphType(d->pendingType);
+    QTextCursor cursor(document());
+    cursor.beginEditBlock();
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(d->pendingMessage.join(QString()));
+    cursor.endEditBlock();
+    d->pendingMessage.clear();
+}
+
+//! attach the held messages to the line that was shown in their place
+void ReportOutput::keepFolded(const QTextBlock& block,
+                              ReportHighlighter::Paragraph type,
+                              const QStringList& folded)
+{
+    if (!block.isValid()) {
+        return;
+    }
+    //the highlighter owns the block's user data and puts its own state there, so
+    //this rides along in the same object rather than replacing it
+    auto* data = static_cast<TextBlockData*>(block.userData());
+    if (!data) {
+        data = new TextBlockData;
+        const_cast<QTextBlock&>(block).setUserData(data);
+    }
+    data->folded = folded;
+    data->foldedType = type;
+    //the underline says the line is foldable, and the highlighter draws it from
+    //this data, which was not there yet when the block was first highlighted
+    reportHl->rehighlightBlock(block);
+}
+
+//! the collapsed line under this point, invalid when there is none
+QTextBlock ReportOutput::foldedBlockAt(const QPoint& pos) const
+{
+    QTextBlock block = cursorForPosition(pos).block();
+    if (!block.isValid()) {
+        return {};
+    }
+    auto* data = static_cast<TextBlockData*>(block.userData());
+    if (data && !data->folded.isEmpty()) {
+        return block;
+    }
+    return {};
+}
+
+//! open the fold on this line, or close it again
+//!
+//! The line itself stays either way: it is what the reader clicks a second time,
+//! and leaving it in place is what makes this a fold rather than a one-way reveal
+//! that reappends its messages on every click.
+void ReportOutput::toggleFold(const QTextBlock& block)
+{
+    auto* data = static_cast<TextBlockData*>(block.userData());
+    if (!data || data->folded.isEmpty()) {
+        return;
+    }
+
+    //the end of this line's text, before the separator that starts the next block
+    const int start = block.position() + block.length() - 1;
+
+    if (data->expanded > 0) {
+        QTextBlock last = block;
+        for (int i = 0; i < data->expanded && last.next().isValid(); ++i) {
+            last = last.next();
+        }
+        data->expanded = 0;
+        QTextCursor cursor(document());
+        cursor.beginEditBlock();
+        cursor.setPosition(start);
+        cursor.setPosition(last.position() + last.length() - 1, QTextCursor::KeepAnchor);
+        cursor.removeSelectedText();
+        cursor.endEditBlock();
+        return;
+    }
+
+    QStringList lines;
+    lines.reserve(data->folded.size());
+    for (int i = 0; i < data->folded.size(); ++i) {
+        //the messages are held with their newlines; the block separators supply
+        //those again, so strip them before joining
+        QString line = data->folded.at(i);
+        while (line.endsWith(QLatin1Char('\n')) || line.endsWith(QLatin1Char('\r'))) {
+            line.chop(1);
+        }
+        lines.append(messageFoldBranch(i, data->folded.size()) + line);
+    }
+    data->expanded = lines.size();
+
+    reportHl->setParagraphType(data->foldedType);
+    QTextCursor cursor(document());
+    cursor.beginEditBlock();
+    cursor.setPosition(start);
+    cursor.insertText(QStringLiteral("\n") + lines.join(QStringLiteral("\n")));
+    cursor.endEditBlock();
+}
+
+void ReportOutput::appendReport(ReportHighlighter::Paragraph messageType, const QString& message,
+                                const QStringList* folded)
+{
+    bool showTimecode = ReportViewParams::getcheckShowReportTimecode();
+    QString text = message;
+
+    // The time code can only be set when the cursor is at the block start
+    if (showTimecode && blockStart) {
+        QTime time = QTime::currentTime();
+        text.prepend(time.toString(QStringLiteral("hh:mm:ss  ")));
+    }
+    blockStart = text.endsWith(QLatin1Char('\n'));
+
+    bool flushed = false;
+    QTextDocument *document = this->document();
+
+    //a line carrying held messages skips the batching: it has to end up in a block
+    //of its own, now, so that the messages can be hung on that block
+    if (folded) {
+        writePending();
+        reportHl->setParagraphType(messageType);
+        QTextCursor cursor(document);
+        cursor.beginEditBlock();
+        cursor.movePosition(QTextCursor::End);
+        const int start = cursor.position();
+        cursor.insertText(text);
+        cursor.endEditBlock();
+        keepFolded(document->findBlock(start), messageType, *folded);
+        if (gotoEnd) {
             cursor.movePosition(QTextCursor::End);
             setTextCursor(cursor);
             ensureCursorVisible();
         }
+        return;
+    }
+
+    // Try to batch process text input because text layout is an expensive
+    // operation
+    if (CustomReportEvent::counter > 1
+            && (d->pendingMessage.isEmpty()
+                || d->pendingType == messageType))
+    {
+        d->pendingType = messageType;
+        d->pendingMessage.append(text);
+        int maxCount = document->maximumBlockCount();
+        if (maxCount > 0
+                && d->pendingMessage.size() + document->blockCount() > maxCount)
+        {
+            document->clear();
+            if (d->pendingMessage.size() > maxCount)
+                d->pendingMessage.erase(d->pendingMessage.begin(),
+                        d->pendingMessage.begin() + d->pendingMessage.size() - maxCount);
+        }
+    }
+    else {
+        if (d->pendingMessage.size()) {
+            if (d->pendingType == messageType) {
+                d->pendingMessage.append(text);
+                text.clear();
+            }
+            reportHl->setParagraphType(d->pendingType);
+            QTextCursor cursor(document);
+            cursor.beginEditBlock();
+            cursor.movePosition(QTextCursor::End);
+            cursor.insertText(d->pendingMessage.join(QString()));
+            cursor.endEditBlock();
+            d->pendingMessage.clear();
+            flushed = true;
+        }
+        if (text.size()) {
+            if (CustomReportEvent::counter > 1) {
+                d->pendingType = messageType;
+                d->pendingMessage.append(text);
+            }
+            else {
+                reportHl->setParagraphType(messageType);
+                QTextCursor cursor(document);
+                cursor.beginEditBlock();
+                cursor.movePosition(QTextCursor::End);
+                cursor.insertText(text);
+                cursor.endEditBlock();
+                flushed = true;
+            }
+        }
+    }
+
+    if (flushed && gotoEnd) {
+        QTextCursor cursor(document);
+        cursor.movePosition(QTextCursor::End);
+        setTextCursor(cursor);
+        ensureCursorVisible();
     }
 }
 
+
+//! open or close the fold on the collapsed line that was clicked
+void ReportOutput::mousePressEvent(QMouseEvent* ev)
+{
+    if (ev->button() == Qt::LeftButton) {
+        QTextBlock block = foldedBlockAt(ev->pos());
+        if (block.isValid()) {
+            toggleFold(block);
+            return;
+        }
+    }
+    QTextEdit::mousePressEvent(ev);
+}
+
+//! point at a collapsed line, so it reads as something to click
+void ReportOutput::mouseMoveEvent(QMouseEvent* ev)
+{
+    viewport()->setCursor(foldedBlockAt(ev->pos()).isValid() ? Qt::PointingHandCursor
+                                                             : Qt::IBeamCursor);
+    QTextEdit::mouseMoveEvent(ev);
+}
 
 bool ReportOutput::event(QEvent* event)
 {

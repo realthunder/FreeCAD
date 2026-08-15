@@ -24,6 +24,8 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
+# include <cmath>
 # include <cstring>
 #endif
 
@@ -31,6 +33,68 @@
 
 using namespace App;
 
+namespace {
+
+/// Indexed by SurfaceFinish::Pattern; None is the empty name
+const char *finishPatternNames[] = {
+    "", "knurl", "knurl-straight", "brushed", "blasted", "turned"
+};
+
+static_assert(sizeof(finishPatternNames) / sizeof(finishPatternNames[0])
+                  == SurfaceFinish::PatternCount,
+              "every SurfaceFinish::Pattern needs a name");
+
+} // namespace
+
+//===========================================================================
+// SurfaceFinish
+//===========================================================================
+
+void SurfaceFinish::normalize()
+{
+    if (!isSet()) {
+        // Nothing else means anything without a pattern, and zeroing is
+        // what lets the record compare equal to the default and elide
+        *this = SurfaceFinish();
+        return;
+    }
+    if (!(pitch >= MinPitch)) {   // catches NaN too
+        pitch = MinPitch;
+    }
+    if (!(depth >= 0.0F)) {
+        depth = 0.0F;
+    }
+    if (!std::isfinite(angle)) {
+        angle = 0.0F;
+    }
+    else {
+        // A lay has an axis, not a direction: 190 degrees is 10 degrees
+        angle = std::fmod(angle, 180.0F);
+        if (angle < 0.0F) {
+            angle += 180.0F;
+        }
+    }
+}
+
+const char *SurfaceFinish::patternName(uint8_t pattern)
+{
+    // An unrecognised pattern (a document from a later build) has no name
+    // here; it is still stored and written back unchanged
+    return pattern < PatternCount ? finishPatternNames[pattern] : "";
+}
+
+uint8_t SurfaceFinish::patternFromName(const char *name)
+{
+    if (!name || !name[0]) {
+        return None;
+    }
+    for (uint8_t i = 1; i < PatternCount; ++i) {
+        if (std::strcmp(name, finishPatternNames[i]) == 0) {
+            return i;
+        }
+    }
+    return None;
+}
 
 //===========================================================================
 // Material
@@ -153,6 +217,13 @@ void Material::set(const char* MatName)
 void Material::setType(const MaterialType MatType)
 {
     _matType = MatType;
+    // A preset states the whole material and none of them states a finish,
+    // so a previous one must not survive -- the same rule the colours and
+    // both floats below already follow. USER_DEFINED states nothing and
+    // therefore changes nothing, here as in the switch.
+    if (MatType != USER_DEFINED) {
+        finish = SurfaceFinish();
+    }
     switch (MatType)
     {
     case BRASS:
@@ -334,4 +405,75 @@ void Material::setType(const MaterialType MatType)
         transparency = 0.0000f;
         break;
     }
+}
+
+float Material::shininessToRoughness(float shininess)
+{
+    const float exponent = std::max(shininess, 0.0f) * 128.0f;
+    return std::min(std::sqrt(2.0f / (exponent + 2.0f)), 1.0f);
+}
+
+float Material::roughnessToShininess(float roughness)
+{
+    const float squared = std::max(roughness * roughness, 1e-6f);
+    const float exponent = 2.0f / squared - 2.0f;
+    return std::clamp(exponent / 128.0f, 0.0f, 1.0f);
+}
+
+Material Material::pbrToPhong(const Material& raw)
+{
+    Material mat = raw;
+    const Color& base = raw.diffuseColor;
+    const Color& tint = raw.specularColor;
+    const float metallic = tint.a;
+    auto mix = [metallic](float dielectric, float metal) {
+        return 0.04f * dielectric * (1.0f - metallic) + metal * metallic;
+    };
+    mat.specularColor.set(mix(tint.r, base.r), mix(tint.g, base.g), mix(tint.b, base.b));
+    mat.shininess = roughnessToShininess(raw.shininess);
+    mat.pbr = false;
+    return mat;
+}
+
+Material Material::phongToPbr(const Material& classic)
+{
+    Material mat = classic;
+    // White tint, metallic 0: a Phong specular is an intensity, and every
+    // Phong surface is a dielectric as far as the model can say.
+    mat.specularColor.set(1.0f, 1.0f, 1.0f, 0.0f);
+    mat.shininess = shininessToRoughness(classic.shininess);
+    mat.pbr = true;
+    return mat;
+}
+
+void Material::setPBR(bool enable)
+{
+    if (pbr == enable)
+        return;
+    *this = enable ? phongToPbr(*this) : pbrToPhong(*this);
+}
+
+float Material::getMetallic() const
+{
+    return pbr ? specularColor.a : 0.0f;  // the Phong model has no metals
+}
+
+float Material::getRoughness() const
+{
+    return pbr ? shininess : shininessToRoughness(shininess);
+}
+
+void Material::setMetallic(float value)
+{
+    // Stating a metallic factor decides the mode: the Phong slot this
+    // lands in means something else, and a value written there would be
+    // thrown away by the conversion the moment the mode was switched.
+    setPBR(true);
+    specularColor.a = value;
+}
+
+void Material::setRoughness(float value)
+{
+    setPBR(true);
+    shininess = value;
 }

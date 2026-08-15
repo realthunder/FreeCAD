@@ -1664,9 +1664,13 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, int hiliteId, bool hit) {
 			glEnd();
 			glRasterPos3d(-a, -a, a);
 
-			glEnable(GL_TEXTURE_2D);
-
-            // Render axis labels
+            // Render axis labels. Texturing stays off (disabled above with
+            // the axes): a bitmap glyph is meant to take the raster color
+            // alone, and leaving GL_TEXTURE_2D enabled makes glBitmap go
+            // through Mesa's textured-fragment path, which NULL-derefs
+            // inside gallium as soon as a texture object is bound (the cube
+            // face texture left over from the previous frame). Re-enabled
+            // below, before the cube faces are drawn.
             GLint unpack,rowlength;
             glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpack);
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -1691,6 +1695,8 @@ bool NaviCubeShared::drawNaviCube(SoCamera *cam, int hiliteId, bool hit) {
 
             glPixelStorei(GL_UNPACK_ALIGNMENT, unpack);
             glPixelStorei(GL_UNPACK_ROW_LENGTH, rowlength);
+
+			glEnable(GL_TEXTURE_2D);
 		}
 	}
 

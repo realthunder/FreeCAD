@@ -36,9 +36,13 @@
 # include <BRepMesh_Deflection.hxx>
 # include <BRepMesh_IncrementalMesh.hxx>
 # include <BRepMesh_ShapeTool.hxx>
+# include <BRepAdaptor_Surface.hxx>
 # include <Geom_Line.hxx>
 # include <Geom_Plane.hxx>
 # include <Geom_TrimmedCurve.hxx>
+# include <gp_Cone.hxx>
+# include <gp_Cylinder.hxx>
+# include <gp_Pln.hxx>
 # include <gp_Trsf.hxx>
 # include <Precision.hxx>
 # include <Poly_Array1OfTriangle.hxx>
@@ -107,8 +111,12 @@
 #include <Base/Console.h>
 #include <Base/Sequencer.h>
 #include <Base/Parameter.h>
+#include <Base/ProgramVersion.h>
+#include <Base/Reader.h>
+#include <Base/Stream.h>
 #include <Base/TimeInfo.h>
 #include <Base/Tools.h>
+#include <Base/Writer.h>
 #include <Gui/Application.h>
 #include <Gui/Document.h>
 #include <Gui/Action.h>
@@ -117,6 +125,7 @@
 #include <Gui/Utilities.h>
 #include <Gui/ViewProviderLink.h>
 #include <Gui/TaskElementColors.h>
+#include <Gui/Inventor/SoFCRenderMaterial.h>
 #include <Gui/Inventor/SoFCShapeInfo.h>
 #include <Gui/Inventor/SoFCVertexCache.h>
 #include <Gui/InventorBase.h>
@@ -1176,7 +1185,7 @@ static ColorVariant *lookupColorVariant(std::list<ColorVariant> &variants,
 }
 
 /// Find or build the variant of \a geom baking exactly the resolved
-/// per-face colors \a slice (diffuse rgb + transparency in alpha), and
+/// per-face colors \a slice (diffuse rgb + opacity in alpha), and
 /// take a reference on it.
 static ColorVariant *acquireColorVariant(InstGeometry &geom,
                                          const std::vector<App::Color> &slice)
@@ -1200,7 +1209,7 @@ static ColorVariant *acquireColorVariant(InstGeometry &geom,
     float *t = mat->transparency.startEditing();
     for (int i = 0; i < n; ++i) {
         dc[i].setValue(slice[i].r, slice[i].g, slice[i].b);
-        t[i] = slice[i].a;
+        t[i] = slice[i].transparency();
     }
     mat->diffuseColor.finishEditing();
     mat->transparency.finishEditing();
@@ -1483,6 +1492,347 @@ static bool shapeInstancingActive()
 } // namespace PartGui
 
 //**************************************************************************
+// PropertyDiffuseColor -- a name over ShapeAppearance's diffuse field
+
+// Registered with a leading underscore: this is a name over ShapeAppearance's
+// diffuse field, wired by the view provider to its own member, so it is not a
+// type a user may add (App::Property::isInternalType, and the note beside
+// Gui::PropertyShapeColor).
+TYPESYSTEM_SOURCE_P(PartGui::PropertyDiffuseColor)
+void PartGui::PropertyDiffuseColor::init()
+{
+    initSubclass(PartGui::PropertyDiffuseColor::classTypeId,
+                 "PartGui::_PropertyDiffuseColor", "App::PropertyColorList",
+                 &PartGui::PropertyDiffuseColor::create);
+}
+
+void PropertyDiffuseColor::setAppearance(App::PropertyMaterialList *appearance,
+                                         const App::PropertyColor *shapeColor)
+{
+    _appearance = appearance;
+    _shapeColor = shapeColor;
+    // Whatever the constructor's ADD_PROPERTY put in the base list is a copy
+    // of what the appearance already holds. Drop it rather than leave a
+    // second, stale answer behind where a base-pointer read could find it.
+    _lValueList.clear();
+}
+
+const std::vector<Base::Color> &PropertyDiffuseColor::getValues() const
+{
+    if (_appearance)
+        return _appearance->getDiffuseColors();
+    return App::PropertyColorList::getValues();
+}
+
+int PropertyDiffuseColor::getSize() const
+{
+    return static_cast<int>(getValues().size());
+}
+
+void PropertyDiffuseColor::setValues(std::vector<Base::Color> &&colors)
+{
+    if (!_appearance) {
+        App::PropertyColorList::setValues(std::move(colors));
+        return;
+    }
+    if (colors.empty() && _shapeColor) {
+        // Emptying the list has always meant "every face back to the object
+        // colour"; an empty field in the appearance means the default
+        // material's colour instead, which is a different colour whenever
+        // the object has one of its own.
+        _appearance->setDiffuseColor(_shapeColor->getValue());
+        return;
+    }
+    _appearance->setDiffuseColors(colors);
+}
+
+void PropertyDiffuseColor::set1Value(int idx, const Base::Color &col)
+{
+    if (!_appearance) {
+        App::PropertyColorList::set1Value(idx, col);
+        return;
+    }
+    // The appearance grows the list itself when idx names a new entry, and
+    // takes -1 as "append" the way the base does.
+    _appearance->setDiffuseColor(idx < 0 ? _appearance->getSize() : idx, col);
+}
+
+void PropertyDiffuseColor::setSize(int newSize)
+{
+    if (!_appearance) {
+        App::PropertyColorList::setSize(newSize);
+        return;
+    }
+    _appearance->setSize(newSize);
+}
+
+void PropertyDiffuseColor::setSize(int newSize, const Base::Color &def)
+{
+    if (!_appearance) {
+        App::PropertyColorList::setSize(newSize, def);
+        return;
+    }
+    App::Material mat = _appearance->getMaterial(0);
+    mat.diffuseColor = def;
+    _appearance->setSize(newSize, mat);
+}
+
+unsigned int PropertyDiffuseColor::getMemSize() const
+{
+    // Nothing of its own: the colours are counted where they are stored.
+    if (_appearance)
+        return 0;
+    return App::PropertyColorList::getMemSize();
+}
+
+bool PropertyDiffuseColor::isSame(const App::Property &other) const
+{
+    if (&other == this)
+        return true;
+    if (auto redirected = Base::freecad_dynamic_cast<const PropertyDiffuseColor>(&other))
+        return getValues() == redirected->getValues();
+    auto list = Base::freecad_dynamic_cast<const App::PropertyColorList>(&other);
+    return list && getValues() == list->getValues();
+}
+
+App::Property *PropertyDiffuseColor::Copy() const
+{
+    // A plain list, so that whoever holds the copy -- undo, mostly -- holds
+    // the values and not a second pointer into this object's appearance.
+    auto copy = new App::PropertyColorList();
+    copy->setValues(getValues());
+    return copy;
+}
+
+void PropertyDiffuseColor::Paste(const App::Property &from)
+{
+    if (auto redirected = Base::freecad_dynamic_cast<const PropertyDiffuseColor>(&from))
+        setValues(redirected->getValues());
+    else
+        setValues(dynamic_cast<const App::PropertyColorList&>(from).getValues());
+}
+
+PyObject *PropertyDiffuseColor::getPyObject()
+{
+    const auto &values = getValues();
+    PyObject *list = PyList_New(values.size());
+    int i = 0;
+    for (const auto &color : values) {
+        PyObject *rgba = PyTuple_New(4);
+        PyTuple_SetItem(rgba, 0, PyFloat_FromDouble(color.r));
+        PyTuple_SetItem(rgba, 1, PyFloat_FromDouble(color.g));
+        PyTuple_SetItem(rgba, 2, PyFloat_FromDouble(color.b));
+        PyTuple_SetItem(rgba, 3, PyFloat_FromDouble(color.a));
+        PyList_SetItem(list, i++, rgba);
+    }
+    return list;
+}
+
+void PropertyDiffuseColor::setPyObject(PyObject *value)
+{
+    // A single colour, which the base spells through its non-virtual
+    // setValue -- hence the copy of that logic rather than a call to it. The
+    // read is what may fail here; the write must not have its exception
+    // swallowed and reported as a bad sequence.
+    Base::Color color;
+    bool single = false;
+    try {
+        color = getPyValue(value);
+        single = true;
+    }
+    catch (...) {
+    }
+    if (single) {
+        std::vector<Base::Color> colors(1, color);
+        guardLegacyAlpha(colors);
+        setValues(std::move(colors));
+        return;
+    }
+    // A sequence, parsed by a plain colour list so the guard below sees the
+    // whole assignment at once. (Handing the object to the inherited
+    // setPyObject would write colour by colour, past any chance to judge it.)
+    App::PropertyColorList parsed;
+    parsed.App::PropertyColorList::setPyObject(value);
+    std::vector<Base::Color> colors = parsed.getValues();
+    guardLegacyAlpha(colors);
+    setValues(std::move(colors));
+}
+
+/** Catch a macro written for the old meaning of alpha
+ *
+ * A colour's alpha means opacity now (see Base/Color.h); it used to mean
+ * transparency, and every macro from that era spells "opaque" as 0.0 -- which
+ * today reads as invisible. An assignment in which EVERY alpha is exactly 0.0
+ * is therefore either such a macro or a deliberate attempt to make every face
+ * invisible through DiffuseColor; the first is common and the second has
+ * better spellings (Transparency = 100, or Visibility). So the guard assumes
+ * the macro, makes the colours opaque, and says so once per session.
+ *
+ * A genuine read-modify-write of an already invisible object presents the
+ * same all-zero alphas; that is what the current-state test excuses. Partial
+ * transparency (0.5 both ways), and anything mixed, is left exactly as given
+ * -- those values mean the same or cannot be judged, and guessing would be
+ * worse than either reading.
+ */
+void PropertyDiffuseColor::guardLegacyAlpha(std::vector<Base::Color> &colors) const
+{
+    if (colors.empty())
+        return;
+    for (const auto &color : colors) {
+        if (color.a != 0.0f)
+            return;
+    }
+    // Already fully transparent: the zeroes are this object's own state
+    // coming back, not a legacy macro's idea of opaque.
+    const auto &current = getValues();
+    if (!current.empty()) {
+        bool invisible = true;
+        for (const auto &color : current) {
+            if (color.a != 0.0f) {
+                invisible = false;
+                break;
+            }
+        }
+        if (invisible)
+            return;
+    }
+    static bool warned;
+    if (!warned) {
+        warned = true;
+        Base::Console().Warning(
+            "DiffuseColor: an assignment set every alpha to 0, the old spelling of "
+            "opaque, and was read as opaque. Alpha means opacity now (1 = opaque); "
+            "use Transparency or Visibility to hide an object.\n");
+    }
+    for (auto &color : colors)
+        color.a = 1.0f;
+}
+
+void PropertyDiffuseColor::Save(Base::Writer &writer) const
+{
+    // With the values: this is the name every reader that predates
+    // ShapeAppearance knows, so as long as the appearance says nothing a
+    // colour list cannot say, the document carries the face colours under
+    // both names and an older FreeCAD opens it with its colours intact. The
+    // alpha written here is a TRANSPARENCY, which is what those readers
+    // expect -- saveXML and saveStream below convert it.
+    //
+    // The cost is that a per-face import stores its colours twice. That is
+    // the price of the compatibility and it is paid deliberately.
+    if (!_appearance || _appearance->variesOnlyInDiffuse()) {
+        App::PropertyColorList::Save(writer);
+        return;
+    }
+    // Without them: the appearance varies a field a colour list has no room
+    // for, so any copy written here would be a lossy second answer to the
+    // same question. The element still goes out, so a document keeps a
+    // DiffuseColor of this type, which is what distinguishes it from an
+    // older one that carries the values.
+    writer.Stream() << writer.ind() << '<' << xmlName() << " file=\"\"/>\n";
+}
+
+void PropertyDiffuseColor::Restore(Base::XMLReader &reader)
+{
+    if (!_appearance) {
+        App::PropertyColorList::Restore(reader);
+        return;
+    }
+    // PropertyLists::Restore with neither values nor a file clears the list,
+    // which here would empty the appearance that is about to be restored
+    // into. Everything else is as the base does it -- including registering
+    // *this* for a separate file, which is why an older document's
+    // DiffuseColor is restored through this property and not a stand-in
+    // (the file is read long after the XML pass has moved on).
+    reader.readElement(xmlName());
+    std::string file(reader.getAttribute("file", ""));
+    if (!file.empty())
+        reader.addFile(file.c_str(), this);
+    else if (reader.hasAttribute("count"))
+        restoreXML(reader);
+}
+
+void PropertyDiffuseColor::restoreXML(Base::XMLReader &reader)
+{
+    if (!_appearance) {
+        App::PropertyColorList::restoreXML(reader);
+        return;
+    }
+    int count = reader.getAttributeAsInteger("count");
+    // Whether alpha means opacity is a property of the file, not of the
+    // element, so it is asked here as well -- the same question the inherited
+    // archive-member path asks (App::PropertyColorList::RestoreDocFile).
+    bool convert = !Base::alphaIsOpacity(reader);
+    std::vector<Base::Color> values(count);
+    auto &stream = reader.beginCharStream() >> std::hex;
+    for (int i = 0; i < count; ++i) {
+        uint32_t packed;
+        stream >> packed;
+        values[i].setPackedValue(packed);
+        if (convert)
+            values[i].a = 1.0F - values[i].a;
+    }
+    stream >> std::dec;
+    reader.endCharStream();
+    setValues(std::move(values));
+}
+
+bool PropertyDiffuseColor::saveXML(Base::Writer &writer) const
+{
+    if (!_appearance)
+        return App::PropertyColorList::saveXML(writer);
+    const bool convert = !Base::writerAlphaIsOpacity();
+    writer.Stream() << ">\n" << std::hex;
+    for (auto color : getValues()) {
+        if (convert)
+            color.a = 1.0F - color.a;
+        writer.Stream() << color.getPackedValue() << '\n';
+    }
+    writer.Stream() << std::dec;
+    return false;
+}
+
+void PropertyDiffuseColor::restoreStream(Base::InputStream &str, unsigned count)
+{
+    if (!_appearance) {
+        App::PropertyColorList::restoreStream(str, count);
+        return;
+    }
+    std::vector<Base::Color> values(count);
+    uint32_t packed = 0;  // must be 32 bit long
+    for (auto &color : values) {
+        str >> packed;
+        color.setPackedValue(packed);
+    }
+    setValues(std::move(values));
+}
+
+void PropertyDiffuseColor::saveStream(Base::OutputStream &str) const
+{
+    if (!_appearance) {
+        App::PropertyColorList::saveStream(str);
+        return;
+    }
+    const bool convert = !Base::writerAlphaIsOpacity();
+    for (auto color : getValues()) {
+        if (convert)
+            color.a = 1.0F - color.a;
+        str << color.getPackedValue();
+    }
+}
+
+unsigned int PropertyDiffuseColor::getSaveSize(Base::Writer &writer) const
+{
+    (void)writer;
+    // getMemSize() is deliberately 0 -- the colours are counted where they are
+    // stored -- but the inline-versus-archive rule reads it as the cost of
+    // writing this property, and now that the values do go out, that cost is
+    // real again.
+    if (!_appearance)
+        return App::PropertyColorList::getMemSize();
+    return static_cast<unsigned int>(getValues().size() * sizeof(uint32_t));
+}
+
+//**************************************************************************
 // Construction/Destruction
 
 App::PropertyFloatConstraint::Constraints ViewProviderPartExt::sizeRange = {1.0,64.0,1.0};
@@ -1550,6 +1900,11 @@ ViewProviderPartExt::ViewProviderPartExt()
     ADD_PROPERTY_TYPE(PointColor, (vmat.diffuseColor), osgroup, App::Prop_None, "Set object point color");
     ADD_PROPERTY_TYPE(PointColorArray, (PointColor.getValue()), osgroup, App::Prop_None, "Object point color array.");
     ADD_PROPERTY_TYPE(DiffuseColor,(ShapeColor.getValue()), osgroup, App::Prop_None, "Object diffuse color.");
+    // From here on the face colours are the appearance's, which already
+    // holds this same colour as its single entry. Wired after the
+    // ADD_PROPERTY above, whose write must not be redirected into a property
+    // the base class is still setting up.
+    DiffuseColor.setAppearance(&ShapeAppearance, &ShapeColor);
     ADD_PROPERTY_TYPE(LineColorArray,(LineColor.getValue()), osgroup, App::Prop_None, "Object line color array.");
     ADD_PROPERTY_TYPE(LineWidth,(lwidth), osgroup, App::Prop_None, "Set object line width.");
     LineWidth.setConstraints(&sizeRange);
@@ -1663,6 +2018,27 @@ ViewProviderPartExt::~ViewProviderPartExt()
     nodeset->unref();
 }
 
+void ViewProviderPartExt::handleChangedPropertyType(Base::XMLReader &reader,
+                                                    const char *TypeName,
+                                                    App::Property *prop)
+{
+    // DiffuseColor kept its name and its bytes but changed type when its
+    // storage moved into ShapeAppearance, so a document written before that
+    // arrives here rather than at Restore, where the base does nothing and
+    // every per-face colour would be dropped in silence.
+    //
+    // Restored through the property itself, not a stand-in: a colour list
+    // large enough to live in its own archive entry is read long after this
+    // returns, and it is the pointer handed to the reader now that the read
+    // will write into.
+    if (prop == &DiffuseColor
+            && strcmp(TypeName, App::PropertyColorList::getClassTypeId().getName()) == 0) {
+        DiffuseColor.Restore(reader);
+        return;
+    }
+    inherited::handleChangedPropertyType(reader, TypeName, prop);
+}
+
 void ViewProviderPartExt::onChanged(const App::Property* prop)
 {
     Gui::ColorUpdater colorUpdater;
@@ -1702,7 +2078,7 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
                 || prop == &PointColor
                 || prop == &PointMaterial
                 || prop == &ShapeColor
-                || prop == &ShapeMaterial)
+                || prop == &ShapeAppearance)
         {
             // When restoring, rely on
             // DiffuseColor/LineColorArray/PointColorArray to setup the colors.
@@ -1794,7 +2170,19 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
         Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &DiffuseColor) {
-        setHighlightedFaces(DiffuseColor.getValues());
+        // Only a touch() reaches this now -- a write to DiffuseColor lands in
+        // ShapeAppearance and is announced there, by the branch below.
+        applyShapeAppearance();
+        Gui::ColorUpdater::addObject(getObject());
+    }
+    else if (prop == &ShapeAppearance) {
+        // The appearance changed, whichever name it arrived under. The
+        // base class pushes a single appearance into the Coin material node;
+        // a per-face one is carried by this view provider's own material
+        // arrays, which is what applyShapeAppearance fills in -- colours
+        // alone while diffuse is the only varying field, whole materials
+        // once any other field varies per face.
+        applyShapeAppearance();
         Gui::ColorUpdater::addObject(getObject());
     }
     else if(prop == &ShapeColor) {
@@ -1803,33 +2191,26 @@ void ViewProviderPartExt::onChanged(const App::Property* prop)
                     App::Property::User3, &ShapeColor);
             ViewProviderGeometryObject::onChanged(prop);
             App::Color c = ShapeColor.getValue();
-            c.a = Transparency.getValue()/100.0f;
+            c.setTransparency(Transparency.getValue()/100.0f);
             DiffuseColor.setValue(c);
             updateColors();
         }
         return;
     }
     else if (prop == &Transparency) {
-        const App::Material& Mat = ShapeMaterial.getValue();
-        long value = (long)(100*Mat.transparency);
+        long value = (long)(100*ShapeAppearance.getTransparency(0));
         if (value != Transparency.getValue()) {
             float trans = Transparency.getValue()/100.0f;
-
-            App::PropertyContainer* parent = ShapeMaterial.getContainer();
-            ShapeMaterial.setContainer(nullptr);
-            ShapeMaterial.setTransparency(trans);
-            ShapeMaterial.setContainer(parent);
-
-            if(!prop->testStatus(App::Property::User3)) {
-                if(MapTransparency.getValue() || MappedColors.getSize()) {
-                    updateColors();
-                } else{
-                    auto colors = DiffuseColor.getValues();
-                    for (auto &c : colors)
-                        c.a = trans;
-                    DiffuseColor.setValues(colors);
-                }
-            }
+            // One write: a transparency IS the diffuse alphas now, so this
+            // both sets every face and announces once through the
+            // ShapeAppearance branch above. The old form had to detach the
+            // property from its container to write one of its two stores
+            // without the other seeing, then push DiffuseColor by hand --
+            // the duplication that store paid for, and the reason it is gone.
+            ShapeAppearance.setTransparency(trans);
+            if(!prop->testStatus(App::Property::User3)
+                    && (MapTransparency.getValue() || MappedColors.getSize()))
+                updateColors();
         }
     }
     else if (prop == &Lighting) {
@@ -2436,10 +2817,34 @@ static bool materialsUnrepresentable(const std::vector<App::Material> &mats)
     for (size_t i = 1; i < mats.size(); ++i) {
         if (mats[i].ambientColor != mats[0].ambientColor
                 || mats[i].specularColor != mats[0].specularColor
-                || mats[i].emissiveColor != mats[0].emissiveColor)
+                || mats[i].emissiveColor != mats[0].emissiveColor
+                || mats[i].shininess != mats[0].shininess
+                // A per-face surface finish is carried by the material
+                // index, which only means the face while the shape
+                // binds its materials per part -- an instanced
+                // representation states one material per instance and
+                // would quietly drop every face's finish but the first.
+                || mats[i].finish != mats[0].finish)
             return true;
     }
     return false;
+}
+
+void ViewProviderPartExt::applyShapeAppearance()
+{
+    // The colour path serves PBR mode too: the Phong reading keeps the
+    // diffuse as the base colour (see getPhongMaterial), so a list whose
+    // other fields are uniform is still a colour list here.
+    if (ShapeAppearance.variesOnlyInDiffuse()) {
+        setHighlightedFaces(DiffuseColor.getValues());
+        return;
+    }
+    int count = ShapeAppearance.getSize();
+    std::vector<App::Material> mats;
+    mats.reserve(count);
+    for (int i = 0; i < count; ++i)
+        mats.push_back(ShapeAppearance.getPhongMaterial(i));
+    setHighlightedFaces(mats);
 }
 
 void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& colors)
@@ -2468,6 +2873,31 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
     Gui::SoUpdateVBOAction action;
     action.apply(this->faceset);
 
+    // A colour vector varies diffuse+transparency only; the other fields
+    // come from the document appearance's entry 0. Pushed here, not only
+    // by the base class (which pushes a single-ENTRY appearance), so that
+    // a multi-entry appearance whose non-diffuse fields are uniform still
+    // reaches the node -- and so that any per-face arrays a previous
+    // whole-material apply left there collapse back to scalars.
+    {
+        const App::Material m = ShapeAppearance.getPhongMaterial(0);
+        const SbColor ambient(m.ambientColor.r, m.ambientColor.g, m.ambientColor.b);
+        const SbColor specular(m.specularColor.r, m.specularColor.g, m.specularColor.b);
+        const SbColor emissive(m.emissiveColor.r, m.emissiveColor.g, m.emissiveColor.b);
+        if (pcShapeMaterial->ambientColor.getNum() != 1
+                || pcShapeMaterial->ambientColor[0] != ambient)
+            pcShapeMaterial->ambientColor.setValue(ambient);
+        if (pcShapeMaterial->specularColor.getNum() != 1
+                || pcShapeMaterial->specularColor[0] != specular)
+            pcShapeMaterial->specularColor.setValue(specular);
+        if (pcShapeMaterial->emissiveColor.getNum() != 1
+                || pcShapeMaterial->emissiveColor[0] != emissive)
+            pcShapeMaterial->emissiveColor.setValue(emissive);
+        if (pcShapeMaterial->shininess.getNum() != 1
+                || pcShapeMaterial->shininess[0] != m.shininess)
+            pcShapeMaterial->shininess.setValue(m.shininess);
+    }
+
     int size = static_cast<int>(colors.size());
     if (size > 1) {
         int numfaces = this->faceset->partIndex.getNum();
@@ -2481,10 +2911,10 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
         int i=0;
         for (; i < size; i++) {
             ca[i].setValue(colors[i].r, colors[i].g, colors[i].b);
-            t[i] = colors[i].a;
+            t[i] = colors[i].transparency();
         }
         const auto &color = ShapeColor.getValue();
-        float trans = ShapeMaterial.getValue().transparency;
+        float trans = ShapeAppearance.getTransparency(0);
         for (; i < numfaces; i++) { 
             ca[i].setValue(color.r, color.g, color.b);
             t[i] = trans;
@@ -2498,12 +2928,17 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
     pcFaceBind->value = SoMaterialBinding::OVERALL;
     pcShapeMaterial->diffuseColor.setValue(color.r, color.g, color.b);
     //pcShapeMaterial->transparency = colors[0].a; do not get transparency from DiffuseColor in this case
-    pcShapeMaterial->transparency.setValue(ShapeMaterial.getValue().transparency);
+    pcShapeMaterial->transparency.setValue(ShapeAppearance.getTransparency(0));
 
 }
 
 void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& colors)
 {
+    // Not during a restore, for the same reason as the colour overload.
+    if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange)
+            && !App::Document::isAnyRestoring())
+        getObject()->touch(true);
+
     // Instanced representation: diffuse+transparency divergence goes
     // through the color-variant path; anything beyond that must bake
     // whole materials per face -- rebuild flattened (the raised flag
@@ -2520,23 +2955,27 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
     if (instanced) {
         // The uniform-valued non-diffuse components ride the object
         // material; diffuse+transparency partition the instances.
-        const auto &m0 = colors.empty() ? ShapeMaterial.getValue() : colors[0];
+        const App::Material m0 = colors.empty() ? ShapeAppearance.getPhongMaterial(0) : colors[0];
         pcShapeMaterial->ambientColor.setValue(
             m0.ambientColor.r, m0.ambientColor.g, m0.ambientColor.b);
         pcShapeMaterial->specularColor.setValue(
             m0.specularColor.r, m0.specularColor.g, m0.specularColor.b);
         pcShapeMaterial->emissiveColor.setValue(
             m0.emissiveColor.r, m0.emissiveColor.g, m0.emissiveColor.b);
+        pcShapeMaterial->shininess.setValue(m0.shininess);
         std::vector<App::Color> diffuse;
         diffuse.reserve(colors.size());
         for (const auto &m : colors) {
             App::Color c = m.diffuseColor;
-            c.a = m.transparency;
+            c.setTransparency(m.transparency);
             diffuse.push_back(c);
         }
         applyInstancedFaceColors(diffuse);
         return;
     }
+
+    Gui::SoUpdateVBOAction action;
+    action.apply(this->faceset);
 
     int size = static_cast<int>(colors.size());
     if (size > 1) {
@@ -2550,11 +2989,15 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
         pcShapeMaterial->ambientColor.setNum(numfaces);
         pcShapeMaterial->specularColor.setNum(numfaces);
         pcShapeMaterial->emissiveColor.setNum(numfaces);
+        pcShapeMaterial->shininess.setNum(numfaces);
+        pcShapeMaterial->transparency.setNum(numfaces);
 
         SbColor* dc = pcShapeMaterial->diffuseColor.startEditing();
         SbColor* ac = pcShapeMaterial->ambientColor.startEditing();
         SbColor* sc = pcShapeMaterial->specularColor.startEditing();
         SbColor* ec = pcShapeMaterial->emissiveColor.startEditing();
+        float* sh = pcShapeMaterial->shininess.startEditing();
+        float* tr = pcShapeMaterial->transparency.startEditing();
 
         int i=0;
         for (; i < size; i++) {
@@ -2562,29 +3005,37 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
             ac[i].setValue(colors[i].ambientColor.r, colors[i].ambientColor.g, colors[i].ambientColor.b);
             sc[i].setValue(colors[i].specularColor.r, colors[i].specularColor.g, colors[i].specularColor.b);
             ec[i].setValue(colors[i].emissiveColor.r, colors[i].emissiveColor.g, colors[i].emissiveColor.b);
+            sh[i] = colors[i].shininess;
+            tr[i] = colors[i].transparency;
         }
 
-        const auto &material = ShapeMaterial.getValue();
+        const App::Material material = ShapeAppearance.getMaterial(0);
         for (; i < numfaces; ++i) {
             dc[i].setValue(material.diffuseColor.r, material.diffuseColor.g, material.diffuseColor.b);
             ac[i].setValue(material.ambientColor.r, material.ambientColor.g, material.ambientColor.b);
             sc[i].setValue(material.specularColor.r, material.specularColor.g, material.specularColor.b);
             ec[i].setValue(material.emissiveColor.r, material.emissiveColor.g, material.emissiveColor.b);
+            sh[i] = material.shininess;
+            tr[i] = material.transparency;
         }
 
         pcShapeMaterial->diffuseColor.finishEditing();
         pcShapeMaterial->ambientColor.finishEditing();
         pcShapeMaterial->specularColor.finishEditing();
         pcShapeMaterial->emissiveColor.finishEditing();
+        pcShapeMaterial->shininess.finishEditing();
+        pcShapeMaterial->transparency.finishEditing();
         return;
     }
 
-    const auto &material = colors.size()==1?colors[0]:ShapeMaterial.getValue();
+    const App::Material material = colors.size()==1?colors[0]:ShapeAppearance.getMaterial(0);
     pcFaceBind->value = SoMaterialBinding::OVERALL;
     pcShapeMaterial->diffuseColor.setValue(material.diffuseColor.r, material.diffuseColor.g, material.diffuseColor.b);
     pcShapeMaterial->ambientColor.setValue(material.ambientColor.r, material.ambientColor.g, material.ambientColor.b);
     pcShapeMaterial->specularColor.setValue(material.specularColor.r, material.specularColor.g, material.specularColor.b);
     pcShapeMaterial->emissiveColor.setValue(material.emissiveColor.r, material.emissiveColor.g, material.emissiveColor.b);
+    pcShapeMaterial->shininess.setValue(material.shininess);
+    pcShapeMaterial->transparency.setValue(material.transparency);
 }
 
 static inline App::PropertyLinkSub *getColoredElements(const App::DocumentObject *obj) {
@@ -2599,7 +3050,7 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
 
     if(!element || !element[0]) {
         auto color = ShapeColor.getValue();
-        color.a = Transparency.getValue()/100.0f;
+        color.setTransparency(Transparency.getValue()/100.0f);
         ret["Face"] = color;
         ret["Edge"] = LineColor.getValue();
         ret["Vertex"] = PointColor.getValue();
@@ -2635,7 +3086,7 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
         auto size = DiffuseColor.getSize();
         if(element[4]=='*') {
             auto color = ShapeColor.getValue();
-            color.a = Transparency.getValue()/100.0f;
+            color.setTransparency(Transparency.getValue()/100.0f);
             bool singleColor = true;
             for(int i=0;i<size;++i) {
                 if(DiffuseColor[i]!=color)
@@ -2644,7 +3095,7 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
             }
             if(size && singleColor) {
                 color = DiffuseColor[0];
-                color.a = Transparency.getValue()/100.0f;
+                color.setTransparency(Transparency.getValue()/100.0f);
                 ret.clear();
             }
             ret["Face"] = color;
@@ -2655,7 +3106,7 @@ std::map<std::string,App::Color> ViewProviderPartExt::getElementColors(const cha
             else
                 ret[element] = ShapeColor.getValue();
             if(size==1)
-                ret[element].a = Transparency.getValue()/100.0f;
+                ret[element].setTransparency(Transparency.getValue()/100.0f);
         }
     } else if (boost::starts_with(element,"Edge")) {
         auto size = LineColorArray.getSize();
@@ -2721,8 +3172,8 @@ void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color
                 touched = true;
                 ShapeColor.setValue(v.second);
             }
-            if(v.second.a*100 != Transparency.getValue()) {
-                Transparency.setValue(v.second.a*100);
+            if(v.second.transparency()*100 != Transparency.getValue()) {
+                Transparency.setValue(v.second.transparency()*100);
                 touched = true;
             }
         } else if(v.first == "Edge") {
@@ -2756,7 +3207,7 @@ void ViewProviderPartExt::setElementColors(const std::map<std::string,App::Color
 
 void ViewProviderPartExt::unsetHighlightedFaces()
 {
-    setHighlightedFaces(DiffuseColor.getValues());
+    applyShapeAppearance();
 }
 
 void ViewProviderPartExt::setHighlightedEdges(const std::vector<App::Color>& colors)
@@ -2898,8 +3349,91 @@ void ViewProviderPartExt::reload()
     updateVisual();
 }
 
-static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&obj, 
-        ViewProviderPartExt *&svp, App::Color &color) 
+namespace {
+
+/** One of the three per-element colour arrays, picked by element type
+ *
+ * The two places below want "the colour list for this kind of element" and
+ * do not care which one it is. They used to hold an App::PropertyColorList
+ * pointer to one of DiffuseColor, LineColorArray and PointColorArray, which
+ * stops being safe the moment DiffuseColor keeps its colours somewhere else
+ * than the base list does: the reads would come back empty, for faces only
+ * and without a word. So the branch lives here instead, once, and every
+ * access goes through the property's own static type.
+ */
+class ElementColors
+{
+public:
+    ElementColors() = default;
+    ElementColors(TopAbs_ShapeEnum type, ViewProviderPartExt *vp)
+        : _type(type), _vp(vp)
+    {}
+
+    explicit operator bool() const { return _vp != nullptr; }
+
+    int getSize() const
+    {
+        switch (_type) {
+        case TopAbs_VERTEX:
+            return _vp->PointColorArray.getSize();
+        case TopAbs_EDGE:
+            return _vp->LineColorArray.getSize();
+        default:
+            return _vp->DiffuseColor.getSize();
+        }
+    }
+
+    const std::vector<App::Color> &getValues() const
+    {
+        switch (_type) {
+        case TopAbs_VERTEX:
+            return _vp->PointColorArray.getValues();
+        case TopAbs_EDGE:
+            return _vp->LineColorArray.getValues();
+        default:
+            return _vp->DiffuseColor.getValues();
+        }
+    }
+
+    void setValues(const std::vector<App::Color> &colors)
+    {
+        switch (_type) {
+        case TopAbs_VERTEX:
+            _vp->PointColorArray.setValue(colors);
+            break;
+        case TopAbs_EDGE:
+            _vp->LineColorArray.setValue(colors);
+            break;
+        default:
+            _vp->DiffuseColor.setValue(colors);
+            break;
+        }
+    }
+
+    void touch()
+    {
+        switch (_type) {
+        case TopAbs_VERTEX:
+            _vp->PointColorArray.touch();
+            break;
+        case TopAbs_EDGE:
+            _vp->LineColorArray.touch();
+            break;
+        default:
+            _vp->DiffuseColor.touch();
+            break;
+        }
+    }
+
+private:
+    TopAbs_ShapeEnum _type = TopAbs_FACE;
+    ViewProviderPartExt *_vp = nullptr;
+};
+
+}  // namespace
+
+static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&obj,
+        ViewProviderPartExt *&svp, App::Color &color)
 {
     if(!obj)
         return false;
@@ -2916,8 +3450,8 @@ static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&o
         auto link = obj->getExtensionByType<App::LinkBaseExtension>(true);
         if(vp && vp->OverrideMaterial.getValue()) {
             colorFound = true;
-            color = vp->ShapeMaterial.getValue().diffuseColor;
-            color.a = vp->ShapeMaterial.getValue().transparency;
+            color = vp->ShapeAppearance.getDiffuseColor(0);
+            color.setTransparency(vp->ShapeAppearance.getTransparency(0));
             if(!link || !link->getElementCountValue())
                 return true;
         }
@@ -2936,8 +3470,8 @@ static bool getLinkColor(const Data::MappedName &mapped, App::DocumentObject *&o
                     vp->OverrideMaterialList[index] &&
                     vp->MaterialList.getSize()>index)
                 {
-                    color = vp->MaterialList[index].diffuseColor;
-                    color.a = vp->MaterialList[index].transparency;
+                    color = vp->MaterialList.getDiffuseColor(index);
+                    color.setTransparency(vp->MaterialList.getTransparency(index));
                     return true;
                 }
                 if(colorFound)
@@ -3008,12 +3542,8 @@ static App::Color getElementColor(App::Color color,
             return color;
 
         float trans = vp->Transparency.getValue()/100.0;
-        auto prop = &vp->DiffuseColor;
-        if(type == TopAbs_VERTEX) 
-            prop = &vp->PointColorArray;
-        else if(type == TopAbs_EDGE)
-            prop = &vp->LineColorArray;
-        if(prop->getSize()==0)
+        ElementColors prop((TopAbs_ShapeEnum)type, vp);
+        if(prop.getSize()==0)
             return color;
 
         mapped = original;
@@ -3041,23 +3571,23 @@ static App::Color getElementColor(App::Color color,
         auto idx = Part::TopoShape::shapeTypeAndIndex(indexedName);
         if(idx.second>0 && idx.second<=(int)shape.countSubShapes(idx.first)) {
             if(idx.first==type) {
-                if(prop->getSize()==1) {
-                    color = prop->getValues()[0];
-                    color.a = trans;
+                if(prop.getSize()==1) {
+                    color = prop.getValues()[0];
+                    color.setTransparency(trans);
                 }
-                else if(idx.second<=prop->getSize()) 
-                    return prop->getValues()[idx.second-1];
+                else if(idx.second<=prop.getSize())
+                    return prop.getValues()[idx.second-1];
             }else{
                 // This means the element is generated from a different type of source element,
                 // e.g. face generated by an edge.
                 auto aidx = shape.findAncestor(shape.findShape(idx.first,idx.second),(TopAbs_ShapeEnum)type);
                 if(aidx>0) {
-                    if(prop->getSize()==1) {
-                        color = prop->getValues()[0];
-                        color.a = trans;
+                    if(prop.getSize()==1) {
+                        color = prop.getValues()[0];
+                        color.setTransparency(trans);
                     }
-                    else if(aidx<=prop->getSize())
-                        return prop->getValues()[aidx-1];
+                    else if(aidx<=prop.getSize())
+                        return prop.getValues()[aidx-1];
                 }
             }
         }
@@ -3069,7 +3599,7 @@ std::vector<App::Color> ViewProviderPartExt::getShapeColors(const Part::TopoShap
         App::Color &defColor, App::Document *sourceDoc, bool linkOnly)
 {
     defColor.setPackedValue(Gui::ViewParams::getDefaultShapeColor());
-    defColor.a = 0;
+    defColor.a = 1.0f;  // opaque whatever the preference's alpha byte says
 
     if(!sourceDoc) {
         sourceDoc = App::GetApplication().getActiveDocument();
@@ -3095,7 +3625,7 @@ std::vector<App::Color> ViewProviderPartExt::getShapeColors(const Part::TopoShap
                 Gui::Application::Instance->getViewProvider(obj));
     if(vp) {
         defColor = vp->ShapeColor.getValue();
-        defColor.a = vp->Transparency.getValue()/100.0f;
+        defColor.setTransparency(vp->Transparency.getValue()/100.0f);
         return vp->DiffuseColor.getValues();
     }
 
@@ -3123,28 +3653,26 @@ bool ViewProviderPartExt::hasBaseFeature() const {
 
 struct ColorInfo {
     TopAbs_ShapeEnum type;
-    App::PropertyColorList *prop = 0;
+    ElementColors prop;
     App::Color defaultColor;
     std::map<int,App::Color> colors;
     bool mapColor;
 
     void init(TopAbs_ShapeEnum t, ViewProviderPartExt *vp) {
         type = t;
+        prop = ElementColors(t, vp);
         switch(type) {
         case TopAbs_VERTEX:
             defaultColor = vp->PointColor.getValue();
-            prop = &vp->PointColorArray;
             mapColor = vp->MapPointColor.getValue();
             break;
         case TopAbs_EDGE:
             defaultColor = vp->LineColor.getValue();
-            prop = &vp->LineColorArray;
             mapColor = vp->MapLineColor.getValue();
             break;
         case TopAbs_FACE:
             defaultColor = vp->ShapeColor.getValue();
-            defaultColor.a = vp->Transparency.getValue()/100.0f;
-            prop = &vp->DiffuseColor;
+            defaultColor.setTransparency(vp->Transparency.getValue()/100.0f);
             mapColor = vp->MapFaceColor.getValue();
             break;
         default:
@@ -3234,9 +3762,9 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
         if(!info.prop) continue;
         if(noColorMap || !info.mapColor) {
             if(info.colors.empty())
-                info.prop->touch();
+                info.prop.touch();
             else {
-                auto colors = info.prop->getValues();
+                auto colors = info.prop.getValues();
                 if(colors.size()!=shape.countSubShapes(info.type)) {
                     colors.clear();
                     colors.resize(shape.countSubShapes(info.type),info.defaultColor);
@@ -3246,7 +3774,7 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
                         break;
                     colors[v.first] = v.second;
                 }
-                info.prop->setValue(colors);
+                info.prop.setValues(colors);
             }
             continue;
         }
@@ -3278,7 +3806,7 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
             }
             auto color = getElementColor(info.defaultColor, shape, doc,info.type,mapped,caches);
             if(!MapTransparency.getValue())
-                color.a = trans;
+                color.setTransparency(trans);
             if(color != colors[i]) {
                 touched = true;
                 colors[i] = color;
@@ -3288,7 +3816,7 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
             colors.clear();
             colors.push_back(info.defaultColor);
         }
-        info.prop->setValue(colors);
+        info.prop.setValues(colors);
     }
 }
 
@@ -3736,7 +4264,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
         clearInstanceColors();
         const App::Color &c = colors.size() == 1 ? colors[0] : ShapeColor.getValue();
         // do not get transparency from DiffuseColor in this case
-        setOverall(c, ShapeMaterial.getValue().transparency);
+        setOverall(c, ShapeAppearance.getTransparency(0));
         return;
     }
 
@@ -3747,7 +4275,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     for (const auto &inst : instanced->instances)
         total += inst.geom->faceCount;
     App::Color base = ShapeColor.getValue();
-    base.a = ShapeMaterial.getValue().transparency;
+    base.setTransparency(ShapeAppearance.getTransparency(0));
     std::vector<App::Color> resolved(size_t(total), base);
     for (size_t i = 0; i < colors.size() && i < resolved.size(); ++i)
         resolved[i] = colors[i];
@@ -3771,7 +4299,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     // the shared base subgraph (cross-instance sharable whatever its
     // value, the Link mechanism), a divergent slice a baked, refcounted
     // color variant shared by every instance applying that exact vector.
-    setOverall(ShapeColor.getValue(), ShapeMaterial.getValue().transparency);
+    setOverall(ShapeColor.getValue(), ShapeAppearance.getTransparency(0));
     bool structureChanged = false;
     int faceBase = 0;
     for (auto &inst : instanced->instances) {
@@ -3801,7 +4329,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
                 inst.overrideMat->shininess.setIgnored(TRUE);
             }
             inst.overrideMat->diffuseColor.setValue(c.r, c.g, c.b);
-            inst.overrideMat->transparency.setValue(c.a);
+            inst.overrideMat->transparency.setValue(c.transparency());
         } else {
             ColorVariant *variant = acquireColorVariant(*inst.geom, slice);
             if (variant != inst.variant) {
@@ -4739,7 +5267,7 @@ void ViewProviderPartExt::queueDecimationDescent()
                 else {
                     // The arrays under the highlight/selection state
                     // were rewritten; re-apply like updateVisual does.
-                    setHighlightedFaces(DiffuseColor.getValues());
+                    applyShapeAppearance();
                     setHighlightedEdges(LineColorArray.getValues());
                     setHighlightedPoints(PointColorArray.getValue());
                     // ...and register the content the rewrite emitted
@@ -4959,6 +5487,124 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         scheduleDeferredVisualSlice();
 }
 
+namespace {
+
+/// The projection frame of one face, as the three SbVec4f the render
+/// material carries -- (origin, kind), (axis, radius), (xdir, spare),
+/// matching Render::SurfaceFrame.
+///
+/// A surface finish is a pattern the tool left, and the tool worked in
+/// the surface's own frame: a plane's axes, or the axis a cylinder or
+/// cone was turned about. Read here because this is the last place the
+/// analytic OCCT surface is in hand -- past this point there is only a
+/// triangle soup, and the renderer's fallback is to guess the frame from
+/// the object-space normal (fc_finish.sh's triplanar projection), which
+/// cannot know that a cylinder has an axis.
+///
+/// Answers false for a surface neither planar nor a surface of
+/// revolution -- a freeform patch has no frame worth stating, and no
+/// finish anyone specifies wants one.
+///
+/// WARNING: the frame is CANONICALIZED, and that is what keeps the palette
+/// small enough to be worth having: the origin's component along the
+/// axis is dropped for a plane (invisible: the pattern is in-plane) and
+/// set to the axis point nearest the object origin for a radial one
+/// (which only shifts the axial phase), and the axis sign is fixed. So
+/// coplanar faces, parallel faces and the coaxial cylinders of a stepped
+/// shaft all collapse onto one entry, rather than each spending one of
+/// the sixteen a draw may hold.
+bool faceProjectionFrame(const TopoDS_Face &face, SbVec4f out[3])
+{
+    TopLoc_Location loc;
+    if (BRep_Tool::Surface(face, loc).IsNull())
+        return false;   // purely triangulated: no analytic surface at all
+
+    gp_Pnt origin;
+    gp_Dir axis;
+    gp_Dir xdir;
+    float radius = 0.0f;
+    float kind = 0.0f;
+    try {
+        // Restricted to the face, so a cone's radius below is measured
+        // over the part of it this face actually is.
+        BRepAdaptor_Surface adapt(face);
+        switch (adapt.GetType()) {
+        case GeomAbs_Plane: {
+            const gp_Ax3 &pos = adapt.Plane().Position();
+            origin = pos.Location();
+            axis = pos.Direction();
+            xdir = pos.XDirection();
+            kind = 1.0f;    // Render::SurfaceFrame::Planar
+            break;
+        }
+        case GeomAbs_Cylinder: {
+            const gp_Cylinder cyl = adapt.Cylinder();
+            const gp_Ax3 &pos = cyl.Position();
+            origin = pos.Location();
+            axis = pos.Direction();
+            xdir = pos.XDirection();
+            radius = float(cyl.Radius());
+            kind = 2.0f;    // Render::SurfaceFrame::Radial
+            break;
+        }
+        case GeomAbs_Cone: {
+            const gp_Cone cone = adapt.Cone();
+            const gp_Ax3 &pos = cone.Position();
+            origin = pos.Location();
+            axis = pos.Direction();
+            xdir = pos.XDirection();
+            // R(v) = RefRadius + v * sin(semi-angle): the radius at the
+            // middle of the face, which is the circumference the pattern
+            // period is fitted to. A cone's is not constant, so the
+            // pattern stretches a little toward the wide end -- which is
+            // what a knurl rolled onto a taper actually does.
+            const double v = 0.5 * (adapt.FirstVParameter()
+                                    + adapt.LastVParameter());
+            radius = float(std::fabs(cone.RefRadius()
+                                     + v * std::sin(cone.SemiAngle())));
+            kind = 2.0f;
+            break;
+        }
+        default:
+            return false;
+        }
+    }
+    catch (const Standard_Failure &) {
+        return false;
+    }
+
+    gp_Vec vaxis(axis);
+    gp_Vec vx(xdir);
+    // Fix the axis sign so a face and its reversed twin -- the two sides
+    // of a plate, a cylinder met from either end -- share one entry.
+    const double a[3] = {vaxis.X(), vaxis.Y(), vaxis.Z()};
+    for (int i = 0; i < 3; ++i) {
+        if (std::fabs(a[i]) > 1.0e-9) {
+            if (a[i] < 0.0) {
+                vaxis.Reverse();
+                vx.Reverse();
+            }
+            break;
+        }
+    }
+    // Drop the component along the axis, which is the one component
+    // neither kind can show: a plane's pattern is laid IN the plane, so
+    // sliding the origin along its normal changes nothing, and a radial
+    // frame's origin only has to name a point ON the axis -- the nearest
+    // one to the object origin, which is what this leaves. Two faces
+    // that agree about everything visible now agree about the frame too.
+    gp_Vec vo(origin.X(), origin.Y(), origin.Z());
+    vo -= vaxis * vo.Dot(vaxis);
+
+    out[0].setValue(float(vo.X()), float(vo.Y()), float(vo.Z()), kind);
+    out[1].setValue(float(vaxis.X()), float(vaxis.Y()), float(vaxis.Z()),
+                    radius);
+    out[2].setValue(float(vx.X()), float(vx.Y()), float(vx.Z()), 0.0f);
+    return true;
+}
+
+} // anonymous namespace
+
 void ViewProviderPartExt::updateVisual()
 {
     if (!getObject()
@@ -5128,7 +5774,7 @@ void ViewProviderPartExt::updateVisual()
         VisualTouched = false;
         Gui::ViewProvider::VisualBuildTimer highlightTimer(
                 Gui::ViewProvider::VisualHighlightTime, nullptr);
-        setHighlightedFaces(DiffuseColor.getValues());
+        applyShapeAppearance();
         setHighlightedEdges(LineColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValue());
         return;
@@ -5170,7 +5816,7 @@ void ViewProviderPartExt::updateVisual()
         // The material has to be checked again (colors verified uniform)
         Gui::ViewProvider::VisualBuildTimer highlightTimer(
                 Gui::ViewProvider::VisualHighlightTime, nullptr);
-        setHighlightedFaces(DiffuseColor.getValues());
+        applyShapeAppearance();
         setHighlightedEdges(LineColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValue());
         return;
@@ -5340,7 +5986,7 @@ void ViewProviderPartExt::updateVisual()
                          numTriangles, numNodes, numPoints, numNorms,
                          numFaces, numEdges, numLines,
                          meshLadder.scaleSpent, &meshLadder,
-                         residentLanded);
+                         residentLanded, pcRenderMaterial);
         armMeshLevelSource();
 
         // The rung between a spent tessellation and the bounding box
@@ -5392,7 +6038,7 @@ void ViewProviderPartExt::updateVisual()
         // The material has to be checked again
         Gui::ViewProvider::VisualBuildTimer highlightTimer(
                 Gui::ViewProvider::VisualHighlightTime, nullptr);
-        setHighlightedFaces(DiffuseColor.getValues());
+        applyShapeAppearance();
         setHighlightedEdges(LineColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValue());
     }
@@ -5460,6 +6106,14 @@ struct ViewProviderPartExt::VisualFillData {
     int numTriangles = 0, numNodes = 0, numPoints = 0, numNorms = 0,
         numFaces = 0, numEdges = 0, numLines = 0;
     bool nodesAttachedOnly = false, linesAttachedOnly = false;
+    /// The projection frames a surface finish is laid out in: the
+    /// deduplicated palette and one index per face (see
+    /// faceProjectionFrame). Computed with the geometry, but written
+    /// into the render material by applyVisualFill -- a Coin field is
+    /// the GUI thread's, and on the pooled path the fill is not on it.
+    std::vector<SbVec4f> framePalette;
+    std::vector<int32_t> frameIndices;
+    bool anyFrame = false;
 
     // -- worker-emitted vertex cache content -----------------------
     // (docs/WorkerVertexCache.md) Built by the fill next to the display
@@ -5807,6 +6461,18 @@ void ViewProviderPartExt::fillVisualArrays(VisualFillData &data)
         for (int i=0; texcoordArr && i < numNodes; i++)
             texcoordArr[i] = SbVec2f(0.0f, 0.0f);
 
+        // The projection frames a surface finish is laid out in, one
+        // entry per DISTINCT frame and one index per face (see
+        // faceProjectionFrame and SoFCRenderMaterial::framePalette).
+        // Entry 0 is the FIRST face's frame, following the finish
+        // palette's rule: a mesh whose per-vertex stream collapses --
+        // which is what happens when every face is framed alike, the
+        // ordinary case for a turned part -- carries no index to read,
+        // and entry 0 is what the backend gives it.
+        std::vector<SbVec4f> framePalette;
+        std::vector<int32_t> frameIndices(numFaces, 0);
+        bool anyFrame = false;
+
         int ii = 0,faceNodeOffset=0,faceTriaOffset=0;
         for (int i=1; i <= faceMap.Extent(); i++, ii++) {
             const TopoDS_Face &actFace = TopoDS::Face(faceMap(i));
@@ -5831,6 +6497,40 @@ void ViewProviderPartExt::fillVisualArrays(VisualFillData &data)
             int nbTriInFace   = mesh->NbTriangles();
             // check orientation
             TopAbs_Orientation orient = actFace.Orientation();
+
+            // The face's projection frame, deduplicated into the
+            // palette. An unclassifiable face states the UNFRAMED frame
+            // rather than being skipped, so that it keeps its place in
+            // the palette's indexing and shades triplanarly.
+            SbVec4f frame[3] = {SbVec4f(0.0f, 0.0f, 0.0f, 0.0f),
+                                SbVec4f(0.0f, 0.0f, 1.0f, 0.0f),
+                                SbVec4f(1.0f, 0.0f, 0.0f, 0.0f)};
+            if (ii < int(frameIndices.size())) {
+                if (faceProjectionFrame(actFace, frame))
+                    anyFrame = true;
+                int idx = -1;
+                for (std::size_t k = 0; k < framePalette.size() && idx < 0;
+                     k += 3) {
+                    if (framePalette[k] == frame[0]
+                            && framePalette[k + 1] == frame[1]
+                            && framePalette[k + 2] == frame[2])
+                        idx = int(k / 3);
+                }
+                if (idx < 0) {
+                    // Past the cap the face takes entry 0 -- the first
+                    // face's frame -- the way an overflowing finish
+                    // takes the object's own.
+                    if (framePalette.size() / 3
+                            >= std::size_t(Render::MaxFramePalette))
+                        idx = 0;
+                    else {
+                        idx = int(framePalette.size() / 3);
+                        framePalette.insert(framePalette.end(),
+                                            frame, frame + 3);
+                    }
+                }
+                frameIndices[ii] = idx;
+            }
 
             // purely triangulated faces carry authored texture coordinates
             // and normals in the stored mesh -- use both as-is
@@ -6004,6 +6704,14 @@ void ViewProviderPartExt::fillVisualArrays(VisualFillData &data)
             faceNodeOffset += nbNodesInFace;
             faceTriaOffset += nbTriInFace;
         }
+
+        // The frames travel with the display arrays rather than being
+        // written here: this runs on the refine pool for a pooled fill,
+        // and a Coin field is the GUI thread's. applyVisualFill states
+        // them on the render material.
+        data.anyFrame = anyFrame;
+        data.framePalette = std::move(framePalette);
+        data.frameIndices = std::move(frameIndices);
 
         // handling of the free edges -- the polygons were captured
         // (an edge that belongs to a face has no entry: its nodes
@@ -6278,8 +6986,30 @@ void ViewProviderPartExt::applyVisualFill(const VisualFillData &data,
         SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
         SoBrepPointSet *nodeset,
         int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
-        int &numFaces, int &numEdges, int &numLines)
+        int &numFaces, int &numEdges, int &numLines,
+        Gui::SoFCRenderMaterial *rendermat)
 {
+    // The frames reach the shapes only while a finish is stated
+    // somewhere -- SoFCRenderMaterial decides that, since the finish
+    // is the appearance's business and this is the geometry's.
+    if (rendermat) {
+        if (data.anyFrame) {
+            // setNum first: setValues grows a field but never
+            // shrinks one, and a re-tessellation may state fewer
+            // frames than the last one did.
+            rendermat->framePalette.setNum(int(data.framePalette.size()));
+            rendermat->framePalette.setValues(
+                    0, int(data.framePalette.size()), data.framePalette.data());
+            rendermat->frameIndices.setNum(int(data.frameIndices.size()));
+            rendermat->frameIndices.setValues(
+                    0, int(data.frameIndices.size()), data.frameIndices.data());
+        }
+        else {
+            rendermat->framePalette.setNum(0);
+            rendermat->frameIndices.setNum(0);
+        }
+    }
+
     numTriangles = data.numTriangles;
     numNodes = data.numNodes;
     numPoints = data.numPoints;
@@ -6360,7 +7090,7 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
         int &numFaces, int &numEdges, int &numLines,
         ScaleSpent tessellationSpent, MeshLadderState *ladder,
-        bool residentLanded)
+        bool residentLanded, Gui::SoFCRenderMaterial *rendermat)
 {
     // Everything this function does, tessellation INCLUDED -- the mesh
     // accumulator nests inside this one, and the reporter subtracts it
@@ -6380,7 +7110,7 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
     applyVisualFill(data, coords, pcoords, norm, texcoords,
                     faceset, lineset, nodeset,
                     numTriangles, numNodes, numPoints, numNorms,
-                    numFaces, numEdges, numLines);
+                    numFaces, numEdges, numLines, rendermat);
 }
 
 bool ViewProviderPartExt::queueVisualFillOnPool(const TopoDS_Shape &cShape,
@@ -6485,7 +7215,8 @@ bool ViewProviderPartExt::queueVisualFillOnPool(const TopoDS_Shape &cShape,
                             Gui::ViewProvider::VisualFillTime, nullptr);
                     applyVisualFill(*data, coords, pcoords, norm, texcoords,
                                     faceset, lineset, nodeset,
-                                    nt, nn, np, nno, nf, ne, nl);
+                                    nt, nn, np, nno, nf, ne, nl,
+                                    pcRenderMaterial);
                 }
                 armMeshLevelSource();
                 // The decimation post-step, exactly as the inline
@@ -6508,7 +7239,7 @@ bool ViewProviderPartExt::queueVisualFillOnPool(const TopoDS_Shape &cShape,
                 {
                     Gui::ViewProvider::VisualBuildTimer highlightTimer(
                             Gui::ViewProvider::VisualHighlightTime, nullptr);
-                    setHighlightedFaces(DiffuseColor.getValues());
+                    applyShapeAppearance();
                     setHighlightedEdges(LineColorArray.getValues());
                     setHighlightedPoints(PointColorArray.getValue());
                 }
@@ -6615,7 +7346,7 @@ void ViewProviderPartExt::finishRestoring()
     };
     syncMaterial(LineMaterial.getValue(), pcLineMaterial);
     syncMaterial(PointMaterial.getValue(), pcPointMaterial);
-    syncMaterial(ShapeMaterial.getValue(), pcShapeMaterial);
+    syncMaterial(ShapeAppearance.getMaterial(0), pcShapeMaterial);
 
     if(VisualTouched && (isUpdateForced() || Visibility.getValue()))
         updateVisual();

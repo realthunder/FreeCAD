@@ -317,7 +317,7 @@ void PropertyConstraintList::setPyObject(PyObject* value)
             if (!PyObject_TypeCheck(item, &(ConstraintPy::Type))) {
                 std::string error = std::string("types in list must be 'Constraint', not ");
                 error += item->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
 
             values[i] = static_cast<ConstraintPy*>(item)->getConstraintPtr();
@@ -332,7 +332,7 @@ void PropertyConstraintList::setPyObject(PyObject* value)
     else {
         std::string error = std::string("type must be 'Constraint' or list of 'Constraint', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 

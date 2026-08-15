@@ -61,6 +61,11 @@ private:
     void toggleLight(bool on);
     void lightIntensity(int value);
     void lightColor();
+    void toggleFillLight(bool on);
+    void fillLightIntensity(int value);
+    void fillLightColor();
+    void ambientIntensity(int value);
+    void ambientColor();
     void saveDirection();
     void loadDirection();
     QWidget* createViewer(QWidget* parent);

@@ -812,7 +812,15 @@ class Param:
 
     def widget_default_expr(self):
         '''C++ expression of the parameter default passed to the widget
-        setter; string parameters wrap it for QString setters.'''
+        setter; string parameters wrap it for QString setters, and a
+        proxy whose setter takes another type again unwraps it.'''
+        if self.proxy:
+            expr = self.proxy.widget_default_expr(self)
+            if expr is not None:
+                return expr
+        return self._widget_default_expr()
+
+    def _widget_default_expr(self):
         return f"{self.namespace}::{self.class_name}::default{self.name}()"
 
     def _init_pref_widget(self):
@@ -973,7 +981,7 @@ class ParamString(Param):
     WidgetType = "Gui::PrefLineEdit"
     WidgetSetter = "setText"
 
-    def widget_default_expr(self):
+    def _widget_default_expr(self):
         return (f"QString::fromUtf8({self.namespace}::"
                 f"{self.class_name}::default{self.name}().c_str())")
 
@@ -1045,6 +1053,12 @@ class ParamProxy:
 
     def widget_setter(self, param):
         return self.WidgetSetter if self.WidgetSetter else param.WidgetSetter
+
+    def widget_default_expr(self, _param):
+        '''Override when the proxy's setter takes a different type than
+        the parameter's own widget setter does. None keeps the
+        parameter's expression.'''
+        return None
 
     def declare_widget(self, param):
         if self.param_bool:
@@ -1204,6 +1218,11 @@ class ParamFile(ParamProxy):
     WidgetType = "Gui::PrefFileChooser"
     WidgetSetter = "setFileNameStd"
     PropertyType = 'App::PropertyFileIncluded'
+
+    def widget_default_expr(self, param):
+        # setFileNameStd takes the std::string, not the QString a plain
+        # string parameter would wrap its default in.
+        return f"{param.namespace}::{param.class_name}::default{param.name}()"
 
 
 class ParamSpinBox(ParamProxy):

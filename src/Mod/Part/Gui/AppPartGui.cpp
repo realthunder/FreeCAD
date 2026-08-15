@@ -153,6 +153,9 @@ PyMOD_INIT_FUNC(PartGui)
 
     // clang-format off
     PartGui::PropertyEnumAttacherItem               ::init();
+    // A name over ShapeAppearance's diffuse field, and a property type of its
+    // own -- which a document names, so it has to be registered.
+    PartGui::PropertyDiffuseColor                   ::init();
     PartGui::SoBrepFaceSet                          ::initClass();
     PartGui::SoBrepEdgeSet                          ::initClass();
     PartGui::SoBrepPointSet                         ::initClass();

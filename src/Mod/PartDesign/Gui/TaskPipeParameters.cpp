@@ -430,7 +430,7 @@ bool TaskDlgPipeParameters::accept()
         Gui::cmdGuiDocument(pcPipe, "resetEdit()");
         Gui::cmdAppDocument(pcPipe, "recompute()");
         if (!vp->getObject()->isValid())
-            throw Base::RuntimeError(vp->getObject()->getStatusString());
+            THROWM(Base::RuntimeError, vp->getObject()->getStatusString())
         Gui::Command::commitCommand();
     }
     catch (const Base::Exception& e) {

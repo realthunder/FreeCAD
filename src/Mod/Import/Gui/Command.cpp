@@ -62,8 +62,7 @@ void FCCmdImportReadBREP::activated(int iMsg)
         return;
     }
 
-    fn = Base::Tools::escapeEncodeFilename(fn);
-    doCommand(Doc, "TopoShape = Import.ReadBREP(\"%s\")", (const char*)fn.toUtf8());
+    doCommand(Doc, "TopoShape = Import.ReadBREP(%s)", Base::Tools::pythonLiteral(fn).c_str());
     commitCommand();
 }
 
@@ -100,8 +99,7 @@ void ImportStep::activated(int iMsg)
     if (!fn.isEmpty()) {
         openCommand(QT_TRANSLATE_NOOP("Command", "Part ImportSTEP Create"));
         doCommand(Doc, "f = App.document().addObject(\"ImportStep\",\"ImportStep\")");
-        fn = Base::Tools::escapeEncodeFilename(fn);
-        doCommand(Doc, "f.FileName = \"%s\"", (const char*)fn.toUtf8());
+        doCommand(Doc, "f.FileName = %s", Base::Tools::pythonLiteral(fn).c_str());
         commitCommand();
         updateActive();
     }
@@ -145,8 +143,7 @@ void ImportIges::activated(int iMsg)
     if (!fn.isEmpty()) {
         openCommand(QT_TRANSLATE_NOOP("Command", "ImportIGES Create"));
         doCommand(Doc, "f = App.document().addObject(\"ImportIges\",\"ImportIges\")");
-        fn = Base::Tools::escapeEncodeFilename(fn);
-        doCommand(Doc, "f.FileName = \"%s\"", (const char*)fn.toUtf8());
+        doCommand(Doc, "f.FileName = %s", Base::Tools::pythonLiteral(fn).c_str());
         commitCommand();
         updateActive();
     }

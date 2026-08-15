@@ -130,6 +130,28 @@ const openCard = (subject: Subject) =>
 // the narrow layout; anywhere else both are on screen at once.
 const [cardOpen, setCardOpen] = createSignal(false);
 
+// The selection menu: mode (single/multi) and pick filter, pushed to
+// the viewer as it changes (docs/ThinClientUI.md). Session-local on
+// purpose — a filter someone forgot yesterday reads as broken picking
+// today.
+type SelMode = 'single' | 'multi';
+const FILTERS = ['elements', 'object', 'face', 'edge', 'vertex'] as const;
+type Filter = (typeof FILTERS)[number];
+const [selMode, setSelMode] = createSignal<SelMode>('single');
+const [filter, setFilter] = createSignal<Filter>('elements');
+const pickMode = (m: SelMode) => {
+  setSelMode(m);
+  window.fcviewerSetSelMode?.(m === 'multi' ? 1 : 0);
+};
+const pickFilter = (f: Filter) => {
+  setFilter(f);
+  window.fcviewerSetPickFilter?.(FILTERS.indexOf(f));
+};
+const FILTER_LABELS: Record<Filter, string> = {
+  elements: 'All elements', object: 'Whole object',
+  face: 'Faces', edge: 'Edges', vertex: 'Vertices',
+};
+
 const host = document.createElement('div');
 host.id = 'fc-ui';
 document.body.appendChild(host);
@@ -151,6 +173,35 @@ render(() => (
         { label: 'HUD',
           checked: () => hud() !== null,
           onSelect: () => window.fcviewerSetHud?.(hud() === null) },
+      ]}
+    />
+    <LauncherMenu
+      hidden={() => cardOpen() && window.innerWidth <= NARROW}
+      glyph={
+        /* Cursor-arrow "select" icon, inline so every device draws the
+           same thing (a text glyph already came out as tofu once). */
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+          <path d="M13 13l6 6" />
+        </svg>
+      }
+      title="Selection"
+      class="fc-launcher-sel"
+      items={[
+        { label: 'Mode', header: true },
+        ...(['single', 'multi'] as const).map((m) => ({
+          label: m === 'single' ? 'Single' : 'Multi',
+          checked: () => selMode() === m,
+          onSelect: () => pickMode(m),
+        })),
+        { label: 'Filter', header: true },
+        ...FILTERS.map((f) => ({
+          label: FILTER_LABELS[f],
+          checked: () => filter() === f,
+          onSelect: () => pickFilter(f),
+        })),
       ]}
     />
   </>

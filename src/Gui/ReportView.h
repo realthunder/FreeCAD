@@ -28,6 +28,7 @@
 #include <QSyntaxHighlighter>
 
 #include "Window.h"
+#include "MessageCollapse.h"
 #include <FCGlobal.h>
 
 
@@ -164,6 +165,10 @@ public:
 protected:
     /** For internal use only */
     void customEvent ( QEvent* ev ) override;
+    /** Folds or unfolds the messages a collapsed line stands in for */
+    void mousePressEvent(QMouseEvent* ev) override;
+    /** Points the cursor at a collapsed line */
+    void mouseMoveEvent(QMouseEvent* ev) override;
     /** Handles the change of style sheets */
     void changeEvent(QEvent *) override;
     /** Pops up the context menu with some extensions */
@@ -172,6 +177,8 @@ protected:
     bool event(QEvent* event) override;
 
 public Q_SLOTS:
+    /** Show every duplicate line held back so far, with its repeat count. */
+    void flushDuplicates();
     /** Save the report messages into a file. */
     void onSaveAs();
     /** Toggles the report of errors. */
@@ -202,6 +209,26 @@ public Q_SLOTS:
     void onToggleGoToEnd();
 
 private:
+    /** Hold back a line that repeats one of the last few shown; true when held. */
+    bool holdDuplicate(ReportHighlighter::Paragraph type, const QString& text);
+    /** Put one line into the view, batching as the report view always has.
+     * Passing the messages it stands in for makes it a collapsed line: it skips
+     * the batching so it gets a block of its own, and becomes expandable.
+     */
+    void appendReport(ReportHighlighter::Paragraph messageType, const QString& message,
+                      const QStringList* folded = nullptr);
+    /** Show one held line, with the count of what it stands for; clears the fold. */
+    void flushHeld(ReportHighlighter::Paragraph type, MessageFold& fold);
+    /** Write out whatever the batching is holding. */
+    void writePending();
+    /** Hang the held messages on the line shown in their place. */
+    void keepFolded(const QTextBlock& block, ReportHighlighter::Paragraph type,
+                    const QStringList& folded);
+    /** The collapsed line at this point, an invalid block when there is none. */
+    QTextBlock foldedBlockAt(const QPoint& pos) const;
+    /** Show the messages behind a collapsed line, or hide them again. */
+    void toggleFold(const QTextBlock& block);
+
     class Data;
     Data* d;
     bool gotoEnd;

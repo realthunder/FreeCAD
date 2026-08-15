@@ -114,7 +114,7 @@ Py::Object ExpressionBindingPy::bind(const Py::Tuple& args)
         App::DocumentObject* obj = static_cast<App::DocumentObjectPy*>(py)->getDocumentObjectPtr();
         App::ObjectIdentifier id(App::ObjectIdentifier::parse(obj, str));
         if (!id.getProperty()) {
-            throw Base::AttributeError("Wrong property");
+            THROWM(Base::AttributeError, "Wrong property")
         }
 
         expr->bind(id);

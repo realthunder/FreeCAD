@@ -604,12 +604,12 @@ void initInterpreter(int argc, char* argv[])
 
     status = PyConfig_SetBytesArgv(&config, argc, argv);
     if (PyStatus_Exception(status)) {
-        throw Base::RuntimeError("Failed to set config");
+        THROWM(Base::RuntimeError, "Failed to set config")
     }
 
     status = Py_InitializeFromConfig(&config);
     if (PyStatus_Exception(status)) {
-        throw Base::RuntimeError("Failed to init from config");
+        THROWM(Base::RuntimeError, "Failed to init from config")
     }
 
     PyConfig_Clear(&config);
@@ -1009,7 +1009,7 @@ PyObject* InterpreterSingleton::createSWIGPointerObj(const char* Module,
     }
 
     // none of the SWIG's succeeded
-    throw Base::RuntimeError("No SWIG wrapped library loaded");
+    THROWM(Base::RuntimeError, "No SWIG wrapped library loaded")
 }
 
 bool InterpreterSingleton::convertSWIGPointerObj(const char* Module,
@@ -1036,7 +1036,7 @@ bool InterpreterSingleton::convertSWIGPointerObj(const char* Module,
     }
 
     // none of the SWIG's succeeded
-    throw Base::RuntimeError("No SWIG wrapped library loaded");
+    THROWM(Base::RuntimeError, "No SWIG wrapped library loaded")
 }
 
 void InterpreterSingleton::cleanupSWIG(const char* TypeName)
@@ -1067,7 +1067,7 @@ PyTypeObject* InterpreterSingleton::getSWIGPointerTypeObj(const char* Module, co
     }
 
     // none of the SWIG's succeeded
-    throw Base::RuntimeError("No SWIG wrapped library loaded");
+    THROWM(Base::RuntimeError, "No SWIG wrapped library loaded")
 }
 
 #if (defined(HAVE_SWIG) && (HAVE_SWIG == 1))

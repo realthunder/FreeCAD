@@ -27,64 +27,27 @@
 #include <string>
 #include <vector>
 
-namespace {
-
-/// Mirror of bgfx_utils' loadShader: the per-API shader subdirectory of
-/// the runtime asset path.
-const char *shaderApiDir()
+bgfx::ShaderHandle loadShaderData(const std::string &path)
 {
-    switch (bgfx::getRendererType()) {
-    case bgfx::RendererType::OpenGL:   return "glsl";
-    case bgfx::RendererType::OpenGLES: return "essl";
-    case bgfx::RendererType::Vulkan:   return "spirv";
-    case bgfx::RendererType::Metal:    return "metal";
-    default:                           return "glsl";
-    }
-}
-
-} // anonymous namespace
-
-bgfx::ShaderHandle loadShader(const bx::StringView &name, const char *path)
-{
-    std::string file(path ? path : "");
-    if (!file.empty() && file.back() != '/')
-        file += '/';
-    file += "shaders/";
-    file += shaderApiDir();
-    file += '/';
-    file.append(name.getPtr(), name.getLength());
-    file += ".bin";
-
-    FILE *fp = std::fopen(file.c_str(), "rb");
-    if (!fp) {
-        std::fprintf(stderr, "bgfx: cannot open shader %s\n", file.c_str());
+    FILE *fp = std::fopen(path.c_str(), "rb");
+    if (!fp)
         return BGFX_INVALID_HANDLE;
-    }
     std::fseek(fp, 0, SEEK_END);
     long size = std::ftell(fp);
     std::fseek(fp, 0, SEEK_SET);
-    const bgfx::Memory *mem = bgfx::alloc(uint32_t(size + 1));
-    size_t read = std::fread(mem->data, 1, size_t(size), fp);
-    std::fclose(fp);
-    mem->data[size] = '\0';
-    if (read != size_t(size)) {
-        std::fprintf(stderr, "bgfx: short read on shader %s\n", file.c_str());
+    if (size <= 0) {
+        std::fclose(fp);
         return BGFX_INVALID_HANDLE;
     }
-    bgfx::ShaderHandle handle = bgfx::createShader(mem);
-    bgfx::setName(handle, name.getPtr(), name.getLength());
-    return handle;
-}
-
-bgfx::ProgramHandle loadProgram(const bx::StringView &vsName,
-                                const bx::StringView &fsName,
-                                const char *path)
-{
-    bgfx::ShaderHandle vsh = loadShader(vsName, path);
-    bgfx::ShaderHandle fsh = BGFX_INVALID_HANDLE;
-    if (!fsName.isEmpty())
-        fsh = loadShader(fsName, path);
-    return bgfx::createProgram(vsh, fsh, true);
+    // One byte over: bgfx wants the block NUL-terminated (the shader
+    // name tail is read as a string).
+    std::vector<char> data(size_t(size) + 1, '\0');
+    size_t read = std::fread(data.data(), 1, size_t(size), fp);
+    std::fclose(fp);
+    if (read != size_t(size))
+        return BGFX_INVALID_HANDLE;
+    return bgfx::createShader(bgfx::copy(data.data(),
+                                         uint32_t(data.size())));
 }
 
 #endif // FC_RENDERER_STANDALONE

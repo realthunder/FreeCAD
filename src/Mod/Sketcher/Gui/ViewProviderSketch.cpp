@@ -580,11 +580,14 @@ ViewProviderSketch::ViewProviderSketch()
         this->Autoconstraints.setValue(hGrp->GetBool("AutoConstraints", true));
         this->AvoidRedundant.setValue(hGrp->GetBool("AvoidRedundantAutoconstraints", true));
 
-        unsigned long shcol = hGrp->GetUnsigned("FaceColor", 0x54abff80);
+        // The alpha byte is an opacity, like every colour preference since
+        // the convention flip (Base/Color.h); the default is the same 50%
+        // transparent blue it always was, stated the new way round.
+        unsigned long shcol = hGrp->GetUnsigned("FaceColor", 0x54abff7f);
         float r = ((shcol >> 24) & 0xff) / 255.0;
         float g = ((shcol >> 16) & 0xff) / 255.0;
         float b = ((shcol >> 8) & 0xff) / 255.0;
-        int t = 100 * (shcol & 0xff) / 255;
+        int t = 100 * (255 - (shcol & 0xff)) / 255;
         this->ShapeColor.setValue(App::Color(r, g, b));
         this->Transparency.setValue(t);
     }
@@ -919,7 +922,7 @@ void ViewProviderSketch::getCoordsOnSketchPlane(const SbVec3f& point, const SbVe
     // line
     Base::Vector3d R1(v1), RA(dir);
     if (fabs(RN * RA) < FLT_EPSILON)
-        throw Base::ZeroDivisionError("View direction is parallel to sketch plane");
+        THROWM(Base::ZeroDivisionError, "View direction is parallel to sketch plane")
     // intersection point on plane
     Base::Vector3d S = R1 + ((RN * (R0 - R1)) / (RN * RA)) * RA;
 
@@ -7268,8 +7271,8 @@ void ViewProviderSketch::onChanged(const App::Property *prop)
             pInternalView->ShapeColor.setValue(ShapeColor.getValue());
         else if (prop == &Transparency)
             pInternalView->Transparency.setValue(Transparency.getValue());
-        else if (prop == &ShapeMaterial)
-            pInternalView->ShapeMaterial.setValue(ShapeMaterial.getValue());
+        else if (prop == &ShapeAppearance)
+            pInternalView->ShapeAppearance.setValue(ShapeAppearance[0]);
     }
     if (prop == &SectionView)
         toggleViewSection(SectionView.getValue() ? 1 : 0);

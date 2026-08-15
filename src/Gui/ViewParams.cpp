@@ -100,6 +100,7 @@ public:
     double SelectionPointScale;
     double SelectionPointMaxSize;
     double PickRadius;
+    double TouchLoupeLift;
     double SelectionTransparency;
     long SelectionLinePattern;
     long SelectionLinePatternScale;
@@ -326,6 +327,8 @@ public:
         funcs["SelectionPointMaxSize"] = &ViewParamsP::updateSelectionPointMaxSize;
         PickRadius = this->handle->GetFloat("PickRadius", 5.0);
         funcs["PickRadius"] = &ViewParamsP::updatePickRadius;
+        TouchLoupeLift = this->handle->GetFloat("TouchLoupeLift", 28.0);
+        funcs["TouchLoupeLift"] = &ViewParamsP::updateTouchLoupeLift;
         SelectionTransparency = this->handle->GetFloat("SelectionTransparency", 0.5);
         funcs["SelectionTransparency"] = &ViewParamsP::updateSelectionTransparency;
         SelectionLinePattern = this->handle->GetInt("SelectionLinePattern", 0);
@@ -793,6 +796,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePickRadius(ViewParamsP *self) {
         self->PickRadius = self->handle->GetFloat("PickRadius", 5.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateTouchLoupeLift(ViewParamsP *self) {
+        self->TouchLoupeLift = self->handle->GetFloat("TouchLoupeLift", 28.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateSelectionTransparency(ViewParamsP *self) {
@@ -2314,7 +2321,7 @@ void ViewParams::removeTransparencyOnTop() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineSync() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Specifies how to sync hidden line draw style settings to opened document");
+"Specifies how to sync hidden line display style settings to opened document");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -2535,6 +2542,36 @@ void ViewParams::setPickRadius(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void ViewParams::removePickRadius() {
     instance()->handle->RemoveFloat("PickRadius");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *ViewParams::docTouchLoupeLift() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"How far above the fingertip the touch loupe picks, in CSS pixels.\n"
+"The pick ring and its centre dot sit this far above the contact\n"
+"point so the finger never covers what it is aiming at.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & ViewParams::getTouchLoupeLift() {
+    return instance()->TouchLoupeLift;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & ViewParams::defaultTouchLoupeLift() {
+    const static double def = 28.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void ViewParams::setTouchLoupeLift(const double &v) {
+    instance()->handle->SetFloat("TouchLoupeLift",v);
+    instance()->TouchLoupeLift = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void ViewParams::removeTouchLoupeLift() {
+    instance()->handle->RemoveFloat("TouchLoupeLift");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -3338,7 +3375,7 @@ void ViewParams::removeHiddenLineOverrideBackground() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineShaded() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Whether to enable shading in hidden line draw style");
+"Whether to enable shading in hidden line display style");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3366,7 +3403,7 @@ void ViewParams::removeHiddenLineShaded() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineShowOutline() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Show outline in hidden line draw style (only works in experiemental renderer),.");
+"Show outline in hidden line display style (only works in experiemental renderer),.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3394,7 +3431,7 @@ void ViewParams::removeHiddenLineShowOutline() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLinePerFaceOutline() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Render per face outline in hidden line draw style (Warning! this may cause slow down),.");
+"Render per face outline in hidden line display style (Warning! this may cause slow down),.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3531,7 +3568,7 @@ void ViewParams::removeHiddenLinePointSize() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineHideSeam() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Hide seam edges in hidden line draw style.");
+"Hide seam edges in hidden line display style.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3559,7 +3596,7 @@ void ViewParams::removeHiddenLineHideSeam() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineHideVertex() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Hide vertex in hidden line draw style.");
+"Hide vertex in hidden line display style.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3587,7 +3624,7 @@ void ViewParams::removeHiddenLineHideVertex() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docHiddenLineHideFace() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Hide face in hidden line draw style.");
+"Hide face in hidden line display style.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3642,7 +3679,7 @@ void ViewParams::removeStatusMessageTimeout() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docShadowSync() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Specifies how to sync shadow draw style settings to opened document");
+"Specifies how to sync shadow display style settings to opened document");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -6210,7 +6247,7 @@ void ViewParams::removeSelectionStackSize() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docDefaultDrawStyle() {
     return QT_TRANSLATE_NOOP("ViewParams",
-"Default draw style of a new document");
+"Default display style of a new document");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -6373,7 +6410,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:581)
+// Auto generated code (Gui/ViewParams.py:583)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6418,7 +6455,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:589)
+// Auto generated code (Gui/ViewParams.py:591)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6432,27 +6469,27 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:599)
+// Auto generated code (Gui/ViewParams.py:601)
 static const char *DrawStyleDocs[] = {
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, normal display mode"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show points only"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show wire frame only"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show hidden line by display object as transparent"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, shading forced off"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, shading force on"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show both wire frame and face with shading"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, show tessellation wire frame"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Draw style, drop shadows for the scene.\nClick this button while in shadow mode to toggle light manipulator"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, show wire frame only"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, show hidden line by display object as transparent"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, shading forced off"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, shading force on"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, show both wire frame and face with shading"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, show tessellation wire frame"),
+    QT_TRANSLATE_NOOP("DrawStyle", "Display style, drop shadows for the scene.\nPress the shortcut again while in shadow mode to toggle the\nlight manipulator. The menu entry cannot do it: it is a radio\nbutton, and one already ticked emits nothing when clicked."),
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:609)
+// Auto generated code (Gui/ViewParams.py:611)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:616)
+// Auto generated code (Gui/ViewParams.py:618)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6460,7 +6497,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:625)
+// Auto generated code (Gui/ViewParams.py:627)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6472,7 +6509,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:638)
+// Auto generated code (Gui/ViewParams.py:640)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)

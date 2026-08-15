@@ -36,6 +36,9 @@
 #include <App/PropertyFile.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyStandard.h>
+// PropertyLength: the ground's explicit extents are lengths, as the
+// Coin quad reads them.
+#include <App/PropertyUnits.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Stream.h>
@@ -57,8 +60,10 @@
 #include "../Renderer/MeshSource.h"
 #include "../Renderer/ProxyHierarchy.h"
 #include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoPointLight.h>
 #include <Inventor/nodes/SoSpotLight.h>
 #include <Inventor/annex/FXViz/nodes/SoShadowDirectionalLight.h>
+#include <Inventor/elements/SoEnvironmentElement.h>
 #include <Inventor/elements/SoLightElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/nodes/SoTexture2.h>
@@ -237,6 +242,10 @@ translateCache(SoFCVertexCache * cache)
     mesh->positions = reinterpret_cast<const float *>(cache->getVertexArray());
     mesh->normals = reinterpret_cast<const float *>(cache->getNormalArray());
     mesh->colors = cache->getColorArray();
+    static_assert(Render::MeshData::MaterialStride
+                      == SoFCVertexCache::MaterialStride,
+                  "material stream stride mismatch");
+    mesh->materials = cache->getMaterialArray();
 
     static_assert(sizeof(GLint) == sizeof(int32_t), "GLint size mismatch");
     mesh->numTriangleIndices = cache->getNumTriangleIndices();
@@ -391,6 +400,7 @@ bool meshMatchesCache(CacheMeshData & mesh, SoFCVertexCache * cache)
     if (mesh.positions != reinterpret_cast<const float *>(cache->getVertexArray())
             || mesh.normals != reinterpret_cast<const float *>(cache->getNormalArray())
             || mesh.colors != cache->getColorArray()
+            || mesh.materials != cache->getMaterialArray()
             || mesh.texCoords
                    != reinterpret_cast<const float *>(cache->getTexCoordArray()))
         return false;
@@ -461,6 +471,7 @@ void verifyMeshReuse(const CacheMeshData & kept, SoFCVertexCache * cache)
     else if (kept.positions != fresh->positions)            bad = "positions";
     else if (kept.normals != fresh->normals)                bad = "normals";
     else if (kept.colors != fresh->colors)                  bad = "colors";
+    else if (kept.materials != fresh->materials)            bad = "materials";
     else if (kept.texCoords != fresh->texCoords)            bad = "texture coordinates";
     else if (kept.numTriangleIndices != fresh->numTriangleIndices
              || kept.triangleIndices != fresh->triangleIndices)
@@ -773,6 +784,10 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
         && (m.polygonoffsetfactor != 0.0f || m.polygonoffsetunits != 0.0f);
     res.polygonoffsetfactor = m.polygonoffsetfactor;
     res.polygonoffsetunits = m.polygonoffsetunits;
+    // The Tessellation draw style rides in on this: SoFCUnifiedSelection
+    // overrides SoDrawStyleElement to LINES and lets the shapes draw
+    // their faces, which GL turns into a wireframe with glPolygonMode.
+    res.drawstyle = uint8_t(m.drawstyle);
 
     // Depth-occluded parts of on-top lines/points are dimmed to this alpha
     // (SoFCRenderer's RenderPassLinePattern pass). The selection highlight
@@ -875,6 +890,21 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     if (res.type == Render::Material::Triangle) {
         res.metallic = m.metallic;
         res.roughness = m.roughness;
+        res.finish = m.finish;
+        res.finishpitch = m.finishpitch;
+        res.finishdepth = m.finishdepth;
+        res.finishangle = m.finishangle;
+        // The palette rides along; whether a draw shades from it is
+        // decided per draw below (a partial draw resolves its face's
+        // entry into the scalars instead).
+        res.finishpalette = m.finishpalette;
+        // Entry 0 is the first face's frame, and it is the draw's own:
+        // a mesh whose material stream collapsed (every face framed
+        // alike, nothing else varying) carries no index to read, and
+        // the backend uploads this as entry 0 either way.
+        res.framepalette = m.framepalette;
+        if (m.framepalette && !m.framepalette->entries.empty())
+            res.frame = m.framepalette->entries.front();
         res.water = m.water;
         res.waterdensity = m.waterdensity;
         res.glass = m.glass;
@@ -1199,6 +1229,85 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             draw.partIndex = ventry.partidx;
             draw.indexStart = indexStart;
             draw.indexCount = indexCount;
+
+            // Per-face material (SoFCRenderCache::Material array form,
+            // captured from the coin fork's extended lazy element). A
+            // present array is authoritative for its channel — an
+            // override that replaced a scalar dropped it. A whole draw
+            // shades from the mesh's baked material stream; a partial
+            // (single-face) draw resolves its face's values into the
+            // scalars here, since it draws without the stream flag.
+            if (rmat.type == Render::Material::Triangle) {
+                const bool hasarrays = material.emissives.getNum()
+                    || material.speculars.getNum()
+                    || material.shininesses.getNum()
+                    || material.metallics.getNum()
+                    || material.roughnesses.getNum()
+                    || material.finishindices.getNum()
+                    // The frames too, and they are the only one of
+                    // these a UNIFORM appearance can state: a knurled
+                    // shaft has one material and still needs its
+                    // per-face frame index read.
+                    || material.frameindices.getNum();
+                if (ventry.partidx < 0) {
+                    draw.material.perfacematerial =
+                        hasarrays && mesh->materials != nullptr;
+                    // Which reading the stream's two alpha slots carry
+                    // is the bake's own answer, not this material's:
+                    // the cache that baked it is the authority.
+                    draw.material.perfacepbr =
+                        draw.material.perfacematerial
+                        && ventry.cache->hasPbrMaterial();
+                } else if (hasarrays) {
+                    // A single-face draw carries no stream, so its
+                    // face's values resolve into the scalars. The
+                    // colour arrays are as long as the shape has faces
+                    // (clamp); the PBR pair is as long as the
+                    // appearance (pad with entry 0).
+                    const int p = ventry.partidx;
+                    if (int n = material.emissives.getNum())
+                        draw.material.emissive =
+                            material.emissives[std::min(p, n - 1)];
+                    if (int n = material.speculars.getNum())
+                        draw.material.specular =
+                            material.speculars[std::min(p, n - 1)];
+                    if (int n = material.shininesses.getNum())
+                        draw.material.shininess =
+                            material.shininesses[std::min(p, n - 1)];
+                    if (int n = material.metallics.getNum())
+                        draw.material.metallic = material.metallics[p < n ? p : 0];
+                    if (int n = material.roughnesses.getNum())
+                        draw.material.roughness = material.roughnesses[p < n ? p : 0];
+                    // A single-face draw carries no stream to index the
+                    // palette with, so its face's entry becomes the
+                    // draw's own finish and the palette goes away.
+                    const int n = material.finishindices.getNum();
+                    if (n && material.finishpalette) {
+                        const auto &entries = material.finishpalette->entries;
+                        const int32_t idx = material.finishindices[p < n ? p : 0];
+                        if (idx >= 0 && std::size_t(idx) < entries.size()) {
+                            const auto &entry = entries[std::size_t(idx)];
+                            draw.material.finish = entry.pattern;
+                            draw.material.finishpitch = entry.pitch;
+                            draw.material.finishdepth = entry.depth;
+                            draw.material.finishangle = entry.angle;
+                        }
+                    }
+                    draw.material.finishpalette.reset();
+                    // The face's projection frame, resolved the same way
+                    // and for the same reason -- one face has one frame,
+                    // and the backend uploads a palette-less draw's own
+                    // frame as entry 0.
+                    const int nfr = material.frameindices.getNum();
+                    if (nfr && material.framepalette) {
+                        const auto &entries = material.framepalette->entries;
+                        const int32_t idx = material.frameindices[p < nfr ? p : 0];
+                        if (idx >= 0 && std::size_t(idx) < entries.size())
+                            draw.material.frame = entries[std::size_t(idx)];
+                    }
+                    draw.material.framepalette.reset();
+                }
+            }
             draw.identity = ventry.identity;
             if (!ventry.identity) {
                 static_assert(sizeof(draw.model) == sizeof(SbMat),
@@ -1327,6 +1436,35 @@ RendererBridge::translateAOConfig(App::PropertyContainer * view)
             view, "Render", "AOSlices", RenderParams::getAOSlices()));
     res.steps = int(viewParamOverride<App::PropertyInteger>(
             view, "Render", "AOSteps", RenderParams::getAOSteps()));
+    return res;
+}
+
+Render::CavityConfig
+RendererBridge::translateCavityConfig(App::PropertyContainer * view)
+{
+    Render::CavityConfig res;
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "Cavity", RenderParams::getCavity());
+    res.valley = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "CavityValley", RenderParams::getCavityValley()));
+    res.ridge = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "CavityRidge", RenderParams::getCavityRidge()));
+    res.radius = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "CavityRadius", RenderParams::getCavityRadius()));
+    return res;
+}
+
+Render::MatcapConfig
+RendererBridge::translateMatcapConfig(App::PropertyContainer * view)
+{
+    Render::MatcapConfig res;
+    res.enabled = viewParamOverride<App::PropertyBool>(
+            view, "Render", "Matcap", RenderParams::getMatcap());
+    res.preset = int(viewParamOverride<App::PropertyEnumeration>(
+            view, "Render", "MatcapPreset",
+            RenderParams::getMatcapPreset()));
+    res.tint = float(viewParamOverride<App::PropertyFloat>(
+            view, "Render", "MatcapTint", RenderParams::getMatcapTint()));
     return res;
 }
 
@@ -1751,6 +1889,65 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         res.valid = true;
         break;
     }
+    // No qualifying light in the traversal -- which is every draw style
+    // except Shadow, the only one that puts an SoShadowDirectionalLight
+    // or SoSpotLight in the graph. The renderer can supply its own from
+    // Render_Light* instead, so that everything keyed off a light stops
+    // depending on a draw style (docs/CoinRetirement.md stage 4a).
+    //
+    // Deliberately second, not first: while the Shadow style exists the
+    // light it provides keeps winning, so this is additive and the style
+    // behaves exactly as before. Off by default, so a view that has not
+    // asked for it is lit as it always was.
+    if (!res.valid
+            && viewParamOverride<App::PropertyBool>(
+                view, "Render", "Light", RenderParams::getLight())) {
+        Base::Vector3d dir(RenderParams::getLightDirectionX(),
+                           RenderParams::getLightDirectionY(),
+                           RenderParams::getLightDirectionZ());
+        if (auto prop = viewPropOverride<App::PropertyVector>(
+                    view, "Render", "LightDirection"))
+            dir = prop->getValue();
+        if (dir.Length() < 1e-9)
+            dir = Base::Vector3d(-1.0, -1.0, -1.0);
+        dir.Normalize();
+        // Already world space: these are the user's numbers, not a
+        // traversal result, so none of the view-reference unwinding the
+        // Coin branch needs applies.
+        res.direction[0] = float(dir.x);
+        res.direction[1] = float(dir.y);
+        res.direction[2] = float(dir.z);
+        res.spot = viewParamOverride<App::PropertyBool>(
+                view, "Render", "LightSpot", RenderParams::getLightSpot());
+        if (res.spot) {
+            Base::Vector3d pos(RenderParams::getLightPositionX(),
+                               RenderParams::getLightPositionY(),
+                               RenderParams::getLightPositionZ());
+            if (auto prop = viewPropOverride<App::PropertyVector>(
+                        view, "Render", "LightPosition"))
+                pos = prop->getValue();
+            res.position[0] = float(pos.x);
+            res.position[1] = float(pos.y);
+            res.position[2] = float(pos.z);
+            // Coin's SoSpotLight::cutOffAngle is radians; the property is
+            // degrees, like the Shadow style's SpotLightCutOffAngle.
+            res.cutOffAngle = float(viewParamOverride<App::PropertyFloat>(
+                    view, "Render", "LightCutOffAngle",
+                    RenderParams::getLightCutOffAngle()) * M_PI / 180.0);
+            res.dropOffRate = float(viewParamOverride<App::PropertyFloat>(
+                    view, "Render", "LightDropOffRate",
+                    RenderParams::getLightDropOffRate()));
+        }
+        if (auto prop = viewPropOverride<App::PropertyColor>(
+                    view, "Render", "LightColor"))
+            res.color = prop->getValue().getPackedValue();
+        else
+            res.color = uint32_t(RenderParams::getLightColor());
+        res.intensity = float(viewParamOverride<App::PropertyFloat>(
+                view, "Render", "LightIntensity",
+                RenderParams::getLightIntensity()));
+        res.valid = true;
+    }
     if (res.valid) {
         // Render_Shadow (Render group) is a convenience toggle to drop the
         // shadow map while keeping the scene lit; the Shadow draw style
@@ -1799,13 +1996,52 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         // the only way a shadow light gets here) with ViewParams
         // fallback. The light itself is per-view already: it comes from
         // the Shadow style's Coin light node built from the same
-        // properties. Not honored: Shadow_GroundSizeAuto=false explicit
-        // ground extents (the backend sizes its ground from the scene
-        // bounding box only).
+        // properties.
         res.ground = viewParamOverride<App::PropertyBool>(
                 view, "Shadow", "ShowGround", ViewParams::getShadowShowGround());
         res.groundScale = float(viewParamOverride<App::PropertyFloat>(
                 view, "Shadow", "GroundSizeScale", ViewParams::getShadowGroundScale()));
+        // Sizing and placement, the same four properties the Coin quad
+        // reads (View3DInventorViewer::Private::updateShadowGround). The
+        // defaults here have to match the ones _shadowParam materializes
+        // there, because a view that has never shown the Coin ground
+        // carries none of these properties yet.
+        res.groundAuto = viewParamOverride<App::PropertyBool>(
+                view, "Shadow", "GroundSizeAuto", true);
+        res.groundSizeX = float(viewParamOverride<App::PropertyLength>(
+                view, "Shadow", "GroundSizeX", 100.0));
+        res.groundSizeY = float(viewParamOverride<App::PropertyLength>(
+                view, "Shadow", "GroundSizeY", 100.0));
+        res.groundAutoPos = viewParamOverride<App::PropertyBool>(
+                view, "Shadow", "GroundAutoPosition", true);
+        // Coin reads one placement and uses it two ways: as the outright
+        // position when GroundAutoPosition is off (and then applies no
+        // transform), and as an additional offset -- rotation included --
+        // when it is on. Split here so the backend does not have to know
+        // the rule.
+        Base::Placement pla;
+        if (auto prop = viewPropOverride<App::PropertyPlacement>(
+                    view, "Shadow", "GroundPlacement"))
+            pla = prop->getValue();
+        if (res.groundAutoPos) {
+            res.groundPos[0] = res.groundPos[1] = res.groundPos[2] = 0.0f;
+            Base::Matrix4D m = pla.toMatrix();
+            // Base::Matrix4D is row-major; LightConfig::groundMatrix is
+            // column-major like the renderer's other matrices.
+            for (int c = 0; c < 4; ++c) {
+                for (int r = 0; r < 4; ++r)
+                    res.groundMatrix[c * 4 + r] = float(m[r][c]);
+            }
+        }
+        else {
+            const Base::Vector3d &p = pla.getPosition();
+            res.groundPos[0] = float(p.x);
+            res.groundPos[1] = float(p.y);
+            res.groundPos[2] = float(p.z);
+            static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0,
+                                               0, 0, 1, 0, 0, 0, 0, 1};
+            std::copy(identity, identity + 16, res.groundMatrix);
+        }
         if (auto prop = viewPropOverride<App::PropertyColor>(view, "Shadow", "GroundColor"))
             res.groundColor = prop->getValue().getPackedValue();
         else
@@ -1868,6 +2104,117 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
     res.sunDiscSize = float(viewParamOverride<App::PropertyFloat>(
             view, "Render", "SunDiscSize",
             RenderParams::getSunDiscSize()));
+    return res;
+}
+
+Render::ViewLightConfig
+RendererBridge::translateViewLightConfig(SoState * state)
+{
+    // The ordinary lights of the traversal. The viewer's headlight and
+    // backlight are plain SoDirectionalLights sitting in the root
+    // *before* the camera, which is what makes a headlight a headlight:
+    // with no viewing transform on the state yet, its direction is
+    // fixed in eye space and the unwinding below hands the backend the
+    // world-space direction that currently corresponds to it. So the
+    // camera tracking costs nothing here -- it falls out of the same
+    // matrix the scene light uses.
+    //
+    // Exactly the complement of translateLightConfig: it takes the
+    // FIRST light of a shadow-casting type (SoShadowDirectionalLight or
+    // SoSpotLight) as the single scene light and stops there, so that
+    // one node -- and only that one -- is skipped here. Everything past
+    // it is an ordinary light: a further spot keeps its cone but gets no
+    // map, a further shadow directional falls through to the plain
+    // directional branch below. Which one the scene light claimed is
+    // decided by the same walk, in the same order, with the same `on`
+    // filter, so the two agree without either seeing the other.
+    bool sceneLightTaken = false;
+    Render::ViewLightConfig res;
+    res.fed = true;
+    // GL's LIGHT_MODEL_AMBIENT, which Coin drives from SoEnvironment
+    // (default 0.2 grey). A surface's ambient term is this times the
+    // material's own ambient colour.
+    {
+        SbColor amb = SoEnvironmentElement::getAmbientColor(state);
+        amb *= SoEnvironmentElement::getAmbientIntensity(state);
+        res.ambient = amb.getPackedValue(0.0f);
+    }
+    const SoNodeList & lights = SoLightElement::getLights(state);
+    for (int i = 0; i < lights.getLength(); ++i) {
+        if (res.count >= Render::MaxViewLights)
+            break;
+        SoNode * node = lights[i];
+        if (!node || !node->isOfType(SoLight::getClassTypeId()))
+            continue;
+        auto light = static_cast<const SoLight *>(node);
+        // EnableHeadlight off is an `on` of FALSE, and dropping the
+        // light here is the whole of honoring it.
+        if (!light->on.getValue())
+            continue;
+        // The scene light's node types. Only the first such node is
+        // claimed (translateLightConfig breaks there); the rest are
+        // ordinary lights. SoShadowDirectionalLight derives from
+        // SoDirectionalLight, so this test has to come before the
+        // directional one below either way.
+        if (node->isOfType(SoShadowDirectionalLight::getClassTypeId())
+                || node->isOfType(SoSpotLight::getClassTypeId())) {
+            if (!sceneLightTaken) {
+                sceneLightTaken = true;
+                continue;
+            }
+        }
+
+        Render::ViewLight out;
+        SbVec3f dir(0.0f, 0.0f, -1.0f);
+        SbVec3f pos(0.0f, 0.0f, 0.0f);
+        if (node->isOfType(SoSpotLight::getClassTypeId())) {
+            // A spot is a positional light with a cone on top: same
+            // location and the same SoEnvironment attenuation, the
+            // direction read as the cone axis.
+            auto spot = static_cast<const SoSpotLight *>(light);
+            out.positional = true;
+            out.spot = true;
+            pos = spot->location.getValue();
+            dir = spot->direction.getValue();
+            out.cutOffAngle = spot->cutOffAngle.getValue();
+            out.dropOffRate = spot->dropOffRate.getValue();
+            const SbVec3f & att =
+                SoEnvironmentElement::getLightAttenuation(state);
+            for (int j = 0; j < 3; ++j)
+                out.attenuation[j] = att[j];
+        } else if (node->isOfType(SoDirectionalLight::getClassTypeId())) {
+            dir = static_cast<const SoDirectionalLight *>(light)
+                ->direction.getValue();
+        } else if (node->isOfType(SoPointLight::getClassTypeId())) {
+            auto point = static_cast<const SoPointLight *>(light);
+            out.positional = true;
+            pos = point->location.getValue();
+            // Coin keeps distance attenuation on SoEnvironment, not on
+            // the light, so it is a state read rather than a field.
+            const SbVec3f & att =
+                SoEnvironmentElement::getLightAttenuation(state);
+            for (int j = 0; j < 3; ++j)
+                out.attenuation[j] = att[j];
+        } else {
+            continue;
+        }
+        // Same view-reference unwinding as the scene light: the light
+        // element's matrices are model * viewing, and the backend wants
+        // world space because it re-applies its own view matrix.
+        SbMatrix mat = SoLightElement::getMatrix(state, i);
+        mat.multRight(SoViewingMatrixElement::get(state).inverse());
+        mat.multDirMatrix(dir, dir);
+        mat.multVecMatrix(pos, pos);
+        if (dir.length() > 0.0f)
+            dir.normalize();
+        for (int j = 0; j < 3; ++j) {
+            out.direction[j] = dir[j];
+            out.position[j] = pos[j];
+        }
+        out.color = light->color.getValue().getPackedValue(0.0f);
+        out.intensity = light->intensity.getValue();
+        res.lights[res.count++] = out;
+    }
     return res;
 }
 
@@ -1992,6 +2339,7 @@ RendererBridge::translatePreselConfig()
     res.outlineOnly = ViewParams::getNoPreSelFaceHighlightWithOutline();
     res.outlineWidth = preselOutlineWidth();
     res.pickRadius = (float)ViewParams::getPickRadius();
+    res.loupeLift = (float)ViewParams::getTouchLoupeLift();
     return res;
 }
 

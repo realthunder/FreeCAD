@@ -47,6 +47,15 @@ add_executable(fcviewer
     ../SceneLadder.cpp
     ../MeshSimplify.cpp
     ../BGFXRenderer.cpp
+    ../BGFXFrame.cpp
+    ../BGFXScene.cpp
+    ../BGFXViewEffects.cpp
+    ../BGFXViewEnv.cpp
+    ../BGFXViewLifecycle.cpp
+    ../BGFXViewOverlay.cpp
+    ../BGFXViewParticles.cpp
+    ../BGFXViewShadow.cpp
+    ../BGFXViewSubmit.cpp
     ../StandalonePlatform.cpp
 )
 

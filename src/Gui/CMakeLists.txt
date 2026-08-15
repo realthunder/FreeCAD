@@ -60,6 +60,7 @@ endif(MSVC)
 if(MSVC)
     set(FreeCADGui_LIBS
          FreeCADApp
+         customtitlebarkit
          ${COIN3D_LIBRARIES}
          ${OPENGL_gl_LIBRARY}
     )
@@ -73,6 +74,7 @@ if(MSVC)
 else(MSVC)
     set(FreeCADGui_LIBS
         FreeCADApp
+        customtitlebarkit
         ${COIN3D_LIBRARIES}
         ${Boost_LIBRARIES}
         ${OPENGL_gl_LIBRARY}
@@ -861,6 +863,7 @@ SET(View3D_CPP_SRCS
     TinkerCADNavigationStyle.cpp
     TouchpadNavigationStyle.cpp
     GestureNavigationStyle.cpp
+    ShadingOptions.cpp
     SplitView3DInventor.cpp
     View.cpp
     View3DInventor.cpp
@@ -887,6 +890,7 @@ SET(View3D_SRCS
     MouseSelection.h
     NavigationStyle.h
     GestureNavigationStyle.h
+    ShadingOptions.h
     SplitView3DInventor.h
     View.h
     View3DInventor.h
@@ -1020,7 +1024,10 @@ SET(Inventor_CPP_SRCS
     Inventor/SmSwitchboard.cpp
     Inventor/SoFCVBO.cpp
     Inventor/SoFCVertexArrayIndexer.cpp
+    Inventor/CoinLazyElementEx.cpp
     Inventor/SoFCDiffuseElement.cpp
+    Inventor/SoFCFinishElement.cpp
+    Inventor/SoFCPbrElement.cpp
     Inventor/SoFCZoomOffsetElement.cpp
     Inventor/SoFCVertexCache.cpp
     Inventor/SoFCRenderCache.cpp
@@ -1080,7 +1087,10 @@ SET(Inventor_SRCS
     Inventor/SoFCVBO.h
     Inventor/SoFCVertexAttribute.h
     Inventor/SoFCVertexArrayIndexer.h
+    Inventor/CoinLazyElementEx.h
     Inventor/SoFCDiffuseElement.h
+    Inventor/SoFCFinishElement.h
+    Inventor/SoFCPbrElement.h
     Inventor/SoFCZoomOffsetElement.h
     Inventor/COWData.h
     Inventor/SoFCVertexCache.h
@@ -1310,6 +1320,7 @@ SET(FreeCADGui_CPP_SRCS
     Control.cpp
     SpaceballEvent.cpp
     PreferencePackManager.cpp
+    ThemeManager.cpp
     Thumbnail.cpp
     Utilities.cpp
     LiveViewInteraction.cpp
@@ -1340,6 +1351,7 @@ SET(FreeCADGui_SRCS
     InventorAll.h
     Macro.h
     MergeDocuments.h
+    MessageCollapse.h
     MetaTypes.h
     Notifications.h
     PreCompiled.cpp
@@ -1348,6 +1360,7 @@ SET(FreeCADGui_SRCS
     Control.h
     SpaceballEvent.h
     PreferencePackManager.h
+    ThemeManager.h
     Thumbnail.h
     Tools.h
     Utilities.h

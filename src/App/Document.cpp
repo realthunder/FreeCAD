@@ -391,7 +391,7 @@ int Document::_openTransaction(const char* name, int id)
         Base::FlagToggler<> flag(d->opentransaction);
 
         if(id && mUndoMap.find(id)!=mUndoMap.end())
-            throw Base::RuntimeError("invalid transaction id");
+            THROWM(Base::RuntimeError, "invalid transaction id")
         if (d->activeUndoTransaction)
             _commitTransaction(true);
         _clearRedos();
@@ -1133,7 +1133,7 @@ void Document::Restore(Base::XMLReader &reader)
     reader.readElement();
     if (strcmp(reader.localName(), "Document") != 0
             && strcmp(reader.localName(), FC_ELEM_FCDOCUMENT) != 0)
-        throw Base::XMLParseException("Not a FreeCAD document");
+        THROWM(Base::XMLParseException, "Not a FreeCAD document")
     long scheme = reader.getAttributeAsInteger("SchemaVersion");
     reader.DocumentSchema = scheme;
     if (reader.hasAttribute("ProgramVersion")) {
@@ -1435,6 +1435,57 @@ Document::RestoringScopeGuard::~RestoringScopeGuard()
 {
     if (toggled)
         globalIsRestoring = false;
+}
+
+Document::RestoreDrainGuard::RestoreDrainGuard(Document *doc)
+    : doc(doc)
+    , toggled(doc && !doc->testStatus(Status::RestoreDrain))
+{
+    if (toggled)
+        doc->setStatus(Status::RestoreDrain, true);
+}
+
+Document::RestoreDrainGuard::~RestoreDrainGuard()
+{
+    if (toggled)
+        doc->setStatus(Status::RestoreDrain, false);
+}
+
+void Document::reportRestoreDrainChange(const DocumentObject *obj, const Property *prop)
+{
+    // An object that is still restoring is not a finding: that is the load's
+    // own work arriving late, and it already keeps this promise its own way
+    // -- restoreDeferredFile() serves a parked archive entry with the owner's
+    // touch saved and put back. What the report is for is the handler that
+    // writes back on a *render*, and it is worth nothing if the expected
+    // writes crowd the unexpected ones out of it.
+    if (obj->isRestoring())
+        return;
+    ++d->drainReport.count;
+    // The count is the measurement; the names are there to point at the
+    // handler, and one of each is enough for that.
+    if (d->drainReport.truncated)
+        return;
+    std::string name = obj->getFullName();
+    name += '.';
+    name += prop && prop->getName() ? prop->getName() : "touch()";
+    if (std::find(d->drainReport.names.begin(), d->drainReport.names.end(), name)
+            != d->drainReport.names.end())
+        return;
+    if (d->drainReport.names.size() >= 10)
+        d->drainReport.truncated = true;
+    else
+        d->drainReport.names.push_back(std::move(name));
+}
+
+const Document::RestoreDrainReport &Document::getRestoreDrainReport() const
+{
+    return d->drainReport;
+}
+
+void Document::clearRestoreDrainReport()
+{
+    d->drainReport = RestoreDrainReport();
 }
 
 void Document::buildDefaults(Base::Writer &writer,
@@ -2106,7 +2157,7 @@ Document::importObjects(Base::XMLReader& reader)
     reader.readElement();
     if (strcmp(reader.localName(), "Document") != 0
             && strcmp(reader.localName(), FC_ELEM_FCDOCUMENT) != 0)
-        throw Base::XMLParseException("Not a FreeCAD document");
+        THROWM(Base::XMLParseException, "Not a FreeCAD document")
     long scheme = reader.getAttributeAsInteger("SchemaVersion");
     reader.DocumentSchema = scheme;
     if (reader.hasAttribute("ProgramVersion")) {
@@ -2769,7 +2820,7 @@ void Document::save(Base::Writer &writer, bool archive) const {
     writer.writeFiles();
 
     if (writer.hasErrors()) {
-        throw Base::FileException("Failed to write all data to file");
+        THROWM(Base::FileException, "Failed to write all data to file")
     }
 
     GetApplication().signalSaveDocument(*this);
@@ -4358,7 +4409,7 @@ DocumentObject * Document::addObject(const char* sType, const char* pObjectName,
     if (type.isBad()) {
         std::stringstream str;
         str << "'" << sType << "' is not a document object type";
-        throw Base::TypeError(str.str());
+        THROWM(Base::TypeError, str.str())
     }
 
     void* typeInstance = type.createInstance();
@@ -4439,7 +4490,7 @@ std::vector<DocumentObject *> Document::addObjects(const char* sType, const std:
     if (type.isBad()) {
         std::stringstream str;
         str << "'" << sType << "' is not a document object type";
-        throw Base::TypeError(str.str());
+        THROWM(Base::TypeError, str.str())
     }
 
     std::vector<DocumentObject *> objects;
@@ -4533,7 +4584,7 @@ std::vector<DocumentObject *> Document::addObjects(const char* sType, const std:
 void Document::addObject(DocumentObject* pcObject, const char* pObjectName, bool activate)
 {
     if (pcObject->getDocument()) {
-        throw Base::RuntimeError("Document object is already added to a document");
+        THROWM(Base::RuntimeError, "Document object is already added to a document")
     }
 
     pcObject->setDocument(this);
@@ -5374,11 +5425,11 @@ void Document::reorderObjects(const std::vector<DocumentObject*> &_objs, Documen
 {
     const char *msg = "Object does not belong to this document";
     if (!before || before->getDocument() != this)
-        throw Base::RuntimeError(msg);
+        THROWM(Base::RuntimeError, msg)
         
     for (auto obj : _objs) {
         if (!obj || obj->getDocument() != this)
-            throw Base::RuntimeError(msg);
+            THROWM(Base::RuntimeError, msg)
     }
     auto objs = _objs;
     objs.erase(std::unique(objs.begin(), objs.end()), objs.end());

@@ -280,12 +280,17 @@ PreferencePagePython::PreferencePagePython(const Py::Object& p, QWidget* parent)
 
         QObject* object = wrap.toQObject(widget);
         if (object) {
-            QWidget* form = qobject_cast<QWidget*>(object);
-            if (form) {
-                this->setWindowTitle(form->windowTitle());
+            QWidget* pageForm = qobject_cast<QWidget*>(object);
+            if (pageForm) {
+                this->setWindowTitle(pageForm->windowTitle());
                 auto layout = new QVBoxLayout;
-                layout->addWidget(form);
+                layout->addWidget(pageForm);
                 setLayout(layout);
+
+                // Watch it rather than assume it: the form is built in Python and
+                // reachable from there, so this page is not the only one who can
+                // end its life.
+                this->form = pageForm;
             }
         }
     }
@@ -302,8 +307,26 @@ void PreferencePagePython::changeEvent(QEvent *e)
     QWidget::changeEvent(e);
 }
 
+bool PreferencePagePython::formIsAlive(const char* method) const
+{
+    if (form) {
+        return true;
+    }
+
+    // Every Python page reads its widgets through the form, so calling it with the
+    // form gone raises out of its first line. The page has nothing left to show
+    // either, so skip it rather than let one page break the whole dialog.
+    Base::Console().Warning("Preference page '%s' lost its form widget, %s skipped\n",
+                            windowTitle().toUtf8().constData(), method);
+    return false;
+}
+
 void PreferencePagePython::loadSettings()
 {
+    if (!formIsAlive("loadSettings")) {
+        return;
+    }
+
     Base::PyGILStateLocker lock;
     try {
         if (page.hasAttr(std::string("loadSettings"))) {
@@ -320,6 +343,10 @@ void PreferencePagePython::loadSettings()
 
 void PreferencePagePython::saveSettings()
 {
+    if (!formIsAlive("saveSettings")) {
+        return;
+    }
+
     Base::PyGILStateLocker lock;
     try {
         if (page.hasAttr(std::string("saveSettings"))) {
@@ -432,7 +459,7 @@ void PyResource::load(const char* name)
         if (!fi.exists()) {
             if (cwd == home) {
                 QString what = QObject::tr("Cannot find file %1").arg(fi.absoluteFilePath());
-                throw Base::FileSystemError(what.toUtf8().constData());
+                THROWM(Base::FileSystemError, what.toUtf8().constData())
             }
             else {
                 fi.setFile( QDir(home), fn );
@@ -440,7 +467,7 @@ void PyResource::load(const char* name)
                 if (!fi.exists()) {
                     QString what = QObject::tr("Cannot find file %1 neither in %2 nor in %3")
                         .arg(fn, cwd, home);
-                    throw Base::FileSystemError(what.toUtf8().constData());
+                    THROWM(Base::FileSystemError, what.toUtf8().constData())
                 }
                 else {
                     fn = fi.absoluteFilePath(); // file resides in FreeCAD's home directory
@@ -451,7 +478,7 @@ void PyResource::load(const char* name)
     else {
         if (!fi.exists()) {
             QString what = QObject::tr("Cannot find file %1").arg(fn);
-            throw Base::FileSystemError(what.toUtf8().constData());
+            THROWM(Base::FileSystemError, what.toUtf8().constData())
         }
     }
 
@@ -464,11 +491,11 @@ void PyResource::load(const char* name)
         file.close();
     }
     catch (...) {
-        throw Base::RuntimeError("Cannot create resource");
+        THROWM(Base::RuntimeError, "Cannot create resource")
     }
 
     if (!w)
-        throw Base::ValueError("Invalid widget.");
+        THROWM(Base::ValueError, "Invalid widget.")
 
     if (w->inherits("QDialog")) {
         myDlg = static_cast<QDialog*>(w);

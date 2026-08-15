@@ -141,10 +141,10 @@ struct FrontDoor
     bool identityDoor = false;
 };
 
-/// The stored front doors, seeded once with the two bundled presets:
-/// LAN (today's direct ip:port behavior) and thundereal (the own-door
-/// shape — public origin behind an identity door). Seeding is
-/// flag-guarded so a deliberately deleted preset stays deleted.
+/// The stored front doors, seeded once with the three bundled presets:
+/// LAN (today's direct ip:port behavior), Quick tunnel, and thundereal
+/// (the own-door shape — public origin behind an identity door). Seeding
+/// is flag-guarded so a deliberately deleted preset stays deleted.
 std::vector<FrontDoor> loadDoors()
 {
     auto hGrp = shareParams();
@@ -409,7 +409,15 @@ QString ruleHelp()
         "A <b>disabled</b> grant admits nobody but is kept, so it can be "
         "re-enabled without reissuing a link. A grant marked <i>this "
         "session</i> was minted live for a renamed client and dies with "
-        "the process — Keep it to write it down.");
+        "the process — Keep it to write it down.<br><br>"
+        "What holds and what does not: the <b>token</b> is a secret and "
+        "the <b>identity</b> is verified by the sign-in door, so those "
+        "two are boundaries. The <b>name</b> is whatever the viewer "
+        "calls itself and the <b>address</b> is where it appears to "
+        "come from — anyone holding the token can present another "
+        "name, so narrowing by name organises the people you invited, "
+        "it does not keep anybody out. Ban by name accordingly: it "
+        "stops an honest client, not a determined one.");
 }
 
 /// The small always-on-top pill in the corner of the 3D area while

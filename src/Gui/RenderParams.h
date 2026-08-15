@@ -1526,12 +1526,12 @@ public:
     //@{
     /// Accessor for parameter Shadow
     ///
-    /// Render the shadow map cast by the Shadow draw style's scene
+    /// Render the shadow map cast by the Shadow display style's scene
     /// light (and the god-ray shafts / caustic occlusion that depend on
     /// it). A convenience switch to drop shadows without leaving the
-    /// Shadow draw style; the base headlight and environment lighting
+    /// Shadow display style; the base headlight and environment lighting
     /// stay, so the scene remains lit, just flatter. Has no effect unless
-    /// the Shadow draw style provides a scene light.
+    /// the Shadow display style provides a scene light.
     static const bool & getShadow();
     static const bool & defaultShadow();
     static void removeShadow();
@@ -1626,6 +1626,142 @@ public:
     static void removeAOResolution();
     static void setAOResolution(const double &v);
     static const char *docAOResolution();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Cavity
+    ///
+    /// Enable screen space cavity (curvature) shading of the
+    /// experimental render engine (render cache mode 3 with a selected
+    /// renderer type). Darkens concave creases and convex ridges found
+    /// in the geometry prepass normals, which makes surface shape and
+    /// small features read without relying on the lighting.
+    /// 
+    /// Best paired with the Shaded draw style, the one that draws no
+    /// edges: there the darkened crease is the only thing stating where
+    /// a face ends, so cavity does the job the edge lines do elsewhere,
+    /// without the wireframe over every tessellated curve. In a style
+    /// that already draws edges (Flat Lines) the two land on the same
+    /// pixels and cavity mostly restates them.
+    /// 
+    /// Independent of ambient occlusion: cavity is a local curvature
+    /// term, occlusion is a visibility integral over a world-space
+    /// radius (contact darkening). They compose.
+    static const bool & getCavity();
+    static const bool & defaultCavity();
+    static void removeCavity();
+    static void setCavity(const bool &v);
+    static const char *docCavity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CavityRadius
+    ///
+    /// Baseline the cavity curvature is measured over, in pixels.
+    /// 
+    /// This decides which features the pass can see at all. The term
+    /// reads how far the surface normal turns between the two
+    /// neighbours, so at the default of 1 it sees only what turns
+    /// within a single pixel: hard creases, crisply, which is what
+    /// stands in for the edge lines the Shaded draw style does not
+    /// draw. Widening it brings broad curvature (fillets, blends, a
+    /// sculpted face) in, at the cost of spreading a hard crease into a
+    /// band of this width.
+    /// 
+    /// Being in pixels it is resolution-relative: the same value covers
+    /// less of the model on a high-DPI display, so a large model on a
+    /// dense screen may want more than 1.
+    static const double & getCavityRadius();
+    static const double & defaultCavityRadius();
+    static void removeCavityRadius();
+    static void setCavityRadius(const double &v);
+    static const char *docCavityRadius();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CavityValley
+    ///
+    /// Cavity darkening strength in concave creases (inside corners,
+    /// fillets, pockets). Zero disables the valley term.
+    static const double & getCavityValley();
+    static const double & defaultCavityValley();
+    static void removeCavityValley();
+    static void setCavityValley(const double &v);
+    static const char *docCavityValley();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CavityRidge
+    ///
+    /// Cavity darkening strength on convex ridges (outside corners,
+    /// chamfers). Reads as a soft contour along edges. Zero disables the
+    /// ridge term.
+    /// 
+    /// Both terms darken: the pass multiplies the finished 8-bit scene
+    /// color, which cannot brighten past white, so the ridge highlight
+    /// some workbench renderers use is not available here.
+    static const double & getCavityRidge();
+    static const double & defaultCavityRidge();
+    static void removeCavityRidge();
+    static void setCavityRidge(const double &v);
+    static const char *docCavityRidge();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Matcap
+    ///
+    /// Enable matcap shading of the experimental render engine
+    /// (render cache mode 3 with a selected renderer type). Replaces
+    /// the scene's lighting with a fixed studio attached to the camera,
+    /// looked up by each fragment's view space normal: the shading of a
+    /// surface then depends only on which way it faces the viewer, so
+    /// form reads identically wherever the scene light happens to be.
+    /// The classic inspection shading -- pair it with Cavity for edge
+    /// definition. Overrides physically based shading while on.
+    static const bool & getMatcap();
+    static const bool & defaultMatcap();
+    static void removeMatcap();
+    static void setMatcap(const bool &v);
+    static const char *docMatcap();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MatcapPreset
+    ///
+    /// Which matcap to shade with. The presets are computed in the
+    /// shader rather than sampled from images, so they cost no assets
+    /// and stay sharp at any resolution. Studio = soft key light with a
+    /// rim; Clay = matte, no highlight, the most neutral read of form;
+    /// Metal = banded sweep with a hard edge, exaggerates curvature;
+    /// Pearl = warm/cool dual tone, shows shallow undulation.
+    static const long & getMatcapPreset();
+    static const long & defaultMatcapPreset();
+    static void removeMatcapPreset();
+    static void setMatcapPreset(const long &v);
+    static const char *docMatcapPreset();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MatcapTint
+    ///
+    /// How much each object's own color tints the matcap, 0 to 1.
+    /// One multiplies the matcap by the object color, so the matcap
+    /// supplies the shading and the assembly keeps its color coding.
+    /// Zero shades the whole scene as one uniform material instead,
+    /// which drops the color coding but makes shape directly
+    /// comparable across parts.
+    static const double & getMatcapTint();
+    static const double & defaultMatcapTint();
+    static void removeMatcapTint();
+    static void setMatcapTint(const double &v);
+    static const char *docMatcapTint();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -1762,9 +1898,9 @@ public:
     /// Accessor for parameter Volumetric
     ///
     /// Enable volumetric lighting (light shafts) of the experimental
-    /// render engine: raymarch the shadow map of the Shadow draw style
+    /// render engine: raymarch the shadow map of the Shadow display style
     /// through a homogeneous scattering medium. Only effective while
-    /// the Shadow draw style provides a scene light.
+    /// the Shadow display style provides a scene light.
     static const bool & getVolumetric();
     static const bool & defaultVolumetric();
     static void removeVolumetric();
@@ -1804,7 +1940,7 @@ public:
     /// Project an animated caustic light pattern onto surfaces
     /// below the water body (objects with the Render_Water property),
     /// modulated by the shadow map. Only effective while volumetric
-    /// lighting and the Shadow draw style are active.
+    /// lighting and the Shadow display style are active.
     static const bool & getCaustics();
     static const bool & defaultCaustics();
     static void removeCaustics();
@@ -1856,7 +1992,7 @@ public:
     /// Shade water bodies (objects with the Render_Water property)
     /// as an animated water surface: screen-space refraction of the
     /// scene behind it, Fresnel-blended environment reflection and a
-    /// sun glint from the Shadow draw style light.
+    /// sun glint from the Shadow display style light.
     static const bool & getWaterSurface();
     static const bool & defaultWaterSurface();
     static void removeWaterSurface();
@@ -1984,7 +2120,7 @@ public:
     ///
     /// Receive the scene light's shadow on the water surface: a
     /// shadow band on the water where a caster blocks the light and
-    /// the sun glint killed there. Requires the Shadow draw style
+    /// the sun glint killed there. Requires the Shadow display style
     /// with an active shadow map; off leaves the surface fully lit.
     /// The refracted scene below the surface keeps its own shadow
     /// regardless.
@@ -2131,10 +2267,161 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter Light
+    ///
+    /// Let the render engine supply its own directional or spot scene
+    /// light, described by the Light* settings below, instead of taking
+    /// one out of the Coin traversal.
+    /// 
+    /// Everything the engine keys off a light -- shadows, volumetric
+    /// shafts, the sun disc, ground reflection -- today has exactly one
+    /// source: the Shadow display style, which is what puts an
+    /// SoShadowDirectionalLight or SoSpotLight in the scene graph at all
+    /// (the viewer headlight is a plain SoDirectionalLight, which the
+    /// engine rejects by type). That makes a draw style the owner of the
+    /// lighting, and it is why the style cannot simply be retired
+    /// (docs/CoinRetirement.md 3.4).
+    /// 
+    /// Off by default, and while off nothing changes. A light found in
+    /// the traversal still wins when one is there, so the Shadow style
+    /// keeps behaving exactly as before; these settings supply a light
+    /// when it does not.
+    static const bool & getLight();
+    static const bool & defaultLight();
+    static void removeLight();
+    static void setLight(const bool &v);
+    static const char *docLight();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightIntensity
+    ///
+    /// Brightness of the renderer's own scene light.
+    static const double & getLightIntensity();
+    static const double & defaultLightIntensity();
+    static void removeLightIntensity();
+    static void setLightIntensity(const double &v);
+    static const char *docLightIntensity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightDirectionX
+    static const double & getLightDirectionX();
+    static const double & defaultLightDirectionX();
+    static void removeLightDirectionX();
+    static void setLightDirectionX(const double &v);
+    static const char *docLightDirectionX();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightDirectionY
+    static const double & getLightDirectionY();
+    static const double & defaultLightDirectionY();
+    static void removeLightDirectionY();
+    static void setLightDirectionY(const double &v);
+    static const char *docLightDirectionY();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightDirectionZ
+    static const double & getLightDirectionZ();
+    static const double & defaultLightDirectionZ();
+    static void removeLightDirectionZ();
+    static void setLightDirectionZ(const double &v);
+    static const char *docLightDirectionZ();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightColor
+    ///
+    /// Colour of the renderer's own scene light.
+    static const unsigned long & getLightColor();
+    static const unsigned long & defaultLightColor();
+    static void removeLightColor();
+    static void setLightColor(const unsigned long &v);
+    static const char *docLightColor();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightSpot
+    ///
+    /// Make the renderer's own light a spot rather than a directional
+    /// one. A spot has a position and a cone; a directional light has
+    /// only a direction.
+    static const bool & getLightSpot();
+    static const bool & defaultLightSpot();
+    static void removeLightSpot();
+    static void setLightSpot(const bool &v);
+    static const char *docLightSpot();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightPositionX
+    static const double & getLightPositionX();
+    static const double & defaultLightPositionX();
+    static void removeLightPositionX();
+    static void setLightPositionX(const double &v);
+    static const char *docLightPositionX();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightPositionY
+    static const double & getLightPositionY();
+    static const double & defaultLightPositionY();
+    static void removeLightPositionY();
+    static void setLightPositionY(const double &v);
+    static const char *docLightPositionY();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightPositionZ
+    static const double & getLightPositionZ();
+    static const double & defaultLightPositionZ();
+    static void removeLightPositionZ();
+    static void setLightPositionZ(const double &v);
+    static const char *docLightPositionZ();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightCutOffAngle
+    ///
+    /// Half angle of the spot cone, in degrees.
+    static const double & getLightCutOffAngle();
+    static const double & defaultLightCutOffAngle();
+    static void removeLightCutOffAngle();
+    static void setLightCutOffAngle(const double &v);
+    static const char *docLightCutOffAngle();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LightDropOffRate
+    ///
+    /// How sharply a spot falls off from the cone axis. Zero is even
+    /// across the cone.
+    static const double & getLightDropOffRate();
+    static const double & defaultLightDropOffRate();
+    static void removeLightDropOffRate();
+    static void setLightDropOffRate(const double &v);
+    static const char *docLightDropOffRate();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter SunDisc
     ///
     /// Draw a visible sun -- a bright disc with a limb glow -- in
-    /// the sky along the Shadow draw style's directional scene light,
+    /// the sky along the Shadow display style's directional scene light,
     /// occluded by geometry and feeding the bloom glow. Perspective
     /// cameras only; spot lights have no sky direction.
     static const bool & getSunDisc();
@@ -2164,7 +2451,7 @@ public:
     /// Mirror the model in the shadow ground plane of the
     /// experimental render engine: the opaque scene is re-rendered
     /// with a reflected camera and blended onto the ground. Only
-    /// effective while the Shadow draw style shows a ground plane.
+    /// effective while the Shadow display style shows a ground plane.
     static const bool & getGroundReflection();
     static const bool & defaultGroundReflection();
     static void removeGroundReflection();

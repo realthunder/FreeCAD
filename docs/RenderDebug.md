@@ -602,10 +602,55 @@ view.saveRenderDump(path,
   harness can sweep buffer visualizations without touching view state.
 - **Sidecar metadata** (`<path>.json`): camera (position/orientation/type/
   scale), viewport size, backend type + renderer caps line, MSAA samples,
-  git describe, and the full set of active `Render_*`/`RenderDebug_*` values.
+  git describe, the full set of active `Render_*`/`RenderDebug_*` values,
+  and the **preferences those do not cover** (see below).
   A capture is thereby *reproducible*: the harness (or a human) can re-stage
   the exact frame from the sidecar alone. "I saw stipple once" becomes a
   checked-in test case.
+- **Why the preferences too.** A `Render_*` view property outranks the
+  parameter it was seeded from -- `_renderParam` materializes it once
+  when the renderer is selected and owns it after -- so the whole
+  `View/Render` group is covered by the property set above,
+  enumerations included (`AOMethod`, `MatcapPreset`, `WaterRippleType`
+  are materialized by hand beside the `_renderParam` calls, because the
+  generic helper cannot install the enum strings first).
+
+  What the properties do **not** cover is the viewer's own rig, which
+  has no property form at all: the lights, the scene ambient, the
+  background, the chrome that adds pixels to a capture, and the
+  `RenderCache` mode that decides whether a backend draws the frame in
+  the first place. Nor a view that never selected a renderer, which has
+  no `Render_*` properties to record. So the sidecar carries a
+  `preferences` object: the look-affecting subset of `View`, plus the
+  whole `View/Render` group beside it -- a parameter read against its
+  property is what says whether the property was merely seeded from it
+  or has since been overridden. Without this a sidecar can describe a
+  capture faithfully and still re-stage into a different picture, which
+  is how a stray scene-wide setting once passed for a renderer bug
+  (`docs/RenderEngine.md` 7).
+
+  ⚠️ Recording is not licence to write. Anything with a view property
+  is restaged **through the property**, never by moving the user's
+  global preference: the property is the per-view override that exists
+  for exactly this, and a preference write outlives the document and
+  the session. The verification harness is the one exception, and only
+  because it runs against a private throwaway config.
+
+  What goes out is what the config has **set**; a parameter still on its
+  built-in default does not appear, because that default lives in the
+  reading code, not in the group. Restaging into a fresh config -- what
+  `render-verify.sh` does -- is therefore exact, and restaging into a
+  config that has set a key this one left alone is best-effort.
+
+  Values are bucketed by parameter **type** (`bool`, `int`, `unsigned`,
+  `float`, `string`) rather than written flat, because a group is a set
+  of typed maps and JSON cannot tell an int from an unsigned. The two
+  are not interchangeable: `SetInt` on a key files it under `Integer`
+  while `GetUnsigned` goes on reading the untouched `Unsigned` entry
+  (measured -- `SetInt("BackgroundColor", 287454020)` then
+  `GetUnsigned` reads 0). Guessing the setter from the JSON value would
+  therefore replay every colour below `0x80000000` into the wrong slot
+  and leave the frame with its old background.
 
 `FC_BGFX_DEBUG_READBACK`'s stats (geometry-pixel count, average color) get the
 same treatment as a `getRenderStats()` Python call — cheap numeric
@@ -714,10 +759,122 @@ shape of everything above, so its contract is stated here:
 - ⚠️ **Always pass the full `--modes` list.** The default is `0,1,2,3,4`; a
   golden set holding 0-8 then compares only five stages and prints the rest as a
   `modes only on one side` *note*, not a failure -- a silently partial pass.
+- ⚠️ **A lone `beauty DIVERGED` with every other stage at 0.0000% is the
+  harness, not the renderer.** Mode 0 is the first capture after a camera is
+  restaged, and that slot can catch a frame the scene has not been drawn into
+  yet: the beauty shot comes back as background plus chrome while the depth,
+  normal, AO and shadow buffers captured a few hundred ms later are
+  byte-identical to the golden. A missing model that leaves an *identical
+  depth buffer* is a contradiction, and that contradiction is the tell -- read
+  it as a flake and re-run before hunting a cause. Seen once in ~6
+  `demo-fountain` runs, on one camera. The same first-frame settling shows up
+  as ~20 differing pixels between two captures with nothing done between them,
+  which is why a round-trip test needs a no-op control leg to measure its own
+  noise floor rather than comparing against zero.
 - ⚠️ **`--gpu` needs a real Wayland socket.** From a shell without
   `/run/user/$(id -u)` (agent sessions), set
   `XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir` or Qt finds no platform plugin and the
   capture aborts.
+- ⚠️ **Set the camera, never ask for it.** `viewIsometric()` and friends
+  *animate*. A grab a few `updateGui()` calls later catches the camera
+  mid-flight, and the failure does not look like a camera fault: a
+  near-horizontal orthographic camera cuts a hard horizon across the
+  frame, because a horizontal plane seen edge-on covers exactly the
+  lower half of an orthographic view. That reads as a half-sized ground
+  plane, and it cost a session's worth of suspicion of the backend's
+  shadow ground before the two legs were shown to agree to within 0.2%.
+  Assign `cam.orientation` the literal rotation, and re-pin immediately
+  before the grab — entering a draw style can move the camera again.
+- ⚠️ **Set a draw style by property, not by `runCommand`.**
+  `Gui.runCommand("Std_DrawStyleShadow", 0)` on a viewer *already* in
+  shadow mode is the light-manipulator toggle, not a no-op, so the
+  second leg of an A/B raises the dragger — which draws, and which
+  `View3DInventorViewer::Private::getBoundingBox` folds into the scene
+  bounds, moving everything sized from them. `view.DrawStyle = "Shadow"`
+  is idempotent.
+- WARNING: **`saveImage` is blind to anything that renders into its own
+  FBO, and to the composite.** It re-renders offscreen, so a nested
+  render target is flattened away and Coin's on-top pass never happens.
+  Both bit: every shadow smoothing size read a 0.00 difference through
+  `saveImage` because the shadow map is an `SoSceneTexture2` with its
+  own framebuffer, and the entire class of "Coin stomps a buffer the
+  backend owns" is invisible to it. Use
+  `v.getViewer().grabFramebuffer()` for anything on-screen-shaped, and
+  `saveRenderDump` for the backend's own buffers.
+
+This closes the "no reliable way to verify rendering" gap: the SwiftShader
+blindspot is covered by the desktop leg being a *real-GPU readback* of the
+same knob-for-knob staged frame.
+
+The user-shader feature (section 6) has its own companion harness,
+`scripts/user-shader-verify.sh`: a desktop leg running the
+document-object-model GUI suites under xvfb (`user_shader_params.py`,
+`user_shader_post.py` — property binding, per-binding overrides,
+activation/deactivation with byte-exact restores) and a viewer leg
+re-running the pipeline against a live headless-Chromium WASM viewer
+(`user_shader_viewer.py` scene-graph route,
+`user_shader_viewer_appearance.py` document-object route).
+
+### 5.1 What this harness cannot see
+
+Recorded because each entry cost a session, and because a harness that
+passes on a build the user can see is broken is worse than no harness.
+
+- WARNING: **menu behaviour, entirely.** Three ways of driving a menu
+  were measured against a visibly broken build and all three passed:
+  (a) `QTest.mouseClick(widget)` posts straight to the widget and never
+  takes the popup grab (`menu_dismiss_probe.py`, 12/12 green while the
+  menu bar was swallowing clicks); (b) **xdotool/XTEST** moves the real
+  pointer onto the right widget with the popup up and the application
+  receives *nothing*, `underMouse()` staying false under xvfb and under
+  real XWayland alike; (c) posting to the `QWindow` through
+  `QWindowSystemInterface` (`menu_opener_probe.py`) passes 5/5 on the
+  broken build too. The likely common cause is that no real grab is ever
+  taken without a window manager. **The user is the only oracle for
+  menu behaviour**: report it as unverified, never as a pass.
+- WARNING: **probe key presses must go through
+  `QTest.keyClick(mw.windowHandle(), ...)`.** A key event sent to a
+  `QWidget` never reaches Qt's shortcut map, so accelerator tests pass
+  against dead accelerators.
+- WARNING: **PySide deletes menu widgets you inspect.** Reaching an
+  entry through `QWidgetAction::defaultWidget()`, or holding any QWidget
+  wrapper across statements, makes PySide take ownership and collect it,
+  killing the C++ children. It surfaces as "Internal C++ object already
+  deleted" on something that was alive a line earlier, and reads as the
+  menu rebuilding itself. Use `findChildren` plus a parent-chain
+  ancestry filter and reduce everything to `str`/`int` inside the loop.
+  Probes only; in C++ the menu owns them.
+- WARNING: **`updateGui()` never delivers a deferred delete**, so a probe
+  that holds the call stack is blind to every cleanup a destructor does.
+  `QApplication::processEvents()` skips `DeferredDelete` events, and a
+  *nested* `QEventLoop` skips them too: the event is posted at the outer
+  loop level and waits for that stack to unwind. A probe that wants what
+  a user gets from clicking has to run each step from its own main-loop
+  callback, i.e. a `QTimer::singleShot` chain. The cost of learning
+  this: "leaving Transform edit leaves the object drawn transparent"
+  survived two sessions as a rendering bug and was the probe's own call
+  stack keeping the task dialog -- and with it the object's on-top
+  registration -- alive. Compare `dragger_stale_probe.py` (one long
+  function, reads the defect) with `dragger_stale3_probe.py` (callback
+  chain, same build, reads 0.0000 on all three render paths).
+  `QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete)`
+  forces delivery regardless of loop level and is the quick way to tell
+  a deferred destructor from a stale frame.
+- WARNING: **startup `Console().Log` output is invisible to a probe.** A
+  probe script runs long after the splash, and enabling logging from
+  Python is too late for anything that happened during it. Pass
+  **`--log-file <path>`** and read the line back from the file;
+  `scripts/renderer-desktop.sh` takes **`FC_ARGS`** for exactly this.
+- WARNING: **a `gdb --batch` run leaves FreeCAD alive** after the script
+  ends, so kill it by PID. `pkill -f '<pattern>'` matched *its own
+  shell* and killed the cleanup instead of the application, twice,
+  leaving stray GUI windows behind.
+- NOTE: **for a Coin console warning, break on
+  `SoDebugError::postWarning` under gdb and read the backtrace.**
+  Matching a message to a plausible call site got two of three warnings
+  wrong: neither the place nor the cause was what the text suggested,
+  and both were real bugs that had been called cosmetic
+  (`docs/CoinRetirement.md` stage 1a).
 
 This closes the "no reliable way to verify rendering" gap: the SwiftShader
 blindspot is covered by the desktop leg being a *real-GPU readback* of the

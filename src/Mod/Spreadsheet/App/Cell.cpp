@@ -531,7 +531,7 @@ void Cell::setDisplayUnit(const std::string& unit)
         auto e = Expression::parseUnit(owner->sheet(), unit.c_str());
 
         if (!e) {
-            throw Base::UnitsMismatchError("Invalid unit");
+            THROWM(Base::UnitsMismatchError, "Invalid unit")
         }
         UnitExpression *expr = static_cast<UnitExpression*>(e.get());
         newDisplayUnit = DisplayUnit(unit, expr->getUnit(), expr->getScaler());
@@ -621,7 +621,7 @@ void Cell::setAlias(const std::string &n, bool silent)
         if (!silent) {
             std::string msg("Alias locked by 'Auto alias' cell ");
             msg += addr.toString();
-            throw Base::RuntimeError(msg.c_str());
+            THROWM(Base::RuntimeError, msg.c_str())
         }
     } else
         _setAlias(n);
@@ -1063,7 +1063,7 @@ int Cell::decodeAlignment(const std::string& itemStr, int alignment)
         alignment = (alignment & ~Cell::ALIGNMENT_VERTICAL) | Cell::ALIGNMENT_BOTTOM;
     }
     else if (!itemStr.empty()) {
-        throw Base::ValueError("Invalid alignment.");
+        THROWM(Base::ValueError, "Invalid alignment.")
     }
 
     return alignment;

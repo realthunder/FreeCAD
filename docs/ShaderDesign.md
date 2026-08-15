@@ -8,6 +8,12 @@ This is a companion to `docs/TShapeRenderCache.md` (geometry caching /
 instancing) and `docs/RoadMap.md` (project direction). It documents the
 `src/Gui/Renderer/` backend, not the legacy Coin GL renderer.
 
+> **Status (2026-08)**: written 2026-07-21, before the user-shader
+> release and the effect library. For those, and for the current
+> architecture reference, see `docs/RenderEngine.md` (§5 user shaders)
+> and `docs/RenderDebug.md` (§6 design history); this file remains the
+> deep-dive on the built-in pass pipeline and effect shading math.
+
 ---
 
 ## 1. Architecture
@@ -84,7 +90,6 @@ scene color before later geometry draws over them. Abbreviated:
 | `ViewGroundRefl` | mirrored-camera opaque re-render for ground reflection |
 | `ViewOpaque` | **opaque** triangles / lines / points (PBR + shadow) |
 | `ViewSectionCap` | stencil section caps of clipped opaque solids |
-| `ViewAOApply` | multiply blurred AO onto the scene color |
 | `ViewGroundReflApply` | blend the mirrored scene onto the ground plane |
 | `ViewOutline` | hidden-line stencil outlines |
 | `ViewCaustics` | additive water-caustics splat over submerged surfaces |
@@ -129,6 +134,22 @@ config struct the bridge fills. "Property" = per-view dynamic
   metallic/roughness/occlusion/emissive maps; view `Render_PBR*`;
   `RenderParams` `EnvIntensity`, `Roughness`, etc.
 
+### 3.1a Machined surface finish
+- **Shaders**: `fc_finish.sh`, called from `fc_mesh_fs.sh` (so every mesh
+  variant, opaque and OIT, textured or not).
+- **What**: a procedural knurl / brushed / blasted / turned relief over
+  object space (`v_opos`/`v_onrm`), triplanar-projected, perturbing the
+  shading normal through Mikkelsen's surface gradient from the pattern's
+  analytic gradient — no UV, no tangent frame, no per-draw matrix.
+  Filtered against the pixel footprint, with the slope variance the
+  filter removes handed to the roughness (or, in the Phong path, to the
+  shininess).
+- **Config**: none of its own — `u_finishParams` is per-draw, from
+  `Render::Material::finish*`.
+- **Controls**: the appearance's own `App::SurfaceFinish` (authored, and
+  it wins), else per-object `Render_Finish`, `Render_FinishPitch`,
+  `Render_FinishDepth`, `Render_FinishAngle`.
+
 ### 3.2 Bump / parallax
 - **Shaders**: `fc_mesh_fs.sh` (dFdx/dFdy tangent frame; only on textured
   meshes with a bump map).
@@ -136,11 +157,12 @@ config struct the bridge fills. "Property" = per-view dynamic
 - **Controls**: `Render_BumpScale`, `Render_Parallax`.
 
 ### 3.3 SSAO (ambient occlusion)
-- **Passes**: `ViewAOPrepass` → `ViewAOGen` → `ViewAOBlur` → `ViewAOApply`.
-- **Shaders**: `fs_fc_ssao.sc`, `fs_fc_ssao_blur.sc`, `fs_fc_ssao_apply.sc`.
+- **Passes**: `ViewAOPrepass` → `ViewAOGen` → `ViewAOBlur`.
+- **Shaders**: `fs_fc_ssao.sc`, `fs_fc_ssao_blur.sc`.
 - **What**: hemisphere kernel rotated per pixel by a tiled 4×4 noise
-  texture; depth-compared against the prepass, blurred, multiplied onto the
-  scene ambient. Only attenuates indirect light.
+  texture; depth-compared against the prepass, blurred, then sampled by the
+  mesh shaders (`aoMeshTex`, unit 9) to attenuate their ambient term —
+  there is no fullscreen apply pass. Only attenuates indirect light.
 - **Config**: `AOConfig` (`translateAOConfig`).
 - **Controls**: `Render_SSAO` (bool), plus `Render_SSAO*` radius / intensity
   / bias; `RenderParams` `SSAO*` fallback. Live-toggle:
@@ -257,6 +279,33 @@ config struct the bridge fills. "Property" = per-view dynamic
 - **Transparency**: `ViewTransparent` + `ViewOITComposite` — weighted,
   blended order-independent transparency (WBOIT).
 
+### 3.11 Cavity (curvature) shading
+- **Passes**: `ViewCavity` — a fullscreen multiply over the finished opaque
+  scene, after the section caps and before the outlines.
+- **Shaders**: `fs_fc_cavity.sc` (reads the prepass, `fc_prepass_read.sh`).
+- **What**: screen-space divergence of the prepass *normals*, darkening
+  concave creases (valley) and convex ridges. Reading positions instead
+  would make every tessellation facet boundary read as a crease;
+  interpolated normals stay smooth across facets and jump only at real
+  edges. It darkens only — the scene target is 8-bit, so a ridge
+  *highlight* is not available.
+- **Config**: `CavityConfig` (`translateCavityConfig`).
+- **Controls**: `Render_Cavity` + `Render_CavityValley` /
+  `Render_CavityRidge`. Composes with AO rather than replacing it: cavity
+  is a one-pixel curvature term, occlusion a radius-based visibility
+  integral.
+
+### 3.12 Matcap shading
+- **Shaders**: `fc_mesh_fs.sh` (the matcap branch).
+- **What**: replaces the scene lighting with a fixed studio attached to the
+  camera, looked up by each fragment's view-space normal, so form reads the
+  same wherever the light is. The presets (Studio / Clay / Metal / Pearl)
+  are computed in the shader, not sampled from images — no assets, sharp at
+  any resolution, and free for the browser tier. Overrides PBR while on.
+- **Config**: `MatcapConfig` (`translateMatcapConfig`).
+- **Controls**: `Render_Matcap`, `Render_MatcapPreset` (an enumeration),
+  `Render_MatcapTint` (how much each object's own color tints it).
+
 ---
 
 ## 4. Property / parameter model
@@ -273,7 +322,11 @@ helpers (highest priority first):
    `View3DInventor` object. Materialized by
    `View3DInventorViewer::setRendererType` / the draw styles; read read-only
    by `viewParamOverride` in the bridge. **Live-tunable** from the Python
-   console, e.g. `Gui.activeView().Render_SSAO = False`.
+   console, e.g. `Gui.activeView().Render_SSAO = False`. A handful of them
+   — the shading model plus cavity, occlusion, shadows and bloom — also
+   have a UI: the **Shading** section of the Display style tool button's
+   drop-down (`Gui/ShadingOptions.h`), which writes these same properties
+   and disables itself when no backend is selected.
 3. **Global default** — `RenderParams` (`Preferences/View/Render`, generated
    from `RenderParams.py`) and `ViewParams` (`Preferences/View`, generated
    from `ViewParams.py`). The fallback when no view property is set.

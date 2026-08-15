@@ -41,6 +41,8 @@
 
 namespace Render {
 struct UserShader;
+struct FinishPalette;
+struct FramePalette;
 }
 
 class SoFCVertexCache;
@@ -234,6 +236,16 @@ public:
     uint32_t ambient;
     uint32_t emissive;
     uint32_t specular;
+    /// Array form of ambient/emissive/specular/shininess, captured
+    /// from the coin fork's extended lazy element when a material node
+    /// holds them per face (packed colors, matching the scalars
+    /// above; empty = scalar only, which is every object until
+    /// something feeds per-face materials). Only external backends
+    /// will consume them; the GL path keeps reading the scalars.
+    COWVector<uint32_t> ambients;
+    COWVector<uint32_t> emissives;
+    COWVector<uint32_t> speculars;
+    COWVector<float> shininesses;
     uint32_t linepattern;
     uint32_t linecolor;
     uint32_t facecolor;
@@ -244,6 +256,45 @@ public:
     /// (< 0 = unset); only external backends consume them.
     float metallic;
     float roughness;
+    /// Per-face form of the pair, captured from the same node when a
+    /// PBR appearance states one factor pair per face (empty
+    /// otherwise). A whole-object draw shades from the mesh's baked
+    /// stream, which carries the same values; these serve the draws
+    /// that cannot -- a single-face draw resolves its face's pair into
+    /// the scalars above. Indexed like the arrays above, but padded
+    /// with entry 0 rather than clamped (see SoFCPbrElement).
+    COWVector<float> metallics;
+    COWVector<float> roughnesses;
+    /// Machined surface finish captured from SoFCRenderMaterial (0 =
+    /// none): the procedural pattern external backends shade over the
+    /// surface, with the pitch and depth in millimetres of object space
+    /// and the lay angle in degrees.
+    uint8_t finish;
+    float finishpitch;
+    float finishdepth;
+    float finishangle;
+    /// Per-face form of the finish, captured from the same node: the
+    /// distinct finishes of the appearance as a palette, and one index
+    /// into it per face. A whole-object draw hands the palette to the
+    /// backend and shades from the index the mesh's baked stream
+    /// carries; a single-face draw, which has no stream, resolves its
+    /// face's entry into the scalars above. Entry 0 is what those
+    /// scalars repeat. Indexed like the PBR pair -- padded with entry 0
+    /// rather than clamped (see SoFCFinishElement).
+    std::shared_ptr<const Render::FinishPalette> finishpalette;
+    COWVector<int32_t> finishindices;
+    /// The projection frame the finish is laid out in, captured from the
+    /// same node but derived from the GEOMETRY rather than from the
+    /// appearance -- the plane's own axes, or the axis a cylinder was
+    /// turned about (Render::SurfaceFrame). Unframed leaves the finish
+    /// projected triplanarly, which is what every shape without an
+    /// analytic surface, and every shape nobody finished, states.
+    /// Palette and index array follow the finish's rules exactly, down
+    /// to entry 0 being the whole draw's -- here the FIRST FACE's frame,
+    /// which is what a mesh whose stream collapsed (every face framed
+    /// alike) reads, and what a single-face draw resolves against.
+    std::shared_ptr<const Render::FramePalette> framepalette;
+    COWVector<int32_t> frameindices;
     /// Water body flag/density captured from SoFCRenderMaterial: the
     /// shapes' closed volume becomes a scattering medium of the
     /// volumetric lighting pass (only external backends consume this).
@@ -398,10 +449,41 @@ public:
         if (specular > other.specular) return false;
         if (shininess < other.shininess) return true;
         if (shininess > other.shininess) return false;
+        if (ambients < other.ambients) return true;
+        if (ambients > other.ambients) return false;
+        if (emissives < other.emissives) return true;
+        if (emissives > other.emissives) return false;
+        if (speculars < other.speculars) return true;
+        if (speculars > other.speculars) return false;
+        if (shininesses < other.shininesses) return true;
+        if (shininesses > other.shininesses) return false;
         if (metallic < other.metallic) return true;
         if (metallic > other.metallic) return false;
         if (roughness < other.roughness) return true;
         if (roughness > other.roughness) return false;
+        if (metallics < other.metallics) return true;
+        if (metallics > other.metallics) return false;
+        if (roughnesses < other.roughnesses) return true;
+        if (roughnesses > other.roughnesses) return false;
+        if (finish < other.finish) return true;
+        if (finish > other.finish) return false;
+        if (finishpitch < other.finishpitch) return true;
+        if (finishpitch > other.finishpitch) return false;
+        if (finishdepth < other.finishdepth) return true;
+        if (finishdepth > other.finishdepth) return false;
+        if (finishangle < other.finishangle) return true;
+        if (finishangle > other.finishangle) return false;
+        // Pointer identity: a palette is immutable once published and
+        // one node makes one, so two draws sharing a palette share the
+        // pointer (like usershader below).
+        if (finishpalette.get() < other.finishpalette.get()) return true;
+        if (finishpalette.get() > other.finishpalette.get()) return false;
+        if (finishindices < other.finishindices) return true;
+        if (finishindices > other.finishindices) return false;
+        if (framepalette.get() < other.framepalette.get()) return true;
+        if (framepalette.get() > other.framepalette.get()) return false;
+        if (frameindices < other.frameindices) return true;
+        if (frameindices > other.frameindices) return false;
         if (water < other.water) return true;
         if (water > other.water) return false;
         if (waterdensity < other.waterdensity) return true;

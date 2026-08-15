@@ -108,7 +108,7 @@ void PropertyCosmeticEdgeList::setPyObject(PyObject *value)
             if (!PyObject_TypeCheck(item, &(CosmeticEdgePy::Type))) {
                 std::string error = std::string("types in list must be 'CosmeticEdge', not ");
                 error += item->ob_type->tp_name;
-                throw Base::TypeError(error);
+                THROWM(Base::TypeError, error)
             }
 
             values[i] = static_cast<CosmeticEdgePy*>(item)->getCosmeticEdgePtr();
@@ -123,7 +123,7 @@ void PropertyCosmeticEdgeList::setPyObject(PyObject *value)
     else {
         std::string error = std::string("type must be 'CosmeticEdge' or list of 'CosmeticEdge', not ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 }
 

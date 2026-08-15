@@ -93,9 +93,14 @@ struct SceneSnapshot {
     HiddenLineConfig hlconfig;
     SectionConfig secconf;
     AOConfig aoconf;
+    CavityConfig cavityconf;    ///< v42; defaulted on older snapshots
+    MatcapConfig matcapconf;    ///< v43; defaulted on older snapshots
     PBRConfig pbrconf;
     BumpConfig bumpconf;
     LightConfig lightconf;
+    /// v52; `fed` false on older snapshots, which is exactly what makes
+    /// them keep the fixed headlight they were rendered with.
+    ViewLightConfig viewlightconf;
     VolumetricConfig volconf;
     WaterConfig waterconf;
     BloomConfig bloomconf;      ///< v18; defaulted on older snapshots
@@ -690,6 +695,7 @@ struct ParsedMeshChunk : MeshData {
     std::vector<float> posStore;
     std::vector<float> normStore;
     std::vector<uint8_t> colorStore;
+    std::vector<uint8_t> matStore;
     std::vector<float> uvStore;
     std::vector<int32_t> triStore;
     std::vector<int32_t> lineStore;

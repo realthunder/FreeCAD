@@ -429,7 +429,7 @@ public:
 
     void setColorOverride(App::Color c) {
         overrideColor.setValue(SbColor(c.r, c.g, c.b));
-        overrideTransparency.setValue(c.a);
+        overrideTransparency.setValue(c.transparency());
         overrideColor.setIgnored(FALSE);
     }
 

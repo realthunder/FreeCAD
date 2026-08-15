@@ -434,7 +434,7 @@ void Application::renameDocument(const char *OldName, const char *NewName)
 {
     (void)OldName;
     (void)NewName;
-    throw Base::RuntimeError("Renaming document internal name is no longer allowed!");
+    THROWM(Base::RuntimeError, "Renaming document internal name is no longer allowed!")
 }
 
 Document* Application::newDocument(const char * Name, const char * UserName, bool createView, bool tempDoc)
@@ -972,7 +972,7 @@ Document* Application::openDocumentPrivate(const char * FileName,
     if (!File.exists()) {
         std::stringstream str;
         str << "File '" << FileName << "' does not exist!";
-        throw Base::FileSystemError(str.str().c_str());
+        THROWM(Base::FileSystemError, str.str().c_str())
     }
 
     // Before creating a new document we check whether the document is already open
@@ -1104,7 +1104,7 @@ void Application::setActiveDocument(const char *Name)
     else {
         std::stringstream s;
         s << "Try to activate unknown document '" << Name << "'";
-        throw Base::RuntimeError(s.str());
+        THROWM(Base::RuntimeError, s.str())
     }
 }
 
@@ -1244,7 +1244,7 @@ int Application::checkLinkDepth(int depth, MessageOption option)
             FC_ERR(msg);
             return 0;
         case MessageOption::Throw:
-            throw Base::RuntimeError(msg);
+            THROWM(Base::RuntimeError, msg)
         }
     }
 
@@ -1451,7 +1451,7 @@ Base::Reference<ParameterGrp>  Application::GetParameterGroupByPath(const char* 
 
     // is there a path separator ?
     if (pos == std::string::npos) {
-        throw Base::ValueError("Application::GetParameterGroupByPath() no parameter set name specified");
+        THROWM(Base::ValueError, "Application::GetParameterGroupByPath() no parameter set name specified")
     }
     // assigning the parameter set name
     cTemp.assign(cName,0,pos);
@@ -1460,7 +1460,7 @@ Base::Reference<ParameterGrp>  Application::GetParameterGroupByPath(const char* 
     // test if name is valid
     auto It = mpcPramManager.find(cTemp.c_str());
     if (It == mpcPramManager.end())
-        throw Base::ValueError("Application::GetParameterGroupByPath() unknown parameter set name specified");
+        THROWM(Base::ValueError, "Application::GetParameterGroupByPath() unknown parameter set name specified")
 
     return It->second->GetGroup(cName.c_str());
 }
@@ -1930,19 +1930,85 @@ static void freecadNewHandler ()
 #include <execinfo.h>
 #include <dlfcn.h>
 #include <cxxabi.h>
+#endif
+#if !defined(_MSC_VER)
+#include <unistd.h>
+#endif
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <string>
 #include <sstream>
+#include <thread>
 
 #if HAVE_CONFIG_H
 #include <config.h>
 #endif // HAVE_CONFIG_H
 
-// This function produces a stack backtrace with demangled function & method names.
-void printBacktrace(size_t skip=0)
+#include <Base/CrashLog.h>
+#if defined(_MSC_VER)
+#include <Base/StackWalker.h>
+#endif
+
+namespace {
+
+#if defined(_MSC_VER)
+/** The Windows half of printBacktrace().
+ *
+ * Two deliberate departures from Base::StackWalker's defaults: no
+ * SymUseSymSrv, and the module list is silenced. Reaching the Microsoft symbol
+ * server from a crash handler can block for minutes, and OnLoadModule
+ * otherwise prints a few hundred lines before the first real frame.
+ */
+class CrashStackWalker: public StackWalker
 {
+public:
+    CrashStackWalker(Base::CrashLog::Entry& entry, size_t skip)
+        : StackWalker(RetrieveVerbose | SymBuildPath)
+        , m_entry(entry)
+        , m_skip(skip)
+    {}
+
+protected:
+    void OnSymInit(LPCSTR, DWORD, LPCSTR) override
+    {}
+    void OnLoadModule(LPCSTR, LPCSTR, DWORD64, DWORD, DWORD, LPCSTR, LPCSTR, ULONGLONG) override
+    {}
+    void OnDbgHelpErr(LPCSTR, DWORD, DWORD64) override
+    {}
+
+    void OnCallstackEntry(CallstackEntryType eType, CallstackEntry& entry) override
+    {
+        // Drop the frames belonging to the handler itself, so the numbering
+        // matches what the glibc branch prints.
+        if (eType != lastEntry && entry.offset != 0 && m_seen++ < m_skip) {
+            return;
+        }
+        StackWalker::OnCallstackEntry(eType, entry);
+    }
+
+    void OnOutput(LPCSTR szText) override
+    {
+        m_entry.line(szText);
+    }
+
+private:
+    Base::CrashLog::Entry& m_entry;
+    size_t m_skip;
+    size_t m_seen {0};
+};
+#endif  // _MSC_VER
+
+}  // namespace
+
+// This function produces a stack backtrace with demangled function & method names.
+// It goes to <UserAppData>/crash.log first and to stderr second, on every platform.
+void printBacktrace(size_t skip=0, const char* reason=nullptr)
+{
+    Base::CrashLog::Entry entry(Base::CrashLog::Severity::Fatal,
+                                reason ? reason : "");
 #if defined HAVE_BACKTRACE_SYMBOLS
     void *callstack[128];
     size_t nMaxFrames = sizeof(callstack) / sizeof(callstack[0]);
@@ -1970,44 +2036,57 @@ void printBacktrace(size_t skip=0)
         }
 
         // cannot directly print to cerr when using --write-log
-        std::cerr << str.str();
+        entry.line(str.str());
     }
 
     free(symbols);
+#elif defined(_MSC_VER)
+    CrashStackWalker sw(entry, skip);
+    sw.ShowCallstack();
 #else //HAVE_BACKTRACE_SYMBOLS
     (void)skip;
-    std::cerr << "Cannot print the stacktrace because the C runtime library doesn't provide backtrace or backtrace_symbols\n";
+    entry.line("Cannot print the stacktrace because the C runtime library doesn't provide backtrace or backtrace_symbols\n");
 #endif
 }
-#endif
 
 void segmentation_fault_handler(int sig)
 {
 #if defined(FC_OS_LINUX)
     (void)sig;
-    std::cerr << "Program received signal SIGSEGV, Segmentation fault.\n";
-    printBacktrace(2);
+    printBacktrace(2, "Program received signal SIGSEGV, Segmentation fault.");
 #if defined(FC_DEBUG)
     abort();
 #else
     _exit(1);
 #endif
 #else
+    // Re-arm first. signal() resets the disposition to SIG_DFL as the handler is
+    // entered, so without this the handler is a one-shot: the first SIGSEGV of a
+    // run is reported and every one after it bypasses this function entirely.
+    // Measured 2026-08-12 -- the second fault of a session produced no entry at
+    // all, and the third came back as a raw access violation from the CRT.
+    std::signal(sig, segmentation_fault_handler);
+
     switch (sig) {
         case SIGSEGV:
-            std::cerr << "Illegal storage access..." << std::endl;
+            // Record it *before* throwing. The throw unwinds to whoever catches
+            // Base::AccessViolation -- in the GUI that is
+            // GUIApplication::notify(), which only shows a message box -- and by
+            // then every frame that would say where the fault came from is gone.
+            // This is the only chance to keep them.
+            printBacktrace(2, "Illegal storage access...");
 #if !defined(_DEBUG)
-            throw Base::AccessViolation("Illegal storage access! Please save your work under a new file name and restart the application!");
+            THROWM(Base::AccessViolation, "Illegal storage access! Please save your work under a new file name and restart the application!")
 #endif
             break;
         case SIGABRT:
-            std::cerr << "Abnormal program termination..." << std::endl;
+            printBacktrace(2, "Abnormal program termination...");
 #if !defined(_DEBUG)
-            throw Base::AbnormalProgramTermination("Break signal occurred");
+            THROWM(Base::AbnormalProgramTermination, "Break signal occurred")
 #endif
             break;
         default:
-            std::cerr << "Unknown error occurred..." << std::endl;
+            printBacktrace(2, "Unknown error occurred...");
             break;
     }
 #endif // FC_OS_LINUX
@@ -2023,7 +2102,7 @@ void unexpection_error_handler()
     std::cerr << "Unexpected error occurred..." << std::endl;
     // try to throw an exception and give the user chance to save their work
 #if !defined(_DEBUG)
-    throw Base::AbnormalProgramTermination("Unexpected error occurred! Please save your work under a new file name and restart the application!");
+    THROWM(Base::AbnormalProgramTermination, "Unexpected error occurred! Please save your work under a new file name and restart the application!")
 #else
     terminate();
 #endif
@@ -2032,10 +2111,20 @@ void unexpection_error_handler()
 #if defined(FC_SE_TRANSLATOR) // Microsoft compiler
 void my_se_translator_filter(unsigned int code, EXCEPTION_POINTERS* pExp)
 {
-    Q_UNUSED(pExp)
     switch (code)
     {
     case EXCEPTION_ACCESS_VIOLATION:
+        // Better placed than the one in segmentation_fault_handler(): the
+        // translator runs during the SEH filter pass, before any unwinding, and
+        // it is handed the faulting CONTEXT -- so walk that rather than the
+        // handler's own stack.
+        {
+            std::ostringstream why;
+            why << "Access violation at " << pExp->ExceptionRecord->ExceptionAddress;
+            Base::CrashLog::Entry entry(Base::CrashLog::Severity::Fatal, why.str());
+            CrashStackWalker sw(entry, 0);
+            sw.ShowCallstack(GetCurrentThread(), pExp->ContextRecord);
+        }
         throw Base::AccessViolation();
     case EXCEPTION_FLT_DIVIDE_BY_ZERO:
     case EXCEPTION_INT_DIVIDE_BY_ZERO:
@@ -2047,7 +2136,7 @@ void my_se_translator_filter(unsigned int code, EXCEPTION_POINTERS* pExp)
     std::stringstream str;
     str << "SEH exception of type: " << code;
     // general C++ SEH exception for things we don't need to handle separately....
-    throw Base::RuntimeError(str.str());
+    THROWM(Base::RuntimeError, str.str())
 }
 #endif
 
@@ -2077,6 +2166,10 @@ void Application::init(int argc, char ** argv)
         initTypes();
 
         initConfig(argc,argv);
+        // Only now is the user directory known. Anything that crashed before
+        // this point already wrote its log to the working directory rather
+        // than losing it.
+        Base::CrashLog::setDirectory(mConfig["UserAppData"]);
         initApplication();
     }
     catch (...) {
@@ -2164,6 +2257,7 @@ void Application::initTypes()
     App::PropertyColorList          ::init();
     App::PropertyMaterial           ::init();
     App::PropertyMaterialList       ::init();
+    App::PropertySurfaceFinishList  ::init();
     App::PropertyPath               ::init();
     App::PropertyFile               ::init();
     App::PropertyFileIncluded       ::init();
@@ -2203,6 +2297,7 @@ void Application::initTypes()
     App::PropertyMagneticFluxDensity        ::init();
     App::PropertyMagnetization              ::init();
     App::PropertyMass                       ::init();
+    App::PropertyMoment                     ::init();
     App::PropertyPressure                   ::init();
     App::PropertyPower                      ::init();
     App::PropertyShearModulus               ::init();
@@ -2210,6 +2305,7 @@ void Application::initTypes()
     App::PropertySpecificHeat               ::init();
     App::PropertySpeed                      ::init();
     App::PropertyStiffness                  ::init();
+    App::PropertyStiffnessDensity           ::init();
     App::PropertyStress                     ::init();
     App::PropertyTemperature                ::init();
     App::PropertyThermalConductivity        ::init();
@@ -2501,12 +2597,12 @@ void parseProgramOptions(int ac, char ** av, const string& exe, variables_map& v
     catch (const std::exception& e) {
         std::stringstream str;
         str << e.what() << endl << endl << visible << endl;
-        throw Base::UnknownProgramOption(str.str());
+        THROWM(Base::UnknownProgramOption, str.str())
     }
     catch (...) {
         std::stringstream str;
         str << "Wrong or unknown option, bailing out!" << endl << endl << visible << endl;
-        throw Base::UnknownProgramOption(str.str());
+        THROWM(Base::UnknownProgramOption, str.str())
     }
 
     if (vm.count("help")) {
@@ -2515,7 +2611,7 @@ void parseProgramOptions(int ac, char ** av, const string& exe, variables_map& v
         str << "For a detailed description see https://www.freecad.org/wiki/Start_up_and_Configuration" << endl<<endl;
         str << "Usage: " << exe << " [options] File1 File2 ..." << endl << endl;
         str << visible << endl;
-        throw Base::ProgramInformation(str.str());
+        THROWM(Base::ProgramInformation, str.str())
     }
 
     if (vm.count("response-file")) {
@@ -2526,7 +2622,7 @@ void parseProgramOptions(int ac, char ** av, const string& exe, variables_map& v
             std::stringstream str;
             str << "Could no open the response file: '"
                 << vm["response-file"].as<string>() << "'" << endl;
-            throw Base::UnknownProgramOption(str.str());
+            THROWM(Base::UnknownProgramOption, str.str())
         }
         // Read the whole file into a string
         stringstream ss;
@@ -2566,7 +2662,7 @@ void processProgramOptions(const variables_map& vm, std::map<std::string,std::st
             str << "VTK      " << fcVtkVersion << '\n';
             str << "xerces-c " << fcXercescVersion << '\n';
         }
-        throw Base::ProgramInformation(str.str());
+        THROWM(Base::ProgramInformation, str.str())
     }
 
     if (vm.count("module-path")) {
@@ -2653,7 +2749,7 @@ void processProgramOptions(const variables_map& vm, std::map<std::string,std::st
         for (const auto & it : mConfig) {
             str << it.first << "=" << it.second << std::endl;
         }
-        throw Base::ProgramInformation(str.str());
+        THROWM(Base::ProgramInformation, str.str())
     }
 
     if (vm.count("get-config")) {
@@ -2665,7 +2761,7 @@ void processProgramOptions(const variables_map& vm, std::map<std::string,std::st
             str << pos->second;
         }
         str << std::endl;
-        throw Base::ProgramInformation(str.str());
+        THROWM(Base::ProgramInformation, str.str())
     }
 
     if (vm.count("set-config")) {
@@ -3026,14 +3122,14 @@ std::list<std::string> Application::processFiles(const std::list<std::string>& f
                 std::string ext = file.extension();
                 std::vector<std::string> mods = App::GetApplication().getImportModules(ext.c_str());
                 if (!mods.empty()) {
-                    std::string escapedstr = Base::Tools::escapeEncodeFilename(file.filePath());
+                    std::string literal = Base::Tools::pythonLiteral(file.filePath());
 
                     Base::Interpreter().loadModule(mods.front().c_str());
                     Base::Interpreter().runStringArg("import %s",mods.front().c_str());
-                    Base::Interpreter().runStringArg("%s.open(u\"%s\")",mods.front().c_str(),
-                            escapedstr.c_str());
+                    Base::Interpreter().runStringArg("%s.open(%s)",mods.front().c_str(),
+                            literal.c_str());
                     processed.push_back(it);
-                    Base::Console().Log("Command line open: %s.open(u\"%s\")\n",mods.front().c_str(),escapedstr.c_str());
+                    Base::Console().Log("Command line open: %s.open(%s)\n",mods.front().c_str(),literal.c_str());
                 }
                 else if (file.exists()) {
                     Base::Console().Warning("File format not supported: %s \n", file.filePath().c_str());
@@ -3078,8 +3174,9 @@ void Application::processCmdLineFiles()
     std::map<std::string,std::string>::const_iterator it = cfg.find("SaveFile");
     if (it != cfg.end()) {
         std::string output = it->second;
-        output = Base::Tools::escapeEncodeFilename(output);
 
+        // Note this is the raw path: escaping it here used to leave FileInfo
+        // below, and every message in this block, looking at an escaped name.
         Base::FileInfo fi(output);
         std::string ext = fi.extension();
         try {
@@ -3087,8 +3184,8 @@ void Application::processCmdLineFiles()
             if (!mods.empty()) {
                 Base::Interpreter().loadModule(mods.front().c_str());
                 Base::Interpreter().runStringArg("import %s",mods.front().c_str());
-                Base::Interpreter().runStringArg("%s.export(App.ActiveDocument.Objects, '%s')"
-                    ,mods.front().c_str(),output.c_str());
+                Base::Interpreter().runStringArg("%s.export(App.ActiveDocument.Objects, %s)"
+                    ,mods.front().c_str(),Base::Tools::pythonLiteral(output).c_str());
             }
             else {
                 Base::Console().Warning("File format not supported: %s \n", output.c_str());
@@ -3149,12 +3246,44 @@ void Application::LoadParameters()
     if (mConfig.count("VendorCFGPrefix"))
         vendorPrefix = mConfig["VendorCFGPrefix"];
 
+    // The colour parameters an older config means differently: their alpha
+    // byte was read as a transparency, and since the convention flip
+    // (Base/Color.h) it is an opacity. Only these two -- every other colour
+    // preference was edited through ColorButton, which always stored a
+    // QColor alpha, so its bytes already mean opacity. Converted ONLY when a
+    // new vendor's config is first seeded from the previous vendor's below:
+    // the vendor rename is what marks the convention change, so a config
+    // that already has the new name is already in the new meaning.
+    auto convertLegacyConfigColours = [](const std::string &path) {
+        Base::Reference<ParameterManager> mgr = ParameterManager::Create();
+        if (mgr->LoadDocument(path.c_str()) != 1)
+            return;
+        bool changed = false;
+        auto flip = [&mgr, &changed](const char *group, const char *name) {
+            Base::Reference<ParameterGrp> grp = mgr->GetGroup(group);
+            // Stated in the file, not a default: two different presets
+            // coming back equal is the only way to tell without a lookup API.
+            unsigned long v = grp->GetUnsigned(name, 0);
+            if (v != grp->GetUnsigned(name, 1))
+                return;
+            grp->SetUnsigned(name, (v & ~0xFFUL) | (0xFF - (v & 0xFF)));
+            changed = true;
+        };
+        flip("BaseApp/Preferences/Mod/Part", "DefaultDatumColor");
+        flip("BaseApp/Preferences/Mod/PartDesign", "DefaultDatumColor");
+        flip("BaseApp/Preferences/Mod/Sketcher/General", "FaceColor");
+        if (changed)
+            mgr->SaveDocument(path.c_str());
+    };
+
     if (mConfig.find("UserParameter") == mConfig.end()) {
         std::string path = mConfig["UserConfigPath"] + vendorPrefix + "user.cfg";
         if (vendorPrefix.size() && !FileInfo(path).exists()) {
             FileInfo fi(mConfig["UserConfigPath"] + "user.cfg");
-            if (fi.exists())
+            if (fi.exists()) {
                 fi.copyTo(path.c_str());
+                convertLegacyConfigColours(path);
+            }
         }
         mConfig["UserParameter"] = path;
     }
@@ -3265,7 +3394,7 @@ QString getUserHome()
     int error = getpwuid_r(getuid(), &pwd, buffer.data(), buffer.size(), &result);
     Q_UNUSED(error)
     if (!result)
-        throw Base::RuntimeError("Getting HOME path from system failed!");
+        THROWM(Base::RuntimeError, "Getting HOME path from system failed!")
     path = QString::fromUtf8(result->pw_dir);
 #else
     path = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
@@ -3376,7 +3505,7 @@ boost::filesystem::path findPath(const QString& stdHome, const QString& customHo
         try {
             boost::filesystem::create_directories(appData);
         } catch (const boost::filesystem::filesystem_error& e) {
-            throw Base::FileSystemError("Could not create directories. Failed with: " + e.code().message());
+            THROWM(Base::FileSystemError, "Could not create directories. Failed with: " + e.code().message())
         }
     }
 
@@ -3582,7 +3711,7 @@ std::string Application::FindHomePath(const char* sCall)
         int nchars = readlink("/proc/self/exe", resolved, PATH_MAX);
 #endif
         if (nchars < 0 || nchars >= PATH_MAX)
-            throw Base::FileSystemError("Cannot determine the absolute path of the executable");
+            THROWM(Base::FileSystemError, "Cannot determine the absolute path of the executable")
         resolved[nchars] = '\0'; // enforce null termination
         absPath = resolved;
     }

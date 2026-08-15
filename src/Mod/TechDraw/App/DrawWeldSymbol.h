@@ -44,6 +44,7 @@ public:
     ~DrawWeldSymbol() override = default;
 
     App::PropertyLink         Leader;
+    App::PropertyLink*        getOwnerProperty() override { return &Leader; }
     App::PropertyBool         AllAround;
     App::PropertyBool         FieldWeld;
     App::PropertyBool         AlternatingWeld;

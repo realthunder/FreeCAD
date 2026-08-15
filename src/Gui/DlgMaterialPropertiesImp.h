@@ -26,7 +26,14 @@
 
 #include <QDialog>
 #include <memory>
+#include <utility>
 #include <vector>
+
+namespace App {
+class Property;
+class PropertyMaterial;
+class PropertyMaterialList;
+}
 
 namespace Gui {
 class ViewProvider;
@@ -34,6 +41,16 @@ class ViewProvider;
 namespace Dialog {
 class Ui_DlgMaterialProperties;
 
+/** The appearance editor
+ *
+ * Edits the named material property -- ShapeAppearance's whole list, or a
+ * plain PropertyMaterial like a colour plot's TextureMaterial -- across
+ * every given view provider. Every edit applies as it is committed (a
+ * colour picked, a spin box stepped), so the 3D view answers live; OK
+ * keeps the result and Cancel restores the appearance the dialog opened
+ * on. On a material list the shading model can be toggled between Phong
+ * and PBR, converting the stored values so the look survives the switch.
+ */
 class DlgMaterialPropertiesImp : public QDialog
 {
     Q_OBJECT
@@ -44,22 +61,35 @@ public:
     void setViewProviders(const std::vector<Gui::ViewProvider*>&);
     QColor diffuseColor() const;
 
+    void reject() override;
+
 private:
     void setupConnections();
+    void onShadingModelActivated(int);
     void onAmbientColorChanged();
     void onDiffuseColorChanged();
     void onEmissiveColorChanged();
     void onSpecularColorChanged();
     void onShininessValueChanged(int);
+    void onMetallicValueChanged(int);
+    void onRoughnessValueChanged(int);
+
+    App::PropertyMaterialList* listProperty(Gui::ViewProvider*) const;
+    App::PropertyMaterial* singleProperty(Gui::ViewProvider*) const;
+    /// Relabel and show/hide the rows for the shading model
+    void updateModeView(bool pbr);
+    /// Refresh every control from the first object holding the property
+    void syncFromProperty();
 
 private:
     std::unique_ptr<Ui_DlgMaterialProperties> ui;
     std::string material;
     std::vector<Gui::ViewProvider*> Objects;
+    /// What Cancel restores: the property as the dialog found it
+    std::vector<std::pair<Gui::ViewProvider*, std::unique_ptr<App::Property>>> snapshots;
 };
 
 } // namespace Dialog
 } // namespace Gui
 
 #endif // GUI_DIALOG_DLGMATERIALPROPERTIES_IMP_H
-

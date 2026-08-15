@@ -162,6 +162,11 @@ if(OCC_FOUND)
   else(OCC_VERSION_STRING VERSION_LESS 7.8.0)
     list(APPEND OCC_LIBRARIES TKDESTEP TKDEIGES TKDEGLTF TKDESTL)
   endif(OCC_VERSION_STRING VERSION_LESS 7.8.0)
+  if(NOT OCC_VERSION_STRING VERSION_LESS 8.0.0)
+    # OCCT 8.0 moved the Expr/ExprIntrp packages out of TKMath into their
+    # own toolkit; SMESH's segment distribution parses expressions with them.
+    list(APPEND OCC_LIBRARIES TKExpress)
+  endif(NOT OCC_VERSION_STRING VERSION_LESS 8.0.0)
   message(STATUS "-- Found OCE/OpenCASCADE version: ${OCC_VERSION_STRING}")
   message(STATUS "-- OCE/OpenCASCADE include directory: ${OCC_INCLUDE_DIR}")
   message(STATUS "-- OCE/OpenCASCADE shared libraries directory: ${OCC_LIBRARY_DIR}")

@@ -62,6 +62,6 @@ BRepAlgoAPI_BooleanOperation* Section::makeOperation(const TopoDS_Shape& base, c
     mkSection->Approximation(approx);
     mkSection->Build();
     if (!mkSection->IsDone())
-        throw Base::RuntimeError("Section failed");
+        THROWM(Base::RuntimeError, "Section failed")
     return mkSection.release();
 }

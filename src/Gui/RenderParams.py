@@ -35,7 +35,7 @@ sys.path.append(path.join(path.dirname(path.dirname(path.abspath(__file__))), 'T
 import params_utils
 
 from params_utils import ParamBool, ParamString, ParamFloat, ParamInt, \
-                         ParamComboBox, auto_comment
+                         ParamHex, ParamColor, ParamComboBox, auto_comment
 
 NameSpace = 'Gui'
 ClassName = 'RenderParams'
@@ -889,12 +889,12 @@ Params = [
         doc="Enable screen space ambient occlusion of the experimental render\n"
         "engine (render cache mode 3 with a selected renderer type)."),
     ParamBool('Shadow',  True, title='Shadow',
-        doc="Render the shadow map cast by the Shadow draw style's scene\n"
+        doc="Render the shadow map cast by the Shadow display style's scene\n"
         "light (and the god-ray shafts / caustic occlusion that depend on\n"
         "it). A convenience switch to drop shadows without leaving the\n"
-        "Shadow draw style; the base headlight and environment lighting\n"
+        "Shadow display style; the base headlight and environment lighting\n"
         "stay, so the scene remains lit, just flatter. Has no effect unless\n"
-        "the Shadow draw style provides a scene light."),
+        "the Shadow display style provides a scene light."),
     ParamInt('AOMethod',  0, title='AO method',
         proxy=ParamComboBox(items=['SSAO (hemisphere)', 'GTAO (horizon)']),
         doc="Ambient occlusion algorithm. 0 = classic hemisphere-kernel\n"
@@ -925,6 +925,73 @@ Params = [
         "Effect resolution drives only the costlier reflection re-render.\n"
         "1.0 renders the occlusion at full resolution; lower trades AO\n"
         "sharpness for speed."),
+    ParamBool('Cavity',  False, title='Cavity shading',
+        doc="Enable screen space cavity (curvature) shading of the\n"
+        "experimental render engine (render cache mode 3 with a selected\n"
+        "renderer type). Darkens concave creases and convex ridges found\n"
+        "in the geometry prepass normals, which makes surface shape and\n"
+        "small features read without relying on the lighting.\n"
+        "\n"
+        "Best paired with the Shaded draw style, the one that draws no\n"
+        "edges: there the darkened crease is the only thing stating where\n"
+        "a face ends, so cavity does the job the edge lines do elsewhere,\n"
+        "without the wireframe over every tessellated curve. In a style\n"
+        "that already draws edges (Flat Lines) the two land on the same\n"
+        "pixels and cavity mostly restates them.\n"
+        "\n"
+        "Independent of ambient occlusion: cavity is a local curvature\n"
+        "term, occlusion is a visibility integral over a world-space\n"
+        "radius (contact darkening). They compose."),
+    ParamFloat('CavityRadius',  1.0, title='Cavity radius',
+        doc="Baseline the cavity curvature is measured over, in pixels.\n"
+        "\n"
+        "This decides which features the pass can see at all. The term\n"
+        "reads how far the surface normal turns between the two\n"
+        "neighbours, so at the default of 1 it sees only what turns\n"
+        "within a single pixel: hard creases, crisply, which is what\n"
+        "stands in for the edge lines the Shaded draw style does not\n"
+        "draw. Widening it brings broad curvature (fillets, blends, a\n"
+        "sculpted face) in, at the cost of spreading a hard crease into a\n"
+        "band of this width.\n"
+        "\n"
+        "Being in pixels it is resolution-relative: the same value covers\n"
+        "less of the model on a high-DPI display, so a large model on a\n"
+        "dense screen may want more than 1."),
+    ParamFloat('CavityValley',  1.0, title='Valley darkening',
+        doc="Cavity darkening strength in concave creases (inside corners,\n"
+        "fillets, pockets). Zero disables the valley term."),
+    ParamFloat('CavityRidge',  0.5, title='Ridge darkening',
+        doc="Cavity darkening strength on convex ridges (outside corners,\n"
+        "chamfers). Reads as a soft contour along edges. Zero disables the\n"
+        "ridge term.\n"
+        "\n"
+        "Both terms darken: the pass multiplies the finished 8-bit scene\n"
+        "color, which cannot brighten past white, so the ridge highlight\n"
+        "some workbench renderers use is not available here."),
+    ParamBool('Matcap',  False, title='Matcap shading',
+        doc="Enable matcap shading of the experimental render engine\n"
+        "(render cache mode 3 with a selected renderer type). Replaces\n"
+        "the scene's lighting with a fixed studio attached to the camera,\n"
+        "looked up by each fragment's view space normal: the shading of a\n"
+        "surface then depends only on which way it faces the viewer, so\n"
+        "form reads identically wherever the scene light happens to be.\n"
+        "The classic inspection shading -- pair it with Cavity for edge\n"
+        "definition. Overrides physically based shading while on."),
+    ParamInt('MatcapPreset',  0, title='Matcap',
+        proxy=ParamComboBox(items=['Studio', 'Clay', 'Metal', 'Pearl']),
+        doc="Which matcap to shade with. The presets are computed in the\n"
+        "shader rather than sampled from images, so they cost no assets\n"
+        "and stay sharp at any resolution. Studio = soft key light with a\n"
+        "rim; Clay = matte, no highlight, the most neutral read of form;\n"
+        "Metal = banded sweep with a hard edge, exaggerates curvature;\n"
+        "Pearl = warm/cool dual tone, shows shallow undulation."),
+    ParamFloat('MatcapTint',  1.0, title='Matcap object tint',
+        doc="How much each object's own color tints the matcap, 0 to 1.\n"
+        "One multiplies the matcap by the object color, so the matcap\n"
+        "supplies the shading and the assembly keeps its color coding.\n"
+        "Zero shades the whole scene as one uniform material instead,\n"
+        "which drops the color coding but makes shape directly\n"
+        "comparable across parts."),
     ParamBool('PBR',  False, title='Physically based shading',
         doc="Enable physically based shading with image based lighting of\n"
         "the experimental render engine (render cache mode 3 with a\n"
@@ -966,9 +1033,9 @@ Params = [
         "angle for a strong relief impression."),
     ParamBool('Volumetric',  False, title='Light shafts',
         doc="Enable volumetric lighting (light shafts) of the experimental\n"
-        "render engine: raymarch the shadow map of the Shadow draw style\n"
+        "render engine: raymarch the shadow map of the Shadow display style\n"
         "through a homogeneous scattering medium. Only effective while\n"
-        "the Shadow draw style provides a scene light."),
+        "the Shadow display style provides a scene light."),
     ParamFloat('VolumetricIntensity',  1.0, title='Intensity',
         doc="Brightness of the inscattered (light shaft) light."),
     ParamFloat('VolumetricDensity',  0.0, title='Medium density',
@@ -978,7 +1045,7 @@ Params = [
         doc="Project an animated caustic light pattern onto surfaces\n"
         "below the water body (objects with the Render_Water property),\n"
         "modulated by the shadow map. Only effective while volumetric\n"
-        "lighting and the Shadow draw style are active."),
+        "lighting and the Shadow display style are active."),
     ParamFloat('CausticsIntensity',  1.0, title='Caustics intensity',
         doc="Brightness of the projected caustic pattern."),
     ParamFloat('CausticsScale',  0.0, title='Caustics scale',
@@ -990,7 +1057,7 @@ Params = [
         doc="Shade water bodies (objects with the Render_Water property)\n"
         "as an animated water surface: screen-space refraction of the\n"
         "scene behind it, Fresnel-blended environment reflection and a\n"
-        "sun glint from the Shadow draw style light."),
+        "sun glint from the Shadow display style light."),
     ParamFloat('WaterWaveStrength',  0.3, title='Wave strength',
         doc="Amplitude of the animated wave perturbation of the water\n"
         "surface normal; zero gives a flat mirror-like surface."),
@@ -1028,7 +1095,7 @@ Params = [
     ParamBool('WaterShadow',  True, title='Water shadow',
         doc="Receive the scene light's shadow on the water surface: a\n"
         "shadow band on the water where a caster blocks the light and\n"
-        "the sun glint killed there. Requires the Shadow draw style\n"
+        "the sun glint killed there. Requires the Shadow display style\n"
         "with an active shadow map; off leaves the surface fully lit.\n"
         "The refracted scene below the surface keeps its own shadow\n"
         "regardless."),
@@ -1078,9 +1145,46 @@ Params = [
     ParamFloat('BloomRadius',  1.0, title='Bloom radius',
         doc="Radius scale of the glow halo. One is the default gaussian\n"
         "footprint; larger blooms wider."),
+    ParamBool('Light',  False, title='Renderer scene light',
+        doc="Let the render engine supply its own directional or spot scene\n"
+        "light, described by the Light* settings below, instead of taking\n"
+        "one out of the Coin traversal.\n"
+        "\n"
+        "Everything the engine keys off a light -- shadows, volumetric\n"
+        "shafts, the sun disc, ground reflection -- today has exactly one\n"
+        "source: the Shadow display style, which is what puts an\n"
+        "SoShadowDirectionalLight or SoSpotLight in the scene graph at all\n"
+        "(the viewer headlight is a plain SoDirectionalLight, which the\n"
+        "engine rejects by type). That makes a draw style the owner of the\n"
+        "lighting, and it is why the style cannot simply be retired\n"
+        "(docs/CoinRetirement.md 3.4).\n"
+        "\n"
+        "Off by default, and while off nothing changes. A light found in\n"
+        "the traversal still wins when one is there, so the Shadow style\n"
+        "keeps behaving exactly as before; these settings supply a light\n"
+        "when it does not."),
+    ParamFloat('LightIntensity',  0.8, title='Light intensity',
+        doc="Brightness of the renderer's own scene light."),
+    ParamFloat('LightDirectionX',  -1.0),
+    ParamFloat('LightDirectionY',  -1.0),
+    ParamFloat('LightDirectionZ',  -1.0),
+    ParamHex('LightColor',  0xf0fdffff, title='Light color', proxy=ParamColor(),
+        doc="Colour of the renderer's own scene light."),
+    ParamBool('LightSpot',  False, title='Use spot light',
+        doc="Make the renderer's own light a spot rather than a directional\n"
+        "one. A spot has a position and a cone; a directional light has\n"
+        "only a direction."),
+    ParamFloat('LightPositionX',  0.0),
+    ParamFloat('LightPositionY',  0.0),
+    ParamFloat('LightPositionZ',  0.0),
+    ParamFloat('LightCutOffAngle',  45.0, title='Spot cut-off angle',
+        doc="Half angle of the spot cone, in degrees."),
+    ParamFloat('LightDropOffRate',  0.0, title='Spot drop-off rate',
+        doc="How sharply a spot falls off from the cone axis. Zero is even\n"
+        "across the cone."),
     ParamBool('SunDisc',  False, title='Sun disc',
         doc="Draw a visible sun -- a bright disc with a limb glow -- in\n"
-        "the sky along the Shadow draw style's directional scene light,\n"
+        "the sky along the Shadow display style's directional scene light,\n"
         "occluded by geometry and feeding the bloom glow. Perspective\n"
         "cameras only; spot lights have no sky direction."),
     ParamFloat('SunDiscSize',  1.5, title='Sun disc size',
@@ -1090,7 +1194,7 @@ Params = [
         doc="Mirror the model in the shadow ground plane of the\n"
         "experimental render engine: the opaque scene is re-rendered\n"
         "with a reflected camera and blended onto the ground. Only\n"
-        "effective while the Shadow draw style shows a ground plane."),
+        "effective while the Shadow display style shows a ground plane."),
     ParamFloat('GroundReflectionIntensity',  0.4, title='Reflection intensity',
         doc="Blend factor of the mirrored model on the ground plane."),
     ParamInt('DebugViewMode',  0, title='Debug view mode',

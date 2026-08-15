@@ -30,6 +30,7 @@
 #include <Inventor/draggers/SoDirectionalLightDragger.h>
 #include <Inventor/events/SoEvent.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoEnvironment.h>
 #include <Inventor/nodes/SoEventCallback.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoPickStyle.h>
@@ -68,6 +69,16 @@ void DlgSettingsLightSources::setupConnection()
             this, &DlgSettingsLightSources::lightIntensity);
     connect(ui->light1Color, &Gui::ColorButton::changed,
             this, &DlgSettingsLightSources::lightColor);
+    connect(ui->checkBoxFillLight, &QCheckBox::toggled,
+            this, &DlgSettingsLightSources::toggleFillLight);
+    connect(ui->sliderIntensityFillLight, &QSlider::valueChanged,
+            this, &DlgSettingsLightSources::fillLightIntensity);
+    connect(ui->fillLightColor, &Gui::ColorButton::changed,
+            this, &DlgSettingsLightSources::fillLightColor);
+    connect(ui->sliderIntensityAmbient, &QSlider::valueChanged,
+            this, &DlgSettingsLightSources::ambientIntensity);
+    connect(ui->ambientLightColor, &Gui::ColorButton::changed,
+            this, &DlgSettingsLightSources::ambientColor);
 }
 
 void DlgSettingsLightSources::showEvent(QShowEvent* event)
@@ -163,6 +174,11 @@ void DlgSettingsLightSources::saveSettings()
     ui->checkBoxLight1->onSave();
     ui->light1Color->onSave();
     ui->sliderIntensity1->onSave();
+    ui->checkBoxFillLight->onSave();
+    ui->fillLightColor->onSave();
+    ui->sliderIntensityFillLight->onSave();
+    ui->ambientLightColor->onSave();
+    ui->sliderIntensityAmbient->onSave();
     saveDirection();
 }
 
@@ -171,6 +187,11 @@ void DlgSettingsLightSources::loadSettings()
     ui->checkBoxLight1->onRestore();
     ui->light1Color->onRestore();
     ui->sliderIntensity1->onRestore();
+    ui->checkBoxFillLight->onRestore();
+    ui->fillLightColor->onRestore();
+    ui->sliderIntensityFillLight->onRestore();
+    ui->ambientLightColor->onRestore();
+    ui->sliderIntensityAmbient->onRestore();
 }
 
 void DlgSettingsLightSources::saveDirection()
@@ -232,6 +253,47 @@ void DlgSettingsLightSources::lightColor()
         float green = float(color.greenF());
         float blue = float(color.blueF());
         view->getHeadlight()->color = SbColor(red, green, blue);
+    }
+}
+
+void DlgSettingsLightSources::toggleFillLight(bool on)
+{
+    if (view) {
+        view->setFillLightEnabled(on);
+    }
+}
+
+void DlgSettingsLightSources::fillLightIntensity(int value)
+{
+    if (view) {
+        view->getFillLight()->intensity = float(value) / 100.0F;
+    }
+}
+
+void DlgSettingsLightSources::fillLightColor()
+{
+    if (view) {
+        QColor color = ui->fillLightColor->color();
+        view->getFillLight()->color = SbColor(float(color.redF()),
+                                              float(color.greenF()),
+                                              float(color.blueF()));
+    }
+}
+
+void DlgSettingsLightSources::ambientIntensity(int value)
+{
+    if (view) {
+        view->getEnvironment()->ambientIntensity = float(value) / 100.0F;
+    }
+}
+
+void DlgSettingsLightSources::ambientColor()
+{
+    if (view) {
+        QColor color = ui->ambientLightColor->color();
+        view->getEnvironment()->ambientColor = SbColor(float(color.redF()),
+                                                       float(color.greenF()),
+                                                       float(color.blueF()));
     }
 }
 

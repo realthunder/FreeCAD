@@ -96,9 +96,9 @@ bool Revolution::fetchAxisLink(const App::PropertyLinkSub &axisLink,
     }
 
     if (axEdge.IsNull())
-        throw Base::ValueError("AxisLink shape is null");
+        THROWM(Base::ValueError, "AxisLink shape is null")
     if (axEdge.ShapeType() != TopAbs_EDGE)
-        throw Base::TypeError("AxisLink shape is not an edge");
+        THROWM(Base::TypeError, "AxisLink shape is not an edge")
 
     BRepAdaptor_Curve crv(TopoDS::Edge(axEdge));
     gp_Pnt base;
@@ -112,7 +112,7 @@ bool Revolution::fetchAxisLink(const App::PropertyLinkSub &axisLink,
         occdir = crv.Circle().Axis().Direction();
         angle = crv.LastParameter() - crv.FirstParameter();
     } else {
-        throw Base::TypeError("AxisLink edge is neither line nor arc of circle.");
+        THROWM(Base::TypeError, "AxisLink edge is neither line nor arc of circle.")
     }
     if (reversed)
         occdir.Reverse();

@@ -60,8 +60,7 @@ class NotificationLabel: public QLabel
 {
     Q_OBJECT
 public:
-    NotificationLabel(const QString& text, const QPoint& pos, int displayTime, int minShowTime = 0,
-                      int width = 0);
+    NotificationLabel(const QString& text, const QPoint& pos, int displayTime, int width = 0);
     /// Reuse existing notification to show a new notification (with a new text)
     void reuseNotification(const QString& text, int displayTime, const QPoint& pos, int width);
     /// Hide notification after a hiding timer.
@@ -93,7 +92,6 @@ private:
     void hideNotificationImmediately();
 
 private:
-    int minShowTime;
     QTimer hideTimer;
     QTimer expireTimer;
 
@@ -104,9 +102,8 @@ private:
 qobject_delete_later_unique_ptr<NotificationLabel> NotificationLabel::instance = nullptr;
 
 NotificationLabel::NotificationLabel(const QString& text, const QPoint& pos, int displayTime,
-                                     int minShowTime, int width)
-    : QLabel(nullptr, Qt::ToolTip | Qt::BypassGraphicsProxyWidget),
-      minShowTime(minShowTime)
+                                     int width)
+    : QLabel(nullptr, Qt::ToolTip | Qt::BypassGraphicsProxyWidget)
 {
     instance.reset(this);
     setForegroundRole(QPalette::ToolTipText);// defaults to ToolTip QPalette
@@ -237,19 +234,15 @@ bool NotificationLabel::eventFilter(QObject* o, QEvent* e)
 
     switch (e->type()) {
         case QEvent::MouseButtonPress: {
-            // If minimum on screen time has already lapsed - hide the notification no matter where
-            // the click was done
-            auto total = expireTimer.interval();
-            auto remaining = expireTimer.remainingTime();
-            auto lapsed = total - remaining;
-            // ... or if the click is inside the notification, hide it no matter if the minimum
-            // onscreen time has lapsed or not
+            // Any click anywhere dismisses the notification. It was not asked for and it
+            // sits over the window the click is aimed at, so reaching for the mouse at all
+            // is the clearest "I have seen it" there is - and waiting out a minimum time
+            // before a click could take it away only left it in the way.
             auto insideclick = this->underMouse();
-            if (lapsed > minShowTime || insideclick) {
-                hideNotification();
-
-                return insideclick;
-            }
+            hideNotification();
+            // a click inside is the notification's own, and goes no further; one outside
+            // is meant for what it covers and must still get there
+            return insideclick;
         } break;
         case QEvent::WindowDeactivate:
             if (hideIfReferenceWidgetDeactivated)
@@ -320,8 +313,7 @@ bool NotificationLabel::notificationLabelChanged(const QString& text)
 /***************************** NotificationBox **********************************/
 
 bool NotificationBox::showText(const QPoint& pos, const QString& text, QWidget* referenceWidget,
-                               int displayTime, unsigned int minShowTime, Options options,
-                               int width)
+                               int displayTime, Options options, int width)
 {
     QRect restrictionarea = {};
 
@@ -368,7 +360,6 @@ bool NotificationBox::showText(const QPoint& pos, const QString& text, QWidget* 
         new NotificationLabel(text,
                               pos,
                               displayTime,
-                              minShowTime,
                               width);// sets NotificationLabel::instance to itself
 
         NotificationLabel::instance->setTipRect(restrictionarea);

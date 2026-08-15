@@ -82,6 +82,7 @@ public:
         signalParamChanged("HashIndexedName");
         signalParamChanged("EnableMaterialEdit");
         signalParamChanged("MCPServerAutoStart");
+        signalParamChanged("MCPServerPort");
 
     // Auto generated code (Tools/params_utils.py:240)
     }
@@ -122,6 +123,7 @@ public:
     bool HashIndexedName;
     bool EnableMaterialEdit;
     bool MCPServerAutoStart;
+    long MCPServerPort;
 
     // Auto generated code (Tools/params_utils.py:253)
     DocumentParamsP() {
@@ -202,6 +204,8 @@ public:
         funcs["EnableMaterialEdit"] = &DocumentParamsP::updateEnableMaterialEdit;
         MCPServerAutoStart = this->handle->GetBool("MCPServerAutoStart", false);
         funcs["MCPServerAutoStart"] = &DocumentParamsP::updateMCPServerAutoStart;
+        MCPServerPort = this->handle->GetInt("MCPServerPort", 8765);
+        funcs["MCPServerPort"] = &DocumentParamsP::updateMCPServerPort;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -369,6 +373,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateMCPServerAutoStart(DocumentParamsP *self) {
         self->MCPServerAutoStart = self->handle->GetBool("MCPServerAutoStart", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMCPServerPort(DocumentParamsP *self) {
+        self->MCPServerPort = self->handle->GetInt("MCPServerPort", 8765);
     }
 };
 
@@ -1419,5 +1427,36 @@ void DocumentParams::setMCPServerAutoStart(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removeMCPServerAutoStart() {
     instance()->handle->RemoveBool("MCPServerAutoStart");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docMCPServerPort() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Port the MCP debug console server listens on. If it is already in\n"
+"use the server takes the next free port after it, so the port it\n"
+"ends up on is reported in the console and in the Tools -> MCP\n"
+"Server tooltip.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & DocumentParams::getMCPServerPort() {
+    return instance()->MCPServerPort;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & DocumentParams::defaultMCPServerPort() {
+    const static long def = 8765;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setMCPServerPort(const long &v) {
+    instance()->handle->SetInt("MCPServerPort",v);
+    instance()->MCPServerPort = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeMCPServerPort() {
+    instance()->handle->RemoveInt("MCPServerPort");
 }
 //[[[end]]]

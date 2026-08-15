@@ -208,7 +208,7 @@ class GuiExport ViewProviderLink : public ViewProviderDocumentObject
 
 public:
     App::PropertyBool OverrideMaterial;
-    App::PropertyMaterial ShapeMaterial;
+    App::PropertyMaterialList ShapeAppearance;
     App::PropertyEnumeration DrawStyle;
     App::PropertyFloatConstraint LineWidth;
     App::PropertyFloatConstraint PointSize;
@@ -232,6 +232,12 @@ public:
 
     void updateData(const App::Property*) override;
     void onChanged(const App::Property* prop) override;
+    /// Fold a pre-ShapeAppearance document's ShapeMaterial into the
+    /// appearance. Without this the element matches no property and the
+    /// base drops it, losing the override colour of every existing link.
+    void handleChangedPropertyName(Base::XMLReader &reader,
+                                   const char *TypeName,
+                                   const char *PropName) override;
     std::vector<App::DocumentObject*> claimChildren() const override;
     bool getElementPicked(const SoPickedPoint *, std::string &) const override;
     bool getDetailPath(const char *, SoFullPath *, bool, SoDetail *&) const override;
@@ -298,7 +304,7 @@ public:
             App::PropertyLinkSub &coloredElements,
             App::PropertyColorList &colorList,
             App::PropertyBool *overrideMaterial,
-            App::PropertyMaterial *shapeMaterial,
+            App::PropertyMaterialList *shapeMaterial,
             int elementCount = 0);
 
     static bool applyColorsTo(ViewProviderDocumentObject &vp, bool prevOverride);

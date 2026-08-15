@@ -470,7 +470,7 @@ TechDraw::DrawWeldSymbol* TaskWeldingSymbol::createWeldingSymbol()
     App::DocumentObject* newObj = m_leadFeat->getDocument()->getObject(symbolName.c_str());
     TechDraw::DrawWeldSymbol* newSym = Base::freecad_dynamic_cast<TechDraw::DrawWeldSymbol>(newObj);
     if (!newObj || !newSym)
-        throw Base::RuntimeError("TaskWeldingSymbol - new symbol object not found");
+        THROWM(Base::RuntimeError, "TaskWeldingSymbol - new symbol object not found")
 
     Gui::cmdAppObjectArgs(page, "addView(%s)", newSym->getFullName(/*python*/true));
     Gui::cmdAppObjectArgs(newSym, "Leader = %s", m_leadFeat->getFullName(/*python*/true));

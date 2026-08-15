@@ -28,6 +28,7 @@
 
 #include <vtkUnstructuredGrid.h>
 #include <vtkCellLinks.h>
+#include <vtkVersion.h>
 
 #include <vector>
 #include <set>
@@ -95,10 +96,10 @@ public:
                                        std::map<int, std::map<long,int> >& nodeQuadDomains);
   vtkCellLinks* GetLinks()
   {
-#ifdef VTK_CELL_ARRAY_V2
-    return static_cast<vtkCellLinks*>(GetCellLinks());
+#if VTK_VERSION_NUMBER >= VTK_VERSION_CHECK(9, 2, 20221112)
+    return static_cast<vtkCellLinks*>(vtkUnstructuredGrid::GetLinks());
 #else
-    return Links;
+    return static_cast<vtkCellLinks*>(GetCellLinks());
 #endif
   }
   SMDS_Downward* getDownArray(unsigned char vtkType)

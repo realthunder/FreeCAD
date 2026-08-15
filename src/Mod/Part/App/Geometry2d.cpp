@@ -103,12 +103,12 @@ unsigned int Geometry2d::getMemSize () const
 
 void Geometry2d::Save(Base::Writer & /*writer*/) const
 {
-    throw Base::NotImplementedError("Save");
+    THROWM(Base::NotImplementedError, "Save")
 }
 
 void Geometry2d::Restore(Base::XMLReader & /*reader*/)
 {
-    throw Base::NotImplementedError("Restore");
+    THROWM(Base::NotImplementedError, "Restore")
 }
 
 // -------------------------------------------------
@@ -363,17 +363,17 @@ Geometry2d *Geom2dBezierCurve::clone() const
 
 unsigned int Geom2dBezierCurve::getMemSize () const
 {
-    throw Base::NotImplementedError("Geom2dBezierCurve::getMemSize");
+    THROWM(Base::NotImplementedError, "Geom2dBezierCurve::getMemSize")
 }
 
 void Geom2dBezierCurve::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("Geom2dBezierCurve::Save");
+    THROWM(Base::NotImplementedError, "Geom2dBezierCurve::Save")
 }
 
 void Geom2dBezierCurve::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("Geom2dBezierCurve::Restore");
+    THROWM(Base::NotImplementedError, "Geom2dBezierCurve::Restore")
 }
 
 PyObject *Geom2dBezierCurve::getPyObject()
@@ -565,17 +565,17 @@ std::list<Geometry2d*> Geom2dBSplineCurve::toBiArcs(double /*tolerance*/) const
 
 unsigned int Geom2dBSplineCurve::getMemSize() const
 {
-    throw Base::NotImplementedError("Geom2dBSplineCurve::getMemSize");
+    THROWM(Base::NotImplementedError, "Geom2dBSplineCurve::getMemSize")
 }
 
 void Geom2dBSplineCurve::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("Geom2dBSplineCurve::Save");
+    THROWM(Base::NotImplementedError, "Geom2dBSplineCurve::Save")
 }
 
 void Geom2dBSplineCurve::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("Geom2dBSplineCurve::Restore");
+    THROWM(Base::NotImplementedError, "Geom2dBSplineCurve::Restore")
 }
 
 PyObject *Geom2dBSplineCurve::getPyObject()
@@ -607,7 +607,7 @@ void Geom2dConic::setLocation(const Base::Vector2d& Center)
         conic->SetLocation(p1);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -682,7 +682,7 @@ void Geom2dArcOfConic::setLocation(const Base::Vector2d& Center)
         conic->SetLocation(p1);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -745,7 +745,7 @@ void Geom2dArcOfConic::setRange(double u, double v)
         curve->SetTrim(u, v);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -830,7 +830,7 @@ void Geom2dCircle::setRadius(double Radius)
         circle->SetCirc2d(c);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -873,12 +873,12 @@ void Geom2dCircle::Restore(Base::XMLReader& reader)
     try {
         GCE2d_MakeCircle mc(axis, Radius);
         if (!mc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(mc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(mc.Status()))
 
         this->myCurve = mc.Value();
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -986,7 +986,7 @@ void Geom2dArcOfCircle::setRadius(double Radius)
         circle->SetCirc2d(c);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1032,10 +1032,10 @@ void Geom2dArcOfCircle::Restore(Base::XMLReader &reader)
     try {
         GCE2d_MakeCircle mc(axis, Radius);
         if (!mc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(mc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(mc.Status()))
         GCE2d_MakeArcOfCircle ma(mc.Value()->Circ2d(), u, v);
         if (!ma.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(ma.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(ma.Status()))
 
         Handle(Geom2d_TrimmedCurve) tmpcurve = ma.Value();
         Handle(Geom2d_Circle) tmpcircle = Handle(Geom2d_Circle)::DownCast(tmpcurve->BasisCurve());
@@ -1045,7 +1045,7 @@ void Geom2dArcOfCircle::Restore(Base::XMLReader &reader)
         this->myCurve->SetTrim(tmpcurve->FirstParameter(), tmpcurve->LastParameter());
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1096,7 +1096,7 @@ void Geom2dEllipse::setMajorRadius(double Radius)
         ellipse->SetMajorRadius(Radius);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1114,7 +1114,7 @@ void Geom2dEllipse::setMinorRadius(double Radius)
         ellipse->SetMinorRadius(Radius);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1149,7 +1149,7 @@ void Geom2dEllipse::setMajorAxisDir(Base::Vector2d newdir)
         myCurve->SetElips2d(e);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1193,12 +1193,12 @@ void Geom2dEllipse::Restore(Base::XMLReader& reader)
     try {
         GCE2d_MakeEllipse mc(axis, MajorRadius, MinorRadius);
         if (!mc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(mc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(mc.Status()))
 
         this->myCurve = mc.Value();
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1263,7 +1263,7 @@ void Geom2dArcOfEllipse::setMajorRadius(double Radius)
         ellipse->SetMajorRadius(Radius);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1281,7 +1281,7 @@ void Geom2dArcOfEllipse::setMinorRadius(double Radius)
         ellipse->SetMinorRadius(Radius);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1320,7 +1320,7 @@ void Geom2dArcOfEllipse::setMajorAxisDir(Base::Vector2d newdir)
         c->SetElips2d(e);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1368,11 +1368,11 @@ void Geom2dArcOfEllipse::Restore(Base::XMLReader &reader)
     try {
         GCE2d_MakeEllipse mc(axis, MajorRadius, MinorRadius);
         if (!mc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(mc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(mc.Status()))
 
         GCE2d_MakeArcOfEllipse ma(mc.Value()->Elips2d(), u, v);
         if (!ma.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(ma.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(ma.Status()))
 
         Handle(Geom2d_TrimmedCurve) tmpcurve = ma.Value();
         Handle(Geom2d_Ellipse) tmpellipse = Handle(Geom2d_Ellipse)::DownCast(tmpcurve->BasisCurve());
@@ -1382,7 +1382,7 @@ void Geom2dArcOfEllipse::Restore(Base::XMLReader &reader)
         this->myCurve->SetTrim(tmpcurve->FirstParameter(), tmpcurve->LastParameter());
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1433,7 +1433,7 @@ void Geom2dHyperbola::setMajorRadius(double Radius)
         h->SetMajorRadius(Radius);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1451,7 +1451,7 @@ void Geom2dHyperbola::setMinorRadius(double Radius)
         h->SetMinorRadius(Radius);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1495,12 +1495,12 @@ void Geom2dHyperbola::Restore(Base::XMLReader& reader)
     try {
         GCE2d_MakeHyperbola mc(axis, MajorRadius, MinorRadius);
         if (!mc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(mc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(mc.Status()))
 
         this->myCurve = mc.Value();
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1560,7 +1560,7 @@ void Geom2dArcOfHyperbola::setMajorRadius(double Radius)
         h->SetMajorRadius(Radius);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1578,7 +1578,7 @@ void Geom2dArcOfHyperbola::setMinorRadius(double Radius)
         h->SetMinorRadius(Radius);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1626,11 +1626,11 @@ void Geom2dArcOfHyperbola::Restore(Base::XMLReader &reader)
     try {
         GCE2d_MakeHyperbola mc(axis, MajorRadius, MinorRadius);
         if (!mc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(mc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(mc.Status()))
 
         GCE2d_MakeArcOfHyperbola ma(mc.Value()->Hypr2d(), u, v);
         if (!ma.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(ma.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(ma.Status()))
 
         Handle(Geom2d_TrimmedCurve) tmpcurve = ma.Value();
         Handle(Geom2d_Hyperbola) tmphyperbola = Handle(Geom2d_Hyperbola)::DownCast(tmpcurve->BasisCurve());
@@ -1640,7 +1640,7 @@ void Geom2dArcOfHyperbola::Restore(Base::XMLReader &reader)
         this->myCurve->SetTrim(tmpcurve->FirstParameter(), tmpcurve->LastParameter());
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1691,7 +1691,7 @@ void Geom2dParabola::setFocal(double length)
         p->SetFocal(length);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1734,12 +1734,12 @@ void Geom2dParabola::Restore(Base::XMLReader& reader)
     try {
         GCE2d_MakeParabola mc(axis, Focal);
         if (!mc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(mc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(mc.Status()))
 
         this->myCurve = mc.Value();
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1799,7 +1799,7 @@ void Geom2dArcOfParabola::setFocal(double length)
         p->SetFocal(length);
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1845,11 +1845,11 @@ void Geom2dArcOfParabola::Restore(Base::XMLReader &reader)
     try {
         GCE2d_MakeParabola mc(axis, Focal);
         if (!mc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(mc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(mc.Status()))
 
         GCE2d_MakeArcOfParabola ma(mc.Value()->Parab2d(), u, v);
         if (!ma.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(ma.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(ma.Status()))
 
         Handle(Geom2d_TrimmedCurve) tmpcurve = ma.Value();
         Handle(Geom2d_Parabola) tmpparabola = Handle(Geom2d_Parabola)::DownCast(tmpcurve->BasisCurve());
@@ -1859,7 +1859,7 @@ void Geom2dArcOfParabola::Restore(Base::XMLReader &reader)
         this->myCurve->SetTrim(tmpcurve->FirstParameter(), tmpcurve->LastParameter());
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -1961,12 +1961,12 @@ void Geom2dLine::Restore(Base::XMLReader &reader)
     try {
         GCE2d_MakeLine mc(pnt, dir);
         if (!mc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(mc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(mc.Status()))
 
         this->myCurve = mc.Value();
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -2035,7 +2035,7 @@ void Geom2dLineSegment::setPoints(const Base::Vector2d& Start, const Base::Vecto
             throw Standard_Failure("Both points are equal");
         GCE2d_MakeSegment ms(p1, p2);
         if (!ms.IsDone()) {
-            throw Base::CADKernelError(gce_ErrorStatusText(ms.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(ms.Status()))
         }
 
         // get Geom_Line of line segment
@@ -2047,7 +2047,7 @@ void Geom2dLineSegment::setPoints(const Base::Vector2d& Start, const Base::Vecto
         this_curv->SetTrim(that_curv->FirstParameter(), that_curv->LastParameter());
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -2094,12 +2094,12 @@ void Geom2dLineSegment::Restore(Base::XMLReader &reader)
     try {
         GCE2d_MakeSegment mc(p1, p2);
         if (!mc.IsDone())
-            throw Base::CADKernelError(gce_ErrorStatusText(mc.Status()));
+            THROWM(Base::CADKernelError, gce_ErrorStatusText(mc.Status()))
 
         this->myCurve = mc.Value();
     }
     catch (Standard_Failure& e) {
-        throw Base::CADKernelError(e.GetMessageString());
+        THROWM(Base::CADKernelError, e.GetMessageString())
     }
 }
 
@@ -2144,17 +2144,17 @@ const Handle(Geom2d_Geometry)& Geom2dOffsetCurve::handle() const
 
 unsigned int Geom2dOffsetCurve::getMemSize () const
 {
-    throw Base::NotImplementedError("Geom2dOffsetCurve::getMemSize");
+    THROWM(Base::NotImplementedError, "Geom2dOffsetCurve::getMemSize")
 }
 
 void Geom2dOffsetCurve::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("Geom2dOffsetCurve::Save");
+    THROWM(Base::NotImplementedError, "Geom2dOffsetCurve::Save")
 }
 
 void Geom2dOffsetCurve::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("Geom2dOffsetCurve::Restore");
+    THROWM(Base::NotImplementedError, "Geom2dOffsetCurve::Restore")
 }
 
 PyObject *Geom2dOffsetCurve::getPyObject()
@@ -2193,17 +2193,17 @@ Geometry2d *Geom2dTrimmedCurve::clone() const
 
 unsigned int Geom2dTrimmedCurve::getMemSize () const
 {
-    throw Base::NotImplementedError("Geom2dTrimmedCurve::getMemSize");
+    THROWM(Base::NotImplementedError, "Geom2dTrimmedCurve::getMemSize")
 }
 
 void Geom2dTrimmedCurve::Save(Base::Writer &/*writer*/) const
 {
-    throw Base::NotImplementedError("Geom2dTrimmedCurve::Save");
+    THROWM(Base::NotImplementedError, "Geom2dTrimmedCurve::Save")
 }
 
 void Geom2dTrimmedCurve::Restore(Base::XMLReader &/*reader*/)
 {
-    throw Base::NotImplementedError("Geom2dTrimmedCurve::Restore");
+    THROWM(Base::NotImplementedError, "Geom2dTrimmedCurve::Restore")
 }
 
 PyObject *Geom2dTrimmedCurve::getPyObject()
@@ -2372,7 +2372,7 @@ std::unique_ptr<Geom2dCurve> makeFromTrimmedCurve2d(const Handle(Geom2d_Curve)& 
     else {
         std::string err = "Unhandled curve type ";
         err += c->DynamicType()->Name();
-        throw Base::TypeError(err);
+        THROWM(Base::TypeError, err)
     }
 }
 std::unique_ptr<Geom2dCurve> makeFromCurveAdaptor2d(const Adaptor2d_Curve2d& adapt)
@@ -2436,7 +2436,7 @@ std::unique_ptr<Geom2dCurve> makeFromCurveAdaptor2d(const Adaptor2d_Curve2d& ada
     }
 
     if (!geoCurve)
-        throw Base::TypeError("Unhandled curve type");
+        THROWM(Base::TypeError, "Unhandled curve type")
 
     // Check if the curve must be trimmed
     Handle(Geom2d_Curve) curv2d = Handle(Geom2d_Curve)::DownCast

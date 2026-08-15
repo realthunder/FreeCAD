@@ -60,6 +60,7 @@
 # include <Inventor/nodes/SoCube.h>
 # include <Inventor/nodes/SoDirectionalLight.h>
 # include <Inventor/nodes/SoDrawStyle.h>
+# include <Inventor/nodes/SoEnvironment.h>
 # include <Inventor/nodes/SoEventCallback.h>
 # include <Inventor/nodes/SoFaceSet.h>
 # include <Inventor/nodes/SoIndexedFaceSet.h>
@@ -77,6 +78,7 @@
 # include <Inventor/nodes/SoSphere.h>
 # include <Inventor/nodes/SoSwitch.h>
 # include <Inventor/nodes/SoTransform.h>
+# include <Inventor/nodes/SoTransformSeparator.h>
 # include <Inventor/nodes/SoTranslation.h>
 # include <Inventor/events/SoMouseButtonEvent.h>
 # include <Inventor/nodes/SoTexture2.h>
@@ -555,6 +557,25 @@ struct View3DInventorViewer::Private
     std::string debugLabelFedText;
     SbVec2s debugLabelFedVp {0, 0};
 
+    // What the backend draws outside the scene graph — today the shadow
+    // ground — has no node for a bounding box traversal to find, so auto
+    // clipping cuts it away: SoRenderManagerP::setClippingPlanes applies
+    // an SoGetBoundingBoxAction on every render, and the answer holds the
+    // model alone. This callback carries the backend's own bounds into
+    // that traversal.
+    //
+    // It has to sit *directly under the render manager's superscene*,
+    // which Quarter builds with boundingBoxCaching OFF, so it is asked
+    // every traversal. The obvious place — SoFCUnifiedSelection::
+    // getBoundingBox, which already reports the same bounds — is below
+    // whatever separator the scene root is wrapped in (SoShadowGroup, in
+    // the very draw style that has a ground), and that one caches: it
+    // answers once and nothing the backend draws can invalidate a Coin
+    // cache. docs/CoinRetirement.md §1c.
+    CoinPtr<SoCallback> rendererBoundsNode;
+    static void rendererBoundsCB(void *ud, SoAction *action);
+    void addRendererBoundsNode();
+
     // Redraw throttle for a document being filled by a live operation. The
     // clock is monotonic and starts with the viewer, so the zero stamps below
     // read as long overdue: the first request of an import always renders at
@@ -594,6 +615,12 @@ struct View3DInventorViewer::Private
         // cheap frame must not unlock it.
         frameCostMs = frameCostMs > 0.0 ? 0.5 * frameCostMs + 0.5 * ms : ms;
     }
+
+    /// Describe the window background so the backend draws it behind
+    /// the scene: transparent geometry must blend against the real
+    /// background, not the backend's clear color. Shared by the
+    /// on-screen frame and offscreen captures.
+    Render::Background backgroundFeed(const QColor &col) const;
 
     void updateOverlayCaptures(SoGLRenderAction *glra);
     void clearOverlayCaptures();
@@ -742,6 +769,29 @@ void View3DInventorViewer::Private::overlayCaptureCB(void *ud, SoAction *action)
     auto *capture = static_cast<OverlayCapture *>(ud);
     capture->manager->capture(static_cast<SoGLRenderAction *>(action),
                               capture->root);
+}
+
+Render::Background
+View3DInventorViewer::Private::backgroundFeed(const QColor &col) const
+{
+    Render::Background rbg;
+    if (owner->hasGradientBackground()) {
+        SbColor fcol, tcol, mcol;
+        rbg.hasMid = owner->pcBackGround->getColorGradient(fcol, tcol, mcol);
+        rbg.type = owner->getGradientBackground() == Background::LinearGradient
+            ? Render::Background::LinearGradient
+            : Render::Background::RadialGradient;
+        rbg.fromColor = fcol.getPackedValue();
+        rbg.toColor = tcol.getPackedValue();
+        if (rbg.hasMid)
+            rbg.midColor = mcol.getPackedValue();
+    } else {
+        rbg.type = Render::Background::Flat;
+        rbg.fromColor = (uint32_t(col.red()) << 24)
+            | (uint32_t(col.green()) << 16)
+            | (uint32_t(col.blue()) << 8) | 0xff;
+    }
+    return rbg;
 }
 
 void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra)
@@ -1333,6 +1383,37 @@ void View3DInventorViewer::init()
     backlight->direction.setValue(-hl->direction.getValue());
     backlight->on.setValue(false); // by default off
 
+    // The third light of a three-point rig. Unlike the headlight it is not
+    // fixed to the eye: it lives after the camera, in world space, under a
+    // rotation slaved to the camera orientation, so its direction stays
+    // camera-relative while the geometry below it is not disturbed.
+    fillLight = new SoDirectionalLight();
+    fillLight->ref();
+    fillLight->setName("filllight");
+    fillLight->direction.setValue(-0.60F, -0.35F, -0.79F);
+    fillLight->intensity.setValue(0.6F);
+    fillLight->color.setValue(0.95F, 0.95F, 1.0F);
+    fillLight->on.setValue(false); // by default off
+
+    // Coin's own default (0.2 grey) until the preferences say otherwise, so
+    // simply having the node changes nothing.
+    environment = new SoEnvironment();
+    environment->ref();
+    environment->setName("environment");
+
+    lightRotation = new SoRotation;
+    lightRotation->ref();
+
+    auto threePointLightingSeparator = new SoTransformSeparator;
+    threePointLightingSeparator->addChild(lightRotation);
+    threePointLightingSeparator->addChild(fillLight);
+
+    viewerLightingRoot = new SoGroup;
+    viewerLightingRoot->ref();
+    viewerLightingRoot->setName("viewerLightingRoot");
+    viewerLightingRoot->addChild(threePointLightingSeparator);
+    viewerLightingRoot->addChild(environment);
+
     // Set up background scenegraph with image in it.
     backgroundroot = new SoSeparator;
     backgroundroot->ref();
@@ -1543,6 +1624,15 @@ View3DInventorViewer::~View3DInventorViewer()
     this->nonObjectGroup = nullptr;
     this->backlight->unref();
     this->backlight = nullptr;
+    this->viewerLightingRoot->unref();
+    this->viewerLightingRoot = nullptr;
+    this->lightRotation->rotation.disconnect();
+    this->lightRotation->unref();
+    this->lightRotation = nullptr;
+    this->fillLight->unref();
+    this->fillLight = nullptr;
+    this->environment->unref();
+    this->environment = nullptr;
 
     inventorSelection.reset(nullptr);
 
@@ -2196,7 +2286,23 @@ void View3DInventorViewer::applyOverrideMode()
     else if (SoFCUnifiedSelection::DisplayModeTessellation == mode) {
         this->shading = true;
         this->selectionRoot->overrideMode = SoFCUnifiedSelection::DisplayModeTessellation;
-        this->getSoRenderManager()->setRenderMode(SoRenderManager::HIDDEN_LINE);
+        // Coin's HIDDEN_LINE opens with clearBuffers(TRUE, TRUE) -- a
+        // colour+depth clear of the whole framebuffer, taken before it
+        // fills the scene depth-only. On the plain path that is exactly
+        // right. On the composited path it runs *after* the backend has
+        // rendered its frame into the same buffer, ignores the
+        // clearwindow/clearzbuffer arguments it was passed, and throws
+        // that frame away; and since the backend owns the geometry,
+        // SoFCRenderer emits none to put back. The window is left
+        // showing the clear colour.
+        //
+        // The backend implements this style itself -- faces filled in
+        // the background colour to occlude, then the triangle edges as
+        // geometry (BGFXView::submitTessellation) -- so it wants the
+        // plain mode and no second opinion from Coin.
+        this->getSoRenderManager()->setRenderMode(
+                _pimpl->renderer ? SoRenderManager::AS_IS
+                                 : SoRenderManager::HIDDEN_LINE);
     }
     else if (SoFCUnifiedSelection::DisplayModeHiddenLine == mode) {
         _pimpl->initHiddenLineConfig(true);
@@ -2365,10 +2471,18 @@ void View3DInventorViewer::Private::updateShadowGroundSwitch()
     // too would composite the two grounds on top of each other -
     // z-fighting bands where Coin's (differently blurred) shadow wins
     // the depth test.
-    if (!renderer
-            && _shadowParam<App::PropertyBool>(view, "ShowGround",
-                ViewParams::docShadowShowGround(),
-                ViewParams::getShadowShowGround()))
+    //
+    // Read first, decide after: _shadowParam is what creates the
+    // property, and && would short-circuit past it whenever a backend is
+    // active. The view would then carry every other Shadow_* property
+    // and not this one, so the per-view override could not be set at all
+    // -- assigning it from Python fails rather than creating it -- while
+    // the global preference still reached the backend through the bridge
+    // and hid the hole.
+    const bool showGround = _shadowParam<App::PropertyBool>(view,
+            "ShowGround", ViewParams::docShadowShowGround(),
+            ViewParams::getShadowShowGround());
+    if (!renderer && showGround)
         pcShadowGroundSwitch->whichChild = 0;
     else
         pcShadowGroundSwitch->whichChild = -1;
@@ -3123,6 +3237,26 @@ bool View3DInventorViewer::isBacklightEnabled() const
     return this->backlight->on.getValue();
 }
 
+SoDirectionalLight* View3DInventorViewer::getFillLight() const
+{
+    return this->fillLight;
+}
+
+void View3DInventorViewer::setFillLightEnabled(bool on)
+{
+    this->fillLight->on = on;
+}
+
+bool View3DInventorViewer::isFillLightEnabled() const
+{
+    return this->fillLight->on.getValue();
+}
+
+SoEnvironment* View3DInventorViewer::getEnvironment() const
+{
+    return this->environment;
+}
+
 void View3DInventorViewer::setSceneGraph(SoNode* root)
 {
     inherited::setSceneGraph(root);
@@ -3138,11 +3272,37 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
     //the geometry scene only
     SoNode* scene = this->getSoRenderManager()->getSceneGraph();
     if (scene && scene->getTypeId().isDerivedFrom(SoSeparator::getClassTypeId())) {
+        auto sceneroot = static_cast<SoSeparator*>(scene);
         sa.apply(scene);
         if (!sa.getPath()) {
-            static_cast<SoSeparator*>(scene)->insertChild(this->backlight, 0);
+            sceneroot->insertChild(this->backlight, 0);
+        }
+        // The fill light and the ambient environment go *after* the camera,
+        // in world space, but still above the render-cache root so the
+        // renderer backends see them too. The backlight and the headlight
+        // sit before the camera, which is what makes them eye-fixed.
+        sa.reset();
+        sa.setNode(this->viewerLightingRoot);
+        sa.apply(scene);
+        if (!sa.getPath()) {
+            // Anchored on the camera rather than on a fixed position: the
+            // scene root itself is swapped out by index when shadows are
+            // activated, so it is not something to count from.
+            int index = sceneroot->findChild(getSoRenderManager()->getCamera());
+            if (index >= 0) {
+                ++index;
+            }
+            else {
+                index = sceneroot->findChild(root);
+            }
+            sceneroot->insertChild(this->viewerLightingRoot,
+                                   index < 0 ? sceneroot->getNumChildren() : index);
         }
     }
+
+    _pimpl->addRendererBoundsNode();
+
+    syncLightRotation();
 
     navigation->findBoundingSphere();
 }
@@ -3260,8 +3420,12 @@ void View3DInventorViewer::savePicture(int width, int height, int sample, const 
         root->addChild(lm);
     }
 
+    // The same rig as the on-screen scene root, in the same order: the
+    // eye-fixed lights before the camera, the world-space ones after it.
     root->addChild(getHeadlight());
+    root->addChild(getBacklight());
     root->addChild(camera);
+    root->addChild(viewerLightingRoot);
     auto gl = new SoCallback;
     gl->setCallback(setGLWidgetCB, this->getGLWidget());
     root->addChild(gl);
@@ -3283,7 +3447,7 @@ void View3DInventorViewer::savePicture(int width, int height, int sample, const 
                                                       float(bgColor.alphaF())));
             }
             if (!renderer.render(root)) {
-                throw Base::RuntimeError("Offscreen rendering failed");
+                THROWM(Base::RuntimeError, "Offscreen rendering failed")
             }
 
             renderer.writeToImage(img);
@@ -3301,7 +3465,7 @@ void View3DInventorViewer::savePicture(int width, int height, int sample, const 
                                                     float(bgColor.blueF())));
             }
             if (!renderer.render(root)) {
-                throw Base::RuntimeError("Offscreen rendering failed");
+                THROWM(Base::RuntimeError, "Offscreen rendering failed")
             }
 
             renderer.writeToImage(img);
@@ -3550,14 +3714,14 @@ bool View3DInventorViewer::dumpToFile(SoNode* node, const char* filename, bool b
             vo = std::unique_ptr<SoVectorizeAction>(new SoVectorizePSAction());
         }
         else {
-            throw Base::ValueError("Not supported vector graphic");
+            THROWM(Base::ValueError, "Not supported vector graphic")
         }
 
         SoVectorOutput* out = vo->getOutput();
         if (!out || !out->openFile(filename)) {
             std::ostringstream a_out;
             a_out << "Cannot open file '" << filename << "'";
-            throw Base::FileSystemError(a_out.str());
+            THROWM(Base::FileSystemError, a_out.str())
         }
 
         saveGraphic(ps, col, vo.get());
@@ -3925,8 +4089,28 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
 
     const QColor col = this->backgroundColor();
     glViewport(0, 0, width, height);
-    glClearColor(float(col.redF()), float(col.greenF()), float(col.blueF()), float(col.alphaF()));
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // With a backend active the geometry is its to draw: the Coin
+    // traversal below skips it (SoFCRenderer::render returns early while
+    // canSkipInternal()), so without this an offscreen capture is a
+    // blank image. Same call as the on-screen frame, only rendered at
+    // the capture's size and into the framebuffer bound above.
+    bool externalRendered = false;
+    if (SoCamera* cam = _pimpl->renderer ? getSoRenderManager()->getCamera()
+                                         : nullptr) {
+        SbMatrix viewMat, projMat;
+        SbViewportRegion capvp {short(width), short(height)};
+        SbViewVolume vol = cam->getViewVolume(capvp.getViewportAspectRatio());
+        vol.getMatrices(viewMat, projMat);
+        _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
+        externalRendered = _pimpl->renderer->renderOffscreen(
+                col, &viewMat.getValue(), &projMat.getValue(), width, height);
+    }
+    if (!externalRendered) {
+        glClearColor(float(col.redF()), float(col.greenF()), float(col.blueF()),
+                     float(col.alphaF()));
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    }
 
     SoBoxSelectionRenderAction gl(SbViewportRegion(width, height));
     // When creating a new GL render action we have to copy over the cache context id
@@ -3935,16 +4119,32 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
     gl.setCacheContext(id);
     gl.setTransparencyType(SoGLRenderAction::SORTED_OBJECT_SORTED_TRIANGLE_BLEND);
 
+    // The backend's output already carries the background, and repainting
+    // the gradient would erase it — the same suppression the on-screen
+    // frame does, for the same reason.
+    pcBackGround->setSuppressed(externalRendered);
     gl.apply(this->backgroundroot);
+    pcBackGround->setSuppressed(false);
     // The render action of the render manager has set the depth function to GL_LESS
     // while creating a new render action has it set to GL_LEQUAL. So, in order to get
     // the exact same result set it explicitly to GL_LESS.
     glDepthFunc(GL_LESS);
+    SoDatumLabel::SuppressGLRender =
+        externalRendered && _pimpl->editingBackendFed;
+    SoFCRenderCacheManager::SuppressImageGLRender =
+        SoDatumLabel::SuppressGLRender;
     gl.apply(this->getSoRenderManager()->getSceneGraph());
-    gl.apply(this->foregroundroot);
+    SoDatumLabel::SuppressGLRender = false;
+    SoFCRenderCacheManager::SuppressImageGLRender = false;
 
-    if (this->axiscrossEnabled) {
-        this->drawAxisCross();
+    // Foreground superimposition and the corner axis cross come from the
+    // backend's overlay feeds on a backend frame, like on screen.
+    if (!externalRendered) {
+        gl.apply(this->foregroundroot);
+
+        if (this->axiscrossEnabled) {
+            this->drawAxisCross();
+        }
     }
 
     fbo->release();
@@ -4085,6 +4285,33 @@ void View3DInventorViewer::onGetBoundingBox(SoGetBoundingBoxAction *action)
     }
 }
 
+void View3DInventorViewer::Private::rendererBoundsCB(void *ud, SoAction *action)
+{
+    if (!action->isOfType(SoGetBoundingBoxAction::getClassTypeId()))
+        return;
+    auto self = static_cast<View3DInventorViewer::Private *>(ud);
+    // The same report SoFCUnifiedSelection makes, from a place a cache
+    // cannot answer for. Reaching both is a union of one box with itself.
+    self->owner->onGetBoundingBox(static_cast<SoGetBoundingBoxAction *>(action));
+}
+
+void View3DInventorViewer::Private::addRendererBoundsNode()
+{
+    auto scene = owner->getSoRenderManager()->getSceneGraph();
+    if (!scene || !scene->isOfType(SoSeparator::getClassTypeId()))
+        return;
+    auto super = static_cast<SoSeparator *>(scene);
+    if (!rendererBoundsNode) {
+        rendererBoundsNode = new SoCallback;
+        rendererBoundsNode->setName("RendererBounds");
+        rendererBoundsNode->setCallback(&Private::rendererBoundsCB, this);
+    }
+    // Appended, not inserted: activateShadow() swaps the scene root by
+    // index, and a node at the front would shift every one of them.
+    if (super->findChild(rendererBoundsNode) < 0)
+        super->addChild(rendererBoundsNode);
+}
+
 bool View3DInventorViewer::hasExternalRenderer() const
 {
     return _pimpl->renderer != nullptr;
@@ -4186,6 +4413,16 @@ void View3DInventorViewer::setRendererType(const std::string &type)
     // The Coin shadow ground is suppressed while a backend is active
     // (it draws its own); re-evaluate if the Shadow style is on.
     _pimpl->updateShadowGroundSwitch();
+    // Likewise the Coin render mode, which Tessellation picks differently
+    // with a backend present: it is sticky, so switching the backend on
+    // or off under that style already applied has to re-decide it. Only
+    // Tessellation -- applyOverrideMode() would re-enter activateShadow()
+    // for the Shadow style, which is neither cheap nor wanted here.
+    if (SoFCUnifiedSelection::DisplayModeTessellation == overrideMode.c_str()) {
+        getSoRenderManager()->setRenderMode(
+                _pimpl->renderer ? SoRenderManager::AS_IS
+                                 : SoRenderManager::HIDDEN_LINE);
+    }
 }
 
 void View3DInventorViewer::pickAndSelect(const SbVec3f &origin,
@@ -4336,6 +4573,16 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             RenderParams::docAOIntensity(), RenderParams::getAOIntensity());
     _renderParam<App::PropertyFloat>(view, "AOResolution",
             RenderParams::docAOResolution(), RenderParams::getAOResolution());
+    // Cavity composes with occlusion rather than replacing it, so it sits
+    // with the AO block.
+    _renderParam<App::PropertyBool>(view, "Cavity",
+            RenderParams::docCavity(), RenderParams::getCavity());
+    _renderParam<App::PropertyFloat>(view, "CavityValley",
+            RenderParams::docCavityValley(), RenderParams::getCavityValley());
+    _renderParam<App::PropertyFloat>(view, "CavityRidge",
+            RenderParams::docCavityRidge(), RenderParams::getCavityRidge());
+    _renderParam<App::PropertyFloat>(view, "CavityRadius",
+            RenderParams::docCavityRadius(), RenderParams::getCavityRadius());
     _renderParam<App::PropertyBool>(view, "PBR",
             RenderParams::docPBR(), RenderParams::getPBR());
     static const App::PropertyFloatConstraint::Constraints _unit_cstr(0.0,1.0,0.1);
@@ -4372,6 +4619,25 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyBool>(view, "PBREnvBackground",
             RenderParams::docPBREnvBackground(),
             RenderParams::getPBREnvBackground());
+    // Matcap is the other shading model: it overrides PBR while on, so it
+    // follows it here.
+    _renderParam<App::PropertyBool>(view, "Matcap",
+            RenderParams::docMatcap(), RenderParams::getMatcap());
+    // An enumeration, like Render_AOMethod above: materialized by hand so
+    // the names are installed before the value is set.
+    if (!view->getPropertyByName("Render_MatcapPreset")) {
+        static const char* _matcapPresetEnums[] =
+            {"Studio", "Clay", "Metal", "Pearl", nullptr};
+        auto prop = static_cast<App::PropertyEnumeration*>(
+                view->addDynamicProperty("App::PropertyEnumeration",
+                                         "Render_MatcapPreset", "Render",
+                                         RenderParams::docMatcapPreset()));
+        prop->setEnums(_matcapPresetEnums);
+        prop->setValue(long(RenderParams::getMatcapPreset()));
+    }
+    _renderParam<App::PropertyFloatConstraint>(view, "MatcapTint",
+            RenderParams::docMatcapTint(), RenderParams::getMatcapTint(),
+            applyUnitConstraint);
     _renderParam<App::PropertyFloat>(view, "BumpScale",
             RenderParams::docBumpScale(), RenderParams::getBumpScale());
     _renderParam<App::PropertyBool>(view, "Parallax",
@@ -4395,6 +4661,38 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyFloat>(view, "BloomRadius",
             RenderParams::docBloomRadius(),
             RenderParams::getBloomRadius());
+    // The renderer's own scene light (docs/CoinRetirement.md stage 4a).
+    // Off by default and inert while off: a light found in the Coin
+    // traversal still wins, so the Shadow draw style is unaffected.
+    // Direction and position are vectors here rather than the three
+    // scalars the global parameters use, to match the Shadow_* shape a
+    // later stage has to migrate from.
+    _renderParam<App::PropertyBool>(view, "Light",
+            RenderParams::docLight(), RenderParams::getLight());
+    _renderParam<App::PropertyVector>(view, "LightDirection",
+            RenderParams::docLight(),
+            Base::Vector3d(RenderParams::getLightDirectionX(),
+                           RenderParams::getLightDirectionY(),
+                           RenderParams::getLightDirectionZ()));
+    _renderParam<App::PropertyColor>(view, "LightColor",
+            RenderParams::docLightColor(),
+            App::Color(uint32_t(RenderParams::getLightColor())));
+    _renderParam<App::PropertyFloat>(view, "LightIntensity",
+            RenderParams::docLightIntensity(),
+            RenderParams::getLightIntensity());
+    _renderParam<App::PropertyBool>(view, "LightSpot",
+            RenderParams::docLightSpot(), RenderParams::getLightSpot());
+    _renderParam<App::PropertyVector>(view, "LightPosition",
+            RenderParams::docLightSpot(),
+            Base::Vector3d(RenderParams::getLightPositionX(),
+                           RenderParams::getLightPositionY(),
+                           RenderParams::getLightPositionZ()));
+    _renderParam<App::PropertyFloat>(view, "LightCutOffAngle",
+            RenderParams::docLightCutOffAngle(),
+            RenderParams::getLightCutOffAngle());
+    _renderParam<App::PropertyFloat>(view, "LightDropOffRate",
+            RenderParams::docLightDropOffRate(),
+            RenderParams::getLightDropOffRate());
     _renderParam<App::PropertyBool>(view, "SunDisc",
             RenderParams::docSunDisc(), RenderParams::getSunDisc());
     _renderParam<App::PropertyFloat>(view, "SunDiscSize",
@@ -4599,27 +4897,7 @@ void View3DInventorViewer::renderScene()
         const SbViewportRegion vp = getSoRenderManager()->getViewportRegion();
         SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
-        // Describe the background so the backend draws it behind the scene;
-        // transparent geometry must blend against the real background, not
-        // the backend's clear color.
-        Render::Background rbg;
-        if (hasGradientBackground()) {
-            SbColor fcol, tcol, mcol;
-            rbg.hasMid = pcBackGround->getColorGradient(fcol, tcol, mcol);
-            rbg.type = getGradientBackground() == Background::LinearGradient
-                ? Render::Background::LinearGradient
-                : Render::Background::RadialGradient;
-            rbg.fromColor = fcol.getPackedValue();
-            rbg.toColor = tcol.getPackedValue();
-            if (rbg.hasMid)
-                rbg.midColor = mcol.getPackedValue();
-        } else {
-            rbg.type = Render::Background::Flat;
-            rbg.fromColor = (uint32_t(col.red()) << 24)
-                | (uint32_t(col.green()) << 16)
-                | (uint32_t(col.blue()) << 8) | 0xff;
-        }
-        _pimpl->renderer->setBackground(rbg);
+        _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         // render() publishes on the way past when something is listening
         // (docs/HeadlessServe.md §4), and a published object entry names
         // its object for the viewer. The names come from here rather
@@ -5124,7 +5402,7 @@ SbVec3f View3DInventorViewer::getPointOnXYPlaneOfPlacement(const SbVec2s& pnt,
     SoCamera* pCam = this->getSoRenderManager()->getCamera();
 
     if (!pCam)
-        throw Base::RuntimeError("No camera node found");
+        THROWM(Base::RuntimeError, "No camera node found")
 
     SbViewVolume vol = pCam->getViewVolume();
     SbLine line;
@@ -5140,7 +5418,7 @@ SbVec3f View3DInventorViewer::getPointOnXYPlaneOfPlacement(const SbVec2s& pnt,
     if (xyPlane.intersect(line, pt))
         return pt;
 
-    throw Base::RuntimeError("No intersection found");
+    THROWM(Base::RuntimeError, "No intersection found")
 }
 
 SbVec3f View3DInventorViewer::getPointOnLine(const SbVec2s& pnt,
@@ -5487,18 +5765,32 @@ void View3DInventorViewer::setCameraType(SoType type)
 {
     inherited::setCameraType(type);
 
+    SoCamera* cam = this->getSoRenderManager()->getCamera();
+    if (!cam) {
+        return;
+    }
+
     if (type.isDerivedFrom(SoPerspectiveCamera::getClassTypeId())) {
         // When doing a viewAll() for an orthographic camera and switching
         // to perspective the scene looks completely strange because of the
         // heightAngle. Setting it to 45 deg also causes an issue with a too
         // close camera but we don't have this other ugly effect.
-        SoCamera* cam = this->getSoRenderManager()->getCamera();
-        if (!cam) {
-            return;
-        }
-
         static_cast<SoPerspectiveCamera*>(cam)->heightAngle = (float)(M_PI / 4.0);  // NOLINT
     }
+
+    // The camera node itself was just replaced, so the fill light's rotation
+    // has to be slaved to the new one.
+    syncLightRotation();
+}
+
+void View3DInventorViewer::syncLightRotation()
+{
+    SoCamera* cam = this->getSoRenderManager()->getCamera();
+    if (!cam) {
+        return;
+    }
+    lightRotation->rotation.disconnect();
+    lightRotation->rotation.connectFrom(&cam->orientation);
 }
 
 void View3DInventorViewer::moveCameraTo(const SbRotation& orientation, const SbVec3f& position, int duration)

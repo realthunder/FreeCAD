@@ -8,7 +8,12 @@
  * a_position : quad corner; x = end of the segment (0 = A, 1 = B),
  *              y = side of the line (-1 / +1)
  * i_data0    : xyz = segment endpoint A (model space)
+ *              w   = stipple run: model-space distance from the start
+ *                    of the polyline this segment belongs to (0 on a
+ *                    segment that starts one)
  * i_data1    : xyz = segment endpoint B (model space)
+ *              w   = this segment's model-space length (0 = unknown,
+ *                    the stipple then counts from A as it used to)
  * i_data2    : per-vertex color at A
  * i_data3    : per-vertex color at B
  * u_params   : y = line width in pixels
@@ -17,10 +22,11 @@
  *                  polygon-offset fill still blends over its outline)
  *
  * The LINE_PATTERN variant additionally outputs v_dist for the stipple
- * fragment shader: x = pixel distance along the segment from A times the
- * vertex clip w, y = clip w. Dividing x/y in the fragment shader undoes
- * the hardware's perspective correction, i.e. yields the screen-linear
- * distance glLineStipple counts.
+ * fragment shader: x = pixel distance along the polyline (this segment
+ * plus the run before it) times the vertex clip w, y = clip w. Dividing
+ * x/y in the fragment shader undoes the hardware's perspective
+ * correction, i.e. yields the screen-linear distance glLineStipple
+ * counts.
  */
 
 uniform vec4 u_params;
@@ -74,7 +80,18 @@ void main()
 		             mul(u_model[0], vec4(i_data1.xyz, 1.0)).xyz, t);
 #endif
 #ifdef LINE_PATTERN
-		v_dist = vec2(t * len * pos.w, pos.w);
+		// Where this vertex falls in the pattern: the run already
+		// covered before this segment plus the distance along it.
+		// The run arrives in model units (i_data0.w, with the
+		// segment's own model length in i_data1.w) and is scaled by
+		// this segment's screen-per-model ratio — exact under an
+		// orthographic camera, and under perspective continuous
+		// enough along a tessellated curve that the dashes survive
+		// it. Restarting per segment instead drew such a curve
+		// solid, every segment being shorter than one dash.
+		float mdlLen = i_data1.w;
+		float runPx = mdlLen > 1.0e-9 ? i_data0.w * (len / mdlLen) : 0.0;
+		v_dist = vec2((runPx + t * len) * pos.w, pos.w);
 #endif
 	}
 }

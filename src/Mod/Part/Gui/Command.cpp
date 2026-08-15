@@ -690,16 +690,16 @@ void CmdPartImport::activated(int iMsg)
         if (!pDoc) // no document
             return;
 
-        fn = Base::Tools::escapeEncodeFilename(fn);
+        std::string literal = Base::Tools::pythonLiteral(fn);
         openCommand(QT_TRANSLATE_NOOP("Command", "Import Part"));
         if (select == filter[1] ||
             select == filter[3]) {
             doCommand(Doc, "import ImportGui");
-            doCommand(Doc, "ImportGui.insert(\"%s\",\"%s\")", (const char*)fn.toUtf8(), pDoc->getName());
+            doCommand(Doc, "ImportGui.insert(%s,\"%s\")", literal.c_str(), pDoc->getName());
         }
         else {
             doCommand(Doc, "import Part");
-            doCommand(Doc, "Part.insert(\"%s\",\"%s\")", (const char*)fn.toUtf8(), pDoc->getName());
+            doCommand(Doc, "Part.insert(%s,\"%s\")", literal.c_str(), pDoc->getName());
         }
         commitCommand();
 
@@ -800,7 +800,7 @@ void CmdPartImportCurveNet::activated(int iMsg)
         QFileInfo fi; fi.setFile(fn);
         openCommand(QT_TRANSLATE_NOOP("Command", "Part Import Curve Net"));
         doCommand(Doc,"f = App.activeDocument().addObject(\"Part::CurveNet\",\"%s\")", (const char*)fi.baseName().toUtf8());
-        doCommand(Doc,"f.FileName = \"%s\"",(const char*)fn.toUtf8());
+        doCommand(Doc,"f.FileName = %s",Base::Tools::pythonLiteral(fn).c_str());
         commitCommand();
         updateActive();
     }

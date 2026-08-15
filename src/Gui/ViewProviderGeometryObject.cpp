@@ -47,6 +47,9 @@
 #include <QImage>
 #include <QMenu>
 
+#include <Base/Reader.h>
+#include <Base/Tools.h>
+
 #include <App/PropertyFile.h>
 
 #include <App/GeoFeature.h>
@@ -65,6 +68,7 @@
 #include "SoFCSelection.h"
 #include "SoFCUnifiedSelection.h"
 #include "Inventor/SoFCRenderMaterial.h"
+#include "Renderer/Renderer.h"
 #include "View3DInventorViewer.h"
 
 
@@ -103,14 +107,29 @@ ViewProviderGeometryObject::ViewProviderGeometryObject()
     ADD_PROPERTY_TYPE(ShapeColor, (r, g, b), osgroup, App::Prop_None, "Set shape color");
     ADD_PROPERTY_TYPE(Transparency, (initialTransparency), osgroup, App::Prop_None, "Set object transparency");
     Transparency.setConstraints(&intPercent);
+
+    // The appearance is the one storage now, so it starts out agreeing with
+    // ShapeColor and Transparency instead of carrying DEFAULT's colour until
+    // the first change syncs them. The default material itself stays this
+    // fork's (STEEL under USER_DEFINED), not upstream's.
     App::Material mat(App::Material::DEFAULT);
-    ADD_PROPERTY_TYPE(ShapeMaterial,(mat), osgroup, App::Prop_None, "Shape material");
+    mat.diffuseColor.set(r, g, b);
+    mat.transparency = Base::fromPercent(initialTransparency);
+    ADD_PROPERTY_TYPE(ShapeAppearance, (mat), osgroup, App::Prop_None, "Shape appearance");
+    ADD_PROPERTY_TYPE(ShapeMaterial, (mat), osgroup, App::Prop_None, "Shape material");
+    // Retired as a store; kept only so old macros and old documents still
+    // land somewhere. One datum should not be two rows in the editor.
+    ShapeMaterial.setStatus(App::Property::Hidden, true);
     ADD_PROPERTY_TYPE(BoundingBox, (false), dogroup, App::Prop_None, "Display object bounding box");
 
+    // Both names write through to the appearance from here on. Wired after
+    // the ADD_PROPERTY calls above, whose own writes must not be redirected
+    // while the appearance is still being constructed.
+    ShapeColor.setAppearance(&ShapeAppearance);
+    ShapeMaterial.setAppearance(&ShapeAppearance);
+
     pcShapeMaterial = new SoMaterial;
-    pcShapeMaterial->diffuseColor.setValue(r, g, b);
-    pcShapeMaterial->transparency = float(initialTransparency);
-    ShapeMaterial.setTransparency((float)initialTransparency / 100.0f);
+    setCoinAppearance(mat);
     pcShapeMaterial->ref();
 
     sPixmap = "Feature";
@@ -144,44 +163,132 @@ ViewProviderGeometryObject::~ViewProviderGeometryObject()
     delete pcSwitchSensor;
 }
 
+namespace {
+
+/** Give the whole appearance one material, without losing the face colours
+ *
+ * A single material is a statement about the object, and an object having one
+ * appearance does not mean its faces have stopped having colours of their own.
+ * So a per-face diffuse field survives and every other field is set across the
+ * list; only an appearance that already holds one diffuse colour is replaced
+ * outright. Without this, restoring a document whose ShapeMaterial follows its
+ * per-face colours -- which is every document written before ShapeAppearance,
+ * since ShapeMaterial sorts after DiffuseColor -- throws those colours away.
+ */
+void applyWholeMaterial(App::PropertyMaterialList &appearance, const App::Material &value)
+{
+    // ShapeMaterial cannot state a shading model -- it is a plain material
+    // and its serialised form has no room for one -- so it must never
+    // restate the appearance's. Without this the compatibility name would
+    // convert a PBR appearance to Phong just by being restored after it
+    // (it sorts later), or by an old macro writing through it.
+    App::Material mat = value;
+    mat.pbr = appearance.isPBR();
+    // A surface finish is the same case one field further on: ShapeMaterial's
+    // serialised form has no room for one either, so the value arriving here
+    // always states None -- and the single-entry path below REPLACES the list,
+    // which would wipe a finish the appearance had just restored (this name
+    // sorts after ShapeAppearance). Take the appearance's own.
+    mat.finish = appearance.getFinish(0);
+    // The whole-value path replaces the list, so it is only safe while the
+    // finish is uniform too; a per-face finish takes the field-by-field path
+    // below, which does not touch it at all.
+    if (appearance.getDiffuseColors().size() <= 1 && appearance.getFinishes().size() <= 1) {
+        appearance.setValue(mat);
+        return;
+    }
+    App::PropertyMaterialList::atomic_change guard(appearance);
+    appearance.setAmbientColor(mat.ambientColor);
+    appearance.setSpecularColor(mat.specularColor);
+    appearance.setEmissiveColor(mat.emissiveColor);
+    appearance.setShininess(mat.shininess);
+    appearance.setTransparency(mat.transparency);
+    appearance.setImage(mat.image);
+    appearance.setImagePath(mat.imagePath);
+    appearance.setUuid(mat.uuid);
+    guard.tryInvoke();
+}
+
+}  // namespace
+
 void ViewProviderGeometryObject::onChanged(const App::Property* prop)
 {
     Gui::ColorUpdater colorUpdater;
 
-    // Actually, the properties 'ShapeColor' and 'Transparency' are part of the property 'ShapeMaterial'.
-    // Both redundant properties are kept due to more convenience for the user. But we must keep the values
-    // consistent of all these properties.
+    // ShapeColor and Transparency are the single-value face of ShapeAppearance,
+    // kept as their own properties because they are what the user reaches for.
+    // The appearance holds the value; these two mirror entry 0 of it.
     if (prop == &ShapeColor) {
-        const App::Color &c = ShapeColor.getValue();
+        // The push lives here, not only in ShapeColor::setValue, because the
+        // base's setPyObject and Paste call setValue non-virtually and would
+        // otherwise update the mirror without ever reaching the appearance.
+        // Guarded, so the appearance mirroring back cannot ping-pong.
+        //
+        // The rgb only: the entry's alpha is its opacity, Transparency's to
+        // move. With one store a whole-colour push would drag whatever alpha
+        // ShapeColor happens to hold over the object's transparency -- the
+        // old second store used to absorb exactly that.
+        Base::Color c = ShapeColor.getValue();
         pcShapeMaterial->diffuseColor.setValue(c.r, c.g, c.b);
-        if (c != ShapeMaterial.getValue().diffuseColor)
-            ShapeMaterial.setDiffuseColor(c);
-    }
-    else if (prop == &Transparency) {
-        const App::Material &Mat = ShapeMaterial.getValue();
-        long value = (long)(100 * Mat.transparency);
-        if (value != Transparency.getValue()) {
-            float trans = Transparency.getValue() / 100.0f;
-            pcShapeMaterial->transparency = trans;
-            ShapeMaterial.setTransparency(trans);
-        }
+        const Base::Color entry = ShapeAppearance.getDiffuseColor(0);
+        c.a = entry.a;
+        if (c != entry)
+            ShapeAppearance.setDiffuseColor(c);
     }
     else if (prop == &ShapeMaterial) {
+        const App::Material &mat = ShapeMaterial.getValue();
+        // Only a single appearance can be pushed into the one Coin material
+        // node, as below: a per-face one is carried by the shape's own
+        // material arrays and pushing a single colour would wipe them.
+        if (ShapeAppearance.getDiffuseColors().size() <= 1)
+            setCoinAppearance(mat);
+        if (!(mat == ShapeAppearance.getMaterial(0)))
+            applyWholeMaterial(ShapeAppearance, mat);
+    }
+    else if (prop == &Transparency) {
+        long value = Base::toPercent(ShapeAppearance.getTransparency(0));
+        if (value != Transparency.getValue()) {
+            float trans = Base::fromPercent(Transparency.getValue());
+            pcShapeMaterial->transparency = trans;
+            ShapeAppearance.setTransparency(trans);
+        }
+    }
+    else if (prop == &ShapeAppearance) {
         if (getObject() && getObject()->testStatus(App::ObjectStatus::TouchOnColorChange))
             getObject()->touch(true);
-        const App::Material &Mat = ShapeMaterial.getValue();
-        long value = (long)(100 * Mat.transparency);
+        long value = Base::toPercent(ShapeAppearance.getTransparency(0));
         if (value != Transparency.getValue())
             Transparency.setValue(value);
-        const App::Color& color = Mat.diffuseColor;
-        pcShapeMaterial->ambientColor.setValue(Mat.ambientColor.r,Mat.ambientColor.g,Mat.ambientColor.b);
-        pcShapeMaterial->diffuseColor.setValue(Mat.diffuseColor.r,Mat.diffuseColor.g,Mat.diffuseColor.b);
-        pcShapeMaterial->specularColor.setValue(Mat.specularColor.r,Mat.specularColor.g,Mat.specularColor.b);
-        pcShapeMaterial->emissiveColor.setValue(Mat.emissiveColor.r,Mat.emissiveColor.g,Mat.emissiveColor.b);
-        pcShapeMaterial->shininess.setValue(Mat.shininess);
-        pcShapeMaterial->transparency.setValue(Mat.transparency);
-        if (color != ShapeColor.getValue())
-            ShapeColor.setValue(Mat.diffuseColor);
+        // Only a single appearance can be pushed into the one Coin material
+        // node; a per-face list is carried by the shape's own material arrays
+        // (ViewProviderPartExt), so leave the node alone in that case. The
+        // node gets the Phong reading; the ShapeMaterial mirror below stays
+        // raw, because it writes back into the appearance and a derived
+        // mirror would quietly convert the stored values.
+        if (ShapeAppearance.getSize() == 1)
+            setCoinAppearance(ShapeAppearance.getPhongMaterial(0));
+        // Refresh the two compatibility names off the appearance. mirrorValue,
+        // not setValue: these read from the store they would otherwise write
+        // straight back into.
+        //
+        // Only while the appearance holds one diffuse colour, though: entry 0
+        // of a per-face appearance is one face, not the object, and taking it
+        // for the object would be worse than stale. ViewProviderPartExt
+        // answers a ShapeColor change by collapsing the face colours to it --
+        // so a per-face import that mirrored would throw away the very
+        // colours it had just applied.
+        if (ShapeAppearance.getDiffuseColors().size() <= 1) {
+            // Alpha included: the appearance's diffuse alpha IS the entry's
+            // opacity, and a mirror carrying any other alpha stops being
+            // equal to it -- so the equality check in mirrorValue fires, the
+            // write announces, and the onChanged web pushes the stale alpha
+            // straight back into the appearance it was mirroring.
+            ShapeColor.mirrorValue(ShapeAppearance.getDiffuseColor(0));
+            ShapeMaterial.mirrorValue(ShapeAppearance.getMaterial(0));
+        }
+        // A PBR-mode appearance rides the render material node (its
+        // metallic/roughness), so it has to follow appearance changes too
+        updateRenderMaterial();
         Gui::ColorUpdater::addObject(getObject());
     }
     else if (prop == &BoundingBox) {
@@ -196,6 +303,131 @@ void ViewProviderGeometryObject::onChanged(const App::Property* prop)
     }
 
     ViewProviderDragger::onChanged(prop);
+}
+
+// ⭐ Registered under a leading underscore, which is what marks a property
+// type as one container's own member rather than a value a user may add
+// (App::Property::isInternalType): both of these are names over
+// ShapeAppearance and are wired to it by the constructor below, so a
+// standalone instance -- all addDynamicProperty can make -- would be wired
+// to nothing. The C++ names are left alone; only the registered type name
+// carries the mark. Nothing reads the pre-underscore name: both types were
+// added during this development cycle, so no document anywhere states one.
+TYPESYSTEM_SOURCE_P(Gui::PropertyShapeColor)
+void Gui::PropertyShapeColor::init()
+{
+    initSubclass(Gui::PropertyShapeColor::classTypeId, "Gui::_PropertyShapeColor",
+                 "App::PropertyColor", &Gui::PropertyShapeColor::create);
+}
+
+TYPESYSTEM_SOURCE_P(Gui::PropertyShapeMaterial)
+void Gui::PropertyShapeMaterial::init()
+{
+    initSubclass(Gui::PropertyShapeMaterial::classTypeId, "Gui::_PropertyShapeMaterial",
+                 "App::PropertyMaterial", &Gui::PropertyShapeMaterial::create);
+}
+
+void PropertyShapeColor::setValue(const Base::Color &col)
+{
+    App::PropertyColor::setValue(col);
+    if (_appearance) {
+        // The rgb only; the entry's alpha is the object's transparency and
+        // moves through Transparency (see the onChanged push).
+        Base::Color c = col;
+        c.a = _appearance->getDiffuseColor(0).a;
+        _appearance->setDiffuseColor(c);
+    }
+}
+
+void PropertyShapeColor::setValue(float r, float g, float b, float a)
+{
+    setValue(Base::Color(r, g, b, a));
+}
+
+void PropertyShapeColor::setValue(uint32_t rgba)
+{
+    Base::Color col;
+    col.setPackedValue(rgba);
+    setValue(col);
+}
+
+void PropertyShapeColor::applyToAppearance()
+{
+    // A per-face appearance is the more specific value and already restored:
+    // leave it alone rather than collapse or overwrite its first entry. The
+    // rgb only, as every ShapeColor push: an old document's transparency
+    // arrives through ShapeMaterial and Transparency, which restore later.
+    if (_appearance && _appearance->getDiffuseColors().size() <= 1) {
+        Base::Color c = getValue();
+        c.a = _appearance->getDiffuseColor(0).a;
+        _appearance->setDiffuseColor(c);
+    }
+}
+
+void PropertyShapeColor::Restore(Base::XMLReader &reader)
+{
+    App::PropertyColor::Restore(reader);
+    applyToAppearance();
+}
+
+void PropertyShapeMaterial::setValue(const App::Material &mat)
+{
+    App::PropertyMaterial::setValue(mat);
+    if (_appearance)
+        applyWholeMaterial(*_appearance, mat);
+}
+
+void PropertyShapeMaterial::applyToAppearance()
+{
+    // Also the entry point for an old document's ShapeMaterial, which arrives
+    // after its per-face colours: those are the more specific value and the
+    // rest of the material still applies over them.
+    if (_appearance)
+        applyWholeMaterial(*_appearance, getValue());
+}
+
+void PropertyShapeMaterial::Restore(Base::XMLReader &reader)
+{
+    App::PropertyMaterial::Restore(reader);
+    applyToAppearance();
+}
+
+void ViewProviderGeometryObject::setCoinAppearance(const App::Material &mat)
+{
+    pcShapeMaterial->ambientColor.setValue(mat.ambientColor.r, mat.ambientColor.g, mat.ambientColor.b);
+    pcShapeMaterial->diffuseColor.setValue(mat.diffuseColor.r, mat.diffuseColor.g, mat.diffuseColor.b);
+    pcShapeMaterial->specularColor.setValue(mat.specularColor.r, mat.specularColor.g, mat.specularColor.b);
+    pcShapeMaterial->emissiveColor.setValue(mat.emissiveColor.r, mat.emissiveColor.g, mat.emissiveColor.b);
+    pcShapeMaterial->shininess.setValue(mat.shininess);
+    pcShapeMaterial->transparency.setValue(mat.transparency);
+}
+
+void ViewProviderGeometryObject::handleChangedPropertyType(Base::XMLReader &reader,
+                                                           const char *TypeName,
+                                                           App::Property *prop)
+{
+    // ShapeColor and ShapeMaterial kept their names but changed type when
+    // their storage moved into ShapeAppearance, so a document written before
+    // that arrives here rather than at handleChangedPropertyName. Restore
+    // through a stand-in of the old type and fold the value in; without this
+    // the base does nothing and every such object silently loses its colour.
+    if (prop == &ShapeColor
+            && strcmp(TypeName, App::PropertyColor::getClassTypeId().getName()) == 0) {
+        App::PropertyColor old;
+        old.Restore(reader);
+        ShapeColor.mirrorValue(old.getValue());
+        ShapeColor.applyToAppearance();
+        return;
+    }
+    if (prop == &ShapeMaterial
+            && strcmp(TypeName, App::PropertyMaterial::getClassTypeId().getName()) == 0) {
+        App::PropertyMaterial old;
+        old.Restore(reader);
+        ShapeMaterial.mirrorValue(old.getValue());
+        ShapeMaterial.applyToAppearance();
+        return;
+    }
+    ViewProviderDragger::handleChangedPropertyType(reader, TypeName, prop);
 }
 
 namespace {
@@ -236,6 +468,49 @@ bool loadTextureImage(const char *path, SoSFImage &field,
                        packed.data());
     }
     return true;
+}
+
+// Fill in what a stated finish leaves unsaid: a pattern authored with no
+// pitch (or with the placeholder minimum App::SurfaceFinish::normalize()
+// floors an unstated one to) gets the size that pattern has on a real
+// part, and a depth that keeps its flank slopes machinable. Millimetres,
+// absolute rather than scaled to the model -- a finish is a physical
+// fact about the surface, and a 0.8 mm knurl stays 0.8 mm whether it is
+// cut on a thumbscrew or on a capstan.
+void applyFinishDefaults(App::SurfaceFinish &finish)
+{
+    float pitch = 0.0f;
+    float depthratio = 0.0f;
+    switch (finish.pattern) {
+        case App::SurfaceFinish::Knurl:
+        case App::SurfaceFinish::KnurlStraight:
+            pitch = 0.8f;   // a common medium diamond knurl
+            depthratio = 0.3f;
+            break;
+        case App::SurfaceFinish::Brushed:
+            pitch = 0.15f;  // fine scratch lay
+            depthratio = 0.1f;
+            break;
+        case App::SurfaceFinish::Blasted:
+            pitch = 0.12f;  // bead craters
+            // Shallow: a crater as deep as a third of its width reads
+            // as lunar rather than as blasted (measured against the
+            // depth sweep, 2026-08-14)
+            depthratio = 0.15f;
+            break;
+        case App::SurfaceFinish::Turned:
+            pitch = 0.25f;  // lathe feed marks
+            depthratio = 0.12f;
+            break;
+        default:
+            // None, or a pattern only a later build knows: nothing to
+            // default, and the backend draws neither
+            return;
+    }
+    if (finish.pitch <= App::SurfaceFinish::MinPitch)
+        finish.pitch = pitch;
+    if (finish.depth <= 0.0f)
+        finish.depth = finish.pitch * depthratio;
 }
 
 } // anonymous namespace
@@ -398,6 +673,139 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     };
     float metallic = floatProp("Render_Metallic");
     float roughness = floatProp("Render_Roughness");
+    // A PBR-mode appearance is authored material data and beats the
+    // Render_* overrides, which predate it as the only way to state
+    // these. Entry 0 -- exact for a uniform appearance; a per-face one
+    // is approximated by its first entry until the per-face streams
+    // carry the raw values.
+    const bool pbr = ShapeAppearance.isPBR();
+    // Per-face factor pair, when the appearance's entries genuinely
+    // differ in it: neither factor has a Coin material field to ride
+    // (see SoFCPbrElement), so the arrays travel on the node below and
+    // the render cache bakes them into the per-vertex material stream.
+    std::vector<float> metallics;
+    std::vector<float> roughnesses;
+    if (pbr) {
+        metallic = ShapeAppearance.getMetallic(0);
+        // The renderer reads a roughness <= 0 as unset (and derives from
+        // the shininess), so an authored mirror finish stops at the
+        // shader's own lower clamp instead
+        roughness = ShapeAppearance.getRoughness(0);
+        if (roughness < 0.02f)
+            roughness = 0.02f;
+        const int count = ShapeAppearance.getSize();
+        bool varies = false;
+        for (int i = 1; i < count && !varies; ++i) {
+            varies = ShapeAppearance.getMetallic(i) != ShapeAppearance.getMetallic(0)
+                || ShapeAppearance.getRoughness(i) != ShapeAppearance.getRoughness(0);
+        }
+        if (varies) {
+            metallics.reserve(count);
+            roughnesses.reserve(count);
+            for (int i = 0; i < count; ++i) {
+                metallics.push_back(ShapeAppearance.getMetallic(i));
+                roughnesses.push_back(
+                        std::max(ShapeAppearance.getRoughness(i), 0.02f));
+            }
+        }
+    }
+    // The machined surface finish (App::SurfaceFinish) the render engine
+    // shades as a procedural pattern. Authored material data beats the
+    // Render_* knobs here exactly as it does for the PBR pair above: an
+    // appearance that states a finish is the finish, and the knobs are
+    // how an appearance that carries none gets one. Entry 0 -- exact for
+    // a uniform appearance, the first face's for a per-face one until
+    // the per-face finish stream lands.
+    App::SurfaceFinish finish = ShapeAppearance.getFinish(0);
+    // An appearance that states a finish ANYWHERE is the authority for
+    // every face, not only for the faces it finished: a face left
+    // unfinished in a per-face appearance is a statement too, and letting
+    // the knobs fill it in would contradict the palette built below
+    // (whose entry 0 is what these scalars repeat).
+    if (!ShapeAppearance.hasFinish()) {
+        // The pattern knob reads as a name (an enumeration the object
+        // carries its own list for, or a plain string) or as the raw
+        // Pattern value, so it can be stated from the property editor
+        // and from a script without either having to guess the other's
+        // spelling.
+        uint8_t pattern = App::SurfaceFinish::None;
+        App::Property *prop = getPropertyByName("Render_Finish");
+        if (auto enumprop =
+                Base::freecad_dynamic_cast<App::PropertyEnumeration>(prop)) {
+            if (enumprop->getEnum().isValid()) {
+                if (const char *name = enumprop->getValueAsString())
+                    pattern = App::SurfaceFinish::patternFromName(name);
+            }
+        }
+        else if (auto strprop =
+                     Base::freecad_dynamic_cast<App::PropertyString>(prop)) {
+            pattern = App::SurfaceFinish::patternFromName(strprop->getValue());
+        }
+        else if (auto intprop =
+                     Base::freecad_dynamic_cast<App::PropertyInteger>(prop)) {
+            long value = intprop->getValue();
+            if (value > 0 && value < App::SurfaceFinish::PatternCount)
+                pattern = static_cast<uint8_t>(value);
+        }
+        if (pattern != App::SurfaceFinish::None) {
+            finish.pattern = pattern;
+            // <= 0 = automatic, the convention every Render_* size knob
+            // follows (floatProp answers -1 for a property nobody added)
+            float value = floatProp("Render_FinishPitch");
+            finish.pitch = value > 0.0f ? value : 0.0f;
+            value = floatProp("Render_FinishDepth");
+            finish.depth = value > 0.0f ? value : 0.0f;
+            value = floatProp("Render_FinishAngle");
+            finish.angle = value > 0.0f ? value : 0.0f;
+            finish.normalize();
+        }
+    }
+    applyFinishDefaults(finish);
+
+    // Per-face form of the finish, when the appearance's entries
+    // genuinely differ in it. Four numbers per face is three arrays more
+    // than a per-vertex stream should carry, so the distinct finishes
+    // become a PALETTE and each face carries one index into it (see
+    // SoFCFinishElement); entry 0 is what the scalars above repeat, so a
+    // consumer that ignores the palette keeps the per-object look.
+    std::vector<SbVec4f> palette;
+    std::vector<int32_t> finishIndices;
+    const std::vector<App::SurfaceFinish> &finishes = ShapeAppearance.getFinishes();
+    bool finishVaries = false;
+    for (std::size_t i = 1; i < finishes.size() && !finishVaries; ++i)
+        finishVaries = finishes[i] != finishes[0];
+    if (finishVaries) {
+        finishIndices.reserve(finishes.size());
+        for (const App::SurfaceFinish &entry : finishes) {
+            App::SurfaceFinish face = entry;
+            applyFinishDefaults(face);
+            const SbVec4f value(float(face.pattern), face.pitch, face.depth,
+                                face.angle);
+            int idx = -1;
+            for (std::size_t k = 0; k < palette.size() && idx < 0; ++k) {
+                if (palette[k] == value)
+                    idx = int(k);
+            }
+            if (idx < 0) {
+                // Past the cap the face falls back to entry 0 -- the
+                // object's own finish -- rather than to an arbitrary
+                // neighbour's. A part with more than this many distinct
+                // finishes is not a part anyone machined.
+                if (palette.size() >= std::size_t(Render::MaxFinishPalette))
+                    idx = 0;
+                else {
+                    palette.push_back(value);
+                    idx = int(palette.size()) - 1;
+                }
+            }
+            finishIndices.push_back(idx);
+        }
+    }
+    if (palette.size() < 2) {
+        palette.clear();
+        finishIndices.clear();
+    }
+
     // Render_Water turns the object's closed shape into a water body of
     // the render engine's volumetric lighting pass (tinted by the shape
     // color); Render_WaterDensity <= 0 = automatic.
@@ -486,8 +894,9 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     bool lightShadowExt = lightShadow && lightShadowExtProp
         && lightShadowExtProp->getValue();
 
-    if (metallic < 0.0f && roughness < 0.0f && !water && !glass
-            && !cloud && !fire && !fountain && !light) {
+    if (!pbr && metallic < 0.0f && roughness < 0.0f && !finish.isSet()
+            && palette.empty()
+            && !water && !glass && !cloud && !fire && !fountain && !light) {
         if (pcRenderMaterial) {
             int idx = pcRoot->findChild(pcRenderMaterial);
             if (idx >= 0)
@@ -504,6 +913,52 @@ void ViewProviderGeometryObject::updateRenderMaterial()
     }
     pcRenderMaterial->metallic = metallic;
     pcRenderMaterial->roughness = roughness;
+    // Rewritten only when they really change: every write notifies, and
+    // a notification off this node invalidates the render caches below.
+    auto syncFactors = [](SoMFFloat &field, const std::vector<float> &values) {
+        const int num = static_cast<int>(values.size());
+        if (field.getNum() == num
+                && (num == 0
+                    || std::equal(values.begin(), values.end(),
+                                  field.getValues(0))))
+            return;
+        field.setNum(num);   // setValues() grows but never shrinks
+        if (num)
+            field.setValues(0, num, values.data());
+    };
+    syncFactors(pcRenderMaterial->metallics, metallics);
+    syncFactors(pcRenderMaterial->roughnesses, roughnesses);
+    pcRenderMaterial->finish = finish.pattern;
+    pcRenderMaterial->finishPitch = finish.pitch;
+    pcRenderMaterial->finishDepth = finish.depth;
+    pcRenderMaterial->finishAngle = finish.angle;
+    // Same "only when they really change" rule as the factor arrays: a
+    // write notifies, and a notification off this node invalidates the
+    // render caches below it.
+    auto syncPalette = [](SoMFVec4f &field, const std::vector<SbVec4f> &values) {
+        const int num = static_cast<int>(values.size());
+        if (field.getNum() == num
+                && (num == 0
+                    || std::equal(values.begin(), values.end(),
+                                  field.getValues(0))))
+            return;
+        field.setNum(num);
+        if (num)
+            field.setValues(0, num, values.data());
+    };
+    auto syncIndices = [](SoMFInt32 &field, const std::vector<int32_t> &values) {
+        const int num = static_cast<int>(values.size());
+        if (field.getNum() == num
+                && (num == 0
+                    || std::equal(values.begin(), values.end(),
+                                  field.getValues(0))))
+            return;
+        field.setNum(num);
+        if (num)
+            field.setValues(0, num, values.data());
+    };
+    syncPalette(pcRenderMaterial->finishPalette, palette);
+    syncIndices(pcRenderMaterial->finishIndices, finishIndices);
     pcRenderMaterial->water = water;
     pcRenderMaterial->waterDensity = waterDensity < 0.0f ? 0.0f
                                                          : waterDensity;
@@ -669,8 +1124,63 @@ void ViewProviderGeometryObject::updateBoundingBox() {
     }
 }
 
+/** Bring the compatibility names level with the appearance, after a restore
+ *
+ * ShapeColor, ShapeMaterial and Transparency are the single-value face of
+ * ShapeAppearance: derived from it, not a second store. A document this fork
+ * wrote states all four and restores each, so this finds nothing to do -- the
+ * mirrors already agree, and both writes below are refused as no changes.
+ *
+ * A document written by a release that has only ShapeAppearance (upstream from
+ * 1.0 on) states none of them, and then the mirrors are whatever the
+ * constructor left: a grey object at zero transparency in the property editor,
+ * over an appearance that says otherwise. The announcement the appearance
+ * makes while restoring does not reach them -- measured on a 1.1 file, where
+ * an appearance read from its own archive entry arrives correct and leaves
+ * both stale, while the same write after the restore mirrors normally -- so
+ * the derivation belongs here, once, after every value the file carries has
+ * landed.
+ *
+ * Transparency first: the reaction to a ShapeColor change folds it into the
+ * appearance's diffuse alpha, which is where this fork keeps an entry's
+ * transparency, and it has to be able to read the right one.
+ *
+ * Only while the appearance holds one diffuse colour, for the reason
+ * onChanged has: entry 0 of a per-face appearance is one face, not the object.
+ */
+void ViewProviderGeometryObject::refreshAppearanceMirrors()
+{
+    if (ShapeAppearance.getDiffuseColors().size() > 1)
+        return;
+
+    long transparency = Base::toPercent(ShapeAppearance.getTransparency(0));
+    if (transparency != Transparency.getValue()) {
+        // NoModify, or a document nobody has touched opens already modified.
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+                guard(App::Property::NoModify, &Transparency);
+        Transparency.setValue(transparency);
+    }
+
+    // Alpha included, for the reason onChanged's mirror block gives: any
+    // other alpha makes the mirror unequal to what it mirrors, and the
+    // announcement pushes that difference back into the appearance.
+    Base::Color color = ShapeAppearance.getDiffuseColor(0);
+    if (color != ShapeColor.getValue()) {
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+                guard(App::Property::NoModify, &ShapeColor);
+        ShapeColor.mirrorValue(color);
+    }
+    App::Material material = ShapeAppearance.getMaterial(0);
+    if (!(material == ShapeMaterial.getValue())) {
+        Base::ObjectStatusLocker<App::Property::Status, App::Property>
+                guard(App::Property::NoModify, &ShapeMaterial);
+        ShapeMaterial.mirrorValue(material);
+    }
+}
+
 void ViewProviderGeometryObject::finishRestoring()
 {
+    refreshAppearanceMirrors();
     updateBoundingBox();
     // Restored Render_* dynamic properties (per-object render engine
     // settings) need their scene graph nodes rebuilt.

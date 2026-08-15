@@ -38,6 +38,8 @@ public:
     virtual std::unique_ptr<Renderer> create(
             const std::string &type, QOpenGLWidget *widget,
             bool publishOnly = false) const override;
+    virtual bool warmup(QOpenGLWidget *widget, const std::string &type,
+                        WarmupTiming *timing = nullptr) override;
 };
 
 class BGFXRenderer : public Renderer
@@ -49,6 +51,13 @@ public:
     virtual bool render(const QColor &bg,
                         const void *viewMatrix,
                         const void *projMatrix) override;
+    /// Render one capture frame at the requested size into the
+    /// framebuffer the caller bound; see Render::Renderer. Standalone
+    /// builds return false -- the host owns its backbuffer.
+    virtual bool renderOffscreen(const QColor &bg,
+                                 const void *viewMatrix,
+                                 const void *projMatrix,
+                                 int width, int height) override;
     virtual bool publish(const QColor &bg,
                          const void *viewMatrix,
                          const void *projMatrix,
@@ -77,11 +86,14 @@ public:
     virtual void setHiddenLineConfig(const HiddenLineConfig &config) override;
     virtual void setSectionConfig(const SectionConfig &config) override;
     virtual void setAOConfig(const AOConfig &config) override;
+    virtual void setCavityConfig(const CavityConfig &config) override;
+    virtual void setMatcapConfig(const MatcapConfig &config) override;
     virtual bool isSceneAnimated() const override;
     virtual bool isSceneDirty() const override;
     virtual void setPBRConfig(const PBRConfig &config) override;
     virtual void setBumpConfig(const BumpConfig &config) override;
     virtual void setLightConfig(const LightConfig &config) override;
+    virtual void setViewLightConfig(const ViewLightConfig &config) override;
     virtual void setVolumetricConfig(const VolumetricConfig &config) override;
     virtual void setWaterConfig(const WaterConfig &config) override;
     virtual void setBloomConfig(const BloomConfig &config) override;

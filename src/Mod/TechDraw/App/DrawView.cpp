@@ -318,6 +318,30 @@ int DrawView::countParentPages() const
     return count;
 }
 
+DrawViewCollection* DrawView::getCollection() const
+{
+    for (auto& parent : getInList()) {
+        if (parent->isDerivedFrom<DrawViewCollection>()) {
+            return static_cast<DrawViewCollection*>(parent);
+        }
+    }
+    return nullptr;
+}
+
+DrawView* DrawView::claimParent() const
+{
+    App::PropertyLink* ownerProp = const_cast<DrawView*>(this)->getOwnerProperty();
+    if (ownerProp) {
+        auto owner = dynamic_cast<DrawView*>(ownerProp->getValue());
+        if (owner) {
+            return owner;
+        }
+    }
+
+    //no owner of our own, so the collection we belong to - if any - is our parent
+    return getCollection();
+}
+
 //finds the first DrawPage in this Document that claims to own this DrawView
 //note that it is possible to manipulate the Views property of DrawPage so that
 //more than 1 DrawPage claims a DrawView.

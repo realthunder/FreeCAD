@@ -104,7 +104,7 @@ Base::Quantity PropertyQuantity::createQuantityFromPy(PyObject *value)
     else {
         std::string error = std::string("wrong type as quantity: ");
         error += value->ob_type->tp_name;
-        throw Base::TypeError(error);
+        THROWM(Base::TypeError, error)
     }
 
     return quant;
@@ -132,7 +132,7 @@ void PropertyQuantity::setPyObject(PyObject *value)
         }
 
         if (unit != _Unit)
-            throw Base::UnitsMismatchError("Not matching Unit!");
+            THROWM(Base::UnitsMismatchError, "Not matching Unit!")
 
         PropertyFloat::setValue(quant.getValue());
     }
@@ -252,7 +252,7 @@ void PropertyQuantityConstraint::setPyObject(PyObject *value)
     }
 
     if (unit != _Unit)
-        throw Base::UnitsMismatchError("Not matching Unit!");
+        THROWM(Base::UnitsMismatchError, "Not matching Unit!")
 
     PropertyFloat::setValue(quant.getValue()); // clazy:exclude=skipped-base-method
 }
@@ -622,6 +622,17 @@ PropertyMass::PropertyMass()
 }
 
 //**************************************************************************
+// PropertyMoment
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+TYPESYSTEM_SOURCE(App::PropertyMoment, App::PropertyQuantity)
+
+PropertyMoment::PropertyMoment()
+{
+    setUnit(Base::Unit::Moment);
+}
+
+//**************************************************************************
 // PropertyPressure
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -752,6 +763,17 @@ TYPESYSTEM_SOURCE(App::PropertyShearModulus, App::PropertyQuantity)
 PropertyShearModulus::PropertyShearModulus()
 {
     setUnit(Base::Unit::ShearModulus);
+}
+
+//**************************************************************************
+// PropertyStiffnessDensity
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+TYPESYSTEM_SOURCE(App::PropertyStiffnessDensity, App::PropertyQuantity)
+
+PropertyStiffnessDensity::PropertyStiffnessDensity()
+{
+    setUnit(Base::Unit::StiffnessDensity);
 }
 
 //**************************************************************************

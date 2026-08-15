@@ -240,13 +240,13 @@ void PropertyFilletSegments::setPyObject(PyObject *pyobj)
         for (int i=0; i<seq.size(); ++i) {
             Py::Sequence item(seq[i].ptr());
             if (item.size() != 2)
-                throw Base::TypeError(msg);
+                THROWM(Base::TypeError, msg)
             auto &segments = value[Py::String(item[0].ptr())];
             Py::Sequence pySegments(Py::Sequence(item[1].ptr()));
             for (int j=0; j<pySegments.size(); ++j) {
                 Py::Sequence pySegment(pySegments[j].ptr());
                 if (pySegment.size() < 2 || pySegment.size() > 3)
-                    throw Base::TypeError(msg);
+                    THROWM(Base::TypeError, msg)
                 segments.emplace_back(Py::Float(pySegment[0].ptr()),
                                       Py::Float(pySegment[1].ptr()),
                                       pySegment.size()==2?0.0:Py::Float(pySegment[2].ptr()));
@@ -255,7 +255,7 @@ void PropertyFilletSegments::setPyObject(PyObject *pyobj)
         if (value != segmentsMap)
             setValue(std::move(value));
     } catch (Py::Exception &) {
-        throw Base::TypeError(msg);
+        THROWM(Base::TypeError, msg)
     }
 }
 
@@ -611,7 +611,7 @@ void PropertyChamferEdges::setPyObject(PyObject *pyobj)
         for (int i=0; i<seq.size(); ++i) {
             Py::Sequence item(seq[i].ptr());
             if (item.size() <= 1 || item.size() >= 4)
-                throw Base::TypeError(msg);
+                THROWM(Base::TypeError, msg)
             auto &info = value[Py::String(item[0].ptr())];
             info.size = Py::Float(item[1].ptr());
             if (item.size() > 2)
@@ -624,7 +624,7 @@ void PropertyChamferEdges::setPyObject(PyObject *pyobj)
         if (value != chamferEdgeMap)
             setValue(std::move(value));
     } catch (Py::Exception &) {
-        throw Base::TypeError(msg);
+        THROWM(Base::TypeError, msg)
     }
 }
 

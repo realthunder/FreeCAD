@@ -62,6 +62,109 @@ Satin, Metalized, Neon GNC, Chrome, Aluminium, Obsidian, Neon PHC, Jade, Ruby or
             </Documentation>
             <Parameter Name="Transparency" Type="Float"/>
         </Attribute>
+        <Attribute Name="PBR" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+Whether the values carry the PBR reading rather than the Phong one:
+DiffuseColor is the base colour, Shininess the roughness, SpecularColor
+the F0 tint with the metallic factor in its alpha.
+
+Setting it CONVERTS the values, so the surface keeps looking like itself
+in the other model; only the specular colour, which Phong alone can
+state, is lost on the way back. Materials read from a ShapeAppearance
+list carry the list's mode, and assigning materials to one gives it the
+mode of the first -- the list holds a single mode, so any further entry
+is converted to it.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="PBR" Type="Boolean"/>
+        </Attribute>
+        <Attribute Name="Metallic" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The metallic factor, riding the specular alpha. Reads 0 on a Phong
+material, which has no metals; writing one converts the material to PBR
+first, since stating a metallic factor decides the mode.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="Metallic" Type="Float"/>
+        </Attribute>
+        <Attribute Name="Roughness" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The roughness. On a Phong material it reads as the Blinn-Phong
+derivation of the shininess; writing one converts the material to PBR
+first, as Metallic does.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="Roughness" Type="Float"/>
+        </Attribute>
+        <Attribute Name="Finish" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The surface finish pattern by name: "" (none), "knurl", "knurl-straight",
+"brushed", "blasted" or "turned". An unrecognised name reads back as "".
+
+A finish states what was done to the surface, not how it shades, so it
+survives every conversion between the Phong and PBR readings. Size it
+with FinishPitch, FinishDepth and FinishAngle; setting the pattern to ""
+clears all three.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="Finish" Type="String"/>
+        </Attribute>
+        <Attribute Name="FinishPitch" ReadOnly="false">
+            <Documentation>
+                <UserDocu>Surface finish feature spacing, in millimetres.</UserDocu>
+            </Documentation>
+            <Parameter Name="FinishPitch" Type="Float"/>
+        </Attribute>
+        <Attribute Name="FinishDepth" ReadOnly="false">
+            <Documentation>
+                <UserDocu>Surface finish peak to valley depth, in millimetres.</UserDocu>
+            </Documentation>
+            <Parameter Name="FinishDepth" Type="Float"/>
+        </Attribute>
+        <Attribute Name="FinishAngle" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+Surface finish lay direction in degrees, within the pattern frame. A lay
+has an axis rather than a direction, so the value wraps into [0, 180).
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="FinishAngle" Type="Float"/>
+        </Attribute>
+        <Attribute Name="Image" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The embedded texture image of the material, as the string upstream
+FreeCAD stores it in. Nothing in this fork writes one; it is here so a
+material that arrived carrying one survives a round trip through Python
+rather than being silently dropped by anything that restates the
+material -- the property editor's appearance row among them.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="Image" Type="String"/>
+        </Attribute>
+        <Attribute Name="ImagePath" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The path of the material's texture image. Carried, not used, exactly
+like Image.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="ImagePath" Type="String"/>
+        </Attribute>
+        <Attribute Name="Uuid" ReadOnly="false">
+            <Documentation>
+                <UserDocu>
+The identity of the material card this material came from. Carried, not
+used, exactly like Image -- and it is what makes two appearances the
+same appearance whatever their colours currently say.
+                </UserDocu>
+            </Documentation>
+            <Parameter Name="Uuid" Type="String"/>
+        </Attribute>
         <CustomAttributes />
     </PythonExport>
 </GenerateModel>

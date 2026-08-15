@@ -266,6 +266,61 @@ public:
     /// Activate a stylesheet
     void setStyleSheet(const QString& qssFile, bool tiledBackground);
     QString replaceVariablesInQss(QString qssText);
+    /** Apply the palette named by MainWindow/ColorScheme.
+     *
+     * "Light" or "Dark" pins Qt's palette; an empty value lets Qt follow the
+     * system setting. Themes that ship no stylesheet (FreeCAD Classic) draw
+     * entirely from this palette, so without a value Qt >= 6.8 would render
+     * them dark on a dark desktop. A no-op before Qt 6.8, which has no API to
+     * override the scheme.
+     */
+    static void applyColorScheme();
+    /** Re-apply the theme the desktop calls for, for "Match Desktop".
+     *
+     * A no-op unless MainWindow/ThemeAuto is set. Called at startup and again
+     * whenever the desktop's scheme changes, and re-entrant: applying a theme
+     * pins the palette, which is itself a scheme change.
+     */
+    static void resolveAutoTheme();
+    /// Whether the platform reports a dark system color scheme.
+    static bool systemPrefersDarkScheme();
+    /** Make widgets resolve against the current application palette again.
+     *
+     * Needed after a theme change: Qt restores a widget to the palette it held
+     * when a stylesheet polished it, so widgets can be left holding colors from
+     * the previous scheme. Widgets that set a palette of their own are kept.
+     */
+    static void refreshInheritedPalettes();
+    /** @name The accent colors a stylesheet gets where the configuration names none.
+     *
+     * FreeCAD's blue and two shades of it, packed with an opaque alpha the way
+     * the Themes parameters store them. The Theme preference page and the Start
+     * wizard both carry these; they are here so that everything resolving
+     * @ThemeAccentColor* agrees.
+     *
+     * The shipped sheets use the three slots for three different jobs, so they
+     * must not be the same color -- which they were until the states they are
+     * supposed to tell apart all came out identical:
+     *
+     *  - 1 is the highlight, on nearly a hundred rules: hover, selected, checked.
+     *  - 2 is the engaged state: focus, pressed, a combo box that is open. It
+     *    is deeper than 1 so that focus reads as more than hover.
+     *  - 3 is only ever the far stop of a gradient whose near stop is 1, so it
+     *    is a slightly darker 1 and gives the gradient somewhere to go.
+     *
+     * A dark theme wants 2 lifted rather than deepened; its preference pack
+     * overrides these.
+     */
+    //@{
+    static constexpr unsigned long DefaultAccentColor1 = 0x557BB6FFUL;
+    static constexpr unsigned long DefaultAccentColor2 = 0x405C89FFUL;
+    static constexpr unsigned long DefaultAccentColor3 = 0x4B6CA0FFUL;
+    /// Slots 2 and 3 as a dark scheme wants them; the Dark pack carries the same values.
+    static constexpr unsigned long DefaultDarkAccentColor2 = 0x88A3CCFFUL;
+    static constexpr unsigned long DefaultDarkAccentColor3 = 0x466595FFUL;
+    /// Backwards-compatible spelling of DefaultAccentColor1.
+    static constexpr unsigned long DefaultAccentColor = DefaultAccentColor1;
+    //@}
     //@}
 
     /** @name User Commands */
@@ -409,6 +464,13 @@ public:
 
     static PyObject* sShowDownloads            (PyObject *self,PyObject *args);
     static PyObject* sShowPreferences          (PyObject *self,PyObject *args);
+
+    static PyObject* sListThemes               (PyObject *self,PyObject *args);
+    static PyObject* sApplyTheme               (PyObject *self,PyObject *args);
+    static PyObject* sListConfigBackups        (PyObject *self,PyObject *args);
+    static PyObject* sRevertConfig             (PyObject *self,PyObject *args);
+    static PyObject* sListConfigUndos          (PyObject *self,PyObject *args);
+    static PyObject* sUndoConfig               (PyObject *self,PyObject *args);
 
     static PyObject* sCreateViewer             (PyObject *self,PyObject *args);
     static PyObject* sGetMarkerIndex           (PyObject *self,PyObject *args);

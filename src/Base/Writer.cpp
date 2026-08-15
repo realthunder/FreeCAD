@@ -27,12 +27,15 @@
 #include <locale>
 #include <iomanip>
 
+#include <Build/Version.h>
+
 #include "Writer.h"
 #include "Base64.h"
 #include "Base64Filter.h"
 #include "Exception.h"
 #include "FileInfo.h"
 #include "Persistence.h"
+#include "ProgramVersion.h"
 #include "Stream.h"
 #include "Tools.h"
 
@@ -41,6 +44,15 @@
 using namespace Base;
 using namespace std;
 using namespace zipios;
+
+bool Base::writerAlphaIsOpacity()
+{
+    // The release this build calls itself, which is what it stamps into the
+    // ProgramVersion attribute of every document it writes -- so it is also
+    // what a later reader will judge those documents by.
+    static const bool opacity = alphaIsOpacity(FCVersionMajor "." FCVersionMinor);
+    return opacity;
+}
 
 // boost iostream filter to escape ']]>' in text file saved into CDATA section.
 // It does not check if the character is valid utf8 or not.
@@ -91,7 +103,7 @@ Writer::~Writer() = default;
 std::ostream& Writer::beginCharStream(CharStreamFormat format, unsigned line_size)
 {
     if (CharStream) {
-        throw Base::RuntimeError("Writer::beginCharStream(): invalid state");
+        THROWM(Base::RuntimeError, "Writer::beginCharStream(): invalid state")
     }
     charStreamFormat = format;
     if (format == CharStreamFormat::Base64Encoded) {
@@ -122,7 +134,7 @@ std::ostream& Writer::endCharStream()
 std::ostream& Writer::charStream()
 {
     if (!CharStream) {
-        throw Base::RuntimeError("Writer::endCharStream(): no current character stream");
+        THROWM(Base::RuntimeError, "Writer::endCharStream(): no current character stream")
     }
     return *CharStream;
 }
@@ -139,7 +151,7 @@ void Writer::insertAsciiFile(const char* FileName)
     Base::ifstream from(fi, std::ios::in | std::ios::binary);
     if (!from)
     if (!from) {
-        throw Base::FileException("Writer::insertAsciiFile() Could not open file!");
+        THROWM(Base::FileException, "Writer::insertAsciiFile() Could not open file!")
     }
 
     beginCharStream() << from.rdbuf();
@@ -151,7 +163,7 @@ void Writer::insertBinFile(const char* FileName, unsigned line_size)
     Base::FileInfo fi(FileName);
     Base::ifstream from(fi, std::ios::in | std::ios::binary);
     if (!from)
-        throw Base::FileException("Writer::insertBinaryFile() Could not open file!");
+        THROWM(Base::FileException, "Writer::insertBinaryFile() Could not open file!")
 
     beginCharStream(CharStreamFormat::Base64Encoded, line_size) << from.rdbuf();
     endCharStream();
@@ -398,7 +410,7 @@ StringWriter::StringWriter() {
 
 void StringWriter::writeFiles() {
     if(!FileList.empty()) {
-        throw Base::FileException("StringWriter does not support saving into multiple files");
+        THROWM(Base::FileException, "StringWriter does not support saving into multiple files")
     }
 }
 

@@ -61,12 +61,14 @@ class DrawWeldSymbol;
 namespace TechDrawGui
 {
 class QGIView;
+class QGIViewCollection;
 class QGIViewDimension;
 class QGITemplate;
 class ViewProviderPage;
 class QGIViewBalloon;
 class QGILeaderLine;
 class QGIRichAnno;
+class QGIWeldSymbol;
 class QGITile;
 
 class TechDrawGuiExport QGSPage: public QGraphicsScene
@@ -114,6 +116,7 @@ public:
     void addDimToParent(QGIViewDimension* dim, QGIView* parent);
     void addLeaderToParent(QGILeaderLine* lead, QGIView* parent);
     void addAnnoToParent(QGIRichAnno* anno, QGIView* parent);
+    void addWeldToParent(QGIWeldSymbol* weld, QGIView* parent);
 
     std::vector<QGIView*> getViews() const;
 
@@ -139,10 +142,11 @@ public:
     void saveSvg(QString filename);
     void postProcessXml(QTemporaryFile& temporaryFile, QString filename, QString pagename);
 
-    void setDimensionGroups();
-    void setBalloonGroups();
-    void setLeaderGroups();
-    void setRichAnnoGroups();
+    void setViewParents();
+    int parentDepth(QGIView* view) const;
+    void attachToParent(QGIView* item);
+    void addItemToParent(QGIView* item, QGIView* parent);
+    std::vector<QGIView*> collectUnparented() const;
 
 protected:
     QColor getBackgroundColor();

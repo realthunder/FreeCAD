@@ -245,10 +245,19 @@ unchanged.
    granularity of one item; anything long inside an item (a giant
    brep) reports through the progress layer instead of blocking
    silently.
-5. **Every behavior change gates against the eager path** on the real
+5. **Deferred work may not modify the document.** What runs behind the
+   window is the file's own record being replayed, and a load that
+   ends with the document needing a recompute has changed *what*, not
+   just *when*. The eager path was owed nothing here because
+   `afterRestore()` purged each object before announcing it and a
+   recompute purges its own; work replayed later lands past both, so
+   the drain states the rule instead of inheriting it —
+   `App::Document::RestoreDrainGuard`, and one line naming whatever
+   tried (DocumentLoad.md §13).
+6. **Every behavior change gates against the eager path** on the real
    GPU: 0 property diffs, 0 px at convergence with the saved camera,
    and the pipeline's own completion lines as the arbiter of "done".
-6. **No stage may make one document's progress depend on another's.**
+7. **No stage may make one document's progress depend on another's.**
    State is keyed by document, gates are asked of the document being
    worked on, and a shared budget is split between the documents that
    can use it rather than handed to whichever is first.

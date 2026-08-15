@@ -1,0 +1,236 @@
+# Porting the upstream FEM workbench: an evaluation
+
+Status: evaluation, measured 2026-08-11. No FEM port has been done.
+Companion to [CoinRetirement.md](./CoinRetirement.md) section 3.6, whose
+workbench audit could not reach FEM.
+
+## 1. The short answer
+
+Three separate questions were tangled together under "port FEM". They have
+different answers:
+
+1. **Can a dev build have FEM at all?** It can now. The in-tree SMESH is
+   fixed and builds against OCCT 8.0.1 (section 3). This was the actual
+   blocker and it is closed.
+2. **Is the fork's FEM broken?** No. FEM ships in the released packages and
+   always has. It is off only in the local dev presets (section 2).
+3. **Should the fork replace its FEM with upstream's?** Not as a FEM
+   project. The cost is not in FEM: upstream's FEM is written against core
+   refactors the fork predates (Console renamed, `App::Color` moved to
+   `Base::Color`, `ShapeAppearance`, the `Gui/Selection/` move, a new
+   `Materials` module). Porting FEM alone means either dragging those
+   core-wide changes in, or holding a FEM that speaks a dialect the rest of
+   the fork does not. Recommendation in section 8.
+
+## 2. Where FEM actually stands
+
+`BUILD_FEM` defaults to `ON` (`InitializeFreeCADBuildOptions.cmake:104`),
+and `freecad-rt-feedstock/recipe/build.sh` builds with
+`FREECAD_USE_EXTERNAL_SMESH=ON`, `BUILD_FEM_NETGEN=ON`, vtk 9.2.6 and the
+conda `smesh` package. **So released packages contain a working FEM.**
+
+What is off is FEM in the local dev presets (`BUILD_FEM=OFF` in every user
+preset). That is why the section 3.6 audit has an FEM-shaped hole, and why
+the `fem-mesh` and `fem-post` probe cases in `fcad-probes/wb_audit_probe.py`
+have never run.
+
+FEM renders through Coin, not VTK: there is no `vtkRenderer` anywhere in
+`src/Mod/Fem`; `ViewProviderFemPostObject` runs a `vtkGeometryFilter` and
+copies the result into `SoCoordinate3` / `SoIndexedFaceSet` /
+`SoIndexedLineSet`. VTK is a data pipeline only, so FEM results reach the
+bgfx backend through the render cache like any other geometry.
+
+## 3. What was fixed (in-tree SMESH on OCCT 8.0.1)
+
+Measured before: with `BUILD_FEM=ON` against OCCT 8.0.1, salomesmesh failed
+**10 targets on 19 errors**, all of them things OCCT 8.0 deleted
+(`Standard_Stream.hxx`, `Bnd_B3d.hxx`, `Bnd_B2d.hxx`, the `TColStd` and
+`MeshVS` typedef aliases, `TopTools_MapOfShape`,
+`Standard_Failure::DynamicType`, changed `MeshVS` virtual signatures).
+
+Upstream had already done that work properly, version-guarded, in one merge
+(`057d51f846`, PR #29904). Our copy had drifted 2.5 years behind and we were
+part-way through reinventing it (`8c820dd3c0`). Taking upstream's copy
+instead:
+
+| | targets failed | errors |
+|---|---|---|
+| our salomesmesh, OCCT 8.0.1 | 10 | 19 |
+| upstream's salomesmesh | 1 | 0 (link only) |
+| plus `TKExpress` linked | 0 | 0 |
+
+The one remaining failure was a link error, not drift: OCCT 8.0 moved the
+`Expr` and `ExprIntrp` packages out of `TKMath` into a `TKExpress` toolkit,
+and SMESH parses segment-distribution expressions with them.
+
+Commits: `ee74491988` (TKExpress), `a59278f5ce` (SMESH sync), `5dd43b6320`
+(drop an upstream debug print). The sync also brings VTK 9.3 polyhedral-cell
+support our copy lacked. Two of our own changes were deliberately dropped
+(upstream supersedes the boost 1.85 fix with `std::filesystem`, and
+supersedes the OCCT 8 header work); one was re-applied on top (NETGEN
+dumping its output file into the drive root on Windows, `1368167c03`).
+
+Only the Linux non-NETGEN configuration was compiled. The Windows and NETGEN
+paths are guarded but unbuilt here.
+
+**This also removes the reason to build `smesh-feedstock`.** External smesh
+was blocked because occt's `run_exports` pin is `x.x.x` and no published
+smesh covers 8.0.1; the in-tree route now works instead.
+
+## 4. How far apart the two FEMs are
+
+Merge base `a662fbb2ff` (2023-12-27); upstream tip `512e91aad0` (2026-07-27).
+
+| | files | insertions | deletions |
+|---|---|---|---|
+| our delta to `src/Mod/Fem` | 43 | 215 | 256 |
+| upstream delta (no `.ts`) | 974 | 164465 | 54066 |
+
+Our 43 files are almost all fork-wide sweeps (unicode, OCCT version bumps,
+the binding-generator change) plus about seven genuinely FEM-specific fixes.
+**The fork has no FEM investment to protect.** A port is a replace, not a
+merge.
+
+## 5. The adaptation surface
+
+The decisive measurement is not diff size, it is whether upstream's FEM
+compiles against this fork's core. Method: syntax-only compile of upstream's
+FEM sources with the real flags the eval tree uses for our own FEM, with
+upstream's Fem tree prepended so FEM's own headers resolve to upstream's
+copies (`scratchpad/fem_census.py`).
+
+| | TUs | clean | failed |
+|---|---|---|---|
+| upstream `Fem/App` | 50 | 13 | 37 |
+| upstream `Fem/Gui` | 88 | 9 | 79 |
+
+The failures are **not 116 unrelated problems**. They collapse into a short
+list of upstream-wide refactors this fork predates:
+
+| what | sites | files | nature |
+|---|---|---|---|
+| `Console().log/error/message/warning` (we have `Log`/`Error`/...) | 158 | many | mechanical, or 4 alias methods in core |
+| `App::Color` moved to `Base::Color` | 56 | 7 | mechanical, but cascades into ~200 template errors |
+| `ShapeAppearance` on `ViewProviderPart` | 37 | 13 | real Part/Gui feature port |
+| `Base::TimeElapsed` | 32 | 3 | small core addition |
+| `Gui/Selection/` include move | 28 | 25 | mechanical (proved: a forwarding shim clears all of them) |
+| `originalPoint/Line/FaceColors` | 24 | 2 | `ViewProviderPart` members we lack |
+| `ViewProviderPythonFeature` renamed `ViewProviderFeaturePython` | 23 | 16 | mechanical (shim clears it) |
+| `fastsignals` | 5 | 4 | vendor `3rdParty/FastSignals`, or alias to boost::signals2 |
+| `App/Datums.h` | 2 | 2 | real new core feature |
+
+Plus a handful of fork-versus-upstream conflicts where the **fork** is the
+one that diverged, so upstream's FEM must be adapted to us:
+
+- `ComplexGeoData::getElementTypes()` returns `const std::vector<const char*>&`
+  here (our `75a7f709d8`) and by value upstream, so `FemMesh`'s override
+  conflicts.
+- `App::Property::isSame` is pure virtual here, so upstream's
+  `PropertyPostDataObject` is abstract and every ported property class must
+  implement it.
+- `ViewProviderFemPostPipeline::acceptReorderingObjects` overrides nothing here.
+- `Gui::Document::signalHighlightObject` moved to `Application` here (`3418f1be72`).
+- `App::PropertyStiffnessDensity` and `App::PropertyMoment` do not exist here.
+
+Caveats on these numbers, stated because they cut in the optimistic
+direction: the census stops at the first fatal error per TU, so deeper
+errors stay hidden and the counts are **lower bounds**. The Gui figure is
+additionally depressed by `ui_*.h` and `moc_*.cpp` that a real build would
+generate; a shim run cut Gui's missing-header failures from 77 to 46 and
+raised its visible API errors from 2 to 33, which is the shape of what
+further unmasking would do.
+
+### 5.1 The Materials coupling
+
+Upstream FEM does `import Materials` in 13 files and `MatGui` in 2. This
+fork has the December-2023 vintage of that module: python module named
+`Material`, not `Materials`, and `.xml` bindings rather than upstream's
+`.pyi`. Upstream's has diverged by 346 files / +25515 lines and gained
+`ExternalManager`, `Library`, `MaterialFilter` and the rest.
+
+So porting FEM drags in porting a second module of comparable size. This is
+the single biggest hidden cost in the "just copy `src/Mod/Fem`" framing.
+
+Python also wants `vtkmodules` (39 uses across 15 files), which needs
+`BUILD_FEM_VTK_PYTHON` and the VTK python wrappers.
+
+## 6. What a port would buy
+
+Real and substantial, for FEM users: 121 new python modules and 26 new App
+files, including a reworked post-processing pipeline (branch filters,
+1D/2D extractors, histogram, line plot, table, glyph filter), new
+constraints (rigid body, electromagnetic, electric charge density), netgen
+and mesh-refinement objects (distance, tfcurve/tfsurface/tfvolume), a
+reworked solver object layer for CalculiX/Elmer/Z88, and 49 new test files.
+
+It buys nothing for the stated project direction (renderer, browser/mobile,
+large-model performance, out-of-process OCCT). FEM is not on that path.
+
+## 7. Options
+
+**A. Do nothing.** Releases keep their working FEM. The audit hole stays.
+Cost: zero. This is no longer the cheapest useful option, because B is now
+nearly free.
+
+**B. Turn FEM on in the dev presets (recommended).** The blocker is gone
+(section 3). Cost: a `.conda/fem-deps` prefix (exists, 1.6G, Qt-free) and
+build time. Buys: the section 3.6 audit can finally run its `fem-mesh` and
+`fem-post` cases, and dev builds match what ships.
+
+**C. Port upstream FEM, adapting it to the fork's core.** Rewrite the ~350
+mechanical sites to the fork's dialect, port `Materials`, `App/Datums`, the
+small property types, `ShapeAppearance` and the `ViewProviderPart` colour
+members. Buys section 6. Costs: the Materials module port is the hard half;
+and the result is a permanent divergence that makes the *next* FEM sync
+just as expensive, because nothing here moves the fork toward upstream's
+core.
+
+**D. Adopt the core refactors fork-wide, then port FEM.** Rename Console,
+move `App::Color` to `Base::Color`, move `Gui/Selection/`, vendor
+FastSignals. Each is individually mechanical but touches the whole tree, and
+`Base::Color` alone cascades. This is the honest version of C: it makes the
+fork cheaper to sync with upstream forever, and it is a core project, not a
+FEM one.
+
+## 8. Recommendation
+
+Do **B** now, and treat **C/D** as a separate decision that is not really
+about FEM.
+
+B closes the audit gap, is already unblocked, and costs only build time. It
+also gives the tree in which any later port would be tested.
+
+C is poor value judged as a FEM project: the fork has no FEM users pulling
+for it, FEM is off the roadmap, and the expensive part (Materials, the core
+refactors) is not FEM work. If upstream FEM's post-processing is wanted for
+its own sake, say so explicitly and scope it as D, where the core-refactor
+work pays for itself across every future upstream sync, not just FEM.
+
+## 9. Reproducing this
+
+Isolated eval tree, so the primary tree is untouched (it deliberately keeps
+`fem-deps` out of `CMAKE_PREFIX_PATH`, passing `VTK_DIR`,
+`MEDFILE_ROOT_DIR` and `HDF5_ROOT` explicitly):
+
+    scratchpad/fem-eval-configure.sh          # -> build/fem-eval
+    .conda/run.sh ninja -C build/fem-eval SMDS Driver DriverSTL DriverDAT \
+        DriverUNV SMESHDS SMESH MEFISTO2 StdMeshers
+
+salomesmesh depends only on OCCT, VTK, boost and MED, so the SMESH question
+can be settled without building any of FreeCAD.
+
+The compile census:
+
+    git archive upstream/main src/Mod/Fem | tar -x -C <tmp>
+    SHIM=1 .conda/run.sh python3 scratchpad/fem_census.py App   # or Gui
+
+Traps worth keeping:
+
+- The ninja compile command is **ccache-prefixed**, and it carries
+  `-MD -MT <obj> -MF <obj>.d`. Strip those as pairs; dropping only the
+  token that ends in `.o` unpairs `-MT`, and the leftover `.d` path becomes
+  an input file, which gcc reports as "D compiler not installed on this
+  system".
+- A census that stops at the first missing header measures include paths,
+  not API drift. Shim the mechanical renames first, then re-read the
+  numbers.

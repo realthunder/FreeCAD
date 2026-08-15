@@ -189,7 +189,7 @@ void DlgBindSheet::accept()
             if (!cell.isValid()) {
                 std::string msg("Invalid cell: ");
                 msg += addr;
-                throw Base::ValueError(msg.c_str());
+                THROWM(Base::ValueError, msg.c_str())
             }
             if (quote) {
                 addr = std::string("<<") + copy + ">>";

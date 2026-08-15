@@ -284,7 +284,7 @@ std::vector<Base::Vector3d> BaseGeom::findEndPoints()
     } else {
         //TODO: this should throw something
         Base::Console().Message("Geometry::findEndPoints - OCC edge not found\n");
-        throw Base::RuntimeError("no OCC edge in Geometry::findEndPoints");
+        THROWM(Base::RuntimeError, "no OCC edge in Geometry::findEndPoints")
     }
     return result;
 }
@@ -1074,7 +1074,7 @@ Base::Vector3d Generic::apparentInter(GenericPtr g)
     // Line Intersetion (taken from ViewProviderSketch.cpp)
     double det = dir0.x*dir1.y - dir0.y*dir1.x;
     if ((det > 0 ? det : -det) < 1e-10)
-        throw Base::ValueError("Invalid selection - Det = 0");
+        THROWM(Base::ValueError, "Invalid selection - Det = 0")
 
     double c0 = dir0.y*points.at(0).x - dir0.x*points.at(0).y;
     double c1 = dir1.y*g->points.at(1).x - dir1.x*g->points.at(1).y;
@@ -1688,12 +1688,15 @@ bool GeometryUtils::isLine(TopoDS_Edge occEdge)
     Base::Vector3d vs = DrawUtil::toVector3d(s);
     Base::Vector3d ve = DrawUtil::toVector3d(e);
     double endLength = (vs - ve).Length();
-    int low = 0;
-    int high = spline->NbPoles() - 1;
+    //OCC arrays are 1-based.  Poles() assigns over our array, and since OCCT 8
+    //that assignment carries the source bounds with it, so a 0-based array here
+    //silently becomes 1-based and every access below throws.
+    int low = 1;
+    int high = spline->NbPoles();
     TColgp_Array1OfPnt poles(low, high);
     spline->Poles(poles);
     double lenTotal = 0.0;
-    for (int i = 0; i < high; i++) {
+    for (int i = low; i < high; i++) {
         gp_Pnt p1 = poles(i);
         Base::Vector3d v1 = DrawUtil::toVector3d(p1);
         gp_Pnt p2 = poles(i+1);

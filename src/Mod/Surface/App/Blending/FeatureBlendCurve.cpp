@@ -145,10 +145,10 @@ BlendPoint FeatureBlendCurve::GetBlendPoint(App::PropertyLinkSub& link,
     }
 
     if (axEdge.IsNull()) {
-        throw Base::ValueError("DirLink shape is null");
+        THROWM(Base::ValueError, "DirLink shape is null")
     }
     if (axEdge.ShapeType() != TopAbs_EDGE) {
-        throw Base::TypeError("DirLink shape is not an edge");
+        THROWM(Base::TypeError, "DirLink shape is not an edge")
     }
     const TopoDS_Edge& e = TopoDS::Edge(axEdge);
     BRepAdaptor_Curve adapt(e);

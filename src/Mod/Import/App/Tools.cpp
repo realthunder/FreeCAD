@@ -53,12 +53,14 @@ App::Color Tools::convertColor(const Quantity_ColorRGBA& rgba)
     return App::Color(static_cast<float>(red),
                       static_cast<float>(green),
                       static_cast<float>(blue),
-                      1.0f - static_cast<float>(rgba.Alpha()));
+                      static_cast<float>(rgba.Alpha()));
 }
 
 Quantity_ColorRGBA Tools::convertColor(const App::Color& col)
 {
-    return Quantity_ColorRGBA(Quantity_Color(col.r, col.g, col.b, OCC_COLOR_SPACE), 1.0f - col.a);
+    // Both alphas are alphas -- OCCT's and Base::Color's agree since the
+    // fork adopted the opacity convention (see Base/Color.h).
+    return Quantity_ColorRGBA(Quantity_Color(col.r, col.g, col.b, OCC_COLOR_SPACE), col.a);
 }
 
 static inline std::ostream& operator<<(std::ostream& os, const Quantity_ColorRGBA& rgba)

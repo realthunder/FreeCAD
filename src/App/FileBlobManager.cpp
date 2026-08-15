@@ -265,7 +265,7 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
             std::stringstream str;
             str << "FileBlobManager::writeBlobs(): file '" << blob->path()
                 << "' in transient directory doesn't exist.";
-            throw Base::FileSystemError(str.str());
+            THROWM(Base::FileSystemError, str.str())
         }
         writer.putNextEntry((std::string(archivePrefix()) + blob->hash()).c_str());
         writer.Stream() << from.rdbuf();
@@ -294,7 +294,7 @@ void FileBlobManager::writeInlineBlobs(Base::Writer& writer)
             std::stringstream str;
             str << "FileBlobManager::writeInlineBlobs(): file '" << blob->path()
                 << "' in transient directory doesn't exist.";
-            throw Base::FileSystemError(str.str());
+            THROWM(Base::FileSystemError, str.str())
         }
         writer.Stream() << writer.ind() << "<Blob hash=\"" << blob->hash() << "\" size=\""
                         << blob->size() << "\">\n";
@@ -376,7 +376,7 @@ void FileBlobManager::readBlobEntry(Base::Reader& entry)
         if (!to) {
             std::stringstream str;
             str << "FileBlobManager: cannot create " << staging;
-            throw Base::FileSystemError(str.str());
+            THROWM(Base::FileSystemError, str.str())
         }
         entry >> to.rdbuf();
     }
@@ -525,14 +525,14 @@ FileBlobHandle FileBlobManager::insertFile(const char* srcPath)
     if (!src.exists()) {
         std::stringstream str;
         str << "FileBlobManager: file " << srcPath << " does not exist.";
-        throw Base::FileSystemError(str.str());
+        THROWM(Base::FileSystemError, str.str())
     }
 
     const std::string hash = hashFile(srcPath);
     if (hash.empty()) {
         std::stringstream str;
         str << "FileBlobManager: cannot read " << srcPath << " to hash it.";
-        throw Base::FileSystemError(str.str());
+        THROWM(Base::FileSystemError, str.str())
     }
 
     std::lock_guard<std::mutex> guard(_mutex);
@@ -548,7 +548,7 @@ FileBlobHandle FileBlobManager::insertFile(const char* srcPath)
     if (!src.copyTo(dst.c_str())) {
         std::stringstream str;
         str << "FileBlobManager: cannot copy " << srcPath << " to " << dst;
-        throw Base::FileSystemError(str.str());
+        THROWM(Base::FileSystemError, str.str())
     }
 
     // Blobs are immutable; read-only makes accidental in-place edits fail loudly
@@ -565,14 +565,14 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path)
     if (!fi.exists()) {
         std::stringstream str;
         str << "FileBlobManager: cannot adopt missing file " << path;
-        throw Base::FileSystemError(str.str());
+        THROWM(Base::FileSystemError, str.str())
     }
 
     const std::string hash = hashFile(path);
     if (hash.empty()) {
         std::stringstream str;
         str << "FileBlobManager: cannot read " << path << " to hash it.";
-        throw Base::FileSystemError(str.str());
+        THROWM(Base::FileSystemError, str.str())
     }
 
     std::lock_guard<std::mutex> guard(_mutex);
@@ -596,7 +596,7 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path)
         if (!fi.renameFile(dst.c_str())) {
             std::stringstream str;
             str << "FileBlobManager: cannot rename " << fi.filePath() << " to " << dst;
-            throw Base::FileSystemError(str.str());
+            THROWM(Base::FileSystemError, str.str())
         }
         fi.setFile(dst);
     }

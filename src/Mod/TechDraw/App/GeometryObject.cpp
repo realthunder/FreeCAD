@@ -165,10 +165,10 @@ void GeometryObject::projectShape(const TopoDS_Shape& inShape, const gp_Ax2& vie
     catch (const Standard_Failure& e) {
         Base::Console().Error("GO::projectShape - OCC error - %s - while projecting shape\n",
                               e.GetMessageString());
-        throw Base::RuntimeError("GeometryObject::projectShape - OCC error");
+        THROWM(Base::RuntimeError, "GeometryObject::projectShape - OCC error")
     }
     catch (...) {
-        throw Base::RuntimeError("GeometryObject::projectShape - unknown error");
+        THROWM(Base::RuntimeError, "GeometryObject::projectShape - unknown error")
     }
 
     try {
@@ -348,10 +348,10 @@ void GeometryObject::projectShapeWithPolygonAlgo(const TopoDS_Shape& input, cons
         Base::Console().Error(
             "GO::projectShapeWithPolygonAlgo - OCC error - %s - while projecting shape\n",
             e.GetMessageString());
-        throw Base::RuntimeError("GeometryObject::projectShapeWithPolygonAlgo - OCC error");
+        THROWM(Base::RuntimeError, "GeometryObject::projectShapeWithPolygonAlgo - OCC error")
     }
     catch (...) {
-        throw Base::RuntimeError("GeometryObject::projectShapeWithPolygonAlgo - unknown error");
+        THROWM(Base::RuntimeError, "GeometryObject::projectShapeWithPolygonAlgo - unknown error")
     }
 
     try {
@@ -415,7 +415,7 @@ TopoDS_Shape GeometryObject::projectSimpleShape(const TopoDS_Shape& shape, const
 {
     //    Base::Console().Message("GO::()\n");
     if (shape.IsNull()) {
-        throw Base::ValueError("GO::projectSimpleShape - input shape is NULL");
+        THROWM(Base::ValueError, "GO::projectSimpleShape - input shape is NULL")
     }
 
     HLRBRep_Algo* brep_hlr = new HLRBRep_Algo();
@@ -449,7 +449,7 @@ TopoDS_Shape GeometryObject::projectFace(const TopoDS_Shape& face, const gp_Ax2&
 {
     //    Base::Console().Message("GO::projectFace()\n");
     if (face.IsNull()) {
-        throw Base::ValueError("GO::projectFace - input Face is NULL");
+        THROWM(Base::ValueError, "GO::projectFace - input Face is NULL")
     }
 
     HLRBRep_Algo* brep_hlr = new HLRBRep_Algo();

@@ -240,7 +240,7 @@ def read(filename):
                 elif FreeCAD.GuiUp:
                     # link to mesh does not support per face color yet, so just
                     # check the material of the first bound primitive
-                    this_mat = obj.ViewObject.ShapeMaterial
+                    this_mat = obj.ViewObject.ShapeAppearance[0]
                     for bprim in geomnode.primitives():
                         mat = _read_material(bprim)
                         if mat:
@@ -319,7 +319,7 @@ def read(filename):
             if mesh:
                 highlight = False
                 if mat and FreeCAD.GuiUp:
-                    obj.ViewObject.ShapeMaterial = mat
+                    obj.ViewObject.ShapeAppearance = mat
                     if len(segments) > 1 or len(segments[0][0]) != mesh.CountFacets:
                         for segment in segments:
                             mesh.addSegment(segment[0], segment[1])
@@ -359,7 +359,7 @@ def read(filename):
             link.ScaleVector = s
             link.Label = geomnode.original.xmlnode.get('name', obj.Label)
             if mat:
-                link.ViewObject.ShapeMaterial = mat
+                link.ViewObject.ShapeAppearance = mat
                 link.ViewObject.OverrideMaterial = True
             link.recompute(True)
 
@@ -451,7 +451,8 @@ def _build_materials(colmesh, mat, color, obj, matref, effects, segcount, defaul
             pass
 
     if not color and FreeCAD.GuiUp:
-        mat = getattr(obj.ViewObject, 'ShapeMaterial', None)
+        appearance = getattr(obj.ViewObject, 'ShapeAppearance', None)
+        mat = appearance[0] if appearance else None
         if segcount and hasattr(obj.ViewObject,"DiffuseColor"):
             colors = obj.ViewObject.DiffuseColor
             if segcount == len(colors):
@@ -641,7 +642,8 @@ def _export(exportSet, filename, colors):
         mat = None
         if not color and FreeCAD.GuiUp:
             if getattr(sobj.ViewObject, 'OverrideMaterial', False):
-                mat = getattr(sobj.ViewObject, 'ShapeMaterial', None)
+                appearance = getattr(sobj.ViewObject, 'ShapeAppearance', None)
+                mat = appearance[0] if appearance else None
                 if mat:
                     color = mat.DiffuseColor
 

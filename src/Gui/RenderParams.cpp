@@ -118,6 +118,13 @@ public:
     double AORadius;
     double AOIntensity;
     double AOResolution;
+    bool Cavity;
+    double CavityRadius;
+    double CavityValley;
+    double CavityRidge;
+    bool Matcap;
+    long MatcapPreset;
+    double MatcapTint;
     bool PBR;
     double PBRMetallic;
     double PBRRoughness;
@@ -153,6 +160,18 @@ public:
     double BloomThreshold;
     double BloomIntensity;
     double BloomRadius;
+    bool Light;
+    double LightIntensity;
+    double LightDirectionX;
+    double LightDirectionY;
+    double LightDirectionZ;
+    unsigned long LightColor;
+    bool LightSpot;
+    double LightPositionX;
+    double LightPositionY;
+    double LightPositionZ;
+    double LightCutOffAngle;
+    double LightDropOffRate;
     bool SunDisc;
     double SunDiscSize;
     bool GroundReflection;
@@ -310,6 +329,20 @@ public:
         funcs["AOIntensity"] = &RenderParamsP::updateAOIntensity;
         AOResolution = this->handle->GetFloat("AOResolution", 1.0);
         funcs["AOResolution"] = &RenderParamsP::updateAOResolution;
+        Cavity = this->handle->GetBool("Cavity", false);
+        funcs["Cavity"] = &RenderParamsP::updateCavity;
+        CavityRadius = this->handle->GetFloat("CavityRadius", 1.0);
+        funcs["CavityRadius"] = &RenderParamsP::updateCavityRadius;
+        CavityValley = this->handle->GetFloat("CavityValley", 1.0);
+        funcs["CavityValley"] = &RenderParamsP::updateCavityValley;
+        CavityRidge = this->handle->GetFloat("CavityRidge", 0.5);
+        funcs["CavityRidge"] = &RenderParamsP::updateCavityRidge;
+        Matcap = this->handle->GetBool("Matcap", false);
+        funcs["Matcap"] = &RenderParamsP::updateMatcap;
+        MatcapPreset = this->handle->GetInt("MatcapPreset", 0);
+        funcs["MatcapPreset"] = &RenderParamsP::updateMatcapPreset;
+        MatcapTint = this->handle->GetFloat("MatcapTint", 1.0);
+        funcs["MatcapTint"] = &RenderParamsP::updateMatcapTint;
         PBR = this->handle->GetBool("PBR", false);
         funcs["PBR"] = &RenderParamsP::updatePBR;
         PBRMetallic = this->handle->GetFloat("PBRMetallic", 0.0);
@@ -380,6 +413,30 @@ public:
         funcs["BloomIntensity"] = &RenderParamsP::updateBloomIntensity;
         BloomRadius = this->handle->GetFloat("BloomRadius", 1.0);
         funcs["BloomRadius"] = &RenderParamsP::updateBloomRadius;
+        Light = this->handle->GetBool("Light", false);
+        funcs["Light"] = &RenderParamsP::updateLight;
+        LightIntensity = this->handle->GetFloat("LightIntensity", 0.8);
+        funcs["LightIntensity"] = &RenderParamsP::updateLightIntensity;
+        LightDirectionX = this->handle->GetFloat("LightDirectionX", -1.0);
+        funcs["LightDirectionX"] = &RenderParamsP::updateLightDirectionX;
+        LightDirectionY = this->handle->GetFloat("LightDirectionY", -1.0);
+        funcs["LightDirectionY"] = &RenderParamsP::updateLightDirectionY;
+        LightDirectionZ = this->handle->GetFloat("LightDirectionZ", -1.0);
+        funcs["LightDirectionZ"] = &RenderParamsP::updateLightDirectionZ;
+        LightColor = this->handle->GetUnsigned("LightColor", 0xF0FDFFFF);
+        funcs["LightColor"] = &RenderParamsP::updateLightColor;
+        LightSpot = this->handle->GetBool("LightSpot", false);
+        funcs["LightSpot"] = &RenderParamsP::updateLightSpot;
+        LightPositionX = this->handle->GetFloat("LightPositionX", 0.0);
+        funcs["LightPositionX"] = &RenderParamsP::updateLightPositionX;
+        LightPositionY = this->handle->GetFloat("LightPositionY", 0.0);
+        funcs["LightPositionY"] = &RenderParamsP::updateLightPositionY;
+        LightPositionZ = this->handle->GetFloat("LightPositionZ", 0.0);
+        funcs["LightPositionZ"] = &RenderParamsP::updateLightPositionZ;
+        LightCutOffAngle = this->handle->GetFloat("LightCutOffAngle", 45.0);
+        funcs["LightCutOffAngle"] = &RenderParamsP::updateLightCutOffAngle;
+        LightDropOffRate = this->handle->GetFloat("LightDropOffRate", 0.0);
+        funcs["LightDropOffRate"] = &RenderParamsP::updateLightDropOffRate;
         SunDisc = this->handle->GetBool("SunDisc", false);
         funcs["SunDisc"] = &RenderParamsP::updateSunDisc;
         SunDiscSize = this->handle->GetFloat("SunDiscSize", 1.5);
@@ -703,6 +760,34 @@ public:
         self->AOResolution = self->handle->GetFloat("AOResolution", 1.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
+    static void updateCavity(RenderParamsP *self) {
+        self->Cavity = self->handle->GetBool("Cavity", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCavityRadius(RenderParamsP *self) {
+        self->CavityRadius = self->handle->GetFloat("CavityRadius", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCavityValley(RenderParamsP *self) {
+        self->CavityValley = self->handle->GetFloat("CavityValley", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCavityRidge(RenderParamsP *self) {
+        self->CavityRidge = self->handle->GetFloat("CavityRidge", 0.5);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMatcap(RenderParamsP *self) {
+        self->Matcap = self->handle->GetBool("Matcap", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMatcapPreset(RenderParamsP *self) {
+        self->MatcapPreset = self->handle->GetInt("MatcapPreset", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMatcapTint(RenderParamsP *self) {
+        self->MatcapTint = self->handle->GetFloat("MatcapTint", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
     static void updatePBR(RenderParamsP *self) {
         self->PBR = self->handle->GetBool("PBR", false);
     }
@@ -841,6 +926,54 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateBloomRadius(RenderParamsP *self) {
         self->BloomRadius = self->handle->GetFloat("BloomRadius", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLight(RenderParamsP *self) {
+        self->Light = self->handle->GetBool("Light", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightIntensity(RenderParamsP *self) {
+        self->LightIntensity = self->handle->GetFloat("LightIntensity", 0.8);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightDirectionX(RenderParamsP *self) {
+        self->LightDirectionX = self->handle->GetFloat("LightDirectionX", -1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightDirectionY(RenderParamsP *self) {
+        self->LightDirectionY = self->handle->GetFloat("LightDirectionY", -1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightDirectionZ(RenderParamsP *self) {
+        self->LightDirectionZ = self->handle->GetFloat("LightDirectionZ", -1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightColor(RenderParamsP *self) {
+        self->LightColor = self->handle->GetUnsigned("LightColor", 0xF0FDFFFF);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightSpot(RenderParamsP *self) {
+        self->LightSpot = self->handle->GetBool("LightSpot", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightPositionX(RenderParamsP *self) {
+        self->LightPositionX = self->handle->GetFloat("LightPositionX", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightPositionY(RenderParamsP *self) {
+        self->LightPositionY = self->handle->GetFloat("LightPositionY", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightPositionZ(RenderParamsP *self) {
+        self->LightPositionZ = self->handle->GetFloat("LightPositionZ", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightCutOffAngle(RenderParamsP *self) {
+        self->LightCutOffAngle = self->handle->GetFloat("LightCutOffAngle", 45.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLightDropOffRate(RenderParamsP *self) {
+        self->LightDropOffRate = self->handle->GetFloat("LightDropOffRate", 0.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateSunDisc(RenderParamsP *self) {
@@ -3350,12 +3483,12 @@ void RenderParams::removeAO() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docShadow() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Render the shadow map cast by the Shadow draw style's scene\n"
+"Render the shadow map cast by the Shadow display style's scene\n"
 "light (and the god-ray shafts / caustic occlusion that depend on\n"
 "it). A convenience switch to drop shadows without leaving the\n"
-"Shadow draw style; the base headlight and environment lighting\n"
+"Shadow display style; the base headlight and environment lighting\n"
 "stay, so the scene remains lit, just flatter. Has no effect unless\n"
-"the Shadow draw style provides a scene light.");
+"the Shadow display style provides a scene light.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3563,6 +3696,254 @@ void RenderParams::setAOResolution(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeAOResolution() {
     instance()->handle->RemoveFloat("AOResolution");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCavity() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Enable screen space cavity (curvature) shading of the\n"
+"experimental render engine (render cache mode 3 with a selected\n"
+"renderer type). Darkens concave creases and convex ridges found\n"
+"in the geometry prepass normals, which makes surface shape and\n"
+"small features read without relying on the lighting.\n"
+"\n"
+"Best paired with the Shaded draw style, the one that draws no\n"
+"edges: there the darkened crease is the only thing stating where\n"
+"a face ends, so cavity does the job the edge lines do elsewhere,\n"
+"without the wireframe over every tessellated curve. In a style\n"
+"that already draws edges (Flat Lines) the two land on the same\n"
+"pixels and cavity mostly restates them.\n"
+"\n"
+"Independent of ambient occlusion: cavity is a local curvature\n"
+"term, occlusion is a visibility integral over a world-space\n"
+"radius (contact darkening). They compose.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getCavity() {
+    return instance()->Cavity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultCavity() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCavity(const bool &v) {
+    instance()->handle->SetBool("Cavity",v);
+    instance()->Cavity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCavity() {
+    instance()->handle->RemoveBool("Cavity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCavityRadius() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Baseline the cavity curvature is measured over, in pixels.\n"
+"\n"
+"This decides which features the pass can see at all. The term\n"
+"reads how far the surface normal turns between the two\n"
+"neighbours, so at the default of 1 it sees only what turns\n"
+"within a single pixel: hard creases, crisply, which is what\n"
+"stands in for the edge lines the Shaded draw style does not\n"
+"draw. Widening it brings broad curvature (fillets, blends, a\n"
+"sculpted face) in, at the cost of spreading a hard crease into a\n"
+"band of this width.\n"
+"\n"
+"Being in pixels it is resolution-relative: the same value covers\n"
+"less of the model on a high-DPI display, so a large model on a\n"
+"dense screen may want more than 1.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getCavityRadius() {
+    return instance()->CavityRadius;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultCavityRadius() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCavityRadius(const double &v) {
+    instance()->handle->SetFloat("CavityRadius",v);
+    instance()->CavityRadius = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCavityRadius() {
+    instance()->handle->RemoveFloat("CavityRadius");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCavityValley() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Cavity darkening strength in concave creases (inside corners,\n"
+"fillets, pockets). Zero disables the valley term.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getCavityValley() {
+    return instance()->CavityValley;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultCavityValley() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCavityValley(const double &v) {
+    instance()->handle->SetFloat("CavityValley",v);
+    instance()->CavityValley = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCavityValley() {
+    instance()->handle->RemoveFloat("CavityValley");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCavityRidge() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Cavity darkening strength on convex ridges (outside corners,\n"
+"chamfers). Reads as a soft contour along edges. Zero disables the\n"
+"ridge term.\n"
+"\n"
+"Both terms darken: the pass multiplies the finished 8-bit scene\n"
+"color, which cannot brighten past white, so the ridge highlight\n"
+"some workbench renderers use is not available here.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getCavityRidge() {
+    return instance()->CavityRidge;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultCavityRidge() {
+    const static double def = 0.5;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCavityRidge(const double &v) {
+    instance()->handle->SetFloat("CavityRidge",v);
+    instance()->CavityRidge = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCavityRidge() {
+    instance()->handle->RemoveFloat("CavityRidge");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMatcap() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Enable matcap shading of the experimental render engine\n"
+"(render cache mode 3 with a selected renderer type). Replaces\n"
+"the scene's lighting with a fixed studio attached to the camera,\n"
+"looked up by each fragment's view space normal: the shading of a\n"
+"surface then depends only on which way it faces the viewer, so\n"
+"form reads identically wherever the scene light happens to be.\n"
+"The classic inspection shading -- pair it with Cavity for edge\n"
+"definition. Overrides physically based shading while on.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getMatcap() {
+    return instance()->Matcap;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultMatcap() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMatcap(const bool &v) {
+    instance()->handle->SetBool("Matcap",v);
+    instance()->Matcap = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMatcap() {
+    instance()->handle->RemoveBool("Matcap");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMatcapPreset() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Which matcap to shade with. The presets are computed in the\n"
+"shader rather than sampled from images, so they cost no assets\n"
+"and stay sharp at any resolution. Studio = soft key light with a\n"
+"rim; Clay = matte, no highlight, the most neutral read of form;\n"
+"Metal = banded sweep with a hard edge, exaggerates curvature;\n"
+"Pearl = warm/cool dual tone, shows shallow undulation.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getMatcapPreset() {
+    return instance()->MatcapPreset;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultMatcapPreset() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMatcapPreset(const long &v) {
+    instance()->handle->SetInt("MatcapPreset",v);
+    instance()->MatcapPreset = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMatcapPreset() {
+    instance()->handle->RemoveInt("MatcapPreset");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMatcapTint() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How much each object's own color tints the matcap, 0 to 1.\n"
+"One multiplies the matcap by the object color, so the matcap\n"
+"supplies the shading and the assembly keeps its color coding.\n"
+"Zero shades the whole scene as one uniform material instead,\n"
+"which drops the color coding but makes shape directly\n"
+"comparable across parts.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getMatcapTint() {
+    return instance()->MatcapTint;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultMatcapTint() {
+    const static double def = 1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMatcapTint(const double &v) {
+    instance()->handle->SetFloat("MatcapTint",v);
+    instance()->MatcapTint = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMatcapTint() {
+    instance()->handle->RemoveFloat("MatcapTint");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -3842,9 +4223,9 @@ void RenderParams::removeParallax() {
 const char *RenderParams::docVolumetric() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Enable volumetric lighting (light shafts) of the experimental\n"
-"render engine: raymarch the shadow map of the Shadow draw style\n"
+"render engine: raymarch the shadow map of the Shadow display style\n"
 "through a homogeneous scattering medium. Only effective while\n"
-"the Shadow draw style provides a scene light.");
+"the Shadow display style provides a scene light.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3932,7 +4313,7 @@ const char *RenderParams::docCaustics() {
 "Project an animated caustic light pattern onto surfaces\n"
 "below the water body (objects with the Render_Water property),\n"
 "modulated by the shadow map. Only effective while volumetric\n"
-"lighting and the Shadow draw style are active.");
+"lighting and the Shadow display style are active.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -4048,7 +4429,7 @@ const char *RenderParams::docWaterSurface() {
 "Shade water bodies (objects with the Render_Water property)\n"
 "as an animated water surface: screen-space refraction of the\n"
 "scene behind it, Fresnel-blended environment reflection and a\n"
-"sun glint from the Shadow draw style light.");
+"sun glint from the Shadow display style light.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -4320,7 +4701,7 @@ const char *RenderParams::docWaterShadow() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Receive the scene light's shadow on the water surface: a\n"
 "shadow band on the water where a caster blocks the light and\n"
-"the sun glint killed there. Requires the Shadow draw style\n"
+"the sun glint killed there. Requires the Shadow display style\n"
 "with an active shadow map; off leaves the surface fully lit.\n"
 "The refracted scene below the surface keeps its own shadow\n"
 "regardless.");
@@ -4627,10 +5008,359 @@ void RenderParams::removeBloomRadius() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLight() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Let the render engine supply its own directional or spot scene\n"
+"light, described by the Light* settings below, instead of taking\n"
+"one out of the Coin traversal.\n"
+"\n"
+"Everything the engine keys off a light -- shadows, volumetric\n"
+"shafts, the sun disc, ground reflection -- today has exactly one\n"
+"source: the Shadow display style, which is what puts an\n"
+"SoShadowDirectionalLight or SoSpotLight in the scene graph at all\n"
+"(the viewer headlight is a plain SoDirectionalLight, which the\n"
+"engine rejects by type). That makes a draw style the owner of the\n"
+"lighting, and it is why the style cannot simply be retired\n"
+"(docs/CoinRetirement.md 3.4).\n"
+"\n"
+"Off by default, and while off nothing changes. A light found in\n"
+"the traversal still wins when one is there, so the Shadow style\n"
+"keeps behaving exactly as before; these settings supply a light\n"
+"when it does not.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getLight() {
+    return instance()->Light;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultLight() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLight(const bool &v) {
+    instance()->handle->SetBool("Light",v);
+    instance()->Light = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLight() {
+    instance()->handle->RemoveBool("Light");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightIntensity() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Brightness of the renderer's own scene light.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLightIntensity() {
+    return instance()->LightIntensity;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLightIntensity() {
+    const static double def = 0.8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightIntensity(const double &v) {
+    instance()->handle->SetFloat("LightIntensity",v);
+    instance()->LightIntensity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightIntensity() {
+    instance()->handle->RemoveFloat("LightIntensity");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightDirectionX() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLightDirectionX() {
+    return instance()->LightDirectionX;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLightDirectionX() {
+    const static double def = -1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightDirectionX(const double &v) {
+    instance()->handle->SetFloat("LightDirectionX",v);
+    instance()->LightDirectionX = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightDirectionX() {
+    instance()->handle->RemoveFloat("LightDirectionX");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightDirectionY() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLightDirectionY() {
+    return instance()->LightDirectionY;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLightDirectionY() {
+    const static double def = -1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightDirectionY(const double &v) {
+    instance()->handle->SetFloat("LightDirectionY",v);
+    instance()->LightDirectionY = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightDirectionY() {
+    instance()->handle->RemoveFloat("LightDirectionY");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightDirectionZ() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLightDirectionZ() {
+    return instance()->LightDirectionZ;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLightDirectionZ() {
+    const static double def = -1.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightDirectionZ(const double &v) {
+    instance()->handle->SetFloat("LightDirectionZ",v);
+    instance()->LightDirectionZ = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightDirectionZ() {
+    instance()->handle->RemoveFloat("LightDirectionZ");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightColor() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Colour of the renderer's own scene light.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const unsigned long & RenderParams::getLightColor() {
+    return instance()->LightColor;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const unsigned long & RenderParams::defaultLightColor() {
+    const static unsigned long def = 0xF0FDFFFF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("LightColor",v);
+    instance()->LightColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightColor() {
+    instance()->handle->RemoveUnsigned("LightColor");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightSpot() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Make the renderer's own light a spot rather than a directional\n"
+"one. A spot has a position and a cone; a directional light has\n"
+"only a direction.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getLightSpot() {
+    return instance()->LightSpot;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultLightSpot() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightSpot(const bool &v) {
+    instance()->handle->SetBool("LightSpot",v);
+    instance()->LightSpot = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightSpot() {
+    instance()->handle->RemoveBool("LightSpot");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightPositionX() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLightPositionX() {
+    return instance()->LightPositionX;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLightPositionX() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightPositionX(const double &v) {
+    instance()->handle->SetFloat("LightPositionX",v);
+    instance()->LightPositionX = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightPositionX() {
+    instance()->handle->RemoveFloat("LightPositionX");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightPositionY() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLightPositionY() {
+    return instance()->LightPositionY;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLightPositionY() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightPositionY(const double &v) {
+    instance()->handle->SetFloat("LightPositionY",v);
+    instance()->LightPositionY = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightPositionY() {
+    instance()->handle->RemoveFloat("LightPositionY");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightPositionZ() {
+    return "";
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLightPositionZ() {
+    return instance()->LightPositionZ;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLightPositionZ() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightPositionZ(const double &v) {
+    instance()->handle->SetFloat("LightPositionZ",v);
+    instance()->LightPositionZ = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightPositionZ() {
+    instance()->handle->RemoveFloat("LightPositionZ");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightCutOffAngle() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Half angle of the spot cone, in degrees.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLightCutOffAngle() {
+    return instance()->LightCutOffAngle;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLightCutOffAngle() {
+    const static double def = 45.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightCutOffAngle(const double &v) {
+    instance()->handle->SetFloat("LightCutOffAngle",v);
+    instance()->LightCutOffAngle = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightCutOffAngle() {
+    instance()->handle->RemoveFloat("LightCutOffAngle");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLightDropOffRate() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How sharply a spot falls off from the cone axis. Zero is even\n"
+"across the cone.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLightDropOffRate() {
+    return instance()->LightDropOffRate;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLightDropOffRate() {
+    const static double def = 0.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLightDropOffRate(const double &v) {
+    instance()->handle->SetFloat("LightDropOffRate",v);
+    instance()->LightDropOffRate = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLightDropOffRate() {
+    instance()->handle->RemoveFloat("LightDropOffRate");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docSunDisc() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Draw a visible sun -- a bright disc with a limb glow -- in\n"
-"the sky along the Shadow draw style's directional scene light,\n"
+"the sky along the Shadow display style's directional scene light,\n"
 "occluded by geometry and feeding the bloom glow. Perspective\n"
 "cameras only; spot lights have no sky direction.");
 }
@@ -4692,7 +5422,7 @@ const char *RenderParams::docGroundReflection() {
 "Mirror the model in the shadow ground plane of the\n"
 "experimental render engine: the opaque scene is re-rendered\n"
 "with a reflected camera and blended onto the ground. Only\n"
-"effective while the Shadow draw style shows a ground plane.");
+"effective while the Shadow display style shows a ground plane.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)

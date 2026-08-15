@@ -45,11 +45,11 @@ BlendCurve::BlendCurve(const std::vector<BlendPoint>& blendPointsList)
     size_t nb_pts = blendPointsList.size();
 
     if (nb_pts > 2) {
-        throw Base::NotImplementedError("Not implemented");
+        THROWM(Base::NotImplementedError, "Not implemented")
     }
 
     if (nb_pts < 2) {
-        throw Base::ValueError("Need two points for working");
+        THROWM(Base::ValueError, "Need two points for working")
     }
 
     blendPoints = blendPointsList;

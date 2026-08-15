@@ -27,6 +27,10 @@
 #include <Inventor/fields/SoSFEnum.h>
 #include <Inventor/fields/SoSFFloat.h>
 #include <Inventor/fields/SoSFImage.h>
+#include <Inventor/fields/SoSFInt32.h>
+#include <Inventor/fields/SoMFFloat.h>
+#include <Inventor/fields/SoMFInt32.h>
+#include <Inventor/fields/SoMFVec4f.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoSubNode.h>
 #include <FCGlobal.h>
@@ -51,6 +55,85 @@ public:
 
     SoSFFloat metallic;   ///< 0..1 metalness, < 0 = unset
     SoSFFloat roughness;  ///< 0..1 roughness, < 0 = unset (derive from shininess)
+    /** Per-face form of the pair above (empty = the scalars apply)
+     *
+     * A per-face PBR appearance states a factor pair per face, and
+     * neither has a Coin material field to ride: the lazy element's
+     * per-face arrays are SbColor, which drops the alpha the metallic
+     * factor occupies in the stored material, and the shininess slot
+     * carries the Phong quantity. So the pair travels from here into
+     * SoFCPbrElement on traversal, and the render cache bakes it into
+     * the per-vertex material stream. Both fields are set or neither
+     * is; entry i is face i, a face past the end reads entry 0 (see
+     * SoFCPbrElement). The scalars stay the entry-0 values, so a
+     * consumer that ignores these arrays keeps the pre-feature look.
+     */
+    SoMFFloat metallics;
+    SoMFFloat roughnesses;
+    /** Machined surface finish (App::SurfaceFinish) of the shapes
+     *
+     * The pattern the surface was given -- knurled, brushed, blasted,
+     * turned -- which external backends shade as a procedural normal
+     * perturbation that becomes plain roughness once its features fall
+     * below the pixel footprint. Fed either from a finish authored on
+     * the appearance or from the ViewProvider's Render_Finish*
+     * properties. finish is the App::SurfaceFinish::Pattern value, 0 =
+     * none; the pitch and depth are in millimetres of OBJECT space (a
+     * scaled or instanced copy keeps its finish attached to its
+     * geometry) and the angle is the lay direction in degrees.
+     */
+    SoSFInt32 finish;
+    SoSFFloat finishPitch;
+    SoSFFloat finishDepth;
+    SoSFFloat finishAngle;
+    /** Per-face form of the finish above (empty = the scalars apply)
+     *
+     * A finish is four numbers, so a per-face one would be four arrays --
+     * three more than a per-vertex stream should carry. Instead the
+     * distinct finishes the appearance holds form a PALETTE, and what
+     * travels per face is one index into it: finishPalette holds the
+     * entries as (pattern, pitch, depth, angle) exactly as the scalars
+     * above state them, and finishIndices holds one palette index per
+     * face. Both fields are set or neither is, and entry 0 of the
+     * palette is what the scalars repeat -- so a consumer that ignores
+     * them keeps the per-object look.
+     *
+     * finishIndices travels into SoFCFinishElement on traversal and is
+     * baked into the per-vertex material stream by the render cache; the
+     * palette is read straight off this node by the cache's post
+     * callback, since its consumer is the draw material rather than the
+     * shape below.
+     */
+    SoMFVec4f finishPalette;
+    SoMFInt32 finishIndices;
+    /** The projection frames the finish above is laid out in
+     *
+     * Where the finish says what was done to the surface, the frame says
+     * what the surface IS -- the plane's own axes, or the axis a
+     * cylinder or cone was turned about -- so a straight knurl runs
+     * along the axis and turning marks centre on it, rather than being
+     * projected triplanarly off the object-space normal.
+     *
+     * These come from the GEOMETRY, so the Part view provider writes
+     * them at tessellation time while the analytic OCCT surface is
+     * still in hand, and it writes them into these two fields alone --
+     * the appearance-derived fields above have a different writer, and
+     * neither touches the other's.
+     *
+     * Three SbVec4f make one frame: (origin, kind), (axis, radius),
+     * (xdir, spare), matching Render::SurfaceFrame. Entry 0 is the
+     * FIRST face's frame -- what a mesh carrying no per-vertex stream
+     * reads -- and a face whose surface could not be classified states
+     * the unframed frame, which shades triplanarly as before.
+     * frameIndices holds one entry index per face.
+     *
+     * Published to the shapes below (as SoFCFinishElement's second
+     * array) ONLY while a finish is stated somewhere, since a frame with
+     * no pattern to lay out would make every analytic shape in the
+     * document pay for a per-vertex stream it cannot use.
+     */
+    SoMFVec4f framePalette;
+    SoMFInt32 frameIndices;
     /// The shapes form a water body: their closed volume becomes a
     /// scattering medium of the render engine's volumetric lighting
     /// pass (tinted by the material diffuse color), instead of an
@@ -130,6 +213,13 @@ public:
     /// instead of the single downward cone (off by default -- costs up
     /// to six cached tiles per light).
     SoSFBool lightShadowExtended;
+
+    /// Hands the per-face factor arrays to SoFCPbrElement. Everything
+    /// else on this node is read by the render cache's post callback
+    /// straight off the fields; the factor arrays need state because
+    /// their consumer is the shape traversal further down.
+    void callback(SoCallbackAction *action) override;
+    void doAction(SoAction *action) override;
 
 protected:
     ~SoFCRenderMaterial() override = default;

@@ -26,6 +26,29 @@ add_test(NAME DrainCursor_tests_run COMMAND DrainCursor_tests_run)
 # library, so it tests without a GL context, a window or the document
 # model — hence an executable of its own rather than a place in
 # Tests_run, which drags in all of FreeCADApp.
+# Per-face material capture through the coin fork's extended lazy
+# element (docs/ShapeAppearanceDesign.md stage 2). Links FreeCADGui:
+# the render cache is a Gui class, but the whole build-and-read-back
+# runs on an SoCallbackAction, so the test needs no GL context, no
+# window and no QApplication. Run it a second time with a stock libCoin
+# LD_PRELOADed to exercise the fallback leg.
+if(TARGET FreeCADGui)
+    add_executable(RenderCacheMaterial_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/RenderCacheMaterial.cpp)
+    target_include_directories(RenderCacheMaterial_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(RenderCacheMaterial_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME RenderCacheMaterial_tests_run
+             COMMAND RenderCacheMaterial_tests_run)
+endif()
+
 if(TARGET FreeCADRenderer)
     add_executable(SceneDump_tests_run ${CMAKE_CURRENT_SOURCE_DIR}/SceneDump.cpp)
     target_link_libraries(SceneDump_tests_run gtest_main FreeCADRenderer)

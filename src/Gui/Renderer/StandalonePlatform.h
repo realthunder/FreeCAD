@@ -31,13 +31,35 @@
 
 #ifdef FC_RENDERER_STANDALONE
 
+#include <chrono>
 #include <cstdio>
+#include <cstdint>
 #include <sstream>
 
 #include <bgfx/bgfx.h>
 #include <bx/string.h>
 
 class QOpenGLWidget;   // opaque: the standalone build passes nullptr
+
+/// Minimal QElapsedTimer stand-in: the warm-up timing (BGFXRendererLib::
+/// warmup) reports how long the context, the device and the shader
+/// programs took to come up, and it measures them with this. Only the
+/// two calls that code makes.
+class QElapsedTimer
+{
+public:
+    void start() { m_start = clock::now(); }
+    void restart() { m_start = clock::now(); }
+    int64_t nsecsElapsed() const
+    {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                   clock::now() - m_start).count();
+    }
+
+private:
+    using clock = std::chrono::steady_clock;
+    clock::time_point m_start = clock::now();
+};
 
 /// Minimal QColor stand-in: just the packed-rgb accessors render() reads.
 class QColor
@@ -112,15 +134,10 @@ inline const T &qMax(const T &a, const T &b)
     return a < b ? b : a;
 }
 
-/// bgfx example-common (bgfx_utils) replacement: load a compiled shader
-/// pair from <path>/shaders/<api>/<name>.bin with plain stdio.
-bgfx::ProgramHandle loadProgram(const bx::StringView &vsName,
-                                const bx::StringView &fsName,
-                                const char *path = nullptr);
-/// Single-shader flavor of the same loader (a stock vertex stage to
-/// pair with a snapshot-shipped user fragment binary).
-bgfx::ShaderHandle loadShader(const bx::StringView &name,
-                              const char *path = nullptr);
+/// Qt-free stand-in for BGFXRenderer.cpp's loadShaderFile: read a
+/// compiled shader binary with plain stdio. The path building and the
+/// error reporting are the shared fcLoadShader's job.
+bgfx::ShaderHandle loadShaderData(const std::string &path);
 
 #endif // FC_RENDERER_STANDALONE
 

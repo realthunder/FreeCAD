@@ -155,7 +155,7 @@ bool SoFCSelectionContextEx::setColors(
 }
 
 uint32_t SoFCSelectionContextEx::packColor(const App::Color &c, bool &hasTransparency) {
-    float trans = std::max(trans0,c.a);
+    float trans = std::max(trans0,c.transparency());
     if(trans>0)
         hasTransparency = true;
     return SbColor(c.r,c.g,c.b).getPackedValue(trans);

@@ -252,8 +252,10 @@ DlgSettingsWorkbenchesImp::DlgSettingsWorkbenchesImp( QWidget* parent )
 
     connect(ui->wbList->model(), &QAbstractItemModel::rowsMoved, this, &DlgSettingsWorkbenchesImp::wbItemMoved);
     connect(ui->AutoloadModuleCombo, qOverload<int>(&QComboBox::activated), this, &DlgSettingsWorkbenchesImp::onStartWbChanged);
-    connect(ui->WorkbenchSelectorPosition, qOverload<int>(&QComboBox::activated), this, &DlgSettingsWorkbenchesImp::onWbSelectorChanged);
-    connect(ui->CheckBox_WbByTab, &QCheckBox::toggled, this, &DlgSettingsWorkbenchesImp::onWbByTabToggled);
+    // WorkbenchSelectorPosition and CheckBox_WbByTab used to be watched only so
+    // that touching them could ask for a restart. Neither needs one: the
+    // position is re-applied by saveWorkbenchSelector(), and SaveWBbyTab is
+    // read fresh on every workbench activation.
 }
 
 /**
@@ -513,7 +515,18 @@ void DlgSettingsWorkbenchesImp::saveWorkbenchSelector()
 {
     //save workbench selector position
     auto index = ui->WorkbenchSelectorPosition->currentIndex();
+    if (index == WorkbenchSwitcher::getIndex()) {
+        return;
+    }
     WorkbenchSwitcher::setIndex(index);
+
+    // StdWorkbench::setupToolBars() is the only reader of this, so the position
+    // moves when the workbench next installs its UI. Install it again now
+    // rather than asking for a restart -- or, worse, leaving the setting to
+    // take hold at some unrelated moment later on.
+    if (auto* workbench = WorkbenchManager::instance()->active()) {
+        workbench->activate();
+    }
 }
 
 void DlgSettingsWorkbenchesImp::loadWorkbenchSelector()
@@ -624,18 +637,6 @@ void DlgSettingsWorkbenchesImp::onStartWbChanged(int index)
             wbItem->setStartupWb(wbItem->objectName() == wbName);
         }
     }
-}
-
-void DlgSettingsWorkbenchesImp::onWbSelectorChanged(int index)
-{
-    Q_UNUSED(index);
-    requireRestart();
-}
-
-void DlgSettingsWorkbenchesImp::onWbByTabToggled(bool val)
-{
-    Q_UNUSED(val);
-    requireRestart();
 }
 
 void DlgSettingsWorkbenchesImp::sortEnabledWorkbenches()

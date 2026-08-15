@@ -39,6 +39,7 @@
 # include <QTimerEvent>
 # include <QToolTip>
 # include <QScrollBar>
+# include <QStyleHints>
 #endif
 
 #include <QPainterPath>
@@ -117,7 +118,8 @@ public:
         }
 
         if (strcmp(sReason, "StyleSheet") == 0 ||
-            strcmp(sReason, "OverlayActiveStyleSheet") == 0) {
+            strcmp(sReason, "OverlayActiveStyleSheet") == 0 ||
+            strcmp(sReason, "ColorScheme") == 0) {
             OverlayManager::instance()->refresh(nullptr, true);
         }
     }
@@ -139,13 +141,31 @@ public:
     bool hideTab = false;
 
 private:
+    /// Whether the UI the overlay sits on is currently light.
+    static bool isLightUi(const QString& mainStyleSheet) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+        if (qApp) {
+            // The scheme in effect: what MainWindow/ColorScheme pinned, or the
+            // desktop's own setting when nothing is pinned.
+            return qApp->styleHints()->colorScheme() == Qt::ColorScheme::Light;
+        }
+#endif
+        // Nothing to ask: a theme carrying no stylesheet is the classic light one.
+        return mainStyleSheet.isEmpty();
+    }
+
     QString detectOverlayStyleSheetFileName() const {
         QString mainStyleSheet = QString::fromUtf8(handle->GetASCII("StyleSheet").c_str());
         QString overlayStyleSheet = QString::fromUtf8(handle->GetASCII("OverlayActiveStyleSheet").c_str());
 
         if (overlayStyleSheet.isEmpty()) {
-            // User did not choose any stylesheet, we need to choose one based on main stylesheet
-            if (mainStyleSheet.contains(QStringLiteral("light"), Qt::CaseInsensitive)) {
+            // User did not choose any stylesheet, so match the surrounding UI.
+            // The stylesheet name alone cannot tell: a theme may ship none at all
+            // (FreeCAD Classic) and still be light, because its palette is pinned
+            // through MainWindow/ColorScheme. Ask for the scheme in effect, and
+            // keep the name test for themes whose palette says nothing useful.
+            if (mainStyleSheet.contains(QStringLiteral("light"), Qt::CaseInsensitive)
+                || isLightUi(mainStyleSheet)) {
                 overlayStyleSheet = QStringLiteral("overlay:Light-Outline.qss");
             }
             else {

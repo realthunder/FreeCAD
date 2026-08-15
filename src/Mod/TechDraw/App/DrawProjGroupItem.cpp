@@ -145,11 +145,20 @@ void DrawProjGroupItem::postHlrTasks()
 //    Base::Console().Message("DPGI::postHlrTasks() - %s\n", getNameInDocument());
     DrawViewPart::postHlrTasks();
 
-    //DPGI has no geometry until HLR has finished, and the DPG can not properly
-    //AutoDistibute until all its items have geometry.
-    autoPosition();
+    DrawProjGroup* pGroup = getPGroup();
+    if (!pGroup) {
+        return;
+    }
 
-    getPGroup()->reportReady();     //tell the parent DPG we are ready
+    //DPGI has no geometry until HLR has finished, and the DPG can not properly
+    //AutoDistribute until all its items have geometry.  Positioning ourselves here
+    //would measure siblings whose HLR is still running - their bounding boxes are
+    //stale or empty - so the position would depend on the order the HLR threads
+    //happened to finish, and sibling items could end up placed against different
+    //versions of the same neighbour.  Leave it to the group: reportReady()
+    //recomputes it once the last item lands, and that pass positions every item
+    //from one converged set of bounding boxes.
+    pGroup->reportReady();     //tell the parent DPG we are ready
 }
 
 void DrawProjGroupItem::autoPosition()

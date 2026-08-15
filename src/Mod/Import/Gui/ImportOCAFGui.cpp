@@ -60,6 +60,30 @@ void ImportOCAFGui::applyFaceColors(Part::Feature* part, const std::vector<App::
     }
 }
 
+void ImportOCAFGui::applyFaceMaterials(Part::Feature* part,
+                                       const std::vector<App::Material>& mats, bool pbr)
+{
+    auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
+        Gui::Application::Instance->getViewProvider(part));
+    if (!vp || mats.empty()) {
+        return;
+    }
+    // The mode first, so the collapse baselines follow it while the values
+    // land. The materials carry the same tag, so the assignment below
+    // restates it rather than converting them away.
+    vp->ShapeAppearance.setPBR(pbr);
+    // Collapse a uniform list to one entry: a single-entry appearance is
+    // the whole-object form, whose scalar path every consumer handles.
+    if (std::all_of(mats.begin() + 1, mats.end(), [&](const App::Material& m) {
+            return m == mats[0];
+        })) {
+        vp->ShapeAppearance.setValue(mats[0]);
+    }
+    else {
+        vp->ShapeAppearance.setValues(mats);
+    }
+}
+
 void ImportOCAFGui::applyEdgeColors(Part::Feature* part, const std::vector<App::Color>& colors)
 {
     auto vp = dynamic_cast<PartGui::ViewProviderPartExt*>(
@@ -84,7 +108,7 @@ void ImportOCAFGui::applyLinkColor(App::DocumentObject* obj, int index, App::Col
     }
     if (index < 0) {
         vp->OverrideMaterial.setValue(true);
-        vp->ShapeMaterial.setDiffuseColor(color);
+        vp->ShapeAppearance.setDiffuseColor(color);
         return;
     }
     if (vp->OverrideMaterialList.getSize() <= index) {

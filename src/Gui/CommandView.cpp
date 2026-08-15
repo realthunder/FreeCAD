@@ -92,6 +92,7 @@
 #include "SelectionObject.h"
 #include "SelectionView.h"
 #include "SoAxisCrossKit.h"
+#include "ShadingOptions.h"
 #include "SoFCOffscreenRenderer.h"
 #include "SoFCUnifiedSelection.h"
 #include "TaskRenderSettings.h"
@@ -682,13 +683,24 @@ public:
         return _cache.back().c_str();
     }
 
-protected: 
+protected:
     bool isActive();
     virtual void activated(int iMsg);
+    virtual Gui::Action *createAction();
+
+private:
+    /// Flip the shadow light manipulator on every view this command
+    /// would apply a style to.
+    void toggleShadowManip();
+
+    /// Whether this is the Shadow entry, the one style that carries a
+    /// second action on a repeat press.
+    bool isShadow = false;
 };
 
 StdCmdDrawStyleBase::StdCmdDrawStyleBase(int idx, const char *title, const char *doc)
     :Command(cacheString("Std_DrawStyle", title))
+    ,isShadow(Base::streq(title, "Shadow"))
 {
     sGroup        = "Standard-View";
     sMenuText     = title;
@@ -712,7 +724,19 @@ bool StdCmdDrawStyleBase::isActive()
 
 void StdCmdDrawStyleBase::activated(int iMsg)
 {
-    (void)iMsg;
+    // The style entries are checkable (StdCmdDrawStyle::createAction), so
+    // a click arrives as a toggle: iMsg is the new check state, not a
+    // sub-command index. Unchecking is not a state a viewer can be in —
+    // there is always exactly one override mode — so it is ignored, and
+    // the sync in updateIcon() puts the tick back.
+    //
+    // Only when the toggle is what invoked us, though. A script calling
+    // Gui.runCommand("Std_DrawStyleShaded", 0) passes the same 0 with no
+    // trigger source, and that has always meant "apply this style";
+    // treating it as an untick would silently break every macro that
+    // sets a draw style.
+    if (iMsg == 0 && triggerSource() != TriggerNone)
+        return;
 
     Gui::Document *doc = this->getActiveGuiDocument();
     if (!doc) return;
@@ -742,6 +766,53 @@ void StdCmdDrawStyleBase::activated(int iMsg)
     });
 }
 
+void StdCmdDrawStyleBase::toggleShadowManip()
+{
+    Gui::Document *doc = this->getActiveGuiDocument();
+    if (!doc) return;
+    auto activeView = doc->getActiveView();
+    bool applyAll = !activeView || QApplication::queryKeyboardModifiers() == Qt::ControlModifier;
+
+    doc->foreachView<View3DInventor>( [=](View3DInventor *view) {
+        if (!applyAll && view != activeView)
+            return;
+        View3DInventorViewer *viewer = view->getViewer();
+        if (viewer && viewer->getOverrideMode() == "Shadow")
+            viewer->toggleShadowLightManip();
+    });
+}
+
+Gui::Action *StdCmdDrawStyleBase::createAction()
+{
+    Gui::Action *action = Command::createAction();
+    if (!action)
+        return action;
+
+    // A repeat press of the shortcut -- the style the viewer is already
+    // in. A checkable QAction unchecks itself on the way in and then
+    // emits triggered, and activated() ignores the uncheck because a
+    // viewer is always in exactly one mode. So the tick has to be put
+    // back here, or the entry would sit unticked in a style it is in.
+    //
+    // For Shadow that repeat means more: it toggles the light
+    // manipulator, which used to be a second click on the entry until
+    // the entries became radio buttons -- one already ticked emits
+    // nothing when clicked (docs/HANDOFF_ShadingAndDrawStyle.md §4), so
+    // the shortcut is the affordance now and the tooltip says so.
+    //
+    // Menu entries never arrive here: each carries its own widget action
+    // (Gui::Action::addWidget) and only forwards toggled.
+    QObject::connect(action->action(), &QAction::triggered, action, [this]() {
+        auto act = getAction();
+        if (!act || !act->action()->isCheckable() || act->isChecked())
+            return;
+        act->setChecked(true, true);
+        if (isShadow)
+            toggleShadowManip();
+    });
+    return action;
+}
+
 //===========================================================================
 // StdCmdDrawStyle
 //===========================================================================
@@ -752,9 +823,43 @@ public:
     StdCmdDrawStyle();
     virtual const char* className() const {return "StdCmdDrawStyle";}
     void updateIcon(const MDIView *);
+    /// Tick the entry for \a mode and clear the rest. Drives the menus
+    /// through Action::actionChecked, and passes no_signal so restoring
+    /// the tick does not invoke the command back.
+    void syncChecked(const char *mode);
+
     virtual Action * createAction() {
         Action * action = GroupCommand::createAction();
         action->setCheckable(false);
+        // Each style becomes a checkable entry, which ActionGroup::addTo
+        // then renders as a radio button in both the tool button's
+        // drop-down and the menu bar. Two reasons, and neither is
+        // decoration: the menu stays open across a click, so styles can
+        // be compared by walking the list with the 3D view visible behind
+        // it; and the active one is legible at a glance instead of being
+        // whichever entry happens to be highlighted. Gui::Action::
+        // setCheckable is what rewires the action from triggered to
+        // toggled, so it has to be that rather than QAction::setCheckable.
+        for (auto cmd : getCommands()) {
+            if (auto sub = cmd->getAction())
+                sub->setCheckable(true);
+        }
+        // Pressing the active style's shortcut has to reach the command.
+        // Under the strict policy QAction::activate() drops that press
+        // before any signal, so Shadow's manipulator toggle -- and the
+        // tick repair after it -- would never run.
+        if (auto group = qobject_cast<Gui::ActionGroup*>(action))
+            group->setExclusiveOptional(true);
+        // The renderer's shading options ride under the style list as a
+        // popover section: they are not exclusive with each other, so
+        // they cannot be entries in it (Gui/ShadingOptions.h). The menu
+        // is built by ActionGroup::addTo -- for the tool button and for
+        // the menu bar, and again whenever the toolbar is rebuilt -- so
+        // the section is installed on first show of each one.
+        if (auto group = qobject_cast<Gui::ActionGroup*>(action)) {
+            QObject::connect(group, &Gui::ActionGroup::aboutToShow,
+                             ShadingOptionsWidget::install);
+        }
         return action;
     }
 };
@@ -763,12 +868,16 @@ StdCmdDrawStyle::StdCmdDrawStyle()
   : GroupCommand("Std_DrawStyle")
 {
     sGroup        = "Standard-View";
-    sMenuText     = QT_TR_NOOP("Draw style");
-    sToolTipText  = QT_TR_NOOP("Change the draw style of the objects");
-    sStatusTip    = QT_TR_NOOP("Change the draw style of the objects");
+    sMenuText     = QT_TR_NOOP("Display style");
+    sToolTipText  = QT_TR_NOOP("Change the display style and shading of the objects");
+    sStatusTip    = QT_TR_NOOP("Change the display style and shading of the objects");
     sWhatsThis    = "Std_DrawStyle";
     eType         = 0;
     bCanLog       = false;
+    // One override mode per viewer, so the list is a pick-one: this is
+    // what makes ActionGroup render it as radio buttons rather than as
+    // checkboxes, which would advertise combinations that do not exist.
+    setExclusive(true);
 
     int i = 0;
     while(const char *title = drawStyleNameFromIndex(i++)) {
@@ -781,6 +890,17 @@ StdCmdDrawStyle::StdCmdDrawStyle()
             if (view == Application::Instance->activeView())
                 updateIcon(view);
         });
+}
+
+void StdCmdDrawStyle::syncChecked(const char *mode)
+{
+    const int active = drawStyleIndexFromName(mode);
+    int i = -1;
+    for (auto cmd : getCommands()) {
+        ++i;
+        if (auto sub = cmd->getAction())
+            sub->setChecked(i == active, true);
+    }
 }
 
 void StdCmdDrawStyle::updateIcon(const MDIView *view)
@@ -799,6 +919,10 @@ void StdCmdDrawStyle::updateIcon(const MDIView *view)
                 setup(_pcAction);
             }
         }
+        // The tick follows the viewer, not the click: the style also
+        // changes from the Shading section's shadow switch, from a
+        // restored document and from the console.
+        syncChecked(mode.c_str());
     }
 }
 
@@ -2364,7 +2488,10 @@ void StdViewScreenShot::activated(int iMsg)
 
         if (fd.exec() == QDialog::Accepted) {
             selFilter = fd.selectedNameFilter();
-            QString fn = Base::Tools::escapeEncodeString(fd.selectedFiles().front());
+            // The raw path: QFileInfo and QPixmap below want the real name, and
+            // used to be handed the escaped one.
+            QString fn = fd.selectedFiles().front();
+            std::string pyfn = Base::Tools::pythonLiteral(fn);
 
             Gui::WaitCursor wc;
 
@@ -2408,12 +2535,12 @@ void StdViewScreenShot::activated(int iMsg)
                 QStringList lines = comment.split(QStringLiteral("\n"), QString::KeepEmptyParts );
 #endif
                 comment = lines.join(QStringLiteral("\\n"));
-                doCommand(Gui,"Gui.activeDocument().activeView().saveImage('%s',%d,%d,'%s','%s')",
-                            fn.toUtf8().constData(),w,h,background,comment.toUtf8().constData());
+                doCommand(Gui,"Gui.activeDocument().activeView().saveImage(%s,%d,%d,'%s','%s')",
+                            pyfn.c_str(),w,h,background,comment.toUtf8().constData());
             }
             else {
-                doCommand(Gui,"Gui.activeDocument().activeView().saveImage('%s',%d,%d,'%s')",
-                            fn.toUtf8().constData(),w,h,background);
+                doCommand(Gui,"Gui.activeDocument().activeView().saveImage(%s,%d,%d,'%s')",
+                            pyfn.c_str(),w,h,background);
             }
 
             // When adding a watermark check if the image could be created

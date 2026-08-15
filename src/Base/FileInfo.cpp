@@ -315,7 +315,7 @@ std::wstring FileInfo::toStdWString() const
     return ConvertToWideString(FileName);
 #else
     // On other platforms it's discouraged to use wchar_t for file names
-    throw Base::FileException("Cannot use FileInfo::toStdWString() on this platform");
+    THROWM(Base::FileException, "Cannot use FileInfo::toStdWString() on this platform")
 #endif
 }
 

@@ -79,8 +79,13 @@ public:
     explicit PreferencePage(QWidget* parent = nullptr);
     ~PreferencePage() override = default;
 
-    bool isRestartRequired() const;
-    void requireRestart();
+    // isRestartRequired()/requireRestart() are gone. Nothing a preference page
+    // writes needs the process restarted: the three settings that used to ask
+    // for one are read either on the next workbench activation or on every use,
+    // and they now re-apply themselves when saved. The one setting that does
+    // need a restart -- Use software OpenGL, a Qt attribute that has to be set
+    // before QApplication exists -- never went through here; it says so in its
+    // own tooltip.
 
 public Q_SLOTS:
     virtual void loadSettings()=0;
@@ -89,9 +94,6 @@ public Q_SLOTS:
 
 protected:
     void changeEvent(QEvent* event) override = 0;
-
-private:
-    bool restartRequired;
 };
 
 /** Subclass that embeds a form from a UI file.

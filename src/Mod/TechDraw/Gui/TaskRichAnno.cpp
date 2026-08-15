@@ -292,7 +292,7 @@ void TaskRichAnno::createAnnoFeature()
 
     App::DocumentObject* obj = m_basePage->getDocument()->getObject(annoName.c_str());
     if (!obj) {
-        throw Base::RuntimeError("TaskRichAnno - new RichAnno object not found");
+        THROWM(Base::RuntimeError, "TaskRichAnno - new RichAnno object not found")
     }
     Gui::cmdAppObjectArgs(m_basePage, "addView(%s)", Gui::Command::getObjectCmd(obj));
 

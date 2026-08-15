@@ -131,7 +131,76 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     droplet rings the particle impact map drives
 //     (docs/RenderEngine.md §5.8). Without them a viewer defaulted the
 //     strength to 1 and rang the water whatever the property said.
-const uint32_t kVersion = 40;
+// 41: the presel/sel highlight configs carry loupeLift
+//     (ViewParams::TouchLoupeLift) — how far above the fingertip the
+//     touch loupe picks (docs/ThinClientUI.md).
+// 42: CavityConfig — screen-space cavity (curvature) shading, the
+//     prepass-normal darkening applied to the opaque scene
+//     (docs/RenderEngine.md). A viewer older than this defaults it off,
+//     which is the pre-feature look.
+// 43: MatcapConfig — matcap shading, the camera-fixed studio that
+//     replaces the scene lighting (docs/RenderEngine.md). A viewer
+//     older than this defaults it off, which is the pre-feature look.
+// 44: CavityConfig carries its radius — the pixel baseline the
+//     curvature is measured over. A viewer older than this measures
+//     over one pixel whatever the property says, which reads as the
+//     effect barely being there on anything but a hard crease.
+// 45: Material carries its SoDrawStyleElement style, which is how the
+//     Tessellation draw style reaches the backend at all. A viewer
+//     older than this fills the faces, i.e. shows Shaded instead.
+// 46: LightConfig carries the ground's sizing and placement --
+//     explicit half extents, an explicit position, and the placement
+//     matrix -- which the Coin quad has always honoured and the backend
+//     sized from the scene bounding box alone. A viewer older than this
+//     keeps doing that, i.e. ignores an explicitly sized or moved
+//     ground rather than misplacing one.
+// 47: Per-face material -- a mesh chunk may carry the baked
+//     emissive/specular/shininess stream (flags bit 8) and Material
+//     carries the perfacematerial flag selecting it. A viewer older
+//     than this shades such draws with the material scalars, which is
+//     the pre-feature look.
+// 48: Per-face PBR -- Material carries the perfacepbr flag saying that
+//     the stream of v47 spends its two alpha slots on the metallic and
+//     roughness factors instead of a constant and the shininess. A
+//     viewer older than this reads the roughness slot as a shininess
+//     (and never the metallic), i.e. shades those faces as the uniform
+//     PBR object they were before.
+// 49: Machined surface finish -- Material carries the App::SurfaceFinish
+//     pattern with its pitch, depth and lay angle, which the backend
+//     shades as a procedural normal perturbation. A viewer older than
+//     this draws the plain surface, i.e. the pre-feature look.
+// 50: Per-face surface finish -- the per-vertex material stream widens
+//     from 8 to 12 bytes, the third slot carrying an index into the
+//     draw material's new finish palette (the distinct finishes of a
+//     per-face-finished object). A viewer older than this cannot read
+//     the stream at all, which is why the mesh chunk revision moves
+//     with it.
+// 51: Surface finish projection frames -- the material carries the frame
+//     each face's finish is laid out in (the plane's own axes, or the
+//     axis a cylinder was turned about), and the material stream's
+//     third slot names one in its SECOND byte. The stride does not
+//     change: that byte was reserved and read as zero, which is the
+//     unframed frame, so an older viewer draws the triplanar projection
+//     this replaces rather than misreading anything.
+// 52: The ordinary Coin lights (ViewLightConfig) -- the viewer's
+//     headlight and backlight and any document directional/point light,
+//     which until now never left the Coin side at all and were stood in
+//     for by a hard-coded white headlight. An older snapshot carries
+//     none, and its `fed` reads false, which is the flag that asks a
+//     backend for exactly that stand-in: old dumps render unchanged.
+// 53: ViewLightConfig also carries the traversal's global ambient
+//     (SoEnvironment ambientColor * ambientIntensity). With it the
+//     ambient term becomes Coin's -- the material's own ambient colour
+//     times this -- instead of a flat fraction of the diffuse. A v52
+//     snapshot has no such field and its `fed` still selects the
+//     legacy floor, so it renders as it did.
+// 54: A ViewLight may be a spot -- an SoSpotLight past the one the
+//     scene light claims, carrying Coin's cutOffAngle and dropOffRate
+//     beside the position and attenuation it already had. A v53
+//     snapshot has no such field and its lights read as the plain
+//     directional/positional ones they were, which is what a writer of
+//     that version could produce anyway.
+const uint32_t kVersion = 54;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -139,14 +208,29 @@ const uint32_t kVersion = 40;
 /// layout changes and every key changes with it, which retires the
 /// entries cached by older builds instead of letting them be misread.
 /// (4: a shader chunk carries the particle state step and its binary.
-///  5: a mesh chunk carries attachedOnly, the producer's one-bit
-///  element classification -- #13b. Nothing can be MISREAD without the
-///  bump: it rides a free bit of an existing flags byte, so an old
-///  chunk reads as unclassified. The bump is for the other failure,
-///  the one this file's own guard comment names: a cached chunk from
-///  an older build would answer "unclassified" forever, and the gate
-///  would work on the desktop and quietly do nothing in the browser.)
-const uint32_t kChunkVersion = 5;
+///  5: a mesh chunk may carry the per-face material stream, and a
+///     material chunk the perfacematerial flag.
+///  6: a material chunk carries the perfacepbr flag beside it.
+///  7: a material chunk carries the surface finish record.
+///  8: the mesh chunk's material stream is 12 bytes a vertex (the
+///     finish palette index in the third slot), and a material chunk
+///     carries the palette itself.
+///  9: a material chunk carries the surface finish's projection frame
+///     and the palette of frames its faces name.
+/// 10: a mesh chunk carries attachedOnly, the producer's one-bit
+///     element classification -- #13b. Nothing can be MISREAD without
+///     the bump: it rides a free bit of an existing flags byte, so an
+///     old chunk reads as unclassified. The bump is for the other
+///     failure, the one this file's own guard comment names: a cached
+///     chunk from an older build would answer "unclassified" forever,
+///     and the gate would work on the desktop and quietly do nothing
+///     in the browser.)
+const uint32_t kChunkVersion = 10;
+
+/// Bytes per vertex of MeshData::materials, whose layout Renderer.h
+/// documents. Named here because the stride is what a reader of an
+/// older dump would get wrong.
+const size_t kMaterialStride = MeshData::MaterialStride;
 
 //////////////////////////////////////////////////////////////////////
 // Streamed config layout guards.
@@ -178,15 +262,17 @@ const uint32_t kChunkVersion = 5;
 // ::occlusion and ::coverage drive backend-local logs rather than any
 // pixel.
 static_assert(sizeof(HiddenLineConfig) == 20, "HiddenLineConfig changed: stream the new field, then update this");
-static_assert(sizeof(PreselHighlightConfig) == 16, "PreselHighlightConfig changed: stream the new field, then update this");
+static_assert(sizeof(PreselHighlightConfig) == 20, "PreselHighlightConfig changed: stream the new field, then update this");
 static_assert(sizeof(SectionConfig) == 12, "SectionConfig changed: stream the new field, then update this");
 static_assert(sizeof(AOConfig) == 28, "AOConfig changed: stream the new field, then update this");
+static_assert(sizeof(CavityConfig) == 16, "CavityConfig changed: stream the new field, then update this");
+static_assert(sizeof(MatcapConfig) == 12, "MatcapConfig changed: stream the new field, then update this");
 static_assert(sizeof(BumpConfig) == 8, "BumpConfig changed: stream the new field, then update this");
 static_assert(sizeof(VolumetricConfig) == 28, "VolumetricConfig changed: stream the new field, then update this");
 static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new field, then update this");
 static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new field, then update this");
 static_assert(offsetof(PBRConfig, envBackground) == 16, "PBRConfig changed: stream the new field, then update this");
-static_assert(offsetof(LightConfig, groundColor) == 76,"LightConfig changed: stream the new field, then update this");
+static_assert(offsetof(LightConfig, groundColor) == 168,"LightConfig changed: stream the new field, then update this");
 static_assert(offsetof(RenderDebugConfig, coverage) == 7, "RenderDebugConfig changed: stream the new field, then update this");
 
 //////////////////////////////////////////////////////////////////////
@@ -338,15 +424,17 @@ void writeMeshChunk(Writer &w, const MeshData &m)
 {
     w.u32(kChunkVersion);
     w.i32(m.numVertices);
-    // Bit 8 is the odd one out: the first three say a payload follows,
+    // Bit 16 is the odd one out: the lower four say a payload follows,
     // this one is the producer's classification and carries no bytes
     // (attachedOnly, #13b -- every vertex is an edge endpoint, or every
     // edge bounds a face). It rides the flags byte rather than
     // appending a field because a reader that does not know it simply
     // does not test it, and the bit costs nothing on a mesh that has no
-    // points or lines at all.
+    // points or lines at all. It must stay off the payload bits: one of
+    // those set with no bytes behind it desynchronises the reader.
     uint8_t flags = (m.normals ? 1 : 0) | (m.colors ? 2 : 0)
-        | (m.texCoords ? 4 : 0) | (m.attachedOnly ? 8 : 0);
+        | (m.texCoords ? 4 : 0) | (m.materials ? 8 : 0)
+        | (m.attachedOnly ? 16 : 0);
     w.u8(flags);
     w.raw(m.positions, size_t(m.numVertices) * 3 * sizeof(float));
     if (m.normals)
@@ -355,6 +443,8 @@ void writeMeshChunk(Writer &w, const MeshData &m)
         w.raw(m.colors, size_t(m.numVertices) * 4);
     if (m.texCoords)
         w.raw(m.texCoords, size_t(m.numVertices) * 4 * sizeof(float));
+    if (m.materials)
+        w.raw(m.materials, size_t(m.numVertices) * kMaterialStride);
 
     auto indices = [&](const int32_t *v, int n) {
         w.i32(v ? n : 0);
@@ -562,11 +652,16 @@ void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
         r.floats(mesh->uvStore.data(), nv * 4);
         mesh->texCoords = mesh->uvStore.data();
     }
+    if (flags & 8) {
+        mesh->matStore.resize(nv * kMaterialStride);
+        r.raw(mesh->matStore.data(), nv * kMaterialStride);
+        mesh->materials = mesh->matStore.data();
+    }
     // Absent bit = unclassified = always draws, which is the safe
     // direction and exactly what a chunk written by an older build
     // means: nobody judged this drawable, so nothing on screen may be
     // assumed to be standing in for it.
-    mesh->attachedOnly = (flags & 8) != 0;
+    mesh->attachedOnly = (flags & 16) != 0;
 
     auto indices = [&](std::vector<int32_t> &store, const int32_t *&ptr,
                        int &count) {
@@ -1212,6 +1307,45 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     w.b(m.solidshape);
     w.f(m.metallic);
     w.f(m.roughness);
+    w.u8(m.finish);   // v49
+    w.f(m.finishpitch);
+    w.f(m.finishdepth);
+    w.f(m.finishangle);
+    // The finish palette (v50): entry 0 repeats the record above, so a
+    // draw without a per-face finish writes an empty one.
+    const uint32_t numfinish = m.finishpalette
+        ? uint32_t(std::min(m.finishpalette->entries.size(),
+                            size_t(MaxFinishPalette)))
+        : 0;
+    w.u32(numfinish);
+    for (uint32_t i = 0; i < numfinish; ++i) {
+        const auto &entry = m.finishpalette->entries[i];
+        w.u8(entry.pattern);
+        w.f(entry.pitch);
+        w.f(entry.depth);
+        w.f(entry.angle);
+    }
+    // The projection frames the finish is laid out in (v51). The draw's
+    // own frame first -- which is what a reader takes when the palette
+    // is empty -- then the palette, whose entry 0 repeats it.
+    auto writeFrame = [&w](const SurfaceFrame &f) {
+        w.u8(f.kind);
+        for (int i = 0; i < 3; ++i)
+            w.f(f.origin[i]);
+        for (int i = 0; i < 3; ++i)
+            w.f(f.axis[i]);
+        for (int i = 0; i < 3; ++i)
+            w.f(f.xdir[i]);
+        w.f(f.radius);
+    };
+    writeFrame(m.frame);
+    const uint32_t numframe = m.framepalette
+        ? uint32_t(std::min(m.framepalette->entries.size(),
+                            size_t(MaxFramePalette)))
+        : 0;
+    w.u32(numframe);
+    for (uint32_t i = 0; i < numframe; ++i)
+        writeFrame(m.framepalette->entries[i]);
     w.b(m.water);
     w.f(m.waterdensity);
     w.b(m.glass);
@@ -1266,6 +1400,14 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
         w.floats(m.clipplanes[i], 4);
     // v23: the user "material"-stage shader.
     refs.shader(w, m.usershader.get());
+    // v45: SoDrawStyleElement, which is how the Tessellation draw style
+    // arrives. Older viewers draw the faces filled, i.e. as Shaded.
+    w.u8(m.drawstyle);
+    // v47: per-face material — shade from the mesh's baked stream.
+    // Older viewers use the scalars above, the pre-feature look.
+    w.b(m.perfacematerial);
+    // v48: that stream's alpha slots carry the PBR factor pair.
+    w.b(m.perfacepbr);
 }
 
 void readMaterial(Reader &r, Material &m, const RefReader &refs,
@@ -1308,6 +1450,61 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
     m.solidshape = r.b();
     m.metallic = r.f();
     m.roughness = r.f();
+    if (version >= 49) {
+        m.finish = r.u8();
+        m.finishpitch = r.f();
+        m.finishdepth = r.f();
+        m.finishangle = r.f();
+    }
+    if (version >= 50) {
+        const uint32_t numfinish = r.u32();
+        if (r.ok && numfinish) {
+            auto palette = std::make_shared<FinishPalette>();
+            palette->entries.reserve(
+                    std::min(numfinish, uint32_t(MaxFinishPalette)));
+            for (uint32_t i = 0; i < numfinish && r.ok; ++i) {
+                FinishPalette::Entry entry;
+                entry.pattern = r.u8();
+                entry.pitch = r.f();
+                entry.depth = r.f();
+                entry.angle = r.f();
+                if (i < uint32_t(MaxFinishPalette))
+                    palette->entries.push_back(entry);
+            }
+            if (r.ok)
+                m.finishpalette = std::move(palette);
+        }
+    }
+    if (version >= 51) {
+        auto readFrame = [&r]() {
+            SurfaceFrame f;
+            const uint8_t kind = r.u8();
+            f.kind = kind <= SurfaceFrame::Radial ? kind
+                                                  : SurfaceFrame::Unframed;
+            for (int i = 0; i < 3; ++i)
+                f.origin[i] = r.f();
+            for (int i = 0; i < 3; ++i)
+                f.axis[i] = r.f();
+            for (int i = 0; i < 3; ++i)
+                f.xdir[i] = r.f();
+            f.radius = r.f();
+            return f;
+        };
+        m.frame = readFrame();
+        const uint32_t numframe = r.u32();
+        if (r.ok && numframe) {
+            auto palette = std::make_shared<FramePalette>();
+            palette->entries.reserve(
+                    std::min(numframe, uint32_t(MaxFramePalette)));
+            for (uint32_t i = 0; i < numframe && r.ok; ++i) {
+                const SurfaceFrame f = readFrame();
+                if (i < uint32_t(MaxFramePalette))
+                    palette->entries.push_back(f);
+            }
+            if (r.ok)
+                m.framepalette = std::move(palette);
+        }
+    }
     m.water = r.b();
     m.waterdensity = r.f();
     m.glass = r.b();
@@ -1394,6 +1591,16 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
         std::memset(m.clipplanes[i], 0, sizeof(m.clipplanes[i]));
     if (version >= 23)
         refs.shader(r, m.usershader);
+    // v45: the draw style. Absent means filled, which is what every
+    // style but Tessellation asks for anyway.
+    if (version >= 45)
+        m.drawstyle = r.u8();
+    // v47: per-face material. Absent means the scalars apply.
+    if (version >= 47)
+        m.perfacematerial = r.b();
+    // v48: the stream's PBR reading. Absent means the Phong one.
+    if (version >= 48)
+        m.perfacepbr = r.b();
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -1429,6 +1636,12 @@ void writeLight(Writer &w, const LightConfig &l, const RefWriter &refs)
     w.f(l.groundReflectionIntensity);
     w.b(l.sunDisc);   // v18
     w.f(l.sunDiscSize);
+    w.b(l.groundAuto);   // v46
+    w.f(l.groundSizeX);
+    w.f(l.groundSizeY);
+    w.b(l.groundAutoPos);
+    w.floats(l.groundPos, 3);
+    w.floats(l.groundMatrix, 16);
 }
 
 void readLight(Reader &r, LightConfig &l, const RefReader &refs,
@@ -1464,6 +1677,16 @@ void readLight(Reader &r, LightConfig &l, const RefReader &refs,
         l.sunDisc = r.b();
         l.sunDiscSize = r.f();
     }
+    if (version >= 46) {
+        l.groundAuto = r.b();
+        l.groundSizeX = r.f();
+        l.groundSizeY = r.f();
+        l.groundAutoPos = r.b();
+        r.floats(l.groundPos, 3);
+        r.floats(l.groundMatrix, 16);
+    }
+    // Older streams leave the struct's defaults: auto sizing from the
+    // scene bounds, which is what those builds did.
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -2713,6 +2936,15 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.i32(snap.aoconf.slices);
     w.i32(snap.aoconf.steps);
 
+    w.b(snap.cavityconf.enabled);
+    w.f(snap.cavityconf.valley);
+    w.f(snap.cavityconf.ridge);
+    w.f(snap.cavityconf.radius);
+
+    w.b(snap.matcapconf.enabled);
+    w.i32(snap.matcapconf.preset);
+    w.f(snap.matcapconf.tint);
+
     w.b(snap.pbrconf.enabled);
     w.f(snap.pbrconf.metallic);
     w.f(snap.pbrconf.roughness);
@@ -2724,6 +2956,26 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.b(snap.bumpconf.parallax);
 
     writeLight(w, snap.lightconf, refs);
+
+    // v52: the ordinary Coin lights. Only the filled slots go out --
+    // `count` bounds the loop on both sides.
+    const ViewLightConfig &vlc = snap.viewlightconf;
+    w.b(vlc.fed);
+    w.u32(vlc.ambient);
+    w.u32(uint32_t(vlc.count));
+    for (int i = 0; i < vlc.count && i < MaxViewLights; ++i) {
+        const ViewLight &vl = vlc.lights[i];
+        w.floats(vl.direction, 3);
+        w.floats(vl.position, 3);
+        w.b(vl.positional);
+        w.floats(vl.attenuation, 3);
+        w.u32(vl.color);
+        w.f(vl.intensity);
+        // v54: the cone of a spot light.
+        w.b(vl.spot);
+        w.f(vl.cutOffAngle);
+        w.f(vl.dropOffRate);
+    }
 
     const VolumetricConfig &vc = snap.volconf;
     w.b(vc.enabled); w.f(vc.intensity); w.f(vc.density);
@@ -2798,6 +3050,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.b(c->faceOutline);
         w.b(c->outlineOnly);
         w.f(c->pickRadius);  // v11
+        w.f(c->loupeLift);   // v41
     }
 
     // v20: render debugging config (docs/RenderDebug.md).
@@ -3071,6 +3324,19 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.aoconf.slices = version >= 14 ? r.i32() : 0;
     snap.aoconf.steps = version >= 14 ? r.i32() : 0;
 
+    if (version >= 42) {
+        snap.cavityconf.enabled = r.b();
+        snap.cavityconf.valley = r.f();
+        snap.cavityconf.ridge = r.f();
+        if (version >= 44)
+            snap.cavityconf.radius = r.f();
+    }
+    if (version >= 43) {
+        snap.matcapconf.enabled = r.b();
+        snap.matcapconf.preset = r.i32();
+        snap.matcapconf.tint = r.f();
+    }
+
     snap.pbrconf.enabled = r.b();
     snap.pbrconf.metallic = r.f();
     snap.pbrconf.roughness = r.f();
@@ -3083,6 +3349,34 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.bumpconf.parallax = r.b();
 
     readLight(r, snap.lightconf, refs, version);
+
+    if (version >= 52) {
+        ViewLightConfig &vlc = snap.viewlightconf;
+        vlc.fed = r.b();
+        if (version >= 53)
+            vlc.ambient = r.u32();
+        int n = int(r.u32());
+        // A writer with a larger MaxViewLights than this build must not
+        // desync the stream: read every light it sent, keep the ones
+        // there is room for.
+        vlc.count = 0;
+        for (int i = 0; i < n; ++i) {
+            ViewLight vl;
+            r.floats(vl.direction, 3);
+            r.floats(vl.position, 3);
+            vl.positional = r.b();
+            r.floats(vl.attenuation, 3);
+            vl.color = r.u32();
+            vl.intensity = r.f();
+            if (version >= 54) {
+                vl.spot = r.b();
+                vl.cutOffAngle = r.f();
+                vl.dropOffRate = r.f();
+            }
+            if (vlc.count < MaxViewLights)
+                vlc.lights[vlc.count++] = vl;
+        }
+    }
 
     VolumetricConfig &vc = snap.volconf;
     vc.enabled = r.b(); vc.intensity = r.f(); vc.density = r.f();
@@ -3196,6 +3490,8 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             c->outlineOnly = r.b();
             if (version >= 11)
                 c->pickRadius = r.f();
+            if (version >= 41)
+                c->loupeLift = r.f();
         }
     }
 

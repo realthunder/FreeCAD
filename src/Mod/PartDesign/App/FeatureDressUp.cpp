@@ -99,7 +99,7 @@ Part::Feature *DressUp::getBaseObject(bool silent) const
     }
 
     if (!silent && err) {
-        throw Base::RuntimeError(err);
+        THROWM(Base::RuntimeError, err)
     }
 
     return rv;

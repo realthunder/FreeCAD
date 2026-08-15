@@ -125,7 +125,7 @@ void QGISVGTemplate::draw()
 {
     TechDraw::DrawSVGTemplate* tmplte = getSVGTemplate();
     if (!tmplte) {
-        throw Base::RuntimeError("Template Feature not set for QGISVGTemplate");
+        THROWM(Base::RuntimeError, "Template Feature not set for QGISVGTemplate")
     }
     QString templateSvg = tmplte->processTemplate();
     load(templateSvg.toUtf8());

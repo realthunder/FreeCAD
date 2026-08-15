@@ -101,8 +101,11 @@ static void inline setRandomColor(const char *name, bool force)
             if (auto vpLink = Base::freecad_dynamic_cast<ViewProviderLink>(view)) {
                 if(!vpLink->OverrideMaterial.getValue())
                     cmdGuiObjectArgs(sel.pObject, "OverrideMaterial = True");
-                cmdGuiObjectArgs(sel.pObject, "ShapeMaterial.DiffuseColor=(%.2f,%.2f,%.2f)",
-                                 color[0], color[1], color[2]);
+                // ShapeAppearance hands Python a copy of each entry, so an
+                // assignment into [0] would not write back. Set it through the
+                // property instead, as upstream does here.
+                vpLink->ShapeAppearance.setDiffuseColor(
+                        App::Color(color[0], color[1], color[2]));
                 continue;
             }
             if (Base::freecad_dynamic_cast<App::PropertyColor>(view->getPropertyByName("ShapeColor"))) {

@@ -87,13 +87,12 @@ void CmdPointsImport::activated(int iMsg)
     }
 
     if (!fn.isEmpty()) {
-        fn = Base::Tools::escapeEncodeFilename(fn);
         Gui::Document* doc = getActiveGuiDocument();
         openCommand(QT_TRANSLATE_NOOP("Command", "Import points"));
         addModule(Command::App, "Points");
         doCommand(Command::Doc,
-                  "Points.insert(\"%s\", \"%s\")",
-                  fn.toUtf8().data(),
+                  "Points.insert(%s, \"%s\")",
+                  Base::Tools::pythonLiteral(fn).c_str(),
                   doc->getDocument()->getName());
         commitCommand();
 
@@ -144,11 +143,10 @@ void CmdPointsExport::activated(int iMsg)
         }
 
         if (!fn.isEmpty()) {
-            fn = Base::Tools::escapeEncodeFilename(fn);
             doCommand(Command::Doc,
-                      "Points.export([App.ActiveDocument.%s], \"%s\")",
+                      "Points.export([App.ActiveDocument.%s], %s)",
                       point->getNameInDocument(),
-                      fn.toUtf8().data());
+                      Base::Tools::pythonLiteral(fn).c_str());
         }
     }
 }
