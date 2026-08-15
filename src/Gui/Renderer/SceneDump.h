@@ -355,6 +355,21 @@ struct SceneSnapshot {
         /// part of the group manifest chunk: it must not disturb the
         /// content keys, and a rename should not re-key geometry.
         ObjectInfo info;
+        /// Whether the producer held part of this object back when it
+        /// published (v55, DrawCall::objectIncomplete): a companion
+        /// draw whose capture the publish budget deferred is LATE, not
+        /// absent. The element contract reads it to tell a late
+        /// companion from a display mode that genuinely draws points or
+        /// edges alone (docs/SceneStreaming.md #13b) -- without it a
+        /// consumer grants the Points/Wireframe exemption to an object
+        /// whose faces are merely still coming, which is the dots-first
+        /// load storm reproduced one tier further out.
+        ///
+        /// Beside `info` and for the same reason: it is a property of
+        /// the publish, not of the geometry, and it flips as the
+        /// producer's capture backlog drains. Inside a content key it
+        /// would retire an object's cached chunks for a state bit.
+        bool incomplete = false;
     };
 
     /// Which publish this one is, and which it is encoded against.

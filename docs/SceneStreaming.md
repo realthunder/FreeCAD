@@ -2826,15 +2826,19 @@ purpose, because the performance harnesses read those lines out of
 `--log-file` and only the console writes there -- and `std::printf` in
 the browser.
 
-WARNING: **this tier is not built on the development box.** The recipe
-the tree documents in five places -- this directory's `CMakeLists.txt`,
-`scripts/wasm-viewer.sh`, `scripts/compile-shaders.sh`,
-`scripts/README.md` -- wants an emsdk at `~/works/sw/emsdk`, and there
-is no `emcc` on the box. So nothing in the normal build loop compiles
-`FC_RENDERER_STANDALONE`, and **that is how two breakages accumulated
-with nothing saying so.** Until a toolchain is available the tier is
-only compile-checkable by hand, which is what was done for these
-changes:
+SUPERSEDED (2026-08-15): **the tier is built on the development box
+now.** emsdk is installed at `~/works/sw/emsdk` (emcc 6.0.6, and it
+needs the conda python -- `EMSDK_PYTHON=.conda/freecad/bin/python3`),
+`build/wasm` is configured with `emcmake`, and `ninja -C build/wasm`
+produces the fcviewer bundle. Build it after any renderer change; the
+hand recipe below is kept only for the case where the toolchain is not
+at hand. What follows was written when there was no `emcc` on the box,
+and **that is how two breakages accumulated with nothing saying so.**
+
+The recipe the tree documents in five places -- this directory's
+`CMakeLists.txt`, `scripts/wasm-viewer.sh`, `scripts/compile-shaders.sh`,
+`scripts/README.md` -- wants the emsdk at that path. Without it the
+tier is only compile-checkable by hand:
 
 ```
 x86_64-conda-linux-gnu-g++ -fsyntax-only -std=c++20 -DBX_CONFIG_DEBUG=0 \
@@ -2863,6 +2867,43 @@ direction -- but a cached chunk from an older build would answer
 "unclassified" forever, and the gate would work on the desktop and
 quietly do nothing in the browser, which is the exact failure this
 file's own layout-guard comment exists to prevent.
+
+Third, the **dependency half** of the contract had no input here.
+`DrawCall::objectIncomplete` was publish-transient and never
+serialized, so every object a consumer read looked complete -- and
+"complete with no companion draw" is precisely the display-mode
+exemption, the branch that says a Points or Wireframe object must be
+allowed to draw its own subject. A viewer therefore granted the
+exemption to objects whose faces the *producer* had held back, which
+is the dots-first load storm reproduced one tier out.
+
+It rides the **object entry in the manifest root** as of v55, beside
+the document identity of v38 and outside the group chunk for the same
+reason: it is a property of the publish, not of the geometry. Folding
+it into a content key would retire an object's cached chunks every
+time the producer's capture backlog drained -- a state bit re-keying
+megabytes. The consumer stamps it onto the object's draws in
+`applySceneObjects`, on every assembly, because a draw outlives the
+entry that was current when it arrived (an object stands on its old
+geometry while new geometry is in flight) and a mark left standing
+after the companion landed is a companion waited for forever. The
+delta's change test gained the bit for the same reason: it usually
+flips *with* the draws that were being waited for, but a delta that
+depended on that coincidence would fail silently in the one case it
+did not hold. A bundled capture has no object section, so the
+monolithic layout carries the keys as a list after the scene draws --
+four zero bytes for the settled scene a capture is normally taken of.
+
+NOTE: **this was carried on the browser's evidence, not the
+desktop's.** The split counter `gatedByDependency` measured **zero on
+every plan of every phase of every run** of the storm gate: on the
+`.FCStd` path the load gate (13b.1) covers exactly the window in which
+a late companion can occur, so `objectIncomplete` is masked there and
+the desktop cannot show the rule firing. The streaming tier has no
+"document restoring" status to hang a load gate on -- a served scene
+arrives progressively with the view live throughout -- so it is the
+tier where the mark is the only thing standing between a deferred
+companion and the exemption.
 
 The edge gate is the harder half there, and not for want of a budget:
 the WASM tier has had one all along (`Render::MemoryBudget s_budget`,

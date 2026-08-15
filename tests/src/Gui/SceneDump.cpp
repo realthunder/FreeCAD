@@ -765,6 +765,145 @@ TEST(SceneDump, deltaCarriesOnlyWhatChanged)
     }
 }
 
+/// An object whose companion draw the producer held back says so on the
+/// wire (v55, docs/SceneStreaming.md #13b). Without it a consumer reads
+/// every object as complete and grants the Points/Wireframe exemption to
+/// one whose faces are merely still coming -- the dots-first load storm,
+/// reproduced a tier further out.
+TEST(SceneDump, anIncompleteObjectSaysSoOnTheWire)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    // One of the two scene objects published with a companion deferred.
+    // Marked on ONE of its two draws: the producer stamps the draws
+    // whose companion is missing, and the question is about the object.
+    for (auto& d : snap.scene) {
+        if (d.objectKey == 0x1111 && d.material.diffuse == 0x00ff00ffu) {
+            d.objectIncomplete = true;
+        }
+    }
+
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+    expectScene(loaded);
+
+    auto held = model.objects.find(0x1111);
+    ASSERT_TRUE(held != model.objects.end());
+    EXPECT_TRUE(held->second.entry.incomplete);
+    auto whole = model.objects.find(0x2222);
+    ASSERT_TRUE(whole != model.objects.end());
+    EXPECT_FALSE(whole->second.entry.incomplete);
+
+    // And it reaches the draws, which is where the contract reads it --
+    // every draw of the object, not just the one the producer stamped.
+    size_t marked = 0;
+    for (const auto& d : loaded.scene) {
+        if (d.objectIncomplete) {
+            ++marked;
+            EXPECT_EQ(d.objectKey, 0x1111u);
+        }
+    }
+    EXPECT_EQ(marked, 2u);
+}
+
+/// The mark clears without any geometry moving, which is the case the
+/// object entry's placement makes possible and a content key would have
+/// hidden: it lives outside the group chunk, so a publish that only
+/// drains the producer's capture backlog re-keys nothing. A delta that
+/// carried entries by manifest key alone would carry none of it, and the
+/// consumer would wait forever for a companion that had arrived.
+TEST(SceneDump, theIncompleteMarkClearsWithoutTheGeometryMoving)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    attachSinks(snap, store);
+    for (auto& d : snap.scene) {
+        if (d.objectKey == 0x1111) {
+            d.objectIncomplete = true;
+        }
+    }
+
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.manifestVersion = 1;
+    snap.objectEntries = &entries;
+    std::vector<uint8_t> full;
+    ASSERT_TRUE(Render::saveSceneSnapshot(full, snap));
+
+    Render::SceneObjectModel model;
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(full.data(), full.size(), loaded));
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+    ASSERT_TRUE(model.objects[0x1111].entry.incomplete);
+
+    // Publish 2: the backlog drained. Nothing else about the object
+    // changed -- same meshes, same materials, same box -- so its group
+    // manifest key is the one publish 1 sent.
+    for (auto& d : snap.scene) {
+        d.objectIncomplete = false;
+    }
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries2;
+    snap.baseObjects = entries;
+    snap.baseVersion = 1;
+    snap.manifestVersion = 2;
+    snap.objectEntries = &entries2;
+    std::vector<uint8_t> drained;
+    ASSERT_TRUE(Render::saveSceneSnapshot(drained, snap));
+
+    Render::SceneSnapshot loaded2;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(drained.data(), drained.size(), loaded2));
+    ASSERT_EQ(loaded2.objectUpdates.size(), 1u)
+        << "the delta has to carry an object whose mark moved, even though "
+           "its manifest key did not";
+    EXPECT_EQ(loaded2.objectUpdates[0].entry.objectKey, 0x1111u);
+    EXPECT_EQ(loaded2.objectUpdates[0].entry.key,
+              model.objects[0x1111].entry.key)
+        << "the mark is outside the content key: draining the backlog must "
+           "not re-key the geometry";
+    ASSERT_TRUE(resolveInto(loaded2, store, model));
+    EXPECT_FALSE(model.objects[0x1111].entry.incomplete);
+    for (const auto& d : loaded2.scene) {
+        EXPECT_FALSE(d.objectIncomplete);
+    }
+}
+
+/// A bundled capture has no object section to hang the mark on, and a
+/// capture taken mid-load is exactly the one that needs it.
+TEST(SceneDump, aBundledCaptureCarriesTheIncompleteMark)
+{
+    Render::SceneSnapshot snap = makeScene();
+    for (auto& d : snap.scene) {
+        if (d.objectKey == 0x2222) {
+            d.objectIncomplete = true;
+        }
+    }
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    expectScene(loaded);
+    size_t marked = 0;
+    for (const auto& d : loaded.scene) {
+        if (d.objectIncomplete) {
+            ++marked;
+            EXPECT_EQ(d.objectKey, 0x2222u);
+        }
+    }
+    EXPECT_EQ(marked, 1u);
+}
+
 /// A delta's changed manifests ride inline (v37). They are new by
 /// definition — an object is in the delta exactly because its manifest
 /// key changed — so no cache ever answers for them, and fetching them
