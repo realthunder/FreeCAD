@@ -4106,6 +4106,53 @@ public:
     /// destroys it with the other offscreen targets.
     bool ensureDebugScene();
 
+    /// Whether this backend can hand the id image back to the CPU at
+    /// all. WebGL2 cannot, which is why the audit is a desktop
+    /// instrument that informs the browser tier rather than one that
+    /// runs there.
+    static bool idReadbackSupported()
+    {
+        const bgfx::Caps *caps = bgfx::getCaps();
+        return caps
+            && (caps->supported & BGFX_CAPS_TEXTURE_BLIT)
+            && (caps->supported & BGFX_CAPS_TEXTURE_READ_BACK);
+    }
+
+    /// CPU-readable mirror of the id image, created on first use at the
+    /// debug target's size. A render target cannot be read back
+    /// directly on every backend; blitting into a plain READ_BACK
+    /// texture is the portable arrangement.
+    bool ensureIdReadback()
+    {
+        if (!idReadbackSupported() || !bgfx::isValid(debugSceneTex))
+            return false;
+        if (bgfx::isValid(idReadTex) && idReadW == debugSceneW
+                && idReadH == debugSceneH)
+            return true;
+        if (bgfx::isValid(idReadTex)) {
+            bgfx::destroy(idReadTex);
+            idReadTex = BGFX_INVALID_HANDLE;
+        }
+        idReadTex = bgfx::createTexture2D(debugSceneW, debugSceneH, false, 1,
+            bgfx::TextureFormat::RGBA16F,
+            BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
+        idReadW = debugSceneW;
+        idReadH = debugSceneH;
+        return bgfx::isValid(idReadTex);
+    }
+
+    /// Copy this frame's id image and ask for it back. Returns the frame
+    /// number at which \a dst is filled -- the caller must keep \a dst
+    /// alive until bgfx has reached it, since the render thread writes
+    /// into it long after this returns. 0 = the copy could not be made.
+    uint32_t readbackId(void *dst)
+    {
+        if (!bgfx::isValid(idReadTex) || !bgfx::isValid(debugSceneTex))
+            return 0;
+        bgfx::blit(vid(ViewIdReadback), idReadTex, 0, 0, debugSceneTex);
+        return bgfx::readTexture(idReadTex, dst);
+    }
+
     /// Rasterize one scene triangle draw into the debug scene target
     /// (docs/RenderDebug.md): mode 6 accumulates a fragment count with
     /// the depth test off (additive blend — the overdraw heatmap
@@ -6732,15 +6779,6 @@ public:
         occlusionProbe.handles.clear();
         occlusionProbe.pending.clear();
         cullQueries.releaseAll();
-        // The occlusion queries are a process-wide pool shared by every
-        // view (docs/FarFieldProxies.md §10.1, §12), so a closed view
-        // that kept its leases would starve the next one that measured
-        // or culled.
-        for (auto q : occlusionProbe.handles)
-            occlusionLeases.release(q);
-        occlusionProbe.handles.clear();
-        occlusionProbe.pending.clear();
-        cullQueries.releaseAll();
         // A publish-only renderer never asked for a view, so there is
         // none to remove -- and asking would be the one call that
         // brings the graphics device into a process that has none.
@@ -6933,6 +6971,43 @@ public:
     void buildInstanceGroups();
 
     Render::Background background;
+    /// Version stamp of the published SCENE -- bumped by setScene,
+    /// consumed by publishedMeshes() below.
+    uint64_t drawListVersion = 1;
+    /// cacheId -> generation of every mesh the published scene
+    /// carries: the collector's keep-set (sec 13c.5). A kept mesh is
+    /// never TTL-collected -- its buffers die at the rung swap
+    /// (generation moved: freed synchronously at the next collect,
+    /// drawn or not, which is what makes a downgrade's free an EVENT
+    /// the plan can trust) or when it leaves the scene at a publish.
+    /// One carve-out: a kept mesh whose every draw the element gates
+    /// suppress (gatedOnlyMeshes) is not submittable, and keeping the
+    /// unsubmittable is how 74.5MB of gated edge buffers came to stand
+    /// behind a 64MB budget -- it falls back to the recency rule
+    /// instead (collectMeshes).
+    /// The two-frame TTL guess collected buffers the scene still drew
+    /// on a longer-than-two-frame cadence and re-uploaded them
+    /// forever: the measured 198-draw, 75MB, period-4 wave.
+    ///
+    /// The SCENE only, deliberately: overlays, selections and the
+    /// highlight feed (NaviCube, show-on-top) draw every frame while
+    /// they are active, so the TTL never bites them and they need no
+    /// keep entry -- and the highlight churns per HOVER, which would
+    /// rebuild this map per mouse move if it were included. They stay
+    /// on the recency rule, ungoverned, for now.
+    std::unordered_map<uint64_t, uint64_t> publishedIds;
+    uint64_t publishedIdsVersion = 0;
+    const std::unordered_map<uint64_t, uint64_t> &publishedMeshes()
+    {
+        if (publishedIdsVersion == drawListVersion)
+            return publishedIds;
+        publishedIdsVersion = drawListVersion;
+        publishedIds.clear();
+        for (const auto &d : scene)
+            if (d.mesh)
+                publishedIds[d.mesh->cacheId] = d.mesh->generation;
+        return publishedIds;
+    }
     std::map<int, Render::DrawCallList> selections;
     // Overlay feeds keyed by producer id (Renderer::setOverlay); map
     // order assigns the (limited) overlay view slots deterministically.
@@ -6957,6 +7032,214 @@ public:
     Render::WaterConfig waterconf;
     Render::BloomConfig bloomconf;
     Render::RenderDebugConfig debugconf;
+    /// Backend frame cost accumulated since the last reported line
+    /// (docs/FarFieldProxies.md sec 10.1). Per view, because two views
+    /// draw different scenes and a shared accumulator would report
+    /// their mean as though it were one frame's.
+    FrameStatsAccum frameStats;
+    /// Where the FIXED per-frame CPU goes inside render()
+    /// (docs/DrawSubmission.md phase 0 item 2). The frame line already
+    /// splits ours / bgfx / outside; it found 15.6ms of our own C++ that
+    /// does NOT scale with draw count, which is four times the per-draw
+    /// part and is the largest single CPU item in the renderer. These
+    /// name the candidates: the cull walks all rows, and so does the
+    /// submit loop, whatever the survivors number.
+    ///
+    /// Accumulated over the reporting window like frameStats, and reset
+    /// with it. Anything not scoped shows up in the derived remainder,
+    /// which is the point -- a breakdown that cannot be wrong about what
+    /// it left out.
+    /// CpuPreSubmit is everything from the top of render() to the main
+    /// submit loop (the cull included, and subtracted back out when
+    /// reported); CpuPostSubmit is what the remainder must then be.
+    /// Measured with a checkpoint rather than a scope because the region
+    /// has early returns and is not a block.
+    ///
+    /// The Post* four subdivide the post-submit region, which measured
+    /// 12.95ms flat across a 2.4x change in draw count. ! The first
+    /// explanation offered for that -- "eight per-pass full scans of the
+    /// draw list" -- was WRONG and is why these exist: six of the eight
+    /// are behind ground-reflection, hidden-line or scene-outline
+    /// guards that are off on this camera, and the three that do run
+    /// short-circuit per row. Counting loops in the source is not
+    /// measuring them.
+    ///
+    /// CpuCtxOut / CpuCtxIn / CpuBlit are the desktop hand-off around
+    /// bgfx::frame(): drop the Qt GL context, take bgfx's, and after the
+    /// frame take Qt's back and copy bgfx's target into the widget. The
+    /// comment on timedBgfxFrame calls these "Qt's cost, not bgfx's" and
+    /// excludes them from the bgfx figure -- which is right, and is
+    /// exactly why they need a number of their own. They are flat per
+    /// frame, which is the shape the fixed cost has.
+    enum CpuPhase { CpuCull, CpuSubmitLoop, CpuPreSubmit,
+                    CpuPostCaps, CpuPostEffects, CpuPostSel, CpuPostTail,
+                    CpuCtxOut, CpuCtxIn, CpuBlit, CpuCtxDone,
+                    CpuPhaseCount };
+    int64_t renderInnerT0 = 0;
+    /// Running checkpoint for the Post* phases: each mark closes the
+    /// span since the previous one. Safe because the post region is
+    /// straight-line at top level (its only `return` is inside a
+    /// lambda), so no span can be left open.
+    int64_t cpuMarkT = 0;
+    void cpuMark(int phase)
+    {
+        if (!debugconf.frameTiming)
+            return;
+        const int64_t now = bx::getHPCounter();
+        cpuPhaseMs[phase] += 1000.0 * double(now - cpuMarkT)
+            / double(bx::getHPFrequency());
+        cpuMarkT = now;
+    }
+    double cpuPhaseMs[CpuPhaseCount] = {};
+    /// RAII so an early return or a throw cannot leave a phase open.
+    struct CpuScope {
+        Private *self;
+        int phase;
+        int64_t t0;
+        bool on;
+        CpuScope(Private *s, int p)
+            : self(s), phase(p), t0(0), on(s->debugconf.frameTiming)
+        {
+            if (on)
+                t0 = bx::getHPCounter();
+        }
+        ~CpuScope()
+        {
+            if (on)
+                self->cpuPhaseMs[phase] += 1000.0
+                    * double(bx::getHPCounter() - t0)
+                    / double(bx::getHPFrequency());
+        }
+        CpuScope(const CpuScope &) = delete;
+        CpuScope &operator=(const CpuScope &) = delete;
+    };
+    /// The occluded-fraction walk (docs/FarFieldProxies.md sec 10.1) and
+    /// its scratch. Per view for the same reason as frameStats: two
+    /// views see different scenes from different cameras.
+    OcclusionProbeState occlusionProbe;
+    OcclusionBoxBatch occlusionBatch;
+    OcclusionLeases occlusionLeases;
+    /// Occlusion culling (docs/FarFieldProxies.md sec 12) -- the same
+    /// mechanism as the probe above, acting on its answers. Per view
+    /// for the same reason: the verdicts are a camera's, not a scene's.
+    Render::OcclusionCullConfig cullconf;
+    Render::OcclusionCuller culler;
+    Render::OcclusionTestBatch cullBatch;
+    /// The tests in flight and the handles created for them. ! One
+    /// handle per test, not a pool of handles reassigned per frame: a
+    /// bgfx query handle is an object's identity and a reassigned one
+    /// answers with the previous occupant's verdict (OcclusionLeases).
+    OcclusionCullQueries cullQueries;
+    /// KEY: The other oracle (docs/FarFieldProxies.md section 12.12): a CPU
+    /// depth buffer, rasterized and questioned inside one frame. It
+    /// shares the *index* with the culler above and nothing else -- no
+    /// verdict, no lease, no pad, no confirmation -- because everything
+    /// the culler keeps between frames is there to survive a latency
+    /// this path does not have.
+    Render::MaskedOccluderPass maskedCull;
+    /// The frame-level A/B probe over the whole occlusion block
+    /// (12.13, the OcclusionBenefitProbe parameter). Holds its verdict
+    /// arms across frames; reset on the probe's off->on edge so a
+    /// re-enabled probe is a fresh experiment.
+    Render::CullBenefitEstimator cullBenefit;
+    bool cullBenefitOn = false;
+    /// Occlusion folded per SOURCE, for the level plan (occlusion as a
+    /// memory mechanism): how many consecutive rendered frames EVERY
+    /// draw of a source has been culled -- frustum or occlusion, with
+    /// the software oracle answering. The downgrade sweep treats a
+    /// source past OcclusionCullConfig::demoteStreak as free: its
+    /// upload comes back without charging the camera visible error.
+    /// An entry is only trusted at the CURRENT fold generation, so a
+    /// reused tag address cannot inherit a dead source's streak; the
+    /// map is pruned of stale entries on a slow cadence rather than
+    /// rebuilt, and a streak survives a paused render loop only if the
+    /// camera did (the plan fires against the last rendered frame's
+    /// camera, which is the one the fold saw).
+    struct OcclStreak {
+        uint32_t frames = 0;
+        uint64_t fold = 0;
+    };
+    std::unordered_map<const void *, OcclStreak> occlHiddenStreak;
+    uint64_t occlStreakFold = 0;
+    /// * The cull audit (docs/FarFieldProxies.md sec 12.9): one id image in
+    /// flight, plus the verdict it is an answer about.
+    ///
+    /// The snapshots are the point. A readback lands a frame or two
+    /// after the image was drawn, by which time the mask has been walked
+    /// again and the draw list may have been republished; checking the
+    /// image against *then-current* state would compare a picture with a
+    /// verdict that was never applied to it -- which is the same
+    /// one-frame skew that made the culling oscillate in the first
+    /// place, reappearing inside the instrument built to find it.
+    std::vector<uint16_t> idPixels;   ///< RGBA16F, 4 halves per pixel
+    std::vector<uint8_t> idMask;      ///< the cull mask, as it was
+    /// Which node's verdict cut each masked row, as it was. Empty when
+    /// occlusion culling is off, which is how the readout tells "the
+    /// frustum cut this row" from "nothing was attributing at all".
+    std::vector<int32_t> idOwner;
+    /// Every node's visibility state, as it was. Indexed by node.
+    std::vector<Render::OcclusionNodeAudit> idNodeAudit;
+    std::vector<uint64_t> idKeys;     ///< objectKey per row, as it was
+    std::vector<uint32_t> idHist;     ///< pixels owned, per id
+    /// What the tight-bound arms would have culled on the frame the
+    /// image was taken (docs/FarFieldProxies.md sec 12.19). Snapshots like
+    /// everything else here, and for the same reason -- they are answers
+    /// about that image. Empty unless RenderDebug_CullBounds is on.
+    std::vector<uint8_t> idTightJudged;
+    std::vector<uint8_t> idTightAabb;
+    std::vector<uint8_t> idTightObb;
+    std::vector<uint8_t> idTightTri;
+    TightBoundAudit idTight;
+    /// Primitives a single draw may be asked about one by one before the
+    /// diagnostic gives up on it. A bound on the worst row, not a
+    /// sample: rows that hit it are counted and reported, because a cap
+    /// nobody is told about reads as a mechanism that found nothing.
+    static const uint32_t kTightPrimitiveCap = 200000;
+    /// Frame at which idPixels is filled; 0 = no readback in flight.
+    uint32_t idReadyFrame = 0;
+    uint16_t idPixW = 0;
+    uint16_t idPixH = 0;
+    bool idAuditWarned = false;
+    /// What cross-object instancing collapsed on the last frame
+    /// (docs/DrawSubmission.md phase 0.5). Every submission decision is
+    /// scoped against the draw count, and until this existed nothing
+    /// said how much of that count the batching already removes --
+    /// "the model has repeated parts" and "the renderer is instancing
+    /// them" were one belief with no measurement between them.
+    struct InstancingStats {
+        uint32_t groups = 0;          ///< groups the producer formed
+        uint32_t groupsSingleton = 0; ///< of them, holding one member
+        uint32_t groupsUsable = 0;    ///< of them, holding two or more
+        uint32_t membersUsable = 0;   ///< draws in the usable groups
+        uint32_t submits = 0;         ///< instanced submits issued
+        uint32_t drawsReplaced = 0;   ///< draws those submits stood in for
+        uint32_t refused = 0;         ///< groups the backend refused
+        uint32_t refusedMembers = 0;
+        uint32_t thinnedMembers = 0;  ///< left alone by culling/visibility
+        uint32_t eligible = 0;        ///< scene rows offered
+        /// Why nothing was instanced at all, when nothing was. Null when
+        /// the path ran -- a zero with no reason beside it is the readout
+        /// this exists to replace.
+        const char *why = nullptr;
+    };
+    InstancingStats instStats;
+    /// Whether BGFX_DEBUG_PROFILER is currently set. bgfx needs it to
+    /// fill per-view stats, and it is a context-wide switch, so it is
+    /// tracked rather than set every frame.
+    bool profilerOn = false;
+    /// The draw list the index was built from. A rebuild costs 12-28 ms
+    /// on a large assembly, so it happens when the scene changes and
+    /// never per frame.
+    uint64_t cullSceneVersion = 0;
+    uint64_t cullBuiltVersion = 0;
+    double cullBuildMs = 0.0;
+    bool cullUnsupported = false;
+    /// Draws the index deliberately does not contain, and how many of
+    /// them were on-top. Reported, because "the index is smaller than
+    /// the scene" is the difference between exempting what cannot be
+    /// judged and quietly not culling anything.
+    uint32_t cullExemptOnTop = 0;
+    uint32_t cullIndexed = 0;
     Render::UserShaderConfig usershaderconf;
     /// Snapshot of _BGFXLib.userCompileGeneration taken by render();
     /// isSceneDirty() reports dirty while they differ (async compile).
@@ -7060,6 +7343,83 @@ public:
     // viewer keeps redrawing while set so the animation advances.
     bool animatedFrame = false;
     float bboxMin[3], bboxMax[3];
+    /// The element gates (docs/SceneStreaming.md #13b), pushed in from
+    /// the host -- the Gui bridge on the desktop, the URL parameters in
+    /// the standalone viewer. Defaults are the pre-feature behaviour:
+    /// draw every vertex, drop no edge, suppress nothing while loading.
+    ///
+    /// OUTSIDE the desktop guard below, and deliberately: the vertex
+    /// gate is pure display -- it asks the producer's one-bit
+    /// classification and whether the edges are on screen, and needs no
+    /// budget, no level plan and no pressure state. That is worth more
+    /// on a phone than on the desktop, where a point costs a 32-byte
+    /// sprite instance record against 4 bytes in the heap. The edge
+    /// gate rides along but stays dormant there, because it reads
+    /// gpuOverBudget and the standalone tier's budget is its CPU half
+    /// only -- a resident-payload and heap figure that cannot see the
+    /// GPU buffers an edge draw would free. It arms itself the day that
+    /// tier grows an uploaded-bytes meter (#13a), with no further wiring.
+    bool shapeVerticesOn = true;
+    bool pressureDropEdges = false;
+    bool loadDropElements = false;
+    /// What the gates suppressed in the last rendered frame, and how
+    /// many drawables were eligible to be suppressed at all (classified
+    /// attachedOnly by the producer). Reported with the level plan: a
+    /// gate that cannot say whether it fired cannot be told apart from
+    /// one that is not wired, and this workstream has already spent a
+    /// session on exactly that confusion. `eligible` separates "the
+    /// rule refused" from "nobody classified anything".
+    size_t gatedPoints = 0, gatedLines = 0, gateEligible = 0;
+    /// Meshes whose every scene draw the gates suppressed this frame
+    /// -- not submittable, so the collector must not keep them for
+    /// being published (see collectMeshes). Rebuilt each frame by the
+    /// gate walk; empty whenever no gate is active.
+    std::unordered_set<uint64_t> gatedOnlyMeshes;
+    // Whether the last rendered frame stood over the GPU budget. Out
+    // here because the edge gate reads it; only the desktop half ever
+    // writes it (the budget crossing, which also wakes the planner), so
+    // in the standalone build it stays false and says so honestly.
+    bool gpuOverBudget = false;
+    // Whether the pressure controller still holds raised error
+    // (levelPressure.raisedPx > 0) -- the desktop plan mirrors it here
+    // because levelPressure is desktop-only while the edge gate is
+    // shared code. The gate LATCHES on this rather than following
+    // gpuOverBudget alone: once the collector retires gated edge
+    // buffers the total falls under budget, and a gate keyed to the
+    // instantaneous bit would re-open, re-upload the whole class, and
+    // hand the wave its period back -- eviction and gate coupled
+    // through the meter. The staircase's learned floor keeps this
+    // true at the settled state, so the latch inherits the ladder's
+    // own hysteresis instead of inventing a second one.
+    bool pressureStanding = false;
+    // The element contract's staged pressure latch (#13b): 0 = nothing
+    // dropped, 1 = attached points dropped, 2 = attached lines dropped
+    // too. Escalates points -> lines while over budget and releases
+    // lines -> points once the pressure has fully cleared, one stage
+    // per elemGateStagger frames, so the collector's census can answer
+    // whether the cheaper stage was enough before the next is spent.
+    int elemPressureStage = 0;
+    int elemStageFrames = 0;
+    int elemGateStagger = 15;
+    // The load gate as of the last frame, so the crossing can be
+    // reported. The plan readout below cannot carry it: that prints on
+    // a camera settle, and a load can begin and end entirely between
+    // two settles -- the gate would do its whole job with nothing ever
+    // saying it ran.
+    bool loadDropSeen = false;
+
+    /// Whether the level plan narrates its decisions. Pushed in from
+    /// the Gui bridge like the budget beside it -- this library knows
+    /// nothing of RenderParams -- with the environment variable as the
+    /// standalone viewer's way in. Out here with the gates it also
+    /// reports, so the standalone build can narrate them too.
+    bool levelDebug() const
+    {
+        static const bool env = std::getenv("FC_LEVEL_DEBUG") != nullptr;
+        return levelDebugOn || env;
+    }
+    bool levelDebugOn = false;
+
 
 #ifndef FC_RENDERER_STANDALONE
     // The desktop level plan's event half (§13 step 2): fed the camera
@@ -7069,11 +7429,40 @@ public:
     // The last memory-ceiling epoch this view replanned for (§13
     // step 3) — a new observation marks the planner dirty.
     uint64_t levelCeilingSeen = 0;
+    /// How much visible error the ladder is holding to fit its budget,
+    /// and what it has learned about giving it back (sec 13c.3). The climb
+    /// reads its tolerance from this, so both directions of the ladder
+    /// agree on one -- see the plan callback, where the oscillation it
+    /// prevents is measured.
+    Render::PressureTolerance levelPressure;
+    /// The budget the pressure controller's floor was learned under; a
+    /// different one is a different question and forgets it.
+    size_t levelBudgetSeen = 0;
+    /// How much of the held error survives each plan that fits, pushed
+    /// in from the bridge beside the budget (this library knows nothing
+    /// of RenderParams). The default is the parameter's, so a viewer
+    /// that never sets it still releases in steps rather than snapping.
+    float levelPressureReleaseFrac = 0.5f;
+    /// DowngradeLedger parameter: the downgrade sweep's in-flight credit
+    /// (Render::DowngradeLedger on the view); off restores the
+    /// storming behaviour for comparison.
+    bool downgradeLedgerOn = true;
+    /// ClimbHardLimit / ClimbAdmitBatch parameters: the budget is
+    /// an absolute ceiling for climbs -- none admitted at or over it
+    /// (in-flight ones aborted through the de-want pass), batched
+    /// admission under it.
+    bool climbHardLimitOn = true;
+    int climbAdmitBatch = 64;
+    /// DescentOrderBatch parameter: how many descents one plan pass may
+    /// order (0 = uncapped); see planMeshDemotes' maxOrders.
+    int descentOrderBatch = 64;
+    /// LevelBudgetDeadband parameter: the rest band above the GPU
+    /// budget, as a fraction of it, inside which the downgrade sweep
+    /// does not trigger (it still corrects back to the budget when it
+    /// does). See the plan callback for the dither it removes.
+    float levelBudgetDeadband = 0.03f;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
-    // Whether the last rendered frame stood over the GPU budget — the
-    // crossing is what wakes the planner.
-    bool gpuOverBudget = false;
 
     /// GPU geometry bytes in use: the API's own number where it
     /// reports one, else the upload accounting.

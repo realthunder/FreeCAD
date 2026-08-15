@@ -83,6 +83,16 @@ bool BGFXRenderer::render(const QColor &col,
         savedMode = pimpl->debugconf.viewMode;
         pimpl->debugconf.viewMode = pimpl->pendingDump.mode;
     }
+    // The seam that makes the frame's biggest term visible. Everything
+    // this renderer does is inside this call; bgfx's `cpuTimeFrame` is
+    // the whole application frame. The difference is Coin's composite,
+    // Qt and the app -- see docs/DrawSubmission.md phase 0 item 2, where
+    // ~44ms of a 54.8ms frame had no instrument on it at all.
+    const int64_t renderT0 = bx::getHPCounter();
+    if (pimpl->debugconf.frameTiming)
+        pimpl->frameStats.renderMs += 1000.0
+            * double(bx::getHPCounter() - renderT0)
+            / double(bx::getHPFrequency());
     bool ok = pimpl->render(col, viewMatrix, projMatrix);
     if (savedMode >= 0)
         pimpl->debugconf.viewMode = savedMode;
@@ -223,6 +233,12 @@ void BGFXRenderer::setScene(DrawCallList &&draws)
 {
     dumpFeed("scene", 0, draws);
     pimpl->scene = std::move(draws);
+    ++pimpl->drawListVersion;
+    // The occlusion index is partitioned from this list, and a stale
+    // partition would mask draws by the bounds of whatever used to
+    // occupy those rows. Rebuilt on the next frame that culls, never
+    // here: a publish that no view is culling should not pay for one.
+    ++pimpl->cullSceneVersion;
     pimpl->buildInstanceGroups();
     pimpl->sceneDirty = true;
     pimpl->feedDirty = true;
@@ -517,6 +533,21 @@ void BGFXRenderer::setRenderDebugConfig(const RenderDebugConfig &config)
     }
 }
 
+void BGFXRenderer::setOcclusionCullConfig(const OcclusionCullConfig &config)
+{
+    if (pimpl->cullconf != config) {
+        const bool wasEnabled = pimpl->cullconf.enabled;
+        pimpl->cullconf = config;
+        pimpl->sceneDirty = true;
+        // Turning culling off has to give the masked geometry back, and
+        // the mask is rebuilt per frame -- so nothing to undo. Turning it
+        // on (or changing what a verdict means) starts from no
+        // knowledge rather than from verdicts taken under other rules.
+        if (!config.enabled || !wasEnabled)
+            pimpl->culler.clear();
+    }
+}
+
 void BGFXRenderer::setUserShaderConfig(const UserShaderConfig &config)
 {
     if (pimpl->usershaderconf == config)
@@ -660,9 +691,65 @@ bool BGFXRenderer::drivesMeshLevels() const
 
 void BGFXRenderer::setGpuMemoryBudget(size_t bytes)
 {
+    if (pimpl->gpuBudget == bytes)
+        return;
     pimpl->gpuBudget = bytes;
+#ifndef FC_RENDERER_STANDALONE
+    // A changed budget is a new question and the plan must be made to
+    // ask it. It used to be woken by its own boundary dither -- over
+    // budget, a sweep, a markDirty, forever -- and the deadband
+    // removed exactly that: a live budget drop on a still camera then
+    // slept unnoticed for a whole 600s measurement window.
+    pimpl->levelPlanner.markDirty();
+#endif
+}
+
+void BGFXRenderer::setLevelDebug(bool on)
+{
+    pimpl->levelDebugOn = on;
+}
+
+void BGFXRenderer::setLevelPressureRelease(float fraction)
+{
+    pimpl->levelPressureReleaseFrac = fraction;
+}
+
+void BGFXRenderer::setDowngradeLedger(bool on)
+{
+    pimpl->downgradeLedgerOn = on;
+}
+
+void BGFXRenderer::setClimbAdmission(bool hardLimit, int batch)
+{
+    pimpl->climbHardLimitOn = hardLimit;
+    pimpl->climbAdmitBatch = batch > 0 ? batch : 1;
+}
+
+void BGFXRenderer::setDescentOrderBatch(int batch)
+{
+    pimpl->descentOrderBatch = batch > 0 ? batch : 0;
+}
+
+void BGFXRenderer::setLevelBudgetDeadband(float fraction)
+{
+    const float band = fraction > 0.0f ? fraction : 0.0f;
+    if (pimpl->levelBudgetDeadband == band)
+        return;
+    pimpl->levelBudgetDeadband = band;
+    // Same staleness as the budget: narrowing the band can put the
+    // standing total outside it, and only a plan pass can act on that.
+    pimpl->levelPlanner.markDirty();
 }
 #endif
+
+void BGFXRenderer::setElementGates(bool shapeVertices, bool pressureEdges,
+                                   bool loadingDrop, int staggerFrames)
+{
+    pimpl->shapeVerticesOn = shapeVertices;
+    pimpl->pressureDropEdges = pressureEdges;
+    pimpl->loadDropElements = loadingDrop;
+    pimpl->elemGateStagger = staggerFrames > 0 ? staggerFrames : 1;
+}
 
 //////////////////////////////////////////////////////////////////////
 

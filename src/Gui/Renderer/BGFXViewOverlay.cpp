@@ -693,52 +693,6 @@ bool BGFXView::ensureDebugScene()
     debugSceneH = height;
     return bgfx::isValid(debugSceneFbo);
 }
-    /// Whether this backend can hand the id image back to the CPU at
-    /// all. WebGL2 cannot, which is why the audit is a desktop
-    /// instrument that informs the browser tier rather than one that
-    /// runs there.
-    static bool idReadbackSupported()
-    {
-        const bgfx::Caps *caps = bgfx::getCaps();
-        return caps
-            && (caps->supported & BGFX_CAPS_TEXTURE_BLIT)
-            && (caps->supported & BGFX_CAPS_TEXTURE_READ_BACK);
-    }
-
-    /// CPU-readable mirror of the id image, created on first use at the
-    /// debug target's size. A render target cannot be read back
-    /// directly on every backend; blitting into a plain READ_BACK
-    /// texture is the portable arrangement.
-    bool ensureIdReadback()
-    {
-        if (!idReadbackSupported() || !bgfx::isValid(debugSceneTex))
-            return false;
-        if (bgfx::isValid(idReadTex) && idReadW == debugSceneW
-                && idReadH == debugSceneH)
-            return true;
-        if (bgfx::isValid(idReadTex)) {
-            bgfx::destroy(idReadTex);
-            idReadTex = BGFX_INVALID_HANDLE;
-        }
-        idReadTex = bgfx::createTexture2D(debugSceneW, debugSceneH, false, 1,
-            bgfx::TextureFormat::RGBA16F,
-            BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
-        idReadW = debugSceneW;
-        idReadH = debugSceneH;
-        return bgfx::isValid(idReadTex);
-    }
-
-    /// Copy this frame's id image and ask for it back. Returns the frame
-    /// number at which \a dst is filled — the caller must keep \a dst
-    /// alive until bgfx has reached it, since the render thread writes
-    /// into it long after this returns. 0 = the copy could not be made.
-    uint32_t readbackId(void *dst)
-    {
-        if (!bgfx::isValid(idReadTex) || !bgfx::isValid(debugSceneTex))
-            return 0;
-        bgfx::blit(vid(ViewIdReadback), idReadTex, 0, 0, debugSceneTex);
-        return bgfx::readTexture(idReadTex, dst);
-    }
 
 
 void BGFXView::submitDebugScene(const Render::DrawCall &draw, int mode)
