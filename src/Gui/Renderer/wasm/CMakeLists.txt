@@ -149,73 +149,82 @@ set_target_properties(fcviewer PROPERTIES SUFFIX ".html")
 # one console line. Building it here is what makes `cmake --build
 # build/wasm` produce the whole page instead of half of it.
 #
-# The node toolchain is a HARD dependency of the viewer, like emscripten
-# and the host shaderc above: the page is not the canvas, it is the canvas
-# plus its chrome, and a build that quietly produces the first half has
-# produced something that looks finished and is not. Missing tools stop
-# the configure here rather than surfacing as one console line in a
-# browser later.
-find_program(FCVIEWER_NPM npm)
-find_program(FCVIEWER_NODE node)
-if(NOT FCVIEWER_NPM OR NOT FCVIEWER_NODE)
-    message(FATAL_ERROR
-        "the WASM viewer needs the node toolchain to build its DOM UI "
-        "bundle -- the menu and the HUD card (src/Gui/Renderer/web, built "
-        "with vite).\n"
-        "  node: ${FCVIEWER_NODE}\n"
-        "  npm:  ${FCVIEWER_NPM}\n"
-        "Install node and npm (or put them on PATH) and configure again.")
+# Built by default. With it on, the node toolchain is a HARD dependency,
+# like emscripten and the host shaderc above: the page is not the canvas,
+# it is the canvas plus its chrome, and a build that quietly produces the
+# first half has produced something that looks finished and is not, which
+# is exactly how this went unnoticed. Missing tools stop the configure
+# here rather than surfacing as one console line in a browser later.
+#
+# -DFCVIEWER_UI=OFF is the way to build without node at all -- an
+# explicit choice to produce the bare page, rather than a silent
+# fallback. shell.html then 404s web/inspector.js and logs "fcviewer-ui:
+# bundle failed to load", and the viewer runs with no menu and no HUD
+# card.
+option(FCVIEWER_UI "Build the viewer's DOM UI bundle (requires node/npm)" ON)
+if(FCVIEWER_UI)
+    find_program(FCVIEWER_NPM npm)
+    find_program(FCVIEWER_NODE node)
+    if(NOT FCVIEWER_NPM OR NOT FCVIEWER_NODE)
+        message(FATAL_ERROR
+            "the WASM viewer needs the node toolchain to build its DOM UI "
+            "bundle -- the menu and the HUD card (src/Gui/Renderer/web, built "
+            "with vite).\n"
+            "  node: ${FCVIEWER_NODE}\n"
+            "  npm:  ${FCVIEWER_NPM}\n"
+            "Install node and npm (or put them on PATH) and configure again.")
+    endif()
+    # vite 6 asks for node >= 20. 19.x builds the bundle correctly and only
+    # warns (EBADENGINE), so this says so rather than failing a build that
+    # works -- but it is the first thing to suspect if the bundle misbehaves.
+    execute_process(COMMAND ${FCVIEWER_NODE} --version
+                    OUTPUT_VARIABLE FCVIEWER_NODE_VERSION
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+    string(REGEX REPLACE "^v" "" FCVIEWER_NODE_VERSION "${FCVIEWER_NODE_VERSION}")
+    if(FCVIEWER_NODE_VERSION AND FCVIEWER_NODE_VERSION VERSION_LESS 20)
+        message(STATUS
+            "fcviewer UI: node ${FCVIEWER_NODE_VERSION} is below the 20 vite 6 "
+            "asks for; the bundle still builds, with an EBADENGINE warning")
+    endif()
+    set(FCVIEWER_UI_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../web)
+    file(GLOB_RECURSE FCVIEWER_UI_FILES CONFIGURE_DEPENDS
+         ${FCVIEWER_UI_SRC}/src/*.ts ${FCVIEWER_UI_SRC}/src/*.tsx
+         ${FCVIEWER_UI_SRC}/src/*.css)
+    # Keyed on the manifest, so the install runs when the dependencies change
+    # and not on every build. The script also decides which rollup this
+    # machine can run (see UiDeps.cmake) -- a build-time question, because it
+    # depends on what the install just put in node_modules.
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web-deps.stamp
+        COMMAND ${CMAKE_COMMAND}
+                -DNPM=${FCVIEWER_NPM}
+                -DNODE=${FCVIEWER_NODE}
+                -DUI_SRC=${FCVIEWER_UI_SRC}
+                -DSTAMP=${CMAKE_CURRENT_BINARY_DIR}/web-deps.stamp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/UiDeps.cmake
+        DEPENDS ${FCVIEWER_UI_SRC}/package.json
+                ${CMAKE_CURRENT_SOURCE_DIR}/UiDeps.cmake
+        COMMENT "fcviewer UI: installing npm dependencies"
+        VERBATIM)
+    # --outDir keeps CMake authoritative about where the bundle lands, rather
+    # than the tree-relative path baked into vite.config.ts (which stays, so a
+    # bare `npm run build` still works on its own).
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web/inspector.js
+        COMMAND ${FCVIEWER_NPM} run build --
+                --outDir ${CMAKE_CURRENT_BINARY_DIR}/web --emptyOutDir
+        WORKING_DIRECTORY ${FCVIEWER_UI_SRC}
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/web-deps.stamp
+                ${FCVIEWER_UI_FILES} ${FCVIEWER_UI_SRC}/vite.config.ts
+        COMMENT "fcviewer UI: building the DOM bundle (vite)"
+        VERBATIM)
+    add_custom_target(fcviewer_ui ALL
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/web/inspector.js)
+    # So that asking for the viewer gets the whole page, not just the canvas
+    # half of it.
+    add_dependencies(fcviewer fcviewer_ui)
 endif()
-# vite 6 asks for node >= 20. 19.x builds the bundle correctly and only
-# warns (EBADENGINE), so this says so rather than failing a build that
-# works -- but it is the first thing to suspect if the bundle misbehaves.
-execute_process(COMMAND ${FCVIEWER_NODE} --version
-                OUTPUT_VARIABLE FCVIEWER_NODE_VERSION
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-                ERROR_QUIET)
-string(REGEX REPLACE "^v" "" FCVIEWER_NODE_VERSION "${FCVIEWER_NODE_VERSION}")
-if(FCVIEWER_NODE_VERSION AND FCVIEWER_NODE_VERSION VERSION_LESS 20)
-    message(STATUS
-        "fcviewer UI: node ${FCVIEWER_NODE_VERSION} is below the 20 vite 6 "
-        "asks for; the bundle still builds, with an EBADENGINE warning")
-endif()
-set(FCVIEWER_UI_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../web)
-file(GLOB_RECURSE FCVIEWER_UI_FILES CONFIGURE_DEPENDS
-     ${FCVIEWER_UI_SRC}/src/*.ts ${FCVIEWER_UI_SRC}/src/*.tsx
-     ${FCVIEWER_UI_SRC}/src/*.css)
-# Keyed on the manifest, so the install runs when the dependencies change
-# and not on every build. The script also decides which rollup this
-# machine can run (see UiDeps.cmake) -- a build-time question, because it
-# depends on what the install just put in node_modules.
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web-deps.stamp
-    COMMAND ${CMAKE_COMMAND}
-            -DNPM=${FCVIEWER_NPM}
-            -DNODE=${FCVIEWER_NODE}
-            -DUI_SRC=${FCVIEWER_UI_SRC}
-            -DSTAMP=${CMAKE_CURRENT_BINARY_DIR}/web-deps.stamp
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/UiDeps.cmake
-    DEPENDS ${FCVIEWER_UI_SRC}/package.json
-            ${CMAKE_CURRENT_SOURCE_DIR}/UiDeps.cmake
-    COMMENT "fcviewer UI: installing npm dependencies"
-    VERBATIM)
-# --outDir keeps CMake authoritative about where the bundle lands, rather
-# than the tree-relative path baked into vite.config.ts (which stays, so a
-# bare `npm run build` still works on its own).
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web/inspector.js
-    COMMAND ${FCVIEWER_NPM} run build --
-            --outDir ${CMAKE_CURRENT_BINARY_DIR}/web --emptyOutDir
-    WORKING_DIRECTORY ${FCVIEWER_UI_SRC}
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/web-deps.stamp
-            ${FCVIEWER_UI_FILES} ${FCVIEWER_UI_SRC}/vite.config.ts
-    COMMENT "fcviewer UI: building the DOM bundle (vite)"
-    VERBATIM)
-add_custom_target(fcviewer_ui ALL
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/web/inspector.js)
-# So that asking for the viewer gets the whole page, not just the canvas
-# half of it.
-add_dependencies(fcviewer fcviewer_ui)
 
 # Build stamp next to the bundle: the page reports it in the hello
 # handshake and the backend (FC_BGFX_VIEWER_BUILD pointing here) pushes
