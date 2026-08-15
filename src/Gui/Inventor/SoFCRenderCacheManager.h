@@ -96,6 +96,11 @@ public:
   /// backend is attached, since the internal GL pass honors them too.
   void setViewObject(App::PropertyContainer *view);
 
+  /// Re-translate what the attached backend already holds, for a change
+  /// that is baked into a translated draw instead of read per frame (see
+  /// SoFCRenderer::refreshExternalFeed).
+  void refreshExternalFeed();
+
   /// Route the scene feed to the backend's overlay feed instead (see
   /// SoFCRenderer::setExternalOverlay()): this manager then captures an
   /// overlay root (foreground superimposition, corner axis cross) and

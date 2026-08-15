@@ -419,9 +419,25 @@ public:
     bool fillGroup = false;
     bool concave = false;
     bool hatch = false;
+    bool noOnTop = true;
     double hatchScale = 1.0;
   } section;
   void updateSectionStyle();
+
+  /// The two style keys that decide whether an on-top draw is sectioned,
+  /// for the bridge to bake into the draw calls it translates. Resolved
+  /// afresh instead of read from the snapshot above: a feed runs before
+  /// the frame that follows it takes its snapshot (the cache manager
+  /// republishes into setScene(), then calls render()), so the snapshot
+  /// would answer with the style of the frame before the change. There is
+  /// one of these per feed, against one per draw entry for the snapshot.
+  RendererBridge::SectionOnTop sectionOnTop() const;
+
+  /// Translate everything this renderer holds into the attached backend:
+  /// the scene, every selection feed and the highlight. Used when a
+  /// backend is attached mid-session, and when something baked into the
+  /// translated draws has changed.
+  void feedExternal();
 
   // Optional external render backend mirroring the scene/selection feeds.
   Render::Renderer *external = nullptr;
@@ -636,7 +652,7 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
 
   auto clippers = next.clippers;
   if (this->shadowmapping
-      || ((ViewParams::getNoSectionOnTop()
+      || ((this->section.noOnTop
           || (this->section.concave && clippers.getNum() > 1))
           && next.isOnTop()))
     clippers.clear();
@@ -1051,34 +1067,65 @@ SoFCRenderer::setExternalRenderer(Render::Renderer * renderer,
     return;
   // Feed the current state so a backend attached mid-session (e.g. on a
   // preference change) does not have to wait for the next scene rebuild.
+  PRIVATE(this)->feedExternal();
+}
+
+void
+SoFCRendererP::feedExternal()
+{
   // Mirror the live feed paths' translate() context exactly: setScene()
   // resolves the object info map alongside the draws, and the selection /
   // highlight feeds carry their id / highlight flag — without them the
   // materials translate as plain scene draws (dimmed to TransparencyOnTop,
   // stippled, unthickened) and the replayed selection is near-invisible.
-  if (PRIVATE(this)->scene) {
-    auto & objinfo = PRIVATE(this)->objinfo;
+  if (this->scene) {
     auto draws = RendererBridge::translate(
-          PRIVATE(this)->scene->getVertexCaches(true), 0, false, false,
-          &objinfo);
-    renderer->setObjectInfo(Render::ObjectInfoMap(objinfo));
-    PRIVATE(this)->objinfodraws = draws.size();
-    PRIVATE(this)->objinfoSynced();
-    renderer->setScene(std::move(draws));
+          this->scene->getVertexCaches(true),
+          this->sectionOnTop(), 0, false, false,
+          &this->objinfo);
+    this->external->setObjectInfo(Render::ObjectInfoMap(this->objinfo));
+    this->objinfodraws = draws.size();
+    this->objinfoSynced();
+    this->external->setScene(std::move(draws));
   }
-  for (auto & sel : PRIVATE(this)->selections)
-    renderer->addSelection(sel.first,
-          RendererBridge::translate(*sel.second, sel.first));
-  for (auto & sel : PRIVATE(this)->selectionsontop)
-    renderer->addSelection(sel.first,
-          RendererBridge::translate(*sel.second, sel.first));
-  if (!PRIVATE(this)->highlightcaches.empty())
-    renderer->setHighlight(
-          RendererBridge::translate(PRIVATE(this)->highlightcaches, 0, true),
-          PRIVATE(this)->hlwholeontop);
-  if (auto hatch = PRIVATE(this)->hatchtexture)
-    renderer->setHatchImage(hatch->data.data(), hatch->nc,
-                            hatch->width, hatch->height);
+  for (auto & sel : this->selections)
+    this->external->addSelection(sel.first,
+          RendererBridge::translate(*sel.second, this->sectionOnTop(),
+                                    sel.first));
+  for (auto & sel : this->selectionsontop)
+    this->external->addSelection(sel.first,
+          RendererBridge::translate(*sel.second, this->sectionOnTop(),
+                                    sel.first));
+  if (!this->highlightcaches.empty())
+    this->external->setHighlight(
+          RendererBridge::translate(this->highlightcaches,
+                                    this->sectionOnTop(), 0, true),
+          this->hlwholeontop);
+  if (auto hatch = this->hatchtexture)
+    this->external->setHatchImage(hatch->data.data(), hatch->nc,
+                                  hatch->width, hatch->height);
+}
+
+void
+SoFCRenderer::refreshExternalFeed()
+{
+  auto self = PRIVATE(this);
+  if (!self->external)
+    return;
+  // Everything the backend holds was translated from caches this renderer
+  // still has, so a re-bake is a re-translation and nothing more: no
+  // traversal, and -- unlike dropping the caches -- the selection and
+  // highlight feeds come back with it rather than waiting for the user to
+  // select something again.
+  if (self->overlaymode) {
+    if (self->scene)
+      self->external->setOverlay(self->overlayid,
+          RendererBridge::translate(self->scene->getVertexCaches(true),
+                                    self->sectionOnTop(), 0, false, true),
+          self->overlayanchor);
+    return;
+  }
+  self->feedExternal();
 }
 
 void
@@ -1115,7 +1162,7 @@ SoFCRenderer::setExternalOverlay(Render::Renderer * renderer, int id,
   if (renderer && self->scene)
     renderer->setOverlay(id,
         RendererBridge::translate(self->scene->getVertexCaches(true),
-                                  0, false, true),
+                                  self->sectionOnTop(), 0, false, true),
         anchor);
 }
 
@@ -1354,7 +1401,8 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
   if (PRIVATE(this)->external) {
     if (PRIVATE(this)->overlaymode)
       PRIVATE(this)->external->setOverlay(PRIVATE(this)->overlayid,
-          RendererBridge::translate(caches, 0, false, true),
+          RendererBridge::translate(caches, PRIVATE(this)->sectionOnTop(),
+                                    0, false, true),
           PRIVATE(this)->overlayanchor);
     else {
       // Collect draw identities alongside the draws, against the map the
@@ -1380,7 +1428,9 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
         resident.clear();
       Render::ObjectInfoMap added;
       Gui::RenderTiming::Scope xlate(Gui::RenderTiming::Translate);
-      auto draws = RendererBridge::translate(caches, 0, false, false,
+      auto draws = RendererBridge::translate(caches,
+                                             PRIVATE(this)->sectionOnTop(),
+                                             0, false, false,
                                              &resident,
                                              restate ? nullptr : &added);
       PRIVATE(this)->objinfodraws = draws.size();
@@ -1471,7 +1521,8 @@ SoFCRenderer::setHighlight(VertexCacheMap && caches, bool wholeontop)
 
   if (PRIVATE(this)->external)
     PRIVATE(this)->external->setHighlight(
-          RendererBridge::translate(PRIVATE(this)->highlightcaches, 0, true),
+          RendererBridge::translate(PRIVATE(this)->highlightcaches,
+                                    PRIVATE(this)->sectionOnTop(), 0, true),
           wholeontop);
 }
 
@@ -1486,7 +1537,8 @@ SoFCRenderer::addSelection(int id, const VertexCacheMap & caches)
 
   if (PRIVATE(this)->external)
     PRIVATE(this)->external->addSelection(
-          id, RendererBridge::translate(caches, id));
+          id, RendererBridge::translate(caches, PRIVATE(this)->sectionOnTop(),
+                                        id));
 }
 
 void
@@ -2305,7 +2357,7 @@ SoFCRendererP::renderOpaque(SoGLRenderAction * action,
     auto & draw_entry = draw_entries[idx];
     if (draw_entry.skip > 0
         && !this->shadowmapping
-        && ((!this->section.concave && !ViewParams::getNoSectionOnTop())
+        && ((!this->section.concave && !this->section.noOnTop)
             || !draw_entry.material->clippers.getNum()))
       continue;
 
@@ -2638,6 +2690,19 @@ SoFCRendererP::updateSectionStyle()
                                           ViewParams::getSectionHatchTextureEnable());
   this->section.hatchScale = Gui::sectionStyle(this->viewobject, "HatchScale",
                                                ViewParams::getSectionHatchTextureScale());
+  this->section.noOnTop = Gui::sectionStyle(this->viewobject, "NoOnTop",
+                                            ViewParams::getNoSectionOnTop());
+}
+
+RendererBridge::SectionOnTop
+SoFCRendererP::sectionOnTop() const
+{
+  RendererBridge::SectionOnTop res;
+  res.noOnTop = Gui::sectionStyle(this->viewobject, "NoOnTop",
+                                  ViewParams::getNoSectionOnTop());
+  res.concave = Gui::sectionStyle(this->viewobject, "Concave",
+                                  ViewParams::getSectionConcave());
+  return res;
 }
 
 void

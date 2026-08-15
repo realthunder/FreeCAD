@@ -582,7 +582,8 @@ useHighlightPass(const CoinMaterial & m, int selId, bool highlight)
 
 Render::Material
 translateMaterial(const CoinMaterial & m, int selId, bool highlight,
-                  TextureImageMap & texmap)
+                  TextureImageMap & texmap,
+                  const RendererBridge::SectionOnTop & sectionOnTop)
 {
     Render::Material res;
 
@@ -907,11 +908,11 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
 
     // Clip planes (sections), as world-space plane equations. Same on-top
     // exception as SoFCRenderer::applyMaterial: on-top draws are not
-    // sectioned when NoSectionOnTop is set (default) or in concave mode.
+    // sectioned when the section does not reach them (the default) or in
+    // concave mode. Both come from the view being drawn.
     if (m.clippers.getNum()) {
-        bool concave =
-            ViewParams::getSectionConcave() && m.clippers.getNum() > 1;
-        if (!((ViewParams::getNoSectionOnTop() || concave) && res.ontop)) {
+        bool concave = sectionOnTop.concave && m.clippers.getNum() > 1;
+        if (!((sectionOnTop.noOnTop || concave) && res.ontop)) {
             for (const auto & info : m.clippers.getData()) {
                 const SoClipPlane * clipper = info.cast<SoClipPlane>();
                 if (!clipper->on.getValue() || clipper->on.isIgnored())
@@ -936,6 +937,7 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
 
 Render::DrawCallList
 RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
+                          const SectionOnTop & sectionOnTop,
                           int selId, bool highlight, bool sequentialOrder,
                           Render::ObjectInfoMap * objectInfo,
                           Render::ObjectInfoMap * addedInfo)
@@ -956,7 +958,7 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             continue;
 
         Render::Material rmat =
-            translateMaterial(material, selId, highlight, textures);
+            translateMaterial(material, selId, highlight, textures, sectionOnTop);
 
         for (const VertexCacheEntry & ventry : v.second) {
             if (!ventry.cache)

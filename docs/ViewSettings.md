@@ -138,14 +138,15 @@ the Coin light node takes. See the trap in 8.
 
 ## 6. The section and clipping style
 
-Nine keys, all read through `Gui::sectionStyle(view, name, default)`:
+Ten keys, all read through `Gui::sectionStyle(view, name, default)`:
 
 | property | preference | read by |
 |---|---|---|
 | `Section_Fill` | `SectionFill` | both renderers |
 | `Section_FillInvert` | `SectionFillInvert` | both |
 | `Section_FillGroup` | `SectionFillGroup` | both |
-| `Section_Concave` | `SectionConcave` | both |
+| `Section_Concave` | `SectionConcave` | both, and picking |
+| `Section_NoOnTop` | `NoSectionOnTop` | both, and picking |
 | `Section_Hatch` | `SectionHatchTextureEnable` | both |
 | `Section_HatchScale` | `SectionHatchTextureScale` | both |
 | `Section_HatchTexture` | `SectionHatchTexture` | `applySectionHatchTexture` |
@@ -161,16 +162,47 @@ than the setting is worth. `SoFCRenderer::setViewObject` is told the
 view independently of any backend, since it draws these whether or not
 one is attached.
 
-`NoSectionOnTop` is the one style key in the Clipping panel with no view
-property: it is read by the render cache manager (which rebuilds when it
-changes) and by `SoFCRayPickAction`, not per frame, so promoting it
-means dealing with cache invalidation rather than adding a lookup.
+### 6.1 The two keys that are not read per frame
+
+`Section_NoOnTop` and `Section_Concave` decide whether a draw that is
+rendered on top escapes the section. Unlike the rest of the family that
+answer is not looked up while the frame is drawn -- it is **baked in
+earlier**, in three places, and each needed its own handle:
+
+- **The backend's draw calls.** `RendererBridge::translate` writes the
+  clip planes into the translated draw, and a draw list is translated
+  when the scene is republished, not per frame. The rule travels in as
+  `RendererBridge::SectionOnTop` (`SoFCRendererP::sectionOnTop()`),
+  resolved afresh at each feed rather than read from the per-frame
+  snapshot: the cache manager republishes into `setScene()` *before* it
+  calls `render()`, so the snapshot would still describe the frame
+  before the change. Because it is baked, a change of either key has to
+  **re-translate**: `View3DInventorViewer::onViewPropertyChanged` calls
+  `refreshExternalFeed()` for these two and a plain redraw for everything
+  else. Not `refreshRenderCache()` -- dropping the caches costs a
+  traversal and takes the selection and highlight feeds with it, and
+  nothing restores those until the user selects something again (a probe
+  caught exactly that: the box lost its green). The re-feed re-translates
+  the scene, every selection and the highlight from caches the renderer
+  still holds, so nothing is lost and nothing is traversed.
+- **The highlight path caches.** `SoFCRenderCacheManager` builds them
+  with the flag in force and drops the whole `pathcachetable` whenever
+  it moves, so the manager holds the view object as well and compares
+  against what that view answers.
+- **Picking.** A concave section is a union of half spaces, so a point
+  outside one plane may still be inside the section and the pick has to
+  look past every plane on its own. `SoFCRayPickAction` is told the two
+  flags by its caller (`setSectionConcave`, `setResetClipPlane`) rather
+  than reading `ViewParams` itself, because `SoFCUnifiedSelection` is
+  what knows the view. **How a view sections is how it picks**; before
+  this, clicking in a view with its own section style used the reader's
+  global one.
 
 ## 7. The Clipping panel
 
 The panel is per view -- there is one for each 3D view, keyed by the
 view, and it builds that view's clip planes -- so every style widget in
-it answers to the view property that owns the setting: the seven
+it answers to the view property that owns the setting: the eight
 `Section_*` style keys, the two clip plane widget keys, and the
 backlight's three `Light_*` keys.
 
@@ -299,8 +331,16 @@ showing. And a Z clip is invisible to a camera pointing down Z: stage
 
 ## 10. Open
 
-- `SoFCRayPickAction` reads `getSectionConcave()` globally, so picking
-  does not follow a view's own section style.
+- Moving the `NoSectionOnTop` or `SectionConcave` **preference** does not
+  re-translate the draw lists the way the view property does (6.1), so a
+  view with no override of its own shows the change only on the next
+  scene republish. Measured, not assumed: a probe moved the preference
+  with a selected, clipped box on screen and drew the same frame.
+  Pre-existing, and no UI reaches it -- the Clipping panel is the only
+  place either key can be edited, and a user edit there writes the view
+  property too, which is re-baked. The fix if it is ever wanted is one
+  `on_change=True` in `ViewParams.py` per key, calling the same re-feed
+  for every view.
 - Outside the Clipping panel there is no UI to create an override: a
   `Light_*` property appears only through a saved view, a script, or
   that panel.

@@ -376,6 +376,11 @@ void SoFCUnifiedSelection::setViewObject(App::PropertyContainer *view)
     pimpl->manager.setViewObject(view);
 }
 
+void SoFCUnifiedSelection::refreshExternalFeed()
+{
+    pimpl->manager.refreshExternalFeed();
+}
+
 void SoFCUnifiedSelection::setExternalRenderer(Render::Renderer *renderer,
                                                App::PropertyContainer *view)
 {
@@ -707,7 +712,9 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
             Gui::sectionStyle(viewobject, "Concave",
                               ViewParams::getSectionConcave()));
 
-    this->rayPickAction.setResetClipPlane(ViewParams::getNoSectionOnTop());
+    this->rayPickAction.setResetClipPlane(
+            Gui::sectionStyle(viewobject, "NoOnTop",
+                              ViewParams::getNoSectionOnTop()));
 
     getPickedInfoOnTop(ret, singlePick, filter);
 

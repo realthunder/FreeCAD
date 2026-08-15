@@ -342,6 +342,15 @@ public:
         return binding.preference();
     }
 
+    // A concave section is a union of half spaces, which the on-top and
+    // group-rendering options cannot be combined with, so those two
+    // widgets follow it. What this view sections by, not what the
+    // installation does.
+    bool sectionConcave() const
+    {
+        return Gui::sectionStyle(view, "Concave", ViewParams::getSectionConcave());
+    }
+
     void populateStyle(const StyleBinding &binding)
     {
         QVariant value = styleValue(binding);
@@ -575,8 +584,7 @@ Clipping::Clipping(Gui::View3DInventor* view, QWidget* parent)
 
     // Everything the panel says about the look of a section, of the clip
     // plane widget and of the backlight, bound to the view property that
-    // answers for it. NoSectionOnTop is the one style key with no property
-    // of its own, so that checkbox still edits the preference alone.
+    // answers for it.
     using PropBool = App::PropertyBool;
     using PropFloat = App::PropertyFloat;
     auto boolStyle = [this](QAbstractButton *w, const char *property,
@@ -609,6 +617,8 @@ Clipping::Clipping(Gui::View3DInventor* view, QWidget* parent)
               []() { return ViewParams::getSectionFillInvert(); });
     boolStyle(d->ui.checkBoxConcave, "Section_Concave",
               []() { return ViewParams::getSectionConcave(); });
+    boolStyle(d->ui.checkBoxOnTop, "Section_NoOnTop",
+              []() { return ViewParams::getNoSectionOnTop(); });
     boolStyle(d->ui.checkBoxHatch, "Section_Hatch",
               []() { return ViewParams::getSectionHatchTextureEnable(); });
     boolStyle(d->ui.checkBoxGroupRendering, "Section_FillGroup",
@@ -649,8 +659,8 @@ Clipping::Clipping(Gui::View3DInventor* view, QWidget* parent)
                  },
                  []() { return QVariant(ViewParams::getBacklightIntensity() / 100.0); });
 
-    d->ui.checkBoxOnTop->setDisabled(ViewParams::getSectionConcave());
-    d->ui.checkBoxGroupRendering->setDisabled(ViewParams::getSectionConcave());
+    d->ui.checkBoxOnTop->setDisabled(d->sectionConcave());
+    d->ui.checkBoxGroupRendering->setDisabled(d->sectionConcave());
 
     if (!d->ui.checkBoxFill->isChecked()) {
         d->ui.checkBoxInvert->setDisabled(true);
@@ -1009,11 +1019,11 @@ void Clipping::on_checkBoxFill_toggled(bool on)
         ViewParams::setSectionFill(on);
     d->ui.checkBoxInvert->setEnabled(on);
     d->ui.checkBoxConcave->setEnabled(on);
-    d->ui.checkBoxOnTop->setEnabled(on && !ViewParams::getSectionConcave());
+    d->ui.checkBoxOnTop->setEnabled(on && !d->sectionConcave());
     d->ui.checkBoxHatch->setEnabled(on);
     d->ui.editHatchTexture->setEnabled(on);
     d->ui.spinBoxHatchScale->setEnabled(on);
-    d->ui.checkBoxGroupRendering->setEnabled(on && !ViewParams::getSectionConcave());
+    d->ui.checkBoxGroupRendering->setEnabled(on && !d->sectionConcave());
     if (d->view)
         d->view->getViewer()->redraw();
 }

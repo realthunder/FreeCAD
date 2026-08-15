@@ -1797,6 +1797,17 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
             // all it takes -- but the Clipping panel is showing what the
             // view says, and the clip plane widget is the panel's own.
             Dialog::Clipping::onViewPropertyChanged(_pimpl->view, prop.getName());
+            // The two exceptions: whether an on-top draw is sectioned is
+            // baked into the translated draw call (RendererBridge::
+            // SectionOnTop), and a draw list is translated when the scene
+            // is republished, not per frame. Nothing else would republish
+            // it, so this pair has to ask for the re-bake. Not
+            // refreshRenderCache(): dropping the caches costs a traversal
+            // and takes the selection and highlight feeds with it, which
+            // nothing restores until the user selects something again.
+            if (!strcmp(prop.getName(), "Section_NoOnTop")
+                    || !strcmp(prop.getName(), "Section_Concave"))
+                selectionRoot->refreshExternalFeed();
             getSoRenderManager()->scheduleRedraw();
         }
         else if (boost::starts_with(prop.getName(),"Render_")

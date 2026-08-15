@@ -155,6 +155,11 @@ public:
     /// The owning 3D view object, for the per-view Section_* style
     /// overrides the render cache manager resolves.
     void setViewObject(App::PropertyContainer *view);
+
+    /// Re-translate what the attached backend holds, for a section style
+    /// change that a translated draw carries rather than reads per frame
+    /// (see SoFCRenderer::refreshExternalFeed).
+    void refreshExternalFeed();
     void setExternalRenderer(Render::Renderer *renderer,
                              App::PropertyContainer *view = nullptr);
 

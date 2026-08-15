@@ -40,6 +40,19 @@ class View3DInventor;
 
 namespace RendererBridge {
 
+/// Whether the draws being translated take the section clip planes when
+/// they are drawn on top, and whether the section is concave. Passed in
+/// rather than read from ViewParams inside, because these are the view's
+/// own Section_NoOnTop/Section_Concave style where it carries one
+/// (docs/ViewSettings.md 6) -- and because a translated draw carries the
+/// answer with it: unlike the per-frame configs it is baked in here, so a
+/// change of either key has to re-translate (View3DInventorViewer::
+/// refreshRenderCache), not merely redraw.
+struct SectionOnTop {
+    bool noOnTop = true;
+    bool concave = false;
+};
+
 /// Translate a flattened Coin vertex cache map (the SoFCRenderer feed
 /// format) into backend-neutral draw calls for a Render::Renderer.
 /// The returned draw calls keep the underlying SoFCVertexCache data alive
@@ -70,6 +83,7 @@ namespace RendererBridge {
 /// (Render::Renderer::updateObjectInfo) instead of the whole table.
 GuiExport Render::DrawCallList translate(
         const SoFCRenderCache::VertexCacheMap & vcachemap,
+        const SectionOnTop & sectionOnTop,
         int selId = 0, bool highlight = false,
         bool sequentialOrder = false,
         Render::ObjectInfoMap * objectInfo = nullptr,
