@@ -722,8 +722,27 @@ static void buildCamera(float *viewMtx, float *projMtx)
 
     const float aspect = s_height > 0
         ? float(s_width) / float(s_height) : 1.0f;
-    const float neard = bx::max(0.001f * s_diag, s_dist - 4.0f * s_diag);
-    const float fard = s_dist + 4.0f * s_diag;
+    // Fit the depth range to the scene instead of standing well clear of
+    // it. 4 * diag put the far plane eight bounding-radii out and let the
+    // near plane clamp to 0.001 * diag, which on the rack model is a
+    // 5163:1 range -- and the near plane is what depth resolution is
+    // proportional to. That bought a depth LSB of 0.147 world units at
+    // the geometry, so any two surfaces flush against each other (a plate
+    // mounted on a panel: everywhere, in an assembly) were within one LSB
+    // and the buffer could not say which was in front. Parts INSIDE the
+    // model bled through the panels covering them, and did it more the
+    // further away the camera stood, because the LSB grows with distance
+    // -- so backing off appeared to add detail and approaching appeared
+    // to lose it, when what was actually happening is that the far view
+    // was drawing things it should have hidden.
+    //
+    // 0.75 * diag is a bounding sphere of one and a half radii: still
+    // slack, and it takes the LSB to ~0.0003 units. A camera closer to
+    // the scene than that clamps to a fraction of its own distance, which
+    // is the case where the geometry is near the eye and precision is
+    // plentiful anyway.
+    const float neard = bx::max(0.002f * s_dist, s_dist - 0.75f * s_diag);
+    const float fard = s_dist + 0.75f * s_diag;
     // WebGL keeps the GL clip conventions (homogeneous depth); bgfx is
     // not initialized yet when the first frame builds its camera, so
     // don't ask getCaps().
