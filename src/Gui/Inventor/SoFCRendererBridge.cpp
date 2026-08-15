@@ -2234,7 +2234,26 @@ RendererBridge::translateViewLightConfig(SoState * state)
         // Same view-reference unwinding as the scene light: the light
         // element's matrices are model * viewing, and the backend wants
         // world space because it re-applies its own view matrix.
-        SbMatrix mat = SoLightElement::getMatrix(state, i);
+        const SbMatrix lightMat = SoLightElement::getMatrix(state, i);
+        // A light traversed BEFORE the camera carries no viewing
+        // transform, so its element matrix is the model matrix alone --
+        // identity for the headlight and backlight, which the viewer
+        // hangs at the root. That is exactly what makes it a headlight,
+        // and it is the one thing a consumer with its own camera has to
+        // know: the unwinding below is only valid for the camera that
+        // did it. Ship the eye-space direction alongside so a streamed
+        // viewer can redo it against its own.
+        out.eyeSpace = lightMat.equals(SbMatrix::identity(), 1e-6f);
+        if (out.eyeSpace) {
+            SbVec3f eyeDir = dir;
+            if (eyeDir.length() > 0.0f)
+                eyeDir.normalize();
+            for (int j = 0; j < 3; ++j) {
+                out.eyeDirection[j] = eyeDir[j];
+                out.eyePosition[j] = pos[j];
+            }
+        }
+        SbMatrix mat = lightMat;
         mat.multRight(SoViewingMatrixElement::get(state).inverse());
         mat.multDirMatrix(dir, dir);
         mat.multVecMatrix(pos, pos);

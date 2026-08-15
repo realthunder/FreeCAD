@@ -1151,6 +1151,26 @@ struct ViewLight {
     float cutOffAngle = 0.785398f;
     float dropOffRate = 0.0f;
 
+    /// CAMERA-RELATIVE (a headlight): this light sits before the camera,
+    /// so what is fixed about it is its EYE-space direction, and the
+    /// world-space `direction` above is only the direction that
+    /// corresponded to it under the camera that produced this config.
+    ///
+    /// That distinction does not matter to a renderer drawing its own
+    /// camera's frame -- it recomputes the world direction every
+    /// traversal. It matters entirely to a STREAMED viewer, whose camera
+    /// is its own: applying the producer's world direction there lights
+    /// the scene from wherever that camera happened to point, which for
+    /// a headless serving process is a default looking down -Z. Faces
+    /// pointing at the viewer then get nothing but ambient.
+    bool eyeSpace = false;
+    /// The eye-space direction and position `eyeSpace` refers to, valid
+    /// only while it is set. A consumer with its own camera re-derives
+    /// world space from these; one drawing the producer's frame can keep
+    /// using `direction`/`position` and never look at them.
+    float eyeDirection[3] = {0.0f, 0.0f, -1.0f};
+    float eyePosition[3] = {0.0f, 0.0f, 0.0f};
+
     bool operator==(const ViewLight &o) const {
         return std::equal(direction, direction + 3, o.direction)
             && std::equal(position, position + 3, o.position)
@@ -1158,7 +1178,10 @@ struct ViewLight {
             && std::equal(attenuation, attenuation + 3, o.attenuation)
             && color == o.color && intensity == o.intensity
             && spot == o.spot && cutOffAngle == o.cutOffAngle
-            && dropOffRate == o.dropOffRate;
+            && dropOffRate == o.dropOffRate
+            && eyeSpace == o.eyeSpace
+            && std::equal(eyeDirection, eyeDirection + 3, o.eyeDirection)
+            && std::equal(eyePosition, eyePosition + 3, o.eyePosition);
     }
     bool operator!=(const ViewLight &o) const { return !(*this == o); }
 };

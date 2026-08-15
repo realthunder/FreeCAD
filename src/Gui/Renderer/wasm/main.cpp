@@ -2083,6 +2083,73 @@ static void sendDecisionLog(uint32_t id)
                 s_decisionLog.size());
 }
 
+/// Set whenever a snapshot has been applied, because applying one
+/// pushes the producer's OWN world-space light config (which is what
+/// relightForCamera exists to correct). A scene is applied more often
+/// than its version moves -- 383 applies against 143 versions on the
+/// rack model -- so a correction that dedupes on the version alone
+/// loses the race with every re-apply, and the scene goes dark again
+/// for as long as the camera then sits still.
+static bool s_relightDue = false;
+
+/// Re-derive the camera-relative lights against THIS viewer's camera.
+///
+/// A headlight is fixed in EYE space. The world-space direction the
+/// producer sent was unwound through the producer's viewing matrix
+/// (ViewLight::eyeSpace), and it is only true for that camera -- this
+/// viewer's is its own. Applied verbatim it lights the scene from
+/// wherever the producer happened to be pointing, which for a headless
+/// serving process is a default looking down -Z: the model's top faces
+/// catch everything and every surface facing the viewer falls to
+/// ambient. Exactly the reason setAutoZoomScale is recomputed here
+/// instead of taken from the snapshot.
+static void relightForCamera(const float *viewMtx)
+{
+    const Render::ViewLightConfig &src = s_snap.viewlightconf;
+    bool any = false;
+    for (int i = 0; i < src.count; ++i)
+        any = any || src.lights[i].eyeSpace;
+    if (!any)
+        return;
+    float inv[16];
+    bx::mtxInverse(inv, viewMtx);
+    Render::ViewLightConfig out = src;
+    for (int i = 0; i < out.count; ++i) {
+        Render::ViewLight &l = out.lights[i];
+        if (!l.eyeSpace)
+            continue;
+        const bx::Vec3 d = bx::mulXyz0(
+            bx::Vec3(l.eyeDirection[0], l.eyeDirection[1],
+                     l.eyeDirection[2]), inv);
+        const float len = bx::length(d);
+        if (len > 0.0f) {
+            l.direction[0] = d.x / len;
+            l.direction[1] = d.y / len;
+            l.direction[2] = d.z / len;
+        }
+        if (l.positional) {
+            const bx::Vec3 p = bx::mul(
+                bx::Vec3(l.eyePosition[0], l.eyePosition[1],
+                         l.eyePosition[2]), inv);
+            l.position[0] = p.x;
+            l.position[1] = p.y;
+            l.position[2] = p.z;
+        }
+    }
+    // Re-send when the derived config moves, and whenever a snapshot has
+    // been applied since the last send -- an apply pushes the producer's
+    // own world-space config, so a still camera must not let this
+    // conclude there is nothing left to correct.
+    static Render::ViewLightConfig sent;
+    static bool sentValid = false;
+    if (sentValid && !s_relightDue && sent == out)
+        return;
+    s_relightDue = false;
+    sent = out;
+    sentValid = true;
+    s_renderer->setViewLightConfig(out);
+}
+
 static void mainLoop()
 {
     const double frameNow = emscripten_get_now();
@@ -2164,6 +2231,9 @@ static void mainLoop()
 
     float viewMtx[16], projMtx[16];
     buildCamera(viewMtx, projMtx);
+    // The camera-relative lights, for the same reason as the autozoom
+    // scale below: both were baked against the producer's camera.
+    relightForCamera(viewMtx);
     // Recompute the autozoom (screen-constant) scale from THIS viewer's camera
     // each frame, replacing the value baked into the snapshot from the desktop
     // camera; otherwise screen-constant content (datum labels) keeps the desktop
@@ -2911,6 +2981,10 @@ static void applySnapshot(bool fit)
     s_renderer->setBumpConfig(s_snap.bumpconf);
     s_renderer->setLightConfig(s_snap.lightconf);
     s_renderer->setViewLightConfig(s_snap.viewlightconf);
+    // That pushed the PRODUCER's world-space directions; any
+    // camera-relative light among them has to be re-derived against this
+    // viewer's camera before the next frame draws.
+    s_relightDue = true;
     s_renderer->setVolumetricConfig(s_snap.volconf);
     s_renderer->setWaterConfig(s_snap.waterconf);
     s_renderer->setBloomConfig(s_snap.bloomconf);

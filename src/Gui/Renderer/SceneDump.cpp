@@ -215,7 +215,17 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     chunks every time the producer's capture backlog drained. The
 //     monolithic layout has no object section, so a bundled capture
 //     carries the keys as a list of their own after the scene draws.
-const uint32_t kVersion = 55;
+// 56: a ViewLight says whether it is CAMERA-RELATIVE, and carries the
+//     eye-space direction the world-space one was unwound from. The
+//     unwinding is only valid for the camera that did it, and a streamed
+//     viewer's camera is its own -- so a headlight arrived as a fixed
+//     world direction pointing wherever the producer happened to look,
+//     which for a headless serving process is a default down -Z: every
+//     surface facing the viewer rendered at ambient (measured: mean
+//     luminance 20 against the desktop's 108 on the same model). A v55
+//     snapshot has no flag, its lights stay world-space, and it renders
+//     exactly as it did.
+const uint32_t kVersion = 56;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -3043,6 +3053,12 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.b(vl.spot);
         w.f(vl.cutOffAngle);
         w.f(vl.dropOffRate);
+        // v56: camera-relative lights carry the eye-space direction the
+        // world one was derived from, because the consumer's camera is
+        // not this one's (see ViewLight::eyeSpace).
+        w.b(vl.eyeSpace);
+        w.floats(vl.eyeDirection, 3);
+        w.floats(vl.eyePosition, 3);
     }
 
     const VolumetricConfig &vc = snap.volconf;
@@ -3461,6 +3477,11 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 vl.spot = r.b();
                 vl.cutOffAngle = r.f();
                 vl.dropOffRate = r.f();
+            }
+            if (version >= 56) {
+                vl.eyeSpace = r.b();
+                r.floats(vl.eyeDirection, 3);
+                r.floats(vl.eyePosition, 3);
             }
             if (vlc.count < MaxViewLights)
                 vlc.lights[vlc.count++] = vl;
