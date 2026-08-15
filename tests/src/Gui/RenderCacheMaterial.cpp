@@ -135,7 +135,9 @@ protected:
         return nullptr;
     }
 
-    // Assert one vertex's 8 stream bytes spell face \a f's material.
+    // Assert the colour bytes of one vertex's stream record spell face
+    // \a f's material. Only the first eight of MaterialStride are read:
+    // the finish slots after them are another feature's.
     static void expectVertexMaterial(const uint8_t* mats, int32_t v, int f)
     {
         const uint32_t emissive =
@@ -143,7 +145,7 @@ protected:
         const uint32_t specular =
             packed(kSpecular[f][0], kSpecular[f][1], kSpecular[f][2]);
         const auto shin = uint8_t(kShininess[f] * 255.0F + 0.5F);
-        const uint8_t* p = mats + size_t(v) * 8;
+        const uint8_t* p = mats + size_t(v) * SoFCVertexCache::MaterialStride;
         EXPECT_EQ(p[0], (emissive >> 24) & 0xff) << "vertex " << v;
         EXPECT_EQ(p[1], (emissive >> 16) & 0xff) << "vertex " << v;
         EXPECT_EQ(p[2], (emissive >> 8) & 0xff) << "vertex " << v;
@@ -325,7 +327,8 @@ TEST_F(RenderCacheMaterial, BakesPerFacePbrFactors)
     const GLint* idx = vcache->getTriangleIndices();
     for (int tri = 0; tri < 3; ++tri) {
         for (int c = 0; c < 3; ++c) {
-            const uint8_t* p = mats + size_t(idx[tri * 3 + c]) * 8;
+            const uint8_t* p =
+                mats + size_t(idx[tri * 3 + c]) * SoFCVertexCache::MaterialStride;
             EXPECT_EQ(p[3], quantized(kMetallic[tri]))
                 << "metallic of face " << tri;
             EXPECT_EQ(p[7], quantized(kRoughness[tri]))
@@ -355,7 +358,7 @@ TEST_F(RenderCacheMaterial, PbrFactorsAloneAllocateTheStream)
     const uint32_t emissive = packed(kEmissive[0][0], kEmissive[0][1], kEmissive[0][2]);
     const GLint* idx = vcache->getTriangleIndices();
     for (int tri = 0; tri < 3; ++tri) {
-        const uint8_t* p = mats + size_t(idx[tri * 3]) * 8;
+        const uint8_t* p = mats + size_t(idx[tri * 3]) * SoFCVertexCache::MaterialStride;
         // the colours are the entry-0 scalars, the factors per face
         EXPECT_EQ(p[0], (emissive >> 24) & 0xff) << "face " << tri;
         EXPECT_EQ(p[3], quantized(kMetallic[tri])) << "face " << tri;
