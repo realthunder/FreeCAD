@@ -125,6 +125,7 @@
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
 #include <Base/Sequencer.h>
+#include <Base/Builder3D.h>
 #include <Base/Tools.h>
 #include <Base/UnitsApi.h>
 #include <App/GeoFeatureGroupExtension.h>
@@ -1781,6 +1782,10 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
         {
             Base::StateLocker guard(_applyingOverride);
             applyOverrideMode();
+        }
+        else if (boost::starts_with(prop.getName(),"Light_")) {
+            applyLightProperty(prop);
+            getSoRenderManager()->scheduleRedraw();
         }
         else if (boost::starts_with(prop.getName(),"Render_")
                  || boost::starts_with(prop.getName(),"RenderDebug_")) {
@@ -4910,6 +4915,283 @@ void Gui::reseedLocalRenderProperties(App::PropertyContainer *view)
     for (const auto &name : stale)
         view->removeDynamicProperty(name.c_str());
     initRenderProperties(view);
+}
+
+// The viewer's light rig. Every open viewer used to read these keys
+// straight out of the View preference group, which made one rig for the
+// whole application: a document that wanted its own lighting could not
+// have it, and a saved view could only restage a lit look by moving
+// everybody else's. Each key now lands in a Light_* view property, and the
+// viewer takes its light from there.
+//
+// A property carries PropNoPersist for as long as it is only a copy of the
+// preference: the preference still reaches every view that has not
+// overridden it, and a merely seeded value is written to no file. The
+// first edit clears the mark, and from then on the property is an override
+// -- it lights this view alone, it travels with the document, and a saved
+// view captures it. That one bit is what says "the author meant this", so
+// it is also what decides whether the setting reaches somebody else's
+// installation.
+namespace {
+
+enum LightTarget { HeadLight, BackLight, FillLight, SceneAmbient };
+enum LightField { FieldEnable, FieldColor, FieldDirection, FieldIntensity };
+
+struct LightPropertyDef {
+    const char *key;        // the View preference key, and the Light_ suffix
+    LightTarget target;
+    LightField field;
+    unsigned long def;      // bool, packed colour, or intensity per cent
+    const char *docu;
+};
+
+const LightPropertyDef _lightProperties[] = {
+    {"EnableHeadlight", HeadLight, FieldEnable, 1,
+     "Light this view with the headlight"},
+    {"HeadlightColor", HeadLight, FieldColor, 0xFFFFFFFF,
+     "Colour of this view's headlight"},
+    {"HeadlightDirection", HeadLight, FieldDirection, 0,
+     "Direction of this view's headlight, in eye space"},
+    {"HeadlightIntensity", HeadLight, FieldIntensity, 100,
+     "Intensity of this view's headlight"},
+    {"EnableBacklight", BackLight, FieldEnable, 0,
+     "Light this view's back faces with the backlight"},
+    {"BacklightColor", BackLight, FieldColor, 0xFFFFFFFF,
+     "Colour of this view's backlight"},
+    {"BacklightDirection", BackLight, FieldDirection, 0,
+     "Direction of this view's backlight, in eye space"},
+    {"BacklightIntensity", BackLight, FieldIntensity, 100,
+     "Intensity of this view's backlight"},
+    {"EnableFillLight", FillLight, FieldEnable, 0,
+     "Light this view with the off-axis fill light"},
+    {"FillLightColor", FillLight, FieldColor, 0xE6FAFFFF,
+     "Colour of this view's fill light"},
+    {"FillLightDirection", FillLight, FieldDirection, 0,
+     "Direction of this view's fill light, relative to the camera"},
+    {"FillLightIntensity", FillLight, FieldIntensity, 60,
+     "Intensity of this view's fill light"},
+    {"AmbientLightColor", SceneAmbient, FieldColor, 0xFFFFFFFF,
+     "Colour of this view's scene ambient light"},
+    {"AmbientLightIntensity", SceneAmbient, FieldIntensity, 20,
+     "Intensity of this view's scene ambient light (Coin's own default is 20)"},
+};
+
+const LightPropertyDef *_findLightProperty(const char *key)
+{
+    if (!key)
+        return nullptr;
+    for (const auto &def : _lightProperties) {
+        if (boost::equals(key, def.key))
+            return &def;
+    }
+    return nullptr;
+}
+
+const char *_lightPropertyType(LightField field)
+{
+    switch (field) {
+    case FieldEnable:
+        return "App::PropertyBool";
+    case FieldColor:
+        return "App::PropertyColor";
+    case FieldDirection:
+        return "App::PropertyVector";
+    default:
+        return "App::PropertyFloat";
+    }
+}
+
+std::string _lightPropertyName(const LightPropertyDef &def)
+{
+    return std::string("Light_") + def.key;
+}
+
+SoDirectionalLight *_lightNode(View3DInventorViewer &viewer, LightTarget target)
+{
+    switch (target) {
+    case HeadLight:
+        return viewer.getHeadlight();
+    case BackLight:
+        return viewer.getBacklight();
+    case FillLight:
+        return viewer.getFillLight();
+    default:
+        return nullptr;
+    }
+}
+
+void _applyLight(View3DInventorViewer &viewer, const LightPropertyDef &def,
+                 const App::Property &prop)
+{
+    if (!prop.isDerivedFrom(Base::Type::fromName(_lightPropertyType(def.field))))
+        return;
+    switch (def.field) {
+    case FieldEnable: {
+        bool on = static_cast<const App::PropertyBool &>(prop).getValue();
+        switch (def.target) {
+        case HeadLight:
+            viewer.setHeadlightEnabled(on);
+            break;
+        case BackLight:
+            viewer.setBacklightEnabled(on);
+            break;
+        case FillLight:
+            viewer.setFillLightEnabled(on);
+            break;
+        default:
+            break;
+        }
+        break;
+    }
+    case FieldColor: {
+        const auto &c = static_cast<const App::PropertyColor &>(prop).getValue();
+        SbColor col(c.r, c.g, c.b);
+        if (def.target == SceneAmbient) {
+            if (auto env = viewer.getEnvironment())
+                env->ambientColor.setValue(col);
+        }
+        else if (auto node = _lightNode(viewer, def.target))
+            node->color.setValue(col);
+        break;
+    }
+    case FieldDirection: {
+        const auto &v = static_cast<const App::PropertyVector &>(prop).getValue();
+        if (auto node = _lightNode(viewer, def.target))
+            node->direction.setValue(float(v.x), float(v.y), float(v.z));
+        break;
+    }
+    case FieldIntensity: {
+        auto v = float(static_cast<const App::PropertyFloat &>(prop).getValue());
+        if (def.target == SceneAmbient) {
+            if (auto env = viewer.getEnvironment())
+                env->ambientIntensity.setValue(v);
+        }
+        else if (auto node = _lightNode(viewer, def.target))
+            node->intensity.setValue(v);
+        break;
+    }
+    }
+}
+
+// Read the preference into a property of the matching type. Returns false
+// when the preference has nothing to say, which only a direction can do --
+// there is no sensible default for one, so an unset direction leaves the
+// light pointing where it already points.
+bool _readPreference(const LightPropertyDef &def, ParameterGrp &grp, App::Property &prop)
+{
+    switch (def.field) {
+    case FieldEnable:
+        static_cast<App::PropertyBool &>(prop).setValue(
+                grp.GetBool(def.key, def.def != 0));
+        return true;
+    case FieldColor:
+        static_cast<App::PropertyColor &>(prop).setValue(
+                uint32_t(grp.GetUnsigned(def.key, def.def)));
+        return true;
+    case FieldDirection: {
+        std::string dir = grp.GetASCII(def.key);
+        if (dir.empty())
+            return false;
+        try {
+            Base::Vector3f v = Base::to_vector(dir);
+            static_cast<App::PropertyVector &>(prop).setValue(
+                    Base::Vector3d(v.x, v.y, v.z));
+        }
+        catch (const std::exception &) {
+            return false;
+        }
+        return true;
+    }
+    default:
+        static_cast<App::PropertyFloat &>(prop).setValue(
+                grp.GetInt(def.key, long(def.def)) / 100.0);
+        return true;
+    }
+}
+
+ParameterGrp::handle _viewParameterGroup()
+{
+    return App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/View");
+}
+
+// What lights a view that has not overridden this key -- and every view of
+// a viewer with no view object of its own (a headless publisher, a preview
+// widget), which has nowhere to keep an override.
+void _applyPreference(View3DInventorViewer &viewer,
+                      const LightPropertyDef &def, ParameterGrp &grp)
+{
+    switch (def.field) {
+    case FieldEnable: {
+        App::PropertyBool prop;
+        if (_readPreference(def, grp, prop))
+            _applyLight(viewer, def, prop);
+        break;
+    }
+    case FieldColor: {
+        App::PropertyColor prop;
+        if (_readPreference(def, grp, prop))
+            _applyLight(viewer, def, prop);
+        break;
+    }
+    case FieldDirection: {
+        App::PropertyVector prop;
+        if (_readPreference(def, grp, prop))
+            _applyLight(viewer, def, prop);
+        break;
+    }
+    default: {
+        App::PropertyFloat prop;
+        if (_readPreference(def, grp, prop))
+            _applyLight(viewer, def, prop);
+        break;
+    }
+    }
+}
+
+} // anonymous namespace
+
+bool View3DInventorViewer::isLightPreferenceKey(const char *key)
+{
+    return _findLightProperty(key) != nullptr;
+}
+
+void View3DInventorViewer::applyLightProperty(const App::Property &prop)
+{
+    const char *name = prop.getName();
+    if (!name || !boost::starts_with(name, "Light_"))
+        return;
+    if (auto def = _findLightProperty(name + 6))
+        _applyLight(*this, *def, prop);
+}
+
+bool View3DInventorViewer::applyLightPreference(const char *key)
+{
+    auto def = _findLightProperty(key);
+    if (!def)
+        return false;
+
+    // A property here IS the override -- it exists only because somebody
+    // chose it -- so the preference stops at a view that has one. There is
+    // no seeded copy to keep in step, and nothing to decide about saving:
+    // what the view carries is what its author meant, and that is exactly
+    // what belongs in the document.
+    if (auto view = _pimpl->view) {
+        std::string name = _lightPropertyName(*def);
+        if (auto prop = view->getPropertyByName(name.c_str())) {
+            _applyLight(*this, *def, *prop);
+            return true;
+        }
+    }
+    auto grp = _viewParameterGroup();
+    _applyPreference(*this, *def, *grp);
+    return true;
+}
+
+void View3DInventorViewer::syncLightProperties()
+{
+    for (const auto &def : _lightProperties)
+        applyLightPreference(def.key);
 }
 
 // #define ENABLE_GL_DEPTH_RANGE

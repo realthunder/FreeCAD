@@ -585,6 +585,17 @@ public:
 
     void onViewPropertyChanged(const App::Property &);
 
+    /// Whether a View preference key belongs to the viewer's light rig,
+    /// which a Light_* view property can override.
+    static bool isLightPreferenceKey(const char *key);
+    /// Light this view from the effective value of one rig key: its
+    /// Light_* property if it has one, and the preference otherwise.
+    /// Returns false for a key that is not part of the rig.
+    bool applyLightPreference(const char *key);
+    /// The same for the whole rig. Done after a restore, so that the
+    /// overrides the document carried reach the light nodes.
+    void syncLightProperties();
+
     const SoPathList *getLatePickPaths() const;
 
     void appendDetailPath(SoPath *path, ViewProvider *vp);
@@ -636,6 +647,9 @@ private:
     static void interactionLoggerCB(void * ud, SoAction* action);
 
 private:
+    /// Push one Light_* property into the Coin light or environment node
+    /// it stands for.
+    void applyLightProperty(const App::Property &prop);
     static void selectCB(void * viewer, SoPath * path);
     static void deselectCB(void * viewer, SoPath * path);
     static SoPath * pickFilterCB(void * viewer, const SoPickedPoint * pp);
