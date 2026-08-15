@@ -23,6 +23,7 @@ options: an optional list of possible flags including
     * 'Camera': capture camera settings
     * 'Shadow': capture shadow draw style settings
     * 'Clippings': capture clip plane settings
+    * 'RenderSettings': capture the view's own render settings (Render_*, Light_*, Section_*)
     * 'All': capture all settings
 
 If options is not given, it captures all settings enabled by various 'SaveXXX' properties.
@@ -39,6 +40,7 @@ options: an optional list of possible flags including
     * 'Camera': restore camera settings
     * 'Shadow': restore shadow draw style settings
     * 'Clippings': crestore clip plane settings
+    * 'RenderSettings': restore the view's own render settings (Render_*, Light_*, Section_*)
     * 'All': restore all settings
 
 If options is not given, it restores settings enabled by various 'SaveXXX' properties.

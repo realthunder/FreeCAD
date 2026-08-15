@@ -84,6 +84,8 @@ static bool getOptions(PyObject *tuple, ViewProviderSavedView::CaptureOptions &o
                 options |= ViewProviderSavedView::CaptureOption::DrawStyle;
             else if (boost::iequals(opt, "clippings"))
                 options |= ViewProviderSavedView::CaptureOption::Clippings;
+            else if (boost::iequals(opt, "rendersettings"))
+                options |= ViewProviderSavedView::CaptureOption::RenderSettings;
             else if (boost::iequals(opt, "all"))
                 options |= ViewProviderSavedView::CaptureOption::All;
             else {

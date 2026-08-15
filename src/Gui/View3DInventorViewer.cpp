@@ -4881,7 +4881,7 @@ static const char *_localRenderProperties[] = {
     nullptr
 };
 
-static bool _isLocalRenderProperty(const char *name)
+bool Gui::isLocalRenderProperty(const char *name)
 {
     if (!name)
         return false;
@@ -4941,7 +4941,7 @@ void Gui::reseedLocalRenderProperties(App::PropertyContainer *view)
         return;
     std::vector<std::string> stale;
     for (const auto &v : view->getDynamicPropertyNames()) {
-        if (_isLocalRenderProperty(v.c_str()))
+        if (Gui::isLocalRenderProperty(v.c_str()))
             stale.push_back(v);
     }
     if (stale.empty())

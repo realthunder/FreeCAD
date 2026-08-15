@@ -86,6 +86,13 @@ class Renderer;
 
 namespace Gui {
 
+/// Whether a render property states what the machine can afford rather
+/// than what the model should look like - the sampling and budget dials
+/// and the debug instrumentation. Those are never saved with a document,
+/// and a saved view must not carry them either: it would hand its reader
+/// somebody else's hardware.
+GuiExport bool isLocalRenderProperty(const char *name);
+
 class ViewProvider;
 class SoFCBackgroundGradient;
 class NavigationStyle;

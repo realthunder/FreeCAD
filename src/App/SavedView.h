@@ -41,6 +41,7 @@ public:
     App::PropertyBool SaveCamera;
     App::PropertyBool SaveClippings;
     App::PropertyBool SaveDrawStyleSettings;
+    App::PropertyBool SaveRenderSettings;
 
     SavedView();
     virtual ~SavedView();
@@ -58,6 +59,14 @@ public:
     template<class PropT>
     PropT *getClippingProperty(const char *name, bool create=false) {
         return Base::freecad_dynamic_cast<PropT>(getProperty(PropT::getClassTypeId(), name, "ClipSettings", create));
+    }
+    /// The per-view render settings a saved view restores: the Render_*,
+    /// Light_* and Section_* properties the view carries. Only what the
+    /// view overrides is captured -- a knob still following the
+    /// preference is somebody's own setting, not this document's.
+    template<class PropT>
+    PropT *getRenderProperty(const char *name, bool create=false) {
+        return Base::freecad_dynamic_cast<PropT>(getProperty(PropT::getClassTypeId(), name, "RenderSettings", create));
     }
     template<class PropT>
     PropT *getCameraProperty(const char *name, bool create=false) {
