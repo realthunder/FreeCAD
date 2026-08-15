@@ -114,6 +114,26 @@ public:
   static std::shared_ptr<const PrebuiltContent>
   takePrebuilt(const SoNode * node);
 
+  /** What the registry answered, counted since the last reset.
+   *
+   * A publish that adopts nothing has to say which way it failed:
+   * \a missing means no worker ever registered content for the shape,
+   * \a stale means content was registered but the node was touched
+   * after the stamp, so the capture could not trust it. Without the
+   * split the two are indistinguishable from the outside, and the
+   * "0 adopted" line names no cause (docs/WorkerVertexCache.md).
+   */
+  struct PrebuiltStats {
+    /// takePrebuilt() calls -- shapes a capture offered to adopt.
+    int requested = 0;
+    /// ...of those, ones with no registry entry at all.
+    int missing = 0;
+    /// ...and ones whose entry was dropped on the node id check.
+    int stale = 0;
+  };
+  static void resetPrebuiltStats();
+  static const PrebuiltStats & prebuiltStats();
+
   /** Install prebuilt content into this cache in place of the
    * per-primitive capture. Call between open() and close() exactly
    * where the traversal would have fed primitives. Returns false --
@@ -126,6 +146,13 @@ public:
   /// contract (uniform color, no texture units, no markers). Only
   /// meaningful between open() and close().
   bool prebuiltApplicable() const;
+
+  /// Which contract clause put this cache outside it, as a short
+  /// literal, or null when prebuiltApplicable() is true. The counted
+  /// half of the same question the stats above ask of the registry:
+  /// a state-side refusal has several distinct causes and the caller
+  /// reports which one it hit.
+  const char * prebuiltReject() const;
 
   bool installPrebuilt(const PrebuiltContent & content);
 

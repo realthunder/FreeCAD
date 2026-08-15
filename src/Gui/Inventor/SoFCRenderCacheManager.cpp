@@ -648,6 +648,26 @@ public:
   // verify arm's compare at postShape (docs/WorkerVertexCache.md).
   std::shared_ptr<const SoFCVertexCache::PrebuiltContent> verifyprebuilt;
   int adoptedcount = 0;
+
+  // Why shapes that DID have worker content still could not adopt it,
+  // keyed on the literal SoFCVertexCache::prebuiltReject() returned --
+  // pointer identity is enough, they all come from one function. The
+  // registry-side half of the same question is counted there
+  // (SoFCVertexCache::prebuiltStats).
+  std::vector<std::pair<const char *, int> > adoptrejects;
+
+  void countAdoptReject(const char * why)
+  {
+    if (!why)
+      return;
+    for (auto & entry : this->adoptrejects) {
+      if (entry.first == why) {
+        ++entry.second;
+        return;
+      }
+    }
+    this->adoptrejects.emplace_back(why, 1);
+  }
 };
 
 std::unordered_map<const SoNode *,
@@ -1535,6 +1555,8 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
     PRIVATE(this)->capturecount = 0;
     PRIVATE(this)->deferredcount = 0;
     PRIVATE(this)->adoptedcount = 0;
+    PRIVATE(this)->adoptrejects.clear();
+    SoFCVertexCache::resetPrebuiltStats();
     {
       CaptureFlagGuard capguard;
       PRIVATE(this)->action->apply(path->getTail());
@@ -1546,14 +1568,37 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
       // each pass captures at least one more shape until none defer.
       PRIVATE(this)->sceneid = 0;
     }
-    if (Gui::RenderParams::getLevelDebug()
-        && (PRIVATE(this)->deferredcount > 0
-            || PRIVATE(this)->adoptedcount > 0))
-      Base::Console().Message(
-          "capture budget: %d captured in %.0fms, %d deferred, "
-          "%d adopted\n",
-          PRIVATE(this)->capturecount, PRIVATE(this)->capturespentms,
-          PRIVATE(this)->deferredcount, PRIVATE(this)->adoptedcount);
+    {
+      // The adoption side of the line reports its own failure: a bare
+      // "0 adopted" cannot distinguish "nothing was ever registered"
+      // from "registered but voided" from "refused by the captured
+      // state", and those have three different fixes. Printed whenever
+      // a shape offered anything, so the count cannot go quiet.
+      const auto & pstats = SoFCVertexCache::prebuiltStats();
+      if (Gui::RenderParams::getLevelDebug()
+          && (PRIVATE(this)->deferredcount > 0
+              || PRIVATE(this)->adoptedcount > 0
+              || pstats.requested > 0)) {
+        std::string why;
+        auto add = [&why](int count, const char * what) {
+          if (!count)
+            return;
+          char buf[128];
+          std::snprintf(buf, sizeof(buf), ", %d %s", count, what);
+          why += buf;
+        };
+        add(pstats.missing, "no entry");
+        add(pstats.stale, "stale id");
+        for (const auto & entry : PRIVATE(this)->adoptrejects)
+          add(entry.second, entry.first);
+        Base::Console().Message(
+            "capture budget: %d captured in %.0fms, %d deferred, "
+            "%d adopted of %d offered%s\n",
+            PRIVATE(this)->capturecount, PRIVATE(this)->capturespentms,
+            PRIVATE(this)->deferredcount, PRIVATE(this)->adoptedcount,
+            pstats.requested, why.c_str());
+      }
+    }
     cache->close(state);
 
     {
@@ -2359,6 +2404,12 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
       // is not compared.
       if (self->vcache->prebuiltApplicable())
         self->verifyprebuilt = std::move(prebuilt);
+    }
+    else if (const char * why = self->vcache->prebuiltReject()) {
+      // Had content, refused it: name the clause (the fallback below
+      // is the normal path, but a publish that never adopts has to be
+      // able to say whether it was the registry or the state).
+      self->countAdoptReject(why);
     }
     else if (self->vcache->installPrebuilt(*prebuilt)) {
       ++self->adoptedcount;

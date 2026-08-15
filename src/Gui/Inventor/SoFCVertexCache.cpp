@@ -1103,21 +1103,40 @@ SoFCVertexCache::setPrebuilt(const SoNode * node,
     PrebuiltTable[node] = std::move(content);
 }
 
+static SoFCVertexCache::PrebuiltStats PrebuiltStatsCounters;
+
+void
+SoFCVertexCache::resetPrebuiltStats()
+{
+  PrebuiltStatsCounters = PrebuiltStats();
+}
+
+const SoFCVertexCache::PrebuiltStats &
+SoFCVertexCache::prebuiltStats()
+{
+  return PrebuiltStatsCounters;
+}
+
 std::shared_ptr<const SoFCVertexCache::PrebuiltContent>
 SoFCVertexCache::takePrebuilt(const SoNode * node)
 {
+  ++PrebuiltStatsCounters.requested;
   auto it = PrebuiltTable.find(node);
-  if (it == PrebuiltTable.end())
+  if (it == PrebuiltTable.end()) {
+    ++PrebuiltStatsCounters.missing;
     return nullptr;
+  }
   auto content = std::move(it->second);
   PrebuiltTable.erase(it);
-  if (content->nodeid != node->getNodeId())
+  if (content->nodeid != node->getNodeId()) {
+    ++PrebuiltStatsCounters.stale;
     return nullptr;
+  }
   return content;
 }
 
-bool
-SoFCVertexCache::prebuiltApplicable() const
+const char *
+SoFCVertexCache::prebuiltReject() const
 {
   // The prebuilt contract: the worker baked neither colors nor texture
   // coordinates, so any captured state that needs them falls back to
@@ -1125,19 +1144,29 @@ SoFCVertexCache::prebuiltApplicable() const
   // verdict open() reached from the lazy element. Valid only between
   // open() and close() (tmp lives in that window).
   auto self = PRIVATE(this);
-  if (!self->tmp || self->prevattached)
-    return false;
+  if (!self->tmp)
+    return "closed";
+  if (self->prevattached)
+    return "prev attached";
   if (self->colorpervertex != 0)
-    return false;
+    return "color per vertex";
   if (self->lastenabled >= 0)
-    return false;
+    return "texture unit";
   if (self->tmp->numbumpcoords)
-    return false;
+    return "bump coords";
   if (self->markerindices)
-    return false;
-  if (self->glrender || self->flipnormal)
-    return false;
-  return true;
+    return "markers";
+  if (self->glrender)
+    return "glrender";
+  if (self->flipnormal)
+    return "flipped normal";
+  return nullptr;
+}
+
+bool
+SoFCVertexCache::prebuiltApplicable() const
+{
+  return prebuiltReject() == nullptr;
 }
 
 bool
