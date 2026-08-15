@@ -340,6 +340,18 @@ showing. And a Z clip is invisible to a camera pointing down Z: stage
 
 ## 10. Open
 
+- **Concave picking keeps the wrong set.** `SoFCRayPickAction::doPick`
+  re-picks with the clip planes off and then keeps the points that at
+  least one plane *clips*, where the union the concave section draws is
+  the points that at least one plane *keeps*. Two of the three regions
+  come out wrong: what no plane clips (plainly visible) cannot be picked
+  at all, and what every plane clips (not drawn) can. Measured with a
+  standalone harness -- a cube and two planes, picking down the four
+  quadrants: convex picks only the kept quadrant, concave picks the other
+  three and not that one. Pre-existing and untouched here; the fix is to
+  keep on the first plane with distance >= 0 instead of the first with
+  distance < 0, but it changes what a click selects, so it is a decision
+  rather than a cleanup.
 - Moving the `NoSectionOnTop` or `SectionConcave` **preference** does not
   re-translate the draw lists the way the view property does (6.1), so a
   view with no override of its own shows the change only on the next
