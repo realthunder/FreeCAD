@@ -1886,6 +1886,14 @@ inline GeomKey computeGeomKey(const Render::MeshData &mesh)
 /// and the fixed passes cost what they cost.
 inline std::atomic<size_t> s_gpuGeometryBytes {0};
 
+/// Bumped every time geometry handles are actually given back
+/// (GpuGeometry::destroy). A creation the handle pool refused is worth
+/// retrying only once something has been freed since -- a pool that is
+/// full stays full, and rebuilding the vertex memory every frame for
+/// every refused mesh would cost far more than the draws it is trying
+/// to rescue. See BGFXView::tryUploadGeometry.
+inline std::atomic<uint64_t> s_geomFreedEpoch {0};
+
 struct GpuGeometry
 {
     /// Position + normal vertex stream.
@@ -1909,6 +1917,12 @@ struct GpuGeometry
     uint64_t lastUsed = 0;
     /// Bytes this entry has uploaded (s_gpuGeometryBytes share).
     size_t bytes = 0;
+    /// The frame this entry was last refused a vertex buffer on (0 =
+    /// never), so a mesh denied by several passes of one frame counts
+    /// once, and the destroy-epoch that refusal stood under, so the
+    /// retry waits for handles to actually come back.
+    uint64_t deniedFrame = 0;
+    uint64_t deniedEpoch = ~uint64_t(0);
 
     void track(size_t add)
     {
@@ -1918,18 +1932,25 @@ struct GpuGeometry
 
     void destroy()
     {
+        bool freed = false;
         for (auto ib : {&tri, &line, &point, &lineNoSeam}) {
             if (bgfx::isValid(*ib)) {
                 bgfx::destroy(*ib);
                 *ib = BGFX_INVALID_HANDLE;
+                freed = true;
             }
         }
         for (auto vb : {&vbh, &triEdgeInst, &triCornerInst, &texcoord}) {
             if (bgfx::isValid(*vb)) {
                 bgfx::destroy(*vb);
                 *vb = BGFX_INVALID_HANDLE;
+                freed = true;
             }
         }
+        // Handles are back in the pool: whoever was refused one may ask
+        // again.
+        if (freed)
+            ++s_geomFreedEpoch;
         s_gpuGeometryBytes -= bytes;
         bytes = 0;
     }
@@ -3527,6 +3548,41 @@ public:
     // plain dot products. CPU cost is a one-off ~2M radiance samples.
     void ensureEnvironment();
 
+    /// Give \a geom its buffers if it has none, and account for the
+    /// refusal when the handle pool has none left to give. The draw
+    /// sites all skip an invalid vertex buffer rather than fatally
+    /// binding it, so a refusal is silent geometry loss -- it has to be
+    /// counted, and it has to be retried.
+    ///
+    /// Retried only once handles have actually come back
+    /// (s_geomFreedEpoch): the pool does not refill on its own, and
+    /// upload() rebuilds the whole vertex stream before it asks, so
+    /// retrying every refused mesh every frame would cost far more than
+    /// the draws it is trying to rescue. The epoch is read back AFTER
+    /// the attempt because destroy() below may bump it.
+    void tryUploadGeometry(GpuGeometry &geom, const Render::MeshData &data)
+    {
+        if (bgfx::isValid(geom.vbh))
+            return;
+        if (geom.deniedEpoch != s_geomFreedEpoch.load()) {
+            // Give back the partial upload before asking again:
+            // upload() creates every buffer unconditionally and tracks
+            // its bytes, so a second call over a half-built entry would
+            // orphan the index buffers it already holds and count them
+            // twice.
+            geom.destroy();
+            geom.upload(data);
+        }
+        if (bgfx::isValid(geom.vbh))
+            return;
+        geom.deniedEpoch = s_geomFreedEpoch.load();
+        ++bufferDeniedSubmits;
+        if (geom.deniedFrame != frame) {
+            geom.deniedFrame = frame;
+            ++bufferDeniedMeshes;
+        }
+    }
+
     GpuMesh *getMesh(const Render::MeshData &data)
     {
         GpuMesh &mesh = meshes[data.cacheId];
@@ -3550,19 +3606,7 @@ public:
             GeomKey key = computeGeomKey(data);
             auto res = geometries.emplace(key, GpuGeometry());
             GpuGeometry &geom = res.first->second;
-            if (!bgfx::isValid(geom.vbh))
-                geom.upload(data);
-            if (!bgfx::isValid(geom.vbh)) {
-                // handle pool exhausted: the draw sites skip an
-                // invalid upload instead of fatally binding it
-                static bool warned = false;
-                if (!warned) {
-                    warned = true;
-                    fprintf(stderr,
-                            "bgfx: vertex buffer handle pool exhausted, "
-                            "some meshes will not be drawn\n");
-                }
-            }
+            tryUploadGeometry(geom, data);
             mesh.geom = &geom;
             mesh.upload(data);
             static const bool dbgfeed =
@@ -3575,6 +3619,14 @@ public:
                         (unsigned long long)key.hash,
                         res.second ? "" : " shared");
         }
+        // A geometry refused a vertex buffer keeps a cached entry that
+        // has none, and the branch above never runs for it again: it
+        // was never retried, and a mesh drawn every frame keeps its
+        // lastUsed current so the two-frame purge never retires it
+        // either. That mesh stayed invisible for the life of the
+        // process, behind one warning printed once.
+        else if (!bgfx::isValid(mesh.geom->vbh))
+            tryUploadGeometry(*mesh.geom, data);
         mesh.geom->lastUsed = frame;
         return &mesh;
     }
@@ -5393,6 +5445,13 @@ public:
     std::unordered_map<uint64_t, GpuTexture> textures;
     uint64_t frame = 0;
     int drawcount = 0;
+    /// Geometry the handle pool refused this frame (tryUploadGeometry):
+    /// draw submissions that asked for a mesh with no vertex buffer and
+    /// were skipped, and how many DISTINCT meshes that was -- one mesh
+    /// is asked for by several passes, so the submission count alone
+    /// cannot say how much geometry is actually missing from the
+    /// screen. Both reset with drawcount at the top of the frame.
+    size_t bufferDeniedSubmits = 0, bufferDeniedMeshes = 0;
     // Standalone (WebGL2) one-shot warmup: the very first MSAA scene
     // framebuffer created while bgfx's async WebGL2 init is still settling
     // renders the overlay views wrong (a stale-target artifact — the corner
@@ -7455,6 +7514,14 @@ public:
     static const size_t kNeverReported = size_t(-1);
     size_t gatedDepSeen = kNeverReported, gatedPointsSeen = kNeverReported,
         gatedLinesSeen = kNeverReported, gateEligibleSeen = kNeverReported;
+    /// Last reported handle-pool refusal (BGFXView::tryUploadGeometry),
+    /// edge-triggered like the gates above: exhaustion lasts as long as
+    /// the scene is too big for the pool, and a line every frame would
+    /// bury the moment it started. BOTH edges are reported -- silent
+    /// geometry loss that silently stops is exactly as unreadable as
+    /// the loss itself, and this counter exists because the condition
+    /// used to announce itself once per process and never again.
+    size_t bufferDeniedSeen = kNeverReported;
     /// Meshes whose every scene draw the gates suppressed this frame
     /// -- not submittable, so the collector must not keep them for
     /// being published (see collectMeshes). Rebuilt each frame by the

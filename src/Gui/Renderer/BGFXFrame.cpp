@@ -3356,6 +3356,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
 
     ++view->frame;
     view->drawcount = 0;
+    view->bufferDeniedSubmits = view->bufferDeniedMeshes = 0;
     view->autozoomScale = autozoomScale;
     if (pbrActive && pbrconf.envBackground)
         view->submitEnvBackground();
@@ -5658,6 +5659,23 @@ bool BGFXRenderer::Private::render(const QColor &col,
                     rep.probing ? " (probing)" : "",
                     rep.armSeen, rep.armSamples);
         }
+    }
+
+    // Geometry the GPU handle pool refused this frame. Unconditional --
+    // not behind levelDebug -- because this is not a quality decision
+    // the renderer made, it is geometry missing from the screen.
+    if (view->bufferDeniedMeshes != bufferDeniedSeen) {
+        const size_t was = bufferDeniedSeen;
+        bufferDeniedSeen = view->bufferDeniedMeshes;
+        if (view->bufferDeniedMeshes)
+            FC_RENDER_MSG(
+                "render levels: GPU handle pool REFUSED %zu meshes "
+                "(%zu submissions skipped) -- that geometry is NOT on "
+                "screen; retrying as handles come back\n",
+                view->bufferDeniedMeshes, view->bufferDeniedSubmits);
+        else if (was != kNeverReported)
+            FC_RENDER_MSG("render levels: GPU handle pool recovered -- "
+                          "every mesh asked for has its buffers\n");
     }
 
     if (!hasScene && !scene.empty())
