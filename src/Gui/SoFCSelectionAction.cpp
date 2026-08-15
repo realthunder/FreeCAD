@@ -1619,12 +1619,17 @@ void SoFCRayPickAction::setResetClipPlane(bool enable)
     resetclipplane = enable;
 }
 
+void SoFCRayPickAction::setSectionConcave(bool enable)
+{
+    sectionconcave = enable;
+}
+
 void SoFCRayPickAction::doPick(SoNode *node)
 {
     SoState *state = getState();
     bool pushed = false;
     bool pickall = isPickAll();
-    if (resetclipplane || ViewParams::getSectionConcave()) {
+    if (resetclipplane || sectionconcave) {
         auto element = static_cast<SoClipPlaneElement*>(
                 state->getElementNoPush(SoClipPlaneElement::getClassStackIndex()));
         if (element && element->getNum()) {

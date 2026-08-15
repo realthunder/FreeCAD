@@ -422,6 +422,15 @@ public:
     bool resetClipPlane() const {return resetclipplane;}
     void setResetClipPlane(bool enable);
 
+    /// Whether the clip planes in force describe a concave section (a union
+    /// of half spaces), in which case a point outside one plane may still
+    /// be inside the section and the pick has to look past every plane.
+    /// Told by the caller rather than read from ViewParams here, because
+    /// the style belongs to the view being picked in: a view carrying a
+    /// Section_Concave override answers for it (docs/ViewSettings.md 6).
+    bool sectionConcave() const {return sectionconcave;}
+    void setSectionConcave(bool enable);
+
     int getBackFaceCount() const {
         return (int)faceDistances.size();
     }
@@ -451,6 +460,7 @@ private:
     PickMode pickMode = PickMode::FrontFace;
     bool skipFace;
     bool resetclipplane = false;
+    bool sectionconcave = false;
     bool latePicking = false;
 };
 

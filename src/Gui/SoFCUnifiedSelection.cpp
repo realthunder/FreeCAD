@@ -282,6 +282,12 @@ public:
     Gui::Document        *pcDocument;
     View3DInventorViewer *pcViewer;
 
+    // The owning 3D view object, whose Section_* properties answer for the
+    // section style this node picks and renders with. Null for a viewer
+    // that has no view object (a headless publisher, a preview widget),
+    // which then simply reads the preferences.
+    App::PropertyContainer *viewobject = nullptr;
+
     CoinPtr<SoFullPath> currentHighlight;
     CoinPtr<SoFullPath> detailPath;
 
@@ -366,6 +372,7 @@ SoFCRenderCacheManager *SoFCUnifiedSelection::getRenderManager()
 
 void SoFCUnifiedSelection::setViewObject(App::PropertyContainer *view)
 {
+    pimpl->viewobject = view;
     pimpl->manager.setViewObject(view);
 }
 
@@ -693,6 +700,12 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
     SoFCDisplayModeElement::set(this->rayPickAction.getState(),0,SbName::empty(),false);
 
     this->rayPickAction.cleanup();
+
+    // How this view sections is how it picks: a concave section is a union
+    // of half spaces, so the pick has to look past each plane on its own.
+    this->rayPickAction.setSectionConcave(
+            Gui::sectionStyle(viewobject, "Concave",
+                              ViewParams::getSectionConcave()));
 
     this->rayPickAction.setResetClipPlane(ViewParams::getNoSectionOnTop());
 
