@@ -2678,12 +2678,41 @@ storm as expensive as the drop.
 The stagger was supposed to prevent exactly this ("what keeps the
 release from re-opening into the memory the collector just freed"), but
 a stagger only DELAYS the re-admission -- it never PRICES it. Nothing
-asks what the class costs before handing it back, and the answer here
-is 2x the budget. The fix belongs with the release decision: weigh the
-gated meshes' buffers (the collector already tracks them as
-`gatedOnlyMeshes`) against actual headroom, and re-admit incrementally
-rather than all 5909 draws on one frame -- the standing "incremental by
-default" rule. NOT yet fixed.
+asked what the class costs before handing it back, and the answer here
+is 2x the budget.
+
+**FIXED: the release is priced.** Before stepping down, the latch adds
+up what re-admitting that class would upload (`GpuMesh::readmitCost`,
+which lives beside `upload()` because it is the same arithmetic) and
+compares it with real headroom. It steps down only if the class fits,
+and reports the refusal on its crossing so a latch that stays put for a
+reason cannot be mistaken for one that is stuck:
+
+    render levels: element gate stage 2 holds -- handing back the
+    lines would upload 114.1MB into 73.3MB of headroom
+
+Measured over the same release window:
+
+| | unpriced | priced |
+|---|---|---|
+| **peak accepted error** | **1654.00px** | **8.01px** |
+| gaps >= 200ms | 104 in 120s | 74 in 150s |
+| latch | released, overshot, re-escalated | held |
+
+WARNING: price the GEOMETRY, not just the instance buffer. A mesh whose
+every draw the gate suppressed is collected outright, vertices and
+index stream with it, so re-admission pays for all of it again. A first
+version counted only the instances, under-read by about a fifth
+(107.1MB against the ~126MB actually taken), and that was enough to
+approve a release that then blew the budget and re-escalated -- the
+same failure the pricing existed to prevent, just quieter.
+
+What this does NOT do is make the classes come back on a full budget:
+the ladder climbs into whatever headroom exists, so the equilibrium on
+a model this size is edges gated and faces fine. Handing them back in
+BATCHES rather than all 5909 draws at once -- the standing "incremental
+by default" rule -- is the remaining work, and it is what would let a
+partial re-admission use the headroom that is genuinely there.
 
 WARNING: the latch's state was readable only from the plan line, and a
 settled ladder STOPS PLANNING -- so the release walks back over exactly

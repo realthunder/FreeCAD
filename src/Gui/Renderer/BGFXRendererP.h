@@ -2173,6 +2173,40 @@ struct GpuMesh
         }
     }
 
+    /// What re-uploading this mesh as an edge (or point) drawable would
+    /// cost, for the element gate's release to weigh against real
+    /// headroom before it hands a class back.
+    ///
+    /// It has to count the GEOMETRY too, not just the instance buffer:
+    /// a mesh every draw of which the gate suppressed is collected
+    /// outright (collectMeshes), taking its vertices and index stream
+    /// with it, so re-admission pays for all of it again. Pricing the
+    /// instances alone under-reads by about a fifth, which is enough to
+    /// approve a release that then blows the budget -- measured.
+    ///
+    /// It lives HERE, beside upload(), because it is the same
+    /// arithmetic: a copy of these formulas kept anywhere else drifts
+    /// the first time a stream is added to either.
+    static uint64_t readmitCost(const Render::MeshData &mesh, bool lines)
+    {
+        uint64_t bytes = uint64_t(mesh.numVertices) * sizeof(SceneVertex);
+        if (mesh.colors)
+            bytes += uint64_t(mesh.numVertices) * 4;
+        if (mesh.materials)
+            bytes += uint64_t(mesh.numVertices) * sizeof(MatVertex);
+        if (lines) {
+            bytes += uint64_t(mesh.numLineIndices) * 4;
+            if (mesh.numLineIndices > 1)
+                bytes += uint64_t(mesh.numLineIndices / 2) * 16
+                    * sizeof(float);
+        }
+        else {
+            bytes += uint64_t(mesh.numPointIndices) * 4;
+            bytes += uint64_t(mesh.numPointIndices) * 8 * sizeof(float);
+        }
+        return bytes;
+    }
+
     /// One quad-expansion instance per line segment (endpoints + endpoint
     /// colors), from any GL_LINES style index set of the mesh.
     static bgfx::VertexBufferHandle makeSegmentInstances(
@@ -7413,6 +7447,9 @@ public:
     // two settles -- the gate would do its whole job with nothing ever
     // saying it ran.
     bool loadDropSeen = false;
+    /// Whether the last release attempt was refused on price, so the
+    /// refusal is reported on its crossing rather than every frame.
+    bool elemReleaseHeld = false;
     /// The same for the pressure latch, and for a sharper reason: the
     /// plan readout is the only other place the stage appears, and a
     /// settled ladder stops planning altogether -- so the release

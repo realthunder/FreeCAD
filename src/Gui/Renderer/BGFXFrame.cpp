@@ -3799,6 +3799,35 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // the same stairs backwards, one stage per stagger, and only
     // once the ladder has given back ALL raised error -- the
     // cheapest thing to give up is the last thing taken back.
+    //
+    // MEASURED, and this is why the release is PRICED and not merely
+    // staggered (docs/SceneStreaming.md 13b): handing the line class
+    // back on the strength of the stagger alone re-admitted 126MB on
+    // ONE frame -- the whole settled scene again, 55MB past the
+    // restored budget -- so the pressure controller slammed the
+    // tolerance to its 1654px ceiling, the latch re-escalated, and the
+    // scene ended up worse than before it released (6.46px at 82.6MB
+    // where it had held 2.00px at 76.3MB), at a cost of 104 event-loop
+    // gaps over 200ms. A stagger DELAYS a re-admission; it never asks
+    // what it costs. This does, on the uploader's own arithmetic.
+    auto readmitBytes = [&](Render::Material::Type type) {
+        std::unordered_set<uint64_t> counted;
+        uint64_t bytes = 0;
+        for (const auto &d : scene) {
+            if (!d.mesh || !d.mesh->attachedOnly || !d.objectKey
+                    || d.material.ontop || d.material.highlightline
+                    || d.material.type != type)
+                continue;
+            // Per MESH, not per draw: the upload is keyed by cacheId
+            // and several draws share one, so a per-draw sum prices
+            // the same buffer many times over.
+            if (!counted.insert(d.mesh->cacheId).second)
+                continue;
+            bytes += GpuMesh::readmitCost(*d.mesh,
+                                          type == Render::Material::Line);
+        }
+        return bytes;
+    };
     {
         const bool pressed = gpuOverBudget || pressureStanding;
         if (gpuOverBudget) {
@@ -3814,8 +3843,36 @@ bool BGFXRenderer::Private::render(const QColor &col,
         }
         else if (!pressed && elemPressureStage > 0) {
             if (++elemStageFrames >= elemGateStagger) {
-                --elemPressureStage;
-                elemStageFrames = 0;
+                // Stage 2 hands the LINES back, stage 1 the POINTS --
+                // the reverse of the order they were spent in.
+                const uint64_t price = readmitBytes(
+                    elemPressureStage >= 2 ? Render::Material::Line
+                                           : Render::Material::Point);
+                const size_t budget = gpuBudgetBytes();
+                const uint64_t used = gpuUsedBytes();
+                const uint64_t headroom = budget > used ? budget - used : 0;
+                // No budget to weigh it against means no reason to
+                // hold: the gates exist to serve a budget.
+                const bool affordable = !budget || price <= headroom;
+                if (affordable) {
+                    --elemPressureStage;
+                    elemStageFrames = 0;
+                }
+                else if (levelDebug() && !elemReleaseHeld) {
+                    // Said once per crossing, not per frame: a latch
+                    // that stays put for a REASON is the thing the
+                    // measurement could not distinguish from a latch
+                    // that was stuck.
+                    FC_RENDER_MSG(
+                        "render levels: element gate stage %d holds -- "
+                        "handing back %s would upload %.1fMB into "
+                        "%.1fMB of headroom\n",
+                        elemPressureStage,
+                        elemPressureStage >= 2 ? "the lines" : "the points",
+                        double(price) / 1048576.0,
+                        double(headroom) / 1048576.0);
+                }
+                elemReleaseHeld = !affordable;
             }
         }
         else {
