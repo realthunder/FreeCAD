@@ -192,11 +192,11 @@ class MetadataTest: public ::testing::Test
 protected:
     void SetUp() override
     {
-        xercesc_3_2::XMLPlatformUtils::Initialize();
+        XERCES_CPP_NAMESPACE_QUALIFIER XMLPlatformUtils::Initialize();
     }
     void TearDown() override
     {
-        xercesc_3_2::XMLPlatformUtils::Terminate();
+        XERCES_CPP_NAMESPACE_QUALIFIER XMLPlatformUtils::Terminate();
     }
     std::string GivenSimpleMetadataXMLString()
     {
