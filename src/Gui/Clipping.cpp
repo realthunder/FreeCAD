@@ -849,6 +849,12 @@ Clipping::~Clipping()
     d->ui.dirX->onSave();
     d->ui.dirY->onSave();
     d->ui.dirZ->onSave();
+    // Whatever took this panel away -- the dock closing, the stack page
+    // being deleted -- the view must stop being answered by it, or the
+    // next binding hands back a dead entry instead of building a panel.
+    auto it = _Clippings.find(d->view);
+    if (it != _Clippings.end() && (!it->second || it->second->widget() == this))
+        _Clippings.erase(it);
     delete d;
 }
 
@@ -890,8 +896,18 @@ void Clipping::setupConnections()
 
 void Clipping::done(int r)
 {
+    // Escape in the panel closes the whole dock, and the dock is what
+    // owns every panel in it -- but the deletion is deferred, so the two
+    // statics have to be dropped here rather than left to their
+    // QPointers. Otherwise a toggle before the event loop gets to the
+    // deletion finds a live dock and, with the map just cleared, builds a
+    // SECOND panel for a view that already has one: both alive, both
+    // holding clip planes in that view's scene graph, and only the newer
+    // one reachable to switch them off again.
     if (_DockWidget)
         _DockWidget->deleteLater();
+    _DockWidget = nullptr;
+    _StackedWidget = nullptr;
     _Clippings.clear();
     QDialog::done(r);
 }
