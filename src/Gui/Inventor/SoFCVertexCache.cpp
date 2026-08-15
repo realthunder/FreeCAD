@@ -3088,7 +3088,13 @@ SoFCVertexCache::getBoundingBox(const SbMatrix * matrix, SbBox3f & bbox) const
   if (PRIVATE(this)->boundbox.isEmpty())
     PRIVATE(this)->getBoundingBox(nullptr, PRIVATE(this)->boundbox);
   bbox = PRIVATE(this)->boundbox;
-  if (matrix)
+  // Never transform an EMPTY box: SbBox3f::transform guards that only
+  // under COIN_DEBUG, and in a release Coin it runs the +/-FLT_MAX
+  // sentinel corners through the matrix, overflowing them into a box
+  // of +/-inf that no longer LOOKS empty -- it then rides extendBy
+  // into the scene box and a view-fit puts the camera at infinity.
+  // Empty caches exist since point sets are born with no coordinates.
+  if (matrix && !bbox.isEmpty())
     bbox.transform(*matrix);
 }
 
