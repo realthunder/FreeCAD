@@ -131,15 +131,27 @@ void _writeStyle(App::PropertyContainer *view, const char *property,
     auto prop = view->getPropertyByName(property);
     if (prop && prop->getTypeId() != type)
         return;
+    bool created = false;
     if (!prop) {
         prop = view->addDynamicProperty(type.getName(), property,
                                         strncmp(property, "Light_", 6) == 0
                                             ? "Light" : "Section");
         if (!prop)
             return;
+        created = true;
     }
-    if (_styleValue(prop) == value)
+    if (_styleValue(prop) == value) {
+        // A property born holding what was asked for still changed what
+        // the view answers, because until now it answered with the
+        // preference. Nothing else says so: creating a property signals
+        // nothing, and a set to the value it already holds is dropped by
+        // Property::hasSetValue(). Without this, unchecking a box whose
+        // override is created false (the preference having said true)
+        // moves nothing at all.
+        if (created)
+            prop->touch();
         return;
+    }
     _setStyleValue(prop, value);
 }
 

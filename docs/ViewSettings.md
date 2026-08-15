@@ -228,6 +228,15 @@ The new code only adds the view side (`Clipping::Private::bindStyle`,
 one connection per widget) and a `populating` guard that, together with
 `setAutoSave(false)`, covers the panel's own filling.
 
+**Creating the override is itself a change.** A property is born holding
+its type's default (`false`, `0`), which is often exactly what the user
+just asked for -- unchecking a box whose preference said `true` writes
+`false` onto a property created `false`. Nothing signals that on its own:
+creating a property emits nothing, and `Property::hasSetValue()` drops a
+set to the value already held. So `_writeStyle` touches a property it had
+to create, or the first turn of a knob whose new value matches the
+property default reaches nothing that redraws.
+
 A `Section_*` or `Light_*` property change reaches the panel through
 `View3DInventorViewer::onViewPropertyChanged` ->
 `Clipping::onViewPropertyChanged`, so a saved view or a script moves the
