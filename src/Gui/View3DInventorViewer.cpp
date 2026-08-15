@@ -402,15 +402,19 @@ template<class PropT, class ValueT, class CallbackT>
 static ValueT _containerProperty(App::PropertyContainer *view,
                                  const char *_name, const char *_docu,
                                  const char *group, const ValueT &def,
-                                 CallbackT cb) {
+                                 CallbackT cb, short attr = App::Prop_None) {
     char name[128];
     snprintf(name, sizeof(name)-1, "%s_%s", group, _name);
     auto prop = view->getPropertyByName(name);
     if (prop && !prop->isDerivedFrom(PropT::getClassTypeId()))
         return def;
     if (!prop) {
+        // The attribute has to be given here: Prop_NoPersist reaches the
+        // property through syncType at construction, and setStatus cannot
+        // add it afterwards -- Property::setStatusValue masks that bit out
+        // and keeps whatever the property was created with.
         prop = view->addDynamicProperty(PropT::getClassTypeId().getName(),
-                                        name, group, _docu);
+                                        name, group, _docu, attr);
         static_cast<PropT*>(prop)->setValue(def);
     }
     cb(*static_cast<PropT*>(prop));
@@ -441,6 +445,20 @@ static ValueT _renderParam(App::PropertyContainer *view, const char *_name, cons
     if (!view)
         return def;
     return _containerProperty<PropT, ValueT>(view, _name, _docu, "Render", def, cb);
+}
+
+/// A render setting that states what the machine can afford rather than
+/// what the model should look like. Same per-view property as the rest,
+/// but created Prop_NoPersist so that it never reaches a file and so
+/// never arrives on somebody else's installation as their budget.
+template<class PropT, class ValueT>
+static ValueT _localRenderParam(App::PropertyContainer *view, const char *_name,
+                                const char *_docu, const ValueT &def) {
+    if (!view)
+        return def;
+    auto cb = [](PropT &){};
+    return _containerProperty<PropT, ValueT>(view, _name, _docu, "Render", def, cb,
+                                             App::Prop_NoPersist);
 }
 
 template<class PropT, class ValueT, class CallbackT>
@@ -4548,29 +4566,29 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         prop->setEnums(_ssaoMethodEnums);
         prop->setValue(long(RenderParams::getAOMethod()));
     }
-    _renderParam<App::PropertyInteger>(view, "AOSlices",
+    _localRenderParam<App::PropertyInteger>(view, "AOSlices",
             RenderParams::docAOSlices(), RenderParams::getAOSlices());
-    _renderParam<App::PropertyInteger>(view, "AOSteps",
+    _localRenderParam<App::PropertyInteger>(view, "AOSteps",
             RenderParams::docAOSteps(), RenderParams::getAOSteps());
     _renderParam<App::PropertyBool>(view, "Shadow",
             RenderParams::docShadow(), RenderParams::getShadow());
-    _renderParam<App::PropertyFloat>(view, "EffectResolution",
+    _localRenderParam<App::PropertyFloat>(view, "EffectResolution",
             RenderParams::docEffectResolution(),
             RenderParams::getEffectResolution());
-    _renderParam<App::PropertyInteger>(view, "CoarseTessellation",
+    _localRenderParam<App::PropertyInteger>(view, "CoarseTessellation",
             RenderParams::docCoarseTessellation(),
             RenderParams::getCoarseTessellation());
-    _renderParam<App::PropertyFloat>(view, "LevelTolerance",
+    _localRenderParam<App::PropertyFloat>(view, "LevelTolerance",
             RenderParams::docLevelTolerance(),
             RenderParams::getLevelTolerance());
-    _renderParam<App::PropertyInteger>(view, "GpuMemoryBudgetMB",
+    _localRenderParam<App::PropertyInteger>(view, "GpuMemoryBudgetMB",
             RenderParams::docGpuMemoryBudgetMB(),
             RenderParams::getGpuMemoryBudgetMB());
     _renderParam<App::PropertyFloat>(view, "AORadius",
             RenderParams::docAORadius(), RenderParams::getAORadius());
     _renderParam<App::PropertyFloat>(view, "AOIntensity",
             RenderParams::docAOIntensity(), RenderParams::getAOIntensity());
-    _renderParam<App::PropertyFloat>(view, "AOResolution",
+    _localRenderParam<App::PropertyFloat>(view, "AOResolution",
             RenderParams::docAOResolution(), RenderParams::getAOResolution());
     // Cavity composes with occlusion rather than replacing it, so it sits
     // with the AO block.
@@ -4781,7 +4799,8 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         auto prop = static_cast<App::PropertyEnumeration*>(
                 view->addDynamicProperty("App::PropertyEnumeration",
                                          "RenderDebug_ViewMode", "RenderDebug",
-                                         RenderParams::docDebugViewMode()));
+                                         RenderParams::docDebugViewMode(),
+                                         App::Prop_NoPersist));
         prop->setEnums(_debugViewModeEnums);
         prop->setValue(long(RenderParams::getDebugViewMode()));
         prop->setStatus(App::Property::Hidden, true);
@@ -4790,7 +4809,8 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         auto prop = static_cast<App::PropertyBool*>(
                 view->addDynamicProperty("App::PropertyBool",
                                          "RenderDebug_FreezeFrame", "RenderDebug",
-                                         RenderParams::docDebugFreezeFrame()));
+                                         RenderParams::docDebugFreezeFrame(),
+                                         App::Prop_NoPersist));
         prop->setValue(RenderParams::getDebugFreezeFrame());
         prop->setStatus(App::Property::Hidden, true);
     }
@@ -4798,7 +4818,8 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         auto prop = static_cast<App::PropertyBool*>(
                 view->addDynamicProperty("App::PropertyBool",
                                          "RenderDebug_Label", "RenderDebug",
-                                         RenderParams::docDebugLabel()));
+                                         RenderParams::docDebugLabel(),
+                                         App::Prop_NoPersist));
         prop->setValue(RenderParams::getDebugLabel());
         prop->setStatus(App::Property::Hidden, true);
     }
@@ -4806,7 +4827,8 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         auto prop = static_cast<App::PropertyBool*>(
                 view->addDynamicProperty("App::PropertyBool",
                                          "RenderDebug_Timing", "RenderDebug",
-                                         RenderParams::docDebugTiming()));
+                                         RenderParams::docDebugTiming(),
+                                         App::Prop_NoPersist));
         prop->setValue(RenderParams::getDebugTiming());
         prop->setStatus(App::Property::Hidden, true);
     }
@@ -4814,7 +4836,8 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         auto prop = static_cast<App::PropertyBool*>(
                 view->addDynamicProperty("App::PropertyBool",
                                          "RenderDebug_Delta", "RenderDebug",
-                                         RenderParams::docDebugDelta()));
+                                         RenderParams::docDebugDelta(),
+                                         App::Prop_NoPersist));
         prop->setValue(RenderParams::getDebugDelta());
         prop->setStatus(App::Property::Hidden, true);
     }
@@ -4822,10 +4845,71 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
         auto prop = static_cast<App::PropertyBool*>(
                 view->addDynamicProperty("App::PropertyBool",
                                          "RenderDebug_Coverage", "RenderDebug",
-                                         RenderParams::docDebugCoverage()));
+                                         RenderParams::docDebugCoverage(),
+                                         App::Prop_NoPersist));
         prop->setValue(RenderParams::getDebugCoverage());
         prop->setStatus(App::Property::Hidden, true);
     }
+
+}
+
+// The render properties that state what the machine can afford rather than
+// what the model should look like: how many samples the ambient occlusion
+// traces and at what resolution, how much GPU memory the backend may take,
+// how coarsely a shape may be tessellated, and the whole debug
+// instrumentation. Everything else in the group describes a look, which is
+// the author's and is meant to travel; these describe the desktop it was
+// authored on, and arriving on a smaller machine as somebody else's budget
+// is the opposite of what they are for. AOMethod is deliberately not here:
+// SSAO against GTAO reads as an authoring choice, not a cost dial.
+static const char *_localRenderProperties[] = {
+    "Render_AOResolution",
+    "Render_AOSlices",
+    "Render_AOSteps",
+    "Render_CoarseTessellation",
+    "Render_EffectResolution",
+    "Render_GpuMemoryBudgetMB",
+    "Render_LevelTolerance",
+    nullptr
+};
+
+static bool _isLocalRenderProperty(const char *name)
+{
+    if (!name)
+        return false;
+    if (boost::starts_with(name, "RenderDebug_"))
+        return true;
+    for (const char **local = _localRenderProperties; *local; ++local) {
+        if (boost::equals(name, *local))
+            return true;
+    }
+    return false;
+}
+
+void Gui::reseedLocalRenderProperties(App::PropertyContainer *view)
+{
+    if (!view)
+        return;
+    // Only for a view that already carries the render set. Rebuilding it
+    // here on a view that has none would hand it the whole group it never
+    // asked for -- and then save it.
+    if (!view->getPropertyByName("Render_AO"))
+        return;
+    std::vector<std::string> stale;
+    for (const auto &v : view->getDynamicPropertyNames()) {
+        if (_isLocalRenderProperty(v.c_str()))
+            stale.push_back(v);
+    }
+    if (stale.empty())
+        return;
+    // A file written before these became local carries the author's values
+    // in them, and restoring one overwrites what this installation seeded.
+    // Drop those and let initRenderProperties put the local preference back
+    // -- which also gives them the Prop_NoPersist they can only be born
+    // with, so the next save no longer carries them.
+    for (const auto &name : stale)
+        view->removeDynamicProperty(name.c_str());
+    initRenderProperties(view);
 }
 
 // #define ENABLE_GL_DEPTH_RANGE

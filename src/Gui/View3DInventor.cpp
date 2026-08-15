@@ -72,6 +72,7 @@
 #include "NaviCube.h"
 #include "NavigationStyle.h"
 #include "SoFCDB.h"
+#include "Inventor/SoFCRenderCacheManager.h"
 #include "SoFCSelectionAction.h"
 #include "SoFCVectorizeSVGAction.h"
 #include "View3DInventorExamples.h"
@@ -1212,6 +1213,12 @@ void View3DInventor::Restore(Base::XMLReader &reader)
 {
     Base::StateLocker guard(_restoring);
     MDIView::Restore(reader);
+    // What the document states about this view is the author's look. What it
+    // may still state about their hardware is not: a file written before
+    // those knobs were made local carries a sample count and a memory budget
+    // tuned on another machine, and restoring one overwrites what this
+    // installation seeded. Put the local preference back.
+    reseedLocalRenderProperties(this);
 }
 
 void View3DInventor::onChanged(const App::Property *prop)
