@@ -198,7 +198,7 @@ public:
    * palette index in the next and two reserved after them
    * (hasFinishMaterial()). Present only when the coin fork's
    * extended lazy element carried per-face material arrays whose
-   * resolved values actually diverge (CoinLazyElementEx), or a per-face
+   * resolved values actually diverge (SoLazyElementEx), or a per-face
    * PBR appearance carried factors (SoFCPbrElement), or a per-face
    * finish or projection frame carried indices (SoFCFinishElement);
    * null for every uniform-material cache. Only triangle vertices carry values --

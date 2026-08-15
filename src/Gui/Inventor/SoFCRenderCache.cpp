@@ -28,6 +28,7 @@
 #include <Inventor/elements/SoTextureEnabledElement.h>
 #include <Inventor/elements/SoOverrideElement.h>
 #include <Inventor/elements/SoLazyElement.h>
+#include <Inventor/elements/SoLazyElementEx.h>
 #include <Inventor/elements/SoLinePatternElement.h>
 #include <Inventor/elements/SoLineWidthElement.h>
 #include <Inventor/elements/SoPointSizeElement.h>
@@ -67,7 +68,6 @@
 #include "SoFCRenderMaterial.h"
 #include "SoFCVertexCache.h"
 #include "SoFCDetail.h"
-#include "CoinLazyElementEx.h"
 #include "SoFCDiffuseElement.h"
 #include "SoFCFinishElement.h"
 #include "SoFCPbrElement.h"
@@ -376,37 +376,42 @@ getOverrideFlags(SoState * state)
 
 // Capture the array form of ambient/emissive/specular/shininess from
 // the coin fork's extended lazy element into the material (empty when
-// the extension is absent or a field holds only its scalar). The
-// element is the authority here: it has already resolved override and
-// inheritance semantics, exactly like the scalar reads next to the
-// call sites, so no per-field flag checks are repeated.
+// a field holds only its scalar, and on any traversal the element is
+// not installed on). The element is the authority here: it has already
+// resolved override and inheritance semantics, exactly like the scalar
+// reads next to the call sites, so no per-field flag checks are
+// repeated.
 static void
 captureMaterialArrays(SoFCRenderCache::_Material &m, SoState *state)
 {
-  auto capture = [state](COWVector<uint32_t> &array,
-                         int (*getter)(SoState *, const float **, uint64_t *)) {
-    const float *values = nullptr;
-    int num = getter(state, &values, nullptr);
-    array.reset();
-    if (num <= 1)
+  m.ambients.reset();
+  m.emissives.reset();
+  m.speculars.reset();
+  m.shininesses.reset();
+
+  const SoLazyElementEx *ex = SoLazyElementEx::getInstance(state);
+  if (!ex)
+    return;
+
+  auto capture = [](COWVector<uint32_t> &array,
+                    const SoLazyElementEx::FieldArray &field) {
+    if (field.num <= 1)
       return;
-    array.reserve(num);
-    for (int i = 0; i < num; ++i) {
-      SbColor c(values[i*3], values[i*3+1], values[i*3+2]);
+    array.reserve(field.num);
+    for (int i = 0; i < field.num; ++i) {
+      SbColor c(field.values[i*3], field.values[i*3+1], field.values[i*3+2]);
       array.append(c.getPackedValue(0.0f));
     }
   };
-  capture(m.ambients, &Gui::CoinLazyElementEx::getAmbient);
-  capture(m.emissives, &Gui::CoinLazyElementEx::getEmissive);
-  capture(m.speculars, &Gui::CoinLazyElementEx::getSpecular);
+  capture(m.ambients, ex->getAmbientArray());
+  capture(m.emissives, ex->getEmissiveArray());
+  capture(m.speculars, ex->getSpecularArray());
 
-  const float *values = nullptr;
-  int num = Gui::CoinLazyElementEx::getShininess(state, &values, nullptr);
-  m.shininesses.reset();
-  if (num > 1) {
-    m.shininesses.reserve(num);
-    for (int i = 0; i < num; ++i)
-      m.shininesses.append(values[i]);
+  const SoLazyElementEx::FieldArray &shininess = ex->getShininessArray();
+  if (shininess.num > 1) {
+    m.shininesses.reserve(shininess.num);
+    for (int i = 0; i < shininess.num; ++i)
+      m.shininesses.append(shininess.values[i]);
   }
 }
 

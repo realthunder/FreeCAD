@@ -5,11 +5,6 @@
 // context, no window, no document. Verified by reading the values back
 // out of the built cache, not by looking at a picture: Coin's own
 // output is expected to be unchanged at this stage.
-//
-// The same binary also verifies the fallback: run with a stock libCoin
-// preloaded (one without the coin_lazyex_* symbols) and the second test
-// takes over, asserting the capture degrades to exactly the old
-// scalar-only behavior.
 
 #include <gtest/gtest.h>
 
@@ -24,7 +19,6 @@
 
 #include <App/Application.h>
 #include <Gui/SoFCDB.h>
-#include <Gui/Inventor/CoinLazyElementEx.h>
 #include <Gui/Inventor/SoFCVertexCache.h>
 #include <Gui/Inventor/SoFCRenderCache.h>
 #include <Gui/Inventor/SoFCRenderCacheManager.h>
@@ -179,10 +173,6 @@ protected:
 
 TEST_F(RenderCacheMaterial, CapturesPerFaceArrays)
 {
-    if (!Gui::CoinLazyElementEx::available()) {
-        GTEST_SKIP() << "coin_lazyex_* not present in this libCoin";
-    }
-
     const auto* m = triangleMaterial();
     ASSERT_NE(m, nullptr);
 
@@ -216,10 +206,6 @@ TEST_F(RenderCacheMaterial, CapturesPerFaceArrays)
 // per-face diffuse bake.
 TEST_F(RenderCacheMaterial, BakesPerFaceMaterialStream)
 {
-    if (!Gui::CoinLazyElementEx::available()) {
-        GTEST_SKIP() << "coin_lazyex_* not present in this libCoin";
-    }
-
     SoFCVertexCache* vcache = triangleVertexCache();
     ASSERT_NE(vcache, nullptr);
     const uint8_t* mats = vcache->getMaterialArray();
@@ -241,10 +227,6 @@ TEST_F(RenderCacheMaterial, BakesPerFaceMaterialStream)
 // flagged perfacematerial and hands the stream through MeshData.
 TEST_F(RenderCacheMaterial, BridgeMarksPerFaceDraw)
 {
-    if (!Gui::CoinLazyElementEx::available()) {
-        GTEST_SKIP() << "coin_lazyex_* not present in this libCoin";
-    }
-
     manager.traverse(root, SbViewportRegion(256, 256));
     SoFCRenderCache* cache = manager.getSceneCache();
     ASSERT_NE(cache, nullptr);
@@ -278,10 +260,6 @@ TEST_F(RenderCacheMaterial, BridgeMarksPerFaceDraw)
 // the scalars like any uniform one.
 TEST_F(RenderCacheMaterial, SameValuedArraysStayUniform)
 {
-    if (!Gui::CoinLazyElementEx::available()) {
-        GTEST_SKIP() << "coin_lazyex_* not present in this libCoin";
-    }
-
     const SbColor emissives[3] = {kEmissive[0], kEmissive[0], kEmissive[0]};
     const SbColor speculars[3] = {kSpecular[0], kSpecular[0], kSpecular[0]};
     const float shininesses[3] = {kShininess[0], kShininess[0], kShininess[0]};
@@ -307,10 +285,6 @@ TEST_F(RenderCacheMaterial, SameValuedArraysStayUniform)
 
 TEST_F(RenderCacheMaterial, UniformMaterialStaysScalar)
 {
-    if (!Gui::CoinLazyElementEx::available()) {
-        GTEST_SKIP() << "coin_lazyex_* not present in this libCoin";
-    }
-
     // one entry per field: the arrays must stay empty, so a uniform
     // object's material is bit-identical to what it was before stage 2
     material->diffuseColor.setValue(kDiffuse[0]);
@@ -336,8 +310,7 @@ TEST_F(RenderCacheMaterial, UniformMaterialStaysScalar)
 // material field to ride, so it comes down SoFCPbrElement from an
 // SoFCRenderMaterial and takes the stream's two alpha slots -- the
 // metallic where the emissive alpha is otherwise a constant 0xff, the
-// roughness where the shininess sits. Independent of the coin fork:
-// these tests never skip.
+// roughness where the shininess sits.
 TEST_F(RenderCacheMaterial, BakesPerFacePbrFactors)
 {
     addPbrFactors();
@@ -429,10 +402,6 @@ TEST_F(RenderCacheMaterial, BridgeMarksPerFacePbrDraw)
 // shininess in the specular alpha, the constant in the emissive one.
 TEST_F(RenderCacheMaterial, UniformPbrKeepsThePhongStream)
 {
-    if (!Gui::CoinLazyElementEx::available()) {
-        GTEST_SKIP() << "coin_lazyex_* not present in this libCoin";
-    }
-
     auto* pbr = new Gui::SoFCRenderMaterial;
     pbr->metallic = kMetallic[0];
     pbr->roughness = kRoughness[0];
@@ -452,31 +421,6 @@ TEST_F(RenderCacheMaterial, UniformPbrKeepsThePhongStream)
     for (int tri = 0; tri < 3; ++tri) {
         expectVertexMaterial(mats, idx[tri * 3], tri);
     }
-}
-
-TEST_F(RenderCacheMaterial, FallbackAgainstStockCoin)
-{
-    if (Gui::CoinLazyElementEx::available()) {
-        GTEST_SKIP() << "extension present; run with a stock libCoin preloaded";
-    }
-
-    // without the extension the scalars must still arrive and the
-    // arrays must stay empty -- exactly the pre-stage-2 capture
-    const auto* m = triangleMaterial();
-    ASSERT_NE(m, nullptr);
-    EXPECT_EQ(m->ambient, kAmbient[0].getPackedValue());
-    EXPECT_EQ(m->emissive, kEmissive[0].getPackedValue());
-    EXPECT_EQ(m->specular, kSpecular[0].getPackedValue());
-    EXPECT_FLOAT_EQ(m->shininess, kShininess[0]);
-    EXPECT_EQ(m->ambients.getNum(), 0);
-    EXPECT_EQ(m->emissives.getNum(), 0);
-    EXPECT_EQ(m->speculars.getNum(), 0);
-    EXPECT_EQ(m->shininesses.getNum(), 0);
-
-    // and the stage-3 stream stays off too
-    SoFCVertexCache* vcache = triangleVertexCache();
-    ASSERT_NE(vcache, nullptr);
-    EXPECT_EQ(vcache->getMaterialArray(), nullptr);
 }
 
 }  // namespace

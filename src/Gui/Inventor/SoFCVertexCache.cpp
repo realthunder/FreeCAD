@@ -82,6 +82,7 @@
 #include <Inventor/system/gl.h>
 #include <Inventor/SbPlane.h>
 #include <Inventor/SbBox3f.h>
+#include <Inventor/elements/SoLazyElementEx.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
 #include <Inventor/threads/SbMutex.h>
@@ -96,7 +97,6 @@
 #include "SoFCVBO.h"
 #include "SoFCVertexArrayIndexer.h"
 #include "SoFCShapeInfo.h"
-#include "CoinLazyElementEx.h"
 #include "SoFCFinishElement.h"
 #include "SoFCPbrElement.h"
 #include "COWData.h"
@@ -975,10 +975,13 @@ SoFCVertexCache::open(SoState * state)
   PRIVATE(this)->matframe = false;
   {
     auto t = PRIVATE(this)->tmp;
-    if (Gui::CoinLazyElementEx::available()) {
-      t->numemissive = Gui::CoinLazyElementEx::getEmissive(state, &t->emissiveptr);
-      t->numspecular = Gui::CoinLazyElementEx::getSpecular(state, &t->specularptr);
-      t->numshininess = Gui::CoinLazyElementEx::getShininess(state, &t->shininessptr);
+    if (const SoLazyElementEx *ex = SoLazyElementEx::getInstance(state)) {
+      t->emissiveptr = ex->getEmissiveArray().values;
+      t->numemissive = ex->getEmissiveArray().num;
+      t->specularptr = ex->getSpecularArray().values;
+      t->numspecular = ex->getSpecularArray().num;
+      t->shininessptr = ex->getShininessArray().values;
+      t->numshininess = ex->getShininessArray().num;
     }
     const auto & pbr = SoFCPbrElement::get(state);
     if (pbr.isPerFace() && (pbr.nummetallic > 1 || pbr.numroughness > 1)) {
