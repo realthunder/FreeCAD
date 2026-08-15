@@ -56,6 +56,18 @@ add_executable(fcviewer
     ../BGFXViewParticles.cpp
     ../BGFXViewShadow.cpp
     ../BGFXViewSubmit.cpp
+    # The occlusion culler and the spatial index it walks: the frame path
+    # calls them unguarded, so this tier links them like the desktop does.
+    # Dependency-light by design (no Qt, no App) -- MeshSource.cpp is the
+    # one neighbour that is not, and stays out.
+    ../OcclusionCull.cpp
+    ../ProxyHierarchy.cpp
+    ../CullBenefit.cpp
+    # The software oracle. Its SIMD layer already has a wasm_simd128
+    # backend (Simd4.h) and falls back to scalar without -msimd128, and
+    # its platform probes are guarded, so it ports as-is.
+    ../MaskedOcclusion.cpp
+    ../OccluderMesh.cpp
     ../StandalonePlatform.cpp
 )
 

@@ -2833,6 +2833,17 @@ static void autoFitCamera()
     s_userCam = true;         // a reproduced view; don't auto-refit
 }
 
+/// ?shapevertices=1 -- draw the vertex points that sit on the ends of a
+/// shape's edges (docs/SceneStreaming.md #13b). Off, like the desktop
+/// parameter of the same name, and it matters more here: such a point
+/// lands exactly on an edge already drawn, and it costs a 32-byte
+/// sprite instance record against the 4 bytes it occupies in the heap,
+/// so on a phone it is the most expensive thing on screen per unit of
+/// what it shows. All or nothing per point set, and only where the
+/// producer classified every one of its vertices as an edge endpoint --
+/// a point cloud always draws.
+static bool s_shapeVertices = false;
+
 /// Feed the loaded snapshot to the renderer; a first load also fits
 /// the camera (streamed updates keep the user's).
 static void applySnapshot(bool fit)
@@ -3711,16 +3722,6 @@ static bool s_noFetchOrder = false;
 /// disables selection entirely — every mesh entry fetches its finest
 /// built level, the pre-5d behavior.
 static float s_lodPx = 2.0f;
-/// ?shapevertices=1 -- draw the vertex points that sit on the ends of a
-/// shape's edges (docs/SceneStreaming.md #13b). Off, like the desktop
-/// parameter of the same name, and it matters more here: such a point
-/// lands exactly on an edge already drawn, and it costs a 32-byte
-/// sprite instance record against the 4 bytes it occupies in the heap,
-/// so on a phone it is the most expensive thing on screen per unit of
-/// what it shows. All or nothing per point set, and only where the
-/// producer classified every one of its vertices as an edge endpoint --
-/// a point cloud always draws.
-static bool s_shapeVertices = false;
 /// ?genlod — ask the server to build every declared-but-unbuilt level
 /// the current publish names (§7, phase 5c). A debug stand-in for
 /// level *selection* (phase 5d), which will ask for the one level a
