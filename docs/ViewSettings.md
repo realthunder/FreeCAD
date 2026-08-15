@@ -198,6 +198,15 @@ earlier**, in three places, and each needed its own handle:
   this, clicking in a view with its own section style used the reader's
   global one.
 
+  In concave mode the pick runs with the clip planes off and then keeps
+  what the union draws: a point **any one plane keeps** (distance >= 0),
+  dropping only what every plane cuts. It used to keep the complement --
+  the points at least one plane *clips* -- so the plainly visible region
+  could not be picked and the fully cut one could. Checked by a
+  standalone harness (a cube, two planes, one pick down each quadrant):
+  convex hits only the quadrant both planes keep, concave hits the other
+  three and not the one both cut.
+
 ## 7. The Clipping panel
 
 The panel is per view -- there is one for each 3D view, keyed by the
@@ -340,18 +349,6 @@ showing. And a Z clip is invisible to a camera pointing down Z: stage
 
 ## 10. Open
 
-- **Concave picking keeps the wrong set.** `SoFCRayPickAction::doPick`
-  re-picks with the clip planes off and then keeps the points that at
-  least one plane *clips*, where the union the concave section draws is
-  the points that at least one plane *keeps*. Two of the three regions
-  come out wrong: what no plane clips (plainly visible) cannot be picked
-  at all, and what every plane clips (not drawn) can. Measured with a
-  standalone harness -- a cube and two planes, picking down the four
-  quadrants: convex picks only the kept quadrant, concave picks the other
-  three and not that one. Pre-existing and untouched here; the fix is to
-  keep on the first plane with distance >= 0 instead of the first with
-  distance < 0, but it changes what a click selects, so it is a decision
-  rather than a cleanup.
 - Moving the `NoSectionOnTop` or `SectionConcave` **preference** does not
   re-translate the draw lists the way the view property does (6.1), so a
   view with no override of its own shows the change only on the next
