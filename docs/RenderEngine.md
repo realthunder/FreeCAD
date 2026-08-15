@@ -8,6 +8,9 @@ documents cover specific subsystems in depth:
   and the design history of the user-shader feature (§6).
 - `docs/TShapeRenderCache.md` — TShape-level tessellation sharing and
   the cross-object instancing architecture.
+- `docs/ViewSettings.md` -- the per-view settings model (`Render_*`,
+  `Light_*`, `Section_*`), what a document is allowed to carry to
+  somebody else's installation, and the Clipping panel.
 - `docs/ComputeBoundaries.md` — the headless-server / unified-protocol
   direction the renderer tiers plug into.
 - `docs/RoadMap.md` — where this all is going.
@@ -404,6 +407,11 @@ both full at once.
 | fire flames | `u_localLight` 0..3 | 4 | fire body appearance slots, in `render()` |
 | `Render_Light` bulbs | `u_localLight` 4..7 | 4 | `Material::lightsource` draws, in `render()` |
 | scene light | `u_lightDir` etc. | 1 | `SoLightElement`, via `translateLightConfig` |
+
+The rig itself is per view: each of its fourteen keys can be answered by
+a `Light_*` property on the view object rather than by this
+installation's preference, which is what lets a document carry its own
+lighting (`docs/ViewSettings.md`).
 
 **Coin lights** (`Render::ViewLightConfig`) are the viewer's rig --
 headlight, backlight, fill light -- and any `SoDirectionalLight` /
