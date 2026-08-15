@@ -587,12 +587,21 @@ public:
     StdCmdClipPlaneDragger();
     virtual const char* className() const
     { return "StdCmdClipPlaneDragger"; }
-protected: 
+protected:
     virtual void setOption(bool checked) {
+        // Whether the dragger is shown is a property of the view that shows
+        // it, so that is where the choice lands. It is also the user's own
+        // choice, made here rather than in the Clipping panel, so their
+        // default follows it -- the same split the panel uses.
+        Dialog::Clipping::setShowPlane(activeView(), checked);
         ViewParams::setShowClipPlane(checked);
     }
     virtual bool getOption() const {
-        return ViewParams::getShowClipPlane();
+        return Dialog::Clipping::showPlane(activeView());
+    }
+    static View3DInventor *activeView() {
+        return Base::freecad_dynamic_cast<View3DInventor>(
+                Application::Instance->activeView());
     }
 };
 StdCmdClipPlaneDragger::StdCmdClipPlaneDragger()

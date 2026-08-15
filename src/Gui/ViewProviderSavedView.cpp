@@ -259,6 +259,8 @@ static void applyLegacyClipSettings(App::SavedView *obj, View3DInventor *view)
         {"ClipHatchScale", "Section_HatchScale", App::PropertyFloat::getClassTypeId()},
         {"ClipHatchTexture", "Section_HatchTexture", App::PropertyString::getClassTypeId()},
         {"ClipGroup", "Section_FillGroup", App::PropertyBool::getClassTypeId()},
+        {"ClipShowPlane", "Section_ShowPlane", App::PropertyBool::getClassTypeId()},
+        {"ClipPlaneSize", "Section_PlaneSize", App::PropertyFloat::getClassTypeId()},
         // Both spellings: capture wrote BackLight*, apply read BackFaceLight*,
         // so the backlight has never actually been restored by a saved view.
         {"BackLight", "Light_EnableBacklight", App::PropertyBool::getClassTypeId()},
@@ -301,9 +303,7 @@ void ViewProviderSavedView::apply(CaptureOptions options)
             // carries here: the section style and the backlight, captured
             // then as global preferences. Restoring one used to move the
             // reader's own defaults; it becomes an override on this view
-            // instead. ClipShowPlane and ClipPlaneSize are dropped -- they
-            // size and show the dragger, which is a tool and not part of
-            // how the model is meant to look.
+            // instead.
             applyLegacyClipSettings(obj, view);
 
             Base::Vector3d posX, posY, posZ, pos;

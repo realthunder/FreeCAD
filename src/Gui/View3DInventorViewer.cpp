@@ -140,6 +140,7 @@
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
 #include "Application.h"
+#include "Clipping.h"
 #include "CornerCrossLetters.h"
 #include "Document.h"
 #include "GLPainter.h"
@@ -1788,6 +1789,14 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
         }
         else if (boost::starts_with(prop.getName(),"Light_")) {
             applyLightProperty(prop);
+            Dialog::Clipping::onViewPropertyChanged(_pimpl->view, prop.getName());
+            getSoRenderManager()->scheduleRedraw();
+        }
+        else if (boost::starts_with(prop.getName(),"Section_")) {
+            // The section style is read afresh per frame, so a redraw is
+            // all it takes -- but the Clipping panel is showing what the
+            // view says, and the clip plane widget is the panel's own.
+            Dialog::Clipping::onViewPropertyChanged(_pimpl->view, prop.getName());
             getSoRenderManager()->scheduleRedraw();
         }
         else if (boost::starts_with(prop.getName(),"Render_")

@@ -105,6 +105,23 @@ public:
 
     static void toggle(View3DInventor *view = nullptr);
 
+    /** Whether a view shows the clip plane dragger
+     *
+     * The view's own Section_ShowPlane override where it carries one, and
+     * this installation's preference where it does not.
+     */
+    static bool showPlane(Gui::View3DInventor *view);
+    /// Give a view its own answer for that, which is what travels with it.
+    static void setShowPlane(Gui::View3DInventor *view, bool on);
+
+    /** Follow a style property a view was just given
+     *
+     * A Section_ or Light_ property can be set by anything -- a saved view
+     * applied, a script, this dialog -- and a panel open on that view is
+     * showing what it says, so it follows.
+     */
+    static void onViewPropertyChanged(Gui::View3DInventor *view, const char *property);
+
     virtual bool eventFilter(QObject *, QEvent*);
 
 protected Q_SLOTS:

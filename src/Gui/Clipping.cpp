@@ -25,6 +25,7 @@
 #ifndef _PreComp_
 # include <cmath>
 # include <climits>
+# include <cstring>
 # include <Inventor/actions/SoGetBoundingBoxAction.h>
 # include <Inventor/nodes/SoClipPlane.h>
 # include <Inventor/nodes/SoGroup.h>
@@ -47,11 +48,14 @@
 
 #include <Base/Tools.h>
 #include <App/Document.h>
+#include <App/PropertyStandard.h>
 #include <App/SavedView.h>
 #include "Application.h"
 #include "Clipping.h"
 #include "ui_Clipping.h"
 #include "DockWindowManager.h"
+#include "Inventor/SoFCRenderCacheManager.h"
+#include "PrefWidgets.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
 #include "ViewProviderSavedView.h"
@@ -62,6 +66,84 @@
 
 using namespace Gui::Dialog;
 using namespace Gui;
+
+namespace {
+
+// The panel edits how one view reads a clipped model, not how this
+// installation draws every one of them, so each style widget answers to a
+// view property first -- Section_* for the section style, Light_* for the
+// backlight -- and to the preference only where the view carries no
+// override. Presence of the property IS the override; nothing materializes
+// one, which is why merely opening the panel writes nothing.
+//
+// Where a change goes depends on where it came from. A user turning a knob
+// here means it for this view and means it as their default, so it reaches
+// both -- the preference through the widget's own auto-save, exactly as it
+// did before. Anything the program drives -- a saved view applied, a
+// script, the preference page moving underneath an open panel -- lands on
+// the view alone: the document may be opened on somebody else's
+// installation, and restoring a look there must never move their settings.
+struct StyleBinding {
+    const char *property;                       // the view property to write
+    Base::Type type;
+    std::function<QVariant()> get;              // read the widget
+    std::function<void(const QVariant &)> set;  // and put a value back
+    std::function<QVariant()> preference;       // what a view with no override reads
+    Gui::PrefWidget *pref;                      // null where the widget is not one
+};
+
+QVariant _styleValue(App::Property *prop)
+{
+    if (auto p = Base::freecad_dynamic_cast<App::PropertyBool>(prop))
+        return p->getValue();
+    if (auto p = Base::freecad_dynamic_cast<App::PropertyFloat>(prop))
+        return p->getValue();
+    if (auto p = Base::freecad_dynamic_cast<App::PropertyString>(prop))
+        return QString::fromUtf8(p->getValue());
+    if (auto p = Base::freecad_dynamic_cast<App::PropertyColor>(prop))
+        return QVariant::fromValue(p->getValue().asValue<QColor>());
+    return {};
+}
+
+void _setStyleValue(App::Property *prop, const QVariant &value)
+{
+    if (auto p = Base::freecad_dynamic_cast<App::PropertyBool>(prop))
+        p->setValue(value.toBool());
+    else if (auto p = Base::freecad_dynamic_cast<App::PropertyFloat>(prop))
+        p->setValue(value.toDouble());
+    else if (auto p = Base::freecad_dynamic_cast<App::PropertyString>(prop))
+        p->setValue(value.toString().toUtf8().constData());
+    else if (auto p = Base::freecad_dynamic_cast<App::PropertyColor>(prop)) {
+        App::Color color;
+        color.setValue<QColor>(qvariant_cast<QColor>(value));
+        p->setValue(color);
+    }
+}
+
+// Give the view an override, creating the property the first time. A value
+// that is already there is left alone: rewriting it would touch the
+// document and redraw the view for nothing.
+void _writeStyle(App::PropertyContainer *view, const char *property,
+                 Base::Type type, const QVariant &value)
+{
+    if (!view || !value.isValid())
+        return;
+    auto prop = view->getPropertyByName(property);
+    if (prop && prop->getTypeId() != type)
+        return;
+    if (!prop) {
+        prop = view->addDynamicProperty(type.getName(), property,
+                                        strncmp(property, "Light_", 6) == 0
+                                            ? "Light" : "Section");
+        if (!prop)
+            return;
+    }
+    if (_styleValue(prop) == value)
+        return;
+    _setStyleValue(prop, value);
+}
+
+} // anonymous namespace
 
 SO_NODE_SOURCE(ClipDragger);
 
@@ -216,6 +298,81 @@ public:
     bool flipZ{false};
     SoTimerSensor* sensor{nullptr};
     bool busy{false};
+    std::vector<StyleBinding> styles;
+    // Set while the panel fills a widget from what the view already says.
+    // Nothing is written back then: the value is where it came from, and
+    // writing it would turn every panel that was merely opened into an
+    // override the document then carries.
+    bool populating{false};
+
+    // Bind one widget to the view property that answers for it. The
+    // preference write stays where it was -- the widget's own auto-save for
+    // a preference widget, the hand written slot for the two that are not --
+    // so only a user's edit moves the default; this adds the view side,
+    // which every change reaches.
+    template<class WidgetT, class SignalT>
+    void bindStyle(WidgetT *widget, SignalT signal, const char *property,
+                   const Base::Type &type,
+                   std::function<QVariant()> get,
+                   std::function<void(const QVariant &)> set,
+                   std::function<QVariant()> preference)
+    {
+        std::size_t index = styles.size();
+        styles.push_back({property, type, std::move(get), std::move(set),
+                          std::move(preference), dynamic_cast<Gui::PrefWidget*>(widget)});
+        QObject::connect(widget, signal, widget, [this, index]() {
+            if (populating || !view)
+                return;
+            const auto &binding = styles[index];
+            _writeStyle(view, binding.property, binding.type, binding.get());
+        });
+    }
+
+    // What this view reads for a style key: its own override where it has
+    // one, this installation's preference otherwise.
+    QVariant styleValue(const StyleBinding &binding) const
+    {
+        if (view) {
+            if (auto prop = view->getPropertyByName(binding.property)) {
+                if (prop->getTypeId() == binding.type)
+                    return _styleValue(prop);
+            }
+        }
+        return binding.preference();
+    }
+
+    void populateStyle(const StyleBinding &binding)
+    {
+        QVariant value = styleValue(binding);
+        if (!value.isValid() || value == binding.get())
+            return;
+        Base::StateLocker guard(populating);
+        // A preference widget saves itself whenever its value moves, and
+        // this move is not the user's.
+        if (binding.pref)
+            binding.pref->setAutoSave(false);
+        binding.set(value);
+        if (binding.pref)
+            binding.pref->setAutoSave(true);
+    }
+
+    void populateStyles()
+    {
+        for (const auto &binding : styles)
+            populateStyle(binding);
+    }
+
+    void populateStyle(const char *property)
+    {
+        if (!property)
+            return;
+        for (const auto &binding : styles) {
+            if (strcmp(binding.property, property) == 0) {
+                populateStyle(binding);
+                break;
+            }
+        }
+    }
 
     void initClip(CoinPtr<SoClipPlane> &clip,
                   CoinPtr<ClipDragger> &dragger,
@@ -339,6 +496,14 @@ public:
         }
     }
 
+    void applyPlaneSize(double size)
+    {
+        draggerX->planeSize.setValue(size);
+        draggerY->planeSize.setValue(size);
+        draggerZ->planeSize.setValue(size);
+        draggerCustom->planeSize.setValue(size);
+    }
+
     void updateSwitch()
     {
         SbBool sw[4];
@@ -390,6 +555,82 @@ Clipping::Clipping(Gui::View3DInventor* view, QWidget* parent)
     d->ui.editHatchTexture->setFileName(
             QString::fromUtf8(ViewParams::getSectionHatchTexture().c_str()));
 
+    // Everything the panel says about the look of a section, of the clip
+    // plane widget and of the backlight, bound to the view property that
+    // answers for it. NoSectionOnTop is the one style key with no property
+    // of its own, so that checkbox still edits the preference alone.
+    using PropBool = App::PropertyBool;
+    using PropFloat = App::PropertyFloat;
+    auto boolStyle = [this](QAbstractButton *w, const char *property,
+                            std::function<bool()> pref) {
+        d->bindStyle(w, &QAbstractButton::toggled, property,
+                     PropBool::getClassTypeId(),
+                     [w]() { return QVariant(w->isChecked()); },
+                     [w](const QVariant &v) { w->setChecked(v.toBool()); },
+                     [pref]() { return QVariant(pref()); });
+    };
+    auto doubleStyle = [this](QDoubleSpinBox *w, const char *property,
+                              std::function<double()> pref) {
+        d->bindStyle(w, QOverload<double>::of(&QDoubleSpinBox::valueChanged), property,
+                     PropFloat::getClassTypeId(),
+                     [w]() { return QVariant(w->value()); },
+                     [w](const QVariant &v) { w->setValue(v.toDouble()); },
+                     [pref]() { return QVariant(pref()); });
+    };
+    // The fill draws only under the renderer, and the panel has always said
+    // so by showing the box clear until it is on. That gate belongs to the
+    // widget, not to what the view says.
+    d->bindStyle(d->ui.checkBoxFill, &QAbstractButton::toggled, "Section_Fill",
+                 PropBool::getClassTypeId(),
+                 [this]() { return QVariant(d->ui.checkBoxFill->isChecked()); },
+                 [this](const QVariant &v) {
+                     d->ui.checkBoxFill->setChecked(v.toBool() && ViewParams::isUsingRenderer());
+                 },
+                 []() { return QVariant(ViewParams::getSectionFill()); });
+    boolStyle(d->ui.checkBoxInvert, "Section_FillInvert",
+              []() { return ViewParams::getSectionFillInvert(); });
+    boolStyle(d->ui.checkBoxConcave, "Section_Concave",
+              []() { return ViewParams::getSectionConcave(); });
+    boolStyle(d->ui.checkBoxHatch, "Section_Hatch",
+              []() { return ViewParams::getSectionHatchTextureEnable(); });
+    boolStyle(d->ui.checkBoxGroupRendering, "Section_FillGroup",
+              []() { return ViewParams::getSectionFillGroup(); });
+    boolStyle(d->ui.checkBoxShowPlane, "Section_ShowPlane",
+              []() { return ViewParams::getShowClipPlane(); });
+    boolStyle(d->ui.checkBoxBacklight, "Light_EnableBacklight",
+              []() { return ViewParams::getEnableBacklight(); });
+    doubleStyle(d->ui.spinBoxHatchScale, "Section_HatchScale",
+                []() { return ViewParams::getSectionHatchTextureScale(); });
+    doubleStyle(d->ui.spinBoxPlaneSize, "Section_PlaneSize",
+                []() { return ViewParams::getClipPlaneSize(); });
+    d->bindStyle(d->ui.editHatchTexture, &FileChooser::fileNameSelected,
+                 "Section_HatchTexture", App::PropertyString::getClassTypeId(),
+                 [this]() { return QVariant(d->ui.editHatchTexture->fileName()); },
+                 [this](const QVariant &v) { d->ui.editHatchTexture->setFileName(v.toString()); },
+                 []() {
+                     return QVariant(QString::fromUtf8(
+                             ViewParams::getSectionHatchTexture().c_str()));
+                 });
+    d->bindStyle(d->ui.backlightColor, &ColorButton::changed,
+                 "Light_BacklightColor", App::PropertyColor::getClassTypeId(),
+                 [this]() { return QVariant::fromValue(d->ui.backlightColor->color()); },
+                 [this](const QVariant &v) {
+                     d->ui.backlightColor->setColor(qvariant_cast<QColor>(v));
+                 },
+                 []() {
+                     return QVariant::fromValue(App::Color::fromPackedRGBA<QColor>(
+                             static_cast<uint32_t>(ViewParams::getBacklightColor())));
+                 });
+    // The light node takes a factor, the slider and the preference a per
+    // cent of it.
+    d->bindStyle(d->ui.sliderIntensity, &QSlider::valueChanged,
+                 "Light_BacklightIntensity", PropFloat::getClassTypeId(),
+                 [this]() { return QVariant(d->ui.sliderIntensity->value() / 100.0); },
+                 [this](const QVariant &v) {
+                     d->ui.sliderIntensity->setValue(int(v.toDouble() * 100 + 0.5));
+                 },
+                 []() { return QVariant(ViewParams::getBacklightIntensity() / 100.0); });
+
     d->ui.checkBoxOnTop->setDisabled(ViewParams::getSectionConcave());
     d->ui.checkBoxGroupRendering->setDisabled(ViewParams::getSectionConcave());
 
@@ -403,12 +644,7 @@ Clipping::Clipping(Gui::View3DInventor* view, QWidget* parent)
     }
 
     QObject::connect(d->ui.spinBoxPlaneSize, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-        [this](double size) {
-            d->draggerX->planeSize.setValue(size);
-            d->draggerY->planeSize.setValue(size);
-            d->draggerZ->planeSize.setValue(size);
-            d->draggerCustom->planeSize.setValue(size);
-        });
+        this, [this](double size) { d->applyPlaneSize(size); });
 
     auto setupSpinBox = [](PrefDoubleSpinBox *spinbox, const char *name, bool subentry) {
         spinbox->setParamGrpPath("View/Clipping");
@@ -515,6 +751,14 @@ Clipping::Clipping(Gui::View3DInventor* view, QWidget* parent)
                 vp->capture(options);
 
         });
+
+    // Whatever this view says about the look overrides what the widgets
+    // just read out of the preferences. Last, so the widgets' own handlers
+    // are connected and a value that moves takes the view with it.
+    d->populateStyles();
+    // The draggers were built before that, and a size the view already
+    // agreed with moves no widget, so hand it to them either way.
+    d->applyPlaneSize(d->ui.spinBoxPlaneSize->value());
 }
 
 static QPointer<QDockWidget> _DockWidget;
@@ -684,7 +928,7 @@ void Clipping::onGroupBoxZToggled(bool on)
 
 void Clipping::on_checkBoxFill_toggled(bool on)
 {
-    if (on && !ViewParams::isUsingRenderer()) {
+    if (on && !d->populating && !ViewParams::isUsingRenderer()) {
         int res = QMessageBox::question(Gui::getMainWindow(), tr("Clipping"),
                 tr("Cross section fill only works with 'Experiemental' render cache"
                    " (Preferences -> Display -> Render cache).\n\n"
@@ -696,7 +940,10 @@ void Clipping::on_checkBoxFill_toggled(bool on)
         }
         ViewParams::useRenderer(true);
     }
-    ViewParams::setSectionFill(on);
+    // The view side is the binding's; this is the user's own default, so it
+    // moves only when the user is the one who moved the box.
+    if (!d->populating)
+        ViewParams::setSectionFill(on);
     d->ui.checkBoxInvert->setEnabled(on);
     d->ui.checkBoxConcave->setEnabled(on);
     d->ui.checkBoxOnTop->setEnabled(on && !ViewParams::getSectionConcave());
@@ -856,10 +1103,12 @@ void Clipping::on_checkBoxHatch_toggled(bool)
 
 void Clipping::on_editHatchTexture_fileNameSelected(const QString &filename)
 {
-    if (filename.isEmpty())
-        ViewParams::removeSectionHatchTexture();
-    else
-        ViewParams::setSectionHatchTexture(filename.toUtf8().constData());
+    if (!d->populating) {
+        if (filename.isEmpty())
+            ViewParams::removeSectionHatchTexture();
+        else
+            ViewParams::setSectionHatchTexture(filename.toUtf8().constData());
+    }
     if (d->view)
         d->view->getViewer()->redraw();
 }
@@ -934,6 +1183,27 @@ void Clipping::getClipPlanes(View3DInventor *view,
     const auto &r = d->draggerCustom->rotation.getValue();
     plaCustom = Base::Placement(Base::Vector3d(t[0], t[1], t[2]),
                                 Base::Rotation(r[0], r[1], r[2], r[3]));
+}
+
+bool Clipping::showPlane(View3DInventor *view)
+{
+    return Gui::sectionStyle(view, "ShowPlane", ViewParams::getShowClipPlane());
+}
+
+void Clipping::setShowPlane(View3DInventor *view, bool on)
+{
+    // The view carries it whether or not a panel is open on it; a panel
+    // that is open follows through onViewPropertyChanged.
+    _writeStyle(view, "Section_ShowPlane", App::PropertyBool::getClassTypeId(), on);
+}
+
+void Clipping::onViewPropertyChanged(View3DInventor *view, const char *property)
+{
+    auto it = _Clippings.find(view);
+    if (it == _Clippings.end() || !it->second)
+        return;
+    if (auto clipping = qobject_cast<Clipping*>(it->second->widget()))
+        clipping->d->populateStyle(property);
 }
 
 bool Clipping::eventFilter(QObject *o, QEvent *ev)
