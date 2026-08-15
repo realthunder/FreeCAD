@@ -228,7 +228,7 @@ public:
     bool EnableMenuBarCheckBox;
     bool EnableBacklight;
     unsigned long BacklightColor;
-    double BacklightIntensity;
+    long BacklightIntensity;
     bool OverrideSelectability;
     unsigned long SelectionStackSize;
     long DefaultDrawStyle;
@@ -583,7 +583,7 @@ public:
         funcs["EnableBacklight"] = &ViewParamsP::updateEnableBacklight;
         BacklightColor = this->handle->GetUnsigned("BacklightColor", 0xFFFFFFFF);
         funcs["BacklightColor"] = &ViewParamsP::updateBacklightColor;
-        BacklightIntensity = this->handle->GetFloat("BacklightIntensity", 1.0);
+        BacklightIntensity = this->handle->GetInt("BacklightIntensity", 100);
         funcs["BacklightIntensity"] = &ViewParamsP::updateBacklightIntensity;
         OverrideSelectability = this->handle->GetBool("OverrideSelectability", false);
         funcs["OverrideSelectability"] = &ViewParamsP::updateOverrideSelectability;
@@ -1335,7 +1335,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateBacklightIntensity(ViewParamsP *self) {
-        self->BacklightIntensity = self->handle->GetFloat("BacklightIntensity", 1.0);
+        self->BacklightIntensity = self->handle->GetInt("BacklightIntensity", 100);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateOverrideSelectability(ViewParamsP *self) {
@@ -6163,29 +6163,34 @@ void ViewParams::removeBacklightColor() {
 
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docBacklightIntensity() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Backlight intensity, as a percentage. An integer because that is the\n"
+"slot everything else uses: the Clipping dialog's slider, the 3D view\n"
+"preference page and the viewer, which divides it by a hundred. This\n"
+"class used to read a Float fraction from the same name -- a second,\n"
+"separate slot that nothing ever wrote; see ViewParams::migrate().");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
-const double & ViewParams::getBacklightIntensity() {
+const long & ViewParams::getBacklightIntensity() {
     return instance()->BacklightIntensity;
 }
 
 // Auto generated code (Tools/params_utils.py:388)
-const double & ViewParams::defaultBacklightIntensity() {
-    const static double def = 1.0;
+const long & ViewParams::defaultBacklightIntensity() {
+    const static long def = 100;
     return def;
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-void ViewParams::setBacklightIntensity(const double &v) {
-    instance()->handle->SetFloat("BacklightIntensity",v);
+void ViewParams::setBacklightIntensity(const long &v) {
+    instance()->handle->SetInt("BacklightIntensity",v);
     instance()->BacklightIntensity = v;
 }
 
 // Auto generated code (Tools/params_utils.py:406)
 void ViewParams::removeBacklightIntensity() {
-    instance()->handle->RemoveFloat("BacklightIntensity");
+    instance()->handle->RemoveInt("BacklightIntensity");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -6410,7 +6415,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:583)
+// Auto generated code (Gui/ViewParams.py:591)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6455,7 +6460,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:591)
+// Auto generated code (Gui/ViewParams.py:599)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6469,7 +6474,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:601)
+// Auto generated code (Gui/ViewParams.py:609)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -6483,13 +6488,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:611)
+// Auto generated code (Gui/ViewParams.py:619)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:618)
+// Auto generated code (Gui/ViewParams.py:626)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6497,7 +6502,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:627)
+// Auto generated code (Gui/ViewParams.py:635)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6509,7 +6514,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:640)
+// Auto generated code (Gui/ViewParams.py:648)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)
@@ -6631,4 +6636,32 @@ void ViewParams::onForceSolidSingleSideLightingChanged()
 void ViewParams::onViewParamChanged(const char *sReason)
 {
     Dialog::DlgSettingsDrawStyles::onParamChanged(sReason);
+}
+
+void ViewParams::migrate()
+{
+    // BacklightIntensity was read out of two different typed slots of the
+    // same group under the same name -- a group is a set of typed maps, and
+    // an Int and a Float of one name are two separate values. This class
+    // took the Float as a fraction; the Clipping dialog's slider, the 3D
+    // view preference page and the viewer all took the Int as a per cent.
+    // Only the Int ever lit anything, which is why this class's accessor
+    // (and the slider default it seeds) returned a value nothing wrote.
+    //
+    // The Float is dropped, carried over as a per cent first if a config
+    // has one and no Int -- scripting is the only thing that could have
+    // written it. Removing it is what keeps the migration from repeating.
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/View");
+    for (const auto &v : hGrp->GetFloatMap("BacklightIntensity")) {
+        if (v.first != "BacklightIntensity")
+            continue;
+        bool hasInt = false;
+        for (const auto &i : hGrp->GetIntMap("BacklightIntensity"))
+            hasInt = hasInt || i.first == "BacklightIntensity";
+        if (!hasInt)
+            hGrp->SetInt("BacklightIntensity", long(v.second * 100 + 0.5));
+        hGrp->RemoveFloat("BacklightIntensity");
+        break;
+    }
 }

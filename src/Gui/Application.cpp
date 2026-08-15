@@ -2096,6 +2096,7 @@ void Application::initApplication()
         // Move the pre-split render engine parameter keys into
         // Preferences/View/Render before anything reads them.
         RenderParams::migrate();
+        ViewParams::migrate();
         new Base::ScriptProducer( "FreeCADGuiInit", FreeCADGuiInit );
         init_resources();
         setCategoryFilterRules();

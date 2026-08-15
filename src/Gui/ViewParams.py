@@ -528,7 +528,12 @@ Params = [
     ParamBool('EnableMenuBarCheckBox',  'FC_ENABLE_MENUBAR_CHECKBOX'),
     ParamBool('EnableBacklight',  False),
     ParamHex('BacklightColor',  0xffffffff),
-    ParamFloat('BacklightIntensity',  1.0),
+    ParamInt('BacklightIntensity',  100,
+        "Backlight intensity, as a percentage. An integer because that is the\n"
+        "slot everything else uses: the Clipping dialog's slider, the 3D view\n"
+        "preference page and the viewer, which divides it by a hundred. This\n"
+        "class used to read a Float fraction from the same name -- a second,\n"
+        "separate slot that nothing ever wrote; see ViewParams::migrate()."),
     ParamBool('OverrideSelectability',  False, "Override object selectability to enable selection"),
     ParamUInt('SelectionStackSize', 30, "Maximum selection history record size"),
     ParamInt('DefaultDrawStyle', 0, 'Default display style of a new document',
@@ -558,6 +563,9 @@ def declare_begin():
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
+
+    /// One-time migration of keys that changed type or name.
+    static void migrate();
 ''')
 
 def declare_end():

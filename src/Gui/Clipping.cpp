@@ -384,7 +384,7 @@ Clipping::Clipping(Gui::View3DInventor* view, QWidget* parent)
     d->ui.checkBoxGroupRendering->initAutoSave(ViewParams::getSectionFillGroup());
     d->ui.checkBoxBacklight->initAutoSave(ViewParams::getEnableBacklight());
     d->ui.backlightColor->initAutoSave(static_cast<uint>(ViewParams::getBacklightColor()));
-    d->ui.sliderIntensity->initAutoSave(ViewParams::getBacklightIntensity());
+    d->ui.sliderIntensity->initAutoSave(static_cast<int>(ViewParams::getBacklightIntensity()));
     d->ui.checkBoxShowPlane->initAutoSave(ViewParams::getShowClipPlane());
     d->ui.spinBoxPlaneSize->initAutoSave(ViewParams::getClipPlaneSize());
     d->ui.editHatchTexture->setFileName(
