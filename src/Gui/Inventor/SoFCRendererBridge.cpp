@@ -202,7 +202,13 @@ translateCache(SoFCVertexCache * cache)
         // the safe direction: a drawable nobody has judged is one
         // nothing else on screen may be standing in for.
         static const SbName attachedField("attachedOnly");
-        const SoField *f = node->getField(attachedField);
+        // Off the PROTO when there is one, same as the source tag: a
+        // color variant copies its base's geometry arrays but no
+        // producer ever classifies the variant node itself, so its own
+        // field is the constructor default forever. The base's answer
+        // is the variant's answer -- identical geometry.
+        SoNode *fieldNode = proto ? proto : node;
+        const SoField *f = fieldNode->getField(attachedField);
         if (f && f->isOfType(SoSFBool::getClassTypeId()))
             mesh->attachedOnly = static_cast<const SoSFBool *>(f)->getValue();
         if (Gui::RenderParams::getLevelDebug()) {

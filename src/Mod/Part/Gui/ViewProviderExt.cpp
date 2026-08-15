@@ -1939,6 +1939,13 @@ ViewProviderPartExt::ViewProviderPartExt()
     static_cast<SoFCCoordinate3*>(coords)->vp = this;
     coords->ref();
     pcoords = new SoCoordinate3();
+    // Born EMPTY, not with Coin's default single (0,0,0): a point set
+    // draws every coordinate it can see, no index in between, so an
+    // unfilled nodeset paints a phantom dot at the object's origin --
+    // and it passes every element gate, because unfilled means
+    // unclassified and unclassified must always draw. MEASURED: 5909
+    // such dots covered the first ~165 frames of a rack model load.
+    pcoords->point.setNum(0);
     pcoords->ref();
     faceset = new SoBrepFaceSet();
     faceset->ref();
@@ -4109,6 +4116,11 @@ bool ViewProviderPartExt::buildInstanced()
             TopoDS_Shape local = leaf.Located(TopLoc_Location());
             auto gcoords = new SoCoordinate3;
             auto gpcoords = new SoCoordinate3;
+            // Same phantom-dot guard as the constructor's pcoords: an
+            // SoCoordinate3 is born holding one (0,0,0) and a point set
+            // draws all coordinates, so every sharer of an unfilled
+            // entry would submit a dot at its instance placement.
+            gpcoords->point.setNum(0);
             auto gnorm = new SoNormal;
             auto gtexcoords = new SoTextureCoordinate2;
             gtexcoords->point.setNum(0);
