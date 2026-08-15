@@ -427,7 +427,7 @@ constexpr float kPlanDemoteMargin = 0.5f;
 /// Holding short of the camera's tolerance is not a failure: it is what
 /// "the budget is met" costs. Releasing further is measured to break
 /// it.
-struct PressureTolerance {
+struct RendererExport PressureTolerance {
     /// Worst error the descent has had to accept in this spell of
     /// pressure, in pixels -- the attack half, and what the climb's
     /// tolerance is derived from. 0 = no pressure standing.
