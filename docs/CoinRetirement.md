@@ -554,14 +554,57 @@ Two places could fix it, and the obvious one is the trap:
 
 **Done 2026-08-16, the second way** (`SoFCRendererP::applyBillboard`).
 The replay loop asks each autozoom entry whether it is a billboard, and
-substitutes the camera basis scaled to world units per screen pixel --
-`SbViewVolume::getWorldToScreenScale` over the viewport width, which
-carries the anchor's own depth through the perspective divide -- instead
-of calling the node's `GLRender`. `pixelScale` when set, the backend's
-glyph factor when not (`SoAutoZoomTranslation::DefaultPixelScale`, so
-the two paths read one number). Measured on the label of the table
+substitutes the camera basis scaled to world units per screen pixel,
+instead of calling the node's `GLRender`. `pixelScale` when set, the
+backend's glyph factor when not (`SoAutoZoomTranslation::DefaultPixelScale`,
+so the two paths read one number). Measured on the label of the table
 above: the delta a label adds to its frame went from **18042 pixels to
 459**, which is what the backend and cache 0 both read, to the pixel.
+
+The scale itself took two tries, and the first one is the trap.
+`SbViewVolume::getWorldToScreenScale` answers a *nearby* question -- the
+world radius of a SPHERE covering a given screen radius -- and its
+perspective form is a tangent construction, linear only in the small and
+drifting off-axis. Asked for the viewport width it made a corner label
+half again too large under a perspective camera; asked for one pixel it
+was still 8% small. An orthographic camera showed neither, which is why
+the first version passed. It now evaluates the backend's own expression
+element for element (`2d/(P[1][1]*H)`, the depth term dropped for an
+orthographic projection), so the two paths size a billboard by one piece
+of arithmetic rather than by two that agree in the middle of the view.
+
+### The backend's billboard is not oversized -- what that measurement was
+
+The same run read the backend's label at 1572 blue pixels against cache
+0's 1494 and glr's 1519, and that was carried forward as "the backend's
+billboard is ~5% large in area under a perspective camera". It is not.
+Measured again as an EXTENT rather than a count, with one camera pinned
+across all three legs:
+
+| | cache 0 | backend |
+|---|---|---|
+| font 12 | 98x29 | 99x30 |
+| font 48 | 361x84 | 362x85 |
+
+The box stays **one pixel** larger in each dimension while the label
+grows 3.7x, and it reads the same orthographic and perspective, centre
+of the view and corner. A 5% scale error would be 18 pixels at font 48.
+The blue-pixel excess meanwhile *falls* with size, 5.2% to 2.9% -- which
+is how a constant-width antialiased edge behaves (it scales with the
+perimeter) and the opposite of how a scale error behaves. So the
+backend's quad is the same size as Coin's blit and about half a pixel
+softer at its border, and the count that said otherwise was measuring
+the border.
+
+⚠️ Two harness lessons, both of which produced confident wrong numbers
+here. **A thresholded pixel count is not a size** -- it moves with edge
+filtering as readily as with scale, and squaring it into an "area"
+turns a one-pixel border into 5%. **Amplify before believing a few
+percent**: the same label at 4x the font separates a scale error, which
+grows with it, from a quantisation, which does not. And `fitAll` inside
+a leg frames the legs differently -- 40 pixels apart here -- which under
+a perspective camera changes the label's depth and therefore its size,
+so the camera must be captured once and re-pinned before every grab.
 
 **Two numbers per case, because the capture is not the frame.** Every
 row above is measured twice, `saveImage` and a screen grab, and one case
@@ -724,6 +767,22 @@ behavioural. What is known to differ from cache 0:
   and a lone `SoDrawStyle` node is not (`Material::drawstyleoverride`,
   scene dump v57). Measured: the delta the box adds went 39437 -> 1566
   pixels on the backend, against 463 on both other paths.
+  That last gap was the backend drawing the box's **triangulation**:
+  `submitTessellation` had one segment per triangle index position, so
+  every face carried a diagonal, and the pattern never reached it
+  because the bridge only put `linepattern` on a `Material::Line`. Both
+  fixed 2026-08-16. GL hands `LINES` to `glPolygonMode` and the shapes
+  that arrive this way are `SoFCVertexCache`'s **glrender** shapes
+  (`SoCube`, `SoText2`, `SoFCBoundingBox`) -- ones Coin replays as its
+  own polygons -- so a diagonal is an artefact of triangulating them and
+  GL never draws one. `GpuGeometry::ensureCreaseEdges` drops the edges
+  shared by two coplanar triangles and keeps everything else, so a
+  tessellated curve is unchanged, and its per-triangle offsets keep a
+  partial index range mapping onto an instance range. The display MODE
+  keeps every triangle edge: there the tessellation is the thing being
+  shown. Delta 1954 -> 859 against cache 0's 498; the rest is dash phase
+  and the quad line's antialiasing, and at a threshold that admits an
+  antialiased dash the two cover 999 and 898 pixels of the same lines.
 - ~~**`SoImage` capture companions** are drawn by the cache's GL
   renderer at pixel coordinates read as world units (3.6)~~ -- **fixed
   2026-08-16**, see the end of 3.6. The GL pass carries the backend's
@@ -742,7 +801,10 @@ it falls back to had two drawing defects of its own -- both fixed
 2026-08-16, on the reasoning that the fallback is no longer a path a
 user chose. Both were measured against cache 0 on the same frame rather
 than argued from the code, and the same measurement caught the backend
-being the wrong one of the three on the first of them.
+being the wrong one of the three on the first of them -- twice over, as
+it turned out: the fill, and then the triangulation underneath it. The
+third thing that measurement appeared to catch, an oversized billboard
+on the backend, did not survive being measured a second way (3.6).
 
 ## 4. Plan
 
