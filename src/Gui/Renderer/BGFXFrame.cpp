@@ -61,9 +61,35 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (_deinit)
         return false;
 
+#ifndef FC_RENDERER_STANDALONE
+    // Whatever framebuffer the caller asked for this frame: the widget's
+    // own on screen, a capture target for a screenshot. Every exit that
+    // touches the context has to leave that one bound, because
+    // QOpenGLWidget::makeCurrent() binds the WIDGET's instead -- and
+    // then the Coin traversal that a failed frame falls back to draws to
+    // the screen while the capture it was asked for stays empty. That is
+    // what made every screenshot black while the window looked right,
+    // whenever the backend was attached but could not draw.
+    GLint hostFbo = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &hostFbo);
+    auto bailToHost = [this, hostFbo]() {
+        widget->makeCurrent();
+        if (auto *ctx = QOpenGLContext::currentContext())
+            ctx->extraFunctions()->glBindFramebuffer(GL_FRAMEBUFFER,
+                                                     GLuint(hostFbo));
+        return false;
+    };
+#endif
+
+    // getView() prepares the device, and its own failures can leave the
+    // backend's context current rather than the caller's.
     auto view = _BGFXLib.getView(widget, type);
     if (!view)
+#ifndef FC_RENDERER_STANDALONE
+        return bailToHost();
+#else
         return false;
+#endif
 
     // A shader pack that could not supply a core program keeps the
     // view down: without this the torn-down view (no framebuffer)
@@ -88,10 +114,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
         }
 #ifndef FC_RENDERER_STANDALONE
         // Hand the context back the way the fb-invalid bail does, so
-        // Coin draws the frame on Qt's context.
-        widget->makeCurrent();
-#endif
+        // Coin draws the frame on Qt's context -- and into the
+        // framebuffer the caller asked for.
+        return bailToHost();
+#else
         return false;
+#endif
     }
 
 #ifdef FC_RENDERER_STANDALONE
@@ -163,10 +191,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
             || _BGFXLib.ssaoResolution != view->ssaoScale)
         view->init(!progChanged);
 
-    if (!bgfx::isValid(view->bgfxFbo)) {
-        widget->makeCurrent();
-        return false;
-    }
+    if (!bgfx::isValid(view->bgfxFbo))
+        return bailToHost();
 #endif
 
     uint16_t width = view->width;
@@ -3965,10 +3991,9 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // bound when it asked for it: the widget's own for an on-screen
     // frame, a capture target for a screenshot (renderOffscreen).
     // QOpenGLWidget::makeCurrent() binds its own framebuffer, so the
-    // caller's has to be remembered here and restored before the blit,
-    // which transfers into whatever is bound.
-    GLint hostFbo = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &hostFbo);
+    // caller's -- remembered at the top of this frame, where every bail
+    // reads it too -- is restored before the blit, which transfers into
+    // whatever is bound.
     widget->doneCurrent();
     _BGFXLib.makeCurrent();
     bgfx::frame();
