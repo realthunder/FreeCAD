@@ -535,3 +535,63 @@ render side already deduplicates these on the GPU.
   entry count and the `instancing 0.0NNs` line, with
   `scripts/demo-instanced.py` and `scripts/demo-inst-release.py` as the
   scenes that reach that path.
+
+## 9. Build order
+
+Three steps, each separately measurable and separately shippable. The
+order is chosen so the format lands first and the two things that could
+be got wrong -- chunk assignment, and threading -- come after something
+that already works.
+
+### 9.1 Step 1: the round trip, one chunk, no analysis
+
+The whole mechanism end to end with the store as a single chunk. No
+component analysis, no packing, no parallelism.
+
+- `PropertyPartShape::Save` at schema >= 6 writes through a
+  document-level store writer and records its logical position;
+  the XML entry becomes `<Part store="Shapes0" pos="N" .../>`.
+- Below schema 6 nothing changes -- same code path, same bytes.
+- Restore holds one `BinTools_ShapeReader` over the store and serves
+  each property at its position.
+
+Decide first, because everything else sits on it: **where the store
+lives while it is being built.** The property needs its position during
+the XML pass, so the store is filled then and emitted as a member
+afterwards -- either buffered in memory (simple; the whole store
+resident at save) or spooled to a temp file (bounded; more plumbing).
+
+Two pieces of existing machinery to reuse rather than reinvent: the
+store member must be written **first** in the archive so it precedes
+every property that references it, and `Document::restoreDeferredFile`
+already serves a property from an archive entry long after the walk --
+"seek to a position in the store" is the same shape of operation, so the
+progressive path should fall out rather than be rebuilt.
+
+Gate: `isPartner` True after reopen on the sec 1.1 scene; the file
+smaller by the duplicate half; old files load unchanged.
+
+Touches: `src/Mod/Part/App/PropertyTopoShape.cpp`, `src/Base/Writer.*`,
+`src/Base/Reader.*`, `src/App/Document.cpp`.
+
+### 9.2 Step 2: chunking by sharing component
+
+The analysis and the packing (sec 4.2): collect TShape pointers per
+property, union-find into components, pack components greedily
+longest-first into chunks with a size target, one member each, one
+reader each.
+
+Gate: dedup unchanged from step 1 (nothing lost to a boundary), plus the
+logging sec 6 asks for -- chunk count and byte spread, components split
+and what that cost, chunks touched per load.
+
+### 9.3 Step 3: parallel restore
+
+One reader per chunk on a worker pool. Note the split before starting:
+parsing a chunk is the parallel part, but handing the result to a
+property mutates the document, so the parse fans out and the
+`setValue` half stays serialized.
+
+Gate: `docs/DocumentLoad.md`'s open timings on `MiSTer_imported.FCStd`,
+with the slowest chunk's share of the restore reported -- sec 5.4 is the
+thing being tested here, not the parallelism as such.
