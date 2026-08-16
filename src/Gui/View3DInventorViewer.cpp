@@ -487,17 +487,6 @@ struct View3DInventorViewer::Private
     CoinPtr<SoShapeHints>             pcShadowShapeHints;
     CoinPtr<SoFCDirectionalLight>     pcShadowDirectionalLight;
     CoinPtr<SoFCSpotLight>            pcShadowSpotLight;
-    CoinPtr<SoGroup>                  pcShadowGroundGroup;
-    CoinPtr<SoSwitch>                 pcShadowGroundSwitch;
-    CoinPtr<SoCoordinate3>            pcShadowGroundCoords;
-    CoinPtr<SoFaceSet>                pcShadowGround;
-    CoinPtr<SoShadowStyle>            pcShadowGroundStyle;
-    CoinPtr<SoMaterial>               pcShadowMaterial;
-    CoinPtr<SoTexture2>               pcShadowGroundTexture;
-    CoinPtr<SoTextureCoordinate2>     pcShadowGroundTextureCoords;
-    CoinPtr<SoBumpMap>                pcShadowGroundBumpMap;
-    CoinPtr<SoLightModel>             pcShadowGroundLightModel;
-    CoinPtr<SoShapeHints>             pcShadowGroundShapeHints;
     CoinPtr<SoPickStyle>              pcShadowPickStyle;
     uint32_t                          shadowNodeId = 0;
     uint32_t                          cameraNodeId = 0;
@@ -648,8 +637,8 @@ struct View3DInventorViewer::Private
 
     void activateShadow();
     void deactivateShadow();
-    void updateShadowGround(const SbBox3f &box);
-    void updateShadowGroundSwitch();
+    void updateShadowExtent(const SbBox3f &box);
+    void materializeGroundParams();
     void redraw();
     void onRender();
     bool toggleDragger(int toggle);
@@ -2503,35 +2492,72 @@ void View3DInventorViewer::Private::deactivateShadow()
             superScene->removeChild(index);
         pcShadowShapeHints.reset();
         pcShadowGroup.reset();
-        pcShadowGroundSwitch->whichChild = -1;
         owner->inventorSelection->getRootPath()->truncate(1);
     }
 }
 
-void View3DInventorViewer::Private::updateShadowGroundSwitch()
+/// Create the Shadow_Ground* properties on the view without consuming
+/// them. The ground itself is the render backend's now
+/// (Render::LightConfig, docs/CoinRetirement.md stage 4b), and the
+/// bridge that feeds it only *reads* the view -- `_shadowParam` is
+/// what creates a property. Without this the view would carry every
+/// other Shadow_* property and none of the ground's, so a per-view
+/// override could not be set at all (assigning it from Python fails
+/// rather than creating it) while the global preference still reached
+/// the backend and hid the hole.
+void View3DInventorViewer::Private::materializeGroundParams()
 {
-    if (!pcShadowGroundSwitch)
+    if (!view)
         return;
-    // An active external render backend draws its own shadow ground
-    // (Render::LightConfig::ground); letting Coin GL-render this one
-    // too would composite the two grounds on top of each other -
-    // z-fighting bands where Coin's (differently blurred) shadow wins
-    // the depth test.
-    //
-    // Read first, decide after: _shadowParam is what creates the
-    // property, and && would short-circuit past it whenever a backend is
-    // active. The view would then carry every other Shadow_* property
-    // and not this one, so the per-view override could not be set at all
-    // -- assigning it from Python fails rather than creating it -- while
-    // the global preference still reached the backend through the bridge
-    // and hid the hole.
-    const bool showGround = _shadowParam<App::PropertyBool>(view,
-            "ShowGround", ViewParams::docShadowShowGround(),
+    _shadowParam<App::PropertyBool>(view, "ShowGround",
+            ViewParams::docShadowShowGround(),
             ViewParams::getShadowShowGround());
-    if (!renderer && showGround)
-        pcShadowGroundSwitch->whichChild = 0;
-    else
-        pcShadowGroundSwitch->whichChild = -1;
+    _shadowParam<App::PropertyColor>(view, "GroundColor",
+            ViewParams::docShadowGroundColor(),
+            App::Color((uint32_t)ViewParams::getShadowGroundColor()));
+    static const App::PropertyFloatConstraint::Constraints _transp_cstr(0.0,1.0,0.1);
+    _shadowParam<App::PropertyFloatConstraint>(view, "GroundTransparency",
+            ViewParams::docShadowGroundTransparency(),
+            ViewParams::getShadowGroundTransparency(),
+            [](App::PropertyFloatConstraint &prop) {
+                if(!prop.getConstraints())
+                    prop.setConstraints(&_transp_cstr);
+            });
+    _shadowParam<App::PropertyBool>(view, "GroundBackFaceCull",
+            ViewParams::docShadowGroundBackFaceCull(),
+            ViewParams::getShadowGroundBackFaceCull());
+    _shadowParam<App::PropertyBool>(view, "GroundShading",
+            ViewParams::docShadowGroundShading(),
+            ViewParams::getShadowGroundShading());
+    _shadowParam<App::PropertyFileIncluded>(view, "GroundTexture",
+            ViewParams::docShadowGroundTexture(),
+            ViewParams::getShadowGroundTexture().c_str());
+    _shadowParam<App::PropertyFileIncluded>(view, "GroundBumpMap",
+            ViewParams::docShadowGroundBumpMap(),
+            ViewParams::getShadowGroundBumpMap().c_str());
+    static const App::PropertyQuantityConstraint::Constraints _texture_cstr = {0,DBL_MAX,10.0};
+    _shadowParam<App::PropertyLength>(view, "GroundTextureSize",
+            ViewParams::docShadowGroundTextureSize(),
+            ViewParams::getShadowGroundTextureSize(),
+            [](App::PropertyLength &prop) {
+                if(prop.getConstraints() != &_texture_cstr)
+                    prop.setConstraints(&_texture_cstr);
+            });
+    // Sizing and placement. The defaults here are the contract the
+    // bridge's fallbacks copy (SoFCRendererBridge translateLightConfig):
+    // a view that has never had the Shadow style carries none of these.
+    _shadowParam<App::PropertyBool>(view, "GroundSizeAuto",
+            "Auto adjust ground size based on the scene bounding box", true);
+    _shadowParam<App::PropertyFloat>(view, "GroundSizeScale",
+            ViewParams::docShadowGroundScale(),
+            ViewParams::getShadowGroundScale());
+    _shadowParam<App::PropertyLength>(view, "GroundSizeX", "", 100.0);
+    _shadowParam<App::PropertyLength>(view, "GroundSizeY", "", 100.0);
+    _shadowParam<App::PropertyBool>(view, "GroundAutoPosition",
+            "Auto place the ground face at the Z bottom of the scene", true);
+    _shadowParam<App::PropertyPlacement>(view, "GroundPlacement",
+            "Ground placement. If 'GroundAutoPosition' is on, this specifies an additional offset of the ground",
+            Base::Placement());
 }
 
 void View3DInventorViewer::Private::activateShadow()
@@ -2630,86 +2656,12 @@ void View3DInventorViewer::Private::activateShadow()
 
         pcShadowGroup->addChild(owner->pcViewProviderRoot);
 
-        if(!pcShadowGroundSwitch) {
-            pcShadowGroundSwitch = new SoSwitch;
-            pcShadowGroundSwitch->setName("ShadowGround");
-
-            pcShadowGroundStyle = new SoShadowStyle;
-            pcShadowGroundStyle->style = SoShadowStyle::SHADOWED;
-
-            pcShadowMaterial = new SoMaterial;
-
-            pcShadowGroundTextureCoords = new SoTextureCoordinate2;
-
-            pcShadowGroundTexture = new SoTexture2;
-            // pcShadowGroundTexture->model = SoMultiTextureImageElement::BLEND;
-
-            pcShadowGroundCoords = new SoCoordinate3;
-
-            pcShadowGround = new SoFaceSet;
-
-            pcShadowGroundShapeHints = new SoShapeHints;
-            pcShadowGroundShapeHints->vertexOrdering = SoShapeHints::COUNTERCLOCKWISE;
-
-            auto pickStyle = new SoPickStyle;
-            pickStyle->style = SoPickStyle::UNPICKABLE;
-
-            auto tu = new SoTextureUnit;
-            tu->unit = 1;
-
-            pcShadowGroundLightModel = new SoLightModel;
-
-            pcShadowGroundGroup = new SoSeparator;
-
-            pcShadowGroundGroup->addChild(pcShadowGroundLightModel);
-            pcShadowGroundGroup->addChild(pickStyle);
-            pcShadowGroundGroup->addChild(pcShadowGroundShapeHints);
-            pcShadowGroundGroup->addChild(pcShadowGroundTextureCoords);
-            pcShadowGroundGroup->addChild(tu);
-
-            // We deliberately insert the same SoTextureCoordinate2 twice.
-            // The first one with default texture unit 0, and the second
-            // one with unit 1. The reason for unit 1 is because unit 0
-            // texture does not work with bump map (Coin3D bug?). The
-            // reason for unit 0 texture coordinate is because Coin3D
-            // crashes if there is at least one texture coordinate node,
-            // but no unit 0 texture coordinate, with the following call
-            // stack.
-            //
-            // SoMultiTextureCoordinateelement::get4()
-            // SoMultiTextureCoordinateelement::get4()
-            // SoFaceSet::generatePrimitives()
-            // SoShape::validatePVCache()
-            // SoShape::shouldGLRender()
-            // ...
-            //
-            pcShadowGroundGroup->addChild(pcShadowGroundTextureCoords);
-
-            pcShadowGroundGroup->addChild(pcShadowGroundTexture);
-            pcShadowGroundGroup->addChild(pcShadowMaterial);
-            pcShadowGroundGroup->addChild(pcShadowGroundCoords);
-            pcShadowGroundGroup->addChild(pcShadowGroundStyle);
-
-            // We need to add an polygon offset for the group here because there
-            // is on in PartGui::ViewProviderPartExt, which means almost every
-            // shape in freecad is displayed an offset face rendering. If we
-            // don't add the same polygon offset here, the group may rendered on
-            // top of the shapes because of the depth offset.
-            //
-            // However, Coin3D bumpmap rendering
-            // (soshape_bumpmap::renderBumpMap()) in correctly uses a hard coded
-            // polygon offset as well, which will cause even more visual
-            // artifacts. The fix is simple in Coin3D is simple. Just get the
-            // current polygon offset and add some extra.
-            SoPolygonOffset* offset = new SoPolygonOffset();
-            pcShadowGroundGroup->addChild(offset);
-
-            pcShadowGroundGroup->addChild(pcShadowGround);
-
-            pcShadowGroundSwitch->addChild(pcShadowGroundGroup);
-        }
-
-        pcShadowGroup->addChild(pcShadowGroundSwitch);
+        // The ground receiver is the render backend's
+        // (Render::LightConfig, docs/CoinRetirement.md stage 4b). What
+        // stood here was the Coin quad -- an SoFaceSet under its own
+        // light model, shape hints, two texture coordinate nodes and an
+        // SoPolygonOffset that existed only to match the one
+        // PartGui::ViewProviderPartExt puts on nearly every shape.
 
         // SoShadowGroup is currently incapable of supporting per object
         // lighting model setup. It only checks the setting on toggling shadow
@@ -2835,64 +2787,12 @@ void View3DInventorViewer::Private::activateShadow()
     sbColor.setPackedValue(color.getPackedValue(),f);
     light->color = sbColor;
 
-    color = _shadowParam<App::PropertyColor>(view, "GroundColor",
-            ViewParams::docShadowGroundColor(), App::Color((uint32_t)ViewParams::getShadowGroundColor()));
-    sbColor.setPackedValue(color.getPackedValue(),f);
-    pcShadowMaterial->diffuseColor = sbColor;
-    pcShadowMaterial->specularColor = SbColor(0,0,0);
-
-    static const App::PropertyFloatConstraint::Constraints _transp_cstr(0.0,1.0,0.1);
-    double transp = _shadowParam<App::PropertyFloatConstraint>(view, "GroundTransparency",
-            ViewParams::docShadowGroundTransparency(), ViewParams::getShadowGroundTransparency(),
-            [](App::PropertyFloatConstraint &prop) {
-                if(!prop.getConstraints())
-                    prop.setConstraints(&_transp_cstr);
-            });
-
-    if(_shadowParam<App::PropertyBool>(view, "GroundBackFaceCull",
-            ViewParams::docShadowGroundBackFaceCull(), ViewParams::getShadowGroundBackFaceCull()))
-    {
-        pcShadowGroundShapeHints->shapeType = SoShapeHints::SOLID;
-        pcShadowGroundShapeHints->vertexOrdering = SoShapeHints::COUNTERCLOCKWISE;
-    } else {
-        pcShadowGroundShapeHints->shapeType = SoShapeHints::UNKNOWN_SHAPE_TYPE;
-        pcShadowGroundShapeHints->vertexOrdering = SoShapeHints::UNKNOWN_ORDERING;
-    }
-
-    pcShadowMaterial->transparency = transp;
-    pcShadowGroundStyle->style = (transp == 1.0 ? 0x4 : 0) | SoShadowStyle::SHADOWED;
-
-    updateShadowGroundSwitch();
+    // The ground's own properties are the backend's to read; this side
+    // only has to bring them into being.
+    materializeGroundParams();
 
     if(isValidBBox(bbox))
-        updateShadowGround(bbox);
-
-    pcShadowGroundTexture->filename = _shadowParam<App::PropertyFileIncluded>(view, "GroundTexture",
-            ViewParams::docShadowGroundTexture(), ViewParams::getShadowGroundTexture().c_str());
-
-    const char *bumpmap = _shadowParam<App::PropertyFileIncluded>(view, "GroundBumpMap",
-            ViewParams::docShadowGroundBumpMap(), ViewParams::getShadowGroundBumpMap().c_str());
-    if(bumpmap && bumpmap[0]) {
-        if(!pcShadowGroundBumpMap) {
-            pcShadowGroundBumpMap = new SoBumpMap;
-        }
-        pcShadowGroundBumpMap->filename = bumpmap;
-        if (pcShadowGroundGroup->findChild(pcShadowGroundBumpMap) < 0) {
-            int idx = pcShadowGroundGroup->findChild(pcShadowMaterial);
-            if (idx >= 0)
-                pcShadowGroundGroup->insertChild(pcShadowGroundBumpMap,idx);
-        }
-    } else if (pcShadowGroundBumpMap) {
-        int idx = pcShadowGroundGroup->findChild(pcShadowGroundBumpMap);
-        if (idx >= 0)
-            pcShadowGroundGroup->removeChild(idx);
-    }
-
-    if(_shadowParam<App::PropertyBool>(view, "GroundShading",
-            ViewParams::docShadowGroundShading(), ViewParams::getShadowGroundShading()))
-        pcShadowGroundLightModel->model = SoLightModel::PHONG;
-    else
-        pcShadowGroundLightModel->model = SoLightModel::BASE_COLOR;
+        updateShadowExtent(bbox);
 
     SbBool isActive = TRUE;
     if (_shadowParam<App::PropertyBool>(view, "TransparentShadow",
@@ -4456,10 +4356,7 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         }
         getSoRenderManager()->scheduleRedraw();
     }
-    // The Coin shadow ground is suppressed while a backend is active
-    // (it draws its own); re-evaluate if the Shadow style is on.
-    _pimpl->updateShadowGroundSwitch();
-    // Likewise the Coin render mode, which Tessellation picks differently
+    // The Coin render mode, which Tessellation picks differently
     // with a backend present: it is sticky, so switching the backend on
     // or off under that style already applied has to re-decide it. Only
     // Tessellation -- applyOverrideMode() would re-enter activateShadow()
@@ -6454,7 +6351,7 @@ void View3DInventorViewer::viewAll()
         return;
     }
 
-    _pimpl->updateShadowGround(box);
+    _pimpl->updateShadowExtent(box);
 
     // Set the height angle to 45 deg
     SoCamera* cam = this->getSoRenderManager()->getCamera();
@@ -6466,7 +6363,11 @@ void View3DInventorViewer::viewAll()
     viewBoundBox(box);
 }
 
-void View3DInventorViewer::Private::updateShadowGround(const SbBox3f &box)
+/// Re-fit the Coin shadow light and its filter to the scene extent.
+/// The ground quad used to be sized here too, and to widen the extent
+/// the spot light's spread is scaled against; the backend owns it now
+/// (stage 4b), and it sizes its own quad from the same bounding box.
+void View3DInventorViewer::Private::updateShadowExtent(const SbBox3f &box)
 {
     App::Document *doc = owner->guiDocument?owner->guiDocument->getDocument():nullptr;
 
@@ -6486,72 +6387,6 @@ void View3DInventorViewer::Private::updateShadowGround(const SbBox3f &box)
             });
         pcShadowDirectionalLight->bboxSize = size * float(scale);
         pcShadowDirectionalLight->bboxCenter = center;
-    }
-
-    if(pcShadowGroundSwitch && pcShadowGroundSwitch->whichChild.getValue()>=0) {
-        float z = size[2];
-        float width, length;
-        if(_shadowParam<App::PropertyBool>(view, "GroundSizeAuto",
-                    "Auto adjust ground size based on the scene bounding box", true))
-        {
-            double scale = _shadowParam<App::PropertyFloat>(view, "GroundSizeScale",
-                    ViewParams::docShadowGroundScale(), ViewParams::getShadowGroundScale());
-            if(scale <= 0.0)
-                scale = 1.0;
-            width = length = scale * std::max(std::max(size[0],size[1]),size[2]);
-        } else {
-            width = _shadowParam<App::PropertyLength>(view, "GroundSizeX", "", 100.0);
-            length = _shadowParam<App::PropertyLength>(view, "GroundSizeY", "", 100.0);
-        }
-
-        Base::Placement pla = _shadowParam<App::PropertyPlacement>(
-                view, "GroundPlacement",
-                "Ground placement. If 'GroundAutoPosition' is on, this specifies an additional offset of the ground",
-                Base::Placement());
-
-        if(!_shadowParam<App::PropertyBool>(view, "GroundAutoPosition",
-                    "Auto place the ground face at the Z bottom of the scene", true))
-        {
-            center[0] = pla.getPosition().x;
-            center[1] = pla.getPosition().y;
-            z = pla.getPosition().z;
-            pla = Base::Placement();
-        } else {
-            z = center[2]-z/2-1;
-        }
-        SbVec3f coords[4] = {
-            {center[0]-width, center[1]-length, z},
-            {center[0]+width, center[1]-length, z},
-            {center[0]+width, center[1]+length, z},
-            {center[0]-width, center[1]+length, z},
-        };
-        if(!pla.isIdentity()) {
-            SbMatrix mat = ViewProvider::convert(pla.toMatrix());
-            for(auto &coord : coords)
-                mat.multVecMatrix(coord,coord);
-        }
-        pcShadowGroundCoords->point.setValues(0, 4, coords);
-
-        static const App::PropertyQuantityConstraint::Constraints _texture_cstr = {0,DBL_MAX,10.0};
-        float textureSize = _shadowParam<App::PropertyLength>(view, "GroundTextureSize",
-            ViewParams::docShadowGroundTextureSize(), ViewParams::getShadowGroundTextureSize(),
-            [](App::PropertyLength &prop) {
-                if(prop.getConstraints() != &_texture_cstr)
-                    prop.setConstraints(&_texture_cstr);
-            });
-        if(textureSize < 1e-5)
-            pcShadowGroundTextureCoords->point.setNum(0);
-        else {
-            float w = width*2.0/textureSize;
-            float l = length*2.0/textureSize;
-            SbVec2f points[4] = {{0,l}, {w,l}, {w,0}, {0,0}};
-            pcShadowGroundTextureCoords->point.setValues(0,4,points);
-        }
-
-        SbBox3f gbox = box;
-        for(int i=0; i<4; ++i)
-            gbox.extendBy(coords[i]);
-        size = gbox.getSize();
     }
 
     static const App::PropertyIntegerConstraint::Constraints _smooth_cstr(0,100,1);
@@ -7890,7 +7725,7 @@ void View3DInventorViewer::Private::redraw()
     }
     timer.stop();
     SoCamera* cam = owner->getSoRenderManager()->getCamera();
-    if(pcShadowGroup && pcShadowGroundSwitch && cam) {
+    if(pcShadowGroup && cam) {
         // Work around coin shadow rendering bug. On Windows, (and occasionally
         // on Linux), when shadow group is touched, it renders nothing when the
         // shadow cache is freshly built. We work around this issue using an
@@ -7905,7 +7740,7 @@ void View3DInventorViewer::Private::redraw()
         pcShadowGroup->touch();
         SbBox3f bbox;
         if(owner->getSceneBoundBox(bbox))
-            updateShadowGround(bbox);
+            updateShadowExtent(bbox);
         shadowNodeId = pcShadowGroup->getNodeId();
         cameraNodeId = cam->getNodeId();
         owner->getSoRenderManager()->scheduleRedraw();

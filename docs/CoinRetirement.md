@@ -1204,10 +1204,65 @@ one. In order:
 
   ⚠️ `Render_Shadow` defaults **on**, so a test that switches it on
   measures nothing. Switch it off to see the map.
-- **4b — the ground moves to the backend.** Partly there already
-  (`Render::LightConfig::ground`); the rest is the Coin geometry in
-  `pcShadowGroundGroup`, which today also has to carry its own
-  `SoPolygonOffset` to match the one every Part shape has.
+- **4b — the ground moves to the backend. DONE** (2026-08-16). The
+  Coin geometry in `pcShadowGroundGroup` is gone: the `SoFaceSet` and
+  its `SoCoordinate3`, the light model, the shape hints, the two
+  texture-coordinate nodes and the `SoPolygonOffset` that existed only
+  to match the one `PartGui::ViewProviderPartExt` puts on nearly every
+  shape. `Render::LightConfig` is the only ground now.
+
+  Two things the removal turned up, and neither was the geometry:
+
+  - **The port had never seen two of the ground's properties, and both
+    default on.** `ShadowGroundShading` and `ShadowGroundBackFaceCull`
+    are the ones Coin states as nodes *above* the quad — an
+    `SoLightModel` and an `SoShapeHints` — rather than on the quad
+    itself, so the bridge, which walks the ground's own properties,
+    never carried them. The backend's ground was lit and two-sided
+    whatever they said: a camera below the ground plane was shut out by
+    a grey slab where Coin let it look straight through. Both are in
+    `LightConfig` now (`groundShading`, `groundBackFaceCull`), read by
+    `translateLightConfig`, applied in `submitShadowGround` as the
+    lighting and two-sided bits of `u_params` plus a `BGFX_STATE_CULL_CW`
+    — the `mat.ccw` case of every other cull site, since `groundQuad`
+    winds its corners counter-clockwise about +Z. Streamed at
+    `SceneDump` v58, so the browser tier gets them too.
+  - **Creating those properties is now a job of its own.** The bridge
+    only *reads* the view; `_shadowParam` is what brings a property into
+    being, and it was being called incidentally, while the Coin nodes
+    were configured. With the nodes gone the whole `Shadow_Ground*`
+    family would never have been created, and a per-view override could
+    not have been set at all — assigning one from Python fails rather
+    than creating it — while the global preference kept reaching the
+    backend and hid the hole. That is the same trap `Shadow_ShowGround`
+    fell into once already (§3.4). `materializeGroundParams()` is the
+    one place that creates them now, called from `activateShadow()`.
+
+  `fcad-probes/ground_backend_probe.py`, 15/15: the family
+  materializes; the quad draws in `Shadow_GroundColor` and carries its
+  shadow (stddev 37.7 of the green channel); `GroundShading` off
+  flattens it to the property colour outright (mean 203.6 against
+  0.8 x 255 = 204, stddev 10.1); from below, `GroundBackFaceCull` on
+  leaves **0** ground pixels and shows the box behind it, off fills
+  12383 and hides it; explicit half extents resize it; transparency 1
+  removes it. `renderer_light_probe.py` 10/10 and
+  `clip_bounds_probe.py` 5/5 are unchanged by this.
+
+  What the Coin paths lose is the ground: glr and cache 0 draw the
+  scene and its shadow *map* with nothing to receive it. That is stage
+  4c's accepted cost arriving one stage early, and the probe asserts it
+  rather than leaving it to be discovered. Two consequences worth
+  writing down:
+
+  - `ground_parity_probe.py` is **retired** — its whole method is a
+    bgfx-vs-glr comparison of two grounds, and there is one ground now.
+    Its header says so and points here.
+  - glr's clip planes still fit a ground it does not draw (measured:
+    `clip_bounds_probe.py`'s glr rows are unchanged). `onGetBoundingBox`
+    is gated on the renderer, so the number is a cached traversal
+    answering, not a live report — the same caching separator §1c
+    documents. Harmless, and on a developer path: the planes are wider
+    than the drawn scene needs, never tighter.
 - **4c -- the plain-Coin path. DECIDED 2026-08-16: acceptable.**
   `SoShadowGroup` is Coin's only shadow implementation, so a cache-0
   user loses shadows outright, and that is the accepted cost. Taken
