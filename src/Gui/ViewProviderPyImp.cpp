@@ -120,6 +120,11 @@ PyObject*  ViewProviderPy::supportedProperties(PyObject *args)
     Base::Type::getAllDerivedFrom(App::Property::getClassTypeId(), ary);
     Py::List res;
     for (auto & it : ary) {
+        // Internal types are instantiable but addProperty refuses them
+        // (App::Property::isInternalType); the same reasoning as
+        // DocumentObjectPy::supportedProperties.
+        if (App::Property::isInternalType(it.getName()))
+            continue;
         auto data = static_cast<Base::BaseClass*>(it.createInstance());
         if (data) {
             delete data;

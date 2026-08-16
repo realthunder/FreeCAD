@@ -139,6 +139,13 @@ PyObject*  DocumentObjectPy::supportedProperties(PyObject *args)
     Base::Type::getAllDerivedFrom(App::Property::getClassTypeId(), ary);
     Py::List res;
     for (auto & it : ary) {
+        // An internal type is instantiable but addProperty refuses it
+        // (Property::isInternalType): it only works as one container's
+        // own member. Listing it as supported invites the caller to add
+        // it and be told no -- which is what the Document test suite
+        // walking this list does.
+        if (Property::isInternalType(it.getName()))
+            continue;
         Base::BaseClass *data = static_cast<Base::BaseClass*>(it.createInstance());
         if (data) {
             delete data;
