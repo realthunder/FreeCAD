@@ -142,6 +142,21 @@ struct MeshData {
     bool hasTransparency = false;   ///< some per-vertex colors are transparent
     bool hasOpaqueParts = false;    ///< some per-vertex colors are opaque
 
+    /// Every element of this drawable is ATTACHED to higher-dimensional
+    /// geometry of the same shape: every vertex of a point set is an
+    /// edge endpoint, or every edge of a line set bounds a face
+    /// (docs/SceneStreaming.md #13b). Such a drawable may be suppressed
+    /// under memory pressure, because what makes it redundant is drawn
+    /// anyway -- a vertex sits on an edge already on screen, an edge
+    /// runs along a face silhouette already on screen.
+    ///
+    /// All or nothing per drawable, and false by default so anything
+    /// the producer has not classified always draws. One floating
+    /// element -- a point cloud's points, a wire, a sketch, a datum
+    /// line -- makes the whole drawable unsuppressable, because nothing
+    /// else on screen would show it.
+    bool attachedOnly = false;
+
     /// Texture coordinates, xyzw per vertex (Coin's SbVec4f layout; the
     /// default texgen and 2D texcoord nodes produce (s, t, 0, 1)). Null
     /// when the cache was built without an active texture.
@@ -371,6 +386,200 @@ struct AOConfig {
     bool operator!=(const AOConfig &o) const { return !(*this == o); }
 };
 
+/// Per-frame occlusion culling configuration
+/// (docs/FarFieldProxies.md §12). Resolved by the bridge each render
+/// from the Render_Occlusion* view properties / global RenderParams
+/// defaults, like AOConfig.
+///
+/// The mechanism is described in Gui/Renderer/OcclusionCull.h; what
+/// belongs here is only what a user or a script may turn. Every default
+/// is chosen so that being wrong costs frame time rather than pixels:
+/// too small a budget or too long a lifetime draws geometry that could
+/// have been skipped, never the reverse.
+struct OcclusionCullConfig {
+    /// Skip draws whose spatial-index node the depth buffer proved
+    /// could not have contributed a pixel. Off leaves the frustum
+    /// culling the renderer already does untouched.
+    bool enabled = false;
+    /// How many frames a *visible* verdict is believed before the node
+    /// is re-tested. Purely a cost/latency trade: geometry that becomes
+    /// hidden keeps drawing until its verdict expires, which is
+    /// invisible in the image and merely wasteful.
+    uint32_t visibleTtl = 6;
+    /// Tests issued per frame. The GPU offers 256 queries at a time
+    /// (BGFX_CONFIG_MAX_OCCLUSION_QUERIES) and `RenderDebug_Occlusion`
+    /// is the other consumer of that pool, so the default leaves it
+    /// room; exceeding what the backend can hand out is not an error,
+    /// the surplus is simply offered again next frame.
+    uint32_t budget = 128;
+    /// Do not test a node standing for fewer instances than this. A
+    /// query is itself a draw, so testing a node that could save one
+    /// draw loses whether it answers hidden or visible.
+    uint32_t minSubtree = 8;
+    /// ⚠️ **The fail-safe, and the reason a bug here costs frames and
+    /// not correctness.** A hidden node is cut *and* re-tested every
+    /// frame, so its way back is the answer to that test. If the
+    /// answers stop arriving — no query handles, a backend that dropped
+    /// the batch, a walk abandoned — a node would otherwise stay hidden
+    /// forever and geometry would simply be missing. After this many
+    /// frames without an *answer* (not without an offer), a hidden node
+    /// reverts to visible. Confirmations keep it hidden indefinitely,
+    /// so this never flickers a node the tests are still answering.
+    uint32_t maxHiddenFrames = 120;
+    /// Outward padding of a test box, as a fraction of its own
+    /// diagonal — relative, so it means the same at any model scale.
+    ///
+    /// ⚠️ Not a tolerance: the measurement does not work without it. A
+    /// node's bounds are the union of its contents', so a box face
+    /// coincides *exactly* with a real surface whenever a part has a
+    /// flat face at its own extreme — in CAD the common case, not the
+    /// edge case. Rasterized at equal depth the two disagree in the
+    /// last bit, and where the box loses, LEQUAL rejects every fragment
+    /// and the node calls itself hidden while in plain view. Un-padded
+    /// this reported 99% of a 5455-part model hidden, the root
+    /// included.
+    float padFraction = 1.0e-3f;
+    /// Additional outward padding of a test box, in depth-buffer steps
+    /// (24-bit; the scene target is D24S8) converted to a world
+    /// distance at the box's nearest corner.
+    ///
+    /// ⚠️ The other half of the padding, and the half `padFraction`
+    /// cannot supply. A pad measured in the box's own diagonal says
+    /// nothing about whether the *depth buffer* can separate the box
+    /// from the surface it bounds: a small part lying flush on a large
+    /// panel has a small diagonal and therefore a small pad, at a
+    /// distance where one depth step is far larger. The two quantize to
+    /// the same value, LEQUAL loses the tie half the time, and the node
+    /// reports itself hidden in plain view — measured as the whole
+    /// component detail of a board disappearing while the board stayed
+    /// (§12.6). Costs frame time when too large and pixels when too
+    /// small, so the default is generous.
+    float depthPadLsb = 16.0f;
+    /// How many consecutive answers of "no pixels" a node must give
+    /// before its subtree is actually skipped. 1 acts on every answer.
+    ///
+    /// A test is issued against one frame's depth and read against a
+    /// later one -- non-blocking on purpose -- so the occluders move
+    /// underneath the answer while it is in flight. Acted on singly, a
+    /// node tested while an occluder was still drawn gets culled after
+    /// that occluder has gone; the hole tests visible; it returns; and
+    /// it oscillates. Measured at 1, two captures of the same static
+    /// scene 30 s apart differed in 14101 pixels (sec 12.6).
+    ///
+    /// WARNING: confirmations DILUTE that oscillation and were measured
+    /// not to remove it (sec 12.7) -- false answers come in runs, and
+    /// the residual damage tracks the re-test count, which this knob
+    /// cannot reach. The hardware-query path is therefore not
+    /// image-stable at any setting of this; the software oracle below
+    /// is, by construction, and is the shipped answer.
+    uint32_t hiddenConfirm = 2;
+
+    /// KEY: Answer with a CPU software depth buffer
+    /// (Gui/Renderer/MaskedOcclusion.h) instead of hardware queries.
+    ///
+    /// Everything above this line -- the lifetimes, the confirmations,
+    /// the budget, both pads -- exists because a hardware query's answer
+    /// arrives a frame or two after the question, and section 12.11 measured
+    /// that none of them reach the failure it causes. The software path
+    /// reads none of them: occluders are rasterized and nodes tested
+    /// against the same buffer in one pass, so there is no latency to
+    /// age and no verdict to confirm. What it reads instead is the three
+    /// fields below. Default ON, matching Render_OcclusionSoftware:
+    /// the query path is not image-stable at any knob setting.
+    bool software = true;
+    /// Triangles the software occluder pass may rasterize per frame.
+    uint32_t occluderTriangles = 250000;
+    /// Projected bounding-box diagonal, in pixels, under which a draw is
+    /// not worth rasterizing as an occluder.
+    float minOccluderPx = 24.0f;
+    /// Software buffer resolution as a divisor of the viewport.
+    /// WARNING: Above 1 this can over-cull -- see MaskedCullConfig.
+    uint32_t softwareDivisor = 1;
+    /// Worker threads for the software occluder pass, 0 = automatic.
+    uint32_t softwareThreads = 0;
+    /// KEY: Run the software pass's four-wide vector pre-pass, which
+    /// discards triangles that cover no pixel before the exact
+    /// rasterizer looks at them (Gui/Renderer/MaskedOcclusion.h,
+    /// `setSimdFilter`). It can only discard, so turning it off changes
+    /// how long the pass takes and -- at the margin, for triangles a
+    /// hundredth of a pixel from covering nothing -- how much it hides.
+    /// It cannot change what the buffer claims is there.
+    bool softwareSimd = true;
+
+    /// KEY: Ask the occlusion question per object rather than per
+    /// partition group (Gui/Renderer/MaskedOcclusion.h, `testInstances`).
+    /// The group is the unit the walk can skip, and measurement says it
+    /// is the unit that is failing to resolve: 91% of what a cull still
+    /// submits reaches no pixel, unmoved by a tenfold better buffer.
+    bool perInstance = false;
+
+    /// How many consecutive frames every draw of a source must have
+    /// been culled before the level plan's DOWNGRADE sweep may treat
+    /// that source as free -- occlusion as a memory mechanism, not just
+    /// a time one. 0 disables the feed. Only the software oracle's
+    /// verdicts are folded (deterministic per frame); the streak is the
+    /// hysteresis that keeps a camera drifting across a verdict from
+    /// costing an upload per flap.
+    uint32_t demoteStreak = 8;
+
+    /// KEY: Rasterize the software pass's occluders from coarse hulls
+    /// rather than from their meshes (Gui/Renderer/OccluderMesh.h). The
+    /// budget above says what the pass may spend; this says what it
+    /// buys with it -- a hull is a fraction of the triangles, so the
+    /// same allowance admits far more of the candidates, and it was the
+    /// candidates that never got in rather than the buffer's speed that
+    /// left the pass hiding 45% of a 95.4% ceiling.
+    bool coarseOccluders = false;
+    /// Decimation rung a hull is built at, coarsest first.
+    uint32_t coarseLevel = 2;
+    /// Triangles a draw must carry before it is worth a hull.
+    uint32_t coarseMinTriangles = 512;
+    /// Hulls that may be built in one frame; 0 freezes the cache.
+    uint32_t coarseBuilds = 8;
+    /// How far a hull recedes from the camera before it is rasterized,
+    /// as a multiple of its own measured displacement bound. 1 is the
+    /// value at which it cannot claim to be nearer than the surface it
+    /// stands for; 0 is the unbiased measurement.
+    float coarseBias = 1.0f;
+    /// What the hull cache may hold, in bytes.
+    size_t coarseMemory = size_t(64) << 20;
+
+    /// Run the frame-level A/B probe (CullBenefit.h): alternate frames
+    /// with the whole cull block on and off, compare median frame
+    /// cost, and print the verdict on the culling readout cadence.
+    /// While a probe's off-arm runs, the oracle does not run at all --
+    /// the hidden-streak demote feed pauses with it, which over one
+    /// probe is a handful of frames. Measurement only: the verdict
+    /// does not yet gate anything by itself (12.13's wire-or-delete
+    /// decision reads it first).
+    bool benefitProbe = false;
+
+    bool operator==(const OcclusionCullConfig &o) const {
+        return enabled == o.enabled && visibleTtl == o.visibleTtl
+            && budget == o.budget && minSubtree == o.minSubtree
+            && maxHiddenFrames == o.maxHiddenFrames
+            && padFraction == o.padFraction
+            && depthPadLsb == o.depthPadLsb
+            && hiddenConfirm == o.hiddenConfirm
+            && software == o.software
+            && occluderTriangles == o.occluderTriangles
+            && minOccluderPx == o.minOccluderPx
+            && softwareDivisor == o.softwareDivisor
+            && softwareThreads == o.softwareThreads
+            && softwareSimd == o.softwareSimd
+            && perInstance == o.perInstance
+            && demoteStreak == o.demoteStreak
+            && coarseOccluders == o.coarseOccluders
+            && coarseLevel == o.coarseLevel
+            && coarseMinTriangles == o.coarseMinTriangles
+            && coarseBuilds == o.coarseBuilds
+            && coarseBias == o.coarseBias
+            && coarseMemory == o.coarseMemory
+            && benefitProbe == o.benefitProbe;
+    }
+    bool operator!=(const OcclusionCullConfig &o) const { return !(*this == o); }
+};
+
 /// Per-frame screen-space cavity (curvature) shading configuration —
 /// like AOConfig there is no GL-renderer counterpart. A curvature term
 /// read from the geometry prepass normals, multiplied onto the finished
@@ -428,18 +637,79 @@ struct MatcapConfig {
 struct RenderDebugConfig {
     /// Buffer visualization routed to the screen instead of the shaded
     /// scene: 0 = off, 1 = linearized depth, 2 = view-space normals,
-    /// 3 = ambient occlusion term, 4 = shadow term. The on-top,
-    /// highlight and overlay passes still draw on top.
+    /// 3 = ambient occlusion term, 4 = shadow term, 5 = shadow tile
+    /// coverage, 6 = overdraw, 7 = shadow filtering probe, 8 = UV,
+    /// 9 = planar reflection, 10 = particle impact map, 11 =
+    /// per-instance draw id. The on-top, highlight and overlay passes
+    /// still draw on top.
     int viewMode = 0;
     /// Freeze every intentionally time- or history-dependent input
     /// (temporal accumulation/jitter, water/fire animation time) so a
     /// repeat frame renders identically — the determinism switch for
     /// golden-image comparison.
     bool freezeFrame = false;
+    /// Log what a frame costs the CPU against what it costs the GPU,
+    /// once a second (docs/FarFieldProxies.md §10.1). Shares the
+    /// RenderDebug_Timing switch with the pipeline stage timers of
+    /// Gui/RenderTiming.h, because it answers the half of the same
+    /// question they cannot: their last stage ends at submission, and
+    /// whether a per-object cost is submission or the GPU drawing it is
+    /// what decides the mechanism of any culling scheme.
+    bool frameTiming = false;
+    /// Measure how much of what the frame draws could not have reached
+    /// the screen (docs/FarFieldProxies.md §10.1): bounding boxes of
+    /// spatial-index nodes re-tested against the finished depth buffer
+    /// under hardware occlusion queries, a batch per frame, one line
+    /// per completed walk. This is the proposed culling mechanism run
+    /// without acting on its answers, not an estimate of one.
+    bool occlusion = false;
     /// Log a histogram of how many pixels each drawn object covers, once
     /// a second (docs/FarFieldProxies.md §9). Costs one projection per
     /// object on the frames it reports and nothing while off.
     bool coverage = false;
+    /// Log what a far-field cut would cost this camera, once a second,
+    /// without generating a single proxy (docs/FarFieldProxies.md
+    /// §11.1). Partitions the drawn instances and descends a frontier at
+    /// several tolerances; the resulting draw count against today's is
+    /// the number that decides whether phase 2 is worth building. Costs
+    /// one partition build on the frames it reports — which is itself a
+    /// reported number, since phase 3 has to pay it — and nothing while
+    /// off.
+    bool proxyCut = false;
+    /// Generate proxies for a sample of the nodes that cut stops on and
+    /// report what they commit (docs/FarFieldProxies.md §11.1c) — the
+    /// measurement that turns the cut estimate's *extent* axis into an
+    /// error axis. Unlike the others this one builds meshes, so it is
+    /// bounded by a node sample and reports what it left out.
+    bool proxyGen = false;
+    /// ⭐ Audit the occlusion culling against the geometry itself, once
+    /// a second (docs/FarFieldProxies.md §12.9). Every other measurement
+    /// of the culling compares *pictures* — this one compares a verdict
+    /// against what the draws it covers actually put on screen: the
+    /// scene is re-rasterized with the cull mask ignored and each draw
+    /// writing its own identity, so the set of ids owning a pixel is an
+    /// exact answer to "which draws reach the screen", and its
+    /// intersection with the mask is a list of proven over-culls, each
+    /// named, with a pixel count. The same histogram gives the converse
+    /// for free: drawn rows that own no pixel at all, which is the
+    /// headroom the culling has not taken.
+    ///
+    /// Independent of \ref viewMode — the id re-render runs either for
+    /// mode 11 (look at it) or for this (measure it), and the audit does
+    /// not disturb what is on screen.
+    bool cullAudit = false;
+
+    /// Re-ask every still-drawn row with a tighter occludee volume and
+    /// count what would have flipped (docs/FarFieldProxies.md §12.19).
+    /// A diagnostic that decides whether a mechanism is worth building,
+    /// not a mechanism: nothing is culled by it, the verdicts are only
+    /// counted against \ref cullAudit's id image — which is also why it
+    /// needs that audit on to report anything.
+    ///
+    /// ⚠️ One of its arms asks about every triangle of every drawn
+    /// object. It runs on the audit's frame alone and still costs far
+    /// more than a frame.
+    bool cullBounds = false;
 
     /// A dynamically bound named shader parameter (docs/RenderDebug.md
     /// §2.5): any RenderDebug_* view property beyond the fixed knobs
@@ -465,7 +735,11 @@ struct RenderDebugConfig {
 
     bool operator==(const RenderDebugConfig &o) const {
         return viewMode == o.viewMode && freezeFrame == o.freezeFrame
-            && coverage == o.coverage && userParams == o.userParams;
+            && frameTiming == o.frameTiming && occlusion == o.occlusion
+            && coverage == o.coverage && proxyCut == o.proxyCut
+            && proxyGen == o.proxyGen && cullAudit == o.cullAudit
+            && cullBounds == o.cullBounds
+            && userParams == o.userParams;
     }
     bool operator!=(const RenderDebugConfig &o) const { return !(*this == o); }
 };
@@ -877,6 +1151,26 @@ struct ViewLight {
     float cutOffAngle = 0.785398f;
     float dropOffRate = 0.0f;
 
+    /// CAMERA-RELATIVE (a headlight): this light sits before the camera,
+    /// so what is fixed about it is its EYE-space direction, and the
+    /// world-space `direction` above is only the direction that
+    /// corresponded to it under the camera that produced this config.
+    ///
+    /// That distinction does not matter to a renderer drawing its own
+    /// camera's frame -- it recomputes the world direction every
+    /// traversal. It matters entirely to a STREAMED viewer, whose camera
+    /// is its own: applying the producer's world direction there lights
+    /// the scene from wherever that camera happened to point, which for
+    /// a headless serving process is a default looking down -Z. Faces
+    /// pointing at the viewer then get nothing but ambient.
+    bool eyeSpace = false;
+    /// The eye-space direction and position `eyeSpace` refers to, valid
+    /// only while it is set. A consumer with its own camera re-derives
+    /// world space from these; one drawing the producer's frame can keep
+    /// using `direction`/`position` and never look at them.
+    float eyeDirection[3] = {0.0f, 0.0f, -1.0f};
+    float eyePosition[3] = {0.0f, 0.0f, 0.0f};
+
     bool operator==(const ViewLight &o) const {
         return std::equal(direction, direction + 3, o.direction)
             && std::equal(position, position + 3, o.position)
@@ -884,7 +1178,10 @@ struct ViewLight {
             && std::equal(attenuation, attenuation + 3, o.attenuation)
             && color == o.color && intensity == o.intensity
             && spot == o.spot && cutOffAngle == o.cutOffAngle
-            && dropOffRate == o.dropOffRate;
+            && dropOffRate == o.dropOffRate
+            && eyeSpace == o.eyeSpace
+            && std::equal(eyeDirection, eyeDirection + 3, o.eyeDirection)
+            && std::equal(eyePosition, eyePosition + 3, o.eyePosition);
     }
     bool operator!=(const ViewLight &o) const { return !(*this == o); }
 };
@@ -1578,6 +1875,15 @@ struct DrawCall {
     /// is never serialized: nothing on the wire ever claims to be the
     /// mesh it stands in for.
     bool standIn = false;
+    /// A companion drawable of this draw's object was deferred by the
+    /// publish's capture budget, so the object is on screen with part
+    /// of itself missing or stale. The element gates read it to tell
+    /// "the face/line set has not arrived yet" apart from "the display
+    /// mode legitimately omits it" (docs/SceneStreaming.md #13b): an
+    /// attached point or line set whose companion is merely late must
+    /// wait for it, not claim the mode exemption. Publish-transient
+    /// and desktop-only for now -- never serialized.
+    bool objectIncomplete = false;
 };
 
 typedef std::vector<DrawCall> DrawCallList;
@@ -1823,6 +2129,10 @@ public:
     /// Per-frame render debugging configuration (docs/RenderDebug.md).
     virtual void setRenderDebugConfig(const RenderDebugConfig &config)
     { (void)config; }
+    /// Per-frame occlusion culling configuration
+    /// (docs/FarFieldProxies.md §12).
+    virtual void setOcclusionCullConfig(const OcclusionCullConfig &config)
+    { (void)config; }
     /// User-loadable shaders captured from scene SoShaderProgram nodes
     /// (docs/RenderDebug.md §6).
     virtual void setUserShaderConfig(const UserShaderConfig &config)
@@ -1912,6 +2222,65 @@ public:
     /// automatic: the backend's own reported GPU memory limit where
     /// the API states one (D3D/Vulkan do), else no budget at all.
     virtual void setGpuMemoryBudget(size_t bytes) { (void)bytes; }
+    /// Narrate what each mesh-level plan decides. Needed to tell a
+    /// ladder that will not descend apart from one that never ran --
+    /// on desktop OpenGL the automatic GPU budget is 0, so the
+    /// downgrade half of the plan had never executed and nothing said
+    /// so.
+    virtual void setLevelDebug(bool on) { (void)on; }
+    /// How much of the error the plan is holding back to fit its GPU
+    /// budget survives each plan that fits (Render::PressureTolerance,
+    /// sec 13c.3). Handing it all back at the first plan inside the budget
+    /// is what made this ladder cycle: the tolerance fell from 51px to
+    /// 2px in one step, 946 objects re-tessellated at once, and the
+    /// budget broke again. 0 or less restores that snap.
+    virtual void setLevelPressureRelease(float fraction) { (void)fraction; }
+    /// Whether the GPU downgrade sweep carries its unlanded orders as
+    /// credit against the next plans' deficits (Render_DowngradeLedger;
+    /// see Render::DowngradeLedger for why a sweep without one storms).
+    virtual void setDowngradeLedger(bool on) { (void)on; }
+    /// The hard-ceiling admission for climbs (Render_ClimbHardLimit /
+    /// Render_ClimbAdmitBatch): at or over the budget the plan admits
+    /// no refine and aborts those in flight; under it, climbs are
+    /// admitted in batches of \a batch so the allocator-exact total
+    /// approaches the ceiling in verified steps.
+    virtual void setClimbAdmission(bool hardLimit, int batch)
+    { (void)hardLimit; (void)batch; }
+    /// How many descents (demotes/downgrades) one plan pass may order
+    /// (Render_DescentOrderBatch, the climb batch's mirror): each
+    /// order enqueues a worker job but pays a GUI-thread snapshot at
+    /// the hook, so a pass is bounded and the replan after the batch
+    /// lands takes the rest. 0 or less removes the cap.
+    virtual void setDescentOrderBatch(int batch) { (void)batch; }
+    /// The rest band above the GPU budget, as a fraction of it
+    /// (Render_LevelBudgetDeadband): the downgrade sweep triggers only
+    /// past budget*(1+fraction) and still corrects back to the budget,
+    /// so an equilibrium that lands just over the line may stand --
+    /// climbs already stop at the budget, and inside the band neither
+    /// direction acts. 0 restores the bare line and with it the
+    /// boundary dither.
+    virtual void setLevelBudgetDeadband(float fraction) { (void)fraction; }
+    /// The element contract's inputs (docs/SceneStreaming.md #13b),
+    /// pushed in like every other parameter -- this library knows
+    /// nothing of RenderParams. The contract itself lives in the
+    /// backend: an attached point set draws only while its object's
+    /// line set is shown and memory allows, an attached line set only
+    /// while its face set is shown and memory allows, floating sets
+    /// rank with the faces, and pressure spends points -> lines ->
+    /// faces, taking them back in reverse.
+    /// \a shapeVertices false suppresses attached point sets outright
+    /// instead of letting the contract decide; \a pressureEdges false
+    /// exempts attached line sets from the pressure stages;
+    /// \a loadingDrop true forces both drops while a document is still
+    /// arriving -- whether one is loading is a question only the host
+    /// can answer, so it is pushed as a state and not derived here.
+    /// \a staggerFrames is the frame wait between pressure stages,
+    /// escalating and releasing both. None of these ever touches an
+    /// on-top or highlight draw.
+    virtual void setElementGates(bool shapeVertices, bool pressureEdges,
+                                 bool loadingDrop, int staggerFrames)
+    { (void)shapeVertices; (void)pressureEdges; (void)loadingDrop;
+      (void)staggerFrames; }
     /// Section cap hatch texture pixels; \a nc-component 8-bit rows,
     /// tightly packed. Null data clears the texture. The pixels are copied.
     virtual void setHatchImage(const void *data, int nc,
@@ -2001,6 +2370,93 @@ public:
     };
     virtual bool warmup(QOpenGLWidget *, const std::string &,
                         WarmupTiming * = nullptr) { return false; }
+};
+
+/// CPU accounting for the part of a frame that is *not* the renderer's.
+///
+/// The frame line splits its CPU into three: our own C++, the bgfx call
+/// it ends in, and `outside` -- everything else between one backend
+/// frame and the next. `outside` is derived (frame minus ours), so it is
+/// complete by construction but says nothing about what is in it, and on
+/// a native run it is the largest of the three. This is what puts an
+/// instrument on it.
+///
+/// It lives here, as a process-wide accumulator rather than a method on
+/// Renderer, because the code being timed is Gui's -- Coin's composite,
+/// Qt's paint, the overlays -- and runs after render() has returned. The
+/// backend drains it on the same tick it prints the frame line, and the
+/// remainder it cannot attribute is printed too: a breakdown of a
+/// derived quantity is only trustworthy if it says how much it missed.
+class RendererExport FrameOutside
+{
+public:
+    enum Phase {
+        /// renderScene() before the backend call: viewport, background
+        /// colour resolution, the meta feed.
+        Pre,
+        /// The background root traversal (and the GL background fill on
+        /// frames the backend did not draw).
+        Background,
+        /// inherited::actualRedraw() -- the whole Coin scene-graph
+        /// traversal. At render-cache mode 3 the geometry went to the
+        /// backend, so this ought to be compositing overlays and little
+        /// else; if it is not, that is a bug, not a tuning knob.
+        Coin,
+        /// The foreground root traversal.
+        Foreground,
+        /// Overlay captures re-traversed and fed to the backend.
+        Captures,
+        /// The chrome after them: axis cross, dimension text, navigation
+        /// redraw, graphics items, fps string, NaviCube, alpha fixup.
+        Chrome,
+        /// QuarterWidget::paintEvent() before the redraw, minus the
+        /// delay queue below.
+        PaintPre,
+        /// Coin's delay queue, drained at the top of the paint event
+        /// with the GL context released around it.
+        DelayQueue,
+        /// QGraphicsView::paintEvent() -- Qt's own painting over the GL
+        /// viewport, which runs after the scene is drawn.
+        GraphicsView,
+        /// The tail of the paint event after that.
+        PaintPost,
+        PhaseCount
+    };
+
+    /// Whether anything is draining. False costs one relaxed load, which
+    /// is what makes it safe to leave the calls in the render path.
+    static bool enabled() { return active.load(std::memory_order_relaxed); }
+    static void setEnabled(bool on);
+    static void add(Phase p, double ms);
+    /// Move the accumulated per-phase milliseconds out, zeroing them.
+    /// \a out is indexed by Phase and always fully written.
+    static void drain(double *out);
+
+private:
+    static std::atomic<bool> active;
+    static double phaseMs[PhaseCount];
+};
+
+/// Times a scope into a FrameOutside phase. Reads the switch once, on
+/// entry, so a scope that spans the frame where it is turned on is
+/// either wholly counted or wholly not -- never half.
+class RendererExport FrameOutsideScope
+{
+public:
+    explicit FrameOutsideScope(FrameOutside::Phase p);
+    ~FrameOutsideScope();
+    /// End the region early and disarm. For a span that starts at the
+    /// top of a function and ends in its middle, where a nested block
+    /// would put the locals it declares out of reach of the rest.
+    /// Several scopes may name the same phase; they add.
+    void stop();
+    FrameOutsideScope(const FrameOutsideScope &) = delete;
+    FrameOutsideScope &operator=(const FrameOutsideScope &) = delete;
+
+private:
+    FrameOutside::Phase phase;
+    bool on;
+    int64_t t0;
 };
 
 class RendererExport RendererFactory

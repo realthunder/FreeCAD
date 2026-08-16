@@ -117,6 +117,15 @@ bool buildMeshLevel(const TopoDS_Shape &shape, const MeshLevelJob &job,
 /// document is served is what arms or skips the desktop refine climb
 /// (docs/MultiDocServe.md §5) — serving one document must not disarm
 /// another's views. Null falls back to the process-wide reading.
+///
+/// \a onScaleDown / \a scaledError are the dynamic-scale descent (sec 13):
+/// what a source ALREADY displaying its coarse rung can still give up
+/// when a budget cannot be met any other way. Rung 0 is not the floor;
+/// the plan keeps picking objects one at a time and each re-tessellates
+/// itself coarser again, so \a scaledError is the error the next step
+/// would show and the callback is what takes it. Armed only where a
+/// step exists -- past the box-error threshold a shape becomes its
+/// bounding box, which has no step after it.
 void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              SoNode *faceTag, SoNode *lineTag,
                              float builtError = 0.0f,
@@ -127,11 +136,79 @@ void registerMeshLevelSource(const TopoDS_Shape &shape, bool normalsFromUV,
                              std::function<void()> onDemote = {},
                              float demoteError = 0.0f,
                              std::function<void()> onDowngrade = {},
-                             App::Document *doc = nullptr);
+                             App::Document *doc = nullptr,
+                             const char *origin = nullptr,
+                             std::function<void()> onScaleDown = {},
+                             float scaledError = 0.0f);
 
 /// Drop the registration made under these tags (before the nodes die;
 /// their addresses may be reused).
 void unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag);
+
+/// Mesh a structure copy of \a shape at \a deflection / \a angle on the
+/// refine worker pool and hand it to \a apply on the GUI thread -- the
+/// same job queue, token and memory-ceiling guard the exact climb uses,
+/// with the parameters given rather than taken from the registration.
+///
+/// This is what makes the ladder's DESCENT a build too (sec 13, dynamic
+/// scale). Climbing needs the exact parameters and nothing else, but
+/// going *below* the rung a shape was built at cannot be a swap: OCCT
+/// keeps a resident triangulation that is finer than the one asked for,
+/// so a coarser display mesh has to be meshed. The caller's apply is
+/// then transferMeshLevels followed by demoteMeshLevels -- the transfer
+/// brings the coarser rung in beside the finer one, and the demote,
+/// which keeps the triangulation with the fewest nodes, drops the finer
+/// one and its edge polygons. That pair is the whole of "adopt this
+/// coarser mesh and free what it replaces".
+void queueMeshLevelBuild(const void *tag, const TopoDS_Shape &shape,
+                         double deflection, double angle,
+                         std::function<void(const TopoDS_Shape &)> apply);
+
+/// Run \a work on the refine worker pool and its returned landing on
+/// the GUI thread -- the decimation rung's half of the same descent
+/// (sec 13c). \a work owns everything it reads (a SNAPSHOT of the
+/// display arrays, taken on the GUI thread at enqueue -- Coin nodes
+/// are not thread-safe here) and returns the landing closure, or null
+/// when the rung refused. The landing runs only while the tag's
+/// registration is still the live one (same token as the refine jobs:
+/// re-registering or unregistering the tag cancels), which is what
+/// makes capturing the view provider sound. Descent jobs are counted
+/// in MeshSourceRegistry::descentInFlight() from enqueue to
+/// settlement and run ahead of queued climbs.
+void queueMeshDescentWork(const void *tag,
+                          std::function<std::function<void()>()> work);
+
+/// Cancel the pending worker job and un-run landing queued under \a
+/// tag, if any. For jobs whose tag is NOT a registration's primary
+/// tag -- the pooled visual fill keys its jobs on the coords node so
+/// they never collide with the decimation/mesh jobs on the faceset
+/// tag -- unregisterMeshLevelSource cannot cancel them, and the owner
+/// must do it here before it dies (the landing captures the view
+/// provider).
+void cancelMeshLevelWork(const void *tag);
+
+/// Run \a body on the GUI thread under the landing pump's per-turn
+/// time budget instead of now. This is how a plan-ordered hook body
+/// leaves the plan callback: a sweep fires up to a whole batch of
+/// hooks in one callback, and their bodies -- a display-array
+/// snapshot, a resident-rung rebuild -- measured second-long bursts
+/// when run in place. Items are keyed by \a tag: unregistering or
+/// re-registering the tag purges what has not run (the bodies capture
+/// their view provider, and the destructor unregisters). A descent
+/// item counts as an in-flight descent from enqueue to run/purge, so
+/// the downgrade ledger's write-off horizon covers the deferral; a
+/// climb body passes \a descent false, because the settle counter it
+/// would advance is what the ledger judges its ORDERS' completion by,
+/// and a climb settling is not a downgrade landing.
+void queueLevelGuiWork(const void *tag, std::function<void()> body,
+                       bool descent = true);
+
+/// Whether the caller is executing inside the landing pump's turn --
+/// diagnostic context for the slow-build attribution (a pump item, a
+/// drain slice and any other queued call all dispatch as the same
+/// meta-call to the application object, and naming which one a slow
+/// rebuild ran under is what the instruments could not do).
+bool inLandingPump();
 
 /// The coarse-first tessellation level for display builds; negative
 /// means tessellate at the full display deviation as always. Resolved
@@ -187,6 +264,13 @@ bool demoteMeshLevels(const TopoDS_Shape &shape);
 /// re-activation of the finest rung, no worker, no re-tessellation.
 /// Returns whether anything changed. GUI thread.
 bool downgradeMeshLevels(const TopoDS_Shape &shape);
+
+/// Total nodes over every face triangulation of \a shape -- the size of
+/// what it is currently tessellated at, in the one unit both a
+/// re-tessellation and a simplification change. What says whether
+/// asking BRepMesh for a coarser mesh actually produced one: for a
+/// shape of planar faces it does not, at any deflection.
+int meshLevelNodeCount(const TopoDS_Shape &shape);
 
 /// Whether \a shape holds more than one resident triangulation on any
 /// face — i.e. a finer rung a refine could activate without the

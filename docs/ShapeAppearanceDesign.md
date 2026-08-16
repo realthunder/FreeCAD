@@ -671,11 +671,16 @@ Deviations from the sketch above, found by reading the consumer first:
   when the new type derives from the occupant, and `SoAction` recreates
   its state when the global enable counter moves, so installing after
   actions already exist is sound.
-- **The C surface is `coin_lazyex_*`** (install + abi_version + one
-  getter per field over an opaque `SoState*`), bound by
-  `Gui::CoinLazyElementEx` with dlsym at `SoFCDB::init`. The element
-  class header stays internal to the coin tree; nothing in FreeCAD
-  includes it.
+- **The element is a plain public class.** It began as a C surface
+  (`coin_lazyex_*`) bound with dlsym, so that one FreeCAD binary could
+  still run against a stock Coin; the fork's binary rename to `CoinRT`
+  (2026-08-14) ended that, since FreeCAD now refuses to start against
+  anything but the fork anyway. Since **2026-08-15** the header is
+  installed as `Inventor/elements/SoLazyElementEx.h`, FreeCAD calls
+  `SoLazyElementEx::install()` at `SoFCDB::init` and reads the arrays
+  off `SoLazyElementEx::getInstance(state)` -- an ordinary link-time
+  dependency, with the type check that used to live behind the C getters
+  now in `getInstance()`.
 - **Staleness is handled in the element, not the consumer.** The `Ex`
   overrides of the scalar `set*Elt` virtuals drop the matching array, so
   a later scalar writer (`SoVRMLMaterial`, a bare `setAmbient`) cannot
@@ -744,7 +749,7 @@ forced by reading the consumers:
   specular with shininess (0..1) quantized into the alpha -- the same
   slot `u_matSpecular.w` already uses.
 - **`SoFCVertexCache` does the bake** (`getMaterialArray()`), reading
-  the Ex element through `Gui::CoinLazyElementEx` at `open()` and
+  the Ex element at `open()` and
   resolving per `getMaterialIndex()` in the triangle callback, with the
   `colorpervertex` divergence pattern (`matpervertex`: capture enabled
   only when an array is genuinely present, array allocated only when

@@ -1190,20 +1190,34 @@ void BGFXView::setMeshVertexBuffers(GpuMesh *gpu, const Render::MeshData &mesh)
         bgfx::setVertexBuffer(3, gpu->mats);
 }
 
-void BGFXView::collectMeshes()
+void BGFXView::collectMeshes(const std::unordered_map<uint64_t, uint64_t> &kept,
+                             const std::unordered_set<uint64_t> &gatedOnly)
 {
     for (auto it = meshes.begin(); it != meshes.end();) {
-        if (it->second.lastUsed + 2 < frame) {
+        auto pub = kept.find(it->first);
+        const bool stale =
+            pub == kept.end() || gatedOnly.count(it->first)
+            ? it->second.lastUsed + 2 < frame
+            : (it->second.geom
+               && it->second.generation != pub->second);
+        if (stale) {
             it->second.destroy();
             it = meshes.erase(it);
         } else
             ++it;
     }
-    // After the meshes: any geometry a surviving mesh references was
-    // touched this frame through it, so an aged geometry has no
-    // referencing mesh left and can go.
+    // Geometries are shared behind the meshes, so their rule is
+    // REFERENCE, not age: any geometry a surviving mesh points at
+    // stays with it; the rest are orphans of swaps and publishes
+    // and go after the same in-flight grace.
+    std::unordered_set<const GpuGeometry *> referenced;
+    referenced.reserve(meshes.size());
+    for (const auto &m : meshes)
+        if (m.second.geom)
+            referenced.insert(m.second.geom);
     for (auto it = geometries.begin(); it != geometries.end();) {
-        if (it->second.lastUsed + 2 < frame) {
+        if (!referenced.count(&it->second)
+                && it->second.lastUsed + 2 < frame) {
             it->second.destroy();
             it = geometries.erase(it);
         } else

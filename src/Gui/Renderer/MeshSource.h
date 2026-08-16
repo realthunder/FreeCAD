@@ -71,8 +71,16 @@ namespace Render {
 ///   CPU RAM (step 3's GPU half) — fired when the GPU budget wants
 ///   upload bytes back; the way back up is then an instant
 ///   re-activation through an ordinary refine.
-/// - `fallbackError`: the error of the coarse rung either way down
-///   lands on — what the plan prices the drop by.
+/// - `fallbackError`: the error of the rung a DEMOTE lands on -- what
+///   the plan prices the drop by.
+/// - `downgradeFallbackError`: the same for the downgrade, when the two
+///   directions land somewhere different. They usually do not: dropping
+///   the exact rung and merely un-displaying it both leave the coarse
+///   one showing. But a source already displaying its coarse rung
+///   descends by re-tessellating COARSER, and then the demote (drop a
+///   hidden finer rung, nothing on screen changes) and the downgrade
+///   (show a coarser mesh) commit quite different error. 0 falls back
+///   to `fallbackError`, which is every pre-existing caller.
 ///
 /// At namespace scope rather than nested, because a nested class with
 /// default member initializers cannot be a default argument of its
@@ -83,7 +91,31 @@ struct LevelHooks {
     std::function<void()> demote;
     std::function<void()> downgrade;
     float fallbackError = 0.0f;
+    float downgradeFallbackError = 0.0f;
+    /// Whether `demote` drops a HIDDEN finer rung -- a move that changes
+    /// nothing on screen -- as against the dynamic-scale descent, which
+    /// re-tessellates the DISPLAYED mesh coarser and visibly. The two
+    /// arrive through the same slot, and only the arming site knows
+    /// which it holds; dropHiddenLevels()'s contract ("nothing on
+    /// screen changes") is only honest for the first kind, so it fires
+    /// nothing without this. A visible descent is planMeshDemotes'
+    /// business: priced against a camera, never taken blind.
+    bool demoteDropsHiddenRung = false;
 };
+
+/// What demoteError/downgradeError answer for a tag the registry has
+/// never heard of, as against 0 for one it knows but that armed no way
+/// down.
+///
+/// The two look identical to a plan that only asks "is there a rung"
+/// and they are completely different defects: 0 is a source whose
+/// registration declined to arm a descent, while this is a drawn mesh
+/// whose source is not registered AT ALL -- never registered, or
+/// unregistered while its draw lives on. Counting them together
+/// reported "no fallback rung" for both and sent the previous
+/// investigation looking for a missing coarse build where the real
+/// question was who owns the tag.
+constexpr float kTagUnknown = -1.0f;
 
 class RendererExport MeshSourceRegistry {
 public:
@@ -110,8 +142,28 @@ public:
     /// shape diagonal) when the producer tessellated coarse-first —
     /// which is what tells the serializer to declare the exact mesh as
     /// an unbuilt rung above it.
+    /// \a origin names the registration site, for the tally below. It
+    /// is a literal owned by the caller, compared by pointer never by
+    /// content, and used for nothing else.
     void add(const void *tag, Generator gen, float publishedError = 0.0f,
-             LevelHooks hooks = LevelHooks());
+             LevelHooks hooks = LevelHooks(), const char *origin = nullptr);
+
+    /// How many live sources each registration site contributed, and
+    /// how many of those armed a downgrade hook.
+    ///
+    /// Without a downgrade hook a source can never come back down:
+    /// downgradeError() returns 0 for it and the plan skips it as
+    /// having no rung to fall back to. Whether that is most of a scene
+    /// decides whether a GPU budget can be honoured at all, and the
+    /// answer differs per site -- so counting by site is what turns
+    /// "the plan refused everything" into a defect with an address.
+    struct OriginTally {
+        const char *origin = nullptr;
+        uint32_t sources = 0;
+        uint32_t withDowngrade = 0;
+        uint32_t withDemote = 0;
+    };
+    std::vector<OriginTally> originTally() const;
     /// Drop \a tag and every chunk-key association pointing at it.
     /// Call before the geometry behind the tag dies; the tag's address
     /// may be reused.
@@ -135,6 +187,36 @@ public:
 
     /// The registered publishedError of the source behind \a tag, or 0.
     float publishedError(const void *tag);
+
+    /// Restate what the DISPLAY tessellation of \a tag now is, without
+    /// touching its generator or hooks. False when nothing is
+    /// registered under the tag.
+    ///
+    /// For the producer that coarsened a source in place rather than by
+    /// re-registering it -- the decimation rung of
+    /// docs/SceneStreaming.md #13c rewrites its display nodes and keeps
+    /// everything else. Leaving the old figure standing is not a
+    /// cosmetic staleness: the refine pass wants a source when
+    /// `levelError * diagPx > tolerancePx`, so an error that understates
+    /// how coarse the object actually became is one that may never ask
+    /// for it back, and the object stays visibly decimated after the
+    /// pressure that decimated it has gone. It also prices the next
+    /// descent step from a rung the object is no longer standing on.
+    ///
+    /// Bumps generation() like add(), so a cached publishedError()
+    /// answer is re-asked.
+    bool setPublishedError(const void *tag, float publishedError);
+
+    /// Whether \a tag names a registered source at all.
+    ///
+    /// publishedError() answers 0 both for the exact rung and for a tag
+    /// nobody owns, so a mesh whose source was never registered is
+    /// published as exact and enters the level plan looking like a
+    /// source standing at the top of its ladder. Distinguishing the two
+    /// is what says whether the ladder can reach a drawn mesh; measured
+    /// on the rack model, 1197 of 1569 apparently-exact sources were
+    /// this.
+    bool knows(const void *tag) const;
 
     /// Bumped whenever a registration changes, and so whenever any
     /// tag's publishedError could have moved. A caller holding an
@@ -176,7 +258,8 @@ public:
     /// without a callback.
     void requestDemote(const void *tag);
     /// The coarse-rung error \a tag would fall back to; 0 = not
-    /// demotable. What planMeshDemotes prices a demotion by.
+    /// demotable, kTagUnknown = no such source. What planMeshDemotes
+    /// prices a demotion by.
     float demoteError(const void *tag);
 
     /// The GPU budget wants \a tag's upload bytes back (§13 step 3):
@@ -188,8 +271,11 @@ public:
 
     /// A CPU memory ceiling stands: drop every *hidden* exact rung —
     /// sources displaying their coarse rung while still holding the
-    /// exact one (a demote hook beside a non-zero publishedError).
-    /// Dropping those consults no camera: nothing on screen changes.
+    /// exact one (a demote hook that declares demoteDropsHiddenRung,
+    /// beside a non-zero publishedError). Dropping those consults no
+    /// camera: nothing on screen changes. A coarse source whose demote
+    /// is the visible dynamic-scale descent is deliberately NOT fired
+    /// here -- see LevelHooks::demoteDropsHiddenRung.
     void dropHiddenLevels();
 
     /// A memory ceiling was observed: an exact build failed to
@@ -200,8 +286,108 @@ public:
     /// level plan from then on also demotes what the camera would not
     /// miss. The epoch lets the planner replan promptly on a new
     /// observation.
-    void observeMemoryCeiling();
+    ///
+    /// \a shortfallBytes is how much memory the observer wanted back --
+    /// the floor less what the system had free. It is what lets the
+    /// plan trade *visible* error for memory, and only as much of it as
+    /// the shortfall needs (planMeshDemotes' priced tier); a ceiling
+    /// observed without a quantity behind it (a bad_alloc says only
+    /// "no") passes 0, and the plan stays inside its free tier.
+    /// Freshest observation wins rather than the largest: the shortfall
+    /// is a statement about memory now, and a stale one would keep
+    /// demoting against pressure that has passed.
+    void observeMemoryCeiling(size_t shortfallBytes = 0);
     uint64_t memoryCeilingEpoch() const { return ceilingEpoch; }
+    size_t memoryShortfall() const { return ceilingShortfall; }
+
+    /// Plan-ordered descent jobs (worker-side coarsenings: the
+    /// dynamic-scale re-tessellation and the decimation rung) currently
+    /// queued or running. The producer notes every enqueue and every
+    /// settlement -- landed, refused, or canceled; the pair must
+    /// balance. What the downgrade ledger holds its write-off horizon
+    /// open on: an order's bytes cannot land before its job does, so
+    /// expiring the credit on a frame count while the job still queues
+    /// re-orders the same memory from other sources -- the storm.
+    ///
+    /// The optional GENERATION scopes that statement to one sweep's
+    /// order. A descent is no longer one job: a downgrade's hook body
+    /// queues a worker build, whose landing queues a pooled visual
+    /// fill, whose apply is when the bytes actually move -- and the
+    /// aggregate settle counter reaches any target long before the
+    /// tails of those chains do (measured as the ladder overshooting
+    /// a 64MB budget down to 44.7MB: credit written off early, the
+    /// sweep re-ordering from other sources while the first order's
+    /// fills were still in flight). Every enqueue made while a
+    /// generation is current -- the plan's order loop opens one, and
+    /// the landing pump re-enters the job's own while running it --
+    /// inherits it, so a generation drains exactly when the order's
+    /// transitive chain has.
+    void noteDescentQueued(uint64_t gen = 0)
+    {
+        descentJobs.fetch_add(1, std::memory_order_relaxed);
+        if (gen) {
+            std::lock_guard<std::mutex> lock(genMutex);
+            ++genOutstanding[gen];
+        }
+    }
+    void noteDescentSettled(uint64_t gen = 0)
+    {
+        descentJobs.fetch_sub(1, std::memory_order_relaxed);
+        descentSettles.fetch_add(1, std::memory_order_relaxed);
+        if (gen) {
+            std::lock_guard<std::mutex> lock(genMutex);
+            auto it = genOutstanding.find(gen);
+            if (it != genOutstanding.end() && --it->second == 0)
+                genOutstanding.erase(it);
+        }
+    }
+    uint32_t descentInFlight() const
+    {
+        return descentJobs.load(std::memory_order_relaxed);
+    }
+    /// Monotonic count of settled descent jobs (landed, refused, or
+    /// purged), kept for the narration lines.
+    uint64_t descentSettleCount() const
+    {
+        return descentSettles.load(std::memory_order_relaxed);
+    }
+    /// A fresh generation for one sweep's orders (never 0).
+    uint64_t openDescentGeneration()
+    {
+        return descentGenCounter.fetch_add(1, std::memory_order_relaxed)
+            + 1;
+    }
+    /// Whether \a gen's transitive chain of jobs has drained. Gen 0 --
+    /// work queued outside any order -- reads as settled.
+    bool descentGenerationSettled(uint64_t gen) const
+    {
+        if (!gen)
+            return true;
+        std::lock_guard<std::mutex> lock(genMutex);
+        return genOutstanding.find(gen) == genOutstanding.end();
+    }
+    /// The generation new descent work inherits on this thread; the
+    /// producers read it at enqueue. GUI thread for all writers today,
+    /// thread-local so a worker-side settle cannot see a stale scope.
+    static uint64_t &currentDescentGeneration()
+    {
+        static thread_local uint64_t gen = 0;
+        return gen;
+    }
+    /// Scoped set/restore of currentDescentGeneration: the plan wraps
+    /// its order loop, the landing pump wraps each item it runs.
+    class DescentGenScope
+    {
+        uint64_t prev;
+
+    public:
+        explicit DescentGenScope(uint64_t gen)
+            : prev(currentDescentGeneration())
+        {
+            currentDescentGeneration() = gen;
+        }
+        ~DescentGenScope() { currentDescentGeneration() = prev; }
+    };
 
 private:
     struct Source {
@@ -213,11 +399,22 @@ private:
         /// requestRefine sets and cancelRefine clears.
         LevelHooks hooks;
         bool asked = false;
+        /// Registration site, a caller-owned literal (see add()).
+        const char *origin = nullptr;
     };
-    std::mutex mutex;
+    mutable std::mutex mutex;
     std::map<const void *, Source> sources;
     std::unordered_map<std::string, const void *> keys;
     std::atomic<uint64_t> ceilingEpoch {0};
+    std::atomic<size_t> ceilingShortfall {0};
+    std::atomic<uint32_t> descentJobs {0};
+    std::atomic<uint64_t> descentSettles {0};
+    std::atomic<uint64_t> descentGenCounter {0};
+    /// Per-generation outstanding job counts; an absent key is a
+    /// drained (or never-used) generation. Guarded by its own mutex:
+    /// settles come off the refine workers too.
+    mutable std::mutex genMutex;
+    std::unordered_map<uint64_t, uint32_t> genOutstanding;
     /// See generation(). Bumped by every add() and remove(), which are
     /// the only things that can change what publishedError() answers.
     std::atomic<uint32_t> registryGen {0};
@@ -256,6 +453,15 @@ public:
     /// The scene feed changed: replan even with a still camera.
     void markDirty() { m_dirty = true; }
 
+    /// Whether the plan now running is for a camera the last one did
+    /// not see -- valid inside the plan callback, and only there.
+    ///
+    /// What a rung costs on screen is a function of where the camera
+    /// is, so anything a plan LEARNED about this scene under a budget
+    /// (PressureTolerance::floorPx) is evidence about this camera and
+    /// stops applying when it moves.
+    bool cameraMoved() const { return m_cameraMoved; }
+
     /// The camera the pending/last plan is for — what a plan callback
     /// should pass to planMeshRefines (stable while the callback runs,
     /// unlike whatever pointer the render loop had).
@@ -277,6 +483,7 @@ private:
     bool m_haveObserved = false;
     bool m_havePlanned = false;
     bool m_dirty = false;
+    bool m_cameraMoved = true;
 };
 
 } // namespace Render

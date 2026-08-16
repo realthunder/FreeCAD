@@ -999,25 +999,29 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
     }
 
     // Render-debug capture burn-in (docs/RenderDebug.md §4.3): with
-    // RenderDebug_Label on, a corner label names the active debug view
-    // mode, the freeze state and every custom RenderDebug_* parameter
-    // value, so a captured frame documents its settings without its
-    // sidecar. Rides the overlay feed like the fps readout — the WASM
-    // viewer burns the same label into its own captures.
+    // the DebugLabel parameter on, a corner label names the active
+    // debug view mode, the freeze state and every custom RenderDebug_*
+    // parameter value, so a captured frame documents its settings
+    // without its sidecar. Rides the overlay feed like the fps readout
+    // -- the WASM viewer burns the same label into its own captures.
+    // The switches are global RenderParams; only the custom shader
+    // parameters still live on the view.
     std::string debugLabel;
     if (view) {
-        auto lbl = dynamic_cast<App::PropertyBool*>(
-                view->getPropertyByName("RenderDebug_Label"));
-        if (lbl && lbl->getValue()) {
+        if (RenderParams::getDebugLabel()) {
             std::ostringstream ss;
             ss << "RenderDebug ";
-            if (auto p = dynamic_cast<App::PropertyEnumeration*>(
-                    view->getPropertyByName("RenderDebug_ViewMode")))
-                ss << (p->isValid() ? p->getValueAsString() : "?");
-            if (auto p = dynamic_cast<App::PropertyBool*>(
-                    view->getPropertyByName("RenderDebug_FreezeFrame")))
-                if (p->getValue())
-                    ss << " freeze";
+            static const char* _viewModeNames[] =
+                {"Off", "Depth", "Normal", "AO", "Shadow", "ShadowTile",
+                 "Overdraw", "ShadowFilter", "UV", "Reflection",
+                 "ImpactMap", "InstanceId"};
+            const long mode = RenderParams::getDebugViewMode();
+            ss << (mode >= 0
+                    && mode < long(sizeof(_viewModeNames)
+                                   / sizeof(_viewModeNames[0]))
+                    ? _viewModeNames[mode] : "?");
+            if (RenderParams::getDebugFreezeFrame())
+                ss << " freeze";
             // Custom named parameters (the same set the bridge feeds as
             // uniforms), name=value.
             std::map<std::string, App::Property*> props;
@@ -4209,15 +4213,12 @@ void View3DInventorViewer::actualRedraw()
     }
 
     // The stage timers live deep in the publish pipeline, which knows
-    // nothing of views; the view that is drawing states whether they run.
-    if (auto view = _pimpl->view) {
-        if (auto prop = dynamic_cast<App::PropertyBool*>(
-                view->getPropertyByName("RenderDebug_Timing")))
-            RenderTiming::setEnabled(prop->getValue());
-        if (auto prop = dynamic_cast<App::PropertyBool*>(
-                view->getPropertyByName("RenderDebug_Delta")))
-            ScenePublishDelta::setLogging(prop->getValue());
-    }
+    // nothing of views; the drawing view applies the global switches
+    // here. Global on purpose: these are measurement state, and their
+    // old per-view copies saved inside documents shadowed the globals
+    // (a saved Timing=false once blanked a whole measurement run).
+    RenderTiming::setEnabled(RenderParams::getDebugTiming());
+    ScenePublishDelta::setLogging(RenderParams::getDebugDelta());
 
     switch (renderType) {
     case Native:
@@ -4609,9 +4610,9 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _localRenderParam<App::PropertyFloat>(view, "LevelTolerance",
             RenderParams::docLevelTolerance(),
             RenderParams::getLevelTolerance());
-    _localRenderParam<App::PropertyInteger>(view, "GpuMemoryBudgetMB",
-            RenderParams::docGpuMemoryBudgetMB(),
-            RenderParams::getGpuMemoryBudgetMB());
+    // No per-view GpuMemoryBudgetMB, LevelDebug or LevelCeilingSimulateMB:
+    // those are machine-resource and measurement knobs, global RenderParams
+    // only (see stripLegacyRenderProperties for the full ruling).
     _renderParam<App::PropertyFloat>(view, "AORadius",
             RenderParams::docAORadius(), RenderParams::getAORadius());
     _renderParam<App::PropertyFloat>(view, "AOIntensity",
@@ -4816,67 +4817,85 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
             RenderParams::docGroundReflectionIntensity(),
             RenderParams::getGroundReflectionIntensity());
 
-    // RenderDebug_* debugging knobs (docs/RenderDebug.md): materialized
-    // hidden -- not user settings; the property editor's 'Show all'
-    // reveals them, and scripts/the verification harness set them.
-    if (!view->getPropertyByName("RenderDebug_ViewMode")) {
-        static const char* _debugViewModeEnums[] =
-            {"Off", "Depth", "Normal", "AO", "Shadow", "ShadowTile",
-             "Overdraw", "ShadowFilter", "UV", "Reflection",
-             "ImpactMap", nullptr};
-        auto prop = static_cast<App::PropertyEnumeration*>(
-                view->addDynamicProperty("App::PropertyEnumeration",
-                                         "RenderDebug_ViewMode", "RenderDebug",
-                                         RenderParams::docDebugViewMode(),
-                                         App::Prop_NoPersist));
-        prop->setEnums(_debugViewModeEnums);
-        prop->setValue(long(RenderParams::getDebugViewMode()));
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_FreezeFrame")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_FreezeFrame", "RenderDebug",
-                                         RenderParams::docDebugFreezeFrame(),
-                                         App::Prop_NoPersist));
-        prop->setValue(RenderParams::getDebugFreezeFrame());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_Label")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_Label", "RenderDebug",
-                                         RenderParams::docDebugLabel(),
-                                         App::Prop_NoPersist));
-        prop->setValue(RenderParams::getDebugLabel());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_Timing")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_Timing", "RenderDebug",
-                                         RenderParams::docDebugTiming(),
-                                         App::Prop_NoPersist));
-        prop->setValue(RenderParams::getDebugTiming());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_Delta")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_Delta", "RenderDebug",
-                                         RenderParams::docDebugDelta(),
-                                         App::Prop_NoPersist));
-        prop->setValue(RenderParams::getDebugDelta());
-        prop->setStatus(App::Property::Hidden, true);
-    }
-    if (!view->getPropertyByName("RenderDebug_Coverage")) {
-        auto prop = static_cast<App::PropertyBool*>(
-                view->addDynamicProperty("App::PropertyBool",
-                                         "RenderDebug_Coverage", "RenderDebug",
-                                         RenderParams::docDebugCoverage(),
-                                         App::Prop_NoPersist));
-        prop->setValue(RenderParams::getDebugCoverage());
-        prop->setStatus(App::Property::Hidden, true);
+    // No occlusion-culling and no RenderDebug_* switch properties: those
+    // are performance mechanisms and measurement state, global
+    // RenderParams only. They used to be materialized here (hidden), and
+    // documents that saved them shadowed the globals every measurement
+    // set -- see stripLegacyRenderProperties. Custom RenderDebug_<name>
+    // shader parameters (docs/RenderDebug.md sec 2.5) remain per-view: they
+    // are dynamically named, created by the user or a script, and no
+    // global parameter could stand in for them.
+}
+
+const char * const *Gui::legacyRenderPropertyNames()
+{
+    // The per-view render properties that were retired to global
+    // RenderParams (2026-08-14): debug and measurement switches, the
+    // ladder's tuning knobs, the occlusion-culling mechanism, and the
+    // GPU budget -- none express per-view display intent, and saved
+    // copies inside documents shadowed whatever the preferences or a
+    // measurement harness set globally. Old documents still carry them
+    // as saved dynamic properties; View3DInventor::Restore strips them
+    // after reading, so loading stays compatible and the dead surface
+    // does not linger in the property editor.
+    static const char * const names[] = {
+        "Render_GpuMemoryBudgetMB",
+        "Render_LevelDebug",
+        "Render_LevelCeilingSimulateMB",
+        "Render_Occlusion",
+        "Render_OcclusionSoftware",
+        "Render_OcclusionSimd",
+        "Render_OcclusionPerInstance",
+        "Render_OcclusionCoarse",
+        "Render_OcclusionVisibleTtl",
+        "Render_OcclusionBudget",
+        "Render_OcclusionMinSubtree",
+        "Render_OcclusionMaxHidden",
+        "Render_OcclusionDepthPad",
+        "Render_OcclusionConfirm",
+        "Render_OcclusionOccluderTris",
+        "Render_OcclusionMinOccluder",
+        "Render_OcclusionResolution",
+        "Render_OcclusionThreads",
+        "Render_OcclusionDemoteStreak",
+        "Render_OcclusionCoarseLevel",
+        "Render_OcclusionCoarseMinTris",
+        "Render_OcclusionCoarseBuilds",
+        "Render_OcclusionCoarseBias",
+        "Render_OcclusionCoarseMemory",
+        "Render_OcclusionBenefitProbe",
+        "Render_LevelPressureRelease",
+        "Render_DowngradeLedger",
+        "Render_ClimbHardLimit",
+        "Render_ClimbAdmitBatch",
+        "Render_DescentOrderBatch",
+        "Render_ShapeVertices",
+        "Render_PressureDropEdges",
+        "Render_LoadDropElements",
+        "RenderDebug_ViewMode",
+        "RenderDebug_FreezeFrame",
+        "RenderDebug_Label",
+        "RenderDebug_Timing",
+        "RenderDebug_Delta",
+        "RenderDebug_Coverage",
+        "RenderDebug_Occlusion",
+        "RenderDebug_ProxyCut",
+        "RenderDebug_ProxyGen",
+        "RenderDebug_CullAudit",
+        "RenderDebug_CullBounds",
+        nullptr,
+    };
+    return names;
+}
+
+void Gui::stripLegacyRenderProperties(App::PropertyContainer *view)
+{
+    if (!view)
+        return;
+    for (const char * const *name = legacyRenderPropertyNames(); *name;
+         ++name) {
+        if (view->getPropertyByName(*name))
+            view->removeDynamicProperty(*name);
     }
 
 }
@@ -4896,7 +4915,6 @@ static const char *_localRenderProperties[] = {
     "Render_AOSteps",
     "Render_CoarseTessellation",
     "Render_EffectResolution",
-    "Render_GpuMemoryBudgetMB",
     "Render_LevelTolerance",
     nullptr
 };
@@ -5262,6 +5280,12 @@ void View3DInventorViewer::syncLightProperties()
 // upon spin.
 void View3DInventorViewer::renderScene()
 {
+    // The frame line splits the frame's CPU into ours, bgfx's and
+    // `outside` -- and `outside` is this function's other half plus Qt.
+    // These scopes are what tell them apart; they cost a relaxed load
+    // each while the timing switch is off (Render::FrameOutside).
+    Render::FrameOutsideScope outPre(Render::FrameOutside::Pre);
+
     // Must set up the OpenGL viewport manually, as upon resize
     // operations, Coin won't set it up until the SoGLRenderAction is
     // applied again. And since we need to do glClear() before applying
@@ -5300,6 +5324,9 @@ void View3DInventorViewer::renderScene()
         // only a serving process builds the table at all.
         if (Render::SceneStreamServer::instance().running())
             ObjectMetaFeed::instance().feed(_pimpl->renderer.get());
+        // Everything past here for this frame is the renderer's own
+        // account, which it times itself.
+        outPre.stop();
         externalRendered =
             _pimpl->renderer->render(col, &viewMat.getValue(), &projMat.getValue());
         // Time-animated backend content (e.g. water caustics) keeps
@@ -5338,11 +5365,14 @@ void View3DInventorViewer::renderScene()
     // not write depth. Suppress both for backend-rendered frames (the
     // suppress flag is reset right after so offscreen renders sharing the
     // node keep their background).
-    if (!externalRendered)
-        drawSingleBackground(col);
-    pcBackGround->setSuppressed(externalRendered);
-    glra->apply(this->backgroundroot);
-    pcBackGround->setSuppressed(false);
+    {
+        Render::FrameOutsideScope outBg(Render::FrameOutside::Background);
+        if (!externalRendered)
+            drawSingleBackground(col);
+        pcBackGround->setSuppressed(externalRendered);
+        glra->apply(this->backgroundroot);
+        pcBackGround->setSuppressed(false);
+    }
 
     SoBoxSelectionRenderAction *glbra = nullptr;
     if(glra->isOfType(SoBoxSelectionRenderAction::getClassTypeId())) {
@@ -5363,6 +5393,13 @@ void View3DInventorViewer::renderScene()
         externalRendered && _pimpl->editingBackendFed && !parallelgl;
     SoFCRenderCacheManager::SuppressImageGLRender =
         SoDatumLabel::SuppressGLRender;
+    // * The sharp one. At render-cache mode 3 the geometry has already
+    // gone to the backend above, so this traversal should be compositing
+    // overlays and nothing else. If it is a large share of the frame it
+    // is walking the whole scene graph for no pixels -- a bug, not a
+    // cost. (Both actualRedraw() calls are inside the span: the retry
+    // after an out-of-memory is still time this frame spent.)
+    Render::FrameOutsideScope outCoin(Render::FrameOutside::Coin);
     try {
         // Render normal scenegraph.
         inherited::actualRedraw();
@@ -5377,6 +5414,7 @@ void View3DInventorViewer::renderScene()
         QMessageBox::warning(parentWidget(), QObject::tr("Out of memory"),
                              QObject::tr("Not enough memory available to display the data."));
     }
+    outCoin.stop();
     SoDatumLabel::SuppressGLRender = false;
     SoFCRenderCacheManager::SuppressImageGLRender = false;
     if (glbra) {
@@ -5389,11 +5427,15 @@ void View3DInventorViewer::renderScene()
 #endif
 
     // Render overlay front scenegraph.
-    if (!externalRendered || parallelgl)
-        glra->apply(this->foregroundroot);
+    {
+        Render::FrameOutsideScope outFg(Render::FrameOutside::Foreground);
+        if (!externalRendered || parallelgl)
+            glra->apply(this->foregroundroot);
+    }
 
     // Compose the fps/stats readout before the overlay captures run so
     // the backend feed carries the current frame's numbers.
+    Render::FrameOutsideScope outFps(Render::FrameOutside::Chrome);
     if (fpsEnabled) {
         static FC_COIN_THREAD_LOCAL std::ostringstream stream;
         stream.str("");
@@ -5412,9 +5454,15 @@ void View3DInventorViewer::renderScene()
         _pimpl->fpsText.clear();
     }
 
-    if (_pimpl->renderer)
-        _pimpl->updateOverlayCaptures(glra);
+    outFps.stop();
+    {
+        Render::FrameOutsideScope outCaps(Render::FrameOutside::Captures);
+        if (_pimpl->renderer)
+            _pimpl->updateOverlayCaptures(glra);
+    }
 
+    // The rest of the function: chrome, and the alpha fixup at the end.
+    Render::FrameOutsideScope outChrome(Render::FrameOutside::Chrome);
     if (this->axiscrossEnabled && (!externalRendered || parallelgl)) {
         this->drawAxisCross();
     }
@@ -5429,6 +5477,18 @@ void View3DInventorViewer::renderScene()
     // the backend output (drawn before the traversal) catches up.
     if (_pimpl->renderer && _pimpl->renderer->needsRedraw())
         this->getSoRenderManager()->scheduleRedraw();
+
+    // A publish that spent its capture budget left shapes a frame stale
+    // (Render CaptureBudgetMS); keep publishing until none defer. Each
+    // follow-up publish captures at least one more shape, so this
+    // converges, and going through the normal redraw keeps the event
+    // loop serviced between passes -- which is the entire point.
+    if (selectionRoot) {
+        if (auto manager = selectionRoot->getRenderManager()) {
+            if (manager->getDeferredCaptureCount() > 0)
+                this->getSoRenderManager()->scheduleRedraw();
+        }
+    }
 
     // Immediately reschedule to get continuous animation.
     if (this->isAnimating()) {

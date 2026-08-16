@@ -36,6 +36,7 @@
 #include <Inventor/annex/FXViz/nodes/SoShadowStyle.h>
 #include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoShape.h>
+#include <Inventor/nodes/SoIndexedShape.h>
 #include <Inventor/nodes/SoImage.h>
 #include <Inventor/nodes/SoTexture2.h>
 #include <Inventor/nodes/SoSeparator.h>
@@ -83,6 +84,8 @@
 
 #include <Base/Console.h>
 #include "../ViewParams.h"
+#include "../RenderParams.h"
+#include <chrono>
 #include "../RenderTiming.h"
 #include "../InventorBase.h"
 #include "../SoFCUnifiedSelection.h"
@@ -638,6 +641,23 @@ public:
   int traversedepth;
   SoFCRenderer *renderer;
   int annotation;
+
+  // The capture budget of one publish (Render CaptureBudgetMS): how much
+  // time this rebuild's shape captures have spent, how many shapes were
+  // captured and deferred, and whether the budget applies at all -- only
+  // render()'s rebuild sets it, so a sensor-triggered selection capture
+  // outside a publish is never deferred (nothing would schedule the
+  // follow-up publish that catches a deferred shape up).
+  bool capturebudgeting = false;
+  double capturespentms = 0.0;
+  int capturecount = 0;
+  int deferredcount = 0;
+  std::chrono::steady_clock::time_point capturestart;
+
+  // Worker-emitted content adopted by the open capture, or held for the
+  // verify arm's compare at postShape (docs/WorkerVertexCache.md).
+  std::shared_ptr<const SoFCVertexCache::PrebuiltContent> verifyprebuilt;
+  int adoptedcount = 0;
 };
 
 std::unordered_map<const SoNode *,
@@ -1531,10 +1551,32 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
     PRIVATE(this)->override_selectstyle = false;
     PRIVATE(this)->usershaders.shaders.clear();
     PRIVATE(this)->publishdelta.begin();
+    // Arm the capture budget for this publish and this publish only
+    // (preShape defers nothing outside a publish -- see the member note).
+    PRIVATE(this)->capturebudgeting = true;
+    PRIVATE(this)->capturespentms = 0.0;
+    PRIVATE(this)->capturecount = 0;
+    PRIVATE(this)->deferredcount = 0;
+    PRIVATE(this)->adoptedcount = 0;
     {
       CaptureFlagGuard capguard;
       PRIVATE(this)->action->apply(path->getTail());
     }
+    PRIVATE(this)->capturebudgeting = false;
+    if (PRIVATE(this)->deferredcount > 0) {
+      // Shapes were left a publish stale: forget the scene id so the
+      // next render republishes (the caller schedules that redraw), and
+      // each pass captures at least one more shape until none defer.
+      PRIVATE(this)->sceneid = 0;
+    }
+    if (Gui::RenderParams::getLevelDebug()
+        && (PRIVATE(this)->deferredcount > 0
+            || PRIVATE(this)->adoptedcount > 0))
+      Base::Console().Message(
+          "capture budget: %d captured in %.0fms, %d deferred, "
+          "%d adopted\n",
+          PRIVATE(this)->capturecount, PRIVATE(this)->capturespentms,
+          PRIVATE(this)->deferredcount, PRIVATE(this)->adoptedcount);
     cache->close(state);
 
     {
@@ -1671,7 +1713,11 @@ SoFCRenderCacheManagerP::preSeparator(void *userdata,
     sensorcaches = &sensor.caches;
     for (auto it=sensorcaches->begin(); it!=sensorcaches->end();) {
       prevcache = *it;
-      if (prevcache->getNodeId() != node->getNodeId()) {
+      // An incomplete cache (one holding a capture-budget-deferred
+      // child) reads like a mismatch: reusing it would prune the very
+      // path the follow-up publish exists to walk again.
+      if (prevcache->getNodeId() != node->getNodeId()
+          || prevcache->isIncomplete()) {
         it = sensorcaches->erase(it);
         continue;
       }
@@ -2249,6 +2295,59 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
     ++it;
   }
 
+  // Worker-emitted content for this node (docs/WorkerVertexCache.md):
+  // the fill worker already built the arrays the capture below would
+  // re-derive by traversal; adopt them instead. Consumed here one-shot
+  // -- takePrebuilt drops the entry when the node was touched since
+  // registration.
+  std::shared_ptr<const SoFCVertexCache::PrebuiltContent> prebuilt;
+  const int wvcmode = Gui::RenderParams::getWorkerVertexCache();
+  if (wvcmode > 0)
+    prebuilt = SoFCVertexCache::takePrebuilt(node);
+
+  // The capture budget (Render CaptureBudgetMS). A publish that has
+  // already spent its budget capturing changed shapes keeps this shape's
+  // previous vertex cache for the frame -- the mesh is a publish stale,
+  // in a scene that is churning anyway -- and a first-time shape simply
+  // stays out of the frame, which is what a live import looks like.
+  // Every open ancestor cache is poisoned so the next publish walks back
+  // down here (a completed ancestor would otherwise turn valid, prune,
+  // and freeze the stale child in for good), and the stale cache goes
+  // back into the sensor so the NEXT deferral still has a stand-in.
+  // Requiring one capture first makes the publish sequence monotonic:
+  // each pass captures at least one shape, so the storm drains.
+  // A shape with adoptable prebuilt content is never deferred: the
+  // budget rations traversal-capture time, and an adoption costs a
+  // fraction of it while producing a CORRECT frame instead of a stale
+  // one.
+  if (self->capturebudgeting && self->capturecount > 0 && !prebuilt) {
+    const long budget = Gui::RenderParams::getCaptureBudgetMS();
+    if (budget > 0 && self->capturespentms >= double(budget)) {
+      if (prev) {
+        currentcache->addChildCache(state, prev);
+        sensor.caches.emplace_back(prev);
+      }
+      for (auto & opencache : self->stack)
+        opencache->setIncomplete();
+      // The caches up to the object's selection root additionally
+      // record that the deferred shape is one of THEIR OWN: entries
+      // merged through a so-marked cache carry the mark out to the
+      // display (VertexCacheEntry::incomplete), so an adopted point or
+      // line set never draws ahead of a face set the budget held back
+      // (#13b). Up to the selection root and no further, because the
+      // root is where the object's sibling drawables -- possibly
+      // captured under nested caches of their own -- all pass through,
+      // and anything above it belongs to other objects.
+      for (auto it = self->stack.rbegin(); it != self->stack.rend(); ++it) {
+        (*it)->setIncompleteHere();
+        if ((*it)->isSelectionRoot())
+          break;
+      }
+      ++self->deferredcount;
+      return SoCallbackAction::PRUNE;
+    }
+  }
+
   static int noproto = -1;
   if (noproto < 0)
     noproto = std::getenv("FC_NO_VCACHE_PROTO") ? 1 : 0;
@@ -2264,6 +2363,8 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
     }
   }
 
+  if (self->capturebudgeting)
+    self->capturestart = std::chrono::steady_clock::now();
   state->push();
   self->vcache.reset(new SoFCVertexCache(state, const_cast<SoNode*>(node), prev));
   if (self->selnodeid.size())
@@ -2272,6 +2373,26 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
 
   currentcache->beginChildCaching(state, self->vcache);
   self->vcache->open(state);
+
+  if (prebuilt) {
+    if (wvcmode >= 2) {
+      // Verify arm: run the full traversal capture and compare against
+      // the worker's content at postShape. An out-of-contract shape is
+      // not a defect (the adoption path would have fallen back), so it
+      // is not compared.
+      if (self->vcache->prebuiltApplicable())
+        self->verifyprebuilt = std::move(prebuilt);
+    }
+    else if (self->vcache->installPrebuilt(*prebuilt)) {
+      ++self->adoptedcount;
+      // Skip the per-primitive capture; postShape still fires (post
+      // callbacks run on PRUNE) and closes the cache exactly as it
+      // closes a traversal capture.
+      return SoCallbackAction::PRUNE;
+    }
+    // Contract fallback: the cache is open and empty -- the traversal
+    // capture below is the normal path.
+  }
   return SoCallbackAction::CONTINUE;
 }
 
@@ -2352,13 +2473,47 @@ SoFCRenderCacheManagerP::postShape(void *userdata,
                                    const SoNode * node)
 {
   SoFCRenderCacheManagerP *self = reinterpret_cast<SoFCRenderCacheManagerP*>(userdata);
-  if (!self->vcache)
+  if (!self->vcache) {
+    // Never let a verify entry survive into another shape's compare.
+    self->verifyprebuilt.reset();
     return SoCallbackAction::PRUNE;
+  }
 
   SoState *state = action->getState();
   state->pop();
   self->vcache->close(state);
   self->stack.back()->endChildCaching(state, self->vcache);
+
+  if (self->capturebudgeting) {
+    self->capturespentms += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - self->capturestart).count();
+    ++self->capturecount;
+  }
+
+  if (self->verifyprebuilt) {
+    std::string diff;
+    if (!self->vcache->comparePrebuilt(*self->verifyprebuilt, diff)) {
+      int nodeindices = -1;
+      if (node->isOfType(SoIndexedShape::getClassTypeId()))
+        nodeindices = static_cast<const SoIndexedShape*>(node)
+            ->coordIndex.getNum();
+      FC_ERR("worker vertex cache mismatch on " << node->getName()
+             << " (" << node->getTypeId().getName().getString()
+             << " " << static_cast<const void*>(node)
+             << " coordIndex " << nodeindices
+             << " nodeid " << node->getNodeId()
+             << " stamped " << self->verifyprebuilt->nodeid
+             << "): " << diff);
+    }
+    else
+      // Console directly, not FC_LOG: the verify arm is an opt-in
+      // diagnostic and its positive signal must be distinguishable
+      // from "never ran" without a log-level hunt.
+      Base::Console().Log("worker vertex cache verified on %s (%s)\n",
+                          node->getName().getString(),
+                          node->getTypeId().getName().getString());
+    self->verifyprebuilt.reset();
+  }
 
   static int debugproto = -1;
   if (debugproto < 0)
@@ -2449,6 +2604,12 @@ SbFCUniqueId
 SoFCRenderCacheManager::getSceneNodeId() const
 {
   return PRIVATE(this)->sceneid;
+}
+
+int
+SoFCRenderCacheManager::getDeferredCaptureCount() const
+{
+  return PRIVATE(this)->deferredcount;
 }
 
 SoFCRenderCache *

@@ -3071,7 +3071,10 @@ void expandField(std::vector<T> &values, int count, const T &def)
 {
     if (static_cast<int>(values.size()) == count)
         return;
-    values.assign(count, values.empty() ? def : values.front());
+    // by value: assign() frees the old buffer before it copies, so handing
+    // it a reference into that buffer is a use after free
+    const T current = values.empty() ? def : values.front();
+    values.assign(count, current);
 }
 
 /** Follow a change of entry count, without materialising a uniform field

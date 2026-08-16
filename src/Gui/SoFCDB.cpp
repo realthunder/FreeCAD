@@ -47,6 +47,10 @@
 #include <Base/Tools.h>
 #include <zipios++/gzipoutputstream.h>
 
+#include <cstring>
+#include <Inventor/CoinFork.h>
+#include <Inventor/elements/SoLazyElementEx.h>
+
 #include "SoFCDB.h"
 #include "Camera.h"
 #include "Flag.h"
@@ -82,7 +86,6 @@
 #include "Inventor/SoFCRenderCache.h"
 #include "Inventor/SoFCDisplayMode.h"
 #include "Inventor/SoFCShapeInfo.h"
-#include "Inventor/CoinLazyElementEx.h"
 #include "Inventor/SoAutoZoomTranslation.h"
 #include "Inventor/SoFCRenderMaterial.h"
 #include "Inventor/SoDrawingGrid.h"
@@ -112,12 +115,27 @@ SbBool Gui::SoFCDB::isInitialized()
     return init_done;
 }
 
+bool Gui::SoFCDB::hasForkFeature(const char* feature)
+{
+    if (!feature || !*feature)
+        return false;
+    const char* tags = coin_fork_features();
+    const std::size_t len = std::strlen(feature);
+    for (const char* p = tags; (p = std::strstr(p, feature)) != nullptr; p += len) {
+        const bool starts = (p == tags) || (p[-1] == ' ');
+        const bool ends = (p[len] == '\0') || (p[len] == ' ');
+        if (starts && ends)
+            return true;
+    }
+    return false;
+}
+
 void Gui::SoFCDB::init()
 {
     SoInteraction                   ::init();
-    // bind the coin fork's extended lazy element if this Coin has it;
-    // the render cache then sees per-face material arrays
-    CoinLazyElementEx               ::install();
+    // the coin fork's extended lazy element, which is what carries
+    // per-face material arrays down to the render cache
+    SoLazyElementEx                 ::install();
     RotTransDragger                 ::initClass();
     SoGLRenderActionElement         ::initClass();
     SoFCInteractiveElement          ::initClass();

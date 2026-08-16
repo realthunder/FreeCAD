@@ -107,6 +107,7 @@ GuiExport Render::AOConfig translateAOConfig(App::PropertyContainer * view);
 GuiExport Render::CavityConfig translateCavityConfig(App::PropertyContainer * view);
 GuiExport Render::MatcapConfig translateMatcapConfig(App::PropertyContainer * view);
 GuiExport Render::RenderDebugConfig translateRenderDebugConfig(App::PropertyContainer * view);
+GuiExport Render::OcclusionCullConfig translateOcclusionCullConfig(App::PropertyContainer * view);
 
 /// Extract a property value as floats zero-padded to vec4 lanes — the
 /// dynamic-property shader parameter protocol (docs/RenderDebug.md §2.5,
@@ -195,6 +196,29 @@ GuiExport float translateEffectResolution(App::PropertyContainer * view);
 GuiExport float translateSSAOResolution(App::PropertyContainer * view);
 GuiExport float translateLevelTolerance(App::PropertyContainer * view);
 GuiExport size_t translateGpuMemoryBudget(App::PropertyContainer * view);
+/// How much of the error held back to fit the GPU budget survives each
+/// plan that fits (docs/SceneStreaming.md #13c.3) -- the release half
+/// of the ladder's control loop, and the half whose absence made it
+/// oscillate.
+GuiExport float translateLevelPressureRelease(App::PropertyContainer * view);
+GuiExport bool translateLevelDebug(App::PropertyContainer * view);
+GuiExport bool translateDowngradeLedger(App::PropertyContainer * view);
+GuiExport bool translateClimbHardLimit(App::PropertyContainer * view);
+GuiExport int translateClimbAdmitBatch(App::PropertyContainer * view);
+GuiExport int translateDescentOrderBatch(App::PropertyContainer * view);
+/// The rest band above the GPU budget inside which the downgrade sweep
+/// does not trigger (docs/SceneStreaming.md #13c.6) -- what lets an
+/// equilibrium that lands on the budget line stand instead of dither.
+GuiExport float translateLevelBudgetDeadband(App::PropertyContainer * view);
+GuiExport bool translateShapeVertices(App::PropertyContainer * view);
+GuiExport bool translatePressureDropEdges(App::PropertyContainer * view);
+/// The frame wait between the element contract's pressure stages,
+/// escalating and releasing both (docs/SceneStreaming.md #13b).
+GuiExport int translateElementGateStagger(App::PropertyContainer * view);
+/// Whether the element gates should suppress both classes outright
+/// right now: Render_LoadDropElements is on, coarse-first is on, and
+/// some document is still arriving (docs/SceneStreaming.md #13b).
+GuiExport bool translateLoadDropElements(App::PropertyContainer * view);
 
 } // namespace RendererBridge
 } // namespace Gui

@@ -42,10 +42,17 @@
 # include <QStyle>
 # include <QStyleHints>
 # include <QStyleOptionMenuItem>
+# include <QSurfaceFormat>
 # include <QTextStream>
 # include <QTimer>
 # include <QWindow>
 # include <QOpenGLWidget>
+#endif
+
+#include <Inventor/CoinFork.h>
+
+#ifndef _WIN32
+# include <dlfcn.h>
 #endif
 
 // Qt6 removed the QtPlatformHeaders module; see the use site below for why the
@@ -1967,6 +1974,22 @@ bool Application::isClosing()
     return d->isClosing;
 }
 
+// A plain static, not a member of the pimpl: the owner is a workbench
+// whose queue is a function-local static of its own, and this only has
+// to outlive the drains that set it. False is the honest default for a
+// build with no such workbench loaded -- nothing is deferring anything.
+static bool s_buildingVisuals = false;
+
+void Application::setBuildingVisuals(bool building)
+{
+    s_buildingVisuals = building;
+}
+
+bool Application::isBuildingVisuals() const
+{
+    return s_buildingVisuals;
+}
+
 MacroManager *Application::macroManager()
 {
     return d->macroMngr;
@@ -2201,6 +2224,27 @@ void Application::initTypes()
 
 void Application::initOpenInventor()
 {
+    // The Coin fork ships a deliberately divergent ABI under its own binary
+    // name (libCoinRT). The rename keeps stock libCoin out; this check
+    // catches the remaining hazard: a stale build of the fork itself, where
+    // the loaded library's object layouts differ from the headers this
+    // binary was compiled against and every virtual call is a coin toss.
+    if (coin_fork_abi() != COIN_FORK_ABI_VERSION) {
+        const char *libpath = "<unknown>";
+#ifndef _WIN32
+        Dl_info info;
+        if (dladdr(reinterpret_cast<void*>(&coin_fork_abi), &info) && info.dli_fname)
+            libpath = info.dli_fname;
+#endif
+        Base::Console().Error(
+            "Coin library ABI mismatch: compiled against fork ABI %d, but the "
+            "loaded library (%s) reports ABI %d. Rebuild/reinstall the Coin "
+            "fork and anything linking it (pivy), then rebuild FreeCAD.\n",
+            COIN_FORK_ABI_VERSION, libpath, coin_fork_abi());
+        throw Base::RuntimeError("Coin library ABI mismatch, refusing to start "
+                                 "(see the log for the loaded library path)");
+    }
+
     // init the Inventor subsystem
     SoDB::init();
     SIM::Coin3D::Quarter::Quarter::init();
@@ -2221,6 +2265,27 @@ GuiExport void postMainWindowSetup(MainWindow &mw);
 void preAppSetup()
 {
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+
+    // FC_SWAP_INTERVAL: how many display refreshes a buffer swap waits
+    // for. Qt's default is 1, which pins the frame to the vblank grid --
+    // a frame whose real cost is 19.5 ms is presented in 33.3 ms on a
+    // 60 Hz screen (two intervals) and 25.0 ms on a 120 Hz one (three).
+    // That wait is idle, and it lands in the frame line's `outside`
+    // term, where it reads as though the application were spending the
+    // time. Set 0 to measure what a frame costs rather than when it is
+    // shown. Not a preference: it is a measurement knob, off the
+    // parameter tree on purpose so no user session inherits a busy-loop.
+    //
+    // ! __GL_SYNC_TO_VBLANK=0 does NOT substitute for this. It works
+    // (glxgears goes 60 -> 12984 fps) and still leaves this application
+    // vblank-locked, because the swap that waits is the one Qt makes for
+    // the composited top-level window, not the one the driver variable
+    // reaches.
+    if (const char *iv = getenv("FC_SWAP_INTERVAL")) {
+        QSurfaceFormat fmt = QSurfaceFormat::defaultFormat();
+        fmt.setSwapInterval(std::atoi(iv));
+        QSurfaceFormat::setDefaultFormat(fmt);
+    }
 
 #if (QT_VERSION >= QT_VERSION_CHECK(5, 12, 0))
     QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL);

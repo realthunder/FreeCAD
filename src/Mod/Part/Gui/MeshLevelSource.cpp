@@ -37,6 +37,7 @@
 #endif
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstdlib>
@@ -48,8 +49,11 @@
 #include <vector>
 
 #include <QCoreApplication>
+#include <QTimer>
 
 #include <App/PropertyStandard.h>
+#include <Base/Console.h>
+#include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/RenderParams.h>
 #include <Gui/Renderer/MeshSource.h>
@@ -94,6 +98,23 @@ struct RefineJob {
     const void *tag = nullptr;
     LevelSourceStatePtr st;
     std::function<void(const TopoDS_Shape &)> apply;
+    /// The decimation descent's job body (sec 13c): runs on the worker
+    /// -- it owns a snapshot of the display arrays, never the nodes --
+    /// and returns the landing to marshal to the GUI thread, or null
+    /// when the rung refused. Set instead of st/apply.
+    std::function<std::function<void()>()> work;
+    /// A plan-ordered descent (the dynamic-scale re-tessellation or a
+    /// decimation job): counted in the registry's in-flight tally --
+    /// the downgrade ledger holds its credit open on it -- and queued
+    /// AHEAD of climbs: under the pressure that ordered it, freeing
+    /// memory outranks spending more (the climb hard gate refuses new
+    /// climbs anyway, but jobs already queued should not starve it).
+    bool descent = false;
+    /// The sweep order this job descends for (0 = none): inherited
+    /// from the thread-current generation at enqueue, re-entered
+    /// around the landing so chained enqueues inherit it too. What
+    /// the downgrade ledger's write-off horizon actually rides.
+    uint64_t gen = 0;
 };
 
 std::mutex s_refineMutex;
@@ -158,6 +179,261 @@ bool debugCeilingHit()
     return ++builds == at;
 }
 
+/// Every descent job settles its in-flight count exactly once, on
+/// whichever exit it takes -- the ledger's write-off horizon rides it.
+void settleDescent(const RefineJob &job)
+{
+    if (job.descent)
+        Render::MeshSourceRegistry::instance().noteDescentSettled(job.gen);
+}
+
+//////////////////////////////////////////////////////////////////////
+// The landing pump. A worker marshals its finished job to the GUI
+// thread with a queued invocation -- and Qt delivers EVERY pending
+// queued event in one sendPostedEvents sweep, so a batch of landings
+// (ClimbAdmitBatch refines, a DescentOrderBatch of coarsenings) ran
+// back-to-back inside a single event-loop turn: measured 1-2.7s
+// stretches in which no timer, paint or input event was served. The
+// pump gives each turn a time budget instead: landings queue here, a
+// zero-timer runs as many as the budget allows, and everything else
+// the loop owes gets its turn between reschedules.
+//
+// GUI thread only, all of it -- the workers reach it through one
+// queued hop that does nothing but enqueue.
+
+/// A worker landing and the sweep order it descends for: the pump
+/// re-enters the generation while running it, so what the landing
+/// queues in turn (a pooled fill, a deferred rebuild) counts under
+/// the same order.
+struct LandingItem {
+    std::function<void()> fn;
+    uint64_t gen = 0;
+};
+std::deque<LandingItem> s_landingQueue;
+
+/// Spent pump items go to a reaper thread instead of destructing in
+/// the turn: a landing's closure owns the worker's payload -- the
+/// meshed TopoShape copy of an exact climb chief among it -- and
+/// freeing those measured 0.1-0.2s of a pump window on the GUI
+/// thread (the "frees" split in the pump line). Everything these
+/// closures own is safe to destroy off-thread: OCCT handles carry
+/// atomic refcounts, Coin nodes appear only as raw unowned pointers,
+/// and the detached fill arrays are plain memory.
+std::mutex s_reaperMutex;
+std::condition_variable s_reaperCv;
+std::deque<std::function<void()>> s_reaperQueue;
+bool s_reaperStarted = false;
+
+void reapOffThread(std::function<void()> &&fn)
+{
+    if (!fn)
+        return;
+    {
+        std::lock_guard<std::mutex> lock(s_reaperMutex);
+        s_reaperQueue.push_back(std::move(fn));
+        if (!s_reaperStarted) {
+            s_reaperStarted = true;
+            std::thread([]() {
+                for (;;) {
+                    std::deque<std::function<void()>> batch;
+                    {
+                        std::unique_lock<std::mutex> lock(s_reaperMutex);
+                        s_reaperCv.wait(
+                            lock, [] { return !s_reaperQueue.empty(); });
+                        batch.swap(s_reaperQueue);
+                    }
+                    // The destructions run here, unlocked.
+                    batch.clear();
+                }
+            }).detach();
+        }
+    }
+    s_reaperCv.notify_one();
+}
+/// Plan-ordered hook bodies deferred out of the plan callback (the
+/// pacing's other half): a sweep fires up to a batch of hooks in ONE
+/// callback, and running their bodies there -- a snapshot each for the
+/// decimation descents, a resident-rung rebuild each for the
+/// exact-resident downgrades -- measured 0.6-1.3s bursts. Keyed by the
+/// source's primary tag so an unregistration (the view provider's
+/// destructor among them) can purge what must not run on a dead owner.
+/// Each queued item counts in the registry's descent tally from
+/// enqueue to run/purge -- the ledger's horizon covers the deferral.
+struct GuiWorkItem {
+    const void *tag = nullptr;
+    std::function<void()> body;
+    /// Whether the item counts in the registry's descent tally (a
+    /// paced climb body does not -- see queueLevelGuiWork).
+    bool descent = true;
+    /// The sweep order this body descends for (see RefineJob::gen).
+    uint64_t gen = 0;
+};
+std::deque<GuiWorkItem> s_guiWork;
+bool s_landingScheduled = false;
+
+void pumpLandings();
+
+void scheduleLandingPump()
+{
+    if (s_landingScheduled)
+        return;
+    s_landingScheduled = true;
+    QTimer::singleShot(0, QCoreApplication::instance(),
+                       []() { pumpLandings(); });
+}
+
+/// What the landing pump actually spends, split by what it ran
+/// (LevelDebug narration). The <200ms interactivity gate fails on this
+/// pump's turns, and the visual-build split only covers the updateVisual
+/// inside the bodies -- without this line the difference between "the
+/// pump's items are the stall" and "the stall is somewhere else
+/// entirely" is not measurable. Reported like VisualSplitReporter: a
+/// cumulative delta line once 0.2s of pump time has accumulated, plus
+/// the worst single turn in the window, which is the number the gate's
+/// worst gap must be compared against.
+struct PumpAccount {
+    double landSec = 0, bodySec = 0, worstTurn = 0;
+    /// The worst single item this window: a turn near budget plus one
+    /// oversized atom is the shape the gate fails on, and without this
+    /// number "the items are too big" and "too many items ran" read
+    /// the same.
+    double worstItem = 0;
+    /// What handing spent items to the reaper still costs the turn
+    /// (the destruction itself runs off-thread now; this measured
+    /// 0.1-0.2s per window when the frees ran inline).
+    double freeSec = 0;
+    std::size_t turns = 0, landings = 0, bodies = 0;
+};
+static PumpAccount s_pumpAccount;
+
+/// Whether the level plan is narrating (same rule as the visual-build
+/// split in ViewProviderExt.cpp): the global parameter or the
+/// FC_LEVEL_DEBUG environment.
+static bool pumpDebugOn()
+{
+    static const bool env = std::getenv("FC_LEVEL_DEBUG") != nullptr;
+    return env || Gui::RenderParams::getLevelDebug();
+}
+
+bool s_inLandingPump = false;
+
+void pumpLandings()
+{
+    s_landingScheduled = false;
+    Base::StateLocker pumping(s_inLandingPump);
+    const double budget =
+        std::max(1L, Gui::RenderParams::getLevelLandBudgetMS()) / 1000.0;
+    const auto start = std::chrono::steady_clock::now();
+    auto now = []() { return std::chrono::steady_clock::now(); };
+    auto since = [](std::chrono::steady_clock::time_point t0,
+                    std::chrono::steady_clock::time_point t1) {
+        return std::chrono::duration<double>(t1 - t0).count();
+    };
+    auto spent = [&start, budget, &now, &since]() {
+        return since(start, now()) >= budget;
+    };
+    PumpAccount &acc = s_pumpAccount;
+    // Landings first: they free memory and re-arm sources; the hook
+    // bodies behind them typically queue MORE work.
+    while (!s_landingQueue.empty()) {
+        auto item = std::move(s_landingQueue.front());
+        s_landingQueue.pop_front();
+        auto t0 = now();
+        {
+            // The landing's chained enqueues (a pooled fill, a
+            // deferred rebuild) inherit its sweep order -- the
+            // downgrade ledger's horizon rides the whole chain.
+            Render::MeshSourceRegistry::DescentGenScope scope(item.gen);
+            item.fn();
+        }
+        const double d = since(t0, now());
+        acc.landSec += d;
+        acc.worstItem = std::max(acc.worstItem, d);
+        ++acc.landings;
+        auto f0 = now();
+        reapOffThread(std::move(item.fn));
+        acc.freeSec += since(f0, now());
+        if (spent())
+            break;
+    }
+    // At least one hook body per turn even when the budget went to
+    // landings: a steady landing stream must not starve the orders
+    // that free memory.
+    bool ranGui = false;
+    while (!s_guiWork.empty() && (!ranGui || !spent())) {
+        auto item = std::move(s_guiWork.front());
+        s_guiWork.pop_front();
+        auto t0 = now();
+        {
+            Render::MeshSourceRegistry::DescentGenScope scope(item.gen);
+            item.body();
+        }
+        const double d = since(t0, now());
+        acc.bodySec += d;
+        acc.worstItem = std::max(acc.worstItem, d);
+        ++acc.bodies;
+        if (item.descent)
+            Render::MeshSourceRegistry::instance().noteDescentSettled(
+                item.gen);
+        auto f0 = now();
+        reapOffThread(std::move(item.body));
+        acc.freeSec += since(f0, now());
+        ranGui = true;
+    }
+    ++acc.turns;
+    acc.worstTurn = std::max(acc.worstTurn, since(start, now()));
+    const double total = acc.landSec + acc.bodySec;
+    if (total >= 0.2 && pumpDebugOn()) {
+        Base::Console().Message(
+            "landing pump: %zu turns spent %.3fs = landings %.3fs in %zu "
+            "+ hook bodies %.3fs in %zu + frees %.3fs; worst turn %.0fms, "
+            "worst item %.0fms (budget %.0fms)\n",
+            acc.turns, total, acc.landSec, acc.landings, acc.bodySec,
+            acc.bodies, acc.freeSec, acc.worstTurn * 1000.0,
+            acc.worstItem * 1000.0, budget * 1000.0);
+        acc = PumpAccount{};
+    }
+    if (!s_landingQueue.empty() || !s_guiWork.empty())
+        scheduleLandingPump();
+}
+
+/// Purge every deferred hook body queued under \a tag (the tag is
+/// being unregistered or re-registered); their in-flight counts settle
+/// here, unrun. GUI thread.
+void purgeLevelGuiWork(const void *tag)
+{
+    if (!tag || s_guiWork.empty())
+        return;
+    auto it = s_guiWork.begin();
+    while (it != s_guiWork.end()) {
+        if (it->tag == tag) {
+            const bool counted = it->descent;
+            const uint64_t gen = it->gen;
+            it = s_guiWork.erase(it);
+            if (counted)
+                Render::MeshSourceRegistry::instance().noteDescentSettled(
+                    gen);
+        }
+        else {
+            ++it;
+        }
+    }
+}
+
+/// Marshal \a fn from a worker to the paced GUI queue; \a gen is the
+/// sweep order the landing belongs to (RefineJob::gen).
+void queueLandingFromWorker(std::function<void()> fn, uint64_t gen = 0)
+{
+    auto payload = std::make_shared<std::function<void()>>(std::move(fn));
+    QMetaObject::invokeMethod(
+        QCoreApplication::instance(),
+        [payload, gen]() {
+            s_landingQueue.push_back({std::move(*payload), gen});
+            scheduleLandingPump();
+        },
+        Qt::QueuedConnection);
+}
+
 void refineLoop()
 {
     for (;;) {
@@ -168,17 +444,65 @@ void refineLoop()
             job = std::move(s_refineQueue.front());
             s_refineQueue.pop_front();
             auto it = s_refineTokens.find(job.tag);
-            if (it == s_refineTokens.end() || it->second != job.token)
-                continue;  // canceled while queued
+            if (it == s_refineTokens.end() || it->second != job.token) {
+                // canceled while queued
+                settleDescent(job);
+                continue;
+            }
+        }
+        if (job.work) {
+            // A decimation job clusters arrays it owns: no OCCT, no
+            // fresh tessellation, and NO memory-floor refusal -- it
+            // frees memory, and pressure is exactly when it runs.
+            std::function<void()> landing = job.work();
+            if (!landing) {
+                settleDescent(job);
+                continue;
+            }
+            auto payload = std::make_shared<
+                std::pair<RefineJob, std::function<void()>>>(
+                std::move(job), std::move(landing));
+            const uint64_t gen = payload->first.gen;
+            queueLandingFromWorker([payload]() {
+                settleDescent(payload->first);
+                {
+                    std::lock_guard<std::mutex> lock(s_refineMutex);
+                    auto it = s_refineTokens.find(payload->first.tag);
+                    if (it == s_refineTokens.end()
+                        || it->second != payload->first.token)
+                        return;
+                    s_refineTokens.erase(it);
+                }
+                payload->second();
+            }, gen);
+            continue;
         }
         // Pre-build ceiling estimate: a build started under a low
         // MemAvailable is a bad_alloc that has not happened yet — and
         // by the time it does, it may be somebody else's. The job is
         // dropped (its ask stands, so it is not retried into the same
         // wall); the observation flips the plans to demoting.
+        // The simulation knob (the LevelCeilingSimulateMB parameter):
+        // raise
+        // the floor above whatever the machine actually has free, and
+        // every exact build is refused exactly as it would be on a
+        // machine that had run out -- which is the only way to exercise
+        // this half of the plan on a box with memory to spare, and the
+        // premise of the whole coarse-first design is a model that does
+        // not fit. Read per job, not once, so it can be turned on
+        // against a running viewer.
+        size_t floor = s_memFloorBytes;
+        if (const long simMB = Gui::RenderParams::getLevelCeilingSimulateMB())
+            floor = std::max(floor, size_t(simMB) << 20);
         const size_t avail = Render::MemoryBudget::availableMemory();
-        if (avail && avail < s_memFloorBytes) {
-            Render::MeshSourceRegistry::instance().observeMemoryCeiling();
+        if (avail && avail < floor) {
+            // The shortfall travels with the observation: it is the
+            // only place that knows both numbers, and it is what lets
+            // the level plan buy memory back with visible error --
+            // exactly as much as the floor is missing and no more.
+            Render::MeshSourceRegistry::instance().observeMemoryCeiling(
+                floor - avail);
+            settleDescent(job);
             continue;
         }
         bool outOfMemory = false;
@@ -190,48 +514,71 @@ void refineLoop()
             meshed.Nullify();
         }
         if (outOfMemory) {
-            Render::MeshSourceRegistry::instance().observeMemoryCeiling();
+            // A bad_alloc states only "no", never how much: what it
+            // costs to make the next build fit is exactly the number
+            // nobody has. So the shortfall is re-read here rather than
+            // invented -- normally the allocation failed because the
+            // system is under the floor, and that gap is the ask; when
+            // it is not (one outsized build on a machine with room),
+            // 0 says so, and the plan keeps to what the camera cannot
+            // see.
+            const size_t now = Render::MemoryBudget::availableMemory();
+            Render::MeshSourceRegistry::instance().observeMemoryCeiling(
+                now && now < floor ? floor - now : 0);
+            settleDescent(job);
             continue;
         }
-        if (meshed.IsNull())
+        if (meshed.IsNull()) {
+            settleDescent(job);
             continue;
+        }
         // The apply reads and writes live document geometry and Coin
         // nodes: GUI thread only. The token is re-checked there — the
         // marshalled hop is one more window for a cancellation.
         auto payload = std::make_shared<std::pair<RefineJob, TopoDS_Shape>>(
             std::move(job), std::move(meshed));
-        QMetaObject::invokeMethod(
-            QCoreApplication::instance(),
-            [payload]() {
-                {
-                    std::lock_guard<std::mutex> lock(s_refineMutex);
-                    auto it = s_refineTokens.find(payload->first.tag);
-                    if (it == s_refineTokens.end()
-                        || it->second != payload->first.token)
-                        return;
-                    // Consumed: the callback re-registers (at error 0),
-                    // but should that not happen, a second fire is not
-                    // an option either.
-                    s_refineTokens.erase(it);
-                }
-                payload->first.apply(payload->second);
-            },
-            Qt::QueuedConnection);
+        const uint64_t gen = payload->first.gen;
+        queueLandingFromWorker([payload]() {
+            settleDescent(payload->first);
+            {
+                std::lock_guard<std::mutex> lock(s_refineMutex);
+                auto it = s_refineTokens.find(payload->first.tag);
+                if (it == s_refineTokens.end()
+                    || it->second != payload->first.token)
+                    return;
+                // Consumed: the callback re-registers (at error 0),
+                // but should that not happen, a second fire is not
+                // an option either.
+                s_refineTokens.erase(it);
+            }
+            payload->first.apply(payload->second);
+        }, gen);
     }
 }
 
-void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
-                      std::function<void(const TopoDS_Shape &)> apply)
+void enqueueLevelJob(RefineJob &&job)
 {
     resolveMemFloor();
+    if (job.descent) {
+        job.gen =
+            Render::MeshSourceRegistry::currentDescentGeneration();
+        Render::MeshSourceRegistry::instance().noteDescentQueued(job.gen);
+    }
     std::lock_guard<std::mutex> lock(s_refineMutex);
-    RefineJob job;
     job.token = ++s_refineCounter;
-    job.tag = tag;
-    job.st = st;
-    job.apply = std::move(apply);
-    s_refineTokens[tag] = job.token;
-    s_refineQueue.push_back(std::move(job));
+    s_refineTokens[job.tag] = job.token;
+    if (job.descent) {
+        // Ahead of the climbs, behind descents already queued: under
+        // the pressure that ordered it, freeing memory outranks
+        // spending more, and the plan's own order is kept among peers.
+        auto it = s_refineQueue.begin();
+        while (it != s_refineQueue.end() && it->descent)
+            ++it;
+        s_refineQueue.insert(it, std::move(job));
+    }
+    else {
+        s_refineQueue.push_back(std::move(job));
+    }
     if (s_refineThreads < refineThreadCap()) {
         ++s_refineThreads;
         std::thread(refineLoop).detach();
@@ -239,8 +586,28 @@ void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
     s_refineCv.notify_one();
 }
 
+void queueExactRefine(const void *tag, const LevelSourceStatePtr &st,
+                      std::function<void(const TopoDS_Shape &)> apply,
+                      bool descent = false)
+{
+    RefineJob job;
+    job.tag = tag;
+    job.st = st;
+    job.apply = std::move(apply);
+    job.descent = descent;
+    enqueueLevelJob(std::move(job));
+}
+
 void cancelExactRefine(const void *tag)
 {
+    // The worker token ONLY. The deferred hook bodies are NOT purged
+    // here: this cancel is also the climb's de-want leg, fired blindly
+    // by every plan over the coarse sources it no longer wants refined
+    // -- and purging then silently deleted the descent orders the SAME
+    // plan had just queued (measured: 1657 downgrade orders, 367
+    // landed effects, the ladder stuck 37MB over its budget with the
+    // pressure tolerance blown to 2128px). The bodies die with their
+    // OWNER instead: register/unregister purge explicitly.
     if (!tag)
         return;
     std::lock_guard<std::mutex> lock(s_refineMutex);
@@ -289,6 +656,16 @@ App::PropertyContainer *renderOverrides(App::Document *doc)
     return Gui::SceneServeSource::renderProperties();
 }
 
+/// How many rungs the ladder declares (Render_LevelCount). Clamped to
+/// at least one: a ladder with no rungs is the pre-ladder behaviour,
+/// which -1 already says, and a zero here would silently disable
+/// coarse-first for every shape instead.
+unsigned ladderRungs()
+{
+    const long n = Gui::RenderParams::getLevelCount();
+    return unsigned(std::max(1L, std::min(n, 16L)));
+}
+
 } // anonymous namespace
 
 int PartGui::coarseTessellationLevel(App::Document *doc)
@@ -303,7 +680,7 @@ int PartGui::coarseTessellationLevel(App::Document *doc)
     if (haveEnv) {
         static const int level = [] {
             int lvl = std::atoi(std::getenv("FC_COARSE_TESSELLATION"));
-            return lvl >= 0 && lvl < 8 ? lvl : -1;
+            return lvl >= 0 && unsigned(lvl) < ladderRungs() ? lvl : -1;
         }();
         return level;
     }
@@ -335,7 +712,62 @@ int PartGui::coarseTessellationLevel(App::Document *doc)
                 container->getPropertyByName("Render_CoarseTessellation")))
             lvl = prop->getValue();
     }
-    return lvl >= 0 && lvl < 8 ? int(lvl) : -1;
+    return lvl >= 0 && unsigned(lvl) < ladderRungs() ? int(lvl) : -1;
+}
+
+void PartGui::queueMeshLevelBuild(const void *tag,
+                                 const TopoDS_Shape &shape,
+                                 double deflection, double angle,
+                                 std::function<void(const TopoDS_Shape &)>
+                                     apply)
+{
+    if (shape.IsNull() || !tag || !apply || !(deflection > 0.0))
+        return;
+    // A state of its own, so the parameters travel with the job rather
+    // than being read off the registration -- the descent asks for a
+    // deflection the registration knows nothing about.
+    auto st = std::make_shared<LevelSourceState>();
+    st->shape = shape;
+    st->params.exactDeflection = deflection;
+    st->params.exactAngle = angle;
+    queueExactRefine(tag, st, std::move(apply), /*descent*/ true);
+}
+
+void PartGui::queueMeshDescentWork(const void *tag,
+                                   std::function<std::function<void()>()>
+                                       work)
+{
+    if (!tag || !work)
+        return;
+    RefineJob job;
+    job.tag = tag;
+    job.work = std::move(work);
+    job.descent = true;
+    enqueueLevelJob(std::move(job));
+}
+
+void PartGui::cancelMeshLevelWork(const void *tag)
+{
+    cancelExactRefine(tag);
+}
+
+void PartGui::queueLevelGuiWork(const void *tag, std::function<void()> body,
+                                bool descent)
+{
+    if (!body)
+        return;
+    uint64_t gen = 0;
+    if (descent) {
+        gen = Render::MeshSourceRegistry::currentDescentGeneration();
+        Render::MeshSourceRegistry::instance().noteDescentQueued(gen);
+    }
+    s_guiWork.push_back({tag, std::move(body), descent, gen});
+    scheduleLandingPump();
+}
+
+bool PartGui::inLandingPump()
+{
+    return s_inLandingPump;
 }
 
 void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
@@ -348,13 +780,20 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
                                       std::function<void()> onDemote,
                                       float demoteError,
                                       std::function<void()> onDowngrade,
-                                      App::Document *doc)
+                                      App::Document *doc,
+                                      const char *origin,
+                                      std::function<void()> onScaleDown,
+                                      float scaledError)
 {
     if (shape.IsNull() || (!faceTag && !lineTag))
         return;
     // Re-registration replaces the source, so whatever refine was in
-    // flight for the previous one is now building the wrong shape.
+    // flight for the previous one is now building the wrong shape --
+    // and the deferred hook bodies of the previous registration go
+    // with it (they capture the owner's state as it was).
     cancelExactRefine(faceTag ? faceTag : lineTag);
+    purgeLevelGuiWork(faceTag ? static_cast<const void *>(faceTag)
+                              : static_cast<const void *>(lineTag));
     // A degenerate shape cannot ladder; checked here so a registered
     // source always means "levels can be built".
     try {
@@ -403,16 +842,30 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
         const void *primary = faceTag ? faceTag : lineTag;
         auto fired = std::make_shared<std::atomic<bool>>(false);
         // The climb goes through the worker — unless a finer rung is
-        // still resident (a downgraded source): then the apply runs
-        // right here, GUI thread, with the live shape itself —
-        // transferMeshLevels reads same-shape as "activate the finest
-        // resident rung", no tessellation at all.
+        // still resident (a downgraded source): then the apply needs
+        // no tessellation at all -- transferMeshLevels reads same-shape
+        // as "activate the finest resident rung". It is still a full
+        // GUI rebuild, and a plan admits up to a whole climb batch in
+        // one callback, so the body is paced through the landing pump
+        // rather than run in place (a batch of these was the one
+        // rebuild path left outside the pump: measured as a 4.2s
+        // event-loop turn against the pump's worst 1.7s). The fired
+        // flag doubles as the cancel -- a de-want resets it and the
+        // queued body declines to run -- and the item is not a descent:
+        // the settle tally feeds the downgrade ledger.
         hooks.refine = [primary, st, fired,
                         apply = std::move(onExactBuilt)]() {
             if (fired->exchange(true))
                 return;
             if (meshLevelFinerResident(st->shape)) {
-                apply(st->shape);
+                queueLevelGuiWork(
+                    primary,
+                    [fired, st, apply]() {
+                        if (!fired->load())
+                            return;
+                        apply(st->shape);
+                    },
+                    /*descent*/ false);
                 return;
             }
             queueExactRefine(primary, st, apply);
@@ -430,6 +883,36 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
         if (meshLevelFinerResident(shape)) {
             hooks.demote = [st]() { demoteMeshLevels(st->shape); };
             hooks.fallbackError = builtError;
+            // The one demote that really is free: the finer rung it
+            // drops is not the one being displayed.
+            hooks.demoteDropsHiddenRung = true;
+        }
+        // The dynamic-scale descent (sec 13): a source already showing its
+        // coarse rung is not out of moves. Where a step coarser exists
+        // it arms BOTH ways down at that step's error, because a
+        // coarser display mesh gives back CPU RAM and upload bytes
+        // alike -- unlike the exact/coarse pair above, where the two
+        // directions free different things. A shared flag keeps the
+        // pair to one action; the rebuild re-registers and arms the
+        // step after it, which is what lets the plan keep descending
+        // the same object until the model fits.
+        //
+        // It does not overwrite a demote armed just above: that one
+        // drops a hidden exact rung for free, so it is strictly the
+        // better move and the plan should spend it first.
+        if (onScaleDown && scaledError > 0.0f) {
+            auto fired = std::make_shared<std::atomic<bool>>(false);
+            auto once = [fired, apply = std::move(onScaleDown)]() {
+                if (fired->exchange(true))
+                    return;
+                apply();
+            };
+            if (!hooks.demote) {
+                hooks.demote = once;
+                hooks.fallbackError = scaledError;
+            }
+            hooks.downgrade = once;
+            hooks.downgradeFallbackError = scaledError;
         }
     }
     else if (builtError <= 0.0f && demoteError > 0.0f) {
@@ -454,16 +937,40 @@ void PartGui::registerMeshLevelSource(const TopoDS_Shape &shape,
         }
         hooks.fallbackError = demoteError;
     }
+    // The ways DOWN are paced: a plan sweep fires up to a whole batch
+    // of these in one callback, and the bodies -- a snapshot each for
+    // the decimation descents, a resident-rung rebuild each for the
+    // exact-resident drops -- measured 0.6-1.3s of one event-loop turn
+    // when run in place. The hook itself becomes an enqueue onto the
+    // landing pump; the primary tag keys the purge that runs before
+    // the owner may die. The climb (refine) is not wrapped: it already
+    // only queues a worker job.
+    const void *primaryTag = faceTag ? static_cast<const void *>(faceTag)
+                                     : static_cast<const void *>(lineTag);
+    auto pace = [primaryTag](std::function<void()> fn)
+        -> std::function<void()> {
+        if (!fn)
+            return fn;
+        return [primaryTag, fn = std::move(fn)]() {
+            queueLevelGuiWork(primaryTag, fn);
+        };
+    };
+    hooks.demote = pace(std::move(hooks.demote));
+    hooks.downgrade = pace(std::move(hooks.downgrade));
+
     auto &reg = Render::MeshSourceRegistry::instance();
     if (faceTag)
-        reg.add(faceTag, gen, builtError, hooks);
+        reg.add(faceTag, gen, builtError, hooks, origin);
     if (lineTag)
-        reg.add(lineTag, gen, builtError, hooks);
+        reg.add(lineTag, gen, builtError, hooks, origin);
 }
 
 void PartGui::unregisterMeshLevelSource(SoNode *faceTag, SoNode *lineTag)
 {
     cancelExactRefine(faceTag ? faceTag : lineTag);
+    // Before the owner may die: the deferred bodies capture it.
+    purgeLevelGuiWork(faceTag ? static_cast<const void *>(faceTag)
+                              : static_cast<const void *>(lineTag));
     auto &reg = Render::MeshSourceRegistry::instance();
     if (faceTag)
         reg.remove(faceTag);

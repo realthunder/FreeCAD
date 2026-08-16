@@ -722,8 +722,27 @@ static void buildCamera(float *viewMtx, float *projMtx)
 
     const float aspect = s_height > 0
         ? float(s_width) / float(s_height) : 1.0f;
-    const float neard = bx::max(0.001f * s_diag, s_dist - 4.0f * s_diag);
-    const float fard = s_dist + 4.0f * s_diag;
+    // Fit the depth range to the scene instead of standing well clear of
+    // it. 4 * diag put the far plane eight bounding-radii out and let the
+    // near plane clamp to 0.001 * diag, which on the rack model is a
+    // 5163:1 range -- and the near plane is what depth resolution is
+    // proportional to. That bought a depth LSB of 0.147 world units at
+    // the geometry, so any two surfaces flush against each other (a plate
+    // mounted on a panel: everywhere, in an assembly) were within one LSB
+    // and the buffer could not say which was in front. Parts INSIDE the
+    // model bled through the panels covering them, and did it more the
+    // further away the camera stood, because the LSB grows with distance
+    // -- so backing off appeared to add detail and approaching appeared
+    // to lose it, when what was actually happening is that the far view
+    // was drawing things it should have hidden.
+    //
+    // 0.75 * diag is a bounding sphere of one and a half radii: still
+    // slack, and it takes the LSB to ~0.0003 units. A camera closer to
+    // the scene than that clamps to a fraction of its own distance, which
+    // is the case where the geometry is near the eye and precision is
+    // plentiful anyway.
+    const float neard = bx::max(0.002f * s_dist, s_dist - 0.75f * s_diag);
+    const float fard = s_dist + 0.75f * s_diag;
     // WebGL keeps the GL clip conventions (homogeneous depth); bgfx is
     // not initialized yet when the first frame builds its camera, so
     // don't ask getCaps().
@@ -2083,6 +2102,73 @@ static void sendDecisionLog(uint32_t id)
                 s_decisionLog.size());
 }
 
+/// Set whenever a snapshot has been applied, because applying one
+/// pushes the producer's OWN world-space light config (which is what
+/// relightForCamera exists to correct). A scene is applied more often
+/// than its version moves -- 383 applies against 143 versions on the
+/// rack model -- so a correction that dedupes on the version alone
+/// loses the race with every re-apply, and the scene goes dark again
+/// for as long as the camera then sits still.
+static bool s_relightDue = false;
+
+/// Re-derive the camera-relative lights against THIS viewer's camera.
+///
+/// A headlight is fixed in EYE space. The world-space direction the
+/// producer sent was unwound through the producer's viewing matrix
+/// (ViewLight::eyeSpace), and it is only true for that camera -- this
+/// viewer's is its own. Applied verbatim it lights the scene from
+/// wherever the producer happened to be pointing, which for a headless
+/// serving process is a default looking down -Z: the model's top faces
+/// catch everything and every surface facing the viewer falls to
+/// ambient. Exactly the reason setAutoZoomScale is recomputed here
+/// instead of taken from the snapshot.
+static void relightForCamera(const float *viewMtx)
+{
+    const Render::ViewLightConfig &src = s_snap.viewlightconf;
+    bool any = false;
+    for (int i = 0; i < src.count; ++i)
+        any = any || src.lights[i].eyeSpace;
+    if (!any)
+        return;
+    float inv[16];
+    bx::mtxInverse(inv, viewMtx);
+    Render::ViewLightConfig out = src;
+    for (int i = 0; i < out.count; ++i) {
+        Render::ViewLight &l = out.lights[i];
+        if (!l.eyeSpace)
+            continue;
+        const bx::Vec3 d = bx::mulXyz0(
+            bx::Vec3(l.eyeDirection[0], l.eyeDirection[1],
+                     l.eyeDirection[2]), inv);
+        const float len = bx::length(d);
+        if (len > 0.0f) {
+            l.direction[0] = d.x / len;
+            l.direction[1] = d.y / len;
+            l.direction[2] = d.z / len;
+        }
+        if (l.positional) {
+            const bx::Vec3 p = bx::mul(
+                bx::Vec3(l.eyePosition[0], l.eyePosition[1],
+                         l.eyePosition[2]), inv);
+            l.position[0] = p.x;
+            l.position[1] = p.y;
+            l.position[2] = p.z;
+        }
+    }
+    // Re-send when the derived config moves, and whenever a snapshot has
+    // been applied since the last send -- an apply pushes the producer's
+    // own world-space config, so a still camera must not let this
+    // conclude there is nothing left to correct.
+    static Render::ViewLightConfig sent;
+    static bool sentValid = false;
+    if (sentValid && !s_relightDue && sent == out)
+        return;
+    s_relightDue = false;
+    sent = out;
+    sentValid = true;
+    s_renderer->setViewLightConfig(out);
+}
+
 static void mainLoop()
 {
     const double frameNow = emscripten_get_now();
@@ -2164,6 +2250,9 @@ static void mainLoop()
 
     float viewMtx[16], projMtx[16];
     buildCamera(viewMtx, projMtx);
+    // The camera-relative lights, for the same reason as the autozoom
+    // scale below: both were baked against the producer's camera.
+    relightForCamera(viewMtx);
     // Recompute the autozoom (screen-constant) scale from THIS viewer's camera
     // each frame, replacing the value baked into the snapshot from the desktop
     // camera; otherwise screen-constant content (datum labels) keeps the desktop
@@ -2833,6 +2922,39 @@ static void autoFitCamera()
     s_userCam = true;         // a reproduced view; don't auto-refit
 }
 
+/// ?shapevertices=1 -- draw the vertex points that sit on the ends of a
+/// shape's edges (docs/SceneStreaming.md #13b). Off, like the desktop
+/// parameter of the same name, and it matters more here: such a point
+/// lands exactly on an edge already drawn, and it costs a 32-byte
+/// sprite instance record against the 4 bytes it occupies in the heap,
+/// so on a phone it is the most expensive thing on screen per unit of
+/// what it shows. All or nothing per point set, and only where the
+/// producer classified every one of its vertices as an edge endpoint --
+/// a point cloud always draws.
+static bool s_shapeVertices = false;
+
+/// ?cavity=<0|1> -- screen-space cavity shading, ON here, which is the
+/// viewer's own choice and not a relay of the producer's. Same reason
+/// the desktop parameter flipped on: the element contract may withhold
+/// an object's edge and vertex sets, and cavity is what still draws a
+/// crease when no line does -- one fullscreen multiply over targets the
+/// prepass has already paid for, which is why it survives even the
+/// degraded tier that drops AO. The producer's tuning (valley, ridge,
+/// radius) is kept when the snapshot carried it; only the switch is the
+/// viewer's, so a scene from a build older than v42 -- which says
+/// nothing about cavity at all -- gets the same look as a current one.
+static bool s_cavity = true;
+
+/// ?leveldebug -- narrate the level plan and the element gates, which is
+/// the desktop's FC_LEVEL_DEBUG / Render_LevelDebug by another door
+/// (there is no environment to read here). Pushed with the per-snapshot
+/// settings rather than once at startup: set once at startup it was
+/// SILENTLY LOST -- every "render levels:" line this tier is written to
+/// print stayed dark, and the gate counters could not be read at all
+/// until the flag was forced. An instrument nobody has seen fire is not
+/// an instrument.
+static bool s_levelDebug = false;
+
 /// Feed the loaded snapshot to the renderer; a first load also fits
 /// the camera (streamed updates keep the user's).
 static void applySnapshot(bool fit)
@@ -2843,11 +2965,23 @@ static void applySnapshot(bool fit)
     markDirty();
     // One line per apply — the streamed updates were previously
     // silent, which made "did the page get the republish?" guesswork.
+    // ...including how many objects the publish says it holds only part
+    // of (SceneDump v55). Zero is the settled answer; a non-zero count
+    // is the producer's capture budget still draining, and the only
+    // evidence on this side that the mark travelled at all -- the gates
+    // that read it report separately, and cannot distinguish "the rule
+    // did not fire" from "the bit never arrived".
+    std::set<uint64_t> incomplete;
+    for (const auto &d : s_snap.scene) {
+        if (d.objectIncomplete)
+            incomplete.insert(d.objectKey);
+    }
     std::printf("fcviewer: apply snapshot: %zu draws, %zu post, "
-                "%zu splices%s\n",
+                "%zu splices, %zu objects incomplete%s\n",
                 s_snap.scene.size(),
                 s_snap.usershaderconf.shaders.size(),
                 s_snap.usershaderconf.splices.size(),
+                incomplete.size(),
                 fit ? " (fit)" : "");
     s_renderer->setBackground(s_snap.background);
     s_renderer->setHiddenLineConfig(s_snap.hlconfig);
@@ -2858,12 +2992,18 @@ static void applySnapshot(bool fit)
     s_renderer->setAOConfig(ao);
     // Cavity is one fullscreen multiply over targets the prepass
     // already paid for, so it survives the degraded tier that drops AO.
-    s_renderer->setCavityConfig(s_snap.cavityconf);
+    Render::CavityConfig cavity = s_snap.cavityconf;
+    cavity.enabled = s_cavity;
+    s_renderer->setCavityConfig(cavity);
     s_renderer->setMatcapConfig(s_snap.matcapconf);
     s_renderer->setPBRConfig(s_snap.pbrconf);
     s_renderer->setBumpConfig(s_snap.bumpconf);
     s_renderer->setLightConfig(s_snap.lightconf);
     s_renderer->setViewLightConfig(s_snap.viewlightconf);
+    // That pushed the PRODUCER's world-space directions; any
+    // camera-relative light among them has to be re-derived against this
+    // viewer's camera before the next frame draws.
+    s_relightDue = true;
     s_renderer->setVolumetricConfig(s_snap.volconf);
     s_renderer->setWaterConfig(s_snap.waterconf);
     s_renderer->setBloomConfig(s_snap.bloomconf);
@@ -2873,6 +3013,14 @@ static void applySnapshot(bool fit)
     // load from the server-compiled binaries the snapshot carries.
     s_renderer->setUserShaderConfig(s_snap.usershaderconf);
     s_renderer->setAutoZoomScale(s_snap.autozoomScale);
+    // The element gates (#13b). The edge one is pushed on and stays
+    // dormant here for want of an uploaded-bytes meter; the load gate
+    // is the desktop's, where geometry arrives into a live view -- this
+    // tier's scene arrives as a snapshot that is applied whole.
+    s_renderer->setElementGates(s_shapeVertices, /*pressureEdges*/ true,
+                                /*loadingDrop*/ false,
+                                /*staggerFrames*/ 15);
+    s_renderer->setLevelDebug(s_levelDebug);
     s_renderer->setEffectResolution(s_snap.effectResolution);
     s_renderer->setSSAOResolution(s_snap.ssaoResolution);
     if (s_snap.hatch && !s_snap.hatch->pixels.empty())
@@ -4649,6 +4797,13 @@ static bool fillRung(Render::SceneSnapshot::DeferredChunk &entry, int rung,
     const std::string &key = Render::planRungKey(entry, size_t(rung));
     if (key.empty() || !entry.levelMeshes->fill(key, data, size))
         return false;
+    // A rung that does not say what it was built at is indistinguishable
+    // from the exact tessellation to everything past the binder, and the
+    // element gate's coarse-faces rule is one of those things: it holds
+    // an object's edges back while its FACES are still rough. Without
+    // this the browser's whole coarse half is structurally dead.
+    entry.levelMeshes->stampError(key, Render::planRungError(entry,
+                                                             size_t(rung)));
     // The identity parse is no longer outstanding either way — the
     // generic closure and this are two doors into the same store.
     entry.fill = nullptr;
@@ -6660,6 +6815,54 @@ int main()
         });
         if (px >= 0.0)
             s_lodPx = float(px);
+    }
+    // ?shapevertices=<0|1> -- see s_shapeVertices. Only the vertex gate
+    // is offered: the edge gate reads the GPU budget crossing, and this
+    // tier's budget is its CPU half only (resident payload and heap),
+    // which cannot see the GPU buffers an edge draw would free. It
+    // stays pushed and dormant rather than pretending, and arms itself
+    // the day this tier grows an uploaded-bytes meter (#13a).
+    {
+        const int on = EM_ASM_INT({
+            const v = new URLSearchParams(window.location.search)
+                .get('shapevertices');
+            return v === null ? -1 : ((v === '0' || v === 'false') ? 0 : 1);
+        });
+        if (on >= 0) {
+            s_shapeVertices = on != 0;
+            std::printf("fcviewer: shape vertices %s\n",
+                        s_shapeVertices ? "ON" : "off");
+        }
+    }
+    // ?leveldebug -- narrate the level plan and the element gates, the
+    // desktop's FC_LEVEL_DEBUG / Render_LevelDebug by another door
+    // (there is no environment to read here). The gate counters and the
+    // element audit are computed on this tier whether or not anyone
+    // reads them, and until this there was no way to read them: the
+    // desktop prints through Base::Console and the browser half of
+    // FC_RENDER_MSG goes to the JS console, so the same lines land in
+    // devtools. Off by default -- the audit prints on every change of
+    // its verdict, which is chatty while a scene streams in.
+    if (EM_ASM_INT({
+            return new URLSearchParams(window.location.search)
+                .has('leveldebug') ? 1 : 0;
+        }) != 0) {
+        s_levelDebug = true;
+        std::printf("fcviewer: level debug ON\n");
+    }
+    // ?cavity=<0|1> -- see s_cavity. On unless asked otherwise, so the
+    // parameter exists to turn the pass OFF (and to A/B what it is
+    // standing in for when the contract withholds the edges).
+    {
+        const int on = EM_ASM_INT({
+            const v = new URLSearchParams(window.location.search)
+                .get('cavity');
+            return v === null ? -1 : ((v === '0' || v === 'false') ? 0 : 1);
+        });
+        if (on >= 0) {
+            s_cavity = on != 0;
+            std::printf("fcviewer: cavity %s\n", s_cavity ? "ON" : "off");
+        }
     }
     // ?membudget=<MB> — pin the resident geometry budget (§6 phase 4b),
     // which otherwise fits itself to the device. A real budget is larger

@@ -32,6 +32,12 @@
 #include "SceneDump.h"
 #include "MeshSource.h"
 #include "SceneLadder.h"
+#include "ProxyHierarchy.h"
+#include "CullBenefit.h"
+#include "MaskedOcclusion.h"
+#include "Simd4.h"
+#include "OcclusionCull.h"
+#include "MeshSimplify.h"
 #ifndef FC_RENDERER_STANDALONE
 #include "SceneServer.h"
 #endif
@@ -62,6 +68,8 @@
 # endif
 #endif
 
+#include <cfloat>
+#include <thread>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -108,6 +116,20 @@
 // # include <GL/glu.h>
 // # include <GL/glext.h>
 // #endif
+// One narration path for the readouts that belong to BOTH tiers.
+//
+// Base/Console.h is included above only in the Qt half, so every
+// unguarded Base::Console() in this file is a standalone build error --
+// and there were six, in the frame-timing instrument, which is why the
+// WASM tier had stopped compiling. Desktop routing is deliberately
+// UNCHANGED: the performance harnesses read these lines out of
+// --log-file, and only the console writes there.
+#ifdef FC_RENDERER_STANDALONE
+#  define FC_RENDER_MSG(...) std::printf(__VA_ARGS__)
+#else
+#  define FC_RENDER_MSG(...) Base::Console().Message(__VA_ARGS__)
+#endif
+
 
 #include <bgfx/bgfx.h>
 #include <bx/timer.h>
@@ -338,6 +360,629 @@ inline void reportCoverage(const CoverageHistogram &hist)
 #endif
 }
 
+/// What a frame costs the CPU against what it costs the GPU
+/// (docs/FarFieldProxies.md §10.1) — the half of "where does a frame go"
+/// that the stage timers of Gui/RenderTiming.h cannot see, since their
+/// last stage ends at submission and the drawing happens afterwards.
+///
+/// §9.1 put the per-object cost of a frame at 6.85 µs by ablating the
+/// object count against the frame rate, which cannot tell CPU
+/// submission apart from GPU per-draw state. The difference decides
+/// what an occlusion scheme has to do: one that still issues the draw
+/// and lets the GPU reject it saves nothing if the cost is submission.
+/// bgfx already answers it — cpuTimeBegin..cpuTimeEnd brackets the
+/// render thread issuing draw commands to the graphics API, and
+/// gpuTimeBegin..gpuTimeEnd is what the GPU then spent on them.
+struct FrameStatsAccum {
+    uint32_t frames = 0;
+    double frameMs = 0.0;    ///< between two bgfx::frame calls
+    double submitMs = 0.0;   ///< the render thread issuing draw commands
+    double waitSubmitMs = 0.0;
+    double waitRenderMs = 0.0;
+    uint64_t draws = 0;
+    uint64_t prims = 0;
+    /// The GPU half is counted separately, and only when the frame it
+    /// belongs to changes. Its timestamps lag the frame that produced
+    /// them, so bgfx reports the same result for several frames
+    /// running; averaging it once per frame would weight one GPU sample
+    /// as though it were many, and does so unevenly with the frame rate
+    /// — exactly the bias that would decide this measurement wrongly.
+    uint32_t gpuSamples = 0;
+    double gpuMs = 0.0;
+    uint32_t gpuFrameSeen = 0;
+    bool gpuFrameValid = false;
+    /// ⭐ Per-view CPU submit and GPU time, keyed by bgfx view id
+    /// (docs/DrawSubmission.md phase 0). The frame line says the whole
+    /// frame costs 32 ms of submit and 38 ms of GPU across 30577 draws;
+    /// this says *which pass* spends it, which is the difference
+    /// between optimizing submission in general and deleting the pass
+    /// that turns out to be half of it.
+    ///
+    /// ⚠️ bgfx only fills `viewStats` while `BGFX_DEBUG_PROFILER` is
+    /// set, so this stays empty unless the timing switch turned it on.
+    ///
+    /// ⚠️⚠️ Keyed by **pass index**, resolved in the frame the sample was
+    /// taken — never by raw bgfx view id. The id->pass map is rebuilt
+    /// every frame from which passes are live, so a window that mixes
+    /// frames with different live sets would name one pass's cost after
+    /// another's. -1 collects everything unmarked (they share a sink id
+    /// and are not distinguishable).
+    std::map<int, std::pair<double, double>> viewMs;
+    /// Wall time inside BGFXRenderer::render() and inside bgfx::frame().
+    ///
+    /// KEY (docs/DrawSubmission.md phase 0 item 2): bgfx's own numbers
+    /// account for far less of the frame than they appear to.
+    /// `cpuTimeFrame` is the whole application frame; `cpuTimeBegin/End`
+    /// -- what this file calls `submitMs` -- is bgfx's *render thread*
+    /// issuing GL calls, measured at 10.8ms of a 54.8ms frame. The other
+    /// ~44ms is our own per-draw C++, the cull, and Coin compositing on
+    /// top, and nothing measured any of it.
+    ///
+    /// These two seams split it: `renderMs` is everything inside our
+    /// render() (so ours, including the bgfx::frame() call), and
+    /// `bgfxFrameMs` is the bgfx::frame() call alone. frame - render is
+    /// then everything that is not this renderer at all.
+    ///
+    /// ! renderMs is added by the caller *after* accumulateFrameStats
+    /// has run for the same frame, so when a report falls on that frame
+    /// its renderMs lands in the next window. Over a 13-19 frame window
+    /// that is under a frame's worth and it does not accumulate.
+    double renderMs = 0.0;
+    double bgfxFrameMs = 0.0;
+    /// The size the scene was actually rasterized at.
+    ///
+    /// ⚠️ Not bgfx::Stats::width/height: those are the *default*
+    /// backbuffer, which on the desktop tier is a small dummy nothing
+    /// draws into — every content view targets the view's own
+    /// framebuffer. Read from stats it sits at its init size forever,
+    /// and a resolution sweep looks as though the resolution never
+    /// changed. Asking Qt is no better: findChildren() gives the size
+    /// of *a* GL widget, not necessarily the one that drew.
+    uint16_t width = 0;
+    uint16_t height = 0;
+};
+
+/// Accumulate one frame of backend statistics. Cheap enough to run
+/// unconditionally while the switch is on: getStats() hands back a
+/// pointer to state bgfx maintains anyway.
+static void accumulateFrameStats(FrameStatsAccum &acc, uint16_t sceneWidth,
+                                 uint16_t sceneHeight,
+                                 const std::function<int(uint16_t)> &resolvePass)
+{
+    const bgfx::Stats *s = bgfx::getStats();
+    if (!s || s->cpuTimerFreq <= 0)
+        return;
+    const double toMs = 1000.0 / double(s->cpuTimerFreq);
+    ++acc.frames;
+    acc.frameMs += double(s->cpuTimeFrame) * toMs;
+    acc.submitMs += double(s->cpuTimeEnd - s->cpuTimeBegin) * toMs;
+    acc.waitSubmitMs += double(s->waitSubmit) * toMs;
+    acc.waitRenderMs += double(s->waitRender) * toMs;
+    acc.draws += s->numDraw;
+    for (int i = 0; i < bgfx::Topology::Count; ++i)
+        acc.prims += s->numPrims[i];
+    acc.width = sceneWidth;
+    acc.height = sceneHeight;
+    // Per-view, while the profiler flag is on. The GPU half of a view
+    // is only meaningful when its timer resolved, same as the frame's.
+    for (uint16_t i = 0; i < s->numViews; ++i) {
+        const bgfx::ViewStats &v = s->viewStats[i];
+        auto &slot = acc.viewMs[resolvePass(v.view)];
+        slot.first += double(v.cpuTimeEnd - v.cpuTimeBegin) * toMs;
+        if (s->gpuTimerFreq > 0)
+            slot.second += double(v.gpuTimeEnd - v.gpuTimeBegin) * 1000.0
+                           / double(s->gpuTimerFreq);
+    }
+    if (s->gpuTimerFreq > 0
+            && (!acc.gpuFrameValid || s->gpuFrameNum != acc.gpuFrameSeen)) {
+        acc.gpuFrameValid = true;
+        acc.gpuFrameSeen = s->gpuFrameNum;
+        acc.gpuMs += double(s->gpuTimeEnd - s->gpuTimeBegin) * 1000.0
+                     / double(s->gpuTimerFreq);
+        ++acc.gpuSamples;
+    }
+}
+
+/// Report the means accumulated since the last line and start over.
+///
+/// The headline is the per-draw pair: submission microseconds against
+/// GPU microseconds for the same draw, which is the comparison §9.1
+/// could not make. Frame and wait times are reported beside them
+/// because a frame can be bound by neither — waiting on the swap or on
+/// the other thread is a third answer, and one that would make both
+/// per-draw numbers look small for the wrong reason.
+static void reportFrameStats(FrameStatsAccum &acc)
+{
+    if (!acc.frames)
+        return;
+    const double frames = double(acc.frames);
+    const double drawsPerFrame = double(acc.draws) / frames;
+    const double submitMs = acc.submitMs / frames;
+    const bool haveGpu = acc.gpuSamples > 0;
+    const double gpuMs = haveGpu ? acc.gpuMs / double(acc.gpuSamples) : 0.0;
+    char perDraw[128];
+    if (drawsPerFrame > 0.0) {
+        if (haveGpu)
+            snprintf(perDraw, sizeof(perDraw),
+                     "submit %.2fus gpu %.2fus", 1000.0 * submitMs / drawsPerFrame,
+                     1000.0 * gpuMs / drawsPerFrame);
+        else
+            snprintf(perDraw, sizeof(perDraw), "submit %.2fus gpu n/a",
+                     1000.0 * submitMs / drawsPerFrame);
+    }
+    else
+        snprintf(perDraw, sizeof(perDraw), "no draws");
+    char gpuText[64];
+    if (haveGpu)
+        snprintf(gpuText, sizeof(gpuText), "%.2fms(n=%u)", gpuMs, acc.gpuSamples);
+    else
+        snprintf(gpuText, sizeof(gpuText), "n/a");
+    // Primitives per frame and the backbuffer they were rasterized into
+    // are what separate the three things GPU time can be: per-draw
+    // state, vertex throughput, and fill. One frame cannot tell them
+    // apart, but two scenes with different ratios can, and neither
+    // ratio is knowable without both numbers on the line.
+    const double primsPerFrame = double(acc.prims) / frames;
+    // Where the frame's CPU actually goes. `submit` above is only bgfx's
+    // render thread; these three split the whole frame into this
+    // renderer's own C++, the bgfx call it ends in, and everything that
+    // is not this renderer (Coin's composite, Qt, the app). Without the
+    // last one the largest term in the frame has no instrument at all.
+    const double renderMs = acc.renderMs / frames;
+    const double outsideMs = acc.frameMs / frames - renderMs;
+    char buf[640];
+    snprintf(buf, sizeof(buf),
+             "render frame: frames:%u %ux%u frame %.2fms submit %.2fms gpu %s | "
+             "draws %.0f prims %.0f (%.0f/draw) | per-draw %s | wait submit %.2fms "
+             "render %.2fms | cpu ours %.2fms (bgfx::frame %.2fms) outside %.2fms\n",
+             acc.frames, unsigned(acc.width), unsigned(acc.height),
+             acc.frameMs / frames, submitMs, gpuText, drawsPerFrame,
+             primsPerFrame, drawsPerFrame > 0.0 ? primsPerFrame / drawsPerFrame : 0.0,
+             perDraw, acc.waitSubmitMs / frames, acc.waitRenderMs / frames,
+             renderMs, acc.bgfxFrameMs / frames, outsideMs);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+    acc = FrameStatsAccum();
+}
+
+/// Whether the once-a-second frame-cost line is due. Unlike the
+/// far-field readouts below, what it reports is accumulated on every
+/// frame and only *printed* on a tick, so this gates the printing.
+static bool frameStatsDue()
+{
+    static int64_t lastReport = 0;
+    const int64_t now = bx::getHPCounter();
+    if (!lastReport) {
+        lastReport = now;
+        return false;
+    }
+    if (now - lastReport < bx::getHPFrequency())
+        return false;
+    lastReport = now;
+    return true;
+}
+
+/// Whether the once-a-second far-field readout is due. Split from the
+/// report because, unlike the coverage histogram, the measurement it
+/// gates is not free: it builds a partition over every drawn instance,
+/// and a rate limiter inside the report would pay for that on frames
+/// nothing is printed.
+static bool proxyCutDue()
+{
+    static int64_t lastReport = 0;
+    const int64_t now = bx::getHPCounter();
+    const int64_t freq = bx::getHPFrequency();
+    if (lastReport && now - lastReport < freq)
+        return false;
+    lastReport = now;
+    return true;
+}
+
+/// The same for the generation readout, which builds meshes rather than
+/// projecting boxes and can take seconds over a large model.
+///
+/// Hence the pair: the gap is measured from when the last report
+/// *finished*. Stamped on the way in, a report costing longer than the
+/// interval would be due again the moment it returned, and the viewer
+/// would spend every frame inside the measurement.
+static int64_t proxyGenLastReport = 0;
+
+static bool proxyGenDue()
+{
+    const int64_t now = bx::getHPCounter();
+    if (proxyGenLastReport
+            && now - proxyGenLastReport < 5 * bx::getHPFrequency())
+        return false;
+    proxyGenLastReport = now;
+    return true;
+}
+
+static void proxyGenReported()
+{
+    proxyGenLastReport = bx::getHPCounter();
+}
+
+/// What a far-field cut would cost this camera, generating nothing
+/// (docs/FarFieldProxies.md §11.1) — the measurement phase 1 exists to
+/// produce, and the gate on whether phase 2 is worth building.
+///
+/// Reported at several tolerances rather than one, because the draw
+/// count against tolerance is a step function whose floor is the tree
+/// bottoming out: a single operating point cannot be told apart from
+/// having chosen a bad one. \a buildMs is reported for its own sake —
+/// phase 3 has to pay this on the plan's schedule, so its size is a
+/// design input rather than an aside.
+static void reportProxyCut(const Render::ProxyHierarchy &index,
+                           const float *V, const float *P,
+                           float viewportHeightPx, double buildMs)
+{
+    const auto stats = index.stats();
+    if (!stats.instances)
+        return;
+    std::string line;
+    char buf[256];
+    static const float kTolerances[] = {1.0f, 4.0f, 16.0f, 64.0f};
+    // Draws AND primitives at each tolerance. Draws alone were what
+    // this line reported for phase 1, and draws were then measured to
+    // cost nothing on this scene -- the frame is GPU-bound and the GPU
+    // is geometry-bound (docs/DrawSubmission.md). `covered` is the
+    // primitives a proxy would stand in for: the ceiling on the saving,
+    // since the proxy's own primitives come off it and are not knowable
+    // without generating (11.1c).
+    std::string prims;
+    std::string bytesLine;
+    for (float tol : kTolerances) {
+        Render::ProxyCut cut;
+        index.selectCut(V, P, viewportHeightPx, tol, cut);
+        snprintf(buf, sizeof(buf), " %gpx:%u(%u+%u)", double(tol),
+                 cut.drawCount, cut.proxyDraws, unsigned(cut.exact.size()));
+        line += buf;
+        const double total = double(cut.exactPrims + cut.coveredPrims);
+        snprintf(buf, sizeof(buf), " %gpx:%.2fM exact+%.2fM covered(%.0f%%)",
+                 double(tol), double(cut.exactPrims) / 1e6,
+                 double(cut.coveredPrims) / 1e6,
+                 total > 0.0 ? 100.0 * double(cut.coveredPrims) / total : 0.0);
+        prims += buf;
+        // The other axis, and the one that decides whether a model
+        // opens at all: what the cut lets stop being resident.
+        //
+        // Counted per distinct MESH, not per instance, and only where
+        // NO exact instance still references it. Instances share meshes
+        // heavily here (495 instanced submits stand in for 5432 rows),
+        // so summing bytes over covered instances would overstate the
+        // saving several times over, and a mesh with one exact user
+        // left stays resident in full.
+        std::unordered_set<const void *> held, freed;
+        const auto &insts = index.instances();
+        for (uint32_t idx : cut.exact) {
+            if (insts[idx].sourceTag)
+                held.insert(insts[idx].sourceTag);
+        }
+        uint64_t freedBytes = 0, heldBytes = 0;
+        std::vector<uint32_t> sub;
+        for (int node : cut.proxyNodes) {
+            sub.clear();
+            index.subtreeInstances(node, sub);
+            for (uint32_t idx : sub) {
+                const auto &inst = insts[idx];
+                if (!inst.sourceTag || held.count(inst.sourceTag))
+                    continue;
+                if (freed.insert(inst.sourceTag).second)
+                    freedBytes += inst.meshBytes;
+            }
+        }
+        std::unordered_set<const void *> counted;
+        for (uint32_t idx : cut.exact) {
+            const auto &inst = insts[idx];
+            if (inst.sourceTag && counted.insert(inst.sourceTag).second)
+                heldBytes += inst.meshBytes;
+        }
+        const double totalBytes = double(freedBytes + heldBytes);
+        snprintf(buf, sizeof(buf),
+                 " %gpx:%.1fMB held+%.1fMB freed(%.0f%%) over %zu meshes",
+                 double(tol), double(heldBytes) / 1048576.0,
+                 double(freedBytes) / 1048576.0,
+                 totalBytes > 0.0 ? 100.0 * double(freedBytes) / totalBytes : 0.0,
+                 freed.size());
+        bytesLine += buf;
+    }
+    // The distributions that size the partition (§3.2): how many
+    // instances a cell holds decides both the size of a pop and how much
+    // draws exactly when the cut is forced down, and how many materials
+    // it holds is the fan-out below the cut (§5.1).
+    std::string levels;
+    for (size_t l = 0; l < stats.byLevel.size(); ++l) {
+        const auto &ls = stats.byLevel[l];
+        if (!ls.nodes)
+            continue;
+        snprintf(buf, sizeof(buf), " L%u:%un/%ur/max%u/mb%.1f", unsigned(l),
+                 ls.nodes, ls.residents, ls.subtreeMax, ls.bucketsMean);
+        levels += buf;
+    }
+    snprintf(buf, sizeof(buf),
+             " | nodes:%u depth:%u buckets:%u | build %.1fms",
+             stats.nodes, stats.depth, stats.distinctBuckets, buildMs);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("render proxycut: instances:%u draws@tol%s%s\n%s\n%s\n%s\n",
+                stats.instances, line.c_str(), buf, prims.c_str(),
+                bytesLine.c_str(), levels.c_str());
+#else
+    Base::Console().Message(
+            "render proxycut: instances:%u draws@tol%s%s\n", stats.instances,
+            line.c_str(), buf);
+    Base::Console().Message("render proxycut prims@tol:%s\n", prims.c_str());
+    Base::Console().Message("render proxycut bytes@tol:%s\n",
+                            bytesLine.c_str());
+    Base::Console().Message("render proxycut levels:%s\n", levels.c_str());
+#endif
+}
+
+/// What the cut estimate above cannot answer, because nothing it
+/// measures has been built (docs/FarFieldProxies.md §11.1c).
+///
+/// The estimate descends by a node's projected *extent*, which asks
+/// that a whole merged blob be smaller than the tolerance — far
+/// stricter than what a proxy actually commits, since a cell of twenty
+/// screws sixty pixels across decimates into a mesh erring a pixel or
+/// two. The conversion between the two is one number per node, the
+/// error against the extent, and it can only be had by generating: so
+/// this samples the nodes that cut stops on, merges each (cell,
+/// material) group for real, decimates it at several grid
+/// subdivisions, and reports the ratio.
+///
+/// Three other things fall out of generating that no estimate could
+/// have produced, and all three are reported beside it: what the
+/// triangles cost against the geometry instancing shares today (§7.1),
+/// how much surface *survives* — clustering deletes what is smaller
+/// than a cell rather than shrinking it — and how long a proxy takes to
+/// build.
+struct ProxyGenTotals {
+    uint32_t proxies = 0;      ///< generated
+    uint32_t refused = 0;      ///< nothing left to draw at this grid
+    uint32_t rated = 0;        ///< contributed an error ratio
+    uint64_t members = 0;
+    uint64_t sourceTriangles = 0;
+    uint64_t uniqueTriangles = 0;
+    uint64_t proxyTriangles = 0;
+    /// Bounds anything that would stand in for the deleted geometry
+    /// per *cell* rather than per member — a representative exists for
+    /// every occupied cell whether or not a triangle survived on it.
+    uint64_t proxyVertices = 0;
+    uint64_t collapsedMembers = 0;
+    double sourceArea = 0.0;
+    double proxyArea = 0.0;
+    double ratioSum = 0.0;
+    double rmsRatioSum = 0.0;
+    float ratioMax = 0.0f;
+    double ms = 0.0;
+};
+
+static void reportProxyGen(const Render::ProxyHierarchy &index,
+                           const Render::DrawCallList &draws, const float *V,
+                           const float *P, float viewportHeightPx)
+{
+    // The tolerance the cut estimate showed most aggregation at, so
+    // that this measures the operating point in question rather than
+    // one nothing would use.
+    static const float kTolerancePx = 64.0f;
+    // Generating for every node on the cut is generating the whole
+    // model. Both bounds exist to keep a debug readout from becoming a
+    // several-second stall, and both are reported: a measurement that
+    // silently drops most of its work reads as coverage it did not have.
+    static const uint32_t kMaxNodes = 24;
+    static const uint64_t kTriangleBudget = 2000000;
+    // Cell edges of the node's own cell divided by these — powers of
+    // two, so that every level's decimation grid remains a refinement
+    // of the level above it (§3.2, and SimplifyOptions::anchor).
+    static const uint32_t kSubdivisions[] = {4, 8, 16};
+    static const size_t kGrids = sizeof(kSubdivisions) / sizeof(*kSubdivisions);
+
+    Render::ProxyCut cut;
+    index.selectCut(V, P, viewportHeightPx, kTolerancePx, cut);
+    if (cut.proxyNodes.empty())
+        return;
+
+    ProxyGenTotals totals[kGrids];
+    const uint32_t stride = std::max<uint32_t>(
+            1, uint32_t(cut.proxyNodes.size()) / kMaxNodes);
+    uint32_t sampledNodes = 0;
+    uint32_t merges = 0;
+    uint32_t overBudget = 0;
+    uint32_t belowMinMerge = 0;
+    uint32_t nonTriangleBuckets = 0;
+    uint64_t mergedTriangles = 0;
+    double mergeMs = 0.0;
+    std::vector<uint32_t> subtree;
+    std::vector<Render::ProxyMember> members;
+
+    for (size_t i = 0;
+         i < cut.proxyNodes.size() && sampledNodes < kMaxNodes; i += stride) {
+        const int nodeIndex = cut.proxyNodes[i];
+        const Render::ProxyNode &node = index.nodes()[size_t(nodeIndex)];
+        subtree.clear();
+        index.subtreeInstances(nodeIndex, subtree);
+        ++sampledNodes;
+        // The proxy's unit is (cell, material bucket), so that nothing
+        // is ever averaged across materials (§5.1).
+        std::map<uint64_t, std::vector<uint32_t>> byBucket;
+        for (uint32_t inst : subtree)
+            byBucket[index.instances()[size_t(inst)].materialBucket]
+                .push_back(inst);
+        const float cellEdge = node.cellMax[0] - node.cellMin[0];
+        if (!(cellEdge > 0.0f))
+            continue;
+
+        for (const auto &bucket : byBucket) {
+            members.clear();
+            bool nonTriangle = false;
+            for (uint32_t inst : bucket.second) {
+                const uint32_t row = index.instances()[size_t(inst)].drawIndex;
+                if (row >= draws.size())
+                    continue;
+                const Render::DrawCall &draw = draws[row];
+                // Lines and points carry their own materials, so they
+                // are buckets of their own and stay exact; a stand-in
+                // is not geometry at all.
+                if (draw.material.type != Render::Material::Triangle) {
+                    nonTriangle = true;
+                    continue;
+                }
+                if (draw.standIn || !draw.mesh)
+                    continue;
+                Render::ProxyMember member;
+                member.mesh = draw.mesh.get();
+                member.model = draw.identity ? nullptr : draw.model;
+                member.indexStart = draw.indexStart;
+                member.indexCount = draw.indexCount;
+                member.objectKey = draw.objectKey;
+                members.push_back(member);
+            }
+            if (nonTriangle)
+                ++nonTriangleBuckets;
+            if (members.size() < index.params().minMerge) {
+                ++belowMinMerge;
+                continue;
+            }
+            // What this merge would cost, before paying it. A node high
+            // on the cut covers its whole subtree, so one group can be
+            // most of the model, and a budget checked only afterwards
+            // would already have spent it.
+            uint64_t wouldMerge = 0;
+            for (const Render::ProxyMember &member : members) {
+                wouldMerge += uint64_t(member.indexCount > 0
+                                               ? member.indexCount
+                                               : member.mesh
+                                                     ->numTriangleIndices)
+                    / 3;
+            }
+            if (mergedTriangles + wouldMerge > kTriangleBudget) {
+                ++overBudget;
+                continue;
+            }
+
+            Render::SimplifiedMesh merged;
+            Render::ProxyMeshStats mergeStats;
+            if (!Render::mergeProxyMembers(members, merged, nullptr,
+                                           &mergeStats))
+                continue;
+            ++merges;
+            mergedTriangles += mergeStats.sourceTriangles;
+            mergeMs += mergeStats.mergeMs;
+
+            for (size_t g = 0; g < kGrids; ++g) {
+                Render::ProxyMeshParams params;
+                // Anchoring at the node's own cell corner is anchoring
+                // at the level grid: a cell corner is on every grid the
+                // level subdivides into.
+                params.anchor[0] = node.cellMin[0];
+                params.anchor[1] = node.cellMin[1];
+                params.anchor[2] = node.cellMin[2];
+                params.cellSize = cellEdge / float(kSubdivisions[g]);
+                Render::SimplifiedMesh proxy;
+                Render::ProxyMeshStats stats = mergeStats;
+                const bool made =
+                    Render::decimateProxyMesh(merged, params, proxy, &stats);
+                ProxyGenTotals &t = totals[g];
+                t.members += stats.members;
+                t.sourceTriangles += stats.sourceTriangles;
+                t.uniqueTriangles += stats.uniqueTriangles;
+                t.proxyTriangles += stats.proxyTriangles;
+                t.proxyVertices += stats.proxyVertices;
+                t.collapsedMembers += stats.collapsedMembers;
+                t.sourceArea += stats.sourceArea;
+                t.proxyArea += stats.proxyArea;
+                t.ms += stats.simplifyMs;
+                if (!made) {
+                    ++t.refused;
+                    continue;
+                }
+                ++t.proxies;
+                if (stats.extent > 0.0f) {
+                    const float ratio = stats.maxError / stats.extent;
+                    t.ratioSum += ratio;
+                    t.rmsRatioSum += stats.rmsError / stats.extent;
+                    t.ratioMax = std::max(t.ratioMax, ratio);
+                    ++t.rated;
+                }
+            }
+        }
+    }
+
+    // How much geometry the scene shares at all, so that the per-proxy
+    // instancing gate below can be read. Without it, "the members of a
+    // proxy share almost nothing" cannot be told apart from "this
+    // measurement could not see sharing if there were any".
+    // Counted two ways, because they answer different questions. A
+    // cache id is what the merge dedupes by; a source tag is the
+    // geometry *node* behind it, which colour variants of one shape
+    // share. Equal counts mean the assembly really does hold that many
+    // distinct shapes; a sourceTag count well below the cacheId count
+    // would mean sharing exists and the merge is blind to it.
+    std::set<std::pair<uint64_t, const void *>> sceneMeshes;
+    std::set<const void *> sceneSources;
+    uint32_t triangleDraws = 0;
+    for (const Render::DrawCall &draw : draws) {
+        if (draw.material.type != Render::Material::Triangle || draw.standIn
+                || !draw.mesh)
+            continue;
+        ++triangleDraws;
+        sceneMeshes.emplace(draw.mesh->cacheId,
+                            draw.mesh->cacheId ? nullptr
+                                               : (const void *)draw.mesh.get());
+        if (draw.mesh->sourceTag)
+            sceneSources.insert(draw.mesh->sourceTag);
+    }
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "render proxygen: tol %gpx nodes:%u/%u merges:%u src %.2fMtri "
+             "in %.0fms | skipped budget:%u single:%u | nontri buckets:%u | "
+             "scene %u tri draws over %u meshes / %u sources\n",
+             double(kTolerancePx), sampledNodes,
+             unsigned(cut.proxyNodes.size()), merges,
+             double(mergedTriangles) / 1e6, mergeMs, overBudget,
+             belowMinMerge, nonTriangleBuckets, triangleDraws,
+             unsigned(sceneMeshes.size()), unsigned(sceneSources.size()));
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+    for (size_t g = 0; g < kGrids; ++g) {
+        const ProxyGenTotals &t = totals[g];
+        const double rated = t.rated ? double(t.rated) : 1.0;
+        snprintf(buf, sizeof(buf),
+                 "render proxygen 1/%u cell: err/extent mean %.4f worst %.4f "
+                 "rms %.4f | tri %.2fM->%.3fM %.1fx (instanced %.2fM, %.1fx) "
+                 "| area %.0f%% | lost %llu/%llu members, %llu proxy verts "
+                 "| %u proxies %u refused | %.0fms\n",
+                 kSubdivisions[g], t.ratioSum / rated, double(t.ratioMax),
+                 t.rmsRatioSum / rated,
+                 double(t.sourceTriangles) / 1e6,
+                 double(t.proxyTriangles) / 1e6,
+                 t.proxyTriangles ? double(t.sourceTriangles)
+                                        / double(t.proxyTriangles)
+                                  : 0.0,
+                 double(t.uniqueTriangles) / 1e6,
+                 t.proxyTriangles ? double(t.uniqueTriangles)
+                                        / double(t.proxyTriangles)
+                                  : 0.0,
+                 t.sourceArea > 0.0 ? 100.0 * t.proxyArea / t.sourceArea : 0.0,
+                 (unsigned long long)t.collapsedMembers,
+                 (unsigned long long)t.members,
+                 (unsigned long long)t.proxyVertices, t.proxies, t.refused,
+                 t.ms);
+#ifdef FC_RENDERER_STANDALONE
+        std::printf("%s", buf);
+#else
+        Base::Console().Message("%s", buf);
+#endif
+    }
+}
+
 /// A user shader is animated when its source references the engine
 /// clock uniform u_fcTime — no declared flag anywhere, the reference
 /// itself is the opt-in (docs/RenderDebug.md §6).
@@ -460,6 +1105,17 @@ public:
     ~BGFXRendererLibP();
 
     BGFXView *getView(QOpenGLWidget *widget, RendererType::Enum type);
+    /// The view of \a widget if it already exists, else null. Unlike
+    /// getView it creates nothing and prepares no context -- for
+    /// callers off the render path (the level plan, asking what is
+    /// uploaded) that must not bring a view into being by asking about
+    /// it.
+    BGFXView *findView(QOpenGLWidget *widget)
+    {
+        auto it = views.find(widget);
+        return it == views.end() ? nullptr : it->second.get();
+    }
+
 
     void removeView(QOpenGLWidget *widget);
 
@@ -1259,6 +1915,14 @@ inline GeomKey computeGeomKey(const Render::MeshData &mesh)
 /// and the fixed passes cost what they cost.
 inline std::atomic<size_t> s_gpuGeometryBytes {0};
 
+/// Bumped every time geometry handles are actually given back
+/// (GpuGeometry::destroy). A creation the handle pool refused is worth
+/// retrying only once something has been freed since -- a pool that is
+/// full stays full, and rebuilding the vertex memory every frame for
+/// every refused mesh would cost far more than the draws it is trying
+/// to rescue. See BGFXView::tryUploadGeometry.
+inline std::atomic<uint64_t> s_geomFreedEpoch {0};
+
 struct GpuGeometry
 {
     /// Position + normal vertex stream.
@@ -1282,6 +1946,12 @@ struct GpuGeometry
     uint64_t lastUsed = 0;
     /// Bytes this entry has uploaded (s_gpuGeometryBytes share).
     size_t bytes = 0;
+    /// The frame this entry was last refused a vertex buffer on (0 =
+    /// never), so a mesh denied by several passes of one frame counts
+    /// once, and the destroy-epoch that refusal stood under, so the
+    /// retry waits for handles to actually come back.
+    uint64_t deniedFrame = 0;
+    uint64_t deniedEpoch = ~uint64_t(0);
 
     void track(size_t add)
     {
@@ -1291,18 +1961,25 @@ struct GpuGeometry
 
     void destroy()
     {
+        bool freed = false;
         for (auto ib : {&tri, &line, &point, &lineNoSeam}) {
             if (bgfx::isValid(*ib)) {
                 bgfx::destroy(*ib);
                 *ib = BGFX_INVALID_HANDLE;
+                freed = true;
             }
         }
         for (auto vb : {&vbh, &triEdgeInst, &triCornerInst, &texcoord}) {
             if (bgfx::isValid(*vb)) {
                 bgfx::destroy(*vb);
                 *vb = BGFX_INVALID_HANDLE;
+                freed = true;
             }
         }
+        // Handles are back in the pool: whoever was refused one may ask
+        // again.
+        if (freed)
+            ++s_geomFreedEpoch;
         s_gpuGeometryBytes -= bytes;
         bytes = 0;
     }
@@ -1544,6 +2221,40 @@ struct GpuMesh
                 imem, LineQuadVertex::ms_pointInstLayout);
             track(imem->size);
         }
+    }
+
+    /// What re-uploading this mesh as an edge (or point) drawable would
+    /// cost, for the element gate's release to weigh against real
+    /// headroom before it hands a class back.
+    ///
+    /// It has to count the GEOMETRY too, not just the instance buffer:
+    /// a mesh every draw of which the gate suppressed is collected
+    /// outright (collectMeshes), taking its vertices and index stream
+    /// with it, so re-admission pays for all of it again. Pricing the
+    /// instances alone under-reads by about a fifth, which is enough to
+    /// approve a release that then blows the budget -- measured.
+    ///
+    /// It lives HERE, beside upload(), because it is the same
+    /// arithmetic: a copy of these formulas kept anywhere else drifts
+    /// the first time a stream is added to either.
+    static uint64_t readmitCost(const Render::MeshData &mesh, bool lines)
+    {
+        uint64_t bytes = uint64_t(mesh.numVertices) * sizeof(SceneVertex);
+        if (mesh.colors)
+            bytes += uint64_t(mesh.numVertices) * 4;
+        if (mesh.materials)
+            bytes += uint64_t(mesh.numVertices) * sizeof(MatVertex);
+        if (lines) {
+            bytes += uint64_t(mesh.numLineIndices) * 4;
+            if (mesh.numLineIndices > 1)
+                bytes += uint64_t(mesh.numLineIndices / 2) * 16
+                    * sizeof(float);
+        }
+        else {
+            bytes += uint64_t(mesh.numPointIndices) * 4;
+            bytes += uint64_t(mesh.numPointIndices) * 8 * sizeof(float);
+        }
+        return bytes;
     }
 
     /// One quad-expansion instance per line segment (endpoints + endpoint
@@ -2226,6 +2937,25 @@ public:
                             // line) resolves to the highlight color via
                             // LEQUAL. A Sequential view keeps that order
                             // where ViewOpaque's state sorting would not.
+        ViewOcclusionProbe, // measurement only (docs/FarFieldProxies.md
+                            // §10.1, RenderDebug_Occlusion): bounding
+                            // boxes of spatial-index nodes rasterized
+                            // against the opaque depth under occlusion
+                            // queries, writing no colour and no depth.
+                            //
+                            // Here, directly after the opaque bucket,
+                            // rather than at the end of the frame: the
+                            // occluders are exactly the draws that
+                            // wrote depth, and transparent geometry
+                            // writes none (submit() forces depthwrite
+                            // off for it), so nothing later adds an
+                            // occluder. Everything after this point —
+                            // OIT accumulation and resolve, the water
+                            // and glass surface passes, the multisample
+                            // resolve the copy passes force — rebinds
+                            // or resolves the scene framebuffer, and a
+                            // depth test asked after that is not asked
+                            // of the depth the scene wrote.
         ViewSectionCap,     // stencil section caps of clipped opaque
                             // solids (GL: _renderSection; before the
                             // outline/transparent passes like the GL
@@ -2233,16 +2963,26 @@ public:
                             // marking needs the stencil buffer before
                             // the outline passes leave their marks)
         ViewDebugScene,     // debug scene re-render (docs/RenderDebug.md
-                            // modes 6/8): scene triangle fills
-                            // re-rasterized into a dedicated full-res
-                            // target — additive fragment counting for
-                            // the overdraw heatmap, or depth-tested
-                            // texcoord output for the UV mode; the
+                            // modes 6/8/11): scene draws re-rasterized
+                            // into a dedicated full-res target —
+                            // additive fragment counting for the
+                            // overdraw heatmap, depth-tested texcoord
+                            // output for the UV mode, or every draw's
+                            // own identity for the instance-id mode; the
                             // ViewDebug blit samples the result.
                             // (Repurposes the retired AO-apply slot —
                             // the fullscreen AO multiply moved into the
                             // mesh shaders' ambient terms, aoMeshTex at
                             // unit 9.)
+        ViewIdReadback,     // blit-only view of the cull audit
+                            // (RenderDebug_CullAudit): copies the id
+                            // image into a readback texture. Its own
+                            // view id because bgfx runs a view's blits
+                            // BEFORE its draws -- asked on ViewDebugScene
+                            // the copy would carry the previous frame's
+                            // image, and comparing a verdict against a
+                            // frame-old picture is the very error this
+                            // instrument was built to rule out.
         ViewCavity,         // fullscreen cavity (curvature) multiply over
                             // the finished opaque scene: a one-pixel
                             // second derivative of the prepass normals
@@ -2518,6 +3258,7 @@ public:
             fn(h, LifeSized);
         fn(debugSceneTex, LifeSized);
         fn(debugSceneDepth, LifeSized);
+        fn(idReadTex, LifeSized);
         fn(aoNormalZ, LifeSized);
         fn(aoDepth, LifeSized);
         fn(aoTex, LifeSized);
@@ -2836,6 +3577,41 @@ public:
     // plain dot products. CPU cost is a one-off ~2M radiance samples.
     void ensureEnvironment();
 
+    /// Give \a geom its buffers if it has none, and account for the
+    /// refusal when the handle pool has none left to give. The draw
+    /// sites all skip an invalid vertex buffer rather than fatally
+    /// binding it, so a refusal is silent geometry loss -- it has to be
+    /// counted, and it has to be retried.
+    ///
+    /// Retried only once handles have actually come back
+    /// (s_geomFreedEpoch): the pool does not refill on its own, and
+    /// upload() rebuilds the whole vertex stream before it asks, so
+    /// retrying every refused mesh every frame would cost far more than
+    /// the draws it is trying to rescue. The epoch is read back AFTER
+    /// the attempt because destroy() below may bump it.
+    void tryUploadGeometry(GpuGeometry &geom, const Render::MeshData &data)
+    {
+        if (bgfx::isValid(geom.vbh))
+            return;
+        if (geom.deniedEpoch != s_geomFreedEpoch.load()) {
+            // Give back the partial upload before asking again:
+            // upload() creates every buffer unconditionally and tracks
+            // its bytes, so a second call over a half-built entry would
+            // orphan the index buffers it already holds and count them
+            // twice.
+            geom.destroy();
+            geom.upload(data);
+        }
+        if (bgfx::isValid(geom.vbh))
+            return;
+        geom.deniedEpoch = s_geomFreedEpoch.load();
+        ++bufferDeniedSubmits;
+        if (geom.deniedFrame != frame) {
+            geom.deniedFrame = frame;
+            ++bufferDeniedMeshes;
+        }
+    }
+
     GpuMesh *getMesh(const Render::MeshData &data)
     {
         GpuMesh &mesh = meshes[data.cacheId];
@@ -2859,19 +3635,7 @@ public:
             GeomKey key = computeGeomKey(data);
             auto res = geometries.emplace(key, GpuGeometry());
             GpuGeometry &geom = res.first->second;
-            if (!bgfx::isValid(geom.vbh))
-                geom.upload(data);
-            if (!bgfx::isValid(geom.vbh)) {
-                // handle pool exhausted: the draw sites skip an
-                // invalid upload instead of fatally binding it
-                static bool warned = false;
-                if (!warned) {
-                    warned = true;
-                    fprintf(stderr,
-                            "bgfx: vertex buffer handle pool exhausted, "
-                            "some meshes will not be drawn\n");
-                }
-            }
+            tryUploadGeometry(geom, data);
             mesh.geom = &geom;
             mesh.upload(data);
             static const bool dbgfeed =
@@ -2884,6 +3648,14 @@ public:
                         (unsigned long long)key.hash,
                         res.second ? "" : " shared");
         }
+        // A geometry refused a vertex buffer keeps a cached entry that
+        // has none, and the branch above never runs for it again: it
+        // was never retried, and a mesh drawn every frame keeps its
+        // lastUsed current so the two-frame purge never retires it
+        // either. That mesh stayed invisible for the life of the
+        // process, behind one warning printed once.
+        else if (!bgfx::isValid(mesh.geom->vbh))
+            tryUploadGeometry(*mesh.geom, data);
         mesh.geom->lastUsed = frame;
         return &mesh;
     }
@@ -2913,9 +3685,304 @@ public:
         return &tex;
     }
 
+    /// docs/FarFieldProxies.md §10.1 measurement 1: how much of what
+    /// this frame drew could not have reached the screen.
+    ///
+    /// Re-rasterizes a batch of world-space boxes against the finished
+    /// depth buffer under one occlusion query each, writing neither
+    /// colour nor depth. A box whose query returns no pixels is behind
+    /// the scene everywhere it projects, so nothing inside it can have
+    /// contributed one either — which is the conservative direction:
+    /// the boxes bound the geometry loosely, so this *under*-reports
+    /// how much is hidden and any number it produces is a floor.
+    ///
+    /// Boxes rather than the geometry itself because that is the unit a
+    /// culling scheme would actually test (§10.1's CHC++ shape over the
+    /// spatial index): re-submitting the real triangles would measure a
+    /// mechanism nobody would build, and would cost a second geometry
+    /// pass to do it.
+    ///
+    /// \a queries must hold one handle per box. Returns the number
+    /// submitted, which is fewer than asked for if the transient
+    /// buffers are exhausted — reported by the caller rather than
+    /// silently shortening the batch.
+    uint32_t submitOcclusionBoxes(
+            const float *boxMin, const float *boxMax, uint32_t count,
+            const std::vector<bgfx::OcclusionQueryHandle> &queries)
+    {
+        if (!count)
+            return 0;
+        const uint32_t verts = count * 8;
+        const uint32_t indices = count * 36;
+        if (bgfx::getAvailTransientVertexBuffer(verts, SceneVertex::ms_layout)
+                    < verts
+                || bgfx::getAvailTransientIndexBuffer(indices) < indices)
+            return 0;
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::TransientIndexBuffer tib;
+        bgfx::allocTransientVertexBuffer(&tvb, verts, SceneVertex::ms_layout);
+        bgfx::allocTransientIndexBuffer(&tib, indices);
+        auto *v = reinterpret_cast<SceneVertex *>(tvb.data);
+        auto *idx = reinterpret_cast<uint16_t *>(tib.data);
+        // Corner order is the bit-encoded one Render::occlusionBoxIndices
+        // is written against — and the index list comes from there, not
+        // from here, because the version written out at this call site
+        // closed only 3.5 of the box's 6 faces and answered occlusion
+        // questions with the box's own interior (§12.6). Normals are
+        // never read (nothing is written) but the layout carries them,
+        // so they are filled rather than left as whatever the buffer
+        // held.
+        const uint16_t *kBoxIndices = Render::occlusionBoxIndices();
+        for (uint32_t b = 0; b < count; ++b) {
+            const float *lo = boxMin + b * 3;
+            const float *hi = boxMax + b * 3;
+            // Already conservative when they arrive: the caller pads
+            // them, because the same padded box has to be the one the
+            // near-plane exemption is judged on.
+            SceneVertex *c = v + b * 8;
+            for (int i = 0; i < 8; ++i) {
+                c[i].px = (i & 1) ? hi[0] : lo[0];
+                c[i].py = (i & 2) ? hi[1] : lo[1];
+                c[i].pz = (i & 4) ? hi[2] : lo[2];
+                c[i].nx = 0.0f;
+                c[i].ny = 0.0f;
+                c[i].nz = 1.0f;
+            }
+            // Relative to the box's own eight vertices, NOT absolute
+            // into the shared buffer: each draw below binds the stream
+            // at startVertex = b*8, and bgfx offsets the indices by
+            // that itself. Written absolutely, every box after the
+            // first in a batch reads vertices belonging to a later box
+            // — geometry that is somewhere, so it rasterizes and the
+            // query answers, which is why the failure showed up as an
+            // implausible verdict rather than as nothing drawn.
+            uint16_t *bi = idx + b * 36;
+            for (int i = 0; i < 36; ++i)
+                bi[i] = kBoxIndices[i];
+        }
+
+        float identity[16];
+        bx::mtxIdentity(identity);
+        // ⚠️⚠️ The flat program, and u_params zeroed for every box. Both
+        // matter, and either one wrong silently deletes geometry.
+        //
+        // A bgfx uniform keeps whatever the last draw that set it left
+        // in it, and vs_fc_mesh — which these boxes used to be drawn
+        // with — reads u_params.w as an NDC depth bias. The last scene
+        // draw before this view is routinely a *line* draw, whose
+        // u_params.w is not a bias at all but the on-top dim alpha,
+        // normally 1.0. Inherited, it pushes every test box a whole NDC
+        // unit away from the viewer — past the far plane — so the box
+        // rasterizes nothing, the query counts no samples, and the node
+        // reports itself hidden however plainly it is in view. That is
+        // what deleted visible geometry in §12.5, and it is why the
+        // synthetic wall smoke scene never reproduced it: triangles
+        // only, no line draw, so the inherited bias there was 0.
+        //
+        // vs_fc_flat transforms the position and does nothing else, so
+        // the box lands where the box is; the explicit zero keeps that
+        // true if either shader body ever grows a term of its own. Three
+        // other mesh-program pairings in this file zero u_params for the
+        // same reason — see the water surface and AO normal passes.
+        const float zeroParams[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        for (uint32_t b = 0; b < count; ++b) {
+            bgfx::setTransform(identity);
+            bgfx::setUniform(u_params, zeroParams);
+            bgfx::setVertexBuffer(0, &tvb, b * 8, 8);
+            bgfx::setIndexBuffer(&tib, b * 36, 36);
+            // LEQUAL, not LESS: a box face coplanar with the surface it
+            // bounds is exactly the common case (a part flush against
+            // the cell it sits in), and LESS would call it hidden.
+            // Both faces draw — the camera can be inside a node's box,
+            // and a back-face-culled box would then vanish and read as
+            // fully occluded.
+            bgfx::setState(BGFX_STATE_DEPTH_TEST_LEQUAL);
+            bgfx::submit(vid(ViewOcclusionProbe), m_progFlat, queries[b]);
+            ++drawcount;
+        }
+        return count;
+    }
+
+    /// One sweep's memory of which uploads it has already charged
+    /// somebody for. GPU bytes are shared two ways -- several cache ids
+    /// (colour variants of one TShape) point at a single GpuGeometry,
+    /// and a cache id itself is content-addressed, so two sources whose
+    /// meshes match exactly are one upload behind two tags. Charging
+    /// every referent its full bytes would promise the same memory
+    /// twice and report a deficit covered that is not.
+    struct UploadCharge {
+        std::set<uint64_t> cacheIds;
+        std::set<const void *> geoms;
+    };
+
+    /// GPU bytes \a data has uploaded right now: its own per-cache
+    /// streams (baked colours, the line/point instance data) plus the
+    /// colourless geometry behind them, each charged at most once per
+    /// \a charge.
+    ///
+    /// This is the GPU budget's currency and it is NOT
+    /// meshResidentBytes, the CPU arrays of the same mesh. A line
+    /// segment is 8 bytes of index there; here it is those 8 bytes AND
+    /// a 64-byte quad-expansion instance record (two endpoints and
+    /// their colours), so a line-heavy source costs the GPU some nine
+    /// times what it costs the heap. Pricing a downgrade in the wrong
+    /// currency is how a sweep frees "enough" and stays over budget.
+    ///
+    /// 0 for a mesh nothing has uploaded, which is the honest answer:
+    /// downgrading it gives the GPU nothing back.
+    uint64_t uploadedBytesOf(const Render::MeshData &data,
+                             UploadCharge *charge)
+    {
+        auto it = meshes.find(data.cacheId);
+        if (it == meshes.end())
+            return 0;
+        uint64_t bytes = 0;
+        if (!charge || charge->cacheIds.insert(data.cacheId).second)
+            bytes += it->second.bytes;
+        if (const GpuGeometry *geom = it->second.geom) {
+            if (!charge || charge->geoms.insert(geom).second)
+                bytes += geom->bytes;
+        }
+        return bytes;
+    }
+
+    /// What the GPU accounting is holding, split by whether the scene
+    /// still wants it.
+    ///
+    /// The single total is what a budget was judged against, and it
+    /// cannot fall at the moment a descent succeeds: the rungs it
+    /// replaced stay uploaded until collectMeshes retires them two
+    /// frames later. So a plan that had just given up 2394 sources read
+    /// its own memory as having gone UP, and no descent however good
+    /// could honour anything. `live` is the same accounting asked the
+    /// question the budget means -- what the frames now being drawn
+    /// reference -- and it falls the moment the scene stops naming the
+    /// old uploads.
+    struct GpuBytes {
+        uint64_t total = 0;   ///< every buffer currently allocated
+        uint64_t live = 0;    ///< referenced recently enough to survive
+                              ///< the next collectMeshes
+        uint64_t stale = 0;   ///< total - live: awaiting collection
+        uint32_t entries = 0;
+        uint32_t staleEntries = 0;
+    };
+    /// The allocator's books split by drawable class and recency --
+    /// what stands uploaded for triangles vs lines vs points, and how
+    /// much of each no recent frame has drawn. Face, line and point
+    /// drawables are separate caches, so an entry classifies by which
+    /// streams its geometry carries; a shared geometry is charged to
+    /// the first entry that names it. This exists because a 74MB gap
+    /// between uploaded and live had three candidate owners and no
+    /// meter that could name one.
+    struct ClassBytes {
+        uint64_t bytes = 0;      ///< everything this class holds
+        uint64_t undrawn = 0;    ///< ...of which no recent frame drew
+        uint32_t entries = 0;
+        uint32_t undrawnEntries = 0;
+    };
+    struct GpuBytesByClass {
+        ClassBytes tri, line, point, other;
+    };
+    GpuBytesByClass gpuBytesByClass() const
+    {
+        GpuBytesByClass out;
+        std::set<const GpuGeometry *> charged;
+        for (const auto &m : meshes) {
+            const GpuGeometry *g = m.second.geom;
+            uint64_t bytes = m.second.bytes;
+            if (g && charged.insert(g).second)
+                bytes += g->bytes;
+            ClassBytes &cls =
+                (g && bgfx::isValid(g->tri))         ? out.tri
+                : (g && bgfx::isValid(g->line))
+                      || bgfx::isValid(m.second.lineInst)  ? out.line
+                : (g && bgfx::isValid(g->point))
+                      || bgfx::isValid(m.second.pointInst) ? out.point
+                                                           : out.other;
+            cls.bytes += bytes;
+            ++cls.entries;
+            if (m.second.lastUsed + 2 < frame) {
+                cls.undrawn += bytes;
+                ++cls.undrawnEntries;
+            }
+        }
+        // Geometries no mesh references are in flight to collection;
+        // they have no class anymore and land in `other`.
+        for (const auto &g : geometries) {
+            if (charged.count(&g.second))
+                continue;
+            out.other.bytes += g.second.bytes;
+            ++out.other.entries;
+            if (g.second.lastUsed + 2 < frame) {
+                out.other.undrawn += g.second.bytes;
+                ++out.other.undrawnEntries;
+            }
+        }
+        return out;
+    }
+
+    GpuBytes gpuBytes() const
+    {
+        GpuBytes out;
+        // `live` is a recency CENSUS (touched within the two-frame
+        // in-flight window) kept for the readout; retention itself is
+        // publication-keyed (collectMeshes), so `stale` now reads as
+        // "resident but not recently drawn" -- kept rungs of culled or
+        // intermittently drawn objects -- not as garbage awaiting
+        // collection. The budget is judged on `total`, the
+        // allocator's books.
+        auto tally = [&out, this](uint64_t bytes, uint64_t lastUsed) {
+            out.total += bytes;
+            ++out.entries;
+            if (lastUsed + 2 >= frame)
+                out.live += bytes;
+            else {
+                out.stale += bytes;
+                ++out.staleEntries;
+            }
+        };
+        for (const auto &m : meshes)
+            tally(m.second.bytes, m.second.lastUsed);
+        for (const auto &g : geometries)
+            tally(g.second.bytes, g.second.lastUsed);
+        return out;
+    }
+
+    // Retire GPU buffers by PUBLICATION, not by recency (sec 13c.5).
+    //
+    // The old rule -- collect whatever no draw touched for two frames
+    // -- was a guess about need, and it guessed wrong twice: it
+    // destroyed buffers of draws the scene still rendered on a
+    // longer-than-two-frame cadence (198 draws re-uploaded every 4th
+    // frame, ~75MB of standing churn, and a live meter flapping
+    // 45<->120MB on a quiet scene), and it DELAYED a downgrade's free
+    // past the next plan, which is the transient the whole storm
+    // chased. \a kept is the truth instead: what the published lists
+    // carry, at which generation.
+    //
+    //  - kept, generation current: never collected. Its bytes are the
+    //    scene's bytes; only a publish or a swap may free them.
+    //  - kept, generation moved: the rung was swapped -- destroy NOW,
+    //    drawn or not. This is what makes a free a synchronous event
+    //    on the allocator's books (a culled object's old rung would
+    //    otherwise never meet the draw-time generation check and leak).
+    //  - not kept: left the lists at a publish; the two-frame grace
+    //    only spans in-flight frames.
+    //  - kept but gated (\a gatedOnly): published, current, and NOT
+    //    SUBMITTABLE -- every draw naming it is suppressed by the
+    //    element gates (sec 13b). Falls back to the recency grace,
+    //    which a gated mesh always fails, so its buffers retire two
+    //    frames after the gate closes and come back through an
+    //    ordinary on-demand upload when it lifts. This is 13b's
+    //    "suppressing the draw is all it takes to free the memory",
+    //    which publication-keyed retention had silently repealed:
+    //    74.5MB of gated edge buffers stood resident with the gate
+    //    firing on all 5909 of their draws every frame.
+
     // Drop GPU buffers of caches/textures that no draw call referenced
     // recently.
-    void collectMeshes();
+    void collectMeshes(const std::unordered_map<uint64_t, uint64_t> &kept,
+                       const std::unordered_set<uint64_t> &gatedOnly);
 
     // Fullscreen gradient behind the scene, replicating
     // SoFCBackgroundGradient::GLRender vertex for vertex in clip space
@@ -3154,6 +4221,53 @@ public:
     /// destroys it with the other offscreen targets.
     bool ensureDebugScene();
 
+    /// Whether this backend can hand the id image back to the CPU at
+    /// all. WebGL2 cannot, which is why the audit is a desktop
+    /// instrument that informs the browser tier rather than one that
+    /// runs there.
+    static bool idReadbackSupported()
+    {
+        const bgfx::Caps *caps = bgfx::getCaps();
+        return caps
+            && (caps->supported & BGFX_CAPS_TEXTURE_BLIT)
+            && (caps->supported & BGFX_CAPS_TEXTURE_READ_BACK);
+    }
+
+    /// CPU-readable mirror of the id image, created on first use at the
+    /// debug target's size. A render target cannot be read back
+    /// directly on every backend; blitting into a plain READ_BACK
+    /// texture is the portable arrangement.
+    bool ensureIdReadback()
+    {
+        if (!idReadbackSupported() || !bgfx::isValid(debugSceneTex))
+            return false;
+        if (bgfx::isValid(idReadTex) && idReadW == debugSceneW
+                && idReadH == debugSceneH)
+            return true;
+        if (bgfx::isValid(idReadTex)) {
+            bgfx::destroy(idReadTex);
+            idReadTex = BGFX_INVALID_HANDLE;
+        }
+        idReadTex = bgfx::createTexture2D(debugSceneW, debugSceneH, false, 1,
+            bgfx::TextureFormat::RGBA16F,
+            BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK);
+        idReadW = debugSceneW;
+        idReadH = debugSceneH;
+        return bgfx::isValid(idReadTex);
+    }
+
+    /// Copy this frame's id image and ask for it back. Returns the frame
+    /// number at which \a dst is filled -- the caller must keep \a dst
+    /// alive until bgfx has reached it, since the render thread writes
+    /// into it long after this returns. 0 = the copy could not be made.
+    uint32_t readbackId(void *dst)
+    {
+        if (!bgfx::isValid(idReadTex) || !bgfx::isValid(debugSceneTex))
+            return 0;
+        bgfx::blit(vid(ViewIdReadback), idReadTex, 0, 0, debugSceneTex);
+        return bgfx::readTexture(idReadTex, dst);
+    }
+
     /// Rasterize one scene triangle draw into the debug scene target
     /// (docs/RenderDebug.md): mode 6 accumulates a fragment count with
     /// the depth test off (additive blend — the overdraw heatmap
@@ -3161,6 +4275,201 @@ public:
     /// Transform, clip planes and culling replicate the color fill like
     /// the AO prepass does.
     void submitDebugScene(const Render::DrawCall &draw, int mode);
+
+    /// ⭐ Rasterize one scene draw into the debug scene target as its own
+    /// identity (docs/RenderDebug.md §2.3b, view mode 11): a pixel's
+    /// value IS the id of the draw that won the depth test there, so the
+    /// finished image is an exact answer to "which draws reached the
+    /// screen" — the invariant occlusion culling claims, and the only
+    /// measurement of that claim which compares a verdict against
+    /// geometry instead of comparing two pictures.
+    ///
+    /// \a drawIdx is the DrawCall row, which is the granularity the cull
+    /// mask is indexed at (`ProxyInstance::drawIndex`) — per *instance*,
+    /// not per mesh, so a disagreement names a thing that can actually
+    /// be masked. Encoded as drawIdx+1 in three raw byte lanes, since
+    /// zero has to stay available for "no draw owns this pixel".
+    ///
+    /// ⭐⭐ Exact integers, never a hash or a palette: two draws sharing a
+    /// colour is precisely the failure this instrument exists to detect,
+    /// and a mode that made ids pretty would hide it. The target is
+    /// RGBA16F, which carries 0..255 per channel exactly.
+    ///
+    /// Every geometry kind, deliberately. The residual damage of the
+    /// culling shows up on edges, so an audit that skipped lines and
+    /// points would come back clean while missing exactly the draws that
+    /// were wrong. Lines and points therefore go through the same
+    /// screen-space quad expansion the beauty pass uses — the same
+    /// vertex programs, so the coverage IS the coverage — with
+    /// fs_fc_flat's constant-colour path carrying the id (u_params.x = 0
+    /// selects u_matColor; a zero emissive leaves it untouched).
+    ///
+    /// ⚠️ The coverage and depth decisions below are copied from
+    /// submit(); they are the ones that decide which pixels a draw
+    /// takes, so a copy that drifts reports pixels the frame never drew.
+    /// Anything that changes thick-line/point expansion, culling or
+    /// depth there has to change here too.
+    void submitId(const Render::DrawCall &draw, int drawIdx, bool noseam)
+    {
+        const Render::Material &mat = draw.material;
+        if (!draw.mesh || draw.mesh->numVertices == 0)
+            return;
+        GpuMesh *mesh = getMesh(*draw.mesh);
+        if (!bgfx::isValid(mesh->geom->vbh))
+            return;
+        if (noseam && mat.type == Render::Material::Line)
+            mesh->ensureNoSeam(*draw.mesh);
+        noseam = noseam && mat.type == Render::Material::Line
+            && bgfx::isValid(mesh->geom->lineNoSeam);
+        bgfx::IndexBufferHandle ibh = BGFX_INVALID_HANDLE;
+        switch (mat.type) {
+        case Render::Material::Triangle: ibh = mesh->geom->tri; break;
+        case Render::Material::Line:
+            ibh = noseam ? mesh->geom->lineNoSeam : mesh->geom->line;
+            break;
+        case Render::Material::Point: ibh = mesh->geom->point; break;
+        }
+        if (!bgfx::isValid(ibh))
+            return;
+
+        uint32_t linepattern = mat.linepattern;
+        bool patterned = mat.type == Render::Material::Line
+            && (linepattern & 0xffff) != 0xffff;
+        bool thickline = mat.type == Render::Material::Line
+            && (mat.linewidth > 1.001f || patterned)
+            && m_instancing
+            && bgfx::isValid(noseam ? mesh->lineNoSeamInst
+                                    : mesh->lineInst);
+        patterned = patterned && thickline;
+        bool thickpoint = mat.type == Render::Material::Point
+            && mat.pointsize > 1.001f
+            && m_instancing && bgfx::isValid(mesh->pointInst);
+
+        bool transparent = mat.transparent
+            || (mat.pervertexcolor && draw.mesh->hasTransparency);
+        bool twoside = mat.twoside || transparent || mat.ontop;
+        bool culling = mat.culling && !transparent;
+
+        // Depth exactly as the beauty pass resolves it — who owns the
+        // pixel is the entire answer here. On-top draws keep the depth
+        // test off and are submitted in a second round by the caller,
+        // so they take the same pixels they take on screen.
+        bool depthtest = mat.ontop ? false : mat.depthtest;
+        bool depthwrite = (!mat.ontop && transparent) ? false
+                                                      : mat.depthwrite;
+        if (!depthtest)
+            depthwrite = false;
+
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+        if (depthtest)
+            state |= depthFuncState(mat.depthfunc);
+        if (depthwrite)
+            state |= BGFX_STATE_WRITE_Z;
+        if (culling && !twoside && mat.type == Render::Material::Triangle)
+            state |= mat.ccw ? BGFX_STATE_CULL_CW : BGFX_STATE_CULL_CCW;
+        if (mat.type == Render::Material::Line && !thickline)
+            state |= BGFX_STATE_PT_LINES;
+        else if (mat.type == Render::Material::Point && !thickpoint)
+            state |= BGFX_STATE_PT_POINTS
+                | BGFX_STATE_POINT_SIZE(
+                    uint32_t(qMax(mat.pointsize, 1.0f)));
+
+        const uint32_t id = uint32_t(drawIdx) + 1u;
+        const float idc[4] = {float(id & 0xffu), float((id >> 8) & 0xffu),
+                              float((id >> 16) & 0xffu), 1.0f};
+
+        bool clipped = clipActiveFor(mat);
+        if (clipped)
+            setClipUniforms(mat);
+        setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
+                         (float)height);
+
+        bgfx::ProgramHandle prog;
+        if (mat.type == Render::Material::Triangle) {
+            // The debug-scene programs: a bare transform and a constant
+            // output, with none of the mesh shader's lighting, fog, AO
+            // or tone mapping between the id and the target.
+            float dbg[4] = {11.0f, idc[0], idc[1], idc[2]};
+            bgfx::setUniform(u_debugParams, dbg);
+            // ...and its polygon offset, so a fill still resolves
+            // against its own biased edges the way it does on screen.
+            float params[4] = {0.0f, 0.0f, 0.0f, polygonOffsetBias(mat)};
+            bgfx::setUniform(u_params, params);
+            prog = clipped ? m_progDebugSceneClip : m_progDebugScene;
+        }
+        else {
+            float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            // u_params for the line/point/flat family: x = 0 picks the
+            // constant colour over the vertex stream, y = width in
+            // pixels, z = the NDC pull of highlighted lines, w = 1 = no
+            // alpha ceiling (the dimming of occluded on-top lines must
+            // not touch an id).
+            float params[4] = {
+                0.0f,
+                mat.type == Render::Material::Line
+                    ? qMax(1.0f, std::floor(mat.linewidth + 0.5f))
+                    : qMax(1.0f, std::floor(mat.pointsize + 0.5f)),
+                (mat.highlightline && depthtest)
+                    ? -2.0f * (2.0f * 16.0f / 16777216.0f) : 0.0f,
+                1.0f};
+            bgfx::setUniform(u_matColor, idc);
+            bgfx::setUniform(u_matEmissive, zero);
+            bgfx::setUniform(u_params, params);
+            if (patterned) {
+                uint32_t factor = linepattern >> 16;
+                factor = factor < 1 ? 1 : factor > 256 ? 256 : factor;
+                float pat[4] = {float(linepattern & 0xffff), float(factor),
+                                0.0f, 0.0f};
+                bgfx::setUniform(u_linePattern, pat);
+            }
+            prog = thickline
+                ? (patterned ? (clipped ? m_progLinePatClip : m_progLinePat)
+                             : (clipped ? m_progLineClip : m_progLine))
+                : thickpoint
+                    ? (clipped ? m_progPointClip : m_progPoint)
+                    : (clipped ? m_progFlatClip : m_progFlat);
+        }
+        if (!bgfx::isValid(prog))
+            return;
+
+        if (thickline) {
+            uint32_t startSeg = 0;
+            uint32_t numSeg = uint32_t(noseam
+                ? draw.mesh->numNoSeamLineIndices
+                : draw.mesh->numLineIndices) / 2;
+            if (draw.indexCount > 0) {
+                startSeg = uint32_t(draw.indexStart) / 2;
+                numSeg = uint32_t(draw.indexCount) / 2;
+            }
+            bgfx::setVertexBuffer(0, m_lineQuadVb);
+            bgfx::setIndexBuffer(m_lineQuadIb);
+            bgfx::setInstanceDataBuffer(
+                noseam ? mesh->lineNoSeamInst : mesh->lineInst,
+                startSeg, numSeg);
+        }
+        else if (thickpoint) {
+            uint32_t startPt = 0;
+            uint32_t numPt = uint32_t(draw.mesh->numPointIndices);
+            if (draw.indexCount > 0) {
+                startPt = uint32_t(draw.indexStart);
+                numPt = uint32_t(draw.indexCount);
+            }
+            bgfx::setVertexBuffer(0, m_lineQuadVb);
+            bgfx::setIndexBuffer(m_lineQuadIb);
+            bgfx::setInstanceDataBuffer(mesh->pointInst, startPt, numPt);
+        }
+        else {
+            setMeshVertexBuffers(mesh, *draw.mesh);
+            if (draw.indexCount > 0)
+                bgfx::setIndexBuffer(ibh, uint32_t(draw.indexStart),
+                                     uint32_t(draw.indexCount));
+            else
+                bgfx::setIndexBuffer(ibh);
+        }
+        bgfx::setState(state);
+        bgfx::submit(vid(ViewDebugScene), prog);
+        ++drawcount;
+    }
 
     /// Rasterize a water/glass/cloud body draw into one of its interval
     /// depth targets (the meddepth programs write the linear view depth
@@ -3511,6 +4820,62 @@ public:
     }
     /// The bgfx view id of a pass, or the sink if the frame did not
     /// declare it. Never returns an id outside the block.
+    /// Which pass a bgfx view id belongs to, for the per-view cost
+    /// readout (docs/DrawSubmission.md phase 0). Inverts `idMap`, so it
+    /// needs no `setViewName` and cannot drift from the real mapping.
+    ///
+    /// Named for the passes a CAD frame actually spends its draws in;
+    /// anything else reports its pass index, which is enough to find it
+    /// in the enum. A name is a convenience — the index is the fact.
+    /// ⚠️⚠️ Resolve in the SAME FRAME the stat was taken. `idMap` is
+    /// rebuilt every frame from which passes are live, so a raw bgfx
+    /// view id means different passes in different frames — accumulating
+    /// by id across a reporting window and naming it at the end
+    /// attributes one pass's milliseconds to another. Only a pass whose
+    /// mark is set is resolved; everything unmarked shares `sinkView`
+    /// and cannot be told apart.
+    int passIndexOf(uint16_t id) const
+    {
+        for (int p = 0; p < NUM_VIEWS; ++p) {
+            if (passMark[p] && idMap[p] == id)
+                return p;
+        }
+        return -1;
+    }
+
+    static std::string passNameOfIndex(int p)
+    {
+        {
+            switch (p) {
+            case ViewOpaque: return "opaque";
+            case ViewTransparent: return "transparent";
+            case ViewSelection: return "selection";
+            case ViewOutline: return "outline";
+            case ViewShadow: return "shadow";
+            case ViewShadowTint: return "shadowtint";
+            case ViewAOPrepass: return "aoprepass";
+            case ViewAOGen: return "aogen";
+            case ViewAOBlur: return "aoblur";
+            case ViewBackground: return "background";
+            case ViewOITComposite: return "oitcomposite";
+            case ViewSectionCap: return "sectioncap";
+            case ViewDebugScene: return "debugscene";
+            case ViewIdReadback: return "idreadback";
+            case ViewWaterSurface: return "watersurface";
+            case ViewGlassSurface: return "glasssurface";
+            case ViewParticles: return "particles";
+            case ViewGroundRefl: return "groundrefl";
+            case ViewVolGen: return "volgen";
+            default: break;
+            }
+            if (p >= ViewBulbShadow0 && p <= ViewBulbShadow15)
+                return "bulbshadow" + std::to_string(p - ViewBulbShadow0);
+            if (p < 0)
+                return "unmarked";
+            return "pass" + std::to_string(p);
+        }
+    }
+
     uint16_t vid(int p) const
     {
         if (p < 0 || p >= NUM_VIEWS)
@@ -3607,6 +4972,12 @@ public:
     bgfx::FrameBufferHandle debugSceneFbo = BGFX_INVALID_HANDLE;
     uint16_t debugSceneW = 0;
     uint16_t debugSceneH = 0;
+    /// CPU-readable copy of the id image (RenderDebug_CullAudit). A
+    /// render target cannot be read back directly, so the audit blits
+    /// into this and reads that.
+    bgfx::TextureHandle idReadTex = BGFX_INVALID_HANDLE;
+    uint16_t idReadW = 0;
+    uint16_t idReadH = 0;
     bgfx::UniformHandle s_texAccum = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_texReveal = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progCap = BGFX_INVALID_HANDLE;
@@ -3858,6 +5229,10 @@ public:
     // AO/prepass cache key: camera + viewport + AO params + prepass draw
     // set (see the aoRender hash in render()); 0 = never cached.
     uint64_t aoMapHash = 0;
+    // The GPU downgrade sweep's unlanded orders (SceneLadder.h): what
+    // keeps a plan that samples the apply transient from re-correcting
+    // off it. Per view, like the meters it reconciles.
+    Render::DowngradeLedger dgLedger;
     // Camera+viewport of the previous frame (medium-interval and
     // planar-reflection frame cache — see staticFrame in render()).
     uint64_t camFrameHash = 0;
@@ -4099,6 +5474,13 @@ public:
     std::unordered_map<uint64_t, GpuTexture> textures;
     uint64_t frame = 0;
     int drawcount = 0;
+    /// Geometry the handle pool refused this frame (tryUploadGeometry):
+    /// draw submissions that asked for a mesh with no vertex buffer and
+    /// were skipped, and how many DISTINCT meshes that was -- one mesh
+    /// is asked for by several passes, so the submission count alone
+    /// cannot say how much geometry is actually missing from the
+    /// screen. Both reset with drawcount at the top of the frame.
+    size_t bufferDeniedSubmits = 0, bufferDeniedMeshes = 0;
     // Standalone (WebGL2) one-shot warmup: the very first MSAA scene
     // framebuffer created while bgfx's async WebGL2 init is still settling
     // renders the overlay views wrong (a stale-target artifact — the corner
@@ -4135,6 +5517,7 @@ public:
     float autozoomScale = 1.0f;
     // Current frame's view/projection matrices (GL-layout), for billboard
     // autozoom draws (SoTextImage): the screen-aligned basis is read from the
+
     // view matrix and the screen-constant size from the anchor's own view
     // depth + projection in setDrawTransform. Null outside a frame -> billboard
     // falls back to plain scaling.
@@ -4149,6 +5532,1347 @@ public:
     bool hasFBO = false;
 #endif
 };
+
+
+/// Occlusion query handles, leased one per test, for the two things
+/// that ask the depth buffer questions: the measurement probe below and
+/// the culler that acts on the same answers.
+///
+/// ⚠️⚠️ **A bgfx query handle is an object's identity, not a slot to
+/// rent** (docs/FarFieldProxies.md §12.11). `createOcclusionQuery()` is
+/// the only place bgfx ever writes `NoResult` into a handle's slot —
+/// nothing resets it on submit, not the frame swap and not the
+/// backend's own begin — so once a handle has answered, `getResult()`
+/// returns that same answer for as long as the handle lives. A pool of
+/// anonymous handles reassigned per frame therefore serves each test
+/// the *previous occupant's* verdict, and the "not answered yet, read
+/// it again next frame" guard that would catch a mismatch can never
+/// fire. Silently, too: `BGFX_CONFIG_DEBUG_OCCLUSION` asserts only that
+/// a handle is not used twice within a single frame, and cross-frame
+/// reuse trips nothing.
+///
+/// So a handle here is created for exactly one test and destroyed when
+/// its answer is read. `NoResult` then means what every reader in this
+/// file takes it to mean — *this* query has not landed — and nothing
+/// else can have written the slot, because creating a handle also
+/// invalidates any in-flight query still holding that index.
+///
+/// The price is a create/destroy pair per test rather than per node,
+/// and a transient second handle per lease: bgfx defers the free to the
+/// end of the frame, so a released handle cannot be re-allocated until
+/// then. src/3rdParty/CMakeLists.txt raises
+/// `BGFX_CONFIG_MAX_OCCLUSION_QUERIES` to cover both consumers at that
+/// width, and both of them size their appetite from
+/// `caps->limits.maxOcclusionQueries` rather than from that number, so
+/// a backend built without it culls less instead of answering wrongly.
+class OcclusionLeases
+{
+public:
+    /// A handle that reads `NoResult` until the query submitted against
+    /// it lands. Invalid when the backend has none left to give, which
+    /// costs culling and never correctness: the caller drops that test
+    /// and the node keeps whatever it already believed.
+    bgfx::OcclusionQueryHandle acquire()
+    {
+        bgfx::OcclusionQueryHandle q = bgfx::createOcclusionQuery();
+        if (bgfx::isValid(q))
+            ++leased;
+        else
+            ++refused;
+        return q;
+    }
+
+    /// Hand a handle back, once its answer has been read or once the
+    /// test it was created for has been given up on.
+    void release(bgfx::OcclusionQueryHandle q)
+    {
+        if (!bgfx::isValid(q))
+            return;
+        bgfx::destroy(q);
+        --leased;
+    }
+
+    /// Handles currently out. Not the same as tests in flight: a handle
+    /// released this frame is still allocated until the frame ends.
+    uint32_t held() const { return leased; }
+    /// Tests dropped for want of a handle, since the view opened.
+    uint32_t refusals() const { return refused; }
+
+private:
+    uint32_t leased = 0;
+    uint32_t refused = 0;
+};
+
+/// docs/FarFieldProxies.md §10.1 measurement 1: how many of the
+/// instances a frame draws could not have reached the screen.
+///
+/// The mechanism it measures is the one §10.1 proposes — occlusion
+/// queries per *spatial-index node* rather than per object, the CHC++
+/// shape over the hierarchy phase 1 already builds. So the readout is
+/// not an estimate of a mechanism's yield; it is the mechanism, run
+/// without acting on its answers.
+///
+/// Spread over frames because a GPU offers 256 queries at a time and a
+/// large model partitions into thousands of nodes: one batch per frame,
+/// results collected on a later frame, and a line printed when the
+/// whole partition has been walked. A cycle therefore takes a handful
+/// of frames, and nothing is reported until it is complete — a partial
+/// walk would read as a scene with fewer nodes rather than as an
+/// unfinished measurement.
+struct OcclusionProbeState {
+    /// Rebuilt per cycle, like the far-field cut's, and for the same
+    /// reason: a measurement that can be stale measures the wrong
+    /// thing. The build cost is reported.
+    Render::ProxyHierarchy index;
+    enum Verdict : uint8_t { Unknown, Offscreen, Occluded, Visible };
+    std::vector<uint8_t> verdict;
+    /// Nodes submitted last frame, awaiting their results.
+    std::vector<int> pending;
+    /// The handle each of those boxes was drawn under, created for that
+    /// one test and destroyed when its answer is read. Parallel to
+    /// `pending`. ⚠️ Held here rather than in a pool the walk reuses:
+    /// reusing them is what made the wait below a no-op, since a handle
+    /// that has answered once never reports `NoResult` again (see
+    /// OcclusionLeases).
+    std::vector<bgfx::OcclusionQueryHandle> handles;
+    /// Frames spent waiting for the current batch. A query that never
+    /// lands — a box the backend dropped, a device lost between submit
+    /// and read — would otherwise stall the walk forever, and the walk
+    /// is the only thing that ever prints the line.
+    uint32_t waited = 0;
+    /// Next node of the walk. Nodes the frustum already rejects never
+    /// enter a batch — conflating them with occluded ones would credit
+    /// occlusion culling with what frustum culling does today.
+    uint32_t next = 0;
+    bool active = false;
+    bool unsupportedReported = false;
+    double buildMs = 0.0;
+    uint32_t batches = 0;
+    uint32_t skippedBoxes = 0;   ///< transient buffers exhausted
+    /// Nodes the near plane made unanswerable, counted as visible.
+    uint32_t nearClipped = 0;
+    /// Pixels each tested node contributed, bucketed. A node worth 3
+    /// pixels is not worth its draws either, so the tail of this is the
+    /// far-field question asked of the same partition.
+    uint32_t pxHist[5] = {0, 0, 0, 0, 0};
+    int64_t lastReport = 0;
+    /// The camera the walk started against. A walk spans several
+    /// frames, so a camera that moves partway through would have its
+    /// early batches answered from one viewpoint and its late ones from
+    /// another — and the line would report a scene that never existed.
+    /// Restarting is the only honest response; a moving camera simply
+    /// does not get a reading until it stops.
+    float camera[32] = {};
+    bool cameraValid = false;
+
+    /// True when \a V and \a P match what the current walk started
+    /// against; records them when there is no walk in progress.
+    bool sameCamera(const float *V, const float *P)
+    {
+        float now[32];
+        std::memcpy(now, V, 16 * sizeof(float));
+        std::memcpy(now + 16, P, 16 * sizeof(float));
+        if (cameraValid && std::memcmp(now, camera, sizeof(now)) == 0)
+            return true;
+        std::memcpy(camera, now, sizeof(camera));
+        cameraValid = true;
+        return false;
+    }
+};
+
+/// Where the box batch is built. One per frame at most, so a plain
+/// scratch pair rather than an allocation per batch.
+struct OcclusionBoxBatch {
+    std::vector<float> mins;
+    std::vector<float> maxs;
+    std::vector<int> nodes;
+};
+
+/// Walk the partition once and report. Returns true while a cycle is in
+/// progress, so the caller can leave the pass claimed.
+///
+/// \a leases hands out the query handles: one per box, destroyed as its
+/// answer is read, because a reused handle answers with the previous
+/// test's verdict and the wait below would never notice.
+static void driveOcclusionProbe(
+        BGFXView &view, OcclusionProbeState &st, OcclusionBoxBatch &batch,
+        OcclusionLeases &leases,
+        const Render::DrawCallList &scene, const float *V, const float *P,
+        float viewportHeightPx)
+{
+    // How long to leave the picture alone between cycles. The walk
+    // itself costs a handful of frames of box rasterization; running it
+    // back to back would make the readout a load rather than a probe.
+    static const int64_t kQuietFrames = 3;
+    // How long to wait for a batch before declaring it lost. Answers
+    // land two frames after they are submitted; a batch that has not
+    // answered in this many has not been drawn at all, and waiting for
+    // it forever would stop the walk that prints the line.
+    static const uint32_t kWaitFrames = 60;
+
+    const bgfx::Caps *caps = bgfx::getCaps();
+    if (!caps || !(caps->supported & BGFX_CAPS_OCCLUSION_QUERY)) {
+        if (!st.unsupportedReported) {
+            st.unsupportedReported = true;
+            RENDER_ERR("render occlusion: this backend reports no occlusion "
+                       "query support; nothing measured");
+        }
+        return;
+    }
+
+    // A quarter of the backend's handles, so that the culler — which
+    // runs on the same pool and is the mechanism this measures — is not
+    // starved by the measurement. Taking fewer per batch costs the walk
+    // frames, never accuracy: a cycle is complete when every node has
+    // been asked, however many batches that took.
+    const uint32_t kBatch =
+        std::max<uint32_t>(16, std::min<uint32_t>(
+                256, caps->limits.maxOcclusionQueries / 4));
+
+    // Collect the previous batch before anything else: the handles are
+    // the resource, and one whose result has not been read is still
+    // out. Draining first — ahead of the camera check that may abandon
+    // this walk — is what lets an abandoned walk hand its handles back
+    // instead of orphaning them.
+    if (!st.pending.empty()) {
+        for (size_t i = 0; i < st.pending.size(); ++i) {
+            if (bgfx::getResult(st.handles[i])
+                    != bgfx::OcclusionQueryResult::NoResult)
+                continue;
+            // Still in flight. ⭐ This wait is only real because the
+            // handle was created for this one box: read on a reused
+            // handle, `NoResult` never comes back after the first
+            // cycle and the walk helps itself to the previous batch's
+            // answers.
+            if (++st.waited <= kWaitFrames)
+                return;
+            RENDER_ERR("render occlusion: a batch of " << st.pending.size()
+                       << " boxes went unanswered for " << kWaitFrames
+                       << " frames and was abandoned; no hidden share is "
+                          "reported for this walk");
+            for (auto q : st.handles)
+                leases.release(q);
+            st.handles.clear();
+            st.pending.clear();
+            st.active = false;
+            st.waited = 0;
+            st.lastReport = bx::getHPCounter();
+            return;
+        }
+        for (size_t i = 0; i < st.pending.size(); ++i) {
+            int32_t px = 0;
+            const auto r = bgfx::getResult(st.handles[i], &px);
+            leases.release(st.handles[i]);
+            if (!st.active)
+                continue;   // results of a walk that has been abandoned
+            const int node = st.pending[i];
+            st.verdict[size_t(node)] =
+                (r == bgfx::OcclusionQueryResult::Visible && px > 0)
+                    ? OcclusionProbeState::Visible
+                    : OcclusionProbeState::Occluded;
+            const uint32_t bucket = px <= 0 ? 0
+                                  : px <= 4 ? 1
+                                  : px <= 64 ? 2
+                                  : px <= 1024 ? 3 : 4;
+            ++st.pxHist[bucket];
+        }
+        st.handles.clear();
+        st.pending.clear();
+        st.waited = 0;
+    }
+
+    // A camera that moved abandons the walk rather than finishing it
+    // against a different viewpoint: its early batches were answered
+    // from one place and its late ones would be answered from another,
+    // and the line would describe a scene that never existed. A moving
+    // camera simply gets no reading until it stops.
+    if (!st.sameCamera(V, P))
+        st.active = false;
+
+    if (!st.active) {
+        const int64_t now = bx::getHPCounter();
+        if (st.lastReport
+                && now - st.lastReport < kQuietFrames * bx::getHPFrequency())
+            return;
+        const int64_t started = now;
+        std::vector<Render::ProxyInstance> instances;
+        Render::proxyInstances(scene, instances);
+        if (instances.empty())
+            return;
+        st.index.build(instances);
+        st.buildMs = 1000.0 * double(bx::getHPCounter() - started)
+                     / double(bx::getHPFrequency());
+        st.verdict.assign(st.index.nodes().size(), OcclusionProbeState::Unknown);
+        st.pending.clear();
+        st.next = 0;
+        st.batches = 0;
+        st.skippedBoxes = 0;
+        st.nearClipped = 0;
+        std::memset(st.pxHist, 0, sizeof(st.pxHist));
+        st.active = true;
+    }
+
+    // Fill the next batch, skipping what the frustum already rejects.
+    const auto &nodes = st.index.nodes();
+    batch.mins.clear();
+    batch.maxs.clear();
+    batch.nodes.clear();
+    while (st.next < nodes.size() && batch.nodes.size() < kBatch) {
+        const int node = int(st.next++);
+        const Render::ProxyNode &n = nodes[size_t(node)];
+        const auto sight = Render::sightBounds(n.contentMin, n.contentMax, V, P,
+                                               viewportHeightPx);
+        if (sight.what == Render::BoxSight::Offscreen) {
+            st.verdict[size_t(node)] = OcclusionProbeState::Offscreen;
+            continue;
+        }
+        if (sight.what == Render::BoxSight::Empty) {
+            st.verdict[size_t(node)] = OcclusionProbeState::Visible;
+            continue;
+        }
+        // ⚠️ The box is padded outwards, and the measurement does not
+        // work without it.
+        //
+        // A node's bounds are the union of its contents' bounds, so a
+        // face of the box coincides *exactly* with a real surface
+        // whenever some part has a flat face at its own extreme — in
+        // CAD not an edge case but the common one: panels, plates,
+        // brackets, a chassis wall. Rasterized at equal depth the two
+        // disagree in the last bit, and where the box loses, LEQUAL
+        // rejects every fragment and the node reports itself hidden
+        // while its contents are in plain view. A test box has to be a
+        // conservative bound, and float equality is not conservative.
+        //
+        // Relative to the box's own diagonal, so it means the same at
+        // any model scale.
+        //
+        // ⚠️⚠️ And padded by the depth buffer's own resolution as well,
+        // which the relative term cannot supply: a small part flush on
+        // a large panel has a small diagonal, so a small pad, at a
+        // distance where one depth step dwarfs it. Both quantize to the
+        // same stored value and LEQUAL loses the tie. The probe shares
+        // this with the culler on purpose — a measurement that answers
+        // a different question than the mechanism it justifies is worth
+        // nothing (§12.6).
+        float pmin[3], pmax[3];
+        const float dx = n.contentMax[0] - n.contentMin[0];
+        const float dy = n.contentMax[1] - n.contentMin[1];
+        const float dz = n.contentMax[2] - n.contentMin[2];
+        const Render::OcclusionCullConfig defaults;
+        const float pad = defaults.padFraction
+                * std::sqrt(dx * dx + dy * dy + dz * dz)
+            + Render::depthQuantumPad(n.contentMin, n.contentMax, V, P,
+                                      caps->homogeneousDepth,
+                                      defaults.depthPadLsb);
+        for (int k = 0; k < 3; ++k) {
+            pmin[k] = n.contentMin[k] - pad;
+            pmax[k] = n.contentMax[k] + pad;
+        }
+
+        // A box the near plane clips cannot be tested at all: the faces
+        // that would prove it visible are gone, and the ones that
+        // remain are hidden by the box's own contents, so the query
+        // returns nothing and the box reports itself hidden however
+        // plainly it is in view. Judged on the *padded* box, since that
+        // is what gets rasterized — and padding a box whose front face
+        // already sits on the near plane is exactly what pushes it
+        // through.
+        if (sight.what == Render::BoxSight::Inside
+                || Render::boxReachesNearPlane(pmin, pmax, V, P,
+                                               caps->homogeneousDepth)) {
+            st.verdict[size_t(node)] = OcclusionProbeState::Visible;
+            ++st.nearClipped;
+            continue;
+        }
+        for (int k = 0; k < 3; ++k) {
+            batch.mins.push_back(pmin[k]);
+            batch.maxs.push_back(pmax[k]);
+        }
+        batch.nodes.push_back(node);
+    }
+
+    if (!batch.nodes.empty()) {
+        st.handles.clear();
+        while (st.handles.size() < batch.nodes.size()) {
+            bgfx::OcclusionQueryHandle q = leases.acquire();
+            if (!bgfx::isValid(q))
+                break;
+            st.handles.push_back(q);
+        }
+        const uint32_t n = uint32_t(st.handles.size());
+        const uint32_t sent = n
+            ? view.submitOcclusionBoxes(batch.mins.data(), batch.maxs.data(),
+                                        n, st.handles)
+            : 0;
+        // Boxes the batch could not send keep the Unknown verdict; the
+        // report names them rather than counting them as either side.
+        st.skippedBoxes += uint32_t(batch.nodes.size()) - sent;
+        ++st.batches;
+        for (uint32_t i = 0; i < sent; ++i)
+            st.pending.push_back(batch.nodes[i]);
+        // A handle whose box was not drawn will never be answered, and
+        // holding it would leak one out of the pool per cycle.
+        for (size_t i = sent; i < st.handles.size(); ++i)
+            leases.release(st.handles[i]);
+        st.handles.resize(sent);
+        st.waited = 0;
+        return;
+    }
+
+    // The walk is done: descend the partition once and attribute every
+    // instance to the highest node that rejects it. Descending rather
+    // than summing per node is the whole point — culling a node culls
+    // its subtree, so counting occluded nodes independently would count
+    // the same instances at every level they are hidden at.
+    // A root the query calls hidden cannot be true: its box contains
+    // every drawn thing, so if the frame put a single pixel on the
+    // screen the root is visible. When it happens the box test is not
+    // answering — and the descent below would faithfully turn that into
+    // "100% hidden", a number that looks like a spectacular result and
+    // is nothing of the kind. Say so instead; a measurement that cannot
+    // report a failure is not a measurement.
+    if (st.index.root() != Render::kNoProxyNode
+            && st.verdict[size_t(st.index.root())]
+                   == OcclusionProbeState::Occluded) {
+        RENDER_ERR("render occlusion: the whole-model box tested as hidden, "
+                   "which cannot be true while the frame draws anything -- "
+                   "the box test is not answering for this camera and no "
+                   "hidden share is reported");
+        st.active = false;
+        st.lastReport = bx::getHPCounter();
+        return;
+    }
+
+    uint64_t offscreenInstances = 0;
+    uint64_t occludedInstances = 0;
+    uint64_t visibleInstances = 0;
+    uint32_t occludedNodes = 0;
+    uint32_t testedNodes = 0;
+    uint32_t offscreenNodes = 0;
+    std::vector<int> stack;
+    if (st.index.root() != Render::kNoProxyNode)
+        stack.push_back(st.index.root());
+    while (!stack.empty()) {
+        const int node = stack.back();
+        stack.pop_back();
+        const Render::ProxyNode &n = nodes[size_t(node)];
+        const uint8_t vd = st.verdict[size_t(node)];
+        if (vd == OcclusionProbeState::Offscreen) {
+            offscreenInstances += n.subtreeCount;
+            ++offscreenNodes;
+            continue;
+        }
+        if (vd == OcclusionProbeState::Occluded) {
+            occludedInstances += n.subtreeCount;
+            ++occludedNodes;
+            continue;
+        }
+        // Visible (or untested): its own residents draw, and the
+        // question is asked again of each child.
+        visibleInstances += n.residentCount;
+        for (int c : n.child) {
+            if (c != Render::kNoProxyNode)
+                stack.push_back(c);
+        }
+    }
+    for (uint8_t vd : st.verdict) {
+        if (vd == OcclusionProbeState::Visible || vd == OcclusionProbeState::Occluded)
+            ++testedNodes;
+    }
+
+    // Per level, because a single hidden share cannot be read without
+    // knowing where in the partition it was decided. A model whose root
+    // is called hidden and a model whose leaves are each called hidden
+    // print the same headline and mean entirely different things — the
+    // first is a broken box test, the second is what culling is for.
+    struct LevelTally { uint32_t nodes = 0, tested = 0, zeroPx = 0; };
+    std::vector<LevelTally> byLevel;
+    for (size_t n = 0; n < nodes.size(); ++n) {
+        const uint32_t lvl = nodes[n].level;
+        if (byLevel.size() <= lvl)
+            byLevel.resize(lvl + 1);
+        ++byLevel[lvl].nodes;
+        const uint8_t vd = st.verdict[n];
+        if (vd == OcclusionProbeState::Visible
+                || vd == OcclusionProbeState::Occluded) {
+            ++byLevel[lvl].tested;
+            if (vd == OcclusionProbeState::Occluded)
+                ++byLevel[lvl].zeroPx;
+        }
+    }
+    std::string levels;
+    for (size_t l = 0; l < byLevel.size(); ++l) {
+        if (!byLevel[l].nodes)
+            continue;
+        char lb[96];
+        snprintf(lb, sizeof(lb), " L%u:%u/%u hidden%u", unsigned(l),
+                 byLevel[l].tested, byLevel[l].nodes, byLevel[l].zeroPx);
+        levels += lb;
+    }
+
+    const auto stats = st.index.stats();
+    const double total = double(stats.instances);
+    char buf[640];
+    snprintf(buf, sizeof(buf),
+             "render occlusion: instances:%u | hidden %llu (%.1f%%) "
+             "offscreen %llu (%.1f%%) drawn %llu (%.1f%%) | nodes %u tested %u "
+             "occluded %u offscreen %u | node px 0:%u <=4:%u <=64:%u "
+             "<=1k:%u more:%u | batches %u nearclip %u skipped %u | "
+             "build %.1fms\n",
+             stats.instances, (unsigned long long)occludedInstances,
+             total > 0 ? 100.0 * double(occludedInstances) / total : 0.0,
+             (unsigned long long)offscreenInstances,
+             total > 0 ? 100.0 * double(offscreenInstances) / total : 0.0,
+             (unsigned long long)visibleInstances,
+             total > 0 ? 100.0 * double(visibleInstances) / total : 0.0,
+             stats.nodes, testedNodes, occludedNodes, offscreenNodes,
+             st.pxHist[0], st.pxHist[1], st.pxHist[2], st.pxHist[3],
+             st.pxHist[4], st.batches, st.nearClipped, st.skippedBoxes,
+             st.buildMs);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+    std::printf("render occlusion levels:%s\n", levels.c_str());
+#else
+    Base::Console().Message("%s", buf);
+    Base::Console().Message("render occlusion levels:%s\n", levels.c_str());
+#endif
+    st.active = false;
+    st.lastReport = bx::getHPCounter();
+}
+
+/// Project the draw list into the table the culler partitions.
+///
+/// Not `proxyInstances()` alone, because two kinds of draw are not
+/// judgeable by the bounds they carry, and both are exactly the ones the
+/// frustum cull already exempts (BGFXRenderer.cpp, "Frustum culling"):
+///
+/// - **autozoom** draws rebuild their model matrix per frame, so the fed
+///   bounds describe where the draw *was*;
+/// - **emitters** draw outside their own bounds, which is what
+///   drawHeadroom() measures.
+///
+/// The emitter case could be padded rather than dropped, but an emitter
+/// is one draw and the padding would be a guess; dropping it costs one
+/// draw and cannot be wrong. Rows that are dropped are simply absent
+/// from the index and therefore never masked — `drawIndex` still refers
+/// to the original draw list, so the mask stays aligned.
+///
+/// ⚠️⚠️ **On-top draws are excluded, and leaving them in was measured to
+/// delete visible geometry.** An on-top draw is defined by ignoring the
+/// depth test: it is drawn over whatever is in front of it, so it is
+/// visible *however occluded its geometry is*. A depth-buffer occlusion
+/// test answers the question "is this geometry behind something", which
+/// for on-top draws is true and irrelevant — and acting on it removes
+/// something the eye can plainly see. Culling them cost 1.5% of the
+/// pixels of a whole-assembly view of the server model, concentrated in
+/// exactly the structure an engineer is looking at.
+static void cullInstances(const Render::DrawCallList &scene,
+                          std::vector<Render::ProxyInstance> &out,
+                          uint32_t *exemptOnTop = nullptr)
+{
+    Render::proxyInstances(scene, out);
+    uint32_t ontop = 0;
+    out.erase(std::remove_if(out.begin(), out.end(),
+                             [&](const Render::ProxyInstance &inst) {
+                                 if (inst.drawIndex >= scene.size())
+                                     return true;
+                                 const auto &d = scene[inst.drawIndex];
+                                 if (d.material.ontop) {
+                                     ++ontop;
+                                     return true;
+                                 }
+                                 return !d.material.autozoom.empty()
+                                     || drawHeadroom(d) > 0.0f;
+                             }),
+              out.end());
+    if (exemptOnTop)
+        *exemptOnTop = ontop;
+}
+
+/// One occlusion test in flight: the node it asks about, the handle
+/// created for it, and the frame it was issued on.
+struct OcclusionTestLease {
+    bgfx::OcclusionQueryHandle handle = BGFX_INVALID_HANDLE;
+    int node = -1;
+    uint32_t issued = 0;
+};
+
+/// The culler's occlusion queries: the handles it holds and the tests
+/// they stand for.
+struct OcclusionCullQueries {
+    OcclusionLeases leases;
+    /// Tests submitted and not yet answered, in issue order.
+    std::vector<OcclusionTestLease> inflight;
+    /// Scratch for one round's handles, kept across frames so that
+    /// issuing a round allocates nothing.
+    std::vector<bgfx::OcclusionQueryHandle> scratch;
+    /// Tests whose answer never arrived, since the view opened.
+    uint32_t expired = 0;
+    /// Boxes actually submitted last frame. Distinct from the tests the
+    /// walk offered and from the ones it had budget for: a handle the
+    /// backend would not give out, or a transient buffer that ran short,
+    /// shows up only here.
+    uint32_t lastSent = 0;
+
+    void releaseAll()
+    {
+        for (const auto &test : inflight)
+            leases.release(test.handle);
+        inflight.clear();
+    }
+};
+
+/// How long a test may go unanswered before its lease is torn up.
+///
+/// An answer lands two frames after its box is submitted. One that never
+/// lands — a box the backend dropped, a device lost between submit and
+/// read — would otherwise hold its handle forever and leave its node
+/// marked pending, which is the one state the walk never re-offers. The
+/// node would then be left to `maxHiddenFrames`, the fail-safe for
+/// answers that stop arriving, and would sit hidden until it fired.
+/// Expiring the lease first turns a lost query back into an ordinary
+/// un-answered node, re-offered on the next walk. ⚠️ This became
+/// necessary with the leases: while handles were pooled and reused, a
+/// query that never landed still read as answered — with somebody
+/// else's answer — so nothing ever looked stuck.
+static const uint32_t kCullLeaseFrames = 16;
+
+/// One frame of occlusion culling: read the answers the last frame's
+/// tests have produced, walk the index against this camera, mask what
+/// cannot be seen, and issue the next round of tests.
+///
+/// The masking is *additive* into \a cullMask — the frustum's rejections
+/// are already in it — and the mask is consulted only by the eye passes.
+/// That is what keeps the culling per pass rather than per frame, which
+/// §10.4 requires: shadow casters deliberately re-submit culled draws
+/// (off-screen geometry still casts into view) and the mirrored ground
+/// reflection never consults the mask at all, so neither inherits a
+/// verdict taken from the eye.
+static void driveOcclusionCull(
+        BGFXView &view, Render::OcclusionCuller &culler,
+        Render::OcclusionTestBatch &batch, OcclusionCullQueries &queries,
+        const float *V, const float *P,
+        float viewportHeightPx, std::vector<uint8_t> &cullMask,
+        std::vector<int32_t> *cullOwner)
+{
+    const bgfx::Caps *caps = bgfx::getCaps();
+    if (!caps)
+        return;
+
+    // 1. Collect what the last rounds asked. Non-blocking by design: a
+    // query whose frame has not landed keeps its lease and is read next
+    // time. Stalling on it would trade the frame time this is meant to
+    // save for a pipeline bubble, and the node it belongs to simply
+    // keeps whatever it already believed.
+    //
+    // ⭐ `NoResult` carries the whole distinction between "not answered
+    // yet" and "answered", and it only tells the truth because the
+    // handle was created for this one test — see OcclusionLeases.
+    const uint32_t now = culler.frame();
+    size_t kept = 0;
+    for (size_t i = 0; i < queries.inflight.size(); ++i) {
+        const OcclusionTestLease test = queries.inflight[i];
+        int32_t px = 0;
+        const auto r = bgfx::getResult(test.handle, &px);
+        if (r == bgfx::OcclusionQueryResult::NoResult) {
+            if (now - test.issued < kCullLeaseFrames) {
+                queries.inflight[kept++] = test;
+                continue;
+            }
+            ++queries.expired;
+            queries.leases.release(test.handle);
+            culler.abandon(test.node);
+            continue;
+        }
+        culler.result(test.node,
+                      r == bgfx::OcclusionQueryResult::Visible && px > 0, px);
+        queries.leases.release(test.handle);
+    }
+    queries.inflight.resize(kept);
+
+    // 2. Decide what this camera draws.
+    culler.cull(V, P, viewportHeightPx, caps->homogeneousDepth, cullMask,
+                batch, cullOwner);
+    queries.lastSent = 0;
+    if (batch.nodes.empty())
+        return;
+
+    // 3. Issue the next round, one handle created for each test.
+    //
+    // Never taking more than half the backend's pool leaves room for the
+    // measurement probe, which runs on the same handles, and for the
+    // frame's released ones, which bgfx does not free until the frame
+    // ends. The walk already caps the batch at `budget` per frame; this
+    // bounds the *accumulation*, for the case where answers stop coming
+    // and every eligible node ends up in flight at once.
+    const uint32_t ceiling = std::max<uint32_t>(
+            1, caps->limits.maxOcclusionQueries / 2);
+    auto &handles = queries.scratch;
+    handles.clear();
+    while (handles.size() < batch.nodes.size()
+            && queries.leases.held() < ceiling) {
+        bgfx::OcclusionQueryHandle q = queries.leases.acquire();
+        if (!bgfx::isValid(q))
+            break;
+        handles.push_back(q);
+    }
+    // The boxes are contiguous and the batch is offered in priority
+    // order — hidden nodes first, since a test is the only way one can
+    // come back — so submitting a prefix drops the least important.
+    const uint32_t sent = handles.empty()
+        ? 0
+        : view.submitOcclusionBoxes(batch.mins.data(), batch.maxs.data(),
+                                    uint32_t(handles.size()), handles);
+    queries.lastSent = sent;
+    const uint32_t issued = culler.frame();
+    for (uint32_t i = 0; i < sent; ++i)
+        queries.inflight.push_back({handles[i], batch.nodes[i], issued});
+    // A handle whose box was not drawn will never be answered; holding
+    // it would take one out of the pool per frame.
+    for (size_t i = sent; i < handles.size(); ++i)
+        queries.leases.release(handles[i]);
+    // Everything not sent must be told, or it stays marked pending and
+    // is never offered again — for a hidden node that would mean it
+    // could only return via the starvation fail-safe.
+    for (size_t i = sent; i < batch.nodes.size(); ++i)
+        culler.abandon(batch.nodes[i]);
+}
+
+/// Whether the once-a-second cull audit is due. Split from the report
+/// like the far-field readouts, and for the same reason: what it gates
+/// is a full-resolution transfer off the GPU, which must not be paid on
+/// the frames that print nothing.
+static bool cullAuditDue()
+{
+    static int64_t lastReport = 0;
+    const int64_t now = bx::getHPCounter();
+    const int64_t freq = bx::getHPFrequency();
+    if (lastReport && now - lastReport < freq)
+        return false;
+    lastReport = now;
+    return true;
+}
+
+/// ⭐⭐ What a tighter occludee volume would have culled
+/// (docs/FarFieldProxies.md §12.19). A **diagnostic**, not a mechanism:
+/// it decides whether the mechanism is worth building.
+///
+/// Section 12.17 left 90% of what is still drawn reaching no pixel while
+/// each of those draws had been tested individually and answered
+/// visible — so the boxes are not covered although the geometry is. That
+/// has three candidate explanations with wildly different prices, and
+/// this measures all three against the same frame:
+///
+/// - **world AABB** (`aabbMask`, what ships today) — the control;
+/// - **OBB corners** (`obbMask`) — the mesh's *local* box through the
+///   model matrix. A world AABB is the axis-aligned box of an oriented
+///   box for any rotated part, inflated twice; this is the cheap fix,
+///   and on an axis-aligned model it is expected to buy nothing;
+/// - **per triangle** (`triMask`) — every triangle of the draw asked
+///   separately, the draw counted hidden only when none of them reaches
+///   a pixel. ⚠️ Not a shippable mechanism (§12.17's closing paragraph
+///   costed it at 9.75M triangles of query rasterization) but it is the
+///   **ceiling**: no occludee-side refinement against this occluder set
+///   can beat asking about the geometry itself.
+///
+/// KEY: Each arm is monotone in the one above it — a triangle's hull
+/// lies inside the OBB, whose hull lies inside the AABB, and `testRect`
+/// answers Occluded for a subset rect at a no-nearer depth whenever it
+/// does for the enclosing one. So an arm that culls nothing its
+/// predecessor did not is a *proven* dead end and not an unlucky sample.
+///
+/// The masks are handed to the audit rather than acted on, and there
+/// intersected with the id image: a row that would flip and owns no
+/// pixel is the prize, a row that would flip and owns pixels is
+/// over-cull the arm would have introduced. The second number is why
+/// this is measurable at all — the arms are hypotheses, and the id image
+/// is the only thing in the renderer that can call one wrong.
+/// ⚠️ The control arm is not optional. A row reaching this diagnostic
+/// survived the cull, but "survived" covers two different things: it was
+/// tested with its world AABB and answered visible, or it was **never
+/// asked** (an on-top draw, an exempt row, anything the hierarchy does
+/// not hold). Without re-running the world AABB here, both would be
+/// counted as the tighter arms' winnings, and a coverage gap would be
+/// published as a tightness result — the §12.16 mistake in a new place:
+/// reading a number as evidence for the mechanism you happen to be
+/// building. `aabbCull` is that number, and it belongs to neither arm.
+struct TightBoundAudit {
+    uint32_t judged = 0;      ///< drawn rows the arms could answer for
+    /// ⚠️⚠️ Rows the arms were never asked about, and why. The first run
+    /// of this diagnostic judged 2803 of 8388 drawn rows and divided its
+    /// result by all 7574 invisible ones — reporting a 3.0% ceiling for
+    /// a mechanism that had not been offered two thirds of the problem.
+    /// A CAD scene draws each object as fills *and* edges, so the line
+    /// draws are not a rounding error here; they are the majority.
+    uint32_t skippedPoint = 0;   ///< point sprites: a vertex is not a footprint
+    uint32_t skippedNoMesh = 0;  ///< no geometry to ask about at all
+    uint32_t capped = 0;      ///< rows too big for the per-primitive arm
+    uint32_t aabbCull = 0;    ///< rows the shipping world box would cull
+    uint32_t obbCull = 0;     ///< rows the OBB arm would cull
+    uint32_t triCull = 0;     ///< rows the per-triangle arm would cull
+    uint32_t obbOffscreen = 0;   ///< of obbCull, decided by the rect, not depth
+    uint32_t triOffscreen = 0;   ///< of triCull, ditto
+    uint64_t primitives = 0;  ///< primitives the per-primitive arm asked about
+    float ms = 0.0f;
+};
+
+/// The local-space bounds of the vertices a draw actually references.
+///
+/// KEY: The draw's range, not the whole mesh. A part draw (`indexStart`/
+/// `indexCount`) covers a face of a mesh whose world box in `DrawCall`
+/// is already that face's, so bounding the *whole* mesh here would make
+/// the "tight" arm looser than the control it is being compared against
+/// — the one way this measurement could report a negative result that is
+/// an artefact of its own arithmetic.
+static bool drawLocalBounds(const Render::MeshData &m, const int32_t *indices,
+                            size_t first, size_t count, float *lo, float *hi)
+{
+    lo[0] = lo[1] = lo[2] = FLT_MAX;
+    hi[0] = hi[1] = hi[2] = -FLT_MAX;
+    bool any = false;
+    for (size_t i = 0; i < count; ++i) {
+        const int32_t vi = indices[first + i];
+        if (vi < 0 || vi >= m.numVertices)
+            continue;
+        const float *p = m.positions + size_t(vi) * 3;
+        for (int k = 0; k < 3; ++k) {
+            lo[k] = std::min(lo[k], p[k]);
+            hi[k] = std::max(hi[k], p[k]);
+        }
+        any = true;
+    }
+    return any;
+}
+
+/// Take the three arms over every row the cull left drawn.
+///
+/// Runs on the audit's frame only (once a second, and only while
+/// RenderDebug_CullBounds is on): the per-triangle arm is deliberately
+/// far too expensive to ship, so it must never be on a path a normal
+/// frame takes.
+static void auditTightBounds(const Render::DrawCallList &scene,
+                             const std::vector<uint8_t> &culled,
+                             const Render::MaskedDepth &depth,
+                             uint32_t primitiveCap, uint32_t threads,
+                             std::vector<uint8_t> &judgedMask,
+                             std::vector<uint8_t> &aabbMask,
+                             std::vector<uint8_t> &obbMask,
+                             std::vector<uint8_t> &triMask,
+                             TightBoundAudit &out)
+{
+    const auto t0 = bx::getHPCounter();
+    judgedMask.assign(scene.size(), 0);
+    aabbMask.assign(scene.size(), 0);
+    obbMask.assign(scene.size(), 0);
+    triMask.assign(scene.size(), 0);
+
+    uint32_t workers = Render::occluderWorkers(threads);
+    if (scene.size() < 256)
+        workers = 1;
+    std::vector<TightBoundAudit> tally(workers);
+
+    auto work = [&](uint32_t w) {
+        TightBoundAudit &t = tally[w];
+        for (size_t i = w; i < scene.size(); i += workers) {
+            if (i < culled.size() && culled[i])
+                continue;  // already skipped; nothing left to win here
+            const Render::DrawCall &d = scene[i];
+            if (!d.mesh || !d.mesh->positions || d.mesh->numVertices < 1) {
+                ++t.skippedNoMesh;
+                continue;
+            }
+            // ⭐ Whichever primitive this draw actually renders. A CAD
+            // frame submits an object's edges as well as its faces, and
+            // an edge draw is a draw: it costs the same submission, it
+            // is hidden by the same walls, and a segment is a far
+            // tighter thing to ask about than the box around a whole
+            // wireframe. Asking only about triangles measured a third
+            // of the problem and reported the answer as all of it.
+            const int32_t *indices = nullptr;
+            size_t total = 0;
+            size_t per = 3;
+            switch (d.material.type) {
+            case Render::Material::Triangle:
+                indices = d.mesh->triangleIndices;
+                total = size_t(std::max(0, d.mesh->numTriangleIndices));
+                per = 3;
+                break;
+            case Render::Material::Line:
+                indices = d.mesh->lineIndices;
+                total = size_t(std::max(0, d.mesh->numLineIndices));
+                per = 2;
+                break;
+            default:
+                // ⚠️ A point draw is a *sprite*: it covers pixels around
+                // its vertex, and the vertex alone is not that footprint.
+                // Asking about it would be the one arm here that can
+                // answer hidden for something on screen.
+                ++t.skippedPoint;
+                continue;
+            }
+            if (!indices || total < per) {
+                ++t.skippedNoMesh;
+                continue;
+            }
+            // The same resolution the occluder pass uses.
+            size_t first = size_t(std::max(0, d.indexStart));
+            size_t count = d.indexCount > 0 ? size_t(d.indexCount) : total;
+            if (first > total)
+                first = total;
+            if (first + count > total)
+                count = total - first;
+            if (count < per) {
+                ++t.skippedNoMesh;
+                continue;
+            }
+            ++t.judged;
+            judgedMask[i] = 1;
+
+            // The control: the box that ships, asked again here. A row
+            // it culls was never asked in the first place, and nothing
+            // below may take credit for it.
+            if (d.bboxMin[0] <= d.bboxMax[0]
+                && depth.testBoxConcurrent(d.bboxMin, d.bboxMax)
+                        == Render::OccludeAnswer::Occluded) {
+                aabbMask[i] = 1;
+                ++t.aabbCull;
+            }
+
+            float lo[3], hi[3];
+            if (!drawLocalBounds(*d.mesh, indices, first, count, lo, hi)) {
+                ++t.skippedNoMesh;
+                --t.judged;
+                judgedMask[i] = 0;
+                continue;
+            }
+            // The eight corners of the tight *local* box, left in local
+            // space and taken to world by the buffer itself: an oriented
+            // box, where DrawCall::bboxMin/Max is the axis-aligned box
+            // drawn around it.
+            const float *model = d.identity ? nullptr : d.model;
+            float corners[8 * 3];
+            for (int c = 0; c < 8; ++c) {
+                corners[c * 3 + 0] = (c & 1) ? hi[0] : lo[0];
+                corners[c * 3 + 1] = (c & 2) ? hi[1] : lo[1];
+                corners[c * 3 + 2] = (c & 4) ? hi[2] : lo[2];
+            }
+            const Render::OccludeAnswer obb =
+                    depth.testPointsConcurrent(corners, 8, model);
+            const bool obbHides = obb == Render::OccludeAnswer::Occluded
+                    || obb == Render::OccludeAnswer::Offscreen;
+            if (obbHides) {
+                obbMask[i] = 1;
+                ++t.obbCull;
+                if (obb == Render::OccludeAnswer::Offscreen)
+                    ++t.obbOffscreen;
+                // Monotone: every triangle is inside this box, so the
+                // finer arm cannot disagree. Skipping the loop here is
+                // not an approximation, and it is most of what makes the
+                // diagnostic affordable.
+                triMask[i] = 1;
+                ++t.triCull;
+                if (obb == Render::OccludeAnswer::Offscreen)
+                    ++t.triOffscreen;
+                continue;
+            }
+
+            const size_t prims = count / per;
+            if (prims > primitiveCap) {
+                ++t.capped;
+                continue;
+            }
+            // Every primitive asked separately. A draw is hidden only if
+            // none of them reaches a pixel; the first one that does ends
+            // the row, which is why a *visible* draw is cheap here and
+            // only the invisible ones — the ones being counted — pay in
+            // full.
+            bool hidden = true, sawDepth = false;
+            for (size_t prim = 0; prim < prims && hidden; ++prim) {
+                float p[9];
+                bool ok = true;
+                for (size_t k = 0; k < per; ++k) {
+                    const int32_t vi = indices[first + prim * per + k];
+                    if (vi < 0 || vi >= d.mesh->numVertices) {
+                        ok = false;
+                        break;
+                    }
+                    const float *src = d.mesh->positions + size_t(vi) * 3;
+                    p[k * 3 + 0] = src[0];
+                    p[k * 3 + 1] = src[1];
+                    p[k * 3 + 2] = src[2];
+                }
+                ++t.primitives;
+                if (!ok)
+                    continue;  // a degenerate index reaches no pixel either
+                const Render::OccludeAnswer a =
+                        depth.testPointsConcurrent(p, per, model);
+                if (a == Render::OccludeAnswer::Occluded)
+                    sawDepth = true;
+                else if (a != Render::OccludeAnswer::Offscreen)
+                    hidden = false;
+            }
+            if (hidden) {
+                triMask[i] = 1;
+                ++t.triCull;
+                if (!sawDepth)
+                    ++t.triOffscreen;
+            }
+        }
+    };
+
+    if (workers == 1) {
+        work(0);
+    }
+    else {
+        std::vector<std::thread> pool;
+        pool.reserve(workers - 1);
+        for (uint32_t w = 1; w < workers; ++w)
+            pool.emplace_back(work, w);
+        work(0);
+        for (auto &th : pool)
+            th.join();
+    }
+    for (const TightBoundAudit &t : tally) {
+        out.judged += t.judged;
+        out.skippedPoint += t.skippedPoint;
+        out.skippedNoMesh += t.skippedNoMesh;
+        out.capped += t.capped;
+        out.obbCull += t.obbCull;
+        out.triCull += t.triCull;
+        out.obbOffscreen += t.obbOffscreen;
+        out.triOffscreen += t.triOffscreen;
+        out.primitives += t.primitives;
+    }
+    out.ms = float(1000.0 * double(bx::getHPCounter() - t0)
+                   / double(bx::getHPFrequency()));
+}
+
+/// Read the tight-bound arms against the id image.
+///
+/// \a hist is reportCullAudit's histogram (id = row + 1), so a drawn row
+/// owning no pixel is one the frame paid for and could not see. Each arm
+/// splits that set two ways, and both halves matter:
+///
+/// - **prize** — rows the arm would cull that own no pixel: real work
+///   removed, and the reason to build it;
+/// - **RISK** — rows the arm would cull that own pixels: geometry it
+///   would have deleted from the screen. It must be zero. An arm is
+///   only conservative on paper until the id image has been asked, and
+///   this workstream has twice shipped a box test that answered
+///   "hidden" for things that were plainly visible (§12.6, §12.10).
+static void reportTightBounds(const std::vector<uint32_t> &hist,
+                              const std::vector<uint8_t> &mask,
+                              const std::vector<uint8_t> &judgedMask,
+                              const std::vector<uint8_t> &aabbMask,
+                              const std::vector<uint8_t> &obbMask,
+                              const std::vector<uint8_t> &triMask,
+                              const TightBoundAudit &t)
+{
+    if (hist.empty() || obbMask.empty())
+        return;
+    const size_t rows = hist.size() - 1;
+    size_t drawn = 0, invisible = 0;
+    // ⚠️⚠️ THE DENOMINATOR THE CEILING IS DIVIDED BY. Not every invisible
+    // row was offered to the arms, and dividing by the ones that were
+    // not is how a diagnostic reports a mechanism as weak when it was
+    // simply never asked. The first run of this made exactly that
+    // mistake and quoted 3.0% off a third of the rows.
+    size_t judgedInvisible = 0;
+    size_t aabbPrize = 0, aabbRisk = 0;
+    size_t obbPrize = 0, obbRisk = 0, triPrize = 0, triRisk = 0;
+    // What each arm wins *over the control*, which is the only figure
+    // that is about the bound rather than about coverage.
+    size_t obbOver = 0, triOver = 0;
+    for (size_t i = 0; i < rows; ++i) {
+        if (i < mask.size() && mask[i])
+            continue;
+        ++drawn;
+        const bool blind = hist[i + 1] == 0;
+        if (blind)
+            ++invisible;
+        if (blind && i < judgedMask.size() && judgedMask[i])
+            ++judgedInvisible;
+        const bool ctrl = i < aabbMask.size() && aabbMask[i];
+        if (ctrl)
+            (blind ? aabbPrize : aabbRisk) += 1;
+        if (i < obbMask.size() && obbMask[i]) {
+            (blind ? obbPrize : obbRisk) += 1;
+            if (blind && !ctrl)
+                ++obbOver;
+        }
+        if (i < triMask.size() && triMask[i]) {
+            (blind ? triPrize : triRisk) += 1;
+            if (blind && !ctrl)
+                ++triOver;
+        }
+    }
+
+    char buf[1200];
+    snprintf(buf, sizeof(buf),
+             "render tight-bound audit: %zu drawn, %zu invisible (%zu of them "
+             "judged) | control world AABB cull %u (%zu prize + %zu RISK) = "
+             "rows never asked | OBB corners cull %u (%zu prize + %zu RISK, %u "
+             "offscreen), %zu over control | per-primitive cull %u (%zu prize "
+             "+ %zu RISK, %u offscreen), %zu over control | ceiling %.1f%% of "
+             "judged invisible | judged %u skipped %u (%u points, %u no mesh) "
+             "capped %u, %llu prims in %.1f ms\n",
+             drawn, invisible, judgedInvisible,
+             t.aabbCull, aabbPrize, aabbRisk,
+             t.obbCull, obbPrize, obbRisk, t.obbOffscreen, obbOver,
+             t.triCull, triPrize, triRisk, t.triOffscreen, triOver,
+             judgedInvisible
+                     ? 100.0 * double(triOver) / double(judgedInvisible)
+                     : 0.0,
+             t.judged, t.skippedPoint + t.skippedNoMesh,
+             t.skippedPoint, t.skippedNoMesh, t.capped,
+             (unsigned long long)t.primitives, t.ms);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+    if (aabbRisk || obbRisk || triRisk) {
+        RENDER_ERR("render tight-bound audit: an arm would have culled a "
+                   "draw that owns pixels. The arm is not conservative, or "
+                   "its bound is not the geometry's -- its prize count is "
+                   "not usable until this is zero.");
+    }
+}
+
+/// ⭐⭐ Check the occlusion culling against the geometry it stands for
+/// (docs/FarFieldProxies.md §12.9).
+///
+/// \a pixels is the id image as it was rendered with the mask ignored,
+/// \a mask and \a keys the verdict and the draw identities as they were
+/// at that moment. A pixel's id is the draw that won the depth test
+/// there, so `owns a pixel` ∩ `masked` is a set of *proven* errors —
+/// not pixels that differ between two pictures, which is a symptom that
+/// names nothing, but named draws that the frame would have shown and
+/// the culling removed.
+///
+/// The converse falls out of the same histogram and is worth as much:
+/// rows that were drawn and own no pixel at all are the work the
+/// culling has not yet found.
+/// \a owner and \a nodes carry the attribution (§12.10): which node's
+/// verdict cut each masked row, and what every node's state was at the
+/// moment the image was drawn. Both may be empty — occlusion culling
+/// off, or the audit turned on mid-flight — in which case the second
+/// line is not printed rather than printed with nothing in it.
+static void reportCullAudit(const std::vector<uint16_t> &pixels,
+                            uint16_t w, uint16_t h,
+                            const std::vector<uint8_t> &mask,
+                            const std::vector<int32_t> &owner,
+                            const std::vector<Render::OcclusionNodeAudit> &nodes,
+                            const std::vector<uint64_t> &keys,
+                            const Render::ObjectInfoMap &names,
+                            std::vector<uint32_t> &hist)
+{
+    const size_t rows = keys.size();
+    const size_t npx = size_t(w) * size_t(h);
+    // Emptied before anything can fail: the histogram outlives the call
+    // (reportTightBounds reads it next), and a reader cannot tell a
+    // stale one, or an all-zero one from a broken id pass, from a frame
+    // in which nothing reached the screen. Empty says "no answer here".
+    hist.clear();
+    if (!rows || pixels.size() < npx * 4)
+        return;
+    hist.assign(rows + 1, 0u);
+    size_t covered = 0, outOfRange = 0;
+    for (size_t p = 0; p < npx; ++p) {
+        const uint16_t *px = &pixels[p * 4];
+        // .w = 1 marks a fragment; the target clears to zero, so a
+        // background pixel is not merely id 0 but uncovered.
+        if (bx::halfToFloat(px[3]) < 0.5f)
+            continue;
+        ++covered;
+        // Raw byte lanes, rounded rather than truncated: fp16 carries
+        // 0..255 exactly, so any rounding here is the *absence* of a
+        // bug rather than a tolerance.
+        const uint32_t id =
+              uint32_t(bx::halfToFloat(px[0]) + 0.5f)
+            | (uint32_t(bx::halfToFloat(px[1]) + 0.5f) << 8)
+            | (uint32_t(bx::halfToFloat(px[2]) + 0.5f) << 16);
+        if (id == 0 || id > rows) {
+            ++outOfRange;
+            continue;
+        }
+        ++hist[id];
+    }
+
+    // ⛔ The impossible-root guard, in its second incarnation (see
+    // OcclusionFrameStats::rootRefused). An id pass that drew nothing
+    // makes every draw look as though it reached no pixel, so the audit
+    // would report a flawless culling and a colossal amount of wasted
+    // work — the most convincing possible output, and entirely a report
+    // that the instrument is broken. A frame that put geometry on the
+    // screen covers pixels here; say so instead of computing on it.
+    if (!covered) {
+        RENDER_ERR("render cull audit: the id image is empty -- no draw "
+                   "claimed a pixel, which cannot be true of a frame that "
+                   "rendered. The audit is not measuring the scene; its "
+                   "numbers would be meaningless and are not reported.");
+        hist.clear();
+        return;
+    }
+
+    // The two answers, and their worst offenders.
+    struct Offender { uint32_t id; uint32_t px; };
+    std::vector<Offender> overcull;
+    size_t overcullPx = 0, zeroPixelDrawn = 0, drawn = 0, masked = 0;
+    for (size_t i = 0; i < rows; ++i) {
+        const bool cut = i < mask.size() && mask[i] != 0;
+        if (cut) {
+            ++masked;
+            if (hist[i + 1])
+                overcull.push_back({uint32_t(i), hist[i + 1]});
+            overcullPx += hist[i + 1];
+        }
+        else {
+            ++drawn;
+            if (!hist[i + 1])
+                ++zeroPixelDrawn;
+        }
+    }
+    std::sort(overcull.begin(), overcull.end(),
+              [](const Offender &a, const Offender &b) {
+                  return a.px > b.px;
+              });
+
+    std::string worst;
+    const size_t show = std::min<size_t>(overcull.size(), 5);
+    for (size_t i = 0; i < show; ++i) {
+        const uint64_t key = overcull[i].id < keys.size()
+            ? keys[overcull[i].id] : 0;
+        auto it = names.find(key);
+        worst += " ";
+        // The label if the producer resolved one, else the internal
+        // name, else the row. Never nothing: a count without a name is
+        // the readout this whole exercise exists to replace.
+        if (it != names.end() && !it->second.label.empty())
+            worst += it->second.label;
+        else if (it != names.end() && !it->second.obj.empty())
+            worst += it->second.obj;
+        else
+            worst += "row";
+        worst += "#" + std::to_string(overcull[i].id) + ":"
+            + std::to_string(overcull[i].px) + "px";
+    }
+
+    char buf[1024];
+    snprintf(buf, sizeof(buf),
+             "render cull audit: %ux%u %zu covered px | over-cull %zu of %zu "
+             "masked rows, %zu px (%.3f%% of covered)%s | drawn-but-invisible "
+             "%zu of %zu (%.1f%%)%s\n",
+             unsigned(w), unsigned(h), covered,
+             overcull.size(), masked, overcullPx,
+             100.0 * double(overcullPx) / double(covered),
+             worst.c_str(), zeroPixelDrawn, drawn,
+             drawn ? 100.0 * double(zeroPixelDrawn) / double(drawn) : 0.0,
+             outOfRange ? " | WARNING: ids outside the draw list" : "");
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+
+    // ⭐⭐ The second line: not *that* the culling deleted visible
+    // geometry but *which verdict* did (docs/FarFieldProxies.md §12.10).
+    //
+    // ⛔ What is deliberately not here: a drawn/hidden split of the
+    // tests that produced those verdicts. §12.6's account of the
+    // per-test failure is a drawn node losing a depth tie against its
+    // own contents, and flagging which set the offer came from looks
+    // like the way to confirm it — but only an already-hidden node is
+    // offered from the hidden set, so the answer that first sets
+    // `hidden` is *always* of the drawn kind. It would report 100%
+    // every time, for every scene, including scenes where the account
+    // is wrong. See OcclusionNodeState.
+    //
+    // What is measurable, and what these two numbers are: how *fresh*
+    // the deciding answer was, and how often the node has flipped. A
+    // query that lied and a world that moved underneath a correct
+    // answer look identical in a single verdict; they do not look
+    // identical in a node that has entered the hidden state eighteen
+    // times against a camera that never moved.
+    if (overcull.empty() || owner.empty() || nodes.empty())
+        return;
+
+    struct NodeTally { uint32_t px = 0, rows = 0; };
+    std::map<int32_t, NodeTally> byNode;
+    size_t frustumRows = 0, frustumPx = 0;
+    // Fresh: the deciding answer arrived within the last couple of
+    // frames, so with a static camera nothing had time to change
+    // between the query and the mask it produced.
+    size_t freshPx = 0, stalePx = 0, flippingPx = 0;
+    static const uint32_t kFreshFrames = 2;
+    static const uint16_t kFlipping = 3;
+    for (const Offender &o : overcull) {
+        const int32_t node = o.id < owner.size() ? owner[o.id] : -1;
+        if (node < 0 || size_t(node) >= nodes.size()) {
+            // Masked, wrongly, and not by occlusion. A frustum test
+            // that rejects a draw owning pixels is a different bug in
+            // a different piece of code, and counting the two together
+            // is how a fix gets attributed to the wrong mechanism.
+            ++frustumRows;
+            frustumPx += o.px;
+            continue;
+        }
+        NodeTally &t = byNode[node];
+        t.px += o.px;
+        ++t.rows;
+        const Render::OcclusionNodeAudit &a = nodes[size_t(node)];
+        (a.framesSinceAnswer <= kFreshFrames ? freshPx : stalePx) += o.px;
+        if (a.hidEvents >= kFlipping)
+            flippingPx += o.px;
+    }
+
+    std::vector<std::pair<int32_t, NodeTally>> ranked(byNode.begin(),
+                                                      byNode.end());
+    std::sort(ranked.begin(), ranked.end(),
+              [](const std::pair<int32_t, NodeTally> &a,
+                 const std::pair<int32_t, NodeTally> &b) {
+                  return a.second.px > b.second.px;
+              });
+
+    std::string worstNodes;
+    for (size_t i = 0; i < std::min<size_t>(ranked.size(), 5); ++i) {
+        const Render::OcclusionNodeAudit &a = nodes[size_t(ranked[i].first)];
+        char nb[224];
+        snprintf(nb, sizeof(nb),
+                 " n%d(L%u res%u sub%u lastpx%d age%uf hid%uf ev%u):%upx/%urows",
+                 int(ranked[i].first), unsigned(a.level),
+                 unsigned(a.residentCount), unsigned(a.subtreeCount),
+                 int(a.lastPx), unsigned(a.framesSinceAnswer),
+                 unsigned(a.framesHidden), unsigned(a.hidEvents),
+                 unsigned(ranked[i].second.px),
+                 unsigned(ranked[i].second.rows));
+        worstNodes += nb;
+    }
+
+    // Shares of what occlusion cut, not of the whole over-cull: the
+    // frustum's rows are in the same mask but are not this mechanism's
+    // to explain, and folding them into the denominator would quietly
+    // shrink every share here whenever the other bug got worse.
+    const size_t occPx = freshPx + stalePx;
+    char nbuf[1024];
+    snprintf(nbuf, sizeof(nbuf),
+             "render cull attribution: %zu node(s) account for %zu px "
+             "| verdict fresh (<=%uf) %zu px (%.1f%%), older %zu px (%.1f%%) "
+             "| from nodes that have flipped >=%u times: %zu px (%.1f%%) "
+             "| frustum, not occlusion: %zu rows %zu px | worst%s\n",
+             ranked.size(), occPx, kFreshFrames, freshPx,
+             occPx ? 100.0 * double(freshPx) / double(occPx) : 0.0,
+             stalePx,
+             occPx ? 100.0 * double(stalePx) / double(occPx) : 0.0,
+             unsigned(kFlipping), flippingPx,
+             occPx ? 100.0 * double(flippingPx) / double(occPx) : 0.0,
+             frustumRows, frustumPx, worstNodes.c_str());
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", nbuf);
+#else
+    Base::Console().Message("%s", nbuf);
+#endif
+}
 
 class BGFXRenderer::Private
 {
@@ -4168,6 +6892,15 @@ public:
     void deinit()
     {
         _deinit = true;
+        // The occlusion queries are a process-wide pool shared by every
+        // view (docs/FarFieldProxies.md §10.1, §12), so a closed view
+        // that kept its leases would starve the next one that measured
+        // or culled.
+        for (auto q : occlusionProbe.handles)
+            occlusionLeases.release(q);
+        occlusionProbe.handles.clear();
+        occlusionProbe.pending.clear();
+        cullQueries.releaseAll();
         // A publish-only renderer never asked for a view, so there is
         // none to remove -- and asking would be the one call that
         // brings the graphics device into a process that has none.
@@ -4360,6 +7093,43 @@ public:
     void buildInstanceGroups();
 
     Render::Background background;
+    /// Version stamp of the published SCENE -- bumped by setScene,
+    /// consumed by publishedMeshes() below.
+    uint64_t drawListVersion = 1;
+    /// cacheId -> generation of every mesh the published scene
+    /// carries: the collector's keep-set (sec 13c.5). A kept mesh is
+    /// never TTL-collected -- its buffers die at the rung swap
+    /// (generation moved: freed synchronously at the next collect,
+    /// drawn or not, which is what makes a downgrade's free an EVENT
+    /// the plan can trust) or when it leaves the scene at a publish.
+    /// One carve-out: a kept mesh whose every draw the element gates
+    /// suppress (gatedOnlyMeshes) is not submittable, and keeping the
+    /// unsubmittable is how 74.5MB of gated edge buffers came to stand
+    /// behind a 64MB budget -- it falls back to the recency rule
+    /// instead (collectMeshes).
+    /// The two-frame TTL guess collected buffers the scene still drew
+    /// on a longer-than-two-frame cadence and re-uploaded them
+    /// forever: the measured 198-draw, 75MB, period-4 wave.
+    ///
+    /// The SCENE only, deliberately: overlays, selections and the
+    /// highlight feed (NaviCube, show-on-top) draw every frame while
+    /// they are active, so the TTL never bites them and they need no
+    /// keep entry -- and the highlight churns per HOVER, which would
+    /// rebuild this map per mouse move if it were included. They stay
+    /// on the recency rule, ungoverned, for now.
+    std::unordered_map<uint64_t, uint64_t> publishedIds;
+    uint64_t publishedIdsVersion = 0;
+    const std::unordered_map<uint64_t, uint64_t> &publishedMeshes()
+    {
+        if (publishedIdsVersion == drawListVersion)
+            return publishedIds;
+        publishedIdsVersion = drawListVersion;
+        publishedIds.clear();
+        for (const auto &d : scene)
+            if (d.mesh)
+                publishedIds[d.mesh->cacheId] = d.mesh->generation;
+        return publishedIds;
+    }
     std::map<int, Render::DrawCallList> selections;
     // Overlay feeds keyed by producer id (Renderer::setOverlay); map
     // order assigns the (limited) overlay view slots deterministically.
@@ -4384,6 +7154,214 @@ public:
     Render::WaterConfig waterconf;
     Render::BloomConfig bloomconf;
     Render::RenderDebugConfig debugconf;
+    /// Backend frame cost accumulated since the last reported line
+    /// (docs/FarFieldProxies.md sec 10.1). Per view, because two views
+    /// draw different scenes and a shared accumulator would report
+    /// their mean as though it were one frame's.
+    FrameStatsAccum frameStats;
+    /// Where the FIXED per-frame CPU goes inside render()
+    /// (docs/DrawSubmission.md phase 0 item 2). The frame line already
+    /// splits ours / bgfx / outside; it found 15.6ms of our own C++ that
+    /// does NOT scale with draw count, which is four times the per-draw
+    /// part and is the largest single CPU item in the renderer. These
+    /// name the candidates: the cull walks all rows, and so does the
+    /// submit loop, whatever the survivors number.
+    ///
+    /// Accumulated over the reporting window like frameStats, and reset
+    /// with it. Anything not scoped shows up in the derived remainder,
+    /// which is the point -- a breakdown that cannot be wrong about what
+    /// it left out.
+    /// CpuPreSubmit is everything from the top of render() to the main
+    /// submit loop (the cull included, and subtracted back out when
+    /// reported); CpuPostSubmit is what the remainder must then be.
+    /// Measured with a checkpoint rather than a scope because the region
+    /// has early returns and is not a block.
+    ///
+    /// The Post* four subdivide the post-submit region, which measured
+    /// 12.95ms flat across a 2.4x change in draw count. ! The first
+    /// explanation offered for that -- "eight per-pass full scans of the
+    /// draw list" -- was WRONG and is why these exist: six of the eight
+    /// are behind ground-reflection, hidden-line or scene-outline
+    /// guards that are off on this camera, and the three that do run
+    /// short-circuit per row. Counting loops in the source is not
+    /// measuring them.
+    ///
+    /// CpuCtxOut / CpuCtxIn / CpuBlit are the desktop hand-off around
+    /// bgfx::frame(): drop the Qt GL context, take bgfx's, and after the
+    /// frame take Qt's back and copy bgfx's target into the widget. The
+    /// comment on timedBgfxFrame calls these "Qt's cost, not bgfx's" and
+    /// excludes them from the bgfx figure -- which is right, and is
+    /// exactly why they need a number of their own. They are flat per
+    /// frame, which is the shape the fixed cost has.
+    enum CpuPhase { CpuCull, CpuSubmitLoop, CpuPreSubmit,
+                    CpuPostCaps, CpuPostEffects, CpuPostSel, CpuPostTail,
+                    CpuCtxOut, CpuCtxIn, CpuBlit, CpuCtxDone,
+                    CpuPhaseCount };
+    int64_t renderInnerT0 = 0;
+    /// Running checkpoint for the Post* phases: each mark closes the
+    /// span since the previous one. Safe because the post region is
+    /// straight-line at top level (its only `return` is inside a
+    /// lambda), so no span can be left open.
+    int64_t cpuMarkT = 0;
+    void cpuMark(int phase)
+    {
+        if (!debugconf.frameTiming)
+            return;
+        const int64_t now = bx::getHPCounter();
+        cpuPhaseMs[phase] += 1000.0 * double(now - cpuMarkT)
+            / double(bx::getHPFrequency());
+        cpuMarkT = now;
+    }
+    double cpuPhaseMs[CpuPhaseCount] = {};
+    /// RAII so an early return or a throw cannot leave a phase open.
+    struct CpuScope {
+        Private *self;
+        int phase;
+        int64_t t0;
+        bool on;
+        CpuScope(Private *s, int p)
+            : self(s), phase(p), t0(0), on(s->debugconf.frameTiming)
+        {
+            if (on)
+                t0 = bx::getHPCounter();
+        }
+        ~CpuScope()
+        {
+            if (on)
+                self->cpuPhaseMs[phase] += 1000.0
+                    * double(bx::getHPCounter() - t0)
+                    / double(bx::getHPFrequency());
+        }
+        CpuScope(const CpuScope &) = delete;
+        CpuScope &operator=(const CpuScope &) = delete;
+    };
+    /// The occluded-fraction walk (docs/FarFieldProxies.md sec 10.1) and
+    /// its scratch. Per view for the same reason as frameStats: two
+    /// views see different scenes from different cameras.
+    OcclusionProbeState occlusionProbe;
+    OcclusionBoxBatch occlusionBatch;
+    OcclusionLeases occlusionLeases;
+    /// Occlusion culling (docs/FarFieldProxies.md sec 12) -- the same
+    /// mechanism as the probe above, acting on its answers. Per view
+    /// for the same reason: the verdicts are a camera's, not a scene's.
+    Render::OcclusionCullConfig cullconf;
+    Render::OcclusionCuller culler;
+    Render::OcclusionTestBatch cullBatch;
+    /// The tests in flight and the handles created for them. ! One
+    /// handle per test, not a pool of handles reassigned per frame: a
+    /// bgfx query handle is an object's identity and a reassigned one
+    /// answers with the previous occupant's verdict (OcclusionLeases).
+    OcclusionCullQueries cullQueries;
+    /// KEY: The other oracle (docs/FarFieldProxies.md section 12.12): a CPU
+    /// depth buffer, rasterized and questioned inside one frame. It
+    /// shares the *index* with the culler above and nothing else -- no
+    /// verdict, no lease, no pad, no confirmation -- because everything
+    /// the culler keeps between frames is there to survive a latency
+    /// this path does not have.
+    Render::MaskedOccluderPass maskedCull;
+    /// The frame-level A/B probe over the whole occlusion block
+    /// (12.13, the OcclusionBenefitProbe parameter). Holds its verdict
+    /// arms across frames; reset on the probe's off->on edge so a
+    /// re-enabled probe is a fresh experiment.
+    Render::CullBenefitEstimator cullBenefit;
+    bool cullBenefitOn = false;
+    /// Occlusion folded per SOURCE, for the level plan (occlusion as a
+    /// memory mechanism): how many consecutive rendered frames EVERY
+    /// draw of a source has been culled -- frustum or occlusion, with
+    /// the software oracle answering. The downgrade sweep treats a
+    /// source past OcclusionCullConfig::demoteStreak as free: its
+    /// upload comes back without charging the camera visible error.
+    /// An entry is only trusted at the CURRENT fold generation, so a
+    /// reused tag address cannot inherit a dead source's streak; the
+    /// map is pruned of stale entries on a slow cadence rather than
+    /// rebuilt, and a streak survives a paused render loop only if the
+    /// camera did (the plan fires against the last rendered frame's
+    /// camera, which is the one the fold saw).
+    struct OcclStreak {
+        uint32_t frames = 0;
+        uint64_t fold = 0;
+    };
+    std::unordered_map<const void *, OcclStreak> occlHiddenStreak;
+    uint64_t occlStreakFold = 0;
+    /// * The cull audit (docs/FarFieldProxies.md sec 12.9): one id image in
+    /// flight, plus the verdict it is an answer about.
+    ///
+    /// The snapshots are the point. A readback lands a frame or two
+    /// after the image was drawn, by which time the mask has been walked
+    /// again and the draw list may have been republished; checking the
+    /// image against *then-current* state would compare a picture with a
+    /// verdict that was never applied to it -- which is the same
+    /// one-frame skew that made the culling oscillate in the first
+    /// place, reappearing inside the instrument built to find it.
+    std::vector<uint16_t> idPixels;   ///< RGBA16F, 4 halves per pixel
+    std::vector<uint8_t> idMask;      ///< the cull mask, as it was
+    /// Which node's verdict cut each masked row, as it was. Empty when
+    /// occlusion culling is off, which is how the readout tells "the
+    /// frustum cut this row" from "nothing was attributing at all".
+    std::vector<int32_t> idOwner;
+    /// Every node's visibility state, as it was. Indexed by node.
+    std::vector<Render::OcclusionNodeAudit> idNodeAudit;
+    std::vector<uint64_t> idKeys;     ///< objectKey per row, as it was
+    std::vector<uint32_t> idHist;     ///< pixels owned, per id
+    /// What the tight-bound arms would have culled on the frame the
+    /// image was taken (docs/FarFieldProxies.md sec 12.19). Snapshots like
+    /// everything else here, and for the same reason -- they are answers
+    /// about that image. Empty unless RenderDebug_CullBounds is on.
+    std::vector<uint8_t> idTightJudged;
+    std::vector<uint8_t> idTightAabb;
+    std::vector<uint8_t> idTightObb;
+    std::vector<uint8_t> idTightTri;
+    TightBoundAudit idTight;
+    /// Primitives a single draw may be asked about one by one before the
+    /// diagnostic gives up on it. A bound on the worst row, not a
+    /// sample: rows that hit it are counted and reported, because a cap
+    /// nobody is told about reads as a mechanism that found nothing.
+    static const uint32_t kTightPrimitiveCap = 200000;
+    /// Frame at which idPixels is filled; 0 = no readback in flight.
+    uint32_t idReadyFrame = 0;
+    uint16_t idPixW = 0;
+    uint16_t idPixH = 0;
+    bool idAuditWarned = false;
+    /// What cross-object instancing collapsed on the last frame
+    /// (docs/DrawSubmission.md phase 0.5). Every submission decision is
+    /// scoped against the draw count, and until this existed nothing
+    /// said how much of that count the batching already removes --
+    /// "the model has repeated parts" and "the renderer is instancing
+    /// them" were one belief with no measurement between them.
+    struct InstancingStats {
+        uint32_t groups = 0;          ///< groups the producer formed
+        uint32_t groupsSingleton = 0; ///< of them, holding one member
+        uint32_t groupsUsable = 0;    ///< of them, holding two or more
+        uint32_t membersUsable = 0;   ///< draws in the usable groups
+        uint32_t submits = 0;         ///< instanced submits issued
+        uint32_t drawsReplaced = 0;   ///< draws those submits stood in for
+        uint32_t refused = 0;         ///< groups the backend refused
+        uint32_t refusedMembers = 0;
+        uint32_t thinnedMembers = 0;  ///< left alone by culling/visibility
+        uint32_t eligible = 0;        ///< scene rows offered
+        /// Why nothing was instanced at all, when nothing was. Null when
+        /// the path ran -- a zero with no reason beside it is the readout
+        /// this exists to replace.
+        const char *why = nullptr;
+    };
+    InstancingStats instStats;
+    /// Whether BGFX_DEBUG_PROFILER is currently set. bgfx needs it to
+    /// fill per-view stats, and it is a context-wide switch, so it is
+    /// tracked rather than set every frame.
+    bool profilerOn = false;
+    /// The draw list the index was built from. A rebuild costs 12-28 ms
+    /// on a large assembly, so it happens when the scene changes and
+    /// never per frame.
+    uint64_t cullSceneVersion = 0;
+    uint64_t cullBuiltVersion = 0;
+    double cullBuildMs = 0.0;
+    bool cullUnsupported = false;
+    /// Draws the index deliberately does not contain, and how many of
+    /// them were on-top. Reported, because "the index is smaller than
+    /// the scene" is the difference between exempting what cannot be
+    /// judged and quietly not culling anything.
+    uint32_t cullExemptOnTop = 0;
+    uint32_t cullIndexed = 0;
     Render::UserShaderConfig usershaderconf;
     /// Snapshot of _BGFXLib.userCompileGeneration taken by render();
     /// isSceneDirty() reports dirty while they differ (async compile).
@@ -4487,6 +7465,150 @@ public:
     // viewer keeps redrawing while set so the animation advances.
     bool animatedFrame = false;
     float bboxMin[3], bboxMax[3];
+    /// The element gates (docs/SceneStreaming.md #13b), pushed in from
+    /// the host -- the Gui bridge on the desktop, the URL parameters in
+    /// the standalone viewer. Defaults are the pre-feature behaviour:
+    /// draw every vertex, drop no edge, suppress nothing while loading.
+    ///
+    /// OUTSIDE the desktop guard below, and deliberately: the vertex
+    /// gate is pure display -- it asks the producer's one-bit
+    /// classification and whether the edges are on screen, and needs no
+    /// budget, no level plan and no pressure state. That is worth more
+    /// on a phone than on the desktop, where a point costs a 32-byte
+    /// sprite instance record against 4 bytes in the heap. The edge
+    /// gate rides along but stays dormant there, because it reads
+    /// gpuOverBudget and the standalone tier's budget is its CPU half
+    /// only -- a resident-payload and heap figure that cannot see the
+    /// GPU buffers an edge draw would free. It arms itself the day that
+    /// tier grows an uploaded-bytes meter (#13a), with no further wiring.
+    bool shapeVerticesOn = true;
+    bool pressureDropEdges = false;
+    bool loadDropElements = false;
+    /// What the gates suppressed in the last rendered frame, and how
+    /// many drawables were eligible to be suppressed at all (classified
+    /// attachedOnly by the producer). Reported with the level plan: a
+    /// gate that cannot say whether it fired cannot be told apart from
+    /// one that is not wired, and this workstream has already spent a
+    /// session on exactly that confusion. `eligible` separates "the
+    /// rule refused" from "nobody classified anything".
+    size_t gatedPoints = 0, gatedLines = 0, gateEligible = 0;
+    /// Of those, the ones the DEPENDENCY rule alone held back: a
+    /// companion class that is late (its capture deferred) or itself
+    /// gated. Pressure and the parameters account for the rest. It is
+    /// the dependency half that a streaming tier has to carry
+    /// objectIncomplete on the wire to reproduce.
+    size_t gatedByDependency = 0;
+    /// Of those, the ones whose object's FACES ARE STILL COARSE -- the
+    /// contract's rule that an edge or vertex set describes the shape
+    /// its faces approximate, so it waits for the exact rung. Nothing
+    /// to do with memory, and the reason a user sees dots and edges
+    /// over half-refined geometry when it is not enforced.
+    size_t gatedByCoarse = 0;
+    /// THE AUDIT (see the gate walk): attached point and line draws
+    /// this frame actually SUBMITS, and how many of them break the
+    /// contract -- drawn with no face set in the scene at all
+    /// (`auditNoFaces`, the display-mode exemption, legitimate only
+    /// for a real Wireframe/Points object) or over faces still on a
+    /// coarse rung (`auditCoarse`). Counting what the gate suppressed
+    /// can never explain a dot that IS on screen; these can.
+    size_t auditDrawn = 0, auditNoFaces = 0, auditCoarse = 0;
+    /// Point/line draws whose mesh is NOT classified attached, and the
+    /// share of those with no face set in the scene at all. The flag
+    /// is false by default, so "floating" and "not classified yet"
+    /// look identical here -- and the second one is a drawable that
+    /// escapes every gate on the way in.
+    size_t auditFloating = 0, auditFloatingNoFaces = 0;
+    /// ...and how many of those actually carry geometry. A
+    /// drawable published before its fill ran is submitted
+    /// EMPTY: it paints nothing, and counting it as a visible
+    /// dot turns a red herring into a diagnosis.
+    size_t auditFloatingDrawn = 0;
+    /// Last reported violation totals, so the report is edge-triggered:
+    /// the failure being chased lasts a handful of frames.
+    size_t auditSeenNoFaces = 0, auditSeenCoarse = 0, auditSeenFloating = 0;
+    /// Likewise for the dependency rule, and it is the STREAMING tier
+    /// this exists for. The desktop reports the counter in the level
+    /// plan; the browser has no planner, so until this there was no
+    /// line anywhere saying the rule had fired -- and a gate that
+    /// cannot say whether it fired cannot be told apart from one that
+    /// is not wired, which this workstream has already spent a session
+    /// discovering. Edge-triggered like the audit beside it: a late
+    /// companion is late for a handful of frames.
+    /// Seeded to a value no tally can hold, so the FIRST frame always
+    /// reports. An edge-triggered counter that starts equal to its own
+    /// initial value says nothing at all when the answer is a flat zero
+    /// -- and "the rule held nothing back" and "the classification
+    /// never arrived" are exactly the two readings of a flat zero,
+    /// which is the confusion `eligible` exists to end.
+    static const size_t kNeverReported = size_t(-1);
+    size_t gatedDepSeen = kNeverReported, gatedPointsSeen = kNeverReported,
+        gatedLinesSeen = kNeverReported, gateEligibleSeen = kNeverReported;
+    /// Last reported handle-pool refusal (BGFXView::tryUploadGeometry),
+    /// edge-triggered like the gates above: exhaustion lasts as long as
+    /// the scene is too big for the pool, and a line every frame would
+    /// bury the moment it started. BOTH edges are reported -- silent
+    /// geometry loss that silently stops is exactly as unreadable as
+    /// the loss itself, and this counter exists because the condition
+    /// used to announce itself once per process and never again.
+    size_t bufferDeniedSeen = kNeverReported;
+    /// Meshes whose every scene draw the gates suppressed this frame
+    /// -- not submittable, so the collector must not keep them for
+    /// being published (see collectMeshes). Rebuilt each frame by the
+    /// gate walk; empty whenever no gate is active.
+    std::unordered_set<uint64_t> gatedOnlyMeshes;
+    // Whether the last rendered frame stood over the GPU budget. Out
+    // here because the edge gate reads it; only the desktop half ever
+    // writes it (the budget crossing, which also wakes the planner), so
+    // in the standalone build it stays false and says so honestly.
+    bool gpuOverBudget = false;
+    // Whether the pressure controller still holds raised error
+    // (levelPressure.raisedPx > 0) -- the desktop plan mirrors it here
+    // because levelPressure is desktop-only while the edge gate is
+    // shared code. The gate LATCHES on this rather than following
+    // gpuOverBudget alone: once the collector retires gated edge
+    // buffers the total falls under budget, and a gate keyed to the
+    // instantaneous bit would re-open, re-upload the whole class, and
+    // hand the wave its period back -- eviction and gate coupled
+    // through the meter. The staircase's learned floor keeps this
+    // true at the settled state, so the latch inherits the ladder's
+    // own hysteresis instead of inventing a second one.
+    bool pressureStanding = false;
+    // The element contract's staged pressure latch (#13b): 0 = nothing
+    // dropped, 1 = attached points dropped, 2 = attached lines dropped
+    // too. Escalates points -> lines while over budget and releases
+    // lines -> points once the pressure has fully cleared, one stage
+    // per elemGateStagger frames, so the collector's census can answer
+    // whether the cheaper stage was enough before the next is spent.
+    int elemPressureStage = 0;
+    int elemStageFrames = 0;
+    int elemGateStagger = 15;
+    // The load gate as of the last frame, so the crossing can be
+    // reported. The plan readout below cannot carry it: that prints on
+    // a camera settle, and a load can begin and end entirely between
+    // two settles -- the gate would do its whole job with nothing ever
+    // saying it ran.
+    bool loadDropSeen = false;
+    /// Whether the last release attempt was refused on price, so the
+    /// refusal is reported on its crossing rather than every frame.
+    bool elemReleaseHeld = false;
+    /// The same for the pressure latch, and for a sharper reason: the
+    /// plan readout is the only other place the stage appears, and a
+    /// settled ladder stops planning altogether -- so the release
+    /// walks back over frames that print nothing at all.
+    int elemStageSeen = 0;
+
+    /// Whether the level plan narrates its decisions. Pushed in from
+    /// the Gui bridge like the budget beside it -- this library knows
+    /// nothing of RenderParams -- with the environment variable as the
+    /// standalone viewer's way in. Out here with the gates it also
+    /// reports, so the standalone build can narrate them too.
+    bool levelDebug() const
+    {
+        static const bool env = std::getenv("FC_LEVEL_DEBUG") != nullptr;
+        return levelDebugOn || env;
+    }
+    bool levelDebugOn = false;
+
 
 #ifndef FC_RENDERER_STANDALONE
     // The desktop level plan's event half (§13 step 2): fed the camera
@@ -4496,11 +7618,40 @@ public:
     // The last memory-ceiling epoch this view replanned for (§13
     // step 3) — a new observation marks the planner dirty.
     uint64_t levelCeilingSeen = 0;
+    /// How much visible error the ladder is holding to fit its budget,
+    /// and what it has learned about giving it back (sec 13c.3). The climb
+    /// reads its tolerance from this, so both directions of the ladder
+    /// agree on one -- see the plan callback, where the oscillation it
+    /// prevents is measured.
+    Render::PressureTolerance levelPressure;
+    /// The budget the pressure controller's floor was learned under; a
+    /// different one is a different question and forgets it.
+    size_t levelBudgetSeen = 0;
+    /// How much of the held error survives each plan that fits, pushed
+    /// in from the bridge beside the budget (this library knows nothing
+    /// of RenderParams). The default is the parameter's, so a viewer
+    /// that never sets it still releases in steps rather than snapping.
+    float levelPressureReleaseFrac = 0.5f;
+    /// DowngradeLedger parameter: the downgrade sweep's in-flight credit
+    /// (Render::DowngradeLedger on the view); off restores the
+    /// storming behaviour for comparison.
+    bool downgradeLedgerOn = true;
+    /// ClimbHardLimit / ClimbAdmitBatch parameters: the budget is
+    /// an absolute ceiling for climbs -- none admitted at or over it
+    /// (in-flight ones aborted through the de-want pass), batched
+    /// admission under it.
+    bool climbHardLimitOn = true;
+    int climbAdmitBatch = 64;
+    /// DescentOrderBatch parameter: how many descents one plan pass may
+    /// order (0 = uncapped); see planMeshDemotes' maxOrders.
+    int descentOrderBatch = 64;
+    /// LevelBudgetDeadband parameter: the rest band above the GPU
+    /// budget, as a fraction of it, inside which the downgrade sweep
+    /// does not trigger (it still corrects back to the budget when it
+    /// does). See the plan callback for the dither it removes.
+    float levelBudgetDeadband = 0.03f;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
-    // Whether the last rendered frame stood over the GPU budget — the
-    // crossing is what wakes the planner.
-    bool gpuOverBudget = false;
 
     /// GPU geometry bytes in use: the API's own number where it
     /// reports one, else the upload accounting.

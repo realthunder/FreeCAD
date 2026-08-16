@@ -694,6 +694,7 @@ bool BGFXView::ensureDebugScene()
     return bgfx::isValid(debugSceneFbo);
 }
 
+
 void BGFXView::submitDebugScene(const Render::DrawCall &draw, int mode)
 {
     if (!draw.mesh || !draw.mesh->triangleIndices)
@@ -707,6 +708,14 @@ void BGFXView::submitDebugScene(const Render::DrawCall &draw, int mode)
     setClipUniforms(mat);
     float params[4] = {float(mode), 0.0f, 0.0f, 0.0f};
     bgfx::setUniform(u_debugParams, params);
+        // ⚠️ The debug-scene vertex shader reads u_params.w as an NDC
+        // depth bias, and a bgfx uniform keeps whatever the last draw
+        // left in it. These modes want none, but they must SAY so: a
+        // line draw leaves its dim alpha (1.0) there, and one NDC unit
+        // of bias is past the far plane, which rasterizes nothing at all
+        // (docs/FarFieldProxies.md §12.6 — the same trap, once already).
+        float bias[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        bgfx::setUniform(u_params, bias);
     setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
                      (float)height);
     bgfx::setVertexBuffer(0, gpu->geom->vbh);

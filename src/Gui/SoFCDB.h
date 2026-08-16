@@ -44,6 +44,11 @@ public:
     static SbBool isInitialized();
     static void init();
     static void finish();
+    /*! Whether the loaded Coin fork library advertises the given feature
+     * tag (see Inventor/CoinFork.h). Use it to gate optional behaviour on
+     * runtime library capabilities and degrade instead of aborting.
+     */
+    static bool hasForkFeature(const char* feature);
     static SoNode* replaceSwitches(SoNode* node);
     /// helper to apply a SoWriteAction to a node and write it to a string
     static const std::string& writeNodesToString(SoNode * root);

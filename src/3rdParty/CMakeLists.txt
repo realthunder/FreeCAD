@@ -42,6 +42,22 @@ if (BUILD_BGFX)
     # (static_assert in bgfx's config.h).
     set(BGFX_CONFIG_MAX_VIEWS "512" CACHE STRING "" FORCE)
     add_subdirectory(bgfx)
+    # ⚠️⚠️ A bgfx occlusion query handle is an object's identity, not a
+    # slot to rent: createOcclusionQuery() is the only place bgfx writes
+    # the "no result yet" sentinel into a handle's slot, so a handle
+    # reused for a second test answers with the first one's verdict, and
+    # the guard that would catch it can never fire
+    # (docs/FarFieldProxies.md §12.11). The renderer therefore creates a
+    # handle per test and destroys it when the answer is read -- and
+    # bgfx defers the free to the end of the frame, so the live count is
+    # the tests in flight plus a frame's worth of released ones, for the
+    # culler and the measurement probe both. The 256 default fits
+    # neither: one large-assembly walk alone offers 128 tests a frame at
+    # a two-frame answer latency. Not one of the counts bgfx's own CMake
+    # forwards, hence set on the target; PUBLIC to match how it forwards
+    # the others. Costs one GL query object and eight bytes of handle
+    # table per slot.
+    target_compile_definitions(bgfx PUBLIC BGFX_CONFIG_MAX_OCCLUSION_QUERIES=2048)
 endif()
 
 if (BUILD_DILIGENT)

@@ -2002,7 +2002,22 @@ Document::readObjects(Base::XMLReader& reader)
 
     long lastId = 0;
     FC_TIME_INIT(t);
+    // The blocking open's own progress. Historically the archive file
+    // loop ("Importing project files...") was what reported a load and
+    // pumped the event loop; with deferred shape entries most of that
+    // loop no longer runs at open, and a 5000-object document restored
+    // for many seconds with a dead progress bar and a frozen window.
+    // ONE launcher spanning both loops below, because only the TOP
+    // launcher's next() reports and pumps at all -- a second launcher
+    // started under a live blocking one is a silent no-op (measured:
+    // the object-data loop ran unreported while a scoped creation
+    // launcher was still alive above it). next() is throttled inside
+    // the sequencer (one bar update and one event pump per 200ms), so
+    // the per-object cost here is an integer increment.
+    Base::SequencerLauncher seqRestore("Restoring document...",
+                                       size_t(Cnt) * 2);
     for (int i=0 ;i<Cnt ;i++) {
+        seqRestore.next();
         reader.readElement("Object");
         std::string type = reader.getAttribute("type");
         std::string name = reader.getAttribute("name");
@@ -2098,7 +2113,10 @@ Document::readObjects(Base::XMLReader& reader)
     _FC_TIME_INIT(t);
     auto propStats = PropertyContainer::restoreStats;
     try {
+        // The property half of the open -- the bulk of its wall time,
+        // reported through the same launcher as the creation loop.
         for (int i=0 ;i<Cnt ;i++) {
+            seqRestore.next();
             int guard;
             reader.readElement("Object", &guard);
             objName = reader.getAttribute("name");

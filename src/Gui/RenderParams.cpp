@@ -54,13 +54,63 @@ public:
     std::string Type;
     long CoarseTessellation;
     long CoarseDeferFaces;
+    bool MeshSkipRedundant;
+    bool MeshSkipFinerResident;
+    bool MeshSkipInvariant;
     bool ProgressiveLoad;
     long ProgressiveLoadBudgetMS;
     long LevelThreads;
     long LevelMemoryFloorMB;
+    bool LevelDebug;
+    long LevelCeilingSimulateMB;
     long GpuMemoryBudgetMB;
     double LevelTolerance;
+    double LevelPressureRelease;
+    bool ClimbHardLimit;
+    long ClimbAdmitBatch;
+    long LevelLandBudgetMS;
+    bool MeshSkipLanded;
+    bool VisualFillOnPool;
+    long VisualFillMinFaces;
+    long WorkerVertexCache;
+    long CaptureBudgetMS;
+    long LevelSlowBuildMS;
+    long DescentOrderBatch;
+    bool DowngradeLedger;
+    long LevelCount;
+    double LevelScale;
+    double LevelBudgetDeadband;
+    double LevelScaleBoxError;
+    bool SimplifyExhausted;
+    bool SimplifyMergeParts;
+    double SimplifyMinReduction;
+    bool ShapeVertices;
+    bool PressureDropEdges;
+    long ElementGateStagger;
+    bool LoadDropElements;
     double EffectResolution;
+    bool Occlusion;
+    long OcclusionVisibleTtl;
+    long OcclusionBudget;
+    long OcclusionMinSubtree;
+    long OcclusionMaxHidden;
+    long OcclusionDepthPad;
+    long OcclusionConfirm;
+    bool OcclusionSoftware;
+    long OcclusionOccluderTris;
+    long OcclusionMinOccluder;
+    long OcclusionThreads;
+    bool OcclusionSimd;
+    long OcclusionResolution;
+    bool OcclusionPerInstance;
+    long OcclusionDemoteStreak;
+    bool OcclusionCoarse;
+    long OcclusionCoarseLevel;
+    long OcclusionCoarseMinTris;
+    long OcclusionCoarseBuilds;
+    long OcclusionCoarseBias;
+    long OcclusionCoarseMemory;
+    bool OcclusionBenefitProbe;
     bool AO;
     bool Shadow;
     long AOMethod;
@@ -133,6 +183,11 @@ public:
     bool DebugTiming;
     bool DebugDelta;
     bool DebugCoverage;
+    bool DebugProxyCut;
+    bool DebugOcclusion;
+    bool DebugProxyGen;
+    bool DebugCullAudit;
+    bool DebugCullBounds;
 
     // Auto generated code (Tools/params_utils.py:253)
     RenderParamsP() {
@@ -145,6 +200,12 @@ public:
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         CoarseDeferFaces = this->handle->GetInt("CoarseDeferFaces", 1000);
         funcs["CoarseDeferFaces"] = &RenderParamsP::updateCoarseDeferFaces;
+        MeshSkipRedundant = this->handle->GetBool("MeshSkipRedundant", true);
+        funcs["MeshSkipRedundant"] = &RenderParamsP::updateMeshSkipRedundant;
+        MeshSkipFinerResident = this->handle->GetBool("MeshSkipFinerResident", false);
+        funcs["MeshSkipFinerResident"] = &RenderParamsP::updateMeshSkipFinerResident;
+        MeshSkipInvariant = this->handle->GetBool("MeshSkipInvariant", true);
+        funcs["MeshSkipInvariant"] = &RenderParamsP::updateMeshSkipInvariant;
         ProgressiveLoad = this->handle->GetBool("ProgressiveLoad", true);
         funcs["ProgressiveLoad"] = &RenderParamsP::updateProgressiveLoad;
         ProgressiveLoadBudgetMS = this->handle->GetInt("ProgressiveLoadBudgetMS", 100);
@@ -153,12 +214,106 @@ public:
         funcs["LevelThreads"] = &RenderParamsP::updateLevelThreads;
         LevelMemoryFloorMB = this->handle->GetInt("LevelMemoryFloorMB", 0);
         funcs["LevelMemoryFloorMB"] = &RenderParamsP::updateLevelMemoryFloorMB;
+        LevelDebug = this->handle->GetBool("LevelDebug", false);
+        funcs["LevelDebug"] = &RenderParamsP::updateLevelDebug;
+        LevelCeilingSimulateMB = this->handle->GetInt("LevelCeilingSimulateMB", 0);
+        funcs["LevelCeilingSimulateMB"] = &RenderParamsP::updateLevelCeilingSimulateMB;
         GpuMemoryBudgetMB = this->handle->GetInt("GpuMemoryBudgetMB", 0);
         funcs["GpuMemoryBudgetMB"] = &RenderParamsP::updateGpuMemoryBudgetMB;
         LevelTolerance = this->handle->GetFloat("LevelTolerance", 2.0);
         funcs["LevelTolerance"] = &RenderParamsP::updateLevelTolerance;
+        LevelPressureRelease = this->handle->GetFloat("LevelPressureRelease", 0.5);
+        funcs["LevelPressureRelease"] = &RenderParamsP::updateLevelPressureRelease;
+        ClimbHardLimit = this->handle->GetBool("ClimbHardLimit", true);
+        funcs["ClimbHardLimit"] = &RenderParamsP::updateClimbHardLimit;
+        ClimbAdmitBatch = this->handle->GetInt("ClimbAdmitBatch", 64);
+        funcs["ClimbAdmitBatch"] = &RenderParamsP::updateClimbAdmitBatch;
+        LevelLandBudgetMS = this->handle->GetInt("LevelLandBudgetMS", 50);
+        funcs["LevelLandBudgetMS"] = &RenderParamsP::updateLevelLandBudgetMS;
+        MeshSkipLanded = this->handle->GetBool("MeshSkipLanded", true);
+        funcs["MeshSkipLanded"] = &RenderParamsP::updateMeshSkipLanded;
+        VisualFillOnPool = this->handle->GetBool("VisualFillOnPool", true);
+        funcs["VisualFillOnPool"] = &RenderParamsP::updateVisualFillOnPool;
+        VisualFillMinFaces = this->handle->GetInt("VisualFillMinFaces", 2000);
+        funcs["VisualFillMinFaces"] = &RenderParamsP::updateVisualFillMinFaces;
+        WorkerVertexCache = this->handle->GetInt("WorkerVertexCache", 1);
+        funcs["WorkerVertexCache"] = &RenderParamsP::updateWorkerVertexCache;
+        CaptureBudgetMS = this->handle->GetInt("CaptureBudgetMS", 50);
+        funcs["CaptureBudgetMS"] = &RenderParamsP::updateCaptureBudgetMS;
+        LevelSlowBuildMS = this->handle->GetInt("LevelSlowBuildMS", 200);
+        funcs["LevelSlowBuildMS"] = &RenderParamsP::updateLevelSlowBuildMS;
+        DescentOrderBatch = this->handle->GetInt("DescentOrderBatch", 64);
+        funcs["DescentOrderBatch"] = &RenderParamsP::updateDescentOrderBatch;
+        DowngradeLedger = this->handle->GetBool("DowngradeLedger", true);
+        funcs["DowngradeLedger"] = &RenderParamsP::updateDowngradeLedger;
+        LevelCount = this->handle->GetInt("LevelCount", 8);
+        funcs["LevelCount"] = &RenderParamsP::updateLevelCount;
+        LevelScale = this->handle->GetFloat("LevelScale", 2.0);
+        funcs["LevelScale"] = &RenderParamsP::updateLevelScale;
+        LevelBudgetDeadband = this->handle->GetFloat("LevelBudgetDeadband", 0.03);
+        funcs["LevelBudgetDeadband"] = &RenderParamsP::updateLevelBudgetDeadband;
+        LevelScaleBoxError = this->handle->GetFloat("LevelScaleBoxError", 0.25);
+        funcs["LevelScaleBoxError"] = &RenderParamsP::updateLevelScaleBoxError;
+        SimplifyExhausted = this->handle->GetBool("SimplifyExhausted", true);
+        funcs["SimplifyExhausted"] = &RenderParamsP::updateSimplifyExhausted;
+        SimplifyMergeParts = this->handle->GetBool("SimplifyMergeParts", false);
+        funcs["SimplifyMergeParts"] = &RenderParamsP::updateSimplifyMergeParts;
+        SimplifyMinReduction = this->handle->GetFloat("SimplifyMinReduction", 20.0);
+        funcs["SimplifyMinReduction"] = &RenderParamsP::updateSimplifyMinReduction;
+        ShapeVertices = this->handle->GetBool("ShapeVertices", true);
+        funcs["ShapeVertices"] = &RenderParamsP::updateShapeVertices;
+        PressureDropEdges = this->handle->GetBool("PressureDropEdges", true);
+        funcs["PressureDropEdges"] = &RenderParamsP::updatePressureDropEdges;
+        ElementGateStagger = this->handle->GetInt("ElementGateStagger", 15);
+        funcs["ElementGateStagger"] = &RenderParamsP::updateElementGateStagger;
+        LoadDropElements = this->handle->GetBool("LoadDropElements", true);
+        funcs["LoadDropElements"] = &RenderParamsP::updateLoadDropElements;
         EffectResolution = this->handle->GetFloat("EffectResolution", 1.0);
         funcs["EffectResolution"] = &RenderParamsP::updateEffectResolution;
+        Occlusion = this->handle->GetBool("Occlusion", false);
+        funcs["Occlusion"] = &RenderParamsP::updateOcclusion;
+        OcclusionVisibleTtl = this->handle->GetInt("OcclusionVisibleTtl", 6);
+        funcs["OcclusionVisibleTtl"] = &RenderParamsP::updateOcclusionVisibleTtl;
+        OcclusionBudget = this->handle->GetInt("OcclusionBudget", 128);
+        funcs["OcclusionBudget"] = &RenderParamsP::updateOcclusionBudget;
+        OcclusionMinSubtree = this->handle->GetInt("OcclusionMinSubtree", 8);
+        funcs["OcclusionMinSubtree"] = &RenderParamsP::updateOcclusionMinSubtree;
+        OcclusionMaxHidden = this->handle->GetInt("OcclusionMaxHidden", 120);
+        funcs["OcclusionMaxHidden"] = &RenderParamsP::updateOcclusionMaxHidden;
+        OcclusionDepthPad = this->handle->GetInt("OcclusionDepthPad", 16);
+        funcs["OcclusionDepthPad"] = &RenderParamsP::updateOcclusionDepthPad;
+        OcclusionConfirm = this->handle->GetInt("OcclusionConfirm", 2);
+        funcs["OcclusionConfirm"] = &RenderParamsP::updateOcclusionConfirm;
+        OcclusionSoftware = this->handle->GetBool("OcclusionSoftware", true);
+        funcs["OcclusionSoftware"] = &RenderParamsP::updateOcclusionSoftware;
+        OcclusionOccluderTris = this->handle->GetInt("OcclusionOccluderTris", 250000);
+        funcs["OcclusionOccluderTris"] = &RenderParamsP::updateOcclusionOccluderTris;
+        OcclusionMinOccluder = this->handle->GetInt("OcclusionMinOccluder", 24);
+        funcs["OcclusionMinOccluder"] = &RenderParamsP::updateOcclusionMinOccluder;
+        OcclusionThreads = this->handle->GetInt("OcclusionThreads", 0);
+        funcs["OcclusionThreads"] = &RenderParamsP::updateOcclusionThreads;
+        OcclusionSimd = this->handle->GetBool("OcclusionSimd", true);
+        funcs["OcclusionSimd"] = &RenderParamsP::updateOcclusionSimd;
+        OcclusionResolution = this->handle->GetInt("OcclusionResolution", 1);
+        funcs["OcclusionResolution"] = &RenderParamsP::updateOcclusionResolution;
+        OcclusionPerInstance = this->handle->GetBool("OcclusionPerInstance", true);
+        funcs["OcclusionPerInstance"] = &RenderParamsP::updateOcclusionPerInstance;
+        OcclusionDemoteStreak = this->handle->GetInt("OcclusionDemoteStreak", 8);
+        funcs["OcclusionDemoteStreak"] = &RenderParamsP::updateOcclusionDemoteStreak;
+        OcclusionCoarse = this->handle->GetBool("OcclusionCoarse", false);
+        funcs["OcclusionCoarse"] = &RenderParamsP::updateOcclusionCoarse;
+        OcclusionCoarseLevel = this->handle->GetInt("OcclusionCoarseLevel", 2);
+        funcs["OcclusionCoarseLevel"] = &RenderParamsP::updateOcclusionCoarseLevel;
+        OcclusionCoarseMinTris = this->handle->GetInt("OcclusionCoarseMinTris", 512);
+        funcs["OcclusionCoarseMinTris"] = &RenderParamsP::updateOcclusionCoarseMinTris;
+        OcclusionCoarseBuilds = this->handle->GetInt("OcclusionCoarseBuilds", 8);
+        funcs["OcclusionCoarseBuilds"] = &RenderParamsP::updateOcclusionCoarseBuilds;
+        OcclusionCoarseBias = this->handle->GetInt("OcclusionCoarseBias", 100);
+        funcs["OcclusionCoarseBias"] = &RenderParamsP::updateOcclusionCoarseBias;
+        OcclusionCoarseMemory = this->handle->GetInt("OcclusionCoarseMemory", 64);
+        funcs["OcclusionCoarseMemory"] = &RenderParamsP::updateOcclusionCoarseMemory;
+        OcclusionBenefitProbe = this->handle->GetBool("OcclusionBenefitProbe", false);
+        funcs["OcclusionBenefitProbe"] = &RenderParamsP::updateOcclusionBenefitProbe;
         AO = this->handle->GetBool("AO", false);
         funcs["AO"] = &RenderParamsP::updateAO;
         Shadow = this->handle->GetBool("Shadow", true);
@@ -175,7 +330,7 @@ public:
         funcs["AOIntensity"] = &RenderParamsP::updateAOIntensity;
         AOResolution = this->handle->GetFloat("AOResolution", 1.0);
         funcs["AOResolution"] = &RenderParamsP::updateAOResolution;
-        Cavity = this->handle->GetBool("Cavity", false);
+        Cavity = this->handle->GetBool("Cavity", true);
         funcs["Cavity"] = &RenderParamsP::updateCavity;
         CavityRadius = this->handle->GetFloat("CavityRadius", 1.0);
         funcs["CavityRadius"] = &RenderParamsP::updateCavityRadius;
@@ -303,6 +458,16 @@ public:
         funcs["DebugDelta"] = &RenderParamsP::updateDebugDelta;
         DebugCoverage = this->handle->GetBool("DebugCoverage", false);
         funcs["DebugCoverage"] = &RenderParamsP::updateDebugCoverage;
+        DebugProxyCut = this->handle->GetBool("DebugProxyCut", false);
+        funcs["DebugProxyCut"] = &RenderParamsP::updateDebugProxyCut;
+        DebugOcclusion = this->handle->GetBool("DebugOcclusion", false);
+        funcs["DebugOcclusion"] = &RenderParamsP::updateDebugOcclusion;
+        DebugProxyGen = this->handle->GetBool("DebugProxyGen", false);
+        funcs["DebugProxyGen"] = &RenderParamsP::updateDebugProxyGen;
+        DebugCullAudit = this->handle->GetBool("DebugCullAudit", false);
+        funcs["DebugCullAudit"] = &RenderParamsP::updateDebugCullAudit;
+        DebugCullBounds = this->handle->GetBool("DebugCullBounds", false);
+        funcs["DebugCullBounds"] = &RenderParamsP::updateDebugCullBounds;
     }
 
     // Auto generated code (Tools/params_utils.py:283)
@@ -336,6 +501,18 @@ public:
         self->CoarseDeferFaces = self->handle->GetInt("CoarseDeferFaces", 1000);
     }
     // Auto generated code (Tools/params_utils.py:310)
+    static void updateMeshSkipRedundant(RenderParamsP *self) {
+        self->MeshSkipRedundant = self->handle->GetBool("MeshSkipRedundant", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMeshSkipFinerResident(RenderParamsP *self) {
+        self->MeshSkipFinerResident = self->handle->GetBool("MeshSkipFinerResident", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMeshSkipInvariant(RenderParamsP *self) {
+        self->MeshSkipInvariant = self->handle->GetBool("MeshSkipInvariant", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
     static void updateProgressiveLoad(RenderParamsP *self) {
         self->ProgressiveLoad = self->handle->GetBool("ProgressiveLoad", true);
     }
@@ -352,6 +529,14 @@ public:
         self->LevelMemoryFloorMB = self->handle->GetInt("LevelMemoryFloorMB", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelDebug(RenderParamsP *self) {
+        self->LevelDebug = self->handle->GetBool("LevelDebug", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelCeilingSimulateMB(RenderParamsP *self) {
+        self->LevelCeilingSimulateMB = self->handle->GetInt("LevelCeilingSimulateMB", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
     static void updateGpuMemoryBudgetMB(RenderParamsP *self) {
         self->GpuMemoryBudgetMB = self->handle->GetInt("GpuMemoryBudgetMB", 0);
     }
@@ -360,8 +545,188 @@ public:
         self->LevelTolerance = self->handle->GetFloat("LevelTolerance", 2.0);
     }
     // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelPressureRelease(RenderParamsP *self) {
+        self->LevelPressureRelease = self->handle->GetFloat("LevelPressureRelease", 0.5);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateClimbHardLimit(RenderParamsP *self) {
+        self->ClimbHardLimit = self->handle->GetBool("ClimbHardLimit", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateClimbAdmitBatch(RenderParamsP *self) {
+        self->ClimbAdmitBatch = self->handle->GetInt("ClimbAdmitBatch", 64);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelLandBudgetMS(RenderParamsP *self) {
+        self->LevelLandBudgetMS = self->handle->GetInt("LevelLandBudgetMS", 50);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMeshSkipLanded(RenderParamsP *self) {
+        self->MeshSkipLanded = self->handle->GetBool("MeshSkipLanded", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateVisualFillOnPool(RenderParamsP *self) {
+        self->VisualFillOnPool = self->handle->GetBool("VisualFillOnPool", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateVisualFillMinFaces(RenderParamsP *self) {
+        self->VisualFillMinFaces = self->handle->GetInt("VisualFillMinFaces", 2000);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateWorkerVertexCache(RenderParamsP *self) {
+        self->WorkerVertexCache = self->handle->GetInt("WorkerVertexCache", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateCaptureBudgetMS(RenderParamsP *self) {
+        self->CaptureBudgetMS = self->handle->GetInt("CaptureBudgetMS", 50);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelSlowBuildMS(RenderParamsP *self) {
+        self->LevelSlowBuildMS = self->handle->GetInt("LevelSlowBuildMS", 200);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDescentOrderBatch(RenderParamsP *self) {
+        self->DescentOrderBatch = self->handle->GetInt("DescentOrderBatch", 64);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDowngradeLedger(RenderParamsP *self) {
+        self->DowngradeLedger = self->handle->GetBool("DowngradeLedger", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelCount(RenderParamsP *self) {
+        self->LevelCount = self->handle->GetInt("LevelCount", 8);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelScale(RenderParamsP *self) {
+        self->LevelScale = self->handle->GetFloat("LevelScale", 2.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelBudgetDeadband(RenderParamsP *self) {
+        self->LevelBudgetDeadband = self->handle->GetFloat("LevelBudgetDeadband", 0.03);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLevelScaleBoxError(RenderParamsP *self) {
+        self->LevelScaleBoxError = self->handle->GetFloat("LevelScaleBoxError", 0.25);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSimplifyExhausted(RenderParamsP *self) {
+        self->SimplifyExhausted = self->handle->GetBool("SimplifyExhausted", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSimplifyMergeParts(RenderParamsP *self) {
+        self->SimplifyMergeParts = self->handle->GetBool("SimplifyMergeParts", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateSimplifyMinReduction(RenderParamsP *self) {
+        self->SimplifyMinReduction = self->handle->GetFloat("SimplifyMinReduction", 20.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateShapeVertices(RenderParamsP *self) {
+        self->ShapeVertices = self->handle->GetBool("ShapeVertices", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updatePressureDropEdges(RenderParamsP *self) {
+        self->PressureDropEdges = self->handle->GetBool("PressureDropEdges", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateElementGateStagger(RenderParamsP *self) {
+        self->ElementGateStagger = self->handle->GetInt("ElementGateStagger", 15);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateLoadDropElements(RenderParamsP *self) {
+        self->LoadDropElements = self->handle->GetBool("LoadDropElements", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
     static void updateEffectResolution(RenderParamsP *self) {
         self->EffectResolution = self->handle->GetFloat("EffectResolution", 1.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusion(RenderParamsP *self) {
+        self->Occlusion = self->handle->GetBool("Occlusion", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionVisibleTtl(RenderParamsP *self) {
+        self->OcclusionVisibleTtl = self->handle->GetInt("OcclusionVisibleTtl", 6);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionBudget(RenderParamsP *self) {
+        self->OcclusionBudget = self->handle->GetInt("OcclusionBudget", 128);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionMinSubtree(RenderParamsP *self) {
+        self->OcclusionMinSubtree = self->handle->GetInt("OcclusionMinSubtree", 8);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionMaxHidden(RenderParamsP *self) {
+        self->OcclusionMaxHidden = self->handle->GetInt("OcclusionMaxHidden", 120);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionDepthPad(RenderParamsP *self) {
+        self->OcclusionDepthPad = self->handle->GetInt("OcclusionDepthPad", 16);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionConfirm(RenderParamsP *self) {
+        self->OcclusionConfirm = self->handle->GetInt("OcclusionConfirm", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionSoftware(RenderParamsP *self) {
+        self->OcclusionSoftware = self->handle->GetBool("OcclusionSoftware", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionOccluderTris(RenderParamsP *self) {
+        self->OcclusionOccluderTris = self->handle->GetInt("OcclusionOccluderTris", 250000);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionMinOccluder(RenderParamsP *self) {
+        self->OcclusionMinOccluder = self->handle->GetInt("OcclusionMinOccluder", 24);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionThreads(RenderParamsP *self) {
+        self->OcclusionThreads = self->handle->GetInt("OcclusionThreads", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionSimd(RenderParamsP *self) {
+        self->OcclusionSimd = self->handle->GetBool("OcclusionSimd", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionResolution(RenderParamsP *self) {
+        self->OcclusionResolution = self->handle->GetInt("OcclusionResolution", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionPerInstance(RenderParamsP *self) {
+        self->OcclusionPerInstance = self->handle->GetBool("OcclusionPerInstance", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionDemoteStreak(RenderParamsP *self) {
+        self->OcclusionDemoteStreak = self->handle->GetInt("OcclusionDemoteStreak", 8);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarse(RenderParamsP *self) {
+        self->OcclusionCoarse = self->handle->GetBool("OcclusionCoarse", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarseLevel(RenderParamsP *self) {
+        self->OcclusionCoarseLevel = self->handle->GetInt("OcclusionCoarseLevel", 2);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarseMinTris(RenderParamsP *self) {
+        self->OcclusionCoarseMinTris = self->handle->GetInt("OcclusionCoarseMinTris", 512);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarseBuilds(RenderParamsP *self) {
+        self->OcclusionCoarseBuilds = self->handle->GetInt("OcclusionCoarseBuilds", 8);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarseBias(RenderParamsP *self) {
+        self->OcclusionCoarseBias = self->handle->GetInt("OcclusionCoarseBias", 100);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionCoarseMemory(RenderParamsP *self) {
+        self->OcclusionCoarseMemory = self->handle->GetInt("OcclusionCoarseMemory", 64);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateOcclusionBenefitProbe(RenderParamsP *self) {
+        self->OcclusionBenefitProbe = self->handle->GetBool("OcclusionBenefitProbe", false);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAO(RenderParamsP *self) {
@@ -397,7 +762,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCavity(RenderParamsP *self) {
-        self->Cavity = self->handle->GetBool("Cavity", false);
+        self->Cavity = self->handle->GetBool("Cavity", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCavityRadius(RenderParamsP *self) {
@@ -651,6 +1016,26 @@ public:
     static void updateDebugCoverage(RenderParamsP *self) {
         self->DebugCoverage = self->handle->GetBool("DebugCoverage", false);
     }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugProxyCut(RenderParamsP *self) {
+        self->DebugProxyCut = self->handle->GetBool("DebugProxyCut", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugOcclusion(RenderParamsP *self) {
+        self->DebugOcclusion = self->handle->GetBool("DebugOcclusion", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugProxyGen(RenderParamsP *self) {
+        self->DebugProxyGen = self->handle->GetBool("DebugProxyGen", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugCullAudit(RenderParamsP *self) {
+        self->DebugCullAudit = self->handle->GetBool("DebugCullAudit", false);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDebugCullBounds(RenderParamsP *self) {
+        self->DebugCullBounds = self->handle->GetBool("DebugCullBounds", false);
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:332)
@@ -787,6 +1172,173 @@ void RenderParams::setCoarseDeferFaces(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeCoarseDeferFaces() {
     instance()->handle->RemoveInt("CoarseDeferFaces");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMeshSkipRedundant() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Ask the shape whether it is already tessellated the way this\n"
+"rebuild wants it, and skip the tessellation call outright when it\n"
+"is (docs/SceneStreaming.md #13e).\n"
+"A visual rebuild always called BRepMesh_IncrementalMesh, on the\n"
+"assumption that a mesh already resident makes the call nearly\n"
+"free. Measured, it does not: half the calls of a mass descent --\n"
+"2462 of 4942 -- changed no triangle at all and still cost about\n"
+"19ms each, 27% of the whole descent's rebuild time, because\n"
+"reaching the conclusion means building OCCT's internal mesh model\n"
+"of the shape first.\n"
+"The check asks the same question that model would have answered,\n"
+"off the triangulations already hanging on the faces: OCCT's own\n"
+"consistency rule (BRepMesh_ModelPreProcessor), per face, plus the\n"
+"3D polygon of every free edge. It is all-or-nothing per shape and\n"
+"deliberately the stricter test -- one face that would be\n"
+"re-tessellated, one triangulation with an index out of range, and\n"
+"the call runs exactly as before, because the fallback is the real\n"
+"thing and there is nothing to gain by guessing.\n"
+"A resident mesh FINER than the ask is not adequate. That is not\n"
+"an oversight: the descent asks for a coarser mesh on purpose, to\n"
+"give memory back, and OCCT would coarsen it. Skipping there would\n"
+"quietly hold the memory the plan asked for.\n"
+"Off, the call is made unconditionally, as it always was. With the\n"
+"level plan narrating, the off arm also reports how often the\n"
+"check and the call agreed, which is what says the check is safe.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getMeshSkipRedundant() {
+    return instance()->MeshSkipRedundant;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultMeshSkipRedundant() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMeshSkipRedundant(const bool &v) {
+    instance()->handle->SetBool("MeshSkipRedundant",v);
+    instance()->MeshSkipRedundant = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMeshSkipRedundant() {
+    instance()->handle->RemoveBool("MeshSkipRedundant");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMeshSkipFinerResident() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Count a resident mesh FINER than the rebuild asked for as\n"
+"adequate, instead of re-tessellating to coarsen it\n"
+"(docs/SceneStreaming.md #13e). Only consulted when redundant\n"
+"tessellation is being skipped at all.\n"
+"Strictly, finer is not adequate: the descent asks coarse on\n"
+"purpose to hand memory back, and OCCT coarsens the mesh when\n"
+"asked with quality decrease allowed. That is why the check\n"
+"refuses it by default -- accepting it would be the feature\n"
+"quietly holding the memory the level plan asked for.\n"
+"Measured on the descent, though, that is what the refusal is\n"
+"actually costing and it is nearly all of it: 2599 of the 2765\n"
+"refused calls had a resident mesh exactly twice as fine as the\n"
+"ask -- the previous ladder rung, one dynamic scale step back --\n"
+"and every one of them changed no triangle when the call was\n"
+"made anyway. The faces were already at their floor; a face of\n"
+"two triangles does not coarsen.\n"
+"So this trades a coarsening that mostly achieves nothing for the\n"
+"~19ms it costs to find that out. What it risks is the minority\n"
+"where the coarsening WOULD have removed triangles, which is\n"
+"memory the plan then has to recover some other way -- through\n"
+"the refine pool's own coarser rung, where it was always meant to\n"
+"come from.\n"
+"OFF BY DEFAULT, and the reason is that risk, measured. Audited\n"
+"with every call still made so the check can be scored against\n"
+"what the call actually did, this rule predicted 3381 calls\n"
+"redundant and 753 of them -- 22%, better than one in five --\n"
+"rebuilt anyway. Those are real coarsenings it would have\n"
+"skipped, and real memory the plan would not get back. The\n"
+"strict rule's own score on the same instrument is 1 in 7403.\n"
+"/!\\ Never read that count from a run with the skip ON: a call\n"
+"that is skipped is never made, so nothing can say whether it\n"
+"would have rebuilt, and the wrong-verdict column can only\n"
+"count calls the check refused. A zero there is guaranteed by\n"
+"construction rather than earned.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getMeshSkipFinerResident() {
+    return instance()->MeshSkipFinerResident;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultMeshSkipFinerResident() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMeshSkipFinerResident(const bool &v) {
+    instance()->handle->SetBool("MeshSkipFinerResident",v);
+    instance()->MeshSkipFinerResident = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMeshSkipFinerResident() {
+    instance()->handle->RemoveBool("MeshSkipFinerResident");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMeshSkipInvariant() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Skip a tessellation call on a shape whose mesh provably cannot\n"
+"depend on the deflection asked: every face planar, every edge\n"
+"curve a straight line (docs/SceneStreaming.md #13e). A plane\n"
+"deviates from its triangulation by zero and a straight edge\n"
+"discretizes to its two endpoints at ANY deflection, so the call\n"
+"would rebuild the identical mesh -- there is no ask, coarser or\n"
+"finer, at which such a shape tessellates differently.\n"
+"This is the geometric statement behind the measured descent\n"
+"waste: most mechanical parts hit their floor immediately, and a\n"
+"mass descent then pays ~19-38ms per object per step (56-60% of\n"
+"all drop-phase mesh time on the rack model) for BRepMesh to\n"
+"rebuild what cannot change. The empirical exhaustion proof the\n"
+"ladder keeps (scaleSpent) cannot be used for a skip -- audited\n"
+"twice, 14-20% of proved shapes resume coarsening at some later\n"
+"ask, and those rebuilds reclaim real memory. The geometric rule\n"
+"is immune to that leak: the shapes that resume are exactly the\n"
+"curved ones it refuses to claim, and an all-linear mesh cannot\n"
+"shrink, so no reclaim is ever forgone.\n"
+"The classification walks surface and curve TYPES once per shape\n"
+"and is cached; conservative on both counts (a trimmed or offset\n"
+"plane, a straight b-spline, count as curved). The skip is also\n"
+"refused while any face is missing its triangulation -- building\n"
+"that is exactly the call's job.\n"
+"With the level plan narrating and this OFF, the rule is still\n"
+"evaluated and scored against every call it would have skipped --\n"
+"read its WRONG column from that arm only; a run with the skip on\n"
+"cannot score calls it never made.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getMeshSkipInvariant() {
+    return instance()->MeshSkipInvariant;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultMeshSkipInvariant() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMeshSkipInvariant(const bool &v) {
+    instance()->handle->SetBool("MeshSkipInvariant",v);
+    instance()->MeshSkipInvariant = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMeshSkipInvariant() {
+    instance()->handle->RemoveBool("MeshSkipInvariant");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -928,6 +1480,82 @@ void RenderParams::removeLevelMemoryFloorMB() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelDebug() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Narrate what each mesh-level plan decides (docs/SceneStreaming.md\n"
+"#13): the GPU budget it decided against and the bytes in use, how\n"
+"many displayed sources stand at their coarse and exact rungs, and\n"
+"how many refines, demotes and downgrades the plan asked for.\n"
+"Reported on the plan's own cadence - a camera pause - because it\n"
+"is a decision, not a per-frame cost.\n"
+"Needed to tell a ladder that will not descend apart from one that\n"
+"never ran: on the desktop OpenGL backend the automatic GPU budget\n"
+"is 0 (bgfx's GL renderer reports no limit), so the downgrade half\n"
+"of the plan never executed at all and nothing said so.\n"
+"The FC_LEVEL_DEBUG environment variable also turns it on. Read\n"
+"once, at the first plan.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getLevelDebug() {
+    return instance()->LevelDebug;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultLevelDebug() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelDebug(const bool &v) {
+    instance()->handle->SetBool("LevelDebug",v);
+    instance()->LevelDebug = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelDebug() {
+    instance()->handle->RemoveBool("LevelDebug");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelCeilingSimulateMB() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Pretend the system ran out of memory for exact re-tessellation\n"
+"(docs/SceneStreaming.md #13), so the CPU-side half of the level\n"
+"plan can be exercised on a machine that has memory to spare.\n"
+"Non-zero raises the floor that the refine worker compares\n"
+"available memory against, so builds are refused and a memory\n"
+"ceiling is observed - after which the plans start demoting exact\n"
+"meshes the camera would not miss back to their coarse rung.\n"
+"A simulation knob, not a tuning one: LevelMemoryFloorMB is the\n"
+"real floor, and this overrides it upward only.\n"
+"Read when a refine is dequeued, so it takes effect live.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getLevelCeilingSimulateMB() {
+    return instance()->LevelCeilingSimulateMB;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultLevelCeilingSimulateMB() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelCeilingSimulateMB(const long &v) {
+    instance()->handle->SetInt("LevelCeilingSimulateMB",v);
+    instance()->LevelCeilingSimulateMB = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelCeilingSimulateMB() {
+    instance()->handle->RemoveInt("LevelCeilingSimulateMB");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docGpuMemoryBudgetMB() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "GPU geometry budget of the desktop mesh-level plan\n"
@@ -1002,6 +1630,965 @@ void RenderParams::removeLevelTolerance() {
 }
 
 // Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelPressureRelease() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How much of the raised refine tolerance the plan keeps each\n"
+"time it comes in under the GPU budget (docs/SceneStreaming.md\n"
+"#13c.3). While the budget is exceeded the plan accepts visible\n"
+"error to fit the scene, and it must not hand that error straight\n"
+"back the moment one plan fits: measured on a 5455-object model at\n"
+"a 64MB budget, clearing it in one step took the tolerance from\n"
+"51 pixels to 2, asked 946 objects to re-tessellate at once, broke\n"
+"the budget again and cycled -- 43 plans in 611 seconds with no\n"
+"steady state at any point.\n"
+"So quality comes back in steps: each plan that fits keeps this\n"
+"fraction of the standing tolerance, and a step that puts the\n"
+"scene back over budget is remembered as a floor the release never\n"
+"passes again, so the ladder settles at the coarsest tolerance\n"
+"that actually fits instead of oscillating around it. The floor is\n"
+"forgotten when the camera moves or the budget changes, which is\n"
+"when what a rung costs on screen changes.\n"
+"Smaller gives quality back faster and risks the cycle; larger is\n"
+"gentler and slower. 0 or less restores the immediate snap.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLevelPressureRelease() {
+    return instance()->LevelPressureRelease;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLevelPressureRelease() {
+    const static double def = 0.5;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelPressureRelease(const double &v) {
+    instance()->handle->SetFloat("LevelPressureRelease",v);
+    instance()->LevelPressureRelease = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelPressureRelease() {
+    instance()->handle->RemoveFloat("LevelPressureRelease");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docClimbHardLimit() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Whether the GPU budget is an absolute ceiling for the level\n"
+"plan's climbs (docs/SceneStreaming.md #13c.5). With it on, a\n"
+"plan whose allocator-exact uploaded total stands at or above\n"
+"the budget admits NO refine and cancels every climb still in\n"
+"flight -- the existing de-want pass aborts them -- and below\n"
+"the ceiling climbs are admitted in small batches (Climb\n"
+"admission batch) so the total approaches the ceiling in\n"
+"verified steps instead of overshooting it in one plan. Judged\n"
+"against the uploaded TOTAL, not the two-frame live census: the\n"
+"census alternates under churn and is what let climbs land\n"
+"over budget. A crossing is bounded by one batch's bytes;\n"
+"per-climb pre-sizing needs rung-keyed GPU cache entries and is\n"
+"future work. Off restores unadmitted climbing.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getClimbHardLimit() {
+    return instance()->ClimbHardLimit;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultClimbHardLimit() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setClimbHardLimit(const bool &v) {
+    instance()->handle->SetBool("ClimbHardLimit",v);
+    instance()->ClimbHardLimit = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeClimbHardLimit() {
+    instance()->handle->RemoveBool("ClimbHardLimit");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docClimbAdmitBatch() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many refines one plan may admit while the hard climb\n"
+"limit is on and the uploaded total is under budget. Small\n"
+"keeps the possible overshoot small and lets the next plan\n"
+"re-check the allocator-exact total before admitting more;\n"
+"large climbs faster. The set is not ordered by need within a\n"
+"plan, but every plan re-evaluates the whole scene, so nothing\n"
+"starves across plans.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getClimbAdmitBatch() {
+    return instance()->ClimbAdmitBatch;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultClimbAdmitBatch() {
+    const static long def = 64;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setClimbAdmitBatch(const long &v) {
+    instance()->handle->SetInt("ClimbAdmitBatch",v);
+    instance()->ClimbAdmitBatch = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeClimbAdmitBatch() {
+    instance()->handle->RemoveInt("ClimbAdmitBatch");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelLandBudgetMS() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How long one event-loop turn may spend landing finished\n"
+"worker jobs (climb refines and descent coarsenings alike).\n"
+"Landings arrive as queued events, and Qt delivers every\n"
+"pending one in a single sweep -- a batch of 64 landings ran\n"
+"back-to-back for measured 1-2.7s stretches in which no paint,\n"
+"timer or input event was served. The pump runs landings until\n"
+"this budget is spent, then yields the loop and reschedules;\n"
+"a single landing larger than the budget still lands whole\n"
+"(items are not sliceable). Small keeps the UI responsive\n"
+"under a landing storm; large lands a converging scene sooner.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getLevelLandBudgetMS() {
+    return instance()->LevelLandBudgetMS;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultLevelLandBudgetMS() {
+    const static long def = 50;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelLandBudgetMS(const long &v) {
+    instance()->handle->SetInt("LevelLandBudgetMS",v);
+    instance()->LevelLandBudgetMS = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelLandBudgetMS() {
+    instance()->handle->RemoveInt("LevelLandBudgetMS");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMeshSkipLanded() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Whether the rebuild half of a landing skips its OCCT mesh\n"
+"call. A worker landing (climb, scale-descent, stand-in\n"
+"resolution) or a demote/downgrade installs or re-activates the\n"
+"very triangulation the following rebuild displays, and on\n"
+"every such path the resident rung is never coarser than the\n"
+"ask -- BRepMesh there can only validate: measured 18.3s of a\n"
+"92s budget drop (991 validated-only calls, 0.1-0.8s each on\n"
+"large compounds), plus ~1s per landing of a giant re-FAILING\n"
+"the faces the worker's mesher had already failed. Keyed on\n"
+"the path of the one rebuild the landing just prepared, never\n"
+"on the shape's descent history (the exhaustion-proof leak\n"
+"that killed the spent-keyed skip does not reach a per-rebuild\n"
+"claim). Audited at 94 percent exact no-ops; the rest are\n"
+"BRepMesh re-meshing a few faces within ~5 percent of the\n"
+"triangle count in either direction -- perturbation of a rung\n"
+"the ladder chose to display, not reclaim forgone. The level\n"
+"debug flag scores the claim either way; read the 'landed\n"
+"rule' audit line before trusting a change here.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getMeshSkipLanded() {
+    return instance()->MeshSkipLanded;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultMeshSkipLanded() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMeshSkipLanded(const bool &v) {
+    instance()->handle->SetBool("MeshSkipLanded",v);
+    instance()->MeshSkipLanded = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMeshSkipLanded() {
+    instance()->handle->RemoveBool("MeshSkipLanded");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docVisualFillOnPool() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Whether the display-array fill of a big landing rebuild runs\n"
+"on the refine worker pool instead of the GUI thread. After the\n"
+"mesh call was skipped on landings (Skip mesh call on landing\n"
+"rebuilds), the traversal that copies the resident\n"
+"triangulations into the Coin arrays became the per-item floor\n"
+"of the landing pump: 0.3-0.65s per 15-21k-face compound,\n"
+"unsliceable, against a 200ms interactivity gate. With this on,\n"
+"the rebuild captures handles to the resident triangulations\n"
+"and edge polygons (the only state another thread may swap\n"
+"under it -- the topology itself is immutable at runtime),\n"
+"fills detached arrays on a worker, and lands them back through\n"
+"the landing pump as plain array writes. The landing is\n"
+"guarded by the shape identity and a per-object generation\n"
+"count, so a rebuild that ran for any other reason in between\n"
+"simply wins. Only rebuilds inside the landing pump with at\n"
+"least 'Minimum faces for a pooled fill' faces take this path;\n"
+"everything else fills inline exactly as before.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getVisualFillOnPool() {
+    return instance()->VisualFillOnPool;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultVisualFillOnPool() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setVisualFillOnPool(const bool &v) {
+    instance()->handle->SetBool("VisualFillOnPool",v);
+    instance()->VisualFillOnPool = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeVisualFillOnPool() {
+    instance()->handle->RemoveBool("VisualFillOnPool");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docVisualFillMinFaces() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many faces a landing rebuild must have before its\n"
+"array fill goes to the refine pool (Fill landing rebuilds on\n"
+"the refine pool). The fill measures ~30us per face on the\n"
+"reference model, so the default parks roughly the >60ms\n"
+"items; the thousands of small landings in a budget drop stay\n"
+"on the cheap inline path rather than paying a snapshot, a\n"
+"queue hop and a second landing each.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getVisualFillMinFaces() {
+    return instance()->VisualFillMinFaces;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultVisualFillMinFaces() {
+    const static long def = 2000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setVisualFillMinFaces(const long &v) {
+    instance()->handle->SetInt("VisualFillMinFaces",v);
+    instance()->VisualFillMinFaces = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeVisualFillMinFaces() {
+    instance()->handle->RemoveInt("VisualFillMinFaces");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docWorkerVertexCache() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Whether a scene publish adopts the vertex-cache content the\n"
+"fill worker emitted at landing instead of re-capturing the\n"
+"shape by traversal (docs/WorkerVertexCache.md). The capture\n"
+"walks every triangle through a hash-dedup a second time to\n"
+"rebuild exactly the arrays the fill already computed; with\n"
+"this on, the worker emits those arrays next to the display\n"
+"arrays and the publish installs them directly. Uniform-color\n"
+"shapes only -- per-face colors, textures and marker sets fall\n"
+"back to the traversal capture, as does any shape whose nodes\n"
+"were touched after the landing registered the content. 0 is\n"
+"off, 1 adopts, 2 adopts nothing but runs the traversal capture\n"
+"and compares it against the worker's content, logging any\n"
+"disagreement -- slow, for checking the emission, not for use.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getWorkerVertexCache() {
+    return instance()->WorkerVertexCache;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultWorkerVertexCache() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setWorkerVertexCache(const long &v) {
+    instance()->handle->SetInt("WorkerVertexCache",v);
+    instance()->WorkerVertexCache = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeWorkerVertexCache() {
+    instance()->handle->RemoveInt("WorkerVertexCache");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docCaptureBudgetMS() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How long one scene publish may spend re-capturing changed\n"
+"shapes into vertex caches before the rest are deferred. The\n"
+"capture walks a changed shape's primitives one triangle at a\n"
+"time, and during a descent storm every landed batch pays that\n"
+"on the next paint: mid-paint stack samples put the capture at\n"
+"about half of 250-850ms publish frames. Once this budget is\n"
+"spent, each remaining changed shape keeps its previous vertex\n"
+"cache for this frame (a shape captured for the first time\n"
+"stays out of the frame entirely -- progressive appearance,\n"
+"same as a live import), the caches on its path are left\n"
+"unclosed for reuse, and another publish is scheduled; captured\n"
+"shapes turn valid and prune, so successive frames always make\n"
+"progress. The display is at worst a few frames stale in a\n"
+"scene that is churning anyway; a single changed object never\n"
+"comes near the budget. 0 captures everything in one frame,\n"
+"as before this parameter existed.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getCaptureBudgetMS() {
+    return instance()->CaptureBudgetMS;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultCaptureBudgetMS() {
+    const static long def = 50;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setCaptureBudgetMS(const long &v) {
+    instance()->handle->SetInt("CaptureBudgetMS",v);
+    instance()->CaptureBudgetMS = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeCaptureBudgetMS() {
+    instance()->handle->RemoveInt("CaptureBudgetMS");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelSlowBuildMS() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"A visual rebuild whose own cost passes this many\n"
+"milliseconds reports its time split (traversal, mesh,\n"
+"prologue, instancing, highlight) on one line naming the\n"
+"object, under the level debug flag. The aggregate split says\n"
+"where a mass descent's time goes; the landing pump's worst\n"
+"turn is a single object's whole rebuild, and only a per-build\n"
+"line says what that object spent it on. The same threshold\n"
+"arms the slow-dispatch line in GUIApplication::notify, which\n"
+"names the receiver of any single event-loop dispatch this\n"
+"slow -- the net that catches a stall no timer above\n"
+"bracketed. 0 turns both lines off.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getLevelSlowBuildMS() {
+    return instance()->LevelSlowBuildMS;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultLevelSlowBuildMS() {
+    const static long def = 200;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelSlowBuildMS(const long &v) {
+    instance()->handle->SetInt("LevelSlowBuildMS",v);
+    instance()->LevelSlowBuildMS = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelSlowBuildMS() {
+    instance()->handle->RemoveInt("LevelSlowBuildMS");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDescentOrderBatch() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many descents (demotes/downgrades) one plan pass may\n"
+"order, free tier and priced tier together; 0 removes the cap.\n"
+"Each order enqueues a worker job -- the coarsening itself runs\n"
+"on the refine pool -- but the enqueue snapshots the object's\n"
+"display arrays on the GUI thread, so an unbounded pass (the\n"
+"measured 1500-order plans) is itself a stall. Deferred\n"
+"candidates keep their hooks and the replan after the batch\n"
+"lands re-finds them, so nothing is refused, only paced -- the\n"
+"climb admission batch's mirror.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getDescentOrderBatch() {
+    return instance()->DescentOrderBatch;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultDescentOrderBatch() {
+    const static long def = 64;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDescentOrderBatch(const long &v) {
+    instance()->handle->SetInt("DescentOrderBatch",v);
+    instance()->DescentOrderBatch = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDescentOrderBatch() {
+    instance()->handle->RemoveInt("DescentOrderBatch");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDowngradeLedger() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Whether the GPU downgrade sweep carries its own unlanded\n"
+"orders as credit against the next plan's deficit\n"
+"(docs/SceneStreaming.md #13c.4). A downgrade frees exactly the\n"
+"bytes it prices, but not WHEN the plan next looks: the swap\n"
+"uploads the coarse rung immediately while the fine buffers\n"
+"leave the live meter only after the collection window -- on a\n"
+"heavy scene, seconds -- so a plan sampling mid-transition reads\n"
+"old+new at once, computes a larger deficit than the one just\n"
+"covered, and walks other sources further down. Measured on a\n"
+"5455-object model at 64MB with the camera inside the assembly:\n"
+"single plans requesting 1500+ downgrades, live tripling during\n"
+"the storm, and the whole registry drained to its bottom rung\n"
+"while the settled memory was under budget all along.\n"
+"With the ledger, promised bytes hold the sweep until they are\n"
+"observed landing or written off a few frames after the ordered\n"
+"worker jobs have all drained (an order's bytes cannot land\n"
+"before its descent job does); off restores the storming\n"
+"behaviour for comparison.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDowngradeLedger() {
+    return instance()->DowngradeLedger;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDowngradeLedger() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDowngradeLedger(const bool &v) {
+    instance()->handle->SetBool("DowngradeLedger",v);
+    instance()->DowngradeLedger = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDowngradeLedger() {
+    instance()->handle->RemoveBool("DowngradeLedger");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelCount() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many rungs the fidelity ladder declares\n"
+"(docs/SceneStreaming.md #13). Rung n is tessellated at a\n"
+"deflection of the shape diagonal over 8<<n, so rung 0 is the\n"
+"coarsest and each further rung halves the error; this bounds\n"
+"what Coarse tessellation level may select and how far a source\n"
+"may climb. Raising it adds finer rungs, not coarser ones -- to\n"
+"go below rung 0 the plan scales an object's error instead, see\n"
+"Level scale.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getLevelCount() {
+    return instance()->LevelCount;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultLevelCount() {
+    const static long def = 8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelCount(const long &v) {
+    instance()->handle->SetInt("LevelCount",v);
+    instance()->LevelCount = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelCount() {
+    instance()->handle->RemoveInt("LevelCount");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelScale() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"What the level plan multiplies an object's error by when it\n"
+"must free memory and every ordinary descent is exhausted\n"
+"(docs/SceneStreaming.md #13). Rung 0 is not the floor: under a\n"
+"budget the plan keeps picking objects -- individually, cheapest\n"
+"visible error first, never the whole scene at once -- and\n"
+"re-tessellates each one this much coarser again, until the\n"
+"model fits. An object whose scaled error reaches Level scale\n"
+"box error is replaced by its bounding box, which is the real\n"
+"floor: coarsening a deflection cannot drop a planar face below\n"
+"the two triangles it always has, and on a measured STEP\n"
+"assembly a 4x coarser tessellation removed only 19% of the\n"
+"primitives. 1 or less turns dynamic scaling off, and then a\n"
+"budget under what rung 0 costs cannot be honoured.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLevelScale() {
+    return instance()->LevelScale;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLevelScale() {
+    const static double def = 2.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelScale(const double &v) {
+    instance()->handle->SetFloat("LevelScale",v);
+    instance()->LevelScale = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelScale() {
+    instance()->handle->RemoveFloat("LevelScale");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelBudgetDeadband() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"The rest band above the GPU memory budget, as a fraction of\n"
+"it, inside which the level plan orders NO downgrades. The sweep\n"
+"triggers only past budget*(1+this) and still corrects back to\n"
+"the budget itself, so the band is hysteresis, not a higher\n"
+"budget.\n"
+"Without it an equilibrium that lands ON the budget line has\n"
+"nowhere to rest: the plan orders 2-3 downgrades, the release\n"
+"staircase re-wants the quality back, and the ladder dithers\n"
+"0.2-0.4MB across the line for as long as the process lives --\n"
+"measured on the rack model as the difference between a run\n"
+"that settles in ~250s and one that churns its whole 600s\n"
+"window. Climbs already stop AT the budget (Climb hard limit),\n"
+"so inside the band neither direction acts and the plans go\n"
+"genuinely quiet; pressure counts as standing there, which\n"
+"keeps the raised tolerance and the edge gate latched exactly\n"
+"as they were while the equilibrium was reached.\n"
+"The band tolerates standing that fraction over the stated\n"
+"budget (about 2MB at 64MB). 0 restores the bare line and with\n"
+"it the dither.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLevelBudgetDeadband() {
+    return instance()->LevelBudgetDeadband;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLevelBudgetDeadband() {
+    const static double def = 0.03;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelBudgetDeadband(const double &v) {
+    instance()->handle->SetFloat("LevelBudgetDeadband",v);
+    instance()->LevelBudgetDeadband = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelBudgetDeadband() {
+    instance()->handle->RemoveFloat("LevelBudgetDeadband");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLevelScaleBoxError() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"The scaled error at which an object stops being tessellated\n"
+"at all and is drawn as its bounding box (12 triangles whatever\n"
+"its face count), expressed relative to the shape diagonal. This\n"
+"is where the ladder stops paying for topology it can no longer\n"
+"resolve: past roughly a quarter of the diagonal a re-tessellated\n"
+"shape and its box commit similar error, and only the box\n"
+"actually removes the faces. 0 or less never substitutes a box.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getLevelScaleBoxError() {
+    return instance()->LevelScaleBoxError;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultLevelScaleBoxError() {
+    const static double def = 0.25;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLevelScaleBoxError(const double &v) {
+    instance()->handle->SetFloat("LevelScaleBoxError",v);
+    instance()->LevelScaleBoxError = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLevelScaleBoxError() {
+    instance()->handle->RemoveFloat("LevelScaleBoxError");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docSimplifyExhausted() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"When re-tessellating an object coarser stops removing\n"
+"geometry, decimate the mesh it already has instead of dropping\n"
+"straight to its bounding box (docs/SceneStreaming.md #13c).\n"
+"The descent coarsens an object by asking OCCT for a larger\n"
+"deflection, and that saturates: a planar face is two triangles\n"
+"at any deflection, so a shape of flat faces answers the same\n"
+"mesh however coarse the ask. Past that point the only thing\n"
+"that removes geometry is a representation with fewer faces.\n"
+"Vertex clustering is the rung between the two: it keeps the\n"
+"object's shape, where the bounding box does not.\n"
+"Rewrites the display nodes only. Nothing re-tessellates and the\n"
+"OCCT triangulation is untouched, so the way back is one ordinary\n"
+"rebuild, and each further step down clusters on a coarser grid.\n"
+"Face and edge numbering survive: a face that decimates away to\n"
+"nothing keeps its (empty) slot, because those tables are read by\n"
+"element number.\n"
+"What it gives up is exactness of the decimated rung -- section\n"
+"caps through it can be rough, since clustering does not preserve\n"
+"watertightness, and the hidden-line seam filter is dropped\n"
+"because a welded edge may fold a seam and a non-seam together.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getSimplifyExhausted() {
+    return instance()->SimplifyExhausted;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultSimplifyExhausted() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setSimplifyExhausted(const bool &v) {
+    instance()->handle->SetBool("SimplifyExhausted",v);
+    instance()->SimplifyExhausted = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeSimplifyExhausted() {
+    instance()->handle->RemoveBool("SimplifyExhausted");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docSimplifyMergeParts() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Let the decimator weld vertices across face boundaries\n"
+"instead of clustering each face on its own grid.\n"
+"Off, no output triangle spans two faces, so a modelled crease\n"
+"stays a crease and each face keeps at least the triangles its\n"
+"own cells produce. That floor is the catch: this rung is reached\n"
+"precisely when a shape is mostly flat faces, and per-face\n"
+"clustering cannot take a two-triangle face below two triangles.\n"
+"On, positions and attributes cluster once over the whole mesh,\n"
+"which is what actually removes geometry there -- at the cost of\n"
+"shading round creases the model really has.\n"
+"Face identity survives either way: a triangle still belongs to\n"
+"the face it came from, so per-face colour and selection keep\n"
+"working. Only the geometry is shared.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getSimplifyMergeParts() {
+    return instance()->SimplifyMergeParts;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultSimplifyMergeParts() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setSimplifyMergeParts(const bool &v) {
+    instance()->handle->SetBool("SimplifyMergeParts",v);
+    instance()->SimplifyMergeParts = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeSimplifyMergeParts() {
+    instance()->handle->RemoveBool("SimplifyMergeParts");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docSimplifyMinReduction() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How much of an object's triangle count a decimation pass has\n"
+"to remove for the result to be kept, as a percentage.\n"
+"Below it the pass is refused and the descent takes its next step\n"
+"instead, which is the bounding box. A rung that removes almost\n"
+"nothing is worse than not having one: it costs a node rewrite\n"
+"and still holds the memory that made the plan ask.\n"
+"This is also what stops the descent looping. Each step clusters\n"
+"on a coarser grid, so a mesh that has run out of things to merge\n"
+"keeps answering no and the object moves on to the box.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const double & RenderParams::getSimplifyMinReduction() {
+    return instance()->SimplifyMinReduction;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const double & RenderParams::defaultSimplifyMinReduction() {
+    const static double def = 20.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setSimplifyMinReduction(const double &v) {
+    instance()->handle->SetFloat("SimplifyMinReduction",v);
+    instance()->SimplifyMinReduction = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeSimplifyMinReduction() {
+    instance()->handle->RemoveFloat("SimplifyMinReduction");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docShapeVertices() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Let the vertex points that sit on the ends of a shape's edges\n"
+"draw under the element contract (docs/SceneStreaming.md #13b):\n"
+"an attached point set draws only while its object's line set is\n"
+"shown and memory allows, is the FIRST class dropped under\n"
+"pressure and the LAST taken back. Off suppresses attached point\n"
+"sets outright, memory or not.\n"
+"A point is not cheap: it costs the GPU a 32-byte sprite instance\n"
+"record plus its index, roughly nine times what it occupies in\n"
+"the heap, which is why a CPU-currency measurement made them look\n"
+"negligible.\n"
+"All or nothing per point set, and only ATTACHED sets are ever\n"
+"gated: one floating vertex -- one no edge touches, and every\n"
+"point of a point cloud -- and the whole set ranks with the\n"
+"faces, because nothing else would show it. Objects are in\n"
+"practice all floating or none, so a per-vertex subset would buy\n"
+"nothing and cost an index permutation.\n"
+"It never applies in the Points display mode, where the vertices\n"
+"are what the mode exists to show.\n"
+"Picking, pre-selection and selection highlighting are unaffected:\n"
+"the point geometry stays published and resident, the highlight\n"
+"draws render on top as always, and only the base-pass submission\n"
+"is skipped.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getShapeVertices() {
+    return instance()->ShapeVertices;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultShapeVertices() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setShapeVertices(const bool &v) {
+    instance()->handle->SetBool("ShapeVertices",v);
+    instance()->ShapeVertices = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeShapeVertices() {
+    instance()->handle->RemoveBool("ShapeVertices");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docPressureDropEdges() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Let the pressure stages of the element contract\n"
+"(docs/SceneStreaming.md #13b) stop drawing the edges that bound\n"
+"faces. Under the contract an attached line set draws only while\n"
+"its object's face set is shown and memory allows; pressure\n"
+"spends the classes points -> lines -> faces and takes them back\n"
+"in reverse, and this is the switch on the lines stage. Off\n"
+"exempts line sets from the pressure stages (a loading document\n"
+"still drops them).\n"
+"Edge geometry is the GPU's most expensive geometry per unit of\n"
+"screen information: a segment is 8 bytes of index in the heap\n"
+"and those 8 bytes plus a 64-byte quad-expansion instance record\n"
+"on the GPU.\n"
+"All or nothing per edge set, attached sets only: one floating\n"
+"edge -- a wire, a sketch, a datum line, any edge no face uses --\n"
+"and the whole set ranks with the faces, because it is the\n"
+"object, and dropping it would show nothing at all.\n"
+"It never applies in the Wireframe display mode, where the edges\n"
+"are what the mode exists to show.\n"
+"A display gate, not a residency change -- nothing is demoted and\n"
+"nothing re-tessellates, so entering and leaving it costs one\n"
+"frame, which is why it is spent before any rung is given up.\n"
+"Picking, highlighting and on-top rendering are unaffected.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getPressureDropEdges() {
+    return instance()->PressureDropEdges;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultPressureDropEdges() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setPressureDropEdges(const bool &v) {
+    instance()->handle->SetBool("PressureDropEdges",v);
+    instance()->PressureDropEdges = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removePressureDropEdges() {
+    instance()->handle->RemoveBool("PressureDropEdges");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docElementGateStagger() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many frames the element contract's pressure latch waits\n"
+"between stages (docs/SceneStreaming.md #13b), both escalating\n"
+"(points dropped, then lines if the budget is still exceeded) and\n"
+"releasing (lines back, then points, once the ladder has given\n"
+"back all raised error). The wait is what lets the buffer\n"
+"collector's census answer whether the cheaper stage was enough\n"
+"before the next one is spent, and what keeps the release from\n"
+"re-opening into the memory the collector just freed.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getElementGateStagger() {
+    return instance()->ElementGateStagger;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultElementGateStagger() {
+    const static long def = 15;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setElementGateStagger(const long &v) {
+    instance()->handle->SetInt("ElementGateStagger",v);
+    instance()->ElementGateStagger = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeElementGateStagger() {
+    instance()->handle->RemoveInt("ElementGateStagger");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docLoadDropElements() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Stop drawing edges AND vertices for as long as a document is\n"
+"still arriving (docs/SceneStreaming.md #13b), and let the two\n"
+"standing gates above decide again the moment it has finished.\n"
+"A load is when the tier can least afford those two classes and\n"
+"can least use them: the faces are arriving coarse-first and\n"
+"being replaced under the camera, nobody inspects a vertex of a\n"
+"model that is still half there, and every byte not uploaded to\n"
+"an edge instance buffer now is one the arriving geometry gets\n"
+"instead.\n"
+"RE-MEASURED 2026-08-15, and the earlier reading no longer\n"
+"holds. It used to suppress NOTHING on a .FCStd open: the load\n"
+"parked every visual build and published in one step at the\n"
+"end, so the renderer held an empty scene throughout -- 0\n"
+"drawables across 17.8s on a 5455-object model. The publish is\n"
+"incremental now, so the same open feeds the scene while the\n"
+"drain runs and the gate has real work: on the same model it\n"
+"climbs from 1123 to 5909 point and line draws suppressed, out\n"
+"of 11818 eligible in a 17727-drawable scene, and both edges\n"
+"are logged -- ON with an empty scene, OFF as the drain ends.\n"
+"It overrides both gates while it lasts -- vertices drop even\n"
+"with ShapeVertices on, edges drop with no pressure yet declared\n"
+"-- but it is subject to the same all-or-nothing classification\n"
+"and the same display-mode exemptions: a wire, a sketch, a datum\n"
+"line or a point cloud draws throughout, because nothing else on\n"
+"screen would show it, and neither class is dropped in the mode\n"
+"that exists to show it.\n"
+"Independent of this gate, the contract's dependency rule already\n"
+"holds back an attached point or line set whose companion the\n"
+"publish's capture budget deferred: an adopted vertex cache never\n"
+"draws frames ahead of the face set it decorates, load gate or\n"
+"not.\n"
+"Costs one frame to leave, like the pressure gate, so what it\n"
+"holds back comes straight back when the load lets go.\n"
+"Applies only where coarse-first is on (CoarseTessellation 0 or\n"
+"above): with everything tessellated exact up front there is no\n"
+"progressive arrival for this to make room for.\n"
+"A load here means a document restoring, a progressive import\n"
+"filling one, or the deferred view-provider drain that follows a\n"
+"restore -- geometry is still being built into the view in all\n"
+"three.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getLoadDropElements() {
+    return instance()->LoadDropElements;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultLoadDropElements() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setLoadDropElements(const bool &v) {
+    instance()->handle->SetBool("LoadDropElements",v);
+    instance()->LoadDropElements = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeLoadDropElements() {
+    instance()->handle->RemoveBool("LoadDropElements");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docEffectResolution() {
     return QT_TRANSLATE_NOOP("RenderParams",
 "Resolution scale (0.25-1.0) of the expensive screen-space effect\n"
@@ -1034,6 +2621,837 @@ void RenderParams::setEffectResolution(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeEffectResolution() {
     instance()->handle->RemoveFloat("EffectResolution");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusion() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Skip drawing what the depth buffer proves could not have\n"
+"reached the screen (docs/FarFieldProxies.md §12). Bounding boxes\n"
+"of the spatial index's nodes are tested against the depth the\n"
+"occluders leave behind -- by default in a software depth buffer\n"
+"on the CPU (Render_OcclusionSoftware), which answers within the\n"
+"frame that asked -- and a node that puts no pixel through has\n"
+"its whole subtree skipped, one test standing for thousands of\n"
+"draws.\n"
+"\n"
+"Exact, not approximate: only geometry that could not have been\n"
+"seen is removed, so the image is unchanged and what is saved is\n"
+"the draw call, which measures ~1.2-1.5us of CPU submission plus\n"
+"~1.5-1.7us of GPU time whatever it contains (§10.2). It pays on\n"
+"assemblies that hide themselves -- an enclosed chassis, a\n"
+"populated rack, any interior -- and does nothing for a model\n"
+"that is mostly silhouette. Expect roughly a fifth of the draws\n"
+"from a camera inside a large assembly (§10.3); the far larger\n"
+"figure from outside a closed model is a bound, not a promise.\n"
+"\n"
+"Casters and reflections are judged separately: geometry hidden\n"
+"from the eye still casts its shadow and still appears in the\n"
+"ground reflection.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusion() {
+    return instance()->Occlusion;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusion() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusion(const bool &v) {
+    instance()->handle->SetBool("Occlusion",v);
+    instance()->Occlusion = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusion() {
+    instance()->handle->RemoveBool("Occlusion");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionVisibleTtl() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many frames a node found visible is believed before it is\n"
+"tested again. Higher spends fewer queries and keeps drawing\n"
+"geometry that has since become hidden for a little longer; lower\n"
+"tracks the camera more closely at the cost of more tests. Purely\n"
+"a cost trade -- being late here draws too much, never too\n"
+"little, so it cannot affect the image.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionVisibleTtl() {
+    return instance()->OcclusionVisibleTtl;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionVisibleTtl() {
+    const static long def = 6;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionVisibleTtl(const long &v) {
+    instance()->handle->SetInt("OcclusionVisibleTtl",v);
+    instance()->OcclusionVisibleTtl = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionVisibleTtl() {
+    instance()->handle->RemoveInt("OcclusionVisibleTtl");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionBudget() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many occlusion tests one frame may issue. The GPU offers\n"
+"256 for the whole process and the RenderDebug_Occlusion\n"
+"measurement is the other claimant, so the default leaves that\n"
+"measurement room to run alongside. Asking for more tests than\n"
+"the budget allows is not an error: hidden nodes are offered\n"
+"first, since a test is the only way one can come back, and the\n"
+"rest are offered again next frame.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionBudget() {
+    return instance()->OcclusionBudget;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionBudget() {
+    const static long def = 128;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionBudget(const long &v) {
+    instance()->handle->SetInt("OcclusionBudget",v);
+    instance()->OcclusionBudget = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionBudget() {
+    instance()->handle->RemoveInt("OcclusionBudget");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionMinSubtree() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Do not test an index node standing for fewer drawn instances\n"
+"than this. A test is itself a draw, so testing a node that could\n"
+"save one draw loses whether it answers hidden or visible.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionMinSubtree() {
+    return instance()->OcclusionMinSubtree;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionMinSubtree() {
+    const static long def = 8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionMinSubtree(const long &v) {
+    instance()->handle->SetInt("OcclusionMinSubtree",v);
+    instance()->OcclusionMinSubtree = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionMinSubtree() {
+    instance()->handle->RemoveInt("OcclusionMinSubtree");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionMaxHidden() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many frames a hidden node may go without an answer before\n"
+"it is drawn again. A hidden node is re-tested continuously and\n"
+"the answer is its only way back, so if answers stop arriving --\n"
+"no query handles left, a dropped batch -- this is what returns\n"
+"the geometry instead of leaving it missing. Answers that keep\n"
+"confirming the node is hidden keep it hidden indefinitely, so\n"
+"this never flickers a node the tests are still reaching.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionMaxHidden() {
+    return instance()->OcclusionMaxHidden;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionMaxHidden() {
+    const static long def = 120;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionMaxHidden(const long &v) {
+    instance()->handle->SetInt("OcclusionMaxHidden",v);
+    instance()->OcclusionMaxHidden = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionMaxHidden() {
+    instance()->handle->RemoveInt("OcclusionMaxHidden");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionDepthPad() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How far a test box is pushed towards the viewer before it is\n"
+"tested, in steps of the 24-bit depth buffer. A test box has to\n"
+"be a conservative bound, and at the last bit of the depth buffer\n"
+"it is not: a small part lying flush on a large panel quantizes\n"
+"to the same stored depth as the panel, LEQUAL loses the tie\n"
+"whichever way the rasterizer rounds, and the node reports itself\n"
+"hidden while in plain view. Measured that way, the components on\n"
+"a board disappeared while the board stayed. Too large costs\n"
+"frame time by testing visible what could have been skipped; too\n"
+"small deletes geometry, so err high.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionDepthPad() {
+    return instance()->OcclusionDepthPad;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionDepthPad() {
+    const static long def = 16;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionDepthPad(const long &v) {
+    instance()->handle->SetInt("OcclusionDepthPad",v);
+    instance()->OcclusionDepthPad = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionDepthPad() {
+    instance()->handle->RemoveInt("OcclusionDepthPad");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionConfirm() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many consecutive answers of 'no pixels' a node must give\n"
+"before its geometry is actually skipped. 1 acts on every\n"
+"answer, and is what an occlusion test naively does.\n"
+"\n"
+"A test is issued against one frame's depth and read against a\n"
+"later one -- it does not block, because stalling for it would\n"
+"cost the frame time the culling exists to save -- so while an\n"
+"answer is in flight, other geometry is culled and the occluders\n"
+"move underneath it. Acted on singly, a node tested while an\n"
+"occluder was still drawn gets skipped after that occluder has\n"
+"gone; the hole it leaves tests visible; it comes back; and it\n"
+"oscillates, which is a picture that flickers rather than one\n"
+"that is merely wrong.\n"
+"\n"
+"Confirmations DILUTE that oscillation; measured, they do not\n"
+"remove it (docs/FarFieldProxies.md #12.7): the false answers\n"
+"arrive in runs, so tripling the confirmations bought a factor\n"
+"of two, and the residual damage tracks how often nodes are\n"
+"re-tested, which this setting cannot reach. The query path is\n"
+"therefore not image-stable at any value here; occlusion on the\n"
+"CPU (the default oracle) does not read this setting at all.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionConfirm() {
+    return instance()->OcclusionConfirm;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionConfirm() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionConfirm(const long &v) {
+    instance()->handle->SetInt("OcclusionConfirm",v);
+    instance()->OcclusionConfirm = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionConfirm() {
+    instance()->handle->RemoveInt("OcclusionConfirm");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionSoftware() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Answer the occlusion question with a software depth buffer on\n"
+"the CPU instead of hardware occlusion queries\n"
+"(docs/FarFieldProxies.md #12.12). The default, because it is\n"
+"the one oracle whose picture holds still.\n"
+"\n"
+"A hardware query cannot be asked at the moment its answer would\n"
+"be right. It is issued against one frame's depth and read a\n"
+"frame or two later, so a node is tested after the pass that drew\n"
+"its own geometry and is asked to win a depth comparison against\n"
+"itself -- measured as boxes returning no samples at all while\n"
+"their contents were plainly on screen. The confirmations,\n"
+"lifetimes and padding beside this setting all exist to contain\n"
+"that, and none of them reach it.\n"
+"\n"
+"On the CPU, occluders are rasterized and nodes tested against\n"
+"the same buffer in one pass, so a node is asked before its own\n"
+"geometry joins the buffer and the answer arrives in the frame\n"
+"that asked. There is no latency to age, no verdict to confirm\n"
+"and no query pool to run out of. It costs CPU time in a frame\n"
+"that is already CPU-bound, which is the trade to measure, and it\n"
+"behaves identically in the browser, where hardware queries do\n"
+"not.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusionSoftware() {
+    return instance()->OcclusionSoftware;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusionSoftware() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionSoftware(const bool &v) {
+    instance()->handle->SetBool("OcclusionSoftware",v);
+    instance()->OcclusionSoftware = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionSoftware() {
+    instance()->handle->RemoveBool("OcclusionSoftware");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionOccluderTris() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many triangles the CPU occlusion buffer may rasterize in one\n"
+"frame. Only used when occlusion runs on the CPU.\n"
+"\n"
+"Occluders are spent largest-on-screen first, so what the budget\n"
+"drops is what would have hidden least. Dropping them costs\n"
+"culling and never pixels: an occluder that was not rasterized\n"
+"simply hides nothing.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionOccluderTris() {
+    return instance()->OcclusionOccluderTris;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionOccluderTris() {
+    const static long def = 250000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionOccluderTris(const long &v) {
+    instance()->handle->SetInt("OcclusionOccluderTris",v);
+    instance()->OcclusionOccluderTris = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionOccluderTris() {
+    instance()->handle->RemoveInt("OcclusionOccluderTris");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionMinOccluder() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How large a draw must appear on screen, in pixels across its\n"
+"bounding box diagonal, before it is worth rasterizing into the\n"
+"CPU occlusion buffer. Smaller draws can hide almost nothing and\n"
+"spend budget that a larger one could use.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionMinOccluder() {
+    return instance()->OcclusionMinOccluder;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionMinOccluder() {
+    const static long def = 24;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionMinOccluder(const long &v) {
+    instance()->handle->SetInt("OcclusionMinOccluder",v);
+    instance()->OcclusionMinOccluder = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionMinOccluder() {
+    instance()->handle->RemoveInt("OcclusionMinOccluder");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionThreads() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many worker threads the CPU occlusion buffer may rasterize\n"
+"its occluders on. 0 picks automatically, leaving the submitting\n"
+"thread and one other alone -- this runs in the middle of a\n"
+"frame, not on an idle machine.\n"
+"\n"
+"Each worker rasterizes its own slice of the occluder list into\n"
+"its own buffer and the buffers are merged afterwards, so there\n"
+"is no locking. The merge is slightly lossy -- two two-layer\n"
+"blocks cannot combine into one without loss -- so a higher\n"
+"worker count can hide marginally less. Never more.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionThreads() {
+    return instance()->OcclusionThreads;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionThreads() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionThreads(const long &v) {
+    instance()->handle->SetInt("OcclusionThreads",v);
+    instance()->OcclusionThreads = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionThreads() {
+    instance()->handle->RemoveInt("OcclusionThreads");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionSimd() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Let the CPU occlusion buffer discard triangles four at a time\n"
+"with SIMD before its exact rasterizer looks at them\n"
+"(docs/FarFieldProxies.md #12.14).\n"
+"\n"
+"Two thirds of the triangles offered to the buffer cover no pixel\n"
+"at all -- a full-detail CAD tessellation is mostly triangles\n"
+"smaller than the pixel grid -- and every one of them is paid for\n"
+"in full before being thrown away. The pre-pass transforms and\n"
+"projects four at once in single precision and drops the ones that\n"
+"land on no pixel centre.\n"
+"\n"
+"It cannot make the buffer claim a surface that is not there:\n"
+"everything it does not discard is handed to the same exact path\n"
+"as before, recomputed from the original vertices, and a triangle\n"
+"it drops in error is occlusion lost rather than geometry deleted.\n"
+"Turn it off to measure what it saves, not to work around a\n"
+"suspected fault.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusionSimd() {
+    return instance()->OcclusionSimd;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusionSimd() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionSimd(const bool &v) {
+    instance()->handle->SetBool("OcclusionSimd",v);
+    instance()->OcclusionSimd = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionSimd() {
+    instance()->handle->RemoveBool("OcclusionSimd");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionResolution() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Resolution of the CPU occlusion buffer, as a divisor of the\n"
+"viewport. 1 matches the viewport.\n"
+"\n"
+"Above 1 this can remove geometry that was visible, which is the\n"
+"one failure this mechanism exists to avoid: a coarse pixel is\n"
+"marked covered when an occluder reaches its centre, but it\n"
+"stands for several real pixels, and the ones the occluder missed\n"
+"are claimed with it. Reduce it only to measure what it costs, not\n"
+"as a setting.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionResolution() {
+    return instance()->OcclusionResolution;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionResolution() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionResolution(const long &v) {
+    instance()->handle->SetInt("OcclusionResolution",v);
+    instance()->OcclusionResolution = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionResolution() {
+    instance()->handle->RemoveInt("OcclusionResolution");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionPerInstance() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Test each object against the CPU occlusion buffer, not just the\n"
+"group it was partitioned into\n"
+"(docs/FarFieldProxies.md #12.17). Only used when occlusion runs\n"
+"on the CPU.\n"
+"\n"
+"The cull walk tests boxes of groups, and a group is skipped only\n"
+"when all of it is hidden -- so one visible object keeps its\n"
+"hidden neighbours on screen. Measured, that is what limits the\n"
+"culling rather than the quality of the depth buffer: after a\n"
+"cull, 91% of what is still drawn reaches no pixel, and making\n"
+"the occluders ten times better barely moved it.\n"
+"\n"
+"The extra tests are read-only against a buffer that is already\n"
+"finished, so they run on the same worker threads the occluders\n"
+"used and add no state, no latency and nothing the backend has to\n"
+"support.\n"
+"\n"
+"On by default: measured on the benchmark it hides 17% more for\n"
+"0.4ms, against 3% for 3.4ms from making the occluders ten times\n"
+"better, and it over-culls nothing. It can only ever be more\n"
+"correct than testing the group -- a draw is skipped when its own\n"
+"box is covered rather than when its neighbours' collectively\n"
+"are.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusionPerInstance() {
+    return instance()->OcclusionPerInstance;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusionPerInstance() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionPerInstance(const bool &v) {
+    instance()->handle->SetBool("OcclusionPerInstance",v);
+    instance()->OcclusionPerInstance = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionPerInstance() {
+    instance()->handle->RemoveBool("OcclusionPerInstance");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionDemoteStreak() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many consecutive frames every draw of an object must have\n"
+"been culled before the level plan's downgrade sweep may treat\n"
+"it as free -- give its GPU upload back without charging the\n"
+"camera any visible error. 0 never does. Only used when\n"
+"occlusion runs on the CPU, whose verdicts are exact per frame.\n"
+"\n"
+"This is occlusion acting as a MEMORY mechanism: an enclosed\n"
+"assembly's interior is inside the view frustum, so without a\n"
+"hidden verdict the plan prices its downgrade as visible error\n"
+"and pays for it in quality somewhere that actually shows. What\n"
+"the sweep drops stays resident in CPU RAM; the way back is an\n"
+"ordinary refine, so a verdict the camera later overturns costs\n"
+"one upload. The streak is the hysteresis that keeps a drifting\n"
+"camera from paying that upload per flap.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionDemoteStreak() {
+    return instance()->OcclusionDemoteStreak;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionDemoteStreak() {
+    const static long def = 8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionDemoteStreak(const long &v) {
+    instance()->handle->SetInt("OcclusionDemoteStreak",v);
+    instance()->OcclusionDemoteStreak = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionDemoteStreak() {
+    instance()->handle->RemoveInt("OcclusionDemoteStreak");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarse() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Rasterize the CPU occlusion buffer's occluders from coarse\n"
+"hulls instead of from their meshes\n"
+"(docs/FarFieldProxies.md #12.16). Only used when occlusion runs\n"
+"on the CPU.\n"
+"\n"
+"An occluder does not need the mesh, it needs the surface, and a\n"
+"hull carries that at a fraction of the triangles. What the\n"
+"triangle budget above buys is what this changes: measured, 1285\n"
+"of 1322 candidate occluders never entered the buffer because 37\n"
+"full-detail draws spent the whole allowance, and the buffer then\n"
+"hid 45% of what was there to hide.\n"
+"\n"
+"The hulls are built by vertex clustering from the meshes the\n"
+"renderer already holds -- no shape, no tessellator -- a few per\n"
+"frame, and cached. A hull recedes by its own measured error\n"
+"before it is rasterized, so it cannot claim to be nearer than\n"
+"the surface it stands for.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusionCoarse() {
+    return instance()->OcclusionCoarse;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusionCoarse() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarse(const bool &v) {
+    instance()->handle->SetBool("OcclusionCoarse",v);
+    instance()->OcclusionCoarse = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarse() {
+    instance()->handle->RemoveBool("OcclusionCoarse");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarseLevel() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Which rung of the decimation ladder an occluder hull is built\n"
+"at, coarsest first: the clustering grid is an eighth of the\n"
+"mesh's diagonal at 0 and halves per level, so 2 is a\n"
+"thirty-second of it. Lower is cheaper to rasterize and further\n"
+"from the surface; higher approaches the mesh itself.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionCoarseLevel() {
+    return instance()->OcclusionCoarseLevel;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionCoarseLevel() {
+    const static long def = 2;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarseLevel(const long &v) {
+    instance()->handle->SetInt("OcclusionCoarseLevel",v);
+    instance()->OcclusionCoarseLevel = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarseLevel() {
+    instance()->handle->RemoveInt("OcclusionCoarseLevel");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarseMinTris() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many triangles a draw must carry before it is worth a\n"
+"hull. Below this it is rasterized from its mesh: a hull of a\n"
+"small mesh saves triangles that were never what spent the\n"
+"budget.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionCoarseMinTris() {
+    return instance()->OcclusionCoarseMinTris;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionCoarseMinTris() {
+    const static long def = 512;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarseMinTris(const long &v) {
+    instance()->handle->SetInt("OcclusionCoarseMinTris",v);
+    instance()->OcclusionCoarseMinTris = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarseMinTris() {
+    instance()->handle->RemoveInt("OcclusionCoarseMinTris");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarseBuilds() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many occluder hulls may be built in one frame. Building is\n"
+"parallel but not free, so a scene that has just come into view\n"
+"acquires its hulls over several frames rather than stalling one.\n"
+"0 freezes the cache at what it already holds.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionCoarseBuilds() {
+    return instance()->OcclusionCoarseBuilds;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionCoarseBuilds() {
+    const static long def = 8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarseBuilds(const long &v) {
+    instance()->handle->SetInt("OcclusionCoarseBuilds",v);
+    instance()->OcclusionCoarseBuilds = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarseBuilds() {
+    instance()->handle->RemoveInt("OcclusionCoarseBuilds");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarseBias() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How far an occluder hull recedes from the camera before it is\n"
+"rasterized, as a percentage of its own measured displacement.\n"
+"\n"
+"Every point of a hull lies within that displacement of a point of\n"
+"the mesh it was built from, so at 100 the hull cannot be nearer\n"
+"than the surface it stands for -- which is what makes an\n"
+"approximate occluder admissible at all. Below 100 it hides more\n"
+"and may hide geometry that was visible; above 100 it hides\n"
+"progressively less for nothing. 0 rasterizes the hull where it\n"
+"sits, which is the measurement that says whether the bias is\n"
+"needed.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionCoarseBias() {
+    return instance()->OcclusionCoarseBias;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionCoarseBias() {
+    const static long def = 100;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarseBias(const long &v) {
+    instance()->handle->SetInt("OcclusionCoarseBias",v);
+    instance()->OcclusionCoarseBias = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarseBias() {
+    instance()->handle->RemoveInt("OcclusionCoarseBias");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionCoarseMemory() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"What the occluder hull cache may hold, in megabytes, before\n"
+"the least recently used hulls are dropped. A dropped hull costs a\n"
+"rebuild when its occluder comes back into view, never\n"
+"correctness.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getOcclusionCoarseMemory() {
+    return instance()->OcclusionCoarseMemory;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultOcclusionCoarseMemory() {
+    const static long def = 64;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionCoarseMemory(const long &v) {
+    instance()->handle->SetInt("OcclusionCoarseMemory",v);
+    instance()->OcclusionCoarseMemory = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionCoarseMemory() {
+    instance()->handle->RemoveInt("OcclusionCoarseMemory");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docOcclusionBenefitProbe() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Measure whether the culling pays for itself on THIS scene and\n"
+"camera (docs/FarFieldProxies.md 12.13): alternate stretches of\n"
+"frames with the whole occlusion block on and off, compare median\n"
+"frame cost, and print the verdict with the culling readout\n"
+"(Render_LevelDebug cadence). The probe is an intervention -- its\n"
+"off arm draws everything and pauses the hidden-streak demote\n"
+"feed for those frames -- so it is a measuring instrument, not a\n"
+"mode to leave on. The verdict gates nothing yet; it is the\n"
+"number the wire-or-delete decision for CullBenefitEstimator\n"
+"reads.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getOcclusionBenefitProbe() {
+    return instance()->OcclusionBenefitProbe;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultOcclusionBenefitProbe() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setOcclusionBenefitProbe(const bool &v) {
+    instance()->handle->SetBool("OcclusionBenefitProbe",v);
+    instance()->OcclusionBenefitProbe = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeOcclusionBenefitProbe() {
+    instance()->handle->RemoveBool("OcclusionBenefitProbe");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -1311,7 +3729,7 @@ const bool & RenderParams::getCavity() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const bool & RenderParams::defaultCavity() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 
@@ -3171,7 +5589,13 @@ const char *RenderParams::docDebugTiming() {
 "the draw-entry build, the translation to the backend, the\n"
 "backend's own bookkeeping and the draw itself. One summary line\n"
 "per second, so a long operation shows how each stage grows with\n"
-"the scene rather than one average (docs/IncrementalPublish.md).");
+"the scene rather than one average (docs/IncrementalPublish.md).\n"
+"Those stages end at submission, so a second line reports what\n"
+"happens after it: the frame's cost on the CPU issuing draw\n"
+"commands against its cost on the GPU drawing them, and the same\n"
+"pair per draw call (docs/FarFieldProxies.md §10.1). Which of the\n"
+"two a scene is bound by is what decides whether a culling scheme\n"
+"has to remove the draw or may leave it to the GPU to reject.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -3262,6 +5686,207 @@ void RenderParams::setDebugCoverage(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeDebugCoverage() {
     instance()->handle->RemoveBool("DebugCoverage");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugProxyCut() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Log what a far-field cut would cost this camera, without\n"
+"generating anything: the drawn instances are partitioned into the\n"
+"spatial index of docs/FarFieldProxies.md §3, a frontier is chosen\n"
+"by projected error at several tolerances, and the draws that cut\n"
+"would issue -- one per (cell, material) proxy plus whatever stays\n"
+"exact -- are reported against the draws issued today. This is the\n"
+"number that says whether generating proxies is worth building\n"
+"(§11.1). Also reports the distributions that size the partition:\n"
+"instances and material buckets per cell, per level.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugProxyCut() {
+    return instance()->DebugProxyCut;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugProxyCut() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugProxyCut(const bool &v) {
+    instance()->handle->SetBool("DebugProxyCut",v);
+    instance()->DebugProxyCut = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugProxyCut() {
+    instance()->handle->RemoveBool("DebugProxyCut");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugOcclusion() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Measure how much of what the frame draws could not have\n"
+"reached the screen (docs/FarFieldProxies.md §10.1). Bounding\n"
+"boxes of the spatial index's nodes are re-rasterized against the\n"
+"finished depth buffer under hardware occlusion queries, writing\n"
+"neither colour nor depth, and every instance is attributed to the\n"
+"highest node that rejects it -- so a hidden subtree is counted\n"
+"once, not at every level it is hidden at. Boxes bound their\n"
+"contents loosely and the frustum's own rejections are reported\n"
+"separately, so the hidden share it prints is a floor rather than\n"
+"an estimate. A GPU offers 256 queries at a time, so a large model\n"
+"takes several frames to walk and a line is printed per completed\n"
+"walk, never for a partial one.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugOcclusion() {
+    return instance()->DebugOcclusion;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugOcclusion() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugOcclusion(const bool &v) {
+    instance()->handle->SetBool("DebugOcclusion",v);
+    instance()->DebugOcclusion = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugOcclusion() {
+    instance()->handle->RemoveBool("DebugOcclusion");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugProxyGen() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Generate real proxies for a sample of the nodes a far-field\n"
+"cut stops on, and report what they cost and what they commit\n"
+"(docs/FarFieldProxies.md §11.1c). The cut estimate above selects\n"
+"by a node's projected *extent* because no proxy exists yet to\n"
+"have an error; this one merges each (cell, material) group and\n"
+"decimates it, so the error it commits can be measured as a\n"
+"fraction of that extent -- which is the ratio that says whether\n"
+"the estimate reads as its 16px row or its 64px row. Reports\n"
+"alongside it the triangle cost against what instancing already\n"
+"achieves (§7.1) and how much surface area survives, since\n"
+"clustering deletes geometry smaller than a cell rather than\n"
+"shrinking it. Expensive: it builds meshes. Samples a bounded\n"
+"number of nodes and reports how many it skipped.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugProxyGen() {
+    return instance()->DebugProxyGen;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugProxyGen() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugProxyGen(const bool &v) {
+    instance()->handle->SetBool("DebugProxyGen",v);
+    instance()->DebugProxyGen = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugProxyGen() {
+    instance()->handle->RemoveBool("DebugProxyGen");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugCullAudit() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Check what the occlusion culling skipped against what the\n"
+"geometry actually put on screen (docs/FarFieldProxies.md §12.9).\n"
+"Every other measurement of the culling compares two pictures and\n"
+"reports how many pixels differ, which says that something is\n"
+"wrong without saying what: this re-rasterizes the scene with the\n"
+"cull mask ignored and each draw writing its own identity instead\n"
+"of a colour, so the ids that own a pixel are an exact answer to\n"
+"which draws reach the screen. Their intersection with the mask is\n"
+"a list of proven over-culls -- each one a named draw with a pixel\n"
+"count -- and the ids that own nothing while being drawn are the\n"
+"converse: the headroom the culling has not taken. Reads the image\n"
+"back to the CPU once a second, so it costs a full-resolution\n"
+"transfer on the frames it reports and nothing while off. Needs a\n"
+"backend with texture readback, which WebGL2 is not.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugCullAudit() {
+    return instance()->DebugCullAudit;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugCullAudit() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugCullAudit(const bool &v) {
+    instance()->handle->SetBool("DebugCullAudit",v);
+    instance()->DebugCullAudit = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugCullAudit() {
+    instance()->handle->RemoveBool("DebugCullAudit");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docDebugCullBounds() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Measure whether a tighter occludee volume would cull more\n"
+"(docs/FarFieldProxies.md §12.19). After per-instance testing, 90%\n"
+"of the draws a frame still submits reach no pixel while each was\n"
+"tested and answered visible -- so the geometry is hidden and the\n"
+"box around it is not. This re-asks every still-drawn row three\n"
+"ways against the same occluder buffer: with the world box that\n"
+"ships, with the mesh's own box through the model matrix (an\n"
+"oriented box, where the shipping one is the axis-aligned box\n"
+"around it), and with every triangle asked separately -- which is\n"
+"far too slow to ship and is here as the ceiling, since nothing\n"
+"asked about the occludee can beat asking about its geometry. The\n"
+"verdicts are counted against the cull audit's id image, never\n"
+"acted on, so an arm that would have deleted something visible\n"
+"reports itself instead of being believed.\n"
+"Needs the cull audit on (it supplies the image) and the software\n"
+"occluder pass, which owns the buffer being asked. Runs on the\n"
+"audit's frame only, and costs far more than a frame: it is a\n"
+"measurement, not a mode to leave on.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getDebugCullBounds() {
+    return instance()->DebugCullBounds;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultDebugCullBounds() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setDebugCullBounds(const bool &v) {
+    instance()->handle->SetBool("DebugCullBounds",v);
+    instance()->DebugCullBounds = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeDebugCullBounds() {
+    instance()->handle->RemoveBool("DebugCullBounds");
 }
 //[[[end]]]
 

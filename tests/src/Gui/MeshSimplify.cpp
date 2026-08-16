@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <set>
 #include <tuple>
@@ -575,4 +576,363 @@ TEST(MeshSimplify, keepsEdgeAndVertexPartTables)
         EXPECT_NEAR(out.positions[v + 1], pos[s + 1], 0.1f);
         EXPECT_NEAR(out.positions[v + 2], pos[s + 2], 0.1f);
     }
+}
+
+// ---------------------------------------------------------------------
+// Far-field proxies (docs/FarFieldProxies.md §5, phase 2)
+// ---------------------------------------------------------------------
+
+namespace
+{
+
+/// GL-layout (column-major) translation.
+void translation(float *m, float x, float y, float z)
+{
+    for (int i = 0; i < 16; ++i)
+        m[i] = 0.0f;
+    m[0] = m[5] = m[10] = m[15] = 1.0f;
+    m[12] = x;
+    m[13] = y;
+    m[14] = z;
+}
+
+/// A member standing on its own mesh at a placement.
+Render::ProxyMember memberAt(const Render::MeshData &mesh, const float *model,
+                             uint64_t key)
+{
+    Render::ProxyMember m;
+    m.mesh = &mesh;
+    m.model = model;
+    m.objectKey = key;
+    return m;
+}
+
+}  // namespace
+
+TEST(ProxyMesh, mergesEachMemberWhereItsPlacementSaysAndNotWhereItsMeshIs)
+{
+    // One mesh, three placements -- the case a proxy exists for, and
+    // the case a merge that ignored the transform would still pass a
+    // triangle-count test on.
+    const SoupGrid grid(4);
+    const Render::MeshData mesh = grid.mesh();
+    float a[16], b[16], c[16];
+    translation(a, 0.0f, 0.0f, 0.0f);
+    translation(b, 3.0f, 0.0f, 0.0f);
+    translation(c, 0.0f, 3.0f, 0.0f);
+    const std::vector<Render::ProxyMember> members = {
+        memberAt(mesh, a, 11), memberAt(mesh, b, 22), memberAt(mesh, c, 33)};
+
+    Render::ProxyMeshParams params;
+    params.cellSize = 0.5f;
+    Render::SimplifiedMesh out;
+    std::vector<uint64_t> keys;
+    Render::ProxyMeshStats stats;
+    ASSERT_TRUE(Render::buildProxyMesh(members, params, out, &keys, &stats));
+
+    // The merged content spans all three placements: a 1x1 grid at the
+    // origin plus copies three units out in x and in y.
+    EXPECT_NEAR(stats.extent, std::sqrt(16.0f + 16.0f), 0.01f);
+    float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
+    for (size_t v = 0; v + 2 < out.positions.size(); v += 3)
+        for (int k = 0; k < 3; ++k) {
+            lo[k] = std::min(lo[k], out.positions[v + size_t(k)]);
+            hi[k] = std::max(hi[k], out.positions[v + size_t(k)]);
+        }
+    // Within a cell of the nominal corners, not on them: a
+    // representative is its cell's average, so the extremes move
+    // inward. The exact span is stats.extent above, which is measured
+    // on the merge before anything is collapsed.
+    EXPECT_NEAR(lo[0], 0.0f, params.cellSize);
+    EXPECT_NEAR(hi[0], 4.0f, params.cellSize);
+    EXPECT_NEAR(hi[1], 4.0f, params.cellSize);
+    EXPECT_EQ(keys, (std::vector<uint64_t> {11, 22, 33}));
+}
+
+TEST(ProxyMesh, thePartTableNamesTheMemberEachRunCameFrom)
+{
+    // §6: the part table of a proxy is the element table simplifyMesh
+    // already preserves, with one run per member instead of per face.
+    const SoupGrid grid(4);
+    const Render::MeshData mesh = grid.mesh();
+    float a[16], b[16];
+    translation(a, 0.0f, 0.0f, 0.0f);
+    translation(b, 8.0f, 0.0f, 0.0f);
+    const std::vector<Render::ProxyMember> members = {memberAt(mesh, a, 7),
+                                                      memberAt(mesh, b, 9)};
+    Render::ProxyMeshParams params;
+    params.cellSize = 0.34f;
+    Render::SimplifiedMesh out;
+    std::vector<uint64_t> keys;
+    ASSERT_TRUE(Render::buildProxyMesh(members, params, out, &keys));
+
+    ASSERT_EQ(out.triangleParts.size(), 2u);
+    ASSERT_EQ(keys.size(), 2u);
+    EXPECT_GT(out.triangleParts[0].second, 0);
+    EXPECT_GT(out.triangleParts[1].second, 0);
+    // Every triangle of the second member's run sits at the second
+    // member's placement, so a pick landing in that run names object 9.
+    for (const auto &p : partPositions(out, out.triangleParts[1]))
+        EXPECT_GE(std::get<0>(p), 7.9f);
+    for (const auto &p : partPositions(out, out.triangleParts[0]))
+        EXPECT_LE(std::get<0>(p), 1.1f);
+}
+
+TEST(ProxyMesh, weldingAcrossPartsSpendsFewerVerticesOnTheirSharedBoundary)
+{
+    // The one thing the weld actually buys: per-element clustering has
+    // to duplicate a representative in every cell two parts share, and
+    // over the members of a proxy that duplication is most of the
+    // output. It is not what saves a small member -- see below.
+    const SoupFold fold(8);
+    const Render::MeshData mesh = fold.mesh();
+
+    Render::SimplifiedMesh split, welded;
+    Render::SimplifyOptions weldOpts;
+    weldOpts.weldAcrossParts = true;
+    ASSERT_TRUE(Render::simplifyMesh(mesh, 0.3f, split));
+    ASSERT_TRUE(Render::simplifyMesh(mesh, 0.3f, welded, weldOpts));
+
+    EXPECT_LT(welded.numVertices(), split.numVertices());
+    // Both parts still draw, and both tables still have their slots.
+    ASSERT_EQ(welded.triangleParts.size(), 2u);
+    EXPECT_GT(welded.triangleParts[0].second, 0);
+    EXPECT_GT(welded.triangleParts[1].second, 0);
+}
+
+TEST(ProxyMesh, theErrorItCommitsStaysInsideTheCellItClusteredOn)
+{
+    // What a screen-space tolerance is really asking about: no point of
+    // the decimated surface is further from where it came from than a
+    // vertex had to travel, and no vertex travels outside its cell.
+    const SoupGrid grid(24);
+    const Render::MeshData mesh = grid.mesh();
+    for (float cellSize : {0.05f, 0.1f, 0.2f}) {
+        Render::SimplifiedMesh out;
+        Render::SimplifyStats stats;
+        ASSERT_TRUE(Render::simplifyMesh(mesh, cellSize, out,
+                                         Render::SimplifyOptions(), &stats))
+            << cellSize;
+        EXPECT_LE(stats.maxDisplacement, cellSize * std::sqrt(3.0f))
+            << cellSize;
+        EXPECT_LE(stats.rmsDisplacement, stats.maxDisplacement);
+        EXPECT_GT(stats.clusters, 0u);
+    }
+}
+
+TEST(ProxyMesh, theErrorAgainstTheExtentIsSetByTheGridNotByTheContents)
+{
+    // The ratio §11.1b needs in order to read as an error rather than
+    // as an extent: halve the grid and the error against the same
+    // content halves with it.
+    const SoupGrid grid(32, 4.0f);
+    const Render::MeshData mesh = grid.mesh();
+    float model[16];
+    translation(model, 0.0f, 0.0f, 0.0f);
+    const std::vector<Render::ProxyMember> members = {memberAt(mesh, model, 1)};
+
+    float previous = 0.0f;
+    for (float cellSize : {0.5f, 0.25f, 0.125f}) {
+        Render::ProxyMeshParams params;
+        params.cellSize = cellSize;
+        Render::SimplifiedMesh out;
+        Render::ProxyMeshStats stats;
+        ASSERT_TRUE(Render::buildProxyMesh(members, params, out, nullptr,
+                                           &stats))
+            << cellSize;
+        const float ratio = stats.maxError / stats.extent;
+        EXPECT_LT(ratio, cellSize * std::sqrt(3.0f) / stats.extent + 1e-6f);
+        if (previous > 0.0f) {
+            EXPECT_LT(ratio, previous);
+        }
+        previous = ratio;
+    }
+}
+
+TEST(ProxyMesh, membersSmallerThanACellAreDeletedAndTheAreaIsWhatSaysSo)
+{
+    // The finding the displacement error cannot report: clustering does
+    // not shrink a member smaller than a cell, it removes it, because
+    // every one of its triangles has three corners in one cell. A field
+    // of small parts can therefore vanish as a body while every error
+    // reported stays inside the tolerance -- which is why the area
+    // retained and the collapsed-member count are reported beside it.
+    const SoupGrid small(2, 0.05f);
+    const Render::MeshData mesh = small.mesh();
+    std::vector<std::array<float, 16>> models(16);
+    std::vector<Render::ProxyMember> members;
+    for (size_t i = 0; i < models.size(); ++i) {
+        translation(models[i].data(), float(i % 4), float(i / 4), 0.0f);
+        members.push_back(memberAt(mesh, models[i].data(), uint64_t(i)));
+    }
+
+    Render::ProxyMeshParams params;
+    params.cellSize = 0.25f;  // five times the span of any member
+    Render::SimplifiedMesh out;
+    Render::ProxyMeshStats stats;
+    EXPECT_FALSE(Render::buildProxyMesh(members, params, out, nullptr, &stats));
+    EXPECT_EQ(stats.collapsedMembers, members.size());
+    EXPECT_GT(stats.sourceArea, 0.0);
+    EXPECT_EQ(stats.proxyArea, 0.0);
+
+    // A grid fine enough to resolve a member keeps it, and then the
+    // area survives with it.
+    params.cellSize = 0.02f;
+    Render::ProxyMeshStats kept;
+    ASSERT_TRUE(Render::buildProxyMesh(members, params, out, nullptr, &kept));
+    EXPECT_EQ(kept.collapsedMembers, 0u);
+    EXPECT_GT(kept.proxyArea, 0.5 * kept.sourceArea);
+}
+
+TEST(ProxyMesh, theGridIsTheLevelsNotTheContents)
+{
+    // §3.2: a proxy is built from its children's proxies, so the grid
+    // has to be the level's -- shared origin, nesting by halving. Two
+    // anchors a whole cell apart describe the same grid and must
+    // produce the same bytes; an anchor half a cell over does not.
+    const SoupGrid grid(16);
+    const Render::MeshData mesh = grid.mesh();
+    float model[16];
+    translation(model, 0.0f, 0.0f, 0.0f);
+    const std::vector<Render::ProxyMember> members = {memberAt(mesh, model, 1)};
+
+    Render::ProxyMeshParams onGrid;
+    onGrid.cellSize = 0.1f;
+    onGrid.anchor[0] = -1.0f;  // ten whole cells away
+    Render::ProxyMeshParams shifted = onGrid;
+    shifted.anchor[0] = -1.05f;  // half a cell away
+    Render::ProxyMeshParams origin;
+    origin.cellSize = 0.1f;
+
+    Render::SimplifiedMesh a, b, c;
+    ASSERT_TRUE(Render::buildProxyMesh(members, origin, a));
+    ASSERT_TRUE(Render::buildProxyMesh(members, onGrid, b));
+    ASSERT_TRUE(Render::buildProxyMesh(members, shifted, c));
+    EXPECT_EQ(a.positions, b.positions);
+    EXPECT_EQ(a.triangleIndices, b.triangleIndices);
+    EXPECT_NE(a.positions, c.positions);
+}
+
+TEST(ProxyMesh, theInstancingGateSeesOneMeshBehindManyMembers)
+{
+    // §7.1: five hundred instances of one screw share one vertex buffer
+    // today and a baked proxy holds five hundred copies. The merge
+    // reports both numbers so the caller can refuse.
+    const SoupGrid grid(4);
+    const Render::MeshData mesh = grid.mesh();
+    std::vector<std::array<float, 16>> models(9);
+    std::vector<Render::ProxyMember> members;
+    for (size_t i = 0; i < models.size(); ++i) {
+        translation(models[i].data(), float(i), 0.0f, 0.0f);
+        members.push_back(memberAt(mesh, models[i].data(), uint64_t(i)));
+    }
+    Render::ProxyMeshParams params;
+    params.cellSize = 0.3f;
+    Render::SimplifiedMesh out;
+    Render::ProxyMeshStats stats;
+    ASSERT_TRUE(Render::buildProxyMesh(members, params, out, nullptr, &stats));
+
+    EXPECT_EQ(stats.members, 9u);
+    EXPECT_EQ(stats.distinctMeshes, 1u);
+    EXPECT_EQ(stats.sourceTriangles, 9u * 32u);
+    EXPECT_EQ(stats.uniqueTriangles, 32u);
+
+    // And the case that actually occurs: nine *views* onto one cache
+    // entry, which is how the renderer hands out an instanced shape.
+    // Counted by address these read as nine distinct geometries and the
+    // gate would report that it never binds.
+    std::vector<Render::MeshData> views(9, mesh);
+    for (size_t i = 0; i < views.size(); ++i) {
+        views[i].cacheId = 4242;
+        members[i].mesh = &views[i];
+    }
+    ASSERT_TRUE(Render::buildProxyMesh(members, params, out, nullptr, &stats));
+    EXPECT_EQ(stats.distinctMeshes, 1u);
+    EXPECT_EQ(stats.uniqueTriangles, 32u);
+}
+
+TEST(ProxyMesh, aMirroredPlacementKeepsTheSurfaceFacingTheWayItDid)
+{
+    // A negative determinant is two facts: the winding reverses and the
+    // normal's side flips. Handling one without the other turns the
+    // member inside out in a proxy that has no other geometry to
+    // contradict it.
+    const SoupGrid grid(2);
+    const Render::MeshData mesh = grid.mesh();  // +z facing, on z = 0
+    float mirror[16];
+    translation(mirror, 0.0f, 0.0f, 0.0f);
+    mirror[10] = -1.0f;  // mirror through z = 0
+    const std::vector<Render::ProxyMember> members = {
+        memberAt(mesh, mirror, 1)};
+    Render::ProxyMeshParams params;
+    params.cellSize = 0.3f;
+    Render::SimplifiedMesh out;
+    ASSERT_TRUE(Render::buildProxyMesh(members, params, out));
+
+    ASSERT_FALSE(out.normals.empty());
+    for (size_t v = 0; v + 2 < out.normals.size(); v += 3)
+        EXPECT_LT(out.normals[v + 2], -0.9f);
+    // The geometric winding agrees with that normal rather than
+    // contradicting it: the mirrored surface still winds anticlockwise
+    // seen from the side its normal points at.
+    ASSERT_GE(out.triangleIndices.size(), 3u);
+    for (size_t i = 0; i + 2 < out.triangleIndices.size(); i += 3) {
+        const float *pa = &out.positions[size_t(out.triangleIndices[i]) * 3];
+        const float *pb =
+            &out.positions[size_t(out.triangleIndices[i + 1]) * 3];
+        const float *pc =
+            &out.positions[size_t(out.triangleIndices[i + 2]) * 3];
+        const float cz = (pb[0] - pa[0]) * (pc[1] - pa[1])
+            - (pb[1] - pa[1]) * (pc[0] - pa[0]);
+        EXPECT_LT(cz, 0.0f);
+    }
+}
+
+TEST(ProxyMesh, aMemberThatContributesNothingKeepsItsSlot)
+{
+    // The part table is positional, so an empty member must not shift
+    // the members after it -- the same rule a collapsed element already
+    // follows inside one mesh.
+    const SoupGrid grid(4);
+    const Render::MeshData mesh = grid.mesh();
+    Render::MeshData empty;  // no positions, no indices
+    float a[16], b[16];
+    translation(a, 0.0f, 0.0f, 0.0f);
+    translation(b, 8.0f, 0.0f, 0.0f);
+    std::vector<Render::ProxyMember> members = {
+        memberAt(mesh, a, 5), memberAt(empty, b, 6), memberAt(mesh, b, 7)};
+
+    Render::ProxyMeshParams params;
+    params.cellSize = 0.34f;
+    Render::SimplifiedMesh out;
+    std::vector<uint64_t> keys;
+    ASSERT_TRUE(Render::buildProxyMesh(members, params, out, &keys));
+    ASSERT_EQ(keys.size(), 3u);
+    ASSERT_EQ(out.triangleParts.size(), 3u);
+    EXPECT_EQ(keys[1], 6u);
+    EXPECT_EQ(out.triangleParts[1].second, 0);
+    EXPECT_GT(out.triangleParts[2].second, 0);
+    for (const auto &p : partPositions(out, out.triangleParts[2]))
+        EXPECT_GE(std::get<0>(p), 7.9f);
+}
+
+TEST(ProxyMesh, aDrawOfOneFaceContributesThatFaceAlone)
+{
+    // DrawCall carries an index range, and a proxy has to honour it or
+    // a per-face draw drags the whole object into the merge.
+    const SoupGrid grid(4);
+    Render::MeshData mesh = grid.mesh();
+    float model[16];
+    translation(model, 0.0f, 0.0f, 0.0f);
+    Render::ProxyMember part = memberAt(mesh, model, 1);
+    part.indexStart = 0;
+    part.indexCount = 12;  // four triangles of the thirty-two
+
+    Render::ProxyMeshParams params;
+    params.cellSize = 0.05f;
+    Render::SimplifiedMesh out;
+    Render::ProxyMeshStats stats;
+    ASSERT_TRUE(Render::buildProxyMesh({part}, params, out, nullptr, &stats));
+    EXPECT_EQ(stats.sourceTriangles, 4u);
+    EXPECT_LE(stats.sourceVertices, 12u);
 }

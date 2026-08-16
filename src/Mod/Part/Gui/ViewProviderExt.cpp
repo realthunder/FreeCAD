@@ -22,6 +22,10 @@
 
 #include "PreCompiled.h"
 
+#if defined(__linux__)
+# include <execinfo.h>
+#endif
+
 #ifndef _PreComp_
 # include <Bnd_Box.hxx>
 # include <BRep_Tool.hxx>
@@ -29,8 +33,13 @@
 # include <BRepBuilderAPI_Copy.hxx>
 # include <BRepBuilderAPI_MakeVertex.hxx>
 # include <BRepExtrema_DistShapeShape.hxx>
+# include <BRepMesh_Deflection.hxx>
 # include <BRepMesh_IncrementalMesh.hxx>
+# include <BRepMesh_ShapeTool.hxx>
 # include <BRepAdaptor_Surface.hxx>
+# include <Geom_Line.hxx>
+# include <Geom_Plane.hxx>
+# include <Geom_TrimmedCurve.hxx>
 # include <gp_Cone.hxx>
 # include <gp_Cylinder.hxx>
 # include <gp_Pln.hxx>
@@ -40,6 +49,7 @@
 # include <Poly_Polygon3D.hxx>
 # include <Poly_PolygonOnTriangulation.hxx>
 # include <Poly_Triangulation.hxx>
+# include <Poly_TriangulationParameters.hxx>
 # include <Standard_Version.hxx>
 # include <TColgp_Array1OfDir.hxx>
 # include <TColgp_Array1OfPnt.hxx>
@@ -52,7 +62,9 @@
 # include <TopoDS_Shape.hxx>
 # include <TopoDS_Iterator.hxx>
 # include <TopoDS_Vertex.hxx>
+# include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
+# include <TopTools_MapOfShape.hxx>
 
 # include <QApplication>
 # include <QAction>
@@ -61,6 +73,7 @@
 # include <QMenu>
 # include <deque>
 # include <map>
+# include <optional>
 # include <chrono>
 # include <sstream>
 
@@ -95,7 +108,9 @@
 #include <App/Document.h>
 #include <App/DocumentObserver.h>
 #include <App/MappedElement.h>
+#include <map>
 #include <Base/Console.h>
+#include <Base/Sequencer.h>
 #include <Base/Parameter.h>
 #include <Base/ProgramVersion.h>
 #include <Base/Reader.h>
@@ -113,6 +128,7 @@
 #include <Gui/TaskElementColors.h>
 #include <Gui/Inventor/SoFCRenderMaterial.h>
 #include <Gui/Inventor/SoFCShapeInfo.h>
+#include <Gui/Inventor/SoFCVertexCache.h>
 #include <Gui/InventorBase.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Control.h>
@@ -122,6 +138,8 @@
 #include <Gui/RenderParams.h>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <Gui/Renderer/Renderer.h>
+#include <Gui/Renderer/MeshSimplify.h>
+#include <Gui/Renderer/MeshSource.h>
 #include <Mod/Part/App/Tools.h>
 
 #include "ViewProviderExt.h"
@@ -144,6 +162,10 @@ PROPERTY_SOURCE(PartGui::ViewProviderPartExt, Gui::ViewProviderGeometryObject)
 
 namespace PartGui {
 
+namespace {
+bool levelDebugOn();
+}
+
 // Private class used by ViewProviderExt to update its visual nodes up on
 // receiving SoGetBoundingBoxAction
 class SoFCCoordinate3: public SoCoordinate3
@@ -154,8 +176,18 @@ public:
         // the first repaint after a load traverses the whole scene, and
         // building on demand here would hand back the very stall the queue
         // exists to break up. It contributes nothing until its slice comes.
-        if (vp && vp->VisualTouched && !vp->VisualDeferred)
+        if (vp && vp->VisualTouched && !vp->VisualDeferred) {
+            // Named under the level debug flag: this on-demand build
+            // runs inside whatever traversal asked for the bbox, and
+            // the 1.8s giant rebuilds attributed to "the drain" turned
+            // out not to be drain builds at all -- whether THIS is the
+            // caller is exactly what the line answers.
+            if (levelDebugOn())
+                Base::Console().Message(
+                    "on-demand visual build (bbox) for %s\n",
+                    vp->getFullName().c_str());
             vp->updateVisual();
+        }
         SoCoordinate3::getBoundingBox(action);
     }
 
@@ -165,6 +197,641 @@ public:
 void initShapeInstancingGateObserver();  // PartParams.cpp
 
 namespace {
+
+/// Whether the level plan is narrating; the diagnostics below cost a
+/// walk of every face and are silent without it.
+bool levelDebugOn()
+{
+    static const bool env = std::getenv("FC_LEVEL_DEBUG") != nullptr;
+    return env || Gui::RenderParams::getLevelDebug();
+}
+
+/// Why the check below said no, so that a check which refuses too much
+/// can be improved by evidence instead of by argument. A refusal is
+/// cheap and safe; a refusal for a reason nobody measured is how the
+/// saving stays on the table.
+enum class MeshRefusal {
+    None = 0,       ///< redundant: the call would write nothing
+    NoFaces,        ///< edges and vertices only -- the call builds those
+    NoTriangulation,///< a face with no mesh at all: the first tessellation
+    TooCoarse,      ///< resident mesh coarser than the ask
+    TooFine,        ///< resident finer: the descent wants that memory back
+    BadIndices,     ///< #25080: a triangulation OCCT would discard
+    FreeEdge,       ///< a free edge whose 3D polygon is missing or stale
+    Count
+};
+
+struct MeshVerdict {
+    MeshRefusal why = MeshRefusal::None;
+    /// The deflection pair that decided a TooCoarse/TooFine refusal, so
+    /// the report can say by how much and in which direction.
+    double current = 0.0, required = 0.0;
+    bool redundant() const { return why == MeshRefusal::None; }
+};
+
+/// Would the tessellation call about to be made write anything at all?
+///
+/// Measured (#13d), half of a mass descent's tessellation calls changed
+/// no triangle and still cost ~19ms each -- 27% of the descent's whole
+/// GUI-thread rebuild time -- because BRepMesh_IncrementalMesh cannot
+/// conclude "already adequate" without first building its internal model
+/// of the shape: every face, every wire, every edge, discretized.
+///
+/// This asks the same question off what the faces already carry, and the
+/// answer is only worth trusting because it is OCCT's OWN question,
+/// copied rather than invented:
+///
+///   * per face, BRepMesh_ModelPreProcessor's TriangulationConsistency --
+///     the deflection the triangulation was BUILT at (its parameters,
+///     which is the ask; its own Deflection() is an estimate of the
+///     result and can land either side of it) against the deflection the
+///     model would have computed for that face, through the same
+///     BRepMesh_Deflection::IsConsistent with the same AllowQualityDecrease
+///     the call itself passes;
+///   * the same #25080 guard on triangle indices, because a triangulation
+///     OCCT would have discarded as corrupt is one this fill would read;
+///   * every FREE edge's 3D polygon, by BRepMesh_EdgeDiscret's rule. Free
+///     edges are the one thing OCCT still rewrites when every face is
+///     reused: face-bound polygons are committed only for faces it
+///     re-meshed (BRepMesh_ModelPostProcessor), so with every face
+///     consistent the call writes nothing and skipping it is not a
+///     substitution, it is the same outcome without the model build.
+///
+/// Deliberately ALL-OR-NOTHING per shape, where OCCT decides per face:
+/// one inconsistent face and the real call runs, which then does exactly
+/// what it does today (mesh that face, reuse the rest). There is no arm
+/// in which guessing beats asking, because the fallback IS the answer.
+///
+/// The face deflection is the model's own formula less its vertex term:
+/// max(ask, 2 * max face tolerance), where the model takes the wire
+/// average of max(ask, vertex-to-curve gap) -- always >= the ask, and
+/// equal to it unless the shape's vertices sit off their curves. So this
+/// can only UNDER-state what the model would require, and understating
+/// it errs the safe way: a mesh finer than the ask stays, one coarser
+/// than the ask is never accepted.
+///
+/// /!\ A resident mesh FINER than the ask is NOT adequate by default,
+/// and that is the whole point of AllowQualityDecrease being on: the
+/// descent asks coarse on purpose to hand memory back. `acceptFiner`
+/// (Render_MeshSkipFinerResident) drops that half of the rule, because
+/// measurement says it is where nearly all the refused saving sits --
+/// see the parameter's own doc for the numbers and the risk.
+///
+/// /!\ Where this check and OCCT can disagree, they disagree in ONE
+/// direction only, and that is what makes the approximation safe: the
+/// required deflection computed here is a LOWER bound on the model's,
+/// so the upper test (`current < 1.1 * required`) is strictly tighter
+/// than OCCT's and a mesh too COARSE for the ask can never be accepted.
+/// A disagreement is always OCCT wanting to coarsen a mesh this kept --
+/// measured at 1 call in 7403 -- which costs memory, never fidelity.
+MeshVerdict tessellationIsRedundant(const TopoDS_Shape &shape, double deflection,
+                                    bool acceptFiner)
+{
+#if OCC_VERSION_HEX >= 0x070500
+    // Mirrors the parameters the live call passes below; the pre-7.5
+    // constructor has no such flag and its rule is "no coarser than
+    // asked" alone -- which is exactly what accepting a finer resident
+    // mesh asks for, so the two spell the same thing here.
+    const bool allowDecrease = !acceptFiner;
+#else
+    (void)acceptFiner;
+    const bool allowDecrease = false;
+#endif
+    MeshVerdict verdict;
+
+    TopTools_IndexedMapOfShape faceMap;
+    TopExp::MapShapes(shape, TopAbs_FACE, faceMap);
+    // A shape with no faces is edges and vertices, whose tessellation is
+    // the thing the call would build. Nothing to be redundant about.
+    if (faceMap.IsEmpty()) {
+        verdict.why = MeshRefusal::NoFaces;
+        return verdict;
+    }
+
+    TopTools_MapOfShape facedEdges;
+    for (int i = 1; i <= faceMap.Extent(); ++i) {
+        const TopoDS_Face &face = TopoDS::Face(faceMap(i));
+        TopLoc_Location loc;
+        Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(face, loc);
+        if (tri.IsNull()) {
+            verdict.why = MeshRefusal::NoTriangulation;
+            return verdict;
+        }
+
+#if OCC_VERSION_HEX >= 0x070600
+        const Handle(Poly_TriangulationParameters) &built = tri->Parameters();
+        const double current = (!built.IsNull() && built->HasDeflection())
+            ? built->Deflection() : tri->Deflection();
+#else
+        const double current = tri->Deflection();
+#endif
+        const double required = std::max(deflection,
+                2.0 * BRepMesh_ShapeTool::MaxFaceTolerance(face));
+        if (!BRepMesh_Deflection::IsConsistent(current, required, allowDecrease)) {
+            verdict.why = current >= required ? MeshRefusal::TooCoarse
+                                              : MeshRefusal::TooFine;
+            verdict.current = current;
+            verdict.required = required;
+            return verdict;
+        }
+
+        const int nbNodes = tri->NbNodes();
+#if OCC_VERSION_HEX < 0x070600
+        const Poly_Array1OfTriangle &triangles = tri->Triangles();
+#endif
+        for (int t = 1; t <= tri->NbTriangles(); ++t) {
+            Standard_Integer n1 = 0, n2 = 0, n3 = 0;
+#if OCC_VERSION_HEX < 0x070600
+            triangles(t).Get(n1, n2, n3);
+#else
+            tri->Triangle(t).Get(n1, n2, n3);
+#endif
+            if (n1 < 1 || n1 > nbNodes || n2 < 1 || n2 > nbNodes
+                    || n3 < 1 || n3 > nbNodes) {
+                verdict.why = MeshRefusal::BadIndices;
+                return verdict;
+            }
+        }
+
+        for (TopExp_Explorer ex(face, TopAbs_EDGE); ex.More(); ex.Next())
+            facedEdges.Add(ex.Current());
+    }
+
+    for (TopExp_Explorer ex(shape, TopAbs_EDGE); ex.More(); ex.Next()) {
+        if (facedEdges.Contains(ex.Current()))
+            continue;
+        TopLoc_Location loc;
+        Handle(Poly_Polygon3D) poly =
+            BRep_Tool::Polygon3D(TopoDS::Edge(ex.Current()), loc);
+        if (poly.IsNull() || !poly->HasParameters()
+                || !BRepMesh_Deflection::IsConsistent(poly->Deflection(),
+                                                      deflection, allowDecrease)) {
+            verdict.why = MeshRefusal::FreeEdge;
+            return verdict;
+        }
+    }
+    return verdict;
+}
+
+/// Does the tessellation call in a rebuild actually TESSELLATE?
+///
+/// The comment at that call has always claimed a resident mesh makes it
+/// nearly free, and the phase split (#13d) measured it at 71% of a mass
+/// descent's GUI-thread time on shapes the refine pool had already
+/// meshed. One of those is wrong, and the difference decides the whole
+/// workstream: a call that rebuilds is a defect in what the descent
+/// hands over, while a call that merely validates expensively is an
+/// OCCT cost to be avoided rather than moved.
+///
+/// So this asks the shape itself, before and after: how many triangles
+/// it holds, and at what deflection. A count that moves is a rebuild.
+struct MeshCallProbe {
+    struct Stats {
+        std::size_t calls = 0, rebuilt = 0;
+        double timeRebuilt = 0, timeValidated = 0;
+        /// Last rebuild's evidence, so the report can say WHY rather
+        /// than only how often: what was asked, and the coarsest and
+        /// finest deflection standing when it was.
+        double lastAsked = 0, lastResidentMin = 0, lastResidentMax = 0;
+        std::size_t noTriangulation = 0;
+        /// The redundancy check against the call it stands in for. Only
+        /// `skipped` counts calls not made; the rest are calls that WERE
+        /// made, and are what says whether skipping them would have been
+        /// safe:
+        ///   agreed  -- check said redundant, the call indeed rebuilt
+        ///              nothing. The saving on offer.
+        ///   wrong   -- check said redundant and the call REBUILT. Must
+        ///              be zero; anything else is a mesh that would have
+        ///              been silently wrong, and the feature is unsafe
+        ///              until it is explained.
+        ///   missed  -- check said no, the call rebuilt nothing anyway.
+        ///              The saving left behind by being conservative.
+        std::size_t checks = 0, skipped = 0, agreed = 0, wrong = 0, missed = 0;
+        double timeChecking = 0;
+        /// Why the check refused, counted only over the calls that then
+        /// turned out to be REDUNDANT -- a refusal on a call that really
+        /// did rebuild is the check working, and mixing the two would
+        /// bury the interesting histogram under the ordinary one.
+        std::size_t refused[std::size_t(MeshRefusal::Count)] = {};
+        /// The widest deflection disagreement seen, by ratio, on such a
+        /// call. One sample, but it says the direction and the size.
+        double worstRatio = 0, worstCurrent = 0, worstRequired = 0;
+        /// Of those refusals, how many were on an object whose
+        /// tessellation is already SPENT -- one whose descent has
+        /// stopped re-tessellating, and whose ask therefore keeps
+        /// doubling away from a mesh that will never move again
+        /// (ViewProviderExt onScaleDown, "re-tessellating buys
+        /// nothing"). If these track `too fine`, the refusal is not a
+        /// deflection question at all: it is a call nobody should be
+        /// making. Counted PER CLAIM, because only one of the two is a
+        /// proof: a Proved object's call is free to skip (a coarser
+        /// mesh was measured not to exist), while a BoxChosen object
+        /// may still coarsen, so skipping there pins memory exactly
+        /// the way accept-finer did (753/3381). The split is what
+        /// decides how much of the refusal mass a safe skip can claim.
+        std::size_t refusedSpentProved = 0;
+        std::size_t refusedSpentBox = 0;
+        /// The other half of the same audit: calls on a spent object
+        /// that REBUILT anyway. For a skip keyed on the claim rather
+        /// than on the redundancy check, every one of these is a
+        /// rebuild the skip would have wrongly suppressed -- the WRONG
+        /// column of that skip, and the number that decides whether
+        /// `Proved` is actually a proof about future calls or only
+        /// about the one that established it.
+        /// MEASURED (rack model audits, 2026-08-13): 395 and 426
+        /// proved rebuilds against 1548 and 1689 claims over two runs
+        /// -- the flag-only skip is refuted at ~20% WRONG.
+        std::size_t rebuiltSpentProved = 0;
+        std::size_t rebuiltSpentBox = 0;
+        /// The same two cells restricted to calls the check had
+        /// refused ONLY because the resident mesh is finer than the
+        /// ask (TooFine). This is the audit of the COMBINED rule --
+        /// skip when the check's one unprovable case coincides with
+        /// the descent's proof -- which survives residency changes
+        /// the flag alone cannot see: a call whose verdict was
+        /// NoTriangulation or TooCoarse (a demote dropped the rung)
+        /// is still made under the combined rule, so its rebuild is
+        /// not wrongly suppressed and must not be counted against it.
+        /// MEASURED (rack model audit, 2026-08-13): 422 of the 426
+        /// proved rebuilds WERE finer-only -- the combined rule is
+        /// refuted by the same 20% that killed the flag-only skip.
+        /// The proof is sound at the step that established it and
+        /// LEAKY as a permanent claim: as the ask keeps doubling, one
+        /// proved shape in five resumes shrinking at some coarser
+        /// deflection, and those rebuilds are real memory the skip
+        /// would forgo. No spent-keyed skip ships; these counters
+        /// stay as the guard that keeps that conclusion measured.
+        std::size_t finerRebuiltProved = 0;
+        std::size_t finerRebuiltBox = 0;
+        /// The deflection-invariance rule (Render_MeshSkipInvariant),
+        /// scored the same two-sided way as everything above:
+        /// `invariantSkipped` counts only when the skip is ON and is
+        /// therefore vacuous as evidence; right/wrong come from the
+        /// audit arm (skip OFF, the claimed call made anyway and the
+        /// probe's rebuilt verdict compared). WRONG here would mean a
+        /// shape of planes and lines whose mesh moved with the
+        /// deflection -- a refutation of the geometry argument itself,
+        /// so it is the line to watch.
+        std::size_t invariantSkipped = 0;
+        std::size_t invariantRight = 0;
+        std::size_t invariantWrong = 0;
+        /// The landing rule (Render_MeshSkipLanded), scored the same
+        /// two-sided way: skipped only counts with the skip ON;
+        /// right/wrong come from the audit arm (skip OFF, the claimed
+        /// call made anyway). WRONG would mean a rebuild whose caller
+        /// had just installed the triangulation and BRepMesh still
+        /// changed it -- a refutation of the landing argument itself.
+        std::size_t landedSkipped = 0;
+        std::size_t landedRight = 0;
+        std::size_t landedWrong = 0;
+    };
+    static Stats &stats()
+    {
+        static Stats s;
+        return s;
+    }
+
+    const TopoDS_Shape &shape;
+    double asked;
+    bool active;
+    /// What the redundancy check said about the call being made anyway,
+    /// so this can score the check against the only authority there is.
+    MeshVerdict verdict;
+    /// Whether -- and on whose authority -- the object's descent had
+    /// already stopped re-tessellating (proof vs box choice).
+    ViewProviderPartExt::ScaleSpent spent = ViewProviderPartExt::ScaleSpent::No;
+    /// The deflection-invariance rule claimed this call and it is being
+    /// made anyway (the audit arm): score the claim in the destructor.
+    bool invariantClaim = false;
+    /// Same audit arm for the landing rule (Render_MeshSkipLanded).
+    bool landedClaim = false;
+    int trisBefore = 0, facesBefore = 0, facesTotal = 0;
+    double residentMin = 0.0, residentMax = 0.0;
+    std::chrono::high_resolution_clock::time_point start;
+
+    static void sample(const TopoDS_Shape &shape, int &tris, int &faces,
+                       int &total, double *dmin, double *dmax)
+    {
+        TopTools_IndexedMapOfShape faceMap;
+        TopExp::MapShapes(shape, TopAbs_FACE, faceMap);
+        total = faceMap.Extent();
+        for (int i = 1; i <= faceMap.Extent(); ++i) {
+            TopLoc_Location loc;
+            Handle(Poly_Triangulation) tri =
+                BRep_Tool::Triangulation(TopoDS::Face(faceMap(i)), loc);
+            if (tri.IsNull())
+                continue;
+            ++faces;
+            tris += tri->NbTriangles();
+            if (!dmin)
+                continue;
+            const double d = tri->Deflection();
+            *dmin = *dmin == 0.0 ? d : std::min(*dmin, d);
+            *dmax = std::max(*dmax, d);
+        }
+    }
+
+    MeshCallProbe(const TopoDS_Shape &s, double deflection,
+                  const MeshVerdict &v,
+                  ViewProviderPartExt::ScaleSpent tessellationSpent,
+                  bool invariantClaimed = false,
+                  bool landedClaimed = false)
+        : shape(s), asked(deflection), active(levelDebugOn()), verdict(v),
+          spent(tessellationSpent), invariantClaim(invariantClaimed),
+          landedClaim(landedClaimed)
+    {
+        if (!active)
+            return;
+        sample(shape, trisBefore, facesBefore, facesTotal,
+               &residentMin, &residentMax);
+        start = std::chrono::high_resolution_clock::now();
+    }
+
+    ~MeshCallProbe()
+    {
+        if (!active)
+            return;
+        const double elapsed = std::chrono::duration<double>(
+                std::chrono::high_resolution_clock::now() - start).count();
+        int trisAfter = 0, facesAfter = 0, total = 0;
+        sample(shape, trisAfter, facesAfter, total, nullptr, nullptr);
+        Stats &st = stats();
+        ++st.calls;
+        if (!facesBefore && facesTotal)
+            ++st.noTriangulation;
+        const bool rebuilt =
+            trisAfter != trisBefore || facesAfter != facesBefore;
+        if (invariantClaim)
+            ++(rebuilt ? st.invariantWrong : st.invariantRight);
+        if (landedClaim) {
+            ++(rebuilt ? st.landedWrong : st.landedRight);
+            // Every WRONG claim in full: the aggregate says the rule
+            // leaks, only the per-call evidence says WHERE, and the
+            // decision between "fix the claim" and "drop the rule"
+            // hangs on the pattern.
+            if (rebuilt)
+                Base::Console().Message(
+                    "landed claim WRONG: why %d asked %.6f resident "
+                    "%.6f..%.6f tris %d->%d faces %d->%d of %d\n",
+                    int(verdict.why), asked, residentMin, residentMax,
+                    trisBefore, trisAfter, facesBefore, facesAfter,
+                    facesTotal);
+        }
+        if (rebuilt) {
+            ++st.rebuilt;
+            st.timeRebuilt += elapsed;
+            st.lastAsked = asked;
+            st.lastResidentMin = residentMin;
+            st.lastResidentMax = residentMax;
+            if (spent == ViewProviderPartExt::ScaleSpent::Proved) {
+                ++st.rebuiltSpentProved;
+                if (verdict.why == MeshRefusal::TooFine)
+                    ++st.finerRebuiltProved;
+            }
+            else if (spent == ViewProviderPartExt::ScaleSpent::BoxChosen) {
+                ++st.rebuiltSpentBox;
+                if (verdict.why == MeshRefusal::TooFine)
+                    ++st.finerRebuiltBox;
+            }
+        }
+        else
+            st.timeValidated += elapsed;
+        // The check scored against the call it wanted to replace.
+        if (verdict.redundant())
+            ++(rebuilt ? st.wrong : st.agreed);
+        else if (!rebuilt) {
+            // Refused, and the call proved it could have been skipped.
+            // This is the histogram worth having: it says which reason
+            // is costing the saving, rather than that some reason is.
+            ++st.missed;
+            ++st.refused[std::size_t(verdict.why)];
+            if (spent == ViewProviderPartExt::ScaleSpent::Proved)
+                ++st.refusedSpentProved;
+            else if (spent == ViewProviderPartExt::ScaleSpent::BoxChosen)
+                ++st.refusedSpentBox;
+            if (verdict.required > 0.0) {
+                const double ratio = verdict.current / verdict.required;
+                const double off = ratio > 1.0 ? ratio : 1.0 / std::max(ratio, 1e-9);
+                if (off > st.worstRatio) {
+                    st.worstRatio = off;
+                    st.worstCurrent = verdict.current;
+                    st.worstRequired = verdict.required;
+                }
+            }
+        }
+    }
+};
+
+/// Where a visual rebuild's time goes, reported only once it has become
+/// worth reporting (docs/SceneStreaming.md #13d).
+///
+/// A single build costs microseconds and a line per build would bury the
+/// run; a MASS DESCENT rebuilds thousands of objects and stalls the GUI
+/// thread for over a second, which is the thing being complained about.
+/// So this is a self-selecting reporter: it accumulates silently and
+/// speaks only when the cost since the last line has passed a threshold,
+/// which on a quiet session is never.
+///
+/// Every term is a DELTA since the last report, and the unattributed
+/// remainder is printed rather than left to be inferred -- a split whose
+/// parts do not add up to the whole is how a missing cost stays missing.
+struct VisualSplitReporter {
+    /// What was already reported, so each line describes its own window.
+    struct Mark {
+        double build = 0, mesh = 0, fill = 0, prologue = 0, instance = 0;
+        double highlight = 0;
+        std::size_t count = 0;
+    };
+    static Mark &mark()
+    {
+        static Mark m;
+        return m;
+    }
+    /// Accumulated GUI-thread rebuild cost a line is worth, in seconds.
+    /// Well above any single build and well below the 1.6s frame this
+    /// exists to explain.
+    static constexpr double kReportThreshold = 0.2;
+
+    ~VisualSplitReporter()
+    {
+        using VP = Gui::ViewProvider;
+        if (!levelDebugOn())
+            return;
+        Mark &m = mark();
+        const double build = VP::VisualBuildTime.count() - m.build;
+        if (build < kReportThreshold)
+            return;
+        const double mesh = VP::VisualMeshTime.count() - m.mesh;
+        const double fill = VP::VisualFillTime.count() - m.fill;
+        const double prologue = VP::VisualPrologueTime.count() - m.prologue;
+        const double instance = VP::VisualInstanceTime.count() - m.instance;
+        const double highlight = VP::VisualHighlightTime.count() - m.highlight;
+        const std::size_t count = VP::VisualBuildCount - m.count;
+        m = Mark{VP::VisualBuildTime.count(), VP::VisualMeshTime.count(),
+                 VP::VisualFillTime.count(), VP::VisualPrologueTime.count(),
+                 VP::VisualInstanceTime.count(),
+                 VP::VisualHighlightTime.count(), VP::VisualBuildCount};
+        // The traversal is what a worker thread could take; the mesh is
+        // already on the refine pool; the prologue, the instancing and
+        // the highlight epilogue are GUI-thread work that threading
+        // would not touch at all.
+        const double traversal = fill - mesh;
+        const double rest =
+            build - traversal - mesh - prologue - instance - highlight;
+        Base::Console().Message(
+            "visual build: %zu builds in %.3fs = traversal %.3fs (%.0f%%) + "
+            "mesh %.3fs (%.0f%%) + prologue %.3fs (%.0f%%) + instancing "
+            "%.3fs (%.0f%%) + highlight %.3fs (%.0f%%) + unattributed "
+            "%.3fs (%.0f%%)\n",
+            count, build,
+            traversal, 100.0 * traversal / build,
+            mesh, 100.0 * mesh / build,
+            prologue, 100.0 * prologue / build,
+            instance, 100.0 * instance / build,
+            highlight, 100.0 * highlight / build,
+            rest, 100.0 * rest / build);
+        // What that mesh term actually was. Reported beside the split
+        // rather than separately: the question "is the descent paying
+        // to re-tessellate what the pool already built" is only ever
+        // asked about this number.
+        MeshCallProbe::Stats &ms = MeshCallProbe::stats();
+        if (ms.calls) {
+            Base::Console().Message(
+                "visual build: mesh calls %zu, REBUILT %zu (%.3fs) vs "
+                "validated only %zu (%.3fs); %zu had no triangulation at "
+                "all; last rebuild asked %.6f, resident %.6f..%.6f\n",
+                ms.calls, ms.rebuilt, ms.timeRebuilt,
+                ms.calls - ms.rebuilt, ms.timeValidated,
+                ms.noTriangulation, ms.lastAsked, ms.lastResidentMin,
+                ms.lastResidentMax);
+        }
+        // The redundancy check, scored. WRONG is the number that decides
+        // whether skipping is allowed at all, so it is printed even when
+        // it is zero -- an absent line reads as "not measured", which is
+        // the one thing it must never be confused with.
+        if (ms.checks) {
+            Base::Console().Message(
+                "visual build: redundancy check %zu in %.3fs, SKIPPED %zu; "
+                "of the %zu calls still made it got %zu right, %zu WRONG, "
+                "and left %zu redundant calls unclaimed\n",
+                ms.checks, ms.timeChecking, ms.skipped,
+                ms.calls, ms.agreed, ms.wrong, ms.missed);
+        }
+        // Why those unclaimed calls were refused. A check that is safe
+        // but claims little is improved here or not at all.
+        if (ms.missed) {
+            Base::Console().Message(
+                "visual build: unclaimed by reason -- no faces %zu, no "
+                "triangulation %zu, too coarse %zu, too fine %zu, bad "
+                "indices %zu, free edge %zu; on SPENT objects %zu by "
+                "proof + %zu by box choice, and spent calls that REBUILT "
+                "anyway: %zu proved (%zu with only a finer resident) + "
+                "%zu box (%zu finer); widest deflection "
+                "miss %.6f vs %.6f required (x%.2f)\n",
+                ms.refused[std::size_t(MeshRefusal::NoFaces)],
+                ms.refused[std::size_t(MeshRefusal::NoTriangulation)],
+                ms.refused[std::size_t(MeshRefusal::TooCoarse)],
+                ms.refused[std::size_t(MeshRefusal::TooFine)],
+                ms.refused[std::size_t(MeshRefusal::BadIndices)],
+                ms.refused[std::size_t(MeshRefusal::FreeEdge)],
+                ms.refusedSpentProved, ms.refusedSpentBox,
+                ms.rebuiltSpentProved, ms.finerRebuiltProved,
+                ms.rebuiltSpentBox, ms.finerRebuiltBox,
+                ms.worstCurrent, ms.worstRequired, ms.worstRatio);
+        }
+        // The invariance rule, both arms on one line. WRONG is
+        // meaningful only from the audit arm (skip off); skipped is
+        // only ever nonzero with the skip on.
+        if (ms.invariantSkipped || ms.invariantRight
+            || ms.invariantWrong) {
+            Base::Console().Message(
+                "visual build: invariant rule -- skipped %zu; audit "
+                "right %zu, WRONG %zu\n",
+                ms.invariantSkipped, ms.invariantRight, ms.invariantWrong);
+        }
+        // The landing rule, same two arms (Render_MeshSkipLanded).
+        if (ms.landedSkipped || ms.landedRight || ms.landedWrong) {
+            Base::Console().Message(
+                "visual build: landed rule -- skipped %zu; audit "
+                "right %zu, WRONG %zu\n",
+                ms.landedSkipped, ms.landedRight, ms.landedWrong);
+        }
+        if (ms.calls || ms.checks)
+            ms = MeshCallProbe::Stats();
+    }
+};
+
+/// The single-build counterpart of VisualSplitReporter (#13d): one line
+/// naming the object, for any rebuild whose OWN cost passes
+/// Render_LevelSlowBuildMS. The aggregate split says where a mass
+/// descent's time goes; the landing pump's worst turn is one object's
+/// whole rebuild, and only a per-build line says what THAT object spent
+/// it on -- which is what decides how its rebuild gets split.
+struct SlowBuildProbe {
+    const Gui::ViewProviderDocumentObject *vp;
+    std::chrono::high_resolution_clock::time_point start;
+    double mesh, fill, prologue, instance, highlight;
+    /// Which ladder state decided this build's deflection, filled by
+    /// updateVisual once it has decided (empty on the paths that never
+    /// get there). The 2s builds were exact-deflection re-tessellations
+    /// of shapes holding no mesh at all, and WHY the build took the
+    /// exact branch is precisely what the time split cannot say.
+    std::string note;
+    explicit SlowBuildProbe(const Gui::ViewProviderDocumentObject *vp)
+        : vp(vp)
+        , start(std::chrono::high_resolution_clock::now())
+        , mesh(Gui::ViewProvider::VisualMeshTime.count())
+        , fill(Gui::ViewProvider::VisualFillTime.count())
+        , prologue(Gui::ViewProvider::VisualPrologueTime.count())
+        , instance(Gui::ViewProvider::VisualInstanceTime.count())
+        , highlight(Gui::ViewProvider::VisualHighlightTime.count())
+    {}
+    ~SlowBuildProbe()
+    {
+        if (!levelDebugOn())
+            return;
+        const long thresholdMS = Gui::RenderParams::getLevelSlowBuildMS();
+        if (thresholdMS <= 0)
+            return;
+        const double total = std::chrono::duration<double>(
+            std::chrono::high_resolution_clock::now() - start).count();
+        if (total * 1000.0 < double(thresholdMS))
+            return;
+        using VP = Gui::ViewProvider;
+        const double m = VP::VisualMeshTime.count() - mesh;
+        const double f = VP::VisualFillTime.count() - fill;
+        const double p = VP::VisualPrologueTime.count() - prologue;
+        const double i = VP::VisualInstanceTime.count() - instance;
+        const double h = VP::VisualHighlightTime.count() - highlight;
+        Base::Console().Message(
+            "slow visual build: %s %.3fs = traversal %.3f + mesh %.3f + "
+            "prologue %.3f + instancing %.3f + highlight %.3f + "
+            "unattributed %.3f%s%s\n",
+            vp->getFullName().c_str(), total, f - m, m, p, i, h,
+            total - (f - m) - m - p - i - h,
+            note.empty() ? "" : " | ", note.c_str());
+#if defined(__linux__)
+        // The callers, for a slow build no instrumented context owns
+        // (neither the drain nor the pump per the note): every queued
+        // path dispatches as the same meta-call to the application
+        // object, and only the stack says which code queued THIS one.
+        // Mangled names and library offsets are enough to name the
+        // family; this fires rarely (slow builds only) and only under
+        // the level debug flag that gates the whole probe.
+        if (note.find("drain 0 pump 0") != std::string::npos) {
+            void *frames[24];
+            const int n = ::backtrace(frames, 24);
+            char **symbols = ::backtrace_symbols(frames, n);
+            if (symbols) {
+                for (int fi = 0; fi < n; ++fi)
+                    Base::Console().Message("  slow build frame %d: %s\n",
+                                            fi, symbols[fi]);
+                free(symbols);
+            }
+        }
+#endif
+    }
+};
 
 /// The visual builds a document restore asked for and did not get. Held by
 /// weak handle: a slice may run long after the load, and the document may
@@ -191,7 +858,42 @@ struct DeferredVisuals {
     /// pumps events -- from which this slice's own timer can fire. The
     /// walk is not re-entrant: it holds an iterator into the map.
     bool running = false;
+    /// The drain's own progress indicator (KeepInteractive: it reports,
+    /// it does not take the window away). Created at the first slice
+    /// that can work, one step per parked visual popped, reset when the
+    /// last document's queue empties -- without it the longest phase of
+    /// a progressive load ran with a dead status bar.
+    std::unique_ptr<Base::SequencerLauncher> seq;
 };
+
+/// The three drawables' worth of emitted vertex-cache content
+/// (docs/WorkerVertexCache.md).
+struct EmittedVCache {
+    std::shared_ptr<SoFCVertexCache::PrebuiltContent> face, line, point;
+};
+
+// The nested-struct definition must sit at PartGui scope, not inside
+// the anonymous namespace this section otherwise lives in.
+} // anonymous namespace
+struct ViewProviderPartExt::PendingVisualVCache : EmittedVCache {};
+namespace {
+
+/// True while the deferred-visual drain is the caller of updateVisual.
+/// The stand-in gate reads it (buildCoarseStandIn): a drain build of an
+/// oversized bare shape is the LiveImport situation in every way that
+/// matters -- geometry arriving faster than it can be tessellated while
+/// the GUI is supposed to stay live -- but a plain .FCStd restore never
+/// carries the LiveImport status (only the STEP import path sets it),
+/// so the drain used to tessellate 20k-face compounds inline: measured
+/// 1.8s single builds, the worst per-item stalls of both the load and
+/// the drop phase.
+bool s_drainVisualBuild = false;
+
+/// True while a pump item runs the rebuild it deferred out of a
+/// landing (see the gate at the top of updateVisual): the re-entered
+/// updateVisual is inside the pump too, and without this it would
+/// defer itself forever.
+bool s_deferredVisualRun = false;
 
 DeferredVisuals &deferredVisuals()
 {
@@ -204,12 +906,199 @@ DeferredVisuals &deferredVisuals()
         App::GetApplication().signalDeleteDocument.connect(
                 [](const App::Document &doc) {
                     visuals.docs.erase(doc.getName());
+                    // The close that empties the drain also ends its
+                    // progress sequence, or the bar reports a stuck
+                    // "Building visuals..." forever.
+                    if (visuals.docs.empty())
+                        visuals.seq.reset();
+                    if (Gui::Application::Instance)
+                        Gui::Application::Instance->setBuildingVisuals(
+                                !visuals.docs.empty());
                 });
         return true;
     }();
     (void)observing;
     return visuals;
 }
+
+/// Publish "geometry is still being built into the views" for readers
+/// outside this workbench (Gui::Application::isBuildingVisuals). This
+/// queue being non-empty IS that state, and it is the only phase of a
+/// progressive load in which geometry reaches a renderer at all: the
+/// App restore and the deferred view-provider drain both complete with
+/// the 3D scene still empty, so a reader that watches only those two is
+/// told the load is over exactly when the geometry starts arriving.
+///
+/// Called at every mutation of the map rather than derived on demand,
+/// because the map is a static of this translation unit and the readers
+/// are in Gui, which must not depend on a workbench.
+void syncBuildingVisuals()
+{
+    if (Gui::Application::Instance)
+        Gui::Application::Instance->setBuildingVisuals(
+                !deferredVisuals().docs.empty());
+}
+
+/// A Render::MeshData view over what the display nodes already hold.
+///
+/// The decimator (Gui/Renderer/MeshSimplify.h) speaks MeshData and this
+/// class speaks Coin, and the two lay indices out differently. Nothing
+/// here re-tessellates: positions and normals ALIAS the node storage
+/// (SbVec3f is three floats and nothing else), and only the index
+/// re-layouts allocate.
+///
+///  - triangles: Coin stores i0,i1,i2,SO_END_FACE_INDEX per triangle,
+///    MeshData three indices with no delimiter.
+///  - face parts: Coin's partIndex is a per-face triangle COUNT,
+///    MeshData's triangleParts a {start, count} pair in INDEX units.
+///  - lines: Coin stores polylines separated by -1, MeshData GL_LINES
+///    style vertex PAIRS, so an n-point polyline becomes n-1 segments.
+///
+/// Only the arrays a decimated rung has to preserve are carried. Colours
+/// are per-object here (the material nodes hold them, not the vertices),
+/// so there are none to cluster.
+struct CoinMeshView {
+    std::vector<int32_t> tris, lines, points;
+    Render::MeshData mesh;
+
+    /// False when there is no triangle geometry to work on -- an
+    /// edges-only or points-only object, which the decimator has
+    /// nothing to say about and which is not what holds a budget open.
+    bool build(const SoCoordinate3 *coords, const SoNormal *norm,
+               const SoBrepFaceSet *faceset, const SoBrepEdgeSet *lineset,
+               const SoBrepPointSet *nodeset, const SoCoordinate3 *pcoords,
+               const SoTextureCoordinate2 *texcoords = nullptr)
+    {
+        const int nv = coords ? coords->point.getNum() : 0;
+        const int nidx = faceset ? faceset->coordIndex.getNum() : 0;
+        if (nv <= 0 || nidx < 4)
+            return false;
+
+        mesh.numVertices = nv;
+        mesh.positions =
+            reinterpret_cast<const float *>(coords->point.getValues(0));
+        if (norm && norm->vector.getNum() == nv)
+            mesh.normals =
+                reinterpret_cast<const float *>(norm->vector.getValues(0));
+        // Present only when sized to the vertices: the build path zeroes
+        // this node to the coordinate count, so a mismatch is a node
+        // some other rewrite left behind, not per-vertex UVs.
+        if (texcoords && texcoords->point.getNum() == nv)
+            mesh.texCoords = reinterpret_cast<const float *>(
+                    texcoords->point.getValues(0));
+
+        const int32_t *ci = faceset->coordIndex.getValues(0);
+        tris.reserve(size_t(nidx / 4) * 3);
+        for (int i = 0; i + 3 < nidx; i += 4) {
+            if (ci[i] < 0 || ci[i + 1] < 0 || ci[i + 2] < 0)
+                continue;
+            tris.push_back(ci[i]);
+            tris.push_back(ci[i + 1]);
+            tris.push_back(ci[i + 2]);
+        }
+        if (tris.empty())
+            return false;
+        mesh.triangleIndices = tris.data();
+        mesh.numTriangleIndices = int(tris.size());
+
+        // Face parts, counts to ranges. A face that tessellated to
+        // nothing still occupies a slot: the table is read by index, so
+        // dropping empties would renumber every face after it.
+        const int nparts = faceset->partIndex.getNum();
+        if (nparts > 0) {
+            const int32_t *pi = faceset->partIndex.getValues(0);
+            mesh.triangleParts.reserve(size_t(nparts));
+            int at = 0;
+            for (int p = 0; p < nparts; ++p) {
+                const int count = std::max<int>(0, pi[p]) * 3;
+                mesh.triangleParts.emplace_back(at, count);
+                at += count;
+            }
+        }
+
+        if (lineset && lineset->coordIndex.getNum() > 0) {
+            const int nl = lineset->coordIndex.getNum();
+            const int32_t *li = lineset->coordIndex.getValues(0);
+            lines.reserve(size_t(nl) * 2);
+            int runStart = int(lines.size());
+            for (int i = 0; i < nl; ++i) {
+                if (li[i] < 0) {
+                    if (int(lines.size()) > runStart)
+                        mesh.lineParts.emplace_back(
+                                runStart, int(lines.size()) - runStart);
+                    runStart = int(lines.size());
+                    continue;
+                }
+                // Pair this point with the previous one of the same run,
+                // which is the segment between them.
+                if (i > 0 && li[i - 1] >= 0) {
+                    lines.push_back(li[i - 1]);
+                    lines.push_back(li[i]);
+                }
+            }
+            if (int(lines.size()) > runStart)
+                mesh.lineParts.emplace_back(runStart,
+                                            int(lines.size()) - runStart);
+            if (!lines.empty()) {
+                mesh.lineIndices = lines.data();
+                mesh.numLineIndices = int(lines.size());
+            }
+        }
+
+        // Vertex points index a DIFFERENT coordinate node (pcoords), so
+        // they cannot ride the same clustering as the surface: their
+        // indices would address the wrong array. They are left out and
+        // put back untouched, which is also the right answer for what
+        // they are -- a shape's vertices do not decimate.
+        (void)nodeset;
+        (void)pcoords;
+        return true;
+    }
+};
+
+/// A CoinMeshView the worker pool may read: the view's attribute
+/// pointers aim into the live Coin nodes, so the decimation job copies
+/// them out here, on the GUI thread, at enqueue. Everything the job
+/// touches afterwards is owned by this snapshot.
+struct OwnedMeshSnapshot {
+    std::vector<float> positions, normals, texCoords;
+    std::vector<int32_t> tris, lines;
+    Render::MeshData mesh;
+
+    bool build(const SoCoordinate3 *coords, const SoNormal *norm,
+               const SoBrepFaceSet *faceset, const SoBrepEdgeSet *lineset,
+               const SoBrepPointSet *nodeset, const SoCoordinate3 *pcoords,
+               const SoTextureCoordinate2 *texcoords)
+    {
+        CoinMeshView view;
+        if (!view.build(coords, norm, faceset, lineset, nodeset, pcoords,
+                        texcoords))
+            return false;
+        const int nv = view.mesh.numVertices;
+        positions.assign(view.mesh.positions,
+                         view.mesh.positions + size_t(nv) * 3);
+        if (view.mesh.normals)
+            normals.assign(view.mesh.normals,
+                           view.mesh.normals + size_t(nv) * 3);
+        if (view.mesh.texCoords)
+            texCoords.assign(view.mesh.texCoords,
+                             view.mesh.texCoords + size_t(nv) * 2);
+        tris = std::move(view.tris);
+        lines = std::move(view.lines);
+        // Copies the part tables; the array pointers are then rewired
+        // to the owned copies (stable under the shared_ptr the job
+        // holds -- nothing moves this struct after build).
+        mesh = view.mesh;
+        mesh.positions = positions.data();
+        mesh.normals = normals.empty() ? nullptr : normals.data();
+        mesh.texCoords = texCoords.empty() ? nullptr : texCoords.data();
+        mesh.triangleIndices = tris.data();
+        mesh.numTriangleIndices = int(tris.size());
+        mesh.lineIndices = lines.empty() ? nullptr : lines.data();
+        mesh.numLineIndices = int(lines.size());
+        return true;
+    }
+};
 
 } // anonymous namespace
 
@@ -229,12 +1118,12 @@ struct InstGeomKey {
 };
 
 /// One color variant of a shared tessellation: instances whose resolved
-/// per-element colors diverge in value bake them per part — one variant
+/// per-element colors diverge in value bake them per part -- one variant
 /// per DISTINCT resolved color vector (the key), lazily created,
 /// refcounted, shared by every instance (across objects) applying that
 /// exact vector. The variant shape node references the geometry's
 /// coordinate/normal/texcoord nodes; only the per-part material is its
-/// own. Variants never mutate — a different vector materializes a new
+/// own. Variants never mutate -- a different vector materializes a new
 /// variant. Face variants bake diffuse+transparency, line/point variants
 /// diffuse only (like the flattened per-edge/per-vertex paths).
 struct ColorVariant {
@@ -246,7 +1135,7 @@ struct ColorVariant {
 
 /// One shared, immutable tessellation of a leaf sub-shape in its local
 /// frame: the face/edge/vertex subgraphs referenced by every instance
-/// separator (across objects — the table is global). Entries never mutate
+/// separator (across objects -- the table is global). Entries never mutate
 /// after build; a changed shape produces a new TShape and thus a new entry.
 struct InstGeometry {
     Gui::CoinPtr<SoGroup> faceGroup;
@@ -279,7 +1168,7 @@ static inline uint32_t packColorRGBA(const App::Color &c)
 }
 
 /// Pack \a slice into \a key and return an existing variant with that
-/// exact vector (referenced) or null — the caller then builds one.
+/// exact vector (referenced) or null -- the caller then builds one.
 static ColorVariant *lookupColorVariant(std::list<ColorVariant> &variants,
                                         const std::vector<App::Color> &slice,
                                         std::vector<uint32_t> &key)
@@ -332,12 +1221,12 @@ static ColorVariant *acquireColorVariant(InstGeometry &geom,
     mat->shininess.setIgnored(TRUE);
 
     auto faceset = new SoBrepFaceSet;
-    // Same forced UV capture as the base faceset — the variant must
+    // Same forced UV capture as the base faceset -- the variant must
     // produce identical geometry arrays (incl. texcoords) so the
     // backend's content-keyed geometry buffers are shared.
     faceset->forceTexCoords = TRUE;
     // Lets the render cache manager seed this node's vertex cache with
-    // the base's — the geometry arrays stay CPU-shared, only the baked
+    // the base's -- the geometry arrays stay CPU-shared, only the baked
     // color array is owned.
     faceset->protoNode = geom.faceset;
     faceset->coordIndex = geom.faceset->coordIndex;
@@ -359,7 +1248,7 @@ static ColorVariant *acquireColorVariant(InstGeometry &geom,
 }
 
 /// A diffuse-only per-element SoMaterial for line/point variants and
-/// overrides: everything else (incl. transparency — lines/points never
+/// overrides: everything else (incl. transparency -- lines/points never
 /// carry one, like the flattened paths) inherits.
 static SoMaterial *makeDiffuseOnlyMaterial()
 {
@@ -389,7 +1278,7 @@ static ColorVariant *acquireLineColorVariant(InstGeometry &geom,
     int n = int(slice.size());
     auto bind = new SoMaterialBinding;
     // Although an indexed lineset is used the binding must be PER_FACE
-    // (one polyline per edge) — same as the flattened per-edge path.
+    // (one polyline per edge) -- same as the flattened per-edge path.
     bind->value = SoMaterialBinding::PER_FACE;
     auto mat = makeDiffuseOnlyMaterial();
     mat->diffuseColor.setNum(n);
@@ -477,7 +1366,7 @@ struct ShapeInstanceRep {
         Gui::CoinPtr<SoSeparator> edgeSep;
         Gui::CoinPtr<SoSeparator> vertexSep;
         /// uniform-slice per-instance color: rides the render-cache
-        /// material at the wrapper (the Link mechanism) — never baked
+        /// material at the wrapper (the Link mechanism) -- never baked
         Gui::CoinPtr<SoMaterial> overrideMat;
         /// divergent-slice per-instance colors: baked color variant
         ColorVariant *variant = nullptr;
@@ -517,7 +1406,7 @@ struct ShapeInstanceRep {
 
     ~ShapeInstanceRep()
     {
-        // Variant references go first — the geometry entries they nest in
+        // Variant references go first -- the geometry entries they nest in
         // are still held by the keys released below.
         for (auto &inst : instances) {
             if (inst.variant)
@@ -583,7 +1472,7 @@ static void restructureInstanceVertex(ShapeInstanceRep::Instance &inst)
 }
 
 /// The environment part of the shape-instancing gate: the feature param,
-/// a backend renderer live (plain Coin/GL always flattens — without
+/// a backend renderer live (plain Coin/GL always flattens -- without
 /// GPU instancing many small shared nodes are a net loss), and the
 /// backend's published instancing capability. The backend question is
 /// asked of the actual renderer state, not the Render Type preference:
@@ -1050,6 +1939,13 @@ ViewProviderPartExt::ViewProviderPartExt()
     static_cast<SoFCCoordinate3*>(coords)->vp = this;
     coords->ref();
     pcoords = new SoCoordinate3();
+    // Born EMPTY, not with Coin's default single (0,0,0): a point set
+    // draws every coordinate it can see, no index in between, so an
+    // unfilled nodeset paints a phantom dot at the object's origin --
+    // and it passes every element gate, because unfilled means
+    // unclassified and unclassified must always draw. MEASURED: 5909
+    // such dots covered the first ~165 frames of a rack model load.
+    pcoords->point.setNum(0);
     pcoords->ref();
     faceset = new SoBrepFaceSet();
     faceset->ref();
@@ -1107,6 +2003,10 @@ ViewProviderPartExt::ViewProviderPartExt()
 ViewProviderPartExt::~ViewProviderPartExt()
 {
     unregisterMeshLevelSource(faceset, lineset);
+    // The pooled visual fill keys its worker job on the coords node
+    // (its own token slot); the unregister above cannot cancel it,
+    // and its landing captures `this`.
+    cancelMeshLevelWork(coords);
     pcFaceBind->unref();
     pcLineBind->unref();
     pcPointBind->unref();
@@ -1594,7 +2494,7 @@ std::string ViewProviderPartExt::getElement(const SoDetail *detail) const
         return inherited::getElement(detail);
 
     // TShape-instanced representation: a bare detail carries a local
-    // part index of an unknown instance — unresolvable without the pick
+    // part index of an unknown instance -- unresolvable without the pick
     // path; getElementPicked is the reliable route.
     if (instanced)
         return inherited::getElement(detail);
@@ -1685,7 +2585,7 @@ bool ViewProviderPartExt::getDetailPath(const char *subname,
                                        : inst->vertexSep;
         // Append the graph chain from the mode switch down to the
         // wrapper. The chain crosses display-mode roots (plain
-        // separators — they never enter the context stack, so any of
+        // separators -- they never enter the context stack, so any of
         // the wrapper's parent paths keys identically); a search keeps
         // this independent of the mode graph layout.
         SoSearchAction sa;
@@ -1801,7 +2701,7 @@ bool ViewProviderPartExt::getDetailPath(const char *subname,
 SoDetail* ViewProviderPartExt::getDetail(const char* subelement) const
 {
     // TShape-instanced representation: no per-instance details (see
-    // getDetailPath) — null causes whole-object treatment.
+    // getDetailPath) -- null causes whole-object treatment.
     if (instanced)
         return nullptr;
 
@@ -2049,7 +2949,7 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
 
     // Instanced representation: diffuse+transparency divergence goes
     // through the color-variant path; anything beyond that must bake
-    // whole materials per face — rebuild flattened (the raised flag
+    // whole materials per face -- rebuild flattened (the raised flag
     // blocks re-instancing until a representable apply clears it).
     bool divergent = materialsUnrepresentable(colors);
     if (divergent != appliedFaceColorsDivergent) {
@@ -3143,7 +4043,7 @@ bool ViewProviderPartExt::buildInstanced()
 
     // The linear deflection of a shared tessellation derives from the
     // LEAF bounding box (same formula as the flattened build, which uses
-    // the whole shape) — the same part in differently sized parents must
+    // the whole shape) -- the same part in differently sized parents must
     // agree on one mesh. Different deviation settings key apart.
     auto leafDeflection = [&](const TopoDS_Shape &s) -> Standard_Real {
         Bnd_Box bounds;
@@ -3216,6 +4116,11 @@ bool ViewProviderPartExt::buildInstanced()
             TopoDS_Shape local = leaf.Located(TopLoc_Location());
             auto gcoords = new SoCoordinate3;
             auto gpcoords = new SoCoordinate3;
+            // Same phantom-dot guard as the constructor's pcoords: an
+            // SoCoordinate3 is born holding one (0,0,0) and a point set
+            // draws all coordinates, so every sharer of an unfilled
+            // entry would submit a dot at its instance placement.
+            gpcoords->point.setNum(0);
             auto gnorm = new SoNormal;
             auto gtexcoords = new SoTextureCoordinate2;
             gtexcoords->point.setNum(0);
@@ -3229,7 +4134,7 @@ bool ViewProviderPartExt::buildInstanced()
             gfaceset->setSiblings({glineset, gnodeset});
             glineset->setSiblings({gfaceset, gnodeset});
             gnodeset->setSiblings({gfaceset, glineset});
-            // The shared subgraphs are SoFCSelectionRoot — the render
+            // The shared subgraphs are SoFCSelectionRoot -- the render
             // cache's child boundary. Entering the same root under N
             // transforms flattens into shared-cache entries with
             // per-instance matrices (the App::Link mechanism).
@@ -3262,7 +4167,7 @@ bool ViewProviderPartExt::buildInstanced()
             // Level generation for the shared leaf tessellation
             // (MeshLevelSource.h); released with the geometry entry.
             // The whole coarse <-> exact cycle of the entry lives in
-            // registerInstancedLevelEntry (§13): climb on plan demand,
+            // registerInstancedLevelEntry (sec 13): climb on plan demand,
             // demotion back under memory pressure.
             registerInstancedLevelEntry(local, false, builtError,
                                         defl, useAngDefl,
@@ -3290,7 +4195,7 @@ bool ViewProviderPartExt::buildInstanced()
         // contexts key on the traversed selection-root stack, so a
         // per-instance root gives each instance its own sub-element
         // context over the shared shape nodes (the App::Link
-        // mechanism) — see getDetailPath.
+        // mechanism) -- see getDetailPath.
         auto makeSep = [&mat](SoGroup *group) -> SoSeparator * {
             auto sep = new Gui::SoFCSelectionRoot;
             sep->renderCaching = SoSeparator::OFF;
@@ -3377,7 +4282,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     }
 
     // Resolve the full per-face vector: a short apply keeps the base
-    // color on the remaining faces (flat-path semantics — transparency
+    // color on the remaining faces (flat-path semantics -- transparency
     // rides the alpha channel when applied as an array).
     int total = 0;
     for (const auto &inst : instanced->instances)
@@ -3403,7 +4308,7 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     }
 
     // Divergent by value: partition the instances by their resolved
-    // slice — a uniform slice rides a per-instance override material on
+    // slice -- a uniform slice rides a per-instance override material on
     // the shared base subgraph (cross-instance sharable whatever its
     // value, the Link mechanism), a divergent slice a baked, refcounted
     // color variant shared by every instance applying that exact vector.
@@ -3513,7 +4418,7 @@ void ViewProviderPartExt::applyInstancedLineColors(const std::vector<App::Color>
     }
 
     // Divergent by value: partition the instances by their resolved
-    // slice like applyInstancedFaceColors — uniform slices ride a
+    // slice like applyInstancedFaceColors -- uniform slices ride a
     // per-instance override material, divergent slices a baked,
     // refcounted line color variant.
     setOverall(base);
@@ -3674,9 +4579,9 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
 {
     if (!exact) {
         // A coarse desktop build climbs back to exact through the
-        // registration (§13): the callback rebuilds the SHARED nodes
-        // in place — every instance refines at once, the per-proto
-        // ladder — and it captures the nodes, not any view provider:
+        // registration (sec 13): the callback rebuilds the SHARED nodes
+        // in place -- every instance refines at once, the per-proto
+        // ladder -- and it captures the nodes, not any view provider:
         // the entry outlives any one sharer, and a live registration
         // token is what guarantees the entry (release unregisters
         // first). Re-registering exact is what keeps a later sharer's
@@ -3690,7 +4595,9 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
                 buildVisualNodes(local, exactDefl, exactAng, normalsFromUV,
                                  coords, pcoords, norm, texcoords,
                                  faceset, lineset, nodeset,
-                                 nt, nn, np, nno, nf, ne, nl);
+                                 nt, nn, np, nno, nf, ne, nl,
+                                 ScaleSpent::No, nullptr,
+                                 /*residentLanded*/ true);
                 registerInstancedLevelEntry(local, true, builtError,
                                             coarseDefl, coarseAng,
                                             exactDefl, exactAng,
@@ -3705,11 +4612,12 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
         // process-wide here (null doc), not one sharer's document.
         registerMeshLevelSource(local, normalsFromUV, faceset, lineset,
                                 builtError, exactDefl, exactAng,
-                                std::move(onExact));
+                                std::move(onExact), {}, 0.0f, {}, nullptr,
+                                "instanced-leaf");
         return;
     }
     // Exact-resident: registered at error 0 with both ways back down
-    // armed (§13 step 3) — the coarse triangulation never left the
+    // armed (sec 13 step 3) -- the coarse triangulation never left the
     // shape. The demote (CPU-memory ceiling only) drops the exact
     // rung; the downgrade (GPU budget) merely re-activates the coarse
     // one, keeping the exact resident so the climb back is instant.
@@ -3722,7 +4630,8 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
         buildVisualNodes(local, coarseDefl, coarseAng, normalsFromUV,
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
-                         nt, nn, np, nno, nf, ne, nl);
+                         nt, nn, np, nno, nf, ne, nl,
+                         ScaleSpent::No, nullptr, /*residentLanded*/ true);
         registerInstancedLevelEntry(local, false, builtError,
                                     coarseDefl, coarseAng,
                                     exactDefl, exactAng, normalsFromUV,
@@ -3736,7 +4645,8 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
         buildVisualNodes(local, coarseDefl, coarseAng, normalsFromUV,
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
-                         nt, nn, np, nno, nf, ne, nl);
+                         nt, nn, np, nno, nf, ne, nl,
+                         ScaleSpent::No, nullptr, /*residentLanded*/ true);
         registerInstancedLevelEntry(local, false, builtError,
                                     coarseDefl, coarseAng,
                                     exactDefl, exactAng, normalsFromUV,
@@ -3746,40 +4656,60 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
     registerMeshLevelSource(local, normalsFromUV, faceset, lineset,
                             0.0f, exactDefl, exactAng, {},
                             std::move(onDemote), builtError,
-                            std::move(onDowngrade));
+                            std::move(onDowngrade), nullptr,
+                            "instanced-leaf-exact");
 }
 
 // Progressive import of an oversized part (docs/SceneStreaming.md
-// §13): a shape over the CoarseDeferFaces threshold shows a
+// sec 13): a shape over the CoarseDeferFaces threshold shows a
 // 12-triangle bounding-box stand-in immediately, and even its coarse
 // tessellation runs on the refine worker pool. The registration
 // declares the stand-in's error (0.5 of the diagonal) and names the
 // coarse rung parameters as its climb target, so the ordinary level
 // plan fires the build; the meshed copy arrives on the GUI thread,
 // its triangulation transfers onto the live shape, and the rerun of
-// updateVisual() finds every face resident — an instant rebuild. The
+// updateVisual() finds every face resident -- an instant rebuild. The
 // exact rung follows the normal ladder from there. Returns whether
 // the stand-in was built (the caller is done then).
-bool ViewProviderPartExt::buildCoarseStandIn()
+bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
 {
     const long deferFaces = Gui::RenderParams::getCoarseDeferFaces();
-    if (deferFaces < 0 || cachedShape.isNull()) {
+    if (cachedShape.isNull() || (deferFaces < 0 && !underPressure)) {
         return false;
     }
     TopoDS_Shape cShape = cachedShape.getShape();
-    if (cShape.IsNull() || CoarseMeshTShape == cShape.TShape().get()
-        || ExactMeshTShape == cShape.TShape().get()) {
+    if (cShape.IsNull()) {
         return false;
+    }
+    // Under pressure the box is a DESCENT, not a stand-in: the object
+    // has a mesh and the plan asked for it back, so the tests that say
+    // "a mesh is already here" or "this import is not live" are the
+    // wrong questions -- they exist to keep the import path from
+    // standing in for work already done.
+    if (!underPressure) {
+        if ((meshLadder.coarseResolved || meshLadder.exactResident)
+            && meshLadder.anchor == cShape.TShape().get()) {
+            return false;
+        }
+        // The deferred-visual drain is the restore's LiveImport: same
+        // geometry-outrunning-the-tessellator situation, same fix. A
+        // plain .FCStd restore never sets LiveImport (only the STEP
+        // import path does), and without this the drain tessellated
+        // oversized compounds inline -- the measured 1.8s builds that
+        // were the worst per-item stalls of the whole gate run.
+        auto d = pcObject ? pcObject->getDocument() : nullptr;
+        if (!d
+            || (!d->testStatus(App::Document::LiveImport)
+                && !s_drainVisualBuild)) {
+            return false;
+        }
+        if (long(cachedShape.countSubShapes(TopAbs_FACE)) <= deferFaces) {
+            return false;
+        }
     }
     auto doc = pcObject ? pcObject->getDocument() : nullptr;
-    if (!doc || !doc->testStatus(App::Document::LiveImport)) {
-        return false;
-    }
     const int coarseLvl = coarseTessellationLevel(doc);
     if (coarseLvl < 0) {
-        return false;
-    }
-    if (long(cachedShape.countSubShapes(TopAbs_FACE)) <= deferFaces) {
         return false;
     }
     try {
@@ -3816,20 +4746,26 @@ bool ViewProviderPartExt::buildCoarseStandIn()
                << cachedShape.countSubShapes(TopAbs_FACE)
                << " faces deferred to the refine pool)");
         const void *tsh = cShape.TShape().get();
-        auto onCoarse = [this, tsh](const TopoDS_Shape &meshed) {
+        auto onCoarse = [this, tsh, underPressure](const TopoDS_Shape &meshed) {
             TopoDS_Shape cur = cachedShape.getShape();
             if (cur.IsNull() || cur.TShape().get() != tsh) {
                 return;
             }
             transferMeshLevels(meshed, cur);
-            CoarseMeshTShape = tsh;
+            if (meshLadder.anchor == tsh) {
+                meshLadder.coarseResolved = true;
+                meshLadder.residentLanded = true;
+                if (underPressure)
+                    meshLadder.resetDescent();
+            }
             FC_LOG(getFullName() << " stand-in resolved: coarse mesh in");
             updateVisual();
         };
         registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
                                 /*builtError*/ 0.5f, deflection, angDefl,
                                 std::move(onCoarse), {}, 0.0f, {},
-                                pcObject ? pcObject->getDocument() : nullptr);
+                                pcObject ? pcObject->getDocument() : nullptr,
+                                "standin");
     }
     catch (const Standard_Failure &e) {
         FC_ERR("Failed to build the stand-in for the shape of "
@@ -3837,6 +4773,523 @@ bool ViewProviderPartExt::buildCoarseStandIn()
         return false;
     }
     return true;
+}
+
+bool ViewProviderPartExt::simplifyVisualInPlace(double cellSize,
+                                                double shapeDiag,
+                                                float builtErrorNow)
+{
+    if (!Gui::RenderParams::getSimplifyExhausted() || !(cellSize > 0.0))
+        return false;
+    if (!coords || !faceset)
+        return false;
+
+    CoinMeshView view;
+    if (!view.build(coords, norm, faceset, lineset, nodeset, pcoords,
+                    texcoords))
+        return false;
+
+    Render::SimplifyOptions opts;
+    // Welding across faces is what actually removes geometry on the
+    // population that gets here. This seam is reached only when
+    // deflection has PROVED it cannot coarsen the shape -- which is
+    // what a shape of planar faces answers at every deflection, two
+    // triangles a face however coarse the ask. Clustering each face on
+    // its own grid cannot go below those two, so per-face clustering
+    // removes almost nothing exactly where the ladder has run out. The
+    // cost is the crease: attributes then average over the whole mesh
+    // rather than within a face. Off by default all the same, so the
+    // cheaper and more faithful arm is what ships until measured.
+    opts.weldAcrossParts = Gui::RenderParams::getSimplifyMergeParts();
+
+    Render::SimplifiedMesh out;
+    Render::SimplifyStats stats;
+    if (!Render::simplifyMesh(view.mesh, float(cellSize), out, opts, &stats))
+        return false;
+
+    return applySimplifiedRung(out, stats, view.tris.size(), cellSize,
+                               shapeDiag, builtErrorNow);
+}
+
+bool ViewProviderPartExt::applySimplifiedRung(
+        const Render::SimplifiedMesh &out, const Render::SimplifyStats &stats,
+        size_t beforeIndexCount, double cellSize, double shapeDiag,
+        float builtErrorNow)
+{
+    if (!coords || !faceset)
+        return false;
+    // Did it buy anything? The descent has a cheaper next step (the
+    // bounding box), so a rung that barely removes triangles is worse
+    // than useless -- it costs a rebuild and still holds the memory.
+    // The caller reads false as "decimation is spent, take the box".
+    const size_t before = beforeIndexCount;
+    const size_t after = out.triangleIndices.size();
+    const double keepRatio =
+        Gui::RenderParams::getSimplifyMinReduction() / 100.0;
+    if (before == 0 || double(before - after) < keepRatio * double(before))
+        return false;
+
+    const int nv = out.numVertices();
+    if (nv <= 0 || out.triangleIndices.empty())
+        return false;
+
+    const int beforeVertices = coords->point.getNum();
+
+    // This rewrite owns the arrays now: an in-flight pooled fill
+    // (Render_VisualFillOnPool) queued before it must not land its
+    // pre-decimation content over the rung.
+    ++meshLadder.visualFillSeq;
+
+    // --- write the rung back into the display nodes -----------------
+    coords->point.setNum(nv);
+    std::memcpy(coords->point.startEditing(), out.positions.data(),
+                size_t(nv) * 3 * sizeof(float));
+    coords->point.finishEditing();
+
+    if (!out.normals.empty() && int(out.normals.size()) == nv * 3) {
+        norm->vector.setNum(nv);
+        std::memcpy(norm->vector.startEditing(), out.normals.data(),
+                    size_t(nv) * 3 * sizeof(float));
+        norm->vector.finishEditing();
+    }
+    else {
+        norm->vector.setNum(0);
+    }
+
+    // Texture coordinates are per vertex and the vertices are new ones.
+    // When the source carried them, the clustering carried them too
+    // (averaged over the merged vertices, MeshSimplify) -- a textured
+    // object on this rung keeps a recognizable texture instead of one
+    // stretched texel (user ruling). Zeroed otherwise, not dropped:
+    // the build path always sizes this node to the coordinate count,
+    // and a shorter array is what a reader indexing by vertex would
+    // run off the end of.
+    if (texcoords) {
+        texcoords->point.setNum(nv);
+        SbVec2f *uv = texcoords->point.startEditing();
+        if (int(out.texCoords.size()) == nv * 2)
+            std::memcpy(uv, out.texCoords.data(),
+                        size_t(nv) * 2 * sizeof(float));
+        else
+            for (int i = 0; i < nv; ++i)
+                uv[i] = SbVec2f(0.0f, 0.0f);
+        texcoords->point.finishEditing();
+    }
+
+    const int numTri = int(out.triangleIndices.size() / 3);
+    faceset->coordIndex.setNum(numTri * 4);
+    int32_t *ci = faceset->coordIndex.startEditing();
+    for (int t = 0; t < numTri; ++t) {
+        ci[t * 4]     = out.triangleIndices[size_t(t) * 3];
+        ci[t * 4 + 1] = out.triangleIndices[size_t(t) * 3 + 1];
+        ci[t * 4 + 2] = out.triangleIndices[size_t(t) * 3 + 2];
+        ci[t * 4 + 3] = SO_END_FACE_INDEX;
+    }
+    faceset->coordIndex.finishEditing();
+
+    // The face table, ranges back to counts. Every source face keeps its
+    // slot even when it decimated away to nothing: partIndex is read BY
+    // FACE NUMBER -- per-face colours, face selection, the element name
+    // a picked triangle resolves to -- so dropping the empties would
+    // silently renumber every face after the first one to collapse.
+    if (!out.triangleParts.empty()) {
+        faceset->partIndex.setNum(int(out.triangleParts.size()));
+        int32_t *pi = faceset->partIndex.startEditing();
+        for (size_t p = 0; p < out.triangleParts.size(); ++p)
+            pi[p] = out.triangleParts[p].second / 3;
+        faceset->partIndex.finishEditing();
+    }
+    else {
+        faceset->partIndex.setNum(0);
+    }
+    // Triangle counts moved, so anything derived from the old ones is
+    // stale; the solid table is rebuilt by the next full build.
+    faceset->shapeInfo.setNum(0);
+
+    if (lineset) {
+        // Segments back to polylines, ONE RUN PER SOURCE EDGE including
+        // the collapsed ones. SoBrepEdgeSet derives the edge id from
+        // the ordinal of the -1 separator (see its notify()), so an
+        // omitted empty run would renumber every edge behind it. An
+        // empty run draws nothing and cannot be picked.
+        std::vector<int32_t> runs;
+        runs.reserve(out.lineIndices.size() + out.lineParts.size() + 1);
+        auto emitRun = [&](int start, int count) {
+            for (int i = 0; i + 1 < count; i += 2) {
+                const int32_t a = out.lineIndices[size_t(start + i)];
+                const int32_t b = out.lineIndices[size_t(start + i + 1)];
+                if (runs.empty() || runs.back() != a)
+                    runs.push_back(a);
+                runs.push_back(b);
+            }
+            runs.push_back(SO_END_LINE_INDEX);
+        };
+        if (!out.lineParts.empty()) {
+            for (const auto &p : out.lineParts)
+                emitRun(p.first, p.second);
+        }
+        else if (!out.lineIndices.empty()) {
+            emitRun(0, int(out.lineIndices.size()));
+        }
+        lineset->coordIndex.setNum(int(runs.size()));
+        if (!runs.empty()) {
+            std::memcpy(lineset->coordIndex.startEditing(), runs.data(),
+                        runs.size() * sizeof(int32_t));
+            lineset->coordIndex.finishEditing();
+        }
+        // The seam filter does not survive the weld: a merged edge can
+        // fold a seam and a non-seam edge together. Cleared rather than
+        // left stale, so hidden-line mode hides nothing it cannot
+        // justify on this rung.
+        lineset->seamIndices.setNum(0);
+    }
+
+    // Restate the rung this object now stands on. The registry was told
+    // what the TESSELLATION errs by, and the decimation just moved the
+    // display well past it -- and the error is not a guess here, it is
+    // the clustering's own measured worst displacement, relative to the
+    // diagonal like every other published error.
+    //
+    // It has to be said or the object can get STUCK LOOKING DECIMATED:
+    // the refine pass wants a source when levelError * diagPx exceeds
+    // the tolerance, so an error understating how coarse the object
+    // became is one that may never ask for it back once the pressure
+    // that decimated it has gone. Restating it also prices the next
+    // descent step from the rung the object is actually on.
+    //
+    // RMS, not the worst vertex, and the difference is not academic.
+    // Every other published error on this ladder is a NOMINAL figure --
+    // the grid a rung was built on, scale/(8<<level) -- so a worst-case
+    // one is not comparable with the numbers it is about to be judged
+    // against. Measured: maxDisplacement registered a median relative
+    // error of 0.17 against a LevelScaleBoxError of 0.25, i.e. it
+    // declared most decimated objects nearly box-grade, and the plan
+    // believed it -- boxes rose from 1029 to 1204 and the median live
+    // memory from 29.2 to 69.6MB, giving back most of what the rung had
+    // won. The typical displacement is what the object looks like; the
+    // worst one is what its single worst vertex looks like.
+    if (shapeDiag > 0.0 && stats.rmsDisplacement > 0.0f) {
+        // Clamped, and the ceiling is not defensive noise: 5 of 995
+        // rungs measured a displacement LARGER than the shape diagonal
+        // they were divided by, one of them 9.4x it, which is
+        // impossible for a clustering bounded by its own grid. Whatever
+        // that is -- a compound whose bounds do not cover its own
+        // tessellation is the suspect -- the plan must not be handed a
+        // number that says an object errs by nine times its own size.
+        // Floored at the tessellation's error too, since a decimated
+        // mesh cannot be FINER than what it was decimated from.
+        const float raw = float(double(stats.rmsDisplacement) / shapeDiag);
+        const float rungError = std::min(1.0f, std::max(raw, builtErrorNow));
+        if (raw > 1.0f)
+            FC_WARN(getFullName() << " decimated rung error " << raw
+                    << " exceeds the shape diagonal -- clamped; the shape"
+                       " bounds and its tessellation disagree");
+        auto &reg = Render::MeshSourceRegistry::instance();
+        // Both drawables of the object, because both were decimated and
+        // the plan reaches a source by whichever tag a draw carries.
+        if (faceset)
+            reg.setPublishedError(faceset, rungError);
+        if (lineset)
+            reg.setPublishedError(lineset, rungError);
+        FC_LOG(getFullName() << " decimated rung: cell " << cellSize
+                << ", triangles " << (before / 3) << " -> " << (after / 3)
+                << ", vertices " << beforeVertices << " -> " << nv
+                << ", displacement rms " << stats.rmsDisplacement
+                << " max " << stats.maxDisplacement
+                << ", published error " << rungError);
+    }
+    else {
+        FC_LOG(getFullName() << " decimated rung: cell " << cellSize
+                << ", triangles " << (before / 3) << " -> " << (after / 3)
+                << ", vertices " << beforeVertices << " -> " << nv
+                << ", max displacement " << stats.maxDisplacement
+                << " (rung NOT restated: no diagonal)");
+    }
+
+    // The rewrite replaced the arrays any earlier emission mirrored;
+    // re-emit the vertex-cache content from the rung just written
+    // (docs/WorkerVertexCache.md). The rung is decimation-small, so
+    // this GUI-thread walk is proportional to what survived, and it
+    // is what lets the next publish adopt instead of re-capturing.
+    // The caller's epilogue registers the stash after its highlight
+    // re-apply.
+    emitVisualVertexCacheFromNodes();
+    return true;
+}
+
+void ViewProviderPartExt::armMeshLevelSource()
+{
+    TopoDS_Shape cShape = cachedShape.getShape();
+    if (cShape.IsNull() || meshLadder.anchor != cShape.TShape().get())
+        return;
+    const bool exactResident = meshLadder.exactResident;
+    const int coarseLvl = exactResident ? -1 : meshLadder.coarseLevel;
+    const double shapeDiag = meshLadder.shapeDiag;
+    const double exactDeflection = meshLadder.exactDefl;
+    const double exactAngle = meshLadder.exactAng;
+    // The rung this shape stands on, re-derived from the stored
+    // context exactly as updateVisual derived it at build time.
+    float builtError = 0.0f;
+    double deflection = exactDeflection;
+    double AngDeflectionRads = exactAngle;
+    if (coarseLvl >= 0 && shapeDiag > 0.0) {
+        const double scale = std::max(1.0, meshLadder.errorScale);
+        deflection = meshLevelDeflection(shapeDiag, unsigned(coarseLvl))
+            * scale;
+        AngDeflectionRads = std::min(
+            meshLevelAngle(unsigned(coarseLvl)) * scale, M_PI / 2.0);
+        builtError = float(scale / double(8u << unsigned(coarseLvl)));
+    }
+
+    // On a coarse desktop build the registration also carries the
+    // climb back to exact (sec 13): the worker meshes a copy at the
+    // display parameters and this callback -- GUI thread, and only
+    // while the registration is still the live one, which is what
+    // makes capturing `this` sound (the destructor unregisters) --
+    // transfers the triangulation onto the flattened shape and
+    // rebuilds through the ordinary visual path.
+    std::function<void(const TopoDS_Shape &)> onExact;
+    if (builtError > 0.0f) {
+        const void *tsh = cShape.TShape().get();
+        onExact = [this, tsh, builtError](const TopoDS_Shape &meshed) {
+            TopoDS_Shape cur = cachedShape.getShape();
+            if (cur.IsNull() || cur.TShape().get() != tsh)
+                return;
+            transferMeshLevels(meshed, cur);
+            if (meshLadder.anchor == tsh) {
+                meshLadder.exactResident = true;
+                meshLadder.exactCoarseError = builtError;
+                meshLadder.residentLanded = true;
+            }
+            updateVisual();
+        };
+    }
+    // Exact by refine: the coarse triangulation never left the
+    // shape (transferMeshLevels keeps it), so both ways back down
+    // are armed (sec 13 step 3). The demote -- only ever under an
+    // observed CPU-memory ceiling -- drops the exact rung outright;
+    // the downgrade -- the GPU budget's -- merely re-activates the
+    // coarse rung for display and keeps the exact one resident,
+    // so the climb back is instant. Both are the CHEAP kind of
+    // descent (the coarse rung is already resident, the rebuild is a
+    // fill), so they stay synchronous.
+    std::function<void()> onDemote, onDowngrade;
+    if (exactResident && meshLadder.exactCoarseError > 0.0f) {
+        const void *tsh = cShape.TShape().get();
+        onDemote = [this, tsh]() {
+            TopoDS_Shape cur = cachedShape.getShape();
+            if (cur.IsNull() || cur.TShape().get() != tsh)
+                return;
+            if (!demoteMeshLevels(cur))
+                return;
+            if (meshLadder.anchor == tsh) {
+                meshLadder.exactResident = false;
+                meshLadder.residentLanded = true;
+            }
+            updateVisual();
+        };
+        onDowngrade = [this, tsh]() {
+            TopoDS_Shape cur = cachedShape.getShape();
+            if (cur.IsNull() || cur.TShape().get() != tsh)
+                return;
+            if (!downgradeMeshLevels(cur))
+                return;
+            if (meshLadder.anchor == tsh) {
+                meshLadder.exactResident = false;
+                meshLadder.residentLanded = true;
+            }
+            updateVisual();
+        };
+    }
+    // The dynamic-scale descent (sec 13): what this object can still
+    // give up once it is already showing its coarse rung and the
+    // budget is not met. Armed only on a coarse-built source with
+    // a scale to apply -- an exact-resident one has the ordinary
+    // demote/downgrade above, which is cheaper and comes first.
+    std::function<void()> onScaleDown;
+    float scaledError = 0.0f;
+    const double levelScale = Gui::RenderParams::getLevelScale();
+    if (builtError > 0.0f && levelScale > 1.0 && shapeDiag > 0.0) {
+        scaledError = float(builtError * levelScale);
+        const void *tsh = cShape.TShape().get();
+        const double nextScale =
+            std::max(1.0, meshLadder.errorScale) * levelScale;
+        const double nextDefl = deflection * levelScale;
+        const double nextAng = std::min(AngDeflectionRads * levelScale,
+                                        M_PI / 2.0);
+        const double boxError = Gui::RenderParams::getLevelScaleBoxError();
+        onScaleDown = [this, tsh, nextScale, nextDefl, nextAng,
+                       scaledError, boxError]() {
+            TopoDS_Shape cur = cachedShape.getShape();
+            if (cur.IsNull() || cur.TShape().get() != tsh)
+                return;
+            // Past the box error, or once deflection has proved it
+            // cannot coarsen this shape, re-tessellating buys
+            // nothing: only a representation that drops FACES does.
+            if (meshLadder.scaleSpent != ScaleSpent::No
+                || (boxError > 0.0 && scaledError >= boxError)) {
+                // The scale still advances here, synchronously: no
+                // build can fail to land, and it is what grows the
+                // decimation rung's grid step over step.
+                meshLadder.errorScale = nextScale;
+                // The threshold is a CHOICE, not a proof, and must
+                // not overwrite one: a Proved shape stays Proved.
+                if (meshLadder.scaleSpent == ScaleSpent::No)
+                    meshLadder.scaleSpent = ScaleSpent::BoxChosen;
+                if (meshLadder.decimationSpent) {
+                    // The bounding box -- 12 triangles, built inline:
+                    // the one visible descent cheap enough to stay
+                    // synchronous. updateVisual takes that path off
+                    // the flags.
+                    updateVisual();
+                    return;
+                }
+                // The decimation rung: the hook only ENQUEUES -- the
+                // clustering runs on the refine pool over a snapshot,
+                // and the landing rewrites the nodes and re-arms
+                // (sec 13c). Running it here, in the plan callback,
+                // froze the GUI for minutes when a live budget drop
+                // ordered hundreds of steps back-to-back.
+                queueDecimationDescent();
+                return;
+            }
+            // Otherwise mesh a copy coarser on the refine pool and
+            // adopt it: the transfer brings it in beside the finer
+            // rung and the demote, which keeps the fewest nodes,
+            // drops that rung and its edge polygons.
+            //
+            // The scale is committed in the APPLY, not here. A job
+            // the worker drops at its memory floor, or that a
+            // re-registration cancels, would otherwise leave the
+            // ladder's state one rung below the mesh still
+            // displayed -- and the exhaustion proof below never
+            // evaluated for that step.
+            queueMeshLevelBuild(
+                faceset ? static_cast<SoNode *>(faceset)
+                        : static_cast<SoNode *>(lineset),
+                cur, nextDefl, nextAng,
+                [this, tsh, nextScale](const TopoDS_Shape &meshed) {
+                    TopoDS_Shape live = cachedShape.getShape();
+                    if (live.IsNull() || live.TShape().get() != tsh)
+                        return;
+                    if (meshLadder.anchor == tsh)
+                        meshLadder.errorScale = nextScale;
+                    const int before = meshLevelNodeCount(live);
+                    transferMeshLevels(meshed, live);
+                    demoteMeshLevels(live);
+                    const int after = meshLevelNodeCount(live);
+                    // Did asking for a coarser mesh actually
+                    // produce one? A shape of planar faces answers
+                    // no at every deflection, and there is no point
+                    // discovering that once per step.
+                    if (before > 0 && after * 10 >= before * 9
+                        && meshLadder.anchor == tsh)
+                        meshLadder.scaleSpent = ScaleSpent::Proved;
+                    if (meshLadder.anchor == tsh)
+                        meshLadder.residentLanded = true;
+                    updateVisual();
+                });
+        };
+    }
+    registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
+                            builtError, exactDeflection, exactAngle,
+                            std::move(onExact), std::move(onDemote),
+                            exactResident ? meshLadder.exactCoarseError
+                                          : 0.0f,
+                            std::move(onDowngrade),
+                            pcObject ? pcObject->getDocument() : nullptr,
+                            "per-object", std::move(onScaleDown),
+                            scaledError);
+}
+
+void ViewProviderPartExt::queueDecimationDescent()
+{
+    TopoDS_Shape cur = cachedShape.getShape();
+    if (cur.IsNull() || meshLadder.anchor != cur.TShape().get())
+        return;
+    const double shapeDiag = meshLadder.shapeDiag;
+    const int coarseLvl = meshLadder.coarseLevel;
+    float builtError = 0.0f;
+    if (coarseLvl >= 0 && shapeDiag > 0.0) {
+        const double scale = std::max(1.0, meshLadder.errorScale);
+        builtError = float(scale / double(8u << unsigned(coarseLvl)));
+    }
+    const double cellSize = double(builtError) * shapeDiag;
+    // A rung that cannot run at all is decimation spent: the next
+    // order takes the box. Re-arming is what keeps the source
+    // reachable -- the order that got here consumed its hook.
+    auto spent = [this]() {
+        meshLadder.decimationSpent = true;
+        FC_LOG(getFullName() << " decimation spent, bounding box is next");
+        armMeshLevelSource();
+    };
+    if (!Gui::RenderParams::getSimplifyExhausted() || !(cellSize > 0.0)
+        || !coords || !faceset) {
+        spent();
+        return;
+    }
+    auto snap = std::make_shared<OwnedMeshSnapshot>();
+    if (!snap->build(coords, norm, faceset, lineset, nodeset, pcoords,
+                     texcoords)) {
+        spent();
+        return;
+    }
+    Render::SimplifyOptions opts;
+    opts.weldAcrossParts = Gui::RenderParams::getSimplifyMergeParts();
+    const void *tsh = meshLadder.anchor;
+    const size_t beforeIndexCount = snap->tris.size();
+    const float builtErrorNow = builtError;
+    const double diag = shapeDiag;
+    SoNode *tag = faceset ? static_cast<SoNode *>(faceset)
+                          : static_cast<SoNode *>(lineset);
+    queueMeshDescentWork(
+        tag,
+        [this, tsh, snap, cellSize, opts, beforeIndexCount, builtErrorNow,
+         diag]() -> std::function<void()> {
+            // The worker half: pure clustering over the snapshot.
+            auto out = std::make_shared<Render::SimplifiedMesh>();
+            auto stats = std::make_shared<Render::SimplifyStats>();
+            const bool ok = Render::simplifyMesh(snap->mesh, float(cellSize),
+                                                 *out, opts, stats.get());
+            // The landing half: node writes and the re-arm, marshalled
+            // to the GUI thread; it runs only while the registration
+            // that queued this is still the live one (the worker
+            // queue's token), which is what makes `this` sound here --
+            // the destructor unregisters, and unregistering cancels.
+            return [this, tsh, ok, out, stats, cellSize, beforeIndexCount,
+                    builtErrorNow, diag]() {
+                TopoDS_Shape live = cachedShape.getShape();
+                if (live.IsNull() || live.TShape().get() != tsh
+                    || meshLadder.anchor != tsh)
+                    return;
+                // Re-arm FIRST: the registration publishes the nominal
+                // rung error, and the apply's restatement (the
+                // measured one, setPublishedError) must land on top of
+                // it, not under it -- the order updateVisual ran.
+                armMeshLevelSource();
+                if (!ok
+                    || !applySimplifiedRung(*out, *stats, beforeIndexCount,
+                                            cellSize, diag, builtErrorNow)) {
+                    // Decimation is spent too. The object keeps the
+                    // mesh it has; the next order finds the flag set
+                    // and takes the box.
+                    meshLadder.decimationSpent = true;
+                    FC_LOG(getFullName()
+                           << " decimation spent, bounding box is next");
+                }
+                else {
+                    // The arrays under the highlight/selection state
+                    // were rewritten; re-apply like updateVisual does.
+                    applyShapeAppearance();
+                    setHighlightedEdges(LineColorArray.getValues());
+                    setHighlightedPoints(PointColorArray.getValue());
+                    // ...and register the content the rewrite emitted
+                    // from the rung (docs/WorkerVertexCache.md), ids
+                    // stamped after that last touch.
+                    registerPendingVisualVertexCache();
+                }
+            };
+        });
 }
 
 bool ViewProviderPartExt::deferVisualForLoad()
@@ -3851,10 +5304,10 @@ bool ViewProviderPartExt::deferVisualForLoad()
         // The deferred view-provider drain counts as loading too: its
         // slices run with the Restoring bit clear between them, and a
         // visual built in such a gap is walked by the staging sweep that
-        // follows — the very interleaving the queue itself refuses
+        // follows -- the very interleaving the queue itself refuses
         // (runDeferredVisualSlice checks this same flag before building).
-        // Without the same gate here, a direct updateVisual — e.g. from
-        // the camera-fit path while a second document's drain is mid-way —
+        // Without the same gate here, a direct updateVisual -- e.g. from
+        // the camera-fit path while a second document's drain is mid-way --
         // builds into a half-staged subtree, and the content never reaches
         // the renderer: built Coin-side, never drawn.
         auto guiDoc = Gui::Application::Instance->getDocument(doc);
@@ -3866,6 +5319,7 @@ bool ViewProviderPartExt::deferVisualForLoad()
     if (!VisualDeferred) {
         VisualDeferred = true;
         deferredVisuals().docs[doc->getName()].pending.emplace_back(obj);
+        syncBuildingVisuals();
     }
     // The restore pumps events through its progress sequencer, so a slice
     // can be posted now; it will find the document still restoring and put
@@ -3929,6 +5383,20 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         return;
     }
 
+    // Say what this drain owes and how it is going -- the visual build
+    // is the longest phase of a progressive load, and it used to run
+    // with a dead status bar. Created here rather than at park time, so
+    // the total covers everything the load queued.
+    if (!visuals.seq) {
+        std::size_t total = 0;
+        for (const auto &e : visuals.docs)
+            total += e.second.pending.size();
+        if (total)
+            visuals.seq = std::make_unique<Base::SequencerLauncher>(
+                    "Building visuals...", total,
+                    Base::SequencerLauncher::KeepInteractive);
+    }
+
     // One budget for the slice, split evenly between the documents that can
     // use it: what has to stay bounded is the time before the event loop
     // gets its turn back, and that is per slice however many documents are
@@ -3961,7 +5429,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         const double limit = std::min(budget, mark.count() + share);
         const double left = std::max(0.001, limit - mark.count());
 
-        // Deferred shape restore (docs/DocumentLoad.md §14): serve this
+        // Deferred shape restore (docs/DocumentLoad.md sec 14): serve this
         // document's parked archive entries BEFORE any of its visuals is
         // built. Shapes materializing inside the visual fill was the
         // two-document lesson in reverse -- mid-drain content arriving
@@ -3985,6 +5453,8 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         while (!queue.pending.empty()) {
             auto obj = queue.pending.front().getObject();
             queue.pending.pop_front();
+            if (visuals.seq)
+                visuals.seq->next();
             auto vp = obj ? Base::freecad_dynamic_cast<ViewProviderPartExt>(
                                 Gui::Application::Instance->getViewProvider(obj))
                           : nullptr;
@@ -3994,6 +5464,10 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                 // only when this slice is what built it, or the line would
                 // report work it never did.
                 if (vp->VisualTouched) {
+                    // Under the drain flag, so an oversized bare shape
+                    // may take the stand-in path instead of an inline
+                    // tessellation (see s_drainVisualBuild).
+                    Base::StateLocker drainBuild(s_drainVisualBuild);
                     vp->updateVisual();
                     ++queue.built;
                 }
@@ -4013,6 +5487,14 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                 << queue.spent.count() << 's');
         it = visuals.docs.erase(it);
     }
+
+    // After every erase this slice made, so the state falls on the slice
+    // that empties the queue -- the frame after it is the first one that
+    // may draw the elements the load gate was holding back.
+    syncBuildingVisuals();
+
+    if (visuals.docs.empty())
+        visuals.seq.reset();
 
     if (more)
         scheduleDeferredVisualSlice();
@@ -4149,24 +5631,81 @@ void ViewProviderPartExt::updateVisual()
     if (deferVisualForLoad())
         return;
 
+    // A giant rebuild called from a pump item is deferred into its OWN
+    // pump item (Render_VisualFillOnPool): the landing that called this
+    // -- a climb's transfer, a demote's rung drop -- stays cheap, and
+    // the capture or build that follows gets its own budget-checked
+    // turn. Without this, a turn stacked small landings up to the
+    // budget and then one landing's inline giant capture on top:
+    // measured 9 landings and 757ms in one turn against a 50ms budget.
+    // Placed before the prologue and clearInstanced so the displayed
+    // representation -- instanced included -- stays intact for the
+    // turn or two until the item runs. The seq bump supersedes any
+    // in-flight pooled fill now, exactly as the full run would; the
+    // residentLanded claim is NOT consumed here, so the re-entered
+    // run finds it as this call did.
+    if (Gui::RenderParams::getVisualFillOnPool()
+        && inLandingPump() && !s_deferredVisualRun && !s_drainVisualBuild
+        && !cachedShape.isNull() && (faceset || lineset)
+        && long(cachedShape.countSubShapes(TopAbs_FACE))
+            >= std::max(1L, Gui::RenderParams::getVisualFillMinFaces())) {
+        ++meshLadder.visualFillSeq;
+        const void *tsh = cachedShape.getShape().TShape().get();
+        const unsigned seq = meshLadder.visualFillSeq;
+        queueLevelGuiWork(
+            faceset ? static_cast<const void *>(faceset)
+                    : static_cast<const void *>(lineset),
+            [this, tsh, seq]() {
+                // Sound while the item lives: unregister purges by the
+                // same primary tag before the owner may die. A newer
+                // rebuild or decimation rewrite moved the seq and owns
+                // the arrays now; a different TShape is a different
+                // shape's claim.
+                TopoDS_Shape live = cachedShape.getShape();
+                if (live.IsNull() || live.TShape().get() != tsh
+                    || meshLadder.visualFillSeq != seq)
+                    return;
+                Base::StateLocker deferred(s_deferredVisualRun);
+                updateVisual();
+            },
+            /*descent*/ true);
+        VisualTouched = false;
+        return;
+    }
+
+    // Where a rebuild's time actually goes (#13d). Declared BEFORE the
+    // build timer so it is destroyed after it and sees this build's own
+    // cost, and it reports on every exit path this function has.
+    VisualSplitReporter splitReport;
+    // ...and where THIS build's went, if it was slow enough to matter
+    // on its own (a paced descent's turn is one object's rebuild).
+    SlowBuildProbe slowReport(this);
     // A restore or a live import runs this thousands of times inside another
     // stage's timing; the accumulator is what makes that share visible.
     Gui::ViewProvider::VisualBuildTimer buildTimer;
 
-    Gui::SoUpdateVBOAction action;
-    action.apply(this->faceset);
+    {
+        // The prologue is work proportional to what is being DISCARDED --
+        // three action traversals over the nodes about to be refilled --
+        // so it is timed apart from the fill: a mass descent pays it once
+        // per object whether or not the new content is cheap.
+        Gui::ViewProvider::VisualBuildTimer prologueTimer(
+                Gui::ViewProvider::VisualPrologueTime, nullptr);
+        Gui::SoUpdateVBOAction action;
+        action.apply(this->faceset);
 
-    // Clear selection
-    Gui::SoSelectionElementAction saction(Gui::SoSelectionElementAction::None);
-    saction.apply(this->faceset);
-    saction.apply(this->lineset);
-    saction.apply(this->nodeset);
+        // Clear selection
+        Gui::SoSelectionElementAction saction(Gui::SoSelectionElementAction::None);
+        saction.apply(this->faceset);
+        saction.apply(this->lineset);
+        saction.apply(this->nodeset);
 
-    // Clear highlighting
-    Gui::SoHighlightElementAction haction;
-    haction.apply(this->faceset);
-    haction.apply(this->lineset);
-    haction.apply(this->nodeset);
+        // Clear highlighting
+        Gui::SoHighlightElementAction haction;
+        haction.apply(this->faceset);
+        haction.apply(this->lineset);
+        haction.apply(this->nodeset);
+    }
 
     // Drop any previous TShape-instanced representation; the qualifying
     // path rebuilds it below, every other path leaves only the flat
@@ -4189,6 +5728,33 @@ void ViewProviderPartExt::updateVisual()
     toposhape.setShape(toposhape.getShape().Located(aLoc), false);
     lineset ->seamIndices.setNum(0);
     registerShape(cachedShape, toposhape);
+    // The ladder state this object carries belongs to a shape, so a
+    // different TShape starts every claim over -- otherwise an edited
+    // object would inherit the coarseness the plan bought against a
+    // shape that is gone. THE one reset, placed before EVERY early
+    // return (the null path included): a claim that survives an early
+    // return can meet a recycled TShape address two shapes later, and
+    // the null install is the one path that frees the old TShape
+    // without installing a coexisting successor (see MeshLadderState
+    // in the header).
+    meshLadder.rebind(cachedShape.getShape().IsNull()
+                          ? nullptr
+                          : cachedShape.getShape().TShape().get());
+    // The landing claim covers exactly ONE rebuild -- consumed here,
+    // before every early exit, so a claim made for a build that took
+    // the stand-in or instanced path (or errored out) cannot leak
+    // into a later rebuild it knows nothing about.
+    const bool residentLanded = meshLadder.residentLanded;
+    meshLadder.residentLanded = false;
+    // Whatever path this rebuild takes below -- the null install, the
+    // stand-in, the instanced build, the inline or the pooled fill --
+    // it owns the display arrays from here: an in-flight pooled fill
+    // queued by an earlier rebuild is superseded and must not land
+    // over what this one leaves (Render_VisualFillOnPool). Same for a
+    // vertex-cache stash an aborted earlier epilogue left behind: it
+    // mirrors arrays this rebuild is about to replace.
+    ++meshLadder.visualFillSeq;
+    pendingVCache.reset();
     if (cachedShape.isNull()) {
         coords  ->point      .setNum(0);
         pcoords ->point      .setNum(0);
@@ -4203,13 +5769,24 @@ void ViewProviderPartExt::updateVisual()
         return;
     }
 
-    // Progressive import of an oversized part (§13): even the coarse
+    // Progressive import of an oversized part (sec 13): even the coarse
     // build of a many-face shape (or many-leaf compound) stalls the
     // GUI for seconds, and the import stall scales with the largest
     // single part. Build a 12-triangle bounding-box stand-in instead
     // and let the level plan run the coarse build on the refine pool.
-    if (buildCoarseStandIn()) {
+    // ...and the same box as a DESCENT (sec 13, dynamic scale): an
+    // object whose deflection can no longer be coarsened is drawn as
+    // its 12-triangle box, which is the one representation here that
+    // actually removes faces rather than subdividing them less.
+    // The box is the LAST step, not the first one past deflection:
+    // it is taken only once decimation has been tried and has itself
+    // stopped paying (see simplifyVisualInPlace at the end of the
+    // build, which is what sets decimationSpent).
+    if (buildCoarseStandIn(meshLadder.scaleSpent != ScaleSpent::No
+                           && meshLadder.decimationSpent)) {
         VisualTouched = false;
+        Gui::ViewProvider::VisualBuildTimer highlightTimer(
+                Gui::ViewProvider::VisualHighlightTime, nullptr);
         applyShapeAppearance();
         setHighlightedEdges(LineColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValue());
@@ -4222,10 +5799,14 @@ void ViewProviderPartExt::updateVisual()
     // arrived behind a stand-in stays on the flattened build: the
     // resident triangulation was built at the whole-shape rung, and the
     // instanced build's per-leaf rungs would re-tessellate every leaf
-    // inline — the very stall the stand-in existed to avoid.
+    // inline -- the very stall the stand-in existed to avoid.
     bool instancedOk = false;
-    const bool standInResolved =
-        cachedShape.getShape().TShape().get() == CoarseMeshTShape;
+    const bool standInResolved = meshLadder.coarseResolved;
+    // Scoped to the ATTEMPT alone: a failed instanced build still costs
+    // its analysis, and lumping that into the flat fill below would
+    // report the fallback as expensive rather than the try.
+    std::optional<Gui::ViewProvider::VisualBuildTimer> instanceTimer(
+            std::in_place, Gui::ViewProvider::VisualInstanceTime, nullptr);
     try {
         if (!standInResolved)
             instancedOk = buildInstanced();
@@ -4242,9 +5823,12 @@ void ViewProviderPartExt::updateVisual()
         FC_ERR("Failed instanced representation for the shape of "
                << pcObject->getFullName());
     }
+    instanceTimer.reset();
     if (instancedOk) {
         VisualTouched = false;
         // The material has to be checked again (colors verified uniform)
+        Gui::ViewProvider::VisualBuildTimer highlightTimer(
+                Gui::ViewProvider::VisualHighlightTime, nullptr);
         applyShapeAppearance();
         setHighlightedEdges(LineColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValue());
@@ -4322,102 +5906,128 @@ void ViewProviderPartExt::updateVisual()
                         PartParams::getMeshAngularDeflection() : AngularDeflection.getValue()),
                       PartParams::getMinimumAngularDeflection()) / 180.0 * M_PI);
 
-        // Coarse-first publish (docs/SceneStreaming.md §7): a headless
+        // Coarse-first publish (docs/SceneStreaming.md sec 7): a headless
         // streaming server tessellates every shape at a ladder rung
-        // instead of the full display deviation — the exact mesh is
+        // instead of the full display deviation -- the exact mesh is
         // then generated on demand, where a viewer's camera asks. The
         // display parameters are kept for that on-demand build.
         double exactDeflection = deflection;
         double exactAngle = AngDeflectionRads;
         float builtError = 0.0f;
         // The desktop refine already put this very TShape's exact
-        // triangulation in place (§13): build at the display deviation
-        // — the mesher finds the finer mesh resident and keeps it — and
-        // register at error 0. A different TShape is a new shape, and
-        // goes coarse-first again.
-        const bool exactResident =
-            !cShape.IsNull() && ExactMeshTShape == cShape.TShape().get();
-        if (!exactResident)
-            ExactMeshTShape = nullptr;
+        // triangulation in place (sec 13): build at the display deviation
+        // -- the mesher finds the finer mesh resident and keeps it -- and
+        // register at error 0. The rebind at the top of updateVisual
+        // already started a different TShape over, so the claim is
+        // about this shape or it is gone.
+        const bool exactResident = meshLadder.exactResident;
         const int coarseLvl = exactResident
             ? -1 : coarseTessellationLevel(pcObject ? pcObject->getDocument() : nullptr);
+        double shapeDiag = 0.0;
         if (coarseLvl >= 0) {
             double dx = xMax - xMin, dy = yMax - yMin, dz = zMax - zMin;
             double diag = std::sqrt(dx * dx + dy * dy + dz * dz);
+            shapeDiag = diag;
             if (diag > 0) {
-                deflection = meshLevelDeflection(diag, unsigned(coarseLvl));
-                AngDeflectionRads = meshLevelAngle(unsigned(coarseLvl));
-                builtError = float(1.0 / double(8u << unsigned(coarseLvl)));
+                const double scale = std::max(1.0, meshLadder.errorScale);
+                deflection = meshLevelDeflection(diag, unsigned(coarseLvl))
+                    * scale;
+                // The angular tolerance rides the same scale, clamped
+                // short of the half turn at which a revolved face stops
+                // being a surface at all.
+                AngDeflectionRads = std::min(
+                    meshLevelAngle(unsigned(coarseLvl)) * scale, M_PI / 2.0);
+                builtError =
+                    float(scale / double(8u << unsigned(coarseLvl)));
             }
+        }
+
+        if (levelDebugOn()
+            && Gui::RenderParams::getLevelSlowBuildMS() > 0) {
+            char buf[192];
+            snprintf(buf, sizeof(buf),
+                     "asked %.3f exactResident %d coarseLvl %d scale %.1f "
+                     "spent %d dec %d faces %d drain %d pump %d",
+                     deflection, int(exactResident), coarseLvl,
+                     meshLadder.errorScale, int(meshLadder.scaleSpent),
+                     int(meshLadder.decimationSpent),
+                     int(cachedShape.countSubShapes(TopAbs_FACE)),
+                     int(s_drainVisualBuild), int(inLandingPump()));
+            slowReport.note = buf;
+        }
+
+        // The scene server can now re-tessellate this shape at a
+        // coarser deviation when a viewer asks for a declared level of
+        // the meshes these nodes feed (MeshLevelSource.h). Re-runs
+        // replace the previous shape under the same node tags. The
+        // arming itself is armMeshLevelSource, off the context stored
+        // here -- so a worker landing can re-arm the next step without
+        // paying this function's rebuild. Stored BEFORE the fill (the
+        // values are this build's decisions either way): the pooled
+        // path below returns without filling, and its landing arms
+        // off this very context.
+        meshLadder.shapeDiag = shapeDiag;
+        meshLadder.coarseLevel = coarseLvl;
+        meshLadder.exactDefl = exactDeflection;
+        meshLadder.exactAng = exactAngle;
+
+        // The pooled fill (Render_VisualFillOnPool): a big landing
+        // rebuild captures here and fills on the refine pool -- the
+        // traversal fill was the landing pump's per-item floor
+        // (0.3-0.65s per 15-21k-face compound) once the mesh call
+        // learned to skip. Only pump items take it: an ordinary edit's
+        // rebuild stays inline, as does everything below the face
+        // threshold and the load-time drain (its giants have
+        // stand-ins).
+        const long fillMinFaces =
+            std::max(1L, Gui::RenderParams::getVisualFillMinFaces());
+        if (Gui::RenderParams::getVisualFillOnPool()
+            && inLandingPump() && !s_drainVisualBuild
+            && int(cachedShape.countSubShapes(TopAbs_FACE)) >= fillMinFaces
+            && queueVisualFillOnPool(cShape, deflection, AngDeflectionRads,
+                                     residentLanded, builtError, shapeDiag)) {
+            // The old arrays stay on display until the landing; the
+            // epilogue (arm, decimation post-step, highlight) lands
+            // with them.
+            VisualTouched = false;
+            return;
         }
 
         buildVisualNodes(cShape, deflection, AngDeflectionRads, NormalsFromUV,
                          coords, pcoords, norm, texcoords,
                          faceset, lineset, nodeset,
                          numTriangles, numNodes, numPoints, numNorms,
-                         numFaces, numEdges, numLines, pcRenderMaterial);
+                         numFaces, numEdges, numLines,
+                         meshLadder.scaleSpent, &meshLadder,
+                         residentLanded, pcRenderMaterial);
+        armMeshLevelSource();
 
-        // The scene server can now re-tessellate this shape at a
-        // coarser deviation when a viewer asks for a declared level of
-        // the meshes these nodes feed (MeshLevelSource.h). Re-runs
-        // replace the previous shape under the same node tags.
+        // The rung between a spent tessellation and the bounding box
+        // (docs/SceneStreaming.md #13c). Applied HERE, as a post-step of
+        // the ordinary build rather than in the descent callback that
+        // asked for it, so the state is durable: an updateVisual run for
+        // any other reason -- a colour change, a placement edit -- would
+        // otherwise rebuild this object at full detail and quietly undo
+        // the descent, leaving the plan to discover the memory back and
+        // ask all over again.
         //
-        // On a coarse desktop build the registration also carries the
-        // climb back to exact (§13): the worker meshes a copy at the
-        // display parameters and this callback — GUI thread, and only
-        // while the registration is still the live one, which is what
-        // makes capturing `this` sound (the destructor unregisters) —
-        // transfers the triangulation onto the flattened shape and
-        // rebuilds through the ordinary visual path.
-        std::function<void(const TopoDS_Shape &)> onExact;
-        if (builtError > 0.0f) {
-            const void *tsh = cShape.TShape().get();
-            onExact = [this, tsh, builtError](const TopoDS_Shape &meshed) {
-                TopoDS_Shape cur = cachedShape.getShape();
-                if (cur.IsNull() || cur.TShape().get() != tsh)
-                    return;
-                transferMeshLevels(meshed, cur);
-                ExactMeshTShape = tsh;
-                ExactMeshCoarseError = builtError;
-                updateVisual();
-            };
+        // The grid is the error this rung already commits, in world
+        // units: builtError is relative to the diagonal and carries
+        // the error scale, so each descent step clusters coarser than
+        // the last and the sequence terminates.
+        if (meshLadder.scaleSpent != ScaleSpent::No
+                && !meshLadder.decimationSpent
+                && builtError > 0.0f && shapeDiag > 0.0) {
+            if (!simplifyVisualInPlace(double(builtError) * shapeDiag,
+                                       shapeDiag, builtError)) {
+                // Decimation is spent too. The object keeps the mesh it
+                // has for now; the descent's next step finds the flag
+                // set and takes the box.
+                meshLadder.decimationSpent = true;
+                FC_LOG(getFullName()
+                       << " decimation spent, bounding box is next");
+            }
         }
-        // Exact by refine: the coarse triangulation never left the
-        // shape (transferMeshLevels keeps it), so both ways back down
-        // are armed (§13 step 3). The demote — only ever under an
-        // observed CPU-memory ceiling — drops the exact rung outright;
-        // the downgrade — the GPU budget's — merely re-activates the
-        // coarse rung for display and keeps the exact one resident,
-        // so the climb back is instant.
-        std::function<void()> onDemote, onDowngrade;
-        if (exactResident && ExactMeshCoarseError > 0.0f) {
-            const void *tsh = cShape.TShape().get();
-            onDemote = [this, tsh]() {
-                TopoDS_Shape cur = cachedShape.getShape();
-                if (cur.IsNull() || cur.TShape().get() != tsh)
-                    return;
-                if (!demoteMeshLevels(cur))
-                    return;
-                ExactMeshTShape = nullptr;
-                updateVisual();
-            };
-            onDowngrade = [this, tsh]() {
-                TopoDS_Shape cur = cachedShape.getShape();
-                if (cur.IsNull() || cur.TShape().get() != tsh)
-                    return;
-                if (!downgradeMeshLevels(cur))
-                    return;
-                ExactMeshTShape = nullptr;
-                updateVisual();
-            };
-        }
-        registerMeshLevelSource(cShape, NormalsFromUV, faceset, lineset,
-                                builtError, exactDeflection, exactAngle,
-                                std::move(onExact), std::move(onDemote),
-                                exactResident ? ExactMeshCoarseError
-                                              : 0.0f,
-                                std::move(onDowngrade),
-                                pcObject ? pcObject->getDocument() : nullptr);
     }
     catch (Base::Exception &e) {
         FC_ERR("Failed to compute Inventor representation for the shape of " << pcObject->getFullName() << ": " << e.what());
@@ -4437,26 +6047,109 @@ void ViewProviderPartExt::updateVisual()
              << " Triangles:" << numTriangles << " IdxVec:" << numLines);
     VisualTouched = false;
 
-    // The material has to be checked again
-    applyShapeAppearance();
-    setHighlightedEdges(LineColorArray.getValues());
-    setHighlightedPoints(PointColorArray.getValue());
+    {
+        // The material has to be checked again
+        Gui::ViewProvider::VisualBuildTimer highlightTimer(
+                Gui::ViewProvider::VisualHighlightTime, nullptr);
+        applyShapeAppearance();
+        setHighlightedEdges(LineColorArray.getValues());
+        setHighlightedPoints(PointColorArray.getValue());
+    }
+    // An inline decimation post-step above re-emitted vertex-cache
+    // content from the rung it wrote (docs/WorkerVertexCache.md);
+    // register it now that the last node touch of this rebuild is done.
+    registerPendingVisualVertexCache();
 }
 
-void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
+/// One rebuild's fill, detached from the display nodes (see the
+/// header declaration). The capture pins every handle the fill
+/// dereferences -- a triangulation demoted or replaced while a pooled
+/// job flies cannot be freed under it; the job then lands stale and
+/// loses to the generation check, but it never reads freed memory.
+/// The topology of `shape` itself is immutable at runtime (runtime
+/// mutation is only the triangulations and polygons attached to it),
+/// so the fill walks it freely on any thread.
+struct ViewProviderPartExt::VisualFillData {
+    // -- captured on the GUI thread --------------------------------
+    TopoDS_Shape shape;
+    double deflection = 0.0;
+    double angDeflectionRads = 0.0;
+    bool normalsFromUV = false;
+    /// The default-texture-coordinate projection frame (the shape's
+    /// own bounding box). Computed at capture: the bound reads the
+    /// resident triangulations, which are exactly the state another
+    /// thread may swap.
+    Standard_Real xMin = 0, yMin = 0, zMin = 0;
+    Standard_Real xMax = 0, yMax = 0, zMax = 0;
+    struct FaceMesh {
+        Handle(Poly_Triangulation) mesh;
+        TopLoc_Location loc;
+    };
+    /// Per face of the face map, in map order.
+    std::vector<FaceMesh> faceMeshes;
+    /// Per (face, edge) pair of the fill's own edge exploration --
+    /// every edge of every face, positional, no dedup (the fill
+    /// dedups) -- the polygon-on-triangulation against that face's
+    /// captured mesh.
+    std::vector<Handle(Poly_PolygonOnTriangulation)> facePolys;
+    /// Where each face's run starts in facePolys
+    /// (faceMeshes.size() + 1 entries, the last = facePolys.size()).
+    std::vector<size_t> facePolyStart;
+    struct EdgePoly {
+        Handle(Poly_Polygon3D) poly;
+        TopLoc_Location loc;
+    };
+    /// Per edge of the edge map, in map order; empty for edges that
+    /// belong to a face (their nodes come with the face mesh).
+    std::vector<EdgePoly> freeEdgePolys;
+    /// Edge -> one owning face, the free-edge/seam classification;
+    /// built during capture, read again by the fill.
+    std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher,
+                       Part::ShapeHasher> faceEdges;
+
+    // -- filled on the worker (or inline) --------------------------
+    std::vector<SbVec3f> verts;
+    std::vector<SbVec3f> norms;
+    std::vector<SbVec2f> texcoords;
+    std::vector<SbVec3f> points;
+    std::vector<int32_t> faceIndex;
+    std::vector<int32_t> partIndex;
+    std::vector<int32_t> lineIndex;
+    std::vector<int32_t> seamEdges;
+    int numTriangles = 0, numNodes = 0, numPoints = 0, numNorms = 0,
+        numFaces = 0, numEdges = 0, numLines = 0;
+    bool nodesAttachedOnly = false, linesAttachedOnly = false;
+    /// The projection frames a surface finish is laid out in: the
+    /// deduplicated palette and one index per face (see
+    /// faceProjectionFrame). Computed with the geometry, but written
+    /// into the render material by applyVisualFill -- a Coin field is
+    /// the GUI thread's, and on the pooled path the fill is not on it.
+    std::vector<SbVec4f> framePalette;
+    std::vector<int32_t> frameIndices;
+    bool anyFrame = false;
+
+    // -- worker-emitted vertex cache content -----------------------
+    // (docs/WorkerVertexCache.md) Built by the fill next to the display
+    // arrays when the pooled path asked for it; the landing stamps the
+    // node ids and registers them for the next publish to adopt.
+    bool emitVCache = false;
+    std::shared_ptr<SoFCVertexCache::PrebuiltContent> vcFace, vcLine, vcPoint;
+
+    // -- the pooled path's bookkeeping -----------------------------
+    bool failed = false;
+    double captureSec = 0.0, workerSec = 0.0;
+};
+
+bool ViewProviderPartExt::captureVisualFill(const TopoDS_Shape &cShape,
         double deflection, double AngDeflectionRads,
         bool NormalsFromUV,
-        SoCoordinate3 *coords, SoCoordinate3 *pcoords,
-        SoNormal *norm, SoTextureCoordinate2 *texcoords,
-        SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
-        SoBrepPointSet *nodeset,
-        int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
-        int &numFaces, int &numEdges, int &numLines,
-        Gui::SoFCRenderMaterial *rendermat)
+        ScaleSpent tessellationSpent, MeshLadderState *ladder,
+        bool residentLanded, VisualFillData &data)
 {
-    (void)nodeset;
-    std::unordered_map<TopoDS_Shape, TopoDS_Face, Part::ShapeHasher, Part::ShapeHasher> faceEdges;
-    TopLoc_Location aLoc;
+    data.shape = cShape;
+    data.deflection = deflection;
+    data.angDeflectionRads = AngDeflectionRads;
+    data.normalsFromUV = NormalsFromUV;
 
     {
         // The default-texture-coordinate projection frame comes from this
@@ -4465,31 +6158,238 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         Bnd_Box bounds;
         BRepBndLib::Add(cShape, bounds);
         bounds.SetGap(0.0);
-        Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
-        bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+        bounds.Get(data.xMin, data.yMin, data.zMin,
+                   data.xMax, data.yMax, data.zMax);
 
         {
             // Separated from the node building around it: a mesh already
             // resident (an instance sharing this TShape, a stand-in resolved
             // by the pool) makes this call nearly free, and only the split
             // says whether a bulk fill is paying for tessellation at all.
+            //
+            // ...and MEASURED, it is not nearly free: 71% of a mass
+            // descent's GUI-thread rebuild time was spent here, on shapes
+            // the refine pool had already meshed, and HALF of those calls
+            // rebuilt nothing at all -- 19ms each to conclude the mesh was
+            // already right (#13d). So the call is now asked for only when
+            // something might come of it: tessellationIsRedundant answers
+            // the same question off the resident triangulations, and a
+            // shape that is already meshed the way this rebuild wants
+            // never enters OCCT at all.
+            //
+            // The timer spans the CHECK as well as the call it replaces.
+            // A split whose mesh term excluded the thing that made the
+            // mesh term small would be reporting its own success.
             Gui::ViewProvider::VisualBuildTimer meshTimer(
                     Gui::ViewProvider::VisualMeshTime, nullptr);
+            const bool debugCheck = levelDebugOn();
+            const bool skipRedundant = Gui::RenderParams::getMeshSkipRedundant();
+            const bool skipInvariant = Gui::RenderParams::getMeshSkipInvariant();
+            const bool skipLanded = Gui::RenderParams::getMeshSkipLanded();
+            MeshVerdict verdict;
+            // With the feature off, the check still runs under the level
+            // debug flag and its answer is scored against the real call
+            // below -- which is the only way "safe to skip" is ever more
+            // than an argument.
+            if (skipRedundant || skipInvariant || debugCheck) {
+                const auto checkStart =
+                    std::chrono::high_resolution_clock::now();
+                verdict = tessellationIsRedundant(cShape, deflection,
+                        Gui::RenderParams::getMeshSkipFinerResident());
+                if (debugCheck) {
+                    MeshCallProbe::Stats &ms = MeshCallProbe::stats();
+                    ++ms.checks;
+                    ms.timeChecking += std::chrono::duration<double>(
+                        std::chrono::high_resolution_clock::now()
+                        - checkStart).count();
+                    if (skipRedundant && verdict.redundant())
+                        ++ms.skipped;
+                }
+            }
+            // The deflection-invariance rule (Render_MeshSkipInvariant):
+            // a shape of planar faces and straight edges tessellates
+            // the SAME at every deflection -- a plane deviates from its
+            // triangulation by zero, a straight edge discretizes to its
+            // endpoints -- so a call refused only for a deflection
+            // mismatch, too fine or too coarse, would rebuild the
+            // identical mesh. Classified from geometry TYPES once per
+            // anchor, conservatively (anything not literally a plane or
+            // a line counts as curved); residency is re-checked per
+            // call, because a face with no triangulation is exactly
+            // what the call would build. Immune to the exhaustion
+            // proof's measured leak: the proved shapes that resume
+            // coarsening at a later ask are the curved ones this
+            // refuses to claim, and an all-linear mesh cannot shrink,
+            // so no reclaim is ever forgone.
+            const bool invariantCase =
+                (verdict.why == MeshRefusal::TooFine
+                 || verdict.why == MeshRefusal::TooCoarse)
+                && (skipInvariant || debugCheck) && ladder
+                && ladder->anchor == cShape.TShape().get();
+            bool invariantSkip = false;
+            if (invariantCase) {
+                using MI = MeshLadderState::MeshInvariance;
+                if (ladder->meshInvariance == MI::Unknown) {
+                    auto classify = [&cShape]() {
+                        for (TopExp_Explorer fx(cShape, TopAbs_FACE);
+                             fx.More(); fx.Next()) {
+                            TopLoc_Location loc;
+                            Handle(Geom_Surface) surf = BRep_Tool::Surface(
+                                    TopoDS::Face(fx.Current()), loc);
+                            if (surf.IsNull()
+                                || !surf->IsKind(STANDARD_TYPE(Geom_Plane)))
+                                return MI::Varies;
+                        }
+                        for (TopExp_Explorer ex(cShape, TopAbs_EDGE);
+                             ex.More(); ex.Next()) {
+                            const TopoDS_Edge &edge =
+                                TopoDS::Edge(ex.Current());
+                            if (BRep_Tool::Degenerated(edge))
+                                return MI::Varies;
+                            Standard_Real f = 0, l = 0;
+                            Handle(Geom_Curve) curve =
+                                BRep_Tool::Curve(edge, f, l);
+                            if (Handle(Geom_TrimmedCurve) trimmed =
+                                    Handle(Geom_TrimmedCurve)::DownCast(curve))
+                                curve = trimmed->BasisCurve();
+                            if (curve.IsNull()
+                                || !curve->IsKind(STANDARD_TYPE(Geom_Line)))
+                                return MI::Varies;
+                        }
+                        return MI::Invariant;
+                    };
+                    ladder->meshInvariance = classify();
+                }
+                if (ladder->meshInvariance == MI::Invariant) {
+                    invariantSkip = true;
+                    for (TopExp_Explorer fx(cShape, TopAbs_FACE); fx.More();
+                         fx.Next()) {
+                        TopLoc_Location loc;
+                        if (BRep_Tool::Triangulation(TopoDS::Face(fx.Current()),
+                                                     loc).IsNull()) {
+                            invariantSkip = false;
+                            break;
+                        }
+                    }
+                }
+                if (debugCheck && skipInvariant && invariantSkip)
+                    ++MeshCallProbe::stats().invariantSkipped;
+            }
+            // The landing rule (Render_MeshSkipLanded): this fill is
+            // the display half of a landing -- the caller has just
+            // installed (transfer) or re-activated (demote/downgrade)
+            // the very triangulation the rebuild is to display, and on
+            // every landing path the resident rung is never coarser
+            // than the ask, so BRepMesh here can only validate. Keyed
+            // on the PATH of this one rebuild, not on any claim about
+            // the shape's history -- the exhaustion-proof leak that
+            // killed the spent-keyed skip does not reach it.
+            // A face with NO triangulation is claimed too: on a landing
+            // it is a face the same mesher just FAILED at these very
+            // parameters on the worker (the transfer moves every
+            // triangulation the copy got), and BRepMesh is
+            // deterministic, so the GUI-thread retry re-fails it --
+            // measured as ~1s validated-only calls re-failing the same
+            // faces on every landing of the biggest compounds. The
+            // audit arm scores these claims like every other.
+            const bool landedSkip =
+                residentLanded && (skipLanded || debugCheck);
+            if (debugCheck && skipLanded && landedSkip)
+                ++MeshCallProbe::stats().landedSkipped;
+            if (!((skipRedundant && verdict.redundant())
+                  || (skipInvariant && invariantSkip)
+                  || (skipLanded && landedSkip))) {
+                // Behind the level debug flag, the probe says whether the
+                // call REBUILDS (triangle counts move) or merely
+                // validates, and what deflection it found resident
+                // against the one asked for. It walks every face twice
+                // more. The invariant claim rides along so the audit arm
+                // (skip off, the claimed call made anyway) can score it
+                // -- read its WRONG column there or not at all.
+                MeshCallProbe probe(cShape, deflection, verdict,
+                                    tessellationSpent,
+                                    invariantSkip && !skipInvariant,
+                                    landedSkip && !skipLanded);
 #if OCC_VERSION_HEX >= 0x070500
-            IMeshTools_Parameters meshParams;
-            meshParams.Deflection = deflection;
-            meshParams.Relative = Standard_False;
-            meshParams.Angle = AngDeflectionRads;
-            meshParams.InParallel = Standard_True;
-            meshParams.AllowQualityDecrease = Standard_True;
+                IMeshTools_Parameters meshParams;
+                meshParams.Deflection = deflection;
+                meshParams.Relative = Standard_False;
+                meshParams.Angle = AngDeflectionRads;
+                meshParams.InParallel = Standard_True;
+                meshParams.AllowQualityDecrease = Standard_True;
 
-            BRepMesh_IncrementalMesh(cShape, meshParams);
+                BRepMesh_IncrementalMesh(cShape, meshParams);
 #else
-            BRepMesh_IncrementalMesh(cShape, deflection, Standard_False, AngDeflectionRads, Standard_True);
+                BRepMesh_IncrementalMesh(cShape, deflection, Standard_False, AngDeflectionRads, Standard_True);
 #endif
+            }
         }
 
 
+        // The handle snapshot: everything the fill dereferences that
+        // another thread could swap -- the resident triangulation of
+        // each face, the polygon-on-triangulation of each (face,
+        // edge) pair, and the 3D polygon of each free edge. These
+        // lookups walk mutable representation lists on the TShape and
+        // so belong here; everything else the fill reads is immutable
+        // topology or geometry.
+        TopTools_IndexedMapOfShape faceMap;
+        TopExp::MapShapes(cShape, TopAbs_FACE, faceMap);
+        data.faceMeshes.reserve(faceMap.Extent());
+        data.facePolyStart.reserve(faceMap.Extent() + 1);
+        for (int i = 1; i <= faceMap.Extent(); i++) {
+            const TopoDS_Face &face = TopoDS::Face(faceMap(i));
+            VisualFillData::FaceMesh fm;
+            fm.mesh = Part::Tools::triangulationOfFace(
+                    face, fm.loc, deflection, AngDeflectionRads);
+            data.facePolyStart.push_back(data.facePolys.size());
+            TopExp_Explorer xp;
+            for (xp.Init(face, TopAbs_EDGE); xp.More(); xp.Next()) {
+                const TopoDS_Edge &edge = TopoDS::Edge(xp.Current());
+                data.faceEdges.emplace(edge, face);
+                data.facePolys.push_back(fm.mesh.IsNull()
+                        ? Handle(Poly_PolygonOnTriangulation)()
+                        : BRep_Tool::PolygonOnTriangulation(edge, fm.mesh,
+                                                            fm.loc));
+            }
+            data.faceMeshes.push_back(std::move(fm));
+        }
+        data.facePolyStart.push_back(data.facePolys.size());
+
+        TopTools_IndexedMapOfShape edgeMap;
+        TopExp::MapShapes(cShape, TopAbs_EDGE, edgeMap);
+        data.freeEdgePolys.resize(edgeMap.Extent());
+        for (int i = 1; i <= edgeMap.Extent(); i++) {
+            const TopoDS_Edge &edge = TopoDS::Edge(edgeMap(i));
+            // Note: The assumption that if for an edge BRep_Tool::Polygon3D
+            // returns a valid object is wrong. This e.g. happens for ruled
+            // surfaces which gets created by two edges or wires.
+            // So, we have to store the hashes of the edges associated to a face.
+            // If the hash of a given edge is not in this list we know it's really
+            // a free edge.
+            if (data.faceEdges.count(edge))
+                continue;
+            auto &ep = data.freeEdgePolys[i - 1];
+            ep.poly = Part::Tools::polygonOfEdge(edge, ep.loc, deflection,
+                                                 AngDeflectionRads);
+        }
+    }
+    return true;
+}
+
+void ViewProviderPartExt::fillVisualArrays(VisualFillData &data)
+{
+    const TopoDS_Shape &cShape = data.shape;
+    int &numTriangles = data.numTriangles;
+    int &numNodes = data.numNodes;
+    int &numPoints = data.numPoints;
+    int &numNorms = data.numNorms;
+    int &numFaces = data.numFaces;
+    int &numEdges = data.numEdges;
+    int &numLines = data.numLines;
+    const bool NormalsFromUV = data.normalsFromUV;
+
+    {
         // A face without a geometric surface is a purely triangulated one
         // (e.g. a glTF import); its stored UV nodes are real texture
         // coordinates, unlike the parametric UV nodes of a regular face.
@@ -4502,18 +6402,13 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         TopTools_IndexedMapOfShape faceMap;
         TopExp::MapShapes(cShape, TopAbs_FACE, faceMap);
         for (int i=1; i <= faceMap.Extent(); i++) {
-            TopoDS_Face face = TopoDS::Face(faceMap(i));
-            Handle (Poly_Triangulation) mesh = Part::Tools::triangulationOfFace(face, aLoc, deflection, AngDeflectionRads);
+            const Handle(Poly_Triangulation) &mesh = data.faceMeshes[i-1].mesh;
             // Note: we must also count empty faces
             if (!mesh.IsNull()) {
                 numTriangles += mesh->NbTriangles();
                 numNodes     += mesh->NbNodes();
                 numNorms     += mesh->NbNodes();
             }
-
-            TopExp_Explorer xp;
-            for (xp.Init(face,TopAbs_EDGE);xp.More();xp.Next())
-                faceEdges.emplace(xp.Current(), face);
             numFaces++;
         }
 
@@ -4524,8 +6419,7 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
          // key is the edge number, value the coord indexes. This is needed to keep the same order as the edges.
         std::map<int, std::vector<int32_t> > lineSetMap;
         std::set<int>          edgeIdxSet;
-        std::vector<int32_t>   edgeVector;
-        std::vector<int32_t>   seamEdges;
+        std::vector<int32_t>   &seamEdges = data.seamEdges;
 
         // count and index the edges
         for (int i=1; i <= edgeMap.Extent(); i++) {
@@ -4533,21 +6427,17 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             numEdges++;
 
             const TopoDS_Edge& aEdge = TopoDS::Edge(edgeMap(i));
-            TopLoc_Location aLoc;
 
-            // handling of the free edge that are not associated to a face
-            // Note: The assumption that if for an edge BRep_Tool::Polygon3D
-            // returns a valid object is wrong. This e.g. happens for ruled
-            // surfaces which gets created by two edges or wires.
-            // So, we have to store the hashes of the edges associated to a face.
-            // If the hash of a given edge is not in this list we know it's really
-            // a free edge.
-            auto it = faceEdges.find(aEdge);
-            if (it != faceEdges.end()) {
+            // free-edge/seam classification off the captured map (see
+            // the note in captureVisualFill for why Polygon3D alone
+            // cannot answer it)
+            auto it = data.faceEdges.find(aEdge);
+            if (it != data.faceEdges.end()) {
                 if (BRep_Tool::IsClosed(aEdge, it->second))
                     seamEdges.push_back(i-1);
             } else {
-                Handle(Poly_Polygon3D) aPoly = Part::Tools::polygonOfEdge(aEdge, aLoc, deflection, AngDeflectionRads);
+                const Handle(Poly_Polygon3D) &aPoly =
+                    data.freeEdgePolys[i-1].poly;
                 if (!aPoly.IsNull()) {
                     int nbNodesInEdge = aPoly->NbNodes();
                     numNodes += nbNodesInEdge;
@@ -4556,24 +6446,27 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         }
 
         // create memory for the nodes and indexes
-        coords  ->point      .setNum(numNodes);
-        norm    ->vector     .setNum(numNorms);
-        texcoords->point     .setNum(numNodes);
-        faceset ->coordIndex .setNum(numTriangles*4);
-        faceset ->partIndex  .setNum(numFaces);
+        data.verts.resize(numNodes);
+        data.norms.resize(numNorms);
+        data.texcoords.resize(numNodes);
+        data.faceIndex.resize(numTriangles*4);
+        data.partIndex.resize(numFaces);
         // get the raw memory for fast fill up
-        SbVec3f* verts = coords  ->point       .startEditing();
-        SbVec3f* norms = norm    ->vector      .startEditing();
-        SbVec2f* texcoordArr = numNodes > 0 ? texcoords->point.startEditing() : nullptr;
+        SbVec3f* verts = data.verts.data();
+        SbVec3f* norms = data.norms.data();
+        SbVec2f* texcoordArr = numNodes > 0 ? data.texcoords.data() : nullptr;
 
         // Default texture coordinates take the shape bounding box as the
         // projection frame, the largest dimension as the texel scale
         // (uniform across faces).
-        const SbVec3f bbMin((float)xMin, (float)yMin, (float)zMin);
-        float maxDim = (float)std::max({xMax - xMin, yMax - yMin, zMax - zMin});
+        const SbVec3f bbMin((float)data.xMin, (float)data.yMin,
+                            (float)data.zMin);
+        float maxDim = (float)std::max({data.xMax - data.xMin,
+                                        data.yMax - data.yMin,
+                                        data.zMax - data.zMin});
         float invMaxDim = maxDim > 0.0f ? 1.0f / maxDim : 0.0f;
-        int32_t* index = faceset ->coordIndex  .startEditing();
-        int32_t* parts = faceset ->partIndex   .startEditing();
+        int32_t* index = data.faceIndex.data();
+        int32_t* parts = data.partIndex.data();
 
         // preset the normal vector with null vector
         for (int i=0;i < numNorms;i++)
@@ -4595,10 +6488,10 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
 
         int ii = 0,faceNodeOffset=0,faceTriaOffset=0;
         for (int i=1; i <= faceMap.Extent(); i++, ii++) {
-            TopLoc_Location aLoc;
             const TopoDS_Face &actFace = TopoDS::Face(faceMap(i));
-            // get the mesh of the shape
-            Handle (Poly_Triangulation) mesh = Part::Tools::triangulationOfFace(actFace, aLoc, deflection, AngDeflectionRads);
+            // the captured mesh of this face
+            const Handle(Poly_Triangulation) &mesh = data.faceMeshes[i-1].mesh;
+            const TopLoc_Location &aLoc = data.faceMeshes[i-1].loc;
             if (mesh.IsNull()) {
                 parts[ii] = 0;
                 continue;
@@ -4653,7 +6546,7 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             }
 
             // purely triangulated faces carry authored texture coordinates
-            // and normals in the stored mesh — use both as-is
+            // and normals in the stored mesh -- use both as-is
             bool meshOnly = isMeshOnlyFace(actFace);
             if (texcoordArr && meshOnly && mesh->HasUVNodes()) {
                 for (int n = 1; n <= nbNodesInFace; n++) {
@@ -4753,16 +6646,17 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
 
             // handling the edges lying on this face
             TopExp_Explorer Exp;
-            for(Exp.Init(actFace,TopAbs_EDGE);Exp.More();Exp.Next()) {
+            size_t polyCursor = data.facePolyStart[i-1];
+            for(Exp.Init(actFace,TopAbs_EDGE);Exp.More();Exp.Next(),++polyCursor) {
                 const TopoDS_Edge &curEdge = TopoDS::Edge(Exp.Current());
                 // get the overall index of this edge
                 int edgeIndex = edgeMap.FindIndex(curEdge);
-                edgeVector.push_back((int32_t)edgeIndex-1);
                 // already processed this index ?
                 if (edgeIdxSet.find(edgeIndex)!=edgeIdxSet.end()) {
 
                     // this holds the indices of the edge's triangulation to the current polygon
-                    Handle(Poly_PolygonOnTriangulation) aPoly = BRep_Tool::PolygonOnTriangulation(curEdge, mesh, aLoc);
+                    const Handle(Poly_PolygonOnTriangulation) &aPoly =
+                        data.facePolys[polyCursor];
                     if (aPoly.IsNull())
                         continue; // polygon does not exist
 
@@ -4792,8 +6686,6 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
                     edgeIdxSet.erase(edgeIndex);
                 }
             }
-
-            edgeVector.push_back(-1);
 
             // Default texture coordinates for regular B-Rep faces:
             // nothing else in this pipeline generates UVs for them
@@ -4826,58 +6718,43 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             faceTriaOffset += nbTriInFace;
         }
 
-        // The frames reach the shapes only while a finish is stated
-        // somewhere -- SoFCRenderMaterial decides that, since the finish
-        // is the appearance's business and this is the geometry's.
-        if (rendermat) {
-            if (anyFrame) {
-                // setNum first: setValues grows a field but never
-                // shrinks one, and a re-tessellation may state fewer
-                // frames than the last one did.
-                rendermat->framePalette.setNum(int(framePalette.size()));
-                rendermat->framePalette.setValues(
-                        0, int(framePalette.size()), framePalette.data());
-                rendermat->frameIndices.setNum(int(frameIndices.size()));
-                rendermat->frameIndices.setValues(
-                        0, int(frameIndices.size()), frameIndices.data());
-            }
-            else {
-                rendermat->framePalette.setNum(0);
-                rendermat->frameIndices.setNum(0);
-            }
-        }
+        // The frames travel with the display arrays rather than being
+        // written here: this runs on the refine pool for a pooled fill,
+        // and a Coin field is the GUI thread's. applyVisualFill states
+        // them on the render material.
+        data.anyFrame = anyFrame;
+        data.framePalette = std::move(framePalette);
+        data.frameIndices = std::move(frameIndices);
 
-        // handling of the free edges
+        // handling of the free edges -- the polygons were captured
+        // (an edge that belongs to a face has no entry: its nodes
+        // came with the face mesh)
         for (int i=1; i <= edgeMap.Extent(); i++) {
-            const TopoDS_Edge& aEdge = TopoDS::Edge(edgeMap(i));
             Standard_Boolean identity = true;
             gp_Trsf myTransf;
-            TopLoc_Location aLoc;
 
-            // handling of the free edge that are not associated to a face
-            if (!faceEdges.count(aEdge)) {
-                Handle(Poly_Polygon3D) aPoly = Part::Tools::polygonOfEdge(aEdge, aLoc, deflection, AngDeflectionRads);
-                if (!aPoly.IsNull()) {
-                    if (!aLoc.IsIdentity()) {
-                        identity = false;
-                        myTransf = aLoc.Transformation();
-                    }
-
-                    const TColgp_Array1OfPnt& aNodes = aPoly->Nodes();
-                    int nbNodesInEdge = aPoly->NbNodes();
-
-                    gp_Pnt pnt;
-                    for (Standard_Integer j=1;j <= nbNodesInEdge;j++) {
-                        pnt = aNodes(j);
-                        if (!identity)
-                            pnt.Transform(myTransf);
-                        int index = faceNodeOffset+j-1;
-                        verts[index].setValue((float)(pnt.X()),(float)(pnt.Y()),(float)(pnt.Z()));
-                        lineSetMap[i].push_back(index);
-                    }
-
-                    faceNodeOffset += nbNodesInEdge;
+            const Handle(Poly_Polygon3D) &aPoly = data.freeEdgePolys[i-1].poly;
+            if (!aPoly.IsNull()) {
+                const TopLoc_Location &aLoc = data.freeEdgePolys[i-1].loc;
+                if (!aLoc.IsIdentity()) {
+                    identity = false;
+                    myTransf = aLoc.Transformation();
                 }
+
+                const TColgp_Array1OfPnt& aNodes = aPoly->Nodes();
+                int nbNodesInEdge = aPoly->NbNodes();
+
+                gp_Pnt pnt;
+                for (Standard_Integer j=1;j <= nbNodesInEdge;j++) {
+                    pnt = aNodes(j);
+                    if (!identity)
+                        pnt.Transform(myTransf);
+                    int index = faceNodeOffset+j-1;
+                    verts[index].setValue((float)(pnt.X()),(float)(pnt.Y()),(float)(pnt.Z()));
+                    lineSetMap[i].push_back(index);
+                }
+
+                faceNodeOffset += nbNodesInEdge;
             }
         }
 
@@ -4886,8 +6763,8 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
         TopExp::MapShapes(cShape, TopAbs_VERTEX, vertexMap);
 
         numPoints = vertexMap.Extent();
-        pcoords->point.setNum(numPoints);
-        verts = pcoords->point.startEditing();
+        data.points.resize(numPoints);
+        verts = data.points.data();
 
         for (int i=0; i<numPoints; i++) {
             const TopoDS_Vertex& aVertex = TopoDS::Vertex(vertexMap(i+1));
@@ -4895,37 +6772,552 @@ void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
             verts[i].setValue((float)(pnt.X()),(float)(pnt.Y()),(float)(pnt.Z()));
         }
 
+        // Which of these two drawables the display may suppress under
+        // memory pressure (docs/SceneStreaming.md #13b). OCCT answers
+        // it: a vertex with no edge among its ancestors floats, an edge
+        // with no face among its ancestors floats, and a drawable is
+        // suppressable only when NOTHING in it floats -- a point cloud,
+        // a wire, a sketch or a datum line is then never dropped,
+        // because nothing else on screen would show it.
+        //
+        // All or nothing per drawable, deliberately: objects are in
+        // practice either all floating or none, so a per-element subset
+        // would buy nothing measurable and cost an index permutation --
+        // and the coordinate order is the picking identity (the vertex
+        // number is getCoordinateIndex() - startIndex + 1), which such
+        // a permutation would silently break.
+        auto nothingFloats = [&cShape](TopAbs_ShapeEnum of,
+                                       TopAbs_ShapeEnum in) {
+            TopTools_IndexedDataMapOfShapeListOfShape ancestors;
+            TopExp::MapShapesAndAncestors(cShape, of, in, ancestors);
+            // MEASURED: thousands of point sets come out of here
+            // "floating" during a load and "attached" once settled, on
+            // the same objects -- so which of the two roads to false
+            // was taken is the whole question. An EMPTY map is "there
+            // is nothing here to judge", which is not the same claim as
+            // "something in here floats", and only the second one means
+            // the drawable must always draw.
+            if (ancestors.IsEmpty()) {
+                if (Gui::RenderParams::getLevelDebug()) {
+                    static std::map<int, size_t> empties;
+                    const size_t n = ++empties[int(of)];
+                    if ((n & (n - 1)) == 0)
+                        Base::Console().Message(
+                            "render levels: element class: %s ancestor map "
+                            "EMPTY -- cannot judge, answering 'floats' "
+                            "(x%zu)\n",
+                            of == TopAbs_VERTEX ? "VERTEX/EDGE"
+                                                : "EDGE/FACE", n);
+                }
+                return false;
+            }
+            for (int i = 1; i <= ancestors.Extent(); ++i) {
+                if (ancestors.FindFromIndex(i).IsEmpty()) {
+                    if (Gui::RenderParams::getLevelDebug()) {
+                        static std::map<int, size_t> floats;
+                        const size_t n = ++floats[int(of)];
+                        if ((n & (n - 1)) == 0)
+                            Base::Console().Message(
+                                "render levels: element class: %s a real "
+                                "floating element (x%zu)\n",
+                                of == TopAbs_VERTEX ? "VERTEX/EDGE"
+                                                    : "EDGE/FACE", n);
+                    }
+                    return false;
+                }
+            }
+            return true;
+        };
+        data.nodesAttachedOnly = nothingFloats(TopAbs_VERTEX, TopAbs_EDGE);
+        data.linesAttachedOnly = nothingFloats(TopAbs_EDGE, TopAbs_FACE);
+
         // normalize all normals
         for (int i = 0; i< numNorms ;i++)
             norms[i].normalize();
 
-        std::vector<int32_t> lineSetCoords;
+        std::vector<int32_t> &lineSetCoords = data.lineIndex;
         for (const auto & it : lineSetMap) {
             lineSetCoords.insert(lineSetCoords.end(), it.second.begin(), it.second.end());
             lineSetCoords.push_back(-1);
         }
-
-        // preset the index vector size
-        numLines =  lineSetCoords.size();
-        lineset ->coordIndex .setNum(numLines);
-        int32_t* lines = lineset ->coordIndex  .startEditing();
-
-        int l=0;
-        for (std::vector<int32_t>::const_iterator it=lineSetCoords.begin();it!=lineSetCoords.end();++it,l++)
-            lines[l] = *it;
-
-        // end the editing of the nodes
-        coords  ->point       .finishEditing();
-        pcoords ->point       .finishEditing();
-        norm    ->vector      .finishEditing();
-        if (texcoordArr)
-            texcoords->point  .finishEditing();
-        faceset ->coordIndex  .finishEditing();
-        faceset ->partIndex   .finishEditing();
-        lineset ->coordIndex  .finishEditing();
-        if (seamEdges.size())
-            lineset->seamIndices.setValues(0, seamEdges.size(), &seamEdges[0]);
+        numLines = lineSetCoords.size();
     }
+
+    if (data.emitVCache)
+        emitVisualVertexCache(data);
+}
+
+namespace {
+
+/// The capture this replaces walks the primitives Coin generates from
+/// the display arrays and dedups vertices in first-seen order
+/// (SoFCVertexCache::addTriangle/addLine/addPoint). Replicate that
+/// walk over the same arrays. The dedup key is (position, normal):
+/// everything else in the capture's key -- color, texture
+/// coordinates, marker -- is constant under the uniform-color
+/// contract the adoption checks, and a constant key member cannot
+/// split vertices.
+EmittedVCache emitVCacheCore(const SbVec3f *verts,
+                             const SbVec3f *norms,
+                             const int32_t *faceIndex, std::size_t nFaceIndex,
+                             const int32_t *lineIndex, std::size_t nLineIndex,
+                             const SbVec3f *points, std::size_t nPoints)
+{
+    struct VKey {
+        SbVec3f pos;
+        SbVec3f normal;
+        bool operator==(const VKey &o) const {
+            return this->pos == o.pos && this->normal == o.normal;
+        }
+    };
+    struct VKeyHash {
+        std::size_t operator()(const VKey &k) const {
+            std::size_t seed = 0;
+            auto h = [&seed](float f) {
+                // std::hash<float> hashes -0.0f and 0.0f alike, matching
+                // the float equality the capture's dedup uses.
+                seed ^= std::hash<float>()(f) + 0x9e3779b9
+                        + (seed << 6) + (seed >> 2);
+            };
+            h(k.pos[0]); h(k.pos[1]); h(k.pos[2]);
+            h(k.normal[0]); h(k.normal[1]); h(k.normal[2]);
+            return seed;
+        }
+    };
+    typedef std::unordered_map<VKey, int32_t, VKeyHash> VertexMap;
+
+    EmittedVCache emitted;
+
+    // Triangles: coordIndex quads (v0 v1 v2 -1) in order; the normal is
+    // per-vertex-indexed off the same index (the norm node's array).
+    if (nFaceIndex && verts && norms) {
+        auto content = std::make_shared<SoFCVertexCache::PrebuiltContent>();
+        VertexMap vmap;
+        content->triangleindices.reserve(nFaceIndex / 4 * 3);
+        for (std::size_t i = 0; i + 3 < nFaceIndex; i += 4) {
+            for (int k = 0; k < 3; ++k) {
+                const int32_t idx = faceIndex[i + k];
+                VKey key{verts[idx], norms[idx]};
+                auto res = vmap.emplace(key,
+                        (int32_t)content->vertices.size());
+                if (res.second) {
+                    content->vertices.push_back(key.pos);
+                    content->normals.push_back(key.normal);
+                }
+                content->triangleindices.push_back(res.first->second);
+            }
+        }
+        emitted.face = std::move(content);
+    }
+
+    // Lines: -1-separated polylines; the capture sees one segment per
+    // consecutive pair, tagged with the polyline ordinal, and a
+    // constant normal (no normal node scopes over the edge root -- the
+    // cache's normal array is truncated at close, so none is emitted).
+    if (nLineIndex && verts) {
+        auto content = std::make_shared<SoFCVertexCache::PrebuiltContent>();
+        VertexMap vmap;
+        int32_t run = 0;
+        int32_t prev = -1;
+        for (std::size_t i = 0; i < nLineIndex; ++i) {
+            const int32_t v = lineIndex[i];
+            if (v < 0) {
+                ++run;
+                prev = -1;
+                continue;
+            }
+            if (prev >= 0) {
+                for (int32_t idx : {prev, v}) {
+                    VKey key{verts[idx], SbVec3f(0.f, 0.f, 0.f)};
+                    auto res = vmap.emplace(key,
+                            (int32_t)content->vertices.size());
+                    if (res.second)
+                        content->vertices.push_back(key.pos);
+                    content->lineindices.push_back(res.first->second);
+                }
+                content->linepartindices.push_back(run);
+            }
+            prev = v;
+        }
+        if (!content->lineindices.empty())
+            emitted.line = std::move(content);
+    }
+
+    // Points: every pcoords vertex in order, deduplicated by position
+    // (coincident vertices share one cache vertex, exactly as the
+    // capture merges them).
+    if (nPoints && points) {
+        auto content = std::make_shared<SoFCVertexCache::PrebuiltContent>();
+        VertexMap vmap;
+        content->pointindices.reserve(nPoints);
+        for (std::size_t i = 0; i < nPoints; ++i) {
+            VKey key{points[i], SbVec3f(0.f, 0.f, 0.f)};
+            auto res = vmap.emplace(key, (int32_t)content->vertices.size());
+            if (res.second)
+                content->vertices.push_back(key.pos);
+            content->pointindices.push_back(res.first->second);
+        }
+        emitted.point = std::move(content);
+    }
+
+    return emitted;
+}
+
+} // anonymous namespace
+
+void ViewProviderPartExt::emitVisualVertexCache(VisualFillData &data)
+{
+    EmittedVCache emitted = emitVCacheCore(
+            data.verts.data(), data.norms.data(),
+            data.faceIndex.data(), data.faceIndex.size(),
+            data.lineIndex.data(), data.lineIndex.size(),
+            data.points.data(), data.points.size());
+    data.vcFace = std::move(emitted.face);
+    data.vcLine = std::move(emitted.line);
+    data.vcPoint = std::move(emitted.point);
+}
+
+void ViewProviderPartExt::emitVisualVertexCacheFromNodes()
+{
+    if (Gui::RenderParams::getWorkerVertexCache() <= 0)
+        return;
+    if (!coords || !faceset)
+        return;
+    const SbVec3f *verts = coords->point.getValues(0);
+    const int nVerts = coords->point.getNum();
+    const SbVec3f *norms = norm ? norm->vector.getValues(0) : nullptr;
+    const int nNorms = norm ? norm->vector.getNum() : 0;
+    const int32_t *fi = faceset->coordIndex.getValues(0);
+    std::size_t nFi = faceset->coordIndex.getNum();
+    // The face dedup key needs per-vertex-indexed normals; without a
+    // matching normal array the traversal generates a normal cache this
+    // emission cannot mirror -- leave faces to the traversal capture.
+    if (nNorms != nVerts)
+        nFi = 0;
+    const int32_t *li = lineset ? lineset->coordIndex.getValues(0) : nullptr;
+    const std::size_t nLi = lineset ? lineset->coordIndex.getNum() : 0;
+    const SbVec3f *pts = pcoords ? pcoords->point.getValues(0) : nullptr;
+    const std::size_t nPts = pcoords ? pcoords->point.getNum() : 0;
+
+    EmittedVCache emitted =
+        emitVCacheCore(verts, norms, fi, nFi, li, nLi, pts, nPts);
+    if (!pendingVCache)
+        pendingVCache.reset(new PendingVisualVCache);
+    static_cast<EmittedVCache &>(*pendingVCache) = std::move(emitted);
+}
+
+void ViewProviderPartExt::registerPendingVisualVertexCache()
+{
+    if (!pendingVCache)
+        return;
+    auto reg = [](SoNode *node,
+                  std::shared_ptr<SoFCVertexCache::PrebuiltContent> &c) {
+        if (node && c) {
+            c->nodeid = node->getNodeId();
+            SoFCVertexCache::setPrebuilt(node, std::move(c));
+        }
+    };
+    reg(faceset, pendingVCache->face);
+    reg(lineset, pendingVCache->line);
+    reg(nodeset, pendingVCache->point);
+    pendingVCache.reset();
+}
+
+void ViewProviderPartExt::applyVisualFill(const VisualFillData &data,
+        SoCoordinate3 *coords, SoCoordinate3 *pcoords,
+        SoNormal *norm, SoTextureCoordinate2 *texcoords,
+        SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
+        SoBrepPointSet *nodeset,
+        int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
+        int &numFaces, int &numEdges, int &numLines,
+        Gui::SoFCRenderMaterial *rendermat)
+{
+    // The frames reach the shapes only while a finish is stated
+    // somewhere -- SoFCRenderMaterial decides that, since the finish
+    // is the appearance's business and this is the geometry's.
+    if (rendermat) {
+        if (data.anyFrame) {
+            // setNum first: setValues grows a field but never
+            // shrinks one, and a re-tessellation may state fewer
+            // frames than the last one did.
+            rendermat->framePalette.setNum(int(data.framePalette.size()));
+            rendermat->framePalette.setValues(
+                    0, int(data.framePalette.size()), data.framePalette.data());
+            rendermat->frameIndices.setNum(int(data.frameIndices.size()));
+            rendermat->frameIndices.setValues(
+                    0, int(data.frameIndices.size()), data.frameIndices.data());
+        }
+        else {
+            rendermat->framePalette.setNum(0);
+            rendermat->frameIndices.setNum(0);
+        }
+    }
+
+    numTriangles = data.numTriangles;
+    numNodes = data.numNodes;
+    numPoints = data.numPoints;
+    numNorms = data.numNorms;
+    numFaces = data.numFaces;
+    numEdges = data.numEdges;
+    numLines = data.numLines;
+
+    // The same setNum + startEditing/finishEditing bracket the inline
+    // fill always used (the finish is what notifies the render
+    // caches), just over a memcpy from the detached arrays instead of
+    // an in-place walk.
+    coords->point.setNum(data.numNodes);
+    SbVec3f *verts = coords->point.startEditing();
+    if (data.numNodes > 0)
+        memcpy(verts, data.verts.data(), data.numNodes * sizeof(SbVec3f));
+
+    norm->vector.setNum(data.numNorms);
+    SbVec3f *norms = norm->vector.startEditing();
+    if (data.numNorms > 0)
+        memcpy(norms, data.norms.data(), data.numNorms * sizeof(SbVec3f));
+
+    texcoords->point.setNum(data.numNodes);
+    if (data.numNodes > 0) {
+        memcpy(texcoords->point.startEditing(), data.texcoords.data(),
+               data.numNodes * sizeof(SbVec2f));
+        texcoords->point.finishEditing();
+    }
+
+    faceset->coordIndex.setNum(data.numTriangles * 4);
+    int32_t *index = faceset->coordIndex.startEditing();
+    if (data.numTriangles > 0)
+        memcpy(index, data.faceIndex.data(),
+               size_t(data.numTriangles) * 4 * sizeof(int32_t));
+
+    faceset->partIndex.setNum(data.numFaces);
+    int32_t *parts = faceset->partIndex.startEditing();
+    if (data.numFaces > 0)
+        memcpy(parts, data.partIndex.data(),
+               data.numFaces * sizeof(int32_t));
+
+    pcoords->point.setNum(data.numPoints);
+    SbVec3f *points = pcoords->point.startEditing();
+    if (data.numPoints > 0)
+        memcpy(points, data.points.data(),
+               data.numPoints * sizeof(SbVec3f));
+
+    if (nodeset)
+        nodeset->attachedOnly = data.nodesAttachedOnly;
+    if (lineset)
+        lineset->attachedOnly = data.linesAttachedOnly;
+
+    lineset->coordIndex.setNum(data.numLines);
+    int32_t *lines = lineset->coordIndex.startEditing();
+    if (data.numLines > 0)
+        memcpy(lines, data.lineIndex.data(),
+               data.numLines * sizeof(int32_t));
+
+    // end the editing of the nodes
+    coords  ->point       .finishEditing();
+    pcoords ->point       .finishEditing();
+    norm    ->vector      .finishEditing();
+    faceset ->coordIndex  .finishEditing();
+    faceset ->partIndex   .finishEditing();
+    lineset ->coordIndex  .finishEditing();
+    if (data.seamEdges.size())
+        lineset->seamIndices.setValues(0, data.seamEdges.size(),
+                                       data.seamEdges.data());
+}
+
+void ViewProviderPartExt::buildVisualNodes(const TopoDS_Shape &cShape,
+        double deflection, double AngDeflectionRads,
+        bool NormalsFromUV,
+        SoCoordinate3 *coords, SoCoordinate3 *pcoords,
+        SoNormal *norm, SoTextureCoordinate2 *texcoords,
+        SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
+        SoBrepPointSet *nodeset,
+        int &numTriangles, int &numNodes, int &numPoints, int &numNorms,
+        int &numFaces, int &numEdges, int &numLines,
+        ScaleSpent tessellationSpent, MeshLadderState *ladder,
+        bool residentLanded, Gui::SoFCRenderMaterial *rendermat)
+{
+    // Everything this function does, tessellation INCLUDED -- the mesh
+    // accumulator nests inside this one, and the reporter subtracts it
+    // to state the traversal alone (#13d). The capture/fill/apply
+    // split exists for the pooled path (Render_VisualFillOnPool);
+    // here all three run inline and the timing reads as it always
+    // did.
+    Gui::ViewProvider::VisualBuildTimer fillTimer(
+            Gui::ViewProvider::VisualFillTime, nullptr);
+
+    VisualFillData data;
+    if (!captureVisualFill(cShape, deflection, AngDeflectionRads,
+                           NormalsFromUV, tessellationSpent, ladder,
+                           residentLanded, data))
+        return;
+    fillVisualArrays(data);
+    applyVisualFill(data, coords, pcoords, norm, texcoords,
+                    faceset, lineset, nodeset,
+                    numTriangles, numNodes, numPoints, numNorms,
+                    numFaces, numEdges, numLines, rendermat);
+}
+
+bool ViewProviderPartExt::queueVisualFillOnPool(const TopoDS_Shape &cShape,
+        double deflection, double angDeflectionRads, bool residentLanded,
+        float builtError, double shapeDiag)
+{
+    auto data = std::make_shared<VisualFillData>();
+    const auto capture0 = std::chrono::steady_clock::now();
+    try {
+        // The capture is GUI-thread traversal and reports as such --
+        // the slow-build line of a pooled rebuild shows exactly what
+        // the GUI still pays.
+        Gui::ViewProvider::VisualBuildTimer fillTimer(
+                Gui::ViewProvider::VisualFillTime, nullptr);
+        if (!captureVisualFill(cShape, deflection, angDeflectionRads,
+                               NormalsFromUV, meshLadder.scaleSpent,
+                               &meshLadder, residentLanded, *data))
+            return false;
+        // The worker also emits the vertex-cache content of the
+        // drawables (docs/WorkerVertexCache.md); the landing registers
+        // it for the next publish to adopt in place of the traversal
+        // capture. The param is read here on the GUI thread.
+        data->emitVCache = Gui::RenderParams::getWorkerVertexCache() > 0;
+    }
+    catch (const Standard_Failure &) {
+        // The inline fill runs into the same failure under
+        // updateVisual's own catch, which is where it reports.
+        return false;
+    }
+    catch (const std::bad_alloc &) {
+        return false;
+    }
+    data->captureSec = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - capture0).count();
+
+    const void *tsh = cShape.TShape().get();
+    const unsigned seq = meshLadder.visualFillSeq;
+    const float builtErrorNow = builtError;
+    const double diag = shapeDiag;
+    queueMeshDescentWork(
+        // The coords node: this job family's OWN token slot. On the
+        // faceset tag it would supersede -- and be superseded by --
+        // the decimation and coarser-mesh jobs; on its own tag the
+        // only supersession is a newer fill for the same object,
+        // which is exactly the semantics the generation check wants.
+        coords,
+        [this, data, tsh, seq, builtErrorNow, diag]()
+                -> std::function<void()> {
+            // The worker half: the fill over the captured handles and
+            // the immutable topology -- no Coin nodes, no document.
+            const auto t0 = std::chrono::steady_clock::now();
+            try {
+                fillVisualArrays(*data);
+            }
+            catch (...) {
+                data->failed = true;
+            }
+            data->workerSec = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - t0).count();
+            // The landing half: array writes plus the epilogue the
+            // rebuild skipped. It runs only while the worker queue's
+            // token is live -- the destructor cancels the coords tag,
+            // which is what makes `this` sound -- and only while this
+            // fill is still the newest owner of the arrays.
+            return [this, data, tsh, seq, builtErrorNow, diag]() {
+                TopoDS_Shape live = cachedShape.getShape();
+                if (live.IsNull() || live.TShape().get() != tsh
+                    || meshLadder.anchor != tsh
+                    || meshLadder.visualFillSeq != seq)
+                    return;
+                if (data->failed) {
+                    // Keep the arrays on display; arming keeps the
+                    // object reachable so the plan can order again.
+                    armMeshLevelSource();
+                    return;
+                }
+                const auto apply0 = std::chrono::steady_clock::now();
+                Gui::ViewProvider::VisualBuildTimer buildTimer;
+                {
+                    // Prologue parity: updateVisual ran its own at
+                    // queue time, but the per-element selection and
+                    // highlight indices refer to the arrays being
+                    // replaced NOW.
+                    Gui::ViewProvider::VisualBuildTimer prologueTimer(
+                            Gui::ViewProvider::VisualPrologueTime, nullptr);
+                    Gui::SoUpdateVBOAction action;
+                    action.apply(this->faceset);
+                    Gui::SoSelectionElementAction saction(
+                            Gui::SoSelectionElementAction::None);
+                    saction.apply(this->faceset);
+                    saction.apply(this->lineset);
+                    saction.apply(this->nodeset);
+                    Gui::SoHighlightElementAction haction;
+                    haction.apply(this->faceset);
+                    haction.apply(this->lineset);
+                    haction.apply(this->nodeset);
+                }
+                int nt = 0, nn = 0, np = 0, nno = 0;
+                int nf = 0, ne = 0, nl = 0;
+                {
+                    Gui::ViewProvider::VisualBuildTimer fillTimer(
+                            Gui::ViewProvider::VisualFillTime, nullptr);
+                    applyVisualFill(*data, coords, pcoords, norm, texcoords,
+                                    faceset, lineset, nodeset,
+                                    nt, nn, np, nno, nf, ne, nl,
+                                    pcRenderMaterial);
+                }
+                armMeshLevelSource();
+                // The decimation post-step, exactly as the inline
+                // build runs it (see updateVisual): a state that says
+                // "deflection is spent" must decimate what it just
+                // displayed or quietly undo the descent.
+                bool decimationRewrote = false;
+                if (meshLadder.scaleSpent != ScaleSpent::No
+                    && !meshLadder.decimationSpent
+                    && builtErrorNow > 0.0f && diag > 0.0) {
+                    if (!simplifyVisualInPlace(double(builtErrorNow) * diag,
+                                               diag, builtErrorNow)) {
+                        meshLadder.decimationSpent = true;
+                        FC_LOG(getFullName()
+                               << " decimation spent, bounding box is next");
+                    }
+                    else
+                        decimationRewrote = true;
+                }
+                {
+                    Gui::ViewProvider::VisualBuildTimer highlightTimer(
+                            Gui::ViewProvider::VisualHighlightTime, nullptr);
+                    applyShapeAppearance();
+                    setHighlightedEdges(LineColorArray.getValues());
+                    setHighlightedPoints(PointColorArray.getValue());
+                }
+                // Stash the worker-emitted content unless a decimation
+                // rewrite replaced the arrays it mirrors -- the rewrite
+                // (applySimplifiedRung) re-emitted from the final
+                // arrays into the same stash -- then register, id
+                // stamped LAST: any later touch of a node voids that
+                // node's entry at adoption.
+                if (!decimationRewrote
+                    && (data->vcFace || data->vcLine || data->vcPoint)) {
+                    if (!pendingVCache)
+                        pendingVCache.reset(new PendingVisualVCache);
+                    pendingVCache->face = std::move(data->vcFace);
+                    pendingVCache->line = std::move(data->vcLine);
+                    pendingVCache->point = std::move(data->vcPoint);
+                }
+                registerPendingVisualVertexCache();
+                if (levelDebugOn()
+                    && Gui::RenderParams::getLevelSlowBuildMS() > 0) {
+                    const double applySec = std::chrono::duration<double>(
+                        std::chrono::steady_clock::now() - apply0).count();
+                    const double slow =
+                        Gui::RenderParams::getLevelSlowBuildMS() / 1000.0;
+                    if (data->captureSec + data->workerSec + applySec
+                            >= slow)
+                        Base::Console().Message(
+                            "pooled fill: %s capture %.3f + worker %.3f "
+                            "+ apply %.3f s, faces %d\n",
+                            getFullName().c_str(), data->captureSec,
+                            data->workerSec, applySec, data->numFaces);
+                }
+            };
+        });
+    return true;
 }
 
 void ViewProviderPartExt::forceUpdate(bool enable) {
@@ -4965,6 +7357,12 @@ void ViewProviderPartExt::enableFullSelectionHighlight(bool face, bool line, boo
 void ViewProviderPartExt::beforeDelete()
 {
     setStatus(Gui::Detach, true);
+    // Drop any worker-emitted vertex-cache content still waiting for a
+    // publish that will never come (docs/WorkerVertexCache.md) -- the
+    // registry must not hold arrays for nodes about to die.
+    SoFCVertexCache::setPrebuilt(faceset, nullptr);
+    SoFCVertexCache::setPrebuilt(lineset, nullptr);
+    SoFCVertexCache::setPrebuilt(nodeset, nullptr);
     inherited::beforeDelete();
     // clear coin nodes to free up some memory
     updateVisual();
@@ -5004,6 +7402,45 @@ ViewProviderPartExt::_getBoundingBox(const char *subname,
                                      const Gui::View3DInventorViewer *view,
                                      int depth) const
 {
+    // A bounds question must not BUILD THE VISUAL. It used to: a
+    // camera fit or animation start right after a load walked the
+    // whole scene through getSceneBoundBox, and every shape whose
+    // build was still pending tessellated inline -- measured 1.7-1.8s
+    // per 20k-face compound in one event-loop dispatch, the worst
+    // per-item stalls of the interactivity gate (the stack was
+    // viewIsometric -> findBoundingSphere -> here -> updateVisual).
+    // The geometry knows its bounds without a single triangle. The
+    // display nodes hold the shape in its LOCAL frame under the
+    // placement transform, so `transform` false strips the location
+    // exactly as the reset path strips pcTransform below.
+    // Sub-element queries keep the building path: they need the
+    // detail-path machinery of the node graph, and asking about one
+    // sub-element of a never-built shape is rare enough that the
+    // build is acceptable there.
+    if (VisualTouched && !(subname && subname[0])) {
+        try {
+            TopoDS_Shape shape = getShape().getShape();
+            if (!shape.IsNull()) {
+                if (!transform)
+                    shape = shape.Located(TopLoc_Location());
+                Bnd_Box bounds;
+                BRepBndLib::Add(shape, bounds);
+                bounds.SetGap(0.0);
+                if (!bounds.IsVoid()) {
+                    Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+                    bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+                    Base::BoundBox3d bbox(xMin, yMin, zMin,
+                                          xMax, yMax, zMax);
+                    if (mat)
+                        bbox = bbox.Transformed(*mat);
+                    return bbox;
+                }
+            }
+        }
+        catch (Standard_Failure &) {
+            // fall through to the building path below
+        }
+    }
     if (VisualTouched)
         const_cast<ViewProviderPartExt*>(this)->updateVisual();
     return inherited::_getBoundingBox(subname, mat, transform, view, depth);

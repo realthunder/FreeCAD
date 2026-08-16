@@ -52,6 +52,7 @@
 #include <App/Transactions.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/Console.h>
+#include <Base/Sequencer.h>
 #include <Base/Exception.h>
 #include <Base/Matrix.h>
 #include <Base/Reader.h>
@@ -202,6 +203,11 @@ struct DocumentP
     std::size_t _deferSlices = 0;
     std::size_t _deferBuilt = 0;
     FC_DURATION _deferSpent {0};
+    // The drain's progress indicator (KeepInteractive -- it reports, it
+    // does not take the window away), one step per object unit over all
+    // three phases. Without it the stretch between the open returning
+    // and the visual build starting showed a dead status bar.
+    std::unique_ptr<Base::SequencerLauncher> _deferSeq;
     // The drain's own split, next to the slotNewObject one (_newObj*,
     // which during a deferred load only the drain feeds): what the
     // property replay costs against what finishing the view provider does.
@@ -2507,6 +2513,14 @@ void Document::runDeferredRestoreSlice()
                 App::Document::getDependencyList(d->_pcDocument->getObjects(),
                                                  App::Document::DepSort));
     }
+    if (!d->_deferSeq) {
+        const std::size_t total = d->_deferCreate.size()
+            + std::size_t(d->_deferCount) + d->_deferFinish.size();
+        if (total)
+            d->_deferSeq = std::make_unique<Base::SequencerLauncher>(
+                    "Restoring view providers...", total,
+                    Base::SequencerLauncher::KeepInteractive);
+    }
 
     // Restore semantics for everything a slice builds: attach() must not
     // overwrite the visibility the object restored with, the property
@@ -2549,6 +2563,8 @@ void Document::runDeferredRestoreSlice()
         if (!d->_deferCreated) {
             Base::StateLocker phase1(d->_deferPhase1);
             while (auto obj = d->_deferCreate.next(d->_pcDocument)) {
+                if (d->_deferSeq)
+                    d->_deferSeq->next();
                 if (!getViewProvider(obj)) {
                     slotNewObject(*obj);
                     if (auto vpd = Base::freecad_dynamic_cast<
@@ -2581,6 +2597,8 @@ void Document::runDeferredRestoreSlice()
         }
         while (d->_deferCount) {
             --d->_deferCount;
+            if (d->_deferSeq)
+                d->_deferSeq->next();
             auto &xmlReader = *d->_deferReader;
             int guard;
             xmlReader.readElement("ViewProvider",&guard);
@@ -2624,6 +2642,8 @@ void Document::runDeferredRestoreSlice()
             d->_deferReader.reset();
             d->_deferStream.reset();
             while (auto obj = d->_deferFinish.next(d->_pcDocument)) {
+                if (d->_deferSeq)
+                    d->_deferSeq->next();
                 auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
                         getViewProvider(obj));
                 bool fresh = false;
@@ -2757,6 +2777,7 @@ void Document::runDeferredServeSlice()
 
 void Document::finishDeferredRestore()
 {
+    d->_deferSeq.reset();
     d->_deferReader.reset();
     d->_deferStream.reset();
     d->_deferBuf.clear();

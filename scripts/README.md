@@ -37,6 +37,7 @@ stacks.
 | `user_shader_post.py` | In-FreeCAD suite: scene-level post activation by an empty-target `App::Appearance` — TreeRank precedence and every deactivation path (override removal, hide, re-target, delete). |
 | `user_shader_viewer.py` | Browser-tier suite (scene-graph route): post + material `SoShaderProgram` nodes reach a connected WASM viewer through the server-side compile + snapshot shader table; broken-shader fallback and removal restore. |
 | `user_shader_viewer_appearance.py` | Browser-tier suite (document-object route): an empty-target Appearance's post shader reaches the WASM viewer, parameter edits propagate, hiding restores. |
+| `cull_audit.py` | **Occlusion-culling audit** (docs/FarFieldProxies.md §12.9, §12.15): in-FreeCAD driver that measures what the culling actually deleted, per setting, on one fixed camera. Re-rasterizes each frame with the cull mask ignored and every draw writing its own id, so the ids owning a pixel are an exact answer to which draws reach the screen — their intersection with the mask is a list of **proven over-culls**, each a named draw with a pixel count, rather than a count of pixels that merely differ. Reports the picture difference beside it from the same frames, and min/med/max of every timing field. `FC_ROWS` selects the settings to compare. |
 | `ontop_edge_repro.py` | In-FreeCAD repro for **show-on-top hidden-edge dimming**: box(hidden, on-top, Edge2 selected) + cylinder, captures a bgfx and a plain-GL (`Type=Default`) window grab at the canonical 1600x837 size. The cylinder is required — an all-on-top scene makes `canSkipInternal()` false and the internal GL pass paints over the backend frame. |
 | `ontop_edge_judge.py judge\|trace …` | Standalone (PIL) judge for those captures: samples many points along every box edge with per-edge expectations (hidden→DIMMED, front→SOLID, selected→GREEN), accepting a pixel as a line only against its measured local background — a fixed-point luminance probe cannot tell a dimmed line from background. `trace` dumps detected line runs per scanline to re-derive the edge table after a scene/camera change. |
 
@@ -158,6 +159,52 @@ screenshots, and time the load with throttling off. Elapsed time on
 loopback is dominated by request concurrency either way: a single browser
 request delivers around 170 KB/s here whatever its size, against 17 MB/s
 for the same batch over `curl`.
+
+## Verifying an occlusion-culling change
+
+```sh
+export LD_LIBRARY_PATH=~/opt/virtualgl/usr/lib:$LD_LIBRARY_PATH
+env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb \
+  FC_ROWS="sw/1/250000/0/1,sw/1/250000/0/0" \
+  xvfb-run -a --server-args='-screen 0 1920x1200x24' \
+  ~/opt/virtualgl/opt/VirtualGL/bin/vglrun -d egl0 \
+  .conda/run.sh build/conda-relwithdebinfo-801/bin/FreeCAD \
+  --log-file ~/cull_audit.log scripts/cull_audit.py
+# results in ~/cull_audit.txt as they are produced
+```
+
+Each row is a setting: `<ttl>/<confirm>` for the hardware-query oracle,
+`sw/<divisor>/<tris>/<threads>/<simd>/<coarse>/<level>/<bias>/<perinst>` for
+the CPU masked buffer (coarse occluder hulls §12.16, per-instance testing
+§12.17).
+**Give every field of a software row** — the rows set view properties and
+nothing resets them, so an omitted field inherits the previous row's value.
+
+⚠️ A coarse row prints `pending` beside its hull counts, and it must be 0.
+Hulls are built a few per frame, so a row read while the cache is still
+filling measures the warm-up and reads as a weak version of the mechanism.
+
+**The instrument is validated before its verdict is read**, and the script
+does it for you: the first row runs with culling *off*, where nothing is
+masked and the over-cull must therefore be 0. Anything else means the mask
+snapshot or the id decode is broken — and a broken id pass reports a
+spotless "0 over-culls", which is what a working one reports too. Check
+also that `covered px` is a large fraction of the viewport, or the id image
+is empty and no row beneath it means anything.
+
+**Read the spread, not the last line.** Both the over-cull pixels and every
+timing field are reported min/med/max over the row's ~30 frames, because
+both are wide: a culled frame oscillates (§12.6 measured two captures of
+one static scene differing as much as culling-on differed from
+culling-off), and two runs of an identical configuration reported raster
+9.00 ms and 4.31 ms. A 5% effect was once published off single samples of
+that quantity — see §12.14, corrected in §12.15.
+
+The one number that must never move is **over-cull 0 px**. It is the gate
+on every change to the occlusion path: under-culling is always allowed,
+over-culling is geometry deleted from the screen.
+
+## Notes on the other harnesses
 
 A regression is reported against the first pipeline stage whose buffer
 diverges, not just the final image. Add `--gpu` for a real-GPU leg (opens a

@@ -2642,6 +2642,9 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
         RendererBridge::translateMatcapConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setRenderDebugConfig(
         RendererBridge::translateRenderDebugConfig(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setOcclusionCullConfig(
+        RendererBridge::translateOcclusionCullConfig(
+            PRIVATE(this)->externalview));
     PRIVATE(this)->external->setUserShaderConfig(PRIVATE(this)->mergedshaders);
     PRIVATE(this)->external->setPBRConfig(
         RendererBridge::translatePBRConfig(PRIVATE(this)->externalview));
@@ -2670,6 +2673,33 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
         RendererBridge::translateLevelTolerance(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setGpuMemoryBudget(
         RendererBridge::translateGpuMemoryBudget(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setLevelPressureRelease(
+        RendererBridge::translateLevelPressureRelease(
+            PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setDowngradeLedger(
+        RendererBridge::translateDowngradeLedger(
+            PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setClimbAdmission(
+        RendererBridge::translateClimbHardLimit(
+            PRIVATE(this)->externalview),
+        RendererBridge::translateClimbAdmitBatch(
+            PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setDescentOrderBatch(
+        RendererBridge::translateDescentOrderBatch(
+            PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setLevelBudgetDeadband(
+        RendererBridge::translateLevelBudgetDeadband(
+            PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setLevelDebug(
+        RendererBridge::translateLevelDebug(PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setElementGates(
+        RendererBridge::translateShapeVertices(PRIVATE(this)->externalview),
+        RendererBridge::translatePressureDropEdges(
+            PRIVATE(this)->externalview),
+        RendererBridge::translateLoadDropElements(
+            PRIVATE(this)->externalview),
+        RendererBridge::translateElementGateStagger(
+            PRIVATE(this)->externalview));
     PRIVATE(this)->external->setAutoZoomScale(
         RendererBridge::translateAutoZoomScale(state));
   }

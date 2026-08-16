@@ -471,6 +471,11 @@ TEST_F(DeferredLoadTest, VanishedArchiveFailsQuietly)
     ASSERT_NE(doc, nullptr);
 
     removeFile(_file);
+    if (Base::FileInfo(_file).exists()) {
+        // Windows will not unlink a file the document still has open, so the
+        // archive cannot be made to vanish underneath a live document there.
+        GTEST_SKIP() << "the platform keeps an open archive undeletable";
+    }
 
     EXPECT_NO_THROW({
         std::string text = feature(0)->Payload.text();

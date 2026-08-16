@@ -13,7 +13,19 @@ macro(SetupCoin3D)
         find_package(Coin CONFIG REQUIRED)
         if (Coin_FOUND)
             set (COIN3D_INCLUDE_DIRS ${Coin_INCLUDE_DIR})
-            set (COIN3D_LIBRARIES ${Coin_LIBRARIES})
+            # The fork's config package exports the BARE link name of the
+            # binary (COIN_NAME, "CoinRT" since the rename) together with
+            # the directory holding it, not a path and not an imported
+            # target. Handing that name straight to the linker only works
+            # where the prefix is already on its search path; resolve the
+            # real file so a private install prefix links too.
+            find_library(COIN3D_LIBRARIES
+                         NAMES ${COIN_NAME} Coin
+                         HINTS ${Coin_LIB_DIR}
+                         NO_DEFAULT_PATH)
+            if (NOT COIN3D_LIBRARIES)
+                set (COIN3D_LIBRARIES ${Coin_LIBRARIES})
+            endif()
         else()
             message(FATAL_ERROR "=================\n"
                                 "Coin3D not found.\n"

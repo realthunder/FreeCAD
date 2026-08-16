@@ -69,6 +69,13 @@ struct LevelMeshes {
     /// Empty the rung stored under \a key, keeping the object (draws
     /// may still name it; the GPU cache sees the generation move).
     virtual void release(const std::string &key) = 0;
+    /// State the relative error the rung under \a key was built at.
+    /// The ladder knows it, but nothing downstream of the rung binder
+    /// can see the ladder -- every consumer reads the mesh it was
+    /// handed (MeshData::levelError) -- so an unstamped coarse rung
+    /// reads as the exact tessellation. The element gate's
+    /// coarse-faces rule asks exactly that question.
+    virtual void stampError(const std::string &key, float error) = 0;
 };
 
 struct SceneSnapshot {
@@ -355,6 +362,21 @@ struct SceneSnapshot {
         /// part of the group manifest chunk: it must not disturb the
         /// content keys, and a rename should not re-key geometry.
         ObjectInfo info;
+        /// Whether the producer held part of this object back when it
+        /// published (v55, DrawCall::objectIncomplete): a companion
+        /// draw whose capture the publish budget deferred is LATE, not
+        /// absent. The element contract reads it to tell a late
+        /// companion from a display mode that genuinely draws points or
+        /// edges alone (docs/SceneStreaming.md #13b) -- without it a
+        /// consumer grants the Points/Wireframe exemption to an object
+        /// whose faces are merely still coming, which is the dots-first
+        /// load storm reproduced one tier further out.
+        ///
+        /// Beside `info` and for the same reason: it is a property of
+        /// the publish, not of the geometry, and it flips as the
+        /// producer's capture backlog drains. Inside a content key it
+        /// would retire an object's cached chunks for a state bit.
+        bool incomplete = false;
     };
 
     /// Which publish this one is, and which it is encoded against.
@@ -663,6 +685,15 @@ RendererExport uint32_t sceneDumpVersion();
 /// can verify a payload it got from somewhere it does not control (a
 /// browser's IndexedDB store) actually is the bytes that key names.
 RendererExport std::string sha1Hex(const void *data, size_t size);
+
+/// A material's identity as one value — the bucket a far-field proxy is
+/// generated per (docs/FarFieldProxies.md §5.1, ProxyHierarchy.h).
+///
+/// Equality is the serialized bytes, the same rule the snapshot's own
+/// material table dedups by, so a field added to the format cannot
+/// silently drop out of the bucket and merge two materials that render
+/// differently. Textures and shaders enter by pointer identity.
+RendererExport uint64_t materialIdentity(const Material &m);
 
 /// Build the bytes of a declared level from the bytes of the exact
 /// mesh chunk it was declared on (§7, phase 5c): parse, decimate on

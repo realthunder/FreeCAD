@@ -124,6 +124,28 @@ public:
     /// Of VisualBuildTime, the share spent tessellating rather than building
     /// nodes and bookkeeping -- the two answer to different fixes.
     static std::chrono::duration<double> VisualMeshTime;
+    /// Of VisualBuildTime, the share spent walking a tessellation into the
+    /// display nodes: the OCCT traversal and the coordinate, normal and
+    /// index writes it makes as it goes (docs/SceneStreaming.md #13d).
+    /// Split out from the mesh time because the two have different fixes
+    /// available -- tessellation already runs on the refine pool, while
+    /// this runs on the GUI thread and is what a mass descent stalls on.
+    static std::chrono::duration<double> VisualFillTime;
+    /// Of VisualBuildTime, the share spent on the actions a rebuild applies
+    /// to the OLD nodes before it starts (VBO update, selection and
+    /// highlight clears): work proportional to what is being thrown away
+    /// rather than to what is being built, and so a different fix again.
+    static std::chrono::duration<double> VisualPrologueTime;
+    /// Of VisualBuildTime, the share spent on the TShape-instanced
+    /// representation -- the attempt, and the per-solid instance wiring
+    /// when it succeeds.
+    static std::chrono::duration<double> VisualInstanceTime;
+    /// Of VisualBuildTime, the share spent re-applying the per-element
+    /// colors after the fill (the setHighlighted* epilogue): array
+    /// writes proportional to the element count, and the trigger for
+    /// the material re-evaluation -- previously buried in the
+    /// unattributed remainder of the split.
+    static std::chrono::duration<double> VisualHighlightTime;
     static std::size_t VisualBuildCount;
 
     /// Scope guard adding to one of the accumulators above.

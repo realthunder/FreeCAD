@@ -32,6 +32,7 @@
 #include <QImage>
 
 #include <App/Application.h>
+#include <App/Document.h>
 #include <App/PropertyFile.h>
 #include <App/PropertyGeo.h>
 #include <App/PropertyStandard.h>
@@ -52,10 +53,12 @@
 #include <Inventor/elements/SoShapeHintsElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
+#include <Inventor/fields/SoSFBool.h>
 #include <Inventor/nodes/SoClipPlane.h>
 #include <Inventor/nodes/SoBumpMap.h>
 #include "SoFCRenderMaterial.h"
 #include "../Renderer/MeshSource.h"
+#include "../Renderer/ProxyHierarchy.h"
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoPointLight.h>
 #include <Inventor/nodes/SoSpotLight.h>
@@ -71,6 +74,8 @@
 #include <Inventor/nodes/SoShaderParameter.h>
 
 #include "SoAutoZoomTranslation.h"
+#include "../Application.h"
+#include "../Document.h"
 #include "SoFCRendererBridge.h"
 #include "SoFCDisplayModeElement.h"
 #include "SoFCRenderer.h"
@@ -140,9 +145,44 @@ struct CacheMeshData : Render::MeshData {
     std::vector<int32_t> partialLines;
 };
 
+/// Drawn meshes whose source tag no registration claims, split by
+/// where the tag came from (see translateCache). Counted only while
+/// Render_LevelDebug is on, and reported at the end of translate().
+size_t s_unownedProtoTags = 0;
+size_t s_unownedOwnTags = 0;
+/// ...and by the node class behind them, with the bytes standing
+/// behind each. A count says how much the ladder cannot reach; the
+/// class says who to go and ask; the bytes say whether it is worth
+/// going -- the same population was once dismissed at 18.7MB from a
+/// counter that had no bytes column, and later stood behind most of
+/// an unreachable 74MB.
+struct UnownedClassTally {
+    size_t count = 0;
+    uint64_t bytes = 0;
+    int maxVertices = 0;
+};
+std::map<std::string, UnownedClassTally> s_unownedByType;
+/// The largest single unowned translations of the publish, so the
+/// report can name individuals: which shapes, how many vertices their
+/// arrays carry, and how few primitives those arrays are drawn as.
+struct UnownedSample {
+    std::string type;
+    uint64_t cacheId = 0;
+    uint32_t bytes = 0;
+    int numVertices = 0;
+    int points = 0;
+    int lines = 0;
+    int triangles = 0;
+};
+std::vector<UnownedSample> s_unownedTop;
+
 std::shared_ptr<CacheMeshData>
 translateCache(SoFCVertexCache * cache)
 {
+    // The node class of an unclaimed source tag, remembered until the
+    // mesh's arrays are filled in so the tally below can price it.
+    // Points at an SbName's storage, which outlives the type system.
+    const char *unownedType = nullptr;
     auto mesh = std::make_shared<CacheMeshData>();
     mesh->holder = cache;
     mesh->arrayRefs = cache->copyArrayRefs();
@@ -153,6 +193,53 @@ translateCache(SoFCVertexCache * cache)
         // generator registered on the base claims them all.
         SoNode *proto = SoFCVertexCache::getProtoNode(node);
         mesh->sourceTag = proto ? proto : node;
+        // Whether the display may suppress this drawable under memory
+        // pressure -- every vertex sits on an edge, or every edge
+        // bounds a face (docs/SceneStreaming.md #13b). Read by NAME,
+        // like protoNode above: the producer of the answer is PartGui
+        // (only OCCT topology can say) and Gui must not depend on it.
+        // Absent field = absent classification = always draws, which is
+        // the safe direction: a drawable nobody has judged is one
+        // nothing else on screen may be standing in for.
+        static const SbName attachedField("attachedOnly");
+        // Off the PROTO when there is one, same as the source tag: a
+        // color variant copies its base's geometry arrays but no
+        // producer ever classifies the variant node itself, so its own
+        // field is the constructor default forever. The base's answer
+        // is the variant's answer -- identical geometry.
+        SoNode *fieldNode = proto ? proto : node;
+        const SoField *f = fieldNode->getField(attachedField);
+        if (f && f->isOfType(SoSFBool::getClassTypeId()))
+            mesh->attachedOnly = static_cast<const SoSFBool *>(f)->getValue();
+        if (Gui::RenderParams::getLevelDebug()) {
+            // Which of THREE states this drawable arrives in, named
+            // once per (node type, state), in log order so the
+            // sequence is readable: no field at all, field saying
+            // unattached, field saying attached. The first two are
+            // identical downstream -- both end as attachedOnly false,
+            // both bypass every gate -- and they have opposite fixes,
+            // so only this side can tell them apart.
+            //
+            // WARNING: the first version of this probe was gated on
+            // getenv("FC_LEVEL_DEBUG"), which the harness never sets
+            // (it sets the PARAMETER), so it printed nothing and that
+            // nothing was read as "the field is always present". A
+            // null from a probe nobody validated is not evidence.
+            static std::map<std::string, size_t> seen;
+            std::string key =
+                std::string(node->getTypeId().getName().getString())
+                + (!f ? " -- NO attachedOnly FIELD"
+                      : mesh->attachedOnly ? " -- attached"
+                                           : " -- unattached/unjudged");
+            // On the first, and then on each doubling: the magnitude is
+            // the question -- one stray node of a type is a curiosity,
+            // one per object is the population that covered the screen.
+            const size_t n = ++seen[key];
+            if ((n & (n - 1)) == 0)
+                Base::Console().Message(
+                    "render levels: element class: %s (x%zu)\n",
+                    key.c_str(), n);
+        }
         // A producer running coarse-first registered what the display
         // tessellation itself is; the serializer places the mesh on
         // its ladder by this and declares the exact rung above it.
@@ -164,6 +251,24 @@ translateCache(SoFCVertexCache * cache)
         auto & registry = Render::MeshSourceRegistry::instance();
         mesh->sourceGen = registry.generation();
         mesh->levelError = registry.publishedError(mesh->sourceTag);
+        // Who the level plan cannot reach, and why (Render_LevelDebug).
+        //
+        // An unregistered tag publishes at error 0 -- publishedError
+        // cannot say "unknown" -- so such a mesh enters the plan
+        // indistinguishable from one standing at its exact rung, and no
+        // climb or descent can ever touch it. Measured on the rack
+        // model, that was 1197 of 1569 apparently-exact sources. The
+        // split that matters is whether the tag came from a PROTO node:
+        // the bridge prefers the proto so colour variants share one
+        // source, while PartGui registers the view provider's own
+        // faceset/lineset, and where those are not the same node the
+        // registration cannot be found by the tag the mesh carries.
+        if (Gui::RenderParams::getLevelDebug()
+                && !registry.knows(mesh->sourceTag)) {
+            ++(proto ? s_unownedProtoTags : s_unownedOwnTags);
+            const SoNode *tagged = proto ? proto : node;
+            unownedType = tagged->getTypeId().getName().getString();
+        }
     }
 
     mesh->numVertices = cache->getNumVertices();
@@ -236,6 +341,36 @@ translateCache(SoFCVertexCache * cache)
         }
         mesh->lineIndices = mesh->partialLines.data();
         mesh->numLineIndices = int(mesh->partialLines.size());
+    }
+    if (unownedType) {
+        // Priced by the arrays as translated -- what an upload of this
+        // mesh costs -- not by what it draws: a cache may carry a
+        // full-size vertex array behind a handful of point indices,
+        // and the array is the memory.
+        const uint32_t bytes = Render::meshResidentBytes(mesh.get());
+        auto &tally = s_unownedByType[unownedType];
+        ++tally.count;
+        tally.bytes += bytes;
+        tally.maxVertices = std::max(tally.maxVertices, mesh->numVertices);
+        const size_t kTop = 8;
+        if (s_unownedTop.size() < kTop
+                || bytes > s_unownedTop.back().bytes) {
+            UnownedSample sample;
+            sample.type = unownedType;
+            sample.cacheId = mesh->cacheId;
+            sample.bytes = bytes;
+            sample.numVertices = mesh->numVertices;
+            sample.points = mesh->numPointIndices;
+            sample.lines = mesh->numLineIndices / 2;
+            sample.triangles = mesh->numTriangleIndices / 3;
+            s_unownedTop.push_back(std::move(sample));
+            std::sort(s_unownedTop.begin(), s_unownedTop.end(),
+                      [](const UnownedSample &a, const UnownedSample &b) {
+                          return a.bytes > b.bytes;
+                      });
+            if (s_unownedTop.size() > kTop)
+                s_unownedTop.resize(kTop);
+        }
     }
     return mesh;
 }
@@ -1084,6 +1219,7 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             draw.material = rmat;
             draw.mesh = mesh;
             draw.objectKey = ventry.key ? ventry.key->hash() : 0;
+            draw.objectIncomplete = ventry.incomplete;
             // A key already in the map is already right, so the lookup is
             // the whole cost of a draw whose object has been seen before,
             // and the two string copies happen once per object rather
@@ -1242,6 +1378,45 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                 uint64_t kb = b.mesh ? b.mesh->cacheId : 0;
                 return ka < kb;
             });
+    // What this translation handed the plan that it cannot reach (see
+    // translateCache). Reported per translation and reset, so the line
+    // describes one publish rather than a running total, and only when
+    // there is something to report -- silence means every drawn mesh
+    // names a registered source.
+    if (s_unownedProtoTags || s_unownedOwnTags) {
+        std::string byType;
+        for (const auto & t : s_unownedByType) {
+            char buf[160];
+            snprintf(buf, sizeof(buf), " %s:%zu/%.1fMB(nv<=%d)",
+                     t.first.c_str(), t.second.count,
+                     double(t.second.bytes) / 1048576.0,
+                     t.second.maxVertices);
+            byType += buf;
+        }
+        Base::Console().Message(
+            "render levels: unowned source tags this publish: from proto "
+            "node %zu | from own node %zu -- these publish as exact and "
+            "the ladder cannot climb or descend them; by node class:%s\n",
+            s_unownedProtoTags, s_unownedOwnTags, byType.c_str());
+        // The individuals, largest first: a full-size vertex array
+        // drawn as a handful of points is only visible at this grain.
+        std::string top;
+        for (const auto & s : s_unownedTop) {
+            char buf[192];
+            snprintf(buf, sizeof(buf),
+                     " %s cache=%llx %.1fMB nv=%d pt=%d ln=%d tri=%d |",
+                     s.type.c_str(), (unsigned long long)s.cacheId,
+                     double(s.bytes) / 1048576.0, s.numVertices,
+                     s.points, s.lines, s.triangles);
+            top += buf;
+        }
+        if (!top.empty())
+            Base::Console().Message(
+                "render levels: largest unowned:%s\n", top.c_str());
+        s_unownedProtoTags = s_unownedOwnTags = 0;
+        s_unownedByType.clear();
+        s_unownedTop.clear();
+    }
     return res;
 }
 
@@ -1383,19 +1558,104 @@ RendererBridge::shaderParamUniformName(const char * propName)
     return name;
 }
 
+Render::OcclusionCullConfig
+RendererBridge::translateOcclusionCullConfig(App::PropertyContainer *)
+{
+    // Global parameters only, no per-view override: occlusion culling is
+    // a performance mechanism that is meant to leave the image alone, so
+    // there is no per-view display intent to express -- and its knobs
+    // saved inside a document's views were shadowing the globals every
+    // measurement arm set (a saved RenderDebug_Timing=false once blanked
+    // a whole A/B/C run the same way).
+    Render::OcclusionCullConfig res;
+    res.enabled = RenderParams::getOcclusion();
+    // Clamped rather than trusted: a script can still set the parameters
+    // to anything, and a zero budget or a zero hidden lifetime would
+    // turn a performance knob into missing geometry.
+    auto atLeast = [](long v, long floor) {
+        return uint32_t(v < floor ? floor : v);
+    };
+    res.visibleTtl = atLeast(RenderParams::getOcclusionVisibleTtl(), 1);
+    res.budget = atLeast(RenderParams::getOcclusionBudget(), 1);
+    res.minSubtree = atLeast(RenderParams::getOcclusionMinSubtree(), 1);
+    res.maxHiddenFrames = atLeast(RenderParams::getOcclusionMaxHidden(), 1);
+    // Zero is allowed here, unlike the others: it is the un-padded box
+    // test, which is what the failure of §12.6 was, and being able to
+    // ask for it back is what lets the padding be measured rather than
+    // asserted.
+    res.depthPadLsb = float(atLeast(RenderParams::getOcclusionDepthPad(), 0));
+    // At least one: zero confirmations would mean a node is skipped
+    // without any answer having said so.
+    res.hiddenConfirm = atLeast(RenderParams::getOcclusionConfirm(), 1);
+    // The software oracle, and the three knobs that belong to it alone.
+    // None of the ones above are read when it is on: they exist to
+    // contain a latency it does not have (section 12.12).
+    res.software = RenderParams::getOcclusionSoftware();
+    // Zero is allowed: it is the occluder pass rasterizing nothing,
+    // which culls nothing, and being able to ask for that is what makes
+    // the pass ablatable rather than merely believed.
+    res.occluderTriangles = uint32_t(std::max<long>(0,
+            RenderParams::getOcclusionOccluderTris()));
+    res.minOccluderPx = float(std::max<long>(0,
+            RenderParams::getOcclusionMinOccluder()));
+    res.softwareDivisor = atLeast(RenderParams::getOcclusionResolution(), 1);
+    // Zero is the automatic pick, so the floor is zero and not one.
+    res.softwareThreads = uint32_t(std::max<long>(0,
+            RenderParams::getOcclusionThreads()));
+    res.softwareSimd = RenderParams::getOcclusionSimd();
+    res.benefitProbe = RenderParams::getOcclusionBenefitProbe();
+    // The granularity the question is asked at (section 12.17), and the
+    // coarse occluder hulls (section 12.16) -- both the software
+    // oracle's alone.
+    res.perInstance = RenderParams::getOcclusionPerInstance();
+    // Occlusion feeding the level plan's downgrade sweep (occlusion as
+    // a memory mechanism); 0 = never.
+    res.demoteStreak = uint32_t(std::max<long>(0,
+            RenderParams::getOcclusionDemoteStreak()));
+    res.coarseOccluders = RenderParams::getOcclusionCoarse();
+    res.coarseLevel = uint32_t(std::max<long>(0,
+            RenderParams::getOcclusionCoarseLevel()));
+    res.coarseMinTriangles = uint32_t(std::max<long>(0,
+            RenderParams::getOcclusionCoarseMinTris()));
+    // Zero is allowed: it is the cache frozen at what it holds, which is
+    // how a measurement separates what the hulls do from what building
+    // them costs.
+    res.coarseBuilds = uint32_t(std::max<long>(0,
+            RenderParams::getOcclusionCoarseBuilds()));
+    // WARNING: Floored at zero rather than trusted. A negative bias would
+    // pull every hull *towards* the camera, which invents occlusion --
+    // the one failure this mechanism may not have.
+    res.coarseBias = float(std::max<long>(0,
+            RenderParams::getOcclusionCoarseBias())) / 100.0f;
+    res.coarseMemory = size_t(std::max<long>(0,
+            RenderParams::getOcclusionCoarseMemory())) << 20;
+    return res;
+}
+
 Render::RenderDebugConfig
 RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
 {
+    // The debug switches are global parameters only, no per-view
+    // override: they are measurement state, and a document that saved
+    // them inside its views held every later measurement hostage to
+    // what the file happened to carry (a saved RenderDebug_Timing=false
+    // once blanked a whole A/B/C occlusion run). Only the custom
+    // shader parameters below stay per-view -- they are dynamically
+    // named, so no global parameter could stand in for them.
     Render::RenderDebugConfig res;
-    res.viewMode = int(viewParamOverride<App::PropertyEnumeration>(
-            view, "RenderDebug", "ViewMode",
-            RenderParams::getDebugViewMode()));
-    res.freezeFrame = viewParamOverride<App::PropertyBool>(
-            view, "RenderDebug", "FreezeFrame",
-            RenderParams::getDebugFreezeFrame());
-    res.coverage = viewParamOverride<App::PropertyBool>(
-            view, "RenderDebug", "Coverage",
-            RenderParams::getDebugCoverage());
+    res.viewMode = int(RenderParams::getDebugViewMode());
+    res.freezeFrame = RenderParams::getDebugFreezeFrame();
+    // The same switch as the pipeline stage timers, which the viewer
+    // hands to RenderTiming directly: the backend's CPU-against-GPU
+    // line is the continuation of that readout past submission, not a
+    // separate thing to turn on (docs/FarFieldProxies.md §10.1).
+    res.frameTiming = RenderParams::getDebugTiming();
+    res.occlusion = RenderParams::getDebugOcclusion();
+    res.coverage = RenderParams::getDebugCoverage();
+    res.proxyCut = RenderParams::getDebugProxyCut();
+    res.proxyGen = RenderParams::getDebugProxyGen();
+    res.cullAudit = RenderParams::getDebugCullAudit();
+    res.cullBounds = RenderParams::getDebugCullBounds();
 
     // Dynamic named shader parameters (docs/RenderDebug.md §2.5): every
     // further RenderDebug_* property becomes a like-named vec4(-array)
@@ -1416,7 +1676,13 @@ RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
             if (name.empty() || name == "ViewMode" || name == "FreezeFrame"
                     || name == "Label"      // the §4.3 burn-in toggle
                     || name == "Timing"     // measurement switches, not
-                    || name == "Coverage")  // shader inputs
+                    || name == "Delta"      // shader inputs: each would
+                    || name == "Coverage"   // otherwise upload a vec4
+                    || name == "Occlusion"  // uniform nobody declares
+                    || name == "ProxyCut"
+                    || name == "ProxyGen"
+                    || name == "CullAudit"
+                    || name == "CullBounds")
                 continue;
             Render::RenderDebugConfig::UserParam param;
             param.name = name.compare(0, 2, "u_") == 0 ? name : "u_" + name;
@@ -1975,7 +2241,26 @@ RendererBridge::translateViewLightConfig(SoState * state)
         // Same view-reference unwinding as the scene light: the light
         // element's matrices are model * viewing, and the backend wants
         // world space because it re-applies its own view matrix.
-        SbMatrix mat = SoLightElement::getMatrix(state, i);
+        const SbMatrix lightMat = SoLightElement::getMatrix(state, i);
+        // A light traversed BEFORE the camera carries no viewing
+        // transform, so its element matrix is the model matrix alone --
+        // identity for the headlight and backlight, which the viewer
+        // hangs at the root. That is exactly what makes it a headlight,
+        // and it is the one thing a consumer with its own camera has to
+        // know: the unwinding below is only valid for the camera that
+        // did it. Ship the eye-space direction alongside so a streamed
+        // viewer can redo it against its own.
+        out.eyeSpace = lightMat.equals(SbMatrix::identity(), 1e-6f);
+        if (out.eyeSpace) {
+            SbVec3f eyeDir = dir;
+            if (eyeDir.length() > 0.0f)
+                eyeDir.normalize();
+            for (int j = 0; j < 3; ++j) {
+                out.eyeDirection[j] = eyeDir[j];
+                out.eyePosition[j] = pos[j];
+            }
+        }
+        SbMatrix mat = lightMat;
         mat.multRight(SoViewingMatrixElement::get(state).inverse());
         mat.multDirMatrix(dir, dir);
         mat.multVecMatrix(pos, pos);
@@ -2207,12 +2492,163 @@ RendererBridge::translateLevelTolerance(App::PropertyContainer * view)
             RenderParams::getLevelTolerance()));
 }
 
-size_t
-RendererBridge::translateGpuMemoryBudget(App::PropertyContainer * view)
+// The functions from here to translateGpuMemoryBudget read the GLOBAL
+// RenderParams only -- no per-view property override. They are the
+// ladder's tuning and measurement knobs, not display intent, and the
+// per-view copies that documents saved shadowed whatever the harness or
+// the user set globally (a saved Render_GpuMemoryBudgetMB once made a
+// budget read back as unset after a view restore). The view parameter
+// stays for interface stability; display-intent knobs around them
+// (LevelTolerance, CoarseTessellation, the effects) still override.
+
+float
+RendererBridge::translateLevelPressureRelease(App::PropertyContainer *)
 {
-    long mb = long(viewParamOverride<App::PropertyInteger>(
-            view, "Render", "GpuMemoryBudgetMB",
-            RenderParams::getGpuMemoryBudgetMB()));
+    return float(RenderParams::getLevelPressureRelease());
+}
+
+bool
+RendererBridge::translateLevelDebug(App::PropertyContainer *)
+{
+    return RenderParams::getLevelDebug();
+}
+
+bool
+RendererBridge::translateDowngradeLedger(App::PropertyContainer *)
+{
+    return RenderParams::getDowngradeLedger();
+}
+
+bool
+RendererBridge::translateClimbHardLimit(App::PropertyContainer *)
+{
+    return RenderParams::getClimbHardLimit();
+}
+
+int
+RendererBridge::translateClimbAdmitBatch(App::PropertyContainer *)
+{
+    return int(RenderParams::getClimbAdmitBatch());
+}
+
+int
+RendererBridge::translateDescentOrderBatch(App::PropertyContainer *)
+{
+    return int(RenderParams::getDescentOrderBatch());
+}
+
+float
+RendererBridge::translateLevelBudgetDeadband(App::PropertyContainer *)
+{
+    return float(RenderParams::getLevelBudgetDeadband());
+}
+
+bool
+RendererBridge::translateShapeVertices(App::PropertyContainer *)
+{
+    return RenderParams::getShapeVertices();
+}
+
+bool
+RendererBridge::translatePressureDropEdges(App::PropertyContainer *)
+{
+    return RenderParams::getPressureDropEdges();
+}
+
+int
+RendererBridge::translateElementGateStagger(App::PropertyContainer *)
+{
+    return int(RenderParams::getElementGateStagger());
+}
+
+bool
+RendererBridge::translateLoadDropElements(App::PropertyContainer * view)
+{
+    if (!RenderParams::getLoadDropElements())
+        return false;
+
+    // Coarse-first must be on, because that is the arrival this makes
+    // room for. Only the level half of PartGui::coarseTessellationLevel
+    // is re-asked here: its other conditions -- render cache 3, a
+    // backend that drives mesh levels -- are true by construction on
+    // the path that reaches this function at all, and its answer is
+    // per document while this is one state for the frame.
+    {
+        static const int envLevel = [] {
+            const char *env = std::getenv("FC_COARSE_TESSELLATION");
+            return env && *env ? std::atoi(env) : -2;
+        }();
+        const int level = envLevel != -2
+            ? envLevel
+            : int(viewParamOverride<App::PropertyInteger>(
+                      view, "Render", "CoarseTessellation",
+                      long(RenderParams::getCoarseTessellation())));
+        if (level < 0)
+            return false;
+    }
+
+    // The phase that actually matters, and it is the LAST one: the
+    // deferred visual drain, where tessellations are built and fed to
+    // the renderer a slice at a time.
+    //
+    // MEASURED, and it refutes the obvious predicate: on the
+    // 5455-object rack model the renderer's scene held 0 drawables for
+    // the whole of the App restore AND the whole of the deferred
+    // view-provider drain -- `eligible 0` on every frame -- and jumped
+    // to 11818 the instant both had cleared. A gate armed on the
+    // document status bits alone is therefore ON only while there is
+    // nothing on screen to suppress, and lifts exactly as the geometry
+    // arrives. It would have measured as working and bought nothing.
+    if (Gui::Application::Instance
+            && Gui::Application::Instance->isBuildingVisuals())
+        return true;
+
+    // The other ways a document can still be arriving, kept because
+    // they are real even though the case above dominates a .FCStd
+    // open: a live progressive import builds its visuals inline as
+    // objects appear, so its geometry does reach the view while the
+    // document still carries the status bit.
+    //
+    // Asked of ANY document, not just the one the camera is over: the
+    // frame draws them all, and a second document loading behind the
+    // first is where the memory this frees is worth the most.
+    for (auto doc : App::GetApplication().getDocuments()) {
+        if (doc->testStatus(App::Document::Restoring)
+                || doc->testStatus(App::Document::Importing)
+                || doc->testStatus(App::Document::LiveImport))
+            return true;
+        auto guiDoc = Gui::Application::Instance
+            ? Gui::Application::Instance->getDocument(doc) : nullptr;
+        if (guiDoc && guiDoc->isRestoringViewProviders())
+            return true;
+    }
+    return false;
+}
+
+size_t
+RendererBridge::translateGpuMemoryBudget(App::PropertyContainer *)
+{
+    // Global parameter only. This used to honor a per-view
+    // Render_GpuMemoryBudgetMB override, and documents that saved one
+    // shadowed whatever the harness or the preferences set -- a machine
+    // resource cap has no per-view intent to express in the first place.
+    const long mb = long(RenderParams::getGpuMemoryBudgetMB());
+    // Which value stands, said on change. A budget that arrives as 0
+    // has two possible reasons -- the parameter is 0, or this translate
+    // is never called -- and the frame-side readout can distinguish
+    // neither, having only the result.
+    // On change, not once: a one-shot here fires on the first frame of
+    // the document load, long before anything sets a budget, and then
+    // reports "param 0" forever after -- which reads as "the parameter
+    // did not arrive" when it simply had not been set yet.
+    if (std::getenv("FC_LEVEL_DEBUG")) {
+        static long lastMb = -1;
+        if (mb != lastMb) {
+            lastMb = mb;
+            Base::Console().Message(
+                "render levels: budget resolve: param %ldMB\n", mb);
+        }
+    }
     return mb > 0 ? size_t(mb) << 20 : 0;
 }
 

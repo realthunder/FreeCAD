@@ -55,6 +55,12 @@ public:
     /// instance table). Read by name from Gui::SoFCRenderCacheManager
     /// to CPU-share the geometry arrays of a fresh vertex cache.
     SoSFNode  protoNode;
+    /// Every element of this drawable is attached to higher-dimensional
+    /// geometry of the same shape, so the display may suppress it under
+    /// memory pressure (docs/SceneStreaming.md #13b). Read by name from
+    /// the render bridge, like protoNode above -- Gui must not depend on
+    /// PartGui. All or nothing: false whenever any element floats.
+    SoSFBool  attachedOnly;
 
     static void initClass();
     SoBrepEdgeSet();

@@ -40,6 +40,7 @@
 /// share a policy.
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <string>
@@ -393,18 +394,398 @@ RendererExport CoverageHistogram coverageHistogram(const DrawCallList &draws,
 /// work here.
 constexpr float kPlanDemoteMargin = 0.5f;
 
-/// The way back down (§13 step 3), pure policy: among \a draws, the
-/// *exact*-resident sources (levelError 0) whose coarse rung — its
-/// error answered by \a demoteErrOf, 0 = not demotable — would commit
-/// at most kPlanDemoteMargin × \a tolerancePx on screen, plus every
-/// demotable source off screen or wholly behind the camera. Only
-/// consulted under an observed memory ceiling: without one the desktop
-/// keeps every rung it built ("keep both"), and a non-positive
-/// tolerance demotes nothing — everything desires exact.
+/// How far the climb is held back while a budget is being met, and --
+/// the half that matters -- how that is given back
+/// (docs/SceneStreaming.md sec 13c.3).
+///
+/// The desktop ladder is two incremental sweeps where the streamed
+/// viewer has one global plan, and the streamed one is stable for a
+/// reason worth quoting from planLevels: it is deterministic, so "a
+/// plan cannot oscillate with itself". Two sweeps can, and these did.
+/// Measured on the rack model at a 64 MB budget: 43 plans in 611 s,
+/// 2567 objects boxed, no steady state at any point.
+///
+/// The mechanism was the RELEASE, not the descent. The worst error the
+/// descent had to accept is held as a running maximum while the
+/// pressure stands -- a fast attack, and right, since one plan must not
+/// hand back what the last one just gave up -- but it was cleared the
+/// instant a plan came in under budget. So the refine tolerance fell
+/// from ~51 px to 2.00 px in ONE step, the next plan asked 946 objects
+/// to refine, and the budget broke again: a control loop with gain and
+/// no hysteresis on the release side.
+///
+/// So attack fast, release in steps, and REMEMBER WHAT FAILED. Each
+/// release keeps `releaseFraction` of the raised error; a step that
+/// brings the pressure straight back proves that level too generous and
+/// raises a floor the release never passes again. The floor only rises,
+/// so the tolerance walks down to the coarsest setting that actually
+/// fits and stops there. That is an equilibrium the ladder LEARNS,
+/// which is a different thing from a cycle it damps -- and it is why
+/// this is not the hysteresis that was built for the occlusion tester
+/// and did not help there.
+///
+/// Holding short of the camera's tolerance is not a failure: it is what
+/// "the budget is met" costs. Releasing further is measured to break
+/// it.
+struct RendererExport PressureTolerance {
+    /// Worst error the descent has had to accept in this spell of
+    /// pressure, in pixels -- the attack half, and what the climb's
+    /// tolerance is derived from. 0 = no pressure standing.
+    float raisedPx = 0.0f;
+    /// The lowest raised error a release has TRIED and been punished
+    /// for, in pixels: releasing to it or below it is known to put the
+    /// scene back over budget. Rises only, until forget().
+    float floorPx = 0.0f;
+    /// Whether the last update() actually gave something back. The
+    /// caller must replan when it did: a still camera over a quiet
+    /// scene raises no event of its own, so nothing else would take the
+    /// next step of the staircase.
+    bool releasing = false;
+    /// Whether anything has been given back since the pressure last
+    /// stood -- which is what makes a returning pressure ATTRIBUTABLE.
+    /// Not the same as `releasing`, and the difference is the whole
+    /// point: a refine asked for by a release step lands plans later,
+    /// so the pressure it causes usually arrives after the staircase
+    /// has already stopped. Reading `releasing` there would learn
+    /// nothing and the same level would be tried forever.
+    bool gaveBack = false;
+    /// The level the last release step actually stood at, in pixels --
+    /// kept because the step that gives the LAST of it back sets
+    /// raisedPx to 0, and a pressure blaming that step must not learn a
+    /// floor of nothing.
+    float lastStepPx = 0.0f;
+
+    /// The evidence no longer applies. The floor is learned about ONE
+    /// camera and ONE budget, and what a rung costs on screen is
+    /// exactly what changes when either moves.
+    void forget() { floorPx = 0.0f; }
+
+    /// One plan's update; returns the tolerance the CLIMB should run at
+    /// (the descent always runs at the camera's own -- feeding the
+    /// raised value into the free tier runs away: a wider tier accepts
+    /// more error, which widens the tier).
+    ///
+    /// \a acceptedPx is the worst projected error the descent accepted
+    /// this plan (PlanDemoteStats::acceptedErrorPx). Non-finite is not
+    /// a measurement and is ignored: one such candidate would pin the
+    /// running maximum at infinity, and an infinite refine tolerance is
+    /// not a large one -- it is the climb switched OFF, since
+    /// `levelError * diagPx > tolerancePx` is then false for every
+    /// source in the scene. Seen for real, on 9 of 30 plans.
+    ///
+    /// \a viewportPx caps it for the same reason at the other end: an
+    /// error of a million pixels and an error of the screen height are
+    /// the same statement -- the object is not resolvable -- and there
+    /// is no rung beyond "already invisible", so admitting the larger
+    /// number only destroys the tolerance it is about to become.
+    /// Measured before this cap: 4.3e11 px.
+    ///
+    /// \a releaseFraction 0 or less restores the old immediate snap
+    /// exactly, floor and all, so the defect this fixes stays
+    /// reachable for a measurement.
+    float update(bool underPressure, float acceptedPx, float cameraTolPx,
+                 float viewportPx, float releaseFraction);
+};
+
+/// Why the plan refused, when it refuses everything. A budget that
+/// cannot be honoured looks identical to a budget nobody read, and the
+/// two want opposite fixes: `noRung` is plumbing (nothing to fall back
+/// to), `tooBig` is policy (the coarse rung would show, and the free
+/// tier will not accept visible error to save memory).
+///
+/// `considered` counts SOURCES, one per distinct tag, which is what its
+/// name always claimed: the first version counted a source once per
+/// draw carrying it and reported 6287 where 2482 sources stood.
+struct PlanDemoteStats {
+    uint32_t considered = 0;   ///< exact-resident sources examined
+    uint32_t noRung = 0;       ///< registered, but armed no way down
+    /// Drawn, but its source is not in the registry at all (the error
+    /// callback answered kTagUnknown). Not a missing rung -- a missing
+    /// owner, and no generation work would ever reach it.
+    uint32_t unregistered = 0;
+    /// Resident bytes behind noRung + unregistered together: what the
+    /// ladder cannot reach at any pressure. The count says how many
+    /// sources are out of reach, this says whether reaching them would
+    /// be worth the work.
+    uint64_t unreachableBytes = 0;
+    /// The unregistered share of unreachableBytes alone. The two
+    /// populations under the total want opposite fixes -- a source at
+    /// its true bottom is DONE, a tag nobody owns is a defect -- and a
+    /// combined figure once priced the defect at whatever the settled
+    /// scene happened to weigh.
+    uint64_t unregisteredBytes = 0;
+    uint32_t tooBig = 0;       ///< over the margin, and pressure never reached it
+    uint32_t offscreen = 0;    ///< free outright
+    /// In the frustum but proven occluded (the caller's \a hiddenOf):
+    /// free outright, like offscreen, and for the same reason -- no
+    /// pixel of it reaches the screen -- but counted apart because the
+    /// two verdicts come from different mechanisms and fail differently.
+    uint32_t occludedFree = 0;
+    uint32_t eligible = 0;     ///< on screen and under the margin
+    uint32_t underPressure = 0;///< over the margin, taken because the deficit demanded it
+    uint32_t unpriceable = 0;  ///< no judgeable bounds, or the camera inside the box
+    /// Candidates the per-plan order cap (\a maxOrders) deferred to a
+    /// later pass. Not refused -- their hooks stand and the replan
+    /// re-finds them; reported so a capped pass never reads as
+    /// "covered everything".
+    uint32_t deferredByCap = 0;
+    /// Bytes the selection gives back, in whatever currency the caller
+    /// priced it in (planMeshDemotes' \a bytesOf) -- per distinct mesh,
+    /// so an instanced source is not counted once per instance.
+    uint64_t bytesFreed = 0;
+    /// The worst projected coarse error accepted, in pixels: the
+    /// tolerance this plan effectively ran at. Equal to
+    /// kPlanDemoteMargin x tolerancePx or below while no deficit
+    /// stands, and above it by exactly as much as the deficit forced.
+    float acceptedErrorPx = 0.0f;
+};
+
+/// The downgrade sweep's memory of its own unlanded orders -- what
+/// keeps the plan from storming (docs/SceneStreaming.md sec 13c.4).
+///
+/// The sweep's pricing is exact: it knows to the byte what each drop
+/// frees, and the readout shows it covering its deficit precisely.
+/// What it cannot know is WHEN the meter will admit it. A drop applies
+/// as a rebuild that uploads the coarse rung immediately, while the
+/// fine buffers it replaced stay in `live` until they have gone
+/// undrawn for the collection window -- and on a heavy scene that
+/// window is SECONDS of wall time, longer than the plan cadence. So
+/// the next plan, sampling mid-transition, reads old+new double
+/// residency, computes a LARGER deficit than the one just covered,
+/// and -- the previous sources' hooks being consumed -- walks other
+/// sources another rung down. Measured on the rack model at 64MB with
+/// the camera inside: single plans requesting 1500+ downgrades,
+/// live TRIPLING during the storm, the registry drained to
+/// `no fallback rung` 1700 while the true settled memory was 45MB --
+/// far UNDER the budget the storm was still chasing.
+///
+/// The ledger closes the loop: a sweep's promised bytes are carried as
+/// credit against the next deficits until they are OBSERVED landing
+/// (the live meter falling since the order -- each fall credited only
+/// once) or written off after kSettleFrames rendered frames (frames,
+/// not seconds, because collection is frame-clocked). A deficit fully
+/// covered by outstanding credit holds the sweep entirely: the orders
+/// already in flight are the correction, and re-correcting off their
+/// own transient is the storm. Credit that can never land -- shared
+/// geometry pinned by sources the sweep cannot reach -- expires, and
+/// the truth returns within the window.
+///
+/// The frame window is a SETTLE margin, not the expiry itself: an
+/// order now lands as a CHAIN of jobs (the downgrade's hook body
+/// queues a worker build, whose landing queues a pooled visual fill,
+/// whose apply is when the bytes actually move -- sec 13c), and its
+/// bytes cannot fall before that chain drains -- which on a loaded
+/// pool is far past any frame count. So the credit stands until the
+/// order's own DESCENT GENERATION has drained (the producer counts
+/// every job the chain queues under the generation the sweep opened;
+/// MeshSourceRegistry::descentGenerationSettled says when the last
+/// one settled -- landed, refused, or purged), and only then does the
+/// kSettleFrames clock start on the remainder. Not "while any descent
+/// job is in flight": a busy ladder keeps some job queued for minutes
+/// on end, credit held on that never expired, and the phantom
+/// promises of orders that freed nothing (a decimation that came back
+/// "spent" keeps its mesh but was priced in full) accumulated until
+/// the sweep crawled 2MB-deficits against 33MB of standing excess.
+/// Expiring on frames alone was the opposite failure: the 418-order
+/// burst re-ordered the same memory from other sources the moment its
+/// 6 frames ran out. And a target on the AGGREGATE settle counter --
+/// "this order's jobs are done once the counter advances by the drop
+/// count" -- was met by the FIRST settles of every chain (the hook
+/// bodies, seconds before the fills), wrote the credit off early, and
+/// the re-orders overshot a 64MB budget down to 44.7MB settled.
+struct DowngradeLedger {
+    /// One sweep's promise, expiring on ITS OWN terms. An aggregate
+    /// promise cannot: while small follow-up orders keep flowing --
+    /// and a converging ladder orders every plan -- any shared horizon
+    /// is perpetually re-stamped, and the phantom credit of drops that
+    /// freed nothing (a "spent" decimation keeps its mesh; the second
+    /// tag of a shared pair is a structural no-op) accumulates until
+    /// the sweep crawls 2MB-deficits against 50MB of standing excess.
+    /// This is the "queue for downgrade" design stated plainly: each
+    /// order is retired by observed landings (oldest first) or written
+    /// off alone, once its own jobs have settled and its grace passed.
+    struct Order {
+        uint64_t bytes = 0;         ///< promise still unlanded
+        uint64_t frame = 0;         ///< rendered-frame stamp at order
+        uint64_t gen = 0;           ///< the sweep's descent generation:
+                                    ///< drained means "this order's
+                                    ///< chain of jobs is done"
+    };
+    std::deque<Order> orders;
+    /// The live meter the newest order was judged against; only falls
+    /// below this observe landings, and it ratchets down with them so
+    /// a fall is never credited twice.
+    uint64_t liveAtOrder = 0;
+    /// Write-off horizon AFTER an order's jobs settled: the 2-frame
+    /// collection window, plus headroom for the landings to run
+    /// between frames on the same thread.
+    static constexpr uint64_t kSettleFrames = 6;
+
+    /// Bytes still promised, for the readout.
+    uint64_t promised() const
+    {
+        uint64_t sum = 0;
+        for (const Order &o : orders)
+            sum += o.bytes;
+        return sum;
+    }
+
+    /// Outstanding credit, after observing \a liveNow: falls since the
+    /// newest order retire promises oldest-first; an order whose
+    /// generation has drained (\a genSettled, normally
+    /// MeshSourceRegistry::descentGenerationSettled) and whose grace
+    /// frames have passed writes off what it still holds -- alone,
+    /// however many newer orders stand behind it. No predicate reads
+    /// every generation as drained (frame-only expiry).
+    uint64_t outstanding(uint64_t liveNow, uint64_t frameNow,
+                         const std::function<bool(uint64_t)> &genSettled
+                             = {})
+    {
+        // Landings first: a fall is real memory and must retire
+        // promises before any write-off invents a deficit.
+        uint64_t observed =
+            liveAtOrder > liveNow ? liveAtOrder - liveNow : 0;
+        if (observed) {
+            liveAtOrder = liveNow;
+            while (observed && !orders.empty()) {
+                Order &o = orders.front();
+                const uint64_t take = observed < o.bytes ? observed
+                                                         : o.bytes;
+                o.bytes -= take;
+                observed -= take;
+                if (!o.bytes)
+                    orders.pop_front();
+            }
+        }
+        // Expiry is per order: its own chain drained, its own grace
+        // out. An order still being worked holds ITS horizon open (the
+        // restamp), so the grace effectively starts when its last job
+        // settles -- and a newer order's arrival changes nothing for
+        // an older one.
+        for (auto it = orders.begin(); it != orders.end();) {
+            if (genSettled && !genSettled(it->gen)) {
+                it->frame = frameNow;
+                ++it;
+            }
+            else if (frameNow >= it->frame + kSettleFrames) {
+                it = orders.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+        return promised();
+    }
+
+    /// The deficit the next sweep should act on: the raw excess minus
+    /// what is already in flight. 0 holds the sweep this plan.
+    uint64_t deficit(uint64_t liveNow, uint64_t budget, uint64_t frameNow,
+                     const std::function<bool(uint64_t)> &genSettled = {})
+    {
+        const uint64_t raw = liveNow > budget ? liveNow - budget : 0;
+        const uint64_t credit = outstanding(liveNow, frameNow, genSettled);
+        return raw > credit ? raw - credit : 0;
+    }
+
+    /// Record a sweep's order: its PlanDemoteStats::bytesFreed and the
+    /// descent generation the sweep opened around its requests --
+    /// every job the order's chains queue counts under it, so the
+    /// write-off horizon holds exactly while the order is still being
+    /// worked.
+    void order(uint64_t bytes, uint64_t liveNow, uint64_t frameNow,
+               uint64_t gen = 0)
+    {
+        if (!bytes)
+            return;
+        orders.push_back({bytes, frameNow, gen});
+        liveAtOrder = liveNow;
+    }
+};
+
+/// The way back down (sec 13 step 3), pure policy: among \a draws, the
+/// *exact*-resident sources (levelError 0) whose coarse rung -- its
+/// error answered by \a demoteErrOf, 0 = not demotable -- the camera can
+/// be given without missing it. Only consulted under an observed memory
+/// ceiling: without one the desktop keeps every rung it built ("keep
+/// both"), and a non-positive tolerance demotes nothing -- everything
+/// desires exact.
+///
+/// Two tiers, and the second is what makes a budget honourable:
+///
+/// 1. **Free** -- off screen or wholly behind the camera, or a coarse
+///    rung erring at most kPlanDemoteMargin x \a tolerancePx on screen.
+///    Always taken; nothing visible is traded.
+/// 2. **Priced** -- over that margin, so demoting it *would* show.
+///    Admitted only while \a deficitBytes of the pressure that asked
+///    for this pass still stands, cheapest projected error first, and
+///    stopping the moment the deficit is covered.
+///
+/// Tier 2 exists because tier 1 alone cannot honour anything: measured
+/// on the rack model with 64 MB pinned against 517 MB in use, every one
+/// of the 376 sources that carried a fallback rung was refused "on
+/// screen and too big", so the plan reported a budget it had no way to
+/// meet. A policy that will never trade visible error for memory turns
+/// a model too large to display exactly into one that cannot be
+/// displayed at all -- where showing it coarse is better than nothing.
+///
+/// So the effective tolerance is an *outcome* here, not a knob: pressure
+/// raises it, and only as far as the deficit reaches (reported as
+/// PlanDemoteStats::acceptedErrorPx). \a deficitBytes 0 -- no pressure,
+/// or none that can be quantified -- leaves the original free-tier-only
+/// behaviour exactly as it was.
+///
+/// A source is priced by its NEEDIEST owner (the largest projected
+/// error over the draws sharing its tag), the mirror of the refine
+/// pass's union: one instance close to the camera makes the shared
+/// source expensive for every other. It is still a price and not a
+/// veto, which is the difference from the free tier, where any owner
+/// over the margin kept the source exact outright.
+///
+/// \a bytesOf is the CURRENCY, and it must be the same one \a
+/// deficitBytes is quoted in. Default (empty) is meshResidentBytes --
+/// the CPU arrays a mesh occupies -- which is right for the sweep run
+/// against a CPU memory ceiling and wrong for the one run against the
+/// GPU budget: the same line segment is 8 bytes of index on the CPU and
+/// 64 bytes of quad-expansion instance data on the GPU, plus the index
+/// buffer uploaded beside it. A sweep that spends GPU bytes while
+/// counting CPU bytes reports a deficit covered and leaves the budget
+/// standing, which is what one number pretending to be two costs.
+///
+/// It is called at most ONCE PER DISTINCT MESH per pass, so a stateful
+/// implementation may charge a shared upload to the first candidate
+/// that reaches it and answer 0 for the rest. Whoever carries it is
+/// arbitrary; what matters is that the total over the selection is what
+/// dropping all of it actually frees, and never more.
+///
+/// \a hiddenOf, when given, answers whether a SOURCE is proven to reach
+/// no pixel at all -- occlusion's verdict, folded per tag by the caller
+/// (docs/FarFieldProxies.md sec 10: "the gain from occlusion is not
+/// only about speed, but also gpu memory"). A hidden source joins the
+/// free tier beside the offscreen ones: an enclosed chassis's interior
+/// is IN the frustum, so the box test above prices its demotion as
+/// visible error the camera literally cannot see, and under a budget
+/// that error is paid in quality somewhere visible instead. Its errPx
+/// does not enter acceptedErrorPx -- an error nobody can see must not
+/// raise the tolerance the climb runs at. The verdict must be
+/// conservative and hysteresed by the caller (frames-hidden streak):
+/// this pass acts on it without judgement, and a flapping verdict here
+/// is an upload/rebuild per flap.
+///
+/// \a maxOrders, when non-zero, caps how many drops one pass returns
+/// (free tier and priced tier together). Each order is now a worker
+/// job whose enqueue costs the GUI thread a snapshot, so an unbounded
+/// pass -- the measured 1500-order plans -- is itself a stall; the
+/// deferred candidates keep their hooks and the replan that follows
+/// the landed batch re-finds them. stats->bytesFreed counts only what
+/// was ordered, so the ledger's credit stays honest under the cap.
 RendererExport std::vector<const void *> planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
-    const std::function<float(const void *)> &demoteErrOf);
+    const std::function<float(const void *)> &demoteErrOf,
+    PlanDemoteStats *stats = nullptr, size_t deficitBytes = 0,
+    const std::function<uint64_t(const MeshData *)> &bytesOf = {},
+    const std::function<bool(const void *)> &hiddenOf = {},
+    size_t maxOrders = 0);
 
 /// A rung that may not exist yet, named by what would *produce* it
 /// rather than by what it will contain.

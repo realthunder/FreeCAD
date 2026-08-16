@@ -1,0 +1,18 @@
+# ThreadSanitizer suppressions for the TSan FreeCAD tree
+# (build/conda-tsan-801; see scripts/tsan_descent.py).
+#
+# Deliberately MINIMAL. Only FreeCAD and OCCT are instrumented, so a
+# report whose stacks live in Qt/Python/GL is about a library whose
+# own synchronization TSan cannot see (Qt's QMutex is a raw futex on
+# Linux, not a pthread mutex), not about our code. The target race --
+# meshedCopy vs transferMeshLevels/demoteMeshLevels -- has OCCT
+# BRep_*/Poly_*/BRepMesh or PartGui::* frames on BOTH sides; nothing
+# here may match those.
+called_from_lib:libQt6Core.so
+called_from_lib:libQt6Gui.so
+called_from_lib:libQt6Widgets.so
+called_from_lib:libpython3
+called_from_lib:libglib-2.0.so
+race:^QtPrivate::
+race:^QObject::
+race:^QCoreApplication::

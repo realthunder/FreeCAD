@@ -47,12 +47,14 @@ MeshSourceRegistry &MeshSourceRegistry::instance()
 }
 
 void MeshSourceRegistry::add(const void *tag, Generator gen,
-                             float publishedError, LevelHooks hooks)
+                             float publishedError, LevelHooks hooks,
+                             const char *origin)
 {
     if (!tag || !gen)
         return;
     std::lock_guard<std::mutex> guard(mutex);
     Source &src = sources[tag];
+    src.origin = origin;
     src.gen = std::make_shared<Generator>(std::move(gen));
     src.publishedError = publishedError;
     src.canonicalKey.clear();
@@ -63,6 +65,34 @@ void MeshSourceRegistry::add(const void *tag, Generator gen,
     if (debugOn())
         std::fprintf(stderr, "mesh source: add tag=%p err=%g (%zu sources)\n",
                      tag, double(publishedError), sources.size());
+}
+
+std::vector<MeshSourceRegistry::OriginTally>
+MeshSourceRegistry::originTally() const
+{
+    std::lock_guard<std::mutex> guard(mutex);
+    std::vector<OriginTally> out;
+    for (const auto &entry : sources) {
+        const Source &src = entry.second;
+        OriginTally *slot = nullptr;
+        for (auto &t : out) {
+            if (t.origin == src.origin) {
+                slot = &t;
+                break;
+            }
+        }
+        if (!slot) {
+            out.push_back(OriginTally());
+            slot = &out.back();
+            slot->origin = src.origin;
+        }
+        ++slot->sources;
+        if (src.hooks.downgrade)
+            ++slot->withDowngrade;
+        if (src.hooks.demote)
+            ++slot->withDemote;
+    }
+    return out;
 }
 
 void MeshSourceRegistry::remove(const void *tag)
@@ -118,6 +148,34 @@ float MeshSourceRegistry::publishedError(const void *tag)
     std::lock_guard<std::mutex> guard(mutex);
     auto it = sources.find(tag);
     return it == sources.end() ? 0.0f : it->second.publishedError;
+}
+
+bool MeshSourceRegistry::setPublishedError(const void *tag,
+                                           float publishedError)
+{
+    if (!tag)
+        return false;
+    std::lock_guard<std::mutex> guard(mutex);
+    auto it = sources.find(tag);
+    if (it == sources.end())
+        return false;
+    if (it->second.publishedError == publishedError)
+        return true;
+    it->second.publishedError = publishedError;
+    // Same reason as add(): anyone holding an earlier answer re-asks.
+    registryGen.fetch_add(1, std::memory_order_release);
+    if (debugOn())
+        std::fprintf(stderr, "mesh source: restate tag=%p err=%g\n",
+                     tag, double(publishedError));
+    return true;
+}
+
+bool MeshSourceRegistry::knows(const void *tag) const
+{
+    if (!tag)
+        return false;
+    std::lock_guard<std::mutex> guard(mutex);
+    return sources.find(tag) != sources.end();
 }
 
 void MeshSourceRegistry::requestRefine(const void *tag)
@@ -181,7 +239,9 @@ float MeshSourceRegistry::demoteError(const void *tag)
 {
     std::lock_guard<std::mutex> guard(mutex);
     auto it = sources.find(tag);
-    if (it == sources.end() || !it->second.hooks.demote)
+    if (it == sources.end())
+        return kTagUnknown;
+    if (!it->second.hooks.demote)
         return 0.0f;
     return it->second.hooks.fallbackError;
 }
@@ -206,9 +266,15 @@ float MeshSourceRegistry::downgradeError(const void *tag)
 {
     std::lock_guard<std::mutex> guard(mutex);
     auto it = sources.find(tag);
-    if (it == sources.end() || !it->second.hooks.downgrade)
+    if (it == sources.end())
+        return kTagUnknown;
+    if (!it->second.hooks.downgrade)
         return 0.0f;
-    return it->second.hooks.fallbackError;
+    // Where the two directions land somewhere different, the downgrade
+    // says so itself (LevelHooks); otherwise both read the one field.
+    const LevelHooks &hooks = it->second.hooks;
+    return hooks.downgradeFallbackError > 0.0f ? hooks.downgradeFallbackError
+                                               : hooks.fallbackError;
 }
 
 void MeshSourceRegistry::dropHiddenLevels()
@@ -221,7 +287,14 @@ void MeshSourceRegistry::dropHiddenLevels()
         std::lock_guard<std::mutex> guard(mutex);
         for (auto &entry : sources) {
             Source &src = entry.second;
-            if (src.publishedError > 0.0f && src.hooks.demote) {
+            // demoteDropsHiddenRung is the whole gate: a coarse source
+            // with no hidden finer rung arms the VISIBLE dynamic-scale
+            // descent in the same slot (MeshLevelSource.cpp), and
+            // firing that here -- camera-blind, unpriced, on every plan
+            // pass under a sticky ceiling -- walked whole scenes to
+            // their boxes. Visible descents belong to planMeshDemotes.
+            if (src.publishedError > 0.0f && src.hooks.demote
+                    && src.hooks.demoteDropsHiddenRung) {
                 fns.push_back(std::move(src.hooks.demote));
                 src.hooks.demote = nullptr;
                 if (debugOn())
@@ -235,12 +308,15 @@ void MeshSourceRegistry::dropHiddenLevels()
         fn();
 }
 
-void MeshSourceRegistry::observeMemoryCeiling()
+void MeshSourceRegistry::observeMemoryCeiling(size_t shortfallBytes)
 {
     ++ceilingEpoch;
+    ceilingShortfall = shortfallBytes;
     std::fprintf(stderr,
-                 "mesh source: memory ceiling observed (epoch %llu)\n",
-                 static_cast<unsigned long long>(ceilingEpoch.load()));
+                 "mesh source: memory ceiling observed (epoch %llu, "
+                 "shortfall %.1fMB)\n",
+                 static_cast<unsigned long long>(ceilingEpoch.load()),
+                 double(shortfallBytes) / 1048576.0);
 }
 
 bool MeshSourceRegistry::generate(const std::string &key, uint32_t level,
@@ -336,6 +412,13 @@ void MeshLevelPlanner::observe(const float *viewMatrix,
         m_timer->setSingleShot(true);
         m_timer->setInterval(300);
         QObject::connect(m_timer.get(), &QTimer::timeout, [this]() {
+            // Answered BEFORE the planned camera is overwritten, since
+            // that is the only moment the two can still be compared.
+            // The first plan of all counts as moved: nothing has been
+            // learned about a camera nobody has planned for.
+            m_cameraMoved = !m_havePlanned
+                || matricesDiffer(m_view, m_viewPlanned)
+                || matricesDiffer(m_proj, m_projPlanned);
             std::memcpy(m_viewPlanned, m_view, sizeof(m_view));
             std::memcpy(m_projPlanned, m_proj, sizeof(m_proj));
             m_havePlanned = true;

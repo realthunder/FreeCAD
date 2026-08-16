@@ -92,6 +92,8 @@
 #include <Inventor/scxml/ScXML.h>
 #include <Inventor/scxml/SoScXMLStateMachine.h>
 
+#include "Renderer/Renderer.h"
+
 #include "QuarterWidget.h"
 #include "InteractionMode.h"
 #include "QuarterP.h"
@@ -865,6 +867,13 @@ void QuarterWidget::resizeEvent(QResizeEvent* event)
 */
 void QuarterWidget::paintEvent(QPaintEvent* event)
 {
+    // The frame's `outside` term (Render::FrameOutside) is measured from
+    // the backend's side as frame-minus-render, so it also covers what
+    // happens between paint events. These spans are what tell the paint
+    // event apart from the rest: whatever the remainder still holds
+    // after them is Qt's own widget composition and the event loop.
+    Render::FrameOutsideScope outPaintPre(Render::FrameOutside::PaintPre);
+
     if (updateDevicePixelRatio()) {
         qreal dev_pix_ratio = devicePixelRatio();
         int width = static_cast<int>(dev_pix_ratio * this->width());
@@ -903,13 +912,18 @@ void QuarterWidget::paintEvent(QPaintEvent* event)
 
     PRIVATE(this)->autoredrawenabled = false;
 
-    if(PRIVATE(this)->processdelayqueue && SoDB::getSensorManager()->isDelaySensorPending()) {
-        // processing the sensors might trigger a redraw in another
-        // context. Release this context temporarily
-        w->doneCurrent();
-        SoDB::getSensorManager()->processDelayQueue(false);
-        w->makeCurrent();
+    outPaintPre.stop();
+    {
+        Render::FrameOutsideScope outDelay(Render::FrameOutside::DelayQueue);
+        if(PRIVATE(this)->processdelayqueue && SoDB::getSensorManager()->isDelaySensorPending()) {
+            // processing the sensors might trigger a redraw in another
+            // context. Release this context temporarily
+            w->doneCurrent();
+            SoDB::getSensorManager()->processDelayQueue(false);
+            w->makeCurrent();
+        }
     }
+    Render::FrameOutsideScope outPaintPre2(Render::FrameOutside::PaintPre);
 
     assert(w->isValid() && "No valid GL context found!");
 
@@ -917,14 +931,19 @@ void QuarterWidget::paintEvent(QPaintEvent* event)
     //glDrawBuffer(w->format().swapBehavior() == QSurfaceFormat::DoubleBuffer ? GL_BACK : GL_FRONT);
 
     w->makeCurrent();
+    outPaintPre2.stop();
     this->actualRedraw();
 
-    //start the standard graphics view processing for all widgets and graphic items. As 
-    //QGraphicsView initaliizes a QPainter which changes the Opengl context in an unpredictable 
+    //start the standard graphics view processing for all widgets and graphic items. As
+    //QGraphicsView initaliizes a QPainter which changes the Opengl context in an unpredictable
     //manner we need to store the context and recreate it after Qt is done.
-    glPushAttrib(GL_MULTISAMPLE_BIT_EXT);
-    inherited::paintEvent(event);
-    glPopAttrib();
+    {
+        Render::FrameOutsideScope outGView(Render::FrameOutside::GraphicsView);
+        glPushAttrib(GL_MULTISAMPLE_BIT_EXT);
+        inherited::paintEvent(event);
+        glPopAttrib();
+    }
+    Render::FrameOutsideScope outPaintPost(Render::FrameOutside::PaintPost);
 
     // Causes an OpenGL error on resize
     //if (w->format().swapBehavior() == QSurfaceFormat::DoubleBuffer)

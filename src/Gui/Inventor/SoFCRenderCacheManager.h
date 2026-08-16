@@ -189,6 +189,14 @@ public:
 
   SbFCUniqueId getSceneNodeId() const;
 
+  /** How many shapes the last publish left a frame stale under the
+   * capture budget (Render CaptureBudgetMS). Non-zero means the publish
+   * is not done: the caller owning the render loop should schedule
+   * another redraw, and each follow-up publish captures at least one
+   * more shape until this returns 0.
+   */
+  int getDeferredCaptureCount() const;
+
   /// The scene's root render cache as last built by render(), capture()
   /// or traverse(); null before the first build. Read-only inspection
   /// (tests, external consumers).
@@ -226,17 +234,29 @@ GuiExport void applySectionHatchTexture(SoFCRenderCacheManager &manager,
 /// (docs/HeadlessServe.md §3.3).
 GuiExport void initRenderProperties(App::PropertyContainer *view);
 
+
+/// The per-container render property names that were retired to global
+/// RenderParams (debug/measurement switches, ladder tuning, occlusion
+/// culling, the GPU budget): a null-terminated list. Saved copies inside
+/// old documents shadowed the globals, so they are no longer read.
+GuiExport const char * const *legacyRenderPropertyNames();
+
+/// Remove any retired render properties (legacyRenderPropertyNames)
+/// still sitting on the container -- called after a view restores its
+/// saved properties, so old documents load compatibly and the dead
+/// override surface does not linger.
+GuiExport void stripLegacyRenderProperties(App::PropertyContainer *view);
+
 /// Drop the render properties that describe the machine rather than the
 /// model and materialize them again from this installation's preferences.
-/// A document carries the look its author intended, and that look has to
-/// survive being opened on someone else's installation; a sample count, a
-/// memory budget, a render resolution and the debug instrumentation
-/// describe the hardware they were tuned on, so initRenderProperties gives
-/// them Prop_NoPersist and they are no longer written. A file written
-/// before that still carries them, which is what this is for - a view
-/// calls it once it has restored itself. (The attribute cannot be added
-/// afterwards: Property::setStatusValue masks that bit out, so the only
-/// way to get it is to create the property again.)
+/// The ones origin retired to global RenderParams are handled by
+/// stripLegacyRenderProperties above; these are the ones that stay
+/// per-view -- the AO and effect resolutions, the tessellation and level
+/// knobs -- and carry Prop_NoPersist so they are never written. A file
+/// written before that still carries them, which is what this is for: a
+/// view calls it once it has restored itself. (The attribute cannot be
+/// added afterwards: Property::setStatusValue masks that bit out, so the
+/// only way to get it is to create the property again.)
 GuiExport void reseedLocalRenderProperties(App::PropertyContainer *view);
 
 /// The effective value of one section/clipping style key for \a view: its

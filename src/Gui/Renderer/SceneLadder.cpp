@@ -20,6 +20,7 @@
  ****************************************************************************/
 
 #include "SceneLadder.h"
+#include "ProxyHierarchy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1000,76 +1001,15 @@ namespace {
 /// One draw's bounding box against one camera — the shared math of the
 /// desktop plan passes (refine and demote read the same projection,
 /// they just act on opposite sides of the tolerance).
-struct BoxSight {
-    enum What {
-        Empty,      ///< no bounds, degenerate, or not judgeable
-        Offscreen,  ///< outside the frustum (or wholly behind)
-        Inside,     ///< the camera is inside the box span: maximal
-        Visible,    ///< on screen at diagPx
-    } what = Empty;
-    /// Projected size of the box diagonal in pixels (Visible only).
-    float diagPx = 0.0f;
-};
-
+///
+/// The arithmetic itself moved to ProxyHierarchy.h, where the far-field
+/// cut is its third consumer: the cut and the coverage histogram have
+/// to agree about "small on screen" by construction rather than by two
+/// copies of one formula staying in step (docs/FarFieldProxies.md §3.3).
 BoxSight sightBox(const Render::DrawCall &draw, const float *V,
                   const float *P, float viewportHeightPx)
 {
-    BoxSight res;
-    if (draw.bboxMin[0] > draw.bboxMax[0])
-        return res;
-    const float dx = draw.bboxMax[0] - draw.bboxMin[0];
-    const float dy = draw.bboxMax[1] - draw.bboxMin[1];
-    const float dz = draw.bboxMax[2] - draw.bboxMin[2];
-    const float diag = std::sqrt(dx * dx + dy * dy + dz * dz);
-    if (!(diag > 0.0f))
-        return res;
-    // GL layout: column-major, points transform as M * p. proj[15] == 1
-    // is orthographic (w does not depend on z), 0 is perspective.
-    const bool ortho = P[15] != 0.0f;
-    const float p11 = P[5];
-    const float cx = 0.5f * (draw.bboxMin[0] + draw.bboxMax[0]);
-    const float cy = 0.5f * (draw.bboxMin[1] + draw.bboxMax[1]);
-    const float cz = 0.5f * (draw.bboxMin[2] + draw.bboxMax[2]);
-    // View space; the camera looks down -z.
-    const float vx = V[0] * cx + V[4] * cy + V[8] * cz + V[12];
-    const float vy = V[1] * cx + V[5] * cy + V[9] * cz + V[13];
-    const float vz = V[2] * cx + V[6] * cy + V[10] * cz + V[14];
-    // Projected size of the diagonal in pixels: NDC height of a
-    // length d is d * P11 (orthographic) or d * P11 / depth
-    // (perspective), and one NDC unit is half the viewport.
-    if (ortho) {
-        res.diagPx = diag * p11 * 0.5f * viewportHeightPx;
-    }
-    else {
-        // Depth of the box's near side. A box wholly behind the camera
-        // is off-screen; a camera *inside* the box span sees it as
-        // large as anything gets.
-        if (-vz + 0.5f * diag <= 0.0f) {
-            res.what = BoxSight::Offscreen;
-            return res;
-        }
-        const float depth = -vz - 0.5f * diag;
-        if (depth <= 0.0f) {
-            res.what = BoxSight::Inside;
-            return res;
-        }
-        res.diagPx = diag * p11 / depth * 0.5f * viewportHeightPx;
-    }
-    // Clip-space test at the box centre, inflated by the projected
-    // half diagonal (in NDC units of the viewport height; the width
-    // margin is approximated with the same value, conservatively).
-    const float ndcMargin = res.diagPx / (0.5f * viewportHeightPx);
-    const float cxc = P[0] * vx + P[4] * vy + P[8] * vz + P[12];
-    const float cyc = P[1] * vx + P[5] * vy + P[9] * vz + P[13];
-    const float w = ortho
-        ? 1.0f : P[3] * vx + P[7] * vy + P[11] * vz + P[15];
-    if (w <= 0.0f || std::fabs(cxc) > w * (1.0f + ndcMargin)
-        || std::fabs(cyc) > w * (1.0f + ndcMargin)) {
-        res.what = BoxSight::Offscreen;
-        return res;
-    }
-    res.what = BoxSight::Visible;
-    return res;
+    return sightBounds(draw.bboxMin, draw.bboxMax, V, P, viewportHeightPx);
 }
 
 }  // namespace
@@ -1157,9 +1097,25 @@ std::vector<const void *> Render::planMeshRefines(
             // Off-screen never refines — the residency bill this pass
             // exists to stop paying; the camera inside the box span
             // refines outright.
+            //
+            // The error is bounded by the SCREEN before it is compared,
+            // and that is not cosmetic. The tolerance this pass runs at
+            // under memory pressure is the error the descent had to
+            // accept (sec 13c.3), and that raise is bounded by the
+            // viewport height -- an error of a million pixels and one
+            // of the screen height being the same statement. If the
+            // comparison here were not bounded by the same thing, the
+            // two passes would be speaking different currencies again,
+            // and the ladder would ask straight back for exactly what
+            // it had just given up. Measured on the rack model: with
+            // the tolerance at its 600px bound and descents accepting
+            // 3531, 6324 and 16211px, single plans asked 386, 546 and
+            // 950 objects to refine while the budget was still broken.
+            const float bound = std::max(1.0f, viewportHeightPx);
             const bool want = sight.what == BoxSight::Inside
                 || (sight.what == BoxSight::Visible
-                    && mesh.levelError * sight.diagPx > tolerancePx);
+                    && std::min(mesh.levelError * sight.diagPx, bound)
+                           > tolerancePx);
             if (!want)
                 continue;
         }
@@ -1170,6 +1126,78 @@ std::vector<const void *> Render::planMeshRefines(
         }
     }
     return out;
+}
+
+float Render::PressureTolerance::update(bool underPressure, float acceptedPx,
+                                        float cameraTolPx, float viewportPx,
+                                        float releaseFraction)
+{
+    // Below this the raise says nothing: the climb runs at
+    // max(cameraTolPx, raisedPx / kPlanDemoteMargin), so a raised error
+    // under the camera's own tolerance times the margin is already the
+    // camera's number.
+    const float spent = std::max(0.0f, cameraTolPx) * kPlanDemoteMargin;
+    const float frac = releaseFraction > 0.0f
+        ? std::min(releaseFraction, 0.99f) : 0.0f;
+
+    if (underPressure) {
+        // Pressure back after a release: the level released TO is proven
+        // too generous, whatever else this plan does. That is the whole
+        // of what the loop learns, and it is learned from the one event
+        // that can teach it. Asked of gaveBack rather than of
+        // `releasing`, because the refines a release asked for land
+        // plans later -- by then the staircase has usually stopped, and
+        // a controller that only learned mid-step would re-try the
+        // level that failed forever.
+        const float culprit = raisedPx > 0.0f ? raisedPx : lastStepPx;
+        if (gaveBack && culprit > 0.0f)
+            floorPx = std::max(floorPx, culprit);
+        releasing = false;
+        gaveBack = false;
+        if (std::isfinite(acceptedPx))
+            raisedPx = std::max(raisedPx,
+                                std::min(acceptedPx,
+                                         std::max(1.0f, viewportPx)));
+    }
+    else if (raisedPx > 0.0f) {
+        if (frac <= 0.0f) {
+            // The old behaviour, kept reachable so an arm can measure
+            // the defect rather than argue about it: everything given
+            // back at once, the moment one plan comes in under budget.
+            raisedPx = 0.0f;
+            releasing = false;
+        }
+        else {
+            const float next = raisedPx * frac;
+            if (next <= spent && floorPx <= spent) {
+                // Nothing left to hold back: the view fits with room,
+                // and the camera's tolerance rules again. The level it
+                // let go of is still remembered, because THIS is the
+                // step a returning pressure would be blaming, and a
+                // controller that learned 0 from it would walk the
+                // whole staircase down again next time.
+                lastStepPx = raisedPx;
+                raisedPx = 0.0f;
+                releasing = gaveBack = true;
+            }
+            else if (next <= floorPx) {
+                // Releasing this far is measured to break the budget.
+                // Stopping here IS the equilibrium -- holding some
+                // error is what fitting costs on this scene.
+                releasing = false;
+            }
+            else {
+                raisedPx = lastStepPx = next;
+                releasing = gaveBack = true;
+            }
+        }
+    }
+    else
+        releasing = false;
+
+    return raisedPx > 0.0f
+        ? std::max(cameraTolPx, raisedPx / kPlanDemoteMargin)
+        : cameraTolPx;
 }
 
 int Render::CoverageHistogram::atOrUnder(float px) const
@@ -1251,57 +1279,242 @@ Render::CoverageHistogram Render::coverageHistogram(const DrawCallList &draws,
     return out;
 }
 
+namespace
+{
+
+/// One demotable source, priced: what dropping it would show and what
+/// it would give back. Accumulated over every draw carrying the tag,
+/// because the answer belongs to the source and the draws are only how
+/// it appears on screen.
+struct DemoteCandidate {
+    const void *tag = nullptr;
+    /// The coarse rung's error relative to the shape diagonal, as the
+    /// registry answered it -- asked once per source, not once per draw.
+    float coarseErr = 0.0f;
+    /// Largest projected coarse error over the source's owners, in
+    /// pixels -- what the neediest instance would show.
+    float errPx = 0.0f;
+    /// Resident bytes, per distinct mesh (see meshResidentBytes).
+    uint64_t bytes = 0;
+    /// Some owner is on screen: an all-off-screen source is free.
+    bool visible = false;
+    /// Some owner could not be judged (no bounds, or the camera inside
+    /// the box, where projected size is meaningless). Unpriceable, so
+    /// never dropped at any pressure -- a price nobody can compute is
+    /// not a licence to guess it low.
+    bool unpriceable = false;
+    /// The caller's occlusion verdict: no pixel of any owner reaches
+    /// the screen. Asked once per source, like coarseErr.
+    bool occluded = false;
+};
+
+}  // namespace
+
 std::vector<const void *> Render::planMeshDemotes(
     const DrawCallList &draws, const float *viewMatrix,
     const float *projMatrix, float viewportHeightPx, float tolerancePx,
-    const std::function<float(const void *)> &demoteErrOf)
+    const std::function<float(const void *)> &demoteErrOf,
+    PlanDemoteStats *stats, size_t deficitBytes,
+    const std::function<uint64_t(const MeshData *)> &bytesOf,
+    const std::function<bool(const void *)> &hiddenOf,
+    size_t maxOrders)
 {
     std::vector<const void *> out;
     if (!viewMatrix || !projMatrix || viewportHeightPx <= 0.0f
         || tolerancePx <= 0.0f || !demoteErrOf)
         return out;
+    // The currency this pass prices in (see bytesOf): the CPU arrays by
+    // default, the caller's own accounting when it is spending against
+    // a different budget.
+    const auto price = [&bytesOf](const MeshData *m) -> uint64_t {
+        return bytesOf ? bytesOf(m) : uint64_t(Render::meshResidentBytes(m));
+    };
     const PlanBoxes boxes(draws);
-    // A tag drops only when EVERY draw carrying it may — the mirror of
-    // the refine pass's union: a shared source stays exact for its
-    // neediest owner.
-    std::set<const void *> kept;
-    std::vector<const void *> candidates;
-    std::set<const void *> seen;
+    // Price every candidate first, decide after: which sources are
+    // worth dropping cannot be answered draw by draw once pressure is
+    // allowed to widen the selection, because the cheapest source is
+    // only known once they have all been seen.
+    std::vector<DemoteCandidate> cands;
+    std::map<const void *, size_t> index;
+    // Bytes belong to a mesh, not to a draw. An instanced source is one
+    // upload behind many rows, so the same MeshData is charged once.
+    //
+    // Keyed by the mesh alone. The tag it used to be paired with is
+    // read off that same mesh, so the pair never distinguished
+    // anything -- but the key is also the guarantee bytesOf is given
+    // ("at most once per distinct mesh"), and a stateful currency
+    // charging a shared upload to its first referent depends on it, so
+    // it is worth stating in the type rather than deriving.
+    std::set<const MeshData *> charged;
     for (const auto &draw : draws) {
         if (!draw.mesh)
             continue;
         const MeshData &mesh = *draw.mesh;
-        // The demotable set is the refine pass's mirror image: sources
-        // standing at their exact rung with a coarse one to fall back
-        // to (the registry answers its error; 0 = nothing resident).
-        if (!mesh.sourceTag || mesh.levelError > 0.0f)
+        // Every drawn source is asked, and the registry alone answers
+        // whether one has a way down.
+        //
+        // This used to skip sources already displaying a coarse rung,
+        // on the reading that a coarse source is the refine pass's
+        // business and has nothing left to give. That is false under a
+        // budget the coarse scene itself cannot meet -- measured, the
+        // rack model sits at 441MB of coarse geometry against 64MB with
+        // every exact rung already surrendered. Rung 0 is not a floor:
+        // a coarse source descends by re-tessellating COARSER again,
+        // step after step, and the registry's error callback is what
+        // says whether a step exists.
+        if (!mesh.sourceTag)
             continue;
-        if (kept.count(mesh.sourceTag))
+        auto found = index.find(mesh.sourceTag);
+        if (found == index.end()) {
+            if (stats)
+                ++stats->considered;
+            const float coarseErr = demoteErrOf(mesh.sourceTag);
+            if (coarseErr <= 0.0f) {
+                // A source that armed no descent and a tag nobody owns
+                // are separate answers to "why can this not descend".
+                // Both are priced -- and priced APART, because what
+                // decides whether either is worth fixing is the
+                // residency standing behind it, not how many there are.
+                const bool unowned = coarseErr < 0.0f;
+                if (stats) {
+                    ++(unowned ? stats->unregistered : stats->noRung);
+                    if (charged.emplace(&mesh).second) {
+                        // Once: the charged set is bytesOf's "at most
+                        // once per distinct mesh" guarantee.
+                        const uint64_t bytes = price(&mesh);
+                        stats->unreachableBytes += bytes;
+                        if (unowned)
+                            stats->unregisteredBytes += bytes;
+                    }
+                }
+                // Remembered as a non-candidate so the registry is
+                // asked once per source rather than once per draw; the
+                // sentinel keeps which kind, for the later meshes of
+                // the same tag.
+                index.emplace(mesh.sourceTag,
+                              unowned ? size_t(-2) : size_t(-1));
+                continue;
+            }
+            found = index.emplace(mesh.sourceTag, cands.size()).first;
+            DemoteCandidate cand;
+            cand.tag = mesh.sourceTag;
+            cand.coarseErr = coarseErr;
+            cand.occluded = hiddenOf && hiddenOf(mesh.sourceTag);
+            cands.push_back(cand);
+        }
+        if (found->second >= size_t(-2)) {
+            // A second mesh under the same unreachable tag still costs
+            // its bytes; only the count is per source.
+            if (stats && charged.emplace(&mesh).second) {
+                const uint64_t bytes = price(&mesh);
+                stats->unreachableBytes += bytes;
+                if (found->second == size_t(-2))
+                    stats->unregisteredBytes += bytes;
+            }
             continue;
-        const float coarseErr = demoteErrOf(mesh.sourceTag);
-        if (coarseErr <= 0.0f)
-            continue;
+        }
+        DemoteCandidate &cand = cands[found->second];
+        if (charged.emplace(&mesh).second)
+            cand.bytes += price(&mesh);
         const BoxSight sight = boxes.sight(draw, viewMatrix, projMatrix,
                                            viewportHeightPx);
-        // Off-screen frees outright; on screen only when the coarse
-        // rung clears the tolerance by the demote margin — at the
-        // refine boundary itself a drifting camera would trade a full
-        // tessellation back and forth across it.
-        const bool droppable = sight.what == BoxSight::Offscreen
-            || (sight.what == BoxSight::Visible
-                && coarseErr * sight.diagPx
-                    <= tolerancePx * kPlanDemoteMargin);
-        if (!droppable) {
-            kept.insert(mesh.sourceTag);
+        if (sight.what == BoxSight::Visible) {
+            cand.visible = true;
+            cand.errPx = std::max(cand.errPx,
+                                  cand.coarseErr * sight.diagPx);
+        }
+        else if (sight.what != BoxSight::Offscreen)
+            cand.unpriceable = true;
+    }
+
+    // The free tier: nothing the camera can see changes. Off screen is
+    // free outright; on screen only when the coarse rung clears the
+    // tolerance by the demote margin -- at the refine boundary itself a
+    // drifting camera would trade a full tessellation back and forth
+    // across it.
+    const float freeErrPx = tolerancePx * kPlanDemoteMargin;
+    std::vector<const DemoteCandidate *> priced;
+    uint64_t freed = 0;
+    float accepted = 0.0f;
+    // The per-plan order cap: every order is a worker job whose
+    // enqueue costs the GUI thread a snapshot, so one pass is bounded
+    // and the replan after the batch lands takes the rest. The
+    // deferred are counted, not forgotten -- their hooks stand.
+    const auto capped = [&out, maxOrders, stats]() -> bool {
+        if (!maxOrders || out.size() < maxOrders)
+            return false;
+        if (stats)
+            ++stats->deferredByCap;
+        return true;
+    };
+    for (const DemoteCandidate &cand : cands) {
+        if (cand.unpriceable) {
+            if (stats)
+                ++stats->unpriceable;
             continue;
         }
-        if (!seen.count(mesh.sourceTag)) {
-            seen.insert(mesh.sourceTag);
-            candidates.push_back(mesh.sourceTag);
+        // Occlusion's verdict: in the frustum, and still reaching no
+        // pixel. Free like offscreen, and -- the half that matters --
+        // its errPx never enters the accepted error: an error nobody
+        // can see raising the climb's tolerance would trade visible
+        // quality for invisible memory.
+        if (cand.occluded) {
+            if (capped())
+                continue;
+            if (stats)
+                ++stats->occludedFree;
+            out.push_back(cand.tag);
+            freed += cand.bytes;
+            continue;
         }
+        if (cand.visible && cand.errPx > freeErrPx) {
+            priced.push_back(&cand);
+            continue;
+        }
+        if (capped())
+            continue;
+        if (stats)
+            ++(cand.visible ? stats->eligible : stats->offscreen);
+        out.push_back(cand.tag);
+        freed += cand.bytes;
+        accepted = std::max(accepted, cand.errPx);
     }
-    for (const void *tag : candidates)
-        if (!kept.count(tag))
-            out.push_back(tag);
+
+    // The priced tier: visible error, bought only with a deficit and
+    // only as much of it as the deficit needs. Cheapest first, so the
+    // tolerance rises no further than the budget forces it to.
+    std::stable_sort(priced.begin(), priced.end(),
+                     [](const DemoteCandidate *a, const DemoteCandidate *b) {
+                         return a->errPx < b->errPx;
+                     });
+    for (const DemoteCandidate *cand : priced) {
+        if (freed >= deficitBytes || !cand->bytes) {
+            // A source that frees nothing cannot close a deficit, and
+            // showing its coarse rung for nothing is a pure loss.
+            if (stats)
+                ++stats->tooBig;
+            continue;
+        }
+        if (capped())
+            continue;
+        if (stats)
+            ++stats->underPressure;
+        out.push_back(cand->tag);
+        freed += cand->bytes;
+        accepted = std::max(accepted, cand->errPx);
+    }
+    if (stats) {
+        stats->bytesFreed = freed;
+        // Reported bounded by the screen, while the SELECTION above ran
+        // on the true numbers: the ordering among candidates erring
+        // thousands of pixels is real and worth keeping (cheapest
+        // first), but what leaves this function is a tolerance that the
+        // refine pass will be compared against, and that comparison is
+        // screen-bounded (sec 13c.3). An accepted error of 16211px
+        // quoted at a pass that can never see more than the viewport
+        // height is not a stricter statement, only an unreadable one.
+        stats->acceptedErrorPx =
+            std::min(accepted, std::max(1.0f, viewportHeightPx));
+    }
     return out;
 }

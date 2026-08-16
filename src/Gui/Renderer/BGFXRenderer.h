@@ -98,6 +98,8 @@ public:
     virtual void setWaterConfig(const WaterConfig &config) override;
     virtual void setBloomConfig(const BloomConfig &config) override;
     virtual void setRenderDebugConfig(const RenderDebugConfig &config) override;
+    virtual void setOcclusionCullConfig(
+            const OcclusionCullConfig &config) override;
     virtual void setUserShaderConfig(const UserShaderConfig &config) override;
     virtual void setPreselConfig(const PreselHighlightConfig &config) override;
     virtual void setSelConfig(const PreselHighlightConfig &config) override;
@@ -121,10 +123,36 @@ public:
     /// (reflection re-render, SSAO resolve); see Render::Renderer.
     virtual void setEffectResolution(float scale) override;
     virtual void setSSAOResolution(float scale) override;
+    /// The element gates (docs/SceneStreaming.md #13b). Outside the
+    /// desktop guard below: the vertex gate is pure display and is
+    /// worth more on a phone than on the desktop, so the standalone
+    /// viewer drives it from its URL parameters.
+    virtual void setElementGates(bool shapeVertices, bool pressureEdges,
+                                 bool loadingDrop, int staggerFrames) override;
+
+    /// Outside the desktop guard for the same reason as the gates above,
+    /// and it took a browser session to notice it was not: the flag it
+    /// sets is cross-tier (Private::levelDebug, "with the environment
+    /// variable as the standalone viewer's way in"), the lines it turns
+    /// on are cross-tier (FC_RENDER_MSG, which is std::printf here), and
+    /// the gate counters they carry are computed on this tier whether or
+    /// not anyone can read them. Only the SETTER was walled off, so the
+    /// viewer's call resolved to the base class's no-op and every
+    /// "render levels:" line stayed dark in the browser -- silently,
+    /// which is how a whole tier's instrumentation went unread. The
+    /// environment variable the header names as the standalone way in
+    /// does not exist in a browser.
+    virtual void setLevelDebug(bool on) override;
+
 #ifndef FC_RENDERER_STANDALONE
     virtual void setLevelTolerance(float px) override;
     virtual bool drivesMeshLevels() const override;
     virtual void setGpuMemoryBudget(size_t bytes) override;
+    virtual void setLevelPressureRelease(float fraction) override;
+    virtual void setDowngradeLedger(bool on) override;
+    virtual void setClimbAdmission(bool hardLimit, int batch) override;
+    virtual void setDescentOrderBatch(int batch) override;
+    virtual void setLevelBudgetDeadband(float fraction) override;
 #endif
 
 #ifdef FC_RENDERER_STANDALONE

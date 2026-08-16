@@ -70,6 +70,10 @@ namespace Gui {
 
 std::chrono::duration<double> ViewProvider::VisualBuildTime {0};
 std::chrono::duration<double> ViewProvider::VisualMeshTime {0};
+std::chrono::duration<double> ViewProvider::VisualFillTime {0};
+std::chrono::duration<double> ViewProvider::VisualPrologueTime {0};
+std::chrono::duration<double> ViewProvider::VisualInstanceTime {0};
+std::chrono::duration<double> ViewProvider::VisualHighlightTime {0};
 std::size_t ViewProvider::VisualBuildCount = 0;
 
 ViewProvider::VisualBuildTimer::VisualBuildTimer(
@@ -106,12 +110,15 @@ bool isValidBBox(const SbBox3f &bbox)
     const auto &minPt = bbox.getMin();
     if (maxPt[0] < minPt[0])
         return false;
-    return !std::isnan(maxPt[0])
-        && !std::isnan(maxPt[1])
-        && !std::isnan(maxPt[2])
-        && !std::isnan(minPt[0])
-        && !std::isnan(minPt[1])
-        && !std::isnan(minPt[2])
+    // isfinite, not just isnan: a box that went through a matrix with
+    // sentinel corners comes out at +/-inf, which is not NaN, is not
+    // FLT_MAX, and fitted a camera to infinity before this rejected it.
+    return std::isfinite(maxPt[0])
+        && std::isfinite(maxPt[1])
+        && std::isfinite(maxPt[2])
+        && std::isfinite(minPt[0])
+        && std::isfinite(minPt[1])
+        && std::isfinite(minPt[2])
         && maxPt[0]!=FLT_MAX
         && maxPt[1]!=FLT_MAX
         && maxPt[2]!=FLT_MAX

@@ -145,6 +145,125 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter MeshSkipRedundant
+    ///
+    /// Ask the shape whether it is already tessellated the way this
+    /// rebuild wants it, and skip the tessellation call outright when it
+    /// is (docs/SceneStreaming.md #13e).
+    /// A visual rebuild always called BRepMesh_IncrementalMesh, on the
+    /// assumption that a mesh already resident makes the call nearly
+    /// free. Measured, it does not: half the calls of a mass descent --
+    /// 2462 of 4942 -- changed no triangle at all and still cost about
+    /// 19ms each, 27% of the whole descent's rebuild time, because
+    /// reaching the conclusion means building OCCT's internal mesh model
+    /// of the shape first.
+    /// The check asks the same question that model would have answered,
+    /// off the triangulations already hanging on the faces: OCCT's own
+    /// consistency rule (BRepMesh_ModelPreProcessor), per face, plus the
+    /// 3D polygon of every free edge. It is all-or-nothing per shape and
+    /// deliberately the stricter test -- one face that would be
+    /// re-tessellated, one triangulation with an index out of range, and
+    /// the call runs exactly as before, because the fallback is the real
+    /// thing and there is nothing to gain by guessing.
+    /// A resident mesh FINER than the ask is not adequate. That is not
+    /// an oversight: the descent asks for a coarser mesh on purpose, to
+    /// give memory back, and OCCT would coarsen it. Skipping there would
+    /// quietly hold the memory the plan asked for.
+    /// Off, the call is made unconditionally, as it always was. With the
+    /// level plan narrating, the off arm also reports how often the
+    /// check and the call agreed, which is what says the check is safe.
+    static const bool & getMeshSkipRedundant();
+    static const bool & defaultMeshSkipRedundant();
+    static void removeMeshSkipRedundant();
+    static void setMeshSkipRedundant(const bool &v);
+    static const char *docMeshSkipRedundant();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MeshSkipFinerResident
+    ///
+    /// Count a resident mesh FINER than the rebuild asked for as
+    /// adequate, instead of re-tessellating to coarsen it
+    /// (docs/SceneStreaming.md #13e). Only consulted when redundant
+    /// tessellation is being skipped at all.
+    /// Strictly, finer is not adequate: the descent asks coarse on
+    /// purpose to hand memory back, and OCCT coarsens the mesh when
+    /// asked with quality decrease allowed. That is why the check
+    /// refuses it by default -- accepting it would be the feature
+    /// quietly holding the memory the level plan asked for.
+    /// Measured on the descent, though, that is what the refusal is
+    /// actually costing and it is nearly all of it: 2599 of the 2765
+    /// refused calls had a resident mesh exactly twice as fine as the
+    /// ask -- the previous ladder rung, one dynamic scale step back --
+    /// and every one of them changed no triangle when the call was
+    /// made anyway. The faces were already at their floor; a face of
+    /// two triangles does not coarsen.
+    /// So this trades a coarsening that mostly achieves nothing for the
+    /// ~19ms it costs to find that out. What it risks is the minority
+    /// where the coarsening WOULD have removed triangles, which is
+    /// memory the plan then has to recover some other way -- through
+    /// the refine pool's own coarser rung, where it was always meant to
+    /// come from.
+    /// OFF BY DEFAULT, and the reason is that risk, measured. Audited
+    /// with every call still made so the check can be scored against
+    /// what the call actually did, this rule predicted 3381 calls
+    /// redundant and 753 of them -- 22%, better than one in five --
+    /// rebuilt anyway. Those are real coarsenings it would have
+    /// skipped, and real memory the plan would not get back. The
+    /// strict rule's own score on the same instrument is 1 in 7403.
+    /// /!\ Never read that count from a run with the skip ON: a call
+    /// that is skipped is never made, so nothing can say whether it
+    /// would have rebuilt, and the wrong-verdict column can only
+    /// count calls the check refused. A zero there is guaranteed by
+    /// construction rather than earned.
+    static const bool & getMeshSkipFinerResident();
+    static const bool & defaultMeshSkipFinerResident();
+    static void removeMeshSkipFinerResident();
+    static void setMeshSkipFinerResident(const bool &v);
+    static const char *docMeshSkipFinerResident();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MeshSkipInvariant
+    ///
+    /// Skip a tessellation call on a shape whose mesh provably cannot
+    /// depend on the deflection asked: every face planar, every edge
+    /// curve a straight line (docs/SceneStreaming.md #13e). A plane
+    /// deviates from its triangulation by zero and a straight edge
+    /// discretizes to its two endpoints at ANY deflection, so the call
+    /// would rebuild the identical mesh -- there is no ask, coarser or
+    /// finer, at which such a shape tessellates differently.
+    /// This is the geometric statement behind the measured descent
+    /// waste: most mechanical parts hit their floor immediately, and a
+    /// mass descent then pays ~19-38ms per object per step (56-60% of
+    /// all drop-phase mesh time on the rack model) for BRepMesh to
+    /// rebuild what cannot change. The empirical exhaustion proof the
+    /// ladder keeps (scaleSpent) cannot be used for a skip -- audited
+    /// twice, 14-20% of proved shapes resume coarsening at some later
+    /// ask, and those rebuilds reclaim real memory. The geometric rule
+    /// is immune to that leak: the shapes that resume are exactly the
+    /// curved ones it refuses to claim, and an all-linear mesh cannot
+    /// shrink, so no reclaim is ever forgone.
+    /// The classification walks surface and curve TYPES once per shape
+    /// and is cached; conservative on both counts (a trimmed or offset
+    /// plane, a straight b-spline, count as curved). The skip is also
+    /// refused while any face is missing its triangulation -- building
+    /// that is exactly the call's job.
+    /// With the level plan narrating and this OFF, the rule is still
+    /// evaluated and scored against every call it would have skipped --
+    /// read its WRONG column from that arm only; a run with the skip on
+    /// cannot score calls it never made.
+    static const bool & getMeshSkipInvariant();
+    static const bool & defaultMeshSkipInvariant();
+    static void removeMeshSkipInvariant();
+    static void setMeshSkipInvariant(const bool &v);
+    static const char *docMeshSkipInvariant();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter ProgressiveLoad
     ///
     /// Build the visual representation of a restored document after
@@ -219,6 +338,50 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LevelDebug
+    ///
+    /// Narrate what each mesh-level plan decides (docs/SceneStreaming.md
+    /// #13): the GPU budget it decided against and the bytes in use, how
+    /// many displayed sources stand at their coarse and exact rungs, and
+    /// how many refines, demotes and downgrades the plan asked for.
+    /// Reported on the plan's own cadence - a camera pause - because it
+    /// is a decision, not a per-frame cost.
+    /// Needed to tell a ladder that will not descend apart from one that
+    /// never ran: on the desktop OpenGL backend the automatic GPU budget
+    /// is 0 (bgfx's GL renderer reports no limit), so the downgrade half
+    /// of the plan never executed at all and nothing said so.
+    /// The FC_LEVEL_DEBUG environment variable also turns it on. Read
+    /// once, at the first plan.
+    static const bool & getLevelDebug();
+    static const bool & defaultLevelDebug();
+    static void removeLevelDebug();
+    static void setLevelDebug(const bool &v);
+    static const char *docLevelDebug();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelCeilingSimulateMB
+    ///
+    /// Pretend the system ran out of memory for exact re-tessellation
+    /// (docs/SceneStreaming.md #13), so the CPU-side half of the level
+    /// plan can be exercised on a machine that has memory to spare.
+    /// Non-zero raises the floor that the refine worker compares
+    /// available memory against, so builds are refused and a memory
+    /// ceiling is observed - after which the plans start demoting exact
+    /// meshes the camera would not miss back to their coarse rung.
+    /// A simulation knob, not a tuning one: LevelMemoryFloorMB is the
+    /// real floor, and this overrides it upward only.
+    /// Read when a refine is dequeued, so it takes effect live.
+    static const long & getLevelCeilingSimulateMB();
+    static const long & defaultLevelCeilingSimulateMB();
+    static void removeLevelCeilingSimulateMB();
+    static void setLevelCeilingSimulateMB(const long &v);
+    static const char *docLevelCeilingSimulateMB();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter GpuMemoryBudgetMB
     ///
     /// GPU geometry budget of the desktop mesh-level plan
@@ -261,6 +424,597 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter LevelPressureRelease
+    ///
+    /// How much of the raised refine tolerance the plan keeps each
+    /// time it comes in under the GPU budget (docs/SceneStreaming.md
+    /// #13c.3). While the budget is exceeded the plan accepts visible
+    /// error to fit the scene, and it must not hand that error straight
+    /// back the moment one plan fits: measured on a 5455-object model at
+    /// a 64MB budget, clearing it in one step took the tolerance from
+    /// 51 pixels to 2, asked 946 objects to re-tessellate at once, broke
+    /// the budget again and cycled -- 43 plans in 611 seconds with no
+    /// steady state at any point.
+    /// So quality comes back in steps: each plan that fits keeps this
+    /// fraction of the standing tolerance, and a step that puts the
+    /// scene back over budget is remembered as a floor the release never
+    /// passes again, so the ladder settles at the coarsest tolerance
+    /// that actually fits instead of oscillating around it. The floor is
+    /// forgotten when the camera moves or the budget changes, which is
+    /// when what a rung costs on screen changes.
+    /// Smaller gives quality back faster and risks the cycle; larger is
+    /// gentler and slower. 0 or less restores the immediate snap.
+    static const double & getLevelPressureRelease();
+    static const double & defaultLevelPressureRelease();
+    static void removeLevelPressureRelease();
+    static void setLevelPressureRelease(const double &v);
+    static const char *docLevelPressureRelease();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ClimbHardLimit
+    ///
+    /// Whether the GPU budget is an absolute ceiling for the level
+    /// plan's climbs (docs/SceneStreaming.md #13c.5). With it on, a
+    /// plan whose allocator-exact uploaded total stands at or above
+    /// the budget admits NO refine and cancels every climb still in
+    /// flight -- the existing de-want pass aborts them -- and below
+    /// the ceiling climbs are admitted in small batches (Climb
+    /// admission batch) so the total approaches the ceiling in
+    /// verified steps instead of overshooting it in one plan. Judged
+    /// against the uploaded TOTAL, not the two-frame live census: the
+    /// census alternates under churn and is what let climbs land
+    /// over budget. A crossing is bounded by one batch's bytes;
+    /// per-climb pre-sizing needs rung-keyed GPU cache entries and is
+    /// future work. Off restores unadmitted climbing.
+    static const bool & getClimbHardLimit();
+    static const bool & defaultClimbHardLimit();
+    static void removeClimbHardLimit();
+    static void setClimbHardLimit(const bool &v);
+    static const char *docClimbHardLimit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ClimbAdmitBatch
+    ///
+    /// How many refines one plan may admit while the hard climb
+    /// limit is on and the uploaded total is under budget. Small
+    /// keeps the possible overshoot small and lets the next plan
+    /// re-check the allocator-exact total before admitting more;
+    /// large climbs faster. The set is not ordered by need within a
+    /// plan, but every plan re-evaluates the whole scene, so nothing
+    /// starves across plans.
+    static const long & getClimbAdmitBatch();
+    static const long & defaultClimbAdmitBatch();
+    static void removeClimbAdmitBatch();
+    static void setClimbAdmitBatch(const long &v);
+    static const char *docClimbAdmitBatch();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelLandBudgetMS
+    ///
+    /// How long one event-loop turn may spend landing finished
+    /// worker jobs (climb refines and descent coarsenings alike).
+    /// Landings arrive as queued events, and Qt delivers every
+    /// pending one in a single sweep -- a batch of 64 landings ran
+    /// back-to-back for measured 1-2.7s stretches in which no paint,
+    /// timer or input event was served. The pump runs landings until
+    /// this budget is spent, then yields the loop and reschedules;
+    /// a single landing larger than the budget still lands whole
+    /// (items are not sliceable). Small keeps the UI responsive
+    /// under a landing storm; large lands a converging scene sooner.
+    static const long & getLevelLandBudgetMS();
+    static const long & defaultLevelLandBudgetMS();
+    static void removeLevelLandBudgetMS();
+    static void setLevelLandBudgetMS(const long &v);
+    static const char *docLevelLandBudgetMS();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter MeshSkipLanded
+    ///
+    /// Whether the rebuild half of a landing skips its OCCT mesh
+    /// call. A worker landing (climb, scale-descent, stand-in
+    /// resolution) or a demote/downgrade installs or re-activates the
+    /// very triangulation the following rebuild displays, and on
+    /// every such path the resident rung is never coarser than the
+    /// ask -- BRepMesh there can only validate: measured 18.3s of a
+    /// 92s budget drop (991 validated-only calls, 0.1-0.8s each on
+    /// large compounds), plus ~1s per landing of a giant re-FAILING
+    /// the faces the worker's mesher had already failed. Keyed on
+    /// the path of the one rebuild the landing just prepared, never
+    /// on the shape's descent history (the exhaustion-proof leak
+    /// that killed the spent-keyed skip does not reach a per-rebuild
+    /// claim). Audited at 94 percent exact no-ops; the rest are
+    /// BRepMesh re-meshing a few faces within ~5 percent of the
+    /// triangle count in either direction -- perturbation of a rung
+    /// the ladder chose to display, not reclaim forgone. The level
+    /// debug flag scores the claim either way; read the 'landed
+    /// rule' audit line before trusting a change here.
+    static const bool & getMeshSkipLanded();
+    static const bool & defaultMeshSkipLanded();
+    static void removeMeshSkipLanded();
+    static void setMeshSkipLanded(const bool &v);
+    static const char *docMeshSkipLanded();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter VisualFillOnPool
+    ///
+    /// Whether the display-array fill of a big landing rebuild runs
+    /// on the refine worker pool instead of the GUI thread. After the
+    /// mesh call was skipped on landings (Skip mesh call on landing
+    /// rebuilds), the traversal that copies the resident
+    /// triangulations into the Coin arrays became the per-item floor
+    /// of the landing pump: 0.3-0.65s per 15-21k-face compound,
+    /// unsliceable, against a 200ms interactivity gate. With this on,
+    /// the rebuild captures handles to the resident triangulations
+    /// and edge polygons (the only state another thread may swap
+    /// under it -- the topology itself is immutable at runtime),
+    /// fills detached arrays on a worker, and lands them back through
+    /// the landing pump as plain array writes. The landing is
+    /// guarded by the shape identity and a per-object generation
+    /// count, so a rebuild that ran for any other reason in between
+    /// simply wins. Only rebuilds inside the landing pump with at
+    /// least 'Minimum faces for a pooled fill' faces take this path;
+    /// everything else fills inline exactly as before.
+    static const bool & getVisualFillOnPool();
+    static const bool & defaultVisualFillOnPool();
+    static void removeVisualFillOnPool();
+    static void setVisualFillOnPool(const bool &v);
+    static const char *docVisualFillOnPool();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter VisualFillMinFaces
+    ///
+    /// How many faces a landing rebuild must have before its
+    /// array fill goes to the refine pool (Fill landing rebuilds on
+    /// the refine pool). The fill measures ~30us per face on the
+    /// reference model, so the default parks roughly the >60ms
+    /// items; the thousands of small landings in a budget drop stay
+    /// on the cheap inline path rather than paying a snapshot, a
+    /// queue hop and a second landing each.
+    static const long & getVisualFillMinFaces();
+    static const long & defaultVisualFillMinFaces();
+    static void removeVisualFillMinFaces();
+    static void setVisualFillMinFaces(const long &v);
+    static const char *docVisualFillMinFaces();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter WorkerVertexCache
+    ///
+    /// Whether a scene publish adopts the vertex-cache content the
+    /// fill worker emitted at landing instead of re-capturing the
+    /// shape by traversal (docs/WorkerVertexCache.md). The capture
+    /// walks every triangle through a hash-dedup a second time to
+    /// rebuild exactly the arrays the fill already computed; with
+    /// this on, the worker emits those arrays next to the display
+    /// arrays and the publish installs them directly. Uniform-color
+    /// shapes only -- per-face colors, textures and marker sets fall
+    /// back to the traversal capture, as does any shape whose nodes
+    /// were touched after the landing registered the content. 0 is
+    /// off, 1 adopts, 2 adopts nothing but runs the traversal capture
+    /// and compares it against the worker's content, logging any
+    /// disagreement -- slow, for checking the emission, not for use.
+    static const long & getWorkerVertexCache();
+    static const long & defaultWorkerVertexCache();
+    static void removeWorkerVertexCache();
+    static void setWorkerVertexCache(const long &v);
+    static const char *docWorkerVertexCache();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter CaptureBudgetMS
+    ///
+    /// How long one scene publish may spend re-capturing changed
+    /// shapes into vertex caches before the rest are deferred. The
+    /// capture walks a changed shape's primitives one triangle at a
+    /// time, and during a descent storm every landed batch pays that
+    /// on the next paint: mid-paint stack samples put the capture at
+    /// about half of 250-850ms publish frames. Once this budget is
+    /// spent, each remaining changed shape keeps its previous vertex
+    /// cache for this frame (a shape captured for the first time
+    /// stays out of the frame entirely -- progressive appearance,
+    /// same as a live import), the caches on its path are left
+    /// unclosed for reuse, and another publish is scheduled; captured
+    /// shapes turn valid and prune, so successive frames always make
+    /// progress. The display is at worst a few frames stale in a
+    /// scene that is churning anyway; a single changed object never
+    /// comes near the budget. 0 captures everything in one frame,
+    /// as before this parameter existed.
+    static const long & getCaptureBudgetMS();
+    static const long & defaultCaptureBudgetMS();
+    static void removeCaptureBudgetMS();
+    static void setCaptureBudgetMS(const long &v);
+    static const char *docCaptureBudgetMS();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelSlowBuildMS
+    ///
+    /// A visual rebuild whose own cost passes this many
+    /// milliseconds reports its time split (traversal, mesh,
+    /// prologue, instancing, highlight) on one line naming the
+    /// object, under the level debug flag. The aggregate split says
+    /// where a mass descent's time goes; the landing pump's worst
+    /// turn is a single object's whole rebuild, and only a per-build
+    /// line says what that object spent it on. The same threshold
+    /// arms the slow-dispatch line in GUIApplication::notify, which
+    /// names the receiver of any single event-loop dispatch this
+    /// slow -- the net that catches a stall no timer above
+    /// bracketed. 0 turns both lines off.
+    static const long & getLevelSlowBuildMS();
+    static const long & defaultLevelSlowBuildMS();
+    static void removeLevelSlowBuildMS();
+    static void setLevelSlowBuildMS(const long &v);
+    static const char *docLevelSlowBuildMS();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DescentOrderBatch
+    ///
+    /// How many descents (demotes/downgrades) one plan pass may
+    /// order, free tier and priced tier together; 0 removes the cap.
+    /// Each order enqueues a worker job -- the coarsening itself runs
+    /// on the refine pool -- but the enqueue snapshots the object's
+    /// display arrays on the GUI thread, so an unbounded pass (the
+    /// measured 1500-order plans) is itself a stall. Deferred
+    /// candidates keep their hooks and the replan after the batch
+    /// lands re-finds them, so nothing is refused, only paced -- the
+    /// climb admission batch's mirror.
+    static const long & getDescentOrderBatch();
+    static const long & defaultDescentOrderBatch();
+    static void removeDescentOrderBatch();
+    static void setDescentOrderBatch(const long &v);
+    static const char *docDescentOrderBatch();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DowngradeLedger
+    ///
+    /// Whether the GPU downgrade sweep carries its own unlanded
+    /// orders as credit against the next plan's deficit
+    /// (docs/SceneStreaming.md #13c.4). A downgrade frees exactly the
+    /// bytes it prices, but not WHEN the plan next looks: the swap
+    /// uploads the coarse rung immediately while the fine buffers
+    /// leave the live meter only after the collection window -- on a
+    /// heavy scene, seconds -- so a plan sampling mid-transition reads
+    /// old+new at once, computes a larger deficit than the one just
+    /// covered, and walks other sources further down. Measured on a
+    /// 5455-object model at 64MB with the camera inside the assembly:
+    /// single plans requesting 1500+ downgrades, live tripling during
+    /// the storm, and the whole registry drained to its bottom rung
+    /// while the settled memory was under budget all along.
+    /// With the ledger, promised bytes hold the sweep until they are
+    /// observed landing or written off a few frames after the ordered
+    /// worker jobs have all drained (an order's bytes cannot land
+    /// before its descent job does); off restores the storming
+    /// behaviour for comparison.
+    static const bool & getDowngradeLedger();
+    static const bool & defaultDowngradeLedger();
+    static void removeDowngradeLedger();
+    static void setDowngradeLedger(const bool &v);
+    static const char *docDowngradeLedger();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelCount
+    ///
+    /// How many rungs the fidelity ladder declares
+    /// (docs/SceneStreaming.md #13). Rung n is tessellated at a
+    /// deflection of the shape diagonal over 8<<n, so rung 0 is the
+    /// coarsest and each further rung halves the error; this bounds
+    /// what Coarse tessellation level may select and how far a source
+    /// may climb. Raising it adds finer rungs, not coarser ones -- to
+    /// go below rung 0 the plan scales an object's error instead, see
+    /// Level scale.
+    static const long & getLevelCount();
+    static const long & defaultLevelCount();
+    static void removeLevelCount();
+    static void setLevelCount(const long &v);
+    static const char *docLevelCount();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelScale
+    ///
+    /// What the level plan multiplies an object's error by when it
+    /// must free memory and every ordinary descent is exhausted
+    /// (docs/SceneStreaming.md #13). Rung 0 is not the floor: under a
+    /// budget the plan keeps picking objects -- individually, cheapest
+    /// visible error first, never the whole scene at once -- and
+    /// re-tessellates each one this much coarser again, until the
+    /// model fits. An object whose scaled error reaches Level scale
+    /// box error is replaced by its bounding box, which is the real
+    /// floor: coarsening a deflection cannot drop a planar face below
+    /// the two triangles it always has, and on a measured STEP
+    /// assembly a 4x coarser tessellation removed only 19% of the
+    /// primitives. 1 or less turns dynamic scaling off, and then a
+    /// budget under what rung 0 costs cannot be honoured.
+    static const double & getLevelScale();
+    static const double & defaultLevelScale();
+    static void removeLevelScale();
+    static void setLevelScale(const double &v);
+    static const char *docLevelScale();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelBudgetDeadband
+    ///
+    /// The rest band above the GPU memory budget, as a fraction of
+    /// it, inside which the level plan orders NO downgrades. The sweep
+    /// triggers only past budget*(1+this) and still corrects back to
+    /// the budget itself, so the band is hysteresis, not a higher
+    /// budget.
+    /// Without it an equilibrium that lands ON the budget line has
+    /// nowhere to rest: the plan orders 2-3 downgrades, the release
+    /// staircase re-wants the quality back, and the ladder dithers
+    /// 0.2-0.4MB across the line for as long as the process lives --
+    /// measured on the rack model as the difference between a run
+    /// that settles in ~250s and one that churns its whole 600s
+    /// window. Climbs already stop AT the budget (Climb hard limit),
+    /// so inside the band neither direction acts and the plans go
+    /// genuinely quiet; pressure counts as standing there, which
+    /// keeps the raised tolerance and the edge gate latched exactly
+    /// as they were while the equilibrium was reached.
+    /// The band tolerates standing that fraction over the stated
+    /// budget (about 2MB at 64MB). 0 restores the bare line and with
+    /// it the dither.
+    static const double & getLevelBudgetDeadband();
+    static const double & defaultLevelBudgetDeadband();
+    static void removeLevelBudgetDeadband();
+    static void setLevelBudgetDeadband(const double &v);
+    static const char *docLevelBudgetDeadband();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LevelScaleBoxError
+    ///
+    /// The scaled error at which an object stops being tessellated
+    /// at all and is drawn as its bounding box (12 triangles whatever
+    /// its face count), expressed relative to the shape diagonal. This
+    /// is where the ladder stops paying for topology it can no longer
+    /// resolve: past roughly a quarter of the diagonal a re-tessellated
+    /// shape and its box commit similar error, and only the box
+    /// actually removes the faces. 0 or less never substitutes a box.
+    static const double & getLevelScaleBoxError();
+    static const double & defaultLevelScaleBoxError();
+    static void removeLevelScaleBoxError();
+    static void setLevelScaleBoxError(const double &v);
+    static const char *docLevelScaleBoxError();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SimplifyExhausted
+    ///
+    /// When re-tessellating an object coarser stops removing
+    /// geometry, decimate the mesh it already has instead of dropping
+    /// straight to its bounding box (docs/SceneStreaming.md #13c).
+    /// The descent coarsens an object by asking OCCT for a larger
+    /// deflection, and that saturates: a planar face is two triangles
+    /// at any deflection, so a shape of flat faces answers the same
+    /// mesh however coarse the ask. Past that point the only thing
+    /// that removes geometry is a representation with fewer faces.
+    /// Vertex clustering is the rung between the two: it keeps the
+    /// object's shape, where the bounding box does not.
+    /// Rewrites the display nodes only. Nothing re-tessellates and the
+    /// OCCT triangulation is untouched, so the way back is one ordinary
+    /// rebuild, and each further step down clusters on a coarser grid.
+    /// Face and edge numbering survive: a face that decimates away to
+    /// nothing keeps its (empty) slot, because those tables are read by
+    /// element number.
+    /// What it gives up is exactness of the decimated rung -- section
+    /// caps through it can be rough, since clustering does not preserve
+    /// watertightness, and the hidden-line seam filter is dropped
+    /// because a welded edge may fold a seam and a non-seam together.
+    static const bool & getSimplifyExhausted();
+    static const bool & defaultSimplifyExhausted();
+    static void removeSimplifyExhausted();
+    static void setSimplifyExhausted(const bool &v);
+    static const char *docSimplifyExhausted();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SimplifyMergeParts
+    ///
+    /// Let the decimator weld vertices across face boundaries
+    /// instead of clustering each face on its own grid.
+    /// Off, no output triangle spans two faces, so a modelled crease
+    /// stays a crease and each face keeps at least the triangles its
+    /// own cells produce. That floor is the catch: this rung is reached
+    /// precisely when a shape is mostly flat faces, and per-face
+    /// clustering cannot take a two-triangle face below two triangles.
+    /// On, positions and attributes cluster once over the whole mesh,
+    /// which is what actually removes geometry there -- at the cost of
+    /// shading round creases the model really has.
+    /// Face identity survives either way: a triangle still belongs to
+    /// the face it came from, so per-face colour and selection keep
+    /// working. Only the geometry is shared.
+    static const bool & getSimplifyMergeParts();
+    static const bool & defaultSimplifyMergeParts();
+    static void removeSimplifyMergeParts();
+    static void setSimplifyMergeParts(const bool &v);
+    static const char *docSimplifyMergeParts();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter SimplifyMinReduction
+    ///
+    /// How much of an object's triangle count a decimation pass has
+    /// to remove for the result to be kept, as a percentage.
+    /// Below it the pass is refused and the descent takes its next step
+    /// instead, which is the bounding box. A rung that removes almost
+    /// nothing is worse than not having one: it costs a node rewrite
+    /// and still holds the memory that made the plan ask.
+    /// This is also what stops the descent looping. Each step clusters
+    /// on a coarser grid, so a mesh that has run out of things to merge
+    /// keeps answering no and the object moves on to the box.
+    static const double & getSimplifyMinReduction();
+    static const double & defaultSimplifyMinReduction();
+    static void removeSimplifyMinReduction();
+    static void setSimplifyMinReduction(const double &v);
+    static const char *docSimplifyMinReduction();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ShapeVertices
+    ///
+    /// Let the vertex points that sit on the ends of a shape's edges
+    /// draw under the element contract (docs/SceneStreaming.md #13b):
+    /// an attached point set draws only while its object's line set is
+    /// shown and memory allows, is the FIRST class dropped under
+    /// pressure and the LAST taken back. Off suppresses attached point
+    /// sets outright, memory or not.
+    /// A point is not cheap: it costs the GPU a 32-byte sprite instance
+    /// record plus its index, roughly nine times what it occupies in
+    /// the heap, which is why a CPU-currency measurement made them look
+    /// negligible.
+    /// All or nothing per point set, and only ATTACHED sets are ever
+    /// gated: one floating vertex -- one no edge touches, and every
+    /// point of a point cloud -- and the whole set ranks with the
+    /// faces, because nothing else would show it. Objects are in
+    /// practice all floating or none, so a per-vertex subset would buy
+    /// nothing and cost an index permutation.
+    /// It never applies in the Points display mode, where the vertices
+    /// are what the mode exists to show.
+    /// Picking, pre-selection and selection highlighting are unaffected:
+    /// the point geometry stays published and resident, the highlight
+    /// draws render on top as always, and only the base-pass submission
+    /// is skipped.
+    static const bool & getShapeVertices();
+    static const bool & defaultShapeVertices();
+    static void removeShapeVertices();
+    static void setShapeVertices(const bool &v);
+    static const char *docShapeVertices();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter PressureDropEdges
+    ///
+    /// Let the pressure stages of the element contract
+    /// (docs/SceneStreaming.md #13b) stop drawing the edges that bound
+    /// faces. Under the contract an attached line set draws only while
+    /// its object's face set is shown and memory allows; pressure
+    /// spends the classes points -> lines -> faces and takes them back
+    /// in reverse, and this is the switch on the lines stage. Off
+    /// exempts line sets from the pressure stages (a loading document
+    /// still drops them).
+    /// Edge geometry is the GPU's most expensive geometry per unit of
+    /// screen information: a segment is 8 bytes of index in the heap
+    /// and those 8 bytes plus a 64-byte quad-expansion instance record
+    /// on the GPU.
+    /// All or nothing per edge set, attached sets only: one floating
+    /// edge -- a wire, a sketch, a datum line, any edge no face uses --
+    /// and the whole set ranks with the faces, because it is the
+    /// object, and dropping it would show nothing at all.
+    /// It never applies in the Wireframe display mode, where the edges
+    /// are what the mode exists to show.
+    /// A display gate, not a residency change -- nothing is demoted and
+    /// nothing re-tessellates, so entering and leaving it costs one
+    /// frame, which is why it is spent before any rung is given up.
+    /// Picking, highlighting and on-top rendering are unaffected.
+    static const bool & getPressureDropEdges();
+    static const bool & defaultPressureDropEdges();
+    static void removePressureDropEdges();
+    static void setPressureDropEdges(const bool &v);
+    static const char *docPressureDropEdges();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ElementGateStagger
+    ///
+    /// How many frames the element contract's pressure latch waits
+    /// between stages (docs/SceneStreaming.md #13b), both escalating
+    /// (points dropped, then lines if the budget is still exceeded) and
+    /// releasing (lines back, then points, once the ladder has given
+    /// back all raised error). The wait is what lets the buffer
+    /// collector's census answer whether the cheaper stage was enough
+    /// before the next one is spent, and what keeps the release from
+    /// re-opening into the memory the collector just freed.
+    static const long & getElementGateStagger();
+    static const long & defaultElementGateStagger();
+    static void removeElementGateStagger();
+    static void setElementGateStagger(const long &v);
+    static const char *docElementGateStagger();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter LoadDropElements
+    ///
+    /// Stop drawing edges AND vertices for as long as a document is
+    /// still arriving (docs/SceneStreaming.md #13b), and let the two
+    /// standing gates above decide again the moment it has finished.
+    /// A load is when the tier can least afford those two classes and
+    /// can least use them: the faces are arriving coarse-first and
+    /// being replaced under the camera, nobody inspects a vertex of a
+    /// model that is still half there, and every byte not uploaded to
+    /// an edge instance buffer now is one the arriving geometry gets
+    /// instead.
+    /// RE-MEASURED 2026-08-15, and the earlier reading no longer
+    /// holds. It used to suppress NOTHING on a .FCStd open: the load
+    /// parked every visual build and published in one step at the
+    /// end, so the renderer held an empty scene throughout -- 0
+    /// drawables across 17.8s on a 5455-object model. The publish is
+    /// incremental now, so the same open feeds the scene while the
+    /// drain runs and the gate has real work: on the same model it
+    /// climbs from 1123 to 5909 point and line draws suppressed, out
+    /// of 11818 eligible in a 17727-drawable scene, and both edges
+    /// are logged -- ON with an empty scene, OFF as the drain ends.
+    /// It overrides both gates while it lasts -- vertices drop even
+    /// with ShapeVertices on, edges drop with no pressure yet declared
+    /// -- but it is subject to the same all-or-nothing classification
+    /// and the same display-mode exemptions: a wire, a sketch, a datum
+    /// line or a point cloud draws throughout, because nothing else on
+    /// screen would show it, and neither class is dropped in the mode
+    /// that exists to show it.
+    /// Independent of this gate, the contract's dependency rule already
+    /// holds back an attached point or line set whose companion the
+    /// publish's capture budget deferred: an adopted vertex cache never
+    /// draws frames ahead of the face set it decorates, load gate or
+    /// not.
+    /// Costs one frame to leave, like the pressure gate, so what it
+    /// holds back comes straight back when the load lets go.
+    /// Applies only where coarse-first is on (CoarseTessellation 0 or
+    /// above): with everything tessellated exact up front there is no
+    /// progressive arrival for this to make room for.
+    /// A load here means a document restoring, a progressive import
+    /// filling one, or the deferred view-provider drain that follows a
+    /// restore -- geometry is still being built into the view in all
+    /// three.
+    static const bool & getLoadDropElements();
+    static const bool & defaultLoadDropElements();
+    static void removeLoadDropElements();
+    static void setLoadDropElements(const bool &v);
+    static const char *docLoadDropElements();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter EffectResolution
     ///
     /// Resolution scale (0.25-1.0) of the expensive screen-space effect
@@ -276,6 +1030,485 @@ public:
     static void removeEffectResolution();
     static void setEffectResolution(const double &v);
     static const char *docEffectResolution();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter Occlusion
+    ///
+    /// Skip drawing what the depth buffer proves could not have
+    /// reached the screen (docs/FarFieldProxies.md §12). Bounding boxes
+    /// of the spatial index's nodes are tested against the depth the
+    /// occluders leave behind -- by default in a software depth buffer
+    /// on the CPU (Render_OcclusionSoftware), which answers within the
+    /// frame that asked -- and a node that puts no pixel through has
+    /// its whole subtree skipped, one test standing for thousands of
+    /// draws.
+    /// 
+    /// Exact, not approximate: only geometry that could not have been
+    /// seen is removed, so the image is unchanged and what is saved is
+    /// the draw call, which measures ~1.2-1.5us of CPU submission plus
+    /// ~1.5-1.7us of GPU time whatever it contains (§10.2). It pays on
+    /// assemblies that hide themselves -- an enclosed chassis, a
+    /// populated rack, any interior -- and does nothing for a model
+    /// that is mostly silhouette. Expect roughly a fifth of the draws
+    /// from a camera inside a large assembly (§10.3); the far larger
+    /// figure from outside a closed model is a bound, not a promise.
+    /// 
+    /// Casters and reflections are judged separately: geometry hidden
+    /// from the eye still casts its shadow and still appears in the
+    /// ground reflection.
+    static const bool & getOcclusion();
+    static const bool & defaultOcclusion();
+    static void removeOcclusion();
+    static void setOcclusion(const bool &v);
+    static const char *docOcclusion();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionVisibleTtl
+    ///
+    /// How many frames a node found visible is believed before it is
+    /// tested again. Higher spends fewer queries and keeps drawing
+    /// geometry that has since become hidden for a little longer; lower
+    /// tracks the camera more closely at the cost of more tests. Purely
+    /// a cost trade -- being late here draws too much, never too
+    /// little, so it cannot affect the image.
+    static const long & getOcclusionVisibleTtl();
+    static const long & defaultOcclusionVisibleTtl();
+    static void removeOcclusionVisibleTtl();
+    static void setOcclusionVisibleTtl(const long &v);
+    static const char *docOcclusionVisibleTtl();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionBudget
+    ///
+    /// How many occlusion tests one frame may issue. The GPU offers
+    /// 256 for the whole process and the RenderDebug_Occlusion
+    /// measurement is the other claimant, so the default leaves that
+    /// measurement room to run alongside. Asking for more tests than
+    /// the budget allows is not an error: hidden nodes are offered
+    /// first, since a test is the only way one can come back, and the
+    /// rest are offered again next frame.
+    static const long & getOcclusionBudget();
+    static const long & defaultOcclusionBudget();
+    static void removeOcclusionBudget();
+    static void setOcclusionBudget(const long &v);
+    static const char *docOcclusionBudget();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionMinSubtree
+    ///
+    /// Do not test an index node standing for fewer drawn instances
+    /// than this. A test is itself a draw, so testing a node that could
+    /// save one draw loses whether it answers hidden or visible.
+    static const long & getOcclusionMinSubtree();
+    static const long & defaultOcclusionMinSubtree();
+    static void removeOcclusionMinSubtree();
+    static void setOcclusionMinSubtree(const long &v);
+    static const char *docOcclusionMinSubtree();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionMaxHidden
+    ///
+    /// How many frames a hidden node may go without an answer before
+    /// it is drawn again. A hidden node is re-tested continuously and
+    /// the answer is its only way back, so if answers stop arriving --
+    /// no query handles left, a dropped batch -- this is what returns
+    /// the geometry instead of leaving it missing. Answers that keep
+    /// confirming the node is hidden keep it hidden indefinitely, so
+    /// this never flickers a node the tests are still reaching.
+    static const long & getOcclusionMaxHidden();
+    static const long & defaultOcclusionMaxHidden();
+    static void removeOcclusionMaxHidden();
+    static void setOcclusionMaxHidden(const long &v);
+    static const char *docOcclusionMaxHidden();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionDepthPad
+    ///
+    /// How far a test box is pushed towards the viewer before it is
+    /// tested, in steps of the 24-bit depth buffer. A test box has to
+    /// be a conservative bound, and at the last bit of the depth buffer
+    /// it is not: a small part lying flush on a large panel quantizes
+    /// to the same stored depth as the panel, LEQUAL loses the tie
+    /// whichever way the rasterizer rounds, and the node reports itself
+    /// hidden while in plain view. Measured that way, the components on
+    /// a board disappeared while the board stayed. Too large costs
+    /// frame time by testing visible what could have been skipped; too
+    /// small deletes geometry, so err high.
+    static const long & getOcclusionDepthPad();
+    static const long & defaultOcclusionDepthPad();
+    static void removeOcclusionDepthPad();
+    static void setOcclusionDepthPad(const long &v);
+    static const char *docOcclusionDepthPad();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionConfirm
+    ///
+    /// How many consecutive answers of 'no pixels' a node must give
+    /// before its geometry is actually skipped. 1 acts on every
+    /// answer, and is what an occlusion test naively does.
+    /// 
+    /// A test is issued against one frame's depth and read against a
+    /// later one -- it does not block, because stalling for it would
+    /// cost the frame time the culling exists to save -- so while an
+    /// answer is in flight, other geometry is culled and the occluders
+    /// move underneath it. Acted on singly, a node tested while an
+    /// occluder was still drawn gets skipped after that occluder has
+    /// gone; the hole it leaves tests visible; it comes back; and it
+    /// oscillates, which is a picture that flickers rather than one
+    /// that is merely wrong.
+    /// 
+    /// Confirmations DILUTE that oscillation; measured, they do not
+    /// remove it (docs/FarFieldProxies.md #12.7): the false answers
+    /// arrive in runs, so tripling the confirmations bought a factor
+    /// of two, and the residual damage tracks how often nodes are
+    /// re-tested, which this setting cannot reach. The query path is
+    /// therefore not image-stable at any value here; occlusion on the
+    /// CPU (the default oracle) does not read this setting at all.
+    static const long & getOcclusionConfirm();
+    static const long & defaultOcclusionConfirm();
+    static void removeOcclusionConfirm();
+    static void setOcclusionConfirm(const long &v);
+    static const char *docOcclusionConfirm();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionSoftware
+    ///
+    /// Answer the occlusion question with a software depth buffer on
+    /// the CPU instead of hardware occlusion queries
+    /// (docs/FarFieldProxies.md #12.12). The default, because it is
+    /// the one oracle whose picture holds still.
+    /// 
+    /// A hardware query cannot be asked at the moment its answer would
+    /// be right. It is issued against one frame's depth and read a
+    /// frame or two later, so a node is tested after the pass that drew
+    /// its own geometry and is asked to win a depth comparison against
+    /// itself -- measured as boxes returning no samples at all while
+    /// their contents were plainly on screen. The confirmations,
+    /// lifetimes and padding beside this setting all exist to contain
+    /// that, and none of them reach it.
+    /// 
+    /// On the CPU, occluders are rasterized and nodes tested against
+    /// the same buffer in one pass, so a node is asked before its own
+    /// geometry joins the buffer and the answer arrives in the frame
+    /// that asked. There is no latency to age, no verdict to confirm
+    /// and no query pool to run out of. It costs CPU time in a frame
+    /// that is already CPU-bound, which is the trade to measure, and it
+    /// behaves identically in the browser, where hardware queries do
+    /// not.
+    static const bool & getOcclusionSoftware();
+    static const bool & defaultOcclusionSoftware();
+    static void removeOcclusionSoftware();
+    static void setOcclusionSoftware(const bool &v);
+    static const char *docOcclusionSoftware();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionOccluderTris
+    ///
+    /// How many triangles the CPU occlusion buffer may rasterize in one
+    /// frame. Only used when occlusion runs on the CPU.
+    /// 
+    /// Occluders are spent largest-on-screen first, so what the budget
+    /// drops is what would have hidden least. Dropping them costs
+    /// culling and never pixels: an occluder that was not rasterized
+    /// simply hides nothing.
+    static const long & getOcclusionOccluderTris();
+    static const long & defaultOcclusionOccluderTris();
+    static void removeOcclusionOccluderTris();
+    static void setOcclusionOccluderTris(const long &v);
+    static const char *docOcclusionOccluderTris();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionMinOccluder
+    ///
+    /// How large a draw must appear on screen, in pixels across its
+    /// bounding box diagonal, before it is worth rasterizing into the
+    /// CPU occlusion buffer. Smaller draws can hide almost nothing and
+    /// spend budget that a larger one could use.
+    static const long & getOcclusionMinOccluder();
+    static const long & defaultOcclusionMinOccluder();
+    static void removeOcclusionMinOccluder();
+    static void setOcclusionMinOccluder(const long &v);
+    static const char *docOcclusionMinOccluder();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionThreads
+    ///
+    /// How many worker threads the CPU occlusion buffer may rasterize
+    /// its occluders on. 0 picks automatically, leaving the submitting
+    /// thread and one other alone -- this runs in the middle of a
+    /// frame, not on an idle machine.
+    /// 
+    /// Each worker rasterizes its own slice of the occluder list into
+    /// its own buffer and the buffers are merged afterwards, so there
+    /// is no locking. The merge is slightly lossy -- two two-layer
+    /// blocks cannot combine into one without loss -- so a higher
+    /// worker count can hide marginally less. Never more.
+    static const long & getOcclusionThreads();
+    static const long & defaultOcclusionThreads();
+    static void removeOcclusionThreads();
+    static void setOcclusionThreads(const long &v);
+    static const char *docOcclusionThreads();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionSimd
+    ///
+    /// Let the CPU occlusion buffer discard triangles four at a time
+    /// with SIMD before its exact rasterizer looks at them
+    /// (docs/FarFieldProxies.md #12.14).
+    /// 
+    /// Two thirds of the triangles offered to the buffer cover no pixel
+    /// at all -- a full-detail CAD tessellation is mostly triangles
+    /// smaller than the pixel grid -- and every one of them is paid for
+    /// in full before being thrown away. The pre-pass transforms and
+    /// projects four at once in single precision and drops the ones that
+    /// land on no pixel centre.
+    /// 
+    /// It cannot make the buffer claim a surface that is not there:
+    /// everything it does not discard is handed to the same exact path
+    /// as before, recomputed from the original vertices, and a triangle
+    /// it drops in error is occlusion lost rather than geometry deleted.
+    /// Turn it off to measure what it saves, not to work around a
+    /// suspected fault.
+    static const bool & getOcclusionSimd();
+    static const bool & defaultOcclusionSimd();
+    static void removeOcclusionSimd();
+    static void setOcclusionSimd(const bool &v);
+    static const char *docOcclusionSimd();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionResolution
+    ///
+    /// Resolution of the CPU occlusion buffer, as a divisor of the
+    /// viewport. 1 matches the viewport.
+    /// 
+    /// Above 1 this can remove geometry that was visible, which is the
+    /// one failure this mechanism exists to avoid: a coarse pixel is
+    /// marked covered when an occluder reaches its centre, but it
+    /// stands for several real pixels, and the ones the occluder missed
+    /// are claimed with it. Reduce it only to measure what it costs, not
+    /// as a setting.
+    static const long & getOcclusionResolution();
+    static const long & defaultOcclusionResolution();
+    static void removeOcclusionResolution();
+    static void setOcclusionResolution(const long &v);
+    static const char *docOcclusionResolution();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionPerInstance
+    ///
+    /// Test each object against the CPU occlusion buffer, not just the
+    /// group it was partitioned into
+    /// (docs/FarFieldProxies.md #12.17). Only used when occlusion runs
+    /// on the CPU.
+    /// 
+    /// The cull walk tests boxes of groups, and a group is skipped only
+    /// when all of it is hidden -- so one visible object keeps its
+    /// hidden neighbours on screen. Measured, that is what limits the
+    /// culling rather than the quality of the depth buffer: after a
+    /// cull, 91% of what is still drawn reaches no pixel, and making
+    /// the occluders ten times better barely moved it.
+    /// 
+    /// The extra tests are read-only against a buffer that is already
+    /// finished, so they run on the same worker threads the occluders
+    /// used and add no state, no latency and nothing the backend has to
+    /// support.
+    /// 
+    /// On by default: measured on the benchmark it hides 17% more for
+    /// 0.4ms, against 3% for 3.4ms from making the occluders ten times
+    /// better, and it over-culls nothing. It can only ever be more
+    /// correct than testing the group -- a draw is skipped when its own
+    /// box is covered rather than when its neighbours' collectively
+    /// are.
+    static const bool & getOcclusionPerInstance();
+    static const bool & defaultOcclusionPerInstance();
+    static void removeOcclusionPerInstance();
+    static void setOcclusionPerInstance(const bool &v);
+    static const char *docOcclusionPerInstance();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionDemoteStreak
+    ///
+    /// How many consecutive frames every draw of an object must have
+    /// been culled before the level plan's downgrade sweep may treat
+    /// it as free -- give its GPU upload back without charging the
+    /// camera any visible error. 0 never does. Only used when
+    /// occlusion runs on the CPU, whose verdicts are exact per frame.
+    /// 
+    /// This is occlusion acting as a MEMORY mechanism: an enclosed
+    /// assembly's interior is inside the view frustum, so without a
+    /// hidden verdict the plan prices its downgrade as visible error
+    /// and pays for it in quality somewhere that actually shows. What
+    /// the sweep drops stays resident in CPU RAM; the way back is an
+    /// ordinary refine, so a verdict the camera later overturns costs
+    /// one upload. The streak is the hysteresis that keeps a drifting
+    /// camera from paying that upload per flap.
+    static const long & getOcclusionDemoteStreak();
+    static const long & defaultOcclusionDemoteStreak();
+    static void removeOcclusionDemoteStreak();
+    static void setOcclusionDemoteStreak(const long &v);
+    static const char *docOcclusionDemoteStreak();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarse
+    ///
+    /// Rasterize the CPU occlusion buffer's occluders from coarse
+    /// hulls instead of from their meshes
+    /// (docs/FarFieldProxies.md #12.16). Only used when occlusion runs
+    /// on the CPU.
+    /// 
+    /// An occluder does not need the mesh, it needs the surface, and a
+    /// hull carries that at a fraction of the triangles. What the
+    /// triangle budget above buys is what this changes: measured, 1285
+    /// of 1322 candidate occluders never entered the buffer because 37
+    /// full-detail draws spent the whole allowance, and the buffer then
+    /// hid 45% of what was there to hide.
+    /// 
+    /// The hulls are built by vertex clustering from the meshes the
+    /// renderer already holds -- no shape, no tessellator -- a few per
+    /// frame, and cached. A hull recedes by its own measured error
+    /// before it is rasterized, so it cannot claim to be nearer than
+    /// the surface it stands for.
+    static const bool & getOcclusionCoarse();
+    static const bool & defaultOcclusionCoarse();
+    static void removeOcclusionCoarse();
+    static void setOcclusionCoarse(const bool &v);
+    static const char *docOcclusionCoarse();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarseLevel
+    ///
+    /// Which rung of the decimation ladder an occluder hull is built
+    /// at, coarsest first: the clustering grid is an eighth of the
+    /// mesh's diagonal at 0 and halves per level, so 2 is a
+    /// thirty-second of it. Lower is cheaper to rasterize and further
+    /// from the surface; higher approaches the mesh itself.
+    static const long & getOcclusionCoarseLevel();
+    static const long & defaultOcclusionCoarseLevel();
+    static void removeOcclusionCoarseLevel();
+    static void setOcclusionCoarseLevel(const long &v);
+    static const char *docOcclusionCoarseLevel();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarseMinTris
+    ///
+    /// How many triangles a draw must carry before it is worth a
+    /// hull. Below this it is rasterized from its mesh: a hull of a
+    /// small mesh saves triangles that were never what spent the
+    /// budget.
+    static const long & getOcclusionCoarseMinTris();
+    static const long & defaultOcclusionCoarseMinTris();
+    static void removeOcclusionCoarseMinTris();
+    static void setOcclusionCoarseMinTris(const long &v);
+    static const char *docOcclusionCoarseMinTris();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarseBuilds
+    ///
+    /// How many occluder hulls may be built in one frame. Building is
+    /// parallel but not free, so a scene that has just come into view
+    /// acquires its hulls over several frames rather than stalling one.
+    /// 0 freezes the cache at what it already holds.
+    static const long & getOcclusionCoarseBuilds();
+    static const long & defaultOcclusionCoarseBuilds();
+    static void removeOcclusionCoarseBuilds();
+    static void setOcclusionCoarseBuilds(const long &v);
+    static const char *docOcclusionCoarseBuilds();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarseBias
+    ///
+    /// How far an occluder hull recedes from the camera before it is
+    /// rasterized, as a percentage of its own measured displacement.
+    /// 
+    /// Every point of a hull lies within that displacement of a point of
+    /// the mesh it was built from, so at 100 the hull cannot be nearer
+    /// than the surface it stands for -- which is what makes an
+    /// approximate occluder admissible at all. Below 100 it hides more
+    /// and may hide geometry that was visible; above 100 it hides
+    /// progressively less for nothing. 0 rasterizes the hull where it
+    /// sits, which is the measurement that says whether the bias is
+    /// needed.
+    static const long & getOcclusionCoarseBias();
+    static const long & defaultOcclusionCoarseBias();
+    static void removeOcclusionCoarseBias();
+    static void setOcclusionCoarseBias(const long &v);
+    static const char *docOcclusionCoarseBias();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionCoarseMemory
+    ///
+    /// What the occluder hull cache may hold, in megabytes, before
+    /// the least recently used hulls are dropped. A dropped hull costs a
+    /// rebuild when its occluder comes back into view, never
+    /// correctness.
+    static const long & getOcclusionCoarseMemory();
+    static const long & defaultOcclusionCoarseMemory();
+    static void removeOcclusionCoarseMemory();
+    static void setOcclusionCoarseMemory(const long &v);
+    static const char *docOcclusionCoarseMemory();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter OcclusionBenefitProbe
+    ///
+    /// Measure whether the culling pays for itself on THIS scene and
+    /// camera (docs/FarFieldProxies.md 12.13): alternate stretches of
+    /// frames with the whole occlusion block on and off, compare median
+    /// frame cost, and print the verdict with the culling readout
+    /// (Render_LevelDebug cadence). The probe is an intervention -- its
+    /// off arm draws everything and pauses the hidden-streak demote
+    /// feed for those frames -- so it is a measuring instrument, not a
+    /// mode to leave on. The verdict gates nothing yet; it is the
+    /// number the wire-or-delete decision for CullBenefitEstimator
+    /// reads.
+    static const bool & getOcclusionBenefitProbe();
+    static const bool & defaultOcclusionBenefitProbe();
+    static void removeOcclusionBenefitProbe();
+    static void setOcclusionBenefitProbe(const bool &v);
+    static const char *docOcclusionBenefitProbe();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)
@@ -1305,6 +2538,12 @@ public:
     /// backend's own bookkeeping and the draw itself. One summary line
     /// per second, so a long operation shows how each stage grows with
     /// the scene rather than one average (docs/IncrementalPublish.md).
+    /// Those stages end at submission, so a second line reports what
+    /// happens after it: the frame's cost on the CPU issuing draw
+    /// commands against its cost on the GPU drawing them, and the same
+    /// pair per draw call (docs/FarFieldProxies.md §10.1). Which of the
+    /// two a scene is bound by is what decides whether a culling scheme
+    /// has to remove the draw or may leave it to the GPU to reject.
     static const bool & getDebugTiming();
     static const bool & defaultDebugTiming();
     static void removeDebugTiming();
@@ -1346,6 +2585,127 @@ public:
     static void removeDebugCoverage();
     static void setDebugCoverage(const bool &v);
     static const char *docDebugCoverage();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugProxyCut
+    ///
+    /// Log what a far-field cut would cost this camera, without
+    /// generating anything: the drawn instances are partitioned into the
+    /// spatial index of docs/FarFieldProxies.md §3, a frontier is chosen
+    /// by projected error at several tolerances, and the draws that cut
+    /// would issue -- one per (cell, material) proxy plus whatever stays
+    /// exact -- are reported against the draws issued today. This is the
+    /// number that says whether generating proxies is worth building
+    /// (§11.1). Also reports the distributions that size the partition:
+    /// instances and material buckets per cell, per level.
+    static const bool & getDebugProxyCut();
+    static const bool & defaultDebugProxyCut();
+    static void removeDebugProxyCut();
+    static void setDebugProxyCut(const bool &v);
+    static const char *docDebugProxyCut();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugOcclusion
+    ///
+    /// Measure how much of what the frame draws could not have
+    /// reached the screen (docs/FarFieldProxies.md §10.1). Bounding
+    /// boxes of the spatial index's nodes are re-rasterized against the
+    /// finished depth buffer under hardware occlusion queries, writing
+    /// neither colour nor depth, and every instance is attributed to the
+    /// highest node that rejects it -- so a hidden subtree is counted
+    /// once, not at every level it is hidden at. Boxes bound their
+    /// contents loosely and the frustum's own rejections are reported
+    /// separately, so the hidden share it prints is a floor rather than
+    /// an estimate. A GPU offers 256 queries at a time, so a large model
+    /// takes several frames to walk and a line is printed per completed
+    /// walk, never for a partial one.
+    static const bool & getDebugOcclusion();
+    static const bool & defaultDebugOcclusion();
+    static void removeDebugOcclusion();
+    static void setDebugOcclusion(const bool &v);
+    static const char *docDebugOcclusion();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugProxyGen
+    ///
+    /// Generate real proxies for a sample of the nodes a far-field
+    /// cut stops on, and report what they cost and what they commit
+    /// (docs/FarFieldProxies.md §11.1c). The cut estimate above selects
+    /// by a node's projected *extent* because no proxy exists yet to
+    /// have an error; this one merges each (cell, material) group and
+    /// decimates it, so the error it commits can be measured as a
+    /// fraction of that extent -- which is the ratio that says whether
+    /// the estimate reads as its 16px row or its 64px row. Reports
+    /// alongside it the triangle cost against what instancing already
+    /// achieves (§7.1) and how much surface area survives, since
+    /// clustering deletes geometry smaller than a cell rather than
+    /// shrinking it. Expensive: it builds meshes. Samples a bounded
+    /// number of nodes and reports how many it skipped.
+    static const bool & getDebugProxyGen();
+    static const bool & defaultDebugProxyGen();
+    static void removeDebugProxyGen();
+    static void setDebugProxyGen(const bool &v);
+    static const char *docDebugProxyGen();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugCullAudit
+    ///
+    /// Check what the occlusion culling skipped against what the
+    /// geometry actually put on screen (docs/FarFieldProxies.md §12.9).
+    /// Every other measurement of the culling compares two pictures and
+    /// reports how many pixels differ, which says that something is
+    /// wrong without saying what: this re-rasterizes the scene with the
+    /// cull mask ignored and each draw writing its own identity instead
+    /// of a colour, so the ids that own a pixel are an exact answer to
+    /// which draws reach the screen. Their intersection with the mask is
+    /// a list of proven over-culls -- each one a named draw with a pixel
+    /// count -- and the ids that own nothing while being drawn are the
+    /// converse: the headroom the culling has not taken. Reads the image
+    /// back to the CPU once a second, so it costs a full-resolution
+    /// transfer on the frames it reports and nothing while off. Needs a
+    /// backend with texture readback, which WebGL2 is not.
+    static const bool & getDebugCullAudit();
+    static const bool & defaultDebugCullAudit();
+    static void removeDebugCullAudit();
+    static void setDebugCullAudit(const bool &v);
+    static const char *docDebugCullAudit();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DebugCullBounds
+    ///
+    /// Measure whether a tighter occludee volume would cull more
+    /// (docs/FarFieldProxies.md §12.19). After per-instance testing, 90%
+    /// of the draws a frame still submits reach no pixel while each was
+    /// tested and answered visible -- so the geometry is hidden and the
+    /// box around it is not. This re-asks every still-drawn row three
+    /// ways against the same occluder buffer: with the world box that
+    /// ships, with the mesh's own box through the model matrix (an
+    /// oriented box, where the shipping one is the axis-aligned box
+    /// around it), and with every triangle asked separately -- which is
+    /// far too slow to ship and is here as the ceiling, since nothing
+    /// asked about the occludee can beat asking about its geometry. The
+    /// verdicts are counted against the cull audit's id image, never
+    /// acted on, so an arm that would have deleted something visible
+    /// reports itself instead of being believed.
+    /// Needs the cull audit on (it supplies the image) and the software
+    /// occluder pass, which owns the buffer being asked. Runs on the
+    /// audit's frame only, and costs far more than a frame: it is a
+    /// measurement, not a mode to leave on.
+    static const bool & getDebugCullBounds();
+    static const bool & defaultDebugCullBounds();
+    static void removeDebugCullBounds();
+    static void setDebugCullBounds(const bool &v);
+    static const char *docDebugCullBounds();
     //@}
 //[[[end]]]
 

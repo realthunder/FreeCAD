@@ -64,12 +64,55 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(SceneLadder_tests_run gtest_main FreeCADRenderer)
     add_test(NAME SceneLadder_tests_run COMMAND SceneLadder_tests_run)
 
+    add_executable(ProxyHierarchy_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/ProxyHierarchy.cpp)
+    target_link_libraries(ProxyHierarchy_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME ProxyHierarchy_tests_run COMMAND ProxyHierarchy_tests_run)
+
+    add_executable(OcclusionCull_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/OcclusionCull.cpp)
+    target_link_libraries(OcclusionCull_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME OcclusionCull_tests_run COMMAND OcclusionCull_tests_run)
+
+    # The software occlusion rasterizer (docs/FarFieldProxies.md 12.12).
+    # Its central claim is a one-directional one -- it may under-cull and
+    # may never over-cull -- so the tests carry a reference
+    # full-resolution depth buffer to compare against, and the comparison
+    # is an inequality rather than an image.
+    add_executable(MaskedOcclusion_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/MaskedOcclusion.cpp)
+    target_link_libraries(MaskedOcclusion_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME MaskedOcclusion_tests_run COMMAND MaskedOcclusion_tests_run)
+
+    # The coarse occluder hulls (docs/FarFieldProxies.md 12.16). Same
+    # one-directional claim as the buffer they feed -- a hull may make
+    # the pass hide less and never more -- so the central test runs the
+    # real pass twice and compares the two masks as an inequality.
+    add_executable(OccluderMesh_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/OccluderMesh.cpp)
+    target_link_libraries(OccluderMesh_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME OccluderMesh_tests_run COMMAND OccluderMesh_tests_run)
+
+    # The runtime cost/benefit decision (docs/FarFieldProxies.md 12.13).
+    # It decides from timings alone, so it tests from timings alone -- no
+    # GL context, no scene, no clock.
+    add_executable(CullBenefit_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/CullBenefit.cpp)
+    target_link_libraries(CullBenefit_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME CullBenefit_tests_run COMMAND CullBenefit_tests_run)
+
     # Publishing without drawing (docs/HeadlessServe.md §3.1). Same
     # reasoning as above, and then some: the whole claim of the mode is
     # that the process needs no GPU and no display, which only a test
     # that links nothing graphical can make.
-    add_executable(PublishOnly_tests_run
-                   ${CMAKE_CURRENT_SOURCE_DIR}/PublishOnly.cpp)
-    target_link_libraries(PublishOnly_tests_run gtest_main FreeCADRenderer)
-    add_test(NAME PublishOnly_tests_run COMMAND PublishOnly_tests_run)
+    # UNIX only: it speaks to the server over BSD sockets and reads
+    # /proc/self/maps to prove no driver got mapped, neither of which
+    # Windows has -- porting it needs Winsock and another way to
+    # enumerate the loaded modules.
+    if(UNIX)
+        add_executable(PublishOnly_tests_run
+                       ${CMAKE_CURRENT_SOURCE_DIR}/PublishOnly.cpp)
+        target_link_libraries(PublishOnly_tests_run gtest_main FreeCADRenderer)
+        add_test(NAME PublishOnly_tests_run COMMAND PublishOnly_tests_run)
+    endif()
 endif()

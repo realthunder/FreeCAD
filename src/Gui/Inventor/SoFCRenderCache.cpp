@@ -28,6 +28,7 @@
 #include <Inventor/elements/SoTextureEnabledElement.h>
 #include <Inventor/elements/SoOverrideElement.h>
 #include <Inventor/elements/SoLazyElement.h>
+#include <Inventor/elements/SoLazyElementEx.h>
 #include <Inventor/elements/SoLinePatternElement.h>
 #include <Inventor/elements/SoLineWidthElement.h>
 #include <Inventor/elements/SoPointSizeElement.h>
@@ -67,7 +68,6 @@
 #include "SoFCRenderMaterial.h"
 #include "SoFCVertexCache.h"
 #include "SoFCDetail.h"
-#include "CoinLazyElementEx.h"
 #include "SoFCDiffuseElement.h"
 #include "SoFCFinishElement.h"
 #include "SoFCPbrElement.h"
@@ -254,6 +254,12 @@ public:
   Material basematerial;
   bool resetmatrix;
   bool resetclip = false;
+  // Set when a shape below kept a stale vertex cache under the capture
+  // budget; see SoFCRenderCache::isIncomplete().
+  bool incomplete = false;
+  // Set when that shape is one of THIS cache's own drawables; see
+  // SoFCRenderCache::isIncompleteHere().
+  bool incompletehere = false;
 
   static FC_COIN_THREAD_LOCAL SoFCSelectionRoot::Stack RenderCacheStack;
 };
@@ -370,37 +376,42 @@ getOverrideFlags(SoState * state)
 
 // Capture the array form of ambient/emissive/specular/shininess from
 // the coin fork's extended lazy element into the material (empty when
-// the extension is absent or a field holds only its scalar). The
-// element is the authority here: it has already resolved override and
-// inheritance semantics, exactly like the scalar reads next to the
-// call sites, so no per-field flag checks are repeated.
+// a field holds only its scalar, and on any traversal the element is
+// not installed on). The element is the authority here: it has already
+// resolved override and inheritance semantics, exactly like the scalar
+// reads next to the call sites, so no per-field flag checks are
+// repeated.
 static void
 captureMaterialArrays(SoFCRenderCache::_Material &m, SoState *state)
 {
-  auto capture = [state](COWVector<uint32_t> &array,
-                         int (*getter)(SoState *, const float **, uint64_t *)) {
-    const float *values = nullptr;
-    int num = getter(state, &values, nullptr);
-    array.reset();
-    if (num <= 1)
+  m.ambients.reset();
+  m.emissives.reset();
+  m.speculars.reset();
+  m.shininesses.reset();
+
+  const SoLazyElementEx *ex = SoLazyElementEx::getInstance(state);
+  if (!ex)
+    return;
+
+  auto capture = [](COWVector<uint32_t> &array,
+                    const SoLazyElementEx::FieldArray &field) {
+    if (field.num <= 1)
       return;
-    array.reserve(num);
-    for (int i = 0; i < num; ++i) {
-      SbColor c(values[i*3], values[i*3+1], values[i*3+2]);
+    array.reserve(field.num);
+    for (int i = 0; i < field.num; ++i) {
+      SbColor c(field.values[i*3], field.values[i*3+1], field.values[i*3+2]);
       array.append(c.getPackedValue(0.0f));
     }
   };
-  capture(m.ambients, &Gui::CoinLazyElementEx::getAmbient);
-  capture(m.emissives, &Gui::CoinLazyElementEx::getEmissive);
-  capture(m.speculars, &Gui::CoinLazyElementEx::getSpecular);
+  capture(m.ambients, ex->getAmbientArray());
+  capture(m.emissives, ex->getEmissiveArray());
+  capture(m.speculars, ex->getSpecularArray());
 
-  const float *values = nullptr;
-  int num = Gui::CoinLazyElementEx::getShininess(state, &values, nullptr);
-  m.shininesses.reset();
-  if (num > 1) {
-    m.shininesses.reserve(num);
-    for (int i = 0; i < num; ++i)
-      m.shininesses.append(values[i]);
+  const SoLazyElementEx::FieldArray &shininess = ex->getShininessArray();
+  if (shininess.num > 1) {
+    m.shininesses.reserve(shininess.num);
+    for (int i = 0; i < shininess.num; ++i)
+      m.shininesses.append(shininess.values[i]);
   }
 }
 
@@ -1053,6 +1064,36 @@ SbFCUniqueId
 SoFCRenderCache::getNodeId() const
 {
   return PRIVATE(this)->nodeid;
+}
+
+bool
+SoFCRenderCache::isIncomplete() const
+{
+  return PRIVATE(this)->incomplete;
+}
+
+void
+SoFCRenderCache::setIncomplete()
+{
+  PRIVATE(this)->incomplete = true;
+}
+
+bool
+SoFCRenderCache::isIncompleteHere() const
+{
+  return PRIVATE(this)->incompletehere;
+}
+
+void
+SoFCRenderCache::setIncompleteHere()
+{
+  PRIVATE(this)->incompletehere = true;
+}
+
+bool
+SoFCRenderCache::isSelectionRoot() const
+{
+  return PRIVATE(this)->selnode != nullptr;
 }
 
 SbBool
@@ -2065,6 +2106,12 @@ SoFCRenderCacheP::mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
       }
 
       ventries->emplace_back(vcache, childentry, key);
+      // Entries passing through a cache the defer marked belong to the
+      // deferring object (the mark stops at its selection root), so
+      // they pick the mark up here even when they were captured under a
+      // sibling nested cache the defer never opened.
+      if (this->incompletehere)
+        ventries->back().incomplete = true;
       ++slicecount;
       if (!identity && !childentry.resetmatrix) {
         if (!childentry.identity)
@@ -2298,6 +2345,11 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
                                          entry.identity,
                                          entry.resetmatrix,
                                          selfkey);
+        // The defer under the capture budget marked this cache: every
+        // sibling drawable of the deferred shape carries the mark out,
+        // so the display can tell an object whose companion drawable
+        // has not arrived from one whose mode omits it (#13b).
+        vcachemap[material].back().incomplete = PRIVATE(this)->incompletehere;
         PRIVATE(this)->facecount += vcache->getNumFaceParts();
       }
       if (entry.vcache->getNumLineIndices()) {
@@ -2315,6 +2367,11 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
                                          entry.identity,
                                          entry.resetmatrix,
                                          selfkey);
+        // The defer under the capture budget marked this cache: every
+        // sibling drawable of the deferred shape carries the mark out,
+        // so the display can tell an object whose companion drawable
+        // has not arrived from one whose mode omits it (#13b).
+        vcachemap[material].back().incomplete = PRIVATE(this)->incompletehere;
       }
       if (entry.vcache->getNumPointIndices()) {
         Material material = entry.material;
@@ -2331,6 +2388,11 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
                                          entry.identity,
                                          entry.resetmatrix,
                                          selfkey);
+        // The defer under the capture budget marked this cache: every
+        // sibling drawable of the deferred shape carries the mark out,
+        // so the display can tell an object whose companion drawable
+        // has not arrived from one whose mode omits it (#13b).
+        vcachemap[material].back().incomplete = PRIVATE(this)->incompletehere;
       }
       continue;
     }
@@ -2395,6 +2457,13 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
           assert(newentry.mergecount>0);
           newentry.key = std::allocate_shared<CacheKey>(SoFCAllocator<CacheKey>());
           newentry.key->forcePush(0x80000000 | newentry.cache->getCacheId());
+          // A merged entry stands for every member it covers, so it is
+          // incomplete if any of them was -- losing the mark here would
+          // let a draw-call merge unhide a companion-less drawable.
+          newentry.incomplete = false;
+          for (int j = idx; j < idx + newentry.mergecount
+                            && j < (int)v.second.size(); ++j)
+            newentry.incomplete |= v.second[j].incomplete;
           v.second.insert(v.second.begin()+idx, newentry);
           i = idx + newentry.mergecount;
         }

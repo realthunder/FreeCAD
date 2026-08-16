@@ -200,7 +200,32 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     snapshot has no such field and its lights read as the plain
 //     directional/positional ones they were, which is what a writer of
 //     that version could produce anyway.
-const uint32_t kVersion = 54;
+// 55: an object says whether the producer held part of it back --
+//     DrawCall::objectIncomplete, until now publish-transient and never
+//     serialized (docs/SceneStreaming.md #13b). The element contract
+//     needs it to tell a LATE companion draw (its capture deferred by
+//     the publish budget) from an ABSENT one (a display mode drawing
+//     points or edges as its own subject): the first is waited for, the
+//     second is exempt. A consumer without it grants the exemption to
+//     every object, which is the dots-first load storm in the browser.
+//     It rides the object entry in the manifest root, beside the
+//     identity of v38 and outside the group chunk for the same reason
+//     -- it is a property of the publish, not of the geometry, and
+//     folding it into a content key would retire an object's cached
+//     chunks every time the producer's capture backlog drained. The
+//     monolithic layout has no object section, so a bundled capture
+//     carries the keys as a list of their own after the scene draws.
+// 56: a ViewLight says whether it is CAMERA-RELATIVE, and carries the
+//     eye-space direction the world-space one was unwound from. The
+//     unwinding is only valid for the camera that did it, and a streamed
+//     viewer's camera is its own -- so a headlight arrived as a fixed
+//     world direction pointing wherever the producer happened to look,
+//     which for a headless serving process is a default down -Z: every
+//     surface facing the viewer rendered at ambient (measured: mean
+//     luminance 20 against the desktop's 108 on the same model). A v55
+//     snapshot has no flag, its lights stay world-space, and it renders
+//     exactly as it did.
+const uint32_t kVersion = 56;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -216,8 +241,16 @@ const uint32_t kVersion = 54;
 ///     finish palette index in the third slot), and a material chunk
 ///     carries the palette itself.
 ///  9: a material chunk carries the surface finish's projection frame
-///     and the palette of frames its faces name.)
-const uint32_t kChunkVersion = 9;
+///     and the palette of frames its faces name.
+/// 10: a mesh chunk carries attachedOnly, the producer's one-bit
+///     element classification -- #13b. Nothing can be MISREAD without
+///     the bump: it rides a free bit of an existing flags byte, so an
+///     old chunk reads as unclassified. The bump is for the other
+///     failure, the one this file's own guard comment names: a cached
+///     chunk from an older build would answer "unclassified" forever,
+///     and the gate would work on the desktop and quietly do nothing
+///     in the browser.)
+const uint32_t kChunkVersion = 10;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -248,10 +281,11 @@ const size_t kMaterialStride = MeshData::MaterialStride;
 // the offset of their last POD field instead — that still moves
 // whenever a streamed field is added ahead of it.
 //
-// Two guarded fields are deliberately *not* on the wire, and should
+// Four guarded fields are deliberately *not* on the wire, and should
 // stay that way: AOConfig::fast is a per-frame interaction hint the
-// viewer decides for itself, and RenderDebugConfig::coverage drives a
-// backend-local log rather than any pixel.
+// viewer decides for itself, and RenderDebugConfig::frameTiming,
+// ::occlusion and ::coverage drive backend-local logs rather than any
+// pixel.
 static_assert(sizeof(HiddenLineConfig) == 20, "HiddenLineConfig changed: stream the new field, then update this");
 static_assert(sizeof(PreselHighlightConfig) == 20, "PreselHighlightConfig changed: stream the new field, then update this");
 static_assert(sizeof(SectionConfig) == 12, "SectionConfig changed: stream the new field, then update this");
@@ -264,7 +298,7 @@ static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new fi
 static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new field, then update this");
 static_assert(offsetof(PBRConfig, envBackground) == 16, "PBRConfig changed: stream the new field, then update this");
 static_assert(offsetof(LightConfig, groundColor) == 168,"LightConfig changed: stream the new field, then update this");
-static_assert(offsetof(RenderDebugConfig, coverage) == 5, "RenderDebugConfig changed: stream the new field, then update this");
+static_assert(offsetof(RenderDebugConfig, coverage) == 7, "RenderDebugConfig changed: stream the new field, then update this");
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -415,8 +449,17 @@ void writeMeshChunk(Writer &w, const MeshData &m)
 {
     w.u32(kChunkVersion);
     w.i32(m.numVertices);
+    // Bit 16 is the odd one out: the lower four say a payload follows,
+    // this one is the producer's classification and carries no bytes
+    // (attachedOnly, #13b -- every vertex is an edge endpoint, or every
+    // edge bounds a face). It rides the flags byte rather than
+    // appending a field because a reader that does not know it simply
+    // does not test it, and the bit costs nothing on a mesh that has no
+    // points or lines at all. It must stay off the payload bits: one of
+    // those set with no bytes behind it desynchronises the reader.
     uint8_t flags = (m.normals ? 1 : 0) | (m.colors ? 2 : 0)
-        | (m.texCoords ? 4 : 0) | (m.materials ? 8 : 0);
+        | (m.texCoords ? 4 : 0) | (m.materials ? 8 : 0)
+        | (m.attachedOnly ? 16 : 0);
     w.u8(flags);
     w.raw(m.positions, size_t(m.numVertices) * 3 * sizeof(float));
     if (m.normals)
@@ -639,6 +682,11 @@ void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
         r.raw(mesh->matStore.data(), nv * kMaterialStride);
         mesh->materials = mesh->matStore.data();
     }
+    // Absent bit = unclassified = always draws, which is the safe
+    // direction and exactly what a chunk written by an older build
+    // means: nobody judged this drawable, so nothing on screen may be
+    // assumed to be standing in for it.
+    mesh->attachedOnly = (flags & 16) != 0;
 
     auto indices = [&](std::vector<int32_t> &store, const int32_t *&ptr,
                        int &count) {
@@ -725,6 +773,12 @@ bool Render::generateMeshLevel(const void *chunk, size_t size, uint32_t level,
     simplified.fill(levelMesh);
     levelMesh.hasTransparency = mesh.hasTransparency;
     levelMesh.hasOpaqueParts = mesh.hasOpaqueParts;
+    // A statement about the shape's topology, not about this mesh's
+    // resolution: whether a vertex sits on an edge does not change
+    // because the surface was decimated. Dropping it here would make a
+    // drawable un-gateable on exactly the coarse rungs a tier under
+    // memory pressure is standing on.
+    levelMesh.attachedOnly = mesh.attachedOnly;
     return writeChunk(out, [&levelMesh](Writer &w) {
         writeMeshChunk(w, levelMesh);
     });
@@ -802,6 +856,12 @@ public:
         slot->cacheId = id;
         slot->generation = gen + 1;
         return ok;
+    }
+    void stampError(const std::string &key, float error) override
+    {
+        auto it = m_rungs.find(key);
+        if (it != m_rungs.end() && it->second)
+            it->second->levelError = error;
     }
     void release(const std::string &key) override
     {
@@ -904,6 +964,17 @@ std::shared_ptr<const MeshData> readMesh(Reader &r, uint32_t version,
                                                    version);
         const std::string key0 = entry.key;
         entry.levelMeshes = lm;
+        // The identity rung is the finest BUILT level (readMeshLevels
+        // leaves entry.key on it), and its error is what this mesh
+        // draws at -- nonzero whenever the producer published
+        // coarse-first. Carrying it onto the mesh is how the
+        // producer's own statement of coarseness survives the wire.
+        for (size_t i = entry.levels.size(); i-- > 0;) {
+            if (entry.levels[i].key == entry.key) {
+                mesh->levelError = entry.levels[i].error;
+                break;
+            }
+        }
         entry.fill = [lm, key0](SceneSnapshot &, const void *data,
                                 size_t size) {
             return lm->fill(key0, data, size);
@@ -2077,6 +2148,8 @@ void writeObjectSection(Writer &w,
         w.str(e.info.obj);
         w.str(e.info.label);
         w.str(e.info.type);
+        // v55: whether this publish held part of the object back.
+        w.b(e.incomplete);
         writeGroupRef(w, e);
         if (bytesFor) {
             const std::vector<uint8_t> *bytes =
@@ -2105,6 +2178,14 @@ void writeObjectList(Writer &w,
 /// pass. An object is unchanged exactly when its group manifest key is
 /// unchanged: the key covers the whole group, bounding box included, so
 /// there is nothing else that could have moved.
+///
+/// ...except what is deliberately kept out of the key. The v55
+/// incomplete mark flips as the producer's capture backlog drains, and
+/// in practice it flips WITH the draws that were being waited for --
+/// but a delta that carried it only when some other thing moved would
+/// depend on that coincidence, and the failure it hides is silent: a
+/// consumer holding "incomplete" forever waits for a companion that
+/// arrived. Cheaper to compare the bit than to rely on the argument.
 void diffObjectPtrs(const std::vector<SceneSnapshot::ObjectEntry> &from,
                     const std::vector<SceneSnapshot::ObjectEntry> &to,
                     std::vector<const SceneSnapshot::ObjectEntry *> &changed,
@@ -2121,7 +2202,8 @@ void diffObjectPtrs(const std::vector<SceneSnapshot::ObjectEntry> &from,
             removed.push_back(from[j++].objectKey);
         }
         else {
-            if (to[i].key != from[j].key)
+            if (to[i].key != from[j].key
+                    || to[i].incomplete != from[j].incomplete)
                 changed.push_back(&to[i]);
             ++i;
             ++j;
@@ -2766,6 +2848,17 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
                 w.ok = false;
                 break;
             }
+            // v55: the object is incomplete if ANY of its draws says so
+            // -- the mark is carried by the draws whose companion was
+            // deferred, and the contract asks the question of the
+            // object. Read off the draws rather than from a map,
+            // because it is the draws the producer stamped.
+            for (const DrawCall *d : group.second) {
+                if (d->objectIncomplete) {
+                    entry.incomplete = true;
+                    break;
+                }
+            }
             if (snap.objectInfo) {
                 auto it = snap.objectInfo->find(group.first);
                 if (it != snap.objectInfo->end())
@@ -2882,6 +2975,20 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         };
 
         writeDrawList(w, snap.scene, drefs);
+        // v55: the objects this capture holds only part of. A list of
+        // keys rather than a bit per draw: this layout has no object
+        // section to hang it on, and the mark is an object's whatever
+        // the draws are. Almost always four zero bytes -- a capture is
+        // usually taken of a settled scene, and the mark exists for the
+        // one that is not.
+        std::set<uint64_t> incomplete;
+        for (const auto &d : snap.scene) {
+            if (d.objectKey && d.objectIncomplete)
+                incomplete.insert(d.objectKey);
+        }
+        w.u32(uint32_t(incomplete.size()));
+        for (uint64_t key : incomplete)
+            w.u64(key);
     }
 
     // Background + per-frame configs.
@@ -2946,6 +3053,12 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.b(vl.spot);
         w.f(vl.cutOffAngle);
         w.f(vl.dropOffRate);
+        // v56: camera-relative lights carry the eye-space direction the
+        // world one was derived from, because the consumer's camera is
+        // not this one's (see ViewLight::eyeSpace).
+        w.b(vl.eyeSpace);
+        w.floats(vl.eyeDirection, 3);
+        w.floats(vl.eyePosition, 3);
     }
 
     const VolumetricConfig &vc = snap.volconf;
@@ -3137,6 +3250,25 @@ void loadMonolithicTables(Reader &r, SceneSnapshot &snap, uint32_t version,
     };
 
     readDrawList(r, snap.scene, drefs, version);
+
+    // v55: the objects the capture holds only part of, stamped back
+    // onto their draws -- which is where the contract reads it. An
+    // older capture names none, so every object reads complete, which
+    // is what a writer of that version believed anyway.
+    if (version < 55)
+        return;
+    uint32_t nincomplete = r.u32();
+    if (!r.ok || nincomplete > 0x1000000u) {
+        r.ok = false;
+        return;
+    }
+    std::set<uint64_t> incomplete;
+    for (uint32_t i = 0; r.ok && i < nincomplete; ++i)
+        incomplete.insert(r.u64());
+    if (!r.ok || incomplete.empty())
+        return;
+    for (auto &d : snap.scene)
+        d.objectIncomplete = incomplete.count(d.objectKey) != 0;
 }
 
 static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
@@ -3221,6 +3353,8 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 r.str(up.entry.info.label, 0x1000u);
                 r.str(up.entry.info.type, 0x1000u);
             }
+            if (version >= 55)
+                up.entry.incomplete = r.b();
             up.group = snap.groups.size();
             GroupTarget t;
             t.kind = GroupTarget::Scene;
@@ -3343,6 +3477,11 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 vl.spot = r.b();
                 vl.cutOffAngle = r.f();
                 vl.dropOffRate = r.f();
+            }
+            if (version >= 56) {
+                vl.eyeSpace = r.b();
+                r.floats(vl.eyeDirection, 3);
+                r.floats(vl.eyePosition, 3);
             }
             if (vlc.count < MaxViewLights)
                 vlc.lights[vlc.count++] = vl;
@@ -3870,6 +4009,23 @@ bool Render::applySceneObjects(SceneSnapshot &snap, SceneObjectModel &model)
         appendAtBestRung(scene, obj.draws, &model);
     }
     appendAtBestRung(scene, snap.keyless, &model);
+    // v55: the incomplete mark comes down on the object entry, not in
+    // the group chunk, so it is stamped onto the draws here -- at the
+    // one point where an object's current entry and its draws are both
+    // in hand. Stamped rather than merged, and on every assembly:
+    // a draw can outlive the entry that was current when it arrived
+    // (an object stands on its old geometry while new geometry is in
+    // flight), and a mark left standing after the companion landed is
+    // a companion waited for forever.
+    std::set<uint64_t> incomplete;
+    for (const auto &entry : model.objects) {
+        if (entry.second.entry.incomplete)
+            incomplete.insert(entry.first);
+    }
+    const bool anyIncomplete = !incomplete.empty();
+    for (auto &d : scene)
+        d.objectIncomplete = anyIncomplete
+            && incomplete.count(d.objectKey) != 0;
     snap.scene = std::move(scene);
     return true;
 }
@@ -4111,3 +4267,44 @@ bool Render::loadSceneSnapshot(const void *data, size_t size,
 }
 
 #endif // _WIN32
+
+//////////////////////////////////////////////////////////////////////
+// Material identity
+
+/// A material as one value, for ProxyInstance::materialBucket
+/// (docs/FarFieldProxies.md §5.1: a proxy is generated per (cell,
+/// material bucket), so that every proxy carries exactly one material
+/// and nothing is ever averaged).
+///
+/// It lives here, next to the serializer, for the reason collectMaterials
+/// already states about its own table: **equality is the serialized
+/// bytes, which is exact by construction** — two materials that write
+/// the same bytes restore identically — and needs no hand-written
+/// comparison over some sixty fields to stay in step with the format. A
+/// field added to writeMaterial is therefore covered here on the same
+/// commit, where a separate hash would have silently merged two
+/// materials into one bucket and *overstated* what aggregation buys.
+///
+/// Textures and shaders enter by pointer identity rather than by table
+/// index: the bucket asks whether two draws can share one merged mesh,
+/// and sharing a texture object is exactly that question.
+uint64_t Render::materialIdentity(const Material &m)
+{
+    std::vector<uint8_t> bytes;
+    Writer w;
+    w.vec = &bytes;
+    RefWriter refs;
+    refs.tex = [](Writer &cw, const std::shared_ptr<const TextureImage> &t) {
+        cw.u64(uint64_t(reinterpret_cast<uintptr_t>(t.get())));
+    };
+    refs.shader = [](Writer &cw, const UserShader *s) {
+        cw.u64(uint64_t(reinterpret_cast<uintptr_t>(s)));
+    };
+    writeMaterial(w, m, refs);
+    uint64_t h = 1469598103934665603ULL;  // FNV-1a
+    for (uint8_t byte : bytes) {
+        h ^= uint64_t(byte);
+        h *= 1099511628211ULL;
+    }
+    return h;
+}

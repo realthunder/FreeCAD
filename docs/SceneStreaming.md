@@ -2172,6 +2172,165 @@ arrays and stand on the coarse rung, which is always resident.
    the worker. The per-source callbacks live in one
    `MeshSourceRegistry::LevelHooks` struct: refine / cancelRefine /
    demote / downgrade / fallbackError.
+
+   **The budget was unenforceable, and the margin is why (measured
+   2026-08-12).** With 64 MB pinned against 517.6 MB in use on the
+   rack model, the downgrade sweep dropped nothing at all, and its
+   refusal counters said why: `considered 6207 | no fallback rung
+   5909 | too big 296 | eligible 2`. Of the sources that carried a
+   rung to fall back to, **376 of 376 were refused "on screen and
+   too big"** -- because the pass above will not trade visible error
+   for memory at any pressure. That is not a budget that is hard to
+   meet; it is a budget with no mechanism behind it, and it turns a
+   model too large to display exactly into one that cannot be
+   displayed at all. The user's framing is the correction: too large
+   to show exact means show it coarse, which beats showing nothing.
+
+   So `planMeshDemotes` now selects in **two tiers**, and the
+   pressure that asked for the sweep is passed in as a **byte
+   deficit**:
+
+   - **Free** -- off screen, or the coarse rung errs at most
+     `kPlanDemoteMargin` x the tolerance. Taken always, exactly as
+     before. A deficit of 0 (no pressure, or a ceiling observed
+     without a quantity behind it) leaves this the whole pass, so
+     nothing about the settled no-pressure desktop changed.
+   - **Priced** -- over that margin, so demoting it *would* show.
+     Ranked by projected error and admitted cheapest-first, stopping
+     the moment the deficit is covered.
+
+   The effective tolerance is therefore an **outcome, not a knob**:
+   pressure raises it, and only as far as the deficit reaches. The
+   plan reports what it reached (`acceptedErrorPx`) beside what it
+   freed, so a pass that gave the camera 6 px of error to save 200 MB
+   says so rather than leaving it to be inferred from a policy
+   constant. Two consequences of pricing rather than vetoing: a
+   source shared by several instances is priced by its **neediest
+   owner** (the largest projected error) instead of being refused
+   outright by it, and a source that would free **nothing** is never
+   demoted -- showing a coarse rung for zero bytes is a pure loss.
+   Bounds that cannot be judged (no box, or the camera inside it)
+   stay out of both tiers: a price nobody can compute is not a
+   licence to guess it low.
+
+   **Making the descent work exposed the climb fighting it
+   (measured, same run).** With the priced tier in, the plan
+   downgraded 372 sources -- and the very next plan asked for **366
+   of them straight back**. It could not have done otherwise: a
+   source demoted to save memory is by definition one erring more
+   than the tolerance on screen, which is precisely the refine
+   pass's own criterion, so two passes reading two different
+   tolerances make the ladder oscillate and every lap costs a
+   tessellation and an upload. Nothing had ever descended before,
+   so nothing could fight.
+
+   So pressure raises **one** effective tolerance, for both
+   directions. The descent reports the worst error it had to accept;
+   dividing by `kPlanDemoteMargin` puts the climb's threshold back
+   above it by the same hysteresis band the two passes use with no
+   pressure at all, and the plan runs the climb *after* the descent
+   so it settles in one pass rather than two. Two rules keep it
+   honest: only the climb reads the raised value (feeding it back
+   into the descent would run away -- a wider free tier accepts more
+   error, which widens the tolerance, which widens the free tier --
+   while the priced tier is bounded by the deficit and stops on its
+   own), and what holds it up is the **pressure standing**, never the
+   sweep having succeeded. The plan after a successful descent finds
+   only sources with no rung left to drop and so accepts no error at
+   all; reading the tolerance off that number would hand it straight
+   back to the camera and re-ask for everything just given up. It is
+   cleared by the first plan that is inside its budget, and the
+   ladder climbs again.
+
+   **What the two together now do** (rack model, 64 MB pinned, three
+   plans, VirtualGL -- counting rows, not timing ones):
+
+   | plan | used | displayed coarse / exact | refine | downgrade |
+   |---|---|---|---|---|
+   | 1 | 530.5MB | 2022 / 1569 | 0 | **372** |
+   | 2 | 530.5MB | 2394 / 1197 | **0** | 0 |
+   | 3 | **441.3MB** | 2394 / 1197 | 0 | 0 |
+
+   The descent fires where it never had (372 against every previous
+   run's 0), the climb does not undo it (0 against 366), and the
+   ladder settles rather than cycling. Two things the run says
+   plainly:
+
+   - **The estimate overstates what a downgrade frees**, as designed:
+     172.5MB planned against 89.2MB actually returned by the upload
+     accounting, because the coarse rung it swaps in takes some of it
+     back. The replan loop is what closes that gap, and why the
+     selection must not be trusted as a one-shot answer.
+   - **The budget is still not met -- 441.3MB against 64MB -- and
+     the priced tier is not why.** It took every source it could:
+     `considered 1569 | no fallback rung 0 | UNREGISTERED 1197 |
+     too big 0 | under pressure 372`. See below: neither of the two
+     explanations this document previously gave was right.
+
+   **Two refutations, both measured 2026-08-12, and the second moves
+   the workstream.** The plan reported 1197 sources with "no fallback
+   rung" and it was read as sources built exact up front, needing a
+   coarse rung generated. Splitting the counter (`demoteError` now
+   answers `kTagUnknown` for a tag no registration claims, as against
+   0 for one that armed no descent) says otherwise:
+
+   1. **`no fallback rung 0 | UNREGISTERED 1197`.** Not one was an
+      exact-built source. All 1197 are drawn meshes whose source tag
+      the registry has never heard of -- and since `publishedError()`
+      answers 0 for an unowned tag exactly as it does for a genuine
+      exact rung, such a mesh publishes at error 0 and enters the
+      plan looking like a source standing at the top of its ladder.
+      Tallying them by node class named them outright:
+      **`SoBrepPointSet:186`, and nothing else.** It is structural --
+      `registerMeshLevelSource(shape, normalsFromUV, faceTag,
+      lineTag, ...)` has slots for a face node and a line node, while
+      `ViewProviderExt` builds a third drawable, the point set, and
+      registers nothing for it. Coarse-first was never involved.
+   2. **But they are worth 18.7MB of a 466.5MB deficit**, so this is
+      a *reporting* defect and not the memory blocker. Registering
+      the point set would clean the readout and buy almost nothing.
+
+      **WARNING: that 18.7MB is quoted in the CPU currency, and the point
+      sets are the worst case for reading it as a GPU number.** It is
+      `meshResidentBytes`: 4 bytes of index per point. The same point
+      on the GPU is that index *and* a 32-byte sprite instance record
+      (position + colour) -- nine times the figure that made them look
+      negligible, before their share of the vertex stream. "Buys
+      almost nothing" is safe for the CPU ceiling and was never
+      established for the GPU budget; see the accounting split below,
+      which is what makes the two answerable separately.
+
+   **What the same run says the blocker actually is.** After the
+   descent the scene is 2394 sources displayed coarse plus the 1197
+   point sets, and it still occupies **441.3MB against a 64MB
+   budget** -- so the coarse tessellation is itself roughly 420MB,
+   6.6x the budget, with every exact rung already given up. No
+   selection policy can close that, because on the desktop the
+   coarse rung IS the bottom of the ladder: a source built at
+   `CoarseTessellation` (default level 2, error 1/32) has nothing
+   below it to fall to.
+
+   So the next gap is **a rung below coarse**, not a rung above the
+   exact-built. The generator already accepts levels 0..7 and the
+   floor this section already specifies is **rung 0, the box**. A
+   descent that re-tessellates coarser -- coarse to coarser, and
+   ultimately to the box -- is what would let a budget this far under
+   the scene be honoured at all.
+
+   The deficits come from the two pressures themselves. The GPU half
+   passes `used - budget` directly, and **replans while it is still
+   over budget and the last pass dropped something** -- one pass
+   cannot know it freed enough, because it counts what the meshes
+   declare while the budget is judged against what the backend
+   reports uploaded, and that only catches up once the downgraded
+   rungs have been re-uploaded. Each drop consumes its source's hook,
+   so the sequence terminates. The CPU half carries the shortfall on
+   the observation itself (`observeMemoryCeiling(shortfallBytes)`):
+   the refine worker is the only place that knows both the floor and
+   what the system had free. A `bad_alloc` states only "no", never
+   how much, so it re-reads available memory rather than inventing a
+   number, and passes 0 when the machine is not actually under the
+   floor -- one outsized build is not evidence of general pressure.
 4. ✅ **As built (2026-07-31):** `cancel` wired to plan changes. The
    ask became state instead of consumption:
    `MeshSourceRegistry::requestRefine` sets a standing `asked` on
@@ -2203,3 +2362,1327 @@ first and every tessellation, coarse included, streams in behind the
 plan. That makes the desktop ladder box → generator grid rungs →
 exact, the viewer's ladder exactly, with the box promoted from
 stand-in to explicit floor.
+
+### 13a -- two meters, because one number cannot be two quantities
+
+**As built (2026-08-12).** The single `used` figure the budget was
+judged against was wrong in a way that made the budget unmeetable: a
+plan that had just downgraded 2394 sources read its own memory as
+having gone **up**, to 705.5MB, while the frame it produced drew 845K
+primitives. Two separate defects hid inside the one number, and both
+are now split out.
+
+**1. GPU and CPU are different quantities with different release
+points.**
+
+- **GPU = what is UPLOADED.** Released by `collectMeshes` once the
+  scene stops referencing a buffer -- two frames later, by design.
+- **CPU = what is RESIDENT**: the mesh arrays the published scene
+  holds in the heap, per distinct mesh. Released by a *demote* (drop
+  the rung), not by a *downgrade* (stop displaying it).
+
+The same mesh is counted in both and has to be: it occupies both. The
+`Render_LevelDebug` line reports them side by side and never adds
+them:
+
+**The GPU figure is NOT a subset of the CPU one, and that is the whole
+reason two meters are needed.** It is tempting to reason that anything
+uploaded must have been built in the heap first, so CPU residency must
+strictly exceed GPU residency. It does not, for two reasons. The
+staging block (`bgfx::alloc` / `bgfx::copy`) is *transient* -- bgfx
+frees it once the buffer is created, so it is never resident. And the
+GPU does not hold a copy of the CPU arrays, it holds something
+*derived* from them: alongside the vertex stream and the same indices,
+the upload builds a 64-byte quad-expansion instance record per line
+segment and a 32-byte sprite instance per point, neither of which has
+any CPU counterpart. That is exactly where the measured 2x-12x excess
+comes from, and a subset relationship could not produce it.
+
+What *is* true is that the CPU meter **understates**: it counts the
+mesh arrays the published scene holds, and does not yet count the OCCT
+`Poly_Triangulation` rungs (what a demote actually frees) or the Coin
+node arrays. Naming what a meter excludes is part of the meter.
+
+**Harness rule: simulate with the CPU limit ABOVE the GPU limit.** The
+CPU side holds the source of every upload plus the rungs the GPU never
+sees, so a simulation that pins CPU below GPU is describing a machine
+that cannot exist and the two sweeps will fight.
+
+```
+render levels: gpu budget 64MB live 441.3MB (uploaded 705.5MB,
+264.2MB stale in 1832 of 6104 entries) | cpu resident 218.9MB | ...
+```
+
+**2. The budget is judged against `live`, not the total.** The bytes
+of a rung the descent just replaced stay uploaded until the collector
+retires them, so the total *cannot* fall at the moment a descent
+succeeds -- which is exactly when the plan re-reads it and concludes
+it has achieved nothing. `live` is the same accounting asked the
+question the budget means: what the frames now being drawn reference.
+It falls the moment the scene stops naming the old uploads. The
+per-frame *wake* still reads the cheap atomic total (one load against
+a walk of every cache entry, and `total >= live`, so it wakes at least
+as often as the exact number would).
+
+**3. Each sweep spends the currency its own budget is quoted in.**
+`planMeshDemotes` took bytes from `meshResidentBytes` for both sweeps,
+so the GPU sweep priced candidates in *heap* bytes while its deficit
+was in *upload* bytes. These differ by a lot, and not by a constant: a
+line segment is 8 bytes of index on the heap, and on the GPU it is
+those 8 bytes plus a **64-byte** quad-expansion instance record (two
+endpoints and their colours); a point is 4 bytes against 4 + 32. So
+the planner now takes a `bytesOf` currency, defaulting to the heap
+accounting, and the backend passes `BGFXView::uploadedBytesOf` --
+the real bytes of that mesh's buffers, 0 for a mesh nothing has
+uploaded, which is the honest answer that downgrading it gives the GPU
+nothing back.
+
+**Do not double count.** GPU buffers are shared two ways: several
+cache ids (colour variants of one TShape) point at a single
+`GpuGeometry`, and a cache id is content-addressed. `UploadCharge`
+carries the sweep's memory of what it has already charged somebody
+for, so a shared upload is promised to the first candidate that
+reaches it and to nobody else -- the total over a selection is then
+what dropping all of it actually frees, and never more. The planner
+guarantees the currency is asked **at most once per distinct mesh**,
+which is what a stateful implementation stands on.
+
+**Separate simulated limits.** GPU pressure is
+`Render_GpuMemoryBudgetMB` (harness `FC_GPU_BUDGET_MB`), a limit on
+uploaded bytes. CPU pressure is `Render_LevelCeilingSimulateMB`
+(harness `FC_LEVEL_CEILING_MB`), which today raises the *floor* an
+exact build refuses to start under -- a simulation of the machine
+running out, not a limit on our own resident bytes. A CPU limit in the
+same shape as the GPU one (a ceiling on `cpu resident`, with the
+deficit driving the demote sweep) is the natural next step now that
+the meter exists; the two knobs are independent and neither reads the
+other.
+
+### 13b -- edges and vertices under pressure, as built
+
+Falls directly out of 13a's currency: **edge and point drawables are
+disproportionately expensive on the GPU** -- 9x the heap cost per
+segment, 9x per point -- so they are the first thing to give up when
+the budget cannot be met, and the last thing a triangle-count estimate
+would have flagged.
+
+**THE CONTRACT (2026-08-15 restatement -- supersedes the witness rule
+below).** Five rules, strictly followed:
+
+1. **Floating is a topological fact per element, all-or-nothing per
+   drawable.** A vertex floats if it attaches no edge; an edge floats
+   if it attaches no face. A set is attached-only iff NOTHING in it
+   floats (`attachedOnly`, computed by PartGui from OCCT ancestor
+   maps).
+2. **An attached point set draws only while its object's line set is
+   shown and there is memory.**
+3. **An attached line set draws only while its object's face set is
+   shown and there is memory.**
+4. **A floating point or line set ranks with the faces.** It is the
+   object; the element gates never touch it.
+5. **Under pressure the classes are spent points -> lines -> faces and
+   taken back faces -> lines -> points** (a staged latch,
+   `Render_ElementGateStagger` frames between stages; faces move on
+   the plan's cadence, and lines/points return only after the ladder
+   has given back all raised error).
+
+On-top and highlight draws stay outside the contract, as before.
+
+"Shown" is decided inside the frame, dependency-ordered: faces first,
+lines against the face verdict, points against the line verdict. An
+object with no companion draw at all splits on
+`DrawCall::objectIncomplete` (a per-object mark the capture-budget
+defer plants on the innermost cache up to the object's selection root,
+carried out on every sibling entry): a DEFERRED companion is late and
+the dependent set waits for it; an ABSENT one is a display mode
+showing its own subject -- Points and Wireframe keep their exemption,
+because a mode that exists to show these elements cannot be allowed to
+show nothing.
+
+This replaces the old direction of the witness rule ("suppress only if
+the companion is drawn"), which during a publish storm drew adopted
+point caches frames ahead of their budget-deferred face sets -- the
+dots-first load. Under the contract the dependency runs the other way:
+no witness, no draw, unless the object is complete and the absence is
+the mode's choice. `Render_ShapeVertices` now defaults ON and means
+"attached points participate per the contract"; OFF keeps them dark
+outright (the pre-contract default look).
+
+1. **Vertices attached to an edge need not draw at all**
+   (`Render_ShapeVertices`, default off). Such a point lands exactly
+   on the end of an edge that is already drawn: a 32-byte sprite
+   instance apiece for something nobody looks at.
+2. **Edges bounding a face, gated dynamically under pressure**
+   (`Render_PressureDropEdges`, default on). The face still draws and
+   its silhouette still reads, and **cavity shading can fake the
+   edge** where the face geometry already implies it.
+
+**The test is topological, and it is ALL-OR-NOTHING PER DRAWABLE.**
+The question OCCT answers is per element -- is this vertex an endpoint
+of an edge, does this edge bound a face -- but the *decision* is taken
+for the whole drawable:
+
+- A point set is skipped only if **every** one of its vertices is an
+  edge endpoint. One floating vertex and the whole set draws.
+- An edge set is skipped only if **every** one of its edges bounds a
+  face. One floating edge -- a wire, a sketch, a datum line -- and the
+  whole set draws.
+
+This is a deliberate relaxation, and it is what keeps the feature
+small. In practice an object is almost always either all-floating or
+none, so per-element suppression would buy nothing measurable while
+costing an index subset, a permutation of the index array, and a
+collision with the fact that **coordinate order is the picking
+identity** (`getCoordinateIndex() - startIndex + 1` is the vertex
+number, `ViewProviderExt` ~1198). All-or-nothing needs none of that:
+the classification is **one boolean per drawable**, carried from the
+node down to the draw call, and a suppressed drawable is simply not
+submitted.
+
+Computing it is `TopExp::MapShapesAndAncestors(shape, TopAbs_VERTEX,
+TopAbs_EDGE, ...)` -- floating iff the ancestor list is empty -- and
+the same for `TopAbs_EDGE -> TopAbs_FACE`. Under the all-or-nothing
+rule the scan short-circuits on the first floating element.
+
+**And the display mode exempts its own subject.** The vertex gate
+never applies in the **Points** mode and the edge gate never applies
+in **Wireframe**: a mode that exists to show exactly these elements
+cannot be allowed to show nothing. Note the graph makes this less
+obvious than it sounds -- `pcPointsRoot` is a child of the Flat Lines
+root, the Wireframe root, *and* the Points mode root
+(`ViewProviderExt` ~1021-1069), so one node serves three modes and the
+gate cannot be a property of the node's contents.
+
+Both are display-side gates, not residency changes: nothing is
+demoted, nothing re-tessellates, and the way back is a frame. That
+makes them cheaper to enter and leave than any rung move, which is why
+they belong at the top of the pressure response rather than the
+bottom. **Picking, pre-selection highlighting and on-top rendering are
+unaffected** -- the geometry stays published and resident, the
+highlight draws are on-top draws, and only the base-pass submission is
+skipped.
+
+**How it is wired.** `ViewProviderPartExt::buildVisualNodes` asks OCCT
+and stores one bool per drawable on the node (`SoBrepPointSet` /
+`SoBrepEdgeSet::attachedOnly`); the render bridge reads it **by name**
+-- the `protoNode` precedent, because only PartGui can compute the
+answer and Gui must not depend on PartGui -- onto
+`MeshData::attachedOnly`; the backend gates submission. Absent field =
+absent classification = always draws, which is the safe direction.
+
+**Suppressing the draw is all it takes to free the memory.** An
+unsubmitted mesh stops advancing its `lastUsed`, so `collectMeshes`
+destroys its buffers two frames later and 13a's `live` meter sees it
+fall. No rebuild, no re-tessellation, and the way back is one frame.
+
+*Amended for publication-keyed retention (13c.5), which repealed the
+mechanism above without anyone noticing: once "published" meant
+"resident", the gates kept suppressing draws while the collector kept
+their buffers -- measured on the rack model's inside camera as 74.5MB
+of edge buffers, all undrawn, standing behind a 64MB budget (the
+by-class meter attributed the whole uploaded-vs-live gap to them).
+Two deliberate changes restore the contract:*
+
+1. *The gate walk hands the collector the set of meshes whose every
+   scene draw it suppressed this frame; those fall back to the
+   recency grace and retire. A mesh any ungated draw still names
+   (on-top, highlight) is untouched -- that draw keeps it live.*
+2. *The pressure half of the edge gate LATCHES: `gpuOverBudget` arms
+   it, and it holds while the pressure controller still carries
+   raised error (`PressureTolerance::raisedPx > 0`). Following the
+   instantaneous over-budget bit alone would oscillate with the
+   collector -- retiring the gated buffers puts the total back under
+   budget, the gate would re-open into the memory it just freed, and
+   the period-4 wave returns by another route. Edges come back only
+   when the ladder has given back ALL raised error: the cheapest
+   thing to give up is the last thing taken back.*
+
+**MEASURED (rack model, 64 MB budget, first plan, same scene):**
+
+| | gate off | gate on |
+|---|---|---|
+| gpu live | 530.5MB | **191.2MB** |
+| cache entries | 6567 | **2253** |
+| cpu resident | 267.4MB | 267.4MB |
+| displayed coarse / exact | 2022 / 1569 | 2022 / 1569 |
+| downgrades the plan needed | 2361 | **1692** |
+| accepted error | 36.10px | **5.37px** |
+
+The rungs and the displayed geometry are identical -- only the edge
+and point drawables are gone -- so **64% of the GPU bytes of this
+scene were edges and vertices**, which is the 8-12x ratio of 13a
+paying out. The second row is the one that matters to a user: with
+two thirds of the memory returned for free, the plan has to buy far
+less of it back with visible error, and the accepted error falls from
+36.10px to 5.37px at the same budget.
+
+**Spending order, and a proposal the data refused.** The pressure
+response spends vertices, then edges, then face rungs -- vertex third
+class, edge second, face first. It was proposed that the plan spends
+them out of order, pricing its face downgrades against memory the edge
+gate was about to free. It does not: the gates are per frame and the
+plan fires 300 ms after a camera settle, so by plan time the gate has
+been in effect for many frames and `live` already reflects it (191.2MB
+in plan 1, not the ungated 530.5MB). The frame loop supplies the
+ordering for free, and the downgrades that remain are buying a real
+gap above the budget.
+
+Both arms reach the 64 MB budget and pay very differently for it. With
+the gates off the ladder converges at live 8.9MB only by reducing 2302
+objects to bounding boxes; with them on it settles at live 63.1MB /
+cpu 33.0MB with the tolerance back to 2.00px, holding far more real
+tessellation. The gates buy quality at a fixed budget.
+
+**GATE-MEASURED 2026-08-15 on the storm (`scripts/interactivity_gate.py`,
+real desktop, RTX 3060 verified, rack model 5455 objects, budget
+dropped 148 -> 64 MB live).** The contract had shipped unmeasured; this
+is the arm-vs-arm run it owed. `element-gate=off` is the ablation that
+removes the edge stage (`PressureDropEdges` off, `ShapeVertices` off),
+not the pre-contract default:
+
+| | contract on | edge stage off |
+|---|---|---|
+| suppressed at stage 2 | 5909 point + 5909 line | 5909 point + **0** line |
+| **peak accepted error** | **8.01px** | **1654.00px** |
+| error still standing at the end | 4.02px, releasing | 206.75px |
+| settled live | 63.1MB | 59.7MB |
+| gaps >= 200ms in the drop | 107-114 | 171 |
+
+The tolerance column is the verdict and it is not close: without the
+edge stage the ladder can only reach the budget by accepting ~200x the
+error, because the 5909 attached line sets it may not drop have to be
+paid for out of face quality. Convergence time is NOT a verdict here --
+the same arm converged in 48s, 57s and 82s across three runs, so the
+80s of the off arm sits inside its own spread. Quote the error, not the
+clock.
+
+**And the release path is a DEFECT, found by measuring it.** The
+escalation is fine (`stage 0 -> 1 -> 2` under load), but handing the
+memory back (64 -> 148 MB, latch at stage 2) produces this:
+
+| plan | live | accepted error | latch |
+|---|---|---|---|
+| recovering on the restored budget | 76.3MB | 2.00px | stage 2 |
+| **the frame the lines are re-admitted** | **202.8MB** | 1654.00px | stage 1 |
+| peak | 233.0MB | 1654.00px | stage 1 |
+| after re-escalating and re-descending | 82.6MB | 6.46px | stage 2 |
+
+Re-admitting the line class costs **~126MB on one frame** -- the whole
+settled scene again, and 55MB past the restored budget -- so the
+pressure controller slams the tolerance to its 1654px ceiling, the
+latch re-escalates, and the scene ends up WORSE than before it
+released: 6.46px at 82.6MB where it had held 2.00px at 76.3MB. The
+release also cost 104 event-loop gaps >= 200ms (worst 807ms), a second
+storm as expensive as the drop.
+
+The stagger was supposed to prevent exactly this ("what keeps the
+release from re-opening into the memory the collector just freed"), but
+a stagger only DELAYS the re-admission -- it never PRICES it. Nothing
+asked what the class costs before handing it back, and the answer here
+is 2x the budget.
+
+**FIXED: the release is priced.** Before stepping down, the latch adds
+up what re-admitting that class would upload (`GpuMesh::readmitCost`,
+which lives beside `upload()` because it is the same arithmetic) and
+compares it with real headroom. It steps down only if the class fits,
+and reports the refusal on its crossing so a latch that stays put for a
+reason cannot be mistaken for one that is stuck:
+
+    render levels: element gate stage 2 holds -- handing back the
+    lines would upload 114.1MB into 73.3MB of headroom
+
+Measured over the same release window:
+
+| | unpriced | priced |
+|---|---|---|
+| **peak accepted error** | **1654.00px** | **8.01px** |
+| gaps >= 200ms | 104 in 120s | 74 in 150s |
+| latch | released, overshot, re-escalated | held |
+
+WARNING: price the GEOMETRY, not just the instance buffer. A mesh whose
+every draw the gate suppressed is collected outright, vertices and
+index stream with it, so re-admission pays for all of it again. A first
+version counted only the instances, under-read by about a fifth
+(107.1MB against the ~126MB actually taken), and that was enough to
+approve a release that then blew the budget and re-escalated -- the
+same failure the pricing existed to prevent, just quieter.
+
+What this does NOT do is make the classes come back on a full budget:
+the ladder climbs into whatever headroom exists, so the equilibrium on
+a model this size is edges gated and faces fine. Handing them back in
+BATCHES rather than all 5909 draws at once -- the standing "incremental
+by default" rule -- is the remaining work, and it is what would let a
+partial re-admission use the headroom that is genuinely there.
+
+WARNING: the latch's state was readable only from the plan line, and a
+settled ladder STOPS PLANNING -- so the release walks back over exactly
+the frames that print nothing. A first attempt watched 120s of settled
+run and saw no transition at all, which proves nothing either way. The
+stage crossings now log their own edges like the load gate does, and
+the release is only DUE once the memory is handed back: watching a
+scene that settled AT the budget's edge shows a correctly-held latch,
+not a stuck one.
+
+#### 13b.1 -- the load gate, and the phase that turned out to matter
+
+`Render_LoadDropElements` (default on) suppresses **both** classes for
+as long as a document is still arriving, and hands them back to the
+two standing gates the moment it has finished. A load is when the tier
+can least afford edges and vertices and can least use them: the faces
+are arriving coarse-first and being replaced under the camera, nobody
+inspects a vertex of a model that is still half there, and every byte
+not spent on an edge instance buffer is one the arriving geometry
+gets. It overrides both gates while it lasts -- vertices drop with
+`ShapeVertices` on, edges drop with no pressure declared -- but it is
+subject to the same all-or-nothing classification and the same
+display-mode exemptions, so a wire, a sketch or a point cloud draws
+throughout. Leaving costs one frame, like the pressure gate.
+
+**MEASURED (2026-08-13), and on the `.FCStd` open path it bought
+NOTHING -- because there was nothing on screen to suppress.** Rack
+model, 5455 objects, `Render_LevelDebug` on, both crossings and all ten
+intervening plan readouts logged:
+
+| phase | wall | draws in the renderer's scene | eligible | suppressed |
+|---|---|---|---|---|
+| whole load, gate ON | 17.8s | **0** | 0 | 0 point + 0 line |
+| the frame it lifted | -- | 5952 (17727 draws) | 11818 | -- |
+
+`bgfx: scene consumed: 5952 draws, 1241 meshes` appeared **once**,
+after the load, and the gate lifted on that same frame. A progressive
+load parked every visual build
+(`ViewProviderPartExt::deferVisualForLoad`) and published the scene in
+one step when it was done, so the renderer held an empty scene for the
+entire load. A display gate cannot beat a mechanism that has already
+withheld all the geometry: the two are the same idea applied at
+different depths, and the deeper one got there first.
+
+**RE-MEASURED 2026-08-15, and that null is GONE -- the publish is
+incremental now.** Same model, same harness, real desktop: the scene
+fills *while* the drain runs, so the gate has real work throughout,
+climbing as the geometry arrives.
+
+| phase | eligible | suppressed |
+|---|---|---|
+| early load | 2246 | 1123 point + 1123 line |
+| late load / drain | 7098 | 3549 point + 3549 line |
+| the frame it lifted | 11818 (17727 draws) | 5909 point + 0 line |
+
+The lesson is not that the earlier reading was wrong -- it was right
+about the build it measured. It is that **a null result against a
+mechanism that is itself under development expires**, and this one
+expired the moment incremental publish landed. The live progressive
+import (`App::Document::LiveImport`) is still unmeasured; it is no
+longer the only case that exercises the gate.
+
+Getting even the null result required fixing the predicate first.
+"A document is loading" reads naturally as the document status bits
+plus `Gui::Document::isRestoringViewProviders()`, and both of those
+clear *before* the deferred visual drain -- the one phase in which
+geometry would reach a renderer at all. The gate now reads the visual
+queue itself, published as `Gui::Application::isBuildingVisuals()`:
+the queue is PartGui's and its readers are not, so the owner sets the
+flag at every mutation of its map rather than have Gui depend on a
+workbench, the same constraint that makes the bridge read
+`attachedOnly` by name.
+
+WARNING: this is why the crossing is reported at all, and it is the
+whole reason the null was visible. The plan readout prints on a camera
+settle, and a load can begin and end entirely between two settles --
+the gate would have done its whole job with nothing saying it ran, and
+`eligible 0` for seventeen seconds would never have been seen. Both
+edges print under `Render_LevelDebug` with the counts of the frame
+that crossed.
+
+WARNING: the first two attempts to read this timeline were wrong
+because the gate report was `std::printf` while the harness markers
+were Python `sys.stdout` -- two differently buffered streams, whose
+interleaving in a captured pipe is not the order the events happened
+in. It read as though the gate lifted before the drain had run. The
+report goes through the console on the desktop now, so it lands in
+`--log-file` in true order beside the plan readout; **never time two
+events from two buffers.**
+
+#### 13b.2 -- the WASM tier
+
+The gate flags are hoisted out of `#ifndef FC_RENDERER_STANDALONE`, so
+the **vertex gate works in the browser** (`?shapevertices=1` turns the
+points back on; off is the default, as on the desktop). It is pure
+display -- one bit from the producer and whether the edges are drawn --
+and needs no budget, no level plan and no pressure state behind it,
+which is why it ports and the edge gate does not.
+
+The hoist alone was **not sufficient**, twice over.
+
+First, **the WASM tier did not compile**, and had not for two commits.
+The gates commit used `gatedPoints`/`gatedLines`/`gateEligible` in the
+submit loop, which is common to both tiers, while declaring them
+inside `#ifndef FC_RENDERER_STANDALONE`; and before that the
+frame-timing instrument had put six unguarded `Base::Console()` calls
+in a file that only includes `Base/Console.h` in its Qt half. The
+hoist fixes the first; the six now go through one `FC_RENDER_MSG`
+macro that is `Base::Console()` on the desktop -- unchanged on
+purpose, because the performance harnesses read those lines out of
+`--log-file` and only the console writes there -- and `std::printf` in
+the browser.
+
+SUPERSEDED (2026-08-15): **the tier is built on the development box
+now.** emsdk is installed at `~/works/sw/emsdk` (emcc 6.0.6, and it
+needs the conda python -- `EMSDK_PYTHON=.conda/freecad/bin/python3`),
+`build/wasm` is configured with `emcmake`, and `ninja -C build/wasm`
+produces the fcviewer bundle. Build it after any renderer change; the
+hand recipe below is kept only for the case where the toolchain is not
+at hand. What follows was written when there was no `emcc` on the box,
+and **that is how two breakages accumulated with nothing saying so.**
+
+The recipe the tree documents in five places -- this directory's
+`CMakeLists.txt`, `scripts/wasm-viewer.sh`, `scripts/compile-shaders.sh`,
+`scripts/README.md` -- wants the emsdk at that path. Without it the
+tier is only compile-checkable by hand:
+
+```
+x86_64-conda-linux-gnu-g++ -fsyntax-only -std=c++20 -DBX_CONFIG_DEBUG=0 \
+  -DFC_RENDERER_STANDALONE -DFC_OS_WASM -DFreeCADRenderer_STATIC -DHAVE_BGFX \
+  -idirafter /usr/include -I src -I src/Gui/Renderer \
+  -I src/3rdParty/bgfx/{bgfx,bx,bimg}/include \
+  src/Gui/Renderer/BGFXRenderer.cpp
+```
+
+`-DFC_OS_WASM` or `FCGlobal.h` pulls `<QtCore.h>`; `-idirafter
+/usr/include` for `GL/gl.h`. It covers `SceneDump.cpp` too, but not
+`wasm/main.cpp`, which needs `EM_ASM`. **Baseline it against `HEAD`
+before believing an error is yours** -- that is what separated these
+changes' zero new errors from the two pre-existing breakages. A real
+`emcc` build is still owed on all of this.
+
+Second, `attachedOnly` was not on the wire at all, so even a compiling
+hoisted gate would have found **zero eligible drawables** in the
+browser and reported itself working. The classification now rides a free bit of
+the mesh chunk's existing flags byte (bit 8) and is copied onto
+generated levels, since whether a vertex sits on an edge is a fact
+about the shape's topology and not about the rung it is drawn at.
+`kChunkVersion` moves with it: nothing can be *misread* without the
+bump -- an old chunk simply reads as unclassified, which is the safe
+direction -- but a cached chunk from an older build would answer
+"unclassified" forever, and the gate would work on the desktop and
+quietly do nothing in the browser, which is the exact failure this
+file's own layout-guard comment exists to prevent.
+
+Third, the **dependency half** of the contract had no input here.
+`DrawCall::objectIncomplete` was publish-transient and never
+serialized, so every object a consumer read looked complete -- and
+"complete with no companion draw" is precisely the display-mode
+exemption, the branch that says a Points or Wireframe object must be
+allowed to draw its own subject. A viewer therefore granted the
+exemption to objects whose faces the *producer* had held back, which
+is the dots-first load storm reproduced one tier out.
+
+It rides the **object entry in the manifest root** as of v55, beside
+the document identity of v38 and outside the group chunk for the same
+reason: it is a property of the publish, not of the geometry. Folding
+it into a content key would retire an object's cached chunks every
+time the producer's capture backlog drained -- a state bit re-keying
+megabytes. The consumer stamps it onto the object's draws in
+`applySceneObjects`, on every assembly, because a draw outlives the
+entry that was current when it arrived (an object stands on its old
+geometry while new geometry is in flight) and a mark left standing
+after the companion landed is a companion waited for forever. The
+delta's change test gained the bit for the same reason: it usually
+flips *with* the draws that were being waited for, but a delta that
+depended on that coincidence would fail silently in the one case it
+did not hold. A bundled capture has no object section, so the
+monolithic layout carries the keys as a list after the scene draws --
+four zero bytes for the settled scene a capture is normally taken of.
+
+NOTE: **this was carried on the browser's evidence, not the
+desktop's.** The split counter `gatedByDependency` measured **zero on
+every plan of every phase of every run** of the storm gate: on the
+`.FCStd` path the load gate (13b.1) covers exactly the window in which
+a late companion can occur, so `objectIncomplete` is masked there and
+the desktop cannot show the rule firing. The streaming tier has no
+"document restoring" status to hang a load gate on -- a served scene
+arrives progressively with the view live throughout -- so it is the
+tier where the mark is the only thing standing between a deferred
+companion and the exemption.
+
+The edge gate is the harder half there, and not for want of a budget:
+the WASM tier has had one all along (`Render::MemoryBudget s_budget`,
+`wasm/main.cpp` ~3460, fed `observe(residentBytes, blobCache, heap)`
+every heartbeat and pinnable with `?membudget=`). It is a budget on
+**resident payload and heap** -- the CPU half of 13a's pair, with no
+GPU half. So a browser edge gate hung off it would be pressing on a
+signal that cannot see what the gate frees: GPU buffers are not in the
+wasm heap. That tier needs the *uploaded* meter before its edge gate
+means anything, which is the same split 13a made on the desktop.
+
+WARNING: the gate's own counters were double counted in their first
+reading (the predicate is asked by the id pass and the submit loop
+both, and it tallied inside itself -- all three counters came back
+equal, which is impossible for a population split between points and
+lines). They are tallied once per draw now. The table above does not
+depend on them: every figure in it is read off the memory meters and
+the plan, which are independent of the counter.
+
+Both are display-side gates, not residency changes: nothing is
+demoted, nothing re-tessellates, and the way back is a frame. That
+makes them cheaper to enter and leave than any rung move, which is why
+they belong at the top of the pressure response rather than the
+bottom.
+
+### 13c -- decimation, the rung between a spent tessellation and the box
+
+The descent coarsens an object by asking OCCT for a larger deflection,
+and **that saturates**: a planar face is two triangles at any
+deflection, so a shape of mostly flat faces answers the same mesh
+however coarse the ask (measured earlier: 4x coarser removed 19% of
+the primitives). `MeshErrorScaleExhausted` marks the object that has
+proved it, and until now the only step below it was the **bounding
+box** -- the one representation this class could build that actually
+drops faces, and a violent one.
+
+`Render_SimplifyExhausted` (default on) puts vertex clustering
+(`Gui/Renderer/MeshSimplify.h`) in between. It rewrites the **display
+nodes only**: nothing re-tessellates, the OCCT triangulation is
+untouched, so the way back is one ordinary rebuild and each further
+step down clusters on a coarser grid.
+
+**MEASURED (rack model, 5455 objects, 64MB pinned budget, real GPU,
+one run per arm):**
+
+| | decimation on | box only |
+|---|---|---|
+| plans run | 28 | 77 |
+| live gpu, median | **29.2MB** | 73.6MB |
+| live gpu, max | 371.2MB | 212.3MB |
+| plans with pressure standing | **11 (39%)** | 61 (79%) |
+| plans at the unraised 2.00px | **17 (61%)** | 17 (22%) |
+| objects reduced to a bounding box | **1029** | 1208 |
+| decimated rungs applied | 1034 | 0 |
+
+Per object the reduction is drastic -- 3498 triangles to 220, 8454 to
+90, 13838 to 874 -- and the shape survives, which is the whole
+difference from the box. The budget is met on 61% of plans instead of
+22%, at the *unraised* tolerance: the same "quality at a fixed budget"
+the element gates bought, one rung further down.
+
+Three honest caveats.
+
+- **The max is WORSE with it on** (371.2 vs 212.3MB), and that is the
+  mechanism, not a defect: an arm that can afford quality climbs back
+  to it when pressure lifts, so it spends more at the top of the swing.
+- **One run per arm, and the arms are not the same population** -- 28
+  plans against 77, because the box-only arm keeps replanning while it
+  stays over budget. The direction is large and consistent across four
+  independent indicators; the magnitudes are single samples.
+- **Displacement is what a pressure rung looks like**: median 8.79
+  world units over 1038 rungs, max 249.58. The plan is accepting 63px
+  of screen error at that point, so this is the deal being struck, not
+  a surprise.
+
+**What it costs.** Section caps through a decimated rung can be rough
+(clustering does not preserve watertightness) and the hidden-line seam
+filter is dropped, because a welded edge may fold a seam and a non-seam
+edge together and there is no faithful answer. Both are restored by the
+rebuild that climbs out.
+
+**What it keeps, and this is what made it usable.** Face and edge
+*numbering* survive. A face that decimates away to nothing keeps its
+empty slot in `partIndex`, and an edge that collapses keeps its empty
+run in `coordIndex` -- both tables are read by element number
+(`SoBrepEdgeSet` derives the edge id from the ordinal of the `-1`
+separator), so dropping the empties would silently renumber everything
+behind them. Per-face colour and selection keep working.
+
+Two states, not one: `MeshErrorScaleExhausted` says deflection is
+spent, `MeshDecimationSpent` says decimation is too and the box is
+next. One flag doing both jobs would send an object to its box the
+moment tessellation saturated, which is the step this rung exists to
+delay. `Render_SimplifyMinReduction` (default 20%) is what makes the
+sequence terminate: a pass that cannot remove that much is refused,
+and since each step clusters coarser, a mesh with nothing left to merge
+keeps answering no.
+
+Decimation is applied as a **post-step of the ordinary build**, not in
+the descent callback that asked for it, so the state is durable -- an
+`updateVisual` for any other reason (a colour change, a placement edit)
+would otherwise rebuild at full detail and quietly undo the descent.
+
+`Render_SimplifyMergeParts` (default **off**) would weld across face
+boundaries. It was expected to be necessary -- per-face clustering
+cannot take a two-triangle face below two triangles -- but the default
+arm above already removes 94-99% per object on this model, whose
+objects are shells and compounds rather than flat-faced boxes. The
+crease-preserving arm ships; the merging one is there for the model
+that needs it.
+
+#### 13c.1 -- restating the rung, and what the statistic costs
+
+The registry is now told what the decimation did
+(`MeshSourceRegistry::setPublishedError`, which updates a source's
+published error in place without touching its generator or hooks).
+
+It has to be told, and the reason is not tidiness. The refine pass
+wants a source when `levelError * diagPx > tolerancePx`, so an error
+that understates how coarse an object actually became is one that may
+**never ask for it back** -- the object stays visibly decimated after
+the pressure that decimated it has gone. Restating it also prices the
+next descent step from the rung the object is standing on rather than
+the one it left.
+
+**WHICH statistic, and this turned out to matter more than whether.**
+The first attempt published `maxDisplacement`, the worst single vertex.
+Every other published error on this ladder is a NOMINAL figure -- the
+grid a rung was built on, `scale/(8<<level)` -- so a worst case is not
+comparable with the numbers it is judged against. Measured: it declared
+a median relative error of **0.17 against a `LevelScaleBoxError` of
+0.25**, i.e. most decimated objects were announced as nearly box-grade,
+and the plan believed it. Boxes rose from 1029 to 1233. RMS ships
+instead: median 0.077, p90 0.168.
+
+WARNING: 5 of 995 rungs measured a displacement **larger than the shape
+diagonal** they were divided by, one of them 9.4x it -- impossible for
+a clustering bounded by its own grid, and a sign that a shape's bounds
+and its own tessellation disagree (a compound is the suspect). The
+published error is clamped to 1.0 and floored at the tessellation's own
+error, and the clamp logs. The underlying disagreement is unexplained.
+
+#### 13c.2 -- WARNING: the arm comparison above is weaker than it looks
+
+The 13c table should be read as evidence that the rung *works
+per object*, which it is -- the per-object reductions are deterministic
+and were logged a thousand times over. It should **not** be read as a
+settled system-level memory result, and the reason is a defect in how
+it was taken, found while measuring 13c.1:
+
+- The medians were computed over **every plan line in the run,
+  including the ones that fired before any geometry reached the
+  renderer** (live 0.0MB, 0 cache entries).
+- The arms ran **20 to 77 plans**. So the share of those empty plans
+  differed per arm, and the medians were partly a measure of *when each
+  run happened to settle* rather than of what it settled at.
+- Filtering to plans that had a scene changes the numbers and does not
+  stabilise them: one arm still reads a median live of 0.0MB, because
+  these runs do not converge inside the harness window at all.
+
+**`scripts/level_converge.py` is that harness.** It settles on a
+CONDITION, never on a clock: the run ends when `FC_CONV_PLANS`
+consecutive plans report refine, demote and downgrade all zero with the
+live meter steady to within `FC_CONV_TOL` percent, and it reports the
+state it converged to. A run that does not converge says so and is
+explicitly **not** a measurement, rather than quietly yielding a median.
+
+Four validity gates, each of which has already produced a
+plausible-looking lie in this workstream:
+
+1. **the scene must have reached the renderer** -- a plan over 0 cache
+   entries is not a small scene, it is no scene, and averaging those in
+   is precisely what broke the first attempt;
+2. **live must be > 0 while entries > 0** -- `live` counts meshes
+   referenced by the last two frames, so 0.0MB against a populated cache
+   means the view is not drawing and every memory figure in the row
+   describes a frame nobody rendered;
+3. **the camera must not move after the initial fit** -- the plan fires
+   ~300ms after the camera settles somewhere new, so a harness that keeps
+   re-fitting keeps restarting the process it is timing;
+4. **the refine tolerance must be finite** -- see below.
+
+Gate 4 caught a real defect the moment it was written, and it is one
+this section's own feature caused. `levelPressureErrPx` is a running
+maximum of the error the descent has accepted, held up for as long as
+the pressure lasts. One non-finite candidate pins it at infinity, and an
+infinite refine tolerance is **not a large tolerance -- it is the climb
+switched off**, since `levelError * diagPx > tolerancePx` is then false
+for every source in the scene. Measured: `refine tolerance infpx` on 9
+of 30 plans, and **zero occurrences before the rung began publishing a
+large per-object error** (13c.1), so this was self-inflicted. A scene
+that could only ever descend looked exactly like a scene that had
+settled. Non-finite accepted errors are now refused entry to the
+running maximum.
+
+The bound was not enough on its own, and the harness said so. With
+non-finite values refused but the magnitude unbounded, the raised
+tolerance reached **4.3e11 px** -- finite, and just as fatal. So the
+accepted error is bounded by the SCREEN: an error of a million pixels
+and an error of the viewport height are the same statement, the object
+is not resolvable, and there is no rung beyond "already invisible".
+
+WHAT THE HARNESS THEN FOUND, and it is the real result of this section.
+Before the bound, the ladder was in a **limit cycle** on this scene:
+three plans descending under pressure with the tolerance climbing
+(5821 -> 6102 -> 6203 px), then the pressure lifting, the tolerance
+snapping back to 2.00px, and a single plan asking **946 objects to
+refine** -- straight back over budget, and round again. 43 plans in
+611s, 2567 objects put in boxes, no steady state at any point. **Every
+earlier memory figure in this workstream was a sample of that cycle at
+an arbitrary phase**, which is the deeper reason the 13c table cannot be
+quoted, beyond the empty-plan defect that first exposed it.
+
+With the bound, the same arm runs **4 plans in 420s**, descends
+monotonically (371.2 -> 150.9 -> 154.1 -> 149.1MB) and goes quiet
+(refine 0, demote 0, downgrade 0) at a tolerance that peaks at 51.06px,
+with **1 box instead of 2567**. It still has not been declared converged
+-- the run needs a longer window than 420s to collect four consecutive
+quiet plans -- but it is now a system that settles rather than one that
+cycles.
+
+The honest present state: the rung demonstrably removes 94-99% of an
+object's triangles while keeping its shape; the ladder as a whole
+oscillated until the tolerance was bounded and now appears to settle;
+and no arm-to-arm steady-state memory comparison has been taken yet,
+because none was possible until this.
+
+#### 13c.3 -- the release, which is where the cycle actually lived
+
+**"Now appears to settle" was wrong, and the re-run says so.** The
+sentence above rests on a single 420s run that never formally
+converged; the note beside it said to re-take it at a longer window
+before believing it. Re-taken at 900s, the same arm on the same model
+gives, out of **53 plans that had a scene**:
+
+| | HEAD, bounded tolerance |
+|---|---|
+| plans in 916s, all with a scene | 54 |
+| plans at the snapped 2.00px | **17** |
+| plans asking >500 objects to refine at once | **6** |
+| live gpu, mean over plans with a scene | **90.4MB** (budget 64MB) |
+| live gpu, max | 371.1MB |
+| objects reduced to a bounding box | 3498 |
+| converged | **NO -- "this row is NOT a measurement"** |
+
+The sequence is the cycle, verbatim: the tolerance climbs under
+pressure (102 -> 219 -> 600px, the viewport bound), the descent gets
+`live` under the budget, and then **one plan reads 2.00px and asks
+1018 objects to re-tessellate**, `live` goes to 204MB, and it starts
+again. Bounding the tolerance fixed a real defect -- an unbounded one
+switches the climb off entirely -- but it never touched the mechanism
+that makes the loop a loop.
+
+**The mechanism is the RELEASE, and it was a step function.** The
+descent's accepted error is held as a running maximum for as long as
+the pressure stands, which is right: the plan after a successful
+descent finds only sources with no rung left to drop, accepts no error
+at all, and reading the tolerance off *that* would hand back everything
+just given up. But it was **cleared outright at the first plan that
+came in under budget** -- so the whole raise vanished in one step, and
+the very next plan asked for a thousand objects. A control loop with a
+fast attack, real gain, and no hysteresis whatsoever on the release
+side, which is a textbook recipe for a limit cycle.
+
+**And the release was not the only thing wrong, which the same log
+says plainly.** Six of those 54 plans asked for hundreds of refines
+*while the tolerance stood at its 600px bound and the budget was still
+broken* -- 386, 546, 950. That cannot happen if the two passes share
+one tolerance, and they did not: the descents on those plans reported
+accepted errors of **3531, 6324 and 16211px**, while the raise derived
+from them was bounded by the viewport height. Bounding the raise was
+right on its own terms -- an unbounded one reached 4.3e11px and
+switched the climb off -- but it silently turned "one effective
+tolerance for both directions" back into two, and the climb spent its
+plans asking back exactly what the descent had just given up.
+
+The fix is to bound the **currency**, not just the number: the climb
+now compares each source's projected error clamped to the viewport
+height, the same statement the raise is clamped by ("beyond the screen,
+an object is simply not resolvable"), and the descent reports its
+accepted error clamped the same way while still *selecting* on the true
+values, because the ordering among candidates erring thousands of
+pixels is real and worth keeping. With both bounds in place a tolerance
+standing at the screen height means what it says: nothing left to ask
+for.
+
+The streamed viewer does not have this problem, and the reason is
+worth stating because it is a design difference and not a tuning one.
+`planLevels` (SceneLadder.h) is **one global, deterministic
+assignment**: every object starts at its box, every candidate upgrade
+is scored by screen-space error removed per byte added, and the best
+are taken until the budget is spent. Its own comment puts it exactly:
+*"the same camera, ladders and budget produce the same plan, which is
+what there is instead of damping -- a plan cannot oscillate with
+itself."* The desktop ladder is two incremental sweeps instead, and two
+sweeps reading two tolerances certainly can.
+
+`Render::PressureTolerance` (`Gui/Renderer/SceneLadder.h`) is the
+desktop answer, and it does not try to be a global plan. It keeps the
+fast attack and changes the release into a staircase that **learns
+where the floor is**:
+
+- each plan that fits keeps `Render_LevelPressureRelease` of the
+  standing error (default 0.5), so quality returns over several plans
+  and each step is *measured against the budget* before the next one
+  is taken;
+- a step that puts the scene back over budget proves that level too
+  generous, and it becomes a **floor the release never passes again**;
+- the floor only rises, so the walk down terminates: the ladder stops
+  at the coarsest tolerance that actually fits and goes quiet there.
+
+Two details decide whether the floor is learned at all, and both are
+about **lag**. The refines a release step asks for are queued: they
+land plans later, so the pressure they cause usually arrives after the
+staircase has already stopped, and a controller that only blamed the
+step it was mid-way through would learn nothing and re-try the same
+level forever. So the blame is carried on "has anything been given
+back since the pressure last stood", not on "is a step in progress".
+And the step that gives the *last* of the error back sets the raise to
+zero, so the level it let go of is remembered separately -- otherwise
+a pressure blaming that step would learn a floor of nothing, which is
+the snap again, one staircase later.
+
+Holding some error at the end is not a failure -- it is what fitting a
+64MB budget costs on this scene, and the alternative is measured: it
+is the cycle. The floor is evidence about **one camera and one
+budget**, so a camera move (`MeshLevelPlanner::cameraMoved()`) or a
+budget change forgets it; a view that genuinely fits releases all the
+way back to the camera's own tolerance and the raise disappears.
+
+A release is a staircase and a still camera over a quiet scene raises
+no event of its own, so a step that gave error back marks the planner
+dirty to ask for the next one -- otherwise quality would stop coming
+back halfway, which looks exactly like the bug this replaces.
+
+**MEASURED (rack model, 5455 objects, 64MB pinned, real GPU, same
+harness and the same camera in both arms):**
+
+| | HEAD | with 13c.3 |
+|---|---|---|
+| verdict | **NOT CONVERGED in 916s** | **CONVERGED after 394s** |
+| plans | 54, still swinging | 37, then silence |
+| live gpu | 18 -> 371MB, mean 90.4 | **60.2MB** |
+| cpu resident | -- | 33.6MB |
+| plans asking >500 refines | 6 (up to 950) | **0** |
+| objects reduced to a box | 3498 | **1313** |
+| final tolerance | cycling 600 <-> 2.00px | 82.94px, stable |
+
+The floor was learned in three steps and the log says so plainly --
+`floor 2.34px` -> `22.76` -> `41.03`, each rise bought by one release
+step that put the scene back over budget -- after which the staircase
+stopped and the plan reported `SETTLED at what fits` twice before going
+silent. `displayed coarse 2390 exact 1201` at the end: the scene is
+inside a budget it exceeded by 5.8x at its worst, holding real
+tessellation for a third of its objects, with 1313 boxes instead of
+3498.
+
+Note what "converged" had to mean here. The harness's old rule was
+"live under the budget AND no pressure standing", which would score
+this run as a failure -- the pressure IS standing, deliberately, at
+82.94px. Fitting while holding error back is the equilibrium this
+section is about, so the verdict now distinguishes "met at the
+camera's own tolerance" from "met, holding N px of error", and only
+calls the third case a miss.
+
+`Render_LevelPressureRelease = 0` restores the old snap exactly, so
+the defect stays reachable and the two arms can be compared rather
+than argued about. The plan readout now names which of three things a
+raised tolerance means -- `under pressure`, `releasing`, or `SETTLED
+at what fits` -- because for 43 plans it could not tell a ladder that
+had stopped from one that was mid-swing.
+
+### 13d -- where a rebuild's time actually goes, and the plan it refuted
+
+The next item in this workstream was **"build Coin nodes on a worker
+thread"**, and it rested on a single figure: a mass descent costing
+`outside 1517ms` of a 1604ms frame, with the re-tessellation on the
+refine pool and the node rebuild not. That figure was one sample from
+the run that never converged (13c.3), and it had never been attributed
+to anything. Once the ladder settled it could be.
+
+Four accumulators beside the existing mesh timer -- traversal, mesh,
+prologue (the three action traversals a rebuild applies to the nodes it
+is about to discard), instancing -- and **the unattributed remainder
+printed rather than left to be inferred**. A split whose parts do not
+add up to the whole is how a missing cost stays missing.
+
+Reported by a self-selecting reporter: one build costs microseconds and
+a line per build would bury the run, so it speaks only once 0.2s of
+rebuild has piled up -- which on a quiet session is never.
+
+**MEASURED (rack model, 5455 objects, 64MB pinned, real GPU), on the
+descent, 5699 builds costing 170.05s of GUI-thread rebuild:**
+
+| term | s | % |
+|---|---|---|
+| **mesh** | **120.96** | **71.1** |
+| traversal + node fill | 39.99 | 23.5 |
+| prologue | 0.50 | 0.3 |
+| instancing | 0.04 | 0.0 |
+| unattributed | 8.51 | 5.0 |
+
+The load phase is a different question and must not be averaged in
+(there the mesh is 72.5% and legitimately so -- 98% of its calls are a
+shape's first tessellation).
+
+**So the plan targeted 23.5% of the cost.** The mesh term is the
+question, and the comment at that call had always answered it by
+assertion -- "a mesh already resident makes this call nearly free". It
+is now instrumented instead: `MeshCallProbe` asks the shape how many
+triangles it holds before and after the call, and at what deflection.
+A count that moves is a rebuild.
+
+| descent mesh calls | 4942 | |
+|---|---|---|
+| rebuilt | 2480 (50.2%) | 74.50s |
+| ...with no triangulation at all (legitimate first mesh) | 1672 | |
+| ...**re-tessellating an already-meshed shape** | **808** | |
+| **validated only -- changed nothing** | **2462 (49.8%)** | **46.45s** |
+
+**Half the calls change nothing and cost 46.45s doing it**, ~19ms each,
+building OCCT's internal mesh model only to conclude the triangulation
+was already adequate. That is 27% of all descent rebuild time -- more
+than the entire traversal the threading plan was aimed at -- and it
+needs no threading at all: the probe's own face walk answers the same
+question for a fraction of the cost.
+
+Two consequences for the threading idea, kept here because they are
+what a future attempt would otherwise re-derive:
+
+- `buildVisualNodes` has **no separable Coin phase**: it calls
+  `startEditing()` up front and the OCCT walk writes straight into the
+  raw `SbVec3f*` / `int32_t*`. But the only Coin thing that loop
+  touches is array memory and `SbVec3f`, a plain value type -- point it
+  at `std::vector` storage and it becomes Coin-free, and poolable
+  **with no Coin threading whatsoever**.
+- **`COIN_THREADSAFE` was never the prerequisite it was assumed to be.**
+  It guards the recursive *field* lock (`src/fields/SoField.cpp`), a
+  per-frame tax on render traversals; the globals node construction
+  would race on are already unconditionally mutexed -- the node id
+  counter (`SET_UNIQUE_NODE_ID`) and the `SbName` map. What does stay
+  single-threaded is node *objects*: `SoBase`'s reference count is a
+  plain `int32_t`.
+
+Next, in the order the measurement puts them: skip the mesh call whose
+work is already done; then the 808 that re-tessellate what the pool had
+already built; and only then, if what is left justifies it, move the
+traversal off the GUI thread.
+
+### 13e -- not making the call that would write nothing
+
+13d ended with three items in the order the measurement put them. This
+is the first: **half of a mass descent's tessellation calls changed no
+triangle and cost ~19ms each**, because `BRepMesh_IncrementalMesh`
+cannot conclude "already adequate" without first building its internal
+model of the shape -- every face, every wire, every edge discretized --
+and only then comparing.
+
+So the call is now asked for only when something might come of it.
+`tessellationIsRedundant()` answers the same question off what the
+faces already carry, and it is only worth trusting because it is
+**OCCT's own question, copied rather than invented**:
+
+- per face, `BRepMesh_ModelPreProcessor`'s `TriangulationConsistency` --
+  the deflection the triangulation was *built* at (its
+  `Poly_TriangulationParameters`, falling back to `Deflection()`
+  exactly as OCCT does) against the deflection the model would compute
+  for that face, through the same `BRepMesh_Deflection::IsConsistent`
+  with the same `AllowQualityDecrease` the call itself passes;
+- the same #25080 guard on triangle indices, because a triangulation
+  OCCT would have discarded as corrupt is one this fill would read;
+- every **free** edge's 3D polygon, by `BRepMesh_EdgeDiscret`'s rule.
+  Free edges are the one thing OCCT still rewrites when every face is
+  reused: face-bound polygons are committed only for faces it re-meshed
+  (`BRepMesh_ModelPostProcessor`), and `BRepMesh_FaceDiscret` skips
+  every face marked `IMeshData_Reused`. **With every face consistent,
+  the call writes nothing at all** -- so skipping it is not a
+  substitution for the call, it is the same outcome without the model
+  build.
+
+All-or-nothing per shape, where OCCT decides per face: one inconsistent
+face and the real call runs and does exactly what it does today. There
+is no arm in which guessing beats asking, because the fallback *is* the
+answer.
+
+**The check is scored, not argued.** With `Render_MeshSkipRedundant`
+off, the check still runs under the level debug flag and its verdict is
+carried into `MeshCallProbe`, which then reports how often the check and
+the call agreed. That is the only thing that can say a skip is safe:
+
+| audit arm (feature off), whole run | calls | |
+|---|---|---|
+| checks made | 7403 | 0.316 ms each |
+| said redundant, and the call rebuilt nothing | 800 | correct |
+| **said redundant, and the call REBUILT** | **1** | see below |
+| redundant but refused | 2765 | the saving left behind |
+
+**The one disagreement is one-sided by construction.** The required
+deflection computed here is a *lower bound* on the model's (it takes
+`max(ask, 2 x MaxFaceTolerance)` and drops the model's wire average of
+per-edge vertex adjustments, which is never below the ask). So the
+upper test `current < 1.1 x required` is strictly **tighter** than
+OCCT's, and a mesh too *coarse* for the ask can never be accepted. Every
+possible disagreement is OCCT wanting to *coarsen* a mesh this one kept
+-- which costs memory, never fidelity.
+
+#### What the refusals were actually costing
+
+A check that is safe but claims little is improved by evidence or not at
+all, so the refusals are counted by reason -- and only over calls that
+then proved redundant, since refusing a call that really did rebuild is
+the check working:
+
+| reason unclaimed | calls |
+|---|---|
+| **resident mesh FINER than the ask** | **2599** |
+| resident coarser | 148 |
+| a face with no triangulation | 18 |
+| bad indices, free edge, no faces | 0 |
+
+**94% of it is one reason, and the ratio is exactly 2.00** -- the
+resident mesh is the previous ladder rung, one `LevelScale` step back.
+Strictly it is not adequate: the descent asks coarse *on purpose* to
+hand memory back, which is what `AllowQualityDecrease` is for. But every
+one of those 2599 calls **changed no triangle when it was made anyway**.
+The faces were already at their floor; a two-triangle face does not
+coarsen.
+
+`Render_MeshSkipFinerResident` is that trade, and it is the one knob
+here that must be **judged by converged memory rather than by calls
+skipped**, because what it declines is a coarsening.
+
+| arm | mesh calls made | skipped | WRONG | mesh share of rebuild | live GPU | cpu resident |
+|---|---|---|---|---|---|---|
+| off (audit) | 6678 | 0 | 0 | 72% | 57.6 MB | 30.1 MB |
+| off (audit, repeat) | 7403 | 0 | 1 | 72% | 59.5 MB | 31.1 MB |
+| skip, strict | 6511 | 469 | 0 | 69% | 52.0 MB | 25.0 MB |
+| **skip + accept finer** | **3401** | **4720** | **0** | **56%** | **39.2 MB** | **22.7 MB** |
+| skip + accept finer, repeat | 3873 | 6039 | 0 | 55% | 35.7 MB | **36.3 MB** |
+
+**The `WRONG` column of the skip-on rows is 0 for a reason that is not
+safety, and reading it as safety was this section's own first mistake.**
+A call that is SKIPPED is never made, so nothing can say whether it
+would have rebuilt; with the feature on, `WRONG` can only count calls
+the check *refused*. A zero there is guaranteed by construction, not
+earned. **Safety is measurable in the audit (off) arm and nowhere else**,
+and that is where the two rules part company:
+
+| audit arm, every call made | predicted redundant | of those, actually REBUILT |
+|---|---|---|
+| strict | 801 | **1** |
+| accept finer | 3381 | **753 (22%)** |
+
+**Accepting a finer mesh skips a real coarsening about one time in
+five.** The converged-memory columns had only hinted at that (`cpu
+resident` 22.7 MB against 36.3 MB across two runs, straddling a
+30-31 MB baseline, settling nothing); the audit measures it directly.
+So `Render_MeshSkipFinerResident` ships **off** -- not because its bill
+is unsettled, but because it is now settled and it is 753 denied
+coarsenings.
+
+What does repeat, and is not in doubt:
+
+- **the saving.** The mesh share of a rebuild falls 72% -> 55-56%, and
+  validated-only calls collapse from ~3500 to ~500.
+- **GPU memory**, below both baselines (39.2, 35.7 MB).
+- **the strict rule's safety**: 1 wrong in 7403, one-sided toward keeping
+  a finer mesh.
+
+/!\ These converged rows are each arm's *outcome*, not a controlled
+delta. The ladder is a feedback loop -- change what a rebuild costs and
+the plan does different work in the same wall clock -- and the arms
+settled at different tolerances (55.37, 190.54, 165.87, 600.00 px), as
+two identical arms settled 55s and 1.9MB apart. What *is* controlled is
+the per-call arithmetic: a validated-only call costs ~26ms, the check
+costs 0.3ms strict and 0.9-1.1ms when it must walk every face's
+triangles before accepting a finer mesh.
+
+**What ships on by default is the strict rule** -- OCCT's own, mirrored,
+one-sided-safe -- which on this model is 469 calls of the 6511 it
+checked.
+
+#### Where the rest of the prize actually is
+
+The refusal histogram said the resident mesh is finer than the ask by a
+ratio of **exactly 2.00**, with a tail at 4, 16 and 548. That is not a
+deflection question, it is `LevelScale` counted once per descent step,
+and the descent says so itself (`ViewProviderExt::updateVisual`,
+`onScaleDown`):
+
+```cpp
+MeshErrorScale = nextScale;              // the ask doubles
+if (MeshErrorScaleExhausted || ...) {
+    MeshErrorScaleExhausted = true;
+    updateVisual();                      // ...and NO new mesh is built
+    return;
+}
+```
+
+Once an object has proved it cannot be coarsened -- the comment there
+already says *"re-tessellating buys nothing"* -- every further descent
+step still doubles the deflection and rebuilds, so the ask walks
+geometrically away from a mesh that will never move again. The tail at
+4, 16 and 548 is objects several steps past that point.
+
+`buildVisualNodes` is **static**, so it cannot ask whether the caller
+knows this; the flag is now passed in as `tessellationSpent`, and the
+correlation is not a tendency but an identity:
+
+| strict audit arm | calls |
+|---|---|
+| redundant but refused | 2787 |
+| ...of which resident was finer than the ask | 2731 |
+| **...on an object whose tessellation was already SPENT** | **2787 (100%)** |
+
+/!\ /!\ **THE 100% ROW IS RETRACTED -- see 13f.** The counter read a
+local variable shadowing the flag it was named for, so it tracked
+`missed` one for one by construction. "An identity, not a tendency" was
+the bug's own signature, published as strength of evidence. Re-taken
+with the counter fixed, the share is **63%** -- a majority, not an
+identity -- and the split proposed below must be re-judged against that.
+
+**Every single refused-but-redundant call is on an object the descent
+had already proved it could not coarsen.** Not 94%, not "mostly" -- all
+of them. *(Retracted -- see above and 13f.)*
+
+That is the shape of the remaining work, and it is **not** a policy
+choice about fidelity: a call that provably cannot coarsen anything is
+one nobody should be making, and skipping it costs no memory at all --
+unlike accepting a finer mesh, which costs 753 coarsenings.
+
+/!\ **But `MeshErrorScaleExhausted` currently conflates two things**, and
+only one of them is a proof. It is set when the descent's coarser mesh
+failed to reduce the node count (`after * 10 >= before * 9`) -- which
+*is* a proof that tessellating again buys nothing -- and also when
+`scaledError >= boxError`, which merely says the plan has decided to go
+to the box instead. An object spent for the second reason may still be
+coarsenable, so skipping its call would carry exactly the memory bill
+that convicted the accept-finer rule. **Split the flag before acting on
+it**, and audit the two populations separately: the prize is whatever
+share of the 2787 is the first kind, and it is claimable with no memory
+cost at all.
+
+*(Done, and the audit went the other way: the proof does not survive
+the descent, and no spent-keyed skip ships -- see 13g.)*
+
+### 13f -- corrections from a code review, and the re-taken number
+
+A full review of this workstream (2026-08-12) found five defects; four
+are fixed, and one retracts the measurement 13e's next step was resting
+on. They are recorded together because four of them are the same
+disease at different depths: **one slot carrying two meanings, or one
+fact stated in two places that could disagree.**
+
+#### the counter behind "2787 of 2787" was a tautology
+
+`MeshCallProbe` holds `bool spent` -- whether the object had already
+proved it cannot coarsen. Its destructor declared `const double spent =
+<elapsed seconds>`, shadowing the member, and the tally read the local:
+elapsed time is never zero, so `refusedSpent == missed` on every run
+that could ever be taken. The published identity measured nothing.
+
+Re-taken with the counter fixed (audit arm, skip off, rack model, 64MB,
+converged BY SILENCE after 446s at 42.1MB / 110.34px, the 13f fixes
+below in):
+
+| refused-but-redundant | calls |
+|---|---|
+| total | 2487 |
+| on a SPENT object | **1566 (63%)** |
+| on an object still descending | 921 (37%) |
+| refusal reason: resident finer than the ask | 2465 of 2487 |
+| widest deflection miss exactly x2.00 | 305 of 345 report windows |
+
+Two things follow. The flag split 13e proposed is still worth having --
+63% is a real majority -- but it is no longer "claimable in full with no
+memory cost", and the (a)-proof vs (b)-box-choice sub-populations still
+need their own counter before anything is skipped. And the geometric
+tail (misses of x4, x16, x548) did not reproduce: the dominant miss is
+exactly ONE doubling, consistent with the state fixes below having
+removed the divergence that let the ask walk away from the mesh.
+
+#### the ceiling demote that was not free
+
+`dropHiddenLevels`'s contract is "nothing on screen changes", but it
+selected on `publishedError > 0 && hooks.demote`, and the demote slot
+also carries the dynamic-scale descent -- a VISIBLE one-rung
+re-tessellation -- for coarse sources with no hidden finer rung. The
+ceiling epoch is sticky and the caller runs the drop on every plan
+pass, so one real CPU-memory ceiling walked the whole scene to its
+boxes, unpriced and camera-blind, bypassing exactly the pricing
+planMeshDemotes exists to do. `LevelHooks::demoteDropsHiddenRung` now
+says which move the slot holds, and the ceiling drop fires only the
+free one.
+
+#### the state and the display must agree
+
+Three places the ladder's state could diverge from what was drawn, each
+ending in a wrong render or an inline GUI-thread re-tessellation:
+
+- the dynamic-scale identity reset ran AFTER the bounding-box stand-in
+  gate, so an edited object the descent had boxed was re-boxed on flags
+  proved against a TShape that no longer exists (under pressure the
+  gate skips every guard that would have noticed). The reset now runs
+  before the flags' first reader;
+- climbing out of a pressure box cleared the flags but kept the doubled
+  `MeshErrorScale`, so the rebuild refused the worker's rung-1x mesh
+  and re-tessellated inline. The scale resets with the flags;
+- the descent committed `MeshErrorScale` BEFORE queueing the coarser
+  build, so a job dropped at the worker's memory floor (or cancelled by
+  a re-registration) left the state one rung below the display, with
+  that step's exhaustion proof never evaluated. The scale is now
+  committed in the apply; the already-exhausted short circuit keeps the
+  synchronous commit, since nothing can fail to land there and the
+  advancing scale is what grows the decimation grid.
+
+The review's still-open list has since been worked off (2026-08-13):
+TSan on a mass-descent churn harness showed the `meshedCopy` race never
+fires (what fired instead was OCCT's B-spline `Resolution` lazy cache,
+fixed in the OCCT fork with atomics); the three raw TShape anchors are
+one `MeshLadderState` with one rebind; the decimated rung interpolates
+texture coordinates instead of zeroing them.
+
+### 13g -- the flag split, audited: the proof does not survive the descent
+
+13e ended with a plan: split `MeshErrorScaleExhausted` into its two
+claims, audit them separately, and skip the tessellation call only for
+the population whose exhaustion is a PROOF -- that share was to be
+"claimable with no memory cost at all". The split shipped
+(`MeshLadderState::scaleSpent`, a three-state enum: `No` / `BoxChosen`
+/ `Proved`, with `Proved` never downgraded by a later box choice), and
+`MeshCallProbe` learned to count BOTH halves of the audit per claim:
+the refusals that proved redundant (the skip's prize) and the calls on
+spent objects that rebuilt anyway (the skip's WRONG column, which the
+prize-only counter of 13e could never see).
+
+Audited on the rack model (audit arm, skip off, 64MB, real GPU, two
+runs -- one converged at 429s, one not converged at 600s; only
+per-call arithmetic is compared across them):
+
+| calls on SPENT objects | run 1 | run 2 |
+|---|---|---|
+| refused, and the call proved redundant: `Proved` | 1548 | 1689 |
+| ... `BoxChosen` | 570 | 568 |
+| REBUILT anyway: `Proved` | **395** | **426** |
+| ... of those, verdict was finer-resident only | (not counted) | **422** |
+| ... `BoxChosen` | 592 | 579 |
+
+Three verdicts, one worse than the next:
+
+- **The flag-only skip is refuted.** ~20% of the calls on `Proved`
+  objects rebuild the mesh -- the same rate that convicted accept-finer
+  (753/3381 = 22%).
+- **The combined rule is refuted by the same number.** The rescue
+  hypothesis was that those rebuilds came from residency changes the
+  redundancy check would still catch (`NoTriangulation`, `TooCoarse`
+  after a demote dropped the rung), so skipping only on *finer-resident
+  refusal AND proof* would be safe. Run 2's cross says no: 422 of the
+  426 proved rebuilds were finer-resident cases -- precisely the calls
+  the combined rule would have suppressed.
+- **The proof itself is the defect.** `after*10 >= before*9` is sound
+  at the step that establishes it and leaky as a permanent claim: as
+  the ask keeps doubling past that step, one proved shape in five
+  RESUMES shrinking at some coarser deflection. Those rebuilds are not
+  audit noise; they are OCCT reclaiming real memory on objects the
+  ladder had declared exhausted. A skip would not have saved wasted
+  work -- it would have forgone the reclaim.
+
+So: no spent-keyed skip ships, the shipped strict check
+(`Render_MeshSkipRedundant`, WRONG 0 in both runs again) remains the
+whole of 13e's claim, and the counters stay in `MeshCallProbe` as the
+guard that keeps this conclusion measured rather than remembered.
+
+What the audit leaves on the table, stated so it is not rediscovered
+as a surprise: the residual validated-only calls on spent objects cost
+~1.7-1.9s of GUI time per mass descent (~1700 calls at ~1.1ms), and
+the descent currently strands the one-in-five late coarsening because
+`Proved` is permanent until a climb resets it. Re-proving per step
+(clearing `Proved` when the scale advances) would capture those
+coarsenings at the price of resuming the ~80% futile re-tessellations
+the flag exists to stop -- pool-side at ~26ms each, not GUI-side. That
+is a trade to be measured, not assumed, and nothing here decides it.

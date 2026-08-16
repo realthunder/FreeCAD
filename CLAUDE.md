@@ -23,7 +23,7 @@ Underlying tech: **OpenCASCADE (OCCT)** geometry kernel, **Coin3D** (Open Invent
 
 This project is developed together with local forks kept as sibling directories; the dev build links against their **local installed builds**:
 - `~/works/sw/coin` — forked Coin3D (`realthunder/coin`, tracks `coin3d/coin`).
-- `~/works/sw/occt` — forked OCCT (`realthunder/OCCT`, tracks upstream). Improving this kernel is an explicit project focus. **Branch `LinkVibe-801` (OCCT 8.0.1) is what FreeCAD builds against**; `LinkVibe` is the same fork on 7.7.2, kept for the version-guarded fallback paths and for what the released packages still link.
+- `~/works/sw/occt` -- forked OCCT (`realthunder/OCCT`, tracks upstream). Improving this kernel is an explicit project focus. **Branch `LinkVibe-801` (OCCT 8.0.1) is the only development target**; `LinkVibe` is the same fork on 7.7.2 (what the released packages still link), FROZEN as of 2026-08-13 -- nothing is ported there without a compelling reason, and `docs/Backport772.md` is the policy and the ledger.
 - `~/works/sw/{coin3d-feedstock, freecad-rt-feedstock, pivy-feedstock}` — conda-forge recipes used for distribution image releases.
 
 **`LinkVibe` is the working branch in these repos too** — in the coin fork, and in `freecad-rt-feedstock` and `pivy-feedstock`, whose `main` branches build a pinned older tag. The exceptions are occt, where it is `LinkVibe-801` as above, and `coin3d-feedstock`, which has only `master`. A repo checked out on `main`/`master` is not evidence to the contrary; a change asked for "everywhere" belongs on the `LinkVibe` branches.
@@ -34,7 +34,7 @@ When a change requires a matching Coin or OCCT change, expect to edit those repo
 
 **Read `docs/DevEnvironment.md` first** — it documents the two build stacks on this box in full (layouts, exact commands, quirks). Summary:
 
-- **Primary: conda-based debug stack** (Qt 6.10.1 + PySide6 6.10.1, gcc 15) — the only way to get a matched Qt6+PySide6 on Ubuntu 24.04. Env at `.conda/freecad`; wrap every build/run/debug command with `~/works/sw/fcad/.conda/run.sh` (activates env, keeps builds truly Debug). Configure with the `conda-debug-local` user preset → `build/conda-debug-occt801` (Ninja). Local debug installs: OCCT 8.0.1 in `occt/install/conda-debug-801`, Coin in `coin/install/conda-debug`. The `conda-debug-occt772` preset (→ `build/conda-debug`, OCCT 7.7.2 in `occt/install/conda-debug`) compile-checks the fallback paths.
+- **Primary: conda-based debug stack** (Qt 6.10.1 + PySide6 6.10.1, gcc 15) -- the only way to get a matched Qt6+PySide6 on Ubuntu 24.04. Env at `.conda/freecad`; wrap every build/run/debug command with `~/works/sw/fcad/.conda/run.sh` (activates env, keeps builds truly Debug). Configure with the `conda-debug-local` user preset -> `build/conda-debug-occt801` (Ninja). Local debug installs: OCCT 8.0.1 in `occt/install/conda-debug-801`, Coin in `coin/install/conda-debug`. The `conda-debug-occt772` preset (-> `build/conda-debug`, OCCT 7.7.2 in `occt/install/conda-debug`) compile-checked the fallback paths -- no longer routine now that 7.7.2 is frozen (`docs/Backport772.md`); that tree was left mid-rebuild and needs a full rebuild before anything out of it is trusted.
 - **Fallback: system gcc + apt Qt 6.4.2** — `debug-local` user preset → `build/debug` (Makefiles; `sh src/make.sh -j$(nproc)` works). No PySide6 possible here, so Python workbenches don't load. Local occt/coin installs in `<repo>/install/debug`.
 
 Key points that apply to both:
@@ -87,6 +87,29 @@ To change a Python API, edit the **`.xml`** and the **`PyImp.cpp`** — never th
 - **pre-commit** (`.pre-commit-config.yaml`) runs clang-format/black/whitespace fixes but only over an **allowlisted subset** of `src/` — much of the tree is exempt. Run `pre-commit run --files <changed>` before committing; still follow `.clang-format`/black for files outside the allowlist.
 - `.git-blame-ignore-revs` lists bulk-reformat commits — use `git blame --ignore-revs-file .git-blame-ignore-revs`.
 - **Commit messages**: `Area: summary`, where Area is the module abbreviated — `Gui:`, `App:`, `Part:`, `PD:` (PartDesign), `Sketcher:`, `TD:`/`Techdraw:`, `Sheet:` (Spreadsheet). Keep one problem per PR.
+
+### ASCII only (hard rule)
+
+Everything **you** write -- code, comments, docs, commit messages, test data -- must be
+pure ASCII. No em dashes, no curly quotes, no arrows, no stars, no warning signs, no
+emoji, no non-breaking spaces. Write `--` not an em dash, `->` not an arrow, `<=` not
+a less-or-equal sign, `us` not a micro sign, `deg` not a degree sign, `sec` not a
+section sign, `...` not an ellipsis.
+
+Scope: **only lines you add or change.** Never reformat pre-existing non-ASCII -- over
+a thousand tracked files carry it legitimately (upstream author names in copyright
+headers, Qt translations, test fixtures), and rewriting them buries the real change.
+This applies to CLAUDE.md and the docs too: the existing text stays as it is.
+
+Enforcement is `scripts/strip-nonascii.py`, installed as a `post-commit` hook by
+`scripts/install-hooks.sh` (run it once per clone, and for the sibling coin/occt
+repos). It transliterates the non-ASCII on lines the commit added, fixes the commit
+message, and amends the commit. It stands down during rebase/merge/cherry-pick, skips
+merge commits, skips files edited since the commit, and skips translations. A line
+containing `nonascii-ok` is left alone; `NO_STRIP_NONASCII=1` skips a commit. Use
+`python3 scripts/strip-nonascii.py --check` to see what it would rewrite.
+
+The hook is a backstop, not a licence to be sloppy -- write ASCII in the first place.
 
 ## Gotchas
 - `Auto` Qt detection picks Qt5 when present — always force `-DFREECAD_QT_VERSION=6`.

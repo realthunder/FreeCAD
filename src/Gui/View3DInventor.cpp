@@ -74,6 +74,7 @@
 #include "SoFCDB.h"
 #include "Inventor/SoFCRenderCacheManager.h"
 #include "SoFCSelectionAction.h"
+#include "Inventor/SoFCRenderCacheManager.h"
 #include "SoFCVectorizeSVGAction.h"
 #include "View3DInventorExamples.h"
 #include "View3DInventorViewer.h"
@@ -1218,11 +1219,13 @@ void View3DInventor::Restore(Base::XMLReader &reader)
     // keys it did not carry keep following this installation's preference.
     if (_viewer)
         _viewer->syncLightProperties();
-    // What the document states about this view is the author's look. What it
-    // may still state about their hardware is not: a file written before
-    // those knobs were made local carries a sample count and a memory budget
-    // tuned on another machine, and restoring one overwrites what this
-    // installation seeded. Put the local preference back.
+    // Old documents saved per-view copies of render properties that have
+    // since been retired to global RenderParams (debug switches, ladder
+    // tuning, the GPU budget). They restore fine as dynamic properties,
+    // but nothing reads them anymore and their values used to shadow the
+    // globals -- strip them so the dead surface does not linger or get
+    // re-saved.
+    stripLegacyRenderProperties(this);
     reseedLocalRenderProperties(this);
 }
 

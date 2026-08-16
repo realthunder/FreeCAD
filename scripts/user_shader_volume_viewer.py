@@ -141,7 +141,7 @@ def wait_renderer():
             ok = isinstance(stats, dict) and stats.get("geometryPixels", 0) > 0
         except Exception:
             pass
-        if ok and hasattr(v, "RenderDebug_ViewMode"):
+        if ok and hasattr(v, "Render_AO"):
             note("renderer ready")
             run_next()
         elif deadline[0] <= 0:

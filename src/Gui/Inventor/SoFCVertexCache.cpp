@@ -35,6 +35,7 @@
 
 #include <unordered_map>
 #include <vector>
+#include <string>
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
@@ -81,6 +82,7 @@
 #include <Inventor/system/gl.h>
 #include <Inventor/SbPlane.h>
 #include <Inventor/SbBox3f.h>
+#include <Inventor/elements/SoLazyElementEx.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
 #include <Inventor/threads/SbMutex.h>
@@ -95,7 +97,6 @@
 #include "SoFCVBO.h"
 #include "SoFCVertexArrayIndexer.h"
 #include "SoFCShapeInfo.h"
-#include "CoinLazyElementEx.h"
 #include "SoFCFinishElement.h"
 #include "SoFCPbrElement.h"
 #include "COWData.h"
@@ -974,10 +975,13 @@ SoFCVertexCache::open(SoState * state)
   PRIVATE(this)->matframe = false;
   {
     auto t = PRIVATE(this)->tmp;
-    if (Gui::CoinLazyElementEx::available()) {
-      t->numemissive = Gui::CoinLazyElementEx::getEmissive(state, &t->emissiveptr);
-      t->numspecular = Gui::CoinLazyElementEx::getSpecular(state, &t->specularptr);
-      t->numshininess = Gui::CoinLazyElementEx::getShininess(state, &t->shininessptr);
+    if (const SoLazyElementEx *ex = SoLazyElementEx::getInstance(state)) {
+      t->emissiveptr = ex->getEmissiveArray().values;
+      t->numemissive = ex->getEmissiveArray().num;
+      t->specularptr = ex->getSpecularArray().values;
+      t->numspecular = ex->getSpecularArray().num;
+      t->shininessptr = ex->getShininessArray().values;
+      t->numshininess = ex->getShininessArray().num;
     }
     const auto & pbr = SoFCPbrElement::get(state);
     if (pbr.isPerFace() && (pbr.nummetallic > 1 || pbr.numroughness > 1)) {
@@ -1078,6 +1082,236 @@ SoFCVertexCache::getProtoNode(const SoNode * node)
   if (field && field->isOfType(SoSFNode::getClassTypeId()))
     return static_cast<const SoSFNode*>(field)->getValue();
   return nullptr;
+}
+
+// The prebuilt-content registry (docs/WorkerVertexCache.md). Register and
+// consume both happen on the GUI thread (a landing writes, the render
+// cache capture reads), so no lock. Keyed on the raw node pointer: a
+// stale entry for a destroyed node can only collide with a NEW node at
+// the same address, whose node id is necessarily different, so the
+// nodeid check in takePrebuilt drops it.
+static std::unordered_map<const SoNode *,
+    std::shared_ptr<const SoFCVertexCache::PrebuiltContent> > PrebuiltTable;
+
+void
+SoFCVertexCache::setPrebuilt(const SoNode * node,
+                             std::shared_ptr<const PrebuiltContent> content)
+{
+  if (!content)
+    PrebuiltTable.erase(node);
+  else
+    PrebuiltTable[node] = std::move(content);
+}
+
+std::shared_ptr<const SoFCVertexCache::PrebuiltContent>
+SoFCVertexCache::takePrebuilt(const SoNode * node)
+{
+  auto it = PrebuiltTable.find(node);
+  if (it == PrebuiltTable.end())
+    return nullptr;
+  auto content = std::move(it->second);
+  PrebuiltTable.erase(it);
+  if (content->nodeid != node->getNodeId())
+    return nullptr;
+  return content;
+}
+
+bool
+SoFCVertexCache::prebuiltApplicable() const
+{
+  // The prebuilt contract: the worker baked neither colors nor texture
+  // coordinates, so any captured state that needs them falls back to
+  // the traversal capture. colorpervertex == 0 is the uniform-color
+  // verdict open() reached from the lazy element. Valid only between
+  // open() and close() (tmp lives in that window).
+  auto self = PRIVATE(this);
+  if (!self->tmp || self->prevattached)
+    return false;
+  if (self->colorpervertex != 0)
+    return false;
+  if (self->lastenabled >= 0)
+    return false;
+  if (self->tmp->numbumpcoords)
+    return false;
+  if (self->markerindices)
+    return false;
+  if (self->glrender || self->flipnormal)
+    return false;
+  return true;
+}
+
+bool
+SoFCVertexCache::installPrebuilt(const PrebuiltContent & content)
+{
+  auto self = PRIVATE(this);
+  assert(!self->prevattached && self->tmp);
+
+  if (!prebuiltApplicable())
+    return false;
+
+  self->prepare();
+
+  for (const SbVec3f & v : content.vertices)
+    self->vertexarray.append(v);
+  for (const SbVec3f & n : content.normals)
+    self->normalarray.append(n);
+
+  if (!content.triangleindices.empty()) {
+    self->triangleindexer =
+      new SoFCVertexArrayIndexer(self->tmp->prevtriangleindices);
+    self->sortedindexmap = self->tmp->prevsortedindexmap;
+    const int32_t * t = content.triangleindices.data();
+    for (std::size_t i = 0, c = content.triangleindices.size() / 3; i < c; ++i)
+      self->triangleindexer->addTriangle(t[i*3], t[i*3+1], t[i*3+2]);
+  }
+
+  if (!content.lineindices.empty()) {
+    self->lineindexer =
+      new SoFCVertexArrayIndexer(self->tmp->prevlineindices);
+    const int32_t * l = content.lineindices.data();
+    const int32_t * lp = content.linepartindices.data();
+    for (std::size_t i = 0, c = content.lineindices.size() / 2; i < c; ++i)
+      self->lineindexer->addLine(l[i*2], l[i*2+1], lp[i]);
+  }
+
+  if (!content.pointindices.empty()) {
+    self->pointindexer =
+      new SoFCVertexArrayIndexer(self->tmp->prevpointindices);
+    for (int32_t idx : content.pointindices)
+      self->pointindexer->addPoint(idx);
+  }
+
+  return true;
+}
+
+bool
+SoFCVertexCache::comparePrebuilt(const PrebuiltContent & content,
+                                 std::string & diff) const
+{
+  auto self = PRIVATE(this);
+  auto mismatch = [&diff](const char *what, long a, long b) {
+    diff += what;
+    diff += " ";
+    diff += std::to_string(a);
+    diff += " != ";
+    diff += std::to_string(b);
+    diff += "; ";
+    return false;
+  };
+
+  bool res = true;
+  int numv = self->vertexarray.getLength();
+  if (numv != (int)content.vertices.size())
+    res = mismatch("numvertices", numv, (long)content.vertices.size());
+  else if (numv && memcmp(self->vertexarray.getArrayPtr(),
+                          content.vertices.data(), numv * sizeof(SbVec3f)))
+    res = mismatch("vertices", 0, 0);
+
+  int numn = self->normalarray.getLength();
+  if (numn != (int)content.normals.size())
+    res = mismatch("numnormals", numn, (long)content.normals.size());
+  else if (numn && memcmp(self->normalarray.getArrayPtr(),
+                          content.normals.data(), numn * sizeof(SbVec3f)))
+    res = mismatch("normals", 0, 0);
+
+  // Run the content through the same indexer + close transformation the
+  // install path uses (close sorts index runs for GPU vertex-cache
+  // locality), then compare the closed indexers.
+  auto describe = [&diff](const char *tag, const SoFCVertexArrayIndexer *x) {
+    diff += tag;
+    if (!x) {
+      diff += "(none) ";
+      return;
+    }
+    diff += "(n=" + std::to_string(x->getNumIndices());
+    diff += " parts=" + std::to_string(x->getNumParts());
+    diff += " ix=[";
+    for (int i = 0; i < x->getNumIndices() && i < 12; ++i) {
+      if (i)
+        diff += ",";
+      diff += std::to_string(x->getIndices()[i]);
+    }
+    diff += "] po=[";
+    for (int i = 0; i < x->getNumParts() && i < 12; ++i) {
+      if (i)
+        diff += ",";
+      diff += std::to_string(x->getPartOffsets()[i]);
+    }
+    diff += "]) ";
+  };
+
+  auto compareIndexer = [&](const char *what,
+                            const SoFCVertexArrayIndexer *a,
+                            SoFCVertexArrayIndexer &b,
+                            bool skipparts) {
+    int numa = a ? a->getNumIndices() : 0;
+    if (numa != b.getNumIndices()) {
+      res = mismatch(what, numa, b.getNumIndices());
+      describe("cache", a);
+      describe("content", &b);
+      return;
+    }
+    if (!numa)
+      return;
+    if (memcmp(a->getIndices(), b.getIndices(), numa * sizeof(GLint))) {
+      diff += what;
+      diff += " indices differ; ";
+      res = false;
+    }
+    if (skipparts)
+      return;
+    if (a->getNumParts() != b.getNumParts())
+      res = mismatch("parts", a->getNumParts(), b.getNumParts());
+    else if (a->getNumParts()
+             && memcmp(a->getPartOffsets(), b.getPartOffsets(),
+                       a->getNumParts() * sizeof(int)))
+      res = false, diff += "part offsets differ; ";
+  };
+
+  {
+    SoFCVertexArrayIndexer tmpidx;
+    const int32_t *t = content.triangleindices.data();
+    for (std::size_t i = 0, c = content.triangleindices.size() / 3; i < c; ++i)
+      tmpidx.addTriangle(t[i*3], t[i*3+1], t[i*3+2]);
+    if (self->triangleindexer && self->triangleindexer->getNumParts()) {
+      // Rebuild the per-part triangle counts close() consumed from the
+      // node's partIndex field out of the closed cache's offsets; the
+      // count and index comparison carries the content check, the part
+      // offsets are identical by construction.
+      const int *parts = self->triangleindexer->getPartOffsets();
+      int numparts = self->triangleindexer->getNumParts();
+      std::vector<int> counts(numparts);
+      int prev = 0;
+      for (int i = 0; i < numparts; ++i) {
+        counts[i] = (parts[i] - prev) / 3;
+        prev = parts[i];
+      }
+      tmpidx.close(counts.data(), numparts);
+    }
+    else
+      tmpidx.close();
+    compareIndexer("triangles", self->triangleindexer, tmpidx, true);
+  }
+
+  {
+    SoFCVertexArrayIndexer tmpidx;
+    const int32_t *l = content.lineindices.data();
+    const int32_t *lp = content.linepartindices.data();
+    for (std::size_t i = 0, c = content.lineindices.size() / 2; i < c; ++i)
+      tmpidx.addLine(l[i*2], l[i*2+1], lp[i]);
+    tmpidx.close();
+    compareIndexer("lines", self->lineindexer, tmpidx, false);
+  }
+
+  {
+    SoFCVertexArrayIndexer tmpidx;
+    for (int32_t idx : content.pointindices)
+      tmpidx.addPoint(idx);
+    tmpidx.close();
+    compareIndexer("points", self->pointindexer, tmpidx, false);
+  }
+
+  return res;
 }
 
 SbBool 
@@ -2857,7 +3091,13 @@ SoFCVertexCache::getBoundingBox(const SbMatrix * matrix, SbBox3f & bbox) const
   if (PRIVATE(this)->boundbox.isEmpty())
     PRIVATE(this)->getBoundingBox(nullptr, PRIVATE(this)->boundbox);
   bbox = PRIVATE(this)->boundbox;
-  if (matrix)
+  // Never transform an EMPTY box: SbBox3f::transform guards that only
+  // under COIN_DEBUG, and in a release Coin it runs the +/-FLT_MAX
+  // sentinel corners through the matrix, overflowing them into a box
+  // of +/-inf that no longer LOOKS empty -- it then rides extendBy
+  // into the scene box and a view-fit puts the camera at infinity.
+  // Empty caches exist since point sets are born with no coordinates.
+  if (matrix && !bbox.isEmpty())
     bbox.transform(*matrix);
 }
 

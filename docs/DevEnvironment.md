@@ -207,8 +207,12 @@ build silently links the previous library. Set them explicitly:
 NEW=$HOME/works/sw/coin/install/conda-relwithdebinfo
 $RUN cmake -B build/conda-relwithdebinfo-801 \
   -DCoin_DIR=$NEW/lib/cmake/Coin-4.0.6 \
-  -DCOIN3D_INCLUDE_DIRS=$NEW/include -DCOIN3D_LIBRARIES=$NEW/lib/libCoin.so
+  -DCOIN3D_INCLUDE_DIRS=$NEW/include -DCOIN3D_LIBRARIES=$NEW/lib/libCoinRT.so
 ```
+
+(The fork's binary is `libCoinRT` since 2026-08-14 -- deliberately renamed away
+from stock Coin's soname because the fork's ABI diverges; FreeCAD refuses to
+start on a fork ABI mismatch, see `coin_fork_abi()` in the coin repo.)
 
 **Verify before trusting a number**, every time — this is the check that catches the two
 traps above:

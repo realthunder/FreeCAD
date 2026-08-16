@@ -50,6 +50,27 @@ grandfathered and get absorbed by section 4.
 
 ---
 
+> **2026-08-14 revision: the fixed debug switches are GLOBAL parameters
+> now, not per-view properties.** Everything this document describes as a
+> `RenderDebug_<Switch>` view property -- ViewMode, FreezeFrame, Label,
+> Timing, Delta, Coverage, Occlusion, ProxyCut, ProxyGen, CullAudit,
+> CullBounds -- plus the occlusion-culling knobs (`Render_Occlusion*`),
+> the ladder tuning knobs (GpuMemoryBudgetMB, LevelDebug,
+> LevelCeilingSimulateMB, LevelPressureRelease, DowngradeLedger,
+> ClimbHardLimit, ClimbAdmitBatch, DescentOrderBatch, ShapeVertices,
+> PressureDropEdges, LoadDropElements) is read from the global
+> RenderParams only (`Preferences/View/Render`; the RenderDebug ones as
+> `Debug<Switch>`). The per-view copies were retired because documents
+> SAVE view properties: a model file carrying a stale override silently
+> shadowed whatever a measurement harness or the preferences set, and
+> that burned multiple measurement runs. Old files still load; the dead
+> properties are stripped on view restore
+> (`Gui::stripLegacyRenderProperties`). What REMAINS per-view is the
+> genuinely display-intent surface (the effects groups, CoarseTessellation,
+> LevelTolerance) and the **custom named shader parameters** of section
+> 2.5 -- any `RenderDebug_<name>` property outside the fixed list still
+> feeds a like-named `u_<name>` uniform, per view, as before.
+
 ## 2. The debug-parameter protocol
 
 ### 2.1 The existing spine (already implemented)
@@ -136,16 +157,227 @@ is the "view mode" dropdown every production engine ships.
 | 8 | UV | UV / texcoord of the visible surface (depth-tested re-render) | mapping bugs |
 | 9 | Reflection | the planar reflection target, tinted dark red where the mirror covered nothing | mirror pass not running/stale, mirrored camera framing, what does and does not reach the mirror |
 | 10 | ImpactMap | the particle impact map (docs/RenderEngine.md §5.8) stretched over the screen: green where a hit is recorded, brightness its age against the ring lifetime, blue its strength, dark red where nothing has ever struck | impact-driven water rings — separates "the step program reported nothing" from "reported in the wrong place" from "the surface fails to show what is there" |
+| 11 | InstanceId | the identity of the draw that owns each pixel — every scene draw re-rasterized with the cull mask **ignored**, writing `drawIndex + 1` as an exact 24-bit integer (screen shows a hashed palette; the target holds the exact id) | which draws actually reach the screen — the ground truth behind `RenderDebug_CullAudit` (§2.4e), and the answer to "is this draw contributing anything at all" |
 
 Implementation shape: the mode rides `u_debugParams.x`; the final composite
 shader (`fs_fc_debug.sc`) ends in a mode `switch` that samples the relevant
 intermediate target. Modes 1–5/7 are pure routing over targets that already
 exist for the effect passes (modes 4/5/7 reconstruct the view-space position
-from the prepass depth, so they force the prepass on like 1–3). Modes 6/8
+from the prepass depth, so they force the prepass on like 1–3). Modes 6/8/11
 share a dedicated *debug scene re-render* pass (`ViewDebugScene`, repurposing
 the retired AO-apply view slot): every main-pass triangle fill re-rasterizes
 into a full-res RGBA16F target — additive with the depth test off for the
-fragment count, depth-tested texcoord output for UV. The enum is append-only.
+fragment count, depth-tested texcoord output for UV, the draw's own identity
+for the id mode. The enum is append-only.
+
+#### 2.3b Mode 11 in detail — the id image is a measuring instrument
+
+It is not a visualization that happens to be readable; it is ground truth,
+and three of its properties are load-bearing:
+
+- **Per instance, not per mesh.** The id is the `DrawCall` row, which is
+  exactly what the occlusion cull mask is indexed by
+  (`ProxyInstance::drawIndex`). Any coarser and a disagreement would name
+  something that cannot be masked.
+- ⭐⭐ **Exact integers, never a hash or a palette.** Two draws sharing a
+  value is precisely the failure the instrument exists to detect. The
+  target is RGBA16F, which carries 0..255 per channel exactly; the id is
+  split into three raw byte lanes. What the *screen* shows is a hashed
+  palette (consecutive ids differ by one and would otherwise be an
+  invisible gradient) — the screen is never what the audit reads.
+- **Every geometry kind, and the cull mask ignored.** Lines and points go
+  through the same screen-space quad expansion the beauty pass uses, so
+  the coverage is the coverage; the residual damage of occlusion culling
+  shows up on edges, and an audit that skipped them would come back clean
+  while missing exactly the draws that were wrong. Ignoring the mask is
+  the whole point: the image has to be what the frame *would* have drawn
+  had nothing been skipped.
+
+⚠️ Coincident geometry is resolved by draw order (the view is Sequential,
+on-top draws submitted last), where the beauty pass would state-sort. Two
+draws at identical depth may therefore swap owners. This has not been
+observed to matter — see §12.9's validation row, where 818 masked
+instances produced zero false reports — but it is the first thing to
+suspect if the audit ever names something the picture cannot corroborate.
+
+### 2.4e `RenderDebug_CullAudit` — what the culling actually deleted
+
+Turns the id image into a check on the occlusion culling
+(docs/FarFieldProxies.md §12.9): the image is read back once a second and
+intersected with the cull mask *as it was when that image was rendered*.
+
+- `visible(id) ∩ masked` is a set of **proven over-culls** — named draws,
+  each with a pixel count, ranked. Not "N pixels differ between two
+  pictures", which is a symptom that names nothing.
+- The same histogram gives the converse for free: rows that were drawn and
+  own **no pixel at all**, which is the headroom the culling has not taken.
+
+Independent of `ViewMode` — measuring what a frame skipped and looking at a
+false-colour id image are different jobs, and the audit must not require
+the screen to show something nobody can navigate by.
+
+⛔ **The instrument validates itself before it is believed.** An id pass
+that drew nothing reports a flawless culling and a colossal amount of
+wasted work — the most convincing possible output, and entirely a report
+that the instrument is broken. So a frame whose id image covers no pixel
+at all refuses to compute and says so, the same shape as
+`OcclusionFrameStats::rootRefused`. The snapshots are load-bearing for the
+same reason: a readback lands a frame or two late, and checking it against
+the *then-current* mask would reintroduce, inside the instrument, the very
+one-frame skew it was built to find.
+
+Needs a backend with texture readback, which WebGL2 is not; it says so once
+rather than reporting zeros. The id image itself still renders there.
+
+#### ⭐⭐ The attribution line — which verdict deleted the row
+
+A second line, printed only when there is over-cull to explain
+(docs/FarFieldProxies.md §12.10). The audit line names the *draws* the
+culling wrongly removed; this one names the **verdict** that removed each,
+and says how fresh and how stable that verdict was:
+
+```
+render cull attribution: N node(s) account for P px
+  | verdict fresh (<=2f) A px (x%), older B px (y%)
+  | from nodes that have flipped >=3 times: C px (z%)
+  | frustum, not occlusion: R rows S px
+  | worst n<id>(L<level> res<n> sub<n> lastpx<n> age<n>f hid<n>f ev<n>):<n>px/<n>rows
+```
+
+- **`frustum, not occlusion`** separates rows the occlusion culler cut from
+  rows something else in the same mask cut. They are different bugs in
+  different code, and a fix credited to the wrong one is worse than no fix.
+  The percentages above it are shares of what *occlusion* cut, so that the
+  other bug getting worse cannot silently shrink them.
+- **fresh vs older** is the age of the answer that produced the verdict. A
+  query that lied and a correct answer the world moved out from under look
+  identical in one verdict; against a static camera, a *fresh* verdict had no
+  time for the second explanation.
+- `ev` counts how many times the node has **entered** the hidden state (not
+  how often it was re-confirmed), and `hid` how long it has been there: ⭐
+  together they distinguish a stable wrong verdict (`ev1`, large `hid`) from
+  an oscillator (`ev` climbing) without needing a second frame to compare
+  against.
+
+⛔ **What this line deliberately does not report**, because it would be a
+tautology: whether the deciding test was taken while the node's own contents
+were being drawn. Only an already-hidden node is offered a test from the
+hidden set, so the answer that first hides a node is *always* of the drawn
+kind — the number would read 100% for every scene, including every scene
+where the explanation it appears to support is false. See
+`OcclusionNodeState` and docs/FarFieldProxies.md §12.10.
+
+The node states are snapshotted with the image, like the mask, for the
+reason given above.
+
+#### The companion `render culling:` line — and its query accounting
+
+Printed on the `RenderDebug_Timing` cadence whenever occlusion culling is
+on, because "the audit found nothing" and "the mechanism never ran" are
+otherwise the same output. Three of its fields exist to keep the *tests*
+honest, separately from the verdicts:
+
+```
+| tests offered N budgeted M sent S | queries inflight I held H expired E refused R |
+```
+
+- **offered / budgeted / sent** are three different numbers and the gap
+  between them is diagnostic: the walk *offers* every node it wants tested,
+  `budget` caps what one frame may ask, and `sent` is what the backend
+  actually drew boxes for. A transient buffer that ran short shows up only
+  in the last one.
+- ⚠️⚠️ **`inflight` / `held` / `expired` / `refused`** are the occlusion
+  query leases (docs/FarFieldProxies.md §12.11). A bgfx query handle is an
+  object's identity, not a slot to rent — reuse it and the next test reads
+  the previous one's verdict, with no assert and no `NoResult` to catch it —
+  so each test gets a handle of its own. `held` runs ahead of `inflight`
+  because bgfx does not free a released handle until the frame ends;
+  `refused` counts tests dropped for want of a handle (costs culling, never
+  correctness) and `expired` counts queries that never answered at all.
+  Non-zero `refused` means the backend's pool is too small for the budget.
+
+The software oracle prints a different right-hand half — it has no
+queries to account for — carrying the granularity the question was asked
+at (§12.17) and the coarse occluder hulls (§12.16):
+
+```
+| perinst tested N hid K redundant R in Z ms
+| hulls C of D draws, saved T tris (held H, built B, pending P, X MB, Y ms)
+```
+
+- **hid** is the whole of what per-instance testing buys: draws whose own
+  box is covered, sitting in a group that had already answered visible.
+  Read it against `instances hidden` on the left — measured, it is 17% of
+  the total on the benchmark, for 0.4 ms.
+- **redundant** counts nodes holding one instance and nothing below them,
+  whose content box *is* that instance's box, so the answer was already
+  taken. ⚠️ A partition fine enough to make every leaf a single instance
+  drives `tested` to zero and `redundant` to everything — the node walk is
+  then already per-instance and there is nothing left to ask. That is a
+  correct reading, not a broken one, and it is what a unit test with
+  `maxPerCell = 1` measures.
+
+- **C of D** is how much of the pass ran on hulls rather than on meshes,
+  and **saved** is the budget those draws did not spend — which is the
+  budget that went instead to a candidate the triangle cap would
+  otherwise have dropped.
+- ⚠️ **`pending`** is the one to read before anything else in a coarse
+  row. Hulls are built a few per frame, so a scene that has just come
+  into view rasterizes meshes for its first frames; a measurement taken
+  while `pending` is non-zero is a measurement of the warm-up, and it
+  reads as a weak version of the mechanism rather than as an unfinished
+  one. `cull_audit.py` prints it beside every coarse row for that reason.
+
+### 2.4f `RenderDebug_CullBounds` — would a tighter occludee bound pay?
+
+A **diagnostic that decides whether a mechanism is worth building**, not a
+mechanism (docs/FarFieldProxies.md §12.19). It rides the cull audit's
+frame and asks every still-drawn row three more times against the same
+occluder buffer — with the world box that ships, with the mesh's own box
+through its model matrix, and with every triangle and line segment asked
+separately. **Nothing is culled by any of it**: the verdicts are counted
+against the id image and discarded.
+
+```
+render tight-bound audit: D drawn, N invisible (J of them judged)
+  | control world AABB cull C (p prize + r RISK) = rows never asked
+  | OBB corners cull O (...), o over control
+  | per-primitive cull P (...), p over control
+  | ceiling X% of judged invisible | judged J skipped S (points, no mesh) ...
+```
+
+Read it in this order, because two of the columns exist to stop the other
+ones being believed too early:
+
+- ⚠️⚠️ **RISK** — rows an arm would cull that own pixels. It must be zero.
+  An arm is conservative on paper until the id image has been asked, and
+  this workstream twice shipped a box test that answered hidden for
+  things plainly on screen (§12.6, §12.10).
+- ⚠️ **control** — the shipping world box, re-run here. A row it culls was
+  never asked by the pass at all, so it is a *coverage* gap and belongs to
+  neither tighter arm. Non-zero control means the arms' totals are
+  measuring the wrong thing.
+- ⚠️⚠️ **`(J of them judged)`** is the ceiling's denominator, and it is not
+  N. The first run of this diagnostic asked only about triangles, judged
+  2803 of 8388 rows, divided by all 7574 invisible ones and reported a
+  mechanism as weak that had never been offered two thirds of the
+  problem — a CAD frame draws each object's edges as well as its faces.
+  Line draws are now judged; **point draws still are not, on purpose**: a
+  point is a sprite and its vertex is not its footprint, so it is the one
+  arm here that could answer hidden for something visible.
+
+The arms are monotone — a triangle's hull lies inside the OBB, whose hull
+lies inside the AABB — so an arm that adds nothing to its predecessor is
+a proven dead end rather than an unlucky sample. Measured, the OBB arm
+adds 8 rows and the per-primitive ceiling 457 of 5157, which is what
+closed the occludee-bound question (§12.19).
+
+⚠️ **It costs far more than a frame** (~2M primitive queries, 27-38 ms)
+and runs only on the audit's frame. A row measured with it on is not
+comparable for timings with a row measured without it; `cull_audit.py`
+gates it behind `FC_TIGHT=1` and says so. Needs the cull audit on (it
+supplies the image) and the software occluder pass (it owns the buffer
+being re-asked).
 
 Mode-specific tuning rides the `u_userParams[0]` bootstrap lane: `.z`
 overrides the overdraw full-red count (default 8) and the mode-7 probe
@@ -191,8 +423,55 @@ costs one object's worth of the overhead in question. Reported on the
 level planner's schedule rather than per frame, since it is a property of
 where the camera settled.
 
-Note both this and `RenderDebug_Timing` are measurement switches, not
-shader inputs, so §2.5's dynamic-uniform binding skips them.
+### 2.4c `RenderDebug_ProxyCut` — what a far-field cut would cost
+
+A boolean that logs, once a second, what aggregating distant parts *would*
+buy this camera — with nothing generated. The drawn instances are
+partitioned into the spatial index of `docs/FarFieldProxies.md` §3, a
+frontier is descended at 1, 4, 16 and 64 pixels, and each tolerance
+reports the draws that cut would issue: one per (cell, material) proxy
+(§5.1) plus whatever stays exact. A second line gives the per-level
+distributions — nodes, residents, largest subtree, mean material buckets —
+which are what size `K` and the extent target.
+
+It is the gate of §11.1: if that draw count is not far below the draws
+issued today, generating proxies is not worth building.
+
+Two differences from `RenderDebug_Coverage` above are deliberate. It
+counts **instances, not objects** — a part drawing three times pays three
+draw entries, and instances are what a cut partitions. And it rebuilds the
+partition on every report rather than caching it, because a measurement
+that can go stale measures the wrong thing; the build cost is reported
+rather than hidden, since the plan pass of phase 3 has to pay it too.
+
+### 2.4d `RenderDebug_ProxyGen` — what a far-field proxy commits
+
+The switch above estimates; this one generates. For a sample of the nodes
+the 64px cut stops on it merges each (cell, material) group for real and
+decimates it at the node's cell divided by 4, 8 and 16, then reports per
+grid: the error committed as a fraction of the node's extent, the triangle
+count against both the source and what instancing already shares, the
+surface area retained, and how many members came back empty.
+
+The error against the extent is the point of it. The cut estimate descends
+by a node's projected *extent* because phase 1 had no proxy to have an
+error, and the conversion between the two decides whether its table reads
+as its 16px row or its 64px row (`docs/FarFieldProxies.md` §11.1b). The
+answer, measured, is that no single ratio converts it — §11.1c.
+
+⚠️ **Unlike every other switch here, this one builds meshes.** A report
+merges up to two million triangles and decimates them three times, and the
+frame it lands on stalls for as long as that takes. It is therefore
+bounded — a fixed number of sampled nodes and a triangle budget — and it
+reports what it skipped, since a measurement that silently drops most of
+its work reads as coverage it did not have. Its rate limiter also measures
+from when the last report *finished*, or a report costing more than the
+interval would be due again the moment it returned.
+
+Note these, `RenderDebug_Timing` and `RenderDebug_Delta` are all
+measurement switches, not shader inputs, so §2.5's dynamic-uniform binding
+skips them — otherwise each would upload a `vec4` uniform nothing
+declares.
 
 ### 2.5 Generic named parameters — dynamic, not pre-declared
 
