@@ -63,6 +63,7 @@
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
+#include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoTextureUnitElement.h>
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
@@ -89,6 +90,7 @@
 #include <Inventor/SbRotation.h>
 
 #include <Base/Console.h>
+#include "SoAutoZoomTranslation.h"
 #include "SoFCRenderer.h"
 #include "SoFCRenderCache.h"
 #include "SoFCRendererBridge.h"
@@ -296,6 +298,8 @@ public:
                      int pass = RenderPassNormal);
 
   void setupMatrix(SoGLRenderAction * action, const DrawEntry &draw_entry);
+
+  static void applyBillboard(SoState * state, const SoAutoZoomTranslation * zoom);
 
   void updateSelection();
 
@@ -1697,7 +1701,53 @@ SoFCRenderer::getBoundingBox(SbBox3f & bbox) const
     bbox.extendBy(PRIVATE(this)->selectionbbox);
 }
 
-void inline 
+// Screen-align a billboard autozoom, which the node itself cannot do:
+// SoAutoZoomTranslation::doAction is also what the CAPTURE traversal
+// runs, and a camera-dependent rotation and scale baked into a static
+// vertex cache is the very failure the capture companion exists to avoid
+// (the SoFCImageQuad note in SoFCRenderCacheManager.cpp). So the
+// per-frame math belongs to each render path: the external backend does
+// it in BGFXRendererP.h's setDrawTransform, this does it for the GL pass
+// here. Substitute the accumulated matrix's 3x3 with the camera basis
+// scaled to world units per screen pixel, keeping the accumulated
+// translation as the anchor -- geometry emitted in pixels (SoImage
+// capture companions, text glyph quads) then draws at its screen size
+// instead of being read as world units.
+void
+SoFCRendererP::applyBillboard(SoState * state, const SoAutoZoomTranslation * zoom)
+{
+  const SbViewportRegion & vp = SoViewportRegionElement::get(state);
+  float vpwidth = static_cast<float>(vp.getViewportSizePixels()[0]);
+  if (vpwidth < 1.0f)
+    return;
+
+  SbMatrix matrix = SoModelMatrixElement::get(state); // clazy:exclude=rule-of-two-soft
+  SbVec3f anchor(matrix[3][0], matrix[3][1], matrix[3][2]);
+
+  // World units per screen pixel at the anchor's own depth: the view
+  // volume reports the world length that spans the full viewport width,
+  // and does so through the perspective divide at that point.
+  const SbViewVolume & vv = SoViewVolumeElement::get(state);
+  float scale = vv.getWorldToScreenScale(anchor, 1.0f) / vpwidth;
+  float pixelscale = zoom->pixelScale.getValue();
+  scale *= pixelscale > 0.0f ? pixelscale
+                             : SoAutoZoomTranslation::DefaultPixelScale;
+
+  // The camera's world-space axes are the COLUMNS of the viewing matrix's
+  // 3x3 (Coin's row-vector layout: p_view = p_world * VM), and the model
+  // matrix's rows are the local axes in world space.
+  const SbMatrix & vm = SoViewingMatrixElement::get(state);
+  for (int i = 0; i < 3; ++i) {
+    matrix[0][i] = vm[i][0] * scale;   // local X -> screen right
+    matrix[1][i] = vm[i][1] * scale;   // local Y -> screen up
+    matrix[2][i] = vm[i][2] * scale;   // local Z -> toward the viewer
+  }
+  matrix[0][3] = matrix[1][3] = matrix[2][3] = 0.0f;
+  matrix[3][3] = 1.0f;
+  SoModelMatrixElement::set(state, NULL, matrix);
+}
+
+void inline
 SoFCRendererP::setupMatrix(SoGLRenderAction * action, const DrawEntry &draw_entry)
 {
   SoState *state = action->getState();
@@ -1716,7 +1766,11 @@ SoFCRendererP::setupMatrix(SoGLRenderAction * action, const DrawEntry &draw_entr
           SoModelMatrixElement::set(state, NULL, info.matrix);
       } else if (!info.identity)
         SoModelMatrixElement::mult(state, NULL, info.matrix);
-      info.node->GLRender(action);
+      auto zoom = info.cast<SoAutoZoomTranslation>();
+      if (zoom->billboard.getValue())
+        applyBillboard(state, zoom);
+      else
+        info.node->GLRender(action);
     }
   }
 

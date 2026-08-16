@@ -48,10 +48,14 @@ public:
     /// FALSE (plain screen-constant scaling, model rotation kept).
     SoSFBool billboard;
     /// Billboard draws only: on-screen pixels per emitted geometry unit. 0
-    /// (the default) keeps the backend's text factor, tuned for glyph
+    /// (the default) keeps the text factor below, tuned for glyph
     /// legibility; screen-space image quads emitted in native pixels
     /// (SoImage capture companions) set 1 to match the raw-GL pixel size.
     SoSFFloat pixelScale;
+
+    /// What an unset pixelScale means: the glyph-legibility factor the
+    /// external backend applies (BGFXRendererP.h, kBillboard).
+    static constexpr float DefaultPixelScale = 1.35f;
     /// Datum-label auto-flip: keep the glyph in its plane but mirror its local
     /// X/Y per frame so the text always reads upright from the current view
     /// (SoDatumLabel GLRender behaviour). flipNormal is the world-space plane
