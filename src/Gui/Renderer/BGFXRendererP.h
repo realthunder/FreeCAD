@@ -3377,6 +3377,12 @@ public:
     //                GL JIT ~5 s for this set). A resize keeps them --
     //                init(keepShared) skips destroyPrograms() -- and only
     //                a shader-generation or MSAA change releases them.
+    //                ! Because a resize keeps them while re-running the
+    //                whole of init(), every one of them must be created
+    //                through ensureUniform()/ensureProgram() (or an
+    //                equivalent isValid guard): a plain re-creation is
+    //                deduped by bgfx, but by refcounting UP, so the
+    //                handle is never returned to the pool.
     enum HandleLife : uint8_t { LifeSized, LifeView, LifeProgram };
     template <typename Fn>
     void forEachHandle(Fn &&fn)
@@ -3492,7 +3498,7 @@ public:
         fn(m_progGtaoBlur, LifeProgram);
         fn(m_progGtaoDepth, LifeProgram);
         fn(m_progSsaoBlur, LifeProgram);
-        fn(m_progCavity, LifeSized);
+        fn(m_progCavity, LifeProgram);
         fn(m_progVol, LifeProgram);
         fn(m_progVolAccum, LifeProgram);
         fn(m_progReflMedia, LifeProgram);
@@ -3562,11 +3568,11 @@ public:
             fn(h, LifeProgram);
         fn(u_aoParams, LifeProgram);
         fn(u_aoParams2, LifeProgram);
-        fn(u_cavityParams, LifeSized);
+        fn(u_cavityParams, LifeProgram);
         fn(u_aoKernel, LifeProgram);
         fn(s_texEnv, LifeProgram);
         fn(u_pbrParams, LifeProgram);
-        fn(u_matcapParams, LifeSized);
+        fn(u_matcapParams, LifeProgram);
         fn(u_envSH, LifeProgram);
         fn(s_texBump, LifeProgram);
         fn(u_bumpParams, LifeProgram);
@@ -3628,12 +3634,12 @@ public:
         fn(u_ambient, LifeProgram);
         fn(u_envAmbient, LifeProgram);
         fn(u_params, LifeProgram);
-        fn(u_polyOffset, LifeSized);
+        fn(u_polyOffset, LifeProgram);
         fn(u_clipParams, LifeProgram);
         fn(u_clipPlanes, LifeProgram);
         fn(u_linePattern, LifeProgram);
 #ifdef FC_RENDERER_STANDALONE
-        fn(m_progPresent, LifeSized);
+        fn(m_progPresent, LifeProgram);
 #endif
         // Per-view-lifetime resources. The impact map is sized by the
         // map resolution, not by the window; the stateful-particle
