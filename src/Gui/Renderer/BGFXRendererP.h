@@ -5635,6 +5635,14 @@ public:
     // one re-create per view and not one per streamed arrival. (Regression:
     // 6065ad06ed dropped the interaction-triggered rebuild that masked this.)
     int warmup = 0;
+    /// init() could not build the scene framebuffer -- the handle pool
+    /// is full. Latched so the frame path stops asking: a bailed frame
+    /// never reaches bgfx::frame(), and bgfx reclaims a destroyed
+    /// handle only at a frame boundary, so retrying every frame both
+    /// spins and eats the pool it is waiting on. Cleared by the next
+    /// size, scale or program change, which is when there is anything
+    /// new to try.
+    bool targetsFailed = false;
     bool ontop = false;   // route submits to the highlight pass
     bool selPass = false; // route opaque-view submits into ViewSelection
                           // (non-on-top selection draws follow the opaque

@@ -41,6 +41,21 @@ if (BUILD_BGFX)
     # variant packs 55 bits at the old width. Must stay a power of two
     # (static_assert in bgfx's config.h).
     set(BGFX_CONFIG_MAX_VIEWS "512" CACHE STRING "" FORCE)
+    # The same story one pool over, and it bites sooner: a view's render
+    # targets are ~41 framebuffers (the sized set of forEachHandle, the
+    # six-level AO depth pyramid and the particle ping-pong), against a
+    # bgfx default of 128. That is one viewer -- because bgfx frees a
+    # handle at the END of the frame that destroyed it, so a re-init
+    # (any resize) transiently holds both the old set and the new, ~82,
+    # and a second 3D view then has nowhere to go.
+    #
+    # What that looked like: "Failed to allocate frame buffer handle",
+    # then createFrameBuffer asserting on an invalid attachment, i.e. a
+    # SIGTRAP on opening a second view or resizing one a few times.
+    # 512 fits five viewers with a re-init in flight, matching the view
+    # id budget above; the cost is bgfx's FrameBufferRef table, tens of
+    # bytes a slot.
+    set(BGFX_CONFIG_MAX_FRAME_BUFFERS "512" CACHE STRING "" FORCE)
     add_subdirectory(bgfx)
     # ⚠️⚠️ A bgfx occlusion query handle is an object's identity, not a
     # slot to rent: createOcclusionQuery() is the only place bgfx writes

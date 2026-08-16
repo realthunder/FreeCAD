@@ -188,10 +188,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
         _BGFXLib.shaderGeneration != view->shaderGen
         || (_BGFXLib.desktopSamples >= 0
             && _BGFXLib.desktopSamples != view->msaaSamples);
+    // The lost-framebuffer case rebuilds once, not every frame:
+    // view->targetsFailed says the last attempt found the handle pool
+    // full, and a bailed frame never reaches bgfx::frame(), which is
+    // the only place bgfx reclaims what the attempt destroyed.
     if (progChanged
             || _BGFXLib.viewWidth(widget) != int(view->width)
             || _BGFXLib.viewHeight(widget) != int(view->height)
-            || !bgfx::isValid(view->bgfxFbo)
+            || (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale)
         view->init(!progChanged);

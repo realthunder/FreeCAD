@@ -230,7 +230,29 @@ void BGFXView::init(bool keepShared)
     // (BGFX_RESOLVE_AUTO_GEN_MIPS) is also rejected for depth attachments.
     attachment[0].init(bgfxColor, bgfx::Access::Write, 0, 1, 0, BGFX_RESOLVE_NONE);
     attachment[1].init(bgfxDepth, bgfx::Access::Write, 0, 1, 0, BGFX_RESOLVE_NONE);
-    bgfxFbo = bgfx::createFrameBuffer(2, attachment, true);
+    // ! An exhausted handle pool must not be a crash. bgfx returns an
+    // invalid handle from createTexture, and createFrameBuffer ASSERTS
+    // on an invalid attachment ("Invalid texture attachment"), which in
+    // a debug build is a SIGTRAP -- so running out of framebuffers took
+    // the application down rather than costing a frame. Leaving the
+    // scene framebuffer invalid is the outcome the frame path already
+    // knows how to read: it bails to the host and Coin draws.
+    if (bgfx::isValid(bgfxColor) && bgfx::isValid(bgfxDepth))
+        bgfxFbo = bgfx::createFrameBuffer(2, attachment, true);
+    else
+        bgfxFbo = BGFX_INVALID_HANDLE;
+    // Either pool can be the one that ran dry -- an invalid attachment
+    // (textures) or an invalid framebuffer -- and both end here, so the
+    // latch is read off the result rather than off which call failed.
+    targetsFailed = !bgfx::isValid(bgfxFbo);
+    if (targetsFailed) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            std::printf("bgfx: out of render target handles -- this view "
+                        "falls back to Coin rendering\n");
+        }
+    }
 
     // The scene framebuffer is bound per view id per frame (the pass
     // map moves ids between passes from one frame to the next), so
