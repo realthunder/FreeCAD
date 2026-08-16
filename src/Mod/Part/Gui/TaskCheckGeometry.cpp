@@ -64,7 +64,6 @@
 #include <Gui/Selection.h>
 #include <Gui/ViewProvider.h>
 #include <Gui/WaitCursor.h>
-#include <Gui/ViewParams.h>
 #include <Mod/Part/App/PartFeature.h>
 
 #include "TaskCheckGeometry.h"
@@ -919,14 +918,11 @@ void PartGui::goSetupResultBoundingBox(ResultEntry *entry)
       position->translation.setValue(boundCenter);
       group->addChild(position);
 
-      // Experiemental render cache do not support SoCube with SoDrawStyle::LINES
-      if (Gui::ViewParams::getRenderCache() != 3) {
-        SoCube *cube = new SoCube();
-        cube->width.setValue(xmax - xmin);
-        cube->height.setValue(ymax - ymin);
-        cube->depth.setValue(zmax - zmin);
-        group->addChild(cube);
-      }
+      SoCube *cube = new SoCube();
+      cube->width.setValue(xmax - xmin);
+      cube->height.setValue(ymax - ymin);
+      cube->depth.setValue(zmax - zmin);
+      group->addChild(cube);
     }
     catch (const Standard_Failure &){}
 }
