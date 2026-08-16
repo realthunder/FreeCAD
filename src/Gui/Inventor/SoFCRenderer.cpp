@@ -45,6 +45,7 @@
 # include <Inventor/C/glue/gl.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <unordered_map>
 
@@ -64,6 +65,7 @@
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
+#include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoTextureUnitElement.h>
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
@@ -1725,26 +1727,42 @@ void
 SoFCRendererP::applyBillboard(SoState * state, const SoAutoZoomTranslation * zoom)
 {
   const SbViewportRegion & vp = SoViewportRegionElement::get(state);
-  float vpwidth = static_cast<float>(vp.getViewportSizePixels()[0]);
-  if (vpwidth < 1.0f)
+  float vpheight = static_cast<float>(vp.getViewportSizePixels()[1]);
+  if (vpheight < 1.0f)
     return;
 
   SbMatrix matrix = SoModelMatrixElement::get(state); // clazy:exclude=rule-of-two-soft
   SbVec3f anchor(matrix[3][0], matrix[3][1], matrix[3][2]);
 
-  // World units per screen pixel at the anchor's own depth: the view
-  // volume reports the world length that spans the full viewport width,
-  // and does so through the perspective divide at that point.
-  const SbViewVolume & vv = SoViewVolumeElement::get(state);
-  float scale = vv.getWorldToScreenScale(anchor, 1.0f) / vpwidth;
-  float pixelscale = zoom->pixelScale.getValue();
-  scale *= pixelscale > 0.0f ? pixelscale
-                             : SoAutoZoomTranslation::DefaultPixelScale;
-
   // The camera's world-space axes are the COLUMNS of the viewing matrix's
   // 3x3 (Coin's row-vector layout: p_view = p_world * VM), and the model
   // matrix's rows are the local axes in world space.
   const SbMatrix & vm = SoViewingMatrixElement::get(state);
+
+  // World units per screen pixel at the anchor: a world length L at view
+  // depth d covers L*P[1][1]/d of the projection's height, which is 2
+  // wide, so one pixel is 2d/(P[1][1]*H) world units -- and the depth
+  // term drops out of an orthographic projection. This is the backend's
+  // expression, element for element (BGFXRendererP.h, setDrawTransform),
+  // so the two paths size a billboard by one piece of arithmetic.
+  // SbViewVolume::getWorldToScreenScale answers a nearby question -- the
+  // world radius of a SPHERE covering a given screen radius -- and its
+  // perspective form is a tangent construction that is only linear in
+  // the small and drifts off-axis: measured 8% small on a label in the
+  // corner of a perspective view.
+  const SbMatrix & pm = SoProjectionMatrixElement::get(state);
+  float p5 = std::abs(pm[1][1]) > 1e-8f ? pm[1][1] : 1.0f;
+  float scale = 2.0f / (p5 * vpheight);
+  if (std::abs(pm[3][3]) < 1e-6f) {  // perspective: w carries -z
+    float zview = anchor[0]*vm[0][2] + anchor[1]*vm[1][2]
+                + anchor[2]*vm[2][2] + vm[3][2];
+    float depth = -zview;            // in front of the camera => positive
+    scale *= depth > 1e-4f ? depth : 1e-4f;
+  }
+  float pixelscale = zoom->pixelScale.getValue();
+  scale *= pixelscale > 0.0f ? pixelscale
+                             : SoAutoZoomTranslation::DefaultPixelScale;
+
   for (int i = 0; i < 3; ++i) {
     matrix[0][i] = vm[i][0] * scale;   // local X -> screen right
     matrix[1][i] = vm[i][1] * scale;   // local Y -> screen up
