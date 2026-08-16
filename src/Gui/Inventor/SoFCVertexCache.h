@@ -110,9 +110,12 @@ public:
   static void setPrebuilt(const SoNode * node,
                           std::shared_ptr<const PrebuiltContent> content);
   /// Consume the registered content for \a node if its stamped node id
-  /// still matches, else drop and return null.
+  /// still matches, else drop and return null. \a stale, when given,
+  /// reports the drop-on-mismatch case specifically, so a caller can
+  /// name WHICH node went stale -- "something touches it after the
+  /// landing registered it" is only actionable with the class in hand.
   static std::shared_ptr<const PrebuiltContent>
-  takePrebuilt(const SoNode * node);
+  takePrebuilt(const SoNode * node, bool * stale = nullptr);
 
   /** What the registry answered, counted since the last reset.
    *

@@ -3,8 +3,31 @@
 Status: shipped 2026-08-14, verify-mode clean (12/12 exact across
 face/edge/point sets on forced descent landings; the one disagreement
 found was a real Coin bug -- empty polylines in
-SoIndexedLineSet::generatePrimitives -- fixed in the fork). Not yet
-measured against the storm gate. Follows the paint-sampler diagnosis: publish
+SoIndexedLineSet::generatePrimitives -- fixed in the fork).
+
+**2026-08-16: emission WIDENED to the inline path.** As shipped, the
+only producer was the pooled fill, which takes landing-pump items alone
+(`inLandingPump()`, at or above `Render_VisualFillMinFaces` = 2000,
+never the load-time drain). Nothing else emitted, so an ordinary load
+registered nothing and every publish reported `0 adopted of N offered,
+N no entry` -- measured 720/720 on a 240-cylinder grid and across 296
+rack publishes at two budgets. `updateVisual`'s epilogue now emits from
+the final node arrays as well, which is where every inline path arrives
+(ordinary rebuild, load drain, coarse rung, stand-in).
+
+Measured on the grid, same scene and same 1ms budget: the storm went
+from **15 publishes** (677 deferred, 0 adopted) to **one 3ms publish**
+(480 adopted of 720). Verify arm on the same scene: **480 verified, 0
+mismatches**.
+
+Still open: the 240 face sets that report `stale SoBrepFaceSet`. Their
+content is emitted and then discarded, because `onChanged` for
+`ShapeAppearance`/`DiffuseColor` calls `applyShapeAppearance()` after
+the rebuild, and that touches the face set alone -- bumping the node id
+the entry was stamped with. The geometry is unchanged, so the content
+is still valid; only the stamp is stale. A `restamp(node)` on the
+registry, called by an appearance-only path that asserts geometry did
+not change, would recover them. Follows the paint-sampler diagnosis: publish
 capture (SoFCRenderCacheManager re-running generatePrimitives over every
 changed shape) is ~50% of storm paints, and the capture budget
 (Render_CaptureBudgetMS) only spreads that cost across frames. This

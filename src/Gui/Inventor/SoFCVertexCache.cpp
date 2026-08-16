@@ -1118,8 +1118,10 @@ SoFCVertexCache::prebuiltStats()
 }
 
 std::shared_ptr<const SoFCVertexCache::PrebuiltContent>
-SoFCVertexCache::takePrebuilt(const SoNode * node)
+SoFCVertexCache::takePrebuilt(const SoNode * node, bool * stale)
 {
+  if (stale)
+    *stale = false;
   ++PrebuiltStatsCounters.requested;
   auto it = PrebuiltTable.find(node);
   if (it == PrebuiltTable.end()) {
@@ -1130,6 +1132,8 @@ SoFCVertexCache::takePrebuilt(const SoNode * node)
   PrebuiltTable.erase(it);
   if (content->nodeid != node->getNodeId()) {
     ++PrebuiltStatsCounters.stale;
+    if (stale)
+      *stale = true;
     return nullptr;
   }
   return content;

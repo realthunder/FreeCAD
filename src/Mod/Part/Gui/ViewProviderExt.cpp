@@ -6047,6 +6047,28 @@ void ViewProviderPartExt::updateVisual()
              << " Triangles:" << numTriangles << " IdxVec:" << numLines);
     VisualTouched = false;
 
+    // The inline build emits its vertex-cache content too
+    // (docs/WorkerVertexCache.md). Emitted HERE, from the final node
+    // arrays, rather than inside the fill: this epilogue is where every
+    // inline path arrives -- ordinary rebuild, load-time drain, coarse
+    // rung, bounding-box stand-in -- and the arrays are whatever the
+    // publish is about to capture, so the mirror is of the real thing
+    // and not of some intermediate the post-steps below still rewrite.
+    //
+    // Only the POOLED fill used to emit, and it takes landing-pump
+    // items alone (>= Render_VisualFillMinFaces, never the drain), so
+    // an ordinary load registered nothing and every publish adopted
+    // nothing -- 0 adopted of N offered, "no entry" every time.
+    // Off-thread this walk is free; here it is not, so it stays behind
+    // Render_WorkerVertexCache (checked inside), and it buys back more
+    // than it costs: the traversal capture it replaces walks Coin's
+    // generatePrimitives with a wider dedup key.
+    //
+    // A decimation post-step above may already have stashed exactly
+    // this content from the same nodes -- do not walk them twice.
+    if (!pendingVCache)
+        emitVisualVertexCacheFromNodes();
+
     {
         // The material has to be checked again
         Gui::ViewProvider::VisualBuildTimer highlightTimer(
@@ -6055,9 +6077,9 @@ void ViewProviderPartExt::updateVisual()
         setHighlightedEdges(LineColorArray.getValues());
         setHighlightedPoints(PointColorArray.getValue());
     }
-    // An inline decimation post-step above re-emitted vertex-cache
-    // content from the rung it wrote (docs/WorkerVertexCache.md);
-    // register it now that the last node touch of this rebuild is done.
+    // Register once the last node touch of this rebuild is done: the
+    // stamp is the node id, and the appearance/highlight writes above
+    // would void an entry taken before them.
     registerPendingVisualVertexCache();
 }
 

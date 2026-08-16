@@ -649,6 +649,12 @@ public:
   std::shared_ptr<const SoFCVertexCache::PrebuiltContent> verifyprebuilt;
   int adoptedcount = 0;
 
+  // Verify arm only (Render_WorkerVertexCache = 2): comparisons that
+  // ran and AGREED. A mismatch shouts on its own; agreement has to be
+  // counted, or "no mismatch" is indistinguishable from "compared
+  // nothing" and the arm passes by being silent.
+  int verifiedcount = 0;
+
   // Why shapes that DID have worker content still could not adopt it,
   // keyed on the literal SoFCVertexCache::prebuiltReject() returned --
   // pointer identity is enough, they all come from one function. The
@@ -656,17 +662,30 @@ public:
   // (SoFCVertexCache::prebuiltStats).
   std::vector<std::pair<const char *, int> > adoptrejects;
 
-  void countAdoptReject(const char * why)
+  // Which node CLASS was registered and then touched before the publish
+  // could pick it up. Keyed on the interned SoType name, so the same
+  // pointer-identity counting works.
+  std::vector<std::pair<const char *, int> > adoptstale;
+
+  static void count(std::vector<std::pair<const char *, int> > & tally,
+                    const char * key)
   {
-    if (!why)
+    if (!key)
       return;
-    for (auto & entry : this->adoptrejects) {
-      if (entry.first == why) {
+    for (auto & entry : tally) {
+      if (entry.first == key) {
         ++entry.second;
         return;
       }
     }
-    this->adoptrejects.emplace_back(why, 1);
+    tally.emplace_back(key, 1);
+  }
+
+  void countAdoptReject(const char * why) { count(this->adoptrejects, why); }
+
+  void countAdoptStale(const SoNode * node)
+  {
+    count(this->adoptstale, node->getTypeId().getName().getString());
   }
 };
 
@@ -1556,6 +1575,8 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
     PRIVATE(this)->deferredcount = 0;
     PRIVATE(this)->adoptedcount = 0;
     PRIVATE(this)->adoptrejects.clear();
+    PRIVATE(this)->adoptstale.clear();
+    PRIVATE(this)->verifiedcount = 0;
     SoFCVertexCache::resetPrebuiltStats();
     {
       CaptureFlagGuard capguard;
@@ -1588,7 +1609,12 @@ SoFCRenderCacheManager::render(SoGLRenderAction * action)
           why += buf;
         };
         add(pstats.missing, "no entry");
-        add(pstats.stale, "stale id");
+        add(PRIVATE(this)->verifiedcount, "verified");
+        for (const auto & entry : PRIVATE(this)->adoptstale) {
+          char what[96];
+          std::snprintf(what, sizeof(what), "stale %s", entry.first);
+          add(entry.second, what);
+        }
         for (const auto & entry : PRIVATE(this)->adoptrejects)
           add(entry.second, entry.first);
         Base::Console().Message(
@@ -2324,8 +2350,12 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
   // registration.
   std::shared_ptr<const SoFCVertexCache::PrebuiltContent> prebuilt;
   const int wvcmode = Gui::RenderParams::getWorkerVertexCache();
-  if (wvcmode > 0)
-    prebuilt = SoFCVertexCache::takePrebuilt(node);
+  if (wvcmode > 0) {
+    bool stale = false;
+    prebuilt = SoFCVertexCache::takePrebuilt(node, &stale);
+    if (stale)
+      self->countAdoptStale(node);
+  }
 
   // The capture budget (Render CaptureBudgetMS). A publish that has
   // already spent its budget capturing changed shapes keeps this shape's
@@ -2533,13 +2563,19 @@ SoFCRenderCacheManagerP::postShape(void *userdata,
              << " stamped " << self->verifyprebuilt->nodeid
              << "): " << diff);
     }
-    else
+    else {
       // Console directly, not FC_LOG: the verify arm is an opt-in
       // diagnostic and its positive signal must be distinguishable
       // from "never ran" without a log-level hunt.
       Base::Console().Log("worker vertex cache verified on %s (%s)\n",
                           node->getName().getString(),
                           node->getTypeId().getName().getString());
+      // ...and counted for the publish line, because the Log above is
+      // suppressed at default log level: a verify run that compared
+      // NOTHING otherwise reads exactly like one that compared
+      // everything and agreed.
+      ++self->verifiedcount;
+    }
     self->verifyprebuilt.reset();
   }
 

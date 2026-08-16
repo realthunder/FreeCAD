@@ -36,15 +36,22 @@ so a big rebuild does not stall the GUI. `queueVisualFillOnPool`,
 `ViewProviderExt.cpp:5984`. GATED: it takes only landing-pump items
 (`inLandingPump()`), never the load-time drain (`!s_drainVisualBuild`),
 and only shapes at or above `Render_VisualFillMinFaces` (default
-**2000**). This gate is the whole reason emission almost never happens.
+**2000**). That gate is why emission was dead until the inline path
+learned to emit too -- it governs where the FILL runs, and emission
+used to be wired inside the gated branch rather than alongside the
+fill it mirrors.
 
-**Emission** -- the worker PRODUCING the plain-value mirror of what a
-traversal capture would build: first-seen-order deduped vertices and
-normals, plus triangle, line and point index lists
+**Emission** -- PRODUCING the plain-value mirror of what a traversal
+capture would build: first-seen-order deduped vertices and normals,
+plus triangle, line and point index lists
 (`SoFCVertexCache::PrebuiltContent`). `emitVCacheCore`,
 `ViewProviderExt.cpp:6860`. Value types only (`SbVec3f`, `int32_t`) --
 no Coin object crosses a thread boundary, and `COIN_THREADSAFE` stays
-off.
+off. Two producers: the pooled fill emits from the fill data on a
+worker, and `updateVisual`'s epilogue emits from the FINAL node arrays
+(`emitVisualVertexCacheFromNodes`) for every inline path. Emitting from
+the nodes is the more robust of the two -- whatever is in them is by
+construction what the publish will capture.
 
 **Registration** -- the landing, back on the GUI thread, FILING emitted
 content in a static registry keyed on the shape node:
