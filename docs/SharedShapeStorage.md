@@ -213,17 +213,141 @@ cannot be seeked, so one of:
 - **chunk the store** into several members, which bounds both the
   inflate and the memory, and doubles as the guard below.
 
-### 3.5 Chunking, which is what is left of clustering
+## 4. Chunking the store
 
-An earlier draft grouped shapes into clusters by shared-TShape analysis.
-With positions that analysis is unnecessary -- but the *bounding* it
-implied is still useful: a single store for a 17800-object document is
-one very large member. Splitting the store into chunks, with each
-property recording `(store, pos)`, keeps the inflate incremental and
-partial loads cheap. A chunk boundary is the only place dedup is lost,
-so chunk by write order and log the cut rather than by any clever rule.
+One member for a 17800-object document is one very large member. Chunking
+splits it, and it is worth doing carefully because it is also the answer
+to inflate cost, to memory, and to failure isolation.
 
-## 4. Risks and open questions
+### 4.1 Why a chunk boundary costs nothing structurally
+
+Two properties of the format, both read out of the OCCT source rather
+than assumed:
+
+- **The writer never seeks.** `BinTools_OStream` takes `tellp()` once at
+  construction and counts its own position from there; there is no
+  `seekp` anywhere. Writing is strictly append-only.
+- **References are backward deltas**, not absolute offsets:
+  `WriteReference` stores `myPosition - thePosition`, encoded in 1, 2, 4
+  or 8 bytes according to magnitude (`Reference8/16/32/64`). The reader
+  turns it back into an absolute offset and seeks there.
+
+So the store is an append-only byte stream whose internal links all
+point backwards, and the byte distance is what they cost. Cutting that
+stream into pieces is **pagination**, not a format change -- provided
+the reader is handed something that behaves like the original stream.
+Note the second point twice over: a near reference costs one byte and a
+far one costs eight, so write order is not only a partial-load question
+(sec 4.4) but a file-size one.
+
+### 4.2 Variant A -- independent chunks
+
+A separate writer per chunk. Simple, no stream plumbing, and each member
+is self-contained. The cost is that **sharing is lost at every
+boundary**: a shape in chunk 2 cannot reference geometry in chunk 1, so
+it is written again. Worth keeping in mind as the fallback if the
+plumbing below proves fiddly, but it reintroduces exactly the
+duplication this document is about, in proportion to how often sharers
+land in different chunks.
+
+### 4.3 Variant B -- one logical stream over N members (recommended)
+
+Keep **one** writer and **one** reader, and put a stream in front of
+them that spans the chunks:
+
+- **Write**: an output `streambuf` that starts a new zip member every N
+  bytes. `tellp()` keeps returning the logical position, so the writer
+  is unaware, and recorded positions stay in one space.
+- **Read**: an input `streambuf` over the chunk table that maps a logical
+  offset to (chunk, offset within it), inflating a chunk on first touch
+  and caching it. `seekg`/`tellg` are the only operations the reader
+  needs, and they are the two the streambuf implements.
+
+Neither OCCT class changes, because the writer only appends and the
+reader only seeks. Dedup stays exact across the whole document while the
+resident bytes stay bounded.
+
+### 4.4 Write order is what makes a partial load cheap
+
+References point backwards only, so **what a shape needs is always
+written before it**. That single fact decides the ordering rule:
+
+- **Children before parents** (dependency order). A leaf object's
+  geometry is then complete within its own chunk, and the compound or
+  array above it is references only -- five bytes each, measured in
+  sec 3.2. Restoring one child touches one chunk. The parent's own
+  restore necessarily reaches its children's chunks, which is honest:
+  its shape *is* their geometry.
+- **Group by subtree**, so a partial load of a branch touches a short
+  run of chunks rather than a scattering, and so the deltas stay short
+  enough to encode in one or two bytes.
+
+The measurable that says whether the ordering is any good is
+**chunks touched over chunks total** for a partial load; it should be
+logged, not inferred.
+
+### 4.5 Progressive loading keeps working
+
+Because references are backward-only and chunks arrive in write order,
+**every chunk is restorable the moment it arrives** -- nothing in it can
+depend on bytes that have not been read yet. The interleaved loader of
+`docs/ProgressiveLoading.md` keeps its shape; its unit changes from "one
+member per property" to "one chunk carrying many shapes", which is
+fewer, larger reads.
+
+### 4.6 The chunk table, and what a property records
+
+A property records one logical position, and nothing about chunking:
+
+    <Part store="Shapes" pos="4522" ElementMap="..."/>
+
+The document carries the table -- chunk count, and per chunk the logical
+start, the stored length and a checksum. Changing the chunk size, or
+splitting differently on the next save, never touches a property entry.
+
+### 4.7 Sizing, and the cost of getting it wrong
+
+Two forces pull against each other, and one of them is already measured
+(sec 1.1): twenty small members cost **7268** stored bytes where a single
+member of comparable raw size cost **2305**, because deflate runs per
+member and restarts its dictionary each time. So chunks want to be large
+enough to compress well and few enough to keep the table small, but small
+enough that a partial load does not inflate the document to read one
+object. Order of megabytes is the region to start in; make it a
+parameter, measure both ends, and log the choice.
+
+### 4.8 Memory
+
+An LRU over inflated chunks with a byte cap. The reference pattern
+argues that this behaves: the format spends one byte on a near reference
+and eight on a far one, so a store written in dependency order is
+dominated by short backward jumps that stay inside the current or
+previous chunk.
+
+Note separately that the reader's `position -> shape` map holds every
+shape it has restored for as long as the reader lives, which is the
+whole restore pass. That is the point -- it is what reconstructs
+identity -- but it means the map, not just the chunk cache, is the
+retention to watch on a large document.
+
+### 4.9 The uncompressed alternative
+
+Chunks can be stored uncompressed and the `.FCStd` mapped directly. Then
+paging is the operating system's page cache, there is no inflate at all,
+and random access is genuinely random. The cost is file size on the
+geometry, which is exactly what this document is otherwise trying to
+reduce -- so it belongs as an option for workflows that reopen huge
+assemblies far more often than they ship them, not as the default.
+
+### 4.10 Failure isolation
+
+A single central member turns a truncated file into a document with no
+geometry at all, where today it would lose one object. Per-chunk length
+and checksum bound that: damage costs the shapes stored in that chunk
+and whatever references into it, and the rest of the document still
+opens.
+
+## 5. Risks and open questions
 
 - **One reader for the whole restore.** Measured above: without it the
   sharing is not reconstructed at all. It has to survive the document's
@@ -231,9 +355,9 @@ so chunk by write order and log the cut rather than by any clever rule.
   shape.
 - **Progressive and partial loads.** `docs/ProgressiveLoading.md`
   interleaves member reads with object creation; a central store changes
-  that shape of work. Inflate-once plus per-property seeks should fit,
-  but it must be measured against the existing load timings, not
-  assumed.
+  the unit of that work to a chunk (sec 4.5). The argument that it still
+  fits is structural -- references point backwards only -- but the cost
+  must be measured against the existing load timings, not assumed.
 - **Triangulation and flags.** `BinTools_ShapeSetBase` carries the
   with-triangles and with-normals flags; the store must keep FreeCAD's
   current choice, or files silently grow.
@@ -246,10 +370,15 @@ so chunk by write order and log the cut rather than by any clever rule.
   re-read with that in mind. A recompute makes a new TShape, so an edit
   cannot corrupt a sharer.
 - **Failure mode.** A corrupt or truncated store loses every shape at
-  once, where today it would lose one. Worth a length/checksum per
-  chunk.
+  once, where today it would lose one; sec 4.10 bounds it to a chunk.
+- **Chunking is where this gets built or botched.** The streambuf pair
+  of sec 4.3 is the only genuinely new machinery in the design, and
+  variant A (sec 4.2) silently reintroduces the duplication if it is
+  chosen for expedience. Whichever is built, log the chunk count, the
+  chunks touched per load, and the dedup actually achieved -- a silent
+  fallback to per-chunk dedup would look exactly like success.
 
-## 5. Later, optional: content hashing for unshared duplicates
+## 6. Later, optional: content hashing for unshared duplicates
 
 Two objects can hold *equal* geometry with no shared TShape -- separately
 imported copies, flattened copies. The position mechanism never groups
@@ -258,7 +387,7 @@ only when their placements agree (sec 1.3), so it is worth building only
 after this is measured, and only if such duplicates prove common. The
 render side already deduplicates these on the GPU.
 
-## 6. How it will be judged
+## 7. How it will be judged
 
 - `isPartner` across a save/reopen round trip: parent leaf vs child
   shape must be **True** after reopen (it is False today, sec 1.1).
