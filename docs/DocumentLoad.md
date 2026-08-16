@@ -189,8 +189,8 @@ empty and every view provider is defaulted for free.
 
 **File format gating.** This is a format change, so it answers to the
 mechanism that already exists for one. `App::Document` gained schema
-version **6** — `getWritableSchemaVersions()` is now `{4, 5, 6}` — and
-`buildDefaults` writes nothing when `writer.getSchemaVersion() < 6`. A
+version **5** -- `getWritableSchemaVersions()` is now `{4, 5}` -- and
+`buildDefaults` writes nothing when `writer.getSchemaVersion() < 5`. A
 user who lowers the document's `SaveSchemaVersion` to keep it readable by
 an older FreeCAD gets the pre-block file shape back, and the
 `SaveViewProviderDefaults` preference cannot override that: the document's
@@ -322,8 +322,9 @@ offered, 153395 were left out and 40757 written because their value
 really differs — none for status, none unknown to the block.
 
 ⚠️ **A document carries its own `SaveSchemaVersion` forward.** The
-reference document came from an import made before schema 6 existed, so
-it declares 5, and a writer honouring that declaration correctly writes
+reference document came from an import made before the compact format
+existed, so it declares the older version, and a writer honouring that
+declaration correctly writes
 no block at all — App side *or* Gui side. Nothing looks wrong when that
 happens: it saves, it reloads, it compares equal, and it measures
 nothing. `resave_obj_probe.py` states the version it wants.
@@ -499,8 +500,22 @@ stay out by doing nothing. `mustSave()` remains the container-level veto
 for absence-sensitive properties (`Visibility`, `DisplayMode`), and
 `SharedDefaults::eligible()` is the one test all three sides share.
 
+> **Renumbered, 2026-08-16.** The compact format was built as schema 6
+> on top of a schema 5 that meant "shared included-file blobs". Neither
+> was ever released, and schema 5 was never actually compatible: an
+> older reader takes its `hash=` attributes for no attribute it knows
+> and drops the file's embedded content without a word (verified
+> against upstream `main`'s `PropertyFileIncluded::Restore`, which has
+> only `file=` and `data=` branches). Two fork-only formats, one of
+> them lying about it, are one format. So 6 was folded into 5:
+> **4 is upstream's format, 5 is this fork's** -- blobs, default blocks
+> and the shared shape store together, under `<FCDocument>`. Read every
+> "schema 6" below as 5, and every "schema 5" as 4, except where a
+> measurement names the pre-merge blob-only shape, which the new
+> numbering has no name for.
+
 **The root element is the compatibility statement (req 2).** A save that
-resolves to schema 6 is rooted `<FCDocument>`; everything else keeps
+resolves to schema 5 is rooted `<FCDocument>`; everything else keeps
 `<Document>`. No released reader checks a schema number, but every one
 of them — this fork's and upstream's — scans for `<Document>` first,
 reaches the end of the stream, and throws. Verified both ways: a test
@@ -517,8 +532,10 @@ carrying versions, the root name only says "not for readers that
 predate it".
 
 **Schema is an outcome, chosen per document (req 3).** The
-`SaveSchemaVersion` property is the user's cap, **default 5** — a fresh
-document is readable everywhere until someone decides otherwise. The
+`SaveSchemaVersion` property is the user's cap, **default 4** -- a fresh
+document is readable everywhere until someone decides otherwise, and
+now that is true rather than nearly true: at 4 nothing of this fork's
+format is written, included files included. The
 one place to decide is the save dialog: a format row (standard/compact)
 preselected from the document's own cap (or, for a never-saved document,
 the `PreferCompactFormat` parameter holding the last choice made there),
@@ -528,10 +545,10 @@ whatever the document decided. Each save then *resolves* the cap:
 
 | configuration | outcome |
 |---|---|
-| cap 5 (default) | schema 5, `<Document>`, no blocks |
-| cap 6, normal save | schema 6, `<FCDocument>`, App + Gui blocks |
-| cap 6, split XML | schema 5 — per-object files have no block to share |
-| `exportObjects` (clipboard/merge) | capped at 5 always — fragments travel |
+| cap 4 (default) | schema 4, `<Document>`, no blocks, no blobs, no store |
+| cap 5, normal save | schema 5, `<FCDocument>`, App + Gui blocks, blobs, store |
+| cap 5, split XML | schema 5 -- blobs and store, but no block: a per-object file must not depend on a document-wide record it did not ask for (a third object of a class would rewrite the other two, which is the diff a directory layout exists to not have) |
+| `exportObjects` (clipboard/merge) | capped at 4 always -- fragments travel |
 | `dumpContent` (no configured writer) | `Save()` resolves the document's own answer onto the writer |
 | ForceXML / InlineListSize / PreferBinary | orthogonal; comparison buffers are always forced-XML, a form mismatch merely forfeits elision |
 | `SaveObjectDefaults` / `SaveViewProviderDefaults` prefs | **removed** — no machine preference outranks what a document promised |

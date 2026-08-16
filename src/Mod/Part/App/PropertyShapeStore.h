@@ -65,7 +65,7 @@ namespace Part
  * reference graph needs, whenever it is first asked for -- no whole-store
  * inflate and no archive index.
  *
- * The store exists only at schema 6 and above. Below it, nothing here runs:
+ * The store exists only at schema 5 and above. Below it, nothing here runs:
  * a property keeps its own archive member, and this property writes itself out
  * empty, so a file that has no use for a store does not carry one.
  *
@@ -95,7 +95,7 @@ public:
      *
      * Never removes: the property owns the file that every shape still parked
      * at a position reads from, and a save is exactly when those shapes are
-     * being restored one by one. What keeps a store out of a schema-5 file is
+     * being restored one by one. What keeps a store out of a schema-4 file is
      * Save() writing nothing, not the property going away.
      */
     static PropertyShapeStore* prepare(App::Document* doc, Base::Writer& writer);
@@ -114,7 +114,7 @@ public:
 
     /** Written only into a file that has a use for it.
      *
-     * Below schema 6 the property stays on the document -- taking it off
+     * Below schema 5 the property stays on the document -- taking it off
      * would delete the store file, and a shape still parked at a position in
      * it would have nowhere left to come from -- but it writes itself out
      * empty, so the file carries no store.

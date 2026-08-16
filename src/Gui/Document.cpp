@@ -1630,7 +1630,7 @@ bool Document::saveAs()
             "User parameter:BaseApp/Preferences/Document");
     const char *curFile = getDocument()->FileName.getValue();
     bool compact = (curFile && curFile[0])
-            ? getDocument()->getSaveSchemaVersion() >= 6
+            ? getDocument()->getSaveSchemaVersion() >= 5
             : hGrp->GetBool("PreferCompactFormat", false);
     bool chosenCompact = compact;
 
@@ -1651,10 +1651,10 @@ bool Document::saveAs()
         try {
             Gui::WaitCursor wc;
             hGrp->SetBool("PreferCompactFormat", chosenCompact);
-            if (chosenCompact != (getDocument()->getSaveSchemaVersion() >= 6))
+            if (chosenCompact != (getDocument()->getSaveSchemaVersion() >= 5))
                 Command::doCommand(Command::Doc,
                         "App.getDocument(\"%s\").SaveSchemaVersion = %d", DocName,
-                        chosenCompact ? (int)App::Document::getCurrentSchemaVersion() : 5);
+                        chosenCompact ? (int)App::Document::getCurrentSchemaVersion() : 4);
             std::string literal = Base::Tools::pythonLiteral(fn);
             Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveAs(%s)"
                                            , DocName, literal.c_str());
@@ -1883,7 +1883,7 @@ void Document::readObject(Base::XMLReader &xmlReader) {
     }
 }
 
-// Deliberately still 1, and the defaults block of schema 6 (see
+// Deliberately still 1, and the defaults block of schema 5 (see
 // App::Document::getWritableSchemaVersions) does not move it.
 //
 // RestoreDocFile below gates its whole body on `DocumentSchema == 1`, and so
@@ -2853,7 +2853,7 @@ void Document::buildDefaults(Base::Writer &writer,
     // One gate, the same one the App side answers to: the resolved schema.
     // The user chooses the compact format per document in the save dialog;
     // no preference of this machine outranks what that document promised.
-    if (writer.getSchemaVersion() < 6)
+    if (writer.getSchemaVersion() < 5)
         return;
 
     // A default block is one class's whole property set, so it only pays for

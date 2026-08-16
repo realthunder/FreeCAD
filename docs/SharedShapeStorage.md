@@ -17,11 +17,21 @@ parent's shape is a compound whose leaves *are* the children's shapes.
 That sharing is exact and universal in the model tree, and it is lost on
 every reload.
 
-Everything here is gated on **`doc.SaveSchemaVersion = 6`** (user
-ruling, 2026-08-16), the fork's compact format. Nothing outside schema 6
+Everything here is gated on **`doc.SaveSchemaVersion = 5`** (user
+ruling, 2026-08-16), the fork's compact format. Nothing outside schema 5
 changes, so there is no backward-compatibility burden: old files load by
-the old path, and a schema-6 file was never readable by a build without
+the old path, and a schema-5 file was never readable by a build without
 the fork's format anyway.
+
+> **Renumbered, 2026-08-16.** This was built as schema 6 over a schema 5
+> that meant "shared included-file blobs". Neither shipped, and that 5
+> was never compatible either -- an older reader drops its embedded
+> content silently -- so the two were folded into one fork format:
+> **4 is upstream's, 5 is this fork's**. The numbers below have been
+> renumbered to match. The pre-merge baseline the measurements compare
+> against is now written "no store": the fork format with the store
+> unused, which is still what a save produces whenever the store cannot
+> be used (sec 10.5), so those comparisons stand unchanged.
 
 Related reading: `docs/DocumentLoad.md` (the load cost this feeds, and
 the compact-format work that shares *property blocks* -- a different
@@ -149,7 +159,7 @@ then indexes into it. Neither can restore one shape without restoring
 all of them. Switching the central store to `BinTools_ShapeWriter` is
 therefore part of the work, not an implementation detail.
 
-**The new writer and reader are used at schema 6 and above, and nowhere
+**The new writer and reader are used at schema 5 and above, and nowhere
 else.** Below that, a property keeps its own member and the existing
 `exportBrep` / `exportBinary` paths are untouched -- not deprecated, not
 routed through a compatibility shim. Two consequences worth stating
@@ -527,7 +537,7 @@ render side already deduplicates these on the GPU.
 
 - `isPartner` across a save/reopen round trip: parent leaf vs child
   shape must be **True** after reopen (it is False today, sec 1.1).
-- File size on the same document, schema 6 with and without the store.
+- File size on the same document, schema 5 with and without the store.
   Expect the child members to collapse into references: 9573 stored
   bytes of shape members in the measured case, of which 7268 is the
   duplicate half.
@@ -554,7 +564,7 @@ component analysis, no packing, no parallelism.
 - `PropertyPartShape::Save` at schema >= 6 writes through a
   document-level store writer and records its logical position;
   the XML entry becomes `<Part store="Shapes0" pos="N" .../>`.
-- Below schema 6 nothing changes -- same code path, same bytes.
+- Below schema 5 nothing changes -- same code path, same bytes.
 - Restore holds one `BinTools_ShapeReader` over the store and serves
   each property at its position.
 
@@ -671,7 +681,7 @@ first, which made the children references by construction.
 A property records its position and stays restore-pending; the shape is
 read the first time the value is asked for, through the `ensureRestored()`
 that already existed for deferred archive entries. So the deferred load
-survives at schema 6, and it needs no archive index at all.
+survives at schema 5, and it needs no archive index at all.
 
 One ordering trap, found by a stack overflow rather than by reading:
 **the XML pass asks for the shape itself.** `PropertyPartShape::Restore`
@@ -684,7 +694,7 @@ pending flag is not armed until the same drain.
 
 ### 10.5 The store property is never removed
 
-Below schema 6 the property **stays on the document and writes itself out
+Below schema 5 the property **stays on the document and writes itself out
 empty** (user ruling, 2026-08-16, replacing a first version that removed
 it). The property holds the handle that keeps the store file alive, and a
 save is exactly when shapes are still being served out of it one object at
@@ -692,7 +702,7 @@ a time -- so removing it there strands the geometry of every property the
 pre-save pass has not reached yet, silently. Writing nothing keeps the
 store out of the file just as well, and costs nothing that matters.
 
-What keeps a store out of a schema-5 file is therefore three things, not
+What keeps a store out of a schema-4 file is therefore three things, not
 one, and the third only showed up once the property stopped being removed:
 
 - **`Save()` writes the empty form.** It nulls `_blob` around a call to the
@@ -710,7 +720,7 @@ one, and the third only showed up once the property stopped being removed:
   `PropertyContainer::Save`, not by `Save()`, and the only mechanism that
   suppresses it -- `PropNoPersist` -- is deliberately immutable at runtime
   (`Property::setStatusValue` masks those bits back to their old value). So
-  a schema-5 file written from a document that used a store earlier in the
+  a schema-4 file written from a document that used a store earlier in the
   session carries one empty property element. A document that never used a
   store is unaffected.
 
@@ -721,7 +731,7 @@ what changed; a store would have made every autosave cycle rewrite the
 document's entire geometry.
 
 Nothing needs to distinguish a document save from an export any more. An
-export is capped at schema 5, so it creates no store, and with removal
+export is capped at schema 4, so it creates no store, and with removal
 gone there is nothing for it to destroy either -- the `Document::Saving`
 status bit the first version needed was deleted with it.
 
@@ -731,14 +741,14 @@ The sec 1.1 scene, a `Part::Compound` over 20 torus children:
 
 | | file | shape bytes stored |
 |---|---|---|
-| schema 5, ASCII BRep | 14368 | 8971 |
-| schema 5, binary BRep | 14471 | 9049 |
-| **schema 6, store** | **4308** | **1007** |
+| no store, ASCII BRep | 14368 | 8971 |
+| no store, binary BRep | 14471 | 9049 |
+| **schema 5, store** | **4308** | **1007** |
 
     isPartner, parent leaf 0 vs child 0
       before save      : True
-      schema 5 reopen  : False      (unchanged, sec 1.1)
-      schema 6 reopen  : True
+      no store reopen  : False      (unchanged, sec 1.1)
+      with store       : True
 
 Two things worth reading off that table. The win is **entirely dedup**:
 going binary on its own costs 78 bytes, and the store then takes 9049
@@ -747,7 +757,7 @@ prediction of "smaller by the duplicate half" because both halves
 collapse -- the compound member held all 20 tori again, and it is now
 references.
 
-Also checked: a schema-6 save leaves the document untouched; a second
-save in the same session replaces the store; dropping to schema 5 takes
+Also checked: a schema-5 save leaves the document untouched; a second
+save in the same session replaces the store; dropping to schema 4 takes
 the property off the document and out of the file, and the per-property
 members come back; serving a shape does not touch its object.

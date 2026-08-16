@@ -416,7 +416,7 @@ TEST_F(PropertyMaterialListTest, legacyXMLRoundTrip)
     std::vector<App::Material> values {redMaterial(), fullyPaintedMaterial(), App::Material()};
     prop.setValues(values);
 
-    const std::string xml = saveToXML(prop, 5);
+    const std::string xml = saveToXML(prop, 4);
     EXPECT_EQ(xml.find("fields="), std::string::npos) << xml;
 
     App::PropertyMaterialList restored;
@@ -430,7 +430,7 @@ TEST_F(PropertyMaterialListTest, fieldXMLRoundTrip)
     std::vector<App::Material> values {redMaterial(), fullyPaintedMaterial(), App::Material()};
     prop.setValues(values);
 
-    const std::string xml = saveToXML(prop, 6);
+    const std::string xml = saveToXML(prop, 5);
     EXPECT_NE(xml.find("fields=\"1\""), std::string::npos) << xml;
 
     App::PropertyMaterialList restored;
@@ -445,8 +445,8 @@ TEST_F(PropertyMaterialListTest, fieldXMLIsSmallForAUniformList)
     App::PropertyMaterialList prop;
     prop.setValues(std::vector<App::Material>(2000, fullyPaintedMaterial()));
 
-    const std::string compact = saveToXML(prop, 6);
-    const std::string legacy = saveToXML(prop, 5);
+    const std::string compact = saveToXML(prop, 5);
+    const std::string legacy = saveToXML(prop, 4);
     EXPECT_LT(compact.size(), legacy.size() / 100);
 
     App::PropertyMaterialList restored;
@@ -462,7 +462,7 @@ TEST_F(PropertyMaterialListTest, legacyDocFileRoundTrip)
     prop.setValues(values);
 
     App::PropertyMaterialList restored;
-    restoreDocFile(restored, saveDocFile(prop, 5));
+    restoreDocFile(restored, saveDocFile(prop, 4));
     expectEntriesQ8(restored, values);
 }
 
@@ -477,8 +477,8 @@ TEST_F(PropertyMaterialListTest, fieldDocFileRoundTrip)
 
     // a third of the size, and that is the text encoding's ratio: in binary
     // it is the full six-to-one, one packed colour against a whole material
-    const std::string compact = saveDocFile(prop, 6);
-    EXPECT_LT(compact.size(), saveDocFile(prop, 5).size() / 3);
+    const std::string compact = saveDocFile(prop, 5);
+    EXPECT_LT(compact.size(), saveDocFile(prop, 4).size() / 3);
 
     App::PropertyMaterialList restored;
     restoreDocFile(restored, compact);
@@ -495,8 +495,8 @@ TEST_F(PropertyMaterialListTest, fieldDocFileCostsLittleWhenNothingCollapses)
     values[7] = fullyPaintedMaterial();
     prop.setValues(values);
 
-    const std::string compact = saveDocFile(prop, 6);
-    const std::string legacy = saveDocFile(prop, 5);
+    const std::string compact = saveDocFile(prop, 5);
+    const std::string legacy = saveDocFile(prop, 4);
     EXPECT_LT(compact.size(), legacy.size() + legacy.size() / 100);
 
     App::PropertyMaterialList restored;
@@ -552,9 +552,9 @@ TEST_F(PropertyMaterialListTest, equalListsSerialiseIdentically)
 
     EXPECT_TRUE(byWholeValues.isSame(byField));
     EXPECT_TRUE(byWholeValues.isSame(byEntry));
-    EXPECT_EQ(saveToXML(byWholeValues, 6), saveToXML(byField, 6));
-    EXPECT_EQ(saveToXML(byWholeValues, 6), saveToXML(byEntry, 6));
-    EXPECT_EQ(saveDocFile(byWholeValues, 6), saveDocFile(byEntry, 6));
+    EXPECT_EQ(saveToXML(byWholeValues, 5), saveToXML(byField, 5));
+    EXPECT_EQ(saveToXML(byWholeValues, 5), saveToXML(byEntry, 5));
+    EXPECT_EQ(saveDocFile(byWholeValues, 5), saveDocFile(byEntry, 5));
 }
 
 TEST_F(PropertyMaterialListTest, isSameSeesThroughCardinality)
@@ -593,12 +593,12 @@ TEST_F(PropertyMaterialListTest, saveSizeAnswersForTheEncodingBeingWritten)
     prop.setValues(std::vector<App::Material>(1000, redMaterial()));
 
     Base::StringWriter writer;
-    writer.setSchemaVersion(6);
+    writer.setSchemaVersion(5);
     EXPECT_EQ(prop.getSaveSize(writer), prop.getMemSize());
 
     // the compatible encoding spells out every entry, and the rule that
     // decides between an inline list and an archive entry has to hear that
-    writer.setSchemaVersion(5);
+    writer.setSchemaVersion(4);
     EXPECT_EQ(prop.getSaveSize(writer), 1000U * 24U);
 }
 
@@ -629,7 +629,7 @@ TEST_F(PropertyMaterialListTest, aTexturePathSurvivesTheXMLForm)
     std::vector<App::Material> values {texturedMaterial(), App::Material()};
     prop.setValues(values);
 
-    const std::string xml = saveToXML(prop, 5);
+    const std::string xml = saveToXML(prop, 4);
     EXPECT_NE(xml.find("fields=\"1\""), std::string::npos) << xml;
 
     App::PropertyMaterialList restored;
@@ -646,7 +646,7 @@ TEST_F(PropertyMaterialListTest, stringsRideTheCompactDocFile)
     prop.setValues(values);
 
     App::PropertyMaterialList restored;
-    restoreDocFile(restored, saveDocFile(prop, 6));
+    restoreDocFile(restored, saveDocFile(prop, 5));
     expectEntries(restored, values);
 }
 
@@ -659,7 +659,7 @@ TEST_F(PropertyMaterialListTest, aFileWithStringsIsWrittenAsUpstreamsVersionThre
     // the element has to say version="3", because that is the only way
     // upstream's reader knows a second pass follows
     Base::StringWriter element;
-    element.setSchemaVersion(5);
+    element.setSchemaVersion(4);
     element.setPreferBinary(true);
     element.setForceXML(0);  // a StringWriter forces XML unless told otherwise
     prop.Save(element);
@@ -669,7 +669,7 @@ TEST_F(PropertyMaterialListTest, aFileWithStringsIsWrittenAsUpstreamsVersionThre
 
     // and round trips through it
     Base::StringWriter file;
-    file.setSchemaVersion(5);
+    file.setSchemaVersion(4);
     file.setPreferBinary(true);
     file.setForceXML(0);
     prop.SaveDocFile(file);
@@ -917,13 +917,13 @@ TEST_F(PropertyMaterialListTest, pbrRoundTripsTheFieldEncodings)
     prop.setMetallicValues({0.0F, 1.0F, 0.2F});
     prop.setRoughnessValues({0.25F, 0.75F, 0.5F});
 
-    const std::string xml = saveToXML(prop, 6);
+    const std::string xml = saveToXML(prop, 5);
     EXPECT_NE(xml.find("pbr=\"1\""), std::string::npos) << xml;
 
     for (const bool binary : {false, true}) {
         App::PropertyMaterialList restored;
         if (binary) {
-            restoreDocFile(restored, saveDocFile(prop, 6));
+            restoreDocFile(restored, saveDocFile(prop, 5));
         }
         else {
             restoreFromXML(restored, xml);
@@ -955,10 +955,10 @@ TEST_F(PropertyMaterialListTest, anOldSchemaSaveWritesThePhongDerivation)
     for (const bool binary : {false, true}) {
         App::PropertyMaterialList restored;
         if (binary) {
-            restoreDocFile(restored, saveDocFile(prop, 5));
+            restoreDocFile(restored, saveDocFile(prop, 4));
         }
         else {
-            restoreFromXML(restored, saveToXML(prop, 5));
+            restoreFromXML(restored, saveToXML(prop, 4));
         }
         ASSERT_FALSE(restored.isPBR());
         // the metal: its colour lands in the specular; the diffuse stays
@@ -986,8 +986,8 @@ TEST_F(PropertyMaterialListTest, theModeIsPartOfTheSerialisedIdentity)
     pbr.setPBR(true);
 
     EXPECT_FALSE(phong.isSame(pbr));
-    EXPECT_NE(saveToXML(phong, 6), saveToXML(pbr, 6));
-    EXPECT_NE(saveDocFile(phong, 6), saveDocFile(pbr, 6));
+    EXPECT_NE(saveToXML(phong, 5), saveToXML(pbr, 5));
+    EXPECT_NE(saveDocFile(phong, 5), saveDocFile(pbr, 5));
 }
 
 TEST_F(PropertyMaterialListTest, copyAndPasteCarryTheMode)
@@ -1018,7 +1018,7 @@ TEST_F(PropertyMaterialListTest, aPhongEraRestoreResetsTheMode)
     prop.setPBR(true);
     App::PropertyMaterialList phong;
     phong.setValues(std::vector<App::Material>(2, redMaterial()));
-    restoreDocFile(prop, saveDocFile(phong, 6));
+    restoreDocFile(prop, saveDocFile(phong, 5));
     EXPECT_FALSE(prop.isPBR());
 }
 
@@ -1169,9 +1169,9 @@ TEST_F(PropertyMaterialListTest, convertPBRKeepsTheLook)
               App::Color(0.04F, 0.04F, 0.04F).getPackedValue() >> 8);
 
     // a no-op when the mode already matches
-    const std::string before = saveToXML(prop, 6);
+    const std::string before = saveToXML(prop, 5);
     prop.convertPBR(false);
-    EXPECT_EQ(saveToXML(prop, 6), before);
+    EXPECT_EQ(saveToXML(prop, 5), before);
 }
 
 TEST_F(PropertyMaterialListTest, rgbWritesLeaveTheAlphasAlone)
@@ -1325,10 +1325,10 @@ TEST_F(PropertyMaterialListTest, aFinishRoundTripsBothCompactEncodings)
     for (bool asXML : {true, false}) {
         App::PropertyMaterialList back;
         if (asXML) {
-            restoreFromXML(back, saveToXML(prop, 6));
+            restoreFromXML(back, saveToXML(prop, 5));
         }
         else {
-            restoreDocFile(back, saveDocFile(prop, 6));
+            restoreDocFile(back, saveDocFile(prop, 5));
         }
         ASSERT_EQ(back.getSize(), 3) << asXML;
         EXPECT_EQ(back.getFinish(0), knurlFinish()) << asXML;
@@ -1341,18 +1341,18 @@ TEST_F(PropertyMaterialListTest, aFinishRoundTripsBothCompactEncodings)
 
 TEST_F(PropertyMaterialListTest, aFinishRidesItsOwnElementBelowSchemaSix)
 {
-    // The material encodings below schema 6 are upstream's and cannot state a
+    // The material encodings below schema 5 are upstream's and cannot state a
     // finish. Rather than give up their compatibility for it, the finish goes
     // out as an element of its own beside them -- which upstream's reader
     // walks past, since readElement skips elements it did not ask for.
     App::PropertyMaterialList prop;
     prop.setSize(3);
     prop.setDiffuseColor(packed(0x804020ff));
-    const std::string plain = saveToXML(prop, 5);
+    const std::string plain = saveToXML(prop, 4);
 
     prop.setFinish(0, knurlFinish());
     prop.setFinish(2, brushedFinish());
-    const std::string xml = saveToXML(prop, 5);
+    const std::string xml = saveToXML(prop, 4);
     EXPECT_NE(xml.find("<SurfaceFinishList count=\"3\""), std::string::npos) << xml;
     // and the material element itself is untouched: the bytes upstream reads
     // are the bytes it always read
@@ -1372,13 +1372,13 @@ TEST_F(PropertyMaterialListTest, aFinishRidesItsOwnElementBelowSchemaSix)
 
 TEST_F(PropertyMaterialListTest, nothingExtraIsWrittenAtSchemaSix)
 {
-    // At schema 6 the per field encoding states the finish itself, so there
+    // At schema 5 the per field encoding states the finish itself, so there
     // is no second element at all -- not an empty one.
     App::PropertyMaterialList prop;
     prop.setSize(2);
     prop.setFinish(knurlFinish());
 
-    const std::string xml = saveToXML(prop, 6);
+    const std::string xml = saveToXML(prop, 5);
     EXPECT_EQ(xml.find("SurfaceFinishList"), std::string::npos) << xml;
 
     App::PropertyMaterialList back;
@@ -1398,7 +1398,7 @@ TEST_F(PropertyMaterialListTest, anArchivedFinishWaitsForItsMaterials)
     prop.setValues(values);
 
     Base::StringWriter element;
-    element.setSchemaVersion(5);
+    element.setSchemaVersion(4);
     element.setPreferBinary(true);
     element.setForceXML(0);
     prop.Save(element);
@@ -1406,7 +1406,7 @@ TEST_F(PropertyMaterialListTest, anArchivedFinishWaitsForItsMaterials)
     EXPECT_NE(element.getString().find("file="), std::string::npos);
 
     Base::StringWriter file;
-    file.setSchemaVersion(5);
+    file.setSchemaVersion(4);
     file.setPreferBinary(true);
     file.setForceXML(0);
     prop.SaveDocFile(file);

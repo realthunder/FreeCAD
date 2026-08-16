@@ -77,6 +77,20 @@ version is writable only where the writer can still produce that exact shape.
   content and the property writes only
   `<FileIncluded hash=".." name=".." original=".."/>`.
 
+WARNING: **Schema 5 is this fork's format, not a compatible middle rung** (settled
+2026-08-16). Nothing but this fork knows the `hash` attribute: upstream's
+`PropertyFileIncluded::Restore` has a `file=` branch and a `data=` branch and
+nothing else, so an unaware reader opens the document, finds neither, and
+leaves every embedded file **empty without a word** -- the `blobs/` entries sit
+unclaimed beside it. That is exactly the silent-misread failure the compact
+format was designed to make impossible, which is why the compact format (built
+as schema 6, and no more released than this was) was folded into 5 rather than
+stacked above it. **4 is upstream's format and the default cap; 5 is this
+fork's**, and a document written at 5 is rooted `<FCDocument>`, so a reader
+that does not know the format refuses it outright instead of half-reading it.
+The blob table is unchanged by the merge -- the gate still reads `>= 5`; it now
+means "the fork format" rather than claiming to mean something weaker.
+
 The gate is `Base::Writer::getSchemaVersion()`, which only the document-level
 save paths set. Anything serializing a property standalone (§9) leaves it unset
 and keeps the self-contained form, which still round-trips.

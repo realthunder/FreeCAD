@@ -151,7 +151,7 @@ private:
      * Two lives, never at once: on save it is what the collect pass stamped
      * and Save() prints; on restore it is where ensureRestored() will find
      * the shape. Absent means this property carries its own archive member,
-     * which is every document below schema 6.
+     * which is every document below schema 5.
      */
     mutable uint64_t _StorePos = ~static_cast<uint64_t>(0);
 };

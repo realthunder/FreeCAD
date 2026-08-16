@@ -73,10 +73,10 @@ const char* PropertyShapeStore::propertyName()
 
 bool PropertyShapeStore::writesStore(Base::Writer& writer)
 {
-    // Schema 6 and nothing below it. The gate is the whole compatibility
-    // story: a schema-5 document written by this build comes out exactly as
-    // it did before, because none of this runs.
-    if (writer.getSchemaVersion() < 6) {
+    // Schema 5 and nothing below it. The gate is the whole compatibility
+    // story: a schema-4 document written by this build comes out exactly as
+    // upstream writes it, because none of this runs.
+    if (writer.getSchemaVersion() < 5) {
         return false;
     }
     // A writer that keeps a file per property and rewrites only what changed

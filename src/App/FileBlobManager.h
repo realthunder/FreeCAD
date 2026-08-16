@@ -204,7 +204,7 @@ public:
      *
      * The collect pass runs before a single property has been written, so it
      * has to note every blob it can see. A property that then decides to
-     * write itself out with no content -- the shape store below schema 6
+     * write itself out with no content -- the shape store below schema 5
      * (docs/SharedShapeStorage.md) -- says so here, or the archive carries
      * content nothing in the file refers to.
      */

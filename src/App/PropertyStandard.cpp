@@ -3020,7 +3020,7 @@ namespace {
  * entry count, and no list has 2^32-1 entries, so the impossible value says
  * "what follows is per field" to a reader that knows the encoding and
  * cannot be mistaken for a list by one that does not. It is only ever
- * written at schema 6 or later, which no reader unaware of it opens anyway.
+ * written at schema 5 or later, which no reader unaware of it opens anyway.
  */
 constexpr uint32_t FieldStreamMarker = 0xffffffff;
 
@@ -4070,7 +4070,7 @@ unsigned int PropertyMaterialList::getMemSize() const
 
 unsigned int PropertyMaterialList::getSaveSize(Base::Writer &writer) const
 {
-    if (writer.getSchemaVersion() >= 6)
+    if (writer.getSchemaVersion() >= 5)
         return getMemSize();
     // The compatible encoding spells out a whole material per entry however
     // little of it the storage holds, so a uniform list of ten thousand
@@ -4099,7 +4099,7 @@ bool PropertyMaterialList::saveXML(Base::Writer &writer) const
     // compatibility for it, the finish is written beside this property as
     // its own -- see PropertySurfaceFinishList, and section 9.4 of
     // docs/ShapeAppearanceDesign.md.
-    if (writer.getSchemaVersion() >= 6 || hasTextureOrCard())
+    if (writer.getSchemaVersion() >= 5 || hasTextureOrCard())
         return saveFieldXML(writer);
 
     const bool convert = saveConverts();
@@ -4241,19 +4241,19 @@ void PropertyMaterialList::Save(Base::Writer &writer) const
     // ⭐ The finish goes out ahead of the material element, as an element of
     // its own inside this property's -- as though an older format had kept it
     // in a property beside the appearance and this one had merged it in.
-    // Below schema 6 the material encodings are upstream's and cannot state a
+    // Below schema 5 the material encodings are upstream's and cannot state a
     // finish; rather than give up their compatibility for it, this states it
     // alongside. Upstream's reader asks for the material element by name and
     // Base::XMLReader::readElement walks past any element that is not it, so
     // the same file is theirs to open and ours to open back with nothing
-    // lost. At schema 6 and above the per field encoding carries the finish
+    // lost. At schema 5 and above the per field encoding carries the finish
     // itself and nothing extra is written at all.
-    if (writer.getSchemaVersion() < 6 && !_finish.empty()) {
+    if (writer.getSchemaVersion() < 5 && !_finish.empty()) {
         PropertySurfaceFinishList carrier;
         carrier.setValue(_finish);
         carrier.Save(writer);
     }
-    if (writer.getSchemaVersion() < 6 && hasTextureOrCard() && !writer.isForceXML()
+    if (writer.getSchemaVersion() < 5 && hasTextureOrCard() && !writer.isForceXML()
             && canSaveStream(writer)) {
         writer.Stream() << writer.ind() << '<' << xmlName() << " file=\""
                         << (getSize()
@@ -4326,7 +4326,7 @@ void PropertyMaterialList::applyPendingFinish()
 
 void PropertyMaterialList::SaveDocFile(Base::Writer &writer) const
 {
-    if (writer.getSchemaVersion() < 6) {
+    if (writer.getSchemaVersion() < 5) {
         Base::OutputStream str(writer.Stream(), writer.isPreferBinary());
         str << static_cast<uint32_t>(_count);
         saveStream(str);

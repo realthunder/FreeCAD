@@ -167,14 +167,21 @@ wanted diffuse and transparency and nothing else. **This applies to
 
 ### 4.3 Document format: two encodings, chosen by schema
 
-The existing one is kept exactly, byte for byte, and written at **schema 5**
+> **Renumbered, 2026-08-16.** The compact format was folded from schema
+> 6 into schema 5, and the schema 5 it replaced (shared included-file
+> blobs) was never readable by an unaware reader either. **4 is
+> upstream's format, 5 is this fork's**, and the default cap is 4. The
+> numbers in this document have been renumbered to match; an earlier
+> reading of it will say 6 where this says 5, and 5 where this says 4.
+
+The existing one is kept exactly, byte for byte, and written at **schema 4**
 -- the default, the one every other FreeCAD can read: `count="N"` and then
 one line per entry of four packed colours, shininess and transparency, or
 the same sequence in a doc file. It is written and read **sequentially by
 index**, so it streams straight out of per-field arrays without
 materialising anything.
 
-At **schema 6** -- the fork's compact format, which already writes a root
+At **schema 5** -- the fork's compact format, which already writes a root
 element no other reader accepts -- each field is written once, at whatever
 length it actually has: a `fields="1"` attribute and one line per non-empty
 field in XML, a field mask and one length-prefixed run per field in a doc
@@ -186,7 +193,7 @@ from tens of kilobytes to about thirty bytes.
 `PropertyLists::Save` weighs `getMemSize()` against
 `DocumentParams::InlineListSize` to decide between an inline list and an
 archive entry, which is right for every list whose stored form *is* its
-written form. This one has two written forms, and at schema 5 a list that is
+written form. This one has two written forms, and at schema 4 a list that is
 16 bytes in memory is a quarter of a megabyte on the way out -- inlined
 into Document.xml on the strength of the wrong number. Hence a new
 `PropertyLists::getSaveSize(writer)` hook, defaulting to `getMemSize()`,
@@ -1315,7 +1322,7 @@ materializes metal it was not given.
 - XML field form: a `pbr="1"` attribute beside `fields="1"`. An
   attribute is ignored by old readers; a new KEY LINE in the char stream
   would throw "unknown material field" on old fork builds.
-- The compatible encodings (schema < 6 stream and inline XML) cannot
+- The compatible encodings (schema < 5 stream and inline XML) cannot
   carry the flag, so they are written as the PHONG DERIVATION
   (`getPhongMaterial()`): diffuse STAYS the base colour (the bgfx PBR
   path reads its base colour out of the diffuse slot, so zeroing a
@@ -1655,15 +1662,15 @@ merely present.
 
 Against that, the three encodings:
 
-- **Binary field stream (schema >= 6, the default).** A new
+- **Binary field stream (schema >= 5, the fork format).** A new
   `FieldFinish = 1 << 11` mask bit, and a run written as `pattern` in an
   `int8` plus the three floats per entry -- the same shape `_type`
   already uses for its int8 run. Where that run goes is 9.4.2.
-- **XML field form (schema >= 6, or when a string must survive).** A new
+- **XML field form (schema >= 5, or when a string must survive).** A new
   key `'f'`, one line, four tokens per entry. Under item 3 a plain key
   line is fine and no attribute trick is needed; what the line's leading
   number counts is 9.4.2.
-- **The compatible encodings (schema < 6, the upstream-readable ones).**
+- **The compatible encodings (schema < 5, the upstream-readable ones).**
   They cannot carry a finish and should not be made to. Upstream's stream
   is fixed -- count, four packed colours, shininess and transparency,
   then the `version="3"` pass of three strings -- and the only fields with
@@ -1673,8 +1680,8 @@ Against that, the three encodings:
   short-circuits on `uuid` (7.3).
 
   ⚠️ **And "the default save carries it" was not true as written.**
-  `SaveSchemaVersion` defaults to **5**, deliberately (`Document.cpp`
-  ~960: schema 6 is an incompatibility a user chooses per document, never
+  `SaveSchemaVersion` defaults to **4**, deliberately (`Document.cpp`
+  ~960: schema 5 is an incompatibility a user chooses per document, never
   one inherited from a constructor), so the default save is a compatible
   encoding and a finish would have vanished from every ordinary document.
 
@@ -1687,7 +1694,7 @@ Against that, the three encodings:
 `getMemSize()` and `getSaveSize()` pick up `_finish.size() *
 sizeof(SurfaceFinish)`.
 
-#### 9.4.1 A property of its own, and schema 5 becomes lossless both ways
+#### 9.4.1 A property of its own, and schema 4 becomes lossless both ways
 
 ⭐ **The user's answer, and it is better than anything the encodings can
 do from the inside.** Pretend an older format kept the surface finish in
@@ -1723,12 +1730,12 @@ The rules that make it safe:
   `PartGui::PropertyDiffuseColor` uses to be a name over the appearance's
   diffuse field (1.1). A `Copy()` for the undo stack has no appearance to
   name, so it carries detached values.
-- **It writes values only below schema 6**, where the material encoding
-  cannot state them. At 6 and above the appearance's own field form
+- **It writes values only below schema 5**, where the material encoding
+  cannot state them. At 5 and above the appearance's own field form
   carries the finish and the companion writes an empty element, so no
   document ever holds the same finish twice.
 - **An empty element means "nothing stated", never "clear it".** At
-  schema 6 the appearance restores first -- `ShapeAppearance` sorts before
+  schema 5 the appearance restores first -- `ShapeAppearance` sorts before
   `ShapeFinish`, and `ShapeColor` and `ShapeMaterial` after both -- with
   the finish already in it, and an empty companion must not wipe what it
   just got. Same rule `DiffuseColor` needed for the same reason (1.1).
