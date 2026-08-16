@@ -552,8 +552,16 @@ Two places could fix it, and the obvious one is the trap:
   the symmetric place: the bridge does it for the backend, this does it
   for glr, and nothing capture-side moves.
 
-Not done here. Recorded rather than half-landed, since it wants its own
-verification pass across the icon sites, not just this label.
+**Done 2026-08-16, the second way** (`SoFCRendererP::applyBillboard`).
+The replay loop asks each autozoom entry whether it is a billboard, and
+substitutes the camera basis scaled to world units per screen pixel --
+`SbViewVolume::getWorldToScreenScale` over the viewport width, which
+carries the anchor's own depth through the perspective divide -- instead
+of calling the node's `GLRender`. `pixelScale` when set, the backend's
+glyph factor when not (`SoAutoZoomTranslation::DefaultPixelScale`, so
+the two paths read one number). Measured on the label of the table
+above: the delta a label adds to its frame went from **18042 pixels to
+459**, which is what the backend and cache 0 both read, to the pixel.
 
 **Two numbers per case, because the capture is not the frame.** Every
 row above is measured twice, `saveImage` and a screen grab, and one case
@@ -699,13 +707,27 @@ machine reports too.
 everyone including those machines, and it is not driver-dependent but
 behavioural. What is known to differ from cache 0:
 
-- **`SoCube` with `SoDrawStyle::LINES` is not drawn** by the render
-  cache. PartGui's geometry check works around it by omitting the box
-  (`TaskCheckGeometry.cpp`); anything else relying on it draws nothing.
-- **`SoImage` capture companions** are drawn by the cache's GL renderer
-  at pixel coordinates read as world units (3.6). The backend is
-  correct, so this hits exactly the machines that fell back -- the ones
-  least able to report it.
+- ~~**`SoCube` with `SoDrawStyle::LINES` is not drawn** by the render
+  cache~~ -- **not true any more, measured 2026-08-16.** The cache's GL
+  renderer draws it; what it dropped was the **line pattern**, because
+  the width and stipple were applied only to draws typed
+  `Material::Line`, and a cube in `SoDrawStyle::LINES` is a *triangle*
+  draw handed to `glPolygonMode`. So the geometry check's dashed box
+  came out solid, not absent. Fixed, and the 2022 workaround in
+  `TaskCheckGeometry.cpp` (which omitted the box under render cache 3)
+  is gone with it -- the box is back on every path.
+  The **backend** was the one drawing it wrong, and worse: it took
+  every `SoDrawStyle::LINES` for the **Tessellation display mode** and
+  filled the faces in the background colour, so the box hid the shape it
+  was drawn around. The two are now told apart by whether the style
+  arrived as a scene-wide *override*, which is what the display mode is
+  and a lone `SoDrawStyle` node is not (`Material::drawstyleoverride`,
+  scene dump v57). Measured: the delta the box adds went 39437 -> 1566
+  pixels on the backend, against 463 on both other paths.
+- ~~**`SoImage` capture companions** are drawn by the cache's GL
+  renderer at pixel coordinates read as world units (3.6)~~ -- **fixed
+  2026-08-16**, see the end of 3.6. The GL pass carries the backend's
+  per-frame billboard math now, and reads what cache 0 reads.
 - **Preselection highlight** outlines the face where cache 0 fills it
   (3.3). By design, and configurable, but it is a visible difference.
 - **Anaglyph stereo** is blank -- on both legs, so not attributable to
@@ -716,9 +738,11 @@ behavioural. What is known to differ from cache 0:
 
 So the honest answer is that no machine is known where cache 0 works
 and cache 3 does not; what a machine can lose is the backend, and what
-it falls back to has two known drawing defects of its own, one of which
-(`SoImage`) is worth fixing precisely because the fallback is no longer
-a path a user chose.
+it falls back to had two drawing defects of its own -- both fixed
+2026-08-16, on the reasoning that the fallback is no longer a path a
+user chose. Both were measured against cache 0 on the same frame rather
+than argued from the code, and the same measurement caught the backend
+being the wrong one of the three on the first of them.
 
 ## 4. Plan
 
@@ -744,10 +768,11 @@ registered on top.
 **Stage 1c — the workbench scene graphs. DONE** (§3.6): Draft (wire,
 text, dimension, working-plane grid), `App::AnnotationLabel`, Mesh,
 Points and Assembly all draw on the backend, and cross-leg it agrees
-with glr on every one of them. The single disagreement indicts **glr**,
-not the backend: it draws `SoImage` capture companions at pixel
-coordinates read as world units, because `billboard`/`pixelScale` are
-consumed only by the bridge that feeds the backend. TechDraw turned out
+with glr on every one of them. The single disagreement indicted **glr**,
+not the backend: it drew `SoImage` capture companions at pixel
+coordinates read as world units, because `billboard`/`pixelScale` were
+consumed only by the bridge that feeds the backend (fixed 2026-08-16,
+end of 3.6). TechDraw turned out
 not to be a 3D path at all. Measured on llvmpipe **and** on the real GPU
 (Mesa d3d12, RTX 3070 Ti), which read the same. Still unvisited from
 §3.2: FEM (not built in this tree) and large models.
