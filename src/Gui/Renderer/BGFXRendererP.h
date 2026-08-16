@@ -1940,6 +1940,17 @@ struct GpuGeometry
     /// directly into instance ranges.
     bgfx::VertexBufferHandle triEdgeInst = BGFX_INVALID_HANDLE;
     bgfx::VertexBufferHandle triCornerInst = BGFX_INVALID_HANDLE;
+    /// triEdgeInst with the edges interior to a flat patch left out --
+    /// the polygon boundary of the tessellated surface, which is what a
+    /// wireframe draw style asks for (submitTessellation). Only built
+    /// when such a draw arrives, and only when there is something to
+    /// drop: a mesh whose every edge is a crease keeps using
+    /// triEdgeInst. creaseEdgeFirst[t] is the instance the triangle t's
+    /// kept edges start at, so a partial index range still maps onto an
+    /// instance range.
+    bgfx::VertexBufferHandle creaseEdgeInst = BGFX_INVALID_HANDLE;
+    std::vector<uint32_t> creaseEdgeFirst;
+    bool creaseEdgeBuilt = false;
     /// Texture-coordinate stream of textured draws, built lazily on
     /// first textured use.
     bgfx::VertexBufferHandle texcoord = BGFX_INVALID_HANDLE;
@@ -1969,7 +1980,11 @@ struct GpuGeometry
                 freed = true;
             }
         }
-        for (auto vb : {&vbh, &triEdgeInst, &triCornerInst, &texcoord}) {
+        creaseEdgeFirst.clear();
+        creaseEdgeFirst.shrink_to_fit();
+        creaseEdgeBuilt = false;
+        for (auto vb : {&vbh, &triEdgeInst, &triCornerInst, &creaseEdgeInst,
+                        &texcoord}) {
             if (bgfx::isValid(*vb)) {
                 bgfx::destroy(*vb);
                 *vb = BGFX_INVALID_HANDLE;
@@ -2115,6 +2130,133 @@ struct GpuGeometry
         triCornerInst = bgfx::createVertexBuffer(
             cmem, LineQuadVertex::ms_pointInstLayout);
         track(cmem->size);
+    }
+
+    /// The polygon boundary of the tessellated surface: triEdgeInst
+    /// minus the edges a flat patch was split along. An edge shared by
+    /// two triangles of the same plane is an artefact of triangulating
+    /// a polygon, and GL never draws it -- the shapes this path serves
+    /// (SoCube, SoFCBoundingBox: SoFCVertexCache's glrender shapes) are
+    /// replayed by Coin as their own polygons under glPolygonMode. Only
+    /// coplanar neighbours are dropped, so a tessellated curve keeps
+    /// every edge it had.
+    ///
+    /// Built once per mesh, on the first wireframe draw of it. Leaves
+    /// creaseEdgeInst invalid when nothing was dropped, so the common
+    /// mesh costs no second buffer and the caller falls back to
+    /// triEdgeInst.
+    void ensureCreaseEdges(const Render::MeshData &mesh)
+    {
+        if (creaseEdgeBuilt)
+            return;
+        creaseEdgeBuilt = true;
+        const int n = mesh.numTriangleIndices;
+        if (n < 3 || !(bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING))
+            return;
+        LineQuadVertex::init();
+        const int numTri = n / 3;
+
+        auto normalOf = [&mesh](int t, float *out) {
+            const int32_t *ix = mesh.triangleIndices + t*3;
+            const float *p0 = mesh.positions + ix[0]*3;
+            const float *p1 = mesh.positions + ix[1]*3;
+            const float *p2 = mesh.positions + ix[2]*3;
+            const float ax = p1[0]-p0[0], ay = p1[1]-p0[1], az = p1[2]-p0[2];
+            const float bx = p2[0]-p0[0], by = p2[1]-p0[1], bz = p2[2]-p0[2];
+            float nx = ay*bz - az*by;
+            float ny = az*bx - ax*bz;
+            float nz = ax*by - ay*bx;
+            const float len = std::sqrt(nx*nx + ny*ny + nz*nz);
+            // A degenerate triangle has no plane to compare; a zero
+            // normal fails every coplanarity test, so its edges stay.
+            if (len > 1.0e-20f) {
+                nx /= len; ny /= len; nz /= len;
+            }
+            else {
+                nx = ny = nz = 0.0f;
+            }
+            out[0] = nx; out[1] = ny; out[2] = nz;
+        };
+
+        // Coplanar to within about a degree. Tight on purpose: this is
+        // meant to catch a polygon split into triangles, not to
+        // simplify a curved surface into feature lines.
+        constexpr float kCoplanarDot = 0.99985f;
+
+        std::vector<uint8_t> keep(size_t(n), 1);
+        // First index position each edge was seen at; -1 once it has
+        // been paired, so a third user of a non-manifold edge is kept
+        // rather than silently matched again.
+        std::unordered_map<uint64_t, int32_t> seen;
+        seen.reserve(size_t(n));
+        std::vector<float> normals(size_t(numTri) * 3);
+        for (int t = 0; t < numTri; ++t)
+            normalOf(t, &normals[size_t(t)*3]);
+
+        int dropped = 0;
+        for (int i = 0; i < n; ++i) {
+            const int t = i / 3, e = i % 3;
+            const int32_t ia = mesh.triangleIndices[i];
+            const int32_t ib = mesh.triangleIndices[t*3 + (e + 1) % 3];
+            const uint64_t lo = uint64_t(uint32_t(ia < ib ? ia : ib));
+            const uint64_t hi = uint64_t(uint32_t(ia < ib ? ib : ia));
+            const uint64_t key = (hi << 32) | lo;
+            auto it = seen.find(key);
+            if (it == seen.end()) {
+                seen.emplace(key, int32_t(i));
+                continue;
+            }
+            const int32_t j = it->second;
+            it->second = -1;
+            if (j < 0)
+                continue;
+            const float *na = &normals[size_t(t)*3];
+            const float *nb = &normals[size_t(j / 3)*3];
+            if (na[0]*nb[0] + na[1]*nb[1] + na[2]*nb[2] < kCoplanarDot)
+                continue;
+            keep[size_t(i)] = 0;
+            keep[size_t(j)] = 0;
+            dropped += 2;
+        }
+
+        // Nothing to drop, or nothing left to draw (a mesh that is one
+        // flat patch seen from both sides): triEdgeInst already says it.
+        if (dropped == 0 || dropped == n)
+            return;
+
+        creaseEdgeFirst.resize(size_t(numTri) + 1);
+        const bgfx::Memory *emem = bgfx::alloc(
+            uint32_t(n - dropped) * 16 * sizeof(float));
+        float *d = reinterpret_cast<float *>(emem->data);
+        uint32_t out = 0;
+        for (int t = 0; t < numTri; ++t) {
+            creaseEdgeFirst[size_t(t)] = out;
+            for (int e = 0; e < 3; ++e) {
+                const int i = t*3 + e;
+                if (!keep[size_t(i)])
+                    continue;
+                const int32_t ia = mesh.triangleIndices[i];
+                const int32_t ib = mesh.triangleIndices[t*3 + (e + 1) % 3];
+                d[0] = mesh.positions[ia*3];
+                d[1] = mesh.positions[ia*3 + 1];
+                d[2] = mesh.positions[ia*3 + 2];
+                // No stipple run: each edge starts its own pattern, the
+                // way glLineStipple restarts on every polygon edge.
+                d[3] = 0.0f;
+                d[4] = mesh.positions[ib*3];
+                d[5] = mesh.positions[ib*3 + 1];
+                d[6] = mesh.positions[ib*3 + 2];
+                d[7] = 0.0f;
+                for (int c = 8; c < 16; ++c)
+                    d[c] = 1.0f;
+                d += 16;
+                ++out;
+            }
+        }
+        creaseEdgeFirst[size_t(numTri)] = out;
+        creaseEdgeInst = bgfx::createVertexBuffer(
+            emem, LineQuadVertex::ms_instLayout);
+        track(emem->size);
     }
 };
 

@@ -886,10 +886,16 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     // dimmed pass of on-top lines falls back to the user-configurable
     // selection pattern when the material has none (GL: applyMaterial
     // ~539 under RenderPassLinePattern).
-    if (res.type == Render::Material::Line) {
+    // A triangle draw carrying LINES comes out as edges too
+    // (submitTessellation, GL's glPolygonMode), so it wants the pattern
+    // as much as a line draw does -- without this a dashed bounding box
+    // (PartGui's geometry check) drew solid.
+    if (res.type == Render::Material::Line
+            || res.drawstyle == Render::Material::DrawLines) {
         res.linepattern = m.linepattern;
         res.hiddenlinepattern = m.linepattern;
-        if (res.ontop && !m.hasLinePattern()) {
+        if (res.type == Render::Material::Line
+                && res.ontop && !m.hasLinePattern()) {
             uint32_t sellinepattern =
                 uint32_t(ViewParams::getSelectionLinePattern()) & 0xffff;
             if (sellinepattern) {
