@@ -34,13 +34,25 @@ if (BUILD_BGFX)
     # BGFXView::NUM_VIEWS ids for its pass sequence, and that sequence has
     # grown (particle simulation steps, bulb shadow tiles, water/glass,
     # nine overlay slots) to the point where bgfx's default 256 fits only
-    # two viewers. Doubling it fits five. The cost is bgfx's fixed
-    # per-view tables -- a couple of hundred bytes per id, twice over for
-    # the submit/render frame pair -- and one more bit of the 64-bit draw
-    # sort key for the view field, which has room: the tightest key
-    # variant packs 55 bits at the old width. Must stay a power of two
-    # (static_assert in bgfx's config.h).
-    set(BGFX_CONFIG_MAX_VIEWS "512" CACHE STRING "" FORCE)
+    # two viewers. The per-frame pass map since cut a plain viewer to 13
+    # ids (a 16-id block at the 8-id granule), so 1024 is ~64 viewers.
+    #
+    # Three costs, none of them binding:
+    #  - bgfx's fixed per-view tables, a couple of hundred bytes per id,
+    #    three times over (the submit/render frame pair plus the
+    #    context's own): ~1.5MB of host RAM at this width.
+    #  - one more bit of the 64-bit draw sort key for the view field.
+    #    There is room: the tightest key variant packs view bits + 47,
+    #    so 57 of 64 here, and BlitKey needs the field under 16 bits.
+    #  - Frame::sort() walks all MAX_VIEWS every frame -- not a sort of
+    #    them (the radix sort is over draw calls), just a fixup that
+    #    clamps each view's rect and scissor to its framebuffer. It is
+    #    the one term that grows with this constant: ~200KB of cache
+    #    traffic a frame here, tens of microseconds against a 16ms
+    #    budget. Worth knowing before raising it again -- at 4096 that
+    #    scan is ~800KB a frame and no longer free.
+    # Must stay a power of two (static_assert in bgfx's config.h).
+    set(BGFX_CONFIG_MAX_VIEWS "1024" CACHE STRING "" FORCE)
     # The same story one pool over, and it bites sooner: a view's render
     # targets are ~41 framebuffers (the sized set of forEachHandle, the
     # six-level AO depth pyramid and the particle ping-pong), against a
