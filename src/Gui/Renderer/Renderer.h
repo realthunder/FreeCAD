@@ -968,6 +968,16 @@ struct LightConfig {
     float groundPos[3] = {0.0f, 0.0f, 0.0f};
     float groundMatrix[16] = {1, 0, 0, 0, 0, 1, 0, 0,
                               0, 0, 1, 0, 0, 0, 0, 1};
+    /// Ground shading (ShadowGroundShading): off draws the quad in its
+    /// flat color, ignoring the light -- Coin's SoLightModel BASE_COLOR
+    /// on the ground group. The shadow still darkens it; what goes away
+    /// is the diffuse falloff across the quad.
+    bool groundShading = true;
+    /// Ground back-face culling (ShadowGroundBackFaceCull): the quad is
+    /// one-sided, so a camera below the ground plane sees through it
+    /// instead of being shut out by a grey slab -- Coin's SoShapeHints
+    /// SOLID + COUNTERCLOCKWISE on the ground group.
+    bool groundBackFaceCull = true;
     uint32_t groundColor = 0x7d7d7dff;
     /// Ground texture (ShadowGroundTexture), modulated by the ground
     /// color and tiled every groundTextureSize world units

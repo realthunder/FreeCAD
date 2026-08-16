@@ -232,7 +232,15 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     wireframe hides what it was drawn around. A v56 snapshot has no
 //     flag and every wireframe reads as the mode, which is the only
 //     thing a writer of that version distinguished.
-const uint32_t kVersion = 57;
+// 58: LightConfig carries the ground's shading and back-face culling
+//     (ShadowGroundShading / ShadowGroundBackFaceCull), the two ground
+//     properties Coin spends on nodes above the quad -- an SoLightModel
+//     and an SoShapeHints -- rather than on the quad, and which the
+//     ported ground therefore never saw. A viewer older than this
+//     draws the lit two-sided quad it always did; a snapshot older
+//     than this reads as both knobs on, which is what the properties
+//     it was written from defaulted to.
+const uint32_t kVersion = 58;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -308,7 +316,7 @@ static_assert(sizeof(VolumetricConfig) == 28, "VolumetricConfig changed: stream 
 static_assert(sizeof(WaterConfig) == 48, "WaterConfig changed: stream the new field, then update this");
 static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new field, then update this");
 static_assert(offsetof(PBRConfig, envBackground) == 16, "PBRConfig changed: stream the new field, then update this");
-static_assert(offsetof(LightConfig, groundColor) == 168,"LightConfig changed: stream the new field, then update this");
+static_assert(offsetof(LightConfig, groundColor) == 172,"LightConfig changed: stream the new field, then update this");
 static_assert(offsetof(RenderDebugConfig, coverage) == 7, "RenderDebugConfig changed: stream the new field, then update this");
 
 //////////////////////////////////////////////////////////////////////
@@ -1705,6 +1713,8 @@ void writeLight(Writer &w, const LightConfig &l, const RefWriter &refs)
     w.b(l.groundAutoPos);
     w.floats(l.groundPos, 3);
     w.floats(l.groundMatrix, 16);
+    w.b(l.groundShading);   // v58
+    w.b(l.groundBackFaceCull);
 }
 
 void readLight(Reader &r, LightConfig &l, const RefReader &refs,
@@ -1747,6 +1757,10 @@ void readLight(Reader &r, LightConfig &l, const RefReader &refs,
         l.groundAutoPos = r.b();
         r.floats(l.groundPos, 3);
         r.floats(l.groundMatrix, 16);
+    }
+    if (version >= 58) {
+        l.groundShading = r.b();
+        l.groundBackFaceCull = r.b();
     }
     // Older streams leave the struct's defaults: auto sizing from the
     // scene bounds, which is what those builds did.

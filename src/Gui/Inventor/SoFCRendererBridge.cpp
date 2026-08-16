@@ -2092,6 +2092,17 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
                                                0, 0, 1, 0, 0, 0, 0, 1};
             std::copy(identity, identity + 16, res.groundMatrix);
         }
+        // The two knobs Coin spent on scene-graph nodes rather than on
+        // the quad itself -- an SoLightModel and an SoShapeHints ahead of
+        // it -- and which the backend therefore has to be told about
+        // separately. Both default on, so a ported ground that ignored
+        // them differed from Coin's out of the box.
+        res.groundShading = viewParamOverride<App::PropertyBool>(
+                view, "Shadow", "GroundShading",
+                ViewParams::getShadowGroundShading());
+        res.groundBackFaceCull = viewParamOverride<App::PropertyBool>(
+                view, "Shadow", "GroundBackFaceCull",
+                ViewParams::getShadowGroundBackFaceCull());
         if (auto prop = viewPropOverride<App::PropertyColor>(view, "Shadow", "GroundColor"))
             res.groundColor = prop->getValue().getPackedValue();
         else
