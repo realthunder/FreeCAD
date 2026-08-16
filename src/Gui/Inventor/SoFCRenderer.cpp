@@ -909,7 +909,13 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
     this->material.emissive = emissive;
   }
 
-  if (next.type == Material::Line) {
+  // A triangle draw carrying SoDrawStyle::LINES is handed to
+  // glPolygonMode below and comes out as edges, so it wants the line
+  // width and pattern as much as a line draw does -- Coin sets both from
+  // the elements without asking what the shape is, and without this a
+  // dashed bounding box (PartGui's geometry check) drew solid.
+  if (next.type == Material::Line
+      || next.drawstyle == SoDrawStyleElement::LINES) {
     if (first || this->material.linewidth != linewidth) {
       glLineWidth(linewidth);
       FC_GLERROR_CHECK;
@@ -935,7 +941,9 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
       this->material.linepattern = linepattern;
       SoLinePatternElement::set(state, pattern, factor);
     }
-    if (!first)
+    // A line draw is done here; a triangle drawn as lines still needs the
+    // rest of the material, the polygon mode below most of all.
+    if (!first && next.type == Material::Line)
       return true;
   }
 
