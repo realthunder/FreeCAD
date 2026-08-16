@@ -27,6 +27,7 @@
 #include <Inventor/SoRenderManager.h>
 #include "Application.h"
 #include "Document.h"
+#include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -3306,6 +3307,38 @@ void RenderParams::onRenderParamChanged(const char *sReason)
     foreach3DViewer([](Gui::View3DInventorViewer *viewer) {
         viewer->getSoRenderManager()->scheduleRedraw();
     });
+}
+
+void RenderParams::selectRenderPath()
+{
+    // Render cache 3 is what feeds the render engine, so it is the path
+    // whether or not a backend comes up: with one, the backend draws;
+    // without one, the cache's own GL renderer does, and a failure at
+    // any stage below falls back to that by itself (a backend that
+    // cannot be created, a shader pack that will not load, and a frame
+    // that returns false all leave canSkipInternal() false).
+    if (ViewParams::getRenderCache() != 3)
+        ViewParams::setRenderCache(3);
+
+    // The backend: the engine's own where this build has it, and
+    // whatever else registered if not. Resolved against what is
+    // actually registered rather than named by a literal, so a build
+    // without the engine says "Default" instead of asking for a type
+    // nobody can create, and a stored name from another build cannot
+    // survive into this one.
+    std::string type;
+    for (const auto &t : Render::RendererFactory::types()) {
+        if (boost::starts_with(t, "bgfx")) {
+            type = t;
+            break;
+        }
+        if (type.empty())
+            type = t;
+    }
+    if (type.empty())
+        type = "Default";
+    if (getType() != type)
+        setType(type);
 }
 
 void RenderParams::migrate()

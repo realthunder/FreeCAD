@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:556)
+// Auto generated code (Gui/ViewParams.py:561)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -124,6 +124,12 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RenderCache
+    ///
+    /// Which render path draws a 3D view: 0 auto, 1 distributed,
+    /// 2 centralized Coin caching, 3 the render cache that feeds the
+    /// render engine. NOT a user setting -- the path is chosen at
+    /// startup (RenderParams::selectRenderPath), which overrides
+    /// whatever a config carries. Set it at runtime to compare paths.
     static const long & getRenderCache();
     static const long & defaultRenderCache();
     static void removeRenderCache();
@@ -2191,7 +2197,7 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:562)
+    // Auto generated code (Gui/ViewParams.py:567)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2222,7 +2228,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:575)
+// Auto generated code (Gui/ViewParams.py:580)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

@@ -251,7 +251,7 @@ public:
         funcs["EnableSelection"] = &ViewParamsP::updateEnableSelection;
         EnablePreselection = this->handle->GetBool("EnablePreselection", true);
         funcs["EnablePreselection"] = &ViewParamsP::updateEnablePreselection;
-        RenderCache = this->handle->GetInt("RenderCache", 0);
+        RenderCache = this->handle->GetInt("RenderCache", 3);
         funcs["RenderCache"] = &ViewParamsP::updateRenderCache;
         RandomColor = this->handle->GetBool("RandomColor", false);
         funcs["RandomColor"] = &ViewParamsP::updateRandomColor;
@@ -639,7 +639,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:318)
     static void updateRenderCache(ViewParamsP *self) {
-        auto v = self->handle->GetInt("RenderCache", 0);
+        auto v = self->handle->GetInt("RenderCache", 3);
         if (self->RenderCache != v) {
             self->RenderCache = v;
             ViewParams::onRenderCacheChanged();
@@ -1496,7 +1496,12 @@ void ViewParams::removeEnablePreselection() {
 
 // Auto generated code (Tools/params_utils.py:372)
 const char *ViewParams::docRenderCache() {
-    return "";
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Which render path draws a 3D view: 0 auto, 1 distributed,\n"
+"2 centralized Coin caching, 3 the render cache that feeds the\n"
+"render engine. NOT a user setting -- the path is chosen at\n"
+"startup (RenderParams::selectRenderPath), which overrides\n"
+"whatever a config carries. Set it at runtime to compare paths.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -1506,7 +1511,7 @@ const long & ViewParams::getRenderCache() {
 
 // Auto generated code (Tools/params_utils.py:388)
 const long & ViewParams::defaultRenderCache() {
-    const static long def = 0;
+    const static long def = 3;
     return def;
 }
 
@@ -6415,7 +6420,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:591)
+// Auto generated code (Gui/ViewParams.py:596)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6460,7 +6465,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:599)
+// Auto generated code (Gui/ViewParams.py:604)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6474,7 +6479,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:609)
+// Auto generated code (Gui/ViewParams.py:614)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -6488,13 +6493,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:619)
+// Auto generated code (Gui/ViewParams.py:624)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:626)
+// Auto generated code (Gui/ViewParams.py:631)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 9)
@@ -6502,7 +6507,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:635)
+// Auto generated code (Gui/ViewParams.py:640)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -6514,7 +6519,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:648)
+// Auto generated code (Gui/ViewParams.py:653)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 9)

@@ -634,6 +634,85 @@ Still unvisited from 3.2 after this: **FEM** (`BUILD_FEM=OFF` in this
 tree, so it was not measurable here), large models, and VR /
 quad-buffer stereo.
 
+### 3.7 Can this default fail on a machine that only cache 0 would suit?
+
+Asked before making the path a default rather than a choice
+(2026-08-16). Two separate questions, because the default has two
+layers: the backend, and the render cache under it.
+
+**The backend layer is supposed to degrade to the cache's own GL
+renderer, and by construction it does:** `renderOk` is false at every
+frame entry and set true only by a frame that finished, so
+`canSkipInternal()` is false, `SoFCRenderer::render()` does not return
+early, and `renderScene()` clears and un-suppresses Coin's background
+whenever `render()` returned false. Nothing skips Coin on a claim the
+backend has not made good on.
+
+**Two failures were injected to check that, rather than read**, and
+between them they found one real defect and one that is still open:
+
+| what fails | how it was tested | what the user gets |
+| --- | --- | --- |
+| the shader pack cannot be loaded | `FC_BGFX_SHADER_DIR` at an empty directory | the screen is **correct** -- the cache's GL renderer draws it, gradient and axis cross included. Every **screenshot** came back black; fixed 2026-08-16, below |
+| the driver reports OpenGL 2.1 | `MESA_GL_VERSION_OVERRIDE=2.1` | ⚠️ **SIGSEGV** inside bgfx program creation (`Program create: GL23: GL21, GL22`) -- still open |
+| no GL context / no native handle | code read only (`prepare()` returns false, the view is never created) | the cache's GL renderer draws |
+| `bgfx::init` refuses the device | code read only | the cache's GL renderer draws |
+| the build has no backend at all | `selectRenderPath()` resolves `Type` to `Default` | plain GL, no warnings |
+
+**The screenshot defect, and why it looked like a black window.**
+`QOpenGLWidget::makeCurrent()` binds the *widget's* framebuffer. The
+frame's success path knows this and restores the caller's binding before
+the blit; its bail paths called `makeCurrent()` and did not. So a frame
+that failed handed Coin the widget's framebuffer no matter what the
+caller had bound: on screen that is the right one, which is why the
+window looked perfect, and a screenshot's capture target was left empty
+-- black, through all three of `FramebufferObject`, `GrabFramebuffer`
+and `CoinOffscreenRenderer`. The binding is now read once at the top of
+the frame and restored by every bail as well as by the blit.
+
+⚠️ **Read the measurement, not the window.** This was first written up
+here as "a black viewport" because `saveImage` came back black and a
+screenshot is how these probes see. `QWidget::grab()` of the 3D view --
+which composites what is actually on screen -- showed the model the
+whole time. A capture path is not a witness to the screen when the
+capture path is the thing that is broken.
+
+The GL 2.1 leg is an artificial cap (the driver keeps every entry point
+and only reports an older version), so it is not proof of what a genuine
+old GPU does. It is a fair proxy for the mechanism though: the desktop
+shader pack is compiled at GLSL 1.40 (`-p 140` in `BGFXShaders.cmake`),
+so a GL 2.1 class driver -- pre-Sandy-Bridge Intel, indirect GLX over
+`ssh -X`, some RDP and VM stacks, ancient Mesa -- reaches bgfx's GL21
+path with shaders it cannot compile, which is exactly what crashed.
+Nothing catches it: bgfx does not refuse the device, so none of the
+fallbacks above are reached. **Still open**, and the one thing on this
+page that can cost a user their session rather than a feature.
+
+**The cache layer is the real exposure**, because it now applies to
+everyone including those machines, and it is not driver-dependent but
+behavioural. What is known to differ from cache 0:
+
+- **`SoCube` with `SoDrawStyle::LINES` is not drawn** by the render
+  cache. PartGui's geometry check works around it by omitting the box
+  (`TaskCheckGeometry.cpp`); anything else relying on it draws nothing.
+- **`SoImage` capture companions** are drawn by the cache's GL renderer
+  at pixel coordinates read as world units (3.6). The backend is
+  correct, so this hits exactly the machines that fell back -- the ones
+  least able to report it.
+- **Preselection highlight** outlines the face where cache 0 fills it
+  (3.3). By design, and configurable, but it is a visible difference.
+- **Anaglyph stereo** is blank -- on both legs, so not attributable to
+  this default, but it is not a reason to think cache 0 is safer.
+- **Not measured anywhere:** VR (`View3DInventorRiftViewer`),
+  quad-buffer stereo, FEM result meshes, large models on GPUs other
+  than the two tested.
+
+So the honest answer is that no machine is known where cache 0 works
+and cache 3 does not; what a machine can lose is the backend, and what
+it falls back to has two known drawing defects of its own, one of which
+(`SoImage`) is worth fixing precisely because the fallback is no longer
+a path a user chose.
+
 ## 4. Plan
 
 Ordered so that nothing user-visible regresses at any step.
@@ -950,9 +1029,24 @@ zero in every case on both paths. Three findings are worth keeping:
   frame, the defect is three quarters of the difference and the dragger
   is lost inside it.
 
-**Stage 2 — flip the defaults.** `RenderCache` 3 and a real `Type` as
-shipped defaults, with a one-time migration for existing user configs.
-Keep both parameters working exactly as now.
+**Stage 2 — flip the defaults. DONE** (2026-08-16), and further than
+this line asked: the render path is not a persisted setting at all.
+`RenderParams::selectRenderPath()`, called once from
+`Gui::Application::initApplication` before anything reads either key,
+sets `RenderCache` to 3 and `Type` to the engine's backend, **overriding
+whatever the configuration carries**. So no migration is needed for
+existing configs, a machine that once wrote a bad choice does not keep
+it, and a `Type` naming a backend this build does not have cannot
+survive into it -- the type is resolved against
+`RendererFactory::types()`, falling back to `Default` when nothing is
+registered (a build without `BUILD_BGFX`), so it never asks for a
+backend nobody can create.
+
+Runtime changes work exactly as before: setting either parameter from
+the console or a script re-selects the path for that session, which is
+what an A/B comparison needs. ⚠️ What no longer works is selecting the
+path from a `--user-cfg`, since startup overrides it -- a harness that
+did that (`scripts/render-verify.sh`) has to set it at runtime instead.
 
 One prerequisite of this stage is already in: while the backend was
 opt-in, it was acceptable for it to be built by the first 3D view and
@@ -966,12 +1060,18 @@ defect that would have hit every user on this default: Qt 6.4+ recreates
 a top-level's native window on its first `QOpenGLWidget`, so the main
 window vanished and came back on the first document.
 
-**Stage 3 — hide the switches.** Remove render cache and renderer type
-from the preferences UI; keep the parameters as the debug/A-B route
-(`ViewParams`/`RenderParams` are still settable from the console and by
-`--user-cfg`, which is what `scripts/render-verify.sh` already uses).
-The Coin path stays fully functional and fully tested — it just stops
-being something a user can wander into.
+**Stage 3 — hide the switches. DONE** (2026-08-16). The render cache,
+renderer type, `UseVBO` and `TransparentObjectRenderType` are off the
+3D View preference page. The parameters remain the debug/A-B route,
+from the console or a script (not `--user-cfg` -- see stage 2). The
+Coin path stays fully functional and fully tested; it just stops being
+something a user can wander into.
+
+The one place the UI still moves the render cache is the Clipping
+panel's offer to switch to the renderer when the section fill needs it.
+Under this default it is unreachable in an ordinary session and only
+answers a developer who switched the path off at runtime, which is
+still coherent, so it stays.
 
 **Stage 4 — the scene light, then the draw style** (§3.4). Not a menu
 cleanup. `Shadow` is the only thing that puts a light in the graph the

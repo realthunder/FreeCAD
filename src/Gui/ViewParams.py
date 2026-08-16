@@ -155,7 +155,12 @@ Params = [
     ParamBool('EnablePreselection', True,
         title='Enable preselection',
         doc='Enable preselection, highlighted with specified color'),
-    ParamInt('RenderCache', 0, on_change=True),
+    ParamInt('RenderCache', 3, on_change=True,
+        doc="Which render path draws a 3D view: 0 auto, 1 distributed,\n"
+        "2 centralized Coin caching, 3 the render cache that feeds the\n"
+        "render engine. NOT a user setting -- the path is chosen at\n"
+        "startup (RenderParams::selectRenderPath), which overrides\n"
+        "whatever a config carries. Set it at runtime to compare paths."),
     ParamBool('RandomColor', False),
     ParamHex('BoundingBoxColor', 0xffffffff),
     ParamHex('AnnotationTextColor', 0xffffffff),

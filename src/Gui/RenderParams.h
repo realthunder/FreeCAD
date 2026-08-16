@@ -1359,6 +1359,19 @@ public:
     /// Called once at Gui::Application startup.
     static void migrate();
 
+    /// Decide the render path this session draws with, overriding
+    /// whatever the configuration carries: render cache 3 and the
+    /// render engine's backend. Called once at Gui::Application startup,
+    /// before anything reads either.
+    ///
+    /// The path is a development switch rather than a setting. A stored
+    /// choice is ignored -- a machine that once wrote one keeps it out
+    /// of every later session, and a backend that no longer exists in
+    /// this build cannot leave a view pointing at it -- while a change
+    /// made at runtime (console, script) works exactly as before, for
+    /// as long as that session lasts.
+    static void selectRenderPath();
+
 /*[[[cog
 RenderParams.declare_end()
 ]]]*/

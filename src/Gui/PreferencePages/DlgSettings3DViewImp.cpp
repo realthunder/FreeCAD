@@ -77,7 +77,6 @@ DlgSettings3DViewImp::~DlgSettings3DViewImp() = default;
 void DlgSettings3DViewImp::saveSettings()
 {
     ui->comboAliasing->onSave();
-    ui->comboRenderer->onSave();
     ui->boxMarkerSize->onSave();
     ui->CheckBox_CornerCoordSystem->onSave();
     ui->SpinBox_CornerCoordSystemSize->onSave();
@@ -130,18 +129,6 @@ void DlgSettings3DViewImp::loadSettings()
     ui->boxMarkerSize->setCurrentIndex(2); // default value 9px
     ui->boxMarkerSize->onRestore();
 
-    ui->comboRenderer->addItem(tr("Default"), QByteArray("Default"));
-    for (auto &type : RendererFactory::types())
-        ui->comboRenderer->addItem(tr(type.c_str()), QByteArray(type.c_str()));
-    ui->comboRenderer->onRestore();
-
-    // Which backend draws is still a choice, but only where a backend can
-    // draw at all. The render cache that decides that is no longer on this
-    // page, so ask the parameter rather than a widget.
-    bool showRenderer = ui->comboRenderer->count() > 1
-                        && ViewParams::isUsingRenderer();
-    ui->comboRenderer->setVisible(showRenderer);
-    ui->labelRenderer->setVisible(showRenderer);
 }
 
 /**

@@ -2097,6 +2097,9 @@ void Application::initApplication()
         // Preferences/View/Render before anything reads them.
         RenderParams::migrate();
         ViewParams::migrate();
+        // Which render path this session draws with, decided here rather
+        // than read from the configuration.
+        RenderParams::selectRenderPath();
         new Base::ScriptProducer( "FreeCADGuiInit", FreeCADGuiInit );
         init_resources();
         setCategoryFilterRules();
