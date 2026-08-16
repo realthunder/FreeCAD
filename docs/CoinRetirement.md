@@ -654,7 +654,7 @@ between them they found one real defect and one that is still open:
 | what fails | how it was tested | what the user gets |
 | --- | --- | --- |
 | the shader pack cannot be loaded | `FC_BGFX_SHADER_DIR` at an empty directory | the screen is **correct** -- the cache's GL renderer draws it, gradient and axis cross included. Every **screenshot** came back black; fixed 2026-08-16, below |
-| the driver reports OpenGL 2.1 | `MESA_GL_VERSION_OVERRIDE=2.1` | ⚠️ **SIGSEGV** inside bgfx program creation (`Program create: GL23: GL21, GL22`) -- still open |
+| the driver reports OpenGL 2.1 | `MESA_GL_VERSION_OVERRIDE=2.1` | was a **SIGSEGV** inside bgfx program creation (`Program create: GL23: GL21, GL22`); the device is refused up front now, and the cache's GL renderer draws |
 | no GL context / no native handle | code read only (`prepare()` returns false, the view is never created) | the cache's GL renderer draws |
 | `bgfx::init` refuses the device | code read only | the cache's GL renderer draws |
 | the build has no backend at all | `selectRenderPath()` resolves `Type` to `Default` | plain GL, no warnings |
@@ -677,16 +677,23 @@ which composites what is actually on screen -- showed the model the
 whole time. A capture path is not a witness to the screen when the
 capture path is the thing that is broken.
 
-The GL 2.1 leg is an artificial cap (the driver keeps every entry point
-and only reports an older version), so it is not proof of what a genuine
-old GPU does. It is a fair proxy for the mechanism though: the desktop
-shader pack is compiled at GLSL 1.40 (`-p 140` in `BGFXShaders.cmake`),
-so a GL 2.1 class driver -- pre-Sandy-Bridge Intel, indirect GLX over
-`ssh -X`, some RDP and VM stacks, ancient Mesa -- reaches bgfx's GL21
-path with shaders it cannot compile, which is exactly what crashed.
-Nothing catches it: bgfx does not refuse the device, so none of the
-fallbacks above are reached. **Still open**, and the one thing on this
-page that can cost a user their session rather than a feature.
+**The OpenGL floor is 3.1, and it is checked now.** The desktop shader
+pack is compiled at GLSL 1.40 (`-p 140` in `BGFXShaders.cmake`), so a GL
+2.1 class driver -- pre-Sandy-Bridge Intel, indirect GLX over `ssh -X`,
+some RDP and VM stacks, ancient Mesa -- reaches bgfx's GL21 path with
+shaders it cannot compile. bgfx does not refuse such a device; it
+crashed building the first program, taking the session with it, and none
+of the fallbacks above were reached because nothing had failed *yet*.
+`prepare()` now compares the created context's version against 3.1 and
+refuses below it, once (a device does not grow a version, and every
+frame asks again), which lands on the same fallback as every other
+failure here.
+
+The leg that found it is an artificial cap -- the driver keeps every
+entry point and only reports an older version -- so it is not proof of
+what a genuine old GPU does. It is a fair proxy for the mechanism, and
+the guard is written against the reported version, which is what such a
+machine reports too.
 
 **The cache layer is the real exposure**, because it now applies to
 everyone including those machines, and it is not driver-dependent but

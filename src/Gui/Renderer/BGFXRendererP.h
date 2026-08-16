@@ -510,6 +510,9 @@ public:
 
     bool prepare(QOpenGLWidget *widget, RendererType::Enum type)
     {
+        // A device this build's shaders cannot run on, already reported.
+        if (glUnsupported)
+            return false;
         QElapsedTimer _warmClock;
         _warmClock.start();
         msContext = msDevice = 0;
@@ -560,6 +563,28 @@ public:
 
             if (currentType == RendererType::OpenGL) {
                 makeCurrent();
+                // The stock shader pack is compiled at GLSL 1.40, which
+                // is OpenGL 3.1. Below that bgfx does not refuse the
+                // device -- it takes its GL21 path and crashes building
+                // the first program -- so this is where the line is
+                // drawn, and the caller falls back to the render
+                // cache's own GL renderer as it does for any other
+                // failure here (docs/CoinRetirement.md 3.7).
+                const QSurfaceFormat fmt = context->format();
+                if (fmt.majorVersion() < 3
+                        || (fmt.majorVersion() == 3 && fmt.minorVersion() < 1)) {
+                    RENDER_ERR("OpenGL " << fmt.majorVersion() << "."
+                               << fmt.minorVersion()
+                               << " is below the 3.1 this renderer's shaders"
+                                  " need; drawing through the render cache"
+                                  " instead");
+                    // Said once. The device is not going to grow a
+                    // version, and every frame asks again.
+                    glUnsupported = true;
+                    currentType = RendererType::Noop;
+                    widget->makeCurrent();
+                    return false;
+                }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #   if defined(FC_OS_LINUX)
                 if (auto *glx = context->nativeInterface<QNativeInterface::QGLXContext>())
@@ -904,6 +929,10 @@ public:
 #endif
     };
     std::vector<std::string> types;
+    /// Set once when the GL device turns out to be older than the stock
+    /// shader pack needs: there is nothing to retry, and a frame asks
+    /// every time.
+    bool glUnsupported = false;
     RendererType::Enum currentType = RendererType::Noop;
     std::string name = "bgfx";
     std::set<BGFXRenderer::Private *> renderers;
