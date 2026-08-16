@@ -117,6 +117,22 @@ public:
   static std::shared_ptr<const PrebuiltContent>
   takePrebuilt(const SoNode * node, bool * stale = nullptr);
 
+  /** Refresh \a node's registered stamp to the node's CURRENT id, so
+   * the entry survives a touch that changed no geometry.
+   *
+   * The caller asserts exactly that. An appearance apply invalidates
+   * the VBOs and touches the shape node (SoBrepFaceSet::doAction under
+   * SoUpdateVBOAction calls touch()), but the vertex and index arrays
+   * the content mirrors are untouched, and everything colour-dependent
+   * -- firstcolor, hastransp, and the contract check itself -- is
+   * re-derived from the LIVE elements at adoption. Without this an
+   * ordinary colour change silently voided every face entry: measured
+   * 240 of 240 objects, "stale SoBrepFaceSet".
+   *
+   * Returns false when there was no entry to refresh.
+   */
+  static bool restamp(const SoNode * node);
+
   /** What the registry answered, counted since the last reset.
    *
    * A publish that adopts nothing has to say which way it failed:

@@ -1090,8 +1090,18 @@ SoFCVertexCache::getProtoNode(const SoNode * node)
 // stale entry for a destroyed node can only collide with a NEW node at
 // the same address, whose node id is necessarily different, so the
 // nodeid check in takePrebuilt drops it.
-static std::unordered_map<const SoNode *,
-    std::shared_ptr<const SoFCVertexCache::PrebuiltContent> > PrebuiltTable;
+// The stamp lives in the ENTRY, not in the content: the content is
+// shared and const (a color variant may hold the same arrays), while
+// the stamp is a property of this node's registration and restamp()
+// moves it.
+namespace {
+struct PrebuiltEntry {
+  SbFCUniqueId stamp = 0;
+  std::shared_ptr<const SoFCVertexCache::PrebuiltContent> content;
+};
+} // anonymous namespace
+
+static std::unordered_map<const SoNode *, PrebuiltEntry> PrebuiltTable;
 
 void
 SoFCVertexCache::setPrebuilt(const SoNode * node,
@@ -1099,8 +1109,21 @@ SoFCVertexCache::setPrebuilt(const SoNode * node,
 {
   if (!content)
     PrebuiltTable.erase(node);
-  else
-    PrebuiltTable[node] = std::move(content);
+  else {
+    PrebuiltEntry & entry = PrebuiltTable[node];
+    entry.stamp = content->nodeid;
+    entry.content = std::move(content);
+  }
+}
+
+bool
+SoFCVertexCache::restamp(const SoNode * node)
+{
+  auto it = PrebuiltTable.find(node);
+  if (it == PrebuiltTable.end())
+    return false;
+  it->second.stamp = node->getNodeId();
+  return true;
 }
 
 static SoFCVertexCache::PrebuiltStats PrebuiltStatsCounters;
@@ -1128,9 +1151,10 @@ SoFCVertexCache::takePrebuilt(const SoNode * node, bool * stale)
     ++PrebuiltStatsCounters.missing;
     return nullptr;
   }
-  auto content = std::move(it->second);
+  const SbFCUniqueId stamp = it->second.stamp;
+  auto content = std::move(it->second.content);
   PrebuiltTable.erase(it);
-  if (content->nodeid != node->getNodeId()) {
+  if (stamp != node->getNodeId()) {
     ++PrebuiltStatsCounters.stale;
     if (stale)
       *stale = true;

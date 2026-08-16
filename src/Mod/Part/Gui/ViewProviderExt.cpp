@@ -2880,6 +2880,13 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Color>& col
 
     Gui::SoUpdateVBOAction action;
     action.apply(this->faceset);
+    // That traversal touches the face set (SoBrepFaceSet::doAction
+    // calls touch() to force the VBO refresh), which would void the
+    // vertex-cache entry the last rebuild registered for it. Only the
+    // stamp goes stale here -- the geometry this appearance apply left
+    // alone is exactly what the entry mirrors -- so move the stamp
+    // rather than lose the content (docs/WorkerVertexCache.md).
+    SoFCVertexCache::restamp(this->faceset);
 
     // A colour vector varies diffuse+transparency only; the other fields
     // come from the document appearance's entry 0. Pushed here, not only
@@ -2984,6 +2991,13 @@ void ViewProviderPartExt::setHighlightedFaces(const std::vector<App::Material>& 
 
     Gui::SoUpdateVBOAction action;
     action.apply(this->faceset);
+    // That traversal touches the face set (SoBrepFaceSet::doAction
+    // calls touch() to force the VBO refresh), which would void the
+    // vertex-cache entry the last rebuild registered for it. Only the
+    // stamp goes stale here -- the geometry this appearance apply left
+    // alone is exactly what the entry mirrors -- so move the stamp
+    // rather than lose the content (docs/WorkerVertexCache.md).
+    SoFCVertexCache::restamp(this->faceset);
 
     int size = static_cast<int>(colors.size());
     if (size > 1) {
