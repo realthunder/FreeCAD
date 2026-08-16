@@ -94,6 +94,13 @@ void BGFXView::destroyTargets()
     // destroyTextures): the sweep released them with it.
     sinkColor = BGFX_INVALID_HANDLE;
     sinkDepth = BGFX_INVALID_HANDLE;
+    // Every demand-allocated group just lost its framebuffer to the
+    // sweep, so each is "not allocated" again and the next frame that
+    // wants one rebuilds it at the new size. The failure latches clear
+    // with them: a group that could not fit at the old size is owed a
+    // fresh try at the new one, which is usually smaller.
+    for (int g = 0; g < NumEffectGroups; ++g)
+        effectFailed[g] = false;
 #ifndef FC_RENDERER_STANDALONE
     if (hasFBO) {
         _BGFXLib.freeFBO(fbo);
@@ -103,6 +110,273 @@ void BGFXView::destroyTargets()
         hasFBO = false;
     }
 #endif
+}
+
+// ---------------------------------------------------------------------
+// Demand-allocated effect groups.
+//
+// A view's render targets used to be decided by what the GPU *can* do:
+// m_shadow / m_oit / m_ssao / m_vol are capability tests, so a session
+// with volumetrics, water, bloom and reflections all switched off still
+// paid for every one of them. At 1080p that was ~235MB of a ~554MB
+// per-view target footprint, on every open 3D view, for passes that
+// never ran.
+//
+// Capability still gates absolutely -- a group whose m_* flag is false
+// is never allocated whatever the configuration asks for. On top of it
+// each group below is built by the first frame that wants it and
+// released when the configuration that wanted it goes away.
+//
+// ! Release is driven by CONFIGURATION, never by scene content. The
+// frame's *Active flags fold in things like "this frame's scene has a
+// water body" or "the shadow pass ran"; releasing on those would free
+// and rebuild across ordinary editing -- the same churn collectMeshes()
+// had to be taught out of, where a two-frame TTL re-uploaded 198 draws
+// every fourth frame. updateEffect() is therefore called with the
+// config predicate alone, and the one scene-derived group (the bulb
+// atlas) is only ever asked to allocate.
+
+bool BGFXView::effectAllocated(EffectGroup g) const
+{
+    switch (g) {
+    case EffectVolumetric: return bgfx::isValid(volFbo);
+    case EffectBulbShadow: return bgfx::isValid(bulbShadowFbo);
+    case EffectReflection: return bgfx::isValid(reflFbo);
+    case EffectBloom:      return bgfx::isValid(bloomFbo);
+    default:               return false;
+    }
+}
+
+/// Build one group's sized targets. Returns false if any handle came
+/// back invalid -- the pools are shared with every other view, so this
+/// is an ordinary outcome, not an error.
+bool BGFXView::allocEffect(EffectGroup g)
+{
+    switch (g) {
+    case EffectVolumetric: {
+        if (!m_vol)
+            return false;
+        const uint16_t hw = std::max<uint16_t>(1, width / 2);
+        const uint16_t hh = std::max<uint16_t>(1, height / 2);
+        // Half-res raymarch target + the front-of-water inscatter
+        // segment (rgb) and its transmittance (a). The main apply does
+        // its own bilateral upsample from point taps; the front apply
+        // reads linearly, hence the two sampler flag sets.
+        const uint64_t pointFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        const uint64_t linearFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        volTex = bgfx::createTexture2D(hw, hh, false, 1,
+            bgfx::TextureFormat::RGBA16F, pointFlags);
+        volFrontTex = bgfx::createTexture2D(hw, hh, false, 1,
+            bgfx::TextureFormat::RGBA16F, linearFlags);
+        // History pair for the temporal accumulation; sampling flags
+        // mirror the current-frame targets.
+        volHistTex = bgfx::createTexture2D(hw, hh, false, 1,
+            bgfx::TextureFormat::RGBA16F, pointFlags);
+        volHistFrontTex = bgfx::createTexture2D(hw, hh, false, 1,
+            bgfx::TextureFormat::RGBA16F, linearFlags);
+        if (!bgfx::isValid(volTex) || !bgfx::isValid(volFrontTex)
+                || !bgfx::isValid(volHistTex)
+                || !bgfx::isValid(volHistFrontTex))
+            return false;
+        bgfx::TextureHandle volAtt[2] = {volTex, volFrontTex};
+        volFbo = bgfx::createFrameBuffer(2, volAtt, false);
+        bgfx::TextureHandle volHistAtt[2] = {volHistTex,
+                                             volHistFrontTex};
+        volHistFbo = bgfx::createFrameBuffer(2, volHistAtt, false);
+
+        // The three medium interval pairs: full-res front/back depths
+        // of water, cloud and fire body draws, written by the prepass
+        // programs (only .z viewZ and .w validity are consumed). Each
+        // medium kind gets its own pair -- the per-medium-kind slot
+        // scheme -- so they stand or fall together with the raymarch.
+        const uint64_t medFlags = pointFlags;
+        struct MediumTargets {
+            bgfx::TextureHandle *frontTex, *backTex;
+            bgfx::TextureHandle *frontDepth, *backDepth;
+            bgfx::FrameBufferHandle *frontFbo, *backFbo;
+        } media[3] = {
+            {&waterFrontTex, &waterBackTex, &waterFrontDepth,
+             &waterBackDepth, &waterFrontFbo, &waterBackFbo},
+            {&cloudFrontTex, &cloudBackTex, &cloudFrontDepth,
+             &cloudBackDepth, &cloudFrontFbo, &cloudBackFbo},
+            {&fireFrontTex, &fireBackTex, &fireFrontDepth,
+             &fireBackDepth, &fireFrontFbo, &fireBackFbo},
+        };
+        for (auto &m : media) {
+            *m.frontTex = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::RGBA16F, medFlags);
+            *m.backTex = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::RGBA16F, medFlags);
+            *m.frontDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                medFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            *m.backDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                medFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            if (!bgfx::isValid(*m.frontTex) || !bgfx::isValid(*m.backTex)
+                    || !bgfx::isValid(*m.frontDepth)
+                    || !bgfx::isValid(*m.backDepth))
+                return false;
+            bgfx::TextureHandle fatt[2] = {*m.frontTex, *m.frontDepth};
+            *m.frontFbo = bgfx::createFrameBuffer(2, fatt, false);
+            bgfx::TextureHandle batt[2] = {*m.backTex, *m.backDepth};
+            *m.backFbo = bgfx::createFrameBuffer(2, batt, false);
+            if (!bgfx::isValid(*m.frontFbo) || !bgfx::isValid(*m.backFbo))
+                return false;
+        }
+        return bgfx::isValid(volFbo) && bgfx::isValid(volHistFbo);
+    }
+    case EffectBulbShadow: {
+        if (!m_shadow)
+            return false;
+        // A fixed 2048x2048 atlas: it does not follow the viewport,
+        // which is why the two textures are LifeProgram and survive
+        // destroyTargets(). Both creations stay guarded -- unguarded,
+        // every keepShared init (i.e. every resize) overwrote handles
+        // whose textures were still live, orphaning RG32F+D24S8 at
+        // 2048^2, 50MB a resize for the life of the process. After a
+        // resize only bulbShadowFbo is gone and only it is rebuilt.
+        const uint16_t side =
+            uint16_t(kBulbShadowGrid * kBulbShadowTileSize);
+        if (!bgfx::isValid(bulbShadowTex))
+            bulbShadowTex = bgfx::createTexture2D(side, side, false, 1,
+                shadowFormat,
+                BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        if (!bgfx::isValid(bulbShadowDepth))
+            bulbShadowDepth = bgfx::createTexture2D(side, side, false, 1,
+                bgfx::TextureFormat::D24S8,
+                BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
+        if (!bgfx::isValid(bulbShadowTex)
+                || !bgfx::isValid(bulbShadowDepth))
+            return false;
+        bgfx::TextureHandle bsAtt[2] = {bulbShadowTex, bulbShadowDepth};
+        bulbShadowFbo = bgfx::createFrameBuffer(2, bsAtt, false);
+        return bgfx::isValid(bulbShadowFbo);
+    }
+    case EffectReflection: {
+        // The mirrored-camera scene re-render target. This full opaque
+        // re-render is the priciest effect on a large window, so it
+        // scales to effW/effH (Render_EffectResolution); LINEAR
+        // sampling upscales it smoothly onto the full-res consumers
+        // (ground overlay, water surface), which read normalized UV.
+        reflTex = bgfx::createTexture2D(effW, effH, false, 1,
+            bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        reflDepth = bgfx::createTexture2D(effW, effH, false, 1,
+            bgfx::TextureFormat::D24S8,
+            BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        if (!bgfx::isValid(reflTex) || !bgfx::isValid(reflDepth))
+            return false;
+        bgfx::TextureHandle ratt[2] = {reflTex, reflDepth};
+        reflFbo = bgfx::createFrameBuffer(2, ratt, false);
+        return bgfx::isValid(reflFbo);
+    }
+    case EffectBloom: {
+        // Quarter-res RGBA16F halo source + blur ping target.
+        const uint16_t qw = uint16_t(std::max(1, int(width) / 4));
+        const uint16_t qh = uint16_t(std::max(1, int(height) / 4));
+        const uint64_t bloomFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        bloomTex = bgfx::createTexture2D(qw, qh, false, 1,
+            bgfx::TextureFormat::RGBA16F, bloomFlags);
+        bloomBlurTex = bgfx::createTexture2D(qw, qh, false, 1,
+            bgfx::TextureFormat::RGBA16F, bloomFlags);
+        if (!bgfx::isValid(bloomTex) || !bgfx::isValid(bloomBlurTex))
+            return false;
+        bloomFbo = bgfx::createFrameBuffer(1, &bloomTex, false);
+        bloomBlurFbo = bgfx::createFrameBuffer(1, &bloomBlurTex, false);
+        return bgfx::isValid(bloomFbo) && bgfx::isValid(bloomBlurFbo);
+    }
+    default:
+        return false;
+    }
+}
+
+/// Release one group's handles. Framebuffers strictly before the
+/// textures they reference, like forEachHandle's order.
+void BGFXView::freeEffect(EffectGroup g)
+{
+    auto drop = [](auto &h) {
+        if (bgfx::isValid(h)) {
+            bgfx::destroy(h);
+            h = BGFX_INVALID_HANDLE;
+        }
+    };
+    switch (g) {
+    case EffectVolumetric:
+        for (auto *h : {&volFbo, &volHistFbo, &waterFrontFbo,
+                        &waterBackFbo, &cloudFrontFbo, &cloudBackFbo,
+                        &fireFrontFbo, &fireBackFbo})
+            drop(*h);
+        for (auto *h : {&volTex, &volFrontTex, &volHistTex,
+                        &volHistFrontTex, &waterFrontTex, &waterBackTex,
+                        &waterFrontDepth, &waterBackDepth,
+                        &cloudFrontTex, &cloudBackTex, &cloudFrontDepth,
+                        &cloudBackDepth, &fireFrontTex, &fireBackTex,
+                        &fireFrontDepth, &fireBackDepth})
+            drop(*h);
+        break;
+    case EffectBulbShadow:
+        drop(bulbShadowFbo);
+        drop(bulbShadowTex);
+        drop(bulbShadowDepth);
+        // The tiles cached in the released atlas are gone with it.
+        for (int t = 0; t < kBulbShadowTiles; ++t) {
+            bulbShadowValid[t] = false;
+            bulbShadowHash[t] = 0;
+        }
+        break;
+    case EffectReflection:
+        drop(reflFbo);
+        drop(reflTex);
+        drop(reflDepth);
+        break;
+    case EffectBloom:
+        drop(bloomFbo);
+        drop(bloomBlurFbo);
+        drop(bloomTex);
+        drop(bloomBlurTex);
+        break;
+    default:
+        break;
+    }
+}
+
+/// Reconcile one group against this frame's demand. \a want must be a
+/// pure configuration predicate -- see the note above.
+void BGFXView::updateEffect(EffectGroup g, bool want)
+{
+    if (want) {
+        if (effectAllocated(g) || effectFailed[g])
+            return;
+        if (!allocEffect(g)) {
+            // ! Latch it. A failed allocation must not be retried every
+            // frame: the retry is what turned a full pool into a spin
+            // last time -- a bailed frame never reaches bgfx::frame(),
+            // which is the only place bgfx reclaims, so the view sat
+            // waiting on handles it was itself preventing from coming
+            // back. The latch clears on a resize (destroyTargets) and
+            // whenever the configuration turns the group off and on
+            // again, both of which are real chances to succeed.
+            effectFailed[g] = true;
+            freeEffect(g);   // drop whatever part of the set did land
+            static const char *const kNames[NumEffectGroups] = {
+                "volumetric", "bulb shadow", "reflection", "bloom"};
+            std::printf("bgfx: no render target handles for the %s "
+                        "effect -- it stays off in this view\n",
+                        kNames[g]);
+        }
+    } else if (effectAllocated(g)) {
+        freeEffect(g);
+        effectFailed[g] = false;
+    }
 }
 
 /// Shader programs, uniforms and the stand-in textures. Linking them is
@@ -275,21 +549,11 @@ void BGFXView::init(bool keepShared)
         sinkFbo = bgfx::createFrameBuffer(2, sinkAtt, true);
     }
 
-    // Bloom (glow) chain: quarter-res RGBA16F halo source + blur
-    // ping target (small enough to keep unconditionally; the passes
-    // only run while the bloom config is enabled).
+    // Bloom (glow) chain. The quarter-res halo/blur pair is
+    // demand-allocated by ensureEffect(EffectBloom); only the programs
+    // and uniforms are built here, because bgfx shares those across
+    // every view and relinking them is the expensive part.
     {
-        uint16_t qw = uint16_t(std::max(1, int(width) / 4));
-        uint16_t qh = uint16_t(std::max(1, int(height) / 4));
-        const uint64_t bloomFlags = BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
-        bloomTex = bgfx::createTexture2D(qw, qh, false, 1,
-            bgfx::TextureFormat::RGBA16F, bloomFlags);
-        bloomBlurTex = bgfx::createTexture2D(qw, qh, false, 1,
-            bgfx::TextureFormat::RGBA16F, bloomFlags);
-        bloomFbo = bgfx::createFrameBuffer(1, &bloomTex, false);
-        bloomBlurFbo = bgfx::createFrameBuffer(1, &bloomBlurTex,
-                                               false);
         m_progBloomBright = fcLoadProgram("vs_fc_comp",
                                           "fs_fc_bloom_bright",
                                           _BGFXLib.shaderPath().c_str());
@@ -411,17 +675,27 @@ void BGFXView::init(bool keepShared)
                                      bgfx::UniformType::Sampler);
     // 1x1 white stand-in so the cap program samples neutrally when
     // hatching is disabled (and for the stencil cleanup pass).
+    //
+    // ! Guarded, like every LifeProgram creation on this path must be.
+    // A keepShared init runs only destroyTargets(), which sweeps
+    // LifeSized and leaves LifeProgram handles live -- so an
+    // unguarded create here overwrites a handle that still owns its
+    // texture, and the old one is orphaned for the life of the
+    // process. Cheap at 1x1; the same omission cost 50MB a resize on
+    // the bulb shadow atlas below.
     static const uint32_t white = 0xffffffff;
-    m_whiteTex = bgfx::createTexture2D(1, 1, false, 1,
-        bgfx::TextureFormat::RGBA8, 0,
-        bgfx::copy(&white, sizeof(white)));
+    if (!bgfx::isValid(m_whiteTex))
+        m_whiteTex = bgfx::createTexture2D(1, 1, false, 1,
+            bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(&white, sizeof(white)));
     // 1x1 fully transparent black: a stand-in whose *coverage* is
     // zero, for debug binds where the white texture would read as a
     // target full of opaque white (RenderDebug mode 9).
     static const uint32_t black = 0x00000000;
-    m_blackTex = bgfx::createTexture2D(1, 1, false, 1,
-        bgfx::TextureFormat::RGBA8, 0,
-        bgfx::copy(&black, sizeof(black)));
+    if (!bgfx::isValid(m_blackTex))
+        m_blackTex = bgfx::createTexture2D(1, 1, false, 1,
+            bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(&black, sizeof(black)));
     CapVertex::init();
 
     // PBR: the mesh programs always carry the environment sampler
@@ -563,20 +837,10 @@ void BGFXView::init(bool keepShared)
         // every contact terminator. The RG16F fallback (mobile
         // WebGL without float32-linear) compensates with a raised
         // variance floor (bulbShadowConf.w).
-        bulbShadowTex = bgfx::createTexture2D(
-            uint16_t(kBulbShadowGrid * kBulbShadowTileSize),
-            uint16_t(kBulbShadowGrid * kBulbShadowTileSize), false, 1,
-            shadowFormat,
-            BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        bulbShadowDepth = bgfx::createTexture2D(
-            uint16_t(kBulbShadowGrid * kBulbShadowTileSize),
-            uint16_t(kBulbShadowGrid * kBulbShadowTileSize), false, 1,
-            bgfx::TextureFormat::D24S8,
-            BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
-        bgfx::TextureHandle bsAtt[2] = {bulbShadowTex,
-                                        bulbShadowDepth};
-        bulbShadowFbo = bgfx::createFrameBuffer(2, bsAtt, false);
+        //
+        // The atlas itself is demand-allocated by
+        // ensureEffect(EffectBulbShadow) -- 50MB of a fixed 2048x2048
+        // that a scene with no shadow-casting bulb never touches.
         s_texBulbShadow = bgfx::createUniform(
             "s_texBulbShadow", bgfx::UniformType::Sampler);
         u_bulbShadowMtx = bgfx::createUniform(
@@ -594,9 +858,10 @@ void BGFXView::init(bool keepShared)
             "s_texShadowTint", bgfx::UniformType::Sampler);
     }
     static const uint32_t blackCube[6] = {0, 0, 0, 0, 0, 0};
-    m_dummyEnvTex = bgfx::createTextureCube(1, false, 1,
-        bgfx::TextureFormat::RGBA8, 0,
-        bgfx::copy(blackCube, sizeof(blackCube)));
+    if (!bgfx::isValid(m_dummyEnvTex))
+        m_dummyEnvTex = bgfx::createTextureCube(1, false, 1,
+            bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(blackCube, sizeof(blackCube)));
 
     u_matColor = bgfx::createUniform("u_matColor", bgfx::UniformType::Vec4);
     u_matEmissive = bgfx::createUniform("u_matEmissive", bgfx::UniformType::Vec4);
@@ -886,40 +1151,12 @@ void BGFXView::init(bool keepShared)
     // the apply pass does its own bilateral 4-tap upsample.
     m_vol = m_ssao && m_shadow;
     if (m_vol) {
-        uint16_t hw = std::max<uint16_t>(1, width / 2);
-        uint16_t hh = std::max<uint16_t>(1, height / 2);
-        volTex = bgfx::createTexture2D(hw, hh, false, 1,
-            bgfx::TextureFormat::RGBA16F,
-            BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        // Second attachment: the front-of-water inscatter segment
-        // (rgb) + its transmittance (a), linearly filtered for the
-        // full-res front apply.
-        volFrontTex = bgfx::createTexture2D(hw, hh, false, 1,
-            bgfx::TextureFormat::RGBA16F,
-            BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        bgfx::TextureHandle volAtt[2] = {volTex, volFrontTex};
-        volFbo = bgfx::createFrameBuffer(2, volAtt, false);
-        // History pair for the temporal accumulation; sampling
-        // flags mirror the current-frame targets (the main apply
-        // does its own bilateral upsample from point taps, the
-        // front apply reads linearly).
-        volHistTex = bgfx::createTexture2D(hw, hh, false, 1,
-            bgfx::TextureFormat::RGBA16F,
-            BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        volHistFrontTex = bgfx::createTexture2D(hw, hh, false, 1,
-            bgfx::TextureFormat::RGBA16F,
-            BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        bgfx::TextureHandle volHistAtt[2] = {volHistTex,
-                                             volHistFrontTex};
-        volHistFbo = bgfx::createFrameBuffer(2, volHistAtt, false);
+        // The raymarch pair, its history pair and the water/cloud/fire
+        // interval targets are demand-allocated together by
+        // ensureEffect(EffectVolumetric) -- they are the single
+        // largest block a view owns (~166MB at 1080p) and none of it
+        // is touched while Render_Volumetric is off. Programs and
+        // uniforms are built here as usual.
         m_progVol = fcLoadProgram("vs_fc_comp", "fs_fc_volume",
                                   _BGFXLib.shaderPath().c_str());
         m_progVolAccum = fcLoadProgram("vs_fc_comp",
@@ -939,28 +1176,6 @@ void BGFXView::init(bool keepShared)
         u_volTexel = bgfx::createUniform("u_volTexel",
                                          bgfx::UniformType::Vec4);
 
-        // Water medium: full-res front/back depths of water body
-        // draws, written by the prepass programs (only .z viewZ and
-        // .w validity are consumed).
-        const uint64_t waterFlags = 0
-            | BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
-        waterFrontTex = bgfx::createTexture2D(width, height, false, 1,
-            bgfx::TextureFormat::RGBA16F, waterFlags);
-        waterBackTex = bgfx::createTexture2D(width, height, false, 1,
-            bgfx::TextureFormat::RGBA16F, waterFlags);
-        waterFrontDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        waterBackDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        bgfx::TextureHandle fatt[2] = {waterFrontTex, waterFrontDepth};
-        waterFrontFbo = bgfx::createFrameBuffer(2, fatt, false);
-        bgfx::TextureHandle batt[2] = {waterBackTex, waterBackDepth};
-        waterBackFbo = bgfx::createFrameBuffer(2, batt, false);
         m_progVolExt = fcLoadProgram("vs_fc_comp", "fs_fc_volume_ext",
                                      _BGFXLib.shaderPath().c_str());
         s_texWaterFront = bgfx::createUniform(
@@ -977,23 +1192,6 @@ void BGFXView::init(bool keepShared)
         u_causticParams = bgfx::createUniform(
             "u_causticParams", bgfx::UniformType::Vec4,
             kMediumSlots);
-        // Cloud body medium: its own front/back interval pair (the
-        // per-medium-kind slot scheme), FBM density in the
-        // raymarch.
-        cloudFrontTex = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::RGBA16F, waterFlags);
-        cloudBackTex = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::RGBA16F, waterFlags);
-        cloudFrontDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        cloudBackDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        bgfx::TextureHandle cfatt[2] = {cloudFrontTex, cloudFrontDepth};
-        cloudFrontFbo = bgfx::createFrameBuffer(2, cfatt, false);
-        bgfx::TextureHandle cbatt[2] = {cloudBackTex, cloudBackDepth};
-        cloudBackFbo = bgfx::createFrameBuffer(2, cbatt, false);
         s_texCloudFront = bgfx::createUniform(
             "s_texCloudFront", bgfx::UniformType::Sampler);
         s_texCloudBack = bgfx::createUniform(
@@ -1001,23 +1199,6 @@ void BGFXView::init(bool keepShared)
         u_cloudParams = bgfx::createUniform("u_cloudParams",
                                             bgfx::UniformType::Vec4,
                                             kMediumSlots);
-        // Fire body medium: its own front/back interval pair (the
-        // per-medium-kind slot scheme), emissive FBM flame in the
-        // raymarch.
-        fireFrontTex = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::RGBA16F, waterFlags);
-        fireBackTex = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::RGBA16F, waterFlags);
-        fireFrontDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        fireBackDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        bgfx::TextureHandle ffatt[2] = {fireFrontTex, fireFrontDepth};
-        fireFrontFbo = bgfx::createFrameBuffer(2, ffatt, false);
-        bgfx::TextureHandle fbatt[2] = {fireBackTex, fireBackDepth};
-        fireBackFbo = bgfx::createFrameBuffer(2, fbatt, false);
         s_texFireFront = bgfx::createUniform(
             "s_texFireFront", bgfx::UniformType::Sampler);
         s_texFireBack = bgfx::createUniform(
@@ -1084,21 +1265,9 @@ void BGFXView::init(bool keepShared)
     u_glassParams = bgfx::createUniform("u_glassParams",
                                         bgfx::UniformType::Vec4);
 
-    // Ground/planar reflection: the mirrored-camera scene re-render
-    // target. This full opaque-scene re-render is the priciest effect on
-    // a large window, so it scales to effW/effH (Render_EffectResolution);
-    // LINEAR sampling upscales it smoothly onto the full-res consumers
-    // (ground overlay, water surface), which read it at normalized UV.
-    reflTex = bgfx::createTexture2D(effW, effH, false, 1,
-        bgfx::TextureFormat::RGBA8,
-        BGFX_TEXTURE_RT
-        | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-    reflDepth = bgfx::createTexture2D(effW, effH, false, 1,
-        bgfx::TextureFormat::D24S8,
-        BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY
-        | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-    bgfx::TextureHandle ratt[2] = {reflTex, reflDepth};
-    reflFbo = bgfx::createFrameBuffer(2, ratt, false);
+    // Ground/planar reflection. The mirrored-camera re-render target is
+    // demand-allocated by ensureEffect(EffectReflection); the programs
+    // and uniforms are built here.
     if (!bgfx::isValid(m_progReflMedia))
         m_progReflMedia = fcLoadProgram("vs_fc_comp",
                                         "fs_fc_refl_media",

@@ -885,6 +885,29 @@ bool BGFXRenderer::Private::render(const QColor &col,
         return true;
     }
 
+    // Reconcile the demand-allocated target groups against the
+    // configuration, before anything reads their handles. Each
+    // predicate below is configuration ONLY -- no scene content, no
+    // this-frame *Active flag -- so an effect's targets appear when it
+    // is switched on and go away when it is switched off, and survive
+    // everything in between. (BGFXView::updateEffect.)
+    //
+    // The volumetric group carries the water, cloud and fire interval
+    // targets as well: every one of those passes is gated on volActive
+    // downstream, so Render_Volumetric is the single switch that owns
+    // the whole ~166MB set.
+    // m_vol here so a GPU that cannot do it at all is never asked, and
+    // so never reports a failure it was always going to have.
+    view->updateEffect(BGFXView::EffectVolumetric,
+                       view->m_vol && volconf.enabled);
+    view->updateEffect(BGFXView::EffectBloom, bloomconf.enabled);
+    // One shared mirror target, wanted by either consumer.
+    view->updateEffect(BGFXView::EffectReflection,
+                       lightconf.groundReflection
+                           || (waterconf.enabled
+                               && waterconf.reflection
+                               && waterconf.planarReflection));
+
     // WBOIT runs when the resources exist and the scene has any
     // transparent (non-on-top) triangles this frame; otherwise the
     // transparent view stays a bbox-sorted alpha blend into the
@@ -1370,8 +1393,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // shading effects. The medium is a sphere around the scene
     // bounds — bounding it keeps the camera's stand-off distance
     // out of the optical depth.
+    // isValid(volFbo): the targets are demand-allocated, so "the
+    // config wants volumetrics" and "the targets exist" are no longer
+    // the same statement -- a pool that had nothing left leaves the
+    // group unbuilt and every volumetric pass simply does not run.
     bool volActive = view->m_vol && volconf.enabled && shadowActive
-        && !hlconfig.show;
+        && !hlconfig.show && bgfx::isValid(view->volFbo);
     float volDensity = volconf.density;
     float volMaxDist = 0.0f;
     float volMedium[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -2107,7 +2134,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
             view->localLightView[BGFXView::kMediumSlots + slot][3]
                 = 0.0f;
     }
-    bool bloomActive = bloomconf.enabled;
+    // Demand-allocated, like the volumetric set: an unbuilt chain
+    // leaves the passes out of the frame rather than binding nothing.
+    bool bloomActive = bloomconf.enabled
+        && bgfx::isValid(view->bloomFbo);
     float waterWaveStrength = waterconf.waveStrength;
     float waterWaveScale = waterconf.waveScale;
     if (waterWaveScale <= 0.0f)
@@ -2209,6 +2239,30 @@ bool BGFXRenderer::Private::render(const QColor &col,
     bool bulbShadowRender[BGFXView::kBulbShadowTiles] = {};
     bool anyBulbShadow = false;
     {
+        // The 50MB atlas is built by the first frame that has a
+        // shadow-casting bulb to put in it.
+        //
+        // ! Allocate-only, deliberately. Unlike the volumetric, bloom
+        // and reflection groups, this demand is SCENE state -- a light
+        // object carrying Material::lightshadow -- not configuration,
+        // and updateEffect's contract is that only configuration may
+        // release. Freeing on "no bulb in this frame's scene" would
+        // drop and rebuild 50MB across a document switch, whose
+        // intermediate feeds are legitimately empty. It goes away with
+        // the view's programs instead.
+        bool wantBulbAtlas = false;
+        if (shadowActive) {
+            for (int sl = 0; sl < kBulbSlots; ++sl) {
+                if (sl < bulbCount && bulbWantShadow[sl]
+                        && bulbRangeW[sl] > 0.0f) {
+                    wantBulbAtlas = true;
+                    break;
+                }
+            }
+        }
+        if (wantBulbAtlas)
+            view->updateEffect(BGFXView::EffectBulbShadow, true);
+
         uint64_t casterH = 0;
         const auto *caps = bgfx::getCaps();
         // Camera view -> world rotation for the shader's cube-face

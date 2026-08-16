@@ -3683,6 +3683,36 @@ public:
     bgfx::TextureHandle createTexture(bgfx::TextureFormat::Enum format, uint64_t flags = 0,
                                       bool sampled = false);
 
+    /// Target sets that are allocated only while something wants them,
+    /// rather than wherever the GPU merely permits them. Together they
+    /// are ~235MB of a ~554MB per-view footprint at 1080p, and a
+    /// default configuration draws none of them.
+    ///
+    /// ! The order must match the name table in updateEffect().
+    enum EffectGroup : uint8_t {
+        EffectVolumetric,  ///< raymarch pair + water/cloud/fire intervals
+        EffectBulbShadow,  ///< the fixed 2048^2 bulb shadow atlas
+        EffectReflection,  ///< the mirrored-camera re-render target
+        EffectBloom,       ///< quarter-res halo + blur ping
+        NumEffectGroups
+    };
+    /// Does this group's framebuffer set exist right now?
+    bool effectAllocated(EffectGroup g) const;
+    /// Build / release one group. Prefer updateEffect().
+    bool allocEffect(EffectGroup g);
+    void freeEffect(EffectGroup g);
+    /// Reconcile a group against demand, once per frame.
+    ///
+    /// ! \a want must be a pure CONFIGURATION predicate. Passing a
+    /// frame's *Active flag would fold in scene content ("a water body
+    /// is on screen this frame") and free the set across ordinary
+    /// editing, only to rebuild it moments later.
+    void updateEffect(EffectGroup g, bool want);
+    /// A group whose allocation failed: not retried until the pool has
+    /// a real chance again (a resize, or the config turning it off and
+    /// back on). Retrying every frame is what made a full pool spin.
+    bool effectFailed[NumEffectGroups] = {};
+
     void init(bool keepShared = false);
 
     /// Radiance of the environment for a world direction (Z up, unit
