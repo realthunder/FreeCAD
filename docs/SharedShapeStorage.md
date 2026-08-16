@@ -117,118 +117,159 @@ buffers and draw batching already dedup after a reload. What is lost is
 the **CPU** side: file bytes, restore time, tessellation, node memory,
 and one capture instead of N.
 
-## 3. The design: cluster members
+## 3. The design: one central store, addressed by position
 
-**Write shapes that share geometry into one BRep member, and let OCCT's
-own shape table do the deduplication.**
+**Write every shape of the document into one BRep member, record each
+property's byte position in it, and restore by seeking to that
+position.** (User proposal, 2026-08-16.) The obvious worry -- that a
+central store defeats partial loading -- turns out to be mostly
+removable, because OCCT's binary format is random-access by
+construction. That is worth establishing first, since the whole design
+rests on it.
 
-A member holding `Compound(parentShape, child0, child1, ... childN)`
-writes every TShape once, at every level, with per-instance locations --
-so it subsumes the placement trap of sec 1.3 and catches sub-shape sharing
-the hash scheme cannot see. On read, one `importBrep` materializes the
-lot with identity intact, and each property takes its own sub-shape out.
+### 3.1 What OCCT actually supports
 
-    <Part cluster="Cluster0.brp" index="3" ElementMap="..."/>
+`BinTools_ShapeReader` / `BinTools_ShapeWriter` (OCCT 7.6+) write
+"topology in binary format without grouping of objects by types and
+**using relative positions in a file as references**". A repeated
+sub-shape is emitted as a reference to an absolute stream position; the
+reader hits `IsReference()`, does `GoTo(pos)` -- a plain `seekg` --
+reads there, seeks back, and caches the result in a
+`position -> TopoDS_Shape` map.
 
-Three parts to build.
+Two paths that look like they would do the same do **not**:
+`BinTools::Read` and FreeCAD's `TopoShape::importBinary` use the older
+`BinTools_ShapeSet`, a table grouped by type that is read in full before
+any shape can be picked out; the ASCII BRep path
+(`TopTools_ShapeSet::Read`) likewise reads the entire table and only
+then indexes into it. Neither can restore one shape without restoring
+all of them. Switching the central store to `BinTools_ShapeWriter` is
+therefore part of the work, not an implementation detail.
 
-### 3.1 Save: group, then write once
+The reader and writer are present on the frozen 7.7.2 branch as well as
+on 8.0.1, so a file written this way is not 8.0.1-only.
 
-1. **Detect** at `beforeSave` time. Walk each `PropertyPartShape`'s
-   shape shallowly -- the shape itself, and recursively the children of
-   compounds only, not into solids -- collecting `TopoDS_TShape`
-   pointers. Union-find over "shares at least one TShape" gives the
-   clusters. Pointer identity is free; no hashing, no geometry compare.
-   Detection may be **shallow even though the dedup is complete**: it
-   only decides *grouping*, and once two shapes are in one member OCCT
-   dedups everything they share, however deep.
-2. **Write** one member per cluster, holding a compound of the cluster's
-   shapes in a fixed order. The first property of the cluster owns the
-   member; the others record `cluster` + `index` and add no member of
-   their own.
-3. **Order** clusters so a cluster's member precedes the properties that
-   reference it, which keeps the interleaved read resolving forward-only
-   in the normal case.
+### 3.2 Measured on a probe, not assumed
 
-Singleton clusters keep exactly today's behaviour: one member, one
-property, no reference.
+A standalone program (`scripts/bintools_partial_probe.cxx`) writing a
+parent compound plus its 6 children -- the parent's leaves being located
+copies of the children's TShapes -- against the same OCCT the build
+links:
 
-### 3.2 Restore: materialize once, hand out sub-shapes
+    central store: 4552 bytes for the parent + 6 children
+      parent at 0, children at 4522 4527 4532 4537 4542 4547
+    one member per property would be 8464 bytes (1.86x)
+    selective read of child 4 alone: ok
+    parent leaf 0 IsPartner child 0: TRUE   (same TShape pointer: yes)
+    control, one reader per property: IsPartner FALSE
 
-The owner's `RestoreDocFile` imports the member and publishes the
-materialized compound into a per-document restore context keyed by
-member name. A referencing property takes `SubShapes[index]` from it --
-the same TShape, so identity is reconstructed exactly.
+Three things are settled by that:
 
-Ordering has two directions and both must work:
+1. **The duplication disappears.** Each child costs **5 bytes** after
+   the parent (4522 -> 4527 -> ...): its record is a pure reference into
+   geometry already written. 1.86x smaller here; in general the saving
+   is whatever fraction was duplicated.
+2. **Selective restore works.** Seek into the middle of the store, read
+   one shape, and only what that shape's reference graph needs is
+   parsed. Partial loading is not defeated.
+3. **The reader instance is the identity domain.** One reader across the
+   document restores `IsPartner TRUE` and the *same TShape pointer*; a
+   fresh reader per property restores `IsPartner FALSE` -- the loss we
+   have today, reproduced exactly. So the document restore must hold one
+   `BinTools_ShapeReader` alive for the whole pass. This is the single
+   most important implementation constraint here.
 
-- reference read *after* the member: resolve immediately from the
-  context;
-- reference read *before* it (partial or reordered reads): register a
-  pending resolve and settle it when the member arrives, with a final
-  sweep at the end of the file pass as the backstop.
+### 3.3 Save
 
-The context is dropped when the document finishes loading; it holds
-`TopoShape`s, so nothing is copied.
+One member per document; each `PropertyPartShape` writes through the
+shared writer and records `tellp()` before its own `Write`:
 
-### 3.3 What stays per property
+    <Part store="Shapes.bin" pos="4522" ElementMap="..."/>
 
-Element maps and the string hasher stay in their own members, one per
-property. Sharing geometry must not share element maps -- two objects
-over one TShape can carry different mapped names, and that is exactly
-what the TNP machinery relies on.
+No grouping analysis, no hashing, no union-find -- the writer's own
+position map does the deduplication, at every level, including the
+sub-shape sharing that whole-member hashing can never see (sec 1.3).
+A shape already written costs a reference record.
+
+### 3.4 Restore
+
+Hold one `BinTools_ShapeReader` and one seekable stream over the store
+for the document's restore pass. Each property seeks to its recorded
+position and reads; shared sub-shapes resolve to already-restored
+TShapes through the reader's map. Ordering does not matter -- a
+reference is an absolute position, so a property can be restored before
+or after any other.
+
+**The one real constraint is seekability.** A zip member is deflated and
+cannot be seeked, so one of:
+
+- **inflate the store into memory once**, and seek in that buffer. Keeps
+  compression; a partial load then pays inflate over the whole store but
+  parses only what it needs -- and parsing, not inflating, is what
+  dominates (`docs/DocumentLoad.md`). Simplest, and the default choice.
+- **store the member uncompressed** and read the `.FCStd` directly at
+  the member's data offset -- true random access, no inflate, at the
+  cost of compression on the geometry.
+- **chunk the store** into several members, which bounds both the
+  inflate and the memory, and doubles as the guard below.
+
+### 3.5 Chunking, which is what is left of clustering
+
+An earlier draft grouped shapes into clusters by shared-TShape analysis.
+With positions that analysis is unnecessary -- but the *bounding* it
+implied is still useful: a single store for a 17800-object document is
+one very large member. Splitting the store into chunks, with each
+property recording `(store, pos)`, keeps the inflate incremental and
+partial loads cheap. A chunk boundary is the only place dedup is lost,
+so chunk by write order and log the cut rather than by any clever rule.
 
 ## 4. Risks and open questions
 
-- **Cluster snowball.** Connected components are naturally small (a
-  parent and its children), but a chain -- a fusion of children, then an
-  array of the fusion, then a compound of those -- can grow one. A large
-  cluster is read as a unit, which cuts against `ProgressiveLoading.md`
-  and makes partial loads over-read. Cap a cluster by member count or
-  bytes and split it, accepting partial dedup at the cut; log the cut,
-  so a silent truncation never reads as full dedup.
-- **Partial documents.** `App::Document::PartialDoc` restores a subset;
-  a cluster member may carry shapes for objects that are not being
-  loaded. They are dropped after extraction -- correct, but it is read
-  work the partial load did not ask for. Another argument for small
-  clusters.
-- **Aliasing after restore.** Sharing a TShape means a triangulation
-  built for one object is seen by the other. That is already true before
-  a save, so it is not new behaviour -- but it is new *after* a reload,
-  and the ladder's per-source rungs (`docs/SceneStreaming.md` #13)
-  should be re-read with that in mind. A recompute produces a new
-  TShape, so an edit cannot corrupt a sharer.
-- **Where the analysis hooks.** The grouping must run before any
-  property writes. `PropertyPartShape::beforeSave` and the document's
-  save path are the candidates; the writer needs a save-time context to
-  answer "which cluster am I in, and do I own it".
-- **The owner-writes-the-cluster shortcut.** Making the first property
-  write the whole cluster avoids inventing a document-level persistence
-  object, but it means one property's `SaveDocFile` writes another
-  object's geometry. If that turns out to tangle ownership, a small
-  `ShapeCluster` persistence object registered with the writer is the
-  fallback.
+- **One reader for the whole restore.** Measured above: without it the
+  sharing is not reconstructed at all. It has to survive the document's
+  whole file pass, and be dropped after -- it holds every restored
+  shape.
+- **Progressive and partial loads.** `docs/ProgressiveLoading.md`
+  interleaves member reads with object creation; a central store changes
+  that shape of work. Inflate-once plus per-property seeks should fit,
+  but it must be measured against the existing load timings, not
+  assumed.
+- **Triangulation and flags.** `BinTools_ShapeSetBase` carries the
+  with-triangles and with-normals flags; the store must keep FreeCAD's
+  current choice, or files silently grow.
+- **Element maps stay per property.** Sharing geometry must not share
+  element maps -- two objects over one TShape can carry different mapped
+  names, and the TNP machinery relies on that.
+- **Aliasing after restore.** A triangulation built for one object is
+  seen by its sharers. Already true before a save, new after a reload;
+  the ladder's per-source rungs (`docs/SceneStreaming.md` #13) should be
+  re-read with that in mind. A recompute makes a new TShape, so an edit
+  cannot corrupt a sharer.
+- **Failure mode.** A corrupt or truncated store loses every shape at
+  once, where today it would lose one. Worth a length/checksum per
+  chunk.
 
 ## 5. Later, optional: content hashing for unshared duplicates
 
 Two objects can hold *equal* geometry with no shared TShape -- separately
-imported copies, flattened copies. Clustering never groups them, because
-there is nothing to detect. A content hash over the member bytes would,
-but only when their placements agree (sec 1.3), so it is worth building only
-after the cluster work is measured, and only if such duplicates prove
-common. Note the render side already deduplicates these on the GPU.
+imported copies, flattened copies. The position mechanism never groups
+them, because there is nothing to reference. A content hash would, but
+only when their placements agree (sec 1.3), so it is worth building only
+after this is measured, and only if such duplicates prove common. The
+render side already deduplicates these on the GPU.
 
 ## 6. How it will be judged
 
 - `isPartner` across a save/reopen round trip: parent leaf vs child
   shape must be **True** after reopen (it is False today, sec 1.1).
-- File size on the same document, schema 6 with and without clustering.
-  Expect the child members to disappear into the parent's: 9573 stored
+- File size on the same document, schema 6 with and without the store.
+  Expect the child members to collapse into references: 9573 stored
   bytes of shape members in the measured case, of which 7268 is the
   duplicate half.
 - `docs/DocumentLoad.md`'s open timings on `MiSTer_imported.FCStd`, with
-  the shape-restore split already logged there (`import` vs `setValue`).
-- Tessellation and instancing counters after a reload:
-  `_InstGeomTable` entry count and the `instancing 0.0NNs` line, with
+  the shape-restore split already logged there (`import` vs `setValue`),
+  and a partial-load case to prove selective restore pays off.
+- Tessellation and instancing counters after a reload: `_InstGeomTable`
+  entry count and the `instancing 0.0NNs` line, with
   `scripts/demo-instanced.py` and `scripts/demo-inst-release.py` as the
   scenes that reach that path.
