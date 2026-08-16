@@ -1040,10 +1040,19 @@ struct LightConfig {
     /// \a halfOut, when given, receives the two half extents — the
     /// texture spans need them separately, and they stop being equal as
     /// soon as the size is set explicitly.
+    ///
+    /// The reflection implies the receiver: a mirror in the ground plane
+    /// is blended onto the ground quad, so Render_GroundReflection with
+    /// no ground would ask for a reflection and then have nothing to
+    /// show it on. Requiring the user to find RenderShadow_ShowGround as
+    /// well is a coupling nobody can guess from either name, and it is
+    /// asked for here rather than at each consumer so the scene bounds
+    /// (camera auto-clipping) grow to cover the quad too.
     bool groundQuad(const float *bmin, const float *bmax,
                     float corners[4][3], float *halfOut = nullptr) const
     {
-        if (!valid || !ground || groundTransparency >= 1.0f)
+        if (!valid || !(ground || groundReflection)
+                || groundTransparency >= 1.0f)
             return false;
         float hx, hy;
         if (groundAuto) {

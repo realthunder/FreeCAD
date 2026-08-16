@@ -1193,10 +1193,12 @@ Params = [
         doc="Angular radius of the sun disc in degrees (the real sun is\n"
         "about 0.27; larger reads better in a CAD scene)."),
     ParamBool('GroundReflection',  False, title='Ground reflection',
-        doc="Mirror the model in the shadow ground plane of the\n"
-        "experimental render engine: the opaque scene is re-rendered\n"
-        "with a reflected camera and blended onto the ground. Only\n"
-        "effective while the Shadow display style shows a ground plane."),
+        doc="Mirror the model in the ground plane of the experimental\n"
+        "render engine: the opaque scene is re-rendered with a reflected\n"
+        "camera and blended onto the ground. Brings the ground plane out\n"
+        "on its own -- neither the Shadow display style nor its ground\n"
+        "switch is needed -- and the ground keeps its own appearance\n"
+        "settings (color, size, texture) from the shadow group."),
     ParamFloat('GroundReflectionIntensity',  0.4, title='Reflection intensity',
         doc="Blend factor of the mirrored model on the ground plane."),
     ParamInt('DebugViewMode',  0, title='Debug view mode',

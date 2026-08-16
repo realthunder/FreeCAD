@@ -2532,16 +2532,27 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // shadow lookup of the mirrored draws needs the shadow matrix
     // rebased from the mirrored view space (mirrored-view -> world
     // -> original-view -> shadow uv).
-    bool groundReflActive = shadowActive && lightconf.ground
-        && lightconf.groundReflection && bboxValid && !hlconfig.show
+    //
+    // What it needs is a ground quad to blend onto, which groundQuad()
+    // answers for -- it takes the reflection as its own reason to exist,
+    // so RenderShadow_ShowGround need not also be found and switched on.
+    // What it does NOT need is a shadow map: the mirrored re-render and
+    // the overlay are the same with or without one, and a reflection
+    // that could only be seen under the Shadow draw style was the
+    // coupling this had until now.
+    float groundCorners[4][3];
+    const bool groundQuadOk = bboxValid
+        && lightconf.groundQuad(bboxMin, bboxMax, groundCorners);
+    bool groundReflActive = groundQuadOk && lightconf.groundReflection
+        && !hlconfig.show
         && bgfx::isValid(view->m_progGroundRefl)
         && bgfx::isValid(view->reflFbo);
     if (getenv("FC_BGFX_DEBUG_FEED"))
         fprintf(stderr,
-                "bgfx ground refl: conf=%d ground=%d shadow=%d"
+                "bgfx ground refl: conf=%d ground=%d quad=%d shadow=%d"
                 " active=%d intensity=%g\n",
                 lightconf.groundReflection, lightconf.ground,
-                shadowActive, groundReflActive,
+                int(groundQuadOk), shadowActive, groundReflActive,
                 lightconf.groundReflectionIntensity);
     float reflViewMtx[16], reflShadowMtx[16];
     if (groundReflActive) {
@@ -4789,7 +4800,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
         cpuMarkT = bx::getHPCounter();
     if (view->passLive(V::ViewShadowBlurH))
         view->submitShadowBlur(lightconf.smoothBorder);
-    if (shadowActive && lightconf.ground && bboxValid) {
+    // The ground receiver. Its historical reason is the shadow -- the
+    // Shadow draw style draws the plane its scene casts onto, which is
+    // why RenderShadow_ShowGround alone still draws nothing -- and its
+    // second is the reflection, which needs the quad whether or not a
+    // shadow map exists. groundQuad() decides whether there is a quad at
+    // all (either switch, and not fully transparent).
+    if ((shadowActive || lightconf.groundReflection) && groundQuadOk) {
         view->submitShadowGround(bboxMin, bboxMax, lightconf,
                                  volActive && aoRender);
     }

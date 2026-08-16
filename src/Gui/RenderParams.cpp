@@ -5422,10 +5422,12 @@ void RenderParams::removeSunDiscSize() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docGroundReflection() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Mirror the model in the shadow ground plane of the\n"
-"experimental render engine: the opaque scene is re-rendered\n"
-"with a reflected camera and blended onto the ground. Only\n"
-"effective while the Shadow display style shows a ground plane.");
+"Mirror the model in the ground plane of the experimental\n"
+"render engine: the opaque scene is re-rendered with a reflected\n"
+"camera and blended onto the ground. Brings the ground plane out\n"
+"on its own -- neither the Shadow display style nor its ground\n"
+"switch is needed -- and the ground keeps its own appearance\n"
+"settings (color, size, texture) from the shadow group.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)

@@ -88,8 +88,14 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     bgfx::setTexture(1, s_texEnv, m_dummyEnvTex);
     static const bool dbgvis =
         getenv("FC_BGFX_DEBUG_SHADOW_VIS") != nullptr;
-    float shadowParams[4] = {1.0f, shadowEpsilon, 0.003f,
-                             dbgvis ? 1.0f : 0.0f};
+    // The ground is also drawn for the ground reflection, which needs
+    // no shadow map -- then there are no moments to sample, and the
+    // quad is simply a lit plane. u_shadowParams.x = 0 says so; the
+    // sampler still needs a valid bind, which the shader never reads
+    // (the water surface pass does the same).
+    const bool shadowed = shadowFrame && bgfx::isValid(shadowTex);
+    float shadowParams[4] = {shadowed ? 1.0f : 0.0f, shadowEpsilon,
+                             0.003f, dbgvis ? 1.0f : 0.0f};
     float lightDir[4] = {lightDirView[0], lightDirView[1],
                          lightDirView[2], 1.0f};
     bgfx::setUniform(u_shadowParams, shadowParams);
@@ -100,7 +106,7 @@ void BGFXView::submitShadowGround(const float bmin[3], const float bmax[3],
     bgfx::setUniform(u_lightPos, lightPosView);
     bgfx::setUniform(u_lightColor, lightColorI);
     bgfx::setUniform(u_shadowMatrix, shadowMtx);
-    bgfx::setTexture(3, s_texShadow, shadowTex);
+    bgfx::setTexture(3, s_texShadow, shadowed ? shadowTex : m_whiteTex);
     if (bgfx::isValid(s_texShadowTint))
         bgfx::setTexture(7, s_texShadowTint,
                          bgfx::isValid(shadowTintTex) ? shadowTintTex

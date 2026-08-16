@@ -2450,10 +2450,12 @@ public:
     //@{
     /// Accessor for parameter GroundReflection
     ///
-    /// Mirror the model in the shadow ground plane of the
-    /// experimental render engine: the opaque scene is re-rendered
-    /// with a reflected camera and blended onto the ground. Only
-    /// effective while the Shadow display style shows a ground plane.
+    /// Mirror the model in the ground plane of the experimental
+    /// render engine: the opaque scene is re-rendered with a reflected
+    /// camera and blended onto the ground. Brings the ground plane out
+    /// on its own -- neither the Shadow display style nor its ground
+    /// switch is needed -- and the ground keeps its own appearance
+    /// settings (color, size, texture) from the shadow group.
     static const bool & getGroundReflection();
     static const bool & defaultGroundReflection();
     static void removeGroundReflection();
