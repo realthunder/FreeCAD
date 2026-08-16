@@ -34,6 +34,7 @@
 #include <App/GroupExtension.h>
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
+#include "Inventor/SoFCRenderCacheManager.h"
 #include "Clipping.h"
 #include "BitmapFactory.h"
 #include "Application.h"
@@ -221,6 +222,7 @@ static bool isViewRenderProperty(const char *name)
     if (!name || Gui::isLocalRenderProperty(name))
         return false;
     return boost::starts_with(name, "Render_")
+        || boost::starts_with(name, "RenderShadow_")
         || boost::starts_with(name, "Light_")
         || boost::starts_with(name, "Section_");
 }
@@ -381,6 +383,13 @@ void ViewProviderSavedView::apply(CaptureOptions options)
                 p->Paste(*prop);
             }
         }
+
+        // A saved view captured before stage 4d hands the view a
+        // Shadow_* family and, if it captured the draw style, a
+        // "Shadow" enum value. Both were just pasted verbatim; put them
+        // where they are read now (docs/CoinRetirement.md 4d).
+        if (options & (CaptureOption::DrawStyle | CaptureOption::RenderSettings))
+            Gui::migrateShadowProperties(view);
 
         if (options & CaptureOption::Visibilities) {
             if (auto prop = obj->getVisibilityProperty<App::PropertyStringList>("Visibilities")) {
@@ -584,6 +593,12 @@ void ViewProviderSavedView::finishRestoring()
                     obj->getPropertyByName("DrawStyle"))) {
             prop->setEnums(Gui::drawStyleNames());
         }
+        // The names are not persisted with the enum, only its index --
+        // which is why they are re-supplied above, and why a captured
+        // "Shadow" has to be converted here rather than when it is
+        // applied: the index outlives the entry
+        // (docs/CoinRetirement.md 4d/4e).
+        Gui::migrateShadowProperties(obj);
     }
     inherited::finishRestoring();
 }

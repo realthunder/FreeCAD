@@ -722,7 +722,16 @@ bool View3DInventor::setCamera(const char* pCamera, int animateDuration)
         size_t end = start;
         for(;pos[end] && pos[end]!='\n'; ++end);
         for(;end!=start && std::isspace(static_cast<unsigned char>(pos[end-1]));--end);
-        DrawStyle.setValue(std::string(pos+start, pos+end).c_str());
+        std::string mode(pos+start, pos+end);
+        // A camera saved with the Shadow draw style asks for something
+        // that is no longer a style (docs/CoinRetirement.md 4d): the
+        // renderer's light and map go on, and the display style stays
+        // the view's own -- the migration has already put the one the
+        // Shadow style wrapped there.
+        if (mode == "Shadow")
+            applyLegacyShadowStyle(this);
+        else
+            DrawStyle.setValue(mode.c_str());
     }
 
     return true;
@@ -1227,6 +1236,11 @@ void View3DInventor::Restore(Base::XMLReader &reader)
     // re-saved.
     stripLegacyRenderProperties(this);
     reseedLocalRenderProperties(this);
+    // A document written before the Shadow draw style became the
+    // renderer's light, map and ground (docs/CoinRetirement.md 4d)
+    // carries its settings as Shadow_* and its style as an enum value
+    // that is on its way out; move both onto what reads them now.
+    migrateShadowProperties(this);
 }
 
 void View3DInventor::onChanged(const App::Property *prop)

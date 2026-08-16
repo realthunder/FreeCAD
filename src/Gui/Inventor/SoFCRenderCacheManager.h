@@ -234,6 +234,46 @@ GuiExport void applySectionHatchTexture(SoFCRenderCacheManager &manager,
 /// (docs/HeadlessServe.md §3.3).
 GuiExport void initRenderProperties(App::PropertyContainer *view);
 
+/// What a Coin SoShadowGroup still has to be told, out of the shadow
+/// map's own settings. The rest of the family -- the ground receiver --
+/// has no consumer on this side at all: the backend reads it through
+/// the bridge.
+struct ShadowRenderParams {
+    double precision = 1.0;
+    double epsilon = 1.0e-5;
+    double threshold = 0.0;
+    long smoothBorder = 0;
+    long spreadSize = 0;
+    long spreadSampleSize = 0;
+};
+
+/// Materialize the shadow map and ground receiver settings as
+/// RenderShadow_* properties (group "Render Shadow"), and return the few
+/// a Coin shadow group consumes. Called wherever the render properties
+/// are created, so the surface exists whether or not a draw style ever
+/// asks for it -- the bridge that feeds the backend only reads
+/// (docs/CoinRetirement.md stage 4d).
+GuiExport ShadowRenderParams materializeShadowRenderParams(
+        App::PropertyContainer *view);
+
+/// The RenderShadow_* names the engine itself consumes: a
+/// null-terminated list, and the exclusion list of the custom shader
+/// parameter rule (docs/RenderDebug.md §2.5) -- any OTHER RenderShadow_
+/// property is a user uniform.
+GuiExport const char * const *shadowRenderPropertyNames();
+
+/// Turn on what the Shadow draw style stood for -- the renderer's scene
+/// light and its shadow map -- for a container that asked for that style
+/// by name (a restored DrawStyle, or a saved camera's overrideMode).
+GuiExport void applyLegacyShadowStyle(App::PropertyContainer *view);
+
+/// Rename a document's Shadow_* view properties onto their RenderShadow_
+/// (and Render_Light*) equivalents, and convert a DrawStyle of "Shadow"
+/// into the display style it wrapped plus Render_Light / Render_Shadow.
+/// Called on view restore and when a saved view is applied, so a file
+/// written before stage 4d keeps its look and stops carrying a surface
+/// nothing reads.
+GuiExport void migrateShadowProperties(App::PropertyContainer *view);
 
 /// The per-container render property names that were retired to global
 /// RenderParams (debug/measurement switches, ladder tuning, occlusion

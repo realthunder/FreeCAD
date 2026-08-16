@@ -161,17 +161,18 @@ try:
         except Exception:
             note(traceback.format_exc())
 
-    # The Shadow_* per-view properties materialize lazily at the first
-    # shadow render, so retry until the assignment sticks.
+    # The RenderShadow_*/Render_* per-view properties are materialized
+    # with the backend, but the view itself may not exist yet, so retry
+    # until the assignment sticks.
     def tune_shadow(tries=[0]):
         try:
             v = FreeCADGui.activeDocument().activeView()
-            v.Shadow_SmoothBorder = int(os.environ.get("SHADOWSMOOTH", "40"))
-            v.Shadow_LightIntensity = float(os.environ.get("SUN", "0.15"))
+            v.RenderShadow_SmoothBorder = int(os.environ.get("SHADOWSMOOTH", "40"))
+            v.Render_LightIntensity = float(os.environ.get("SUN", "0.15"))
             if "VOLDENSITY" in os.environ:
                 v.Render_VolumetricDensity = float(os.environ["VOLDENSITY"])
             FreeCADGui.SendMsgToActiveView("ViewFit")
-            note("SHADOW SMOOTH %s" % v.Shadow_SmoothBorder)
+            note("SHADOW SMOOTH %s" % v.RenderShadow_SmoothBorder)
         except Exception:
             tries[0] += 1
             if tries[0] < 20:

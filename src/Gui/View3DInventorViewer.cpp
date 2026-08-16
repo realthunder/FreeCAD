@@ -400,13 +400,27 @@ static ValueT _shadowParam(View3DInventor *view, const char *_name, const char *
 /// Render_* overrides are materialized identically on a 3D view and on a
 /// view-less publisher (docs/HeadlessServe.md §3.3), and only
 /// getPropertyByName/addDynamicProperty are ever needed.
+///
+/// A group of several words names its properties without the spaces --
+/// group "Render Shadow" carries RenderShadow_Epsilon -- which is the
+/// property editor's own rule (PropertyModel.cpp setPropertyItemName
+/// drops a `<group without spaces>_` prefix from what it shows), so such
+/// a property displays as plain "Epsilon" under a "Render Shadow"
+/// heading. Stating the group is therefore the whole of grouping.
 template<class PropT, class ValueT, class CallbackT>
 static ValueT _containerProperty(App::PropertyContainer *view,
                                  const char *_name, const char *_docu,
                                  const char *group, const ValueT &def,
                                  CallbackT cb, short attr = App::Prop_None) {
     char name[128];
-    snprintf(name, sizeof(name)-1, "%s_%s", group, _name);
+    char prefix[64];
+    size_t n = 0;
+    for (const char *c = group; *c && n + 1 < sizeof(prefix); ++c) {
+        if (*c != ' ')
+            prefix[n++] = *c;
+    }
+    prefix[n] = '\0';
+    snprintf(name, sizeof(name)-1, "%s_%s", prefix, _name);
     auto prop = view->getPropertyByName(name);
     if (prop && !prop->isDerivedFrom(PropT::getClassTypeId()))
         return def;
@@ -447,6 +461,29 @@ static ValueT _renderParam(App::PropertyContainer *view, const char *_name, cons
     if (!view)
         return def;
     return _containerProperty<PropT, ValueT>(view, _name, _docu, "Render", def, cb);
+}
+
+/// The scene light's shadow map and its ground receiver
+/// (docs/CoinRetirement.md stage 4d). Its own group, so the twenty-odd
+/// knobs the Shadow draw style used to carry do not swamp the Render
+/// one: RenderShadow_<Name>, shown as <Name> under "Render Shadow".
+template<class PropT, class ValueT, class CallbackT>
+static ValueT _shadowRenderParam(App::PropertyContainer *view, const char *_name,
+                                 const char *_docu, const ValueT &def, CallbackT cb) {
+    if (!view)
+        return def;
+    return _containerProperty<PropT, ValueT>(view, _name, _docu,
+                                             "Render Shadow", def, cb);
+}
+
+template<class PropT, class ValueT>
+static ValueT _shadowRenderParam(App::PropertyContainer *view, const char *_name,
+                                 const char *_docu, const ValueT &def) {
+    if (!view)
+        return def;
+    auto cb = [](PropT &){};
+    return _containerProperty<PropT, ValueT>(view, _name, _docu,
+                                             "Render Shadow", def, cb);
 }
 
 /// A render setting that states what the machine can afford rather than
@@ -638,7 +675,6 @@ struct View3DInventorViewer::Private
     void activateShadow();
     void deactivateShadow();
     void updateShadowExtent(const SbBox3f &box);
-    void materializeGroundParams();
     void redraw();
     void onRender();
     bool toggleDragger(int toggle);
@@ -2496,68 +2532,125 @@ void View3DInventorViewer::Private::deactivateShadow()
     }
 }
 
-/// Create the Shadow_Ground* properties on the view without consuming
-/// them. The ground itself is the render backend's now
-/// (Render::LightConfig, docs/CoinRetirement.md stage 4b), and the
-/// bridge that feeds it only *reads* the view -- `_shadowParam` is
-/// what creates a property. Without this the view would carry every
-/// other Shadow_* property and none of the ground's, so a per-view
-/// override could not be set at all (assigning it from Python fails
-/// rather than creating it) while the global preference still reached
-/// the backend and hid the hole.
-void View3DInventorViewer::Private::materializeGroundParams()
+/// Materialize the shadow map's and the ground receiver's settings as
+/// RenderShadow_* view properties, and return the handful a Coin shadow
+/// group still needs. One function because there is one set: the
+/// backend reads every one of them through the bridge, which only
+/// *reads* -- `_shadowRenderParam` is what brings a property into being
+/// -- and the properties have to exist whether or not any draw style
+/// ever asks for them (docs/CoinRetirement.md stage 4d).
+///
+/// The defaults are still the ViewParams `Shadow*` preferences. Moving
+/// those into RenderParams is a stage of its own, after the draw style
+/// itself goes; nothing about the per-view surface depends on it.
+Gui::ShadowRenderParams Gui::materializeShadowRenderParams(App::PropertyContainer *view)
 {
+    ShadowRenderParams res;
     if (!view)
-        return;
-    _shadowParam<App::PropertyBool>(view, "ShowGround",
+        return res;
+
+    // --- the shadow map itself ---
+    static const App::PropertyFloatConstraint::Constraints _precision_cstr(0.0,1.0,0.1);
+    res.precision = _shadowRenderParam<App::PropertyFloatConstraint>(view, "Precision",
+            ViewParams::docShadowPrecision(), ViewParams::getShadowPrecision(),
+            [](App::PropertyFloatConstraint &prop) {
+                if(!prop.getConstraints())
+                    prop.setConstraints(&_precision_cstr);
+            });
+    // The variance shadow map needs a small non-zero epsilon or its
+    // Chebyshev bound is numerically unstable (docs/ShaderDesign.md);
+    // ShadowEpsilonMinimum is the enforced lower bound, and a value that
+    // predates the constraint is clamped to it.
+    static App::PropertyPrecision::Constraints _epsilon_cstr(1e-6,1000.0,1e-5);
+    _epsilon_cstr.LowerBound = ViewParams::getShadowEpsilonMinimum();
+    double epsilonDef = ViewParams::getShadowEpsilon();
+    if (epsilonDef < _epsilon_cstr.LowerBound)
+        epsilonDef = _epsilon_cstr.LowerBound;
+    res.epsilon = _shadowRenderParam<App::PropertyPrecision>(view, "Epsilon",
+            ViewParams::docShadowEpsilon(), epsilonDef,
+            [](App::PropertyFloatConstraint &prop) {
+                if(prop.getConstraints() != &_epsilon_cstr)
+                    prop.setConstraints(&_epsilon_cstr);
+            });
+    if (res.epsilon < _epsilon_cstr.LowerBound)
+        res.epsilon = _epsilon_cstr.LowerBound;
+    static const App::PropertyFloatConstraint::Constraints _threshold_cstr(0.0,1.0,0.1);
+    res.threshold = _shadowRenderParam<App::PropertyFloatConstraint>(view, "Threshold",
+            ViewParams::docShadowThreshold(), ViewParams::getShadowThreshold(),
+            [](App::PropertyFloatConstraint &prop) {
+                if(prop.getConstraints() != &_threshold_cstr)
+                    prop.setConstraints(&_threshold_cstr);
+            });
+    static const App::PropertyIntegerConstraint::Constraints _smooth_cstr(0,100,1);
+    res.smoothBorder = _shadowRenderParam<App::PropertyIntegerConstraint>(view, "SmoothBorder",
+            ViewParams::docShadowSmoothBorder(), ViewParams::getShadowSmoothBorder(),
+            [](App::PropertyIntegerConstraint &prop) {
+                if(prop.getConstraints() != &_smooth_cstr)
+                    prop.setConstraints(&_smooth_cstr);
+            });
+    static const App::PropertyIntegerConstraint::Constraints _spread_cstr(0,1000000,500);
+    res.spreadSize = _shadowRenderParam<App::PropertyIntegerConstraint>(view, "SpreadSize",
+            ViewParams::docShadowSpreadSize(), ViewParams::getShadowSpreadSize(),
+            [](App::PropertyIntegerConstraint &prop) {
+                if(prop.getConstraints() != &_spread_cstr)
+                    prop.setConstraints(&_spread_cstr);
+            });
+    static const App::PropertyIntegerConstraint::Constraints _sample_cstr(0,7,1);
+    res.spreadSampleSize = _shadowRenderParam<App::PropertyIntegerConstraint>(view, "SpreadSampleSize",
+            ViewParams::docShadowSpreadSampleSize(), ViewParams::getShadowSpreadSampleSize(),
+            [](App::PropertyIntegerConstraint &prop) {
+                if(prop.getConstraints() != &_sample_cstr)
+                    prop.setConstraints(&_sample_cstr);
+            });
+
+    // --- the ground receiver ---
+    _shadowRenderParam<App::PropertyBool>(view, "ShowGround",
             ViewParams::docShadowShowGround(),
             ViewParams::getShadowShowGround());
-    _shadowParam<App::PropertyColor>(view, "GroundColor",
+    _shadowRenderParam<App::PropertyColor>(view, "GroundColor",
             ViewParams::docShadowGroundColor(),
             App::Color((uint32_t)ViewParams::getShadowGroundColor()));
     static const App::PropertyFloatConstraint::Constraints _transp_cstr(0.0,1.0,0.1);
-    _shadowParam<App::PropertyFloatConstraint>(view, "GroundTransparency",
+    _shadowRenderParam<App::PropertyFloatConstraint>(view, "GroundTransparency",
             ViewParams::docShadowGroundTransparency(),
             ViewParams::getShadowGroundTransparency(),
             [](App::PropertyFloatConstraint &prop) {
                 if(!prop.getConstraints())
                     prop.setConstraints(&_transp_cstr);
             });
-    _shadowParam<App::PropertyBool>(view, "GroundBackFaceCull",
+    _shadowRenderParam<App::PropertyBool>(view, "GroundBackFaceCull",
             ViewParams::docShadowGroundBackFaceCull(),
             ViewParams::getShadowGroundBackFaceCull());
-    _shadowParam<App::PropertyBool>(view, "GroundShading",
+    _shadowRenderParam<App::PropertyBool>(view, "GroundShading",
             ViewParams::docShadowGroundShading(),
             ViewParams::getShadowGroundShading());
-    _shadowParam<App::PropertyFileIncluded>(view, "GroundTexture",
+    _shadowRenderParam<App::PropertyFileIncluded>(view, "GroundTexture",
             ViewParams::docShadowGroundTexture(),
             ViewParams::getShadowGroundTexture().c_str());
-    _shadowParam<App::PropertyFileIncluded>(view, "GroundBumpMap",
+    _shadowRenderParam<App::PropertyFileIncluded>(view, "GroundBumpMap",
             ViewParams::docShadowGroundBumpMap(),
             ViewParams::getShadowGroundBumpMap().c_str());
     static const App::PropertyQuantityConstraint::Constraints _texture_cstr = {0,DBL_MAX,10.0};
-    _shadowParam<App::PropertyLength>(view, "GroundTextureSize",
+    _shadowRenderParam<App::PropertyLength>(view, "GroundTextureSize",
             ViewParams::docShadowGroundTextureSize(),
             ViewParams::getShadowGroundTextureSize(),
             [](App::PropertyLength &prop) {
                 if(prop.getConstraints() != &_texture_cstr)
                     prop.setConstraints(&_texture_cstr);
             });
-    // Sizing and placement. The defaults here are the contract the
-    // bridge's fallbacks copy (SoFCRendererBridge translateLightConfig):
-    // a view that has never had the Shadow style carries none of these.
-    _shadowParam<App::PropertyBool>(view, "GroundSizeAuto",
+    _shadowRenderParam<App::PropertyBool>(view, "GroundSizeAuto",
             "Auto adjust ground size based on the scene bounding box", true);
-    _shadowParam<App::PropertyFloat>(view, "GroundSizeScale",
+    _shadowRenderParam<App::PropertyFloat>(view, "GroundSizeScale",
             ViewParams::docShadowGroundScale(),
             ViewParams::getShadowGroundScale());
-    _shadowParam<App::PropertyLength>(view, "GroundSizeX", "", 100.0);
-    _shadowParam<App::PropertyLength>(view, "GroundSizeY", "", 100.0);
-    _shadowParam<App::PropertyBool>(view, "GroundAutoPosition",
+    _shadowRenderParam<App::PropertyLength>(view, "GroundSizeX", "", 100.0);
+    _shadowRenderParam<App::PropertyLength>(view, "GroundSizeY", "", 100.0);
+    _shadowRenderParam<App::PropertyBool>(view, "GroundAutoPosition",
             "Auto place the ground face at the Z bottom of the scene", true);
-    _shadowParam<App::PropertyPlacement>(view, "GroundPlacement",
+    _shadowRenderParam<App::PropertyPlacement>(view, "GroundPlacement",
             "Ground placement. If 'GroundAutoPosition' is on, this specifies an additional offset of the ground",
             Base::Placement());
+    return res;
 }
 
 void View3DInventorViewer::Private::activateShadow()
@@ -2608,8 +2701,12 @@ void View3DInventorViewer::Private::activateShadow()
     }
     owner->getSoRenderManager()->setRenderMode(SoRenderManager::AS_IS);
 
-    bool spotlight = _shadowParam<App::PropertyBool>(view, "SpotLight",
-            ViewParams::docShadowSpotLight(), ViewParams::getShadowSpotLight());
+    // The scene light is the renderer's (stage 4a), and stage 4d made
+    // this style read the same properties rather than a family of its
+    // own: what it builds here is a Coin light node standing in for the
+    // one the backend resolves from Render_Light*.
+    bool spotlight = _renderParam<App::PropertyBool>(view, "LightSpot",
+            RenderParams::docLightSpot(), RenderParams::getLightSpot());
 
     if(pcShadowGroup) {
         if((spotlight && pcShadowGroup->findChild(pcShadowSpotLight)<0)
@@ -2674,89 +2771,47 @@ void View3DInventorViewer::Private::activateShadow()
         pcShadowShapeHints->shapeType = SoShapeHints::UNKNOWN_SHAPE_TYPE;
 
     }
-    static const App::PropertyFloatConstraint::Constraints _precision_cstr(0.0,1.0,0.1);
-    // pcShadowGroup->quality = _shadowParam<App::PropertyFloatConstraint>(
-    //         owner, "Quality", 1.0f,
-    //         [](App::PropertyFloatConstraint &prop) {
-    //             if(!prop.getConstraints())
-    //                 prop.setConstraints(&_precision_cstr);
-    //         });
-
-    pcShadowGroup->precision = _shadowParam<App::PropertyFloatConstraint>(view, "Precision",
-            ViewParams::docShadowPrecision(), ViewParams::getShadowPrecision(),
-            [](App::PropertyFloatConstraint &prop) {
-                if(!prop.getConstraints())
-                    prop.setConstraints(&_precision_cstr);
-            });
+    // The map's own settings, and the ground receiver's beside them:
+    // one family, materialized in one place, read here and by the
+    // backend's bridge alike.
+    const auto shadowParams = Gui::materializeShadowRenderParams(view);
+    pcShadowGroup->precision = shadowParams.precision;
+    pcShadowGroup->epsilon = shadowParams.epsilon;
+    pcShadowGroup->threshold = shadowParams.threshold;
 
     SoLight *light;
-    auto _dir = _shadowParam<App::PropertyVector>(
-            view, "LightDirection", nullptr,
-            Base::Vector3d(ViewParams::getShadowLightDirectionX(),
-                            ViewParams::getShadowLightDirectionY(),
-                            ViewParams::getShadowLightDirectionZ()));
+    auto _dir = _renderParam<App::PropertyVector>(
+            view, "LightDirection", RenderParams::docLight(),
+            Base::Vector3d(RenderParams::getLightDirectionX(),
+                            RenderParams::getLightDirectionY(),
+                            RenderParams::getLightDirectionZ()));
     _dir.Normalize();
     SbVec3f dir(_dir.x,_dir.y,_dir.z);
 
     SbBox3f bbox;
     owner->getSceneBoundBox(bbox);
 
-    // The variance shadow map needs a small non-zero epsilon or its
-    // Chebyshev bound is numerically unstable and speckles the
-    // self-shadowed side of curved surfaces (see docs/ShaderDesign.md).
-    // Enforce a configurable minimum (ViewParams ShadowEpsilonMinimum) as
-    // the property's lower bound instead of the former 0.0, and clamp any
-    // value that predates the constraint. PropertyPrecision is a
-    // PropertyFloatConstraint that keeps enough display digits for the
-    // tiny epsilon.
-    static App::PropertyPrecision::Constraints _epsilon_cstr(1e-6,1000.0,1e-5);
-    _epsilon_cstr.LowerBound = ViewParams::getShadowEpsilonMinimum();
-    double epsilonDef = ViewParams::getShadowEpsilon();
-    if (epsilonDef < _epsilon_cstr.LowerBound)
-        epsilonDef = _epsilon_cstr.LowerBound;
-    auto epsilon = _shadowParam<App::PropertyPrecision>(view, "Epsilon",
-            ViewParams::docShadowEpsilon(), epsilonDef,
-            [](App::PropertyFloatConstraint &prop) {
-                if(prop.getConstraints() != &_epsilon_cstr)
-                    prop.setConstraints(&_epsilon_cstr);
-            });
-    if (epsilon < _epsilon_cstr.LowerBound)
-        epsilon = _epsilon_cstr.LowerBound;
-    pcShadowGroup->epsilon = epsilon;
-
-    static const App::PropertyFloatConstraint::Constraints _threshold_cstr(0.0,1.0,0.1);
-    pcShadowGroup->threshold = _shadowParam<App::PropertyFloatConstraint>(view, "Threshold",
-            ViewParams::docShadowThreshold(), ViewParams::getShadowThreshold(),
-            [](App::PropertyFloatConstraint &prop) {
-                if(prop.getConstraints() != &_threshold_cstr)
-                    prop.setConstraints(&_threshold_cstr);
-            });
-
     if(spotlight) {
         light = pcShadowSpotLight;
         pcShadowSpotLight->direction = dir;
-        Base::Vector3d initPos;
-        if(isValidBBox(bbox)) {
-            SbVec3f center = bbox.getCenter();
-            initPos.x = center[0];
-            initPos.y = center[1];
-            initPos.z = center[2] + (_dir.z < 0 ? 1.0f : -1.0f) * (bbox.getMax()[2] - bbox.getMin()[2]);
-        }
-        auto pos = _shadowParam<App::PropertyVector>(view, "SpotLightPosition", nullptr, initPos);
+        // Render_LightPosition, like the backend's spot (which is the
+        // one that outlives this): a plain property, where the style's
+        // own SpotLightPosition used to default to a point above the
+        // scene bounding box.
+        auto pos = _renderParam<App::PropertyVector>(
+                view, "LightPosition", RenderParams::docLightSpot(),
+                Base::Vector3d(RenderParams::getLightPositionX(),
+                               RenderParams::getLightPositionY(),
+                               RenderParams::getLightPositionZ()));
         pcShadowSpotLight->location = SbVec3f(pos.x,pos.y,pos.z);
-        static const App::PropertyFloatConstraint::Constraints _drop_cstr(-0.01,1.0,0.01);
-        pcShadowSpotLight->dropOffRate =
-            _shadowParam<App::PropertyFloatConstraint>(view, "SpotLightDropOffRate", nullptr, 0.0,
-                [](App::PropertyFloatConstraint &prop) {
-                    if(!prop.getConstraints())
-                        prop.setConstraints(&_drop_cstr);
-                });
-        pcShadowSpotLight->cutOffAngle =
-            M_PI * _shadowParam<App::PropertyAngle>(view, "SpotLightCutOffAngle", nullptr, 45.0) / 180.0;
-
-        // pcShadowGroup->visibilityFlag = SoShadowGroup::ABSOLUTE_RADIUS;
-        // pcShadowGroup->visibilityNearRadius = _shadowParam<App::PropertyFloat>(view, "SpotLightRadiusNear", -1.0);
-        // pcShadowGroup->visibilityRadius = _shadowParam<App::PropertyFloat>(view, "SpotLightRadius", -1.0);
+        pcShadowSpotLight->dropOffRate = _renderParam<App::PropertyFloat>(
+                view, "LightDropOffRate", RenderParams::docLightDropOffRate(),
+                RenderParams::getLightDropOffRate());
+        // Degrees in the property, radians in Coin -- the convention the
+        // bridge states for the same property.
+        pcShadowSpotLight->cutOffAngle = M_PI * _renderParam<App::PropertyFloat>(
+                view, "LightCutOffAngle", RenderParams::docLightCutOffAngle(),
+                RenderParams::getLightCutOffAngle()) / 180.0;
     } else {
         light = pcShadowDirectionalLight;
         pcShadowDirectionalLight->direction = dir;
@@ -2772,24 +2827,16 @@ void View3DInventorViewer::Private::activateShadow()
         }
     }
 
-    static const App::PropertyFloatConstraint::Constraints _cstr(0.0,1000.0,0.1);
-    light->intensity = _shadowParam<App::PropertyFloatConstraint>(view, "LightIntensity",
-            ViewParams::docShadowLightIntensity(), ViewParams::getShadowLightIntensity(),
-            [](App::PropertyFloatConstraint &prop) {
-                if(!prop.getConstraints())
-                    prop.setConstraints(&_cstr);
-            });
+    light->intensity = _renderParam<App::PropertyFloat>(view, "LightIntensity",
+            RenderParams::docLightIntensity(), RenderParams::getLightIntensity());
 
-    App::Color color = _shadowParam<App::PropertyColor>(view, "LightColor",
-            ViewParams::docShadowLightColor(), App::Color((uint32_t)ViewParams::getShadowLightColor()));
+    App::Color color = _renderParam<App::PropertyColor>(view, "LightColor",
+            RenderParams::docLightColor(),
+            App::Color(uint32_t(RenderParams::getLightColor())));
     SbColor sbColor;
     float f;
     sbColor.setPackedValue(color.getPackedValue(),f);
     light->color = sbColor;
-
-    // The ground's own properties are the backend's to read; this side
-    // only has to bring them into being.
-    materializeGroundParams();
 
     if(isValidBBox(bbox))
         updateShadowExtent(bbox);
@@ -4636,6 +4683,10 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyFloat>(view, "LightDropOffRate",
             RenderParams::docLightDropOffRate(),
             RenderParams::getLightDropOffRate());
+    // The shadow map and the ground receiver it falls on: their own
+    // group, materialized here so the surface exists wherever the
+    // render properties do (stage 4d).
+    materializeShadowRenderParams(view);
     _renderParam<App::PropertyBool>(view, "SunDisc",
             RenderParams::docSunDisc(), RenderParams::getSunDisc());
     _renderParam<App::PropertyFloat>(view, "SunDiscSize",
@@ -4722,6 +4773,191 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     // shader parameters (docs/RenderDebug.md sec 2.5) remain per-view: they
     // are dynamically named, created by the user or a script, and no
     // global parameter could stand in for them.
+}
+
+const char * const *Gui::shadowRenderPropertyNames()
+{
+    // Everything materializeShadowRenderParams creates, i.e. everything
+    // the shadow map and its ground receiver are configured with. The
+    // list exists to be excluded: any OTHER RenderShadow_<name> property
+    // is a custom shader parameter feeding u_<name>
+    // (docs/RenderDebug.md sec 2.5), and a knob the engine reads itself
+    // must not also upload a uniform nobody declares.
+    static const char * const names[] = {
+        "RenderShadow_Precision",
+        "RenderShadow_Epsilon",
+        "RenderShadow_Threshold",
+        "RenderShadow_SmoothBorder",
+        "RenderShadow_SpreadSize",
+        "RenderShadow_SpreadSampleSize",
+        "RenderShadow_ShowGround",
+        "RenderShadow_GroundColor",
+        "RenderShadow_GroundTransparency",
+        "RenderShadow_GroundBackFaceCull",
+        "RenderShadow_GroundShading",
+        "RenderShadow_GroundTexture",
+        "RenderShadow_GroundBumpMap",
+        "RenderShadow_GroundTextureSize",
+        "RenderShadow_GroundSizeAuto",
+        "RenderShadow_GroundSizeScale",
+        "RenderShadow_GroundSizeX",
+        "RenderShadow_GroundSizeY",
+        "RenderShadow_GroundAutoPosition",
+        "RenderShadow_GroundPlacement",
+        nullptr,
+    };
+    return names;
+}
+
+// Where each Shadow_* property went (docs/CoinRetirement.md stage 4d).
+// The ground and the map's own quality knobs kept their names under the
+// RenderShadow_ prefix; the light was already waiting for them as
+// Render_Light* (stage 4a shaped it to match, defaults included).
+static const struct { const char *from; const char *to; } _shadowPropertyMap[] = {
+    {"Shadow_Precision",             "RenderShadow_Precision"},
+    {"Shadow_Epsilon",               "RenderShadow_Epsilon"},
+    {"Shadow_Threshold",             "RenderShadow_Threshold"},
+    {"Shadow_SmoothBorder",          "RenderShadow_SmoothBorder"},
+    {"Shadow_SpreadSize",            "RenderShadow_SpreadSize"},
+    {"Shadow_SpreadSampleSize",      "RenderShadow_SpreadSampleSize"},
+    {"Shadow_ShowGround",            "RenderShadow_ShowGround"},
+    {"Shadow_GroundColor",           "RenderShadow_GroundColor"},
+    {"Shadow_GroundTransparency",    "RenderShadow_GroundTransparency"},
+    {"Shadow_GroundBackFaceCull",    "RenderShadow_GroundBackFaceCull"},
+    {"Shadow_GroundShading",         "RenderShadow_GroundShading"},
+    {"Shadow_GroundTexture",         "RenderShadow_GroundTexture"},
+    {"Shadow_GroundBumpMap",         "RenderShadow_GroundBumpMap"},
+    {"Shadow_GroundTextureSize",     "RenderShadow_GroundTextureSize"},
+    {"Shadow_GroundSizeAuto",        "RenderShadow_GroundSizeAuto"},
+    {"Shadow_GroundSizeScale",       "RenderShadow_GroundSizeScale"},
+    {"Shadow_GroundSizeX",           "RenderShadow_GroundSizeX"},
+    {"Shadow_GroundSizeY",           "RenderShadow_GroundSizeY"},
+    {"Shadow_GroundAutoPosition",    "RenderShadow_GroundAutoPosition"},
+    {"Shadow_GroundPlacement",       "RenderShadow_GroundPlacement"},
+    {"Shadow_LightDirection",        "Render_LightDirection"},
+    {"Shadow_LightColor",            "Render_LightColor"},
+    {"Shadow_LightIntensity",        "Render_LightIntensity"},
+    {"Shadow_SpotLight",             "Render_LightSpot"},
+    {"Shadow_SpotLightPosition",     "Render_LightPosition"},
+    {"Shadow_SpotLightCutOffAngle",  "Render_LightCutOffAngle"},
+    {"Shadow_SpotLightDropOffRate",  "Render_LightDropOffRate"},
+};
+
+/// Move one value across, by type where the types agree and by number
+/// where they do not. Three of the light pairs differ: the draw style
+/// constrained its float, and stated its cone in an App::PropertyAngle;
+/// the renderer's are plain floats of the same unit, so the value is
+/// carried rather than the property. Both sides of every numeric pair
+/// derive from PropertyFloat or PropertyInteger, which is what makes
+/// that a two-line conversion instead of a table of casts.
+static bool _copyPropertyValue(App::Property *from, App::Property *to)
+{
+    if (!from || !to)
+        return false;
+    if (from->getTypeId() == to->getTypeId()) {
+        to->Paste(*from);
+        return true;
+    }
+    auto ffrom = Base::freecad_dynamic_cast<App::PropertyFloat>(from);
+    auto fto = Base::freecad_dynamic_cast<App::PropertyFloat>(to);
+    if (ffrom && fto) {
+        fto->setValue(ffrom->getValue());
+        return true;
+    }
+    auto ifrom = Base::freecad_dynamic_cast<App::PropertyInteger>(from);
+    auto ito = Base::freecad_dynamic_cast<App::PropertyInteger>(to);
+    if (ifrom && ito) {
+        ito->setValue(ifrom->getValue());
+        return true;
+    }
+    // A float property standing in for an integer one, or the reverse.
+    if (ffrom && ito) {
+        ito->setValue(long(ffrom->getValue()));
+        return true;
+    }
+    if (ifrom && fto) {
+        fto->setValue(double(ifrom->getValue()));
+        return true;
+    }
+    return false;
+}
+
+void Gui::applyLegacyShadowStyle(App::PropertyContainer *view)
+{
+    if (!view)
+        return;
+    // What the Shadow draw style was, in the terms that outlive it: the
+    // renderer's own scene light -- off by default, and the thing a
+    // Shadow-styled document was lit by -- with its shadow map, which
+    // defaults on.
+    _renderParam<App::PropertyBool>(view, "Light",
+            RenderParams::docLight(), RenderParams::getLight(),
+            [](App::PropertyBool &prop) { prop.setValue(true); });
+    _renderParam<App::PropertyBool>(view, "Shadow",
+            RenderParams::docShadow(), RenderParams::getShadow(),
+            [](App::PropertyBool &prop) { prop.setValue(true); });
+}
+
+void Gui::migrateShadowProperties(App::PropertyContainer *view)
+{
+    if (!view)
+        return;
+
+    // The draw style first, because it is read from a property this
+    // loop is about to take away. A document that says "Shadow" means
+    // "the display style inside Shadow_DisplayMode, lit and shadowed by
+    // the scene light" -- which is now Render_Light with Render_Shadow,
+    // and an ordinary display style beside them.
+    auto drawStyle = Base::freecad_dynamic_cast<App::PropertyEnumeration>(
+            view->getPropertyByName("DrawStyle"));
+    if (drawStyle && drawStyle->getEnum().isValid()
+            && boost::equals(drawStyle->getValueAsString(), "Shadow")) {
+        static const char *_subMode[] = {"Flat Lines", "Shaded", "As Is",
+                                         "Hidden Line"};
+        long sub = ViewParams::getShadowDisplayMode();
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyEnumeration>(
+                    view->getPropertyByName("Shadow_DisplayMode")))
+            sub = prop->getValue();
+        if (sub < 0 || sub >= long(sizeof(_subMode)/sizeof(_subMode[0])))
+            sub = 0;
+        int index = drawStyleIndexFromName(_subMode[sub]);
+        if (index >= 0)
+            drawStyle->setValue(long(index));
+        applyLegacyShadowStyle(view);
+    }
+
+    // Then the properties. Nothing is created for a name the document
+    // did not carry: a property exists on a view only because somebody
+    // chose it, and materializeShadowRenderParams answers for the rest.
+    bool migrated = false;
+    for (const auto &pair : _shadowPropertyMap) {
+        auto from = view->getPropertyByName(pair.from);
+        if (!from)
+            continue;
+        migrated = true;
+        auto to = view->getPropertyByName(pair.to);
+        if (!to) {
+            // The target family is materialized when the render
+            // properties are (initRenderProperties), which for a
+            // restoring view may not have happened yet -- create it
+            // with the same type, and let the materializer find it.
+            const char *group = boost::starts_with(pair.to, "RenderShadow_")
+                ? "Render Shadow" : "Render";
+            to = view->addDynamicProperty(from->getTypeId().getName(),
+                                          pair.to, group,
+                                          from->getDocumentation());
+        }
+        _copyPropertyValue(from, to);
+        view->removeDynamicProperty(pair.from);
+    }
+    // The rest of the Shadow group is the Coin shadow group's own: the
+    // sub display mode just folded into the draw style, the light
+    // camera's bounding-box scale and cut-off distance, and Coin's
+    // transparent-shadow flag. They are removed with the draw style
+    // that reads them, one stage from here (4e), not here -- until then
+    // an override still has to work.
+    if (migrated)
+        FC_LOG("migrated the Shadow draw style's properties");
 }
 
 const char * const *Gui::legacyRenderPropertyNames()
@@ -6389,29 +6625,10 @@ void View3DInventorViewer::Private::updateShadowExtent(const SbBox3f &box)
         pcShadowDirectionalLight->bboxCenter = center;
     }
 
-    static const App::PropertyIntegerConstraint::Constraints _smooth_cstr(0,100,1);
-    double smoothBorder = _shadowParam<App::PropertyIntegerConstraint>(view, "SmoothBorder",
-            ViewParams::docShadowSmoothBorder(), ViewParams::getShadowSmoothBorder(),
-            [](App::PropertyIntegerConstraint &prop) {
-                if(prop.getConstraints() != &_smooth_cstr)
-                    prop.setConstraints(&_smooth_cstr);
-            });
-
-    static const App::PropertyIntegerConstraint::Constraints _spread_cstr(0,1000000,500);
-    double spread = _shadowParam<App::PropertyIntegerConstraint>(view, "SpreadSize",
-            ViewParams::docShadowSpreadSize(), ViewParams::getShadowSpreadSize(),
-            [](App::PropertyIntegerConstraint &prop) {
-                if(prop.getConstraints() != &_spread_cstr)
-                    prop.setConstraints(&_spread_cstr);
-            });
-
-    static const App::PropertyIntegerConstraint::Constraints _sample_cstr(0,7,1);
-    double sample = _shadowParam<App::PropertyIntegerConstraint>(view, "SpreadSampleSize",
-            ViewParams::docShadowSpreadSampleSize(), ViewParams::getShadowSpreadSampleSize(),
-            [](App::PropertyIntegerConstraint &prop) {
-                if(prop.getConstraints() != &_sample_cstr)
-                    prop.setConstraints(&_sample_cstr);
-            });
+    const auto shadowParams = Gui::materializeShadowRenderParams(view);
+    double smoothBorder = double(shadowParams.smoothBorder);
+    double spread = double(shadowParams.spreadSize);
+    double sample = double(shadowParams.spreadSampleSize);
 
     float maxSize = std::max(size[0],std::max(size[1],size[2]));
     if (maxSize > 256.0 && pcShadowGroup->findChild(pcShadowSpotLight)>=0)

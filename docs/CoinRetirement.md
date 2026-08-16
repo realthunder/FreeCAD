@@ -1239,10 +1239,11 @@ one. In order:
     one place that creates them now, called from `activateShadow()`.
 
   `fcad-probes/ground_backend_probe.py`, 15/15: the family
-  materializes; the quad draws in `Shadow_GroundColor` and carries its
-  shadow (stddev 37.7 of the green channel); `GroundShading` off
-  flattens it to the property colour outright (mean 203.6 against
-  0.8 x 255 = 204, stddev 10.1); from below, `GroundBackFaceCull` on
+  materializes; the quad draws in the ground colour property and
+  carries its shadow (stddev 33.7 of the green channel);
+  `GroundShading` off flattens it to the property colour outright (mean
+  203.6 against 0.8 x 255 = 204, stddev 10.1); from below,
+  `GroundBackFaceCull` on
   leaves **0** ground pixels and shows the box behind it, off fills
   12383 and hides it; explicit half extents resize it; transparency 1
   removes it. `renderer_light_probe.py` 10/10 and
@@ -1275,9 +1276,93 @@ one. In order:
   preferences, so cache 0 is a developer's A-B route rather than
   somewhere a user can end up. Losing shadows there costs a user
   nothing, because no user is there.
-- **4d — map `Shadow_*` onto `Render_*` and migrate.** All three stores
-  in §3.4: the property, the camera blob, and `SavedView`. Follow the
-  `Shadow_FlatLines` precedent already in `activateShadow()`.
+- **4d — map `Shadow_*` onto the render properties, and migrate. DONE**
+  (2026-08-16). The draw style's per-view family is gone; what a
+  document carries now is what reads it.
+
+  **The map.** Two destinations, because the light already had one:
+
+  - The **light** goes to the `Render_Light*` properties stage 4a
+    built -- deliberately, "to match the `Shadow_*` shape a later stage
+    has to migrate from", defaults included, which is why this half is
+    a rename and not a translation. `Shadow_SpotLight` ->
+    `Render_LightSpot`, `SpotLightPosition` -> `LightPosition`,
+    `SpotLightCutOffAngle` -> `LightCutOffAngle` (degrees on both
+    sides), `SpotLightDropOffRate` -> `LightDropOffRate`, plus
+    direction, colour and intensity.
+  - The **shadow map and its ground** keep their names under a new
+    prefix: `RenderShadow_<Name>`, group **"Render Shadow"**. The
+    property editor drops a `<group without spaces>_` prefix from what
+    it shows (`PropertyModel.cpp` `setPropertyItemName`), so stating
+    the group is the whole of grouping -- `RenderShadow_Epsilon`
+    displays as "Epsilon" under a "Render Shadow" heading, and
+    `_containerProperty` now strips the spaces when it builds the name.
+    That is the pattern for splitting the rest of the `Render` group
+    later.
+
+  Three pairs have different property types -- the style constrained
+  its floats and stated its cone as an `App::PropertyAngle`, the
+  renderer's are plain floats of the same units -- so the migration
+  carries the *value*, not the property. Both sides of every numeric
+  pair derive from `PropertyFloat` or `PropertyInteger`, which makes
+  that two lines rather than a table of casts.
+
+  **The custom-parameter rule follows the prefix.** A `RenderDebug_`
+  property outside the fixed list is a shader uniform (§2.5 of
+  `docs/RenderDebug.md`); `RenderShadow_` now works the same way,
+  excluding the names `shadowRenderPropertyNames()` lists -- those are
+  settings the engine reads itself, and each would otherwise upload a
+  uniform nobody declares.
+
+  **All three stores of §3.4, plus a fourth.** `migrateShadowProperties`
+  runs on `View3DInventor::Restore` (the property), on
+  `ViewProviderSavedView::finishRestoring` (the saved view's own copy,
+  which has to be converted *there* because the enum persists as an
+  index and the index outlives the entry) and on `apply()` (what it
+  hands a view). The camera blob is the fourth: `setCamera` parses
+  `## overrideMode: Shadow` and used to assign it straight to
+  `DrawStyle`, which after 4e would name nothing -- it now calls
+  `applyLegacyShadowStyle` instead, the same "light on, map on" the
+  restore path uses, leaving the display style the view's own.
+
+  A `DrawStyle` of "Shadow" becomes **the display style it wrapped**
+  (`Shadow_DisplayMode`) with `Render_Light` and `Render_Shadow` on.
+
+  `fcad-probes/shadow_migrate_probe.py`, 22/22, on two legs. A
+  synthetic round trip -- write the old names with distinctive values,
+  save, reopen -- is the only way to check that a value survives, and
+  it covers all three type-converting pairs. The second leg is this
+  repository's own `data/examples/render/effects-showcase.FCStd`, which
+  really does carry `DrawStyle` index 8 and twenty `Shadow_*`
+  properties: it comes back with none of them, all twenty under their
+  new names, `DrawStyle` = "As Is" (its `Shadow_DisplayMode` was 2) and
+  the renderer's light on. A document that never used the style
+  restores untouched, light still off.
+
+  **What is deliberately left, and for whom.** The global `View/Shadow*`
+  preferences do not move: they are still the fallback defaults, and
+  their preference-page section is still the Draw styles one. That is a
+  stage of its own *after* 4e, since 4e is what makes the page section
+  obsolete. One consequence is already visible and is the reason to
+  schedule it: a machine whose config carries `View/ShadowLightIntensity`
+  no longer has it reach the light, because the light's default is
+  `Render/LightIntensity` now. Per-view and per-document values migrate;
+  a *global* preference does not. (Measured, not deduced: the ground
+  probe's lit means moved 217.3 -> 207.2 across this stage on a config
+  carrying 0.9 there, and the probe now states the light itself so its
+  numbers are reproducible.)
+
+  Also left until 4e, because `activateShadow()` still reads them:
+  `Shadow_DisplayMode` (spent by the migration, but the live style still
+  materializes it), `Shadow_BoundBoxScale`, `Shadow_MaxDistance` and
+  `Shadow_TransparentShadow` -- Coin light-camera and shadow-group
+  settings with no counterpart in the backend, which fits its own light
+  camera. They go with the style that reads them.
+
+  ⚠️ While this stage stands alone, picking "Shadow" from the menu no
+  longer survives a round trip: the document is converted on reopen.
+  That is the intent -- 4e removes the entry -- but it is a live
+  behaviour change, not only a file-format one.
 - **4e — drop `Shadow` from `drawStyleNames()`.** Safe only because it
   is the last index; assert that rather than assume it.
 
