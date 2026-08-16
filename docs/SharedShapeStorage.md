@@ -146,6 +146,14 @@ then indexes into it. Neither can restore one shape without restoring
 all of them. Switching the central store to `BinTools_ShapeWriter` is
 therefore part of the work, not an implementation detail.
 
+**The new writer and reader are used at schema 6 and above, and nowhere
+else.** Below that, a property keeps its own member and the existing
+`exportBrep` / `exportBinary` paths are untouched -- not deprecated, not
+routed through a compatibility shim. Two consequences worth stating
+plainly: a schema-5 document written by this build is byte-comparable
+with one written before it, and the reading code keeps both paths for
+good, because old files never migrate themselves.
+
 The reader and writer are present on the frozen 7.7.2 branch as well as
 on 8.0.1, so a file written this way is not 8.0.1-only.
 
@@ -240,32 +248,58 @@ Note the second point twice over: a near reference costs one byte and a
 far one costs eight, so write order is not only a partial-load question
 (sec 4.4) but a file-size one.
 
-### 4.2 Variant A -- independent chunks
+### 4.2 A chunk is the dedup unit AND the parallel unit
 
-A separate writer per chunk. Simple, no stream plumbing, and each member
-is self-contained. The cost is that **sharing is lost at every
-boundary**: a shape in chunk 2 cannot reference geometry in chunk 1, so
-it is written again. Worth keeping in mind as the fallback if the
-plumbing below proves fiddly, but it reintroduces exactly the
-duplication this document is about, in proportion to how often sharers
-land in different chunks.
+The obvious way to chunk -- cut every N bytes -- makes chunks that
+reference each other, and a chunk that references another cannot be read
+without it. Cutting somewhere else removes that entirely:
 
-### 4.3 Variant B -- one logical stream over N members (recommended)
+**Put shapes that share into the same chunk, and cut only where nothing
+is shared.** Sharing is a graph over properties; its connected
+components are, by construction, groups that share nothing with each
+other. A chunk built out of whole components therefore has **no
+references leaving it**, which buys three things at once:
 
-Keep **one** writer and **one** reader, and put a stream in front of
-them that spans the chunks:
+- **Dedup is complete** within every component, and there is nothing to
+  lose between them -- a boundary that crosses no sharing costs nothing.
+- **Chunks are independent**, so each can be read by its own
+  `BinTools_ShapeReader` with **no shared mutable state**. That is what
+  keeps restore parallelizable (sec 5), which one central stream would
+  have foreclosed.
+- **Partial loads read only the chunks they need**, with no chance of a
+  reference dragging in another.
 
-- **Write**: an output `streambuf` that starts a new zip member every N
-  bytes. `tellp()` keeps returning the logical position, so the writer
-  is unaware, and recorded positions stay in one space.
-- **Read**: an input `streambuf` over the chunk table that maps a logical
-  offset to (chunk, offset within it), inflating a chunk on first touch
-  and caching it. `seekg`/`tellg` are the only operations the reader
-  needs, and they are the two the streambuf implements.
+Components are usually tiny -- a parent and its children -- so chunks
+**pack** several whole components up to a size target rather than
+holding one each. Packing is lossless in both directions: components do
+not share, so grouping them cannot lose dedup, and a reader still needs
+only its own chunk.
 
-Neither OCCT class changes, because the writer only appends and the
-reader only seeks. Dedup stays exact across the whole document while the
-resident bytes stay bounded.
+Two ways this degrades, both gracefully and both worth logging:
+
+- **A component larger than the cap** must be split, and the sharing
+  across that one cut is lost. Log the cut and the bytes it cost.
+- **Sharing the detector missed.** Detection walks each shape and,
+  recursively, the children of compounds -- it will not see two objects
+  that share a single face deep inside unrelated solids. A missed edge
+  puts two sharers in different chunks, so they are stored separately:
+  exactly today's behaviour, for that pair only. The detector can be
+  deepened later without changing the format.
+
+### 4.3 The alternative, if cross-chunk references are ever wanted
+
+Keeping **one** writer and reader over a stream that spans the chunks --
+an output `streambuf` that starts a new member every N bytes, an input
+one that maps a logical offset to (chunk, offset) and inflates on first
+touch -- would allow references to cross boundaries. Neither OCCT class
+would need changing, because the writer only appends and the reader only
+seeks.
+
+It is written down because it is the natural design if chunking is done
+by size, and because it is the fallback for a component too large to fit
+a chunk. It is **not** the recommendation: it reintroduces the shared
+mutable state that makes restore serial, to buy dedup between things
+that by definition do not share.
 
 ### 4.4 Write order is what makes a partial load cheap
 
@@ -318,17 +352,17 @@ parameter, measure both ends, and log the choice.
 
 ### 4.8 Memory
 
-An LRU over inflated chunks with a byte cap. The reference pattern
-argues that this behaves: the format spends one byte on a near reference
-and eight on a far one, so a store written in dependency order is
-dominated by short backward jumps that stay inside the current or
-previous chunk.
+With independent chunks there is no paging cache to size: a chunk is
+inflated, parsed, and its buffer released. What is resident at once is
+one inflated chunk per worker, which is another reason the size target
+matters.
 
-Note separately that the reader's `position -> shape` map holds every
-shape it has restored for as long as the reader lives, which is the
-whole restore pass. That is the point -- it is what reconstructs
-identity -- but it means the map, not just the chunk cache, is the
-retention to watch on a large document.
+The retention to watch is the reader's `position -> shape` map, which
+holds every shape it has restored for as long as the reader lives. That
+is the point -- it is what reconstructs identity -- but it means a
+reader must not outlive its chunk. One reader per chunk, dropped when
+the chunk is done, bounds it; the single-stream variant of sec 4.3 would
+hold every shape in the document at once.
 
 ### 4.9 The uncompressed alternative
 
@@ -347,12 +381,105 @@ and checksum bound that: damage costs the shapes stored in that chunk
 and whatever references into it, and the rest of the document still
 opens.
 
-## 5. Risks and open questions
+## 5. Load time, and the parallelism this must not foreclose
 
-- **One reader for the whole restore.** Measured above: without it the
-  sharing is not reconstructed at all. It has to survive the document's
-  whole file pass, and be dropped after -- it holds every restored
-  shape.
+### 5.1 What actually runs today
+
+Worth stating precisely, because the design hinges on it:
+
+- **The restore loop is sequential.** `ZipFileReader::readFiles` walks
+  the registered entries and calls `RestoreDocFile` inline; the deferred
+  half (`Document::serveDeferredFiles`) runs on the main thread in timed
+  slices. No thread pool touches shape restore.
+- **But the archive reader was built for concurrency.** `ZipFileReader`
+  indexes the central directory and opens each entry as an independent
+  stream -- its own contract says entries "can in principle be read
+  concurrently (every `openEntry()` owns its own file handle)". Today
+  that capability is spent on reading *out of order* (deferred entries
+  reopened long after the walk), not on reading at once.
+- **OCCT's readers are single-threaded internally.** There is no
+  `OSD_Parallel` in `BinTools`, `BRepTools_ShapeSet` or
+  `TopTools_ShapeSet`; the only `OSD_Parallel` in the Part module is
+  `SetUseOcctThreads` for algorithms.
+
+So parallel shape reading is an **affordance the code deliberately
+has and does not yet use**. A design that took it away would be
+spending something real.
+
+### 5.2 What the duplication actually costs, by stage
+
+From `docs/DocumentLoad.md` on `MiSTer_imported.FCStd` (17800 objects),
+against the 32.7s baseline:
+
+| stage | s | what duplication does to it |
+|---|---|---|
+| BRep parse, 17058 `.brp` | 2.88 | parsed once per copy |
+| visual build, of which `BRepMesh_IncrementalMesh` | 10.92 / **7.6** | **meshed once per copy** |
+
+The tax is paid mostly in **tessellation**, not parsing -- and that is
+the asymmetry that decides this whole question. Restoring identity
+removes a duplicate's mesh as well as its parse, while parallel reading
+can only ever recover the parse. (Against the 11.1s load the four fixes
+in that document produced, the 2.88s parse is a larger share, ~26%, but
+the ordering between the two stages is unchanged.)
+
+### 5.3 The trade, stated as a number
+
+Let `f` be the fraction of shape bytes that are duplicates, and `P` the
+speedup a future parallel restore would get on the parse stage. A store
+that serialized restore would cost `(1 - f)` of today's parse time where
+a parallel per-member restore would cost `1/P` of it. Serializing is the
+worse trade whenever
+
+    1 - f > 1/P
+
+which at 8 workers means duplication would have to exceed **87.5%**
+before a serial store broke even on that stage alone. It will not.
+
+That is the argument against the single-stream variant (sec 4.3), and it
+is why the recommended chunking (sec 4.2) cuts only where nothing is
+shared: **chunks with no references leaving them can be restored
+concurrently, one `BinTools_ShapeReader` each, with no shared mutable
+state** -- exactly as independently as today's one-member-per-property
+layout, and with fewer, larger units of work.
+
+### 5.4 What chunking does to a worker pool
+
+Two constraints the size target has to satisfy at once, and they pull
+opposite ways:
+
+- **Enough chunks to fill the pool.** 17058 tiny members become a few
+  dozen chunks; if that number drops near the core count, the tail
+  dominates. Size the chunks so their count stays a small multiple of
+  `hardware_concurrency`, and prefer lowering the target over shipping a
+  handful of huge chunks.
+- **Balanced chunks, not merely capped ones.** A chunk is a serial unit,
+  so one oversized chunk is a straggler that sets the wall time however
+  many workers are free. Pack components into chunks by decreasing size
+  (greedy longest-first) rather than in document order.
+
+Both are measurable and neither is guessable: log chunk count, chunk
+byte spread, and the slowest chunk's share of the restore.
+
+### 5.5 Net expectation
+
+- Parse work falls by the duplicate fraction, and stays parallelizable
+  at chunk granularity.
+- Tessellation work falls by the same fraction -- the larger prize, and
+  one no scheduling change can substitute for.
+- Fewer, larger reads replace 17058 small ones, which also recovers the
+  compression the small members lose (sec 4.7).
+- The risk is concentrated in one place: chunk sizing and balance, which
+  is why sec 5.4 is instrumented rather than tuned by intuition.
+
+## 6. Risks and open questions
+
+- **One reader per chunk, and the chunk is its whole world.** Measured
+  in sec 3.2: a reader that does not span the sharers does not
+  reconstruct the sharing at all. With chunking by sharing component
+  (sec 4.2) a reader spans exactly one chunk, which is both sufficient
+  and the reason restore stays parallel; get the chunk assignment wrong
+  and the sharing is silently lost instead of loudly broken.
 - **Progressive and partial loads.** `docs/ProgressiveLoading.md`
   interleaves member reads with object creation; a central store changes
   the unit of that work to a chunk (sec 4.5). The argument that it still
@@ -371,14 +498,20 @@ opens.
   cannot corrupt a sharer.
 - **Failure mode.** A corrupt or truncated store loses every shape at
   once, where today it would lose one; sec 4.10 bounds it to a chunk.
-- **Chunking is where this gets built or botched.** The streambuf pair
-  of sec 4.3 is the only genuinely new machinery in the design, and
-  variant A (sec 4.2) silently reintroduces the duplication if it is
-  chosen for expedience. Whichever is built, log the chunk count, the
-  chunks touched per load, and the dedup actually achieved -- a silent
-  fallback to per-chunk dedup would look exactly like success.
+- **Chunk assignment is where this gets built or botched.** Everything
+  else is bookkeeping; the sharing-component analysis and the packing
+  are the only genuinely new machinery. A detector that misses an edge,
+  or a packer that splits a component, loses dedup silently -- the file
+  still loads, and nothing says it stored the geometry twice. Log the
+  chunk count and byte spread, the components split and what that cost,
+  the chunks touched per load, and the dedup actually achieved.
+- **Restore parallelism is an affordance, not a fact** (sec 5.1). It
+  exists in `ZipFileReader` and is unused. If it is never taken up, the
+  argument in sec 5.3 is moot and a single stream would have been
+  simpler -- so the sizing work of sec 5.4 should not be done ahead of
+  the pool that would consume it.
 
-## 6. Later, optional: content hashing for unshared duplicates
+## 7. Later, optional: content hashing for unshared duplicates
 
 Two objects can hold *equal* geometry with no shared TShape -- separately
 imported copies, flattened copies. The position mechanism never groups
@@ -387,7 +520,7 @@ only when their placements agree (sec 1.3), so it is worth building only
 after this is measured, and only if such duplicates prove common. The
 render side already deduplicates these on the GPU.
 
-## 7. How it will be judged
+## 8. How it will be judged
 
 - `isPartner` across a save/reopen round trip: parent leaf vs child
   shape must be **True** after reopen (it is False today, sec 1.1).
