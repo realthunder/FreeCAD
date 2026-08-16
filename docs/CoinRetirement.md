@@ -1208,10 +1208,18 @@ one. In order:
   (`Render::LightConfig::ground`); the rest is the Coin geometry in
   `pcShadowGroundGroup`, which today also has to carry its own
   `SoPolygonOffset` to match the one every Part shape has.
-- **4c — decide the plain-Coin path.** `SoShadowGroup` is Coin's only
-  shadow implementation, so a cache-0 user loses shadows outright. Under
-  this document's premise that is acceptable — but it is a decision to
-  take deliberately, not a refactor to fall into.
+- **4c -- the plain-Coin path. DECIDED 2026-08-16: acceptable.**
+  `SoShadowGroup` is Coin's only shadow implementation, so a cache-0
+  user loses shadows outright, and that is the accepted cost. Taken
+  deliberately, which is all this stage asked for; it is not a refactor
+  to fall into, and it is not one to keep re-opening either. Nothing
+  else in stage 4 is gated on it now.
+
+  What the decision rests on is stages 2 and 3: the render path is no
+  longer a persisted setting and no longer reachable from the
+  preferences, so cache 0 is a developer's A-B route rather than
+  somewhere a user can end up. Losing shadows there costs a user
+  nothing, because no user is there.
 - **4d — map `Shadow_*` onto `Render_*` and migrate.** All three stores
   in §3.4: the property, the camera blob, and `SavedView`. Follow the
   `Shadow_FlatLines` precedent already in `activateShadow()`.
