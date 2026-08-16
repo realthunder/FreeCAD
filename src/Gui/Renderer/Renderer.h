@@ -1070,6 +1070,14 @@ struct LightConfig {
         return true;
     }
 
+    /// ⚠️ A new field of this struct belongs in THREE places, and each
+    /// omission fails silently in its own way: the SceneDump stream (or
+    /// the browser tier keeps the default forever -- the layout assert
+    /// there is what catches it), and this comparison, which is what
+    /// marks the scene dirty. A field left out here reads correctly and
+    /// changes nothing on screen until something else about the light
+    /// happens to move, which is how groundShading and groundBackFaceCull
+    /// shipped inert for two stages.
     bool operator==(const LightConfig &o) const {
         return valid == o.valid && shadow == o.shadow && spot == o.spot
             && direction[0] == o.direction[0]
@@ -1087,6 +1095,8 @@ struct LightConfig {
             && spreadSampleSize == o.spreadSampleSize
             && precision == o.precision
             && ground == o.ground && groundScale == o.groundScale
+            && groundShading == o.groundShading
+            && groundBackFaceCull == o.groundBackFaceCull
             && groundColor == o.groundColor
             && groundTexture == o.groundTexture
             && groundTextureSize == o.groundTextureSize
