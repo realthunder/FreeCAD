@@ -368,6 +368,7 @@ showing. And a Z clip is invisible to a camera pointing down Z: stage
   configuration carries, and the render cache, renderer type, `UseVBO`
   and `TransparentObjectRenderType` are off the 3D View preference page.
   A change made at runtime still re-selects the path for that session,
-  which is the development route; a `--user-cfg` no longer is, since
-  startup overrides it. See `docs/CoinRetirement.md` stages 2 and 3, and
+  which is the development route; a config file no longer is, since
+  startup overrides it -- including the `View` preference-pack template,
+  which used to carry `RenderCache` and `UseVBO` and no longer does. See `docs/CoinRetirement.md` stages 2 and 3, and
   3.7 there for what a machine can lose by it.

@@ -1044,9 +1044,16 @@ backend nobody can create.
 
 Runtime changes work exactly as before: setting either parameter from
 the console or a script re-selects the path for that session, which is
-what an A/B comparison needs. ⚠️ What no longer works is selecting the
-path from a `--user-cfg`, since startup overrides it -- a harness that
-did that (`scripts/render-verify.sh`) has to set it at runtime instead.
+what an A/B comparison needs. Nothing in the tree selected it any other
+way -- every `scripts/demo-*.py` sets `RenderCache` at runtime, and
+`render-verify.sh`'s `--user-cfg` is an empty isolation config, not a
+path selector -- so no harness changed. ⚠️ What no longer works is
+selecting the path *from* a config file, since startup overrides it.
+
+The `View` preference-pack template carried `RenderCache` and `UseVBO`,
+which would have imposed the author's render path and driver switch on
+whoever applied the pack -- the travel rule of `docs/ViewSettings.md` 2,
+in a place that predates it. Both are out of the template.
 
 One prerequisite of this stage is already in: while the backend was
 opt-in, it was acceptable for it to be built by the first 3D view and
