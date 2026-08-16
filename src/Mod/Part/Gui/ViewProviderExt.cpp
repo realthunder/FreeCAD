@@ -1422,6 +1422,20 @@ struct ShapeInstanceRep {
             if (it != _InstGeomTable.end() && --it->second.refcount <= 0) {
                 unregisterMeshLevelSource(it->second.faceset,
                                           it->second.lineset);
+                // Drop any worker vertex-cache content still waiting on
+                // these nodes: the erase below destroys them, and the
+                // registry is keyed on the raw pointer, so an unconsumed
+                // entry would hold its arrays until some future node
+                // happened to land at the same address. Same duty
+                // beforeDelete() performs for a view provider's own
+                // nodes (docs/WorkerVertexCache.md). The last sharer of
+                // the leaf runs this -- the entry is global and
+                // refcounted, so a leaf that also appears under another
+                // object's compound keeps it alive until that object is
+                // gone too.
+                SoFCVertexCache::setPrebuilt(it->second.faceset, nullptr);
+                SoFCVertexCache::setPrebuilt(it->second.lineset, nullptr);
+                SoFCVertexCache::setPrebuilt(it->second.nodeset, nullptr);
                 _InstGeomTable.erase(it);
             }
         }
@@ -4200,6 +4214,12 @@ bool ViewProviderPartExt::buildInstanced()
                     gfaceset->shapeInfo.setValue(instNode);
                 }
             }
+            // Last write to these nodes for this build; stamp now
+            // (docs/WorkerVertexCache.md). The shapeInfo above is
+            // exactly the kind of late touch that would void an entry
+            // registered any earlier.
+            emitAndRegisterSharedVertexCache(gcoords, gpcoords, gnorm,
+                                             gfaceset, glineset, gnodeset);
         }
 
         ShapeInstanceRep::Instance inst;
@@ -4618,6 +4638,8 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
                                             normalsFromUV, coords, pcoords,
                                             norm, texcoords, faceset,
                                             lineset, nodeset);
+                emitAndRegisterSharedVertexCache(coords, pcoords, norm,
+                                                 faceset, lineset, nodeset);
             };
         }
         // No document: the entry is shared by every instance of the
@@ -4651,6 +4673,8 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
                                     exactDefl, exactAng, normalsFromUV,
                                     coords, pcoords, norm, texcoords,
                                     faceset, lineset, nodeset);
+        emitAndRegisterSharedVertexCache(coords, pcoords, norm,
+                                         faceset, lineset, nodeset);
     };
     auto onDowngrade = [=]() {
         if (!downgradeMeshLevels(local))
@@ -4666,6 +4690,8 @@ void ViewProviderPartExt::registerInstancedLevelEntry(
                                     exactDefl, exactAng, normalsFromUV,
                                     coords, pcoords, norm, texcoords,
                                     faceset, lineset, nodeset);
+        emitAndRegisterSharedVertexCache(coords, pcoords, norm,
+                                         faceset, lineset, nodeset);
     };
     registerMeshLevelSource(local, normalsFromUV, faceset, lineset,
                             0.0f, exactDefl, exactAng, {},
@@ -6999,6 +7025,46 @@ EmittedVCache emitVCacheCore(const SbVec3f *verts,
     return emitted;
 }
 
+/// Emit from the DISPLAY NODES rather than from fill data. Whatever the
+/// nodes hold is what the publish is about to capture, so a mirror taken
+/// here is exact by construction -- after any post-step (decimation, a
+/// coarse rung, a stand-in) has finished rewriting them.
+EmittedVCache emitVCacheFromNodes(const SoCoordinate3 *coords,
+                                  const SoCoordinate3 *pcoords,
+                                  const SoNormal *norm,
+                                  const SoBrepFaceSet *faceset,
+                                  const SoBrepEdgeSet *lineset)
+{
+    if (!coords)
+        return EmittedVCache();
+    const SbVec3f *verts = coords->point.getValues(0);
+    const int nVerts = coords->point.getNum();
+    const SbVec3f *norms = norm ? norm->vector.getValues(0) : nullptr;
+    const int nNorms = norm ? norm->vector.getNum() : 0;
+    const int32_t *fi = faceset ? faceset->coordIndex.getValues(0) : nullptr;
+    std::size_t nFi = faceset ? faceset->coordIndex.getNum() : 0;
+    // The face dedup key needs per-vertex-indexed normals; without a
+    // matching normal array the traversal generates a normal cache this
+    // emission cannot mirror -- leave faces to the traversal capture.
+    if (nNorms != nVerts)
+        nFi = 0;
+    // Same verdict for a node that forces UV capture (the shared
+    // instanced tessellation does, so a build under an untextured
+    // sharer still serves a textured one): the cache then opens with
+    // texture unit 0 enabled, which is outside the prebuilt contract --
+    // SoFCVertexCache::prebuiltReject() answers "texture unit" -- and
+    // no texture coordinates are emitted for it to install. Emitting
+    // faces here would register content that is certain to be refused.
+    if (faceset && faceset->forceTexCoords.getValue())
+        nFi = 0;
+    const int32_t *li = lineset ? lineset->coordIndex.getValues(0) : nullptr;
+    const std::size_t nLi = lineset ? lineset->coordIndex.getNum() : 0;
+    const SbVec3f *pts = pcoords ? pcoords->point.getValues(0) : nullptr;
+    const std::size_t nPts = pcoords ? pcoords->point.getNum() : 0;
+
+    return emitVCacheCore(verts, norms, fi, nFi, li, nLi, pts, nPts);
+}
+
 } // anonymous namespace
 
 void ViewProviderPartExt::emitVisualVertexCache(VisualFillData &data)
@@ -7019,27 +7085,46 @@ void ViewProviderPartExt::emitVisualVertexCacheFromNodes()
         return;
     if (!coords || !faceset)
         return;
-    const SbVec3f *verts = coords->point.getValues(0);
-    const int nVerts = coords->point.getNum();
-    const SbVec3f *norms = norm ? norm->vector.getValues(0) : nullptr;
-    const int nNorms = norm ? norm->vector.getNum() : 0;
-    const int32_t *fi = faceset->coordIndex.getValues(0);
-    std::size_t nFi = faceset->coordIndex.getNum();
-    // The face dedup key needs per-vertex-indexed normals; without a
-    // matching normal array the traversal generates a normal cache this
-    // emission cannot mirror -- leave faces to the traversal capture.
-    if (nNorms != nVerts)
-        nFi = 0;
-    const int32_t *li = lineset ? lineset->coordIndex.getValues(0) : nullptr;
-    const std::size_t nLi = lineset ? lineset->coordIndex.getNum() : 0;
-    const SbVec3f *pts = pcoords ? pcoords->point.getValues(0) : nullptr;
-    const std::size_t nPts = pcoords ? pcoords->point.getNum() : 0;
-
     EmittedVCache emitted =
-        emitVCacheCore(verts, norms, fi, nFi, li, nLi, pts, nPts);
+        emitVCacheFromNodes(coords, pcoords, norm, faceset, lineset);
     if (!pendingVCache)
         pendingVCache.reset(new PendingVisualVCache);
     static_cast<EmittedVCache &>(*pendingVCache) = std::move(emitted);
+}
+
+void ViewProviderPartExt::emitAndRegisterSharedVertexCache(
+        SoCoordinate3 *coords, SoCoordinate3 *pcoords, SoNormal *norm,
+        SoBrepFaceSet *faceset, SoBrepEdgeSet *lineset,
+        SoBrepPointSet *nodeset)
+{
+    // The shared instanced tessellation (_InstGeomTable) has no view
+    // provider -- one entry serves every sharer of the leaf, across
+    // objects and documents -- so it cannot stash into pendingVCache
+    // and let an epilogue register later. It registers here instead,
+    // which is sound because the caller has just finished writing these
+    // nodes and the stamp is taken now.
+    //
+    // Faces are normally absent from what this emits: the shared face
+    // set forces UV capture, which puts the cache outside the prebuilt
+    // contract (see emitVCacheFromNodes). Lines and points carry no
+    // such field and adopt normally -- once per shared leaf, however
+    // many instances reference it.
+    if (Gui::RenderParams::getWorkerVertexCache() <= 0)
+        return;
+    if (!coords)
+        return;
+    EmittedVCache emitted =
+        emitVCacheFromNodes(coords, pcoords, norm, faceset, lineset);
+    auto reg = [](SoNode *node,
+                  std::shared_ptr<SoFCVertexCache::PrebuiltContent> &c) {
+        if (node && c) {
+            c->nodeid = node->getNodeId();
+            SoFCVertexCache::setPrebuilt(node, std::move(c));
+        }
+    };
+    reg(faceset, emitted.face);
+    reg(lineset, emitted.line);
+    reg(nodeset, emitted.point);
 }
 
 void ViewProviderPartExt::registerPendingVisualVertexCache()
