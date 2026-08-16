@@ -1,7 +1,10 @@
-# Shared Shape Storage (plan)
+# Shared Shape Storage
 
-This is a plan, not a build log: nothing here is implemented. It is
-about what a `.FCStd` does to geometry that two objects share.
+Sections 1 to 8 are the plan this was designed from, and they still read
+as one. **Step 1 (sec 9.1) is built and measured; sec 10 is what it
+became.** Steps 2 and 3 are not started.
+
+It is about what a `.FCStd` does to geometry that two objects share.
 
 In memory, two objects can hold the *same* `TopoDS_TShape` -- one copy,
 one tessellation, one set of GPU buffers, one instancing entry. A save
@@ -595,3 +598,127 @@ property mutates the document, so the parse fans out and the
 Gate: `docs/DocumentLoad.md`'s open timings on `MiSTer_imported.FCStd`,
 with the slowest chunk's share of the restore reported -- sec 5.4 is the
 thing being tested here, not the parallelism as such.
+
+## 10. Step 1 as built
+
+Built 2026-08-16. The design of sec 3 survives intact -- one store per
+document, addressed by byte position, one reader as the identity domain --
+and everything below is either a decision the plan left open or something
+the code said that the plan had wrong.
+
+### 10.1 The store is a document property
+
+The store rides on a **dynamic property of the document**, created when a
+save uses one and removed when it does not:
+
+    Part::PropertyShapeStore : App::PropertyFileIncluded   (name "ShapeStore")
+
+That answers three of the plan's open questions at once, which is why it
+was chosen over the alternatives considered (a writer attachment, and a
+document-level `PropertyPartShape` holding a compound of every shape):
+
+- **Where the store lives while it is built** (sec 9.1): a spool file in
+  the document's transient directory, adopted by the property when the
+  collect finishes. Bounded memory, no whole-store buffer.
+- **Seekability** (sec 3.4): after a restore the content is a real
+  read-only file in the transient directory, kept alive by the property's
+  blob handle. Random access with no inflate, for the life of the
+  document -- better than the "inflate into memory once" the plan had
+  picked as its default.
+- **Module boundaries**: `PropertyFileIncluded` is an App type carrying an
+  opaque file, so App never learns what is in it. Only Part touches OCCT.
+
+A `PropertyPartShape` holding a compound would have been less code and
+would have deduplicated just as well (sec 1.2), but `BinTools_ShapeSet`
+is a type-grouped table read in full, so selective restore and the
+deferred shape load would both have gone.
+
+### 10.2 Where the shapes are collected
+
+    Document::Save
+      for each object: beforeSave(writer)    <- shapes ensureRestored()
+      beforeSave(writer)                     <- ShapeStore::beforeSave COLLECTS
+      PropertyContainer::Save                <- the store writes its blob hash
+      writeObjects                           <- <Part store=".." pos="N"/>
+
+The collect runs in the store property's own `beforeSave`, which is the
+only window where every shape is present and no object has been written
+yet -- so a property can still be told where its geometry will be. This
+is what `Property::beforeSave()` gaining a `Base::Writer&` is for: the
+pre-save pass could not otherwise see the schema the save resolved.
+
+### 10.3 A recorded position must be a REFERENCE record
+
+The one thing the plan got wrong, and it silently costs the whole point.
+
+`BinTools_ShapeReader` consults its `position -> shape` map **only when it
+reads a reference**. Read a shape record directly at its own position and
+it re-parses into a *new* `TShape`, however many times it has already
+built that exact shape -- so a child read directly after the compound
+above it had already materialised it comes back as an unrelated copy, and
+`isPartner` is false. Measured: that is exactly what the first build did.
+
+So every shape is written **twice**, and the position recorded is the
+**second** one. The first write puts the geometry down; the second is
+therefore always a reference record, and every read enters the branch
+that goes through the map. The extra record is a handful of bytes.
+
+The probe of sec 3.2 did not catch this because it wrote the parent
+first, which made the children references by construction.
+
+### 10.4 Serving is lazy, and must not start too early
+
+A property records its position and stays restore-pending; the shape is
+read the first time the value is asked for, through the `ensureRestored()`
+that already existed for deferred archive entries. So the deferred load
+survives at schema 6, and it needs no archive index at all.
+
+One ordering trap, found by a stack overflow rather than by reading:
+**the XML pass asks for the shape itself.** `PropertyPartShape::Restore`
+ends in an element-map version check that reaches `getComplexData()`, and
+at that moment the store's blob has not been drained from the archive.
+The rule is therefore to stay pending until the store has content -- the
+property then reads as the null shape it is, which is exactly what a
+deferred archive entry reads as at the same moment, because its own
+pending flag is not armed until the same drain.
+
+### 10.5 Three gates the plan did not have
+
+- **`App::Document::Saving`** (a new status bit). `exportObjects` writes a
+  fragment through the same object and property paths, and reaches
+  `beforeSave` through `PropertyContainer::Save`. Without the bit, copying
+  one object out of a document tore that document's store off it.
+- **`Base::Writer::supportsSharedStore()`**, true only for `ZipWriter`.
+  Autosave's `RecoveryWriter` keeps a file per property and rewrites only
+  what changed; a store would have made every autosave cycle rewrite the
+  document's entire geometry.
+- **Serve before removing.** Dropping the store at schema 5 destroys the
+  only route back to a shape still parked at a position, so every one of
+  them is served first.
+
+### 10.6 Measured
+
+The sec 1.1 scene, a `Part::Compound` over 20 torus children:
+
+| | file | shape bytes stored |
+|---|---|---|
+| schema 5, ASCII BRep | 14368 | 8971 |
+| schema 5, binary BRep | 14471 | 9049 |
+| **schema 6, store** | **4308** | **1007** |
+
+    isPartner, parent leaf 0 vs child 0
+      before save      : True
+      schema 5 reopen  : False      (unchanged, sec 1.1)
+      schema 6 reopen  : True
+
+Two things worth reading off that table. The win is **entirely dedup**:
+going binary on its own costs 78 bytes, and the store then takes 9049
+stored shape bytes down to 1007, 9.0x. And it beats the plan's own
+prediction of "smaller by the duplicate half" because both halves
+collapse -- the compound member held all 20 tori again, and it is now
+references.
+
+Also checked: a schema-6 save leaves the document untouched; a second
+save in the same session replaces the store; dropping to schema 5 takes
+the property off the document and out of the file, and the per-property
+members come back; serving a shape does not touch its object.

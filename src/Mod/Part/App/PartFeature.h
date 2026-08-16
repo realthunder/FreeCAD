@@ -160,7 +160,7 @@ public:
 
     const std::vector<const char*>& getElementTypes(bool all=false) const override;
 
-    void beforeSave() const override;
+    void beforeSave(Base::Writer &writer) const override;
 
     bool removeDynamicProperty(const char* name) override;
 

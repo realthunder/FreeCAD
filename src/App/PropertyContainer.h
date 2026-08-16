@@ -395,7 +395,7 @@ public:
    */
   virtual bool mustSave(const Property &prop) const { (void)prop; return false; }
 
-  virtual void beforeSave() const;
+  virtual void beforeSave(Base::Writer &writer) const;
 
   virtual void editProperty(const char * /*propName*/) {}
 

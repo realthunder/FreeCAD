@@ -88,6 +88,12 @@ public:
         RestoreDrain = 15, // View-side catch-up on a finished restore: the work runs in
                            // full, but nothing it does may modify the document.
                            // See RestoreDrainGuard.
+        Saving = 16,       // This document is writing itself: Document::Save is running,
+                           // and the document's own properties are about to be written.
+                           // Export goes through the same object and property paths
+                           // WITHOUT this bit -- it writes a fragment, never the
+                           // document -- so anything that may only act on a real save
+                           // (building or dropping a document-wide store) tests it.
     };
 
     /** @name Properties */

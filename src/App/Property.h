@@ -145,7 +145,7 @@ public:
 
     /** Whether a property TYPE name marks a type internal to a container
      *
-     * ⭐ Some property types are not values a user may add: they only work as
+     * * Some property types are not values a user may add: they only work as
      * a member of one particular container, because they hold a reference to
      * a sibling property whose storage they really are (Gui::PropertyShapeColor
      * over the appearance, PartGui::PropertyDiffuseColor over its diffuse
@@ -354,7 +354,18 @@ public:
      */
     int64_t getID() const {return _id;}
 
-    virtual void beforeSave() const {}
+    /** Last chance to prepare for a save, before anything is written.
+     *
+     * The writer is the one the save is running through, so a property can
+     * see what the document resolved -- the schema above all, which decides
+     * whether a document-wide store is in play at all (docs/SharedShapeStorage.md).
+     * Everything the save will write is still unwritten when this runs, so a
+     * property may still stamp state onto others.
+     */
+    virtual void beforeSave(Base::Writer &writer) const
+    {
+        (void)writer;
+    }
 
     friend class PropertyContainer;
     friend struct PropertyData;

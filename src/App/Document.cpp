@@ -957,7 +957,7 @@ Document::Document(const char* documentName)
             "Prefer binary format when saving object data.\n"
             "This can result in smaller file but bad for version control.");
     PreferBinary.setValue(DocumentParams::getPreferBinary());
-    // ⚠️ 5, not getCurrentSchemaVersion(). Schema 6 is the compact format --
+    // 5, not getCurrentSchemaVersion(). Schema 6 is the compact format --
     // shared default blocks under an <FCDocument> root no other FreeCAD
     // opens -- and an incompatibility like that is chosen, never inherited
     // from a constructor. The save dialog is where a user chooses it,
@@ -1056,6 +1056,12 @@ std::string Document::getTransientDirectoryName(const std::string& uuid, const s
 
 void Document::Save (Base::Writer &writer) const
 {
+    // This document is writing itself, as against exportObjects() writing a
+    // fragment of it through the same object and property paths. Anything that
+    // may only act on a real save reads the bit; see Document::Saving.
+    Base::ObjectStatusLocker<Status, Document> savingBit(
+            Status::Saving, const_cast<Document*>(this));
+
     d->hashers.clear();
     addStringHasher(d->Hasher);
 
@@ -1100,10 +1106,15 @@ void Document::Save (Base::Writer &writer) const
     // d->Hasher->setPersistenceFileName("StringHasher.Table");
     d->Hasher->setPersistenceFileName(nullptr);
 
+    // Two passes, and the order between them is load-bearing: every object
+    // settles its own properties first (a shape parked by the deferred
+    // restore is pulled back in here), and only then do the document's own
+    // properties run -- which is where a document-wide store collects what
+    // the objects have just made ready (docs/SharedShapeStorage.md).
     for (auto o : d->objectArray) {
-        o->beforeSave();
+        o->beforeSave(writer);
     }
-    beforeSave();
+    beforeSave(writer);
 
     d->Hasher->Save(writer);
 
@@ -1553,7 +1564,7 @@ void Document::restoreDefaults(Base::XMLReader &reader, int count)
     if (count <= 0)
         return;
 
-    // ⚠️ The stand-in is in no document, and an object's reaction to its own
+    // The stand-in is in no document, and an object's reaction to its own
     // property changing is written for one that is: restoring an App::Link's
     // element list into a document-less stand-in walks straight into
     // LinkBaseExtension::update() dereferencing a null document. Nothing here
@@ -1571,7 +1582,7 @@ void Document::restoreDefaults(Base::XMLReader &reader, int count)
         // difference has to be pasted onto anything, and on the build that
         // wrote the file there is none.
         //
-        // ⚠️ Two stand-ins, not one stand-in and a pile of Property::Copy().
+        // Two stand-ins, not one stand-in and a pile of Property::Copy().
         // A detached copy has no container, so link properties compare by a
         // scope they no longer know and enumerations by a list they no
         // longer have. Two live stand-ins of the same class, both serialized

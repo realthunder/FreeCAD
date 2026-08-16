@@ -60,6 +60,7 @@
 #include "PartFeature.h"
 #include "PartParams.h"
 #include "PartPyCXX.h"
+#include "PropertyShapeStore.h"
 #include "PropertyTopoShape.h"
 #include "TopoShapePy.h"
 
@@ -79,18 +80,75 @@ void PropertyPartShape::ensureRestored() const
 {
     if (!_RestorePending)
         return;
-    // Cleared before serving: whatever runs below reads the property
-    // again, and must find a settled state instead of re-entering.
     auto self = const_cast<PropertyPartShape*>(this);
-    self->_RestorePending = false;
     auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
-    if (!owner || !owner->getDocument())
+    if (!owner || !owner->getDocument()) {
+        self->_RestorePending = false;
         return;
-    owner->getDocument()->restoreDeferredFile(self);
+    }
+    if (_StorePos != PropertyShapeStore::NoPosition) {
+        // The store arrives with the archive entries, which are drained
+        // after the whole XML pass -- and the XML pass asks for this shape
+        // itself, through the element map version check at the end of
+        // Restore(). Stay pending until the store is here: the property then
+        // reads as the null shape it is, which is exactly what a deferred
+        // archive entry reads as at that moment (its pending flag is not
+        // armed until the same drain).
+        auto store = PropertyShapeStore::find(owner->getDocument());
+        if (!store || !store->hasContent())
+            return;
+        // Cleared before serving: whatever runs below reads the property
+        // again, and must find a settled state instead of re-entering.
+        self->_RestorePending = false;
+        self->serveFromStore();
+    }
+    else {
+        self->_RestorePending = false;
+        owner->getDocument()->restoreDeferredFile(self);
+    }
     // The shape-content expansion Feature::onDocumentRestored() left for
     // the shape's arrival.
     if (auto feat = Base::freecad_dynamic_cast<Feature>(owner))
         feat->restoreShapeContents();
+}
+
+void PropertyPartShape::serveFromStore()
+{
+    const uint64_t pos = _StorePos;
+    // Cleared first, for the same reason the pending flag is: anything the
+    // setValue below reaches must find a settled property, not a second serve.
+    _StorePos = PropertyShapeStore::NoPosition;
+    auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+    if (!owner || !owner->getDocument())
+        return;
+    auto store = PropertyShapeStore::find(owner->getDocument());
+    if (!store) {
+        FC_ERR("No shape store to serve " << getFullName() << " from");
+        return;
+    }
+
+    // Load-time conditions, as the deferred archive serve reproduces them
+    // (Document::restoreDeferredFile): observers see a restoring object, and
+    // an object does not come out touched by having been served.
+    const bool wasTouched = owner->isTouched();
+    {
+        Base::ObjectStatusLocker<App::ObjectStatus, App::DocumentObject> guard(
+                App::ObjectStatus::Restore, owner);
+        // The element map belongs to the property and not to the geometry:
+        // two objects over one shared TShape carry different mapped names, so
+        // it is taken off and put back around the value change.
+        auto elementMap = _Shape.resetElementMap();
+        auto hasher = _Shape.Hasher;
+        std::string ver = _Ver;
+
+        TopoShape shape(store->readShape(pos));
+        shape.Hasher = hasher;
+        shape.resetElementMap(elementMap);
+        setValue(shape);
+        _Ver = ver;
+    }
+    if (!wasTouched)
+        owner->purgeTouched();
 }
 
 void PropertyPartShape::cancelRestorePending()
@@ -98,6 +156,9 @@ void PropertyPartShape::cancelRestorePending()
     if (!_RestorePending)
         return;
     _RestorePending = false;
+    // A store position is dropped the same way an archive entry is: the value
+    // it would have produced has just been overwritten.
+    _StorePos = PropertyShapeStore::NoPosition;
     auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
     if (owner && owner->getDocument())
         owner->getDocument()->cancelDeferredFile(this);
@@ -330,12 +391,30 @@ void PropertyPartShape::getPaths(std::vector<App::ObjectIdentifier> &paths) cons
     //                 << App::ObjectIdentifier::Component::SimpleComponent(App::ObjectIdentifier::String("Volume")));
 }
 
-void PropertyPartShape::beforeSave() const
+void PropertyPartShape::beforeSave(Base::Writer &writer) const
 {
     ensureRestored();
+    // Whatever position a previous save left is about to be answered by this
+    // one: the collect pass below either stamps a new one or leaves none, and
+    // a stale one would send Save() to a store this file does not have.
+    _StorePos = PropertyShapeStore::NoPosition;
+    // The document's store follows the schema this save resolved -- brought
+    // into existence here, before the document's own properties run their
+    // pre-save pass, which is where the collect happens; and taken off the
+    // document entirely when this save writes no store.
+    //
+    // Only for a save of the document itself. An export reaches this same
+    // code -- it writes objects through PropertyContainer::Save, which calls
+    // beforeSave() when nothing else has -- but it writes a fragment capped at
+    // schema 5, and neither creating a store nor tearing the document's one
+    // down is any business of copying an object out.
+    auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+    if (owner && owner->getDocument()
+              && owner->getDocument()->testStatus(App::Document::Saving))
+        PropertyShapeStore::prepare(owner->getDocument(), writer);
+
     _HasherIndex = 0;
     _SaveHasher = false;
-    auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
     if(owner && !_Shape.isNull() && _Shape.getElementMapSize()>0) {
         auto ret = owner->getDocument()->addStringHasher(_Shape.Hasher);
         _HasherIndex = ret.second;
@@ -368,7 +447,13 @@ void PropertyPartShape::Save (Base::Writer &writer) const
 
     bool binary = writer.getMode("BinaryBrep");
     bool toXML = writer.getFileVersion()>1 && writer.isForceXML()>=(binary?3:2);
-    if(!toXML) {
+    if(_StorePos != PropertyShapeStore::NoPosition) {
+        // The geometry is already in the document's store, written there by
+        // the collect pass with every other shape; all that is left to say is
+        // where. See docs/SharedShapeStorage.md.
+        writer.Stream() << " store=\"" << PropertyShapeStore::propertyName()
+            << "\" pos=\"" << _StorePos << "\"/>\n";
+    } else if(!toXML) {
         writer.Stream() << " file=\""
             << writer.addFile(getFileName(binary?".bin":".brp"), this)
             << "\"/>\n";
@@ -419,7 +504,14 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
 
     TopoShape shape;
 
-    if(reader.hasAttribute("file")) {
+    if(reader.hasAttribute("store")) {
+        // The shape is a position in the document's shared store, and the
+        // store is a file that outlives the restore -- so nothing is read
+        // here. ensureRestored() seeks to it the first time the value is
+        // asked for, which is what keeps a large document's open cheap.
+        _StorePos = reader.getAttributeAsUnsigned("pos");
+        _RestorePending = true;
+    } else if(reader.hasAttribute("file")) {
         std::string file = reader.getAttribute("file");
         if (!file.empty()) {
             // initiate a file read

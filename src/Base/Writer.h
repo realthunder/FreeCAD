@@ -108,6 +108,16 @@ public:
     }
     /// process the requested file storing
     virtual void writeFiles() = 0;
+
+    /** Whether this writer can carry a document-wide store.
+     *
+     * A store is one entry that many properties point into
+     * (docs/SharedShapeStorage.md), which pays off for a writer producing one
+     * self-contained archive and costs for one that does not. The recovery
+     * writer keeps a file per property and rewrites only what changed; give it
+     * a store and every autosave rewrites the document's whole geometry.
+     */
+    virtual bool supportsSharedStore() const { return false; }
     /// get all registered file names
     const std::vector<std::string>& getFilenames() const;
     /// Set mode
@@ -244,6 +254,9 @@ public:
     ~ZipWriter() override;
 
     void writeFiles() override;
+
+    /// One archive, written once: what a shared store is for.
+    bool supportsSharedStore() const override { return true; }
 
     std::ostream& Stream() override
     {
