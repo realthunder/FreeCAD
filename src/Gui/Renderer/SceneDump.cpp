@@ -225,7 +225,14 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     luminance 20 against the desktop's 108 on the same model). A v55
 //     snapshot has no flag, its lights stay world-space, and it renders
 //     exactly as it did.
-const uint32_t kVersion = 56;
+// 57: a material says whether its LINES draw style is the scene-wide
+//     override -- the Tessellation display mode -- or a plain
+//     SoDrawStyle node asking for a wireframe. Only the mode wants the
+//     faces filled in the background colour to occlude; filling a
+//     wireframe hides what it was drawn around. A v56 snapshot has no
+//     flag and every wireframe reads as the mode, which is the only
+//     thing a writer of that version distinguished.
+const uint32_t kVersion = 57;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -249,8 +256,12 @@ const uint32_t kVersion = 56;
 ///     failure, the one this file's own guard comment names: a cached
 ///     chunk from an older build would answer "unclassified" forever,
 ///     and the gate would work on the desktop and quietly do nothing
-///     in the browser.)
-const uint32_t kChunkVersion = 10;
+///     in the browser.
+/// 11: a material chunk carries drawstyleoverride, which tells the
+///     Tessellation display mode from a plain wireframe node. A cached
+///     chunk from an older build would answer "the mode" forever and
+///     keep filling the wireframe.)
+const uint32_t kChunkVersion = 11;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1445,6 +1456,10 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     // v45: SoDrawStyleElement, which is how the Tessellation draw style
     // arrives. Older viewers draw the faces filled, i.e. as Shaded.
     w.u8(m.drawstyle);
+    // v57: whether that style is the scene-wide override (the display
+    // mode) or a plain SoDrawStyle node. Older viewers take every
+    // wireframe for the display mode, which is what they always did.
+    w.b(m.drawstyleoverride);
     // v47: per-face material — shade from the mesh's baked stream.
     // Older viewers use the scalars above, the pre-feature look.
     w.b(m.perfacematerial);
@@ -1637,6 +1652,12 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
     // style but Tessellation asks for anyway.
     if (version >= 45)
         m.drawstyle = r.u8();
+    // v57: is that style the display mode's scene-wide override? A dump
+    // that does not say was written when only the display mode could
+    // produce the style at all, so reading it as the mode is right.
+    m.drawstyleoverride = version >= 57
+        ? r.b()
+        : m.drawstyle == Material::DrawLines;
     // v47: per-face material. Absent means the scalars apply.
     if (version >= 47)
         m.perfacematerial = r.b();

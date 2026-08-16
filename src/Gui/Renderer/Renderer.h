@@ -1549,11 +1549,21 @@ struct Material {
     /// that state, so the backend draws the primitives instead — see
     /// BGFXView::submitTessellation. This is how the Tessellation draw
     /// style arrives (SoFCUnifiedSelection overrides the element to
-    /// LINES for it), which is the only thing that sets it today.
+    /// LINES for it), and also how a plain SoDrawStyle node in the scene
+    /// graph asks for a wireframe -- which drawstyleoverride tells apart.
     enum DrawStyle : uint8_t {
         DrawFilled = 0, DrawLines = 1, DrawPoints = 2, DrawInvisible = 3
     };
     uint8_t drawstyle = DrawFilled;
+    /// The draw style above arrived as a scene-wide OVERRIDE, which is
+    /// what the Tessellation display mode is -- SoFCUnifiedSelection sets
+    /// SoOverrideElement's DRAW_STYLE for it, the only place in the tree
+    /// that does. That mode wants the faces filled in the background
+    /// colour to occlude what is behind them (Coin gets the same from
+    /// SoRenderManager::HIDDEN_LINE); a lone SoDrawStyle node asks for a
+    /// wireframe and nothing more, and filling it hides whatever it was
+    /// drawn around.
+    bool drawstyleoverride = false;
     uint32_t diffuse = 0xCCCCCCFF;
     uint32_t emissive = 0;
     uint32_t specular = 0;

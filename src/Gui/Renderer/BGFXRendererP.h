@@ -4080,7 +4080,10 @@ public:
     /// Tessellation draw style: the triangle edges as geometry, over a
     /// background-coloured fill that occludes what is behind. Stands in
     /// for glPolygonMode(GL_LINE) plus SoRenderManager::HIDDEN_LINE,
-    /// neither of which a modern API has.
+    /// neither of which a modern API has. The fill belongs to the
+    /// display MODE (Material::drawstyleoverride); a lone SoDrawStyle
+    /// node asking for a wireframe gets the edges alone, as it does
+    /// from Coin.
     void submitTessellation(const Render::DrawCall &draw,
                             const float *viewMatrix, uint16_t viewId);
 

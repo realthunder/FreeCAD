@@ -94,6 +94,12 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     // reproduced here rather than left out, because a tessellation
     // wireframe with every back face showing through is unreadable on
     // anything with more than one closed solid in it.
+    //
+    // But only for the display MODE, which is what that render mode is
+    // switched on for. A lone SoDrawStyle node asking for a wireframe
+    // (PartGui's geometry-check bounding box) gets no such pass from
+    // Coin, and giving it one filled the box with the background colour
+    // and hid the shape it was drawn around.
     if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
         return;
     GpuMesh *gpu = getMesh(*draw.mesh);
@@ -110,31 +116,33 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     // Pass 1: the faces, in the background colour, depth only as far as
     // the eye is concerned — they exist to occlude, not to be seen.
     // Unlit and untextured for the same reason.
-    float fill[4];
-    unpackColor(bgFillColor, fill);
-    fill[3] = 1.0f;
-    float fillParams[4] = {0.0f, 0.0f, 1.0f, polygonOffsetBias(mat)};
-    bgfx::setUniform(u_matColor, fill);
-    bgfx::setUniform(u_matEmissive, zero);
-    bgfx::setUniform(u_matSpecular, zero);
-    bgfx::setUniform(u_params, fillParams);
-    setPolygonOffsetUniform(&mat);
-    setTriangleFrameState(mat, PassNormal, false, false);
-    if (clipped)
-        setClipUniforms(mat);
-    setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
-                     (float)height);
-    setMeshVertexBuffers(gpu, *draw.mesh);
-    if (draw.indexCount > 0)
-        bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
-                             uint32_t(draw.indexCount));
-    else
-        bgfx::setIndexBuffer(gpu->geom->tri);
-    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-                   | BGFX_STATE_WRITE_Z | BGFX_STATE_MSAA
-                   | BGFX_STATE_DEPTH_TEST_LESS);
-    bgfx::submit(vid(viewId), clipped ? m_progMeshClip : m_progMesh);
-    ++drawcount;
+    if (mat.drawstyleoverride) {
+        float fill[4];
+        unpackColor(bgFillColor, fill);
+        fill[3] = 1.0f;
+        float fillParams[4] = {0.0f, 0.0f, 1.0f, polygonOffsetBias(mat)};
+        bgfx::setUniform(u_matColor, fill);
+        bgfx::setUniform(u_matEmissive, zero);
+        bgfx::setUniform(u_matSpecular, zero);
+        bgfx::setUniform(u_params, fillParams);
+        setPolygonOffsetUniform(&mat);
+        setTriangleFrameState(mat, PassNormal, false, false);
+        if (clipped)
+            setClipUniforms(mat);
+        setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
+                         (float)height);
+        setMeshVertexBuffers(gpu, *draw.mesh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->geom->tri);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                       | BGFX_STATE_WRITE_Z | BGFX_STATE_MSAA
+                       | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(vid(viewId), clipped ? m_progMeshClip : m_progMesh);
+        ++drawcount;
+    }
 
     // Pass 2: every triangle edge, in the material's own colour. The
     // instance range is the index range: the buffer holds one segment

@@ -821,7 +821,11 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     // The Tessellation draw style rides in on this: SoFCUnifiedSelection
     // overrides SoDrawStyleElement to LINES and lets the shapes draw
     // their faces, which GL turns into a wireframe with glPolygonMode.
+    // A plain SoDrawStyle node in the scene graph (PartGui's geometry
+    // check box) arrives the same way but is only asking for a
+    // wireframe, so the backend is told which of the two it has.
     res.drawstyle = uint8_t(m.drawstyle);
+    res.drawstyleoverride = m.overrideflags.test(CoinMaterial::FLAG_DRAW_STYLE);
 
     // Depth-occluded parts of on-top lines/points are dimmed to this alpha
     // (SoFCRenderer's RenderPassLinePattern pass). The selection highlight
