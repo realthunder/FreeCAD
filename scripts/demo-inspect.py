@@ -352,7 +352,10 @@ try:
         # state, and Render_Shadow only drops the shadow map. Matcap does
         # not care, but 'Realistic' and the AO/shadow toggles do.
         try:
-            FreeCADGui.runCommand("Std_DrawStyleShadow", 0)
+            # The scene light is a shading switch now, not a draw style
+            # (docs/CoinRetirement.md stage 4e): Render_Light puts the
+            # light in, Render_Shadow (default on) casts its map.
+            FreeCADGui.activeDocument().activeView().Render_Light = True
             note("SHADOW ON")
         except Exception:
             note(traceback.format_exc())

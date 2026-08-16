@@ -40,7 +40,11 @@ try:
     view.SetBool("NoSelFaceHighlightWithOutline", True)
     view.SetInt("ShadowSmoothBorder", int(os.environ.get("SHADOWSMOOTH", "40")))
     # Dim the directional scene light so the two bulbs carry the scene.
-    view.SetFloat("ShadowLightIntensity", float(os.environ.get("SUN", "0.15")))
+    # The light's own preference group is Render now (stage 4d); the
+    # View/Shadow* keys beside it are still the shadow map's and the
+    # ground's.
+    FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render") \
+        .SetFloat("LightIntensity", float(os.environ.get("SUN", "0.15")))
     # The floor slab is the scene's ground; the draw style's auto ground
     # plane would only blow up the view-fit bounds.
     view.SetBool("ShadowShowGround", False)
@@ -156,7 +160,10 @@ try:
 
     def enable_shadow():
         try:
-            FreeCADGui.runCommand("Std_DrawStyleShadow", 0)
+            # The scene light is a shading switch now, not a draw style
+            # (docs/CoinRetirement.md stage 4e): Render_Light puts the
+            # light in, Render_Shadow (default on) casts its map.
+            FreeCADGui.activeDocument().activeView().Render_Light = True
             note("SHADOW ON")
         except Exception:
             note(traceback.format_exc())

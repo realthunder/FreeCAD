@@ -186,7 +186,10 @@ def build():
 
         view = FreeCADGui.ActiveDocument.ActiveView
         pump()
-        FreeCADGui.runCommand("Std_DrawStyleShadow", 0)
+        # The scene light is a shading switch now, not a draw style
+        # (docs/CoinRetirement.md stage 4e): Render_Light puts the
+        # light in, Render_Shadow (default on) casts its map.
+        FreeCADGui.activeDocument().activeView().Render_Light = True
 
         # --- the jets: a tall centre one, two low flanking ones ---
         # Nozzles: the centre one on top of the pedestal, the flanking

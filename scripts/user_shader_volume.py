@@ -142,7 +142,9 @@ def run():
         # the volumetric pass (which hosts the fire medium) needs the
         # Shadow draw style's scene light; freeze pins the flame time
         # and the march jitter for byte-comparable captures
-        FreeCADGui.runCommand("Std_DrawStyleShadow", 0)
+        # The scene light is a shading switch now, not a draw style
+        # (docs/CoinRetirement.md stage 4e).
+        FreeCADGui.activeDocument().activeView().Render_Light = True
         view.Render_Volumetric = True
         view.RenderDebug_FreezeFrame = True
         settle()
