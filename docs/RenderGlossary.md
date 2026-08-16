@@ -62,6 +62,14 @@ deliberately AFTER the rebuild's last field write on the node
 (appearance, highlighted edges and points). The stamp is what makes an
 entry voidable.
 
+**Restamp** -- moving a registered entry's stamp to the node's current
+id, for a touch that changed no geometry. `SoFCVertexCache::restamp`.
+An appearance apply invalidates VBOs and touches the shape node
+(`SoBrepFaceSet::doAction` answers `SoUpdateVBOAction` with `touch()`),
+which would otherwise void content that still mirrors the node exactly.
+The caller asserts the geometry is unchanged; a rebuild, where it is
+not, must never restamp.
+
 **Publish** -- one pass of the render-cache manager over the changed
 scene graph, producing the `SoFCRenderCache` tree the frame draws from.
 `SoFCRenderCacheManager::render`. The unit that the capture budget,
