@@ -67,10 +67,17 @@ DrawStyles = (
     ("Shaded", "Display style, shading force on", "V,6"),
     ("Flat Lines", "Display style, show both wire frame and face with shading", "V,7"),
     ("Tessellation", "Display style, show tessellation wire frame", "V,8"),
-    ("Shadow", "Display style, drop shadows for the scene.\\n"
-               "Press the shortcut again while in shadow mode to toggle the\\n"
-               "light manipulator. The menu entry cannot do it: it is a radio\\n"
-               "button, and one already ticked emits nothing when clicked.", "V,9"),
+    # No "Shadow" entry: shadows are the renderer's scene light and its
+    # map (Render_Light / Render_Shadow, the Shading section of the
+    # display style drop-down), not a display style that swallows the
+    # one you were looking at. docs/CoinRetirement.md stage 4e.
+    #
+    # It was the LAST entry, which is the only reason removing it
+    # renumbers nothing: App::PropertyEnumeration persists as an index,
+    # so dropping any other name would silently restyle every saved
+    # document. Keep it that way -- add new styles at the end, and see
+    # kLegacyShadowDrawStyle in View3DInventorViewer.cpp, which asserts
+    # this list's length because a document may still hold index 8.
 )
 
 PreSelectionToolTipCorners = (

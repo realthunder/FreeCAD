@@ -6420,7 +6420,7 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:596)
+// Auto generated code (Gui/ViewParams.py:603)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -6465,7 +6465,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:604)
+// Auto generated code (Gui/ViewParams.py:611)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -6475,11 +6475,10 @@ static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Shaded"),
     QT_TRANSLATE_NOOP("DrawStyle", "Flat Lines"),
     QT_TRANSLATE_NOOP("DrawStyle", "Tessellation"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Shadow"),
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:614)
+// Auto generated code (Gui/ViewParams.py:621)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -6489,40 +6488,39 @@ static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, shading force on"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show both wire frame and face with shading"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show tessellation wire frame"),
-    QT_TRANSLATE_NOOP("DrawStyle", "Display style, drop shadows for the scene.\nPress the shortcut again while in shadow mode to toggle the\nlight manipulator. The menu entry cannot do it: it is a radio\nbutton, and one already ticked emits nothing when clicked."),
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:624)
+// Auto generated code (Gui/ViewParams.py:631)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:631)
+// Auto generated code (Gui/ViewParams.py:638)
 const char *drawStyleNameFromIndex(int i)
 {
-    if (i < 0 || i>= 9)
+    if (i < 0 || i>= 8)
         return nullptr;
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:640)
+// Auto generated code (Gui/ViewParams.py:647)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
         return -1;
-    for (int i=0; i< 9; ++i) {
+    for (int i=0; i< 8; ++i) {
         if (strcmp(name, DrawStyleNames[i]) == 0)
             return i;
     }
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:653)
+// Auto generated code (Gui/ViewParams.py:660)
 const char *drawStyleDocumentation(int i)
 {
-    if (i < 0 || i>= 9)
+    if (i < 0 || i>= 8)
         return "";
     return DrawStyleDocs[i];
 }

@@ -120,7 +120,7 @@ scene color before later geometry draws over them. Abbreviated:
 
 Each effect is: a set of passes, the shader(s) that implement it, and the
 config struct the bridge fills. "Property" = per-view dynamic
-`Render_*` / `Shadow_*` property (overrides), with the named
+`Render_*` / `RenderShadow_*` property (overrides), with the named
 `ViewParams` / `RenderParams` as the fallback default.
 
 ### 3.1 PBR surface shading + IBL
@@ -178,16 +178,19 @@ config struct the bridge fills. "Property" = per-view dynamic
   light inserted by the **Shadow draw style** (`Std_DrawStyleShadow`). The
   viewer headlight stays as an unshadowed "other light."
 - **Config**: `LightConfig` (`translateLightConfig`, from the traversal
-  state's light element + `Shadow_*` properties).
-- **Controls**: the Shadow draw style materializes per-view `Shadow_*`
-  properties — `Shadow_Epsilon`, `Shadow_Threshold`, `Shadow_Precision`,
-  `Shadow_SpreadSize`, `Shadow_SmoothBorder`, `Shadow_LightDirection*`,
-  ground receiver `Shadow_Show*` — with `ViewParams` `Shadow*` fallbacks.
+  state's light element + `RenderShadow_*` properties).
+- **Controls**: `Gui::materializeShadowRenderParams` materializes the
+  per-view `RenderShadow_*` properties -- `RenderShadow_Epsilon`,
+  `Threshold`, `Precision`, `SpreadSize`, `SmoothBorder` and the ground
+  receiver's `ShowGround`/`Ground*` -- with `ViewParams` `Shadow*`
+  fallbacks; the light itself is `Render_Light*`. (Before
+  docs/CoinRetirement.md stage 4d these were the Shadow draw style's own
+  `Shadow_*` family; documents carrying that are migrated on restore.)
 
-  **⚠ The `Shadow_Epsilon` quirk (VSM variance floor).** `fc_shadowTap`
+  **! The `RenderShadow_Epsilon` quirk (VSM variance floor).** `fc_shadowTap`
   computes `pmax = va / (va + dd²)` where the variance
   `va = max(m2 − m1², 0) + epsilon` and `epsilon = u_shadowParams.y`
-  comes from `Shadow_Epsilon`. **At `epsilon == 0`, `va → 0` on the
+  comes from `RenderShadow_Epsilon`. **At `epsilon == 0`, `va -> 0` on the
   self-shadowed side (receiver depth ≈ stored depth), so the bound flips
   0/1 per pixel and speckles the terminator band with dark dots** — visible
   on real GPUs (desktop GL, WebGL) though not on the software rasterizer.
@@ -196,14 +199,14 @@ config struct the bridge fills. "Property" = per-view dynamic
   that raw 0 into the backend. Fixed by enforcing a **configurable minimum**
   in two places, both keyed on `ViewParams::ShadowEpsilonMinimum`
   (default `1e-6`):
-  - `View3DInventorViewer` shadow setup: `Shadow_Epsilon`'s
+  - `View3DInventorViewer` shadow setup: `RenderShadow_Epsilon`'s
     `PropertyPrecision` (a `PropertyFloatConstraint`) lower-bound constraint
     is set to the minimum instead of `0.0`, and the value is clamped up.
   - `SoFCRendererBridge::translateLightConfig`: clamps
     `LightConfig::epsilon` up to the same minimum (a value stored before the
     constraint existed can still reach the backend).
 
-  Set `ShadowEpsilonMinimum` to 0 to disable the floor. Raise `Shadow_Epsilon`
+  Set `ShadowEpsilonMinimum` to 0 to disable the floor. Raise `RenderShadow_Epsilon`
   itself to trade a little peter-panning for softer self-shadow terminators.
 
 ### 3.5 Volumetric lighting + media (water / fire / cloud)
@@ -317,8 +320,9 @@ helpers (highest priority first):
    ViewProvider's `Render_*` properties (`Render_Metallic`, `Render_Water`,
    `Render_Fire`, `Render_Glass`, `Render_Cloud`, …). Becomes fields on
    `Render::Material`.
-2. **Per-view dynamic property** — `Render_<Name>` (effects) or
-   `Shadow_<Name>` (shadow draw style) or `HiddenLine_<Name>` on the
+2. **Per-view dynamic property** -- `Render_<Name>` (effects),
+   `RenderShadow_<Name>` (the scene light's shadow map and its ground
+   receiver, group "Render Shadow") or `HiddenLine_<Name>` on the
    `View3DInventor` object. Materialized by
    `View3DInventorViewer::setRendererType` / the draw styles; read read-only
    by `viewParamOverride` in the bridge. **Live-tunable** from the Python
@@ -351,7 +355,7 @@ match. Bump the version when adding fields and keep read gated on it.
 
 ## 6. Gotchas
 
-- **`Shadow_Epsilon` floor** (§3.4) — a zero VSM epsilon speckles the
+- **`RenderShadow_Epsilon` floor** (sec 3.4) -- a zero VSM epsilon speckles the
   terminator; the `ShadowEpsilonMinimum` floor guards it.
 - **On-top escapes screen-space effects** — `Material::ontop` /
   `SoAnnotation` geometry composites after AO/volumetric/water; only

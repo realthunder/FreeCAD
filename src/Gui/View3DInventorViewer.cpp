@@ -105,12 +105,9 @@
 #include <Inventor/SbImage.h>
 #include <Inventor/sensors/SoTimerSensor.h>
 #include <Inventor/SoEventManager.h>
-#include <Inventor/annex/FXViz/nodes/SoShadowGroup.h>
 #include <Inventor/annex/FXViz/nodes/SoShadowStyle.h>
 #include <Inventor/annex/FXViz/nodes/SoShadowDirectionalLight.h>
 #include <Inventor/annex/FXViz/nodes/SoShadowSpotLight.h>
-#include <Inventor/nodes/SoBumpMap.h>
-#include <Inventor/nodes/SoTextureUnit.h>
 #include <Inventor/nodes/SoTextureCoordinate2.h>
 #include <Inventor/manips/SoDirectionalLightManip.h>
 #include <Inventor/manips/SoSpotLightManip.h>
@@ -157,8 +154,6 @@
 #include "SoFCOffscreenRenderer.h"
 #include "SoFCSelection.h"
 #include "Inventor/SoFCDisplayMode.h"
-#include "SoFCDirectionalLight.h"
-#include "SoFCSpotLight.h"
 #include "SoFCSelectionAction.h"
 #include "SoDatumLabel.h"
 #include "SoFCUnifiedSelection.h"
@@ -381,21 +376,6 @@ public:
     }
 };
 
-template<class PropT, class ValueT, class CallbackT>
-static ValueT _shadowParam(View3DInventor *view, const char *_name, const char *_docu, const ValueT &def, CallbackT cb) {
-    if (!view)
-        return def;
-    return view->getProperty<PropT, ValueT>(_name, _docu, "Shadow", def, cb);
-}
-
-template<class PropT, class ValueT>
-static ValueT _shadowParam(View3DInventor *view, const char *_name, const char *_docu, const ValueT &def) {
-    if (!view)
-        return def;
-    auto cb = [](PropT &){};
-    return view->getProperty<PropT, ValueT>(_name, _docu, "Shadow", def, cb);
-}
-
 /// View3DInventor::getProperty, but on any property container: the
 /// Render_* overrides are materialized identically on a 3D view and on a
 /// view-less publisher (docs/HeadlessServe.md §3.3), and only
@@ -435,17 +415,6 @@ static ValueT _containerProperty(App::PropertyContainer *view,
     }
     cb(*static_cast<PropT*>(prop));
     return static_cast<PropT*>(prop)->getValue();
-}
-
-template<class PropT, class ValueT>
-static void _shadowSetParam(View3DInventor *view, const char *_name, const ValueT &def) {
-    if (!view)
-        return;
-    view->getProperty<PropT, ValueT>(_name, nullptr, "Shadow", def, 
-        [&def](PropT &prop) {
-            Base::ObjectStatusLocker<App::Property::Status,App::Property> guard(App::Property::User3, &prop);
-            prop.setValue(def);
-        });
 }
 
 template<class PropT, class ValueT>
@@ -520,17 +489,7 @@ struct View3DInventorViewer::Private
     View3DInventor                    *view;
     View3DInventorViewer              *owner;
 
-    CoinPtr<SoShadowGroup>            pcShadowGroup;
-    CoinPtr<SoShapeHints>             pcShadowShapeHints;
-    CoinPtr<SoFCDirectionalLight>     pcShadowDirectionalLight;
-    CoinPtr<SoFCSpotLight>            pcShadowSpotLight;
-    CoinPtr<SoPickStyle>              pcShadowPickStyle;
-    uint32_t                          shadowNodeId = 0;
-    uint32_t                          cameraNodeId = 0;
-    bool                              shadowExtraRedraw = false;
     bool                              animating = false;
-
-    QTimer                            timer;
 
     CoinPtr<SoTempPath>     tmpPath;
 
@@ -614,10 +573,9 @@ struct View3DInventorViewer::Private
     // which Quarter builds with boundingBoxCaching OFF, so it is asked
     // every traversal. The obvious place — SoFCUnifiedSelection::
     // getBoundingBox, which already reports the same bounds — is below
-    // whatever separator the scene root is wrapped in (SoShadowGroup, in
-    // the very draw style that has a ground), and that one caches: it
-    // answers once and nothing the backend draws can invalidate a Coin
-    // cache. docs/CoinRetirement.md §1c.
+    // whatever separator the scene root is wrapped in, and such a
+    // separator caches: it answers once, and nothing the backend draws
+    // can invalidate a Coin cache. docs/CoinRetirement.md sec 1c.
     CoinPtr<SoCallback> rendererBoundsNode;
     static void rendererBoundsCB(void *ud, SoAction *action);
     void addRendererBoundsNode();
@@ -672,27 +630,8 @@ struct View3DInventorViewer::Private
     void clearOverlayCaptures();
     static void overlayCaptureCB(void *ud, SoAction *action);
 
-    void activateShadow();
-    void deactivateShadow();
-    void updateShadowExtent(const SbBox3f &box);
-    void redraw();
-    void onRender();
-    bool toggleDragger(int toggle);
 
     SoPickedPoint* getPointOnRay(const SbVec2s& pos, const ViewProvider* vp);
-
-    void getBoundingBox(SbBox3f &box) {
-        SoNode *node = nullptr;
-        if (pcShadowSpotLight && pcShadowSpotLight->showDragger.getValue())
-            node = pcShadowSpotLight;
-        else if (pcShadowDirectionalLight && pcShadowDirectionalLight->showDragger.getValue())
-            node = pcShadowDirectionalLight;
-        if (node) {
-            SoGetBoundingBoxAction action(owner->getSoRenderManager()->getViewportRegion());
-            action.apply(node);
-            box.extendBy(action.getBoundingBox());
-        }
-    }
 
     int checkElementIntersection(ViewProviderDocumentObject *vp,
                                  const char *subname,
@@ -702,7 +641,6 @@ struct View3DInventorViewer::Private
 
     void initHiddenLineConfig(bool activate=false);
 
-    static void onDragFinish(void *data, SoDragger *d);
 };
 
 // Coin geometry equivalent of drawArrow()/drawAxisCross(): one arrow along
@@ -1379,8 +1317,6 @@ void View3DInventorViewer::init()
     pcEditingRoot = nullptr;
 
     _pimpl.reset(new Private(this));
-    _pimpl->timer.setSingleShot(true);
-    connect(&_pimpl->timer,SIGNAL(timeout()),this,SLOT(redrawShadow()));
 
     // A redraw held back by the throttle comes back through this timer, so a
     // scene that stops changing still gets its last frame.
@@ -1808,10 +1744,8 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
         naviCubeEnabled  = _pimpl->view->ShowNaviCube.getValue();
         this->getSoRenderManager()->scheduleRedraw();
     } else if(!_applyingOverride) {
-        if ((boost::starts_with(prop.getName(),"Shadow_")
-                || boost::starts_with(prop.getName(),"HiddenLine_"))
-             && (overrideMode == "Shadow"
-                 || overrideMode == "Hidden Line"))
+        if (boost::starts_with(prop.getName(),"HiddenLine_")
+             && overrideMode == "Hidden Line")
         {
             Base::StateLocker guard(_applyingOverride);
             applyOverrideMode();
@@ -1840,7 +1774,8 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
             getSoRenderManager()->scheduleRedraw();
         }
         else if (boost::starts_with(prop.getName(),"Render_")
-                 || boost::starts_with(prop.getName(),"RenderDebug_")) {
+                 || boost::starts_with(prop.getName(),"RenderDebug_")
+                 || boost::starts_with(prop.getName(),"RenderShadow_")) {
             // The embedded environment-image copy follows the path and
             // the embed toggle.
             if (!strcmp(prop.getName(), "Render_PBREnvImage")
@@ -2328,7 +2263,6 @@ void View3DInventorViewer::setOverrideMode(const std::string& mode)
         return;
     }
 
-    _pimpl->deactivateShadow();
     overrideMode = mode;
     applyOverrideMode();
 
@@ -2377,9 +2311,6 @@ void View3DInventorViewer::applyOverrideMode()
     }
     else if (SoFCUnifiedSelection::DisplayModeHiddenLine == mode) {
         _pimpl->initHiddenLineConfig(true);
-    }
-    else if (overrideMode == "Shadow") {
-        _pimpl->activateShadow();
     }
     else {
         this->shading = true;
@@ -2516,22 +2447,6 @@ void View3DInventorViewer::Private::initHiddenLineConfig(bool activate)
             });
 }
 
-void View3DInventorViewer::Private::deactivateShadow()
-{
-    if(pcShadowGroup) {
-        auto superScene = static_cast<SoGroup*>(owner->getSoRenderManager()->getSceneGraph());
-        int index = superScene->findChild(pcShadowGroup);
-        if(index >= 0)
-            superScene->replaceChild(index, owner->pcViewProviderRoot);
-        index = superScene->findChild(pcShadowShapeHints);
-        if (index >= 0)
-            superScene->removeChild(index);
-        pcShadowShapeHints.reset();
-        pcShadowGroup.reset();
-        owner->inventorSelection->getRootPath()->truncate(1);
-    }
-}
-
 /// Materialize the shadow map's and the ground receiver's settings as
 /// RenderShadow_* view properties, and return the handful a Coin shadow
 /// group still needs. One function because there is one set: the
@@ -2651,210 +2566,6 @@ Gui::ShadowRenderParams Gui::materializeShadowRenderParams(App::PropertyContaine
             "Ground placement. If 'GroundAutoPosition' is on, this specifies an additional offset of the ground",
             Base::Placement());
     return res;
-}
-
-void View3DInventorViewer::Private::activateShadow()
-{
-    if (!view)
-        return;
-
-    owner->shading = true;
-
-    App::Document *doc = owner->guiDocument?owner->guiDocument->getDocument():nullptr;
-
-    static const char *_ShadowDisplayMode[] = {"Flat Lines", "Shaded", "As Is", "Hidden Line", nullptr};
-    int displayMode = _shadowParam<App::PropertyEnumeration>(view, "DisplayMode",
-            ViewParams::docShadowDisplayMode(), ViewParams::getShadowDisplayMode(),
-            [](App::PropertyEnumeration &prop) {
-                if (!prop.getEnum().isValid())
-                    prop.setEnums(_ShadowDisplayMode);
-            });
-
-    App::PropertyBool *flatlines = Base::freecad_dynamic_cast<App::PropertyBool>(
-            doc->getPropertyByName("FlatLines"));
-    if (flatlines) {
-        owner->selectionRoot->overrideMode = flatlines->getValue()?"Shaded":"Flat Lines";
-        _shadowSetParam<App::PropertyEnumeration>(view, "DisplayMode", flatlines->getValue()?0:1);
-        doc->removeDynamicProperty("Shadow_FlatLines");
-    } else {
-        SbName mode;
-        switch (displayMode) {
-        case 0:
-            mode = SoFCUnifiedSelection::DisplayModeFlatLines;
-            break;
-        case 1:
-            mode = SoFCUnifiedSelection::DisplayModeShaded;
-            break;
-        case 3:
-            mode = SoFCUnifiedSelection::DisplayModeHiddenLine;
-            break;
-        default:
-            mode = SoFCUnifiedSelection::DisplayModeAsIs;
-            break;
-        }
-        if (owner->selectionRoot->overrideMode.getValue() != mode) {
-            if (mode == SoFCUnifiedSelection::DisplayModeHiddenLine)
-                initHiddenLineConfig(true);
-            else
-                owner->selectionRoot->overrideMode = mode;
-        }
-    }
-    owner->getSoRenderManager()->setRenderMode(SoRenderManager::AS_IS);
-
-    // The scene light is the renderer's (stage 4a), and stage 4d made
-    // this style read the same properties rather than a family of its
-    // own: what it builds here is a Coin light node standing in for the
-    // one the backend resolves from Render_Light*.
-    bool spotlight = _renderParam<App::PropertyBool>(view, "LightSpot",
-            RenderParams::docLightSpot(), RenderParams::getLightSpot());
-
-    if(pcShadowGroup) {
-        if((spotlight && pcShadowGroup->findChild(pcShadowSpotLight)<0)
-            || (!spotlight && pcShadowGroup->findChild(pcShadowDirectionalLight)<0))
-        {
-            coinRemoveAllChildren(pcShadowGroup);
-            auto superScene = static_cast<SoGroup*>(owner->getSoRenderManager()->getSceneGraph());
-            int index = superScene->findChild(pcShadowGroup);
-            if(index >= 0)
-                superScene->replaceChild(index, owner->pcViewProviderRoot);
-            pcShadowGroup.reset();
-        }
-    }
-    if(!pcShadowGroup) {
-        pcShadowGroup = new SoShadowGroup;
-        // pcShadowGroup->renderCaching = SoSeparator::OFF;
-        // pcShadowGroup->boundingBoxCaching = SoSeparator::OFF;
-
-        if(!pcShadowDirectionalLight) {
-            pcShadowDirectionalLight = new SoFCDirectionalLight;
-            pcShadowDirectionalLight->getDragger()->addFinishCallback(onDragFinish, this);
-        }
-
-        if(!pcShadowSpotLight) {
-            pcShadowSpotLight = new SoFCSpotLight;
-            pcShadowSpotLight->getDragger()->addFinishCallback(onDragFinish, this);
-        }
-
-        auto shadowStyle = new SoShadowStyle;
-        shadowStyle->style = SoShadowStyle::NO_SHADOWING;
-        pcShadowGroup->addChild(shadowStyle);
-
-        if(spotlight)
-            pcShadowGroup->addChild(pcShadowSpotLight);
-        else
-            pcShadowGroup->addChild(pcShadowDirectionalLight);
-
-        shadowStyle = new SoShadowStyle;
-        shadowStyle->style = SoShadowStyle::CASTS_SHADOW_AND_SHADOWED;
-        pcShadowGroup->addChild(shadowStyle);
-
-        pcShadowPickStyle = new SoPickStyle;
-        pcShadowGroup->addChild(pcShadowPickStyle);
-
-        pcShadowGroup->addChild(owner->pcViewProviderRoot);
-
-        // The ground receiver is the render backend's
-        // (Render::LightConfig, docs/CoinRetirement.md stage 4b). What
-        // stood here was the Coin quad -- an SoFaceSet under its own
-        // light model, shape hints, two texture coordinate nodes and an
-        // SoPolygonOffset that existed only to match the one
-        // PartGui::ViewProviderPartExt puts on nearly every shape.
-
-        // SoShadowGroup is currently incapable of supporting per object
-        // lighting model setup. It only checks the setting on toggling shadow
-        // enable/disable. So as a not so good work aournd, we put a shape
-        // hints node before entering SoShadowGroup to provide a default light
-        // model (LIGHT_MODEL_TWO_SIDEDE).
-        pcShadowShapeHints = new SoShapeHints;
-        pcShadowShapeHints->vertexOrdering = ViewParams::getForceSolidSingleSideLighting() ?
-            SoShapeHints::UNKNOWN_ORDERING : SoShapeHints::COUNTERCLOCKWISE;
-        pcShadowShapeHints->shapeType = SoShapeHints::UNKNOWN_SHAPE_TYPE;
-
-    }
-    // The map's own settings, and the ground receiver's beside them:
-    // one family, materialized in one place, read here and by the
-    // backend's bridge alike.
-    const auto shadowParams = Gui::materializeShadowRenderParams(view);
-    pcShadowGroup->precision = shadowParams.precision;
-    pcShadowGroup->epsilon = shadowParams.epsilon;
-    pcShadowGroup->threshold = shadowParams.threshold;
-
-    SoLight *light;
-    auto _dir = _renderParam<App::PropertyVector>(
-            view, "LightDirection", RenderParams::docLight(),
-            Base::Vector3d(RenderParams::getLightDirectionX(),
-                            RenderParams::getLightDirectionY(),
-                            RenderParams::getLightDirectionZ()));
-    _dir.Normalize();
-    SbVec3f dir(_dir.x,_dir.y,_dir.z);
-
-    SbBox3f bbox;
-    owner->getSceneBoundBox(bbox);
-
-    if(spotlight) {
-        light = pcShadowSpotLight;
-        pcShadowSpotLight->direction = dir;
-        // Render_LightPosition, like the backend's spot (which is the
-        // one that outlives this): a plain property, where the style's
-        // own SpotLightPosition used to default to a point above the
-        // scene bounding box.
-        auto pos = _renderParam<App::PropertyVector>(
-                view, "LightPosition", RenderParams::docLightSpot(),
-                Base::Vector3d(RenderParams::getLightPositionX(),
-                               RenderParams::getLightPositionY(),
-                               RenderParams::getLightPositionZ()));
-        pcShadowSpotLight->location = SbVec3f(pos.x,pos.y,pos.z);
-        pcShadowSpotLight->dropOffRate = _renderParam<App::PropertyFloat>(
-                view, "LightDropOffRate", RenderParams::docLightDropOffRate(),
-                RenderParams::getLightDropOffRate());
-        // Degrees in the property, radians in Coin -- the convention the
-        // bridge states for the same property.
-        pcShadowSpotLight->cutOffAngle = M_PI * _renderParam<App::PropertyFloat>(
-                view, "LightCutOffAngle", RenderParams::docLightCutOffAngle(),
-                RenderParams::getLightCutOffAngle()) / 180.0;
-    } else {
-        light = pcShadowDirectionalLight;
-        pcShadowDirectionalLight->direction = dir;
-        if(light->isOfType(SoShadowDirectionalLight::getClassTypeId())) {
-            static const App::PropertyFloatConstraint::Constraints _dist_cstr(-1.0,DBL_MAX,10.0);
-            static_cast<SoShadowDirectionalLight*>(light)->maxShadowDistance =
-                _shadowParam<App::PropertyFloatConstraint>(view, "MaxDistance",
-                    ViewParams::docShadowMaxDistance(), ViewParams::getShadowMaxDistance(),
-                    [](App::PropertyFloatConstraint &prop) {
-                        if(!prop.getConstraints())
-                            prop.setConstraints(&_dist_cstr);
-                    });
-        }
-    }
-
-    light->intensity = _renderParam<App::PropertyFloat>(view, "LightIntensity",
-            RenderParams::docLightIntensity(), RenderParams::getLightIntensity());
-
-    App::Color color = _renderParam<App::PropertyColor>(view, "LightColor",
-            RenderParams::docLightColor(),
-            App::Color(uint32_t(RenderParams::getLightColor())));
-    SbColor sbColor;
-    float f;
-    sbColor.setPackedValue(color.getPackedValue(),f);
-    light->color = sbColor;
-
-    if(isValidBBox(bbox))
-        updateShadowExtent(bbox);
-
-    SbBool isActive = TRUE;
-    if (_shadowParam<App::PropertyBool>(view, "TransparentShadow",
-            ViewParams::docShadowTransparentShadow(), ViewParams::getShadowTransparentShadow()))
-        isActive |= 2;
-    if (pcShadowGroup->isActive.getValue() != isActive)
-        pcShadowGroup->isActive = isActive;
-
-    auto superScene = static_cast<SoGroup*>(owner->getSoRenderManager()->getSceneGraph());
-    int index = superScene->findChild(owner->pcViewProviderRoot);
-    if(index >= 0) {
-        superScene->replaceChild(index, pcShadowGroup);
-        superScene->insertChild(pcShadowShapeHints, index);
-        owner->inventorSelection->getRootPath()->append(pcShadowGroup);
-    }
 }
 
 void View3DInventorViewer::setViewportCB(void* ud, SoAction* action)
@@ -3665,11 +3376,7 @@ void View3DInventorViewer::dump(const char *filename, bool onlyVisible) const
     SoGetPrimitiveCountAction action;
     action.setCanApproximate(true);
 
-    SoNode *node;
-    if(overrideMode == "Shadow" && _pimpl->pcShadowGroup)
-        node = _pimpl->pcShadowGroup;
-    else
-        node = pcViewProviderRoot;
+    SoNode *node = pcViewProviderRoot;
 
     action.apply(node);
     if (onlyVisible) {
@@ -4908,17 +4615,58 @@ void Gui::migrateShadowProperties(App::PropertyContainer *view)
     // "the display style inside Shadow_DisplayMode, lit and shadowed by
     // the scene light" -- which is now Render_Light with Render_Shadow,
     // and an ordinary display style beside them.
+    //
+    // The enum persists as an INDEX, and stage 4e took the name away, so
+    // what a pre-4d document holds is an index one past the end of this
+    // build's list.
+    //
+    // ! That index cannot be read back. `Enumeration::getInt()` returns
+    // **-1** for any index it cannot name, so getValue() answers -1
+    // rather than 8 and a test against 8 never fires -- measured, after
+    // it silently left the repository's own example document holding an
+    // unnameable style. What is observable is the invalid state itself:
+    // a list with entries and no valid index. The only value this fork
+    // ever wrote that produces one is Shadow's, because it was the LAST
+    // entry -- which is also the only reason dropping it renumbered
+    // nothing.
+    static const long kLegacyShadowDrawStyle = 8;
+    int styleCount = 0;
+    for (const char **n = drawStyleNames(); *n; ++n)
+        ++styleCount;
+    // Gated, not asserted: if the list ever grows, index 8 is a real
+    // style again and this must stop claiming it. Failing closed leaves
+    // an old document unmigrated; failing open would restyle a new one.
+    const bool indexIsLegacy = (styleCount == kLegacyShadowDrawStyle);
     auto drawStyle = Base::freecad_dynamic_cast<App::PropertyEnumeration>(
             view->getPropertyByName("DrawStyle"));
-    if (drawStyle && drawStyle->getEnum().isValid()
-            && boost::equals(drawStyle->getValueAsString(), "Shadow")) {
+    const bool unnameable = drawStyle && drawStyle->getEnum().hasEnums()
+        && !drawStyle->getEnum().isValid();
+    if (drawStyle
+            && ((indexIsLegacy && unnameable)
+                || (drawStyle->getEnum().isValid()
+                    && boost::equals(drawStyle->getValueAsString(),
+                                     "Shadow")))) {
         static const char *_subMode[] = {"Flat Lines", "Shaded", "As Is",
-                                         "Hidden Line"};
+                                         "Hidden Line", nullptr};
         long sub = ViewParams::getShadowDisplayMode();
         if (auto prop = Base::freecad_dynamic_cast<App::PropertyEnumeration>(
-                    view->getPropertyByName("Shadow_DisplayMode")))
+                    view->getPropertyByName("Shadow_DisplayMode"))) {
+            // ! The same trap as the draw style above, one level down:
+            // an enum's NAMES are not persisted, only its index, and an
+            // enum with no names has no valid index either -- so a
+            // restored Shadow_DisplayMode reads as -1 and every document
+            // would migrate to the first sub mode instead of its own
+            // (measured: the example document came back Flat Lines where
+            // it had asked for As Is). Supplying the names first is what
+            // ViewProviderSavedView::finishRestoring does for the draw
+            // style, and Enumeration::setEnums keeps the stored index
+            // when the old list was empty.
+            prop->setEnums(_subMode);
             sub = prop->getValue();
-        if (sub < 0 || sub >= long(sizeof(_subMode)/sizeof(_subMode[0])))
+        }
+        // The array carries a terminator for setEnums, so bound against
+        // the four names rather than its length.
+        if (sub < 0 || sub > 3)
             sub = 0;
         int index = drawStyleIndexFromName(_subMode[sub]);
         if (index >= 0)
@@ -4950,12 +4698,21 @@ void Gui::migrateShadowProperties(App::PropertyContainer *view)
         _copyPropertyValue(from, to);
         view->removeDynamicProperty(pair.from);
     }
-    // The rest of the Shadow group is the Coin shadow group's own: the
+    // The rest of the Shadow group was the Coin shadow group's own: the
     // sub display mode just folded into the draw style, the light
     // camera's bounding-box scale and cut-off distance, and Coin's
-    // transparent-shadow flag. They are removed with the draw style
-    // that reads them, one stage from here (4e), not here -- until then
-    // an override still has to work.
+    // transparent-shadow flag. Nothing reads them since the draw style
+    // went (stage 4e) and the backend fits its own light camera, so they
+    // leave with the rest rather than sitting in the property editor as
+    // knobs that do nothing.
+    for (const char *dead : {"Shadow_DisplayMode", "Shadow_BoundBoxScale",
+                             "Shadow_MaxDistance",
+                             "Shadow_TransparentShadow"}) {
+        if (view->getPropertyByName(dead)) {
+            view->removeDynamicProperty(dead);
+            migrated = true;
+        }
+    }
     if (migrated)
         FC_LOG("migrated the Shadow draw style's properties");
 }
@@ -5627,8 +5384,7 @@ void View3DInventorViewer::renderScene()
     if (this->isAnimating()) {
         this->getSoRenderManager()->scheduleRedraw();
     } else
-        _pimpl->onRender();
-
+    
     printDimension();
     navigation->redraw();
 
@@ -5811,8 +5567,6 @@ bool View3DInventorViewer::processSoEvent(const SoEvent* ev)
                     return true;
                 }
             }
-            else if (_pimpl->toggleDragger(0))
-                return true;
             else if (Selection().hasPreselection()) {
                 Selection().rmvPreselect();
                 return true;
@@ -6544,7 +6298,6 @@ void View3DInventorViewer::animatedViewAll(const SbBox3f &box, int steps, int ms
         timer.start(Base::clamp<int>(ms, 0, ViewParams::getMaxCameraAnimatePeriod())); // NOLINT
         loop.exec(QEventLoop::ExcludeUserInputEvents);
     }
-    _pimpl->onRender();
 }
 
 #if BUILD_VR
@@ -6587,8 +6340,6 @@ void View3DInventorViewer::viewAll()
         return;
     }
 
-    _pimpl->updateShadowExtent(box);
-
     // Set the height angle to 45 deg
     SoCamera* cam = this->getSoRenderManager()->getCamera();
 
@@ -6597,43 +6348,6 @@ void View3DInventorViewer::viewAll()
     }
 
     viewBoundBox(box);
-}
-
-/// Re-fit the Coin shadow light and its filter to the scene extent.
-/// The ground quad used to be sized here too, and to widen the extent
-/// the spot light's spread is scaled against; the backend owns it now
-/// (stage 4b), and it sizes its own quad from the same bounding box.
-void View3DInventorViewer::Private::updateShadowExtent(const SbBox3f &box)
-{
-    App::Document *doc = owner->guiDocument?owner->guiDocument->getDocument():nullptr;
-
-    if (!pcShadowGroup || !doc || !view)
-        return;
-
-    SbVec3f size = box.getSize();
-    SbVec3f center = box.getCenter();
-
-    if(pcShadowDirectionalLight) {
-        static const App::PropertyFloatConstraint::Constraints _cstr(1.0,1000.0,0.1);
-        double scale = _shadowParam<App::PropertyFloatConstraint>(view, "BoundBoxScale",
-                ViewParams::docShadowBoundBoxScale(), ViewParams::getShadowBoundBoxScale(),
-            [](App::PropertyFloatConstraint &prop) {
-                if(!prop.getConstraints())
-                    prop.setConstraints(&_cstr);
-            });
-        pcShadowDirectionalLight->bboxSize = size * float(scale);
-        pcShadowDirectionalLight->bboxCenter = center;
-    }
-
-    const auto shadowParams = Gui::materializeShadowRenderParams(view);
-    double smoothBorder = double(shadowParams.smoothBorder);
-    double spread = double(shadowParams.spreadSize);
-    double sample = double(shadowParams.spreadSampleSize);
-
-    float maxSize = std::max(size[0],std::max(size[1],size[2]));
-    if (maxSize > 256.0 && pcShadowGroup->findChild(pcShadowSpotLight)>=0)
-        spread *= 256.0/maxSize;
-    pcShadowGroup->smoothBorder = smoothBorder/10.0f + sample/100.0f + spread/1000000.0f;
 }
 
 void View3DInventorViewer::viewAll(float factor)
@@ -7855,26 +7569,6 @@ void View3DInventorViewer::dragLeaveEvent(QDragLeaveEvent* ev)
     inherited::dragLeaveEvent(ev);
 }
 
-void View3DInventorViewer::Private::onRender()
-{
-    if (!pcShadowGroup)
-        return;
-    SoCamera* cam = owner->getSoRenderManager()->getCamera();
-    if(cam) {
-        if(animating || shadowNodeId != pcShadowGroup->getNodeId() || cameraNodeId != cam->getNodeId())
-            timer.start(100);
-        else if (shadowExtraRedraw) {
-            shadowExtraRedraw = false;
-            owner->getSoRenderManager()->scheduleRedraw();
-        }
-    }
-}
-
-void View3DInventorViewer::redrawShadow()
-{
-    _pimpl->redraw();
-}
-
 bool View3DInventorViewer::Private::deferRedraw()
 {
     const qint64 interval = ViewParams::getLiveImportRedrawInterval();
@@ -7932,93 +7626,6 @@ void View3DInventorViewer::redraw(bool force)
     if (!force && _pimpl && _pimpl->deferRedraw())
         return;
     inherited::redraw(force);
-}
-
-void View3DInventorViewer::Private::redraw()
-{
-    if (animating) {
-        timer.start(100);
-        return;
-    }
-    timer.stop();
-    SoCamera* cam = owner->getSoRenderManager()->getCamera();
-    if(pcShadowGroup && cam) {
-        // Work around coin shadow rendering bug. On Windows, (and occasionally
-        // on Linux), when shadow group is touched, it renders nothing when the
-        // shadow cache is freshly built. We work around this issue using an
-        // extra redraw, and the node renders fine with the already built
-        // cache.
-        //
-        // Amendment: directional shadow light requires update on camera change
-        // (not sure why or if it's absolutely needed yet). A patch has been
-        // added to Coin3D to perform only quick partial update if there is no
-        // scene changes.  We shall schedule an extra redraw to perform a full
-        // update by touching the shadow group.
-        pcShadowGroup->touch();
-        SbBox3f bbox;
-        if(owner->getSceneBoundBox(bbox))
-            updateShadowExtent(bbox);
-        shadowNodeId = pcShadowGroup->getNodeId();
-        cameraNodeId = cam->getNodeId();
-        owner->getSoRenderManager()->scheduleRedraw();
-        shadowExtraRedraw = ViewParams::getShadowExtraRedraw();
-    }
-}
-
-void View3DInventorViewer::toggleShadowLightManip(int toggle)
-{
-    _pimpl->toggleDragger(toggle);
-}
-
-void View3DInventorViewer::Private::onDragFinish(void *data, SoDragger *d)
-{
-    auto self = reinterpret_cast<Private*>(data);
-
-    App::AutoTransaction guard(QT_TRANSLATE_NOOP("View", "Change shadow light"));
-    SbVec3f dir;
-    if (self->pcShadowSpotLight && d == self->pcShadowSpotLight->getDragger()) {
-        SbVec3f pos = self->pcShadowSpotLight->location.getValue();
-        _shadowSetParam<App::PropertyVector>(self->view, "SpotLightPosition",
-                Base::Vector3d(pos[0], pos[1], pos[2]));
-        _shadowSetParam<App::PropertyAngle>(self->view, "SpotLightCutOffAngle",
-                self->pcShadowSpotLight->cutOffAngle.getValue() * 180.0 / M_PI);
-        dir = self->pcShadowSpotLight->direction.getValue();
-    }
-    else if (self->pcShadowDirectionalLight && d == self->pcShadowDirectionalLight->getDragger()) {
-        dir = self->pcShadowDirectionalLight->direction.getValue();
-    }
-    else {
-        return;
-    }
-    _shadowSetParam<App::PropertyVector>(self->view, "LightDirection",
-            Base::Vector3d(dir[0], dir[1], dir[2]));
-}
-
-bool View3DInventorViewer::Private::toggleDragger(int toggle)
-{
-    App::Document *doc = owner->guiDocument?owner->guiDocument->getDocument():nullptr;
-    if (!pcShadowGroup || !doc || !view)
-        return false;
-
-    bool dirlight = pcShadowGroup->findChild(pcShadowDirectionalLight) >= 0;
-    SoSFBool &showDragger = dirlight?pcShadowDirectionalLight->showDragger:pcShadowSpotLight->showDragger;
-
-    if (showDragger.getValue() && toggle <= 0) {
-        showDragger = FALSE;
-        pcShadowPickStyle->style = SoPickStyle::SHAPE;
-        return true;
-
-    } else if (!showDragger.getValue() && toggle != 0) {
-        pcShadowPickStyle->style = SoPickStyle::UNPICKABLE;
-        SbBox3f bbox;
-        showDragger = TRUE;
-        owner->getSceneBoundBox(bbox);
-        this->getBoundingBox(bbox);
-        if (isValidBBox(bbox))
-            owner->viewBoundBox(bbox);
-        return true;
-    }
-    return false;
 }
 
 static std::vector<std::string> getBoxSelection(const Base::Vector3d *dir,

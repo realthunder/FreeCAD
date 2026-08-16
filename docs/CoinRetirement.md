@@ -1363,8 +1363,95 @@ one. In order:
   longer survives a round trip: the document is converted on reopen.
   That is the intent -- 4e removes the entry -- but it is a live
   behaviour change, not only a file-format one.
-- **4e — drop `Shadow` from `drawStyleNames()`.** Safe only because it
-  is the last index; assert that rather than assume it.
+- **4e -- drop `Shadow` from `drawStyleNames()`. DONE** (2026-08-16),
+  and with it everything the entry was the only caller of: the
+  `SoShadowGroup`, both `SoFC*Light` nodes with their draggers,
+  `activateShadow`/`deactivateShadow`, the sub display mode, the
+  bounding-box-scale/max-distance/transparent-shadow knobs, the
+  shadow-cache redraw workaround with its timer and slot, and the
+  light manipulator with its repeat-press shortcut. `View3DInventorViewer`
+  loses about 380 lines.
+
+  **The index, asserted rather than assumed -- and then gated.**
+  `App::PropertyEnumeration` persists as an index, so a document
+  written before this holds `DrawStyle = 8`, one past the end of the
+  list this build has. Recognizing it is only sound while `Shadow` was
+  the last entry, so `migrateShadowProperties` counts
+  `drawStyleNames()` and treats index 8 as the legacy Shadow **only
+  while the list is exactly 8 long**. A gate rather than an assertion,
+  because the two failure modes are not symmetric: if a style is added
+  later, failing closed leaves an old document unmigrated, while
+  failing open would restyle a new one. `ViewParams.py` says so where
+  the list is written.
+
+  **The Shading panel's "Shadows" switch is the replacement, and it is
+  a better one.** It sets `Render_Light` (and `Render_Shadow` with it)
+  and leaves the display style alone -- the whole point of the move.
+  The old switch had to host the style you were in and hand it back on
+  the way out, because the draw style occupied the same slot as
+  "Flat Lines". Now shadows compose with whatever you are looking at,
+  the way the other shading switches do.
+
+  What goes with the style and is **not** replaced: the light
+  manipulator (a dragger on a Coin light node; the backend's light has
+  no scene-graph presence), and shadows on the plain Coin paths --
+  stage 4c, decided and accepted.
+
+  ! `Std_DrawStyleShadow` no longer exists as a command, so a
+  keyboard shortcut or toolbar customization naming it is dropped by
+  Qt's own "unknown command" path. `V,9` is free.
+
+  Five preference-page entries went with it -- `ShadowUpdateGround`,
+  `ShadowDisplayMode`, `ShadowBoundBoxScale`, `ShadowMaxDistance`,
+  `ShadowTransparentShadow` -- because they configured the Coin shadow
+  group and its light camera and now drive nothing. The *keys* stay in
+  `ViewParams` (`ShadowDisplayMode` is still what a pre-4d migration
+  reads as its default display style); it is the UI that goes, a
+  preference nobody can act on being worse than none. The rest of that
+  section is the renderer's defaults and moves with the deferred
+  preference stage.
+
+  **Three defects this stage's probes caught, all of them silent.**
+  Worth recording as a class: each was a *name or field that something
+  else keys on*, and each failed by doing nothing rather than by
+  breaking.
+
+  - !! **An enum index that no longer has a name reads back as -1,
+    not as itself.** `Enumeration::getInt()` answers -1 for any index
+    it cannot name, so the migration's `getValue() == 8` test never
+    fired once 4e removed the entry -- and the repository's own example
+    document restored holding an unnameable style (`DrawStyle` reads
+    `None` from Python) while every property around it migrated
+    correctly. What is observable is the *invalid state*: entries
+    present, no valid index. The same trap then bit one level down --
+    `Shadow_DisplayMode` restores with no names either, so it read as
+    -1 and every document would have migrated to the first sub mode
+    instead of its own (measured: "Flat Lines" where the file said
+    "As Is"). Supplying the names first is the fix, as
+    `ViewProviderSavedView::finishRestoring` already does for the draw
+    style; `Enumeration::setEnums` keeps a stored index when the old
+    list was empty.
+    ! A probe asserting "the style is no longer Shadow" **passed**
+    through both of those. `None` is not `"Shadow"`. Assert the value
+    it should BE.
+  - ! **`LightConfig::operator==` had not learned 4b's two new
+    fields**, so `BGFXRenderer::setLightConfig` saw no change and never
+    marked the scene dirty: `GroundShading` and `GroundBackFaceCull`
+    read correctly and changed nothing. It worked while the Shadow draw
+    style existed because a `Shadow_*` property change re-applied the
+    whole override, which dirtied the scene by another route -- so the
+    defect shipped inert in 4b and surfaced only when 4e removed that
+    path. A new `LightConfig` field belongs in three places, and the
+    struct now says so: the stream, the layout assert, and the
+    comparison.
+  - **Prefix tests do not match a longer prefix.**
+    `onViewPropertyChanged` keys on `Render_`, which
+    `RenderShadow_GroundShading` does not start with, so editing one of
+    the migrated properties scheduled no redraw. Same for the render
+    capture's sidecar property list (`View3DInventorPyImp`). Both now
+    name the new prefix -- the cost of a prefix taxonomy, and the
+    reason `shadowRenderPropertyNames()` exists as one list rather than
+    a scattering of string tests.
 
 Not in scope, and not close: Coin as scene graph, traversal and picking.
 Replacing that is a different project — the backend has no picking at all

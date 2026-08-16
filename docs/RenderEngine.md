@@ -1189,8 +1189,8 @@ phone).
 - **`RenderDebug_*` view properties** — hidden dynamic properties on
   the 3D view (property editor "Show all" reveals them; scripts:
   `view.addProperty / removeProperty`, group derived from the name
-  prefix). They ride the same config spine as the `Render_*`/`Shadow_*`
-  overrides.
+  prefix). They ride the same config spine as the
+  `Render_*`/`RenderShadow_*` overrides.
   - `RenderDebug_ViewMode` — one enum, one uniform lane, switched in
     the composite shader: 0 Off, 1 Depth, 2 Normal, 3 AO, 4 Shadow,
     5 ShadowTile (per-bulb atlas-tile hue), 6 Overdraw (additive heat
@@ -1218,7 +1218,7 @@ phone).
   (works on a phone, no puppeteer needed) uploaded back and written
   locally, returning the path list. Every capture writes a sidecar
   JSON (camera, viewport, backend, build, stats, all
-  `Render_*/RenderDebug_*/Shadow_*/HiddenLine_*` props) — enough to
+  `Render_*/RenderShadow_*/RenderDebug_*/HiddenLine_*` props) -- enough to
   restage the frame exactly. `view.getRenderStats()` exposes the
   per-frame counters.
 - **Golden-image harness** — `scripts/render-verify.sh capture|diff`:

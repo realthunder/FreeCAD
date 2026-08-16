@@ -104,8 +104,6 @@ class SoHighlightElementAction;
 class SoFCSelectionAction;
 class SoFCHighlightAction;
 class SoFCPathAnnotation;
-class SoFCDirectionalLight;
-class SoFCSpotLight;
 class Document;
 class GLGraphicsItem;
 class SoShapeScale;
@@ -584,8 +582,6 @@ public:
     bool getSceneBoundBox(SbBox3f &box) const;
     bool getSceneBoundBox(Base::BoundBox3d &box) const;
 
-    void toggleShadowLightManip(int toggle = -1);
-
     void setTransparencyOnTop(float t);
 
     void onGetBoundingBox(SoGetBoundingBoxAction *);
@@ -667,9 +663,6 @@ private:
     void setCursorRepresentation(int mode);
     void aboutToDestroyGLContext() override;
     void createStandardCursors(double);
-
-private Q_SLOTS:
-    void redrawShadow();
 
 private:
     NaviCube* naviCube;

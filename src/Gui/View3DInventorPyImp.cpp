@@ -754,7 +754,7 @@ static void writeRenderDumpSidecar(View3DInventor *view,
     // Every render-engine view property, so the capture carries its
     // full staging state (the harness re-applies these 1:1).
     static const char *prefixes[] = {
-        "Render_", "RenderDebug_", "Shadow_", "HiddenLine_"};
+        "Render_", "RenderShadow_", "RenderDebug_", "HiddenLine_"};
     QJsonObject props;
     std::map<std::string, App::Property*> propMap;
     view->getPropertyMap(propMap);

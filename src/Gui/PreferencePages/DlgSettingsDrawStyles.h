@@ -145,9 +145,6 @@ private:
     QLabel *labelShadowGroundBumpMap = nullptr;
     Gui::PrefFileChooser *ShadowGroundBumpMap = nullptr;
     Gui::PrefCheckBox *ShadowGroundShading = nullptr;
-    Gui::PrefCheckBox *ShadowUpdateGround = nullptr;
-    QLabel *labelShadowDisplayMode = nullptr;
-    Gui::PrefComboBox *ShadowDisplayMode = nullptr;
     QLabel *labelShadowPrecision = nullptr;
     Gui::PrefDoubleSpinBox *ShadowPrecision = nullptr;
     QLabel *labelShadowSmoothBorder = nullptr;
@@ -160,11 +157,6 @@ private:
     Gui::PrefDoubleSpinBox *ShadowEpsilon = nullptr;
     QLabel *labelShadowThreshold = nullptr;
     Gui::PrefDoubleSpinBox *ShadowThreshold = nullptr;
-    QLabel *labelShadowBoundBoxScale = nullptr;
-    Gui::PrefDoubleSpinBox *ShadowBoundBoxScale = nullptr;
-    QLabel *labelShadowMaxDistance = nullptr;
-    Gui::PrefDoubleSpinBox *ShadowMaxDistance = nullptr;
-    Gui::PrefCheckBox *ShadowTransparentShadow = nullptr;
 //[[[end]]]
 
     // -----------------------------------------------------------------------------------
