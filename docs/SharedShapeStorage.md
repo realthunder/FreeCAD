@@ -608,10 +608,10 @@ the code said that the plan had wrong.
 
 ### 10.1 The store is a document property
 
-The store rides on a **dynamic property of the document**, created when a
-save uses one and removed when it does not:
-
     Part::PropertyShapeStore : App::PropertyFileIncluded   (name "ShapeStore")
+
+The store rides on a **dynamic property of the document**, created the
+first time a save uses one and never taken off again (sec 10.5).
 
 That answers three of the plan's open questions at once, which is why it
 was chosen over the alternatives considered (a writer attachment, and a
@@ -682,19 +682,48 @@ property then reads as the null shape it is, which is exactly what a
 deferred archive entry reads as at the same moment, because its own
 pending flag is not armed until the same drain.
 
-### 10.5 Three gates the plan did not have
+### 10.5 The store property is never removed
 
-- **`App::Document::Saving`** (a new status bit). `exportObjects` writes a
-  fragment through the same object and property paths, and reaches
-  `beforeSave` through `PropertyContainer::Save`. Without the bit, copying
-  one object out of a document tore that document's store off it.
-- **`Base::Writer::supportsSharedStore()`**, true only for `ZipWriter`.
-  Autosave's `RecoveryWriter` keeps a file per property and rewrites only
-  what changed; a store would have made every autosave cycle rewrite the
-  document's entire geometry.
-- **Serve before removing.** Dropping the store at schema 5 destroys the
-  only route back to a shape still parked at a position, so every one of
-  them is served first.
+Below schema 6 the property **stays on the document and writes itself out
+empty** (user ruling, 2026-08-16, replacing a first version that removed
+it). The property holds the handle that keeps the store file alive, and a
+save is exactly when shapes are still being served out of it one object at
+a time -- so removing it there strands the geometry of every property the
+pre-save pass has not reached yet, silently. Writing nothing keeps the
+store out of the file just as well, and costs nothing that matters.
+
+What keeps a store out of a schema-5 file is therefore three things, not
+one, and the third only showed up once the property stopped being removed:
+
+- **`Save()` writes the empty form.** It nulls `_blob` around a call to the
+  base class (holding a handle, so the file survives) rather than
+  hand-writing the XML, so the empty form stays whatever that schema and
+  writer call empty.
+- **`FileBlobManager::dropReferenced()`**, the missing counterpart to
+  `noteReferenced`. `Document::collectFileBlobs()` runs before a single
+  property is written and notes every blob it can see, so the archive came
+  out carrying the whole store as an entry the document had no way to
+  reach -- the geometry in the file twice, which is what this document
+  exists to stop. A property that then decides to write no content says so.
+- **The wrapper element remains**, and cannot be removed. The
+  `<Property name="ShapeStore" .../>` element is written by
+  `PropertyContainer::Save`, not by `Save()`, and the only mechanism that
+  suppresses it -- `PropNoPersist` -- is deliberately immutable at runtime
+  (`Property::setStatusValue` masks those bits back to their old value). So
+  a schema-5 file written from a document that used a store earlier in the
+  session carries one empty property element. A document that never used a
+  store is unaffected.
+
+One further gate, unrelated to any of that:
+**`Base::Writer::supportsSharedStore()`**, true only for `ZipWriter`.
+Autosave's `RecoveryWriter` keeps a file per property and rewrites only
+what changed; a store would have made every autosave cycle rewrite the
+document's entire geometry.
+
+Nothing needs to distinguish a document save from an export any more. An
+export is capped at schema 5, so it creates no store, and with removal
+gone there is nothing for it to destroy either -- the `Document::Saving`
+status bit the first version needed was deleted with it.
 
 ### 10.6 Measured
 

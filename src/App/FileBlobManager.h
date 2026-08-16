@@ -200,6 +200,15 @@ public:
     bool hasInlineBlobs() const;
     /// Record that the document being written refers to this blob.
     void noteReferenced(const FileBlobHandle& blob);
+    /** Take back a reference noted for the save in progress.
+     *
+     * The collect pass runs before a single property has been written, so it
+     * has to note every blob it can see. A property that then decides to
+     * write itself out with no content -- the shape store below schema 6
+     * (docs/SharedShapeStorage.md) -- says so here, or the archive carries
+     * content nothing in the file refers to.
+     */
+    void dropReferenced(const FileBlobHandle& blob);
     /** Write one entry per collected blob.
      *
      * Must run while the writer is between entries and before anything

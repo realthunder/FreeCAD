@@ -107,20 +107,12 @@ PropertyShapeStore* PropertyShapeStore::prepare(App::Document* doc, Base::Writer
     }
     auto store = find(doc);
     if (!writesStore(writer)) {
-        // A save that stores nothing centrally must not leave the property
-        // behind: it would go into the file as an empty entry that nothing
-        // reads, in a format that has no notion of a store at all.
-        //
-        // Removing it destroys the only way back to a shape still parked at a
-        // position, so every one of those is served first. They would be
-        // served anyway -- this runs from the pre-save pass, which restores
-        // each shape before writing it -- but the ones belonging to objects
-        // this pass has not reached yet would not be, and the store would be
-        // gone by the time they asked.
-        if (store) {
-            store->serveAll(doc);
-            doc->removeDynamicProperty(propertyName());
-        }
+        // Deliberately NOT removed. The property holds the handle that keeps
+        // the store file alive, and a save is precisely when shapes are still
+        // being served out of it one object at a time -- drop it here and
+        // every property the pre-save pass has not reached yet loses its
+        // geometry, silently. Save() writes the property out empty instead,
+        // so the file carries no store either way.
         return nullptr;
     }
     if (!store) {
@@ -172,14 +164,26 @@ std::vector<PropertyPartShape*> gatherShapes(const App::Document* doc)
 }
 }  // namespace
 
-void PropertyShapeStore::serveAll(App::Document* doc) const
+void PropertyShapeStore::Save(Base::Writer& writer) const
 {
-    if (!doc) {
+    if (writesStore(writer)) {
+        App::PropertyFileIncluded::Save(writer);
         return;
     }
-    for (auto prop : gatherShapes(doc)) {
-        prop->ensureRestored();
-    }
+    // Written as an empty file property, which is what a store with no
+    // content would write anyway -- through the base class rather than by
+    // hand, so the form stays whatever that schema and writer call empty.
+    // The handle is held across the call: releasing the last one deletes the
+    // store file, and shapes may still be reading from it.
+    App::FileBlobHandle held = _blob;
+    _blob.reset();
+    App::PropertyFileIncluded::Save(writer);
+    _blob = std::move(held);
+    // The blob collect pass runs before any property is written and notes
+    // every blob it can see, this one included. Nothing in the file refers to
+    // it now, so take the note back -- otherwise the archive carries the whole
+    // store as an entry that the document has no way to reach.
+    blobManager().dropReferenced(_blob);
 }
 
 void PropertyShapeStore::collect(Base::Writer& writer) const

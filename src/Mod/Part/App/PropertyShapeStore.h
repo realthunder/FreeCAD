@@ -66,8 +66,8 @@ namespace Part
  * inflate and no archive index.
  *
  * The store exists only at schema 6 and above. Below it, nothing here runs:
- * a property keeps its own archive member and the store property is taken off
- * the document entirely, so a file that has no use for one does not carry it.
+ * a property keeps its own archive member, and this property writes itself out
+ * empty, so a file that has no use for a store does not carry one.
  *
  * @warning The reader instance is the identity domain. One reader across the
  * document restores `IsPartner` true and the same TShape pointer; a reader per
@@ -91,11 +91,12 @@ public:
     /// Whether a save through this writer stores shapes centrally at all.
     static bool writesStore(Base::Writer& writer);
 
-    /** Bring the document's store in line with what this save will write.
+    /** The document's store for this save, created if this save uses one.
      *
-     * Creates the property when the save uses a store and removes it when it
-     * does not -- a schema-5 file must not carry one. Returns the store, or
-     * null when this save writes none.
+     * Never removes: the property owns the file that every shape still parked
+     * at a position reads from, and a save is exactly when those shapes are
+     * being restored one by one. What keeps a store out of a schema-5 file is
+     * Save() writing nothing, not the property going away.
      */
     static PropertyShapeStore* prepare(App::Document* doc, Base::Writer& writer);
 
@@ -111,19 +112,20 @@ public:
      */
     void beforeSave(Base::Writer& writer) const override;
 
+    /** Written only into a file that has a use for it.
+     *
+     * Below schema 6 the property stays on the document -- taking it off
+     * would delete the store file, and a shape still parked at a position in
+     * it would have nowhere left to come from -- but it writes itself out
+     * empty, so the file carries no store.
+     */
+    void Save(Base::Writer& writer) const override;
+
     /// Whether the store's file is here and can be read from.
     bool hasContent() const;
 
     /// The shape stored at \a pos, or a null shape.
     TopoDS_Shape readShape(uint64_t pos) const;
-
-    /** Bring in every shape still parked at a position in this store.
-     *
-     * The store is about to stop existing -- replaced by a new one, or dropped
-     * because this save has no use for it -- and a position into a store that
-     * is gone restores nothing.
-     */
-    void serveAll(App::Document* doc) const;
 
 private:
     void collect(Base::Writer& writer) const;

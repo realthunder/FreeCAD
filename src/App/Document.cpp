@@ -1056,12 +1056,6 @@ std::string Document::getTransientDirectoryName(const std::string& uuid, const s
 
 void Document::Save (Base::Writer &writer) const
 {
-    // This document is writing itself, as against exportObjects() writing a
-    // fragment of it through the same object and property paths. Anything that
-    // may only act on a real save reads the bit; see Document::Saving.
-    Base::ObjectStatusLocker<Status, Document> savingBit(
-            Status::Saving, const_cast<Document*>(this));
-
     d->hashers.clear();
     addStringHasher(d->Hasher);
 

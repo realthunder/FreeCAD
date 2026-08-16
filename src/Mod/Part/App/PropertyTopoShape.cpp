@@ -400,17 +400,10 @@ void PropertyPartShape::beforeSave(Base::Writer &writer) const
     _StorePos = PropertyShapeStore::NoPosition;
     // The document's store follows the schema this save resolved -- brought
     // into existence here, before the document's own properties run their
-    // pre-save pass, which is where the collect happens; and taken off the
-    // document entirely when this save writes no store.
-    //
-    // Only for a save of the document itself. An export reaches this same
-    // code -- it writes objects through PropertyContainer::Save, which calls
-    // beforeSave() when nothing else has -- but it writes a fragment capped at
-    // schema 5, and neither creating a store nor tearing the document's one
-    // down is any business of copying an object out.
+    // pre-save pass, which is where the collect happens. A save that writes
+    // no store creates nothing, and takes nothing away either.
     auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
-    if (owner && owner->getDocument()
-              && owner->getDocument()->testStatus(App::Document::Saving))
+    if (owner)
         PropertyShapeStore::prepare(owner->getDocument(), writer);
 
     _HasherIndex = 0;

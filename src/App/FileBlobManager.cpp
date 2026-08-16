@@ -209,6 +209,25 @@ void FileBlobManager::noteReferenced(const FileBlobHandle& blob)
     slot = blob;
 }
 
+void FileBlobManager::dropReferenced(const FileBlobHandle& blob)
+{
+    if (!blob) {
+        return;
+    }
+    // Released after the lock, as in beginSave(): this may hold the last
+    // reference, and ~FileBlob takes the same mutex.
+    FileBlobHandle expiring;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        auto it = _saveSet.find(blob->hash());
+        if (it == _saveSet.end() || it->second != blob) {
+            return;
+        }
+        expiring = std::move(it->second);
+        _saveSet.erase(it);
+    }
+}
+
 std::vector<FileBlobHandle> FileBlobManager::collected() const
 {
     std::vector<FileBlobHandle> pending;
