@@ -1670,7 +1670,7 @@ RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
 
     // Dynamic named shader parameters (docs/RenderDebug.md §2.5): every
     // further RenderDebug_* or RenderShadow_* property becomes a
-    // like-named vec4(-array) uniform — RenderDebug_myKnob feeds
+    // like-named vec4(-array) uniform -- RenderDebug_myKnob feeds
     // "uniform vec4 u_myKnob"; list properties span multiple vec4 lanes
     // (RenderDebug_userParams with 16 floats fills the stock shaders'
     // u_userParams[4] fallback pool). The property map is name-ordered,
@@ -1700,7 +1700,7 @@ RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
                 continue;
             if (strcmp(prefix, "RenderDebug_") == 0) {  // its fixed set
                 if (name == "ViewMode" || name == "FreezeFrame"
-                        || name == "Label"      // the §4.3 burn-in toggle
+                        || name == "Label"      // the sec 4.3 burn-in toggle
                         || name == "Timing"     // measurement switches, not
                         || name == "Delta"      // shader inputs: each would
                         || name == "Coverage"   // otherwise upload a vec4

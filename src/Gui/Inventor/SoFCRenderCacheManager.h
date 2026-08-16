@@ -258,7 +258,7 @@ GuiExport ShadowRenderParams materializeShadowRenderParams(
 
 /// The RenderShadow_* names the engine itself consumes: a
 /// null-terminated list, and the exclusion list of the custom shader
-/// parameter rule (docs/RenderDebug.md §2.5) -- any OTHER RenderShadow_
+/// parameter rule (docs/RenderDebug.md sec 2.5) -- any OTHER RenderShadow_
 /// property is a user uniform.
 GuiExport const char * const *shadowRenderPropertyNames();
 

@@ -1070,7 +1070,7 @@ struct LightConfig {
         return true;
     }
 
-    /// ⚠️ A new field of this struct belongs in THREE places, and each
+    /// ! A new field of this struct belongs in THREE places, and each
     /// omission fails silently in its own way: the SceneDump stream (or
     /// the browser tier keeps the default forever -- the layout assert
     /// there is what catches it), and this comparison, which is what

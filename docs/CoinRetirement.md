@@ -1204,7 +1204,7 @@ one. In order:
 
   ⚠️ `Render_Shadow` defaults **on**, so a test that switches it on
   measures nothing. Switch it off to see the map.
-- **4b — the ground moves to the backend. DONE** (2026-08-16). The
+- **4b -- the ground moves to the backend. DONE** (2026-08-16). The
   Coin geometry in `pcShadowGroundGroup` is gone: the `SoFaceSet` and
   its `SoCoordinate3`, the light model, the shape hints, the two
   texture-coordinate nodes and the `SoPolygonOffset` that existed only
@@ -1215,8 +1215,8 @@ one. In order:
 
   - **The port had never seen two of the ground's properties, and both
     default on.** `ShadowGroundShading` and `ShadowGroundBackFaceCull`
-    are the ones Coin states as nodes *above* the quad — an
-    `SoLightModel` and an `SoShapeHints` — rather than on the quad
+    are the ones Coin states as nodes *above* the quad -- an
+    `SoLightModel` and an `SoShapeHints` -- rather than on the quad
     itself, so the bridge, which walks the ground's own properties,
     never carried them. The backend's ground was lit and two-sided
     whatever they said: a camera below the ground plane was shut out by
@@ -1224,7 +1224,7 @@ one. In order:
     `LightConfig` now (`groundShading`, `groundBackFaceCull`), read by
     `translateLightConfig`, applied in `submitShadowGround` as the
     lighting and two-sided bits of `u_params` plus a `BGFX_STATE_CULL_CW`
-    — the `mat.ccw` case of every other cull site, since `groundQuad`
+    -- the `mat.ccw` case of every other cull site, since `groundQuad`
     winds its corners counter-clockwise about +Z. Streamed at
     `SceneDump` v58, so the browser tier gets them too.
   - **Creating those properties is now a job of its own.** The bridge
@@ -1232,10 +1232,10 @@ one. In order:
     being, and it was being called incidentally, while the Coin nodes
     were configured. With the nodes gone the whole `Shadow_Ground*`
     family would never have been created, and a per-view override could
-    not have been set at all — assigning one from Python fails rather
-    than creating it — while the global preference kept reaching the
+    not have been set at all -- assigning one from Python fails rather
+    than creating it -- while the global preference kept reaching the
     backend and hid the hole. That is the same trap `Shadow_ShowGround`
-    fell into once already (§3.4). `materializeGroundParams()` is the
+    fell into once already (sec 3.4). `materializeGroundParams()` is the
     one place that creates them now, called from `activateShadow()`.
 
   `fcad-probes/ground_backend_probe.py`, 15/15: the family
@@ -1255,13 +1255,13 @@ one. In order:
   rather than leaving it to be discovered. Two consequences worth
   writing down:
 
-  - `ground_parity_probe.py` is **retired** — its whole method is a
+  - `ground_parity_probe.py` is **retired** -- its whole method is a
     bgfx-vs-glr comparison of two grounds, and there is one ground now.
     Its header says so and points here.
   - glr's clip planes still fit a ground it does not draw (measured:
     `clip_bounds_probe.py`'s glr rows are unchanged). `onGetBoundingBox`
     is gated on the renderer, so the number is a cached traversal
-    answering, not a live report — the same caching separator §1c
+    answering, not a live report -- the same caching separator sec 1c
     documents. Harmless, and on a developer path: the planes are wider
     than the drawn scene needs, never tighter.
 - **4c -- the plain-Coin path. DECIDED 2026-08-16: acceptable.**
@@ -1276,7 +1276,7 @@ one. In order:
   preferences, so cache 0 is a developer's A-B route rather than
   somewhere a user can end up. Losing shadows there costs a user
   nothing, because no user is there.
-- **4d — map `Shadow_*` onto the render properties, and migrate. DONE**
+- **4d -- map `Shadow_*` onto the render properties, and migrate. DONE**
   (2026-08-16). The draw style's per-view family is gone; what a
   document carries now is what reads it.
 
@@ -1308,13 +1308,13 @@ one. In order:
   that two lines rather than a table of casts.
 
   **The custom-parameter rule follows the prefix.** A `RenderDebug_`
-  property outside the fixed list is a shader uniform (§2.5 of
+  property outside the fixed list is a shader uniform (sec 2.5 of
   `docs/RenderDebug.md`); `RenderShadow_` now works the same way,
   excluding the names `shadowRenderPropertyNames()` lists -- those are
   settings the engine reads itself, and each would otherwise upload a
   uniform nobody declares.
 
-  **All three stores of §3.4, plus a fourth.** `migrateShadowProperties`
+  **All three stores of sec 3.4, plus a fourth.** `migrateShadowProperties`
   runs on `View3DInventor::Restore` (the property), on
   `ViewProviderSavedView::finishRestoring` (the saved view's own copy,
   which has to be converted *there* because the enum persists as an
@@ -1359,7 +1359,7 @@ one. In order:
   settings with no counterpart in the backend, which fits its own light
   camera. They go with the style that reads them.
 
-  ⚠️ While this stage stands alone, picking "Shadow" from the menu no
+  ! While this stage stands alone, picking "Shadow" from the menu no
   longer survives a round trip: the document is converted on reopen.
   That is the intent -- 4e removes the entry -- but it is a live
   behaviour change, not only a file-format one.
