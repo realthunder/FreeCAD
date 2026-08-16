@@ -870,6 +870,29 @@ struct RenderStats {
     /// Average color of the geometry pixels, 0-255 per channel;
     /// -1 when no geometry pixel exists.
     float avgColor[3] = {-1.0f, -1.0f, -1.0f};
+
+    /// Backend handle-pool occupancy at the last completed frame, each
+    /// beside the pool it is measured against (-1 where the backend
+    /// does not report it).
+    ///
+    /// These are PROCESS-WIDE, not per view: every 3D view, and the
+    /// scene server's own view, draw from the same pools. That is the
+    /// number worth watching -- running out is not a graceful
+    /// degradation by default, it is what a view falls back to Coin
+    /// over, and the fallback only exists because exhausting a pool
+    /// used to assert inside the engine.
+    int numFrameBuffers = -1;
+    int maxFrameBuffers = -1;
+    int numTextures = -1;
+    int maxTextures = -1;
+    int numViews = -1;
+    int maxViews = -1;
+    /// Backend estimates of texture and render-target bytes, and the
+    /// driver's own figure for the process where it reports one.
+    long long textureMemory = -1;
+    long long renderTargetMemory = -1;
+    long long gpuMemoryUsed = -1;
+    long long gpuMemoryMax = -1;
     bool valid = false;
 };
 

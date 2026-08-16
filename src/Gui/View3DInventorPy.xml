@@ -222,7 +222,15 @@ Capture one frame of the external render backend and return its readback
 statistics as a dict: width, height, geometryPixels (pixels covered by
 geometry, i.e. depth in front of the far plane) and avgColor of those
 pixels — the cheap numeric assertions for render smoke tests
-(docs/RenderDebug.md section 4.2).</UserDocu>
+(docs/RenderDebug.md section 4.2).
+
+The dict also carries the backend's handle-pool occupancy, each beside
+its limit: frameBuffers/maxFrameBuffers, textures/maxTextures,
+views/maxViews, plus textureMemory, renderTargetMemory, gpuMemoryUsed
+and gpuMemoryMax in bytes (-1 where the backend does not report one).
+These are PROCESS-WIDE -- every open 3D view and the scene server draw
+from the same pools -- so they answer "how many more views fit", which
+is not a question any single view can answer about itself.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="reloadShaders">

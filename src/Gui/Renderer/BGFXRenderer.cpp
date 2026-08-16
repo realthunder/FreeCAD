@@ -172,6 +172,26 @@ bool BGFXRenderer::frameDumpPending() const
 bool BGFXRenderer::getRenderStats(RenderStats &stats) const
 {
     stats = pimpl->lastStats;
+    // Pool occupancy is read live rather than carried on lastStats:
+    // the readback is per view and per captured frame, while these
+    // are one process-wide set that every view contributes to. Taken
+    // here they describe the pools as of the frame the caller just
+    // pumped, which is what a caller asking "how much headroom is
+    // left" means.
+    if (const bgfx::Stats *s = bgfx::getStats()) {
+        stats.numFrameBuffers = s->numFrameBuffers;
+        stats.numTextures = s->numTextures;
+        stats.numViews = s->numViews;
+        stats.textureMemory = s->textureMemoryUsed;
+        stats.renderTargetMemory = s->rtMemoryUsed;
+        stats.gpuMemoryUsed = s->gpuMemoryUsed;
+        stats.gpuMemoryMax = s->gpuMemoryMax;
+    }
+    if (const bgfx::Caps *c = bgfx::getCaps()) {
+        stats.maxFrameBuffers = int(c->limits.maxFrameBuffers);
+        stats.maxTextures = int(c->limits.maxTextures);
+        stats.maxViews = int(c->limits.maxViews);
+    }
     return stats.valid;
 }
 
