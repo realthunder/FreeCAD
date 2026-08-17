@@ -590,15 +590,19 @@ churn and makes the index load-bearing for restore.
 
 ### 13.7 Shape files, and what the index has to carry for them
 
-Routing `PropertyPartShape` through the manager (sec 12) becomes: shape
-properties are referrers like any other, named `Box.Shape.brp`, with the skip
-and the prune applying to them unchanged. Two consequences:
+**Built 2026-08-17** (`docs/SharedShapeStorage.md` sec 12.3). Shape properties
+are referrers like any other, named `Box.Shape.brp`, with the skip and the
+prune applying to them unchanged. The pending queue is keyed on
+`App::BlobReferrerProperty` rather than on `PropertyFileIncluded`, which is all
+the two have in common. Two consequences were predicted; the first did not
+survive contact:
 
-- **Deferred read by name stops being optional.** Shapes dominate the entry
-  count, so the manager must be able to leave an entry unread and hand it over
-  on demand rather than draining everything during `readFiles`. The content
-  file is what makes that possible: names and hashes are known before any
-  content is touched.
+- ~~**Deferred read by name stops being optional.**~~ The premise was that
+  shapes dominate the entry count, so draining them at open would be ruinous.
+  Content addressing removes it: on `MiSTer_imported.FCStd` 17800 shapes became
+  10873 files, and the walk over them is *cheaper* than the old one over 68235
+  registered entries -- the open went from 4.06s to 2.37s. Entries are still
+  drained at open. Making them lazy is an optimization, not a prerequisite.
 - **Blobs reference other blobs.** A shape file that shares geometry with
   another object writes a reference to that object's *file* rather than a copy
   of the geometry (`docs/SharedShapeStorage.md` sec 11.5). That is still full
@@ -613,6 +617,16 @@ and the prune applying to them unchanged. Two consequences:
   must be loaded because a file they reference is being rewritten. Everything
   else about ownership is recomputed from scratch on every save, which is what
   keeps the scheme free of carried-forward state.
+
+***The bug routing shapes through here uncovered.*** `readBlobEntry()` copied
+an archive entry with `entry >> to.rdbuf()`. That is a *formatted* extraction:
+its sentry skips leading whitespace, so content beginning with any arrived
+short. It had gone unnoticed because no included file the tests carried started
+with whitespace -- and ASCII BRep starts with a newline. Content addressing is
+what made it loud instead of quiet: the stored blob hashed to something other
+than what `Document.xml` referred to, so the referrer was served nothing at all
+rather than handed a corrupted file. `PropertyFileIncluded::RestoreDocFile`
+carried the same line. Both now write the stream (`to << entry.rdbuf()`).
 
 ### 13.8 As built: three decisions the design did not settle
 

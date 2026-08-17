@@ -1253,19 +1253,73 @@ Still owed: the confirmation on `scanner.FCStd` -- 14 groups, 36 objects,
 once each shape is its own content-addressed blob (step 3); inside one store
 the equal-but-unshared duplicates are still written out one by one.
 
-### 12.3 Step 3: shape files through the blob manager
+### 12.3 Step 3: shape files through the blob manager -- DONE
 
-`PropertyPartShape` becomes an ordinary blob referrer: named `Box.Shape.brp`,
-skipped by hash, pruned, indexed. This is where `addPendingReferrer` and the
-collect pass stop being `PropertyFileIncluded`-shaped.
+**Shipped 2026-08-17.** `PropertyPartShape` is an ordinary blob referrer: its
+geometry is one file named `Box.Shape.brp` after the property that owns it,
+addressed by content, skipped when unchanged, pruned when orphaned, and listed
+in `blobs/Content.xml` with every property that refers to it. The pending
+channel is keyed on `App::BlobReferrerProperty`, which `PropertyFileIncluded`
+and `PropertyPartShape` both implement.
 
-**Deferred read by name is required, not optional.** Shapes dominate the entry
-count, so the manager must leave an entry unread and serve it on demand rather
-than draining everything in `readFiles`; the content index is what makes that
-possible, since names and hashes are known before any content is touched.
+**No save writes a central store any more**, so its write path is gone --
+`writesStore`, `prepare` and `collect` with it. What is left reads the
+documents that have one, and the first save moves them out. This is a
+correction to sec 12.6's "gated to archives": there is no case left in which a
+store would be written, and unreachable code is worse than deleted code.
 
-Gate: `docs/DocumentLoad.md`'s open timings on `MiSTer_imported.FCStd` unchanged,
-and `DeferShapeLoad` still reads no geometry at open.
+*Sharing comes back, and more of it.* Two objects over one TShape serialize to
+identical bytes once the location is canonicalized out (step 12.2), so they are
+one file -- and so are two equal parts that never shared anything in memory,
+which the store could not collapse at all. A parse cache keyed on the blob then
+makes one parse serve every referrer, so they come back as one TShape. That is
+sec 12.5's first half, pulled forward because without it this step would have
+*lost* the sharing the store provided.
+
+*The blob is held for as long as it still describes the value*, which is what
+makes a save write nothing for a shape that did not change. A move keeps it:
+the shape differs only in a location the file does not carry.
+
+***Deferred read by name turned out not to be needed.*** The reasoning was that
+shapes dominate the entry count, so draining them at open would be ruinous.
+Content addressing removes the premise: 17800 shapes became 10873 files, and
+the walk over them is *cheaper* than the old one over 68235 registered entries.
+Entries are still drained at open; making them lazy is an optimization now, not
+a prerequisite.
+
+**Measured** on `MiSTer_imported.FCStd`, 17743 objects carrying a shape:
+
+| | entries | bytes | open | full parse |
+|---|---|---|---|---|
+| as it was (`file=` per property) | 68235 | 49880864 | 4.06s | 15.50s |
+| as blobs | 10874 | **25256372** | **2.37s** | 15.28s |
+
+Half the bytes, a sixth of the entries, and the open is 1.7x faster rather than
+unchanged. The parse is still deferred -- both columns pay the same ~15s the
+first time every shape is touched, so nothing was read at open. Re-saving cost
+8.91s.
+
+***A behaviour change worth knowing about.*** Restoring TShape sharing means
+two objects whose geometry *and* placement are identical come back as the same
+`TopoDS_Shape`. Anything that enumerates sub-elements through a
+`TopTools_IndexedMapOfShape` -- `Shape.Faces`, `Shape.Solids` -- then reports
+them once instead of twice. On this document one `App::Part` aggregate went
+from 415239 faces to 403899. **No geometry is lost**: the compound still holds
+every child and its volume is unchanged; it is the enumeration that collapses.
+The central store had the same property, and sec 12.5 asks for more of it.
+
+Gate: `src/Mod/Test/ShapeStorage.py`, 17 cases (`ShapeBlobCases` added),
+`FreeCADCmd -t ShapeStorage`; `FileBlobs` unchanged at 64.
+
+***A latent corruption this uncovered.*** Restored content was copied with
+`entry >> to.rdbuf()` -- a formatted extraction, whose sentry skips leading
+whitespace, so any included file starting with whitespace came back short.
+ASCII BRep starts with a newline, and content addressing turned a quiet
+corruption into a hash that no longer matched what the document referred to:
+the property was served nothing at all. `PropertyFileIncluded::RestoreDocFile`
+had the same line and the same bug. Several other places in the tree still use
+the idiom (`ProjectFile`, `VRMLObject`, `PropertyPythonObject`) and were left
+alone.
 
 ### 12.4 Step 4: the external reference format
 
@@ -1308,8 +1362,10 @@ modified.
 
 ### 12.6 What is deliberately not being built
 
-- **The central store stays as sec 10 shipped it**, gated to archives. It is
-  not extended, and steps 2 and 3 of sec 9 are not done.
+- **The central store stays as sec 10 shipped it** -- superseded by sec 12.3,
+  which took its write path out because nothing could reach it any more. What
+  remains reads the documents that have one. Steps 2 and 3 of sec 9 are not
+  done and now never will be.
 - **The per-component store**, which sec 11 reached before external references
   and which introduced partial referring, is dropped.
 - **A random-access ASCII format.** Positional addressing existed to pull one
