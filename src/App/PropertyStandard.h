@@ -1253,6 +1253,22 @@ public:
     SurfaceFinish getFinish(int idx) const;
     Material::MaterialType getType(int idx) const;
 
+    /** The first entry's field, which is upstream's no-argument spelling
+     *
+     * Theirs indexes element 0 of a list it does not check, so an empty
+     * property is undefined behaviour there. Ours goes through the indexed
+     * getter, which answers with the field's default when the array is
+     * short, so an empty list reads as the default material.
+     */
+    //@{
+    Color getAmbientColor() const { return getAmbientColor(0); }
+    Color getDiffuseColor() const { return getDiffuseColor(0); }
+    Color getSpecularColor() const { return getSpecularColor(0); }
+    Color getEmissiveColor() const { return getEmissiveColor(0); }
+    float getShininess() const { return getShininess(0); }
+    float getTransparency() const { return getTransparency(0); }
+    //@}
+
     void setAmbientColors(const std::vector<Color> &colors);
     void setDiffuseColors(const std::vector<Color> &colors);
     void setSpecularColors(const std::vector<Color> &colors);
@@ -1299,6 +1315,47 @@ public:
     void setImagePath(const std::string &value);
     void setUuid(const std::string &value);
     void setFinish(const SurfaceFinish &value);
+    //@}
+
+    /** Upstream's loose-float and packed-rgba spellings of the four colour
+     * setters above, in both arities
+     *
+     * Each hands straight to the Color form beside it, so none of these
+     * carries a behaviour of its own -- including the alpha, which these
+     * write like any other component. Note what that means here: the
+     * diffuse alpha is the opacity and, in PBR mode, the specular alpha is
+     * the metallic factor, so the defaulted a = 1 is a real value and not
+     * a way of saying "leave it alone". Use setDiffuseRGB/setSpecularRGB
+     * above to keep the existing alpha.
+     */
+    //@{
+    void setAmbientColor(float r, float g, float b, float a = 1.0F)
+    { setAmbientColor(Color(r, g, b, a)); }
+    void setAmbientColor(uint32_t rgba) { setAmbientColor(Color(rgba)); }
+    void setAmbientColor(int idx, float r, float g, float b, float a = 1.0F)
+    { setAmbientColor(idx, Color(r, g, b, a)); }
+    void setAmbientColor(int idx, uint32_t rgba) { setAmbientColor(idx, Color(rgba)); }
+
+    void setDiffuseColor(float r, float g, float b, float a = 1.0F)
+    { setDiffuseColor(Color(r, g, b, a)); }
+    void setDiffuseColor(uint32_t rgba) { setDiffuseColor(Color(rgba)); }
+    void setDiffuseColor(int idx, float r, float g, float b, float a = 1.0F)
+    { setDiffuseColor(idx, Color(r, g, b, a)); }
+    void setDiffuseColor(int idx, uint32_t rgba) { setDiffuseColor(idx, Color(rgba)); }
+
+    void setSpecularColor(float r, float g, float b, float a = 1.0F)
+    { setSpecularColor(Color(r, g, b, a)); }
+    void setSpecularColor(uint32_t rgba) { setSpecularColor(Color(rgba)); }
+    void setSpecularColor(int idx, float r, float g, float b, float a = 1.0F)
+    { setSpecularColor(idx, Color(r, g, b, a)); }
+    void setSpecularColor(int idx, uint32_t rgba) { setSpecularColor(idx, Color(rgba)); }
+
+    void setEmissiveColor(float r, float g, float b, float a = 1.0F)
+    { setEmissiveColor(Color(r, g, b, a)); }
+    void setEmissiveColor(uint32_t rgba) { setEmissiveColor(Color(rgba)); }
+    void setEmissiveColor(int idx, float r, float g, float b, float a = 1.0F)
+    { setEmissiveColor(idx, Color(r, g, b, a)); }
+    void setEmissiveColor(int idx, uint32_t rgba) { setEmissiveColor(idx, Color(rgba)); }
     //@}
 
     /// Whether any entry names a texture or a material card
