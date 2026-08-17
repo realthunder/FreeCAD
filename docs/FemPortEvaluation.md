@@ -1,6 +1,7 @@
 # Porting the upstream FEM workbench: an evaluation
 
-Status: evaluation, measured 2026-08-11. No FEM port has been done.
+Status: evaluation, measured 2026-08-11, **re-measured 2026-08-17
+(section 10)**. No FEM port has been done.
 Companion to [CoinRetirement.md](./CoinRetirement.md) section 3.6, whose
 workbench audit could not reach FEM.
 
@@ -234,3 +235,122 @@ Traps worth keeping:
 - A census that stops at the first missing header measures include paths,
   not API drift. Shim the mechanical renames first, then re-read the
   numbers.
+
+## 10. Re-evaluation, 2026-08-17
+
+Six days after the evaluation the fork adopted four of the core refactors
+section 5 named -- the console names (`74b713cae0`), the colour class
+moving to `Base` (`935bccd118`), `Base::TimeElapsed` and the two FEM
+units (`40c93de2aa`), and the `ShapeAppearance` work that ran through
+2026-08-13. Those were taken up partly *because* this evaluation named
+them. So the question is whether the port got cheaper.
+
+Same method, same upstream tip (`512e91aad0`), so the delta is the
+fork's alone. The original harness did not survive; it was rebuilt from
+section 9, which means row counts are comparable **in kind**, not
+digit-for-digit.
+
+### 10.1 The pass/fail split did not move at all
+
+| | TUs | clean 08-11 | clean 08-17 |
+|---|---|---|---|
+| upstream `Fem/App` | 50 | 13 | 13 |
+| upstream `Fem/Gui` | 88 | 9 | 8 |
+
+That is the first finding, and it is a warning about the metric rather
+than about the work: **one surviving error fails a translation unit**, so
+TU pass/fail cannot see progress until the *last* blocker in a file is
+gone. What moved is the composition of the errors.
+
+### 10.2 What closed
+
+| row | 08-11 | 08-17 | what is left |
+|---|---|---|---|
+| `Console().log/error/message/warning` | 158 | **0** | nothing |
+| `Base::TimeElapsed` | 32 | **0** | nothing |
+| `PropertyMoment` / `PropertyStiffnessDensity` | absent | **present** | nothing |
+| `App::Color` -> `Base::Color` | 56 | **6** | `Base::color_traits` only |
+| `ShapeAppearance` | 37 | **19** | convenience overloads, e.g. `PropertyMaterialList::setDiffuseColor(float, float, float)` |
+
+The two partial rows are the interesting ones: what remains of a 56-site
+and a 37-site row is an adapter template and a handful of overloads. The
+`ShapeAppearance` port did the hard half -- the property, its per-face
+semantics and its storage -- and upstream FEM now fails against it only
+where it wants a spelling we did not add.
+
+### 10.3 What closing them revealed
+
+Section 5 warned its counts were **lower bounds**, because the census
+stops at the first fatal error per TU. This is what that looks like when
+the top rows come off: three upstream-wide refactors that were behind
+them, invisible until now.
+
+| newly visible | errors | files | shape |
+|---|---|---|---|
+| `XMLReader::getAttribute<T>()` templated | 20 | 3 | ours is `getAttribute` + `getAttributeAsFloat/AsInteger` |
+| `addObject<T>()` / `getExtension<T>()` templated | 28 | 9 | ours take a type name and return a base pointer |
+| `Base::Quantity` strings as `std::string` | 4 | 1 | ours return `QString` |
+| `Gui::PropertyEditor::FrameOption` and the `PropertyItem` API | most of Gui's 215 "other" | 44 | editor drift, not yet unpicked |
+
+So the adaptation surface did not shrink by the ~280 sites the closed
+rows represent. It shrank by those, and grew back by what they hid. This
+is the honest shape of a port against a diverged core: each layer of
+mechanical fixes exposes the next one, and only a real build (not a
+syntax census) ever sees the bottom.
+
+### 10.4 What has not moved
+
+- **`fastsignals`**: 51 sites (17 App, 34 Gui) against section 5's 5 --
+  the same unmasking. Still one vendored header or one alias to
+  `boost::signals2`.
+- **The `Gui/Selection/` move and the `ViewProviderFeaturePython`
+  rename**: still mechanical, and the census proves it by curing both
+  with forwarding headers. (WARNING: the aliases need upstream's exact
+  names -- `ViewProviderFeaturePythonT`, namespace `fastsignals` -- and a
+  shim that guesses them wrong reports the rename as an API failure.)
+- **`App/Datums.h`**: still a real new core feature, still 2 files.
+- **The fork-side divergences**: `getElementTypes` by const-ref (18
+  files), `Property::isSame` pure virtual (16 errors, and it makes
+  upstream's `PropertyPostDataObject` and therefore `FemMesh` abstract),
+  `signalHighlightObject`. These are decisions, not chores.
+- ! **The `Materials` module: unchanged.** Still the December-2023
+  vintage, and upstream's moved another 32 files / +1589 lines in the six
+  days since. This was named the single biggest hidden cost, and none of
+  it has been paid.
+
+### 10.5 The target moved too
+
+Upstream advanced 315 commits in those six days; `src/Mod/Fem` alone
+changed 57 files (+33709 / -22842). A port is a snapshot of a moving
+tree, and the sync cost recurs -- which is the argument *for* adopting
+the core refactors on their own merit, and *against* treating a FEM copy
+as a one-off.
+
+### 10.6 Gui's raw count still cannot be read as API drift
+
+205 of Gui's errors, in 14 files, are our own generated `ui_*.h` missing
+widget members upstream's `.ui` files declare, plus a handful of
+`moc_*.cpp` and generated `*Py.h`. A real build generates those from
+upstream's sources. The census now buckets them as artifacts; before
+believing any Gui number, check which bucket it is in.
+
+### 10.7 Revised recommendation
+
+**Unchanged in direction, and now with evidence behind it.**
+
+- **B (turn FEM on in the dev presets) was recommended and has not been
+  done** -- `BUILD_FEM` is `OFF` in all three user presets. It is still
+  cheap and still closes the audit hole. Do it or drop it explicitly.
+- **The core-refactor adoption is working and should continue on its own
+  merit.** Four rows closed in two days, each independently useful to the
+  fork, each making every future upstream sync cheaper. The next ones are
+  named in 10.3 and are the same kind of change: `getAttribute<T>`,
+  `addObject<T>`/`getExtension<T>`, the `Base` string types, the
+  `fastsignals` header, the `Gui/Selection` move.
+- **Do not start the FEM port.** The decisive cost has not moved at all:
+  `Materials` is untouched, and it is a second module of comparable size.
+  FEM remains off the roadmap and the fork still has no FEM investment.
+- If it is ever wanted, the sequence the measurements imply is: finish
+  the mechanical core rows -> settle the two fork divergences
+  (`getElementTypes`, `isSame`) -> port `Materials` -> then, and only
+  then, FEM.
