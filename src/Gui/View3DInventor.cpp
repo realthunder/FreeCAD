@@ -1067,6 +1067,45 @@ void View3DInventor::windowStateChanged(QWidget* view)
         // If this view may be visible again we can stop the timer
         stopSpinTimer->stop();
     }
+
+    // The same news answers a second question -- whether this view still
+    // has anyone looking at it -- and the render engine gives its targets
+    // back when the answer is no. Deliberately re-asked as a question
+    // rather than derived from this event: a tab switch changes the state
+    // of two views and emits for each, so which emission arrives last is
+    // not something to depend on.
+    if (_viewer)
+        _viewer->armBackgroundRelease();
+}
+
+bool View3DInventor::isBackgroundView() const
+{
+    // Genuinely hidden, or minimized: nobody is looking, either way.
+    if (!isVisible() || isMinimized())
+        return true;
+    // A view in a window of its own answers for itself, and isVisible()
+    // above was the whole of that answer. A maximized sibling on the
+    // other screen hides nothing.
+    if (isWindow())
+        return false;
+    // Inside the MDI area "hidden" is not a visibility. A tabbed MDI
+    // keeps every child visible and stacks the current one, maximized,
+    // over the rest -- switching tabs even delivers a hide immediately
+    // followed by a show to the view being left, which is why this is
+    // not a question the Qt visibility flags can answer. What being in
+    // the background means there is that somebody else is maximized
+    // over me; in the tiled modes nobody is maximized, and no view is
+    // in the background because they are all on screen at once.
+    if (isMaximized())
+        return false;
+    auto mw = getMainWindow();
+    if (!mw)
+        return false;
+    for (auto w : mw->windows()) {
+        if (w != this && !w->isWindow() && w->isMaximized())
+            return true;
+    }
+    return false;
 }
 
 void View3DInventor::stopAnimating()

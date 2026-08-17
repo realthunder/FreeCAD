@@ -112,6 +112,36 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter BackgroundReleaseDelay
+    ///
+    /// Milliseconds a 3D view may sit in the background before it gives
+    /// its render targets back, or 0 to let a hidden view keep them.
+    /// 
+    /// Targets are what a view mostly costs: 287MB was measured for one
+    /// 1644x653 view with every effect on, and until now it held them
+    /// whether or not anyone could see it -- so a session with several
+    /// documents open paid for all of their views to look at one. This
+    /// gives that back for the views nobody is looking at. What the view
+    /// keeps is everything a resize keeps: its programs, its uniforms
+    /// and its uploaded scene, so coming back is the resize path and not
+    /// a reload.
+    /// 
+    /// The delay is what stops it firing on a click through the tabs.
+    /// Coming back costs the one frame that rebuilds the targets (~68ms
+    /// on the view measured above) and gives a byte-identical picture --
+    /// the trade is a hitch on return against the memory in between,
+    /// never a difference in the image. Lower it to release sooner on a
+    /// machine short of VRAM; raise it if switching back and forth
+    /// hitches.
+    static const long & getBackgroundReleaseDelay();
+    static const long & defaultBackgroundReleaseDelay();
+    static void removeBackgroundReleaseDelay();
+    static void setBackgroundReleaseDelay(const long &v);
+    static const char *docBackgroundReleaseDelay();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter CoarseTessellation
     ///
     /// Ladder level shapes are tessellated at under coarse-first

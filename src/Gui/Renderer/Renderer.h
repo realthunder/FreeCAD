@@ -2377,6 +2377,23 @@ public:
     /// True when this backend has rendered the current scene and the
     /// internal fixed-function GL pass can be skipped.
     virtual bool canSkipInternal() const { return false; }
+    /// Give back every render target this view holds, because nobody is
+    /// looking at it (docs/RenderEngine.md #3.3). A view's targets are
+    /// its dominant cost -- measured at 287MB for a 1644x653 view with
+    /// all effects on -- and they are held whether or not the view is
+    /// on screen, so a session with several documents open pays for all
+    /// of them to show one. The scene, the programs and the uniforms
+    /// stay: this is the resize path's release, and the next frame
+    /// rebuilds the targets exactly as a resize does.
+    ///
+    /// Costs the frame that rebuilds them (~68ms measured on the same
+    /// view), so the caller is expected to be sure the view is going to
+    /// stay in the background rather than release on every tab click --
+    /// hence Render/BackgroundReleaseDelay. The picture that comes back
+    /// is byte-identical; what this trades is a hitch, never an image.
+    ///
+    /// Returns false when the backend holds no releasable targets.
+    virtual bool releaseTargets() { return false; }
     //@}
 
 protected:

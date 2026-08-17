@@ -552,6 +552,21 @@ public:
     /// view needs to change its multisampled context. Returns false (no-op)
     /// when there is no external renderer.
     bool applyRendererAntiAliasing();
+    /// Hand the backend's render targets back now, without waiting out the
+    /// grace period. They come back with the next frame this view draws.
+    void releaseRenderTargets();
+    /// Start (or cancel) the wait after which a view nobody is looking at
+    /// releases its render targets, according to what
+    /// View3DInventor::isBackgroundView() says right now. Called from
+    /// every signal that could have changed that answer -- the MDI
+    /// window state, a hide or show, and a change to
+    /// Render_BackgroundReleaseDelay itself, since a view already in the
+    /// background is then waiting out a stale deadline.
+    void armBackgroundRelease();
+    /// The grace period in milliseconds: the per-view override where the
+    /// view carries one, the Render/BackgroundReleaseDelay preference
+    /// otherwise. 0 keeps the targets for as long as the view lives.
+    int backgroundReleaseDelay() const;
     /// Materialize the per-view Render_* dynamic properties on the view
     /// object (RenderParams defaults), called when a renderer backend is
     /// selected.
@@ -636,6 +651,12 @@ protected:
     void dragEnterEvent (QDragEnterEvent * ev) override;
     void dragMoveEvent(QDragMoveEvent* ev) override;
     void dragLeaveEvent(QDragLeaveEvent* ev) override;
+    /// Two of the signals that can change whether anyone is looking at
+    /// this view; the MDI one arrives as View3DInventor::
+    /// windowStateChanged instead. None of them can be noticed from the
+    /// frame path, which a view nobody is looking at never reaches.
+    void hideEvent(QHideEvent * ev) override;
+    void showEvent(QShowEvent * ev) override;
     bool processSoEventBase(const SoEvent * const ev);
     void printDimension() const;
     void selectAll();

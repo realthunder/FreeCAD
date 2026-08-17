@@ -590,6 +590,14 @@ struct View3DInventorViewer::Private
     qint64 lastInputMs = 0;
     double frameCostMs = 0.0;
 
+    // Grace period between this view going into the background and its
+    // render targets being handed back (Render_BackgroundReleaseDelay).
+    // It cannot be driven from the frame path, which is the natural home
+    // of everything else here: a hidden view renders no frames, so a
+    // deadline checked there would never come due -- the hide is the
+    // signal, and this is the wait after it.
+    QTimer bgReleaseTimer;
+
     Private(View3DInventorViewer *owner)
         :view(qobject_cast<View3DInventor*>(owner->parent()))
         ,owner(owner)
@@ -1323,6 +1331,12 @@ void View3DInventorViewer::init()
     _pimpl->throttleTimer.setSingleShot(true);
     connect(&_pimpl->throttleTimer, &QTimer::timeout, this, [this] { redraw(); });
 
+    // Nobody has been looking at this view for the grace period: give its
+    // render targets back (armed by hideEvent, cancelled by showEvent).
+    _pimpl->bgReleaseTimer.setSingleShot(true);
+    connect(&_pimpl->bgReleaseTimer, &QTimer::timeout, this,
+            [this] { releaseRenderTargets(); });
+
     static bool _cacheModeInited;
     if (!_cacheModeInited) {
         _cacheModeInited = true;
@@ -1781,6 +1795,12 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
             if (!strcmp(prop.getName(), "Render_PBREnvImage")
                     || !strcmp(prop.getName(), "Render_PBREnvEmbed"))
                 syncEnvImageEmbed(_pimpl->view);
+            // The one Render_ setting no frame reads: it is a deadline
+            // for a view that has stopped rendering, so a change has to
+            // reach the timer itself -- including on a view that is in
+            // the background right now, waiting out the old value.
+            else if (!strcmp(prop.getName(), "Render_BackgroundReleaseDelay"))
+                armBackgroundRelease();
             // Per-view render engine settings; the per-frame config feed
             // re-reads them, so a redraw is enough.
             getSoRenderManager()->scheduleRedraw();
@@ -4126,6 +4146,77 @@ void View3DInventorViewer::setRendererType(const std::string &type)
     }
 }
 
+int View3DInventorViewer::backgroundReleaseDelay() const
+{
+    // The per-view override where there is one, the preference otherwise
+    // -- the same rule as every other Render_* knob, except that this one
+    // is read here rather than by the per-frame config feed, because the
+    // frames have stopped by the time it matters.
+    auto prop = Base::freecad_dynamic_cast<App::PropertyInteger>(
+            _pimpl->view ? _pimpl->view->getPropertyByName(
+                    "Render_BackgroundReleaseDelay") : nullptr);
+    return int(prop ? prop->getValue()
+                    : RenderParams::getBackgroundReleaseDelay());
+}
+
+void View3DInventorViewer::armBackgroundRelease()
+{
+    // Nothing to release without a backend: the plain GL pipeline holds
+    // no per-view targets of its own.
+    if (!_pimpl->renderer) {
+        _pimpl->bgReleaseTimer.stop();
+        return;
+    }
+    const int delay = backgroundReleaseDelay();
+    if (delay <= 0) {
+        // Switched off -- and a pending deadline from before the change
+        // goes with it, or it would fire once more after the user turned
+        // the behaviour off.
+        _pimpl->bgReleaseTimer.stop();
+        return;
+    }
+    // Asked, never remembered. The event that brought us here does not
+    // answer it -- a tab switch hides and immediately re-shows the view
+    // it is leaving, and leaves it visible behind the maximized new one
+    // -- and this is also called when the delay itself changes, where
+    // there is no event to read at all.
+    const bool background = _pimpl->view ? _pimpl->view->isBackgroundView()
+                                         : !isVisible();
+    if (!background)
+        _pimpl->bgReleaseTimer.stop();
+    else if (!_pimpl->bgReleaseTimer.isActive())
+        _pimpl->bgReleaseTimer.start(delay);
+}
+
+void View3DInventorViewer::releaseRenderTargets()
+{
+    // Logged, not silent: this is the one thing that happens to a view
+    // while nobody is watching it, and the hitch it buys is paid by the
+    // frame that brings the view back -- a long way from here. At Log
+    // level, so an ordinary session never sees it.
+    if (_pimpl->renderer && _pimpl->renderer->releaseTargets())
+        FC_LOG("released the background view's render targets");
+}
+
+void View3DInventorViewer::hideEvent(QHideEvent *e)
+{
+    inherited::hideEvent(e);
+    // A hide that is really a hide -- a viewer swapped out of the view's
+    // stacked widget, a window closed to the tray -- rather than the MDI
+    // tab switch, which arrives as windowStateChanged instead. Both end
+    // in the same question, so both just ask it again.
+    armBackgroundRelease();
+}
+
+void View3DInventorViewer::showEvent(QShowEvent *e)
+{
+    inherited::showEvent(e);
+    // Back on screen inside the grace period: nothing was released, and
+    // nothing is owed. Past it, the first frame rebuilds the targets on
+    // its own -- the same path a resize takes.
+    armBackgroundRelease();
+}
+
 void View3DInventorViewer::pickAndSelect(const SbVec3f &origin,
                                          const SbVec3f &dir,
                                          bool ctrl)
@@ -4262,6 +4353,9 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _localRenderParam<App::PropertyInteger>(view, "CoarseTessellation",
             RenderParams::docCoarseTessellation(),
             RenderParams::getCoarseTessellation());
+    _localRenderParam<App::PropertyInteger>(view, "BackgroundReleaseDelay",
+            RenderParams::docBackgroundReleaseDelay(),
+            RenderParams::getBackgroundReleaseDelay());
     _localRenderParam<App::PropertyFloat>(view, "LevelTolerance",
             RenderParams::docLevelTolerance(),
             RenderParams::getLevelTolerance());
@@ -4807,6 +4901,7 @@ static const char *_localRenderProperties[] = {
     "Render_AOResolution",
     "Render_AOSlices",
     "Render_AOSteps",
+    "Render_BackgroundReleaseDelay",
     "Render_CoarseTessellation",
     "Render_EffectResolution",
     "Render_LevelTolerance",

@@ -53,6 +53,7 @@ public:
     std::unordered_map<const char *,void(*)(RenderParamsP*),App::CStringHasher,App::CStringHasher> funcs;
     std::string Type;
     long MaxViewIds;
+    long BackgroundReleaseDelay;
     long CoarseTessellation;
     long CoarseDeferFaces;
     bool MeshSkipRedundant;
@@ -199,6 +200,8 @@ public:
         funcs["Type"] = &RenderParamsP::updateType;
         MaxViewIds = this->handle->GetInt("MaxViewIds", 1024);
         funcs["MaxViewIds"] = &RenderParamsP::updateMaxViewIds;
+        BackgroundReleaseDelay = this->handle->GetInt("BackgroundReleaseDelay", 1000);
+        funcs["BackgroundReleaseDelay"] = &RenderParamsP::updateBackgroundReleaseDelay;
         CoarseTessellation = this->handle->GetInt("CoarseTessellation", 2);
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         CoarseDeferFaces = this->handle->GetInt("CoarseDeferFaces", 1000);
@@ -498,6 +501,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateMaxViewIds(RenderParamsP *self) {
         self->MaxViewIds = self->handle->GetInt("MaxViewIds", 1024);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateBackgroundReleaseDelay(RenderParamsP *self) {
+        self->BackgroundReleaseDelay = self->handle->GetInt("BackgroundReleaseDelay", 1000);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCoarseTessellation(RenderParamsP *self) {
@@ -1130,6 +1137,52 @@ void RenderParams::setMaxViewIds(const long &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeMaxViewIds() {
     instance()->handle->RemoveInt("MaxViewIds");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docBackgroundReleaseDelay() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Milliseconds a 3D view may sit in the background before it gives\n"
+"its render targets back, or 0 to let a hidden view keep them.\n"
+"\n"
+"Targets are what a view mostly costs: 287MB was measured for one\n"
+"1644x653 view with every effect on, and until now it held them\n"
+"whether or not anyone could see it -- so a session with several\n"
+"documents open paid for all of their views to look at one. This\n"
+"gives that back for the views nobody is looking at. What the view\n"
+"keeps is everything a resize keeps: its programs, its uniforms\n"
+"and its uploaded scene, so coming back is the resize path and not\n"
+"a reload.\n"
+"\n"
+"The delay is what stops it firing on a click through the tabs.\n"
+"Coming back costs the one frame that rebuilds the targets (~68ms\n"
+"on the view measured above) and gives a byte-identical picture --\n"
+"the trade is a hitch on return against the memory in between,\n"
+"never a difference in the image. Lower it to release sooner on a\n"
+"machine short of VRAM; raise it if switching back and forth\n"
+"hitches.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getBackgroundReleaseDelay() {
+    return instance()->BackgroundReleaseDelay;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultBackgroundReleaseDelay() {
+    const static long def = 1000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setBackgroundReleaseDelay(const long &v) {
+    instance()->handle->SetInt("BackgroundReleaseDelay",v);
+    instance()->BackgroundReleaseDelay = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeBackgroundReleaseDelay() {
+    instance()->handle->RemoveInt("BackgroundReleaseDelay");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -5972,6 +6025,15 @@ void RenderParams::onRenderParamChanged(const char *sReason)
             ? getType() : std::string();
         foreach3DViewer([&type](Gui::View3DInventorViewer *viewer) {
             viewer->setRendererType(type);
+        });
+        return;
+    }
+    if (boost::equals(sReason, "BackgroundReleaseDelay")) {
+        // Not a per-frame feed like the rest: it times a view that has
+        // stopped drawing, so the views already in the background are
+        // waiting on the old value and have to be re-armed here.
+        foreach3DViewer([](Gui::View3DInventorViewer *viewer) {
+            viewer->armBackgroundRelease();
         });
         return;
     }

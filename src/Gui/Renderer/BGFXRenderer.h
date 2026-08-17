@@ -116,6 +116,9 @@ public:
     virtual bool frameDumpPending() const override;
     virtual bool getRenderStats(RenderStats &stats) const override;
     virtual bool reloadShaders() override;
+    /// Drop this view's sized targets (BGFXView::destroyTargets, the
+    /// resize path's release); the next frame rebuilds them.
+    virtual bool releaseTargets() override;
     /// Scene render-target sample count (0/1 = off). Takes effect when the
     /// view next (re)creates its targets (detected at the top of render()).
     virtual void setMSAASamples(int samples) override;

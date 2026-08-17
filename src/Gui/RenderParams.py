@@ -66,6 +66,27 @@ Params = [
         "as a matter of course.\n"
         "\n"
         "Read once, when the backend starts: a change needs a restart."),
+    ParamInt('BackgroundReleaseDelay',  1000,
+        title='Background view release delay',
+        doc="Milliseconds a 3D view may sit in the background before it gives\n"
+        "its render targets back, or 0 to let a hidden view keep them.\n"
+        "\n"
+        "Targets are what a view mostly costs: 287MB was measured for one\n"
+        "1644x653 view with every effect on, and until now it held them\n"
+        "whether or not anyone could see it -- so a session with several\n"
+        "documents open paid for all of their views to look at one. This\n"
+        "gives that back for the views nobody is looking at. What the view\n"
+        "keeps is everything a resize keeps: its programs, its uniforms\n"
+        "and its uploaded scene, so coming back is the resize path and not\n"
+        "a reload.\n"
+        "\n"
+        "The delay is what stops it firing on a click through the tabs.\n"
+        "Coming back costs the one frame that rebuilds the targets (~68ms\n"
+        "on the view measured above) and gives a byte-identical picture --\n"
+        "the trade is a hitch on return against the memory in between,\n"
+        "never a difference in the image. Lower it to release sooner on a\n"
+        "machine short of VRAM; raise it if switching back and forth\n"
+        "hitches."),
     ParamInt('CoarseTessellation',  2, title='Coarse tessellation level',
         doc="Ladder level shapes are tessellated at under coarse-first\n"
         "(docs/SceneStreaming.md #7): the display mesh is built at this\n"

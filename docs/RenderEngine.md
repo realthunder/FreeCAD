@@ -477,6 +477,87 @@ spot or not, and the same room can be borrowed from a capacity nothing
 fills. The packer never starts a spot in the last slot, so the
 shader's `i + 1` is always in range.
 
+### 3.3 Background views give their targets back
+
+Ids are not what a view mostly costs -- its render targets are. One
+1644x653 view with every effect on holds **287MB** of them, and it held
+them whether or not anyone could see it, so a session with four
+documents open paid for four view's worth of targets to look at one.
+The demand allocation above (each effect group built by the first frame
+that wants it) answers the *unused* half of that; this answers the
+*unwatched* half, and they compose -- a background view releases
+whatever it had built.
+
+The release is `BGFXView::destroyTargets()`, reached through the
+backend-agnostic `Render::Renderer::releaseTargets()`. It is exactly the
+release half of a resize: the sized targets go, the programs, uniforms
+and uploaded scene stay. **Nothing restores them**, because nothing has
+to -- a frame already rebuilds on `!isValid(bgfxFbo) && !targetsFailed`,
+which is precisely the state `destroyTargets()` leaves, so the first
+frame after the view comes back takes the resize path it would have
+taken anyway.
+
+Two things the mechanism has to get right:
+
+- **The wait cannot live in the frame path.** A view nobody is looking
+  at renders no frames, so a deadline checked there never comes due.
+  `View3DInventorViewer::armBackgroundRelease()` starts or cancels a
+  single-shot timer, and every signal that could change the answer calls
+  it: `View3DInventor::windowStateChanged` (the MDI case), the viewer's
+  hide/show events, and a change to the delay itself.
+- **"Nobody is looking" is not a Qt visibility.** Measured: switching
+  MDI tabs delivers the outgoing view a `QHideEvent` *immediately
+  followed* by a `QShowEvent`, and leaves it `isVisible() == true`,
+  stacked behind the maximized incoming one -- a first implementation
+  hung the release off `hideEvent` and it therefore never fired on the
+  one case that matters. So `View3DInventor::isBackgroundView()` **asks
+  a question** instead of remembering an event: hidden or minimized, or
+  else a sibling MDI child is maximized over me. In the tiled MDI modes
+  nothing is maximized and no view is in the background, which is right
+  -- they are all on screen at once. Asking rather than latching also
+  makes the order of the two `windowStateChanged` emissions a tab switch
+  produces (one per view whose state changed) irrelevant.
+- **The destroys have to be executed, not just queued.** `bgfx::destroy`
+  writes a command; the memory comes back when a frame executes the
+  buffer. The one process that needs this most -- a single 3D view, user
+  now on a spreadsheet tab -- has no other frame to ride on, so
+  `releaseTargets()` does the context dance a frame does and calls
+  `bgfx::frame()` itself.
+
+`Render/BackgroundReleaseDelay` (ms, default 1000, 0 = keep) is the
+grace period, with the usual `Render_BackgroundReleaseDelay` per-view
+override; it is a `_localRenderParam`, so it never travels in a
+document. The delay exists because coming back costs the frame that
+rebuilds -- ~68ms on the view measured above, against ~23ms steady --
+and a click through the tabs should not pay it. What comes back is
+**byte-identical** (avgColor difference 0.000 across a rebuild): the
+trade is a hitch, never an image.
+
+For scale, releasing only the four demand-allocated effect groups
+instead was measured at 95.5MB of the 287MB (33%) and +11.4ms; the full
+release is worth the delay it needs.
+
+Measured end to end on the real GPU (D3D12 under WSLg), two documents
+open with every effect on, the pools read through the *other* view --
+bgfx's counters are process-wide, and reading them pumps a frame, so a
+background view cannot be asked about itself:
+
+| | frame buffers | textures | render target memory |
+|---|---|---|---|
+| A alone | 36 | 66 | 287.4MB |
+| A + B built | 68 | 121 | 574.8MB |
+| A backgrounded | 36 | 74 | 287.4MB |
+| A back on screen | 68 | 121 | 574.8MB |
+
+That is **all** of A's 287.4MB, and A's captured frame is md5-identical
+before and after. The undrawn case was confirmed separately on software
+GL, where render targets are ordinary host memory: RSS fell 32MB across
+a background transition with no frame drawn anywhere in the process,
+which is what the `bgfx::frame()` drain is for (under d3d12 the same
+transition moves RSS by 0.3MB, because the driver allocates outside the
+process's accounting -- the GPU is the wrong place to ask this
+question).
+
 ## 4. Draw model
 
 - `Render::DrawCall` = mesh reference (+ index sub-range), model
