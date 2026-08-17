@@ -3702,7 +3702,7 @@ public:
 
     /// Target sets that are allocated only while something wants them,
     /// rather than wherever the GPU merely permits them. Together they
-    /// are ~235MB of a ~554MB per-view footprint at 1080p, and a
+    /// are ~352MB of a ~554MB per-view footprint at 1080p, and a
     /// default configuration draws none of them.
     ///
     /// ! The order must match the name table in updateEffect().
@@ -3712,6 +3712,8 @@ public:
         EffectReflection,  ///< the mirrored-camera re-render target
         EffectBloom,       ///< quarter-res halo + blur ping
         EffectSSAO,        ///< depth+normal prepass, AO chain, glass interval
+        EffectShadow,      ///< the scene light's shadow maps (moments,
+                           ///< blur ping, glass tint pair)
         NumEffectGroups
     };
     /// Does this group's framebuffer set exist right now?
@@ -4414,7 +4416,9 @@ public:
     /// curbs shimmer on razor-straight CAD edges.
     /// (Re)create the shadow map targets for the requested size
     /// (ShadowPrecision); the stored moments are lost, so the cached
-    /// map re-renders.
+    /// map re-renders. The EffectShadow group's builder -- go through
+    /// updateEffect(), which owns when the set exists at all and keeps
+    /// a failed allocation from being retried every frame.
     void ensureShadowTargets(uint16_t size);
 
     void submitShadowBlur(float smoothBorder);
@@ -5317,6 +5321,12 @@ public:
     // (re)created for the requested size by ensureShadowTargets.
     static constexpr uint16_t kShadowMaxSize = 2048;
     uint16_t shadowSize = 0;
+    /// The size the configuration asks for, resolved from
+    /// ShadowPrecision by the frame before it reconciles EffectShadow.
+    /// The one group whose extent is a setting rather than the
+    /// viewport, so allocEffect() reads it instead of width/height and
+    /// a change to it rebuilds the set (updateEffect).
+    uint16_t shadowSizeWanted = 0;
     bgfx::TextureFormat::Enum shadowFormat = bgfx::TextureFormat::RG32F;
     bool m_shadow = false;     // shadow resources exist (caps allow it)
     // The reduced RG16F moment path (float32 not linearly filterable) always

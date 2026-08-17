@@ -901,6 +901,30 @@ bool BGFXRenderer::Private::render(const QColor &col,
     view->updateEffect(BGFXView::EffectVolumetric,
                        view->m_vol && volconf.enabled);
     view->updateEffect(BGFXView::EffectBloom, bloomconf.enabled);
+    // The scene light's shadow maps, ~117MB at ShadowPrecision 1.0:
+    // the 2048^2 moments and their depth, the blur ping and the glass
+    // tint pair. Wanted whenever a scene light is fed and Render_Shadow
+    // is on -- both configuration, the light being the Shadow draw
+    // style's (or Render_Light's), not scene content. Deliberately not
+    // the frame's shadowActive, which folds in the scene bound and so
+    // would free the set for every document that momentarily has no
+    // geometry.
+    //
+    // The ground receiver and the bulb tiles read as shadow settings
+    // but pay for neither: the ground quad draws unshadowed without a
+    // map (submitShadowGround), and the bulb atlas is its own group.
+    {
+        // Coin's sizing: the next power of two of precision * the cap.
+        float prec = bx::clamp(lightconf.precision, 0.01f, 1.0f);
+        uint16_t desired = 1;
+        uint16_t want = uint16_t(prec * BGFXView::kShadowMaxSize);
+        while (desired < want)
+            desired = uint16_t(desired << 1);
+        view->shadowSizeWanted = desired;
+    }
+    view->updateEffect(BGFXView::EffectShadow,
+                       view->m_shadow && lightconf.valid
+                           && lightconf.shadow);
     // One shared mirror target, wanted by either consumer.
     view->updateEffect(BGFXView::EffectReflection,
                        lightconf.groundReflection
@@ -1303,19 +1327,15 @@ bool BGFXRenderer::Private::render(const QColor &col,
             }
         }
     }
-    view->shadowFrame = shadowActive;
-    // Shadow map size from ShadowPrecision (Coin: the next power of
-    // two of precision * the 2048 cap); recreating the targets
-    // resets the cached-map hash.
-    if (shadowActive) {
-        float prec = bx::clamp(lightconf.precision, 0.01f, 1.0f);
-        uint16_t desired = 1;
-        uint16_t want = uint16_t(prec * BGFXView::kShadowMaxSize);
-        while (desired < want)
-            desired = uint16_t(desired << 1);
-        view->ensureShadowTargets(desired);
+    // The targets themselves were reconciled with the rest of the
+    // demand-allocated groups (EffectShadow) before anything read a
+    // handle; a frame that wants a shadow but found no room for the
+    // maps simply has none. shadowFrame follows that outcome rather
+    // than the intent, so no consumer is told there is a map when the
+    // allocation did not land.
+    if (shadowActive)
         shadowActive = bgfx::isValid(view->shadowFbo);
-    }
+    view->shadowFrame = shadowActive;
     // On RG32F the map stores plain (z, z^2) moments and the
     // receivers run Coin's exact VsmLookup — the GL Shadow style's
     // soft penumbra — at every SmoothBorder setting.

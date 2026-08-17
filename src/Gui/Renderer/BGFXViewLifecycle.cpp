@@ -116,6 +116,9 @@ void BGFXView::destroyTargets()
     // hash resets with it (same for the AO/prepass cache and the
     // bulb shadow tiles).
     shadowMapHash = 0;
+    // The sweep below takes the shadow set with the rest of the sized
+    // handles, so the size it was built at is gone with it.
+    shadowSize = 0;
     aoMapHash = 0;
     camFrameHash = 0;
     for (int t = 0; t < kBulbShadowTiles; ++t) {
@@ -157,9 +160,11 @@ void BGFXView::destroyTargets()
 // A view's render targets used to be decided by what the GPU *can* do:
 // m_shadow / m_oit / m_ssao / m_vol are capability tests, so a session
 // with volumetrics, water, bloom and reflections all switched off still
-// paid for every one of them. At 1080p that was ~235MB of a ~554MB
+// paid for every one of them. At 1080p that was ~352MB of a ~554MB
 // per-view target footprint, on every open 3D view, for passes that
-// never ran.
+// never ran. (The shadow maps were the one set that at least waited
+// for a first use -- and then kept their 117MB for the life of the
+// view, however long ago the light was switched off.)
 //
 // Capability still gates absolutely -- a group whose m_* flag is false
 // is never allocated whatever the configuration asks for. On top of it
@@ -183,6 +188,7 @@ bool BGFXView::effectAllocated(EffectGroup g) const
     case EffectReflection: return bgfx::isValid(reflFbo);
     case EffectBloom:      return bgfx::isValid(bloomFbo);
     case EffectSSAO:       return bgfx::isValid(aoPrepassFbo);
+    case EffectShadow:     return bgfx::isValid(shadowFbo);
     default:               return false;
     }
 }
@@ -475,6 +481,17 @@ bool BGFXView::allocEffect(EffectGroup g)
         bloomBlurFbo = bgfx::createFrameBuffer(1, &bloomBlurTex, false);
         return bgfx::isValid(bloomFbo) && bgfx::isValid(bloomBlurFbo);
     }
+    case EffectShadow: {
+        if (!m_shadow)
+            return false;
+        // The one group sized by a setting, not by the viewport:
+        // ensureShadowTargets() builds the whole set (moments + depth,
+        // the blur ping and its write-back, the glass tint pair) at
+        // the extent ShadowPrecision asked for, and is also what a
+        // later precision change comes back through.
+        ensureShadowTargets(shadowSizeWanted);
+        return bgfx::isValid(shadowFbo);
+    }
     default:
         return false;
     }
@@ -549,6 +566,19 @@ void BGFXView::freeEffect(EffectGroup g)
         aoMipCount = 0;
         aoMapHash = 0;
         break;
+    case EffectShadow:
+        for (auto *h : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo,
+                        &shadowTintFbo, &shadowTintBlurFbo,
+                        &shadowTintBlurBackFbo})
+            drop(*h);
+        for (auto *h : {&shadowTex, &shadowDepth, &shadowBlurTex,
+                        &shadowTintTex, &shadowTintBlurTex})
+            drop(*h);
+        // No map, no size and no cached moments: the next allocation
+        // is a first build again, at whatever precision then asks for.
+        shadowSize = 0;
+        shadowMapHash = 0;
+        break;
     default:
         break;
     }
@@ -559,6 +589,17 @@ void BGFXView::freeEffect(EffectGroup g)
 void BGFXView::updateEffect(EffectGroup g, bool want)
 {
     if (want) {
+        // A group is normally either there or not, but the shadow set
+        // also has an extent of its own (ShadowPrecision). Changing it
+        // is a configuration change like switching the group off and on
+        // again, so the old set goes back -- including its failure
+        // latch, since a smaller map is a real chance to fit where the
+        // previous one did not.
+        if (g == EffectShadow && shadowSize != shadowSizeWanted
+                && effectAllocated(g)) {
+            freeEffect(g);
+            effectFailed[g] = false;
+        }
         if (effectAllocated(g) || effectFailed[g])
             return;
         if (!allocEffect(g)) {
@@ -574,7 +615,7 @@ void BGFXView::updateEffect(EffectGroup g, bool want)
             freeEffect(g);   // drop whatever part of the set did land
             static const char *const kNames[NumEffectGroups] = {
                 "volumetric", "bulb shadow", "reflection", "bloom",
-                "AO prepass"};
+                "AO prepass", "shadow map"};
             std::printf("bgfx: no render target handles for the %s "
                         "effect -- it stays off in this view\n",
                         kNames[g]);
