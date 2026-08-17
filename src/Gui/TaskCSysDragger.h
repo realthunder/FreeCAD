@@ -26,7 +26,7 @@
 
 #include "TaskView/TaskDialog.h"
 #include <App/DocumentObserver.h>
-#include <boost/signals2/connection.hpp>
+#include <fastsignals/signal.h>
 
 class QTimer;
 class SoDragger;
@@ -71,9 +71,9 @@ namespace Gui
       QTimer *timer = nullptr;
       int transactionId = 0;
       int lastTransactionId = 0;
-      boost::signals2::scoped_connection connUndo;
-      boost::signals2::scoped_connection connRedo;
-      boost::signals2::scoped_connection connTransaction;
+      fastsignals::scoped_connection connUndo;
+      fastsignals::scoped_connection connRedo;
+      fastsignals::scoped_connection connTransaction;
   };
 }
 

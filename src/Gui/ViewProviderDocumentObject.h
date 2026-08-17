@@ -190,7 +190,7 @@ public:
     void beforeDelete() override;
 
     /// Signal on changed claimed children
-    boost::signals2::signal<void (const ViewProviderDocumentObject &)> signalChangedChildren;
+    fastsignals::signal<void (const ViewProviderDocumentObject &)> signalChangedChildren;
 
     /// Return cached claimed children
     const std::vector<App::DocumentObject*> &getCachedChildren() const;

@@ -30,7 +30,7 @@
 #include <bitset>
 #include <stack>
 
-#include <boost/signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <Gui/TaskView/TaskDialog.h>
 
@@ -97,8 +97,8 @@ public:
      */
     bool isAllowedAlterSelection() const;
 
-    boost::signals2::signal<void (QWidget *, std::vector<QWidget*> &)> signalShowDialog;
-    boost::signals2::signal<void (QWidget *, std::vector<QWidget*> &)> signalRemoveDialog;
+    fastsignals::signal<void (QWidget *, std::vector<QWidget*> &)> signalShowDialog;
+    fastsignals::signal<void (QWidget *, std::vector<QWidget*> &)> signalRemoveDialog;
 
 public Q_SLOTS:
     void accept();

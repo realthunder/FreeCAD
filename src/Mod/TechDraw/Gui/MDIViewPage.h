@@ -140,7 +140,7 @@ protected:
     void sceneSelectionManager();
 
 private:
-    using Connection = boost::signals2::connection;
+    using Connection = fastsignals::connection;
     Connection connectDeletedObject;
 
     QAction *m_toggleFrameAction;

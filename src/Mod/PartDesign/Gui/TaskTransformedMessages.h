@@ -28,7 +28,7 @@
 
 class QCheckBox;
 class Ui_TaskTransformedMessages;
-using Connection = boost::signals2::connection;
+using Connection = fastsignals::connection;
 
 namespace App {
 class Property;

@@ -208,7 +208,7 @@ private:
     bool invalidParameter;
     bool paramTouched = false;
 
-    boost::signals2::scoped_connection connParam;
+    fastsignals::scoped_connection connParam;
 
     ParameterGrp::handle hBackup;
 

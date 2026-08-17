@@ -237,12 +237,15 @@ struct DocumentP
     // These view providers shouldn't appear at secen graph root.
     std::unordered_map<const ViewProvider*, int> _ClaimedViewProviders;
 
-    using Connection = boost::signals2::connection;
+    using Connection = fastsignals::connection;
+    // The two blockers below need connections that were made blockable at
+    // connect time -- see Base::ConnectionBlocker.
+    using AdvancedConnection = fastsignals::advanced_connection;
     Connection connectNewObject;
     Connection connectDelObject;
     Connection connectCngObject;
     Connection connectRenObject;
-    Connection connectActObject;
+    AdvancedConnection connectActObject;
     Connection connectSaveDocument;
     Connection connectCollectFiles;
     Connection connectRestDocument;
@@ -263,9 +266,9 @@ struct DocumentP
     Connection connectPurgeTouchedObject;
     Connection connectChangePropertyEditor;
     Connection connectStartSave;
-    Connection connectChangeDocument;
+    AdvancedConnection connectChangeDocument;
 
-    using ConnectionBlock = boost::signals2::shared_connection_block;
+    using ConnectionBlock = fastsignals::shared_connection_block;
     ConnectionBlock connectActObjectBlocker;
     ConnectionBlock connectChangeDocumentBlocker;
 
@@ -319,7 +322,7 @@ Document::Document(App::Document* pcDocument,Application * app)
     //NOLINTBEGIN
     // Setup the connections
     d->connectNewObject = pcDocument->signalNewObject.connect
-        (std::bind(&Gui::Document::slotNewObject, this, sp::_1), boost::signals2::at_front);
+        (std::bind(&Gui::Document::slotNewObject, this, sp::_1), fastsignals::at_front);
     d->connectDelObject = pcDocument->signalDeletedObject.connect
         (std::bind(&Gui::Document::slotDeletedObject, this, sp::_1));
     d->connectCngObject = pcDocument->signalChangedObject.connect
@@ -327,8 +330,9 @@ Document::Document(App::Document* pcDocument,Application * app)
     d->connectRenObject = pcDocument->signalRelabelObject.connect
         (std::bind(&Gui::Document::slotRelabelObject, this, sp::_1));
     d->connectActObject = pcDocument->signalActivatedObject.connect
-        (std::bind(&Gui::Document::slotActivatedObject, this, sp::_1));
-    d->connectActObjectBlocker = boost::signals2::shared_connection_block
+        (std::bind(&Gui::Document::slotActivatedObject, this, sp::_1),
+         fastsignals::advanced_tag {});
+    d->connectActObjectBlocker = fastsignals::shared_connection_block
         (d->connectActObject, false);
     d->connectSaveDocument = pcDocument->signalSaveDocument.connect
         (std::bind(&Gui::Document::Save, this, sp::_1));
@@ -346,8 +350,9 @@ Document::Document(App::Document* pcDocument,Application * app)
     d->connectChangePropertyEditor = pcDocument->signalChangePropertyEditor.connect
         (std::bind(&Gui::Document::slotChangePropertyEditor, this, sp::_1, sp::_2));
     d->connectChangeDocument = d->_pcDocument->signalChanged.connect // use the same slot function
-        (std::bind(&Gui::Document::slotChangePropertyEditor, this, sp::_1, sp::_2));
-    d->connectChangeDocumentBlocker = boost::signals2::shared_connection_block
+        (std::bind(&Gui::Document::slotChangePropertyEditor, this, sp::_1, sp::_2),
+         fastsignals::advanced_tag {});
+    d->connectChangeDocumentBlocker = fastsignals::shared_connection_block
         (d->connectChangeDocument, true);
     d->connectFinishRestoreObject = pcDocument->signalFinishRestoreObject.connect
         (std::bind(&Gui::Document::slotFinishRestoreObject, this, sp::_1));

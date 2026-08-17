@@ -23,7 +23,7 @@
 #ifndef DrawView_h_
 #define DrawView_h_
 
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <QCoreApplication>
 #include <QRectF>
 
@@ -106,7 +106,7 @@ public:
     virtual void setPosition(double x, double y, bool force = false);
     virtual bool keepUpdated(void);
 
-    boost::signals2::signal<void (const DrawView*)> signalGuiPaint;
+    fastsignals::signal<void (const DrawView*)> signalGuiPaint;
     void requestPaint(void);
 
     virtual double getScale(void) const;

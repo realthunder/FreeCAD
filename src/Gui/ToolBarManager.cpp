@@ -21,7 +21,7 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
-#include <boost/signals2/connection.hpp>
+#include <fastsignals/signal.h>
 #ifndef _PreComp_
 # include <QAction>
 # include <QApplication>
@@ -209,7 +209,7 @@ class ToolBarArea : public QWidget
 public:
     ToolBarArea(QWidget *parent,
                 ParameterGrp::handle hParam,
-                boost::signals2::scoped_connection &conn,
+                fastsignals::advanced_scoped_connection &conn,
                 QTimer *timer = nullptr)
         : QWidget(parent)
         , _sizingTimer(timer)
@@ -331,7 +331,7 @@ private:
     QHBoxLayout *_layout;
     QPointer<QTimer> _sizingTimer;
     ParameterGrp::handle _hParam;
-    boost::signals2::scoped_connection &_conn;
+    fastsignals::advanced_scoped_connection &_conn;
 };
 
 class ToolBar: public QToolBar
@@ -554,7 +554,8 @@ ToolBarManager::ToolBarManager()
             }
             else if (Param == hGlobal)
                 getGlobalToolBarNames();
-        });
+        },
+        fastsignals::advanced_tag {});
     timer.setSingleShot(true);
     connect(&timer, SIGNAL(timeout()), this, SLOT(onTimer()));
 

@@ -98,7 +98,7 @@ private:
 private:
     struct PropInfo;
     struct PropFind;
-    using Connection = boost::signals2::connection;
+    using Connection = fastsignals::connection;
     Connection connectPropData;
     Connection connectPropView;
     Connection connectPropAppend;
@@ -115,7 +115,8 @@ private:
     Connection connectActivateView;
     Connection connectChangedView;
     Connection connectDetachView;
-    Connection connectParamChange;
+    // Blocked by Base::ConnectionBlocker, so it is connected blockable.
+    fastsignals::advanced_connection connectParamChange;
     ParameterGrp::handle hParam;
 
     QTabWidget* tabs;

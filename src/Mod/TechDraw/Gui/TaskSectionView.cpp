@@ -121,7 +121,8 @@ TaskSectionView::TaskSectionView(TechDraw::DrawViewSection* section) :
     ui->lPendingUpdates->setText(QString());
 
     init();
-    conn = m_section->signalChanged.connect(boost::bind(&TaskSectionView::setUiEdit, this));
+    conn = m_section->signalChanged.connect(boost::bind(&TaskSectionView::setUiEdit, this),
+                                            fastsignals::advanced_tag {});
 }
 
 void TaskSectionView::init()
@@ -560,7 +561,8 @@ TechDraw::DrawViewSection* TaskSectionView::createSectionView(void)
         Gui::cmdAppObjectArgs(m_section, "Rotation = %.6f", rotation);
     }
     Gui::Command::updateActive();
-    conn = m_section->signalChanged.connect(boost::bind(&TaskSectionView::setUiEdit, this));
+    conn = m_section->signalChanged.connect(boost::bind(&TaskSectionView::setUiEdit, this),
+                                            fastsignals::advanced_tag {});
     return m_section;
 }
 

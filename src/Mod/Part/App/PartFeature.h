@@ -186,7 +186,7 @@ public:
     App::PropertyLinkHidden *get_ShapeContentOwnerProperty(bool force=false);
     //[[[end]]]
 
-    boost::signals2::signal<void (App::Document *)> signalMapShapeColors;
+    fastsignals::signal<void (App::Document *)> signalMapShapeColors;
 
     static Feature *create(const TopoShape &s,
                            const char *name = nullptr,

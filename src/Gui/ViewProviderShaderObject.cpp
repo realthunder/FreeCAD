@@ -728,9 +728,9 @@ bool _RebuildingBindings;
 // so documents with active Appearances get their signals hooked, with
 // rebuilds coalesced through the event loop.
 struct DocumentHooks {
-    boost::signals2::scoped_connection newObj;
-    boost::signals2::scoped_connection delObj;
-    boost::signals2::scoped_connection changedObj;
+    fastsignals::scoped_connection newObj;
+    fastsignals::scoped_connection delObj;
+    fastsignals::scoped_connection changedObj;
     // whether the last rebuild registered any chains: without chains a
     // link-property edit elsewhere cannot affect the bindings, and the
     // rebuild churn (node reinsertion → recapture) is not worth it

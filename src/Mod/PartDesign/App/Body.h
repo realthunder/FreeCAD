@@ -25,7 +25,7 @@
 #define PARTDESIGN_Body_H
 
 #include <deque>
-#include <boost/signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <Mod/Part/App/BodyBase.h>
 #include <Mod/PartDesign/PartDesignGlobal.h>
@@ -53,7 +53,7 @@ public:
 
     Body();
 
-    boost::signals2::signal<void (const std::deque<App::DocumentObject*>&)>
+    fastsignals::signal<void (const std::deque<App::DocumentObject*>&)>
         signalSiblingVisibilityChanged;
 
     /** @name methods override feature */

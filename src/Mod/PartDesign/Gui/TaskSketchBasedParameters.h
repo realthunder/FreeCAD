@@ -30,7 +30,7 @@
 #include <QGroupBox>
 
 #include <Gui/Selection.h>
-#include <boost/signals2/connection.hpp>
+#include <fastsignals/signal.h>
 #include "ViewProvider.h"
 
 #include "ReferenceSelection.h"
@@ -115,7 +115,7 @@ public:
     void addFittingWidgets(QBoxLayout *parentLayout);
     void _refresh();
 
-    boost::signals2::signal<void ()> signalSelectionModeChanged;
+    fastsignals::signal<void ()> signalSelectionModeChanged;
 
 protected Q_SLOTS:
     void onFitChanged(double);
@@ -206,11 +206,11 @@ protected:
     QListWidget *listWidget;
     QPushButton *button;
     QPushButton *clearButton = nullptr;
-    boost::signals2::scoped_connection conn;
+    fastsignals::scoped_connection conn;
     App::SubObjectT lastReference;
     App::DocumentObjectT linkProp;
     AllowSelectionFlags selectionConf;
-    boost::signals2::scoped_connection connModeChange;
+    fastsignals::scoped_connection connModeChange;
     bool singleElement = false;
     bool linkInited = false;
 };
@@ -264,11 +264,11 @@ protected:
     TaskSketchBasedParameters::SelectionMode selectionMode;
     QListWidget *listWidget;
     QPushButton *button;
-    boost::signals2::scoped_connection conn;
+    fastsignals::scoped_connection conn;
     std::vector<App::SubObjectT> lastReferences;
     App::DocumentObjectT linkProp;
     AllowSelectionFlags selectionConf;
-    boost::signals2::scoped_connection connModeChange;
+    fastsignals::scoped_connection connModeChange;
     bool linkInited = false;
 };
 

@@ -56,7 +56,7 @@ namespace sp = std::placeholders;
 class ElementColors::Private
 {
 public:
-    using Connection = boost::signals2::scoped_connection;
+    using Connection = fastsignals::scoped_connection;
     std::unique_ptr<Ui_TaskElementColors> ui;
     ViewProviderDocumentObject *vp;
     ViewProviderDocumentObject *vpParent;

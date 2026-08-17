@@ -21,7 +21,7 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
-#include <boost/signals2/connection.hpp>
+#include <fastsignals/signal.h>
 
 #ifndef _PreComp_
 # include <QApplication>
@@ -704,8 +704,8 @@ class Monitor
     struct Connections {
         App::SubObjectT activeBodyT;
         PartDesign::Body *activeBody = nullptr;
-        boost::signals2::scoped_connection connChangedObject;
-        boost::signals2::scoped_connection connDeletedObject;
+        fastsignals::scoped_connection connChangedObject;
+        fastsignals::scoped_connection connDeletedObject;
 
         void disconnect(const App::DocumentObject &obj)
         {
@@ -1440,9 +1440,9 @@ public:
     
 public:
     std::map<const App::Document*, Connections> conns;
-    boost::signals2::scoped_connection connDeleteDocument;
-    boost::signals2::scoped_connection connVisibilityChanged;
-    boost::signals2::scoped_connection connPrimitiveMoved;
+    fastsignals::scoped_connection connDeleteDocument;
+    fastsignals::scoped_connection connVisibilityChanged;
+    fastsignals::scoped_connection connPrimitiveMoved;
     App::DocumentObjectT editObjT;
     App::SubObjectT editBodyT;
     App::DocumentT editDoc;
@@ -1506,8 +1506,8 @@ QCheckBox *hookPropertyBool(App::DocumentObject *obj,
 
     // Auto disconnect boost signals when the following QObject signal gets
     // disconnected when the QObject is destroyed.
-    std::shared_ptr<boost::signals2::scoped_connection> pconn(
-            new boost::signals2::scoped_connection(conn));
+    std::shared_ptr<fastsignals::scoped_connection> pconn(
+            new fastsignals::scoped_connection(conn));
 
     Base::connect(static_cast<QAbstractButton*>(checkbox), &QAbstractButton::toggled,
         [objT, pconn](bool checked) {

@@ -217,7 +217,7 @@ private:
     ExpandInfoPtr _ExpandInfo;
     void restoreItemExpansion(const ExpandInfoPtr &, DocumentObjectItem *);
 
-    typedef boost::signals2::connection Connection;
+    typedef fastsignals::connection Connection;
     Connection connectNewObject;
     Connection connectDelObject;
     Connection connectChgObject;
@@ -232,9 +232,9 @@ private:
     Connection connectRecomputedObj;
     Connection connectChangedModified;
     Connection connectDetachView;
-    boost::signals2::scoped_connection connOnTopObject;
-    boost::signals2::scoped_connection connActivateView;
-    boost::signals2::scoped_connection connSignalChanged;
+    fastsignals::scoped_connection connOnTopObject;
+    fastsignals::scoped_connection connActivateView;
+    fastsignals::scoped_connection connSignalChanged;
 
     std::map<App::SubObjectT, std::vector<DocumentObjectItem*>> itemsOnTop;
     bool updatingItemsOnTop = false;
@@ -365,7 +365,7 @@ private:
     DocumentItem *myOwner;
     DocumentObjectDataPtr myData;
     std::vector<std::string> mySubs;
-    typedef boost::signals2::connection Connection;
+    typedef fastsignals::connection Connection;
     int previousStatus;
     int selected;
     bool populated;
@@ -847,7 +847,7 @@ public:
     std::vector<std::pair<QByteArray, int> > iconInfo;
     int iconStatus;
 
-    using Connection = boost::signals2::scoped_connection;
+    using Connection = fastsignals::scoped_connection;
 
     Connection connectIcon;
     Connection connectTool;

@@ -46,7 +46,7 @@ FC_LOG_LEVEL_INIT("Gui", true, true)
 using namespace Gui;
 
 struct ViewProviderGeoFeatureGroupExtension::Private {
-    std::vector<boost::signals2::scoped_connection> conns;
+    std::vector<fastsignals::scoped_connection> conns;
 };
 
 EXTENSION_PROPERTY_SOURCE(Gui::ViewProviderGeoFeatureGroupExtension, Gui::ViewProviderGroupExtension)

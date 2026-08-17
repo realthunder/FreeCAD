@@ -25,7 +25,7 @@
 #define PART_SUBSHAPEBINDER_H
 
 #include <QString>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <App/PropertyLinks.h>
 #include <App/DocumentObserver.h>
 #include <App/FeaturePython.h>
@@ -145,7 +145,7 @@ protected:
 
     void slotLabelChanged();
 
-    typedef boost::signals2::scoped_connection Connection;
+    typedef fastsignals::scoped_connection Connection;
     Connection connRecomputedObj;
     App::Document *contextDoc = 0;
 

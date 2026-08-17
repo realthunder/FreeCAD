@@ -24,7 +24,7 @@
 #ifndef _PreComp_
 # include <TopoDS.hxx>
 # include <TopoDS_Face.hxx>
-# include <boost/signals2.hpp>
+# include <fastsignals/signal.h>
 # include <map>
 # include <string>
 # include <vector>

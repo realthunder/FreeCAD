@@ -24,7 +24,7 @@
 #ifndef GUI_TASKVIEW_TaskDressUpParameters_H
 #define GUI_TASKVIEW_TaskDressUpParameters_H
 
-#include <boost/signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <Gui/TaskView/TaskView.h>
 #include <Mod/PartDesign/App/FeatureDressUp.h>

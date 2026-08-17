@@ -34,7 +34,7 @@ namespace App
 class AppExport TextDocument : public App::DocumentObject {
     PROPERTY_HEADER_WITH_OVERRIDE(App::TextDocument);
 public:
-    using TextSignal = boost::signals2::signal<void ()>;
+    using TextSignal = fastsignals::signal<void ()>;
     using TextSlot = TextSignal::slot_type;
 
     PropertyString Text;
@@ -45,8 +45,9 @@ public:
     void onChanged(const Property* prop) override;
     const char* getViewProviderName() const override;
 
-    boost::signals2::connection connectText(const TextSlot &sub);
-    boost::signals2::connection connectLabel(const TextSlot &sub);
+    /// Blockable: TextDocumentEditorView blocks this one while it writes back.
+    fastsignals::advanced_connection connectText(const TextSlot &sub);
+    fastsignals::connection connectLabel(const TextSlot &sub);
 
 private:
     TextSignal textChanged;

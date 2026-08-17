@@ -27,7 +27,7 @@
 
 #include <map>
 #include <string>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <QTimer>
 #include "Tree.h"
 #include <FCGlobal.h>
@@ -84,7 +84,7 @@ namespace Gui
         };
         mutable std::map<std::string, ObjectInfo> _ObjectMap;
         Document *_Doc;
-        boost::signals2::scoped_connection connChangedChildren;
+        fastsignals::scoped_connection connChangedChildren;
         QTimer timer;
     };
 

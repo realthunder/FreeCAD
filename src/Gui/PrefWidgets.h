@@ -23,7 +23,7 @@
 #ifndef GUI_PREFWIDGETS_H
 #define GUI_PREFWIDGETS_H
 
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <memory>
 #include <QVector>
@@ -129,7 +129,7 @@ public:
   void restoreSubEntries();
   void saveSubEntries();
 
-  boost::signals2::signal<void (QObject *, const SubEntry *)> signalSubEntryChanged;
+  fastsignals::signal<void (QObject *, const SubEntry *)> signalSubEntryChanged;
 
   virtual void setAutoSave(bool enable) = 0;
 

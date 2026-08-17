@@ -36,7 +36,7 @@
 
 #include <bitset>
 #include <functional>
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 #include <unordered_map>
 
 namespace Base
@@ -117,11 +117,11 @@ public:
     App::PropertyInteger TreeRank;
 
     /// signal before changing a property of this object
-    boost::signals2::signal<void (const App::DocumentObject&, const App::Property&)> signalBeforeChange;
+    fastsignals::signal<void (const App::DocumentObject&, const App::Property&)> signalBeforeChange;
     /// signal on changed property of this object
-    boost::signals2::signal<void (const App::DocumentObject&, const App::Property&)> signalChanged;
+    fastsignals::signal<void (const App::DocumentObject&, const App::Property&)> signalChanged;
     /// signal on changed property of this object before document scoped signalChangedObject
-    boost::signals2::signal<void (const App::DocumentObject&, const App::Property&)> signalEarlyChanged;
+    fastsignals::signal<void (const App::DocumentObject&, const App::Property&)> signalEarlyChanged;
 
     /// returns the type name of the ViewProvider
     virtual const char* getViewProviderName() const {

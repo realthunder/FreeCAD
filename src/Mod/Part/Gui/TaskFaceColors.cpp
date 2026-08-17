@@ -87,7 +87,7 @@ namespace PartGui {
 class FaceColors::Private
 {
 public:
-    using Connection = boost::signals2::connection;
+    using Connection = fastsignals::connection;
     Ui_TaskFaceColors* ui;
     QPointer<Gui::View3DInventorViewer> view;
     ViewProviderPartExt* vp;

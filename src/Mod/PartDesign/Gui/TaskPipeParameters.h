@@ -23,7 +23,7 @@
 #ifndef GUI_TASKVIEW_TaskPipeParameters_H
 #define GUI_TASKVIEW_TaskPipeParameters_H
 
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderPipe.h"

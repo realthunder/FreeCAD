@@ -81,7 +81,7 @@ private:
     GraphvizWorker* thread;
     int nPending;
 
-    using Connection = boost::signals2::scoped_connection;
+    using Connection = fastsignals::scoped_connection;
     Connection recomputeConnection;
     Connection undoConnection;
     Connection redoConnection;

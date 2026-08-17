@@ -23,7 +23,7 @@
 #ifndef GUI_TASKVIEW_TaskLoftParameters_H
 #define GUI_TASKVIEW_TaskLoftParameters_H
 
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderLoft.h"
@@ -65,7 +65,7 @@ protected:
 private:
     QWidget* proxy;
     std::unique_ptr<Ui_TaskLoftParameters> ui;
-    boost::signals2::scoped_connection connSections;
+    fastsignals::scoped_connection connSections;
     LinkSubListWidget *sectionWidget;
 };
 

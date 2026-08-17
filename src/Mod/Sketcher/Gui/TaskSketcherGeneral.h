@@ -23,7 +23,7 @@
 #ifndef GUI_TASKVIEW_TaskSketcherGerneral_H
 #define GUI_TASKVIEW_TaskSketcherGerneral_H
 
-#include <boost_signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <Gui/Selection.h>
 #include <Gui/TaskView/TaskView.h>

@@ -31,8 +31,6 @@
 #include <vector>
 #include <QIcon>
 #include <QPixmap>
-#include <boost/signals2.hpp>
-// Upstream's name for the same namespace; see the note in App/Property.h
 #include <fastsignals/signal.h>
 
 #include <App/Material.h>
@@ -443,9 +441,9 @@ public:
     /** @name Signals of the view provider */
     //@{
     /// signal on icon change
-    boost::signals2::signal<void ()> signalChangeIcon;
+    fastsignals::signal<void ()> signalChangeIcon;
     /// signal on tree item highlight change
-    boost::signals2::signal<void (bool, Gui::HighlightMode)> signalChangeHighlight;
+    fastsignals::signal<void (bool, Gui::HighlightMode)> signalChangeHighlight;
     //@}
 
     /** update the content of the ViewProvider

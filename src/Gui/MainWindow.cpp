@@ -307,7 +307,7 @@ struct MainWindowP
     QMap<QString, QPointer<UrlHandler> > urlHandler;
     std::string hiddenDockWindows;
     int screen = -1;
-    boost::signals2::scoped_connection connParam;
+    fastsignals::advanced_scoped_connection connParam;
     ParameterGrp::handle hGrp;
     bool _restoring = false;
     bool _closingAll = false;
@@ -483,7 +483,8 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
                 // what lets a theme name them independently.
                 d->titleBarTimer.start(0);
             }
-        });
+        },
+        fastsignals::advanced_tag {});
 
     d->hGrp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/MainWindow");

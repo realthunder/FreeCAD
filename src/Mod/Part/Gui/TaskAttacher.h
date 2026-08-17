@@ -175,7 +175,7 @@ private:
     bool editOnClose = false;
     bool touched = false;
 
-    using Connection = boost::signals2::connection;
+    using Connection = fastsignals::connection;
     Connection connectDelObject;
     Connection connectDelDocument;
     Connection connectUndo;

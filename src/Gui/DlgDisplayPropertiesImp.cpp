@@ -23,7 +23,7 @@
 #include "PreCompiled.h"
 #ifndef _PreComp_
 # include <algorithm>
-# include <boost_signals2.hpp>
+# include <fastsignals/signal.h>
 # include <QDockWidget>
 # include <QSignalBlocker>
 #endif
@@ -56,7 +56,7 @@ namespace sp = std::placeholders;
 
 class DlgDisplayPropertiesImp::Private
 {
-    using DlgDisplayPropertiesImp_Connection = boost::signals2::connection;
+    using DlgDisplayPropertiesImp_Connection = fastsignals::connection;
 public:
     Ui::DlgDisplayProperties ui;
     bool floating;

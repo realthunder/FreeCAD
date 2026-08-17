@@ -243,8 +243,8 @@ private:
     void slotChildChanged(const App::Property&);
 
     struct ChildConnections {
-        boost::signals2::scoped_connection visibility;
-        boost::signals2::scoped_connection groupTouched;
+        fastsignals::scoped_connection visibility;
+        fastsignals::scoped_connection groupTouched;
         // Marks the entry as seen by the running sync, so that children gone
         // from Group can be swept without building a second lookup structure.
         unsigned long stamp = 0;

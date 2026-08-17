@@ -317,7 +317,7 @@ private:
     friend class TreeParams;
     friend class TreeWidgetItemDelegate;
 
-    using Connection = boost::signals2::connection;
+    using Connection = fastsignals::connection;
     Connection connectNewDocument;
     Connection connectDelDocument;
     Connection connectRenDocument;

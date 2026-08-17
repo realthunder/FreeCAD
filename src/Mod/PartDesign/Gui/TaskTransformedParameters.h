@@ -24,7 +24,7 @@
 #ifndef GUI_TASKVIEW_TaskTransformedParameters_H
 #define GUI_TASKVIEW_TaskTransformedParameters_H
 
-#include <boost/signals2.hpp>
+#include <fastsignals/signal.h>
 
 #include <QComboBox>
 
@@ -265,7 +265,7 @@ protected:
     int defaultMinimumHeight = 150;
 
     QLabel *labelMessage = nullptr;
-    boost::signals2::scoped_connection connMessage;
+    fastsignals::scoped_connection connMessage;
 
     QTimer *updateViewTimer = nullptr;
 

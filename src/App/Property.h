@@ -32,10 +32,9 @@
 #else
 #   include "stx/any.hpp"
 #endif
-#include <boost/signals2.hpp>
-// Upstream's name for the same namespace, so ported code compiles unchanged.
-// Here rather than in each porting site, because upstream's core headers put
-// it where every DocumentObject-side file picks it up.
+// The signals library (src/3rdParty/FastSignals). Included here rather than
+// per site because this is where every DocumentObject-side file picks it up,
+// which is what upstream's core headers do too.
 #include <fastsignals/signal.h>
 #include <bitset>
 #include <string>
@@ -408,7 +407,7 @@ private:
     int64_t _id;
 
 public:
-    boost::signals2::signal<void (const App::Property&)> signalChanged;
+    fastsignals::signal<void (const App::Property&)> signalChanged;
 };
 
 

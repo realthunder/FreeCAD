@@ -27,7 +27,7 @@
 #include <Gui/TaskView/TaskDialog.h>
 #include <Gui/TaskView/TaskView.h>
 
-#include <boost/signals2.hpp>
+#include <fastsignals/signal.h>
 #include "ViewProviderBoolean.h"
 #include "TaskFeatureParameters.h"
 
@@ -86,8 +86,8 @@ private:
     QWidget* proxy;
     std::unique_ptr<Ui_TaskBooleanParameters> ui;
     ViewProviderBoolean *BooleanView;
-    boost::signals2::scoped_connection undoConn;
-    boost::signals2::scoped_connection redoConn;
+    fastsignals::scoped_connection undoConn;
+    fastsignals::scoped_connection redoConn;
     bool selecting = false;
     int transactionID = 0;
 };

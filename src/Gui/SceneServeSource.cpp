@@ -156,7 +156,7 @@ public:
     ServeRenderProperties renderProps;
     std::unique_ptr<Render::Renderer> renderer;
     QTimer timer;
-    std::vector<boost::signals2::scoped_connection> connections;
+    std::vector<fastsignals::scoped_connection> connections;
 
     ~Private()
     {
