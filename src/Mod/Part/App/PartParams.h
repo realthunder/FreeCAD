@@ -252,6 +252,21 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ShareStoredSubShapes
+    ///
+    /// Let a stored shape borrow a sub-shape from another object's file instead
+    /// of writing its geometry again (docs/SharedShapeStorage.md sec 12.4).
+    /// Turning this off writes every file whole, which is what the format did
+    /// before external references; the files stay readable either way.
+    static const bool & getShareStoredSubShapes();
+    static const bool & defaultShareStoredSubShapes();
+    static void removeShareStoredSubShapes();
+    static void setShareStoredSubShapes(const bool &v);
+    static const char *docShareStoredSubShapes();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LoftMaxDegree
     static const unsigned long & getLoftMaxDegree();
     static const unsigned long & defaultLoftMaxDegree();

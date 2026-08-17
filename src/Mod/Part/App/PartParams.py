@@ -74,6 +74,11 @@ Params = [
     ParamInt("ParallelRunThreshold", 100),
     ParamBool("AutoValidateShape", False),
     ParamBool("FixShape", False),
+    ParamBool("ShareStoredSubShapes", True,
+        "Let a stored shape borrow a sub-shape from another object's file instead\n"
+        "of writing its geometry again (docs/SharedShapeStorage.md sec 12.4).\n"
+        "Turning this off writes every file whole, which is what the format did\n"
+        "before external references; the files stay readable either way."),
     ParamUInt("LoftMaxDegree", 5),
     _MinimumDeviation,
     _MeshDeviation,

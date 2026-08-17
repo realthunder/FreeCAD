@@ -422,7 +422,12 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
     App::Document* doc = owner ? owner->getDocument() : nullptr;
     // Without a document there is nothing to share with: a property standing
     // on its own writes plain BRep, as it always did.
-    ShapeOwnerTable* owners = doc ? saveOwnerTable(manager.saveGeneration()) : nullptr;
+    // Without the owner table nothing is borrowed and nothing is published, so
+    // the switch turns this file back into the whole-shape file sec 12.3 wrote.
+    // It is what an A/B against that format is measured with.
+    ShapeOwnerTable* owners = (doc && PartParams::getShareStoredSubShapes())
+        ? saveOwnerTable(manager.saveGeneration())
+        : nullptr;
 
     // The analysis runs whatever happens to the file. It is what tells later
     // objects that this file holds these sub-shapes, and it is cheap next to
