@@ -133,16 +133,8 @@ Notes that matter when reading them:
   namespace: ported code gets exactly the connection type our core returns,
   in both directions, with nothing rewritten.
 
-**Why not vendor FastSignals for its own sake.** It is an API-compatible
-drop-in for Boost.Signals2 that emits 3-6x faster in its own benchmark and
-produces smaller binaries -- both of which this fork would like, the second
-one especially in the WASM tier -- at the cost of `connect_extended`,
-`slot::track`, `shared_connection_block` and the `disconnect(slot)`
-overload. Taking it would mean converting the fork's own signals, since our
-core hands back `boost::signals2::connection` and upstream's hands back
-`fastsignals::connection`. That is a real decision with a measurable
-payoff (`Document`'s signals fire per object on every recompute) and it is
-not this step. 1i is the spelling only.
+! **1i was superseded within the day: the fork took the library itself.**
+The alias described above no longer exists. See section 2.2.
 
 **Verification.** A full build of `build/conda-debug-occt801`, plus
 syntax-only checks that assert the resolved return type of every existing
@@ -171,6 +163,92 @@ What is left is what the evaluation predicted and none of it is additive:
 strings, the `Gui::PropertyEditor` drift, and the generated-file
 artifacts. Gui's clean count does not move at all, because every one of
 its TUs also fails on those.
+
+## 2.2 Taking FastSignals itself (done 2026-08-17)
+
+Section 2.1 item 1i made `fastsignals` another name for `boost::signals2`,
+and argued that adopting the library for its own sake was a separate
+decision. That decision was then taken: the fork's signals **are**
+FastSignals now, `src/3rdParty/FastSignals` is vendored as upstream has it,
+and `boost::signals2` is gone from `src/` entirely.
+
+**The measurement that justified it.** Not the library's own benchmark --
+ours, on the shape our signals actually have,
+`signal<void(const A&, const B&)>`, which is what `App::Document` fires per
+object per property change. Both sides compiled `-O2`:
+
+| slots | boost ns/emit | fastsignals ns/emit | speedup |
+|---|---|---|---|
+| 0 | 18.8 | 5.9 | 3.2x |
+| 1 | 45.7 | 13.4 | 3.4x |
+| 4 | 87.2 | 47.4 | 1.8x |
+| 8 | 141.6 | 93.5 | 1.5x |
+| 16 | 259.2 | 199.1 | 1.3x |
+| connect+disconnect, 1 slot | 128.7 | 47.2 | 2.7x |
+| connect+disconnect, 8 slots | 113.2 | 50.0 | 2.3x |
+
+The gain is largest where the per-emission overhead dominates, which is
+where our signals live: most fire to a handful of observers. Connect cost
+matters on document load, where every object wires its observers.
+
+! **A benchmark trap worth naming, because the first run said the exact
+opposite -- 3x SLOWER.** Boost.Signals2 is header-only, so it is compiled
+with the *calling* translation unit's flags; FastSignals is a library, so it
+is compiled with its own. Measuring a `-O2` benchmark against our Debug
+build of the library compares `-O0` code with `-O2` code and says nothing
+about either. Compile both sides the same way or throw the number away.
+
+**Two changes to the vendored copy**, both marked `[FreeCAD fork addition]`
+in place so a future re-sync sees them:
+
+- **A front connect.** `Gui::Document` connects to `signalNewObject` ahead
+  of every other observer on purpose (`2d693c0423`, "signal new object in
+  Gui::Document first before others"), and FastSignals had no ordering
+  control at all. Its iteration algorithm rests on the id array being
+  sorted ascending, so the id space is split at 2^32: front slots count
+  down from it, ordinary slots count up. A new front id is then smaller
+  than every id present, which is what lets the insert at the beginning
+  keep the array sorted. `remove()` and `get_next_slot()` only ever assumed
+  "sorted", never "starts at 1", so neither changed.
+- **A local named `slots`**, which Qt `#define`s to nothing. Every
+  translation unit that reached a Qt header before `signal.h` stopped
+  parsing inside it. Upstream survives this on include-order luck; a header
+  does not get to assume include order.
+
+! **The one semantic difference, and it is a real one: blocking is decided
+at connect time.** Boost.Signals2 can block any connection whenever it
+likes. FastSignals wraps a blockable slot in a check when it is connected,
+so the ability has to be asked for -- `connect(slot, advanced_tag {})` --
+and the connection has to be stored as `advanced_connection` (or
+`advanced_scoped_connection`; the plain scoped type deliberately refuses an
+advanced connection rather than silently dropping the block). Thirteen
+sites block a connection, and `Base::ConnectionBlocker` now takes the
+advanced type, so a connection that forgot to opt in is a compile error
+rather than a block that quietly does nothing. Converted: the two in
+`Gui::Document`, the parameter-change connections in `Action`,
+`DockWindowManager`, `MainWindow`, `PropertyView` and `ToolBarManager`,
+`TaskSketcherConstraints`, `TaskSectionView`, `TaskOrthoViews`,
+`App::TextDocument::connectText`, and the four registrations in
+`SketcherToolDefaultWidget`.
+
+**`src/boost_signals2.hpp` is gone.** It was a fork chokepoint header, a
+workaround for a boost >= 1.74 deprecation warning, included by 53 files.
+The workaround is moot and the name would now be a lie, so the 53 includes
+name the library directly.
+
+**What the migration guide warned about and what actually happened.**
+Boost.Signals2 pulls in a great deal of the standard library transitively;
+FastSignals does not. Across the whole tree that cost exactly one missing
+`#include <list>`, in `App/Application.h`. Nothing used `connect_extended`,
+`slot::track`, `track_foreign`, a custom combiner, or a non-void signal, so
+none of the genuine incompatibilities applied -- all 181 signals are
+`void(...)`.
+
+**Verification.** A full build; the vendored library's own suites (265
+assertions in 55 cases, plus the concurrency stress test); seven ordering
+tests for the front connect under ASan and UBSan; and the runtime probe
+that drives a document through `App::DocumentObserver`, which is a pure
+signal consumer, so a dropped signal shows up as a missing callback.
 
 ## 3. Stage 2 -- upstream's names and locations, aliases at the old ones
 
