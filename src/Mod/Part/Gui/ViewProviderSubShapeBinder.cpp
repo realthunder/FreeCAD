@@ -688,5 +688,5 @@ void ViewProviderSubShapeBinder::generateIcons() const
 namespace Gui {
 PROPERTY_SOURCE_TEMPLATE(PartGui::ViewProviderSubShapeBinderPython,
                          PartGui::ViewProviderSubShapeBinder)
-template class PartGuiExport ViewProviderPythonFeatureT<ViewProviderSubShapeBinder>;
+template class PartGuiExport ViewProviderFeaturePythonT<ViewProviderSubShapeBinder>;
 }

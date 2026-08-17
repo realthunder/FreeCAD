@@ -4370,5 +4370,5 @@ bool ViewProviderLink::iconMouseEvent(QMouseEvent *ev, const QByteArray &tag)
 
 namespace Gui {
 PROPERTY_SOURCE_TEMPLATE(Gui::ViewProviderLinkPython, Gui::ViewProviderLink)
-template class GuiExport ViewProviderPythonFeatureT<ViewProviderLink>;
+template class GuiExport ViewProviderFeaturePythonT<ViewProviderLink>;
 }

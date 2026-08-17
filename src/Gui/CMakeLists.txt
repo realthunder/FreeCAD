@@ -952,7 +952,7 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderInventorObject.cpp
     ViewProviderMeasureDistance.cpp
     ViewProviderPyImp.cpp
-    ViewProviderPythonFeature.cpp
+    ViewProviderFeaturePython.cpp
     ViewProviderVRMLObject.cpp
     ViewProviderBuilder.cpp
     ViewProviderPlacement.cpp
@@ -993,6 +993,7 @@ SET(Viewprovider_SRCS
     ViewProviderImagePlane.h
     ViewProviderInventorObject.h
     ViewProviderMeasureDistance.h
+    ViewProviderFeaturePython.h
     ViewProviderPythonFeature.h
     ViewProviderVRMLObject.h
     ViewProviderBuilder.h

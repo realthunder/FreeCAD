@@ -146,7 +146,7 @@
 #include "ViewProviderPlacement.h"
 #include "ViewProviderPlane.h"
 #include "ViewProviderPart.h"
-#include "ViewProviderPythonFeature.h"
+#include "ViewProviderFeaturePython.h"
 #include "ViewProviderTextDocument.h"
 #include "ViewProviderSavedView.h"
 #include "ViewProviderSavedViewPy.h"
@@ -2177,8 +2177,20 @@ void Application::initTypes()
     Gui::ViewProviderAnnotationLabel            ::init();
     Gui::ViewProviderPointMarker                ::init();
     Gui::ViewProviderMeasureDistance            ::init();
-    Gui::ViewProviderPythonFeature              ::init();
-    Gui::ViewProviderPythonGeometry             ::init();
+    Gui::ViewProviderFeaturePython              ::init();
+    Gui::ViewProviderGeometryPython             ::init();
+    // The fork's older type NAMES stay resolvable. A view provider is created
+    // by name -- from getViewProviderName(), from a document's ViewType
+    // attribute when it overrides the default, and from Python -- so renaming
+    // the class alone would make those lookups fail and silently leave objects
+    // with no view provider. These register the old spellings against the same
+    // factory; instances still report the new type as their own.
+    Base::Type::createType(Gui::ViewProviderFeaturePython::getClassTypeId(),
+                           "Gui::ViewProviderPythonFeature",
+                           &Gui::ViewProviderFeaturePython::create);
+    Base::Type::createType(Gui::ViewProviderGeometryPython::getClassTypeId(),
+                           "Gui::ViewProviderPythonGeometry",
+                           &Gui::ViewProviderGeometryPython::create);
     Gui::ViewProviderPlacement                  ::init();
     Gui::ViewProviderPlacementPython            ::init();
     Gui::ViewProviderOriginFeature              ::init();

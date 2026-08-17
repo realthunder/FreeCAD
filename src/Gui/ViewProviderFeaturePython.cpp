@@ -38,7 +38,7 @@
 #include <Base/Interpreter.h>
 #include <Base/Tools.h>
 
-#include "ViewProviderPythonFeature.h"
+#include "ViewProviderFeaturePython.h"
 #include "Application.h"
 #include "BitmapFactory.h"
 #include "Document.h"
@@ -47,7 +47,7 @@
 #include "ViewProviderDocumentObjectPy.h"
 
 
-FC_LOG_LEVEL_INIT("ViewProviderPythonFeature", true, true)
+FC_LOG_LEVEL_INIT("ViewProviderFeaturePython", true, true)
 
 
 using namespace Gui;
@@ -56,14 +56,14 @@ namespace sp = std::placeholders;
 
 // ----------------------------------------------------------------------------
 
-ViewProviderPythonFeatureImp::ViewProviderPythonFeatureImp(
+ViewProviderFeaturePythonImp::ViewProviderFeaturePythonImp(
         ViewProviderDocumentObject* vp, App::PropertyPythonObject &proxy)
   : object(vp)
   , Proxy(proxy)
 {
 }
 
-ViewProviderPythonFeatureImp::~ViewProviderPythonFeatureImp()
+ViewProviderFeaturePythonImp::~ViewProviderFeaturePythonImp()
 {
     Base::PyGILStateLocker lock;
 #undef FC_PY_ELEMENT
@@ -77,7 +77,7 @@ ViewProviderPythonFeatureImp::~ViewProviderPythonFeatureImp()
     }
 }
 
-void ViewProviderPythonFeatureImp::init(PyObject *pyobj) {
+void ViewProviderFeaturePythonImp::init(PyObject *pyobj) {
     Base::PyGILStateLocker lock;
     has__object__ = !!PyObject_HasAttrString(pyobj, "__object__");
 
@@ -133,7 +133,7 @@ static QPixmap getPixmapFromPython(Py::Object pyobj)
     return QPixmap();
 }
 
-QIcon ViewProviderPythonFeatureImp::getIcon() const
+QIcon ViewProviderFeaturePythonImp::getIcon() const
 {
     _FC_PY_CALL_CHECK(getIcon,return(QIcon()));
 
@@ -190,7 +190,7 @@ QIcon ViewProviderPythonFeatureImp::getIcon() const
     return {};
 }
 
-void ViewProviderPythonFeatureImp::getExtraIcons(
+void ViewProviderFeaturePythonImp::getExtraIcons(
         std::vector<std::pair<QByteArray, QPixmap> > &icons) const
 {
     _FC_PY_CALL_CHECK(getExtraIcons,return);
@@ -255,7 +255,7 @@ void ViewProviderPythonFeatureImp::getExtraIcons(
     }
 }
 
-bool ViewProviderPythonFeatureImp::claimChildren(std::vector<App::DocumentObject*> &children) const
+bool ViewProviderFeaturePythonImp::claimChildren(std::vector<App::DocumentObject*> &children) const
 {
     _FC_PY_CALL_CHECK(claimChildren,return(false));
 
@@ -282,8 +282,8 @@ bool ViewProviderPythonFeatureImp::claimChildren(std::vector<App::DocumentObject
     return true;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::useNewSelectionModel() const
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::useNewSelectionModel() const
 {
     FC_PY_CALL_CHECK(useNewSelectionModel);
 
@@ -305,7 +305,7 @@ ViewProviderPythonFeatureImp::useNewSelectionModel() const
     return Accepted;
 }
 
-bool ViewProviderPythonFeatureImp::getElement(const SoDetail *det, std::string &res) const
+bool ViewProviderFeaturePythonImp::getElement(const SoDetail *det, std::string &res) const
 {
     _FC_PY_CALL_CHECK(getElement,return(false));
 
@@ -338,8 +338,8 @@ bool ViewProviderPythonFeatureImp::getElement(const SoDetail *det, std::string &
     return true;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::getElementPicked(const SoPickedPoint *pp, std::string &subname) const
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::getElementPicked(const SoPickedPoint *pp, std::string &subname) const
 {
     FC_PY_CALL_CHECK(getElementPicked);
 
@@ -370,7 +370,7 @@ ViewProviderPythonFeatureImp::getElementPicked(const SoPickedPoint *pp, std::str
     return Rejected;
 }
 
-bool ViewProviderPythonFeatureImp::getDetail(const char* name, SoDetail *&det) const
+bool ViewProviderFeaturePythonImp::getDetail(const char* name, SoDetail *&det) const
 {
     _FC_PY_CALL_CHECK(getDetail,return(false));
 
@@ -401,7 +401,7 @@ bool ViewProviderPythonFeatureImp::getDetail(const char* name, SoDetail *&det) c
     return true;
 }
 
-ViewProviderPythonFeatureImp::ValueT ViewProviderPythonFeatureImp::getDetailPath(
+ViewProviderFeaturePythonImp::ValueT ViewProviderFeaturePythonImp::getDetailPath(
         const char* name, SoFullPath *path, bool append, SoDetail *&det) const
 {
     FC_PY_CALL_CHECK(getDetailPath);
@@ -445,13 +445,13 @@ ViewProviderPythonFeatureImp::ValueT ViewProviderPythonFeatureImp::getDetailPath
 }
 
 
-std::vector<Base::Vector3d> ViewProviderPythonFeatureImp::getSelectionShape(const char* /*Element*/) const
+std::vector<Base::Vector3d> ViewProviderFeaturePythonImp::getSelectionShape(const char* /*Element*/) const
 {
     return {};
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::setEdit(int ModNum)
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::setEdit(int ModNum)
 {
     FC_PY_CALL_CHECK(setEdit)
 
@@ -491,8 +491,8 @@ ViewProviderPythonFeatureImp::setEdit(int ModNum)
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::unsetEdit(int ModNum)
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::unsetEdit(int ModNum)
 {
     FC_PY_CALL_CHECK(unsetEdit)
 
@@ -532,8 +532,8 @@ ViewProviderPythonFeatureImp::unsetEdit(int ModNum)
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::setEditViewer(View3DInventorViewer *viewer, int ModNum)
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::setEditViewer(View3DInventorViewer *viewer, int ModNum)
 {
     FC_PY_CALL_CHECK(setEditViewer)
 
@@ -557,8 +557,8 @@ ViewProviderPythonFeatureImp::setEditViewer(View3DInventorViewer *viewer, int Mo
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::unsetEditViewer(View3DInventorViewer *viewer)
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::unsetEditViewer(View3DInventorViewer *viewer)
 {
     FC_PY_CALL_CHECK(unsetEditViewer)
 
@@ -582,8 +582,8 @@ ViewProviderPythonFeatureImp::unsetEditViewer(View3DInventorViewer *viewer)
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::doubleClicked()
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::doubleClicked()
 {
     FC_PY_CALL_CHECK(doubleClicked)
 
@@ -615,8 +615,8 @@ ViewProviderPythonFeatureImp::doubleClicked()
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::iconMouseEvent(QMouseEvent *ev, const QByteArray &tag)
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::iconMouseEvent(QMouseEvent *ev, const QByteArray &tag)
 {
     FC_PY_CALL_CHECK(iconMouseEvent)
 
@@ -644,7 +644,7 @@ ViewProviderPythonFeatureImp::iconMouseEvent(QMouseEvent *ev, const QByteArray &
     return Rejected;
 }
 
-bool ViewProviderPythonFeatureImp::getToolTip(const QByteArray &tag, QString &tooltip) const
+bool ViewProviderFeaturePythonImp::getToolTip(const QByteArray &tag, QString &tooltip) const
 {
     FC_PY_CALL_CHECK(getToolTip)
 
@@ -671,7 +671,7 @@ bool ViewProviderPythonFeatureImp::getToolTip(const QByteArray &tag, QString &to
     return false;
 }
 
-bool ViewProviderPythonFeatureImp::setupContextMenu(QMenu* menu)
+bool ViewProviderFeaturePythonImp::setupContextMenu(QMenu* menu)
 {
     _FC_PY_CALL_CHECK(setupContextMenu,return(false));
 
@@ -707,7 +707,7 @@ bool ViewProviderPythonFeatureImp::setupContextMenu(QMenu* menu)
     return true;
 }
 
-void ViewProviderPythonFeatureImp::attach(App::DocumentObject *pcObject)
+void ViewProviderFeaturePythonImp::attach(App::DocumentObject *pcObject)
 {
     _FC_PY_CALL_CHECK(attach,return);
 
@@ -733,7 +733,7 @@ void ViewProviderPythonFeatureImp::attach(App::DocumentObject *pcObject)
     }
 }
 
-void ViewProviderPythonFeatureImp::updateData(const App::Property* prop)
+void ViewProviderFeaturePythonImp::updateData(const App::Property* prop)
 {
     if(py_updateData.isNone())
         return;
@@ -765,7 +765,7 @@ void ViewProviderPythonFeatureImp::updateData(const App::Property* prop)
     }
 }
 
-void ViewProviderPythonFeatureImp::onChanged(const App::Property* prop)
+void ViewProviderFeaturePythonImp::onChanged(const App::Property* prop)
 {
     if(py_onChanged.isNone())
         return;
@@ -797,11 +797,11 @@ void ViewProviderPythonFeatureImp::onChanged(const App::Property* prop)
     }
 }
 
-void ViewProviderPythonFeatureImp::startRestoring()
+void ViewProviderFeaturePythonImp::startRestoring()
 {
 }
 
-void ViewProviderPythonFeatureImp::finishRestoring()
+void ViewProviderFeaturePythonImp::finishRestoring()
 {
     Base::PyGILStateLocker lock;
     try {
@@ -819,8 +819,8 @@ void ViewProviderPythonFeatureImp::finishRestoring()
     }
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::onDelete(const std::vector<std::string> & sub)
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::onDelete(const std::vector<std::string> & sub)
 {
     FC_PY_CALL_CHECK(onDelete);
 
@@ -857,8 +857,8 @@ ViewProviderPythonFeatureImp::onDelete(const std::vector<std::string> & sub)
     }
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canDelete(App::DocumentObject *obj) const
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canDelete(App::DocumentObject *obj) const
 {
     FC_PY_CALL_CHECK(canDelete);
 
@@ -879,8 +879,8 @@ ViewProviderPythonFeatureImp::canDelete(App::DocumentObject *obj) const
     }
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canAddToSceneGraph() const
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canAddToSceneGraph() const
 {
     FC_PY_CALL_CHECK(canAddToSceneGraph);
 
@@ -899,7 +899,7 @@ ViewProviderPythonFeatureImp::canAddToSceneGraph() const
     return Accepted;
 }
 
-bool ViewProviderPythonFeatureImp::getDefaultDisplayMode(std::string &mode) const
+bool ViewProviderFeaturePythonImp::getDefaultDisplayMode(std::string &mode) const
 {
     _FC_PY_CALL_CHECK(getDefaultDisplayMode,return(0));
 
@@ -922,7 +922,7 @@ bool ViewProviderPythonFeatureImp::getDefaultDisplayMode(std::string &mode) cons
     return true;
 }
 
-std::vector<std::string> ViewProviderPythonFeatureImp::getDisplayModes() const
+std::vector<std::string> ViewProviderFeaturePythonImp::getDisplayModes() const
 {
     std::vector<std::string> modes;
     _FC_PY_CALL_CHECK(getDisplayModes,return(modes));
@@ -959,7 +959,7 @@ std::vector<std::string> ViewProviderPythonFeatureImp::getDisplayModes() const
     return modes;
 }
 
-std::string ViewProviderPythonFeatureImp::setDisplayMode(const char* ModeName)
+std::string ViewProviderFeaturePythonImp::setDisplayMode(const char* ModeName)
 {
     _FC_PY_CALL_CHECK(setDisplayMode,return(ModeName));
 
@@ -979,8 +979,8 @@ std::string ViewProviderPythonFeatureImp::setDisplayMode(const char* ModeName)
     return ModeName;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canDragObjects() const
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canDragObjects() const
 {
     FC_PY_CALL_CHECK(canDragObjects);
 
@@ -1001,8 +1001,8 @@ ViewProviderPythonFeatureImp::canDragObjects() const
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canDragObject(App::DocumentObject* obj) const
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canDragObject(App::DocumentObject* obj) const
 {
     FC_PY_CALL_CHECK(canDragObject);
 
@@ -1025,8 +1025,8 @@ ViewProviderPythonFeatureImp::canDragObject(App::DocumentObject* obj) const
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::dragObject(App::DocumentObject* obj)
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::dragObject(App::DocumentObject* obj)
 {
     FC_PY_CALL_CHECK(dragObject);
 
@@ -1059,8 +1059,8 @@ ViewProviderPythonFeatureImp::dragObject(App::DocumentObject* obj)
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canDropObjects() const
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canDropObjects() const
 {
     FC_PY_CALL_CHECK(canDropObjects);
 
@@ -1081,8 +1081,8 @@ ViewProviderPythonFeatureImp::canDropObjects() const
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canDropObject(App::DocumentObject* obj) const
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canDropObject(App::DocumentObject* obj) const
 {
     FC_PY_CALL_CHECK(canDropObject);
 
@@ -1105,8 +1105,8 @@ ViewProviderPythonFeatureImp::canDropObject(App::DocumentObject* obj) const
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::dropObject(App::DocumentObject* obj)
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::dropObject(App::DocumentObject* obj)
 {
     FC_PY_CALL_CHECK(dropObject);
 
@@ -1137,8 +1137,8 @@ ViewProviderPythonFeatureImp::dropObject(App::DocumentObject* obj)
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canDragAndDropObject(App::DocumentObject *obj) const
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canDragAndDropObject(App::DocumentObject *obj) const
 {
     FC_PY_CALL_CHECK(canDragAndDropObject);
 
@@ -1160,8 +1160,8 @@ ViewProviderPythonFeatureImp::canDragAndDropObject(App::DocumentObject *obj) con
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canDropObjectEx(App::DocumentObject* obj,
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canDropObjectEx(App::DocumentObject* obj,
         App::DocumentObject *owner, const char *subname, const std::vector<std::string> &elements) const
 {
     FC_PY_CALL_CHECK(canDropObjectEx);
@@ -1193,7 +1193,7 @@ ViewProviderPythonFeatureImp::canDropObjectEx(App::DocumentObject* obj,
     return Rejected;
 }
 
-bool ViewProviderPythonFeatureImp::dropObjectEx(App::DocumentObject* obj, App::DocumentObject *owner,
+bool ViewProviderFeaturePythonImp::dropObjectEx(App::DocumentObject* obj, App::DocumentObject *owner,
         const char *subname, const std::vector<std::string> &elements,std::string &ret)
 {
     _FC_PY_CALL_CHECK(dropObjectEx, return(false));
@@ -1225,8 +1225,8 @@ bool ViewProviderPythonFeatureImp::dropObjectEx(App::DocumentObject* obj, App::D
     return true;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::isShow() const
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::isShow() const
 {
     FC_PY_CALL_CHECK(isShow);
 
@@ -1248,8 +1248,8 @@ ViewProviderPythonFeatureImp::isShow() const
 }
 
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canRemoveChildrenFromRoot() const {
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canRemoveChildrenFromRoot() const {
 
     FC_PY_CALL_CHECK(canRemoveChildrenFromRoot);
 
@@ -1269,7 +1269,7 @@ ViewProviderPythonFeatureImp::canRemoveChildrenFromRoot() const {
     return Rejected;
 }
 
-bool ViewProviderPythonFeatureImp::getDropPrefix(std::string &prefix) const {
+bool ViewProviderFeaturePythonImp::getDropPrefix(std::string &prefix) const {
 
     _FC_PY_CALL_CHECK(getDropPrefix,return(false));
 
@@ -1292,8 +1292,8 @@ bool ViewProviderPythonFeatureImp::getDropPrefix(std::string &prefix) const {
     return true;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::replaceObject(
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::replaceObject(
         App::DocumentObject *oldObj, App::DocumentObject *newObj)
 {
     if(!oldObj || !oldObj->isAttachedToDocument()
@@ -1320,8 +1320,8 @@ ViewProviderPythonFeatureImp::replaceObject(
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canReplaceObject(
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canReplaceObject(
         App::DocumentObject *oldObj, App::DocumentObject *newObj)
 {
     if(!oldObj || !oldObj->getNameInDocument()
@@ -1348,8 +1348,8 @@ ViewProviderPythonFeatureImp::canReplaceObject(
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::reorderObjects(
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::reorderObjects(
         const std::vector<App::DocumentObject *> &objs, App::DocumentObject *before)
 {
     FC_PY_CALL_CHECK(reorderObjects);
@@ -1376,8 +1376,8 @@ ViewProviderPythonFeatureImp::reorderObjects(
     return Rejected;
 }
 
-ViewProviderPythonFeatureImp::ValueT
-ViewProviderPythonFeatureImp::canReorderObject(
+ViewProviderFeaturePythonImp::ValueT
+ViewProviderFeaturePythonImp::canReorderObject(
         App::DocumentObject *obj, App::DocumentObject *before)
 {
     FC_PY_CALL_CHECK(canReorderObject);
@@ -1400,7 +1400,7 @@ ViewProviderPythonFeatureImp::canReorderObject(
     return Rejected;
 }
 
-bool ViewProviderPythonFeatureImp::getLinkedViewProvider(
+bool ViewProviderFeaturePythonImp::getLinkedViewProvider(
         ViewProviderDocumentObject *&vp, std::string *subname, bool recursive) const
 {
     _FC_PY_CALL_CHECK(getLinkedViewProvider,return(false));
@@ -1442,7 +1442,7 @@ bool ViewProviderPythonFeatureImp::getLinkedViewProvider(
     return true;
 }
 
-bool ViewProviderPythonFeatureImp::editProperty(const char *name)
+bool ViewProviderFeaturePythonImp::editProperty(const char *name)
 {
     _FC_PY_CALL_CHECK(editProperty,return false);
     Base::PyGILStateLocker lock;
@@ -1467,17 +1467,17 @@ bool ViewProviderPythonFeatureImp::editProperty(const char *name)
 // ---------------------------------------------------------
 
 namespace Gui {
-PROPERTY_SOURCE_TEMPLATE(Gui::ViewProviderPythonFeature, Gui::ViewProviderDocumentObject)
+PROPERTY_SOURCE_TEMPLATE(Gui::ViewProviderFeaturePython, Gui::ViewProviderDocumentObject)
 // explicit template instantiation
-template class GuiExport ViewProviderPythonFeatureT<ViewProviderDocumentObject>;
+template class GuiExport ViewProviderFeaturePythonT<ViewProviderDocumentObject>;
 }
 
 // ---------------------------------------------------------
 
 namespace Gui {
-PROPERTY_SOURCE_TEMPLATE(Gui::ViewProviderPythonGeometry, Gui::ViewProviderGeometryObject)
+PROPERTY_SOURCE_TEMPLATE(Gui::ViewProviderGeometryPython, Gui::ViewProviderGeometryObject)
 // explicit template instantiation
-template class GuiExport ViewProviderPythonFeatureT<ViewProviderGeometryObject>;
+template class GuiExport ViewProviderFeaturePythonT<ViewProviderGeometryObject>;
 }
 
 

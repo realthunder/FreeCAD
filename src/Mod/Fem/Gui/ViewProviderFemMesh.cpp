@@ -3018,5 +3018,5 @@ PROPERTY_SOURCE_TEMPLATE(FemGui::ViewProviderFemMeshPython, FemGui::ViewProvider
 /// @endcond
 
 // explicit template instantiation
-template class FemGuiExport ViewProviderPythonFeatureT<ViewProviderFemMesh>;
+template class FemGuiExport ViewProviderFeaturePythonT<ViewProviderFemMesh>;
 }  // namespace Gui

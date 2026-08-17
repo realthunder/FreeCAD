@@ -217,6 +217,6 @@ ViewProviderSubShapeBinder::ViewProviderSubShapeBinder()
 namespace Gui {
 PROPERTY_SOURCE_TEMPLATE(PartDesignGui::ViewProviderSubShapeBinderPython,
                          PartDesignGui::ViewProviderSubShapeBinder)
-template class PartDesignGuiExport ViewProviderPythonFeatureT<ViewProviderSubShapeBinder>;
+template class PartDesignGuiExport ViewProviderFeaturePythonT<ViewProviderSubShapeBinder>;
 }
 

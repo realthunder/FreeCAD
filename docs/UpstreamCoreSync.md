@@ -3,8 +3,8 @@
 Status: stage 1 and steps 2a and 2d done 2026-08-12; stage 1b (the additive
 templates, section 2.1) done 2026-08-17, as are FastSignals (2.2) and the
 `std::string` units API with its unit audit (2.3) and the colour-traits
-routing (2.4); 2b and 2c still to do; stage 3 waits on the FEM port
-itself. The two fork-side signature questions in section 4 were decided
+routing (2.4); steps 2b and 2c done 2026-08-18, which completes stage 2;
+stage 3 waits on the FEM port itself. The two fork-side signature questions in section 4 were decided
 2026-08-17: keep ours, both of them. **All four parked API questions are
 now answered.**
 Driver: [FemPortEvaluation.md](./FemPortEvaluation.md), which found that the
@@ -483,9 +483,67 @@ Notes that matter when doing them:
 - **2b** upstream also adds `SelectionColors.h` and `BoxSelection.h` in that
   directory, which we have no equivalent for. Create the directory and move
   what we have; do not invent the two new files.
+
+  **Done 2026-08-18.** 18 files moved; forwarding headers left at the five
+  old paths that have outside call sites (`Selection.h` 177 includers,
+  `SelectionObject.h` 55, `SelectionFilter.h` 25, `SelectionView.h` 6,
+  `SelectionFilterPy.h` 1). `SelectionObserverPython.h` got none: nothing
+  outside includes it. Three things this step actually needed:
+  - WARNING WARNING **a forwarding header must not reuse the moved header's
+    include guard.** It would define the guard and then include the real
+    file, whose `#ifndef` is now false, so every consumer would silently
+    see an *empty* header. Each forwarder uses its own `*_FORWARD_H`.
+  - `Selection/SelectionView.h` had to stop using upstream's quoted
+    `"DockWindow.h"`. A quoted include resolves relative to the including
+    file's own directory first, and that header is no longer a sibling.
+    Invisible inside Gui, which has `-I src/Gui`; it broke `Mod/Part/Gui`
+    on the first build. Upstream can keep the quoted form only because
+    nothing outside Gui includes that header there.
+  - the generated binding now lands in a subdirectory of the build tree, so
+    `generate_from_xml` takes the path and
+    `${CMAKE_CURRENT_BINARY_DIR}/Selection` joins the include dirs.
+
+  NOTE **Not moved: the `SoFCSelection` / `SoFCUnifiedSelection` /
+  `SoFCSelectionAction` / `SoFCSelectionContext` family**, which upstream
+  also keeps in that directory. 92 more includers, and upstream's FEM only
+  ever needs `Selection.h`, `SelectionObject.h` and `SelectionFilter.h`
+  from here. A separate step if it is ever wanted.
 - **2c** is a rename of both the header and the class names
   (`ViewProviderPythonFeatureT` -> `ViewProviderFeaturePythonT`, etc.). A
   shim proved during the evaluation that FEM's 23 uses need nothing else.
+
+  **Done 2026-08-18**, and the shim was too optimistic: a *shim* only has
+  to satisfy the compiler, and two of the three problems here are invisible
+  to it. Note upstream's fourth name swaps the words the other way, to
+  `ViewProviderGeometryPython`.
+  - WARNING WARNING **The class name is also a runtime STRING.** View
+    providers are created by name -- from `getViewProviderName()`, from a
+    document's `ViewType` attribute when it overrides the default, and from
+    Python's `addObject(..., viewType=...)`. Renaming the class changed what
+    `PROPERTY_SOURCE_TEMPLATE` registers, so `App/FeaturePython.cpp` and
+    `Mod/Fem/App/FemAnalysis.cpp`, which return the old spelling as a
+    literal, stopped resolving. **The build was completely clean and every
+    `App::FeaturePython` silently had `ViewObject == None`.** Only a runtime
+    probe finds this.
+  - So the old spellings are also registered as type names, with
+    `Base::Type::createType(<new>::getClassTypeId(), "<old name>",
+    &<new>::create)`. An old name then still produces a view provider, and
+    the instance reports the new type as its own. Verified both ways round,
+    with a bogus name as the control.
+  - WARNING **An alias template is not a template-name everywhere the real
+    one is.** Deriving from it is fine; it **cannot be explicitly
+    instantiated**. The 30 `template class <MOD>Export
+    ViewProviderFeaturePythonT<X>;` lines across 25 files therefore name the
+    real template -- correct anyway, since an explicit instantiation is a
+    definition rather than a use. It cannot be forward-declared either;
+    nothing does today.
+
+  NOTE Persistence was checked rather than assumed: `GuiDocument.xml` stores
+  `<ViewProvider name="...">` with the *object* name only, and
+  `Document.xml` writes a `ViewType` attribute **only when it differs from
+  the object's default**. So ordinary documents re-derive the class name on
+  load and are unaffected; the stored-override case is what the type-name
+  aliases above cover.
 - **2d** verify the shared methods behave identically before deleting
   anything; the API is a superset but that is a signature check, not a
   semantic one. `PropertyColor`, `PropertyColorList` and the material

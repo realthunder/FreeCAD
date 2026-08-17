@@ -1563,7 +1563,7 @@ PROPERTY_SOURCE_TEMPLATE(Gui::ViewProviderAppearancePython, Gui::ViewProviderApp
 /// @endcond
 
 // explicit template instantiation
-template class GuiExport ViewProviderPythonFeatureT<ViewProviderShaderProgram>;
-template class GuiExport ViewProviderPythonFeatureT<ViewProviderShader>;
-template class GuiExport ViewProviderPythonFeatureT<ViewProviderAppearance>;
+template class GuiExport ViewProviderFeaturePythonT<ViewProviderShaderProgram>;
+template class GuiExport ViewProviderFeaturePythonT<ViewProviderShader>;
+template class GuiExport ViewProviderFeaturePythonT<ViewProviderAppearance>;
 }
