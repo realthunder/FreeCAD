@@ -79,7 +79,7 @@ void ArrayDelegate::paint(QPainter* painter,
         else {
             QVariant item = tableModel->data(index);
             auto quantity = item.value<Base::Quantity>();
-            QString text = quantity.getUserString();
+            QString text = QString::fromStdString(quantity.getUserString());
             painter->drawText(option.rect, 0, text);
         }
 

@@ -89,7 +89,7 @@ DlgSettingsGeneral::DlgSettingsGeneral( QWidget* parent )
 
     int num = static_cast<int>(Base::UnitSystem::NumUnitSystemTypes);
     for (int i = 0; i < num; i++) {
-        QString item = Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i));
+        QString item = QString::fromStdString(Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i)));
         ui->comboBox_UnitSystem->addItem(item, i);
     }
 

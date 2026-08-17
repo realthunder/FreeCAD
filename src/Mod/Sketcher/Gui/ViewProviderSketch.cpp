@@ -575,7 +575,7 @@ ViewProviderSketch::ViewProviderSketch()
 
         // well it is not visibility automation but a good place nevertheless
         this->ShowGrid.setValue(hGrp->GetBool("ShowGrid", false));
-        this->GridSize.setValue(Base::Quantity::parse(QString::fromUtf8(hGrp->GetGroup("GridSize")->GetASCII("Hist0", "10.0").c_str())).getValue());
+        this->GridSize.setValue(Base::Quantity::parse(hGrp->GetGroup("GridSize")->GetASCII("Hist0", "10.0")).getValue());
         this->GridAuto.setValue(hGrp->GetBool("GridAuto", false));
         this->Autoconstraints.setValue(hGrp->GetBool("AutoConstraints", true));
         this->AvoidRedundant.setValue(hGrp->GetBool("AvoidRedundantAutoconstraints", true));
@@ -3756,7 +3756,10 @@ QString ViewProviderSketch::getPresentationString(const Constraint *constraint)
     nameStr = QString::fromStdString(constraint->Name);
 
     // Get the current value string including units
-    valueStr = constraint->getPresentationValue().getUserString(factor, unitStr);
+    std::string unitStrStd;
+    valueStr = QString::fromStdString(
+        constraint->getPresentationValue().getUserString(factor, unitStrStd));
+    unitStr = QString::fromStdString(unitStrStd);
 
     // Hide units if user has requested it, is being displayed in the base
     // units, and the schema being used has a clear base unit in the first

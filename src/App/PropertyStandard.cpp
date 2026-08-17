@@ -1782,7 +1782,7 @@ void PropertyString::setPathValue(const ObjectIdentifier &path, const App::any &
     else if (value.type() == typeid(float))
         setValue(std::to_string(App::any_cast<float>(value)));
     else if (value.type() == typeid(Quantity))
-        setValue(App::any_cast<Quantity>(value).getUserString().toUtf8().constData());
+        setValue(App::any_cast<Quantity>(value).getUserString());
     else if (value.type() == typeid(std::string))
         setValue(App::any_cast<const std::string &>(value));
     else {

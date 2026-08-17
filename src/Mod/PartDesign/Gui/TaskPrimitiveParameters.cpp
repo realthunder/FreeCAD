@@ -45,6 +45,12 @@
 #include "Utils.h"
 
 
+// getSafeUserString() returns std::string; the command strings below are QStrings.
+static QString safeQuantityQString(const Base::Quantity& quantity)
+{
+    return QString::fromStdString(quantity.getSafeUserString());
+}
+
 using namespace PartDesignGui;
 
 TaskBoxPrimitives::TaskBoxPrimitives(ViewProviderPrimitive* vp, QWidget* parent)
@@ -757,9 +763,9 @@ bool TaskBoxPrimitives::setPrimitive(App::DocumentObject *obj)
                     "%1.Width='%3'\n"
                     "%1.Height='%4'\n")
                     .arg(name,
-                         ui->boxLength->value().getSafeUserString(),
-                         ui->boxWidth->value().getSafeUserString(),
-                         ui->boxHeight->value().getSafeUserString());
+                         safeQuantityQString(ui->boxLength->value()),
+                         safeQuantityQString(ui->boxWidth->value()),
+                         safeQuantityQString(ui->boxHeight->value()));
                 break;
 
             case 2:  // cylinder
@@ -770,11 +776,11 @@ bool TaskBoxPrimitives::setPrimitive(App::DocumentObject *obj)
                     "%1.FirstAngle='%5'\n"
                     "%1.SecondAngle='%6'\n")
                     .arg(name,
-                         ui->cylinderRadius->value().getSafeUserString(),
-                         ui->cylinderHeight->value().getSafeUserString(),
-                         ui->cylinderAngle->value().getSafeUserString(),
-                         ui->cylinderXSkew->value().getSafeUserString(),
-                         ui->cylinderYSkew->value().getSafeUserString());
+                         safeQuantityQString(ui->cylinderRadius->value()),
+                         safeQuantityQString(ui->cylinderHeight->value()),
+                         safeQuantityQString(ui->cylinderAngle->value()),
+                         safeQuantityQString(ui->cylinderXSkew->value()),
+                         safeQuantityQString(ui->cylinderYSkew->value()));
                 break;
 
             case 3:  // cone
@@ -790,10 +796,10 @@ bool TaskBoxPrimitives::setPrimitive(App::DocumentObject *obj)
                     "%1.Height='%4'\n"
                     "%1.Angle='%5'\n")
                     .arg(name,
-                         ui->coneRadius1->value().getSafeUserString(),
-                         ui->coneRadius2->value().getSafeUserString(),
-                         ui->coneHeight->value().getSafeUserString(),
-                         ui->coneAngle->value().getSafeUserString());
+                         safeQuantityQString(ui->coneRadius1->value()),
+                         safeQuantityQString(ui->coneRadius2->value()),
+                         safeQuantityQString(ui->coneHeight->value()),
+                         safeQuantityQString(ui->coneAngle->value()));
                  break;
 
             case 4:  // sphere
@@ -803,10 +809,10 @@ bool TaskBoxPrimitives::setPrimitive(App::DocumentObject *obj)
                     "%1.Angle2='%4'\n"
                     "%1.Angle3='%5'\n")
                     .arg(name,
-                         ui->sphereRadius->value().getSafeUserString(),
-                         ui->sphereAngle1->value().getSafeUserString(),
-                         ui->sphereAngle2->value().getSafeUserString(),
-                         ui->sphereAngle3->value().getSafeUserString());
+                         safeQuantityQString(ui->sphereRadius->value()),
+                         safeQuantityQString(ui->sphereAngle1->value()),
+                         safeQuantityQString(ui->sphereAngle2->value()),
+                         safeQuantityQString(ui->sphereAngle3->value()));
                 break;
             case 5:  // ellipsoid
                 cmd = QStringLiteral(
@@ -817,12 +823,12 @@ bool TaskBoxPrimitives::setPrimitive(App::DocumentObject *obj)
                     "%1.Angle2='%6'\n"
                     "%1.Angle3='%7'\n")
                     .arg(name,
-                         ui->ellipsoidRadius1->value().getSafeUserString(),
-                         ui->ellipsoidRadius2->value().getSafeUserString(),
-                         ui->ellipsoidRadius3->value().getSafeUserString(),
-                         ui->ellipsoidAngle1->value().getSafeUserString(),
-                         ui->ellipsoidAngle2->value().getSafeUserString(),
-                         ui->ellipsoidAngle3->value().getSafeUserString());
+                         safeQuantityQString(ui->ellipsoidRadius1->value()),
+                         safeQuantityQString(ui->ellipsoidRadius2->value()),
+                         safeQuantityQString(ui->ellipsoidRadius3->value()),
+                         safeQuantityQString(ui->ellipsoidAngle1->value()),
+                         safeQuantityQString(ui->ellipsoidAngle2->value()),
+                         safeQuantityQString(ui->ellipsoidAngle3->value()));
                 break;
 
             case 6:  // torus
@@ -833,11 +839,11 @@ bool TaskBoxPrimitives::setPrimitive(App::DocumentObject *obj)
                     "%1.Angle2='%5'\n"
                     "%1.Angle3='%6'\n")
                     .arg(name,
-                         ui->torusRadius1->value().getSafeUserString(),
-                         ui->torusRadius2->value().getSafeUserString(),
-                         ui->torusAngle1->value().getSafeUserString(),
-                         ui->torusAngle2->value().getSafeUserString(),
-                         ui->torusAngle3->value().getSafeUserString());
+                         safeQuantityQString(ui->torusRadius1->value()),
+                         safeQuantityQString(ui->torusRadius2->value()),
+                         safeQuantityQString(ui->torusAngle1->value()),
+                         safeQuantityQString(ui->torusAngle2->value()),
+                         safeQuantityQString(ui->torusAngle3->value()));
                 break;
             case 7:  // prism
                 cmd = QStringLiteral(
@@ -848,10 +854,10 @@ bool TaskBoxPrimitives::setPrimitive(App::DocumentObject *obj)
                     "%1.SecondAngle='%6'\n")
                     .arg(name,
                          QString::number(ui->prismPolygon->value()),
-                         ui->prismCircumradius->value().getSafeUserString(),
-                         ui->prismHeight->value().getSafeUserString(),
-                         ui->prismXSkew->value().getSafeUserString(),
-                         ui->prismYSkew->value().getSafeUserString());
+                         safeQuantityQString(ui->prismCircumradius->value()),
+                         safeQuantityQString(ui->prismHeight->value()),
+                         safeQuantityQString(ui->prismXSkew->value()),
+                         safeQuantityQString(ui->prismYSkew->value()));
                 break;
             case 8:  // wedge
                 // Xmin/max, Ymin/max and Zmin/max must each not be equal
@@ -882,16 +888,16 @@ bool TaskBoxPrimitives::setPrimitive(App::DocumentObject *obj)
                     "%1.X2max='%10'\n"
                     "%1.Z2max='%11'\n")
                     .arg(name,
-                         ui->wedgeXmin->value().getSafeUserString(),
-                         ui->wedgeYmin->value().getSafeUserString(),
-                         ui->wedgeZmin->value().getSafeUserString(),
-                         ui->wedgeX2min->value().getSafeUserString(),
-                         ui->wedgeZ2min->value().getSafeUserString(),
-                         ui->wedgeXmax->value().getSafeUserString(),
-                         ui->wedgeYmax->value().getSafeUserString(),
-                         ui->wedgeZmax->value().getSafeUserString())
-                    .arg(ui->wedgeX2max->value().getSafeUserString(),
-                         ui->wedgeZ2max->value().getSafeUserString());
+                         safeQuantityQString(ui->wedgeXmin->value()),
+                         safeQuantityQString(ui->wedgeYmin->value()),
+                         safeQuantityQString(ui->wedgeZmin->value()),
+                         safeQuantityQString(ui->wedgeX2min->value()),
+                         safeQuantityQString(ui->wedgeZ2min->value()),
+                         safeQuantityQString(ui->wedgeXmax->value()),
+                         safeQuantityQString(ui->wedgeYmax->value()),
+                         safeQuantityQString(ui->wedgeZmax->value()))
+                    .arg(safeQuantityQString(ui->wedgeX2max->value()),
+                         safeQuantityQString(ui->wedgeZ2max->value()));
                 break;
 
             default:

@@ -132,9 +132,9 @@ void DlgRegularSolidImp::onCreateSolidButtonClicked()
                 "App.ActiveDocument.%1.Width=%3\n"
                 "App.ActiveDocument.%1.Height=%4\n"))
                 .arg(QString::fromUtf8(name.c_str()),
-                     Base::UnitsApi::toNumber(ui->boxLength->value()),
-                     Base::UnitsApi::toNumber(ui->boxWidth->value()),
-                     Base::UnitsApi::toNumber(ui->boxHeight->value()));
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->boxLength->value())),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->boxWidth->value())),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->boxHeight->value())));
         }
         else if (ui->comboBox1->currentIndex() == 1) {  // cylinder
             name = doc->getUniqueObjectName("Cylinder");
@@ -146,9 +146,9 @@ void DlgRegularSolidImp::onCreateSolidButtonClicked()
                 "App.ActiveDocument.%1.Closed=%5\n"
                 "App.ActiveDocument.%1.Sampling=%6\n"))
                 .arg(QString::fromUtf8(name.c_str()),
-                     Base::UnitsApi::toNumber(ui->cylinderRadius->value()),
-                     Base::UnitsApi::toNumber(ui->cylinderLength->value()),
-                     Base::UnitsApi::toNumber(ui->cylinderEdgeLength->value()),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->cylinderRadius->value())),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->cylinderLength->value())),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->cylinderEdgeLength->value())),
                      ui->cylinderClosed->isChecked()?QStringLiteral("True"):QStringLiteral("False"))
                 .arg(ui->cylinderCount->value());
         }
@@ -163,10 +163,10 @@ void DlgRegularSolidImp::onCreateSolidButtonClicked()
                 "App.ActiveDocument.%1.Closed=%6\n"
                 "App.ActiveDocument.%1.Sampling=%7\n"))
                 .arg(QString::fromUtf8(name.c_str()),
-                     Base::UnitsApi::toNumber(ui->coneRadius1->value()),
-                     Base::UnitsApi::toNumber(ui->coneRadius2->value()),
-                     Base::UnitsApi::toNumber(ui->coneLength->value()),
-                     Base::UnitsApi::toNumber(ui->coneEdgeLength->value()),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->coneRadius1->value())),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->coneRadius2->value())),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->coneLength->value())),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->coneEdgeLength->value())),
                      ui->coneClosed->isChecked()?QStringLiteral("True"):QStringLiteral("False"))
                 .arg(ui->coneCount->value());
         }
@@ -177,7 +177,7 @@ void DlgRegularSolidImp::onCreateSolidButtonClicked()
                 "App.ActiveDocument.%1.Radius=%2\n"
                 "App.ActiveDocument.%1.Sampling=%3\n"))
                 .arg(QString::fromUtf8(name.c_str()),
-                     Base::UnitsApi::toNumber(ui->sphereRadius->value()))
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->sphereRadius->value())))
                 .arg(ui->sphereCount->value());
         }
         else if (ui->comboBox1->currentIndex() == 4) {  // ellipsoid
@@ -188,8 +188,8 @@ void DlgRegularSolidImp::onCreateSolidButtonClicked()
                 "App.ActiveDocument.%1.Radius2=%3\n"
                 "App.ActiveDocument.%1.Sampling=%4\n"))
                 .arg(QString::fromUtf8(name.c_str()),
-                     Base::UnitsApi::toNumber(ui->ellipsoidRadius1->value()),
-                     Base::UnitsApi::toNumber(ui->ellipsoidRadius2->value()))
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->ellipsoidRadius1->value())),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->ellipsoidRadius2->value())))
                 .arg(ui->ellipsoidCount->value());
         }
         else if (ui->comboBox1->currentIndex() == 5) {  // toroid
@@ -200,8 +200,8 @@ void DlgRegularSolidImp::onCreateSolidButtonClicked()
                 "App.ActiveDocument.%1.Radius2=%3\n"
                 "App.ActiveDocument.%1.Sampling=%4\n"))
                 .arg(QString::fromUtf8(name.c_str()),
-                     Base::UnitsApi::toNumber(ui->toroidRadius1->value()),
-                     Base::UnitsApi::toNumber(ui->toroidRadius2->value()))
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->toroidRadius1->value())),
+                     QString::fromStdString(Base::UnitsApi::toNumber(ui->toroidRadius2->value())))
                 .arg(ui->toroidCount->value());
         }
 

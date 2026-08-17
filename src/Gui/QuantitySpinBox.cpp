@@ -216,7 +216,7 @@ public:
             copy2.remove(locale.groupSeparator());
 
             try {
-                res = Base::Quantity::parse(copy2);
+                res = Base::Quantity::parse(copy2.toStdString());
                 value = res.getValue();
                 ok = true;
             }
@@ -620,7 +620,7 @@ void QuantitySpinBox::setUnitText(const QString& str)
     Q_D(QuantitySpinBox);
 
     try {
-        Base::Quantity quant = Base::Quantity::parse(str);
+        Base::Quantity quant = Base::Quantity::parse(str.toStdString());
         d->userUnitStr.clear();
         setUnit(quant.getUnit());
     }
@@ -635,7 +635,7 @@ void QuantitySpinBox::setDisplayUnit(const QString &str, double scaler)
     Q_D(QuantitySpinBox);
 
     try {
-        Base::Quantity quant = Base::Quantity::parse(str);
+        Base::Quantity quant = Base::Quantity::parse(str.toStdString());
         d->userUnitStr = str;
         if (scaler != 0.0)
             d->userScale = scaler;
@@ -760,10 +760,17 @@ QString QuantitySpinBox::getUserString(const Base::Quantity& val, double& factor
                 locale().toString(val.getValue() / factor, 'f', decimals()), unitString);
     }
     else if (d->scheme) {
-        return val.getUserString(d->scheme.get(), factor, unitString);
+        std::string unitStr;
+        QString text =
+            QString::fromStdString(val.getUserString(d->scheme.get(), factor, unitStr));
+        unitString = QString::fromStdString(unitStr);
+        return text;
     }
     else {
-        return val.getUserString(factor, unitString);
+        std::string unitStr;
+        QString text = QString::fromStdString(val.getUserString(factor, unitStr));
+        unitString = QString::fromStdString(unitStr);
+        return text;
     }
 }
 
@@ -772,11 +779,11 @@ QString QuantitySpinBox::getUserString(const Base::Quantity& val) const
     Q_D(const QuantitySpinBox);
     if (d->scheme) {
         double factor;
-        QString unitString;
-        return val.getUserString(d->scheme.get(), factor, unitString);
+        std::string unitString;
+        return QString::fromStdString(val.getUserString(d->scheme.get(), factor, unitString));
     }
     else {
-        return val.getUserString();
+        return QString::fromStdString(val.getUserString());
     }
 }
 

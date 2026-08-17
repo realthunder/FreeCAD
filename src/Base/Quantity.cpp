@@ -31,6 +31,8 @@
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
+#include <fmt/format.h>
+
 #include "Quantity.h"
 #include "Exception.h"
 #include "UnitsApi.h"
@@ -83,10 +85,10 @@ Quantity::Quantity(double value, const Unit& unit)
     , myUnit {unit}
 {}
 
-Quantity::Quantity(double value, const QString& unit)
+Quantity::Quantity(double value, const std::string& unit)
     : myValue {0.0}
 {
-    if (unit.isEmpty()) {
+    if (unit.empty()) {
         this->myValue = value;
         this->myUnit = Unit();
         return;
@@ -251,24 +253,25 @@ Quantity Quantity::operator-() const
     return Quantity(-(this->myValue), this->myUnit);
 }
 
-QString Quantity::getUserString(double& factor, QString& unitString) const
+std::string Quantity::getUserString(double& factor, std::string& unitString) const
 {
     return Base::UnitsApi::schemaTranslate(*this, factor, unitString);
 }
 
-QString Quantity::getUserString(UnitsSchema* schema, double& factor, QString& unitString) const
+std::string
+Quantity::getUserString(UnitsSchema* schema, double& factor, std::string& unitString) const
 {
     return schema->schemaTranslate(*this, factor, unitString);
 }
 
-QString Quantity::getSafeUserString() const
+std::string Quantity::getSafeUserString() const
 {
     auto retString = getUserString();
-    if (Q_LIKELY(this->myValue != 0)) {
+    if (this->myValue != 0) {
         auto feedbackQty = parse(retString);
         auto feedbackVal = feedbackQty.getValue();
         if (feedbackVal == 0) {
-            retString = QStringLiteral("%1 %2").arg(this->myValue).arg(this->getUnit().getString());
+            retString = fmt::format("{} {}", this->myValue, this->getUnit().getString());
         }
     }
     return retString;
@@ -553,9 +556,9 @@ int QuantityLexer();
 #pragma GCC diagnostic pop
 #endif
 
-Quantity Quantity::parse(const QString& string)
+Quantity Quantity::parse(const std::string& string)
 {
-    return parse(string.toUtf8().constData());
+    return parse(string.c_str());
 }
 
 Quantity Quantity::parse(const char *string)

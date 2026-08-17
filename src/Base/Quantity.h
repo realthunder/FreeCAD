@@ -25,7 +25,7 @@
 #define BASE_Quantity_H
 
 #include "Unit.h"
-#include <QString>
+#include <string>
 
 // NOLINTBEGIN
 #ifndef DOUBLE_MAX
@@ -132,7 +132,7 @@ public:
     Quantity(const Quantity&) = default;
     Quantity(Quantity&&) = default;
     explicit Quantity(double value, const Unit& unit = Unit());
-    explicit Quantity(double value, const QString& unit);
+    explicit Quantity(double value, const std::string& unit);
     /// Destruction
     ~Quantity() = default;
 
@@ -169,17 +169,17 @@ public:
         myFormat = fmt;
     }
     /// transfer to user preferred unit/potence
-    QString getUserString(double& factor, QString& unitString) const;
-    QString getUserString() const
+    std::string getUserString(double& factor, std::string& unitString) const;
+    std::string getUserString() const
     {  // to satisfy GCC
         double dummy1 {};
-        QString dummy2 {};
+        std::string dummy2 {};
         return getUserString(dummy1, dummy2);
     }
-    QString getUserString(UnitsSchema* schema, double& factor, QString& unitString) const;
-    QString getSafeUserString() const;
+    std::string getUserString(UnitsSchema* schema, double& factor, std::string& unitString) const;
+    std::string getSafeUserString() const;
 
-    static Quantity parse(const QString& string);
+    static Quantity parse(const std::string& string);
     static Quantity parse(const char *string);
 
     static const std::vector<UnitInfo> &unitInfo();

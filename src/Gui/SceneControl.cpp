@@ -155,7 +155,7 @@ QJsonObject describeProperty(const App::PropertyContainer *container,
         auto p = static_cast<const App::PropertyQuantity *>(prop);
         d[QLatin1String("type")] = QLatin1String("Quantity");
         d[QLatin1String("value")] = p->getValue();
-        d[QLatin1String("unit")] = p->getUnit().getString();
+        d[QLatin1String("unit")] = QString::fromStdString(p->getUnit().getString());
         if (tid.isDerivedFrom(
                     App::PropertyQuantityConstraint::getClassTypeId())) {
             if (const auto *c = static_cast<

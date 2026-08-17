@@ -95,7 +95,7 @@ void FilletSegmentDelegate::setModelData(QWidget *editor, QAbstractItemModel *mo
     Gui::QuantitySpinBox *spinBox = static_cast<Gui::QuantitySpinBox*>(editor);
     spinBox->interpretText();
     Base::Quantity value = spinBox->value();
-    model->setData(index, value.getUserString(), Qt::DisplayRole);
+    model->setData(index, QString::fromStdString(value.getUserString()), Qt::DisplayRole);
     model->setData(index, value.getValue(), Qt::UserRole);
 }
 
@@ -335,7 +335,7 @@ void TaskFilletParameters::setSegment(QTreeWidgetItem *item, double param, doubl
             item->setData(index, Qt::ToolTipRole, QVariant());
         }
         item->setData(index, Qt::UserRole, q.getValue());
-        item->setText(index, noText ? QString() : q.getUserString());
+        item->setText(index, noText ? QString() : QString::fromStdString(q.getUserString()));
     };
     setupItem("Radius", 1, Base::Quantity(radius, Base::Unit::Length), false);
     setupItem("Param", 2, Base::Quantity(param), length>0.0);

@@ -139,7 +139,7 @@ void ChamferInfoDelegate::setModelData(QWidget *editor, QAbstractItemModel *mode
     Gui::QuantitySpinBox *spinBox = static_cast<Gui::QuantitySpinBox*>(editor);
     spinBox->interpretText();
     Base::Quantity value = spinBox->value();
-    model->setData(index, value.getUserString(), Qt::DisplayRole);
+    model->setData(index, QString::fromStdString(value.getUserString()), Qt::DisplayRole);
     model->setData(index, value.getValue(), Qt::UserRole);
 }
 
@@ -438,7 +438,7 @@ void TaskChamferParameters::setItem(QTreeWidgetItem *item, const Part::TopoShape
             item->setData(index, Qt::ToolTipRole, QVariant());
         }
         item->setData(index, Qt::UserRole, q.getValue());
-        item->setText(index, noText ? QString() : q.getUserString());
+        item->setText(index, noText ? QString() : QString::fromStdString(q.getUserString()));
     };
     setupItem("Size", 1, Base::Quantity(info.size, Base::Unit::Length), false);
     setupItem("Size2", 2, Base::Quantity(info.size2, Base::Unit::Length), info.size2==0.0);

@@ -26,7 +26,7 @@
 #include <unistd.h>
 #endif
 
-#include <QString>
+#include <string>
 
 #include "UnitsSchemaCentimeters.h"
 
@@ -34,40 +34,40 @@
 using namespace Base;
 
 
-QString UnitsSchemaCentimeters::schemaTranslate(const Base::Quantity& quant,
+std::string UnitsSchemaCentimeters::schemaTranslate(const Base::Quantity& quant,
                                                 double& factor,
-                                                QString& unitString)
+                                                std::string& unitString)
 {
     Unit unit = quant.getUnit();
     if (unit == Unit::Length) {
         // all length units in centimeters
-        unitString = QStringLiteral("cm");
+        unitString = "cm";
         factor = 10.0;
     }
     else if (unit == Unit::Area) {
         // all area units in square meters
-        unitString = QStringLiteral("m^2");
+        unitString = "m^2";
         factor = 1000000.0;
     }
     else if (unit == Unit::Volume) {
         // all area units in cubic meters
-        unitString = QStringLiteral("m^3");
+        unitString = "m^3";
         factor = 1000000000.0;
     }
     else if (unit == Unit::Power) {
-        unitString = QStringLiteral("W");
+        unitString = "W";
         factor = 1000000;
     }
     else if (unit == Unit::ElectricPotential) {
-        unitString = QStringLiteral("V");
+        unitString = "V";
         factor = 1000000;
     }
     else if (unit == Unit::HeatFlux) {
-        unitString = QStringLiteral("W/m^2");
+        unitString = "W/m^2";
         factor = 1.0;
     }
     else if (unit == Unit::Velocity) {
-        unitString = QStringLiteral("mm/min");
+        unitString = "mm/min";
         factor = 1.0 / 60;
     }
     else {

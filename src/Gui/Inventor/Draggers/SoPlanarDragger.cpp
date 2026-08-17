@@ -279,8 +279,8 @@ void SoPlanarDragger::drag()
     QString message = QStringLiteral("%1 %2, %3")
                           .arg(
                               QObject::tr("Translation XY:"),
-                              quantityX.getUserString(),
-                              quantityY.getUserString()
+                              QString::fromStdString(quantityX.getUserString()),
+                              QString::fromStdString(quantityY.getUserString())
                           );
     getMainWindow()->showMessage(message, 3000);
 }

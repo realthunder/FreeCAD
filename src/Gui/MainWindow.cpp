@@ -275,7 +275,7 @@ private:
         assert(actions.size() <= maxSchema);
         for(int i = 0; i < maxSchema ; i++)
         {
-            actions[i]->setText(Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i)));
+            actions[i]->setText(QString::fromStdString(Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i))));
         }
     }
 };

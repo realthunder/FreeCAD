@@ -24,7 +24,8 @@
 #ifndef BASE_UNITSSCHEMAIMPERIAL1_H
 #define BASE_UNITSSCHEMAIMPERIAL1_H
 
-#include <QString>
+#include <string>
+
 #include "UnitsSchema.h"
 
 
@@ -41,8 +42,8 @@ class UnitsSchemaImperial1: public UnitsSchema
 public:
     // virtual void setSchemaUnits(void);
     // virtual void resetSchemaUnits(void);
-    QString
-    schemaTranslate(const Base::Quantity& quant, double& factor, QString& unitString) override;
+    std::string
+    schemaTranslate(const Base::Quantity& quant, double& factor, std::string& unitString) override;
     std::string getBasicLengthUnit() const override
     {
         return {"in"};
@@ -58,8 +59,8 @@ class UnitsSchemaImperialDecimal: public UnitsSchema
 public:
     // virtual void setSchemaUnits(void);
     // virtual void resetSchemaUnits(void);
-    QString
-    schemaTranslate(const Base::Quantity& quant, double& factor, QString& unitString) override;
+    std::string
+    schemaTranslate(const Base::Quantity& quant, double& factor, std::string& unitString) override;
     std::string getBasicLengthUnit() const override
     {
         return {"in"};
@@ -75,8 +76,8 @@ class UnitsSchemaImperialBuilding: public UnitsSchema
 public:
     // virtual void setSchemaUnits(void);
     // virtual void resetSchemaUnits(void);
-    QString
-    schemaTranslate(const Base::Quantity& quant, double& factor, QString& unitString) override;
+    std::string
+    schemaTranslate(const Base::Quantity& quant, double& factor, std::string& unitString) override;
     std::string getBasicLengthUnit() const override
     {
         return {"ft"};
@@ -98,8 +99,8 @@ class UnitsSchemaImperialCivil: public UnitsSchema
 public:
     // virtual void setSchemaUnits(void);
     // virtual void resetSchemaUnits(void);
-    QString
-    schemaTranslate(const Base::Quantity& quant, double& factor, QString& unitString) override;
+    std::string
+    schemaTranslate(const Base::Quantity& quant, double& factor, std::string& unitString) override;
     std::string getBasicLengthUnit() const override
     {
         return {"ft"};

@@ -242,7 +242,7 @@ void ViewProviderMeasureDistance::updateData(const App::Property* prop)
         SbVec3f pos = (pCoords->point[2]+pCoords->point[3])/2.0f;
         pTranslation->translation.setValue(pos);
 
-        pLabel->string.setValue((Base::Quantity(dif.length(), Base::Unit::Length)).getUserString().toUtf8().constData());
+        pLabel->string.setValue((Base::Quantity(dif.length(), Base::Unit::Length)).getUserString().c_str());
     }
 
     ViewProviderDocumentObject::updateData(prop);

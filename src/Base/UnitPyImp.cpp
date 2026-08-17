@@ -37,7 +37,7 @@ std::string UnitPy::representation() const
     const UnitSignature& Sig = getUnitPtr()->getSignature();
     std::stringstream ret;
     ret << "Unit: ";
-    ret << getUnitPtr()->getString().toUtf8().constData() << " (";
+    ret << getUnitPtr()->getString() << " (";
     ret << Sig.Length << ",";
     ret << Sig.Mass << ",";
     ret << Sig.Time << ",";
@@ -46,7 +46,7 @@ std::string UnitPy::representation() const
     ret << Sig.AmountOfSubstance << ",";
     ret << Sig.LuminousIntensity << ",";
     ret << Sig.Angle << ")";
-    std::string type = getUnitPtr()->getTypeString().toUtf8().constData();
+    std::string type = getUnitPtr()->getTypeString();
     if (!type.empty()) {
         ret << " [" << type << "]";
     }
@@ -83,10 +83,10 @@ int UnitPy::PyInit(PyObject* args, PyObject* /*kwd*/)
     // get string
     char* string {};
     if (PyArg_ParseTuple(args, "et", "utf-8", &string)) {
-        QString qstr = QString::fromUtf8(string);
+        std::string str {string};
         PyMem_Free(string);
         try {
-            *self = Quantity::parse(qstr).getUnit();
+            *self = Quantity::parse(str).getUnit();
             return 0;
         }
         catch (const Base::ParserError& e) {
@@ -212,7 +212,7 @@ PyObject* UnitPy::richCompare(PyObject* v, PyObject* w, int op)
 
 Py::String UnitPy::getType() const
 {
-    return {getUnitPtr()->getTypeString().toUtf8(), "utf-8"};
+    return {getUnitPtr()->getTypeString(), "utf-8"};
 }
 
 Py::Tuple UnitPy::getSignature() const

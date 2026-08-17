@@ -878,8 +878,8 @@ Document::Document(const char* documentName)
     int num = static_cast<int>(Base::UnitSystem::NumUnitSystemTypes);
     std::vector<std::string> enumValsAsVector;
     for (int i = 0; i < num; i++) {
-        QString item = Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i));
-        enumValsAsVector.emplace_back(item.toStdString());
+        enumValsAsVector.emplace_back(
+            Base::UnitsApi::getDescription(static_cast<Base::UnitSystem>(i)));
     }
     UnitSystem.setEnums(enumValsAsVector);
     // Get the preferences/General unit system as the default for a new document

@@ -29,13 +29,15 @@
 #include <QLocale>
 #include <QString>
 
+#include <fmt/format.h>
+
 #include "UnitsSchema.h"
 
 
 using namespace Base;
 
-QString
-UnitsSchema::toLocale(const Base::Quantity& quant, double factor, const QString& unitString) const
+std::string
+UnitsSchema::toLocale(const Base::Quantity& quant, double factor, const std::string& unitString) const
 {
     QLocale Lc;
     const QuantityFormat& format = quant.getFormat();
@@ -45,12 +47,12 @@ UnitsSchema::toLocale(const Base::Quantity& quant, double factor, const QString&
     }
 
     QString Ln = Lc.toString((quant.getValue() / factor), format.toFormat(), format.precision);
-    return QString::fromUtf8("%1 %2").arg(Ln, unitString);
+    return fmt::format("{} {}", Ln.toStdString(), unitString);
 }
 
-const QString& UnitsSchema::getAngleUnit() const
+const std::string& UnitsSchema::getAngleUnit() const
 {
-    static const QString res = QString::fromUtf8("\xC2\xB0");
+    static const std::string res = "\xC2\xB0";
     return res;
 }
 

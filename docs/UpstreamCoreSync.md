@@ -1,8 +1,9 @@
 # Closing the core-API gap with upstream, starting with what FEM needs
 
 Status: stage 1 and steps 2a and 2d done 2026-08-12; stage 1b (the additive
-templates, section 2.1) done 2026-08-17; 2b and 2c still to do; stage 3
-waits on the FEM port itself.
+templates, section 2.1) done 2026-08-17, as are FastSignals (2.2) and the
+`std::string` units API (2.3); 2b and 2c still to do; stage 3 waits on the
+FEM port itself.
 Driver: [FemPortEvaluation.md](./FemPortEvaluation.md), which found that the
 cost of porting upstream's FEM is not in FEM but in core refactors this fork
 predates.
@@ -249,6 +250,60 @@ assertions in 55 cases, plus the concurrency stress test); seven ordering
 tests for the front connect under ASan and UBSan; and the runtime probe
 that drives a document through `App::DocumentObserver`, which is a pure
 signal consumer, so a dropped signal shows up as a missing callback.
+
+## 2.3 The units API becomes `std::string` (done 2026-08-17)
+
+Chosen by the user as the next task after 2.2, and the only one of the four
+parked API questions that was a real break rather than a keep-ours. The
+reason to take it is direction, not FEM: it is upstream getting Qt out of
+`Base`, which is where the WASM tier needs to go anyway.
+
+**What changed.** Every string on the units path:
+
+| API | was | now |
+|---|---|---|
+| `Quantity::getUserString` (3 overloads), `getSafeUserString` | `QString` | `std::string` |
+| `Quantity::parse`, `Quantity(double, unit)` | `QString` | `std::string` |
+| `Unit::getString`, `getTypeString`, `Unit(expr)` | `QString` | `std::string` |
+| `Unit::getStdString` | -- | gone, it *is* `getString` now |
+| `UnitsApi::schemaTranslate`, `toString`, `toNumber`, `getDescription` | `QString` | `std::string` |
+| `UnitsSchema::schemaTranslate`, `toLocale`, `getAngleUnit` | `QString` | `std::string` |
+
+That is `Quantity.h`, `Unit.h`, `UnitsApi.h` and `UnitsSchema.h` plus the
+seven schema subclasses, and it leaves all four **headers Qt-free**.
+
+**Deliberately NOT done: Qt is still there in the `.cpp`.** Upstream went
+further and replaced `QLocale` number formatting with ICU, and rewrote the
+seven schema subclasses into the data-driven `UnitsSchemasSpecs` tables.
+That is a separate workstream with a new dependency, so here `QLocale`
+stays as an implementation detail of `UnitsSchema::toLocale` and
+`UnitsApi::toNumber`. Note `QString::arg(double, ...)` formats in the C
+locale, so keeping it *preserves* the documented "C locale" contract of
+`toString`/`toNumber` exactly -- reimplementing it was the riskier option.
+
+**Traps this specific change carries.**
+
+1. WARNING `getDescription` is a *translated* string. Its `tr()` came from
+   `Q_DECLARE_TR_FUNCTIONS(UnitsApi)`, whose context is the bare
+   `"UnitsApi"` -- exactly what `QCoreApplication::translate("UnitsApi",
+   ...)` produces, so both the runtime lookup and the existing
+   `Base_*.ts` entries keep matching. It is written with
+   `QT_TRANSLATE_NOOP` so lupdate still sees the literals.
+2. WARNING WARNING Two of those literals contain `m2`/`m3`. They are **marked
+   `nonascii-ok`**, because the post-commit ASCII hook rewrites
+   non-ASCII on lines a commit adds, and transliterating a translated
+   source string silently unmatches it from every `.ts` file.
+3. The caller sweep is 58 files. The two primitives dialogs alone were
+   173 sites, all `X->value().getSafeUserString()` inside a `QString`;
+   they now go through a `safeQuantityQString()` helper, which is
+   **upstream's own answer** to the same problem, so that code stays
+   merge-aligned.
+4. NOTE A scripted sweep is the right tool here, but a regex whose left
+   edge is `\w+` **matches mid-token** and spliced
+   `QString::fromStdString(` into the middle of identifiers in
+   `PropertyItem.cpp` (`Base::QString`, `uQString`/`nit`). Anchor on
+   `(?<![\w:.>])`, and grep for `[A-Za-z0-9_]QString::fromStdString`
+   afterwards -- it finds exactly that damage.
 
 ## 3. Stage 2 -- upstream's names and locations, aliases at the old ones
 

@@ -33,7 +33,7 @@
 #include <unistd.h>
 #endif
 
-#include <QString>
+#include <string>
 
 #include "UnitsSchemaMeterDecimal.h"
 
@@ -41,44 +41,44 @@
 using namespace Base;
 
 
-QString UnitsSchemaMeterDecimal::schemaTranslate(const Base::Quantity& quant,
+std::string UnitsSchemaMeterDecimal::schemaTranslate(const Base::Quantity& quant,
                                                  double& factor,
-                                                 QString& unitString)
+                                                 std::string& unitString)
 {
     Unit unit = quant.getUnit();
     if (unit == Unit::Length) {
         // all length units in metres
-        unitString = QStringLiteral("m");
+        unitString = "m";
         factor = 1e3;
     }
     else if (unit == Unit::Area) {
         // all area units in square meters
-        unitString = QStringLiteral("m^2");
+        unitString = "m^2";
         factor = 1e6;
     }
     else if (unit == Unit::Volume) {
         // all area units in cubic meters
-        unitString = QStringLiteral("m^3");
+        unitString = "m^3";
         factor = 1e9;
     }
     else if (unit == Unit::Power) {
         // watts
-        unitString = QStringLiteral("W");
+        unitString = "W";
         factor = 1000000;
     }
     else if (unit == Unit::ElectricPotential) {
         // volts
-        unitString = QStringLiteral("V");
+        unitString = "V";
         factor = 1000000;
     }
     else if (unit == Unit::HeatFlux) {
         // watts per square metre
-        unitString = QStringLiteral("W/m^2");
+        unitString = "W/m^2";
         factor = 1.0;
     }
     else if (unit == Unit::Velocity) {
         // metres per second
-        unitString = QStringLiteral("m/s");
+        unitString = "m/s";
         factor = 1e3;
     }
     else {

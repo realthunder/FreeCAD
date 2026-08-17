@@ -121,7 +121,7 @@ Unit::Unit() //NOLINT
     Sig.Angle                    = 0;
 }
 
-Unit::Unit(const QString& expr)  // NOLINT
+Unit::Unit(const std::string& expr)  // NOLINT
 {
     try {
         *this = Quantity::parse(expr).getUnit();
@@ -239,12 +239,7 @@ Unit Unit::operator /(const Unit &right) const
     return result;
 }
 
-QString Unit::getString() const
-{
-    return QString::fromUtf8(getStdString().c_str());
-}
-
-std::string Unit::getStdString() const
+std::string Unit::getString() const
 {
     std::stringstream ret;
 
@@ -482,8 +477,8 @@ std::size_t Unit::hash() const {
     }
 }
 
-QString Unit::getTypeString(void) const {
-    return QString::fromUtf8(getType());
+std::string Unit::getTypeString(void) const {
+    return getType();
 }
 
 const std::vector<std::pair<Unit, const char *> > &Unit::unitTypes() {

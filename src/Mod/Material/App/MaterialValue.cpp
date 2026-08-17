@@ -264,7 +264,7 @@ QString MaterialValue::getYAMLString() const
         }
         if (getType() == MaterialValue::Quantity) {
             auto quantity = getValue().value<Base::Quantity>();
-            yaml += quantity.getUserString();
+            yaml += QString::fromStdString(quantity.getUserString());
         }
         else if (getType() == MaterialValue::Float) {
             auto value = getValue();
@@ -481,7 +481,7 @@ QString Material2DArray::getYAMLString() const
             }
             yaml += QString::fromStdString("\"");
             auto quantity = column.value<Base::Quantity>();
-            yaml += quantity.getUserString();
+            yaml += QString::fromStdString(quantity.getUserString());
             yaml += QString::fromStdString("\"");
         }
 
@@ -795,7 +795,7 @@ QString Material3DArray::getYAMLString() const
         }
 
         yaml += QString::fromStdString("\"");
-        auto value = getDepthValue(depth).getUserString();
+        auto value = QString::fromStdString(getDepthValue(depth).getUserString());
         yaml += value;
         yaml += QString::fromStdString("\": [");
 
@@ -825,7 +825,7 @@ QString Material3DArray::getYAMLString() const
                 }
                 yaml += QString::fromStdString("\"");
                 // Base::Quantity quantity = column.value<Base::Quantity>();
-                yaml += column.getUserString();
+                yaml += QString::fromStdString(column.getUserString());
                 yaml += QString::fromStdString("\"");
             }
 

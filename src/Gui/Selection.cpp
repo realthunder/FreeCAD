@@ -992,7 +992,7 @@ QString SelectionSingleton::format(const char *docname,
         auto fmt = [this](double v) -> QString {
             Base::Quantity q(v, Base::Quantity::MilliMetre.getUnit());
             double factor;
-            QString unit;
+            std::string unit;
             Base::UnitsApi::schemaTranslate(q, factor, unit);
             QLocale Lc;
             const Base::QuantityFormat& format = q.getFormat();
@@ -1003,7 +1003,7 @@ QString SelectionSingleton::format(const char *docname,
             return QStringLiteral("%1 %2").arg(
                         Lc.toString(v/factor, format.toFormat(),
                                     fmtDecimal<0 ? format.precision : fmtDecimal),
-                        unit);
+                        QString::fromStdString(unit));
         };
         if (QApplication::queryKeyboardModifiers() == Qt::AltModifier) {
             ts << qSetRealNumberPrecision(std::numeric_limits<double>::digits10 + 1);

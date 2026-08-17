@@ -28,6 +28,7 @@
 
 #include <CXX/WrapPython.h>
 #include <memory>
+#include <QCoreApplication>
 #include <QString>
 #include "Exception.h"
 
@@ -62,32 +63,47 @@ UnitSystem UnitsApi::currentSystem = UnitSystem::SI1;
 
 int UnitsApi::UserPrefDecimals = 2;
 
-QString UnitsApi::getDescription(UnitSystem system)
+std::string UnitsApi::getDescription(UnitSystem system)
 {
+    // QT_TRANSLATE_NOOP keeps the literals where lupdate finds them, with one
+    // translate() call for the whole switch.
+    const char* description = QT_TRANSLATE_NOOP("UnitsApi", "Unknown schema");
     switch (system) {
         case UnitSystem::SI1:
-            return tr("Standard (mm, kg, s, degree)");
+            description = QT_TRANSLATE_NOOP("UnitsApi", "Standard (mm, kg, s, degree)");
+            break;
         case UnitSystem::SI2:
-            return tr("MKS (m, kg, s, degree)");
+            description = QT_TRANSLATE_NOOP("UnitsApi", "MKS (m, kg, s, degree)");
+            break;
         case UnitSystem::Imperial1:
-            return tr("US customary (in, lb)");
+            description = QT_TRANSLATE_NOOP("UnitsApi", "US customary (in, lb)");
+            break;
         case UnitSystem::ImperialDecimal:
-            return tr("Imperial decimal (in, lb)");
+            description = QT_TRANSLATE_NOOP("UnitsApi", "Imperial decimal (in, lb)");
+            break;
         case UnitSystem::Centimeters:
-            return tr("Building Euro (cm, m², m³)");
+            description = QT_TRANSLATE_NOOP("UnitsApi", "Building Euro (cm, m², m³)");  // nonascii-ok
+            break;
         case UnitSystem::ImperialBuilding:
-            return tr("Building US (ft-in, sqft, cft)");
+            description = QT_TRANSLATE_NOOP("UnitsApi", "Building US (ft-in, sqft, cft)");
+            break;
         case UnitSystem::MmMin:
-            return tr("Metric small parts & CNC(mm, mm/min)");
+            description = QT_TRANSLATE_NOOP("UnitsApi", "Metric small parts & CNC(mm, mm/min)");
+            break;
         case UnitSystem::ImperialCivil:
-            return tr("Imperial for Civil Eng (ft, ft/sec)");
+            description = QT_TRANSLATE_NOOP("UnitsApi", "Imperial for Civil Eng (ft, ft/sec)");
+            break;
         case UnitSystem::FemMilliMeterNewton:
-            return tr("FEM (mm, N, s)");
+            description = QT_TRANSLATE_NOOP("UnitsApi", "FEM (mm, N, s)");
+            break;
         case UnitSystem::MeterDecimal:
-            return tr("Meter decimal (m, m², m³)");
+            description = QT_TRANSLATE_NOOP("UnitsApi", "Meter decimal (m, m², m³)");  // nonascii-ok
+            break;
         default:
-            return tr("Unknown schema");
+            break;
     }
+
+    return QCoreApplication::translate("UnitsApi", description).toStdString();
 }
 
 UnitsSchemaPtr UnitsApi::createSchema(UnitSystem system)
@@ -139,23 +155,24 @@ void UnitsApi::setSchema(UnitSystem system)
                                        // Quantity (e.g. mi=1.8km rather then 1.6km).
 }
 
-QString UnitsApi::toString(const Base::Quantity& quantity, const QuantityFormat& format)
+std::string UnitsApi::toString(const Base::Quantity& quantity, const QuantityFormat& format)
 {
+    // QString::arg formats numbers in the C locale, which is what this contract promises.
     QString value = QStringLiteral("'%1 %2'")
                         .arg(quantity.getValue(), 0, format.toFormat(), format.precision)
-                        .arg(quantity.getUnit().getString());
-    return value;
+                        .arg(QString::fromStdString(quantity.getUnit().getString()));
+    return value.toStdString();
 }
 
-QString UnitsApi::toNumber(const Base::Quantity& quantity, const QuantityFormat& format)
+std::string UnitsApi::toNumber(const Base::Quantity& quantity, const QuantityFormat& format)
 {
     return toNumber(quantity.getValue(), format);
 }
 
-QString UnitsApi::toNumber(double value, const QuantityFormat& format)
+std::string UnitsApi::toNumber(double value, const QuantityFormat& format)
 {
     QString number = QStringLiteral("%1").arg(value, 0, format.toFormat(), format.precision);
-    return number;
+    return number.toStdString();
 }
 
 // return true if the current user schema uses multiple units for length (ex. Ft/In)
@@ -177,7 +194,8 @@ std::string UnitsApi::getBasicLengthUnit()
 
 // === static translation methods ==========================================
 
-QString UnitsApi::schemaTranslate(const Base::Quantity& quant, double& factor, QString& unitString)
+std::string
+UnitsApi::schemaTranslate(const Base::Quantity& quant, double& factor, std::string& unitString)
 {
     return UserPrefSystem->schemaTranslate(quant, factor, unitString);
 }
@@ -185,9 +203,8 @@ QString UnitsApi::schemaTranslate(const Base::Quantity& quant, double& factor, Q
 double UnitsApi::toDouble(PyObject* args, const Base::Unit& u)
 {
     if (PyUnicode_Check(args)) {
-        QString str = QString::fromUtf8(PyUnicode_AsUTF8(args));
         // Parse the string
-        Quantity q = Quantity::parse(str);
+        Quantity q = Quantity::parse(PyUnicode_AsUTF8(args));
         if (q.getUnit() == u) {
             return q.getValue();
         }
@@ -207,9 +224,8 @@ Quantity UnitsApi::toQuantity(PyObject* args, const Base::Unit& u)
 {
     double d {};
     if (PyUnicode_Check(args)) {
-        QString str = QString::fromUtf8(PyUnicode_AsUTF8(args));
         // Parse the string
-        Quantity q = Quantity::parse(str);
+        Quantity q = Quantity::parse(PyUnicode_AsUTF8(args));
         d = q.getValue();
     }
     else if (PyFloat_Check(args)) {

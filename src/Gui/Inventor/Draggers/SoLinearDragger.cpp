@@ -281,7 +281,7 @@ void SoLinearDragger::drag()
 
     QString message = QStringLiteral("%1 %2").arg(
         QObject::tr("Translation:"),
-        quantity.getUserString()
+        QString::fromStdString(quantity.getUserString())
     );
     getMainWindow()->showMessage(message, 3000);
 }

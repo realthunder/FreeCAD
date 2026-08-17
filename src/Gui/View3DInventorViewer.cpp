@@ -5605,8 +5605,8 @@ void View3DInventorViewer::printDimension() const
         Base::Quantity qHeight(Base::Quantity::MilliMetre);
         qWidth.setValue(fWidth);
         qHeight.setValue(fHeight);
-        QString wStr = Base::UnitsApi::schemaTranslate(qWidth);
-        QString hStr = Base::UnitsApi::schemaTranslate(qHeight);
+        QString wStr = QString::fromStdString(Base::UnitsApi::schemaTranslate(qWidth));
+        QString hStr = QString::fromStdString(Base::UnitsApi::schemaTranslate(qHeight));
 
         // Create final string and update window
         dim = QStringLiteral("%1 x %2").arg(wStr, hStr);

@@ -175,9 +175,9 @@ void NumberRange::throwIfOutOfRange(const Base::Quantity& value) const
     if (value.getValue() < minimum || value.getValue() > maximum) {
         Base::Quantity minVal(minimum, value.getUnit());
         Base::Quantity maxVal(maximum, value.getUnit());
-        QString valStr = value.getUserString();
-        QString minStr = minVal.getUserString();
-        QString maxStr = maxVal.getUserString();
+        QString valStr = QString::fromStdString(value.getUserString());
+        QString minStr = QString::fromStdString(minVal.getUserString());
+        QString maxStr = QString::fromStdString(maxVal.getUserString());
         QString error = QStringLiteral("Value out of range (%1 out of [%2, %3])").arg(valStr, minStr, maxStr);
 
         THROWM(Base::ValueError, error.toStdString())
@@ -245,7 +245,7 @@ void DlgExpressionInput::onTimer()
             auto * n = Base::freecad_dynamic_cast<NumberExpression>(result.get());
             if (n) {
                 Base::Quantity value = n->getQuantity();
-                QString msg = value.getUserString();
+                QString msg = QString::fromStdString(value.getUserString());
 
                 if (!value.isValid()) {
                     THROWM(Base::ValueError, "Not a number")

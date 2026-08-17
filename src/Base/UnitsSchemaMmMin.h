@@ -24,7 +24,8 @@
 #ifndef BASE_UNITSSCHEMAMMMIN_H
 #define BASE_UNITSSCHEMAMMMIN_H
 
-#include <QString>
+#include <string>
+
 #include "UnitsSchema.h"
 
 
@@ -40,8 +41,8 @@ namespace Base
 class UnitsSchemaMmMin: public UnitsSchema
 {
 public:
-    QString
-    schemaTranslate(const Base::Quantity& quant, double& factor, QString& unitString) override;
+    std::string
+    schemaTranslate(const Base::Quantity& quant, double& factor, std::string& unitString) override;
 };
 
 
