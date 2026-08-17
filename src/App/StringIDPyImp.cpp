@@ -38,8 +38,10 @@ std::string StringIDPy::representation() const
 PyObject* StringIDPy::isSame(PyObject *args) const
 {
     PyObject *other;
-    if (!PyArg_ParseTuple(args, "O!", &StringIDPy::Type, &other)) {     // convert args: Python->C 
-        return Py::new_reference_to(Py::False());
+    if (!PyArg_ParseTuple(args, "O!", &StringIDPy::Type, &other)) {
+        // As above: propagate the TypeError instead of returning a value
+        // while it is still set.
+        return nullptr;
     }
     auto otherPy = static_cast<StringIDPy*>(other);
     return Py::new_reference_to(Py::Boolean(
