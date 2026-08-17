@@ -1391,60 +1391,84 @@ document's first save matches a stale table built for a dead one -- whose
 TShape addresses have since been freed and reissued, so the lookups answer
 confidently and wrongly. Three suite cases failed on exactly that.
 
+***What a reference cannot cross, and what it cost.*** Sec 11.5's premise --
+"where a sub-shape is already stored in another object's file, write a
+reference to that file instead of the geometry" -- **does not hold below a
+face**. A face keys its edges' 2D curves on the `Geom_Surface` object it
+carries, and an edge keys its vertices' parameters on its curve. Those are
+identities of objects in one file's tables, and identity does not survive the
+other file being parsed separately: the borrowed edge comes back with pcurves
+naming a surface that is not this face's, `BRep_Tool::CurveOnSurface` finds
+nothing, and whatever projects the shape dereferences a null 2D curve.
+
+Measured on `scanner.FCStd` saved as a directory and reopened: **124 faces
+with edges carrying no curve on them, and 127 shapes invalid where 4 were
+invalid before**. TechDraw then segfaulted inside OCCT 8.0.1 HLR on exactly
+that, which is how it surfaced; with borrowing disabled the same path was
+clean. A wire and a shell are the other half of it -- they are sewn, so half
+their faces borrowed and half stored gives two edges everywhere the model has
+one, and that alone still left 119 shapes invalid.
+
+So each of the four is borrowed whole or stored whole, and what stays
+borrowable is what sits directly in a compound, a compsolid or a solid --
+whole parts of an assembly, which is the sharing sec 8 exists for.
+
 **Measured** on `scanner.FCStd` (606 objects, forced full recompute), against
 the same build with borrowing disabled, which is exactly what sec 12.3 writes:
 
 | | 12.3, one file per object | 12.4, references |
 |---|---|---|
-| shape files | 332 | 362 |
-| files borrowing nothing | 332 | 127 |
-| distinct sub-shapes borrowed | 0 | 3381 |
-| `E` tokens written | 0 | 14402 |
-| raw shape bytes | 18670216 | **15453310** |
-| deflated shape bytes | 3806881 | **3224998** |
-| whole archive | 4569978 | 3993580 |
+| shape files | 332 | 332 |
+| files borrowing nothing | 332 | 306 |
+| distinct sub-shapes borrowed | 0 | 36 |
+| raw shape bytes | 18670216 | **18276205** |
+| deflated shape bytes | 3806881 | **3735837** |
+| whole archive | 4569978 | 4498940 |
 
-and, with TechDraw parked so the open is not the crash below:
+and, with TechDraw parked so its own OCCT 8.0.1 crash is not what is timed:
 
 | | 12.3 | 12.4 |
 |---|---|---|
-| blob bytes | 18999246 | 15784671 |
-| open | 0.561s | 0.531s |
-| full parse of every shape | 2.392s | 2.399s |
+| blob bytes | 18999246 | 18605235 |
+| open | 0.561s | 0.563s |
+| full parse of every shape | 2.392s | 2.417s |
 | faces restored | 90686 | 90686 |
+| faces missing a curve / invalid shapes | 0 / 4 | 0 / 4 |
 
 ***Sec 11.9's one real risk did not materialize.*** Restore cost was the
 direction this could lose -- reading one object now transitively opens the
-files it borrows from, so fewer bytes but more opens. There is no penalty at
-all: open and full parse are unchanged inside noise, because the files opened
-transitively are the same files the document reads anyway and the parse cache
-means each is parsed once.
+files it borrows from, so fewer bytes but more opens. There is no penalty:
+open and full parse are unchanged inside noise, because the files opened
+transitively are the ones the document reads anyway and the parse cache means
+each is parsed once.
 
-***The size predictions of sec 11.8 land almost exactly.*** Predicted 15431769
-raw against 15453310 measured, 0.14% out; predicted "~3.2 to 3.3 MB" deflated
-against 3224998; predicted 1.70x raw and 1.35x deflated against sec 11.8's
-26181094 / 4373466, measured 1.694x and 1.356x. The scheme is at **1.018x of
-ideal ASCII dedup** (15185193), against the 1.02x sec 11.8 predicted.
+***Sec 11.8's prediction is not reachable in this format, and was never going
+to be.*** It predicted 15431769 raw, 1.70x, from a probe that walked top-down
+emitting a reference at the first sub-shape an earlier object owned. Its own
+type breakdown says what those were: **Edge 5479, Face 2367, Vertex 335**.
+Every one of those is a reference this cannot make. Run without the safety
+rule the prediction lands almost exactly -- 15453310 raw, 0.14% out, 3224998
+deflated, 1.694x and 1.356x against sec 11.8's 26181094 / 4373466, and 1.018x
+of ideal ASCII dedup against 1.02x predicted -- and it corrupts the document.
+**Sec 11.8's numbers should be read as what a scheme with shared geometry
+tables could reach, not as what per-file references can.**
 
-***The reference count does not, and the gate asked for that to be chased.***
-Predicted 8408 references over 377 files with `PolarPattern003` at 5129;
-measured 3381 distinct over 362 files, worst `Chamfer` at 144.
-`PolarPattern003` borrows **23 distinct sub-shapes through 9221 tokens** -- the
-pattern's copies all point at the same few shapes, which is the same sharing
-counted differently, not sharing that was missed. That the bytes land on the
-prediction to 0.14% is the load-bearing evidence: the dedup is there, expressed
-as fewer and larger borrowed sub-shapes. What the probe's traversal counted
-cannot be reproduced from here -- it ran on a different OCCT, and this run
-leaves TechDraw un-recomputed (see below).
+What is left is **2.1% raw and 1.9% deflated on this document**, which is a
+PartDesign model: 36 references, because a feature chain shares faces and
+edges, and those are exactly what cannot be crossed. A model that repeats
+whole parts -- an assembly, the 20-torus scene of sec 10.6 -- is where the
+remaining mechanism pays, and that is not measured here.
 
-***More files, not fewer.*** 332 became 362 because content addressing now
-collapses less: two objects that serialized to identical bytes can differ once
-one of them borrows. The extreme is an object whose *root* TShape another file
-already holds -- it writes a reference-only file of about a hundred bytes where
-before it shared the other object's file outright. That is 30 extra files and a
-few kilobytes against a 3.2 MB saving, and it is left alone.
+***Whole shapes are shared, not referenced.*** An object whose entire root
+TShape another file holds takes that file's blob rather than writing a
+reference to it. The first cut of this step did write the reference, and it
+cost more than its size: 332 files became 362, and files with more than one
+referrer fell from 43 to 14, so 29 files that had been shared were written
+twice over. Borrowing pays below a root, where there is geometry to leave out;
+at the root it is pure indirection, and content addressing already had it
+right.
 
-**Gate**: `src/Mod/Test/ShapeStorage.py`, 22 cases (`ShapeRefCases` added),
+**Gate**: `src/Mod/Test/ShapeStorage.py`, 24 cases (`ShapeRefCases` added),
 `FreeCADCmd -t ShapeStorage`; `FileBlobs` unchanged at 64; and the format
 itself in `tests/src/Mod/Part/App/ShapeRefSet.cpp`, 6 cases in their own
 executable, including **a file that borrows nothing being byte-identical to
@@ -1460,6 +1484,17 @@ unconditionally, so the inline form a directory project writes throws
 untouched by any of this work. And TechDraw's HLR **segfaults inside OCCT
 8.0.1** on this model when its views recompute, which is why the measurements
 above leave TechDraw alone.
+
+***What would recover it, and is not built.*** The whole loss is that each
+file has its own geometry tables, so a surface parsed twice is two objects. A
+format where a file could also reference another file's *geometry* -- "surface
+7 of file 1" in a face's record, "curve 3 of file 1" in an edge's -- would put
+every association back inside one identity domain and make the sub-face
+references safe again. That is a much larger change than this step: it means
+reimplementing `BRepTools_ShapeSet::WriteGeometry` and `ReadGeometry` per
+shape type rather than delegating to them, which is where all of OCCT's curve
+representations, regularity, tolerances and triangulation live. Sec 11.8's
+1.70x is the prize for it.
 
 ### 12.5 Step 5, optional: unifying restored duplicates
 
