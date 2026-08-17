@@ -971,6 +971,14 @@ pure `TopLoc_Location`. A first probe "refuted" canonicalization purely from
 this mistake.
 ### 11.5 The design this points to: external file references
 
+***The premise below is false under a face, and sec 12.4 measured what that
+costs.*** A face keys its edges' 2D curves on the `Geom_Surface` object it
+carries, and an edge keys its vertices' parameters on its curve; those
+identities do not survive the other file being parsed separately. A reference
+may cross into a compound, a compsolid or a solid and nothing else, which
+leaves 2.1% of the shape bytes on a real model rather than the 1.70x this
+section goes on to price. Read sec 12.4 before this.
+
 A component store dedups by putting several objects' geometry in one file and
 addressing it by byte position. There is a second way to get the same sharing
 that keeps one file per object: **where a sub-shape is already stored in
@@ -1321,10 +1329,17 @@ had the same line and the same bug. Several other places in the tree still use
 the idiom (`ProjectFile`, `VRMLObject`, `PropertyPythonObject`) and were left
 alone.
 
-### 12.4 Step 4: the external reference format -- DONE
+### 12.4 Step 4: the external reference format -- BUILT AND REVERTED
 
-**Shipped 2026-08-17.** A shape file may name other files at its head and then,
-wherever a sub-shape is listed, say the sub-shape is in one of them:
+**Built and reverted 2026-08-17** (`353f31b62a`, `4baa4757d0`, `3f409a216c`,
+`db474bfafd`, reverted by `1a4b34e640`). It works and it is correct; it is
+reverted for what it is worth once it is correct -- 2.1% of the shape bytes on
+`scanner.FCStd`, against the 1.70x sec 11.8 predicted. The commits are on the
+branch and revert cleanly back in, and are the thing to build the next attempt
+on. Everything below is what it was and what it measured.
+
+A shape file may name other files at its head and then, wherever a sub-shape
+is listed, say the sub-shape is in one of them:
 
 ```
 CASCADE Topology V1, (c) Matra-Datavision
