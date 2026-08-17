@@ -868,71 +868,159 @@ geometry**. The copy still reports the old `Placement`, and resetting it leaves
 absolute coordinates in the file. Setting `Placement` on the shape itself is a
 pure `TopLoc_Location`. A first probe "refuted" canonicalization purely from
 this mistake.
+### 11.5 The design this points to: external file references
 
-### 11.5 The design this points to: one store per sharing component
+A component store dedups by putting several objects' geometry in one file and
+addressing it by byte position. There is a second way to get the same sharing
+that keeps one file per object: **where a sub-shape is already stored in
+another object's file, write a reference to that file instead of the
+geometry.**
 
-Not one central store, and not per-property files either:
+That is strictly better for everything this fork cares about:
 
-- Union-find over TShape sharing at collect time, exactly the analysis sec 9.2
-  already specifies for chunking -- but the component becomes the *file*, not a
-  chunk of one file.
-- A component with **one** member stays a plain ASCII `.brp`, readable and
-  diffable, as today.
-- A component with **several** members becomes one store file, named
-  `<Object>.<id>.shapes.bin` after its lowest-id member.
-- The same rule applies to **archive and directory saves alike**, so the
-  `supportsSharedStore()` fork disappears, and everything -- included files,
-  shape files, component stores -- flows through the blob manager as referrers
-  indexed by one content file (`docs/FileBlobsManager.md` sec 13).
+- **Partial referring becomes full referring.** A shape file holds a handle on
+  another whole blob and names a sub-shape inside it, so lifetime is ordinary
+  refcounting again -- no joint ownership, no regeneration rules, no frozen
+  component, no size cap, and none of sec 11.6's four rules.
+- **ASCII survives**, because a reference is a name plus an index, not a byte
+  position. The store cannot be ASCII by construction (sec 3.1); this can.
+- **No random access is needed.** Positional addressing existed to pull one
+  shape out of a monolith. With one file per object, files are small and are
+  read whole, so the ASCII format's three structural obstacles -- geometry in
+  front-loaded index-addressed tables, sub-shape references encoded as
+  *reverse* indices that depend on the total shape count
+  (`TopTools_ShapeSet::Write`), and a counted read loop -- stop mattering.
+  They are only fatal for a store.
+- **No component analysis**, no union-find, no packing, no blast radius.
+- **Most files stay standard BRep**, openable by any OCCT tool.
 
-A PartDesign body is exactly one component, so this keeps the 8.9x and the
-cheap edit deltas while editing body A never touches body B's file.
+### 11.6 The format extension
 
-### 11.6 Partial referring is not full referring
+Because each file is read whole, the only thing missing from the existing
+ASCII format is a way to name another file. A `Files` table at the head and one
+new reference token:
 
-A component store introduces a reference *into* a file -- referrer to (blob,
-byte position) -- where content dedup has referrers to a whole blob. This does
-**not** break lifetime: N members holding one blob is still a `shared_ptr` with
-N holders, so refcounting, file deletion, undo snapshots and the clipboard work
-unchanged. What it breaks is **independence of mutation**: no member can change
-its own bytes, and every member's recorded position moves when the component is
-regenerated. Four rules follow.
+```
+Files 2
+Pad.Shape.brp
+Pocket001.Shape.brp
+...
+TShapes 17
+...
++12 3        <- as today: shape 12 of this file, location 3
+E1 7 3       <- new: shape 7 of file 1, location 3
+```
 
-1. **Regenerate only when dirty.** Dirty means membership changed, or some
-   member's TShape differs from the one recorded at the last save -- a pointer
-   comparison. A parked shape (`DeferShapeLoad`, never parsed) is unchanged by
-   definition, so a clean component is copied through byte-for-byte with
-   nothing loaded and nothing parsed. That is incremental save at component
-   granularity, which the central store never had: its collect pass
-   re-serializes every shape on every save.
-2. **Deletion rewrites nothing.** Leave the dead bytes in place and every
-   surviving position stays valid; the blob is untouched and the only diff is
-   the referrer list losing a token. Compact when dead bytes cross a threshold,
-   as a deliberate act rather than a side effect of an edit.
-3. **A component with an *absent* member is frozen.** Absent, not parked: a
-   partial load or a missing module. Copy verbatim, never regenerate, or a save
-   silently drops the geometry of objects that were never loaded. This is the
-   one rule here that can lose data, so it wants an explicit guard and a test.
-4. **The name is pinned to the blob, with the id in it.** A component file
-   outlives its naming member, and internal object names are reusable after
-   deletion, so a clean derived name could be squatted on by a new object that
-   reused the name. The id in the file name removes the ambiguity; ordinary
-   blobs keep clean names and carry the id in the content file instead.
+The reader resolves a file reference by asking the blob manager for that name,
+parsing it whole, caching it, and taking `Shape(index)`. Because that yields
+the same `TopoDS_Shape`, sharing is restored by construction -- no positional
+identity domain and no single long-lived reader held open for the document
+(sec 3.2's constraint, and the reader-retention problem it created, both go
+away).
 
-### 11.7 Open before this is buildable
+A file that references nothing is byte-identical to a standard BRep file, so
+the extension is only present where sharing actually is.
 
-- Is the store's write order deterministic across saves? Sec 11.3's git result
-  depends on it.
-- The **component size distribution on a real model**. Components come from
-  runtime sharing, not document structure, so a compound near the top can
-  collapse the document into a single component -- at which point this is the
-  central store again, plus a regeneration rule. The guard is a size cap with a
-  deliberate split, paying lost dedup across the boundary to bound the blast
-  radius, and sec 4.2 already describes the packing.
-- Whether the element map and the hasher are invariant under location
-  stripping (sec 11.4).
-- Component membership can only be computed over *loaded* shapes, so the
-  previous membership recorded in the content file has to be trusted for parked
-  ones.
-- Export of a subset must recompute components over the exported set: positions
-  never travel between documents.
+### 11.7 Ownership, settled by recomputing it every save
+
+Each shared TShape must live in exactly one file, and something has to decide
+which. Recomputing that assignment from scratch on every save, in a
+deterministic order, makes it a pure function of the current model -- and that
+one decision collapses most of the questions this design otherwise raises.
+Ownership drift, cascading rewrites, dangling references and ownership transfer
+on delete are all consequences of carrying an assignment forward; with a fresh
+pass there is nothing to carry.
+
+Two things survive it.
+
+**Cost.** A full pass re-serializes all geometry every save, which is the
+incremental-save win decentralizing was supposed to buy. Separable: run the
+*analysis* every save -- walking TShapes and mapping pointers is cheap next to
+serialization -- and still write only files whose content changed.
+
+**Parked shapes**, and this is the part that makes the approach work at all: a
+parked shape (`DeferShapeLoad`, never parsed) **has no TShapes in memory, so
+nothing in the document can be sharing with it.** A parked object cannot
+participate in any sharing decision, its file is unchanged by definition, and
+it is inert in the analysis without any special case.
+
+The residue is a parked object whose file *references* a file that changed. If
+the referenced object is a dependency, changing it touches the referrer, which
+must recompute and therefore cannot still be parked -- self-resolving. What is
+left is unrelated sharing between objects with no dependency between them,
+where the content file's blob-to-blob edges name exactly which parked files to
+load.
+
+So the whole problem set reduces to two rules:
+
+1. **The visit order must be deterministic** -- document order, or dependency
+   order. Otherwise files churn between saves for nothing, and sec 11.3's git
+   behaviour depends on a stable layout.
+2. **A changed file forces its parked referrers to load.**
+
+### 11.8 Measured
+
+Each object's shape walked top-down, emitting one reference at the first
+sub-shape already owned by an earlier object and not descending further --
+which is what the writer would do, so these are the real counts. Size is
+estimated as the store's payload re-priced as ASCII (the measured per-document
+ASCII/binary ratio) plus a measured 208-byte file header and a 20-byte
+reference token, which is sound because both schemes write each distinct TShape
+exactly once.
+
+| | compound over 20 tori | PartDesign chain, 12 features | `scanner.FCStd` |
+|---|---|---|---|
+| files | 21 | 19 | 377 (of 606 objects) |
+| distinct TShapes | 141 | 444 | 71185 |
+| references emitted | 20 | 301 | 8408 |
+| files needing none | 20 of 21 | 4 of 19 | 102 of 377 (27%) |
+| max references in one file | 20 | 33 | 5129, median 1 |
+| reference types | Solid 20 | Edge 200, Face 101 | Edge 5479, Face 2367, Vertex 335, Compound 100, Solid 78, Wire 49 |
+| per-file ASCII, raw | 74327 | 374306 | 26181094 |
+| per-file binary, raw | 40363 | 216552 | 13977247 |
+| store, raw | 15367 | 42082 | 8106888 |
+| store payload as ASCII | 28275 | 72802 | 15185193 |
+| **external-ref estimate** | **33065** | **82709** | **15431769** |
+| against per-file ASCII | 2.25x smaller | 4.5x smaller | 1.70x smaller |
+| against ideal ASCII dedup | 1.17x larger | 1.14x larger | 1.02x larger |
+
+Four things to read off it.
+
+**The scheme captures nearly all of the available dedup** -- 98% on the real
+document -- because it shares the store's invariant of writing each distinct
+TShape once. What it gives up against the store is not dedup, it is ASCII:
+1.87x on this document.
+
+**On a real model, more of the store's win is binary than dedup.** 26181094
+ASCII against 13977247 binary is 1.87x for the encoding; 13977247 against
+8106888 is **1.72x for the dedup**. The headline 3.2x is the product, and the
+two halves are separable -- which the 20-torus scene, built to maximize
+sharing, entirely hides.
+
+**Reference counts stay legible, and the exception is diagnosable.** The
+median file needs **one** reference and 102 of 377 need none. The distribution
+is then a long tail -- 153, 134, 118, 116 -- and one outlier: **`PolarPattern003`
+at 5129**, followed by `Boolean001` at 153. The type mix there (Edge 5479, Face
+2367 across the document) says why: a PartDesign pattern fuses its copies into
+the body, so the result shares thousands of individual edges and faces with its
+source rather than whole located solids. Patterns and booleans are the shape of
+the tail, and a per-file reference cap that falls back to inlining beyond it
+would trade bytes for readability in exactly those files.
+
+The counts above are from a run whose candidate scan effectively did not cap
+(15 lookups hit a 4096 limit). An earlier run capped at 256 hit it 31454 times
+and under-detected sharing -- 80808 distinct TShapes instead of 71185 -- while
+producing the same reference total and the same size estimate to within 80
+bytes.
+
+### 11.9 Still open
+
+- Decide whether a per-file reference cap is needed for pattern and boolean
+  results (sec 11.8), and what it costs in bytes when it fires.
+- Restore cost is unmeasured: reading one object now transitively opens the
+  files it references. Total bytes are lower, but the open count is higher.
+- Deterministic visit order has to be established, not assumed (sec 11.7).
+- Whether the element map and hasher are invariant under location stripping
+  (sec 11.4), which is a separate and independently worthwhile change.
+- Export of a subset must inline what it cannot carry: a reference to a file
+  outside the export set has to become geometry again.

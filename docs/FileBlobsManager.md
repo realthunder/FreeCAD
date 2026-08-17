@@ -553,9 +553,17 @@ and the prune applying to them unchanged. Two consequences:
   on demand rather than draining everything during `readFiles`. The content
   file is what makes that possible: names and hashes are known before any
   content is touched.
-- **A component shape store is one blob with N referrers.** No new field is
-  needed for it -- `r` already lists the members, which is exactly the record
-  its regeneration test reads -- and the per-member byte offset stays where it
-  is today, in the property's own `<Part store=".." pos=".."/>`. The rules that
-  differ for it, including why its name carries the object id, are in
-  `docs/SharedShapeStorage.md` sec 11.6.
+- **Blobs reference other blobs.** A shape file that shares geometry with
+  another object writes a reference to that object's *file* rather than a copy
+  of the geometry (`docs/SharedShapeStorage.md` sec 11.5). That is still full
+  referring -- the referrer holds a handle on the whole target blob and names a
+  sub-shape inside it -- so lifetime is ordinary refcounting and none of the
+  rules here change. What the index gains is **blob-to-blob edges**: alongside
+  the property referrers in `r`, a `<F>` records which other files it reads.
+
+  They pay for themselves twice. Pruning becomes correct in the presence of a
+  file that no property names directly but another file needs. And they answer
+  the one question the save cannot answer from memory: which *parked* shapes
+  must be loaded because a file they reference is being rewritten. Everything
+  else about ownership is recomputed from scratch on every save, which is what
+  keeps the scheme free of carried-forward state.
