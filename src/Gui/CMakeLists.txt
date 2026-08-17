@@ -37,6 +37,7 @@ include_directories(
     ${CMAKE_CURRENT_BINARY_DIR}/..
     ${CMAKE_CURRENT_BINARY_DIR}/Language
     ${CMAKE_CURRENT_BINARY_DIR}/propertyeditor
+    ${CMAKE_CURRENT_BINARY_DIR}/Selection
     ${CMAKE_CURRENT_BINARY_DIR}/TaskView
     ${CMAKE_CURRENT_BINARY_DIR}/Quarter
     ${CMAKE_CURRENT_BINARY_DIR}/DAGView
@@ -226,7 +227,7 @@ generate_from_xml(ViewProviderPy)
 generate_from_xml(ViewProviderDocumentObjectPy)
 generate_from_xml(ViewProviderExtensionPy)
 generate_from_xml(WorkbenchPy)
-generate_from_xml(SelectionObjectPy)
+generate_from_xml(Selection/SelectionObjectPy)
 generate_from_xml(LinkViewPy)
 generate_from_xml(ViewProviderLinkPy)
 generate_from_xml(ViewProviderSavedViewPy)
@@ -246,7 +247,7 @@ SET(FreeCADGui_XML_SRCS
     ViewProviderExtensionPy.xml
     PythonWorkbenchPy.xml
     WorkbenchPy.xml
-    SelectionObjectPy.xml
+    Selection/SelectionObjectPy.xml
     DocumentPy.xml
     LinkViewPy.xml
     ViewProviderLinkPy.xml
@@ -662,7 +663,6 @@ SET(Dock_Windows_CPP_SRCS
     DockWindow.cpp
     PropertyView.cpp
     ReportView.cpp
-    SelectionView.cpp
     PieMenu.cpp
     ToolBox.cpp
     Tree.cpp
@@ -679,7 +679,6 @@ SET(Dock_Windows_HPP_SRCS
     DockWindow.h
     PropertyView.h
     ReportView.h
-    SelectionView.h
     PieMenu.h
     ToolBox.h
     Tree.h
@@ -1274,19 +1273,27 @@ SET(Workbench_SRCS
 SOURCE_GROUP("Workbench" FILES ${Workbench_SRCS})
 
 SET(Selection_SRCS
-    SelectionObjectPyImp.cpp
-    SelectionObject.h
-    SelectionObject.cpp
+    Selection/SelectionObjectPyImp.cpp
+    Selection/SelectionObject.h
+    Selection/SelectionObject.cpp
+    Selection/Selection.h
+    Selection/Selection.cpp
+    Selection/SelectionFilter.h
+    Selection/SelectionFilter.cpp
+    Selection/SelectionFilterPy.h
+    Selection/SelectionFilterPy.cpp
+    Selection/SelectionFilter.y
+    Selection/SelectionFilter.l
+    Selection/SelectionObserverPython.cpp
+    Selection/SelectionObserverPython.h
+    Selection/SelectionView.cpp
+    Selection/SelectionView.h
+    # the forwarding headers left at the old paths for existing call sites
     Selection.h
-    Selection.cpp
+    SelectionObject.h
     SelectionFilter.h
-    SelectionFilter.cpp
     SelectionFilterPy.h
-    SelectionFilterPy.cpp
-    SelectionFilter.y
-    SelectionFilter.l
-    SelectionObserverPython.cpp
-    SelectionObserverPython.h
+    SelectionView.h
 )
 SOURCE_GROUP("Selection" FILES ${Selection_SRCS})
 

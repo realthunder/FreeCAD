@@ -42,7 +42,7 @@
 #include <Base/Tools.h>
 #include <Base/PyWrapParseTupleAndKeywords.h>
 #include <Base/UnitsApi.h>
-#include <Gui/SelectionObjectPy.h>
+#include <Gui/Selection/SelectionObjectPy.h>
 
 #include "Command.h"
 #include "Selection.h"
