@@ -33,6 +33,10 @@
 #   include "stx/any.hpp"
 #endif
 #include <boost/signals2.hpp>
+// Upstream's name for the same namespace, so ported code compiles unchanged.
+// Here rather than in each porting site, because upstream's core headers put
+// it where every DocumentObject-side file picks it up.
+#include <fastsignals/signal.h>
 #include <bitset>
 #include <string>
 #include <FCGlobal.h>

@@ -32,6 +32,8 @@
 #include <QIcon>
 #include <QPixmap>
 #include <boost/signals2.hpp>
+// Upstream's name for the same namespace; see the note in App/Property.h
+#include <fastsignals/signal.h>
 
 #include <App/Material.h>
 #include <App/TransactionalObject.h>
