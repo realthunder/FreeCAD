@@ -126,6 +126,28 @@ private:
 
 using FileBlobHandle = std::shared_ptr<FileBlob>;
 
+/** A property the manager restores content into.
+ *
+ * The pending queue is keyed on this rather than on `PropertyFileIncluded`
+ * because a shape property is an ordinary referrer too
+ * (`docs/SharedShapeStorage.md` sec 12.3), and the two have nothing else in
+ * common -- one stores a file the user gave it, the other serializes geometry.
+ */
+class AppExport BlobReferrerProperty
+{
+public:
+    virtual ~BlobReferrerProperty() = default;
+
+    /** Take the content the manager restored on this property's behalf.
+     *
+     * Called once the archive entry holding the content has been read, or
+     * straight away when it had been read already. Not a value change: it
+     * completes the restore of a value the document already had, so it must
+     * not touch the document.
+     */
+    virtual void assignRestoredBlob(const FileBlobHandle& blob) = 0;
+};
+
 /** Per-document store of the files referenced by PropertyFileIncluded.
  *
  * Ownership is deliberately per document rather than per application. A
@@ -326,9 +348,9 @@ public:
      * which is why Gui::Document refuses to park a view provider whose record
      * names a blob.
      */
-    void addPendingReferrer(const std::string& hash, PropertyFileIncluded* prop);
+    void addPendingReferrer(const std::string& hash, BlobReferrerProperty* prop);
     /// Withdraw a referrer that died before it could be served.
-    void removePendingReferrer(PropertyFileIncluded* prop);
+    void removePendingReferrer(BlobReferrerProperty* prop);
     /// Hand every waiting referrer its blob.
     void dispatchPending();
     /** Drop the manager's own hold on restored content.
@@ -400,7 +422,7 @@ private:
     /// Who refers to each of them, which is what names the file it goes to.
     std::unordered_map<std::string, std::vector<BlobReferrer>> _saveRefs;
     /// Properties waiting for content that is still to be read.
-    std::vector<std::pair<std::string, PropertyFileIncluded*>> _pending;
+    std::vector<std::pair<std::string, BlobReferrerProperty*>> _pending;
     /// Whether endRestore() has run, i.e. whether a referrer turning up now
     /// can still be served. See addPendingReferrer().
     bool _restoreClosed {false};

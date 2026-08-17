@@ -24,6 +24,9 @@
   ShapeLocationCases  location canonicalization (sec 11.4, build step 12.2):
                       the geometry goes out at the identity and the top level
                       location is written as a `loc=` attribute instead
+  ShapeBlobCases      the geometry as a file in the document's blob store
+                      (sec 12.3): named after its property, shared by content,
+                      skipped when unchanged, parsed once
 
 Run headless with:  FreeCADCmd -t ShapeStorage
 """
@@ -33,6 +36,7 @@ import shutil
 import tempfile
 import unittest
 import zipfile
+from xml.etree import ElementTree
 
 import FreeCAD
 
@@ -48,16 +52,8 @@ BLOB_INDEX = "Content.xml"
 
 
 @unittest.skipUnless(HAS_PART, "Part module not available")
-class ShapeLocationCases(unittest.TestCase):
-    """The location lives in the XML, never in the geometry.
-
-    Three things follow from that and are pinned down here: a placement still
-    survives a round trip (it must -- outside a recompute Feature::onChanged
-    reads Placement back out of the shape's own transform, so geometry
-    announced at the identity would zero it), moving an object no longer
-    rewrites its geometry, and two equal parts at different placements
-    serialize to the same bytes.
-    """
+class ShapeTestCase(unittest.TestCase):
+    """Scratch directory, document bookkeeping and store-aware assertions."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="fc_shape_test_")
@@ -129,33 +125,59 @@ class ShapeLocationCases(unittest.TestCase):
             if name.endswith(".xml") and not name.startswith(BLOB_DIR + "/")
         )
 
+    def blobNames(self, project):
+        """The stored files of a project, index excluded."""
+        if os.path.isdir(project):
+            blobdir = os.path.join(project, BLOB_DIR)
+            if not os.path.isdir(blobdir):
+                return []
+            return sorted(n for n in os.listdir(blobdir) if n != BLOB_INDEX)
+        archive = zipfile.ZipFile(project)
+        prefix = BLOB_DIR + "/"
+        return sorted(
+            n[len(prefix) :]
+            for n in archive.namelist()
+            if n.startswith(prefix) and n != prefix + BLOB_INDEX
+        )
+
+    def blobBytes(self, project, name):
+        if os.path.isdir(project):
+            with open(os.path.join(project, BLOB_DIR, name), "rb") as handle:
+                return handle.read()
+        return zipfile.ZipFile(project).read("%s/%s" % (BLOB_DIR, name))
+
+    def blobIndex(self, project):
+        """The content index: name -> (hash, referrer tokens)."""
+        entry = "%s/%s" % (BLOB_DIR, BLOB_INDEX)
+        if os.path.isdir(project):
+            path = os.path.join(project, BLOB_DIR, BLOB_INDEX)
+            if not os.path.exists(path):
+                return {}
+            with open(path, "rb") as handle:
+                data = handle.read()
+        else:
+            archive = zipfile.ZipFile(project)
+            if entry not in archive.namelist():
+                return {}
+            data = archive.read(entry)
+        root = ElementTree.fromstring(data)
+        return {n.get("n"): (n.get("h"), (n.get("r") or "").split()) for n in root}
+
     def storedGeometry(self, project):
         """The serialized geometry of a project, wherever this writer put it.
 
-        A directory project writes ASCII BRep inside each object's XML -- that
-        is the whole point of the directory format -- while an archive puts it
-        in the shape store, one content-addressed blob. Either way what is
-        compared is the geometry and nothing around it.
+        From step 12.3 that is one stored file per distinct geometry, whether
+        the project is a directory or an archive. A save asked to carry
+        everything inside its XML puts it there instead, so that form is
+        collected too -- what is compared is the geometry and nothing around
+        it.
         """
-        if os.path.isdir(project):
-            bodies = []
-            for name in sorted(os.listdir(project)):
-                if not name.endswith(".xml"):
-                    continue
-                with open(os.path.join(project, name), "rb") as handle:
-                    text = handle.read().decode("utf-8")
-                for chunk in text.split("<Part ")[1:]:
-                    head, _, rest = chunk.partition(">")
-                    if "brep=" in head or "binary=" in head:
-                        bodies.append(rest.split("</Part>")[0])
-            return bodies
-        archive = zipfile.ZipFile(project)
-        entries = sorted(
-            n
-            for n in archive.namelist()
-            if n.startswith(BLOB_DIR + "/") and n != "%s/%s" % (BLOB_DIR, BLOB_INDEX)
-        )
-        return [archive.read(n) for n in entries]
+        bodies = [self.blobBytes(project, name) for name in self.blobNames(project)]
+        for text in self.documentXml(project).split("<Part ")[1:]:
+            head, _, rest = text.partition(">")
+            if "brep=" in head or "binary=" in head:
+                bodies.append(rest.split("</Part>")[0].encode("utf-8"))
+        return bodies
 
     def assertPlacement(self, obj, expected, msg=""):
         actual = obj.Placement
@@ -169,6 +191,19 @@ class ShapeLocationCases(unittest.TestCase):
             1e-9,
             "%s rotation %s != %s" % (msg, actual.Rotation, expected.Rotation),
         )
+
+
+@unittest.skipUnless(HAS_PART, "Part module not available")
+class ShapeLocationCases(ShapeTestCase):
+    """The location lives in the XML, never in the geometry.
+
+    Three things follow from that and are pinned down here: a placement still
+    survives a round trip (it must -- outside a recompute Feature::onChanged
+    reads Placement back out of the shape's own transform, so geometry
+    announced at the identity would zero it), moving an object no longer
+    rewrites its geometry, and two equal parts at different placements
+    serialize to the same bytes.
+    """
 
     # -- cases -------------------------------------------------------------
 
@@ -242,10 +277,9 @@ class ShapeLocationCases(unittest.TestCase):
         self.assertIn('loc="1 0 0 11 0 1 0 -22.5 0 0 1 3.25"', xml)
         # Round numbers stay round: the shortest text that reads back exactly.
         self.assertNotIn("-22.500000", xml)
-        # And with the location gone, the two boxes are the same geometry.
-        bodies = self.storedGeometry(project)
-        self.assertEqual(len(bodies), 2)
-        self.assertEqual(bodies[0], bodies[1])
+        # And with the location gone, the two boxes are the same geometry --
+        # which, geometry being stored by content, is one file.
+        self.assertEqual(len(self.storedGeometry(project)), 1)
 
     def moveLeavesTheGeometryUntouched(self, project):
         doc = self.newDocument()
@@ -300,16 +334,17 @@ class ShapeLocationCases(unittest.TestCase):
 
     def testInlinedGeometryCarriesNoLocationEither(self):
         """Geometry written inside the XML is a separate branch of both the
-        save and the restore -- and the one a directory project always takes,
-        because ASCII BRep that version control can read is what it is for.
-        """
+        save and the restore. A save asked to carry everything itself takes
+        it -- above ForceXML level 3 there are no stored files to be in."""
         doc = self.newDocument()
         wanted = self.placement(4, 5, 6, angle=60.0, axis=(1, 0, 1))
         self.box(doc, "Moved", wanted)
         doc.recompute()
+        doc.ForceXML = 4
         project = self.directoryPath()
         doc.saveAs(project)
         xml = self.documentXml(project)
+        self.assertEqual(self.blobNames(project), [])
         self.assertIn(' loc="', xml)
         self.assertIn(' brep="1"', xml)
         # The location is not in the geometry as well: the BRep location table
@@ -359,6 +394,141 @@ class ShapeLocationCases(unittest.TestCase):
 
         reopened = self.openDocument(project)
         self.assertPlacement(reopened.getObject("Moved"), wanted)
+
+
+@unittest.skipUnless(HAS_PART, "Part module not available")
+class ShapeBlobCases(ShapeTestCase):
+    """The geometry is an ordinary file in the document's blob store.
+
+    Named after the property that owns it, addressed by content, skipped when
+    unchanged, pruned when orphaned, parsed once however many objects share
+    it -- docs/SharedShapeStorage.md sec 12.3.
+    """
+
+    def testGeometryIsAFileNamedAfterTheProperty(self):
+        doc = self.newDocument()
+        self.box(doc, "Box")
+        doc.recompute()
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.blobNames(project), ["Box.Shape.brp"])
+        # Standard ASCII BRep, openable by anything that reads one.
+        self.assertTrue(self.blobBytes(project, "Box.Shape.brp").startswith(b"\nCASCADE"))
+        xml = self.documentXml(project)
+        self.assertIn(' hash="', xml)
+        self.assertNotIn(' brep="1"', xml)
+        self.assertNotIn(' store="', xml)
+
+    def testEqualGeometryIsOneFileWithTwoReferrers(self):
+        """Two boxes built independently have two TShapes and no sharing at
+        all in memory -- and still come out as one file, because the file is
+        addressed by what is in it."""
+        doc = self.newDocument()
+        self.box(doc, "Box")
+        self.box(doc, "Box001", self.placement(50, 0, 0))
+        doc.recompute()
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.blobNames(project), ["Box.Shape.brp"])
+        index = self.blobIndex(project)
+        self.assertEqual(len(index["Box.Shape.brp"][1]), 2)
+
+    def testSharedFileIsParsedOnce(self):
+        """One file, one parse, one TShape -- which is the sharing the central
+        store used to provide, arrived at by content addressing instead."""
+        doc = self.newDocument()
+        self.box(doc, "Box")
+        self.box(doc, "Box001", self.placement(50, 0, 0))
+        doc.recompute()
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        first = reopened.getObject("Box").Shape
+        second = reopened.getObject("Box001").Shape
+        self.assertTrue(first.isPartner(second), "the two shapes are not one TShape")
+        # And they are still where they belong.
+        self.assertPlacement(reopened.getObject("Box001"), self.placement(50, 0, 0))
+
+    def testUnchangedGeometryIsNotRewritten(self):
+        doc = self.newDocument()
+        self.box(doc, "Box")
+        obj = self.box(doc, "Other", self.placement(0, 0, 40), length=3)
+        doc.recompute()
+        project = self.directoryPath()
+        doc.saveAs(project)
+        before = {n: self.blobBytes(project, n) for n in self.blobNames(project)}
+        stamps = {
+            n: os.stat(os.path.join(project, BLOB_DIR, n)).st_mtime_ns for n in before
+        }
+        self.assertEqual(len(before), 2)
+
+        obj.Length = 7
+        doc.recompute()
+        doc.save()
+        after = {n: self.blobBytes(project, n) for n in self.blobNames(project)}
+        self.assertEqual(after["Box.Shape.brp"], before["Box.Shape.brp"])
+        self.assertEqual(
+            os.stat(os.path.join(project, BLOB_DIR, "Box.Shape.brp")).st_mtime_ns,
+            stamps["Box.Shape.brp"],
+            "an unchanged shape was written again",
+        )
+        self.assertNotEqual(after["Other.Shape.brp"], before["Other.Shape.brp"])
+
+    def testDeletedObjectLeavesNoFile(self):
+        doc = self.newDocument()
+        self.box(doc, "Box")
+        obj = self.box(doc, "Other", self.placement(0, 0, 40), length=3)
+        doc.recompute()
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(len(self.blobNames(project)), 2)
+
+        doc.removeObject(obj.Name)
+        doc.recompute()
+        doc.save()
+        self.assertEqual(self.blobNames(project), ["Box.Shape.brp"])
+
+    def testDocumentWithoutGeometryHasNoBlobDirectory(self):
+        doc = self.newDocument()
+        doc.addObject("App::FeatureTest", "Plain")
+        doc.recompute()
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertFalse(os.path.isdir(os.path.join(project, BLOB_DIR)))
+
+    def testBinaryGeometryRoundTrip(self):
+        doc = self.newDocument()
+        wanted = self.placement(1, 2, 3, angle=25.0)
+        self.box(doc, "Box", wanted)
+        doc.recompute()
+        doc.PreferBinary = True
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.blobNames(project), ["Box.Shape.bin"])
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        obj = reopened.getObject("Box")
+        self.assertPlacement(obj, wanted)
+        self.assertEqual(len(obj.Shape.Faces), 6)
+
+    def testResaveOfAnUnmodifiedProjectChangesNothing(self):
+        """What the whole naming and skipping scheme is for: version control
+        sees no diff when the model did not change."""
+        doc = self.newDocument()
+        self.box(doc, "Box", self.placement(3, 0, 0))
+        self.box(doc, "Other", self.placement(0, 5, 0), length=3)
+        doc.recompute()
+        project = self.directoryPath()
+        doc.saveAs(project)
+        before = {n: self.blobBytes(project, n) for n in self.blobNames(project)}
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        reopened.save()
+        self.assertEqual({n: self.blobBytes(project, n) for n in self.blobNames(project)}, before)
 
 
 if __name__ == "__main__":

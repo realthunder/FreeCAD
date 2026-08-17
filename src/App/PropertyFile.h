@@ -73,7 +73,7 @@ private:
   * will just rename and use the same file. You can use getExchangeTempFile() to 
   * get a file name in the transient dir to write a new file version.
  */
-class AppExport PropertyFileIncluded : public Property
+class AppExport PropertyFileIncluded : public Property, public BlobReferrerProperty
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
@@ -134,7 +134,7 @@ public:
      * value change: it completes the restore of a value the document already
      * had, so it must not touch the document.
      */
-    void assignRestoredBlob(const FileBlobHandle &blob);
+    void assignRestoredBlob(const FileBlobHandle &blob) override;
 
     void setFilter(std::string filter);
     std::string getFilter() const;

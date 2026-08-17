@@ -65,9 +65,13 @@ namespace Part
  * reference graph needs, whenever it is first asked for -- no whole-store
  * inflate and no archive index.
  *
- * The store exists only at schema 5 and above. Below it, nothing here runs:
- * a property keeps its own archive member, and this property writes itself out
- * empty, so a file that has no use for a store does not carry one.
+ * ***Read-only as of step 12.3 of docs/SharedShapeStorage.md.*** No save
+ * writes a store any more: the geometry is one file per object in the blob
+ * store, which gets the same sharing from content addressing -- with the
+ * location canonicalized out (sec 11.4), two objects over one TShape
+ * serialize to the same bytes, so they are one file and, through the parse
+ * cache, one TShape again. What is left here is what opens the documents that
+ * were written with a store, and what lets the next save move them out of it.
  *
  * @warning The reader instance is the identity domain. One reader across the
  * document restores `IsPartner` true and the same TShape pointer; a reader per
@@ -88,36 +92,17 @@ public:
     /// Name the store is carried under, as a dynamic property of the document.
     static const char* propertyName();
 
-    /// Whether a save through this writer stores shapes centrally at all.
-    static bool writesStore(Base::Writer& writer);
-
-    /** The document's store for this save, created if this save uses one.
-     *
-     * Never removes: the property owns the file that every shape still parked
-     * at a position reads from, and a save is exactly when those shapes are
-     * being restored one by one. What keeps a store out of a schema-4 file is
-     * Save() writing nothing, not the property going away.
-     */
-    static PropertyShapeStore* prepare(App::Document* doc, Base::Writer& writer);
-
     /// The document's store, or null.
     static PropertyShapeStore* find(const App::Document* doc);
 
-    /** Collect the document's shapes into the store.
+    /** Always written out empty.
      *
-     * Runs from the document's own pre-save pass, which is after every object
-     * has settled its properties and before a single one has been written --
-     * the only window in which a property can still be told where its shape
-     * will be.
-     */
-    void beforeSave(Base::Writer& writer) const override;
-
-    /** Written only into a file that has a use for it.
-     *
-     * Below schema 5 the property stays on the document -- taking it off
-     * would delete the store file, and a shape still parked at a position in
-     * it would have nowhere left to come from -- but it writes itself out
-     * empty, so the file carries no store.
+     * No save produces a store any more; this property exists to read the
+     * documents that have one. It stays on the document rather than being
+     * taken off -- it owns the file that every shape still parked at a
+     * position reads from, and a save is exactly when those shapes are being
+     * restored one by one -- but it writes nothing, so the file it is being
+     * saved into carries no store.
      */
     void Save(Base::Writer& writer) const override;
 
@@ -128,8 +113,6 @@ public:
     TopoDS_Shape readShape(uint64_t pos) const;
 
 private:
-    void collect(Base::Writer& writer) const;
-
     struct Reader;
     mutable std::unique_ptr<Reader> _reader;
 };

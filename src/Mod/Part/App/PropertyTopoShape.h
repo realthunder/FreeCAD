@@ -33,6 +33,7 @@ class BRepBuilderAPI_MakeShape;
 #include "TopoShape.h"
 #include <TopAbs_ShapeEnum.hxx>
 
+#include <App/FileBlobManager.h>
 #include <App/PropertyGeo.h>
 #include <App/DocumentObject.h>
 
@@ -44,7 +45,8 @@ class Feature;
 /** The part shape property class.
  * @author Werner Mayer
  */
-class PartExport PropertyPartShape : public App::PropertyComplexGeoData
+class PartExport PropertyPartShape : public App::PropertyComplexGeoData,
+                                     public App::BlobReferrerProperty
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
@@ -120,6 +122,21 @@ public:
     void setRestorePending(bool on) override { _RestorePending = on; }
     //@}
 
+    /** @name Blob storage (docs/SharedShapeStorage.md sec 12.3)
+     *
+     * From schema 5 on the geometry is an ordinary file in the document's
+     * blob store, named `Box.Shape.brp` after this property and shared by
+     * content: two objects whose geometry serializes to the same bytes --
+     * which, with the location canonicalized out, is every pair of equal
+     * parts -- are one file, parsed once.
+     */
+    //@{
+    /// Take the geometry file this restore was handed. Does not parse it.
+    void assignRestoredBlob(const App::FileBlobHandle &blob) override;
+    /// The file holding this property's geometry, or null.
+    const App::FileBlobHandle &getBlob() const { return _blob; }
+    //@}
+
     friend class Feature;
     /// Stamps _StorePos during the pre-save collect, and serves it on restore.
     friend class PropertyShapeStore;
@@ -160,6 +177,26 @@ private:
     /// Take this shape out of the document's store, at _StorePos.
     void serveFromStore();
 
+    /** @name Blob storage, the parts that are not the public interface */
+    //@{
+    App::FileBlobManager &blobManager() const;
+    /// Whether this writer puts geometry in the blob store.
+    bool usesBlob(Base::Writer &writer) const;
+    /// Serialize the geometry into the store, unless _blob already holds it.
+    void makeBlob(Base::Writer &writer) const;
+    /// Tell the manager this save refers to _blob, and what to name its file.
+    void noteBlob(Base::Writer &writer) const;
+    /// Parse the geometry out of _blob and announce it.
+    void serveFromBlob();
+    /** Drop _blob if it no longer describes the value being set.
+     *
+     * A shape that differs only in where it sits keeps it: the location is
+     * canonicalized out of the file (sec 11.4), so moving an object leaves
+     * the geometry it already serialized valid, and the save writes nothing.
+     */
+    void dropBlob(const TopoDS_Shape &next);
+    //@}
+
 private:
     TopoShape _Shape;
     TopoShape _ShapeNoName;
@@ -182,6 +219,18 @@ private:
      * its location baked in and nothing has to be put back.
      */
     TopLoc_Location _RestoreLoc;
+    /** The file this property's geometry is, or is about to be, stored in.
+     *
+     * Held from the moment the content is known until the value stops
+     * matching it, which is what lets a save write nothing for a shape that
+     * did not change, and what lets two objects with equal geometry share one
+     * file and one parse.
+     */
+    mutable App::FileBlobHandle _blob;
+    /// Content hash a restore read, empty when this shape is not a blob.
+    std::string _RestoreHash;
+    /// Manager the pending referrer was queued with, for withdrawing it.
+    App::FileBlobManager *_PendingManager {nullptr};
 };
 
 struct PartExport ShapeHistory {

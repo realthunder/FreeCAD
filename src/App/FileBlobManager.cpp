@@ -782,7 +782,14 @@ void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry
             str << "FileBlobManager: cannot create " << staging;
             THROWM(Base::FileSystemError, str.str())
         }
-        entry >> to.rdbuf();
+        // ***Written, not extracted.*** `entry >> to.rdbuf()` is a formatted
+        // extraction: its sentry skips leading whitespace, so content that
+        // begins with any would arrive one or more bytes short. Content
+        // addressing turns that from a quiet corruption into a blob whose
+        // hash no longer matches the one the document refers to, and the
+        // referrer is served nothing at all -- which is exactly what ASCII
+        // BRep, whose first byte is a newline, hit.
+        to << entry.rdbuf();
     }
 
     // adoptFile() hashes the content and relocates it, so the entry name is
@@ -790,7 +797,9 @@ void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry
     // and what it holds are checked against each other by construction. It
     // also drops content that is already stored, which is what makes
     // reopening a document cheap.
-    hold(adoptFile(staging.c_str(), Base::FileInfo(name).extension().c_str()));
+    auto blob = adoptFile(staging.c_str(), Base::FileInfo(name).extension().c_str());
+    FC_TRACE("blob entry " << name << " -> " << (blob ? blob->hash() : std::string("(none)")));
+    hold(std::move(blob));
 }
 
 void FileBlobManager::restoreFromDirectory(const std::string& dir)
@@ -829,7 +838,7 @@ void FileBlobManager::hold(FileBlobHandle blob)
     slot = std::move(blob);
 }
 
-void FileBlobManager::addPendingReferrer(const std::string& hash, PropertyFileIncluded* prop)
+void FileBlobManager::addPendingReferrer(const std::string& hash, BlobReferrerProperty* prop)
 {
     if (hash.empty() || !prop) {
         return;
@@ -837,9 +846,11 @@ void FileBlobManager::addPendingReferrer(const std::string& hash, PropertyFileIn
     // Content read earlier in this restore, or left over from one before it,
     // can be handed over at once. Everything else waits for the drain.
     if (auto blob = find(hash)) {
+        FC_TRACE("referrer served at once from " << hash);
         prop->assignRestoredBlob(blob);
         return;
     }
+    FC_TRACE("referrer queued for " << hash);
     std::lock_guard<std::mutex> guard(_mutex);
     if (_restoreClosed) {
         // Nothing will dispatch this: the hold is gone and dispatchPending()
@@ -854,7 +865,7 @@ void FileBlobManager::addPendingReferrer(const std::string& hash, PropertyFileIn
     _pending.emplace_back(hash, prop);
 }
 
-void FileBlobManager::removePendingReferrer(PropertyFileIncluded* prop)
+void FileBlobManager::removePendingReferrer(BlobReferrerProperty* prop)
 {
     std::lock_guard<std::mutex> guard(_mutex);
     _pending.erase(std::remove_if(_pending.begin(), _pending.end(),
@@ -864,7 +875,7 @@ void FileBlobManager::removePendingReferrer(PropertyFileIncluded* prop)
 
 void FileBlobManager::dispatchPending()
 {
-    std::vector<std::pair<std::string, PropertyFileIncluded*>> pending;
+    std::vector<std::pair<std::string, BlobReferrerProperty*>> pending;
     {
         std::lock_guard<std::mutex> guard(_mutex);
         pending.swap(_pending);

@@ -468,7 +468,10 @@ void PropertyFileIncluded::RestoreDocFile(Base::Reader &reader)
     // copy plain data
     aboutToSetValue();
 
-    reader >> to.rdbuf();
+    // Written, not extracted: extraction skips leading whitespace, so content
+    // that starts with any came back short. See readBlobEntry() for the same
+    // fix and what content addressing turns that into.
+    to << reader.rdbuf();
     to.close();
 
     // Hand the file to the store. Two objects referencing identical content --
