@@ -488,7 +488,56 @@ spot or not, and the same room can be borrowed from a capacity nothing
 fills. The packer never starts a spot in the last slot, so the
 shader's `i + 1` is always in range.
 
-### 3.3 Background views give their targets back
+### 3.3 Targets follow demand, not capability
+
+A view's render targets used to be decided by what the GPU *can* do:
+`m_shadow` / `m_oit` / `m_ssao` / `m_vol` are capability tests, so a
+session with volumetrics, water, bloom, reflections and shadows all
+switched off still paid for every one of them. At 1080p that is
+**~352MB of a ~554MB** per-view target footprint, on every open 3D
+view, for passes that never run.
+
+`BGFXView::updateEffect(EffectGroup, bool)` reconciles each group once
+per frame from the frame's configuration block, **before** anything
+reads a handle. Capability still gates absolutely -- a group whose
+`m_*` flag is false is never allocated whatever the configuration says
+-- but on top of it a group is built by the first frame that wants it
+and released when the want goes away. A group whose allocation fails
+(the pools are shared with every other view) is **latched off** rather
+than retried every frame: a bailed frame never reaches `bgfx::frame()`,
+which is the only place bgfx reclaims, so retrying is how a full pool
+turns into a spin. The latch clears on a resize, and whenever the
+configuration turns the group off and on again.
+
+| group | targets | at 1080p | wanted by |
+|---|---|---|---|
+| `EffectVolumetric` | raymarch + history pair, water/cloud/fire intervals | ~166MB | `Render_Volumetric` |
+| `EffectShadow` | moments + depth, blur ping, glass tint pair | ~117MB | a scene light *and* `Render_Shadow` |
+| `EffectSSAO` | depth+normal prepass, AO chain, glass interval | ~98MB | AO / cavity / volumetric / water / debug views / glass seen |
+| `EffectBulbShadow` | the 2048^2 bulb tile atlas | ~50MB | a light-source body (allocate only) |
+| `EffectReflection` | mirrored-camera re-render | viewport | ground reflection or planar water |
+| `EffectBloom` | quarter-res halo + blur ping | viewport/16 | `Render_Bloom` |
+
+! **Release is driven by CONFIGURATION, never by scene content.** The
+frame's `*Active` flags fold in things like "this frame's scene has a
+water body" or "the shadow pass ran"; releasing on those frees and
+rebuilds across ordinary editing, and across the momentarily empty feed
+of a document switch. Scene state may **add** to a group's demand and
+never take it away -- which is how the two groups with no preference
+behind them join in: the bulb atlas is allocate-only, and glass (a
+material, so there is nothing to switch) latches `glassSeen`.
+
+`EffectShadow` is the one group whose extent is a setting rather than
+the viewport, so `ShadowPrecision` joins the reconcile: a size change
+rebuilds the set, and clears its failure latch, a smaller map being a
+real chance to fit where the last one did not.
+
+Measured at 1920x1080, one view: the four effect groups are 10 fbo / 18
+tex / **86.9MB**, and the shadow group another 6 fbo / 5 tex /
+**117.4MB** (0.25 precision: 7.4MB). Every one of them returns to
+exactly its baseline when switched off again.
+
+### 3.4 Background views give their targets back
 
 Ids are not what a view mostly costs -- its render targets are. One
 1644x653 view with every effect on holds **287MB** of them, and it held
@@ -544,9 +593,11 @@ and a click through the tabs should not pay it. What comes back is
 **byte-identical** (avgColor difference 0.000 across a rebuild): the
 trade is a hitch, never an image.
 
-For scale, releasing only the four demand-allocated effect groups
-instead was measured at 95.5MB of the 287MB (33%) and +11.4ms; the full
-release is worth the delay it needs.
+For scale, releasing only the demand-allocated effect groups instead
+was measured at 95.5MB of the 287MB (33%) and +11.4ms -- taken before
+the shadow group joined them, so a shadowed view would give back more
+now, and still not the core, OIT and prepass targets a full release
+takes. The full release is worth the delay it needs.
 
 Measured end to end on the real GPU (D3D12 under WSLg), two documents
 open with every effect on, the pools read through the *other* view --
