@@ -2915,10 +2915,12 @@ public:
     /// Stateful particle emitters simulated per view, and the fixed
     /// simulation steps each may take in one frame
     /// (docs/RenderEngine.md §5.8). Both are view-id budget: a viewer
-    /// occupies NUM_VIEWS contiguous bgfx ids out of the 512 the build
-    /// configures (src/3rdParty/CMakeLists.txt), so these numbers are
-    /// part of what says how many viewers can be open at once --
-    /// NUM_VIEWS is 87 today, which fits five. Past the budget
+    /// occupies a block of contiguous bgfx ids, sized to the passes its
+    /// frames declare, out of the Render/MaxViewIds a session hands out
+    /// (default 1024, ceiling BGFX_CONFIG_MAX_VIEWS in
+    /// src/3rdParty/CMakeLists.txt), so these numbers are part of what
+    /// says how many viewers can be open at once -- they widen the
+    /// block, not the budget it comes from. Past the budget
     /// BGFXRendererLibP::getView refuses the viewer and it falls back
     /// to Coin rendering; it does not crash, and it does not silently
     /// share ids. A

@@ -361,12 +361,22 @@ self-scheduled redraws; two frozen frames are byte-identical.
 
 ### 3.1 The view-id budget
 
-bgfx addresses views by id out of a fixed table — 512 in this build
-(`BGFX_CONFIG_MAX_VIEWS`, set in `src/3rdParty/CMakeLists.txt`) — and
-submitting an id past it is fatal, not an error return. The pass
-sequence above is 87 ids wide (`BGFXView::NUM_VIEWS`), so reserving all
-of it per viewer fit only five 3D views at once, and the sixth was
-refused.
+bgfx addresses views by id out of a fixed table, and submitting an id
+past it is fatal, not an error return. Two numbers bound it:
+`BGFX_CONFIG_MAX_VIEWS` (`src/3rdParty/CMakeLists.txt`) is the
+**ceiling** the build can address -- 4096, which is what the draw sort
+key's view field costs a bit for -- and `Render/MaxViewIds` is the
+**runtime limit** a session actually hands out and walks, default 1024,
+0 asking for the ceiling. They are separate because they used to be one
+number: raising the constant for capacity also made every frame pay for
+slots no view would ever use, so capacity is cheap and use is not (with
+render stage timing on, running at the ceiling takes a 59fps session to
+19). A change to the limit is read when the backend starts, so it needs
+a restart.
+
+The pass sequence above is 87 ids wide (`BGFXView::NUM_VIEWS`), so
+reserving all of it per viewer fit only five 3D views in the 512-id
+build this began as, and the sixth was refused.
 
 A frame draws far less than the whole sequence, so each one **declares
 the passes it will use** and those are mapped onto the consecutive ids
@@ -374,7 +384,8 @@ of a block sized to fit them (`markPass` / `mapPasses` / `vid`). Enum
 order is draw order is bgfx's submission order, so compaction preserves
 the sequence. Blocks come from a granule pool and only grow, which
 keeps a viewer's ids still as its scene changes. A plain viewer needs
-13 ids, so ~32 fit.
+13 ids (a 16-id block at the 8-id granule), so the default limit is
+roughly 64 viewers and the ceiling roughly 256.
 
 The declarations come from **one per-frame pass table** in `render()`:
 every pass states its liveness predicate exactly once, next to the
