@@ -29,6 +29,19 @@ writeSet(const TopoDS_Shape& shape, const Part::ShapeOwnerTable* owners, Part::S
     return out.str();
 }
 
+/// Record a written file the way a save does, with its root declared.
+int publishAs(const Part::ShapeRefSet& set, const char* hash, Part::ShapeOwnerTable& owners)
+{
+    Part::ShapeOwnerTable::File entry;
+    entry.hash = hash;
+    entry.plan = set.plan();
+    entry.root = set.rootIndex();
+    entry.orientation = TopAbs_FORWARD;
+    const int index = owners.addFile(entry);
+    set.publish(index, owners);
+    return index;
+}
+
 int countFaces(const TopoDS_Shape& shape)
 {
     int faces = 0;
@@ -88,7 +101,7 @@ TEST(ShapeRefSet, BorrowedSubShapeIsShared)
     Part::ShapeRefSet first;
     const std::string firstText = writeSet(box, nullptr, first);
     Part::ShapeOwnerTable owners;
-    first.publish(owners.addFile("first"), owners);
+    publishAs(first, "first", owners);
     EXPECT_EQ(static_cast<std::size_t>(first.shapes().Extent()), owners.size());
 
     // The second holds the very same solid alongside one of its own.
@@ -149,7 +162,7 @@ TEST(ShapeRefSet, BorrowedRootLeavesAnEmptyTable)
     Part::ShapeRefSet first;
     const std::string firstText = writeSet(box, nullptr, first);
     Part::ShapeOwnerTable owners;
-    first.publish(owners.addFile("first"), owners);
+    publishAs(first, "first", owners);
 
     Part::ShapeRefSet second;
     const std::string secondText = writeSet(face, &owners, second);
@@ -189,7 +202,7 @@ TEST(ShapeRefSet, BorrowedShapeKeepsItsOwnLocation)
     Part::ShapeRefSet first;
     const std::string firstText = writeSet(box, nullptr, first);
     Part::ShapeOwnerTable owners;
-    first.publish(owners.addFile("first"), owners);
+    publishAs(first, "first", owners);
 
     gp_Trsf move;
     move.SetTranslation(gp_Vec(10.0, 0.0, 0.0));
@@ -233,7 +246,7 @@ TEST(ShapeRefSet, UnresolvableFileFailsTheRead)
     Part::ShapeRefSet first;
     writeSet(box, nullptr, first);
     Part::ShapeOwnerTable owners;
-    first.publish(owners.addFile("first"), owners);
+    publishAs(first, "first", owners);
 
     TopoDS_Compound compound;
     BRep_Builder builder;

@@ -158,16 +158,41 @@ void applyOrientation(TopoDS_Shape& shape, char code)
 // ShapeOwnerTable
 // ---------------------------------------------------------------------------
 
-int ShapeOwnerTable::addFile(const std::string& file)
+int ShapeOwnerTable::addFile(File file)
 {
-    auto known = _fileIndex.find(file);
+    auto known = _fileIndex.find(file.hash);
     if (known != _fileIndex.end()) {
         return known->second;
     }
-    _files.push_back(file);
+    const std::string hash = file.hash;
+    _files.push_back(std::move(file));
     const int index = static_cast<int>(_files.size());
-    _fileIndex[file] = index;
+    _fileIndex[hash] = index;
     return index;
+}
+
+const ShapeOwnerTable::File& ShapeOwnerTable::file(int index) const
+{
+    static const File none;
+    if (index < 1 || index > static_cast<int>(_files.size())) {
+        return none;
+    }
+    return _files[index - 1];
+}
+
+int ShapeOwnerTable::rootOwner(const TopoDS_Shape& shape) const
+{
+    const ShapeRef* ref = find(shape);
+    if (!ref) {
+        return 0;
+    }
+    const File& holder = file(ref->file);
+    // The orientation has to match too: a file's root token carries it, so a
+    // shape that is the same root reversed is not the same bytes.
+    if (holder.root != ref->index || holder.orientation != shape.Orientation()) {
+        return 0;
+    }
+    return ref->file;
 }
 
 void ShapeOwnerTable::claim(const TopoDS_Shape& shape, int file, int index)
@@ -313,7 +338,7 @@ std::string ShapeRefSet::plan() const
     if (_owners) {
         for (const ShapeRef& ref : _borrowedRefs) {
             const int owner = _borrowed[ref.file - 1];
-            borrowed[_owners->files()[owner - 1]].insert(ref.index);
+            borrowed[_owners->file(owner).hash].insert(ref.index);
         }
     }
     for (const auto& token : _borrowedRead) {
@@ -385,7 +410,7 @@ void ShapeRefSet::write(const TopoDS_Shape& root, std::ostream& out)
     if (!_borrowed.empty()) {
         out << "Files " << _borrowed.size() << "\n";
         for (int file : _borrowed) {
-            out << _owners->files()[file - 1] << "\n";
+            out << _owners->file(file).hash << "\n";
         }
     }
 

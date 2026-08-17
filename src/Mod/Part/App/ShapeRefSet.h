@@ -84,13 +84,33 @@ struct ShapeRef
 class PartExport ShapeOwnerTable
 {
 public:
-    /// Intern a file identity -- its blob's content hash -- for claim().
-    /// Interned, so two properties sharing one file are one entry.
-    int addFile(const std::string& file);
-    const std::vector<std::string>& files() const
+    /// A file the save has already written, as later files need to know it.
+    struct File
     {
-        return _files;
-    }
+        /// Content hash: what a reference names, and what finds the blob.
+        std::string hash;
+        /// What this file itself borrows, i.e. ShapeRefSet::plan().
+        std::string plan;
+        /// Index of its root shape, 0 when it holds none of its own.
+        int root {0};
+        /// Orientation its root is stored with, as TopAbs_Orientation.
+        int orientation {0};
+    };
+
+    /// Intern a written file for claim(). Two properties sharing one blob are
+    /// one entry, which is what the hash keys it on.
+    int addFile(File file);
+    const File& file(int index) const;
+
+    /** The file whose *root* this shape is, or 0.
+     *
+     * A shape that is another file's whole root is not worth a reference: the
+     * two files would hold the same bytes, so the referring property can take
+     * that file outright and the store keeps one copy instead of two.
+     * Borrowing is for the sub-shapes below a root, where there is real
+     * geometry to leave out.
+     */
+    int rootOwner(const TopoDS_Shape& shape) const;
 
     /// Record that \a shape is held by \a file at \a index. Keeps the first
     /// claim: the earliest file in the walk owns what it holds.
@@ -111,7 +131,7 @@ public:
 
 private:
     std::unordered_map<const TopoDS_TShape*, ShapeRef> _refs;
-    std::vector<std::string> _files;
+    std::vector<File> _files;
     std::unordered_map<std::string, int> _fileIndex;
 };
 
@@ -203,6 +223,11 @@ public:
 
     /// Record everything this file holds as owned by it, for later files.
     void publish(int file, ShapeOwnerTable& owners) const;
+    /// This file's root shape index, 0 when it borrowed its root or has none.
+    int rootIndex() const
+    {
+        return _shapes.Extent();
+    }
     //@}
 
     /** What this file borrows, as text, the same either way it was built.

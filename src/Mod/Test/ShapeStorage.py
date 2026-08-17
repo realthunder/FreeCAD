@@ -610,6 +610,39 @@ class ShapeRefCases(ShapeTestCase):
         reopened.save()
         self.assertEqual({n: self.blobBytes(project, n) for n in self.blobNames(project)}, before)
 
+    def testAWholeSharedShapeIsOneFile(self):
+        """A shape that is another object's *whole* shape is shared, not
+        referenced.
+
+        Writing a reference there would produce a file holding nothing but
+        that reference, and would cost the sharing content addressing was
+        already getting right -- the two objects have identical bytes, so they
+        are one file. Borrowing pays below a root, where there is geometry to
+        leave out; at the root it is pure indirection.
+        """
+        doc = self.newDocument()
+        source = doc.addObject("Part::Feature", "Source")
+        twin = doc.addObject("Part::Feature", "Twin")
+        solid = Part.makeBox(10, 20, 30)
+        source.Shape = solid
+        twin.Shape = solid
+        doc.recompute()
+        project = self.directoryPath()
+        doc.saveAs(project)
+
+        names = [n for n in self.blobNames(project) if n.endswith(".brp")]
+        self.assertEqual(names, ["Source.Shape.brp"], "the twin wrote a file of its own")
+        self.assertNotIn(b"Files ", self.blobBytes(project, "Source.Shape.brp"))
+        # One file, both properties named against it.
+        self.assertEqual(len(self.blobIndex(project)["Source.Shape.brp"][1]), 2)
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        first = reopened.getObject("Source").Shape
+        second = reopened.getObject("Twin").Shape
+        self.assertTrue(first.isPartner(second))
+        self.assertAlmostEqual(second.Volume, 10 * 20 * 30, places=6)
+
     def testABorrowerIsRewrittenWhenWhatItBorrowedIsGone(self):
         """An unchanged shape is not on its own a reason to keep the file
         written for it.

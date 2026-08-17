@@ -428,10 +428,27 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
     // objects that this file holds these sub-shapes, and it is cheap next to
     // serialization -- walking TShapes and mapping pointers
     // (docs/SharedShapeStorage.md sec 11.7).
+    const TopoDS_Shape root = shapeForSave(writer);
     ShapeRefSet refs;
     refs.setOwners(owners);
-    refs.add(shapeForSave(writer));
+    refs.add(root);
     const std::string plan = refs.plan();
+
+    // *** A shape that is another file's whole root is not borrowed, it is
+    // shared. Writing a reference to it would produce a file holding nothing
+    // but that reference -- and would cost the one thing content addressing
+    // was already getting right, because the two objects had identical bytes
+    // and so were one file. Borrowing pays below a root, where there is real
+    // geometry to leave out; at the root it is pure indirection.
+    if (owners && !root.IsNull() && refs.rootIndex() == 0) {
+        if (const int held = owners->rootOwner(root)) {
+            if (App::FileBlobHandle shared = manager.find(owners->file(held).hash)) {
+                _blob = shared;
+                _blobPlan = owners->file(held).plan;
+                return;
+            }
+        }
+    }
 
     // The shape not having changed is what kept _blob (dropBlob), but a file's
     // bytes are the shape *and* what the save borrowed. An object that used to
@@ -442,8 +459,14 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
         _blobPlan = plan;
     }
 
-    if (_blob && owners)
-        refs.publish(owners->addFile(_blob->hash()), *owners);
+    if (_blob && owners) {
+        ShapeOwnerTable::File entry;
+        entry.hash = _blob->hash();
+        entry.plan = plan;
+        entry.root = refs.rootIndex();
+        entry.orientation = root.IsNull() ? 0 : root.Orientation();
+        refs.publish(owners->addFile(std::move(entry)), *owners);
+    }
 }
 
 void PropertyPartShape::storeBlob(Base::Writer& writer, ShapeRefSet* refs) const
