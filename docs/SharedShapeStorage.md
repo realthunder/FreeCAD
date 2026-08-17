@@ -1150,11 +1150,11 @@ bytes.
 
 ### 11.9 Still open
 
-- Restore cost is unmeasured, and it is the one direction where this design
-  could lose: reading one object now transitively opens the files it
-  references, so `PolarPattern003` pulls in everything it borrows from. Fewer
-  total bytes, more opens. Measurable as soon as there is a reader.
-- Deterministic visit order has to be established, not assumed (sec 11.7).
+- ~~Restore cost is unmeasured~~ -- measured in sec 12.4 and there is no
+  penalty: open and full parse are unchanged, because the files opened
+  transitively are the ones the document reads anyway and each is parsed once.
+- ~~Deterministic visit order has to be established~~ -- it is `objectArray`,
+  the order `Document::Save` already walks for `beforeSave`.
 - Whether the **hasher** is invariant under location stripping. The element map
   is not a concern -- see sec 7, it is `IndexedName`-based.
 - Export of a subset must inline what it cannot carry: a reference to a file
@@ -1321,31 +1321,145 @@ had the same line and the same bug. Several other places in the tree still use
 the idiom (`ProjectFile`, `VRMLObject`, `PropertyPythonObject`) and were left
 alone.
 
-### 12.4 Step 4: the external reference format
+### 12.4 Step 4: the external reference format -- DONE
 
-The writer emits a `Files` table and an `E<file> <index> <loc>` token for a
-sub-shape already owned by an earlier object's file (sec 11.6); the reader
-resolves it through the blob manager, parses that file whole, caches it, and
-takes `Shape(index)`. The reverse-index encoding becomes a forward index so a
-token means something on its own.
+**Shipped 2026-08-17.** A shape file may name other files at its head and then,
+wherever a sub-shape is listed, say the sub-shape is in one of them:
 
-Ownership is recomputed from scratch every save in a deterministic order
-(sec 11.7). Parked objects are inert; a changed file forces its parked referrers
-to load, which the index's blob-to-blob edges identify.
+```
+CASCADE Topology V1, (c) Matra-Datavision
+Files 2                  <- absent when nothing is borrowed
+8f1c...                  <- content hash of the file borrowed from
+a30b...
+Locations 3
+TShapes 17
++12 3                    <- as today: shape 12 of this file, location 3
+E1 +7 3                  <- new: shape 7 of file 1, location 3
+```
 
-Gate, all against sec 11.8's measurements of `scanner.FCStd`:
+`Part::ShapeRefSet` writes and reads it, `Part::ShapeOwnerTable` is what the
+save accumulates as it walks. **No OCCT change was needed**, but it is not an
+extension either: `TopTools_ShapeSet::Add`, `Write(S,OS)` and `Read(S,IS)` are
+not virtual and the shape map is private, so those three are reimplemented --
+over `BRepTools_ShapeSet`'s geometry hooks, every one of which *is* public and
+virtual, so the geometry encoding is still exactly OCCT's.
 
-- sharing is restored -- `isPartner` true across the reference, and the
-  20-torus scene's parent leaf against child 0 as in sec 10.6;
-- **8408 references over 377 files**, 102 of them needing none, `PolarPattern003`
-  at 5129 -- a materially different count means the ownership pass disagrees
-  with the probe;
-- **~15.4 MB raw / ~3.2-3.3 MB deflated** against 26181094 / 4373466 today;
-- a file that references nothing is byte-identical to what `BRepTools::Write`
-  produces, so most of a project stays standard BRep;
-- two consecutive saves of an unmodified document produce identical files,
-  which is what the deterministic order buys and what sec 11.3's git result
-  depends on.
+*The index in an `E` token is forward; the ordinary token keeps OCCT's reverse
+one.* Sec 12.4 as planned said the encoding "becomes a forward index".
+Converting the local one as well would make every borrowing file's local part
+differ from what OCCT writes, for nothing: a reverse index is relative to a
+shape count, and within one file that is self-contained, because the reader has
+read `TShapes N` before it reads any token. Only the external index has to be
+forward, because this file cannot state another file's shape count.
+
+**Three departures from sec 11.6 and 11.7, each forced.**
+
+***A reference names a file by its content hash, not by the name it is saved
+under.*** Sec 11.6 wrote the name. A save cannot know it: names are assigned by
+`FileBlobManager::planSave()` after every property has been written, and can be
+pinned or suffixed by the previous index. The hash is known when the file is
+made, is already what `Save()` writes as `hash=`, and `find()` already resolves
+it. The cost is 40 hex characters in the table instead of a readable name; the
+git behaviour is the same either way, because a changed target rewrites its
+referrers regardless.
+
+***A file is kept only when the plan also matches, not just the shape.*** A
+file's bytes are its geometry *and* what the save decided to borrow, so an
+unchanged shape is not on its own a reason to keep the file written for it: an
+object that borrowed from a file which has since gone would otherwise keep a
+reference to a file this save does not write, and the geometry would be
+unreachable on the next open. `ShapeRefSet::plan()` states what a file borrows,
+order-independently, and is produced both by writing a file and by parsing one
+-- so a reopened document knows what its own files say and does not have to
+rewrite all of them to find out.
+
+***Parked referrers are not forced to load, because nothing stays parked
+through a save.*** Sec 11.7's rule 2, and the blob-to-blob edges that were to
+identify which files it applies to, are not built. `PropertyPartShape::
+beforeSave` opens with `ensureRestored()`, so a save materializes every shape
+before the analysis sees it, and the parked case sec 11.7 reasons about does
+not arise. That also removes the reason for the edges: a file this save does
+not write cannot still be referenced, because the plan check rewrites whatever
+referred to it.
+
+***The save generation is counted across the process, not per document.*** The
+owner table has to be thrown away between saves and there is no end-of-save
+signal, so `FileBlobManager::saveGeneration()` is what says the last one is
+over. Counting per document is wrong in a way that is invisible until it bites:
+a closed document's address is handed straight back to the next one, so a new
+document's first save matches a stale table built for a dead one -- whose
+TShape addresses have since been freed and reissued, so the lookups answer
+confidently and wrongly. Three suite cases failed on exactly that.
+
+**Measured** on `scanner.FCStd` (606 objects, forced full recompute), against
+the same build with borrowing disabled, which is exactly what sec 12.3 writes:
+
+| | 12.3, one file per object | 12.4, references |
+|---|---|---|
+| shape files | 332 | 362 |
+| files borrowing nothing | 332 | 127 |
+| distinct sub-shapes borrowed | 0 | 3381 |
+| `E` tokens written | 0 | 14402 |
+| raw shape bytes | 18670216 | **15453310** |
+| deflated shape bytes | 3806881 | **3224998** |
+| whole archive | 4569978 | 3993580 |
+
+and, with TechDraw parked so the open is not the crash below:
+
+| | 12.3 | 12.4 |
+|---|---|---|
+| blob bytes | 18999246 | 15784671 |
+| open | 0.561s | 0.531s |
+| full parse of every shape | 2.392s | 2.399s |
+| faces restored | 90686 | 90686 |
+
+***Sec 11.9's one real risk did not materialize.*** Restore cost was the
+direction this could lose -- reading one object now transitively opens the
+files it borrows from, so fewer bytes but more opens. There is no penalty at
+all: open and full parse are unchanged inside noise, because the files opened
+transitively are the same files the document reads anyway and the parse cache
+means each is parsed once.
+
+***The size predictions of sec 11.8 land almost exactly.*** Predicted 15431769
+raw against 15453310 measured, 0.14% out; predicted "~3.2 to 3.3 MB" deflated
+against 3224998; predicted 1.70x raw and 1.35x deflated against sec 11.8's
+26181094 / 4373466, measured 1.694x and 1.356x. The scheme is at **1.018x of
+ideal ASCII dedup** (15185193), against the 1.02x sec 11.8 predicted.
+
+***The reference count does not, and the gate asked for that to be chased.***
+Predicted 8408 references over 377 files with `PolarPattern003` at 5129;
+measured 3381 distinct over 362 files, worst `Chamfer` at 144.
+`PolarPattern003` borrows **23 distinct sub-shapes through 9221 tokens** -- the
+pattern's copies all point at the same few shapes, which is the same sharing
+counted differently, not sharing that was missed. That the bytes land on the
+prediction to 0.14% is the load-bearing evidence: the dedup is there, expressed
+as fewer and larger borrowed sub-shapes. What the probe's traversal counted
+cannot be reproduced from here -- it ran on a different OCCT, and this run
+leaves TechDraw un-recomputed (see below).
+
+***More files, not fewer.*** 332 became 362 because content addressing now
+collapses less: two objects that serialized to identical bytes can differ once
+one of them borrows. The extreme is an object whose *root* TShape another file
+already holds -- it writes a reference-only file of about a hundred bytes where
+before it shared the other object's file outright. That is 30 extra files and a
+few kilobytes against a 3.2 MB saving, and it is left alone.
+
+**Gate**: `src/Mod/Test/ShapeStorage.py`, 22 cases (`ShapeRefCases` added),
+`FreeCADCmd -t ShapeStorage`; `FileBlobs` unchanged at 64; and the format
+itself in `tests/src/Mod/Part/App/ShapeRefSet.cpp`, 6 cases in their own
+executable, including **a file that borrows nothing being byte-identical to
+what `TopoShape::exportBrep()` writes**. `Part_tests_run` still does not link
+on this tree for reasons that predate this, but one of them was that a target
+declared in `tests/` never saw OCCT's library path -- that part is fixed.
+
+***Two pre-existing faults this uncovered, neither fixed here.***
+`Part::PropertyTopoShapeList::Restore` reads the `file` attribute
+unconditionally, so the inline form a directory project writes throws
+`XML Attribute: 'file' not found` -- 119 TechDraw dimensions lost their
+`SavedGeometry` on a directory save of `scanner.FCStd`, and the file is
+untouched by any of this work. And TechDraw's HLR **segfaults inside OCCT
+8.0.1** on this model when its views recompute, which is why the measurements
+above leave TechDraw alone.
 
 ### 12.5 Step 5, optional: unifying restored duplicates
 
