@@ -761,3 +761,178 @@ Also checked: a schema-5 save leaves the document untouched; a second
 save in the same session replaces the store; dropping to schema 4 takes
 the property off the document and out of the file, and the per-property
 members come back; serving a shape does not touch its object.
+
+## 11. The version-control question, and the turn to per-component stores
+
+Everything above designs one central store per document, and sec 10 built it.
+That store is deliberately **off for directory saves** -- `Base::Writer::
+supportsSharedStore()` is true only for `ZipWriter` -- because a single file
+holding all geometry was assumed to be the worst possible artifact for version
+control, which is what save-as-directory exists for (`docs/FileBlobsManager.md`
+sec 13, and the ASCII BRep default that shares the same motivation).
+
+That assumption was tested. One half held and the other did not.
+
+### 11.1 Sub-shape sharing inside one model history
+
+The sec 1.1 scene is a compound over its children, which is the obvious
+parent/child case. The question left open was whether *sequential* features
+share as well -- whether a Pocket's solid reuses the Pad's faces rather than
+copying them.
+
+Measured on a PartDesign body, `AdditiveBox` plus 11 `SubtractiveCylinder`
+features, each feature persisting its own full solid. Sub-shapes of step N+1
+that are the same TShape as one in step N:
+
+```
+  Pad       -> Pocket      Face   4/7    Edge  12/15   Vert   8/10
+  Pocket    -> Pocket001   Face   5/8    Edge  15/18   Vert  10/12
+  ...
+  Pocket009 -> Pocket010   Face  14/17   Edge  42/45   Vert  28/30
+  first     -> last        Face   4/17
+```
+
+Each pocket adds three faces and keeps every other one as the identical TShape.
+The sharing is **chained rather than global** -- first against last is only
+4/17 -- which is precisely what a position-addressed store dedups transitively
+and what a pairwise comparison would miss. It is not a PartDesign artifact: a
+plain `Part::Cut` shares 4/7 faces, 12/15 edges and 8/10 vertices with its base.
+
+### 11.2 What each strategy captures
+
+Same document, whole-file figures from the archive:
+
+| | raw | deflated |
+|---|---|---|
+| schema 4, one `.brp` per property | 374306 | 29502 |
+| schema 5, central store | 42082 | 7842 |
+| whole-file content hashing | 12 distinct hashes over 12 shapes, i.e. nothing | |
+
+**8.9x raw, and per-file content hashing captures none of it.** This settles a
+question that was open in `docs/FileBlobsManager.md` sec 12: routing shape
+files through the blob manager gives equal-copy dedup and incremental save, but
+it is not a substitute for the store, because the redundancy inside a model
+history is not equal copies.
+
+### 11.3 Two corrections to what this document assumed
+
+**Part of the store's compressed win is stream sharing, not dedup.** On the 12
+feature shapes alone: 19861 bytes deflated separately, **10175 deflated as one
+stream with no dedup at all**, against the store's 7842. So roughly 2x of the
+archive's 3.8x compressed advantage is simply one zip member instead of twelve.
+Sec 4.7 worried that many small members deflate worse; that is the same effect
+seen from the other side, and it is larger than the worry implied.
+
+**A single large file is not the worse git artifact.** Both layouts committed
+to a real repository, `.git/objects` measured, then one feature edited in the
+middle of the chain and committed again:
+
+| | working tree | packed, commit 1 | packed, commit 2 | growth |
+|---|---|---|---|---|
+| 12 ASCII `.brp` | 131578 | 28384 | 34986 | **+6602** |
+| one store file | 46178 | 22781 | 23291 | **+510** |
+
+Git's delta compression recovers most of the raw 2.85x on the first commit --
+1.25x packed -- but on the edit the store costs **13x less**, because the
+downstream features are references rather than fresh copies of the changed
+geometry. The store is the cheaper artifact per commit, not the more expensive
+one.
+
+Two conditions on that. It holds only while the store's byte layout is
+**deterministic across saves**; if shape order shuffles, the delta explodes,
+and that is not currently guaranteed. And it is one synthetic body -- it wants
+confirming on a real model. What a binary store does still lose in a directory
+is real but different from what was assumed: readable diffs, per-object
+granularity in `git status`, and any hope of a textual merge.
+
+### 11.4 Location canonicalization
+
+The store only dedups what is **already shared in memory**. Twelve
+independently built identical boxes (`isPartner` False) store at 42588 raw --
+no dedup at all; twelve objects over one shared TShape store at 4726.
+
+Whole-file hashing cannot see them either, because the placement is baked into
+the bytes (sec 1.3) -- *unless* the top-level location is stripped into the XML
+first. Measured: four different placements of one box then serialize to one
+identical 2766-byte file, one hash. `Part::Feature::onChanged` already keeps
+`Placement` and the shape's transform in lockstep in both directions
+(`PartFeature.cpp:1304`), so for a Feature the location in the `.brp` is pure
+redundancy; other containers would write it as an attribute on the `<Part/>`
+element.
+
+Worth doing on its own merits, independent of dedup: today moving one object
+rewrites its entire shape file, and after this it is a one-line XML diff.
+
+Trap for anyone re-running this: **`Shape.copy()` bakes the transform into the
+geometry**. The copy still reports the old `Placement`, and resetting it leaves
+absolute coordinates in the file. Setting `Placement` on the shape itself is a
+pure `TopLoc_Location`. A first probe "refuted" canonicalization purely from
+this mistake.
+
+### 11.5 The design this points to: one store per sharing component
+
+Not one central store, and not per-property files either:
+
+- Union-find over TShape sharing at collect time, exactly the analysis sec 9.2
+  already specifies for chunking -- but the component becomes the *file*, not a
+  chunk of one file.
+- A component with **one** member stays a plain ASCII `.brp`, readable and
+  diffable, as today.
+- A component with **several** members becomes one store file, named
+  `<Object>.<id>.shapes.bin` after its lowest-id member.
+- The same rule applies to **archive and directory saves alike**, so the
+  `supportsSharedStore()` fork disappears, and everything -- included files,
+  shape files, component stores -- flows through the blob manager as referrers
+  indexed by one content file (`docs/FileBlobsManager.md` sec 13).
+
+A PartDesign body is exactly one component, so this keeps the 8.9x and the
+cheap edit deltas while editing body A never touches body B's file.
+
+### 11.6 Partial referring is not full referring
+
+A component store introduces a reference *into* a file -- referrer to (blob,
+byte position) -- where content dedup has referrers to a whole blob. This does
+**not** break lifetime: N members holding one blob is still a `shared_ptr` with
+N holders, so refcounting, file deletion, undo snapshots and the clipboard work
+unchanged. What it breaks is **independence of mutation**: no member can change
+its own bytes, and every member's recorded position moves when the component is
+regenerated. Four rules follow.
+
+1. **Regenerate only when dirty.** Dirty means membership changed, or some
+   member's TShape differs from the one recorded at the last save -- a pointer
+   comparison. A parked shape (`DeferShapeLoad`, never parsed) is unchanged by
+   definition, so a clean component is copied through byte-for-byte with
+   nothing loaded and nothing parsed. That is incremental save at component
+   granularity, which the central store never had: its collect pass
+   re-serializes every shape on every save.
+2. **Deletion rewrites nothing.** Leave the dead bytes in place and every
+   surviving position stays valid; the blob is untouched and the only diff is
+   the referrer list losing a token. Compact when dead bytes cross a threshold,
+   as a deliberate act rather than a side effect of an edit.
+3. **A component with an *absent* member is frozen.** Absent, not parked: a
+   partial load or a missing module. Copy verbatim, never regenerate, or a save
+   silently drops the geometry of objects that were never loaded. This is the
+   one rule here that can lose data, so it wants an explicit guard and a test.
+4. **The name is pinned to the blob, with the id in it.** A component file
+   outlives its naming member, and internal object names are reusable after
+   deletion, so a clean derived name could be squatted on by a new object that
+   reused the name. The id in the file name removes the ambiguity; ordinary
+   blobs keep clean names and carry the id in the content file instead.
+
+### 11.7 Open before this is buildable
+
+- Is the store's write order deterministic across saves? Sec 11.3's git result
+  depends on it.
+- The **component size distribution on a real model**. Components come from
+  runtime sharing, not document structure, so a compound near the top can
+  collapse the document into a single component -- at which point this is the
+  central store again, plus a regeneration rule. The guard is a size cap with a
+  deliberate split, paying lost dedup across the boundary to bound the blast
+  radius, and sec 4.2 already describes the packing.
+- Whether the element map and the hasher are invariant under location
+  stripping (sec 11.4).
+- Component membership can only be computed over *loaded* shapes, so the
+  previous membership recorded in the content file has to be trusted for parked
+  ones.
+- Export of a subset must recompute components over the exported set: positions
+  never travel between documents.

@@ -408,3 +408,154 @@ rest is staged -- worth doing, not scheduled.
 - **RPC-shaped manager API** (`insert(path|bytes)→key`, `acquire(key)→handle`,
   `open(key)→stream`) for the out-of-process document goal; `getValue()→path`
   stays as the legacy accessor.
+
+## 13. Stable names and the content index
+
+Status: **designed, not built.** This section supersedes the first bullet of
+sec 12 and changes the archive layout of sec 5.
+
+### 13.1 What is wrong with content-addressed entry names
+
+Sec 2 makes a blob pure content, stored and written out under the SHA-1 of its
+bytes. For a packed `.FCStd` that is invisible. For a project saved as a
+directory -- which exists to be friendly to version control, and is why
+`PreferBinary` defaults to false -- it is three separate problems:
+
+- Every content edit is a **delete plus add of an opaque hex name**, never a
+  modification, so no tool can follow a file across an edit.
+- **Nothing prunes.** `writeBlobs()` only ever writes, so a project directory
+  accumulates orphaned hex files forever and `git add -A` commits them.
+- The incremental skip is `exists(dir + blob->hash())`, which is sound **only**
+  because the name is the content.
+
+### 13.2 Layout
+
+The same shape in both places, and `blobs/` keeps its name:
+
+```
+<transient>/blobs/Content.xml        <- the index, inside blobs/
+<transient>/blobs/<uuid>.<ext>       <- transient names are uuids
+<project>/blobs/Content.xml
+<project>/blobs/Box.Shape.brp        <- saved names are derived from the referrer
+```
+
+There are no per-property-type subdirectories.
+
+Transient names are uuids because at `insertFile()` time there may be no
+referrer at all -- a blob held only by an undo transaction or the clipboard --
+and because stored files are read-only and held by absolute path, so renaming
+them mid-session is churn for no gain. The extension is kept so a transient
+file can still be opened without guessing. The transient `Content.xml` is a
+diagnostic ledger, not load-bearing.
+
+Saved names are derived, because that is what a human and a diff read, and
+because a directory save already writes `Box.Shape.brp` today
+(`Property::getFileName()` through `writer.addFile`). The two name spaces are
+already decoupled: `writeBlobs()` streams content into an entry, so an entry
+name never had to equal the file name.
+
+### 13.3 The content file
+
+```xml
+<?xml version='1.0' encoding='utf-8'?>
+<FileStore v="1">
+  <F n="Box.Image.png" h="<sha1>" r="4213:Box.Image 4890:Cyl.Image"/>
+  <F n="Cyl.Shape.brp" h="<sha1>" r="4300:Cyl.Shape"/>
+</FileStore>
+```
+
+Three attributes, sorted by name, one element per line, so a content edit is a
+one-line diff and two branches touching different parts merge textually. `n` is
+the name inside `blobs/`, `h` the content hash, `r` the referrers as
+`<objectId>:<Object>.<Property>` tokens -- safe unquoted, since both are
+internal names.
+
+Deliberately absent: the size, which the file itself knows, and the original
+path and base file name, which the **property already persists** in
+`Document.xml`. The index must not duplicate what the document holds; its job
+is the one thing nothing else records, the name-to-content binding and who uses
+it.
+
+XML rather than JSON or a tabular format so that `encodeAttribute` handles
+arbitrary user file names and `Base::XMLReader` parses it with no new
+dependency.
+
+### 13.4 Naming
+
+The derived name is `Property::getFileName()` -- `Object.Property` -- plus the
+extension. An object's internal `Name` is immutable (renaming in the tree
+changes `Label`), so a derived name never churns while the object lives.
+
+**A name belongs to its naming referrer**, defined as the live referrer with
+the lowest object id, not to the referrer set as a whole. If that referrer goes
+away the name is re-derived from the new lowest, which renames the file in the
+same save -- git sees a pure rename, content unchanged.
+
+That rule exists to close a specific hole. Internal names are reused after
+deletion: `App::DocumentObject::_Id` is not (`DocumentP::addObject` only ever
+increases `lastObjectId`, `removeObject` never lowers it, and restore re-mints
+each object at its stored `id=`), but the name is. So a rule that kept a name
+while *any* referrer survived would let a blob shared by `Box` and `Cyl` keep
+the name `Box.Image.png` after `Box` is deleted, and a newly created `Box`
+would then find its rightful name squatted on. With the rule above the two
+generations can never be live in the same save, so the writer can assert name
+uniqueness across the save set rather than resolve a conflict.
+
+Shared content still collapses to **one** file with several referrers, so `r`
+is a list. The generation token in `r` is what keeps the diff honest when a
+path is reused across generations: the line goes from `4213:Box.Image` to
+`4890:Box.Image`.
+
+Residual collisions are rare by construction -- an App property and a
+view-provider property of the same name on the same object need a tier marker
+in the derived name, and referrers with no object fall back to a uuid. What is
+left gets `-1` before the extension, **pinned in the content file**, because
+`Writer::getUniqueFileName()` numbers by scan order and its suffix can
+otherwise migrate between saves.
+
+### 13.5 The skip, and pruning
+
+***The incremental skip must change in the same commit as the naming.*** With
+stable names, a file existing no longer implies its content matches. The skip
+becomes: the previous content file names this file, its recorded hash equals
+the blob's hash, and the file exists. Nothing else is proof.
+
+A directory save reads the **previous** `blobs/Content.xml` before writing, and
+unlinks names that it lists and the new one does not. Nothing outside the
+previous index is ever touched, so a stray file a user put in the tree
+survives.
+
+Note what pruning is and is not for: git compares content, not timestamps, so
+rewriting identical bytes was never visible in `git status`. The skip is a
+save-time I/O win; the diff win comes from the stable names and from removing
+orphans.
+
+### 13.6 What does not change
+
+**Identity stays the hash in `Document.xml`.** The content file is read by the
+same archive handler, ahead of the blob entries, and only re-establishes the
+name table so the *next* save is stable. If it is missing -- an older file, a
+foreign file -- everything still restores and names are assigned fresh on the
+next save, at the cost of a one-time rename.
+
+Having the property reference the name instead, so that a content edit leaves
+`Document.xml` untouched, was considered and deferred: it buys one line of XML
+churn and makes the index load-bearing for restore.
+
+### 13.7 Shape files, and what the index has to carry for them
+
+Routing `PropertyPartShape` through the manager (sec 12) becomes: shape
+properties are referrers like any other, named `Box.Shape.brp`, with the skip
+and the prune applying to them unchanged. Two consequences:
+
+- **Deferred read by name stops being optional.** Shapes dominate the entry
+  count, so the manager must be able to leave an entry unread and hand it over
+  on demand rather than draining everything during `readFiles`. The content
+  file is what makes that possible: names and hashes are known before any
+  content is touched.
+- **A component shape store is one blob with N referrers.** No new field is
+  needed for it -- `r` already lists the members, which is exactly the record
+  its regeneration test reads -- and the per-member byte offset stays where it
+  is today, in the property's own `<Part store=".." pos=".."/>`. The rules that
+  differ for it, including why its name carries the object id, are in
+  `docs/SharedShapeStorage.md` sec 11.6.
