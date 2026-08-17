@@ -218,7 +218,7 @@ std::string DrawHatch::prefSvgHatch(void)
 App::Color DrawHatch::prefSvgHatchColor(void)
 {
     App::Color fcColor;
-    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("Hatch", 0x00FF0000));
+    fcColor.setPackedValue(Preferences::getPreferenceGroup("Colors")->GetUnsigned("Hatch", 0x00FF00FF));
     return fcColor;
 }
 
