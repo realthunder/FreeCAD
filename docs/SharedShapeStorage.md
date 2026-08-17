@@ -609,7 +609,13 @@ objects, or opening a document would mark it modified.
   `scripts/demo-instanced.py` and `scripts/demo-inst-release.py` as the
   scenes that reach that path.
 
-## 9. Build order
+## 9. Build order (superseded)
+
+**Step 1 shipped (sec 10); steps 2 and 3 are superseded by sec 12.** Chunking
+by sharing component and parallel restore were answers to problems a central
+store creates, and sec 11 removes the central store. Kept because step 2's
+component analysis is the same union-find that sec 11.5 considered and rejected,
+and because the reasoning is what sec 11 argues against.
 
 Three steps, each separately measurable and separately shippable. The
 order is chosen so the format lands first and the two things that could
@@ -822,7 +828,7 @@ save in the same session replaces the store; dropping to schema 4 takes
 the property off the document and out of the file, and the per-property
 members come back; serving a shape does not touch its object.
 
-## 11. The version-control question, and the turn to per-component stores
+## 11. The version-control question, and the turn to external file references
 
 Everything above designs one central store per document, and sec 10 built it.
 That store is deliberately **off for directory saves** -- `Base::Writer::
@@ -831,7 +837,11 @@ holding all geometry was assumed to be the worst possible artifact for version
 control, which is what save-as-directory exists for (`docs/FileBlobsManager.md`
 sec 13, and the ASCII BRep default that shares the same motivation).
 
-That assumption was tested. One half held and the other did not.
+That assumption was tested. One half held and the other did not -- and the
+design that came out the far end keeps one file per object and expresses
+sharing as a reference between files, with no store at all. Sec 12 is the build
+order for it; sec 9 below is the superseded plan for the central store, of
+whose three steps only the first was built.
 
 ### 11.1 Sub-shape sharing inside one model history
 
@@ -1145,7 +1155,114 @@ bytes.
   references, so `PolarPattern003` pulls in everything it borrows from. Fewer
   total bytes, more opens. Measurable as soon as there is a reader.
 - Deterministic visit order has to be established, not assumed (sec 11.7).
-- Whether the element map and hasher are invariant under location stripping
-  (sec 11.4), which is a separate and independently worthwhile change.
+- Whether the **hasher** is invariant under location stripping. The element map
+  is not a concern -- see sec 7, it is `IndexedName`-based.
 - Export of a subset must inline what it cannot carry: a reference to a file
   outside the export set has to become geometry again.
+
+## 12. Build order for the external-reference design
+
+Four steps plus an optional fifth. Each is separately shippable, each has a
+gate with a number already measured to compare against, and the order puts the
+infrastructure first so the format change lands on something that works.
+
+### 12.1 Step 1: the blob manager's content index and stable names
+
+No format change, no shape work. `docs/FileBlobsManager.md` sec 13 is the
+specification: `blobs/Content.xml`, uuid names in the transient directory,
+derived `Object.Property.ext` names when saved, the `<objectId>:<Object>.<Property>`
+generation token, collision suffixes pinned in the index, and pruning of names
+the previous index listed.
+
+***The incremental skip must change in the same commit.*** `exists(dir +
+blob->hash())` (`FileBlobManager.cpp:279`) is sound only while the name is the
+content; it becomes a comparison against the hash the previous index recorded
+for that name, or changed content silently keeps its old bytes.
+
+Gate: `src/Mod/Test/FileBlobs.py` extended -- a name survives close, reopen and
+edit; changed content under a stable name actually changes on disk; a collision
+suffix does not migrate between saves; orphans are pruned and nothing outside
+the previous index is touched; saving an unmodified directory project twice
+leaves every file byte-identical.
+
+### 12.2 Step 2: location canonicalization
+
+Independent of everything else and worth shipping on its own: write the shape
+with its top-level location stripped and the placement as an attribute on
+`<Part/>`, next to the existing `store=`/`pos=`/`file=` fork
+(`PropertyTopoShape.cpp:445`).
+
+***The trap*** is sec 11.4's: `Feature::shouldApplyPlacement()` is
+`isRecomputing()`, so during restore a `Shape` change overwrites `Placement`
+from the shape's own transform. The location must be re-applied inside
+`PropertyPartShape::Restore` before `hasSetValue()`.
+
+Gate: placements survive a round trip on a document with placed parts; moving
+one object leaves its shape file byte-identical (which is the point, and which
+the step-1 skip then turns into no write at all); and on `scanner.FCStd` the
+fastener groups collapse -- 14 groups, 36 objects, 875496 bytes, measured in
+sec 11.4.
+
+### 12.3 Step 3: shape files through the blob manager
+
+`PropertyPartShape` becomes an ordinary blob referrer: named `Box.Shape.brp`,
+skipped by hash, pruned, indexed. This is where `addPendingReferrer` and the
+collect pass stop being `PropertyFileIncluded`-shaped.
+
+**Deferred read by name is required, not optional.** Shapes dominate the entry
+count, so the manager must leave an entry unread and serve it on demand rather
+than draining everything in `readFiles`; the content index is what makes that
+possible, since names and hashes are known before any content is touched.
+
+Gate: `docs/DocumentLoad.md`'s open timings on `MiSTer_imported.FCStd` unchanged,
+and `DeferShapeLoad` still reads no geometry at open.
+
+### 12.4 Step 4: the external reference format
+
+The writer emits a `Files` table and an `E<file> <index> <loc>` token for a
+sub-shape already owned by an earlier object's file (sec 11.6); the reader
+resolves it through the blob manager, parses that file whole, caches it, and
+takes `Shape(index)`. The reverse-index encoding becomes a forward index so a
+token means something on its own.
+
+Ownership is recomputed from scratch every save in a deterministic order
+(sec 11.7). Parked objects are inert; a changed file forces its parked referrers
+to load, which the index's blob-to-blob edges identify.
+
+Gate, all against sec 11.8's measurements of `scanner.FCStd`:
+
+- sharing is restored -- `isPartner` true across the reference, and the
+  20-torus scene's parent leaf against child 0 as in sec 10.6;
+- **8408 references over 377 files**, 102 of them needing none, `PolarPattern003`
+  at 5129 -- a materially different count means the ownership pass disagrees
+  with the probe;
+- **~15.4 MB raw / ~3.2-3.3 MB deflated** against 26181094 / 4373466 today;
+- a file that references nothing is byte-identical to what `BRepTools::Write`
+  produces, so most of a project stays standard BRep;
+- two consecutive saves of an unmodified document produce identical files,
+  which is what the deterministic order buys and what sec 11.3's git result
+  depends on.
+
+### 12.5 Step 5, optional: unifying restored duplicates
+
+Mostly free after steps 1-3: equal solids are equal files, so a
+`hash -> TopoShape` parse cache makes one parse serve every referrer. The
+in-memory pass for legacy files and recompute results is sec 7 -- serialize
+location-stripped, hash, group, then
+`setShape(canon.getShape().Located(loc), /*resetElementMap=*/false)`. Do not
+pre-filter on `Volume`/`Area`; it is four times slower than serializing
+everything.
+
+Gate: the pass must not touch the objects, or opening a document marks it
+modified.
+
+### 12.6 What is deliberately not being built
+
+- **The central store stays as sec 10 shipped it**, gated to archives. It is
+  not extended, and steps 2 and 3 of sec 9 are not done.
+- **The per-component store**, which sec 11 reached before external references
+  and which introduced partial referring, is dropped.
+- **A random-access ASCII format.** Positional addressing existed to pull one
+  shape out of a monolith; with one file per object there is no monolith. The
+  three obstacles in `TopTools_ShapeSet` stop mattering rather than needing to
+  be fixed.

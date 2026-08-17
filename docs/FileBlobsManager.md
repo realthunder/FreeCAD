@@ -412,7 +412,9 @@ rest is staged -- worth doing, not scheduled.
 ## 13. Stable names and the content index
 
 Status: **designed, not built.** This section supersedes the first bullet of
-sec 12 and changes the archive layout of sec 5.
+sec 12 and changes the archive layout of sec 5. It is step 1 of the build order
+in `docs/SharedShapeStorage.md` sec 12, which sequences it against the shape
+work that depends on it.
 
 ### 13.1 What is wrong with content-addressed entry names
 
