@@ -524,14 +524,51 @@ byte spread, and the slowest chunk's share of the restore.
   simpler -- so the sizing work of sec 5.4 should not be done ahead of
   the pool that would consume it.
 
-## 7. Later, optional: content hashing for unshared duplicates
+## 7. Content hashing for unshared duplicates -- measured, and mostly free
 
 Two objects can hold *equal* geometry with no shared TShape -- separately
 imported copies, flattened copies. The position mechanism never groups
 them, because there is nothing to reference. A content hash would, but
-only when their placements agree (sec 1.3), so it is worth building only
-after this is measured, and only if such duplicates prove common. The
-render side already deduplicates these on the GPU.
+only when their placements agree (sec 1.3). That was left here as
+"worth building only after this is measured"; sec 11.4 measured it.
+
+**They are common, and they are fasteners.** On `scanner.FCStd`, 14 groups
+covering 36 objects and 875496 bytes -- `Screw001-004`, `Screw005-007`,
+`Nut-Nut003` -- parts copied rather than linked, so each carries its own
+TShape. **9 of the 14 groups share nothing today.**
+
+**The cheap mechanism is the file layer, not a geometric algorithm.** Once the
+top-level location is out of the bytes (sec 11.4), equal solids serialize to
+equal bytes, so they are one blob in the store; the content hash is already
+computed for storage, and a `hash -> TopoShape` parse cache makes one parse
+serve every referrer. Storage dedup becomes runtime dedup at no additional
+cost, and it needs no comparison of any kind.
+
+For shapes that do not arrive that way -- a legacy file, or a recompute result
+-- a detection pass over what is in memory costs **0.8s for 246 objects and
+18088761 bytes**: serialize each with its location stripped, hash, group.
+
+***Do not pre-filter by geometric invariants.*** The obvious optimization is
+backwards: computing `Volume` and `Area` over the same 246 shapes took
+**3.342s**, four times the cost of simply serializing all of them, and the
+filter is loose anyway -- 89 candidates narrowing to 36 confirmed, 53 false
+positives. Serialization is the cheap operation here; integration is not.
+
+**Unification itself is sound and cheap.** Taking the canonical shape and
+re-applying the duplicate's placement yields a shape sharing the canonical
+TShape:
+
+    Screw002/003/004 against Screw001
+      partner with canonical  True      (they shared nothing before: False)
+      dVolume 0.0   dBBox 0.0   faces 27/27   edges 71/71
+      after assignment: placement preserved, each object keeps its own
+      cost: 0.0496s for three objects
+
+Two things to settle before building the in-memory pass: whether the element
+map survives the substitution -- two identical solids from different histories
+carry different element maps, and this fork also caches per-TShape data -- and
+that the substitution does not touch the objects, or opening a document would
+mark it modified.
 
 ## 8. How it will be judged
 
