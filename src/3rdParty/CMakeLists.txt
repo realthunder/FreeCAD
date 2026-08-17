@@ -1,3 +1,6 @@
+# The signals library. Not optional: Base, App and Gui all declare signals.
+add_subdirectory(FastSignals)
+
 # Build SalomeMesh for all Platforms since heavily patched
 if (BUILD_SMESH AND NOT FREECAD_USE_EXTERNAL_SMESH)
     add_subdirectory(salomesmesh)

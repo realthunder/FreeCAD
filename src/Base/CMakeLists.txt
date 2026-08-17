@@ -64,6 +64,11 @@ list(APPEND FreeCADBase_LIBS ${QtCore_LIBRARIES})
 
 list(APPEND FreeCADBase_LIBS fmt::fmt)
 
+# The signals library. Static and PIC, so this both links it and hands its
+# include directory on to everything that links FreeCADBase -- which is
+# everything, since App/Property.h names a signal.
+list(APPEND FreeCADBase_LIBS libfastsignals)
+
 if (BUILD_DYNAMIC_LINK_PYTHON)
     list(APPEND FreeCADBase_LIBS ${PYTHON_LIBRARIES})
 endif (BUILD_DYNAMIC_LINK_PYTHON)
