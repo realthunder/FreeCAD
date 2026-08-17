@@ -1139,6 +1139,11 @@ public:
             // thus honors the per-sampler anisotropic flags) when this reset
             // bit is set — otherwise the flags are silently ignored.
             init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY;
+            // 0 leaves bgfx at its build ceiling; a smaller number
+            // shortens the per-frame walk over the view table and the
+            // per-view pools sized from that ceiling.
+            init.limits.maxViews = uint32_t(
+                    std::max(0, RendererFactory::maxViewIds()));
             if (!bgfx::init(init)) {
                 currentType = RendererType::Noop;
                 RENDER_ERR("init failed");
@@ -1289,6 +1294,10 @@ public:
             // thus honors the per-sampler anisotropic flags) when this reset
             // bit is set — otherwise the flags are silently ignored.
             init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY;
+            // See the standalone path above: a startup option, because
+            // bgfx::init happens once per process.
+            init.limits.maxViews = uint32_t(
+                    std::max(0, RendererFactory::maxViewIds()));
             if (!bgfx::init(init)) {
                 widget->makeCurrent();
                 RENDER_ERR("init failed");

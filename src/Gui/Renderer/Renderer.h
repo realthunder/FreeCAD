@@ -2542,6 +2542,22 @@ public:
     static void registerLib(RendererLib *);
     static void setResourcePath(const std::string &path);
     static const std::string &resourcePath();
+
+    /// Highest number of view ids the backend should hand out, or 0 for
+    /// the backend's own maximum.
+    ///
+    /// Every 3D view holds a block of ids for its pass sequence, so this
+    /// is what decides how many viewers a session can drive on the
+    /// backend at once. It is a STARTUP option: backend startup is
+    /// one-time per process (RendererLib::warmup), so the value in force
+    /// is whichever was set before the first create()/warmup() and a
+    /// change needs a restart to take effect.
+    ///
+    /// The renderer library cannot read a preference itself, so the host
+    /// seeds it -- the same arrangement as setResourcePath and the
+    /// scene-stream thread cap.
+    static void setMaxViewIds(int count);
+    static int maxViewIds();
 };
 
 } // namespace Render

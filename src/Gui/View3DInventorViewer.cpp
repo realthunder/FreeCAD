@@ -4056,6 +4056,10 @@ void View3DInventorViewer::setRendererType(const std::string &type)
             selectionRoot->setExternalRenderer(nullptr);
         if (_pimpl->renderer)
             ObjectMetaFeed::instance().forget(_pimpl->renderer.get());
+        // The view id budget is read when the backend starts, and that
+        // is here for a session that never warmed one up (Application's
+        // warm-up seeds it too, and whichever runs first wins).
+        RendererFactory::setMaxViewIds(int(RenderParams::getMaxViewIds()));
         _pimpl->renderer = RendererFactory::create(
                 type, qobject_cast<QOpenGLWidget*>(getGLWidget()));
         if (_pimpl->renderer && selectionRoot) {

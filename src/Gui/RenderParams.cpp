@@ -52,6 +52,7 @@ public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(RenderParamsP*),App::CStringHasher,App::CStringHasher> funcs;
     std::string Type;
+    long MaxViewIds;
     long CoarseTessellation;
     long CoarseDeferFaces;
     bool MeshSkipRedundant;
@@ -196,6 +197,8 @@ public:
 
         Type = this->handle->GetASCII("Type", "Default");
         funcs["Type"] = &RenderParamsP::updateType;
+        MaxViewIds = this->handle->GetInt("MaxViewIds", 0);
+        funcs["MaxViewIds"] = &RenderParamsP::updateMaxViewIds;
         CoarseTessellation = this->handle->GetInt("CoarseTessellation", 2);
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         CoarseDeferFaces = this->handle->GetInt("CoarseDeferFaces", 1000);
@@ -491,6 +494,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateType(RenderParamsP *self) {
         self->Type = self->handle->GetASCII("Type", "Default");
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMaxViewIds(RenderParamsP *self) {
+        self->MaxViewIds = self->handle->GetInt("MaxViewIds", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCoarseTessellation(RenderParamsP *self) {
@@ -1078,6 +1085,49 @@ void RenderParams::setType(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeType() {
     instance()->handle->RemoveASCII("Type");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMaxViewIds() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many backend view ids the render engine may hand out, which\n"
+"is what decides how many 3D views can draw on it at once: each\n"
+"view takes a block for its pass sequence (about 13 ids for a\n"
+"plain viewer, docs/RenderEngine.md #3.1), and a view that finds\n"
+"no block left falls back to plain GL rather than failing.\n"
+"0 uses the backend's own maximum, which is the build's ceiling.\n"
+"\n"
+"Lower than that ceiling costs nothing and saves a little: the\n"
+"backend walks its whole view table once a frame and sizes its\n"
+"per-view pools from the number, so unused ids are paid for in\n"
+"every frame however few views a session opens. Measured on a\n"
+"desktop GPU, that walk is invisible against a 16ms frame at any\n"
+"of these widths - but the per-view GPU timer pools it also sizes\n"
+"are not, once render stage timing is switched on.\n"
+"\n"
+"Read once, when the backend starts: a change needs a restart.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getMaxViewIds() {
+    return instance()->MaxViewIds;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultMaxViewIds() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMaxViewIds(const long &v) {
+    instance()->handle->SetInt("MaxViewIds",v);
+    instance()->MaxViewIds = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMaxViewIds() {
+    instance()->handle->RemoveInt("MaxViewIds");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

@@ -83,6 +83,33 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter MaxViewIds
+    ///
+    /// How many backend view ids the render engine may hand out, which
+    /// is what decides how many 3D views can draw on it at once: each
+    /// view takes a block for its pass sequence (about 13 ids for a
+    /// plain viewer, docs/RenderEngine.md #3.1), and a view that finds
+    /// no block left falls back to plain GL rather than failing.
+    /// 0 uses the backend's own maximum, which is the build's ceiling.
+    /// 
+    /// Lower than that ceiling costs nothing and saves a little: the
+    /// backend walks its whole view table once a frame and sizes its
+    /// per-view pools from the number, so unused ids are paid for in
+    /// every frame however few views a session opens. Measured on a
+    /// desktop GPU, that walk is invisible against a 16ms frame at any
+    /// of these widths - but the per-view GPU timer pools it also sizes
+    /// are not, once render stage timing is switched on.
+    /// 
+    /// Read once, when the backend starts: a change needs a restart.
+    static const long & getMaxViewIds();
+    static const long & defaultMaxViewIds();
+    static void removeMaxViewIds();
+    static void setMaxViewIds(const long &v);
+    static const char *docMaxViewIds();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter CoarseTessellation
     ///
     /// Ladder level shapes are tessellated at under coarse-first
