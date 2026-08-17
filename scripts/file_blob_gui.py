@@ -35,6 +35,7 @@ from PySide.QtGui import QColor, QImage
 OUT = os.environ.get("US_OUT", os.path.dirname(os.path.abspath(__file__)))
 RESULT = os.environ.get("US_RESULT", os.path.join(OUT, "blob_gui.txt"))
 BLOB_DIR = "blobs"
+BLOB_INDEX = "Content.xml"
 
 results = []
 
@@ -60,8 +61,10 @@ def read_bytes(path):
 
 
 def blob_entries(project):
+    """Content entries only: the index describes them, it is not one of them."""
     names = zipfile.ZipFile(project).namelist()
-    return [n for n in names if n.startswith(BLOB_DIR + "/")]
+    index = "%s/%s" % (BLOB_DIR, BLOB_INDEX)
+    return [n for n in names if n.startswith(BLOB_DIR + "/") and n != index]
 
 
 def gui_xml(project):
@@ -83,6 +86,24 @@ def make_image(path, color=(40, 120, 200)):
 
 def active_view(doc):
     return FreeCADGui.getDocument(doc.Name).ActiveView
+
+
+def view_provider(doc, name, tries=200):
+    """The view provider of an object, once the view tier has caught up.
+
+    View providers are restored lazily, in slices driven by the event loop
+    (Gui::Document::runDeferredRestoreSlice), so ViewObject is None for a while
+    after openDocument and asking for it straight away is a race. Measured: it
+    is None immediately and present after a few slices, at schema 4 and at 5
+    alike. Only a save flushes it synchronously, which is not what this suite
+    wants to do before it has checked what was restored.
+    """
+    for _ in range(tries):
+        obj = doc.getObject(name)
+        if obj is not None and obj.ViewObject is not None:
+            return obj.ViewObject
+        FreeCADGui.updateGui()
+    return None
 
 
 def env_property(view):
@@ -114,6 +135,11 @@ def run():
 
         # --- Embed the environment image on the view.
         doc = FreeCAD.newDocument("BlobGui")
+        # Shared entries are this fork's format and a new document defaults to
+        # upstream's cap of 4, which writes no blob entries at all. Without
+        # this the archive assertions below test schema 4 and fail; the headless
+        # suite opts in the same way (FileBlobs.py newDocument).
+        doc.SaveSchemaVersion = 5
         view = active_view(doc)
         env_property(view)
         view.Render_PBREnvImageData = (image, "env.png")
@@ -121,8 +147,9 @@ def run():
         check("embed-copies-image", bool(embedded) and os.path.exists(embedded), embedded)
         check("embed-content", os.path.exists(embedded) and read_bytes(embedded) == image_bytes)
         check(
-            "embed-stored-by-hash",
-            os.path.basename(embedded) == image_hash,
+            "embed-stored-under-a-uuid",
+            os.path.basename(embedded) != image_hash
+            and os.path.basename(embedded).endswith(".png"),
             os.path.basename(embedded),
         )
 
@@ -145,7 +172,18 @@ def run():
         # --- Archive shape: one entry per distinct content, hash reference.
         entries = blob_entries(project)
         check("one-entry-per-content", len(entries) == 2, str(entries))
-        check("env-entry-present", "%s/%s" % (BLOB_DIR, image_hash) in entries, str(entries))
+        # The view's own property cannot name a file -- it belongs to no
+        # object -- so the App referrer sharing the same content names it.
+        check(
+            "env-entry-named-after-its-referrer",
+            "%s/Texture.File.png" % BLOB_DIR in entries,
+            str(entries),
+        )
+        check(
+            "viewprovider-entry-named-with-its-tier",
+            "%s/Shaded.ViewObject.Render_Texture.png" % BLOB_DIR in entries,
+            str(entries),
+        )
         xml = gui_xml(project)
         check("view-saves-hash", image_hash in xml)
         check(
@@ -169,7 +207,8 @@ def run():
             "restored-object-content",
             os.path.exists(restored_obj.File) and read_bytes(restored_obj.File) == image_bytes,
         )
-        restored_vp = doc.getObject("Shaded").ViewObject
+        restored_vp = view_provider(doc, "Shaded")
+        check("restored-viewprovider-exists", restored_vp is not None)
         check("restored-viewprovider", os.path.exists(restored_vp.Render_Texture))
         check("restored-sharing", restored_obj.File == restored, "view and object must share")
         check("no-unclaimed-content", len(stored_blobs(doc)) == 2, str(stored_blobs(doc)))

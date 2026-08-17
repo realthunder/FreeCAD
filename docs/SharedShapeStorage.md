@@ -1166,7 +1166,20 @@ Four steps plus an optional fifth. Each is separately shippable, each has a
 gate with a number already measured to compare against, and the order puts the
 infrastructure first so the format change lands on something that works.
 
-### 12.1 Step 1: the blob manager's content index and stable names
+### 12.1 Step 1: the blob manager's content index and stable names -- DONE
+
+**Shipped 2026-08-17.** `docs/FileBlobsManager.md` sec 13 is the specification
+and sec 13.8 records the three decisions it left open, all of which the built
+form answers: the previous index is read from the directory being written
+rather than remembered (a save-as would otherwise let another directory's index
+vouch for a file here), a restore claims the index but does not parse it
+(deferred read by name is step 3's, and that is what would need it), and
+40-hex names are pruned as the one exception to "nothing outside the previous
+index", because they are what a pre-index save wrote and nothing else can
+identify them afterwards. Names are `Object.Property.ext` from
+`Property::getFileName()`, now public so the manager spells them the same way a
+property that writes its own file does -- which is what keeps step 3 from
+renaming every shape file on its first save.
 
 No format change, no shape work. `docs/FileBlobsManager.md` sec 13 is the
 specification: `blobs/Content.xml`, uuid names in the transient directory,

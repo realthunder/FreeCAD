@@ -1786,7 +1786,10 @@ unsigned int Document::getMemSize () const
 void Document::collectFiles(App::FileBlobManager &manager,
                             const std::vector<App::DocumentObject*> &objs) const
 {
-    auto collect = [&manager](const App::PropertyContainer *container) {
+    // The object is passed alongside: a view provider's properties are named
+    // after, and belong to the generation of, the object it presents.
+    auto collect = [&manager](const App::PropertyContainer *container,
+                              const App::DocumentObject *object) {
         if (!container) {
             return;
         }
@@ -1794,21 +1797,22 @@ void Document::collectFiles(App::FileBlobManager &manager,
         container->getPropertyList(props);
         for (auto prop : props) {
             if (auto file = Base::freecad_dynamic_cast<App::PropertyFileIncluded>(prop)) {
-                manager.noteReferenced(file->getBlob());
+                manager.noteReferenced(file->getBlob(),
+                                       App::FileBlobManager::referrerOf(file, object));
             }
         }
     };
 
     if (objs.empty()) {
         for (const auto &v : d->_ViewProviderMap) {
-            collect(v.second);
+            collect(v.second, v.first);
         }
         // A view's own properties -- the embedded environment image lives
         // here. They are written into a string inside GuiDocument.xml and
         // replayed from memory, so they can never register an archive entry
         // themselves; this is the only place their content is picked up.
         for (auto view : d->baseViews) {
-            collect(view);
+            collect(view, nullptr);
         }
     }
     else {
@@ -1817,7 +1821,7 @@ void Document::collectFiles(App::FileBlobManager &manager,
         for (auto obj : objs) {
             auto it = d->_ViewProviderMap.find(obj);
             if (it != d->_ViewProviderMap.end()) {
-                collect(it->second);
+                collect(it->second, obj);
             }
         }
     }

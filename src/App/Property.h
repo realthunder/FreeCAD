@@ -168,6 +168,18 @@ public:
      */
     virtual std::string getFullName(bool python=false) const;
 
+    /** Return a file name suitable for saving this property
+     *
+     * `Object.Property`, and `Object.ViewObject.Property` for a view
+     * provider's -- the document name is stripped, so the name survives a
+     * save-as, and an object's internal name is immutable, so it does not
+     * churn while the object lives. Public because it is not only the
+     * property that names the property's file: FileBlobManager derives the
+     * name of a shared file from its referrer, and has to spell it the same
+     * way as a property that writes its own.
+     */
+    std::string getFileName(const char *postfix=nullptr, const char *prefix=nullptr) const;
+
     /// Get the class name of the associated property editor item
     virtual const char* getEditorName() const { return ""; }
 
@@ -391,9 +403,6 @@ protected:
 
     /// Verify a path for the current property
     virtual void verifyPath(const App::ObjectIdentifier & p) const;
-
-    /// Return a file name suitable for saving this property
-    std::string getFileName(const char *postfix=0, const char *prefix=0) const;
 
     // forbidden
     Property(const Property&) = delete;

@@ -166,7 +166,9 @@ Python passthrough, so the protocol design questions below are all still open.</
   `execute()` purity contract or audit, no parallel recompute scheduler, no cross-process
   BRep transfer. The one adjacent thing that *did* land is **content addressing in the
   document tier** — `App::PropertyFileIncluded` files are now stored and reference-counted by
-  content hash and written as `blobs/<hash>` archive entries, with save options and a
+  content hash and written as `blobs/` archive entries -- named after the referring
+  property, with a `blobs/Content.xml` index binding name to content, so an unpacked
+  project is diffable -- with save options and a
   restore handover protocol ([FileBlobsManager.md](./FileBlobsManager.md)). That is
   deduplicated file storage, *not* recompute memoization, and it does not advance the
   process split; it does establish the content-addressing habit both tiers want.
