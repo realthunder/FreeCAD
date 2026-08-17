@@ -1,7 +1,8 @@
 # Closing the core-API gap with upstream, starting with what FEM needs
 
-Status: stage 1 and steps 2a and 2d done 2026-08-12; 2b and 2c still to
-do; stage 3 waits on the FEM port itself.
+Status: stage 1 and steps 2a and 2d done 2026-08-12; stage 1b (the additive
+templates, section 2.1) done 2026-08-17; 2b and 2c still to do; stage 3
+waits on the FEM port itself.
 Driver: [FemPortEvaluation.md](./FemPortEvaluation.md), which found that the
 cost of porting upstream's FEM is not in FEM but in core refactors this fork
 predates.
@@ -65,6 +66,111 @@ it in exactly two places, both `isDerivedFrom` checks that also test
 `Part::Datum`, which we do have. Adapting the two sites preserves fork
 behaviour exactly. Porting `App::Datums` properly is a feature-level change
 reaching into PartDesign and is listed in section 5.
+
+## 2.1 Stage 1b -- the additive templates (done 2026-08-17)
+
+The second round of additive work, and unlike stage 1 it is not FEM-shaped
+at all: these are core APIs upstream grew that we can simply *also* have.
+Every one is a new overload or a new name beside an existing one, so no
+fork call site changes and nothing can regress. The FEM census
+([FemPortEvaluation.md](./FemPortEvaluation.md) section 10.3) is what named
+them, because closing stage 1's rows unmasked them -- but the reason to do
+them is the fork's own sync cost, not FEM.
+
+| item | what | where | existing sites it sits beside |
+|---|---|---|---|
+| 1e | `XMLReader::getAttribute<T>()` in six instantiations, plus the generic and enum forms | `Base/Reader.h`, `Base/Reader.cpp` | 230 `getAttribute` + 498 `getAttributeAs*` |
+| 1f | `Document::addObject<T>()`, `countObjectsOfType<T>()`, `GroupExtension::addObject<T>()`, `ExtensionContainer::getExtension<T>()` | `App/Document.h`, `App/GroupExtension.h`, `App/ExtensionContainer.h` | 2472 `addObject(`, 114 `getExtensionByType<` |
+| 1g | `Base::color_traits` and its `Base::Color` specialization | `Base/Color.h` | -- |
+| 1h | `PropertyMaterialList` float and packed-rgba colour setters, both arities, plus the no-argument getters | `App/PropertyStandard.h` | -- |
+| 1i | `fastsignals` as a name for `boost::signals2` | `src/fastsignals/signal.h`, included from `App/Property.h` and `Gui/ViewProvider.h` | -- |
+
+Not one of those sites changed.
+
+**Why nothing can resolve differently.** A non-template wins overload
+resolution against an equally good template, and none of the new templates
+can deduce `T` from the arguments -- a caller has to name it. So
+`getAttribute("Name")` and `addObject("Part::Feature", "Box")` still reach
+the overloads they always did. The new setters and getters differ in
+arity or parameter type from every existing one.
+
+Notes that matter when reading them:
+
+- **1e** upstream declares the instantiated set with a `requires` clause
+  over a private `instantiated<T>` variable template and defines it out of
+  line, so an unsupported `T` is a compile error at the call site rather
+  than a link error at the end of the build. That is worth copying and is
+  copied. The bodies are ours: they go through `findAttribute()`, and the
+  throwing form raises through `_FC_READER_THROW`, which carries the file
+  and line the fork's readers report.
+- ! **1e, one deliberate divergence.** Upstream's `bool` cast is
+  `value != "0"`, which makes the string `"false"` read as **true**. That
+  is safe upstream only because nothing spelled that way goes through it:
+  `PropertyBool` writes `"true"`/`"false"` and restores it by comparing the
+  string itself. Our `Writer` spells bools the same way, so ours honours
+  both words. Upstream's `"1"`/`"0"` attributes read identically.
+- **1f** upstream's template says `T::getClassName()`, a `consteval` string
+  its `PROPERTY_HEADER_WITH_OVERRIDE` macro emits, guarded by static
+  assertions about namespace-versus-directory. We have no such member and
+  adding one is a change to every property container rather than an
+  addition, so ours uses `T::getClassTypeId().getName()` -- the same
+  string, and the one the non-template overload looks up anyway.
+- **1g** only the adapter is taken. Upstream also routes `Color::setValue`
+  and `Color::asValue` through it, which would change what ours do: theirs
+  carry the alpha and round, ours drop the alpha and truncate. That is a
+  behaviour change to every colour button in the GUI, so it is not part of
+  an additive step. Left as a separate decision.
+- **1h** the no-argument getters read entry 0. Upstream indexes element 0
+  of a list it does not check, so an empty property is undefined behaviour
+  there; ours go through the indexed getter, which answers with the field
+  default when the array is short.
+- **1i** supersedes 1c above, which proposed retyping FEM's five uses
+  instead. The census showed the real number is 51 (17 App, 34 Gui) once
+  the rows above it came off, and almost none of them include anything for
+  it -- upstream's core headers put the name where every DocumentObject-
+  side file picks it up transitively. So the header goes where ours already
+  include `boost/signals2.hpp`, and the alias makes the two names one
+  namespace: ported code gets exactly the connection type our core returns,
+  in both directions, with nothing rewritten.
+
+**Why not vendor FastSignals for its own sake.** It is an API-compatible
+drop-in for Boost.Signals2 that emits 3-6x faster in its own benchmark and
+produces smaller binaries -- both of which this fork would like, the second
+one especially in the WASM tier -- at the cost of `connect_extended`,
+`slot::track`, `shared_connection_block` and the `disconnect(slot)`
+overload. Taking it would mean converting the fork's own signals, since our
+core hands back `boost::signals2::connection` and upstream's hands back
+`fastsignals::connection`. That is a real decision with a measurable
+payoff (`Document`'s signals fire per object on every recompute) and it is
+not this step. 1i is the spelling only.
+
+**Verification.** A full build of `build/conda-debug-occt801`, plus
+syntax-only checks that assert the resolved return type of every existing
+call shape and of every new one -- that is what "not one of those sites
+changed" rests on, since a silent re-resolution is the only way an
+additive overload can hurt -- plus the FEM census
+(`scratchpad/fem_census.py`, `--rev 512e91aad0`) before and after.
+
+Every bucket these five were chosen to close is gone:
+
+| bucket | App before | Gui before | after |
+|---|---|---|---|
+| `fastsignals` | 17 errors / 17 files | 29 / 29 | 0 |
+| `XMLReader getAttribute<T>` | 17 / 1 | -- | 0 |
+| `addObject<T>` / `getExtension<T>` | 9 / 4 | 5 / 2 | 0 |
+| `Base::color_traits` | -- | 6 / 2 | 0 |
+| `ShapeAppearance` | -- | 5 / 2 | 0 |
+
+Upstream's `Fem/App` goes from 13 TUs compiling clean to 29 of 50. The
+census shim supplies a `fastsignals/signal.h` of its own and was present
+in *both* runs, so that row moved because of the transitive include, not
+the shim.
+
+What is left is what the evaluation predicted and none of it is additive:
+`getElementTypes` and `isSame` (section 4), `App/Datums.h`, the `Quantity`
+strings, the `Gui::PropertyEditor` drift, and the generated-file
+artifacts. Gui's clean count does not move at all, because every one of
+its TUs also fails on those.
 
 ## 3. Stage 2 -- upstream's names and locations, aliases at the old ones
 
