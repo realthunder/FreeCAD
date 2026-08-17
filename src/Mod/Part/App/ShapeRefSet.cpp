@@ -25,6 +25,8 @@
 #ifndef _PreComp_
 #include <cstdlib>
 #include <cstring>
+#include <map>
+#include <set>
 #include <iostream>
 #include <locale>
 #include <BRep_Builder.hxx>
@@ -158,36 +160,41 @@ void applyOrientation(TopoDS_Shape& shape, char code)
 
 int ShapeOwnerTable::addFile(const std::string& file)
 {
+    auto known = _fileIndex.find(file);
+    if (known != _fileIndex.end()) {
+        return known->second;
+    }
     _files.push_back(file);
-    return static_cast<int>(_files.size());
+    const int index = static_cast<int>(_files.size());
+    _fileIndex[file] = index;
+    return index;
 }
 
 void ShapeOwnerTable::claim(const TopoDS_Shape& shape, int file, int index)
 {
-    const int slot = _shapes.Add(shape);
-    if (slot > static_cast<int>(_refs.size())) {
-        _refs.resize(slot);
-        _refs[slot - 1] = ShapeRef {file, index};
+    if (shape.IsNull()) {
+        return;
     }
-    // An existing slot keeps the claim it already has: the earliest file in
+    // An existing entry keeps the claim it already has: the earliest file in
     // the walk owns what it holds, which is what makes the assignment a
     // function of the walk order rather than of the order of these calls.
+    _refs.emplace(shape.TShape().get(), ShapeRef {file, index});
 }
 
 const ShapeRef* ShapeOwnerTable::find(const TopoDS_Shape& shape) const
 {
-    const int slot = _shapes.FindIndex(shape);
-    if (slot < 1 || slot > static_cast<int>(_refs.size())) {
+    if (shape.IsNull()) {
         return nullptr;
     }
-    return &_refs[slot - 1];
+    auto found = _refs.find(shape.TShape().get());
+    return found == _refs.end() ? nullptr : &found->second;
 }
 
 void ShapeOwnerTable::clear()
 {
-    _shapes.Clear();
     _refs.clear();
     _files.clear();
+    _fileIndex.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +225,8 @@ void ShapeRefSet::Clear()
     _borrowedRefs.clear();
     _borrowed.clear();
     _sources.clear();
+    _sourceNames.clear();
+    _borrowedRead.clear();
 }
 
 void ShapeRefSet::setOwners(const ShapeOwnerTable* owners)
@@ -293,6 +302,36 @@ int ShapeRefSet::add(const TopoDS_Shape& shape)
         add(it.Value());
     }
     return _shapes.Add(base);
+}
+
+std::string ShapeRefSet::plan() const
+{
+    // Grouped by file and sorted, which is what makes the two sides agree:
+    // the writer walks depth first, the reader meets the tokens in record
+    // order, and neither order is the other.
+    std::map<std::string, std::set<int>> borrowed;
+    if (_owners) {
+        for (const ShapeRef& ref : _borrowedRefs) {
+            const int owner = _borrowed[ref.file - 1];
+            borrowed[_owners->files()[owner - 1]].insert(ref.index);
+        }
+    }
+    for (const auto& token : _borrowedRead) {
+        borrowed[_sourceNames[token.first - 1]].insert(token.second);
+    }
+
+    std::string plan;
+    for (const auto& file : borrowed) {
+        plan += file.first;
+        char separator = ':';
+        for (int index : file.second) {
+            plan += separator;
+            plan += std::to_string(index);
+            separator = ',';
+        }
+        plan += ';';
+    }
+    return plan;
 }
 
 void ShapeRefSet::publish(int file, ShapeOwnerTable& owners) const
@@ -402,10 +441,11 @@ bool ShapeRefSet::readToken(TopoDS_Shape& shape, std::istream& in, int count) co
     }
 
     const ShapeIndexMap* source = nullptr;
+    int slot = 0;
     if (buffer[0] == 'E') {
         // Uppercase, and it can only be this: an ordinary token starts with
         // an orientation, whose external code is a lowercase 'e'.
-        const int slot = std::atoi(buffer + 1);
+        slot = std::atoi(buffer + 1);
         if (slot < 1 || slot > static_cast<int>(_sources.size())) {
             FC_ERR("Shape reference to file " << slot << ", which this file does not name");
             return false;
@@ -422,6 +462,9 @@ bool ShapeRefSet::readToken(TopoDS_Shape& shape, std::istream& in, int count) co
             return false;
         }
         shape = (*source)(index);
+        // What this file states it borrows, which is the plan a save has to
+        // compare against before it can keep the file as it is.
+        _borrowedRead.insert(std::make_pair(slot, index));
     }
     else {
         const int local = count - index + 1;
@@ -493,6 +536,7 @@ TopoDS_Shape ShapeRefSet::read(std::istream& in)
                 return {};
             }
             _sources.push_back(source);
+            _sourceNames.push_back(name);
         }
     }
 

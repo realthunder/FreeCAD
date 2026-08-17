@@ -25,7 +25,9 @@
 
 #include <functional>
 #include <iosfwd>
+#include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <BRepTools_ShapeSet.hxx>
@@ -70,14 +72,20 @@ struct ShapeRef
  * assignment is a pure function of the model -- there is no ownership to carry
  * forward, and so nothing to drift, transfer or dangle.
  *
- * Keyed on the location-stripped shape, which is TShape identity: a shape and
- * the same shape moved are one entry, because a shape table stores geometry at
- * the identity and spells the location separately.
+ * Keyed on the TShape itself, which is what a shape table's identity really
+ * is: a shape and the same shape moved are one entry, because the table stores
+ * geometry at the identity and spells the location separately.
+ *
+ * *** The key is the raw TShape address and the table holds no handle, so a
+ * table left behind by a finished save pins no geometry. That is safe only
+ * because it is cleared at the start of the next save, before any lookup:
+ * within one save every shape it names is held by the property it belongs to.
  */
 class PartExport ShapeOwnerTable
 {
 public:
     /// Intern a file identity -- its blob's content hash -- for claim().
+    /// Interned, so two properties sharing one file are one entry.
     int addFile(const std::string& file);
     const std::vector<std::string>& files() const
     {
@@ -102,10 +110,9 @@ public:
     void clear();
 
 private:
-    ShapeIndexMap _shapes;
-    /// Parallel to _shapes, 0-based against its 1-based index.
-    std::vector<ShapeRef> _refs;
+    std::unordered_map<const TopoDS_TShape*, ShapeRef> _refs;
     std::vector<std::string> _files;
+    std::unordered_map<std::string, int> _fileIndex;
 };
 
 /** An ASCII BRep shape table that may borrow sub-shapes from other files.
@@ -198,6 +205,21 @@ public:
     void publish(int file, ShapeOwnerTable& owners) const;
     //@}
 
+    /** What this file borrows, as text, the same either way it was built.
+     *
+     * A file's bytes are a function of its shape *and* of what the save
+     * decided to borrow, so a shape that has not changed is not on its own a
+     * reason to keep the file that was written for it. Comparing this against
+     * the plan the held file was written with is what says whether a save
+     * still has nothing to do -- and reading it back off a parse is what lets
+     * a reopened document answer that without re-serializing everything.
+     *
+     * Order-independent: the write side walks depth first and the read side
+     * meets the tokens in record order, so the same file has to come out the
+     * same from both.
+     */
+    std::string plan() const;
+
     /** @name Reading */
     //@{
     /** How a borrowed file is obtained: its shape table, in its own forward
@@ -239,9 +261,13 @@ private:
     /// Owner-table file indices, in `Files` block order. Slot n is [n-1].
     std::vector<int> _borrowed;
 
-    /// Read side: the resolver, and the tables the `Files` block named.
+    /// Read side: the resolver, the tables the `Files` block named and their
+    /// identities, and every (slot, index) a token actually asked for -- which
+    /// is this file's plan as the file itself states it.
     Resolver _resolve;
     std::vector<const ShapeIndexMap*> _sources;
+    std::vector<std::string> _sourceNames;
+    mutable std::set<std::pair<int, int>> _borrowedRead;
 };
 
 }  // namespace Part

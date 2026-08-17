@@ -129,6 +129,13 @@ TEST(ShapeRefSet, BorrowedSubShapeIsShared)
     ASSERT_TRUE(children.More());
     EXPECT_TRUE(children.Value().IsPartner(firstRead));
     EXPECT_EQ(countFaces(compound), countFaces(secondRead));
+
+    // The plan the file was written with is the plan reading it back states.
+    // A save with nothing to do rests on that, and the two sides meet the
+    // references in different orders.
+    EXPECT_TRUE(first.plan().empty());
+    EXPECT_FALSE(second.plan().empty());
+    EXPECT_EQ(second.plan(), secondReader.plan());
 }
 
 /// A file whose root is itself borrowed holds no shapes at all.

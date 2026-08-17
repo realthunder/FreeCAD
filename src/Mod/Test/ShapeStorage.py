@@ -27,6 +27,9 @@
   ShapeBlobCases      the geometry as a file in the document's blob store
                       (sec 12.3): named after its property, shared by content,
                       skipped when unchanged, parsed once
+  ShapeRefCases       external file references (sec 11.6, build step 12.4): a
+                      sub-shape already stored in another object's file is
+                      referenced instead of serialized again
 
 Run headless with:  FreeCADCmd -t ShapeStorage
 """
@@ -529,6 +532,116 @@ class ShapeBlobCases(ShapeTestCase):
         reopened = self.openDocument(project)
         reopened.save()
         self.assertEqual({n: self.blobBytes(project, n) for n in self.blobNames(project)}, before)
+
+
+@unittest.skipUnless(HAS_PART, "Part module not available")
+class ShapeRefCases(ShapeTestCase):
+    """A sub-shape another file already holds is named, not stored again.
+
+    Sub-shape sharing is what a save destroyed and what this restores: an
+    aggregate's leaves *are* its children's shapes, and with one file per
+    object each side used to be written, parsed and tessellated separately.
+    """
+
+    def sharedDocument(self):
+        """Two boxes and a compound over them -- the aggregate whose leaves
+        are its children's very shapes."""
+        doc = self.newDocument()
+        first = self.box(doc, "BoxA")
+        second = self.box(doc, "BoxB", length=5)
+        compound = doc.addObject("Part::Compound", "Comp")
+        compound.Links = [first, second]
+        doc.recompute()
+        return doc, compound
+
+    def testSubShapeIsBorrowedFromAnotherFile(self):
+        doc, compound = self.sharedDocument()
+        project = self.directoryPath()
+        doc.saveAs(project)
+
+        stored = {n: self.blobBytes(project, n) for n in self.blobNames(project)}
+        self.assertEqual(sorted(stored), ["BoxA.Shape.brp", "BoxB.Shape.brp", "Comp.Shape.brp"])
+        borrower = stored["Comp.Shape.brp"]
+        self.assertIn(b"\nFiles 2\n", borrower)
+        # Both children are named, and neither is written out again: the
+        # compound is a record and two references, not two solids.
+        self.assertEqual(borrower.count(b"\nTShapes 1\n"), 1)
+        self.assertLess(
+            len(borrower),
+            min(len(stored["BoxA.Shape.brp"]), len(stored["BoxB.Shape.brp"])),
+            "the compound stored geometry it should have referenced",
+        )
+
+    def testAFileThatBorrowsNothingSaysNothing(self):
+        """The extension is present only where sharing is, so most of a
+        project stays a shape file any OCCT tool can read."""
+        doc, _ = self.sharedDocument()
+        project = self.directoryPath()
+        doc.saveAs(project)
+        for name in ("BoxA.Shape.brp", "BoxB.Shape.brp"):
+            data = self.blobBytes(project, name)
+            self.assertNotIn(b"Files ", data)
+            self.assertTrue(data.startswith(b"\nCASCADE Topology V1"), name)
+
+    def testSharingSurvivesTheRoundTrip(self):
+        """The point of the whole design: after a reopen the aggregate's leaf
+        and the child object are one TShape again, which they were not."""
+        doc, compound = self.sharedDocument()
+        self.assertTrue(compound.Shape.Solids[0].isPartner(doc.getObject("BoxA").Shape))
+        project = self.projectPath()
+        doc.saveAs(project)
+        volume = compound.Shape.Volume
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        leaf = reopened.getObject("Comp").Shape.Solids[0]
+        self.assertTrue(leaf.isPartner(reopened.getObject("BoxA").Shape))
+        self.assertAlmostEqual(reopened.getObject("Comp").Shape.Volume, volume, places=6)
+        self.assertEqual(len(reopened.getObject("Comp").Shape.Faces), 12)
+
+    def testResaveOfABorrowingProjectChangesNothing(self):
+        doc, _ = self.sharedDocument()
+        project = self.directoryPath()
+        doc.saveAs(project)
+        before = {n: self.blobBytes(project, n) for n in self.blobNames(project)}
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        reopened.save()
+        self.assertEqual({n: self.blobBytes(project, n) for n in self.blobNames(project)}, before)
+
+    def testABorrowerIsRewrittenWhenWhatItBorrowedIsGone(self):
+        """An unchanged shape is not on its own a reason to keep the file
+        written for it.
+
+        These two share a TShape with no dependency between them, so replacing
+        the first object's shape leaves the second untouched -- and its file
+        still naming a file this save no longer writes. What catches that is
+        the plan the file was written with, not the shape.
+        """
+        doc = self.newDocument()
+        source = doc.addObject("Part::Feature", "Source")
+        borrower = doc.addObject("Part::Feature", "Borrower")
+        solid = Part.makeBox(10, 20, 30)
+        source.Shape = solid
+        borrower.Shape = Part.Compound([solid])
+        doc.recompute()
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertIn(b"Files 1", self.blobBytes(project, "Borrower.Shape.brp"))
+
+        # The source now holds different geometry; the borrower is untouched.
+        source.Shape = Part.makeBox(4, 4, 4)
+        doc.recompute()
+        doc.save()
+        rewritten = self.blobBytes(project, "Borrower.Shape.brp")
+        self.assertNotIn(b"Files ", rewritten)
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        recovered = reopened.getObject("Borrower").Shape
+        self.assertFalse(recovered.isNull())
+        self.assertAlmostEqual(recovered.Volume, 10 * 20 * 30, places=6)
 
 
 if __name__ == "__main__":
