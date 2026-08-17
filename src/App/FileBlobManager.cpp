@@ -22,8 +22,6 @@
 
 #include "PreCompiled.h"
 
-#include <atomic>
-
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -286,11 +284,7 @@ void FileBlobManager::beginSave(Base::Writer& writer)
     // the last reference, to content a property has since replaced. Doing
     // that under the lock deadlocks the thread against itself.
     std::unordered_map<std::string, FileBlobHandle> expiring;
-    // Process-wide, so no two saves anywhere share a number -- see
-    // saveGeneration().
-    static std::atomic<uint64_t> saves {0};
     std::lock_guard<std::mutex> guard(_mutex);
-    _generation = ++saves;
     expiring.swap(_saveSet);
     // Referrers are recomputed from scratch every save. Nothing is carried
     // forward, so a deleted object cannot leave a name behind it.
@@ -309,12 +303,6 @@ void FileBlobManager::beginSave(Base::Writer& writer)
     else {
         _format = BlobFormat::Entries;
     }
-}
-
-uint64_t FileBlobManager::saveGeneration() const
-{
-    std::lock_guard<std::mutex> guard(_mutex);
-    return _generation;
 }
 
 FileBlobManager::BlobFormat FileBlobManager::blobFormat() const

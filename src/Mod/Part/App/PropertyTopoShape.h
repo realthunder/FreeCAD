@@ -41,7 +41,6 @@ namespace Part
 {
 
 class Feature;
-class ShapeRefSet;
 
 /** The part shape property class.
  * @author Werner Mayer
@@ -185,8 +184,6 @@ private:
     bool usesBlob(Base::Writer &writer) const;
     /// Serialize the geometry into the store, unless _blob already holds it.
     void makeBlob(Base::Writer &writer) const;
-    /// Write the geometry to a new file in the store and take it as _blob.
-    void storeBlob(Base::Writer &writer, ShapeRefSet *refs) const;
     /// Tell the manager this save refers to _blob, and what to name its file.
     void noteBlob(Base::Writer &writer) const;
     /// Parse the geometry out of _blob and announce it.
@@ -230,16 +227,6 @@ private:
      * file and one parse.
      */
     mutable App::FileBlobHandle _blob;
-    /** What _blob's file borrows from other files, as ShapeRefSet::plan().
-     *
-     * A file's bytes are a function of the shape *and* of what the save
-     * decided to borrow (docs/SharedShapeStorage.md sec 12.4), so an unchanged
-     * shape is not on its own a reason to keep the file written for it: an
-     * object that used to borrow from a file which has since gone would
-     * otherwise keep a reference to it. Set both by writing the file and by
-     * parsing it, so a reopened document still knows what its own files say.
-     */
-    mutable std::string _blobPlan;
     /// Content hash a restore read, empty when this shape is not a blob.
     std::string _RestoreHash;
     /// Manager the pending referrer was queued with, for withdrawing it.

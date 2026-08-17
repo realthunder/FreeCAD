@@ -286,20 +286,6 @@ public:
      * way whatever the answer is, and only this manager has to care.
      */
     void beginSave(Base::Writer& writer);
-    /** Which save this is, counted across the whole process.
-     *
-     * A consumer that has to build something once per save and throw it away
-     * afterwards has no other way to tell one save from the next: there is no
-     * end-of-save signal, and a document can be saved any number of times.
-     * Comparing this against what it built for is what says the answer is
-     * stale (docs/SharedShapeStorage.md sec 12.4).
-     *
-     * *** Counted globally, not per document, and that is load-bearing: a
-     * closed document's address is handed straight back to the next one, so a
-     * per-document count would let a new document's first save be mistaken
-     * for a stale answer built for a dead one.
-     */
-    uint64_t saveGeneration() const;
     /// Format chosen for the save in progress.
     BlobFormat blobFormat() const;
     /// Whether this save writes a `<Blobs>` element, i.e. there is one to read.
@@ -431,8 +417,6 @@ private:
     mutable std::mutex _mutex;
     /// Format the save in progress writes its content in, see beginSave().
     BlobFormat _format {BlobFormat::None};
-    /// Which save is in progress, see saveGeneration().
-    uint64_t _generation {0};
     /// Blobs this save references, keyed by hash.
     mutable std::unordered_map<std::string, FileBlobHandle> _saveSet;
     /// Who refers to each of them, which is what names the file it goes to.
