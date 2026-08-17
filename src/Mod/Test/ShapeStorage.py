@@ -643,6 +643,54 @@ class ShapeRefCases(ShapeTestCase):
         self.assertTrue(first.isPartner(second))
         self.assertAlmostEqual(second.Volume, 10 * 20 * 30, places=6)
 
+    def testAStoredFaceKeepsItsEdgesCurves(self):
+        """The invariant the whole scheme lives under.
+
+        A face keys its edges' 2D curves on the `Geom_Surface` object it
+        carries, and an edge keys its vertices' parameters on its curve. Those
+        are object identities inside one file's tables and they do not survive
+        the other file being parsed separately: an edge borrowed into a stored
+        face comes back with pcurves naming a surface that is not this face's,
+        `CurveOnSurface` finds nothing, and anything projecting the shape
+        dereferences a null 2D curve. A shell split the same way comes back
+        with two edges everywhere the model has one.
+
+        So a face, an edge, a wire and a shell are each borrowed whole or
+        stored whole. A boolean on a curved solid is the smallest thing that
+        asks for it -- planar faces hide it, because OCCT stores no pcurve for
+        those and computes one when asked.
+        """
+        doc = self.newDocument()
+        whole = doc.addObject("Part::Feature", "Whole")
+        carved = doc.addObject("Part::Feature", "Carved")
+        ball = Part.makeSphere(10)
+        whole.Shape = ball
+        carved.Shape = ball.cut(Part.makeBox(20, 20, 20))
+        doc.recompute()
+        # The premise: the two really do share sub-shapes in memory.
+        shared = sum(
+            1 for a in ball.Edges for b in carved.Shape.Edges if a.isPartner(b)
+        )
+        self.assertGreater(shared, 0, "nothing was shared, so this proves nothing")
+
+        project = self.directoryPath()
+        doc.saveAs(project)
+        volume = carved.Shape.Volume
+        edges = len(carved.Shape.Edges)
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        shape = reopened.getObject("Carved").Shape
+        for index, face in enumerate(shape.Faces):
+            for edge in face.Edges:
+                self.assertIsNotNone(
+                    face.curveOnSurface(edge),
+                    "face %d has an edge with no curve on it" % index,
+                )
+        self.assertTrue(shape.isValid(), "the shell came back split")
+        self.assertEqual(len(shape.Edges), edges, "the shell gained edges")
+        self.assertAlmostEqual(shape.Volume, volume, places=6)
+
     def testABorrowerIsRewrittenWhenWhatItBorrowedIsGone(self):
         """An unchanged shape is not on its own a reason to keep the file
         written for it.

@@ -189,11 +189,27 @@ public:
 
     /** Store a shape and its sub-shapes, stopping wherever one is borrowed.
      *
-     * Returns the shape's index in this file, or 0 when it is borrowed or
-     * null -- so a root that is itself borrowed gives an empty table, which
-     * is a file holding nothing but a reference.
+     * *** Two things a sub-shape may not be borrowed across, both of them the
+     * same rule: a shape's geometry can be keyed on the identity of an object
+     * in the file's own tables, and identity does not survive being parsed
+     * twice.
+     *
+     *  - **A face's edges** hold their 2D curve against the `Geom_Surface`
+     *    the face carries, and an edge's vertices hold their parameter
+     *    against the edge's curve. Borrowed into a locally stored face, the
+     *    edge's pcurve names another file's surface object, and
+     *    `BRep_Tool::CurveOnSurface` then finds nothing -- a null 2D curve,
+     *    which is what anything projecting the shape dereferences. So nothing
+     *    below a locally stored face or edge is ever borrowed.
+     * A face is therefore either borrowed whole or stored whole, and so is an
+     * edge, which is what makes every association land inside one parse.
+     *
+     * What this does not prevent is a borrowed face and a stored face in one
+     * shell no longer sharing the edge between them: each keeps its own copy,
+     * consistent in itself. That costs the sharing, not the geometry, and
+     * ruling it out cost a re-walk per file and made a save unusably slow.
      */
-    int add(const TopoDS_Shape& shape);
+    void build(const TopoDS_Shape& root);
 
     /// Write the tables and then the token naming \a root. add(root) first.
     void write(const TopoDS_Shape& root, std::ostream& out);
@@ -266,6 +282,9 @@ public:
     }
 
 private:
+    /// One step of build(): store \a shape, borrowing where that is allowed.
+    /// \a bound says a locally stored face or edge encloses it.
+    int add(const TopoDS_Shape& shape, bool bound);
     /// Note a borrowed sub-shape, assigning its file a slot on first use.
     void borrow(const TopoDS_Shape& shape, const ShapeRef& ref);
     /// The slot and forward index of a borrowed sub-shape, or null.

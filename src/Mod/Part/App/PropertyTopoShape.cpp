@@ -431,7 +431,7 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
     const TopoDS_Shape root = shapeForSave(writer);
     ShapeRefSet refs;
     refs.setOwners(owners);
-    refs.add(root);
+    refs.build(root);
     const std::string plan = refs.plan();
 
     // *** A shape that is another file's whole root is not borrowed, it is

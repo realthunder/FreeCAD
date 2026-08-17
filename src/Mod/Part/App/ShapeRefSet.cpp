@@ -296,7 +296,12 @@ const ShapeRef* ShapeRefSet::borrowed(const TopoDS_Shape& shape) const
     return &_borrowedRefs[slot - 1];
 }
 
-int ShapeRefSet::add(const TopoDS_Shape& shape)
+void ShapeRefSet::build(const TopoDS_Shape& root)
+{
+    add(root, false);
+}
+
+int ShapeRefSet::add(const TopoDS_Shape& shape, bool bound)
 {
     if (shape.IsNull()) {
         return 0;
@@ -315,7 +320,7 @@ int ShapeRefSet::add(const TopoDS_Shape& shape)
     if (borrowed(base)) {
         return 0;
     }
-    if (_owners) {
+    if (!bound && _owners) {
         if (const ShapeRef* ref = _owners->find(base)) {
             borrow(base, *ref);
             return 0;
@@ -323,8 +328,18 @@ int ShapeRefSet::add(const TopoDS_Shape& shape)
     }
 
     AddGeometry(base);
+    // Nothing under a face, edge, wire or shell stored here is borrowed. The
+    // first two because the association *is* the identity of an object in
+    // this file's tables -- a face keys its edges' 2D curves on the surface
+    // it carries, an edge keys its vertices' parameters on its curve -- and
+    // the second two because they are sewn: a shell whose faces came half
+    // from here and half from another file has two edges everywhere the model
+    // has one, and is no longer a valid boundary.
+    const TopAbs_ShapeEnum type = base.ShapeType();
+    const bool binds = bound || type == TopAbs_FACE || type == TopAbs_EDGE || type == TopAbs_WIRE
+        || type == TopAbs_SHELL;
     for (TopoDS_Iterator it(base, false, false); it.More(); it.Next()) {
-        add(it.Value());
+        add(it.Value(), binds);
     }
     return _shapes.Add(base);
 }

@@ -23,7 +23,7 @@ std::string
 writeSet(const TopoDS_Shape& shape, const Part::ShapeOwnerTable* owners, Part::ShapeRefSet& set)
 {
     set.setOwners(owners);
-    set.add(shape);
+    set.build(shape);
     std::ostringstream out;
     set.write(shape, out);
     return out.str();
