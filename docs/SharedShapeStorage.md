@@ -1329,7 +1329,10 @@ had the same line and the same bug. Several other places in the tree still use
 the idiom (`ProjectFile`, `VRMLObject`, `PropertyPythonObject`) and were left
 alone.
 
-### 12.4 Step 4: the external reference format -- BUILT AND REVERTED
+### 12.4 Step 4: the external reference format -- BUILT, REVERTED, RESTORED
+
+(Reverted on the 2.1% below, then restored behind a switch once that number
+turned out to be about the model rather than the format -- see sec 12.7.)
 
 **Built and reverted 2026-08-17** (`353f31b62a`, `4baa4757d0`, `3f409a216c`,
 `db474bfafd`, reverted by `1a4b34e640`). It works and it is correct; it is
@@ -1536,3 +1539,154 @@ modified.
   shape out of a monolith; with one file per object there is no monolith. The
   three obstacles in `TopTools_ShapeSet` stop mattering rather than needing to
   be fixed.
+
+### 12.7 The format restored behind a switch, and what it is worth by model shape
+
+Step 12.4 was reverted on a single number -- 2.1% on `scanner.FCStd`. That
+number is a property of the model, not of the format, and the revert made it
+hard to check which. It is back (`ShareStoredSubShapes`, on by default). With
+the switch off, `PropertyPartShape::saveBlob` passes no owner table, so nothing
+is borrowed and nothing is published and every file holds its whole shape --
+byte for byte what sec 12.3 wrote. **The A/B is now one build, not two**, and
+the arms reproduce the figures recorded above exactly (332 files, 36
+references, 18276205 raw, 3735837 deflated against 18670216 / 3806881).
+
+The switch gates the write path only. A file that names another file still
+resolves it whatever the setting: a format switch may stop producing a
+construct, never stop reading one.
+
+***What the safety rule is worth, by what the document is made of.*** Same
+build, same probe, borrowing off against on:
+
+| | `scanner.FCStd` | assembly of compounds | `MiSTer` |
+|---|---|---|---|
+| what it is | PartDesign, 606 objects | 40 parts, 8 sub-assemblies, 1 top | imported STEP, 18142 objects |
+| references | 36 | 48 | **0** |
+| raw, off | 18670216 | 2432234 | 117934869 |
+| raw, on | 18276205 | 807253 | 117934869 |
+| **raw** | 1.02x | **3.01x** | **1.00x** |
+| deflated | 1.02x | 2.54x | 1.00x |
+
+So the mechanism pays where a document *stores* a parent whose shape is a
+compound of other objects' whole solids -- `Part::Compound`, `SubShapeBinder`.
+scanner has 36 such places; the synthetic scene is made of nothing else and
+reaches 3.01x, which is its ceiling of three copies collapsing to one.
+
+***An imported assembly is not that shape, and this corrects sec 12.4.*** Sec
+12.4 supposed "a model that repeats whole parts -- an assembly -- is where the
+remaining mechanism pays". `MiSTer` is exactly that and emits **no references
+at all**. `App::Link` and `App::Part` store no shape, so an imported or linked
+assembly has no parent object holding its children's TShapes; its repetition is
+whole-*shape* repetition, and content addressing already collapsed it in sec
+12.3 -- 18142 objects to 10872 files.
+
+! Measure this on an **ASCII** save. References are an extension of the ASCII
+format and of nothing else, so `saveBlob` returns early under `BinaryBrep` and
+a document with `PreferBinary` set shares nothing whatever the switch says.
+Read binary first and the null result looks like a fact about the model.
+
+### 12.8 The ceiling for cross-file geometry, measured
+
+Sec 12.4 closes by naming cross-file geometry references as what would recover
+the sub-face sharing the safety rule forbids, with sec 11.8's 1.70x as the
+prize. That prize was quoted against the pre-12.3 format. Against the baseline
+that ships, the ceiling is worth measuring directly rather than inferring, and
+it does not need the format to exist: take a borrowing-off directory save, read
+each file's three geometry tables, and count the entries whose encodings repeat
+across files.
+
+**Byte-identical encoding is the right identity test, not a convenient one.**
+What a reference has to guarantee is that the borrowing file ends up holding
+the object the borrowed sub-shape's pcurves name. Identical encodings parse to
+equal geometry, so referencing one for the other is sound whether or not they
+were one object when written.
+
+| `scanner.FCStd`, 332 files, 18670216 shape bytes | entries | distinct | bytes | distinct | duplicate |
+|---|---|---|---|---|---|
+| Surfaces | 8497 | 5140 | 3185468 | 1829259 | 42.6% |
+| Curves | 20312 | 15585 | 3460004 | 2593347 | 25.0% |
+| Curve2ds | 25603 | 5688 | 4287305 | 1933887 | 54.9% |
+
+| `MiSTer`, 10872 files, 117934869 shape bytes | entries | distinct | bytes | distinct | duplicate |
+|---|---|---|---|---|---|
+| Surfaces | 70321 | 38792 | 20000374 | 10325309 | 48.4% |
+| Curves | 221160 | 113049 | 31988822 | 15602076 | 51.2% |
+| Curve2ds | 85955 | 27060 | 26168673 | 12148469 | 53.6% |
+
+***It splits in two, and only one half needs a new format.*** A
+`GeomTools_SurfaceSet` keys on the handle, not on the value, so a single file
+can write the same encoding twice by itself:
+
+| | scanner | `MiSTer` | assembly |
+|---|---|---|---|
+| geometry tables, share of all shape bytes | 58.6% | 66.3% | 42.5% |
+| duplicate geometry, share of all shape bytes | 24.5% | 34.0% | 37.0% |
+| -- within one file, **needs no cross-file format** | **8.9%** | **5.9%** | |
+| -- across files, what a reference buys | **15.6%** | **28.1%** | |
+
+So a cheap win sits underneath the expensive one: keying the three tables by
+value rather than by handle removes 6 to 9% of the shape bytes with no format
+change at all, because a file is already read back by index.
+
+Two things the cross-file half is not. It is not the whole prize: the rest of a
+file is locations and the TShape records, and the records collapse too wherever
+a sub-shape can be borrowed. And it is not bytes only -- the same duplication is
+paid again in memory and in tessellation every time the document is opened.
+
+***What it would take.*** Sec 12.4 guessed "reimplementing
+`BRepTools_ShapeSet::WriteGeometry` and `ReadGeometry` per shape type". It is
+less than that. The per-shape records only ever emit *indices* into the three
+tables, so they can keep delegating; what has to change is how a **table** is
+written and read -- an entry becomes either an inline definition or a name of
+another file's entry. `GeomTools_SurfaceSet` and its two siblings already carry
+`Add()`, `Index()`, element access and now `Extent()`, which is all a table
+writer needs. The blocker was that `BRepTools_ShapeSet` kept `mySurfaces`,
+`myCurves` and `myCurves2d` private with no accessors; the fork now exposes
+them.
+
+### 12.9 The larger prize this uncovered: the same part written again elsewhere
+
+Content addressing (sec 12.3) dedups equal **bytes**. A STEP exporter that bakes
+each instance's transform into its coordinates defeats it outright: the same
+part at twenty places is twenty distinct contents and the storage pays for all
+twenty. Sec 12.2 strips a location carried *beside* the geometry; it cannot
+strip one that was multiplied *into* it.
+
+Measured on `MiSTer` -- an assembly exported by exactly such a tool -- by
+grouping every stored shape on quantities a rigid motion cannot change: volume,
+area, and the sorted spectra of face areas and edge lengths. Rotation-proof,
+unlike a bounding box, and matching a whole sorted spectrum rather than totals
+makes a coincidental match unlikely.
+
+| | |
+|---|---|
+| objects with a stored shape | 17058 |
+| distinct contents, after content addressing | 10872 (**1.57x**) |
+| distinct shapes by rigid-motion invariants | **1446** |
+| files repeating a shape already stored | 9426 of 10872 |
+| **removable bytes** | 33686314 of 117934869 = **28.6%** |
+
+The largest single case is a **2129-face part stored twice**, as two distinct
+files of about 3.5 MB each, differing only in where they sit.
+
+***This is a different mechanism from cross-file geometry, and the two barely
+overlap.*** Two congruent parts at different positions encode every surface
+differently, so none of their bytes appear in sec 12.8's cross-file duplication;
+that 28.1% comes from geometry genuinely written identically in two files
+(coincident mating planes, and the per-edge and per-face objects this document
+is full of, which repeat their parent's geometry). The prizes are close to
+additive.
+
+***What it would take, and why it is harder than it looks.*** Content
+addressing needs only a hash. This needs the **transform recovered** between two
+instances before either can be stored once and placed twice, and the invariants
+above only propose candidates -- they do not prove congruence, and they say
+nothing about which rigid motion maps one to the other. A mirrored instance
+shares the same invariants and is not a rigid motion at all. Against that, the
+payoff is not only bytes: a document that resolves to 1446 shapes instead of
+10872 tessellates 1446 times, which is the sec 11.8 point about the prize not
+being bytes, in a much stronger form than a PartDesign model shows.
+
+! These groups are **candidates measured by signature, not confirmed
+congruences**. Before any of it is built, a sample has to be checked by actually
+finding the transform and comparing the shapes under it.
