@@ -2,8 +2,8 @@
 
 Status: stage 1 and steps 2a and 2d done 2026-08-12; stage 1b (the additive
 templates, section 2.1) done 2026-08-17, as are FastSignals (2.2) and the
-`std::string` units API (2.3); 2b and 2c still to do; stage 3 waits on the
-FEM port itself.
+`std::string` units API with its unit audit (2.3); 2b and 2c still to do;
+stage 3 waits on the FEM port itself.
 Driver: [FemPortEvaluation.md](./FemPortEvaluation.md), which found that the
 cost of porting upstream's FEM is not in FEM but in core refactors this fork
 predates.
@@ -304,6 +304,47 @@ locale, so keeping it *preserves* the documented "C locale" contract of
    `PropertyItem.cpp` (`Base::QString`, `uQString`/`nit`). Anchor on
    `(?<![\w:.>])`, and grep for `[A-Za-z0-9_]QString::fromStdString`
    afterwards -- it finds exactly that damage.
+
+### 2.3.1 The unit audit that came with it
+
+Asked for alongside the string change: which units has upstream added
+since the fork, and are they reachable in *expressions* here?
+
+The two trees resolve units in completely different ways, and the fork's
+is the better one to add to. Upstream spells every unit as its own
+**lexer rule** in `Base/Quantity.l`. The fork has a single catch-all rule
+that defers to `Quantity::fromUnitString`, so the `Quantity::unitInfo()`
+table is the one source of truth -- and `UnitExpression::create` resolves
+through `Quantity::getUnitInfo()` off that same table. **A row added to
+`unitInfo()` is therefore live in the expression engine for free**; there
+is no second list to update.
+
+Diffing upstream's 131 lexer spellings against our 130 table rows:
+
+- **10 spellings were missing, now added**: `nA`, `uA`, `nmol`, `umol`,
+  `nW`, `uW`, `mT`, plus a micro-sign row beside each of `uA`, `umol`
+  and `uW` (the fork's convention is one row per accepted spelling, with
+  `alias` pointing at the ASCII one). They need 7 new constants:
+  `NanoAmpere`, `MicroAmpere`, `NanoMole`, `MicroMole`, `NanoWatt`,
+  `MicroWatt`, `MilliTesla`.
+- **No unit family is missing beyond those.** A second diff of the
+  `const Quantity Quantity::X(...)` definitions found only four
+  apparent gaps (`Degree`, `Torr`, `mTorr`, `yTorr`) and all four exist
+  here, merely line-wrapped past the regex.
+- 9 spellings are **fork-only and stay**: `inch`, the `N/m` family,
+  `kmh`, `km/h`, `mi/h`.
+- `mph` maps to `Quantity::MPH` here and `MilePerHour` upstream. Naming
+  only, same unit.
+
+WARNING `NanoWatt` is `1e-3` and `MicroWatt` is `1.0` -- these look wrong and
+are right. The table is in internal units (mm, kg, s), where
+`Watt == 1e+6`. Both trees agree on that scale, so upstream's numbers
+transfer unchanged.
+
+WARNING `"\xC2\xB5" "A"` is written as **two literals on purpose**: `A` is
+a hex digit, so `"\xC2\xB5A"` would be eaten as one escape sequence. The
+existing micro-farad row already had to do this. The micro-mole and
+micro-watt rows do not, because `m` and `W` are not hex digits.
 
 ## 3. Stage 2 -- upstream's names and locations, aliases at the old ones
 
