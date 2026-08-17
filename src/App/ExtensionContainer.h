@@ -126,6 +126,17 @@ public:
     App::Extension* getExtension(Base::Type, bool derived = true, bool no_except=false) const;
     App::Extension* getExtension(const std::string& name) const; //this version does not check derived classes
 
+    /** Returns the first extension of the given type, or one derived from it.
+     *
+     * Upstream's spelling of the call below. It never throws: a container
+     * without the extension gives back nullptr.
+     */
+    template<typename ExtensionT>
+    ExtensionT* getExtension() const {
+        return static_cast<ExtensionT*>(
+                getExtension(ExtensionT::getExtensionClassTypeId(), true, true));
+    }
+
     //returns first of type (or derived from) and throws otherwise
     template<typename ExtensionT>
     ExtensionT* getExtensionByType(bool no_except=false, bool derived=true) const {

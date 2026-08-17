@@ -27,6 +27,7 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectExtension.h>
 #include <App/ExtensionPython.h>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -52,6 +53,12 @@ public:
      * append it to this group as well.
      */
     virtual DocumentObject *addObject(const char* sType, const char* pObjectName);
+    /** The typed form of the call above; the type name comes from T's own
+     * registration. A call without an explicit T cannot pick this overload,
+     * so existing calls are unaffected.
+     */
+    template<typename T>
+    T* addObject(const char* pObjectName);
     /* Adds the object \a obj to this group. Returns all objects that have been added.
      */
     virtual std::vector<DocumentObject*> addObject(DocumentObject* obj);
@@ -249,6 +256,14 @@ private:
 
     bool _enableSubObjects = true;
 };
+
+template<typename T>
+T* GroupExtension::addObject(const char* pObjectName)
+{
+    static_assert(std::is_base_of_v<DocumentObject, T>,
+                  "T must be derived from App::DocumentObject");
+    return static_cast<T*>(addObject(T::getClassTypeId().getName(), pObjectName));
+}
 
 
 template<typename ExtensionT>

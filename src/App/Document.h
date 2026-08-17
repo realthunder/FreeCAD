@@ -36,6 +36,7 @@
 
 #include <memory>
 #include <map>
+#include <type_traits>
 #include <vector>
 #include <QString>
 
@@ -370,6 +371,21 @@ public:
      */
     DocumentObject *addObject(const char* sType, const char* pObjectName=nullptr,
             bool isNew=true, const char *viewType=nullptr, bool isPartial=false);
+    /** Add a feature of the given type to the document.
+     *
+     * The typed form of the call above; the type name is taken from T's own
+     * registration. Additive: a call without an explicit T cannot pick this
+     * one, so every existing call still resolves to the overload above.
+     *
+     * @tparam T          the type of created object
+     * @param pObjectName if nonNULL use that name otherwise generate a new unique name based on \a T
+     * @param isNew       if false don't call the \c DocumentObject::setupObject() callback (default is true)
+     * @param viewType    override object's view provider name
+     * @param isPartial   indicate if this object is meant to be partially loaded
+     */
+    template<typename T>
+    T* addObject(const char* pObjectName = nullptr, bool isNew = true,
+            const char* viewType = nullptr, bool isPartial = false);
     /** Add an array of features of the given types and names.
      * Unicode names are set through the Label property.
      * @param sType       The type of created object
@@ -539,6 +555,8 @@ public:
     /// Returns an array with the correct types already.
     template<typename T> inline std::vector<T*> getObjectsOfType() const;
     int countObjectsOfType(const Base::Type& typeId) const;
+    /// Returns the number of objects of the given type.
+    template<typename T> inline int countObjectsOfType() const;
     /// get the number of objects in the document
     int countObjects() const;
     //@}
@@ -888,6 +906,28 @@ inline std::vector<T*> Document::getObjectsOfType() const
     for (std::vector<App::DocumentObject*>::iterator it = obj.begin(); it != obj.end(); ++it)
         type.push_back(static_cast<T*>(*it));
     return type;
+}
+
+template<typename T>
+inline int Document::countObjectsOfType() const
+{
+    static_assert(std::is_base_of_v<DocumentObject, T>,
+                  "T must be derived from App::DocumentObject");
+    return this->countObjectsOfType(T::getClassTypeId());
+}
+
+template<typename T>
+T* Document::addObject(const char* pObjectName, bool isNew, const char* viewType, bool isPartial)
+{
+    static_assert(std::is_base_of_v<DocumentObject, T>,
+                  "T must be derived from App::DocumentObject");
+    // ! Upstream spells this T::getClassName(), a consteval string that its
+    // PROPERTY_HEADER_WITH_OVERRIDE macro emits. We have no such member, and
+    // adding one is a change to every property container rather than an
+    // addition. The registered type name is the same string and is what the
+    // non-template overload looks up anyway.
+    return static_cast<T*>(addObject(T::getClassTypeId().getName(), pObjectName, isNew,
+                                     viewType, isPartial));
 }
 
 
