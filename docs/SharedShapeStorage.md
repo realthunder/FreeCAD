@@ -1687,6 +1687,33 @@ payoff is not only bytes: a document that resolves to 1446 shapes instead of
 10872 tessellates 1446 times, which is the sec 11.8 point about the prize not
 being bytes, in a much stronger form than a PartDesign model shows.
 
-! These groups are **candidates measured by signature, not confirmed
-congruences**. Before any of it is built, a sample has to be checked by actually
-finding the transform and comparing the shapes under it.
+***Confirmed by recovering the motion, not left as a signature.*** Each shape is
+canonicalized by its own vertex cloud -- centroid, then the principal axes -- so
+the motion between two instances is one frame composed with the other's inverse.
+The axes carry a sign ambiguity and, for a symmetric part, a real degeneracy, so
+every axis order and sign that is a rotation is tried; only determinant +1
+frames are built, which rejects a mirrored instance rather than miscounting it.
+Over the 80 heaviest groups, 35685356 bytes:
+
+    confirmed                73 of 80 groups
+    removable in them        26680213 bytes = 74.8% of those examined
+    deviations               1e-12 to 1e-16, i.e. exact
+
+So the signature over-groups a little -- 7 groups in 80 do not survive -- and
+the whole-document 28.6% should be read as an upper bound of roughly a quarter,
+not as a settled figure.
+
+***And it is two phenomena, not one.*** Of the confirmed bytes:
+
+| | groups | bytes |
+|---|---|---|
+| genuinely moved -- the baked transform | 58 | 20763789 |
+| **same place, differing only in the digits** | 15 | **5916424** |
+
+The second was not expected. The largest case in the document is a 2129-face
+part in two files of about 3.5 MB, at **translation 0 and rotation 0**: 1438 of
+114139 lines differ, all of them trailing digits of `Curve2ds` coefficients at
+about 1e-13. The same part was written twice with its pcurves recomputed
+independently. No transform is involved, and a tolerant comparison alone would
+collapse it -- which makes that fifth of the prize much cheaper to take than the
+other four.
