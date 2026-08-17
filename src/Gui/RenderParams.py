@@ -47,21 +47,23 @@ Params = [
     ParamString('Type', 'Default', title='Renderer type',
         doc="Type of the experimental render engine backend. 'Default' keeps\n"
         "the plain GL pipeline. Only effective with render cache mode 3."),
-    ParamInt('MaxViewIds',  0, title='Backend view id budget',
+    ParamInt('MaxViewIds',  1024, title='Backend view id budget',
         doc="How many backend view ids the render engine may hand out, which\n"
         "is what decides how many 3D views can draw on it at once: each\n"
         "view takes a block for its pass sequence (about 13 ids for a\n"
         "plain viewer, docs/RenderEngine.md #3.1), and a view that finds\n"
-        "no block left falls back to plain GL rather than failing.\n"
-        "0 uses the backend's own maximum, which is the build's ceiling.\n"
+        "no block left falls back to plain GL rather than failing. So the\n"
+        "default is roughly 64 viewers, and 0 asks for the build's own\n"
+        "ceiling instead, which is four times that.\n"
         "\n"
-        "Lower than that ceiling costs nothing and saves a little: the\n"
-        "backend walks its whole view table once a frame and sizes its\n"
-        "per-view pools from the number, so unused ids are paid for in\n"
-        "every frame however few views a session opens. Measured on a\n"
-        "desktop GPU, that walk is invisible against a 16ms frame at any\n"
-        "of these widths - but the per-view GPU timer pools it also sizes\n"
-        "are not, once render stage timing is switched on.\n"
+        "It is worth having a limit below the ceiling because the backend\n"
+        "copies its whole view table once a frame and sizes its per-view\n"
+        "pools from this number, so ids nobody opens are still paid for\n"
+        "in every frame. Measured on a desktop GPU that cost is invisible\n"
+        "against a 16ms frame at this width - but at the ceiling, with\n"
+        "render stage timing on, it is not: the per-view GPU timer pools\n"
+        "take a 59fps session to 19. Raise it for many-viewer work, not\n"
+        "as a matter of course.\n"
         "\n"
         "Read once, when the backend starts: a change needs a restart."),
     ParamInt('CoarseTessellation',  2, title='Coarse tessellation level',

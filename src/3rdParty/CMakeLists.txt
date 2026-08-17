@@ -35,24 +35,31 @@ if (BUILD_BGFX)
     # grown (particle simulation steps, bulb shadow tiles, water/glass,
     # nine overlay slots) to the point where bgfx's default 256 fits only
     # two viewers. The per-frame pass map since cut a plain viewer to 13
-    # ids (a 16-id block at the 8-id granule), so 1024 is ~64 viewers.
+    # ids (a 16-id block at the 8-id granule), so this is ~256 viewers.
     #
-    # Three costs, none of them binding:
-    #  - bgfx's fixed per-view tables, a couple of hundred bytes per id,
-    #    three times over (the submit/render frame pair plus the
-    #    context's own): ~1.5MB of host RAM at this width.
-    #  - one more bit of the 64-bit draw sort key for the view field.
+    # This is now only the CEILING -- what the build can address. What a
+    # session actually uses and walks is Render/MaxViewIds, a runtime
+    # limit clamped to this (bgfx's Init::Limits::maxViews), default 1024.
+    # The split matters because the two used to be one number: raising
+    # the constant for capacity also made every frame pay for slots no
+    # view would ever use.
+    #
+    # What the ceiling itself costs at this width, measured rather than
+    # reasoned (desktop GL, trivial scene, limit at 1024):
+    #  - Host RAM: nothing you can find. The per-view tables are static
+    #    arrays, so the pages past the limit are never touched and never
+    #    fault in -- resident memory came out the same as a 1024 build.
+    #  - One more bit of the 64-bit draw sort key for the view field.
     #    There is room: the tightest key variant packs view bits + 47,
-    #    so 57 of 64 here, and BlitKey needs the field under 16 bits.
-    #  - Frame::sort() walks all MAX_VIEWS every frame -- not a sort of
-    #    them (the radix sort is over draw calls), just a fixup that
-    #    clamps each view's rect and scissor to its framebuffer. It is
-    #    the one term that grows with this constant: ~200KB of cache
-    #    traffic a frame here, tens of microseconds against a 16ms
-    #    budget. Worth knowing before raising it again -- at 4096 that
-    #    scan is ~800KB a frame and no longer free.
+    #    so 59 of 64 here, and BlitKey needs the field under 16 bits.
+    #  - The per-frame terms -- Context::swap()'s copy of the view table,
+    #    Frame::sort()'s rect/scissor fixup, and the per-view pools the
+    #    GPU profiler drives -- follow the runtime limit, not this.
+    # Raising the LIMIT to this ceiling is what is not free: with render
+    # stage timing on it took a 59fps session to 19 with resident memory
+    # climbing 95MB in thirty seconds. Capacity is cheap, use is not.
     # Must stay a power of two (static_assert in bgfx's config.h).
-    set(BGFX_CONFIG_MAX_VIEWS "1024" CACHE STRING "" FORCE)
+    set(BGFX_CONFIG_MAX_VIEWS "4096" CACHE STRING "" FORCE)
     # The same story one pool over, and it bites sooner: a view's render
     # targets are ~41 framebuffers (the sized set of forEachHandle, the
     # six-level AO depth pyramid and the particle ping-pong), against a

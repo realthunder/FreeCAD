@@ -89,16 +89,18 @@ public:
     /// is what decides how many 3D views can draw on it at once: each
     /// view takes a block for its pass sequence (about 13 ids for a
     /// plain viewer, docs/RenderEngine.md #3.1), and a view that finds
-    /// no block left falls back to plain GL rather than failing.
-    /// 0 uses the backend's own maximum, which is the build's ceiling.
+    /// no block left falls back to plain GL rather than failing. So the
+    /// default is roughly 64 viewers, and 0 asks for the build's own
+    /// ceiling instead, which is four times that.
     /// 
-    /// Lower than that ceiling costs nothing and saves a little: the
-    /// backend walks its whole view table once a frame and sizes its
-    /// per-view pools from the number, so unused ids are paid for in
-    /// every frame however few views a session opens. Measured on a
-    /// desktop GPU, that walk is invisible against a 16ms frame at any
-    /// of these widths - but the per-view GPU timer pools it also sizes
-    /// are not, once render stage timing is switched on.
+    /// It is worth having a limit below the ceiling because the backend
+    /// copies its whole view table once a frame and sizes its per-view
+    /// pools from this number, so ids nobody opens are still paid for
+    /// in every frame. Measured on a desktop GPU that cost is invisible
+    /// against a 16ms frame at this width - but at the ceiling, with
+    /// render stage timing on, it is not: the per-view GPU timer pools
+    /// take a 59fps session to 19. Raise it for many-viewer work, not
+    /// as a matter of course.
     /// 
     /// Read once, when the backend starts: a change needs a restart.
     static const long & getMaxViewIds();
