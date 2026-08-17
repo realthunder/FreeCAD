@@ -1624,9 +1624,37 @@ can write the same encoding twice by itself:
 | -- within one file, **needs no cross-file format** | **8.9%** | **5.9%** | |
 | -- across files, what a reference buys | **15.6%** | **28.1%** | |
 
-So a cheap win sits underneath the expensive one: keying the three tables by
-value rather than by handle removes 6 to 9% of the shape bytes with no format
-change at all, because a file is already read back by index.
+So a cheap win sits underneath the expensive one, and the per-table split says
+which part of it is safe to take:
+
+| within-file duplicate bytes | scanner | `MiSTer` |
+|---|---|---|
+| Surfaces | 123717 | 685419 |
+| Curves | 110227 | 2288557 |
+| **Curve2ds** | **1425884** | **3960055** |
+
+It is nearly all pcurves -- 86% of it on scanner, 57% on `MiSTer` -- and the
+pcurve table is the one that can be keyed by value without argument. A pcurve is
+reached through the **surface** an edge's representation names, never by the
+identity of the 2D curve object, so two representations sharing one
+`Geom2d_Curve` cannot be told apart from two holding equal copies. That does not
+hold for the other two tables: a vertex's parameter is keyed on its edge's
+curve, and an edge's pcurve on its face's surface, so merging equal-but-distinct
+objects there would make exactly those lookups ambiguous -- the defect class
+that produced the HLR crash in sec 12.7's footnote. They are left alone.
+
+**Done, in the OCCT fork.** `GeomTools_Curve2dSet::Add` returns the index of an
+entry that would be written identically, keyed by a hash of the written form
+with a full comparison to settle a collision. `Read()` still fills the map
+directly, so an existing file whose table does hold equal entries reads back
+with its indices intact. On `scanner.FCStd`, with the reference format on
+either way:
+
+| | before | after |
+|---|---|---|
+| raw shape bytes | 18276205 | **16820794** (-7.96%) |
+| deflated | 3735837 | **3618447** (-3.14%) |
+| files / references | 332 / 36 | 332 / 36, unchanged |
 
 Two things the cross-file half is not. It is not the whole prize: the rest of a
 file is locations and the TShape records, and the records collapse too wherever
