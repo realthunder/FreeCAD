@@ -907,6 +907,48 @@ bool BGFXRenderer::Private::render(const QColor &col,
                            || (waterconf.enabled
                                && waterconf.reflection
                                && waterconf.planarReflection));
+    // The AO/prepass set: the full-res depth+normal prepass, the AO
+    // resolve chain and the glass absorption interval, ~98MB at 1080p.
+    // Five consumers read it and each one is its own switch, so the
+    // predicate is their union:
+    //   - SSAO (Render_SSAO) and cavity shading, which share the chain;
+    //   - the volumetric raymarch, whose ray ends are the prepass depth;
+    //   - the water surface, which rejects refraction samples by it;
+    //   - the debug buffer views that visualize the prepass or the AO.
+    // Only the volumetric one is a target group of its own, so this
+    // cannot be folded into any of them.
+    //
+    // The fifth consumer is glass, which has no preference anywhere --
+    // it is a material. A glass body can therefore only ADD to the
+    // demand (view->glassSeen), never take it away.
+    //
+    // Glass bodies (Material::glass): the draws leave the ordinary
+    // path and re-render in the glass surface pass -- screen-space
+    // refraction, thickness absorption from the glass front/back
+    // interval, environment reflection. Needs the scene copy, this
+    // resource set and the environment; hidden-line mode disables it
+    // like the other shading effects. Unlike water the body's
+    // edge/vertex draws keep rendering (a glass part keeps its CAD
+    // feature lines).
+    bool hasGlassBody = false;
+    for (const auto &draw : scene) {
+        const auto &mat = draw.material;
+        if (mat.glass && !mat.ontop && mat.numclipplanes == 0
+                && mat.type == Render::Material::Triangle) {
+            hasGlassBody = true;
+            break;
+        }
+    }
+    if (hasGlassBody)
+        view->glassSeen = true;
+    view->updateEffect(BGFXView::EffectSSAO,
+                       view->m_ssao
+                           && (aoconf.enabled || cavityconf.enabled
+                               || volconf.enabled || waterconf.enabled
+                               || (debugconf.viewMode >= 1
+                                   && debugconf.viewMode <= 5)
+                               || debugconf.viewMode == 7
+                               || view->glassSeen));
 
     // WBOIT runs when the resources exist and the scene has any
     // transparent (non-on-top) triangles this frame; otherwise the
@@ -936,10 +978,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // hidden-line technical view, and it needs opaque triangles to state
     // the curvature of. Zero strengths mean the multiply would be a
     // no-op, so the pass is not worth a target switch.
+    // isValid(aoPrepassFbo): the set is demand-allocated, so "the config
+    // wants AO" and "the targets exist" are no longer the same statement
+    // -- a pool with nothing left leaves the group unbuilt and every
+    // pass that reads it simply does not run (as for the volumetric).
     const bool ssaoWanted = view->m_ssao && aoconf.enabled
-        && !hlconfig.show;
+        && !hlconfig.show && bgfx::isValid(view->aoPrepassFbo);
     const bool cavityWanted = view->m_ssao && cavityconf.enabled
-        && !hlconfig.show
+        && !hlconfig.show && bgfx::isValid(view->aoPrepassFbo)
         && (cavityconf.valley > 0.0f || cavityconf.ridge > 0.0f)
         && bgfx::isValid(view->m_progCavity);
     bool hasOpaqueTri = false;
@@ -979,6 +1025,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // it too (mode 4 previously relied on another prepass consumer
     // being active).
     if (!ssaoActive && view->m_ssao
+            && bgfx::isValid(view->aoPrepassFbo)
             && ((debugconf.viewMode >= 1 && debugconf.viewMode <= 5)
                 || debugconf.viewMode == 7)) {
         for (const auto &draw : scene) {
@@ -1398,7 +1445,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // the same statement -- a pool that had nothing left leaves the
     // group unbuilt and every volumetric pass simply does not run.
     bool volActive = view->m_vol && volconf.enabled && shadowActive
-        && !hlconfig.show && bgfx::isValid(view->volFbo);
+        && !hlconfig.show && bgfx::isValid(view->volFbo)
+        && bgfx::isValid(view->aoPrepassFbo);
     float volDensity = volconf.density;
     float volMaxDist = 0.0f;
     float volMedium[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -1529,24 +1577,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
         if (!bgfx::isValid(view->m_envTex))
             waterSurfActive = bgfx::isValid(view->m_dummyEnvTex);
     }
-    // Glass bodies (Material::glass): the draws leave the ordinary
-    // path and re-render in the glass surface pass — screen-space
-    // refraction, thickness absorption from the glass front/back
-    // interval, environment reflection. Needs the scene copy, the
-    // SSAO resource set (the interval targets and the prepass
-    // depth-reject live there) and the environment; hidden-line
-    // mode disables it like the other shading effects. Unlike
-    // water the body's edge/vertex draws keep rendering (a glass
-    // part keeps its CAD feature lines).
-    bool hasGlassBody = false;
-    for (const auto &draw : scene) {
-        const auto &mat = draw.material;
-        if (mat.glass && !mat.ontop && mat.numclipplanes == 0
-                && mat.type == Render::Material::Triangle) {
-            hasGlassBody = true;
-            break;
-        }
-    }
+    // Glass bodies: found with the SSAO group's demand above, since
+    // that is what a glass body asks for when nothing else does.
     bool glassActive = hasGlassBody && !hlconfig.show
         && view->m_ssao
         && bgfx::isValid(view->m_progGlass)
@@ -2391,7 +2423,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     static const bool noWaterReject =
         (getenv("FC_BGFX_NO_WATER_REJECT") != nullptr);
     bool waterSurfReject = waterSurfActive && view->m_ssao
-        && !noWaterReject;
+        && !noWaterReject && bgfx::isValid(view->aoPrepassFbo);
     bool glassReject = glassActive && !noWaterReject;
     bool prepassActive = ssaoActive || volActive || waterSurfReject
         || glassReject || cavityActive;

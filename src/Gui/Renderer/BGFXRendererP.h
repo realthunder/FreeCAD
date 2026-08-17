@@ -3700,6 +3700,7 @@ public:
         EffectBulbShadow,  ///< the fixed 2048^2 bulb shadow atlas
         EffectReflection,  ///< the mirrored-camera re-render target
         EffectBloom,       ///< quarter-res halo + blur ping
+        EffectSSAO,        ///< depth+normal prepass, AO chain, glass interval
         NumEffectGroups
     };
     /// Does this group's framebuffer set exist right now?
@@ -3718,6 +3719,18 @@ public:
     /// a real chance again (a resize, or the config turning it off and
     /// back on). Retrying every frame is what made a full pool spin.
     bool effectFailed[NumEffectGroups] = {};
+    /// A glass body has been seen in this view's scene.
+    ///
+    /// The one consumer of the SSAO group that has no preference at all
+    /// -- glass is a material, so its demand is scene state, and the
+    /// rule above says scene state may add to a group's demand but
+    /// never take it away. Latching the sighting is how that demand
+    /// joins a predicate the configuration also drives: without it,
+    /// "config off, glass on screen" would free the group and rebuild
+    /// it in the same frame, every frame. Cleared with the targets it
+    /// speaks for (destroyTargets), so a resize is where a document
+    /// that no longer has glass gives the 98MB back.
+    bool glassSeen = false;
 
     void init(bool keepShared = false);
 

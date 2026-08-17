@@ -135,6 +135,11 @@ void BGFXView::destroyTargets()
     // fresh try at the new one, which is usually smaller.
     for (int g = 0; g < NumEffectGroups; ++g)
         effectFailed[g] = false;
+    // The glass sighting speaks for targets that no longer exist, and
+    // a resize is the one moment a document that has moved on from
+    // glass can stop paying for it: the next frame that still has a
+    // glass body sets it again.
+    glassSeen = false;
 #ifndef FC_RENDERER_STANDALONE
     if (hasFBO) {
         _BGFXLib.freeFBO(fbo);
@@ -177,6 +182,7 @@ bool BGFXView::effectAllocated(EffectGroup g) const
     case EffectBulbShadow: return bgfx::isValid(bulbShadowFbo);
     case EffectReflection: return bgfx::isValid(reflFbo);
     case EffectBloom:      return bgfx::isValid(bloomFbo);
+    case EffectSSAO:       return bgfx::isValid(aoPrepassFbo);
     default:               return false;
     }
 }
@@ -312,6 +318,147 @@ bool BGFXView::allocEffect(EffectGroup g)
         reflFbo = bgfx::createFrameBuffer(2, ratt, false);
         return bgfx::isValid(reflFbo);
     }
+    case EffectSSAO: {
+        if (!m_ssao)
+            return false;
+        const auto *caps = bgfx::getCaps();
+        const uint64_t aoFlags = 0
+            | BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT
+            | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP
+            | BGFX_SAMPLER_V_CLAMP;
+        // The geometry prepass (aoNormalZ/aoDepth) stays full-res and
+        // POINT-sampled: refraction/glass reject, volumetric ray-ends and
+        // water span all read its exact eye-space depth, which bilinear
+        // upscaling would corrupt at silhouettes. The AO resolve targets
+        // (aoTex raw, aoBlurTex blurred) scale to ssaoW/ssaoH -- their OWN
+        // Render_SSAOResolution, independent of the reflection scale
+        // (effW/effH) -- and sample LINEAR, so a reduced-res AO upsamples
+        // smoothly. SSAO is resolution-sensitive (contact/crevice detail),
+        // so it defaults to full-res rather than sharing effectResolution,
+        // whose reduction produced visibly blocky occlusion.
+        // Full-float normal+depth when available: fp16 viewZ (~10-bit
+        // mantissa) quantizes zoomed-in depths so hard that the GTAO
+        // horizon estimate bands along iso-depth contours (ripples on
+        // curved faces, stair strips on oblique flat ones near
+        // contacts). Point-sampled, so fp32 is safe on WebGL2/mobile
+        // (their float32 restriction is LINEAR filtering).
+        aoNormalZFp16 = !(caps->formats[bgfx::TextureFormat::RGBA32F]
+                          & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        aoNormalZ = bgfx::createTexture2D(width, height, false, 1,
+            aoNormalZFp16 ? bgfx::TextureFormat::RGBA16F
+                          : bgfx::TextureFormat::RGBA32F, aoFlags);
+        aoDepth = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::D24S8,
+            aoFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+        const uint64_t aoResFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;  // linear
+        aoTex = bgfx::createTexture2D(ssaoW, ssaoH, false, 1,
+            bgfx::TextureFormat::R8, aoResFlags);
+        aoBlurTex = bgfx::createTexture2D(ssaoW, ssaoH, false, 1,
+            bgfx::TextureFormat::R8, aoResFlags);
+        if (!bgfx::isValid(aoNormalZ) || !bgfx::isValid(aoDepth)
+                || !bgfx::isValid(aoTex) || !bgfx::isValid(aoBlurTex))
+            return false;
+        bgfx::TextureHandle preatt[2] = {aoNormalZ, aoDepth};
+        aoPrepassFbo = bgfx::createFrameBuffer(2, preatt, false);
+        aoGenFbo = bgfx::createFrameBuffer(1, &aoTex, false);
+        aoBlurFbo = bgfx::createFrameBuffer(1, &aoBlurTex, false);
+        if (!bgfx::isValid(aoPrepassFbo) || !bgfx::isValid(aoGenFbo)
+                || !bgfx::isValid(aoBlurFbo))
+            return false;
+
+        // 4x4 tiled random rotation vectors (xy packed *0.5+0.5),
+        // fixed values so frames are deterministic. The .z channel packs a
+        // 4x4 Bayer dither (0..255): the gen pass uses it to jitter the
+        // per-pixel sample radius, so neighbouring pixels sample at
+        // different distances and the 4x4 blur (one Bayer tile) averages
+        // all 16 sub-radii -- decorrelating the RADIAL occlusion banding
+        // that the azimuthal-only rotation leaves behind.
+        static const uint8_t noise[64] = {
+            0xa2, 0x05, 0x00, 0xff, 0x11, 0xc0, 0x88, 0xff,
+            0xee, 0xc0, 0x22, 0xff, 0x25, 0xd9, 0xaa, 0xff,
+            0x27, 0x23, 0xcc, 0xff, 0x63, 0x03, 0x44, 0xff,
+            0x20, 0xd4, 0xee, 0xff, 0x2a, 0xde, 0x66, 0xff,
+            0x90, 0xfe, 0x33, 0xff, 0x9b, 0xfc, 0xbb, 0xff,
+            0xae, 0x09, 0x11, 0xff, 0xef, 0xbe, 0x99, 0xff,
+            0xd8, 0x23, 0xff, 0xff, 0x3a, 0x15, 0x77, 0xff,
+            0x00, 0x87, 0xdd, 0xff, 0xe8, 0xc9, 0x55, 0xff,
+        };
+        aoNoiseTex = bgfx::createTexture2D(4, 4, false, 1,
+            bgfx::TextureFormat::RGBA8,
+            BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT,
+            bgfx::copy(noise, sizeof(noise)));
+        if (!bgfx::isValid(aoNoiseTex))
+            return false;
+
+        // GTAO depth pyramid: single-channel viewZ, POINT-sampled
+        // (the gen pass picks a discrete level per tap). R32F when
+        // renderable, else R16F -- coarse levels only serve FAR taps,
+        // whose coplanarity guard already tolerates fp16 steps; the
+        // near taps keep reading the full-precision prepass.
+        //
+        // The pyramid is the one part that degrades on its own: with no
+        // levels the GTAO gen reads the prepass at every tap, so a
+        // failure here costs quality, not the group.
+        const bool mipR32 = 0 != (caps->formats[bgfx::TextureFormat::R32F]
+                                  & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        const bool mipR16 = 0 != (caps->formats[bgfx::TextureFormat::R16F]
+                                  & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        aoMipCount = (mipR32 || mipR16)
+                && bgfx::isValid(m_progGtaoDepth) ? kAOMipLevels : 0;
+        for (int m = 0; m < aoMipCount; ++m) {
+            const uint16_t mw = uint16_t(std::max(1, width >> (m + 1)));
+            const uint16_t mh = uint16_t(std::max(1, height >> (m + 1)));
+            aoMipTex[m] = bgfx::createTexture2D(mw, mh, false, 1,
+                mipR32 ? bgfx::TextureFormat::R32F
+                       : bgfx::TextureFormat::R16F, aoFlags);
+            if (bgfx::isValid(aoMipTex[m]))
+                aoMipFbo[m] = bgfx::createFrameBuffer(1, &aoMipTex[m],
+                                                      false);
+            if (!bgfx::isValid(aoMipFbo[m])) {
+                // Keep the levels that did land; the gen pass reads
+                // aoMipCount, so the tail simply is not there.
+                aoMipCount = m;
+                break;
+            }
+        }
+
+        // Glass body absorption interval: full-res front/back
+        // depths of glass draws, written by the prepass programs
+        // like the water medium interval (only .z viewZ and .w
+        // validity are consumed). In this group because the depth
+        // writer is the prepass shader family -- and because a glass
+        // body is what asks for the prepass in the first place when
+        // nothing else does.
+        const uint64_t glassFlags = 0
+            | BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        glassFrontTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA16F, glassFlags);
+        glassBackTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA16F, glassFlags);
+        glassFrontDepth = bgfx::createTexture2D(width, height, false,
+            1, bgfx::TextureFormat::D24S8,
+            glassFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+        glassBackDepth = bgfx::createTexture2D(width, height, false,
+            1, bgfx::TextureFormat::D24S8,
+            glassFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+        if (!bgfx::isValid(glassFrontTex) || !bgfx::isValid(glassBackTex)
+                || !bgfx::isValid(glassFrontDepth)
+                || !bgfx::isValid(glassBackDepth))
+            return false;
+        bgfx::TextureHandle gfatt[2] = {glassFrontTex, glassFrontDepth};
+        glassFrontFbo = bgfx::createFrameBuffer(2, gfatt, false);
+        bgfx::TextureHandle gbatt[2] = {glassBackTex, glassBackDepth};
+        glassBackFbo = bgfx::createFrameBuffer(2, gbatt, false);
+        return bgfx::isValid(glassFrontFbo) && bgfx::isValid(glassBackFbo);
+    }
     case EffectBloom: {
         // Quarter-res RGBA16F halo source + blur ping target.
         const uint16_t qw = uint16_t(std::max(1, int(width) / 4));
@@ -378,6 +525,30 @@ void BGFXView::freeEffect(EffectGroup g)
         drop(bloomTex);
         drop(bloomBlurTex);
         break;
+    case EffectSSAO:
+        drop(aoPrepassFbo);
+        drop(aoGenFbo);
+        drop(aoBlurFbo);
+        for (auto &h : aoMipFbo)
+            drop(h);
+        drop(glassFrontFbo);
+        drop(glassBackFbo);
+        drop(aoNormalZ);
+        drop(aoDepth);
+        drop(aoTex);
+        drop(aoBlurTex);
+        drop(aoNoiseTex);
+        for (auto &h : aoMipTex)
+            drop(h);
+        drop(glassFrontTex);
+        drop(glassBackTex);
+        drop(glassFrontDepth);
+        drop(glassBackDepth);
+        // The pyramid is gone, and so is the cached prepass the AO
+        // chain would otherwise be told to reuse.
+        aoMipCount = 0;
+        aoMapHash = 0;
+        break;
     default:
         break;
     }
@@ -402,7 +573,8 @@ void BGFXView::updateEffect(EffectGroup g, bool want)
             effectFailed[g] = true;
             freeEffect(g);   // drop whatever part of the set did land
             static const char *const kNames[NumEffectGroups] = {
-                "volumetric", "bulb shadow", "reflection", "bloom"};
+                "volumetric", "bulb shadow", "reflection", "bloom",
+                "AO prepass"};
             std::printf("bgfx: no render target handles for the %s "
                         "effect -- it stays off in this view\n",
                         kNames[g]);
@@ -919,72 +1091,11 @@ void BGFXView::init(bool keepShared)
         && (caps->formats[bgfx::TextureFormat::R8]
                 & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
     if (m_ssao) {
-        const uint64_t aoFlags = 0
-            | BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT
-            | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
-            | BGFX_SAMPLER_U_CLAMP
-            | BGFX_SAMPLER_V_CLAMP;
-        // The geometry prepass (aoNormalZ/aoDepth) stays full-res and
-        // POINT-sampled: refraction/glass reject, volumetric ray-ends and
-        // water span all read its exact eye-space depth, which bilinear
-        // upscaling would corrupt at silhouettes. The AO resolve targets
-        // (aoTex raw, aoBlurTex blurred) scale to ssaoW/ssaoH — their OWN
-        // Render_SSAOResolution, independent of the reflection scale
-        // (effW/effH) — and sample LINEAR, so a reduced-res AO upsamples
-        // smoothly. SSAO is resolution-sensitive (contact/crevice detail),
-        // so it defaults to full-res rather than sharing effectResolution,
-        // whose reduction produced visibly blocky occlusion.
-        // Full-float normal+depth when available: fp16 viewZ (~10-bit
-        // mantissa) quantizes zoomed-in depths so hard that the GTAO
-        // horizon estimate bands along iso-depth contours (ripples on
-        // curved faces, stair strips on oblique flat ones near
-        // contacts). Point-sampled, so fp32 is safe on WebGL2/mobile
-        // (their float32 restriction is LINEAR filtering).
-        aoNormalZFp16 = !(caps->formats[bgfx::TextureFormat::RGBA32F]
-                          & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
-        aoNormalZ = bgfx::createTexture2D(width, height, false, 1,
-            aoNormalZFp16 ? bgfx::TextureFormat::RGBA16F
-                          : bgfx::TextureFormat::RGBA32F, aoFlags);
-        aoDepth = bgfx::createTexture2D(width, height, false, 1,
-            bgfx::TextureFormat::D24S8,
-            aoFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        const uint64_t aoResFlags = BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;  // linear
-        aoTex = bgfx::createTexture2D(ssaoW, ssaoH, false, 1,
-            bgfx::TextureFormat::R8, aoResFlags);
-        aoBlurTex = bgfx::createTexture2D(ssaoW, ssaoH, false, 1,
-            bgfx::TextureFormat::R8, aoResFlags);
-        bgfx::TextureHandle preatt[2] = {aoNormalZ, aoDepth};
-        aoPrepassFbo = bgfx::createFrameBuffer(2, preatt, false);
-        aoGenFbo = bgfx::createFrameBuffer(1, &aoTex, false);
-        aoBlurFbo = bgfx::createFrameBuffer(1, &aoBlurTex, false);
-
-        // GTAO depth pyramid: single-channel viewZ, POINT-sampled
-        // (the gen pass picks a discrete level per tap). R32F when
-        // renderable, else R16F — coarse levels only serve FAR taps,
-        // whose coplanarity guard already tolerates fp16 steps; the
-        // near taps keep reading the full-precision prepass.
-        const bool mipR32 = 0 != (caps->formats[bgfx::TextureFormat::R32F]
-                                  & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
-        const bool mipR16 = 0 != (caps->formats[bgfx::TextureFormat::R16F]
-                                  & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
-        aoMipCount = (mipR32 || mipR16) ? kAOMipLevels : 0;
-        for (int m = 0; m < aoMipCount; ++m) {
-            const uint16_t mw = uint16_t(std::max(1, width >> (m + 1)));
-            const uint16_t mh = uint16_t(std::max(1, height >> (m + 1)));
-            aoMipTex[m] = bgfx::createTexture2D(mw, mh, false, 1,
-                mipR32 ? bgfx::TextureFormat::R32F
-                       : bgfx::TextureFormat::R16F, aoFlags);
-            aoMipFbo[m] = bgfx::createFrameBuffer(1, &aoMipTex[m],
-                                                  false);
-        }
-        if (aoMipCount) {
-            ensureProgram(m_progGtaoDepth, "vs_fc_comp", "fs_fc_gtao_depths");
-            if (!bgfx::isValid(m_progGtaoDepth))
-                aoMipCount = 0;
-        }
+        // The targets themselves -- the prepass pair, the AO chain, the
+        // GTAO pyramid and the glass interval, ~98MB at 1080p -- are
+        // demand-allocated by updateEffect(EffectSSAO). Only the
+        // programs and uniforms are built here, as everywhere else.
+        ensureProgram(m_progGtaoDepth, "vs_fc_comp", "fs_fc_gtao_depths");
         static const char *const mipSamplerNames[kAOMipLevels] = {
             "s_texAOMip1", "s_texAOMip2", "s_texAOMip3",
             "s_texAOMip4", "s_texAOMip5", "s_texAOMip6"};
@@ -1023,53 +1134,6 @@ void BGFXView::init(bool keepShared)
         ensureUniform(u_aoParams2, "u_aoParams2", bgfx::UniformType::Vec4);
         ensureUniform(u_aoKernel, "u_aoKernel", bgfx::UniformType::Vec4,
                       kAOSamples);
-        // 4x4 tiled random rotation vectors (xy packed *0.5+0.5),
-        // fixed values so frames are deterministic. The .z channel packs a
-        // 4x4 Bayer dither (0..255): the gen pass uses it to jitter the
-        // per-pixel sample radius, so neighbouring pixels sample at
-        // different distances and the 4x4 blur (one Bayer tile) averages
-        // all 16 sub-radii — decorrelating the RADIAL occlusion banding
-        // that the azimuthal-only rotation leaves behind.
-        static const uint8_t noise[64] = {
-            0xa2, 0x05, 0x00, 0xff, 0x11, 0xc0, 0x88, 0xff,
-            0xee, 0xc0, 0x22, 0xff, 0x25, 0xd9, 0xaa, 0xff,
-            0x27, 0x23, 0xcc, 0xff, 0x63, 0x03, 0x44, 0xff,
-            0x20, 0xd4, 0xee, 0xff, 0x2a, 0xde, 0x66, 0xff,
-            0x90, 0xfe, 0x33, 0xff, 0x9b, 0xfc, 0xbb, 0xff,
-            0xae, 0x09, 0x11, 0xff, 0xef, 0xbe, 0x99, 0xff,
-            0xd8, 0x23, 0xff, 0xff, 0x3a, 0x15, 0x77, 0xff,
-            0x00, 0x87, 0xdd, 0xff, 0xe8, 0xc9, 0x55, 0xff,
-        };
-        aoNoiseTex = bgfx::createTexture2D(4, 4, false, 1,
-            bgfx::TextureFormat::RGBA8,
-            BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT,
-            bgfx::copy(noise, sizeof(noise)));
-
-        // Glass body absorption interval: full-res front/back
-        // depths of glass draws, written by the prepass programs
-        // like the water medium interval (only .z viewZ and .w
-        // validity are consumed). In the SSAO resource set because
-        // the depth writer is the prepass shader family.
-        const uint64_t glassFlags = 0
-            | BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
-        glassFrontTex = bgfx::createTexture2D(width, height, false, 1,
-            bgfx::TextureFormat::RGBA16F, glassFlags);
-        glassBackTex = bgfx::createTexture2D(width, height, false, 1,
-            bgfx::TextureFormat::RGBA16F, glassFlags);
-        glassFrontDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            glassFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        glassBackDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            glassFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        bgfx::TextureHandle gfatt[2] = {glassFrontTex, glassFrontDepth};
-        glassFrontFbo = bgfx::createFrameBuffer(2, gfatt, false);
-        bgfx::TextureHandle gbatt[2] = {glassBackTex, glassBackDepth};
-        glassBackFbo = bgfx::createFrameBuffer(2, gbatt, false);
     }
 
     // Volumetric light shafts: the half-res raymarch reads the SSAO
