@@ -1,4 +1,4 @@
-$input v_normal, v_color0, v_vpos
+$input v_normal, v_color0, v_color1, v_color2, v_vpos, v_opos, v_onrm, v_findex
 
 /*
  * Glass body shading (vs_fc_mesh pair): screen-space refraction of the
