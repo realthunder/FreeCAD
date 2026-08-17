@@ -3548,7 +3548,8 @@ QString materialCall(const Gui::PropertyEditor::Material &mat, int decimals)
         .arg(sc.r, 0, 'f', decimals)
         .arg(sc.g, 0, 'f', decimals)
         .arg(sc.b, 0, 'f', decimals)
-        // Not sc.a: the QColor above never carried one
+        // Not sc.a: the QColor carries an alpha now, but only 8 bits of
+        // one, and the metallic factor wants the full float.
         .arg(mat.specularAlpha, 0, 'f', 4)
         .arg(ec.r, 0, 'f', decimals)
         .arg(ec.g, 0, 'f', decimals)

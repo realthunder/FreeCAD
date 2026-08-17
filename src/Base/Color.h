@@ -225,7 +225,8 @@ public:
      */
     template <typename T>
     void setValue(const T& q) {
-        set(q.redF(),q.greenF(),q.blueF());
+        color_traits<T> ct {q};
+        set(ct.redF(), ct.greenF(), ct.blueF(), ct.alphaF());
     }
     /**
      * returns a template type e.g. Qt color equivalent to FC color
@@ -233,7 +234,10 @@ public:
      */
     template <typename T>
     inline T asValue() const {
-        return(T(int(r*255.0f),int(g*255.0f),int(b*255.0f)));
+        return color_traits<T>::makeColor(int(std::lround(r * 255.0F)),
+                                         int(std::lround(g * 255.0F)),
+                                         int(std::lround(b * 255.0F)),
+                                         int(std::lround(a * 255.0F)));
     }
     /**
      * returns color as hex color "#RRGGBB"

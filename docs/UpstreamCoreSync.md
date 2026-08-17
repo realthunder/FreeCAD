@@ -2,9 +2,11 @@
 
 Status: stage 1 and steps 2a and 2d done 2026-08-12; stage 1b (the additive
 templates, section 2.1) done 2026-08-17, as are FastSignals (2.2) and the
-`std::string` units API with its unit audit (2.3); 2b and 2c still to do;
-stage 3 waits on the FEM port itself. The two fork-side signature
-questions in section 4 were decided 2026-08-17: keep ours, both of them.
+`std::string` units API with its unit audit (2.3) and the colour-traits
+routing (2.4); 2b and 2c still to do; stage 3 waits on the FEM port
+itself. The two fork-side signature questions in section 4 were decided
+2026-08-17: keep ours, both of them. **All four parked API questions are
+now answered.**
 Driver: [FemPortEvaluation.md](./FemPortEvaluation.md), which found that the
 cost of porting upstream's FEM is not in FEM but in core refactors this fork
 predates.
@@ -117,11 +119,13 @@ Notes that matter when reading them:
   adding one is a change to every property container rather than an
   addition, so ours uses `T::getClassTypeId().getName()` -- the same
   string, and the one the non-template overload looks up anyway.
-- **1g** only the adapter is taken. Upstream also routes `Color::setValue`
-  and `Color::asValue` through it, which would change what ours do: theirs
-  carry the alpha and round, ours drop the alpha and truncate. That is a
-  behaviour change to every colour button in the GUI, so it is not part of
-  an additive step. Left as a separate decision.
+- **1g** only the adapter was taken here. Upstream also routes
+  `Color::setValue` and `Color::asValue` through it, which changes what
+  ours do: theirs carry the alpha and round, ours dropped the alpha and
+  truncated. That is a behaviour change to every colour button in the
+  GUI, so it was not part of an additive step. **That routing was taken
+  separately in section 2.4**, where the behaviour change is the subject
+  rather than a side effect.
 - **1h** the no-argument getters read entry 0. Upstream indexes element 0
   of a list it does not check, so an empty property is undefined behaviour
   there; ours go through the indexed getter, which answers with the field
@@ -346,6 +350,116 @@ WARNING `"\xC2\xB5" "A"` is written as **two literals on purpose**: `A` is
 a hex digit, so `"\xC2\xB5A"` would be eaten as one escape sequence. The
 existing micro-farad row already had to do this. The micro-mole and
 micro-watt rows do not, because `m` and `W` are not hex digits.
+
+## 2.4 Colour conversion goes through the traits (done 2026-08-17)
+
+The last of the four parked API questions, and the one the user asked to
+have *verified* rather than merely adopted -- correctly, because taking it
+unexamined would have made six TechDraw colours invisible.
+
+`Color::setValue<T>`/`asValue<T>` now do what upstream's do:
+
+|  | before | after |
+|---|---|---|
+| alpha | dropped, `asValue` always opaque | carried both directions |
+| 8-bit conversion | `int(r * 255.0f)`, truncating | `std::lround(r * 255.0F)` |
+
+Only `QColor` is ever used for `T` (72 `asValue<QColor>`, 24
+`setValue<QColor>`), and `QColor(int,int,int,int)` exists, so the generic
+`color_traits<T>::makeColor` fits without a new specialization.
+
+**What rounding actually changes -- measured, because the obvious guess
+is wrong.** It does *not* fix a widget round trip. For a colour whose
+components came from an 8-bit value, `float(v)/255.0f * 255.0f`
+truncates back to exactly `v` for **all 256 bytes**, so
+`QColor` -> `Color` -> `QColor` was already the identity and still is
+(verified across all 256 values and all 256 alphas).
+
+Where the two disagree is colours whose floats did *not* come from a
+byte -- set from Python, computed, interpolated, or read off a material.
+There truncation and rounding differ for **500 of 1001** sampled values,
+always by one step and always in the same direction: truncation lands
+low. `0.5` became 127 and is now 128, `0.1` became 25 and is now 26. So
+the change removes a systematic one-step-darker bias on every computed
+colour, which is worth having, but it is not the dramatic fix it first
+looks like.
+
+### 2.4.1 WARNING WARNING The six defaults this would have made invisible
+
+FreeCAD packs colour preferences as `0xRRGGBBAA`. Six TechDraw defaults
+name an opaque colour but **omit the alpha byte**, so the packed value
+says fully transparent. That was harmless only for as long as `asValue`
+threw the alpha away:
+
+| pref | default was | means | fixed to |
+|---|---|---|---|
+| `Tracker/TrackerColor` | `0xFF000000` | red, alpha 0 | `0xFF0000FF` |
+| `Colors/TileColor` | `0x00000000` | black, alpha 0 | `0x000000FF` |
+| `Colors/Background` (QGVPage, QGSPage) | `0x70707000` | grey, alpha 0 | `0x707070FF` |
+| `Colors/Hatch` | `0x00FF0000` | green, alpha 0 | `0x00FF00FF` |
+| `Colors/GeomHatch` | `0x00FF0000` | green, alpha 0 | `0x00FF00FF` |
+| `Decorations/HighlightColor` | `0x00000000` | black, alpha 0 | `0x000000FF` |
+
+All six reach `asValue<QColor>()`, directly or through a `PropertyColor`
+default that a colour button then reads.
+
+NOTE **Upstream has this bug.** Their `setPackedValue` is byte-identical
+to ours and their defaults still read `0x70707000`, `0x00FF0000`,
+`0x00000000` -- with the traits routing in place. They fixed exactly one
+of them, `TrackerColor`, and changed its colour to blue while doing it.
+So this is not a case of the fork being behind; it is a case of the fork
+being *told to look*. The fix keeps each pref's intended RGB rather than
+adopting upstream's new hue.
+
+A seventh site is the same mistake reached by a different route:
+`DlgProjectionOnSurface` set `LineColor`/`ShapeColor`/`PointColor` to
+`0x8ae23400` -- opaque green with the alpha byte left off. It never goes
+through a colour button, but `PropertyColorItem::decoration` fills the
+property-editor swatch with whatever `asValue<QColor>()` returns, so the
+swatch would have gone blank. Fixed to `0x8ae234ff`.
+
+Two neighbouring families were deliberately **left alone**, because
+nothing converts them with `asValue` and changing them would be an
+unrelated behaviour change:
+
+- `Part/Dimensions3dColor`, `DimensionsDeltaColor`,
+  `DimensionsAngularColor` -- read as `SbColor(c.r, c.g, c.b)`, which
+  never looks at alpha.
+- `ViewParams` `AxisXColor`/`AxisYColor`/`AxisZColor` (`0xCC333300` and
+  friends) -- stay a packed `unsigned long` all the way into
+  `SoFCCSysDragger::setAxisColors` and never become a `QColor`. Their
+  alpha byte is 0 too, and inconsistent with the `getPackedValue(0.0f)`
+  Coin uses for the same dragger's own defaults, but that is a separate
+  question about dragger colours.
+
+### 2.4.2 What the GUI audit found, path by path
+
+The instruction was to verify the colour, not just the conversion, so
+every route from a widget to a `Base::Color` was checked:
+
+- **Colour buttons** (`Gui::ColorButton`, `Gui::PrefColorButton`) --
+  unchanged. `allowTransparency` defaults to *false*, and
+  `PrefColorButton::restorePreferences` explicitly does
+  `value.setAlpha(0xff)`, so every button hands back an opaque `QColor`
+  exactly as before. This is what makes the 24 `setValue<QColor>` sites
+  safe.
+- **`TaskElementColors`** -- the one place that opens a
+  `QColorDialog` with `ShowAlphaChannel`. It never used `setValue`: it
+  builds `App::Color(c.redF(), c.greenF(), c.blueF(), c.alphaF())` by
+  hand, so it already carried the alpha. Unchanged.
+- **`Clipping`'s `backlightColor`** -- a `PrefColorButton` with
+  `allowTransparency` unset, so alpha is forced to 255 before it reaches
+  `setValue<QColor>`. Unchanged.
+- ! **The material row** (`materialCall`) -- unchanged in behaviour, but
+  it carried a comment saying "Not sc.a: the QColor above never carried
+  one", which this change falsified. The workaround is still correct and
+  stays: `mat.specularAlpha` and `mat.transparency` are full floats,
+  while a `QColor` alpha is 8 bits, and the PBR metallic factor wants
+  the precision. Only the comment changed.
+- **Per-face and `DiffuseColor`** -- `asValue<QColor>()` now reports the
+  stored alpha instead of always 255, which is the point; the editor
+  swatch shows the real colour. Nothing had to change, given the
+  document data is right.
 
 ## 3. Stage 2 -- upstream's names and locations, aliases at the old ones
 
