@@ -564,11 +564,34 @@ TShape:
       after assignment: placement preserved, each object keeps its own
       cost: 0.0496s for three objects
 
-Two things to settle before building the in-memory pass: whether the element
-map survives the substitution -- two identical solids from different histories
-carry different element maps, and this fork also caches per-TShape data -- and
-that the substitution does not touch the objects, or opening a document would
-mark it modified.
+**The element map is not in the way** (user, 2026-08-17). `Data::ElementMap`
+maps `MappedName -> IndexedName` -- `Face1`, `Edge2` -- so it is coupled to the
+shape only through sub-shape ordering, and byte-identical geometry preserves
+that exactly. Two identical solids from different histories keep their own
+different names, and both stay valid.
+
+The one thing to get right is not the map but the *cache*. `TopoShapeCache`
+(`TopoShapeCache.h:61`) is a per-`TopoShape`-instance `shared_ptr`, built lazily
+by `initCache()` (`TopoShapeEx.cpp:604`), not a registry keyed on the TShape --
+two independently built `TopoShape`s over one TShape get separate caches. But it
+holds `cachedElementMap`, existing so "other TopoShape instances with the same
+Cache can reuse the map once generated", and `TopoShape(const TopoShape&)`
+forwards to `operator=` (`TopoShapeEx.cpp:667`). So building the substitute by
+copying the canonical `TopoShape` would carry that cache, and its element map,
+onto the duplicate.
+
+The existing API already avoids it:
+
+    dup.setShape(canon.getShape().Located(loc), /*resetElementMap=*/false);
+
+which keeps the duplicate's own element map, flushes only if the cache was
+touched by the incoming shape, and re-inits that instance's own cache
+(`TopoShapeEx.cpp:673`). Note `TopoShapeExpansion.cpp` carries a second
+definition of `setShape` and is commented out of the build
+(`src/Mod/Part/App/CMakeLists.txt:545`); `TopoShapeEx.cpp` is the live one.
+
+What is left to settle is only that the substitution does not touch the
+objects, or opening a document would mark it modified.
 
 ## 8. How it will be judged
 
