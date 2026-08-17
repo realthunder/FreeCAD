@@ -29,6 +29,7 @@
 #include <sstream>
 #include <functional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -298,6 +299,62 @@ public:
     double getAttributeAsFloat(const char* AttrName, const char *def=nullptr) const;
     /// return the named attribute as a double floating point (does type checking)
     const char* getAttribute(const char* AttrName, const char *def=nullptr) const;
+
+private:
+    /* Upstream's typed attribute accessors, added alongside the four above.
+     *
+     * Purely additive: every existing call keeps resolving to the
+     * non-template getAttribute(), which wins overload resolution against
+     * an equally good template, and none of these can deduce T from the
+     * arguments alone -- a caller has to name it.
+     *
+     * The types the out-of-line template is instantiated for. Naming them
+     * makes an unsupported T a compile error at the call site instead of a
+     * link error at the end of the build.
+     */
+    template<typename T>
+    static constexpr bool instantiated = std::is_same_v<T, bool> || std::is_same_v<T, const char*>
+        || std::is_same_v<T, double> || std::is_same_v<T, int> || std::is_same_v<T, long>
+        || std::is_same_v<T, unsigned long>;
+
+public:
+    /// return the named attribute as T (does type checking); if missing return defaultValue
+    template<typename T>
+        requires Base::XMLReader::instantiated<T>
+    T getAttribute(const char* AttrName, T defaultValue) const;
+
+    /// No default? Will throw an exception if not found!
+    template<typename T>
+        requires Base::XMLReader::instantiated<T>
+    T getAttribute(const char* AttrName) const;
+
+    /// Anything constructible from the raw string, e.g. std::string
+    template<typename T>
+    T getAttribute(const char* AttrName) const
+    {
+        return T(getAttribute<const char*>(AttrName));
+    }
+    template<typename T>
+    T getAttribute(const char* AttrName, T defaultValue) const
+    {
+        return T(getAttribute<const char*>(AttrName, defaultValue));
+    }
+
+    /// Enum classes
+    template<typename T>
+        requires std::is_enum_v<T>
+    T getAttribute(const char* AttrName, T defaultValue) const
+    {
+        return static_cast<T>(
+            getAttribute<unsigned long>(AttrName, static_cast<unsigned long>(defaultValue)));
+    }
+    /// Enum classes
+    template<typename T>
+        requires std::is_enum_v<T>
+    T getAttribute(const char* AttrName) const
+    {
+        return static_cast<T>(getAttribute<unsigned long>(AttrName));
+    }
     //@}
 
     /** @name additional file reading */
