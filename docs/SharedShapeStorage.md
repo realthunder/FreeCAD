@@ -1652,9 +1652,18 @@ either way:
 
 | | before | after |
 |---|---|---|
-| raw shape bytes | 18276205 | **16820794** (-7.96%) |
-| deflated | 3735837 | **3618447** (-3.14%) |
+| raw shape bytes | 18276205 | **16839759** (-7.86%) |
+| deflated | 3735837 | **3637241** (-2.64%) |
 | files / references | 332 / 36 | 332 / 36, unchanged |
+| faces / missing a curve / invalid | 90686 / 0 / 4 | 90686 / 0 / 4, unchanged |
+
+The last row is the one that matters, and it did not come free. The first cut
+of this deduplicated the table correctly and then wrote every shape record with
+index 0, because the records are written through `Index()`, which looks up by
+handle -- and a merged curve is not in the map, its twin is. The saved project
+lost **25443 face pcurves** and gained 217 invalid shapes, and the reference
+format's own counts were unchanged throughout, which is exactly how a defect
+like this hides.
 
 Two things the cross-file half is not. It is not the whole prize: the rest of a
 file is locations and the TShape records, and the records collapse too wherever
