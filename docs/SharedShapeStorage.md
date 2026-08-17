@@ -1007,6 +1007,40 @@ source rather than whole located solids. Patterns and booleans are the shape of
 the tail, and a per-file reference cap that falls back to inlining beyond it
 would trade bytes for readability in exactly those files.
 
+**Compressed, the gap to the store is small.** Raw bytes are what a directory
+project costs and what git's working tree holds, but a `.FCStd` pays deflated
+bytes, and deflate eats most of the encoding difference:
+
+| | deflated |
+|---|---|
+| per-file ASCII, today (687 entries) | 4373466 |
+| **external-ref, full sharing** | **~3200000 to 3306000** |
+| binary central store | 2599202 |
+
+Derived from ratios measured on this document: one-stream ASCII costs **1.23x**
+over binary compressed, against 1.87x raw, and the many-member penalty at this
+scale is only **1.03x** -- not the 1.95x the twelve-file scene suggested, which
+was an artifact of tiny members. So full sharing in ASCII is **1.35x smaller
+than the file the fork writes today**, and about 600 KB larger than a binary
+store on a 3 MB document.
+
+Two things that comparison must not be allowed to hide. The store file's
+headline advantage is not all store: its non-shape payload also fell from
+770182 to 426882 deflated, which is the schema-5 compact property encodings.
+And **the prize is not bytes at all** -- 42% of this document's serialized
+geometry is duplicate (26181094 inline against 15185193 deduped), so restoring
+sharing removes that fraction from memory and from tessellation.
+
+**No per-file reference cap.** An earlier draft of this section proposed
+falling back to inlining beyond some reference count, to keep a file readable.
+The numbers refute it: `PolarPattern003.Shape.brp` is **2207068 bytes raw /
+300418 deflated** today, the second largest entry in the document, and a cap
+would preserve that rather than collapse it -- roughly 7% of the compressed
+shape payload spent on one file, plus the loss of sharing for 5129 sub-shapes.
+The readability argument fails too: 5129 reference lines is on the order of
+80 KB of text, against 2.2 MB of coordinates. The referenced file is smaller
+*and* more legible.
+
 The counts above are from a run whose candidate scan effectively did not cap
 (15 lookups hit a 4096 limit). An earlier run capped at 256 hit it 31454 times
 and under-detected sharing -- 80808 distinct TShapes instead of 71185 -- while
@@ -1015,10 +1049,10 @@ bytes.
 
 ### 11.9 Still open
 
-- Decide whether a per-file reference cap is needed for pattern and boolean
-  results (sec 11.8), and what it costs in bytes when it fires.
-- Restore cost is unmeasured: reading one object now transitively opens the
-  files it references. Total bytes are lower, but the open count is higher.
+- Restore cost is unmeasured, and it is the one direction where this design
+  could lose: reading one object now transitively opens the files it
+  references, so `PolarPattern003` pulls in everything it borrows from. Fewer
+  total bytes, more opens. Measurable as soon as there is a reader.
 - Deterministic visit order has to be established, not assumed (sec 11.7).
 - Whether the element map and hasher are invariant under location stripping
   (sec 11.4), which is a separate and independently worthwhile change.
