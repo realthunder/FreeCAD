@@ -317,8 +317,14 @@ public:
      *
      * The property is handed its blob as soon as the content is available:
      * immediately when it has already been read (a view property restored
-     * from a replayed string long after the archive was closed), otherwise at
+     * from a replayed string while the archive is still open), otherwise at
      * dispatchPending() once the entries have been drained.
+     *
+     * Arriving after endRestore() is an error, not a wait: nothing dispatches
+     * any more and the property would be left empty in silence. It is logged.
+     * A tier that restores that late has to be restored inside the load --
+     * which is why Gui::Document refuses to park a view provider whose record
+     * names a blob.
      */
     void addPendingReferrer(const std::string& hash, PropertyFileIncluded* prop);
     /// Withdraw a referrer that died before it could be served.
@@ -331,6 +337,10 @@ public:
      * point a referrer can appear -- which is after the finish-restore signal,
      * because that is when embedded view documents are replayed. What is still
      * held then is content no property claimed, and it goes.
+     *
+     * This is also the deadline every restoring tier answers to: anything
+     * still to be restored after it cannot be served, so it must not be
+     * deferred past it.
      */
     void endRestore();
     //@}
@@ -391,6 +401,9 @@ private:
     std::unordered_map<std::string, std::vector<BlobReferrer>> _saveRefs;
     /// Properties waiting for content that is still to be read.
     std::vector<std::pair<std::string, PropertyFileIncluded*>> _pending;
+    /// Whether endRestore() has run, i.e. whether a referrer turning up now
+    /// can still be served. See addPendingReferrer().
+    bool _restoreClosed {false};
     /// Keeps restored content alive until every referrer has been served.
     std::unordered_map<std::string, FileBlobHandle> _restoreHold;
     std::unordered_map<std::string, std::weak_ptr<FileBlob>> _blobs;

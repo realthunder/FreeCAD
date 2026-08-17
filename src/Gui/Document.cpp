@@ -2146,18 +2146,24 @@ void Document::RestoreDocFile(Base::Reader &reader)
                 int guard;
                 xmlReader.readElement("ViewProvider",&guard);
                 if (d->_deferVPs) {
-                    // Park the element, verbatim, for the post-open drain --
-                    // unless it references archive entries. Those are
-                    // consumed by the forward walk, in registration order,
-                    // before any drain runs; such a view provider restores
-                    // now, exactly as the eager path would have. The marker
-                    // is exact for attributes: a quote inside a value is
-                    //  re-escaped by the capture, so a literal ` file="` can
-                    // only be markup.
+                    // Park the element, verbatim, for the post-open drain
+                    // -- unless it references content that only the load
+                    // holds open. An archive entry (` file="`) is consumed by
+                    // the forward walk, in registration order, before any
+                    // drain runs. A blob reference (` hash="`, schema 5) is
+                    // served out of FileBlobManager's restore hold, which is
+                    // dropped as soon as the finish-restore signal returns
+                    // (App::Document::afterRestore). Either way the drain is
+                    // too late and the property would come back empty, so
+                    // such a view provider restores now, exactly as the eager
+                    // path would have. The marker is exact for attributes: a
+                    // quote inside a value is re-escaped by the capture, so a
+                    // literal ` file="` can only be markup.
                     std::string &captured = d->_deferScratch;
                     captured.clear();
                     xmlReader.captureElement(captured);
-                    if (captured.find(" file=\"") != std::string::npos) {
+                    if (captured.find(" file=\"") != std::string::npos
+                            || captured.find(" hash=\"") != std::string::npos) {
                         restoreCapturedViewProvider(captured, xmlReader);
                     } else {
                         d->_deferBuf += captured;

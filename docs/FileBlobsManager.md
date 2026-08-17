@@ -307,6 +307,37 @@ its file deleted: re-saving such a document already drops that object's data.
 creation fails, partial load skips it), so `~PropertyFileIncluded` deregisters
 itself from the pending list.
 
+**The release point is a deadline, and a lazily restoring tier has to answer to
+it** (added 2026-08-17, after this bit data). Nothing dispatches after
+`endRestore()`, so a property that first reads its `hash=` later gets no
+content, writes `hash=""` on the next save, and the content leaves the file for
+good. That is what progressive load did to a view provider: `Gui::Document`
+parks each `<ViewProvider>` element verbatim and drains it in slices *after* the
+open, so a `Render_*` included file on a view provider was lost on every open of
+a schema-5 document.
+
+The guard for it already existed and was one attribute short. Parking is refused
+for a record naming an archive entry (` file="`), because the forward walk
+consumes those during the load; it is now refused for one naming a blob
+(` hash="`) as well, for the same reason at the same boundary -- such a view
+provider is restored inside the load by `restoreCapturedViewProvider()`, exactly
+as the eager path would have. The cost is that a view provider with an embedded
+file does not get parked, which is a rounding error: they are textures and
+environment images, not the thousands of default records parking exists for.
+
+`addPendingReferrer()` now **logs** a referrer arriving after the release point
+instead of queueing it onto a list nobody will read again. The bug above was
+invisible for exactly that reason, and it is what any future instance of this
+shape will run into first.
+
+Audited at the same time, and clear: deferred *archive entries*
+(`Document::serveDeferredFiles`, which outlive the view-provider drain) cannot
+carry a file property at schema 5, because such a property registers no entry;
+the `View3DInventor` string replay (sec 8) runs from `signalFinishRestoreDocument`,
+i.e. inside the hold; and `PropertyShapeStore` is the only subclass, restored
+with the document. The parked view-provider record was the one tier past the
+deadline.
+
 ## 8. The view tier
 
 View-side properties reach the same per-document manager, with two wrinkles:

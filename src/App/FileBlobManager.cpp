@@ -732,6 +732,7 @@ void FileBlobManager::beginRestore(Base::XMLReader& reader)
     {
         std::lock_guard<std::mutex> guard(_mutex);
         _pending.clear();
+        _restoreClosed = false;
     }
 
     // An unpacked project keeps its content as ordinary files, so there are no
@@ -840,6 +841,16 @@ void FileBlobManager::addPendingReferrer(const std::string& hash, PropertyFileIn
         return;
     }
     std::lock_guard<std::mutex> guard(_mutex);
+    if (_restoreClosed) {
+        // Nothing will dispatch this: the hold is gone and dispatchPending()
+        // has already run for the last time. A tier restoring this late has
+        // to be restored inside the load instead -- Gui::Document does that
+        // for a view provider whose record names a blob. Queuing it would
+        // leave the property empty without a word, which is how this went
+        // unnoticed once already.
+        FC_WARN("Included file " << hash << " requested after the restore closed");
+        return;
+    }
     _pending.emplace_back(hash, prop);
 }
 
@@ -875,6 +886,9 @@ void FileBlobManager::endRestore()
         std::lock_guard<std::mutex> guard(_mutex);
         _pending.clear();
         hold.swap(_restoreHold);
+        // From here a referrer arriving is a bug in whatever produced it, not
+        // something to wait for; addPendingReferrer() says so out loud.
+        _restoreClosed = true;
     }
     // Released outside the lock: the last reference to unclaimed content dies
     // here, and ~FileBlob calls back into release().
