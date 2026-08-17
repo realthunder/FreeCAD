@@ -3,7 +3,8 @@
 Status: stage 1 and steps 2a and 2d done 2026-08-12; stage 1b (the additive
 templates, section 2.1) done 2026-08-17, as are FastSignals (2.2) and the
 `std::string` units API with its unit audit (2.3); 2b and 2c still to do;
-stage 3 waits on the FEM port itself.
+stage 3 waits on the FEM port itself. The two fork-side signature
+questions in section 4 were decided 2026-08-17: keep ours, both of them.
 Driver: [FemPortEvaluation.md](./FemPortEvaluation.md), which found that the
 cost of porting upstream's FEM is not in FEM but in core refactors this fork
 predates.
@@ -399,15 +400,20 @@ Here the fork is the one that diverged, so upstream's FEM must bend to us.
 All four are FEM-side edits with **no core change**, which is exactly what
 the policy asks for.
 
+The first two were open questions until **2026-08-17, when the user decided
+both: keep ours, no core change.** They are settled; a later session should
+not reopen them, only honour the FEM-side consequence recorded with each.
+
 - `ComplexGeoData::getElementTypes()` returns `const std::vector<const char*>&`
-  here (our `75a7f709d8`), by value upstream. Keep ours -- it avoids a copy
-  in element-mapping paths. Adapt `FemMesh`'s override to return a reference
-  to a static table.
+  here (our `75a7f709d8`), by value upstream. **DECIDED: keep ours** -- it
+  avoids a copy in element-mapping paths. Adapt `FemMesh`'s override to
+  return a reference to a static table.
 - `App::Property::isSame` is **pure virtual** here, and upstream gives it a
-  default body comparing type and `getMemSize`. Keep ours pure: it forces
-  every property to answer the question deliberately, and all 23 fork
-  implementations already do. Implement `isSame` in FEM's
-  `PropertyPostDataObject`.
+  default body comparing type and `getMemSize`. **DECIDED: keep ours pure.**
+  It forces every property to answer the question deliberately, and all 23
+  fork implementations already do. The consequence is that upstream's
+  `PropertyPostDataObject` is *abstract* here, so a FEM port must implement
+  `isSame` on it -- it will not compile otherwise.
 - `signalHighlightObject` lives on `Application` here (`3418f1be72`), on
   `Gui::Document` upstream. Keep ours; adapt FEM's one use.
 - `ViewProviderFemPostPipeline::acceptReorderingObjects` overrides nothing

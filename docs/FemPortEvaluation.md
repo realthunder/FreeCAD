@@ -312,7 +312,11 @@ syntax census) ever sees the bottom.
 - **The fork-side divergences**: `getElementTypes` by const-ref (18
   files), `Property::isSame` pure virtual (16 errors, and it makes
   upstream's `PropertyPostDataObject` and therefore `FemMesh` abstract),
-  `signalHighlightObject`. These are decisions, not chores.
+  `signalHighlightObject`. These were decisions, not chores -- and the
+  first two were **decided on 2026-08-17: keep the fork's signature in
+  both cases, no core change.** So they are now FEM-side chores after all:
+  a port adapts `FemMesh`'s override to return a reference to a static
+  table, and implements `isSame` on every ported property class.
 - ! **The `Materials` module: unchanged.** Still the December-2023
   vintage, and upstream's moved another 32 files / +1589 lines in the six
   days since. This was named the single biggest hidden cost, and none of
