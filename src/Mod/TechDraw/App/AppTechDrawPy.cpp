@@ -1272,7 +1272,7 @@ private:
 
     if (!PyArg_ParseTuple(args.ptr(), "O!O!|O", &(TechDraw::DrawViewPartPy::Type), &pyDocObj,
                                         &(Base::VectorPy::Type), &pyPointIn, &pyUnscale)) {
-        return Py::None();
+        throw Py::Exception();
     }
     bool unscale = pyUnscale == Py_True ? true : false;
     DrawViewPartPy* pyDvp = static_cast<TechDraw::DrawViewPartPy*>(pyDocObj);

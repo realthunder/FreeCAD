@@ -155,7 +155,7 @@ PyObject* GeometryFacadePy::setGeometryMode(PyObject* args)
     }
 
     PyErr_SetString(PyExc_TypeError, "No flag string provided.");
-    Py_Return;
+    return nullptr;
 }
 
 

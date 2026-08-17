@@ -87,7 +87,7 @@ PyObject* ViewProviderFemMeshPy::setNodeColorByScalars(PyObject* args)
         int num_items = PyList_Size(node_ids_py);
         if (num_items < 0) {
             PyErr_SetString(PyExc_ValueError, "PyList_Size < 0. That is not a valid list!");
-            Py_Return;
+            return nullptr;
         }
         std::vector<App::Color> node_colors(num_items);
         for (int i = 0; i < num_items; i++) {
@@ -140,7 +140,7 @@ PyObject* ViewProviderFemMeshPy::setNodeDisplacementByVectors(PyObject* args)
         int num_items = PyList_Size(node_ids_py);
         if (num_items < 0) {
             PyErr_SetString(PyExc_ValueError, "PyList_Size < 0. That is not a valid list!");
-            Py_Return;
+            return nullptr;
         }
         for (int i = 0; i < num_items; i++) {
             PyObject* id_py = PyList_GetItem(node_ids_py, i);
