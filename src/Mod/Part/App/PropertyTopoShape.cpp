@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <charconv>
 # include <sstream>
 # include <Bnd_Box.hxx>
 # include <BRepBndLib.hxx>
@@ -36,6 +37,7 @@
 # include <gp_GTrsf.hxx>
 # include <gp_Trsf.hxx>
 # include <BRepBuilderAPI_MakeShape.hxx>
+# include <TopLoc_Location.hxx>
 # include <TopTools_ListOfShape.hxx>
 # include <TopTools_IndexedMapOfShape.hxx>
 
@@ -75,6 +77,114 @@ TYPESYSTEM_SOURCE(Part::PropertyPartShape , App::PropertyComplexGeoData)
 PropertyPartShape::PropertyPartShape() = default;
 
 PropertyPartShape::~PropertyPartShape() = default;
+
+namespace
+{
+
+/** The shortest text that reads back as the very same double.
+ *
+ * Exactness is not decoration here: an inexactly restored location is a
+ * different shape, and the whole point of taking the location out of the
+ * geometry is a file that does not change when nothing did.
+ */
+void writeReal(std::ostream& out, double value)
+{
+    char buf[40];
+    auto res = std::to_chars(buf, buf + sizeof(buf), value);
+    out.write(buf, res.ptr - buf);
+}
+
+/** Whether a location moves anything at all.
+ *
+ * TopLoc_Location::IsIdentity() answers whether there is a datum, not whether
+ * that datum does anything: setting a placement of zero builds a location that
+ * holds an identity transformation, and every Part::Feature whose placement was
+ * ever touched carries one. Comparing exactly is right -- such a location
+ * contributes nothing to the geometry, so dropping it is lossless, and writing
+ * it would be an attribute that says nothing and a file that churns.
+ */
+bool isIdentityLocation(const TopLoc_Location& loc)
+{
+    if (loc.IsIdentity())
+        return true;
+    const gp_Trsf& trsf = loc.Transformation();
+    for (int row = 1; row <= 3; ++row) {
+        for (int col = 1; col <= 4; ++col) {
+            if (trsf.Value(row, col) != (row == col ? 1.0 : 0.0))
+                return false;
+        }
+    }
+    return true;
+}
+
+/// A location as the 3x4 of its transformation, row major -- scale included.
+std::string locationToString(const TopLoc_Location& loc)
+{
+    std::ostringstream str;
+    const gp_Trsf& trsf = loc.Transformation();
+    for (int row = 1; row <= 3; ++row) {
+        for (int col = 1; col <= 4; ++col) {
+            if (row != 1 || col != 1)
+                str << ' ';
+            writeReal(str, trsf.Value(row, col));
+        }
+    }
+    return str.str();
+}
+
+bool locationFromString(const std::string& text, TopLoc_Location& loc)
+{
+    double v[12];
+    std::istringstream str(text);
+    for (double& value : v) {
+        if (!(str >> value)) {
+            FC_ERR("Truncated shape location '" << text << '\'');
+            return false;
+        }
+    }
+    try {
+        gp_Trsf trsf;
+        trsf.SetValues(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11]);
+        loc = TopLoc_Location(trsf);
+    }
+    catch (const Standard_Failure& e) {
+        FC_ERR("Invalid shape location '" << text << "': " << e.GetMessageString());
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool PropertyPartShape::stripsLocation(Base::Writer& writer)
+{
+    // Schema 5 and nothing below it, for the same reason the shape store has
+    // that gate: a schema-4 document written by this build must come out
+    // exactly as upstream writes it. It must, here, for a harder reason than
+    // taste -- an older reader ignores the `loc=` attribute, and would then
+    // announce the geometry at the identity and zero every placement.
+    return writer.getSchemaVersion() >= 5;
+}
+
+TopoDS_Shape PropertyPartShape::shapeForSave(Base::Writer& writer) const
+{
+    ensureRestored();
+    const TopoDS_Shape& shape = _Shape.getShape();
+    if (!stripsLocation(writer) || shape.IsNull() || shape.Location().IsIdentity())
+        return shape;
+    // Stripped even when the location does nothing (isIdentityLocation), so
+    // that the geometry of a placed part and of one that was never touched
+    // come out as the same bytes. Shares the TShape -- this is a handle swap,
+    // not a copy of any geometry.
+    return shape.Located(TopLoc_Location());
+}
+
+TopoDS_Shape PropertyPartShape::locatedForRestore(const TopoDS_Shape& shape) const
+{
+    if (_RestoreLoc.IsIdentity() || shape.IsNull())
+        return shape;
+    return shape.Located(_RestoreLoc);
+}
 
 void PropertyPartShape::ensureRestored() const
 {
@@ -141,7 +251,7 @@ void PropertyPartShape::serveFromStore()
         auto hasher = _Shape.Hasher;
         std::string ver = _Ver;
 
-        TopoShape shape(store->readShape(pos));
+        TopoShape shape(locatedForRestore(store->readShape(pos)));
         shape.Hasher = hasher;
         shape.resetElementMap(elementMap);
         setValue(shape);
@@ -438,6 +548,14 @@ void PropertyPartShape::Save (Base::Writer &writer) const
         version = _Ver.size()?_Ver:_Shape.getElementMapVersion();
     writer.Stream() << " ElementMap=\"" << version << '"';
 
+    // The top level location, taken off the geometry below and written here
+    // instead (docs/SharedShapeStorage.md sec 11.4). Absent means the geometry
+    // carries its own location, which is what every schema below 5 writes.
+    const TopLoc_Location loc = stripsLocation(writer) ? _Shape.getShape().Location()
+                                                       : TopLoc_Location();
+    if (!isIdentityLocation(loc))
+        writer.Stream() << " loc=\"" << locationToString(loc) << '"';
+
     bool binary = writer.getMode("BinaryBrep");
     bool toXML = writer.getFileVersion()>1 && writer.isForceXML()>=(binary?3:2);
     if(_StorePos != PropertyShapeStore::NoPosition) {
@@ -452,11 +570,11 @@ void PropertyPartShape::Save (Base::Writer &writer) const
             << "\"/>\n";
     } else if(binary) {
         writer.Stream() << " binary=\"1\">\n";
-        _Shape.exportBinary(writer.beginBase64Stream());
+        TopoShape(shapeForSave(writer)).exportBinary(writer.beginBase64Stream());
         writer.endCharStream() <<  writer.ind() << "</Part>\n";
     } else {
         writer.Stream() << " brep=\"1\">\n";
-        _Shape.exportBrep(writer.beginCharStream()<<'\n');
+        TopoShape(shapeForSave(writer)).exportBrep(writer.beginCharStream()<<'\n');
         writer.endCharStream() << '\n' << writer.ind() << "</Part>\n";
     }
 
@@ -494,6 +612,13 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
 
     int hasher_idx = reader.getAttributeAsInteger("HasherIndex","-1");
     int save_hasher = reader.getAttributeAsInteger("SaveHasher","");
+
+    // The location the geometry was written without. It outlives this call:
+    // the geometry may be a deferred archive member or a position in the
+    // store, and is put back wherever it does arrive.
+    _RestoreLoc = TopLoc_Location();
+    if (reader.hasAttribute("loc"))
+        locationFromString(reader.getAttribute("loc"), _RestoreLoc);
 
     TopoShape shape;
 
@@ -573,7 +698,7 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
     }
 
     if (!shape.isNull() || !_Shape.isNull()) {
-        setValue(shape.getShape(), false);
+        setValue(locatedForRestore(shape.getShape()), false);
     }
 }
 
@@ -754,12 +879,16 @@ void PropertyPartShape::SaveDocFile (Base::Writer &writer) const
     // if (_Shape.getShape().IsNull())
     //     return;
 
+    // Written at the identity from schema 5 on, with the location in the XML
+    // instead: a move then leaves this member byte-identical, which the blob
+    // manager's hash skip turns into no write at all.
+    const TopoShape shape(shapeForSave(writer));
     Base::FileInfo finfo(writer.getCurrentFileName());
     if (finfo.hasExtension("bin")) {
-        _Shape.exportBinary(writer.Stream());
+        shape.exportBinary(writer.Stream());
     }
     else {
-        _Shape.exportBrep(writer.Stream());
+        shape.exportBrep(writer.Stream());
     }
 }
 
@@ -786,6 +915,11 @@ void PropertyPartShape::RestoreDocFile(Base::Reader &reader)
     else {
         shape.importBrep(reader);
     }
+    // Back on before anything can see the value: outside a recompute
+    // Feature::onChanged reads Placement out of the shape's own transform,
+    // so geometry announced at the identity zeroes the placement.
+    if (!_RestoreLoc.IsIdentity())
+        shape.setShape(locatedForRestore(shape.getShape()), false);
     FC_DURATION_PLUS(dImport, tRestore);
 
     std::string ver = _Ver;

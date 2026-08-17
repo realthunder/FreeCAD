@@ -1198,23 +1198,60 @@ suffix does not migrate between saves; orphans are pruned and nothing outside
 the previous index is touched; saving an unmodified directory project twice
 leaves every file byte-identical.
 
-### 12.2 Step 2: location canonicalization
+### 12.2 Step 2: location canonicalization -- DONE
 
-Independent of everything else and worth shipping on its own: write the shape
-with its top-level location stripped and the placement as an attribute on
-`<Part/>`, next to the existing `store=`/`pos=`/`file=` fork
-(`PropertyTopoShape.cpp:445`).
+**Shipped 2026-08-17.** The shape is written with its top-level location
+stripped and the location spelled as a `loc=` attribute on `<Part/>`, next to
+the existing `store=`/`pos=`/`file=` fork (`PropertyTopoShape.cpp`).
 
-***The trap*** is sec 11.4's: `Feature::shouldApplyPlacement()` is
-`isRecomputing()`, so during restore a `Shape` change overwrites `Placement`
-from the shape's own transform. The location must be re-applied inside
-`PropertyPartShape::Restore` before `hasSetValue()`.
+The attribute is the 3x4 of the transformation, row major, scale included --
+`loc="1 0 0 11 0 1 0 -22.5 0 0 1 3.25"`. Each number is the shortest text that
+reads back as the very same double (`std::to_chars`), so round values stay
+round in a diff and an inexact restore -- which would be a different shape --
+cannot happen. `gp_Trsf::SetValues` reads it back.
 
-Gate: placements survive a round trip on a document with placed parts; moving
-one object leaves its shape file byte-identical (which is the point, and which
-the step-1 skip then turns into no write at all); and on `scanner.FCStd` the
-fastener groups collapse -- 14 groups, 36 objects, 875496 bytes, measured in
-sec 11.4.
+Gated on `writer.getSchemaVersion() >= 5`, the same gate as the store, and for
+a harder reason than taste: an older reader ignores `loc=` and would announce
+the geometry at the identity, which zeroes every placement (below). Every
+writer that strips is a writer whose reader puts it back -- the export writer
+(clipboard, `copyObject`) carries no schema at all and so never strips.
+
+***The trap*** was sec 11.4's, and the fix is the one it named:
+`Feature::shouldApplyPlacement()` is `isRecomputing()`, so outside a recompute
+-- restore included -- a `Shape` change overwrites `Placement` from the shape's
+own transform. The location goes back on before `setValue()` announces
+anything, at all three places geometry can arrive: inline in `Restore()`, the
+archive member in `RestoreDocFile()`, and the store in `serveFromStore()`. That
+last one is the one that bites, because a stored shape is served on first use,
+long after the placement was restored.
+
+*Found while building it.* `TopLoc_Location::IsIdentity()` answers whether
+there is a datum, not whether it moves anything: setting a placement of zero
+builds a location holding an identity transformation, and every `Part::Feature`
+whose placement was ever touched carries one. So the geometry is stripped
+whenever the location is non-empty, and the attribute is written only when the
+location is not *exactly* the identity -- otherwise a box that was never placed
+and one placed at zero serialize differently, and the attribute says nothing.
+
+*Where the geometry actually is*, which the gate had to be measured against: a
+directory project writes ASCII BRep inline in each object's XML (`FileVersion`
+2 and `ForceXML` 3 are set only for the non-archive writer -- that inline ASCII
+is what the directory format exists for), while an archive puts every shape in
+the store as one blob. The `file=` member is the recovery writer's path.
+
+Gate: `src/Mod/Test/ShapeStorage.py`, 9 cases, `FreeCADCmd -t ShapeStorage`.
+Placements and element maps survive a round trip and the document comes back
+up-to-date; serving a stored shape after the open does not zero the placement;
+an identity placement writes no attribute; moving an object leaves the stored
+geometry byte-identical through both writers (which is the point, and which the
+step-1 hash skip then turns into no write at all); two documents differing only
+in placement store identical geometry; schema 4 is unchanged and writes no
+attribute; and a cross-document copy still arrives placed.
+
+Still owed: the confirmation on `scanner.FCStd` -- 14 groups, 36 objects,
+875496 bytes collapsible, measured in sec 11.4. That payoff is only *realized*
+once each shape is its own content-addressed blob (step 3); inside one store
+the equal-but-unshared duplicates are still written out one by one.
 
 ### 12.3 Step 3: shape files through the blob manager
 

@@ -132,6 +132,27 @@ private:
     TopoDS_Shape loadFromFile(Base::Reader &reader);
     TopoDS_Shape loadFromStream(Base::Reader &reader);
 
+    /** @name Location canonicalization (docs/SharedShapeStorage.md sec 11.4)
+     *
+     * From schema 5 on the geometry is written with its top level location
+     * taken off and the location spelled as a `loc=` attribute instead. Moving
+     * an object then leaves its shape bytes untouched, and two equal parts at
+     * different placements serialize to the same bytes.
+     */
+    //@{
+    /// Whether this writer canonicalizes locations at all.
+    static bool stripsLocation(Base::Writer &writer);
+    /// The geometry as this writer wants it: at the identity, or as it is.
+    TopoDS_Shape shapeForSave(Base::Writer &writer) const;
+    /** Put the `loc=` this restore read back onto arriving geometry.
+     *
+     * *** Must run BEFORE the value is announced. Outside a recompute
+     * Feature::onChanged copies Placement out of the shape's own transform,
+     * so a shape announced at the identity zeroes the placement.
+     */
+    TopoDS_Shape locatedForRestore(const TopoDS_Shape &shape) const;
+    //@}
+
     /// Serve the parked archive entry, if any, before _Shape is used.
     void ensureRestored() const;
     /// Drop the parked entry unserved -- the value got overwritten.
@@ -154,6 +175,13 @@ private:
      * which is every document below schema 5.
      */
     mutable uint64_t _StorePos = ~static_cast<uint64_t>(0);
+    /** The location the `loc=` attribute of this restore carried.
+     *
+     * Identity when the document was written without canonicalized locations,
+     * which is every document below schema 5 -- there the geometry still has
+     * its location baked in and nothing has to be put back.
+     */
+    TopLoc_Location _RestoreLoc;
 };
 
 struct PartExport ShapeHistory {

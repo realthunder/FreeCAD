@@ -188,7 +188,6 @@ void PropertyShapeStore::Save(Base::Writer& writer) const
 
 void PropertyShapeStore::collect(Base::Writer& writer) const
 {
-    (void)writer;
     auto container = getContainer();
     auto doc = Base::freecad_dynamic_cast<App::Document>(container);
     if (!doc) {
@@ -230,7 +229,11 @@ void PropertyShapeStore::collect(Base::Writer& writer) const
                 // a NEW TShape however many times it has already built that
                 // very shape -- which is the sharing this whole store exists
                 // to keep. The second record costs a handful of bytes.
-                const TopoDS_Shape& shape = prop->getValue();
+                // At the identity from schema 5 on, with the location kept in
+                // the XML (docs/SharedShapeStorage.md sec 11.4) -- which also
+                // makes two equal parts at different placements collapse onto
+                // one record here instead of two.
+                const TopoDS_Shape shape = prop->shapeForSave(writer);
                 shapeWriter.Write(shape, out);
                 const auto pos = static_cast<uint64_t>(out.tellp());
                 shapeWriter.Write(shape, out);
