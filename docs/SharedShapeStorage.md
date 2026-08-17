@@ -863,6 +863,37 @@ element.
 Worth doing on its own merits, independent of dedup: today moving one object
 rewrites its entire shape file, and after this it is a one-line XML diff.
 
+**It stays necessary after sec 11.5, for two reasons references cannot cover.**
+
+*Movement churn*, which needs no measurement: moving an object leaves its
+geometry identical and only its location different, so no reference is emitted
+and the whole file is rewritten. With the placement in the XML the shape file is
+byte-identical and the blob manager's hash skip does not rewrite it at all.
+
+*Duplicates with distinct TShapes*: a reference fires only on shared TShapes, so
+two independently computed identical solids are each written in full. Measured
+on `scanner.FCStd`, over the 246 objects that actually persist a
+`Part::PropertyPartShape`:
+
+| | distinct | duplicate groups | bytes collapsible |
+|---|---|---|---|
+| as written today | 241 of 246 | 3 | 163508 |
+| location stripped | 222 of 246 | 15 | **876358** |
+
+5.4x more duplication becomes visible to whole-file hashing, 4.8% of the
+18088761 bytes of serialized geometry -- and the groups are **fasteners**:
+Screw001-004, Screw005-007, Nut-Nut003, each a set of identical parts that were
+copied rather than linked, so each carries its own TShape. That is a permanent
+feature of mechanical assemblies rather than a quirk of this document.
+
+***The restore trap.*** `Feature::shouldApplyPlacement()` is just
+`isRecomputing()` (`PartFeature.cpp:1343`), so outside a recompute -- **including
+during restore** -- a change to `Shape` runs the else branch at
+`PartFeature.cpp:1321` and overwrites `Placement` *from the shape's transform*.
+Strip the location without re-applying it inside `PropertyPartShape::Restore`
+before `hasSetValue()`, and every placement in the document silently becomes
+identity.
+
 Trap for anyone re-running this: **`Shape.copy()` bakes the transform into the
 geometry**. The copy still reports the old `Placement`, and resetting it leaves
 absolute coordinates in the file. Setting `Placement` on the shape itself is a
