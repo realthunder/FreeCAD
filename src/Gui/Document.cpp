@@ -1582,6 +1582,7 @@ public:
         bool compact = false;
         bool dedupPCurves = true;
         bool dedupCongruent = true;
+        bool dedupGeometry = false;
     };
 
     DocumentFormatOption(bool compact, Choices *result)
@@ -1641,10 +1642,22 @@ public:
                     "content alone cannot do when the position is baked into "
                     "the coordinates. Two parts are only ever merged once the "
                     "motion has been recovered and checked."));
+        dedupGeometry = new QCheckBox(QObject::tr(
+                    "Share surfaces and curves between the parts that have "
+                    "them in common"), this);
+        dedupGeometry->setToolTip(QObject::tr(
+                    "Every part stores its own table of surfaces and curves, "
+                    "and about half of what those tables hold is written "
+                    "again by some other part. With this on a part names what "
+                    "another one already holds. It is off by default because "
+                    "it makes one part's geometry depend on another part's "
+                    "file being there."));
         dedupPCurves->setChecked(App::DocumentParams::getDedupShapePCurves());
         dedupCongruent->setChecked(App::DocumentParams::getDedupCongruentShapes());
+        dedupGeometry->setChecked(App::DocumentParams::getDedupCrossFileGeometry());
         layout->addWidget(dedupPCurves);
         layout->addWidget(dedupCongruent);
+        layout->addWidget(dedupGeometry);
 
         apply();
         QObject::connect(compactBtn, &QRadioButton::toggled,
@@ -1652,6 +1665,8 @@ public:
         QObject::connect(dedupPCurves, &QCheckBox::toggled,
                          [this](bool) { apply(); });
         QObject::connect(dedupCongruent, &QCheckBox::toggled,
+                         [this](bool) { apply(); });
+        QObject::connect(dedupGeometry, &QCheckBox::toggled,
                          [this](bool) { apply(); });
     }
 
@@ -1661,6 +1676,7 @@ private:
         result->compact = compactBtn->isChecked();
         result->dedupPCurves = dedupPCurves->isChecked();
         result->dedupCongruent = dedupCongruent->isChecked();
+        result->dedupGeometry = dedupGeometry->isChecked();
         warning->setVisible(compactBtn->isChecked());
     }
 
@@ -1670,6 +1686,7 @@ private:
     QRadioButton *compactBtn;
     QCheckBox *dedupPCurves;
     QCheckBox *dedupCongruent;
+    QCheckBox *dedupGeometry;
 };
 } // anonymous namespace
 
@@ -1692,6 +1709,7 @@ bool Document::saveAs()
     chosen.compact = compact;
     chosen.dedupPCurves = App::DocumentParams::getDedupShapePCurves();
     chosen.dedupCongruent = App::DocumentParams::getDedupCongruentShapes();
+    chosen.dedupGeometry = App::DocumentParams::getDedupCrossFileGeometry();
 
     QString exe = qApp->applicationName();
     QString fn = FileDialog::getSaveFileName(getMainWindow(), QObject::tr("Save %1 Document").arg(exe),
@@ -1717,6 +1735,8 @@ bool Document::saveAs()
                 App::DocumentParams::setDedupShapePCurves(chosen.dedupPCurves);
             if (chosen.dedupCongruent != App::DocumentParams::getDedupCongruentShapes())
                 App::DocumentParams::setDedupCongruentShapes(chosen.dedupCongruent);
+            if (chosen.dedupGeometry != App::DocumentParams::getDedupCrossFileGeometry())
+                App::DocumentParams::setDedupCrossFileGeometry(chosen.dedupGeometry);
             if (chosen.compact != (getDocument()->getSaveSchemaVersion() >= 5))
                 Command::doCommand(Command::Doc,
                         "App.getDocument(\"%s\").SaveSchemaVersion = %d", DocName,
