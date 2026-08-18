@@ -86,6 +86,7 @@ static bool getProperty(PropTmpMap &props, const LinkBaseExtension::PropInfoMap 
                 << ") to be derived from '" << info.type.getName()
                 << "', instead of '" << prop->getTypeId().getName() << "'";
             PyErr_SetString(PyExc_TypeError, str.str().c_str());
+            return false;
         }
     }
     props[keyStr] = std::make_pair(info.index,prop);

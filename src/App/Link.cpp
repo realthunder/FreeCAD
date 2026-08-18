@@ -185,19 +185,22 @@ void LinkBaseExtension::setProperty(int idx, Property *prop) {
     if(idx<0 || idx>=(int)infos.size())
         LINK_THROW(Base::RuntimeError,"App::LinkBaseExtension: property index out of range");
 
+    // check the type before touching anything, so that a rejected property
+    // leaves whatever was configured for this slot alone
+    if(prop && !prop->isDerivedFrom(infos[idx].type)) {
+        std::ostringstream str;
+        str << "App::LinkBaseExtension: expected property type '" <<
+            infos[idx].type.getName() << "', instead of '" <<
+            prop->getTypeId().getName() << "'";
+        LINK_THROW(Base::TypeError,str.str().c_str());
+    }
+
     if(props[idx]) {
         props[idx]->setStatus(Property::LockDynamic,false);
         props[idx] = nullptr;
     }
     if(!prop)
         return;
-    if(!prop->isDerivedFrom(infos[idx].type)) {
-        std::ostringstream str;
-        str << "App::LinkBaseExtension: expected property type '" <<
-            infos[idx].type.getName() << "', instead of '" <<
-            prop->getClassTypeId().getName() << "'";
-        LINK_THROW(Base::TypeError,str.str().c_str());
-    }
 
     props[idx] = prop;
     props[idx]->setStatus(Property::LockDynamic,true);
