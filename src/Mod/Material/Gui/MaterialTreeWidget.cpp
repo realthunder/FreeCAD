@@ -762,6 +762,11 @@ PrefMaterialTreeWidget::PrefMaterialTreeWidget(QWidget* parent)
 
 PrefMaterialTreeWidget::~PrefMaterialTreeWidget() = default;
 
+void PrefMaterialTreeWidget::setAutoSave(bool enable)
+{
+    autoSave(enable, this, &MaterialTreeWidget::materialSelected);
+}
+
 void PrefMaterialTreeWidget::restorePreferences()
 {
     if (getWindowParameter().isNull()) {

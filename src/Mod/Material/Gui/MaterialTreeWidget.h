@@ -280,6 +280,13 @@ public:
     explicit PrefMaterialTreeWidget(QWidget* parent = nullptr);
     ~PrefMaterialTreeWidget() override;
 
+    /** This fork's Gui::PrefWidget has a third pure virtual upstream does
+     * not (setAutoSave), so without this the class stays abstract and the
+     * generated .ui code cannot instantiate it. Saves on the tree's own
+     * selection signal.
+     */
+    void setAutoSave(bool enable) override;
+
 protected:
     // restore from/save to parameters
     void restorePreferences() override;

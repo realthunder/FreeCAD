@@ -95,7 +95,9 @@ private:
     void showPixmap();
     void showSVG();
 
-    QString selectFile(const Gui::FileDialog::FilterList& filters);
+    /// This fork's FileDialog takes Qt's classic ";;"-separated filter
+    /// string, not upstream's structured FilterList.
+    QString selectFile(const QString& filter);
     void onFileSelectImage();
     void onFileSelectSVG();
 };

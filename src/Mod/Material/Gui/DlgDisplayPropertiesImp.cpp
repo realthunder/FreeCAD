@@ -28,7 +28,7 @@
 
 #include <Base/Console.h>
 #include <Gui/Application.h>
-#include <Gui/Dialogs/DlgMaterialPropertiesImp.h>
+#include <Gui/DlgMaterialPropertiesImp.h>
 #include <Gui/DockWindowManager.h>
 #include <Gui/Document.h>
 #include <Gui/Selection/Selection.h>
@@ -82,7 +82,8 @@ public:
         for (const auto& view : views) {
             if (auto* prop =
                     dynamic_cast<App::PropertyMaterial*>(view->getPropertyByName(property))) {
-                Base::Color color = prop->getDiffuseColor();
+                // This fork's PropertyMaterial has no per-field getters.
+                Base::Color color = prop->getValue().diffuseColor;
                 QSignalBlocker block(buttonColor);
                 buttonColor->setColor(color.asValue<QColor>());
                 hasElementColor = true;
@@ -312,9 +313,13 @@ void DlgDisplayPropertiesImp::slotChangedObject(const Gui::ViewProvider& obj,
         }
         else if (prop.isDerivedFrom<App::PropertyMaterialList>()) {
             if (prop_name == "ShapeAppearance") {
-                auto& values = static_cast<const App::PropertyMaterialList&>(prop).getValues();
-                auto& material = values[0];
-                d->ui.widgetMaterial->setMaterial(QString::fromStdString(material.uuid));
+                // No getValues() on this fork's PropertyMaterialList by design
+                // -- read the one entry, which returns by value.
+                const auto& matList = static_cast<const App::PropertyMaterialList&>(prop);
+                if (matList.getSize() > 0) {
+                    App::Material material = matList.getMaterial(0);
+                    d->ui.widgetMaterial->setMaterial(QString::fromStdString(material.uuid));
+                }
             }
         }
         else if (prop.isDerivedFrom<App::PropertyInteger>()) {
@@ -362,22 +367,14 @@ void DlgDisplayPropertiesImp::reject()
  */
 void DlgDisplayPropertiesImp::onButtonCustomAppearanceClicked()
 {
+    // This fork's dialog is not an in/out material editor: it is given the
+    // name of the property and the view providers, edits them live so the 3D
+    // view answers as controls move, and restores its own snapshot on Cancel.
+    // So there is nothing to seed beforehand or write back afterwards.
     std::vector<Gui::ViewProvider*> Provider = getSelection();
-    Gui::Dialog::DlgMaterialPropertiesImp dlg(this);
-    if (!Provider.empty()) {
-        if (auto vp = dynamic_cast<Gui::ViewProviderGeometryObject*>(Provider.front())) {
-            App::Material mat = vp->ShapeAppearance[0];
-            dlg.setCustomMaterial(mat);
-            dlg.setDefaultMaterial(mat);
-        }
-    }
+    Gui::Dialog::DlgMaterialPropertiesImp dlg("ShapeAppearance", this);
+    dlg.setViewProviders(Provider);
     dlg.exec();
-    App::Material mat = dlg.getCustomMaterial();
-    for (auto vp : Provider) {
-        if (auto vpg = dynamic_cast<Gui::ViewProviderGeometryObject*>(vp)) {
-            vpg->ShapeAppearance.setValue(mat);
-        }
-    }
 }
 
 /**
@@ -388,18 +385,11 @@ void DlgDisplayPropertiesImp::onButtonColorPlotClicked()
     std::vector<Gui::ViewProvider*> Provider = getSelection();
     static QPointer<Gui::Dialog::DlgMaterialPropertiesImp> dlg = nullptr;
     if (!dlg) {
-        dlg = new Gui::Dialog::DlgMaterialPropertiesImp(this);
+        dlg = new Gui::Dialog::DlgMaterialPropertiesImp("TextureMaterial", this);
     }
     dlg->setModal(false);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    if (!Provider.empty()) {
-        App::Property* prop = Provider.front()->getPropertyByName("TextureMaterial");
-        if (auto matProp = dynamic_cast<App::PropertyMaterialList*>(prop)) {
-            App::Material mat = (*matProp)[0];
-            dlg->setCustomMaterial(mat);
-            dlg->setDefaultMaterial(mat);
-        }
-    }
+    dlg->setViewProviders(Provider);
     dlg->show();
 }
 
@@ -569,8 +559,11 @@ void DlgDisplayPropertiesImp::setShapeAppearance(const std::vector<Gui::ViewProv
     for (auto view : views) {
         if (auto* prop =
                 dynamic_cast<App::PropertyMaterialList*>(view->getPropertyByName("ShapeAppearance"))) {
+            if (prop->getSize() == 0) {
+                continue;
+            }
             material = true;
-            mat = prop->getValues()[0];
+            mat = prop->getMaterial(0);
             d->ui.widgetMaterial->setMaterial(QString::fromStdString(mat.uuid));
             break;
         }

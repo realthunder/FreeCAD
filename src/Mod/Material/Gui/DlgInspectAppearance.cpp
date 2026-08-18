@@ -180,7 +180,10 @@ void DlgInspectAppearance::update(std::vector<Gui::ViewProvider*>& views)
                     dynamic_cast<App::PropertyMaterialList*>(view->getPropertyByName("ShapeAppearance"));
                 if (prop) {
                     for (int index = 0; index < prop->getSize(); index++) {
-                        auto& material = (prop->getValues())[index];
+                        // This fork deliberately offers no getValues() on
+                        // PropertyMaterialList -- see the comment on the class.
+                        // Read one entry instead, which also returns by value.
+                        auto material = prop->getMaterial(index);
                         auto* tab = makeAppearanceTab(material);
                         ui->tabAppearance->addTab(tab, QString::number(index));
                     }

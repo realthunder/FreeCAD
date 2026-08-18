@@ -28,7 +28,7 @@
 #include <Gui/TaskView/TaskDialog.h>
 #include <Gui/TaskView/TaskView.h>
 
-namespace App
+namespace Base
 {
 class Color;
 }
