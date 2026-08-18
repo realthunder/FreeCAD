@@ -4,7 +4,9 @@ Status: stage 1 and steps 2a and 2d done 2026-08-12; stage 1b (the additive
 templates, section 2.1) done 2026-08-17, as are FastSignals (2.2) and the
 `std::string` units API with its unit audit (2.3) and the colour-traits
 routing (2.4); steps 2b and 2c done 2026-08-18, which completes stage 2;
-stage 3 waits on the FEM port itself. The two fork-side signature questions in section 4 were decided
+stage 3's four items were re-checked against the tree 2026-08-18 and all
+four already hold in the fork's own FEM (section 4.1), so stage 3 has no
+edit left until the FEM port itself brings upstream's sources in. The two fork-side signature questions in section 4 were decided
 2026-08-17: keep ours, both of them. **All four parked API questions are
 now answered.**
 Driver: [FemPortEvaluation.md](./FemPortEvaluation.md), which found that the
@@ -590,6 +592,27 @@ not reopen them, only honour the FEM-side consequence recorded with each.
   `Gui::Document` upstream. Keep ours; adapt FEM's one use.
 - `ViewProviderFemPostPipeline::acceptReorderingObjects` overrides nothing
   here. Adapt FEM.
+
+### 4.1 Checked against the tree 2026-08-18: all four already hold in-tree
+
+The four above are instructions for the *ported* sources. Against the FEM
+this fork actually carries they were re-checked, and **every one is already
+satisfied** -- so stage 3 has no edit to make until upstream's FEM lands.
+
+| item | state in `src/Mod/Fem` |
+|---|---|
+| `getElementTypes()` by const-ref | `FemMesh.cpp:2653` already returns a reference to a function-local `static` table -- exactly the prescribed adaptation |
+| `isSame` pure virtual | `PropertyPostDataObject.h:86` and `FemMesh.h:71` both define it; signatures match the two pure bases (`Property.h:320`, `ComplexGeoData.h:373`), so they really do override |
+| `signalHighlightObject` on `Application` | `Gui/ActiveAnalysisObserver.cpp:78` already calls it through `Gui::Application::Instance` |
+| `acceptReorderingObjects` | absent from the fork's FEM entirely; the fork's own hook is `ViewProvider::canReorderObject` (`Gui/ViewProvider.h:418`), which no FEM view provider overrides |
+
+WARNING **This is an inspection, not a compile.** `BUILD_FEM=OFF` in all
+four user presets, so none of these four interfaces has been compiled
+against the current core -- the two `isSame` stubs in particular are
+written without `override`, which is exactly the spelling that would let a
+future base-signature change break them silently. Compiling the in-tree FEM
+(the standing "Option B" in [FemPortEvaluation.md](./FemPortEvaluation.md))
+is what would turn this table into a measurement.
 
 ## 5. Consult -- cannot be done while keeping fork behaviour
 
