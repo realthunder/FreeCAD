@@ -267,17 +267,17 @@ void Material::setType(const MaterialType MatType)
         transparency = 0.0000f;
         break;
     case PLASTER:
-        ambientColor .set(0.0500f,0.0500f,0.0500f);
-        diffuseColor .set(0.1167f,0.1167f,0.1167f);
-        specularColor.set(0.0305f,0.0305f,0.0305f);
+        ambientColor .set(0.2000f,0.2000f,0.2000f);
+        diffuseColor .set(0.8000f,0.8000f,0.8000f);
+        specularColor.set(0.0400f,0.0400f,0.0400f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.0078f;
         transparency = 0.0000f;
         break;
     case PLASTIC:
-        ambientColor .set(0.1000f,0.1000f,0.1000f);
-        diffuseColor .set(0.0000f,0.0000f,0.0000f);
-        specularColor.set(0.0600f,0.0600f,0.0600f);
+        ambientColor .set(0.1375f,0.1375f,0.1375f);
+        diffuseColor .set(0.5500f,0.5500f,0.5500f);
+        specularColor.set(0.0500f,0.0500f,0.0500f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.0078f;
         transparency = 0.0000f;
@@ -301,23 +301,23 @@ void Material::setType(const MaterialType MatType)
     case STONE:
         ambientColor .set(0.1900f,0.1520f,0.1178f);
         diffuseColor .set(0.7500f,0.6000f,0.4650f);
-        specularColor.set(0.0784f,0.0800f,0.0480f);
+        specularColor.set(0.0400f,0.0400f,0.0400f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.1700f;
         transparency = 0.0000f;
         break;
     case SHINY_PLASTIC:
-        ambientColor .set(0.0880f,0.0880f,0.0880f);
-        diffuseColor .set(0.0000f,0.0000f,0.0000f);
-        specularColor.set(1.0000f,1.0000f,1.0000f);
+        ambientColor .set(0.1375f,0.1375f,0.1375f);
+        diffuseColor .set(0.5500f,0.5500f,0.5500f);
+        specularColor.set(0.0500f,0.0500f,0.0500f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 1.0000f;
         transparency = 0.0000f;
         break;
     case SATIN:
-        ambientColor .set(0.0660f,0.0660f,0.0660f);
-        diffuseColor .set(0.0000f,0.0000f,0.0000f);
-        specularColor.set(0.4400f,0.4400f,0.4400f);
+        ambientColor .set(0.1375f,0.1375f,0.1375f);
+        diffuseColor .set(0.5500f,0.5500f,0.5500f);
+        specularColor.set(0.0500f,0.0500f,0.0500f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.0938f;
         transparency = 0.0000f;
@@ -357,9 +357,9 @@ void Material::setType(const MaterialType MatType)
     case OBSIDIAN:
         ambientColor .set(0.0538f,0.0500f,0.0662f);
         diffuseColor .set(0.1828f,0.1700f,0.2253f);
-        specularColor.set(0.3327f,0.3286f,0.3464f);
+        specularColor.set(0.0400f,0.0400f,0.0400f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.3000f;
+        shininess    = 0.8000f;
         transparency = 0.0000f;
         break;
     case NEON_PHC:
@@ -373,15 +373,15 @@ void Material::setType(const MaterialType MatType)
     case JADE:
         ambientColor .set(0.1350f,0.2225f,0.1575f);
         diffuseColor .set(0.5400f,0.8900f,0.6300f);
-        specularColor.set(0.3162f,0.3162f,0.3162f);
+        specularColor.set(0.0616f,0.0616f,0.0616f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.1000f;
+        shininess    = 0.6000f;
         transparency = 0.0000f;
         break;
     case RUBY:
         ambientColor .set(0.1745f,0.0118f,0.0118f);
         diffuseColor .set(0.6142f,0.0414f,0.0414f);
-        specularColor.set(0.7278f,0.6279f,0.6267f);
+        specularColor.set(0.0766f,0.0766f,0.0766f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.6000f;
         transparency = 0.0000f;
@@ -389,7 +389,7 @@ void Material::setType(const MaterialType MatType)
     case EMERALD:
         ambientColor .set(0.0215f,0.1745f,0.0215f);
         diffuseColor .set(0.0757f,0.6142f,0.0757f);
-        specularColor.set(0.6330f,0.7278f,0.6330f);
+        specularColor.set(0.0501f,0.0501f,0.0501f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
         shininess    = 0.6000f;
         transparency = 0.0000f;
