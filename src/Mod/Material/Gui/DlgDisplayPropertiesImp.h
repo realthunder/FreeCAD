@@ -92,6 +92,8 @@ private:
     void setupConnections();
     void setupFilters();
     void slotChangedObject(const Gui::ViewProvider&, const App::Property& Prop);
+    void slotDeletedObject(const Gui::ViewProvider&);
+    void slotDeleteDocument(const Gui::Document&);
     void setDisplayModes(const std::vector<Gui::ViewProvider*>&);
     void setColorPlot(const std::vector<Gui::ViewProvider*>&);
     void setShapeAppearance(const std::vector<Gui::ViewProvider*>&);
@@ -110,6 +112,12 @@ private:
     void setMapTransparency(const std::vector<Gui::ViewProvider*>&);
     void onPropertyBoolChanged(const char* name, bool checked);
     std::vector<Gui::ViewProvider*> getSelection() const;
+    /// Adopt a selection as what the dialog edits from now on
+    void rememberTargets(const std::vector<Gui::ViewProvider*>& views);
+    /// The objects the dialog edits: the last selection it saw, which outlives
+    /// the selection itself. Resolved from names on every call, so an object
+    /// that has been deleted drops out instead of dangling.
+    std::vector<Gui::ViewProvider*> getTargets() const;
     void setPropertiesFromSelection();
 
 private:

@@ -27,12 +27,15 @@
 #include <fastsignals/signal.h>
 
 #include <Base/Console.h>
+#include <App/Application.h>
+#include <App/Document.h>
 #include <Gui/Application.h>
 #include <Gui/DlgMaterialPropertiesImp.h>
 #include <Gui/DockWindowManager.h>
 #include <Gui/PrefWidgets.h>
 #include <Gui/Document.h>
 #include <Gui/Selection/Selection.h>
+#include <Gui/ViewProviderDocumentObject.h>
 #include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/WaitCursor.h>
 
@@ -56,6 +59,10 @@ class DlgDisplayPropertiesImp::Private
 public:
     Ui::DlgDisplayProperties ui;
     DlgDisplayPropertiesImp_Connection connectChangedObject;
+    DlgDisplayPropertiesImp_Connection connectDeletedObject;
+    DlgDisplayPropertiesImp_Connection connectDeleteDocument;
+    /// document name, object name -- never a view provider pointer, see getTargets()
+    std::vector<std::pair<std::string, std::string>> targets;
 
     static void setElementColor(const std::vector<Gui::ViewProvider*>& views,
                                 const char* property,
@@ -176,6 +183,7 @@ DlgDisplayPropertiesImp::DlgDisplayPropertiesImp(QWidget* parent, Qt::WindowFlag
 
     {
         QSignalBlocker block(d->ui.widgetMaterial);
+        rememberTargets(getSelection());
         setPropertiesFromSelection();
     }
 
@@ -184,6 +192,10 @@ DlgDisplayPropertiesImp::DlgDisplayPropertiesImp(QWidget* parent, Qt::WindowFlag
     // NOLINTBEGIN
     d->connectChangedObject = Gui::Application::Instance->signalChangedObject.connect(
         std::bind(&DlgDisplayPropertiesImp::slotChangedObject, this, sp::_1, sp::_2));
+    d->connectDeletedObject = Gui::Application::Instance->signalDeletedObject.connect(
+        std::bind(&DlgDisplayPropertiesImp::slotDeletedObject, this, sp::_1));
+    d->connectDeleteDocument = Gui::Application::Instance->signalDeleteDocument.connect(
+        std::bind(&DlgDisplayPropertiesImp::slotDeleteDocument, this, sp::_1));
     // NOLINTEND
 }
 
@@ -191,6 +203,8 @@ DlgDisplayPropertiesImp::~DlgDisplayPropertiesImp()
 {
     // no need to delete child widgets, Qt does it all for us
     d->connectChangedObject.disconnect();
+    d->connectDeletedObject.disconnect();
+    d->connectDeleteDocument.disconnect();
     Gui::Selection().Detach(this);
 }
 
@@ -302,7 +316,7 @@ void DlgDisplayPropertiesImp::changeEvent(QEvent* e)
 
 void DlgDisplayPropertiesImp::setPropertiesFromSelection()
 {
-    std::vector<Gui::ViewProvider*> views = getSelection();
+    std::vector<Gui::ViewProvider*> views = getTargets();
     setDisplayModes(views);
     setColorPlot(views);
     setShapeAppearance(views);
@@ -329,6 +343,13 @@ void DlgDisplayPropertiesImp::OnChange(Gui::SelectionSingleton::SubjectType& rCa
         || Reason.Type == Gui::SelectionChanges::RmvSelection
         || Reason.Type == Gui::SelectionChanges::SetSelection
         || Reason.Type == Gui::SelectionChanges::ClrSelection) {
+        // An empty selection is not a reason to stop editing: keep the objects
+        // the dialog was opened on, so clearing the selection -- or picking in
+        // the 3D view -- does not silently disarm every control.
+        std::vector<Gui::ViewProvider*> views = getSelection();
+        if (!views.empty()) {
+            rememberTargets(views);
+        }
         setPropertiesFromSelection();
     }
 }
@@ -339,7 +360,7 @@ void DlgDisplayPropertiesImp::slotChangedObject(const Gui::ViewProvider& obj,
 {
     // This method gets called if a property of any view provider is changed.
     // We pick out all the properties for which we need to update this dialog.
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     auto vp = std::find_if(Provider.begin(), Provider.end(), [&obj](Gui::ViewProvider* v) {
         return v == &obj;
     });
@@ -429,7 +450,7 @@ void DlgDisplayPropertiesImp::onButtonCustomAppearanceClicked()
     // name of the property and the view providers, edits them live so the 3D
     // view answers as controls move, and restores its own snapshot on Cancel.
     // So there is nothing to seed beforehand or write back afterwards.
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     Gui::Dialog::DlgMaterialPropertiesImp dlg("ShapeAppearance", this);
     dlg.setViewProviders(Provider);
     // Cancel restores the appearance itself, and the ShapeColor mirror's
@@ -444,7 +465,7 @@ void DlgDisplayPropertiesImp::onButtonCustomAppearanceClicked()
  */
 void DlgDisplayPropertiesImp::onButtonColorPlotClicked()
 {
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     static QPointer<Gui::Dialog::DlgMaterialPropertiesImp> dlg = nullptr;
     if (!dlg) {
         dlg = new Gui::Dialog::DlgMaterialPropertiesImp("TextureMaterial", this);
@@ -460,7 +481,7 @@ void DlgDisplayPropertiesImp::onButtonColorPlotClicked()
  */
 void DlgDisplayPropertiesImp::onChangeMaterialActivated(int index)
 {
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     auto matType =
         static_cast<App::Material::MaterialType>(d->ui.changeMaterial->itemData(index).toInt());
     App::Material mat(matType);
@@ -483,7 +504,7 @@ void DlgDisplayPropertiesImp::onChangeMaterialActivated(int index)
 void DlgDisplayPropertiesImp::onChangeModeActivated(const QString& s)
 {
     Gui::WaitCursor wc;
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     for (auto it : Provider) {
         if (auto* prop =
                 dynamic_cast<App::PropertyEnumeration*>(it->getPropertyByName("DisplayMode"))) {
@@ -502,7 +523,7 @@ void DlgDisplayPropertiesImp::onChangePlotActivated(const QString& s)
  */
 void DlgDisplayPropertiesImp::onSpinTransparencyValueChanged(int transparency)
 {
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     for (auto it : Provider) {
         if (auto* prop =
                 dynamic_cast<App::PropertyInteger*>(it->getPropertyByName("Transparency"))) {
@@ -516,7 +537,7 @@ void DlgDisplayPropertiesImp::onSpinTransparencyValueChanged(int transparency)
  */
 void DlgDisplayPropertiesImp::onSpinPointSizeValueChanged(double pointsize)
 {
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     for (auto it : Provider) {
         if (auto* prop = dynamic_cast<App::PropertyFloat*>(it->getPropertyByName("PointSize"))) {
             prop->setValue(pointsize);
@@ -529,7 +550,7 @@ void DlgDisplayPropertiesImp::onSpinPointSizeValueChanged(double pointsize)
  */
 void DlgDisplayPropertiesImp::onButtonColorChanged()
 {
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     Base::Color c {};
     c.setValue<QColor>(d->ui.buttonColor->color());
     for (auto it : Provider) {
@@ -544,7 +565,7 @@ void DlgDisplayPropertiesImp::onButtonColorChanged()
  */
 void DlgDisplayPropertiesImp::onSpinLineWidthValueChanged(double linewidth)
 {
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     for (auto it : Provider) {
         if (auto* prop = dynamic_cast<App::PropertyFloat*>(it->getPropertyByName("LineWidth"))) {
             prop->setValue(linewidth);
@@ -554,7 +575,7 @@ void DlgDisplayPropertiesImp::onSpinLineWidthValueChanged(double linewidth)
 
 void DlgDisplayPropertiesImp::onButtonLineColorChanged()
 {
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     QColor s = d->ui.buttonLineColor->color();
     Base::Color c {};
     c.setValue<QColor>(s);
@@ -567,7 +588,7 @@ void DlgDisplayPropertiesImp::onButtonLineColorChanged()
 
 void DlgDisplayPropertiesImp::onButtonPointColorChanged()
 {
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     QColor s = d->ui.buttonPointColor->color();
     Base::Color c {};
     c.setValue<QColor>(s);
@@ -580,7 +601,7 @@ void DlgDisplayPropertiesImp::onButtonPointColorChanged()
 
 void DlgDisplayPropertiesImp::onSpinLineTransparencyValueChanged(int transparency)
 {
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     for (auto it : Provider) {
         if (auto* prop =
                 dynamic_cast<App::PropertyInteger*>(it->getPropertyByName("LineTransparency"))) {
@@ -591,7 +612,7 @@ void DlgDisplayPropertiesImp::onSpinLineTransparencyValueChanged(int transparenc
 
 void DlgDisplayPropertiesImp::onPropertyBoolChanged(const char* name, bool checked)
 {
-    for (auto vp : getSelection()) {
+    for (auto vp : getTargets()) {
         if (auto prop = Base::freecad_dynamic_cast<App::PropertyBool>(vp->getPropertyByName(name))) {
             prop->setValue(checked);
         }
@@ -803,6 +824,88 @@ void DlgDisplayPropertiesImp::setLineTransparency(const std::vector<Gui::ViewPro
                              d->ui.sliderLineTransparency);
 }
 
+void DlgDisplayPropertiesImp::rememberTargets(const std::vector<Gui::ViewProvider*>& views)
+{
+    d->targets.clear();
+    for (auto view : views) {
+        auto vpd = Base::freecad_dynamic_cast<const Gui::ViewProviderDocumentObject>(view);
+        if (!vpd) {
+            continue;
+        }
+        auto obj = vpd->getObject();
+        if (obj && obj->getDocument()) {
+            d->targets.emplace_back(obj->getDocument()->getName(), obj->getNameInDocument());
+        }
+    }
+}
+
+std::vector<Gui::ViewProvider*> DlgDisplayPropertiesImp::getTargets() const
+{
+    std::vector<Gui::ViewProvider*> views;
+
+    for (const auto& target : d->targets) {
+        auto doc = App::GetApplication().getDocument(target.first.c_str());
+        if (!doc) {
+            continue;  // the document was closed under us
+        }
+        auto obj = doc->getObject(target.second.c_str());
+        if (!obj) {
+            continue;  // the object was deleted under us
+        }
+        auto guiDoc = Gui::Application::Instance->getDocument(doc);
+        if (!guiDoc) {
+            continue;
+        }
+        if (auto view = guiDoc->getViewProvider(obj)) {
+            views.push_back(view);
+        }
+    }
+
+    return views;
+}
+
+void DlgDisplayPropertiesImp::slotDeletedObject(const Gui::ViewProvider& obj)
+{
+    auto vpd = Base::freecad_dynamic_cast<const Gui::ViewProviderDocumentObject>(&obj);
+    if (!vpd) {
+        return;
+    }
+    auto object = vpd->getObject();
+    if (!object || !object->getDocument()) {
+        return;
+    }
+
+    // getTargets() would drop this one anyway once the object is gone, but the
+    // signal arrives while it still resolves, so remove it by name here and let
+    // the controls disable themselves if nothing is left.
+    auto name = std::make_pair(std::string(object->getDocument()->getName()),
+                               std::string(object->getNameInDocument()));
+    auto it = std::find(d->targets.begin(), d->targets.end(), name);
+    if (it != d->targets.end()) {
+        d->targets.erase(it);
+        setPropertiesFromSelection();
+    }
+}
+
+void DlgDisplayPropertiesImp::slotDeleteDocument(const Gui::Document& doc)
+{
+    auto document = doc.getDocument();
+    if (!document) {
+        return;
+    }
+
+    std::string name = document->getName();
+    auto it = std::remove_if(d->targets.begin(),
+                             d->targets.end(),
+                             [&name](const std::pair<std::string, std::string>& target) {
+                                 return target.first == name;
+                             });
+    if (it != d->targets.end()) {
+        d->targets.erase(it, d->targets.end());
+        setPropertiesFromSelection();
+    }
+}
+
 std::vector<Gui::ViewProvider*> DlgDisplayPropertiesImp::getSelection() const
 {
     std::vector<Gui::ViewProvider*> views;
@@ -821,7 +924,7 @@ std::vector<Gui::ViewProvider*> DlgDisplayPropertiesImp::getSelection() const
 void DlgDisplayPropertiesImp::onMaterialSelected(
     const std::shared_ptr<Materials::Material>& material)
 {
-    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    std::vector<Gui::ViewProvider*> Provider = getTargets();
     for (auto it : Provider) {
         if (auto* prop = dynamic_cast<App::PropertyMaterialList*>(
                 it->getPropertyByName("ShapeAppearance"))) {
