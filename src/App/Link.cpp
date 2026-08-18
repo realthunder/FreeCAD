@@ -22,8 +22,6 @@
 
 #include "PreCompiled.h"
 
-#include <algorithm>
-
 #include <boost/range.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/preprocessor/stringize.hpp>
@@ -1361,44 +1359,7 @@ Base::Matrix4D LinkBaseExtension::getTransform(bool transform) const {
     return mat;
 }
 
-namespace {
-
-// The objects whose sub objects are being expanded right now, innermost last.
-// A stack rather than a visited set on purpose: an object legitimately
-// reachable twice through different parents must still expand both times,
-// only an object reachable from itself must not.
-thread_local std::vector<const App::ExtensionContainer*> expandingSubObjects;
-
-/// Keeps expandingSubObjects balanced even if the expansion throws
-struct ExpandGuard {
-    explicit ExpandGuard(const App::ExtensionContainer *obj) {
-        expandingSubObjects.push_back(obj);
-    }
-    ~ExpandGuard() {
-        expandingSubObjects.pop_back();
-    }
-    ExpandGuard(const ExpandGuard &) = delete;
-    ExpandGuard &operator=(const ExpandGuard &) = delete;
-};
-
-} // anonymous namespace
-
 bool LinkBaseExtension::extensionGetSubObjects(std::vector<std::string> &ret, int reason) const {
-    // getSubObjects() carries no depth, and checkLinkDepth() cannot stand in
-    // for one here because the expansion below starts a fresh count at every
-    // step. A cyclic link would recurse until the stack ran out, so cut as
-    // soon as an object is asked to expand while it is already expanding.
-    auto container = getExtendedContainer();
-    if(std::find(expandingSubObjects.begin(),expandingSubObjects.end(),container)
-            != expandingSubObjects.end())
-    {
-        auto obj = dynamic_cast<const DocumentObject*>(container);
-        FC_ERR("Cyclic reference in " << (obj?obj->getFullName():std::string("link"))
-                << ", cannot expand sub objects");
-        return true;
-    }
-    ExpandGuard guard(container);
-
     if(!getLinkedObjectProperty() && getElementListProperty()) {
         for(auto obj : getElementListProperty()->getValues()) {
             if(obj && obj->isAttachedToDocument()) {

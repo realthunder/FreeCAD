@@ -290,8 +290,53 @@ bool DocumentObject::mustRecompute() const
     return mustExecute() > 0;
 }
 
+namespace {
+
+// The objects a recursive query is currently inside, innermost last. A stack
+// rather than a visited set on purpose: an object legitimately reachable
+// twice through different parents must still be visited both times, only an
+// object reachable from itself must not. Linear search over a vector,
+// because this is only ever as deep as the model nests.
+using RecursionStack = std::vector<const App::DocumentObject*>;
+
+thread_local RecursionStack expandingSubObjects;
+thread_local RecursionStack queryingMustExecute;
+
+/// Keeps a RecursionStack balanced even if the recursion throws
+struct RecursionGuard {
+    RecursionGuard(RecursionStack &stack, const App::DocumentObject *obj)
+        : stack(stack)
+    {
+        stack.push_back(obj);
+    }
+    ~RecursionGuard() {
+        stack.pop_back();
+    }
+    RecursionGuard(const RecursionGuard &) = delete;
+    RecursionGuard &operator=(const RecursionGuard &) = delete;
+
+    static bool contains(const RecursionStack &stack, const App::DocumentObject *obj) {
+        return std::find(stack.begin(),stack.end(),obj) != stack.end();
+    }
+
+    RecursionStack &stack;
+};
+
+} // anonymous namespace
+
 short DocumentObject::mustExecute() const
 {
+    // LinkBaseExtension::extensionMustExecute() asks the linked object the
+    // same question, and passes no depth, so a cyclic link would recurse
+    // until the stack ran out. Cut when an object is asked while it is
+    // already being asked.
+    if(RecursionGuard::contains(queryingMustExecute,this)) {
+        FC_ERR("Cyclic reference in " << getFullName()
+                << ", cannot tell whether it must execute");
+        return 0;
+    }
+    RecursionGuard guard(queryingMustExecute,this);
+
     if (queryExtension(&DocumentObjectExtension::extensionMustExecute))
         return 1;
     
@@ -1059,6 +1104,17 @@ Base::Placement DocumentObject::getPlacementOf(const std::string &sub,
 }
 
 std::vector<std::string> DocumentObject::getSubObjects(int reason) const {
+    // This API carries no depth, and every extension that expands here ends
+    // up calling back into it, so a cyclic link or group would recurse until
+    // the stack ran out. checkLinkDepth() cannot stand in for the missing
+    // depth because each step starts its count again. Cut as soon as an
+    // object is asked to expand while it is already expanding.
+    if(RecursionGuard::contains(expandingSubObjects,this)) {
+        FC_ERR("Cyclic reference in " << getFullName() << ", cannot expand sub objects");
+        return {};
+    }
+    RecursionGuard guard(expandingSubObjects,this);
+
     std::vector<std::string> ret;
     callExtension(&DocumentObjectExtension::extensionGetSubObjects,ret,reason);
     return ret;
