@@ -758,7 +758,12 @@ void MaterialTreeWidget::saveMaterialTreeChildren(const Base::Reference<Paramete
 PrefMaterialTreeWidget::PrefMaterialTreeWidget(QWidget* parent)
     : MaterialTreeWidget(parent)
     , PrefWidget()
-{}
+{
+    // Every preference widget in this fork opts into the global auto-apply
+    // setting from its constructor; without this the material picker is the
+    // one page that only writes its choice when the dialog is accepted.
+    setAutoSave(Gui::PrefParam::AutoSave());
+}
 
 PrefMaterialTreeWidget::~PrefMaterialTreeWidget() = default;
 
