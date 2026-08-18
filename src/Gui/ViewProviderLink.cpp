@@ -59,6 +59,7 @@
 #include <App/GeoFeatureGroupExtension.h>
 #include <Base/BoundBoxPy.h>
 #include <Base/Console.h>
+#include <Base/Interpreter.h>
 #include <Base/MatrixPy.h>
 #include <Base/PlacementPy.h>
 #include <Base/Reader.h>
@@ -3183,7 +3184,12 @@ bool ViewProviderLink::initDraggingPlacement(int mode) {
                     if(!PyArg_ParseTuple(ret.ptr(),"O!O!O!",&Base::MatrixPy::Type, &pymat,
                                 &Base::PlacementPy::Type, &pypla,
                                 &Base::BoundBoxPy::Type, &pybbox)) {
-                        FC_ERR("initDraggingPlacement() expects return of type tuple(matrix,placement,boundbox)");
+                        // the error is handled here, so take it off the
+                        // interpreter instead of leaving it for an unrelated
+                        // later call to trip over
+                        Base::PyException e;
+                        FC_ERR("initDraggingPlacement() expects return of type "
+                               "tuple(matrix,placement,boundbox): " << e.what());
                         return false;
                     }
                     if (!dragCtx)

@@ -1217,7 +1217,9 @@ static std::string _getCurrentPythonFile(const std::string &execFile)
     Py::Module mod(PyImport_ImportModule("inspect"), true);
     if (mod.isNull()) {
         PyErr_SetString(PyExc_ImportError, "Cannot load inspect module");
-        return std::string();
+        // hand the error to the caller rather than returning a value with the
+        // interpreter left in an error state, as the branch below already does
+        throw Py::Exception();
     }
     Py::Callable inspect(mod.getAttr("stack"));
     Py::List list(inspect.apply());
