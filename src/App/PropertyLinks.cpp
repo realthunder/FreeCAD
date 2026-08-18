@@ -642,6 +642,12 @@ void PropertyLink::setValue(App::DocumentObject * lValue)
                 "Cannot link to  external object " << lValue->getFullName()
                 << " in " << getFullName());
 
+    // the refusal PropertyXLink::setValue has always made, which the rest of
+    // the link properties were missing; Restore() nullifies a stored self
+    // link before it gets here, so an old document still loads
+    if(lValue && lValue == parent)
+        THROWM(Base::ValueError, "self linking")
+
     aboutToSetValue();
 #ifndef USE_OLD_DAG
     // maintain the back link in the DocumentObject class if it is from a document object
