@@ -2143,3 +2143,64 @@ whose file is kept must write again the motion it was restored with.
 larger. Nothing dangles -- the plan check rewrites a file whose target this
 save does not write, which is the case above -- but the setting is what says
 whether a project wants that dependency at all.
+
+### 12.14 Cross-file geometry at assembly scale, and the file it costs
+
+`scanner.FCStd` is a PartDesign model. `MiSTer` is what sec 12.9 called the
+assembly-shaped case, and it is where sec 12.8 predicted the most -- 28.1%.
+Measured on the build that ships this, both arms saved to a directory in
+ASCII, congruent-instance dedup on in both:
+
+| | off | on |
+|---|---|---|
+| shape files | 5204 | 5205 |
+| files naming another | 0 | 2533 |
+| geometry entries named | 0 | **69252** |
+| raw shape bytes | 85347161 | **71348929 (-16.4%)** |
+| deflated shape bytes | 15923269 | **13369001 (-16.0%)** |
+| whole archive | 17789824 | 15235582 |
+| save to directory | 26.5s | 28.1s |
+| reopen / full parse | 1.7s / 310.3s | 1.7s / 310.1s |
+| faces / missing a curve / invalid | 1127011 / 0 / 23 | 1127012 / 0 / 23 |
+
+***16.4%, not the 28.1% sec 12.8 predicted, and the difference is not a
+disappointment.*** That measurement predates congruent-instance dedup, which
+had not yet removed 5668 of this model's 10872 shape files. What sec 12.8
+counted as cross-file duplicate geometry was in large part whole parts written
+again, and those files no longer exist to hold duplicates. The two savings
+overlap; they do not add.
+
+***The content rule, and what it is worth.*** The first cut of this produced
+**6841 files** against the 5204 the setting-off arm writes -- because content
+addressing merges two objects whose bytes match, and two equal parts stop
+having matching bytes as soon as the first defines its geometry and the second
+names it. A file that writes its geometry out in full now says so, keyed on
+that geometry as it would be written, and a later file that would write the
+same thing writes it out in full too. That took 6841 back to 5205 and took the
+raw bytes down with it, from 72040089 to 71348929: the pair costs one file
+where it used to cost two, which is worth more than the entries the second one
+would have named.
+
+***The one file it still costs.*** A file that itself names another's entries
+cannot offer its content, because it is not the bytes a later file writing in
+full would produce. On `MiSTer` exactly one pair falls in that hole:
+`Shell892` names one file, its twin `Shell6303` names two, so the two differ
+and the store keeps both where it used to keep one. Closing it means a later
+file reproducing an earlier one's references rather than deciding its own,
+which is a larger change than the file it saves.
+
+***What the reopen says, object by object.*** The totals differ by one face,
+and a total that moves is exactly what sec 12.10's lesson says not to accept.
+Dumped per object in both arms -- 18085 shapes, faces, edges and validity --
+the two agree everywhere except the top-level compound, which has one more face
+and two more edges with sharing on. That is the extra file: `Shell6303` is a
+one-face shell, and where the two arms share a file the compound sees one
+TShape instead of two. No shape is null, none throws, and the invalid count is
+23 in both arms, as it is with the setting off.
+
+! **Under an address-space cap, running out looks like a crash.** The first of
+these runs was capped at 12GB and died with SIGSEGV in the middle of the
+reopen, which reads as a defect in the format being tested. The same run at
+24GB completes. Materializing every shape of this model costs about 25GB, so
+the cap has to allow for that -- and a crash under a cap should be reproduced
+without one before it is believed.
