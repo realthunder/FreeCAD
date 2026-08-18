@@ -2324,3 +2324,54 @@ names entries by object, and where an object it must be cannot be named (two
 of this file's objects against one of the other's, which two entries may not
 both name), `build()` writes the file again with nothing borrowed below a face
 rather than write one whose faces have edges with no 2D curve.
+
+### 12.16 What borrowing below a face is worth at assembly scale: nothing
+
+Sec 12.15 ships 0.7% and leaves 6% behind a cross-file location table -- a
+fourth shared table, and the largest piece of format work left in this design.
+It was written on `scanner.FCStd`, a PartDesign document, and whole-face
+borrowing is the mechanism that should pay *most* on an assembly, where the
+same part appears many times. So it was priced there before the table was
+written.
+
+**MiSTer, 18142 objects, forced full recompute, directory save in ASCII, cross-file geometry on in every arm:**
+
+| borrowed below a shell | raw shape bytes | deflated | shape files | sub-shape refs |
+|---|---|---|---|---|
+| nothing (what ships) | 71348218 | 13368648 | 5204 | 0 |
+| faces only | 71348218 | 13368648 | 5204 | 0 |
+| faces, edges and vertices | 71348218 | 13368648 | 5204 | 0 |
+
+***Byte-identical, all three.*** The setting is not merely worth little at
+assembly scale -- it does not fire once. The control says the knob is not
+broken: the same build and harness on scanner reproduce sec 12.15 exactly
+(13790456 -> 12845694, -6.9%, 27 -> 1934 references, 4 -> 109 invalid).
+
+***The reason is the `sub-shape refs` column, and it is zero in the arm that
+ships too.*** No file of this model borrows a sub-shape from another file at
+all, whatever the setting says, and that was equally true before cross-file
+geometry existed (sec 12.14's `borrowing 0` arm). Borrowing below a face can
+only refine a choice the model never offers.
+
+***Why an assembly offers none.*** A borrowed sub-shape needs another file
+that separately stores it, and this design has already removed those: content
+addressing merges files whose bytes match and congruent dedup (sec 12.12)
+merged 5668 of 10872 into rigid-motion instances of one another. What is left
+is one file per distinct part, and a distinct part is not a sub-shape of
+another distinct part. The repetition of an assembly is *between document
+objects*, which Links already share, not *between stored shapes*.
+
+Sub-shape borrowing is therefore a **PartDesign** mechanism, not an assembly
+one: it pays where a feature's shape carries the very `TShape` objects of the
+feature below it -- a fillet over a pad, a pattern over both -- which is a
+within-document history chain and has no assembly equivalent. Sec 11.8's
+promise was measured on that shape of model and generalised too far.
+
+***So the cross-file location table is not being built.*** Its whole return is
+sec 12.15's remaining 6% raw / 4.8% deflated on PartDesign documents, and it
+would cost a fourth identity domain in the format, a written location
+reference, a total mapping on shared objects (partial substitution is what
+refuted read-side interning), and the `TopTools_LocationSet::Add` arithmetic
+that inserts every datum of a chain. That is the largest remaining piece of
+this design paying the least measured return of any step in it, on one class
+of document. The shape-storage arc closes at what ships.
