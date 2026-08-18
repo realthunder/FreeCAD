@@ -84,6 +84,10 @@ namespace Render {
 class Renderer;
 }
 
+namespace App {
+class PropertyContainer;
+}
+
 namespace Gui {
 
 /// Whether a render property states what the machine can afford rather
@@ -537,6 +541,21 @@ public:
     bool isEnabledVBO() const;
     void setRenderCache(int);
     void setRendererType(const std::string &);
+    /** Read the Render_* settings from \a container instead of the MDI view
+     *
+     * A viewer that belongs to no View3DInventor -- a material preview, the
+     * material icon renderer -- has no property container of its own, so
+     * every render setting falls through to the global RenderParams
+     * preference and it cannot be given a shading model independent of
+     * whatever the user is looking at. Hand it a container here (the caller
+     * owns it, and it must outlive the viewer) and Gui::initRenderProperties
+     * populates that instead, so the viewer can state its own PBR,
+     * environment and matcap settings.
+     *
+     * Call before selecting the backend with setRendererType(): the
+     * container is bound when the backend is created.
+     */
+    void setRenderSettings(App::PropertyContainer *container);
     /// Whether an external render backend (Renderer/) is active on this
     /// viewer. Interaction paths that would bypass renderScene() (e.g.
     /// the cached-image rubber-band optimization) must keep Native

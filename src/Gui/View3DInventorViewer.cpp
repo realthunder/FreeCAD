@@ -487,7 +487,21 @@ static ValueT _hiddenLineParam(View3DInventor *view, const char *_name, const ch
 struct View3DInventorViewer::Private
 {
     View3DInventor                    *view;
+    /// Where the Render_* settings are read from, when that is not the
+    /// MDI view above. A viewer with no View3DInventor -- a material
+    /// preview, an icon renderer -- otherwise falls through to the
+    /// global RenderParams preferences, so it cannot be given a shading
+    /// model of its own; see setRenderSettings().
+    App::PropertyContainer            *rendersettings = nullptr;
     View3DInventorViewer              *owner;
+
+    /// The container the Render_* settings live on: the override when one
+    /// was given, else the MDI view. Null for a bare viewer that was given
+    /// neither, which reads the global preferences instead.
+    App::PropertyContainer *renderSettings() const {
+        return rendersettings ? rendersettings
+                              : static_cast<App::PropertyContainer *>(view);
+    }
 
     bool                              animating = false;
 
@@ -4056,6 +4070,11 @@ bool View3DInventorViewer::applyRendererAntiAliasing()
     return true;
 }
 
+void View3DInventorViewer::setRenderSettings(App::PropertyContainer *container)
+{
+    _pimpl->rendersettings = container;
+}
+
 void View3DInventorViewer::setRendererType(const std::string &type)
 {
     // An empty or 'Default' type selects the plain GL pipeline. A failed
@@ -4083,8 +4102,9 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         _pimpl->renderer = RendererFactory::create(
                 type, qobject_cast<QOpenGLWidget*>(getGLWidget()));
         if (_pimpl->renderer && selectionRoot) {
-            selectionRoot->setExternalRenderer(_pimpl->renderer.get(), _pimpl->view);
-            Gui::initRenderProperties(_pimpl->view);
+            App::PropertyContainer *settings = _pimpl->renderSettings();
+            selectionRoot->setExternalRenderer(_pimpl->renderer.get(), settings);
+            Gui::initRenderProperties(settings);
             // Seed the renderer-layer knobs it cannot read itself
             // before the backend can start serving (RenderParams
             // changes re-push through onRenderParamChanged).
