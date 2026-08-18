@@ -1501,6 +1501,117 @@ single member are not proxied at all (56 of them here), and lines and
 points are their own material buckets and stay exact (48 here) — a line
 proxy is a separate question this does not touch.
 
+### 11.1d Decided: the deleted mass is carried per cell, not per member
+
+`RenderDebug_ProxyGen` now generates both candidate stand-ins on every
+merge it makes and reports what each cost and what each committed, so
+11.1c's open question is answered by the model rather than by the
+argument. Same machine, same document, same converged whole-assembly
+camera (8479 triangle draws over 8328 distinct meshes, 140-163 nodes on
+the 64px cut), 19 reports aggregated at camera A and 8 at 4x zoom;
+29161 members sampled in the far field.
+
+A stand-in is an axis-aligned box, 12 triangles, appended after the
+decimation -- what `DrawCall::standIn` already draws for geometry that
+has not arrived. The two candidates:
+
+- **per collapsed member**: one box around each member the decimation
+  dropped;
+- **per occupied cell**: one box per cell of the decimation grid that
+  holds dropped content, sized to the content in that cell rather than
+  to the cell.
+
+Both are **conservative covers of the same point set** -- every
+deleted vertex lands inside a box either way -- which is what makes them
+comparable at all: the triangles are the price, and the volume and area
+are how loosely each one holds the same content. Neither can win by
+covering less of the model.
+
+**Far field (camera A, the operating point).**
+
+| grid | members lost | per-member boxes / tri | per-cell boxes / tri | per-cell volume | per-cell area | per-cell names |
+|---|---|---|---|---|---|---|
+| cell/4 | 25106 (86%) | 25106 / 301 k | 5974 / 72 k (0.24x) | 1.61x | 0.76x | 1222 (5%) |
+| cell/8 | 21866 (75%) | 21866 / 262 k | 9220 / 111 k (0.42x) | 0.50x | 0.47x | 2026 (9%) |
+| cell/16 | 16173 (55%) | 16173 / 194 k | 12159 / 146 k (0.75x) | 0.77x | 0.63x | 2447 (15%) |
+
+The volume and area columns are per-cell as a fraction of per-member;
+under 1.0 means the per-cell cover is the tighter of the two.
+
+**The verdict is per cell, and it is not close at the operating grid.**
+At cell/8 it costs 2.4x fewer triangles *and* commits half the volume
+and half the surface area. That is the result 11.1c did not predict: the
+expectation was that per-cell would buy its cheapness by filling the
+gaps between the parts it aggregates, and instead it is tighter on both
+counts, because the loss runs the other way too -- a member whose shape
+is nothing like its bounding box (a long diagonal bracket, a bent clip)
+is over-covered by the one box per-member gives it, and the grid cuts
+that box into pieces that follow the part.
+
+!! The gap-filling does show up, but only at the coarsest grid: at
+cell/4 per-cell commits **1.61x the volume** while still holding less
+surface area. A cell there is a quarter of the node, so a box that
+unions whatever is in one fills real space between real parts. It is an
+argument against standing in at grids coarser than cell/8, not against
+the representation.
+
+**It is close to area-preserving, which is the property that
+matters.** Section 4.1's diagnosis is that a far field stops behaving
+like a surface and starts behaving like a partially opaque cloud, so
+what has to survive is coverage. At cell/8 the decimation deletes
+2.25e4 of surface area and the per-cell boxes put back 1.81e4 of it --
+0.81x, slightly under. Per-member puts back 3.85e4, **1.7x the area it
+is standing in for**: it does not restore the missing coverage, it
+overshoots it, and pays 2.4x more triangles to do so.
+
+**Near field (camera B, 4x zoom).** The ordering reverses on cost and
+holds on tightness: per-cell costs **1.2x to 5.8x more boxes** (its
+count is bounded by the grid, not by the member count, so a cut node
+with few deletions still pays for every cell it spans) while committing
+0.13x-0.46x the volume. This is the regime where per-member is the
+cheaper of the two -- and it is also the regime where deletion barely
+happens: 255 members lost at cell/16 against 16173 in the far field. The
+absolute cost of being wrong here is 18 k triangles against a scene of
+several million.
+
+**What per cell costs, stated plainly: identity.** A box that stands in
+for one member sits in that member's part slot and a pick still names
+the part it hit; a cell holding several members can honestly name none
+of them, and the far field is crowded -- **per-cell names 5-15% of the
+deleted members against per-member's 100%**. Section 6's invariant is
+kept either way (a pick resolves to no object, never to the wrong one),
+but per cell it resolves to nothing far more often. This is the same
+trade the rung ladder already makes and it is judged acceptable at a
+distance where the whole node is 64 px; near the camera, where a user
+picks, the deletion is small and the cut has descended past the node
+anyway.
+
+**The structural argument, which the measurement does not see and
+which points the same way.** Section 7.1 builds a parent's proxy from
+its children's, so whatever carries the deleted mass has to compose the
+same way. Per cell it does: the grids nest, so eight child cells fall in
+one parent cell and their boxes union into one, and the parent's
+stand-in count stays bounded by the parent's own grid. Per member it
+does not: a parent inherits every member deleted anywhere below it, so
+the stand-in table grows with the subtree while the proxy it accompanies
+shrinks -- exactly the wrong shape, and the bottom-up construction would
+have baked it into every level.
+
+! **What neither representation is: cheap.** At cell/8 the per-cell
+stand-ins cost 1.29x the proxy's own triangles, so a node's real cost is
+the proxy plus a bit more than the proxy again. The aggregation still
+wins by a wide margin against the source, but phase 3's cut has to price
+a node at proxy + stand-in, not at proxy, and 11.1c's error term has to
+account for the stand-in as geometry that is present rather than
+missing.
+
+! Two things this does not settle. The boxes are opaque, so the
+"partially opaque cloud" of section 4.1 is approximated by a solid at
+the coverage the boxes happen to have; a normal distribution per cell
+(SGGX, section 4.1) is the next refinement and it is orthogonal to which
+unit the stand-in is keyed on. And a box is not a voxel: this measures
+the cheap end of section 5(2), not Far Voxels itself.
+
 ### 11.2 What the code already gives us
 
 `simplifyMesh()` is a better starting point than §5.1 claims. It is a
