@@ -69,7 +69,6 @@ public:
 private Q_SLOTS:
     void onChangeModeActivated(const QString&);
     void onChangePlotActivated(const QString&);
-    void onChangeMaterialActivated(int);
     void onSpinTransparencyValueChanged(int);
     void onSpinPointSizeValueChanged(double);
     void onButtonColorChanged();
@@ -97,8 +96,6 @@ private:
     void setDisplayModes(const std::vector<Gui::ViewProvider*>&);
     void setColorPlot(const std::vector<Gui::ViewProvider*>&);
     void setShapeAppearance(const std::vector<Gui::ViewProvider*>&);
-    void setMaterial(const std::vector<Gui::ViewProvider*>&);
-    void fillupMaterials();
     void setShapeColor(const std::vector<Gui::ViewProvider*>&);
     void setLineColor(const std::vector<Gui::ViewProvider*>&);
     void setPointColor(const std::vector<Gui::ViewProvider*>&);

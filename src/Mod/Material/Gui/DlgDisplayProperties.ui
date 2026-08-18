@@ -361,9 +361,6 @@
         <property name="bottomMargin">
          <number>0</number>
         </property>
-        <item>
-         <widget class="QComboBox" name="changeMaterial"/>
-        </item>
        </layout>
       </item>
       <item row="2" column="0">
@@ -535,7 +532,6 @@ uniform color for all vertices.</string>
  <tabstops>
   <tabstop>changeMode</tabstop>
   <tabstop>changePlot</tabstop>
-  <tabstop>changeMaterial</tabstop>
   <tabstop>buttonCustomAppearance</tabstop>
   <tabstop>buttonColor</tabstop>
   <tabstop>buttonLineColor</tabstop>

@@ -175,7 +175,6 @@ DlgDisplayPropertiesImp::DlgDisplayPropertiesImp(QWidget* parent, Qt::WindowFlag
     d->ui.buttonColor->setModal(false);
 
     d->ui.checkBoxColorRecompute->initAutoSave();
-    fillupMaterials();
 
     // Create a filter to only include current format materials
     // that contain the basic render model.
@@ -248,10 +247,6 @@ void DlgDisplayPropertiesImp::setupConnections()
             qOverload<int>(&QSpinBox::valueChanged),
             this,
             &DlgDisplayPropertiesImp::onSpinTransparencyValueChanged);
-    connect(d->ui.changeMaterial,
-            qOverload<int>(&QComboBox::activated),
-            this,
-            &DlgDisplayPropertiesImp::onChangeMaterialActivated);
     connect(d->ui.spinPointSize,
             qOverload<double>(&QDoubleSpinBox::valueChanged),
             this,
@@ -320,7 +315,6 @@ void DlgDisplayPropertiesImp::setPropertiesFromSelection()
     setDisplayModes(views);
     setColorPlot(views);
     setShapeAppearance(views);
-    setMaterial(views);
     setShapeColor(views);
     setLineColor(views);
     setPointColor(views);
@@ -474,28 +468,6 @@ void DlgDisplayPropertiesImp::onButtonColorPlotClicked()
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setViewProviders(Provider);
     dlg->show();
-}
-
-/**
- * Sets the 'ShapeAppearance' property of all selected view providers.
- */
-void DlgDisplayPropertiesImp::onChangeMaterialActivated(int index)
-{
-    std::vector<Gui::ViewProvider*> Provider = getTargets();
-    auto matType =
-        static_cast<App::Material::MaterialType>(d->ui.changeMaterial->itemData(index).toInt());
-    App::Material mat(matType);
-    d->ui.buttonColor->setColor(mat.diffuseColor.asValue<QColor>());
-
-    for (auto it : Provider) {
-        if (auto* prop =
-                dynamic_cast<App::PropertyMaterialList*>(it->getPropertyByName("ShapeAppearance"))) {
-            // The presets are Phong definitions and say so, so this puts a
-            // PBR appearance back into Phong mode rather than leaving it to
-            // read the preset's slots its own way
-            prop->setValue(mat);
-        }
-    }
 }
 
 /**
@@ -718,52 +690,6 @@ void DlgDisplayPropertiesImp::setShapeAppearance(const std::vector<Gui::ViewProv
         }
     }
     d->ui.buttonCustomAppearance->setEnabled(material);
-}
-
-void DlgDisplayPropertiesImp::setMaterial(const std::vector<Gui::ViewProvider*>& views)
-{
-    bool material = false;
-    App::Material::MaterialType matType = App::Material::DEFAULT;
-    for (auto view : views) {
-        if (auto* prop =
-                dynamic_cast<App::PropertyMaterialList*>(view->getPropertyByName("ShapeAppearance"))) {
-            material = true;
-            matType = prop->getType(0);
-            break;
-        }
-    }
-
-    int index = d->ui.changeMaterial->findData(matType);
-    if (index >= 0) {
-        d->ui.changeMaterial->setCurrentIndex(index);
-    }
-    d->ui.changeMaterial->setEnabled(material);
-}
-
-void DlgDisplayPropertiesImp::fillupMaterials()
-{
-    d->ui.changeMaterial->addItem(tr("Default"), App::Material::DEFAULT);
-    d->ui.changeMaterial->addItem(tr("Aluminium"), App::Material::ALUMINIUM);
-    d->ui.changeMaterial->addItem(tr("Brass"), App::Material::BRASS);
-    d->ui.changeMaterial->addItem(tr("Bronze"), App::Material::BRONZE);
-    d->ui.changeMaterial->addItem(tr("Copper"), App::Material::COPPER);
-    d->ui.changeMaterial->addItem(tr("Chrome"), App::Material::CHROME);
-    d->ui.changeMaterial->addItem(tr("Emerald"), App::Material::EMERALD);
-    d->ui.changeMaterial->addItem(tr("Gold"), App::Material::GOLD);
-    d->ui.changeMaterial->addItem(tr("Jade"), App::Material::JADE);
-    d->ui.changeMaterial->addItem(tr("Metalized"), App::Material::METALIZED);
-    d->ui.changeMaterial->addItem(tr("Neon GNC"), App::Material::NEON_GNC);
-    d->ui.changeMaterial->addItem(tr("Neon PHC"), App::Material::NEON_PHC);
-    d->ui.changeMaterial->addItem(tr("Obsidian"), App::Material::OBSIDIAN);
-    d->ui.changeMaterial->addItem(tr("Pewter"), App::Material::PEWTER);
-    d->ui.changeMaterial->addItem(tr("Plaster"), App::Material::PLASTER);
-    d->ui.changeMaterial->addItem(tr("Plastic"), App::Material::PLASTIC);
-    d->ui.changeMaterial->addItem(tr("Ruby"), App::Material::RUBY);
-    d->ui.changeMaterial->addItem(tr("Satin"), App::Material::SATIN);
-    d->ui.changeMaterial->addItem(tr("Shiny plastic"), App::Material::SHINY_PLASTIC);
-    d->ui.changeMaterial->addItem(tr("Silver"), App::Material::SILVER);
-    d->ui.changeMaterial->addItem(tr("Steel"), App::Material::STEEL);
-    d->ui.changeMaterial->addItem(tr("Stone"), App::Material::STONE);
 }
 
 void DlgDisplayPropertiesImp::setShapeColor(const std::vector<Gui::ViewProvider*>& views)
