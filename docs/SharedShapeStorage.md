@@ -1965,3 +1965,85 @@ cost worth removing. Timed over all 362873 incidences:
 A plane projection of a line or a circle is analytic, not an approximation. One
 full sweep of the largest model in the collection spends a third of a second
 there. **Not taken.**
+
+### 12.12 Congruent-instance dedup, as built
+
+Sec 12.9 measured the prize and sec 12.11 settled the ground it stands on: two
+instances of one part agree to 5.0e-12 in absolute terms, far inside
+`Precision::Confusion`, so storing one in place of the other is sound -- while
+their encodings cannot be compared at all, not holding the same count of
+numbers. What follows is what it took to build.
+
+***No format change.*** `Part::CongruenceIndex` is a per-save index, keyed on
+the save generation exactly as the owner table is. A shape that matches one
+already written borrows its file, and the motion between them is written as one
+new attribute on the property, `motion`. A document that has no repeats writes
+nothing new, and an older reader that ignores the attribute reads geometry that
+is simply in the wrong place rather than geometry it cannot parse -- which is
+why the setting is a document one and not a schema.
+
+***The motion is baked into the geometry on restore.*** This is the part that
+had to be learned. The first version composed the motion into the location the
+property already writes, which costs nothing and is wrong: a restored shape's
+location **is** the object's `Placement`, which is model data. An `App::Link`
+that replaces its source's placement with its own reads exactly that, and 1146
+links in `MiSTer` drew their geometry where the instance it had been borrowed
+from sits. The geometry was right and the model was wrong, which is the worse
+of the two failures. Baking costs a copy of the geometry per borrowed instance
+-- so this saves file bytes, not memory, and not tessellation.
+
+***What it takes to be sure two shapes are the same part.*** Each of these was
+added because the one before it let something through:
+
+| check | what it catches |
+|---|---|
+| sub-shape counts, vertex radii spectrum | the key; proposes candidates |
+| area and volume | an approximation standing in for what it approximates |
+| every vertex, in index order | a different part with the same invariants |
+| every edge midpoint, in index order | same corners, different edges |
+| surface type per face | an exact cylinder against a spline copy of it |
+| **surface samples per face** | **same boundary, different interior** |
+
+The last row is the one that surprised. Two patches sharing a boundary can
+share every vertex, every edge midpoint, their area **and** their volume, and
+still bulge differently: a pair in this model differs by half its depth that
+way. A boundary does not determine an interior, and neither do the invariants.
+
+***Sub-shape order is the correspondence, deliberately.*** The motion is
+recovered from three spread vertices taken by index and checked against every
+vertex by index. That makes the check safe for more than geometry: the
+borrowing object keeps its own element map, and those names resolve through
+sub-shape indices. An instance whose topology is ordered differently fails to
+match and is written out in full.
+
+***Measured on `MiSTer_binary.FCStd`***, saved to a directory in ASCII:
+
+| | off | on |
+|---|---|---|
+| shape files | 10872 | **5204** |
+| raw shape bytes | 113940802 | **85347161 (-25.1%)** |
+| save | 9.28s | 26.10s |
+
+| over 894 sampled shapes | with sharing | control, sharing off |
+|---|---|---|
+| worst relative volume change | 8.4e-11 | 3.1e-14 |
+| worst relative area change | 1.1e-09 | 1.1e-14 |
+| worst centre-of-mass shift | 4.9e-10 | 5.0e-14 |
+
+The acceptance is a hundredth of `Precision::Confusion`. At the full 1e-7 the
+worst centre of mass moved **6.1e-8** and the saving was 27.0%; 1.9 points of
+byte saving is a cheap price for two orders of fidelity, and the same trade sec
+12.10 made for the pcurves.
+
+! **A bounding box cannot check this work.** OCCT estimates one from surface
+poles, so it is not invariant under a rigid motion: a shape stored once and
+moved back reports a box differing by 1.4mm while its meshed surface agrees
+with the original to **1.8e-15**. Two hours went into a corruption that was not
+there. Volume, area and centre of mass are what to compare.
+
+***Still open.*** The save costs 17s more on 18142 objects, which is the
+invariants and the verification, unoptimized -- the obvious cut is to compute
+area and volume once per shape and keep them beside the owner table rather than
+per candidate pair. And 5204 files against the 1446 distinct shapes sec 12.9
+counted says most of the remaining repeats are ordered differently, which the
+index-order correspondence refuses by design.
