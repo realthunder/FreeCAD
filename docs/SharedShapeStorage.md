@@ -1751,9 +1751,11 @@ The second was not expected. The largest case in the document is a 2129-face
 part in two files of about 3.5 MB, at **translation 0 and rotation 0**: 1438 of
 114139 lines differ, all of them trailing digits of `Curve2ds` coefficients at
 about 1e-13. The same part was written twice with its pcurves recomputed
-independently. No transform is involved, and a tolerant comparison alone would
-collapse it -- which makes that fifth of the prize much cheaper to take than the
-other four.
+independently. No transform is involved, so this fifth of the prize looked much
+cheaper to take than the other four.
+
+**It is not.** Sec 12.11 measured that reading and withdraws it: the two files
+do not hold the same numbers, and no comparison of encodings can merge them.
 
 ### 12.10 Can the pcurves simply be dropped and recomputed?
 
@@ -1862,3 +1864,63 @@ in the kernel reads meaning into the identity of a pcurve object:
 The risk in merging was never the sharing. It was `Index()`, which is asked for
 a curve that is no longer in the map -- the defect measured in sec 12.8, where
 25443 face pcurves were silently emptied.
+
+### 12.11 The cheap fifth is not cheap, and the planar pcurve is not worth caching
+
+Two follow-ups from sec 12.9 and sec 12.10, both measured, both negative. They
+are recorded because each one removes a plausible piece of work.
+
+***A tolerant content hash buys 0.1%, not 5.2%.*** Sec 12.9 read the 15
+same-place groups as differing only in trailing digits, which suggested the
+blob manager could take them with a rounded content key instead of the
+transform recovery the other 58 groups need. Measured over `MiSTer`'s 10872
+shape files by re-printing every number in the file at N significant digits and
+hashing that:
+
+| key | distinct files | removable |
+|---|---|---|
+| exact content hash | 10872 | 0 |
+| rounded to 15 digits | 10872 | 0 |
+| rounded to 13 digits | 10872 | 0 |
+| rounded to 12 digits | 10839 | 65353 (0.1%) |
+| rounded to 10 digits | 10835 | **80346 (0.1%)** |
+
+37 groups merge that exact hashing does not, none of them over-merged -- and
+they are all small shells worth a few kilobytes each. **The 5916424 bytes are
+not among them.**
+
+The largest case says why. Its two files, `Solid1489` and `Solid1263`, 3393786
+and 3393707 bytes:
+
+- **They do not hold the same count of numbers** -- 144538 against 144539. Two
+  independently computed BSpline pcurves can describe the same curve with
+  different poles and knots, so the encodings are not even the same shape of
+  object.
+- The differing values are not trailing digits. Near-zero terms **flip sign**
+  (`-1.195e-14` against `1.151e-14`), which is a relative difference of 100%
+  that no rounding can absorb, and real coefficients differ at **1.7e-8**
+  relative (`5.377016415e-06` against `5.377016322e-06`).
+
+Sec 12.9's 1e-13 was a line-level reading of the diff, not the relative
+difference between the numbers. So there is **one job here, not two**: every
+congruent group, moved or not, has to be settled by comparing geometry within a
+tolerance -- which is what the invariants plus a recovered motion already do,
+deviations 1e-12 to 1e-16 -- and never by comparing what was written. That also
+settles a design question the split had left open: the instance that borrows a
+stored shape receives geometry that differs from its own recompute by up to
+about 1e-8 in the coefficients while being the same curve to 1e-12. Nothing
+downstream reads those digits, but the storage cannot pretend they match.
+
+***The planar pcurve costs 1.1 us, so caching it is not worth building.*** Sec
+12.10 noted that `CurveOnPlane` re-projects on every call and caches nothing,
+and that 76.3% of `MiSTer`'s incidences go that way -- which looked like a load
+cost worth removing. Timed over all 362873 incidences:
+
+| | calls | total | each |
+|---|---|---|---|
+| pcurve stored in the file | 85955 | 0.00s | list walk |
+| projected onto the plane | 276918 | **0.31s** | **1.1 us** |
+
+A plane projection of a line or a circle is analytic, not an approximation. One
+full sweep of the largest model in the collection spends a third of a second
+there. **Not taken.**
