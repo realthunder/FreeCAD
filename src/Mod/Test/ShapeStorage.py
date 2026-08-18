@@ -727,3 +727,149 @@ class ShapeRefCases(ShapeTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAS_PART, "Part module not available")
+class ShapeCongruenceCases(ShapeTestCase):
+    """The same part in two places is stored once and moved back.
+
+    Content addressing shares parts whose bytes match. An exporter that
+    multiplies the placement into the coordinates defeats it: the same part at
+    twenty positions is twenty distinct contents. transformGeometry() is that
+    exporter in miniature -- it bakes a transform into the numbers -- so these
+    cases are the real thing at a size a test can check.
+    """
+
+    def congruentDocument(self, doc):
+        """A part, the same part baked into two other positions, and one that
+        is a different part."""
+        base = Part.makeBox(10, 20, 30).cut(
+            Part.makeCylinder(3, 40, FreeCAD.Vector(5, 10, -5))
+        )
+        first = doc.addObject("Part::Feature", "First")
+        first.Shape = base
+
+        moved = FreeCAD.Matrix()
+        moved.rotateZ(0.7)
+        moved.move(FreeCAD.Vector(100, 50, 25))
+        second = doc.addObject("Part::Feature", "Second")
+        second.Shape = base.transformGeometry(moved)
+
+        elsewhere = FreeCAD.Matrix()
+        elsewhere.rotateX(1.3)
+        elsewhere.move(FreeCAD.Vector(-40, 5, 9))
+        third = doc.addObject("Part::Feature", "Third")
+        third.Shape = base.transformGeometry(elsewhere)
+
+        other = doc.addObject("Part::Feature", "Other")
+        other.Shape = Part.makeBox(10, 20, 31)
+        doc.recompute()
+        return first, second, third, other
+
+    def centre(self, shape):
+        """The average of a shape's vertices.
+
+        Not the bounding box, which OCCT estimates from surface poles and which
+        therefore is not invariant under a rigid motion: a shape stored once
+        and moved back reports a different box while being the same geometry to
+        1.8e-15. Not CenterOfMass either, which a compound does not have.
+        """
+        points = [v.Point for v in shape.Vertexes]
+        total = FreeCAD.Vector()
+        for point in points:
+            total = total + point
+        return total * (1.0 / len(points)) if points else total
+
+    def savedWith(self, congruent, name):
+        group = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        previous = group.GetBool("DedupCongruentShapes", True)
+        group.SetBool("DedupCongruentShapes", congruent)
+        try:
+            doc = self.newDocument(name)
+            shapes = self.congruentDocument(doc)
+            volumes = [obj.Shape.Volume for obj in shapes]
+            centres = [self.centre(obj.Shape) for obj in shapes]
+            project = self.directoryPath(name + "_dir")
+            doc.saveAs(project)
+            FreeCAD.closeDocument(doc.Name)
+            self.docs.remove(name)
+            return project, volumes, centres
+        finally:
+            group.SetBool("DedupCongruentShapes", previous)
+
+    def testCongruentInstancesShareOneFile(self):
+        plain, _, _ = self.savedWith(False, "CongOff")
+        shared, _, _ = self.savedWith(True, "CongOn")
+        self.assertEqual(
+            len(self.blobNames(plain)), 4, "each part should have its own file"
+        )
+        # Second and Third are one part in two places; First is that part with
+        # exact geometry rather than the spline transformGeometry leaves, and
+        # Other is a different part. Three files, not two.
+        self.assertEqual(
+            len(self.blobNames(shared)),
+            3,
+            "the two instances of one part should share a file",
+        )
+
+    def testSharedInstancesComeBackWhereTheyWere(self):
+        project, volumes, centres = self.savedWith(True, "CongBack")
+        doc = self.openDocument(project)
+        for i, name in enumerate(("First", "Second", "Third", "Other")):
+            shape = doc.getObject(name).Shape
+            self.assertAlmostEqual(
+                shape.Volume,
+                volumes[i],
+                delta=abs(volumes[i]) * 1e-9,
+                msg="%s came back as a different shape" % name,
+            )
+            self.assertLess(
+                (self.centre(shape) - centres[i]).Length,
+                1e-8,
+                "%s came back in the wrong place" % name,
+            )
+
+    def testPlacementIsNotUsedToCarryTheMotion(self):
+        """The motion goes into the geometry, never into the placement.
+
+        A restored shape's location is the object's Placement, which is model
+        data: an App::Link that replaces its source's placement with its own
+        reads it, and would draw this geometry where the instance it borrowed
+        from sits. A first attempt at this moved 1146 links that way.
+        """
+        project, _, _ = self.savedWith(True, "CongPlacement")
+        doc = self.openDocument(project)
+        for name in ("First", "Second", "Third", "Other"):
+            self.assertPlacement(
+                doc.getObject(name),
+                FreeCAD.Placement(),
+                "%s placement was used to carry the motion" % name,
+            )
+
+    def testDifferentPartsAreNotMerged(self):
+        """Everything cheap says these two are the same part.
+
+        The near-miss this guards against is real: an exact cylinder and the
+        spline transformGeometry() writes for it share every vertex, every edge
+        midpoint, their area and their volume, and are not the same shape.
+        """
+        project, volumes, _ = self.savedWith(True, "CongDistinct")
+        doc = self.openDocument(project)
+        first = doc.getObject("First").Shape.Volume
+        second = doc.getObject("Second").Shape.Volume
+        self.assertGreater(
+            abs(first - second) / abs(first),
+            1e-6,
+            "an approximation was stored in place of the shape it approximates",
+        )
+
+    def testSwitchedOffNothingIsShared(self):
+        plain, volumes, centres = self.savedWith(False, "CongDisabled")
+        self.assertEqual(len(self.blobNames(plain)), 4)
+        doc = self.openDocument(plain)
+        for i, name in enumerate(("First", "Second", "Third", "Other")):
+            self.assertAlmostEqual(
+                doc.getObject(name).Shape.Volume,
+                volumes[i],
+                delta=abs(volumes[i]) * 1e-12,
+            )

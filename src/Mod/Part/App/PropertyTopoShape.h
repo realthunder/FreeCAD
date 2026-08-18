@@ -240,6 +240,19 @@ private:
      * parsing it, so a reopened document still knows what its own files say.
      */
     mutable std::string _blobPlan;
+    /** The motion from _blob's geometry to this shape's, when the file was
+     * written for another instance of the same part.
+     *
+     * Identity for a file written for this shape, which is the ordinary
+     * case. When it is not identity, this property owns none of the file:
+     * the geometry in it sits where the other instance sits, and this one
+     * is that geometry moved. It is composed into the location written to
+     * the XML, so nothing on the reading side has to know about any of it.
+     */
+    mutable TopLoc_Location _blobMotion;
+    /// The motion a restore has to put back into the geometry, from the
+    /// `motion` attribute. Identity for a file written for this shape.
+    TopLoc_Location _RestoreMotion;
     /// Content hash a restore read, empty when this shape is not a blob.
     std::string _RestoreHash;
     /// Manager the pending referrer was queued with, for withdrawing it.

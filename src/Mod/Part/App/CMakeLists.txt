@@ -225,6 +225,8 @@ SET(Features_SRCS
 SOURCE_GROUP("Features" FILES ${Features_SRCS})
 
 SET(Properties_SRCS
+    ShapeCongruence.cpp
+    ShapeCongruence.h
     ShapeRefSet.cpp
     ShapeRefSet.h
     PropertyShapeStore.cpp

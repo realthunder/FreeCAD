@@ -31,6 +31,7 @@
 # include <Bnd_Box.hxx>
 # include <BRepBndLib.hxx>
 # include <BRepBuilderAPI_Copy.hxx>
+# include <BRepBuilderAPI_Transform.hxx>
 # include <BRepTools.hxx>
 # include <BRep_Builder.hxx>
 # include <BRepTools_ShapeSet.hxx>
@@ -50,6 +51,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/DocumentParams.h>
 #include <App/DocumentObject.h>
 #include <App/ObjectIdentifier.h>
 #include <Base/Console.h>
@@ -68,6 +70,7 @@
 #include "PartPyCXX.h"
 #include "PropertyShapeStore.h"
 #include "PropertyTopoShape.h"
+#include "ShapeCongruence.h"
 #include "ShapeRefSet.h"
 #include "TopoShapePy.h"
 
@@ -363,9 +366,23 @@ TopoDS_Shape PropertyPartShape::shapeForSave(Base::Writer& writer) const
 
 TopoDS_Shape PropertyPartShape::locatedForRestore(const TopoDS_Shape& shape) const
 {
-    if (_RestoreLoc.IsIdentity() || shape.IsNull())
-        return shape;
-    return shape.Located(_RestoreLoc);
+    TopoDS_Shape geometry = shape;
+    // *** Baked into the geometry, not carried as a location, and this is
+    // the whole reason the file this came from could be shared at all. A
+    // restored shape's location is the object's Placement -- model data
+    // someone reads. An App::Link that replaces its source's placement with
+    // its own reads exactly that, and would then draw this geometry where
+    // the instance it was borrowed from sits, which is what a first attempt
+    // at this did to 1146 links. So the motion costs a copy of the geometry
+    // and leaves the location meaning what it has always meant.
+    if (!_RestoreMotion.IsIdentity() && !geometry.IsNull()) {
+        BRepBuilderAPI_Transform moved(geometry, _RestoreMotion.Transformation(), Standard_True);
+        if (moved.IsDone())
+            geometry = moved.Shape();
+    }
+    if (_RestoreLoc.IsIdentity() || geometry.IsNull())
+        return geometry;
+    return geometry.Located(_RestoreLoc);
 }
 
 App::FileBlobManager& PropertyPartShape::blobManager() const
@@ -428,6 +445,11 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
     ShapeOwnerTable* owners = (doc && PartParams::getShareStoredSubShapes())
         ? saveOwnerTable(manager.saveGeneration())
         : nullptr;
+    // Sharing a moved part rides on the same table -- it names the file to
+    // share -- so it is off wherever that is.
+    CongruenceIndex* congruent = (owners && App::DocumentParams::getDedupCongruentShapes())
+        ? CongruenceIndex::forSave(manager.saveGeneration())
+        : nullptr;
 
     // The analysis runs whatever happens to the file. It is what tells later
     // objects that this file holds these sub-shapes, and it is cheap next to
@@ -452,6 +474,30 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
             if (App::FileBlobHandle shared = manager.find(owners->file(held).hash)) {
                 _blob = shared;
                 _blobPlan = owners->file(held).plan;
+                _blobMotion = TopLoc_Location();
+                return;
+            }
+        }
+    }
+
+    // The same part written again somewhere else. Content addressing cannot
+    // see it when the exporter multiplied the placement into the coordinates,
+    // and neither can the table above, which matches on TShape identity. What
+    // is left is to recognize the shape by its geometry and record the motion
+    // -- which needs no format change at all, because the location this
+    // property already writes is where the motion goes
+    // (docs/SharedShapeStorage.md sec 12.12).
+    // Not gated on rootIndex(), unlike the check above: that one asks whether
+    // this file borrowed its root, which is the one case a congruent shape is
+    // never in -- the owner table matches TShapes, and a part written again
+    // elsewhere is a different TShape holding different numbers.
+    if (owners && congruent && !root.IsNull()) {
+        CongruenceIndex::Match match;
+        if (congruent->find(root, match)) {
+            if (App::FileBlobHandle shared = manager.find(owners->file(match.slot).hash)) {
+                _blob = shared;
+                _blobPlan = owners->file(match.slot).plan;
+                _blobMotion = TopLoc_Location(match.motion);
                 return;
             }
         }
@@ -464,6 +510,7 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
     if (!_blob || plan != _blobPlan) {
         storeBlob(writer, &refs);
         _blobPlan = plan;
+        _blobMotion = TopLoc_Location();
     }
 
     if (_blob && owners) {
@@ -472,7 +519,13 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
         entry.plan = plan;
         entry.root = refs.rootIndex();
         entry.orientation = root.IsNull() ? 0 : root.Orientation();
-        refs.publish(owners->addFile(std::move(entry)), *owners);
+        const int file = owners->addFile(std::move(entry));
+        refs.publish(file, *owners);
+        // Every file written, whatever it borrows: what a later instance
+        // needs is a file that reads back as this shape, and borrowing is
+        // internal to the file.
+        if (congruent)
+            congruent->add(root, file);
     }
 }
 
@@ -536,6 +589,7 @@ void PropertyPartShape::dropBlob(const TopoDS_Shape& next)
     }
     _blob.reset();
     _blobPlan.clear();
+    _blobMotion = TopLoc_Location();
 }
 
 void PropertyPartShape::assignRestoredBlob(const App::FileBlobHandle& blob)
@@ -994,6 +1048,12 @@ void PropertyPartShape::Save (Base::Writer &writer) const
                                                        : TopLoc_Location();
     if (!isIdentityLocation(loc))
         writer.Stream() << " loc=\"" << locationToString(loc) << '"';
+    // Present only when this shape borrows the file of another instance of
+    // the same part: the motion from that instance's geometry to this one's,
+    // applied to the geometry on the way in. Absent is the ordinary case and
+    // costs nothing.
+    if (!isIdentityLocation(_blobMotion))
+        writer.Stream() << " motion=\"" << locationToString(_blobMotion) << '"';
 
     bool binary = writer.getMode("BinaryBrep");
     bool toXML = writer.getFileVersion()>1 && writer.isForceXML()>=(binary?3:2);
@@ -1065,8 +1125,11 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
     // the geometry may be a deferred archive member or a position in the
     // store, and is put back wherever it does arrive.
     _RestoreLoc = TopLoc_Location();
+    _RestoreMotion = TopLoc_Location();
     if (reader.hasAttribute("loc"))
         locationFromString(reader.getAttribute("loc"), _RestoreLoc);
+    if (reader.hasAttribute("motion"))
+        locationFromString(reader.getAttribute("motion"), _RestoreMotion);
 
     // Cleared before the branch below chooses: a stale hash would send
     // ensureRestored() looking for a file this restore never asked for.
