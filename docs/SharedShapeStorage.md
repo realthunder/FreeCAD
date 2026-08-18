@@ -2179,7 +2179,10 @@ that geometry as it would be written, and a later file that would write the
 same thing writes it out in full too. That took 6841 back to 5205 and took the
 raw bytes down with it, from 72040089 to 71348929: the pair costs one file
 where it used to cost two, which is worth more than the entries the second one
-would have named.
+would have named. On `scanner.FCStd` the rule changes nothing at all -- 318
+files to 320 either way, byte for byte -- because a PartDesign model's equal
+parts are already one file before the geometry is looked at. This is an
+assembly's problem.
 
 ***The one file it still costs.*** A file that itself names another's entries
 cannot offer its content, because it is not the bytes a later file writing in
