@@ -861,6 +861,53 @@ material cards are user data.
 task panels have to be held at our vintage, which means diverging from
 upstream FEM in the one place upstream FEM changed most.
 
+### 5.2.1 Exercised in a real GUI 2026-08-18
+
+Everything above compiled and loaded, but none of the GUI half had ever
+run. It has now, on the desktop against the real GPU (WSLg, Mesa d3d12,
+bgfx renderer in render-cache mode 3), driven through the in-process MCP
+debug console.
+
+What holds:
+
+- The appearance dialog contract. `DlgMaterialPropertiesImp` was reached
+  from the fork's Display properties panel with two objects selected:
+  edits land live on every selected view provider (shininess 0.2 -> 0.8,
+  diffuse -> red, on both objects, with the 3D view answering), Cancel
+  restores the snapshot exactly, OK keeps, and ShapeColor follows the
+  diffuse colour.
+- `TaskDialog::addTaskBox(icon, widget)` -- the icon shows on the task box
+  header of both Inspect panels.
+- `MatGui.MaterialTreeWidget` constructs from Python, and the widget
+  inside the preferences page populates (System library, 98 leaves) and
+  drives its line edit on selection.
+- The Materials editor opens, loads a card, renders the appearance preview
+  sphere, and adds a model through the model selector.
+- `ImageEdit`'s file dialog: the fork's `";;"` filter string parses into
+  the two filters it should ("Image files (*.jpg *.jpeg *.png *.bmp)",
+  "All files (*)").
+
+Two defects found and fixed:
+
+- The module registered a second `Std_SetAppearance`. The fork already
+  owns that command, the first registration wins, and the module's copy
+  only logged "duplicate command Std_SetAppearance" on every load. Not
+  registered any more; `MatGui::TaskDisplayProperties` and the module's
+  `DlgDisplayPropertiesImp` are therefore unreachable by design, and are
+  kept verbatim so a future sync still diffs cleanly.
+- `PrefMaterialTreeWidget` never opted into the fork's auto-apply default
+  the way every other preference widget does from its constructor, so the
+  Default Material page alone deferred its write to the OK button.
+
+Left standing on purpose:
+
+- `Std_SetMaterial` is registered and opens, but nothing in this fork
+  carries a `Materials::PropertyMaterial` named `ShapeMaterial`, so the
+  panel is inert. That is section 5.4's open question, not a defect.
+- `QLayout::addChildLayout: layout QHBoxLayout "" already has a parent`
+  on every `MaterialTreeWidget` construction. The layout code is verbatim
+  upstream, so this is an upstream cosmetic bug, not a port artifact.
+
 ### 5.3 App::Datums
 
 Section 1d adapts FEM's two sites and needs nothing. But if the fork wants
