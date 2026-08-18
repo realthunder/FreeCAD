@@ -941,6 +941,8 @@ void PropertyLinkList::setValues(std::vector<DocumentObject*> &&lValue) {
             FC_THROWM(Base::ValueError,
                     "Cannot link to  external object " << obj->getFullName()
                     << " in " << getFullName());
+        if(obj == parent)
+            FC_THROWM(Base::ValueError, "self linking in " << getFullName());
     }
     // Filling a group (or any other link list) appends one object at a time,
     // which arrives here as a new list holding the old one as its prefix. Both
@@ -1087,7 +1089,13 @@ void PropertyLinkList::Restore(Base::XMLReader &reader)
         DocumentObject* father = static_cast<DocumentObject*>(getContainer());
         App::Document* document = father->getDocument();
         DocumentObject* child = document ? document->getObject(name.c_str()) : nullptr;
-        if (child)
+        if (child == father) {
+            // a stored self reference predates the check in setValues() below;
+            // drop it rather than fail the load, as PropertyLink::Restore does
+            if (reader.isVerbose())
+                FC_WARN("Object " << name << " links to itself, dropping it");
+        }
+        else if (child)
             values.push_back(child);
         else if (reader.isVerbose())
             FC_WARN("Lost link to " << (document?document->getName():"") << " " << name
