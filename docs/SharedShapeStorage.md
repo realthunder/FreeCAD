@@ -2214,3 +2214,113 @@ reopen, which reads as a defect in the format being tested. The same run at
 24GB completes. Materializing every shape of this model costs about 25GB, so
 the cap has to allow for that -- and a crash under a cap should be reproduced
 without one before it is believed.
+
+### 12.15 Borrowing below a face, and the third identity domain it needs
+
+Sec 12.4 forbids borrowing anything below a face, an edge, a wire or a shell,
+and its closing note names cross-file geometry as what would dissolve the
+rule: a borrowed edge's 2D curve and the local face's surface could then name
+one entry in one identity domain. Sec 12.13 built that. This is the attempt to
+collect on it.
+
+**Measured first, as sec 12.8 measured the ceiling before the format was
+written.** On `scanner.FCStd`, 606 objects, forced full recompute, directory
+save in ASCII, cross-file geometry on in every arm -- so the baseline is
+exactly what ships:
+
+| | raw shape bytes | deflated | sub-shape refs |
+|---|---|---|---|
+| ships (nothing below a face) | 13790456 | 2879780 | 27 |
+| everything below a face, no safety at all | 12524006 (-9.2%) | 2671906 (-7.2%) | 3184 |
+
+**9.2% raw is the ceiling**, not sec 11.8's 1.70x: that prediction was made
+against the pre-12.3 format, and cross-file geometry has since taken most of
+what it counted. The unsafe arm is also exactly as broken as sec 12.4 says --
+**822 faces with an edge carrying no 2D curve, 128 invalid shapes** against
+90686 / 0 / 4 for the arm that ships.
+
+***Cross-file geometry alone does not dissolve the rule.*** With the geometry
+tables shared and every entry named by the *object* it stands for rather than
+by the bytes it is written as -- a handle index in the owner table, added
+here -- the failures moved from 822 to 797. Whatever the borrowed shapes were
+keyed on, it was not the surface.
+
+***What it actually was: the location.*** Splitting the setting into which
+sub-shape may be borrowed says it plainly:
+
+| borrowed below a shell | raw bytes | faces missing a curve | invalid shapes |
+|---|---|---|---|
+| faces only | 12962877 (-6.0%) | **0** | 113 |
+| faces and edges | 12579995 (-8.8%) | 787 | 129 |
+| faces, edges and vertices | 12554544 (-9.0%) | 787 | 125 |
+
+A face borrowed whole is clean; an edge borrowed into a locally stored face is
+not. And every single failure on the model was a **cylinder**. Reading the
+files says why. `Pad006` stores its cylindrical face and borrows the circular
+edges from the sketch's internal shape, which does hold them -- with their 2D
+curves, on the surface this file names, exactly as intended:
+
+```
+Ed                                  <- in the file borrowed from
+ 1e-07 1 1 0
+1  1 0 0 6.28318530717959
+2  1 2 3 0 6.28318530717959         <- pcurve 1, surface 2, LOCATION 3
+2  2 2 5 0 6.28318530717959         <- pcurve 2, surface 2, LOCATION 5
+```
+
+The 2D curve was never missing. `BRep_Tool::CurveOnSurface` looks for a
+representation on `F.Location().Predivided(E.Location())`, and
+`TopLoc_Location::IsEqual` compares the chain of **`TopLoc_Datum3D` objects** a
+location is built from -- never its value. Two files parsed separately hold
+different datums for the same placement, so the representation above cannot be
+found through this file's location table however equal the numbers are.
+
+***A shape file therefore has three identity domains, not two.*** Sec 12.4
+found the sub-shapes, sec 12.13 the geometry; the locations are the third, and
+nothing in this design had noticed them, because until something is borrowed
+*below* a face no association ever crosses a file boundary.
+
+***The one location every file agrees on is the identity.*** So a sub-shape is
+borrowed below a face or an edge only where it sits at the identity relative to
+the shape whose geometry it is keyed on, which needs no format change at all:
+
+| | raw bytes | deflated | faces missing a curve | invalid |
+|---|---|---|---|---|
+| faces, edges and vertices, at any location | 12845694 (-6.9%) | 2725350 | 36 | 109 |
+| **edges and vertices only, at the identity** | **13691334 (-0.7%)** | 2865694 | **0** | **4** |
+
+The second row is the only arm whose gate matches the arm that ships, and it
+is worth 0.7% raw and 0.5% deflated on this document. That is what the setting
+allows and it is off by default.
+
+***What the remaining 6% is blocked on.*** Borrowing whole faces is where the
+bytes are, and it costs 109 invalid shapes -- sec 12.4's sewn shell, now from
+the other side: a shell holding a borrowed face and a stored face is sewn
+through the edge between them, and that edge is one object only while both
+sides reference it. Borrowing it is what the identity-location rule refuses.
+The two rules want opposite things, and both are satisfiable only by a shared
+location domain: a location table entry that names another file's, as a
+geometry entry now can.
+
+***Read-side interning is not that, and was refuted.*** Making the reader
+substitute its own location objects for value-equal ones out of the files it
+borrows from is tempting -- no format change, and it took the failures from
+787 to 560. Taken further, to every entry rather than only single datums, it
+made them **worse (998)**, and for the reason that kills the whole approach: a
+file's own chains are what its own associations were written against, so
+substituting some entries and not others breaks internal matches to fix
+external ones. `TopTools_LocationSet::Add` also inserts every datum of the
+chain it is handed, so a borrowed object built from datums this file does not
+have adds *two* entries where the file counted one and shifts every entry
+after it -- 62 files failed to read that way, which reads as data corruption
+and is arithmetic. A written reference does not have either problem: the
+writer knows which memory object it is naming.
+
+***Also built here, and kept.*** The owner table gained a handle-keyed
+geometry index beside its digest-keyed one -- "does *this file* hold this very
+object, and where it ended up" -- because bytes cannot answer that: two
+entries written alike are still two objects. A file that borrows below a face
+names entries by object, and where an object it must be cannot be named (two
+of this file's objects against one of the other's, which two entries may not
+both name), `build()` writes the file again with nothing borrowed below a face
+rather than write one whose faces have edges with no 2D curve.

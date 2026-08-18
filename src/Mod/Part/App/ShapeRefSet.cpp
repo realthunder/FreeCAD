@@ -33,12 +33,19 @@
 #include <sstream>
 #include <QCryptographicHash>
 #include <BRep_Builder.hxx>
+#include <BRep_PointRepresentation.hxx>
+#include <BRep_TVertex.hxx>
+#include <BRep_Tool.hxx>
 #include <Geom_Curve.hxx>
 #include <Geom_Surface.hxx>
 #include <Geom2d_Curve.hxx>
 #include <GeomTools_Curve2dSet.hxx>
 #include <GeomTools_CurveSet.hxx>
 #include <GeomTools_SurfaceSet.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
+#include <TopoDS_Face.hxx>
+#include <TopExp_Explorer.hxx>
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopTools_LocationSet.hxx>
@@ -340,6 +347,39 @@ const ShapeRef* ShapeOwnerTable::findGeometry(int table, const std::string& dige
     return found == _geometry[table].end() ? nullptr : &found->second;
 }
 
+void ShapeOwnerTable::claimGeometryHandle(int table,
+                                          const void* handle,
+                                          int file,
+                                          const ShapeRef& resolved)
+{
+    if (table < 0 || table >= GeomTableCount || !handle || !file) {
+        return;
+    }
+    // First claim, as everywhere else here -- but the key carries the file,
+    // so this only ever settles one file writing one object twice, which the
+    // tables do not do anyway.
+    _geometryHandles[table].emplace(GeomHandleKey {handle, file}, resolved);
+    _geometryFirst[table].emplace(handle, resolved);
+}
+
+const ShapeRef* ShapeOwnerTable::findGeometryHandle(int table, const void* handle, int file) const
+{
+    if (table < 0 || table >= GeomTableCount || !handle || !file) {
+        return nullptr;
+    }
+    auto found = _geometryHandles[table].find(GeomHandleKey {handle, file});
+    return found == _geometryHandles[table].end() ? nullptr : &found->second;
+}
+
+const ShapeRef* ShapeOwnerTable::findGeometryHandle(int table, const void* handle) const
+{
+    if (table < 0 || table >= GeomTableCount || !handle) {
+        return nullptr;
+    }
+    auto found = _geometryFirst[table].find(handle);
+    return found == _geometryFirst[table].end() ? nullptr : &found->second;
+}
+
 const ShapeOwnerTable::ContentPlan* ShapeOwnerTable::contentPlan(const std::string& key) const
 {
     if (key.empty()) {
@@ -364,6 +404,12 @@ void ShapeOwnerTable::clear()
     _files.clear();
     _fileIndex.clear();
     for (auto& table : _geometry) {
+        table.clear();
+    }
+    for (auto& table : _geometryHandles) {
+        table.clear();
+    }
+    for (auto& table : _geometryFirst) {
         table.clear();
     }
     _contents.clear();
@@ -412,6 +458,10 @@ void ShapeRefSet::Clear()
     for (auto& table : _geometry) {
         table.clear();
     }
+    for (auto& table : _prefer) {
+        table.clear();
+    }
+    _identityBroken = false;
     _geometryRead.clear();
 }
 
@@ -424,6 +474,32 @@ void ShapeRefSet::setGeometrySharing(bool enable)
 {
     _shareGeometry = enable;
 }
+
+void ShapeRefSet::setSubFaceBorrowing(int level)
+{
+    _belowFace = level;
+}
+
+namespace
+{
+/// Which bit of the setting says that what is directly inside this shape may
+/// be borrowed. They are separable: what a borrowed face costs is not what a
+/// borrowed edge costs, and neither is what it is worth.
+int borrowBit(TopAbs_ShapeEnum type)
+{
+    switch (type) {
+        case TopAbs_SHELL:
+            return 1;
+        case TopAbs_FACE:
+        case TopAbs_WIRE:
+            return 2;
+        case TopAbs_EDGE:
+            return 4;
+        default:
+            return 0;
+    }
+}
+}  // namespace
 
 void ShapeRefSet::setResolver(Resolver resolver)
 {
@@ -464,10 +540,41 @@ const ShapeRef* ShapeRefSet::borrowed(const TopoDS_Shape& shape) const
 
 void ShapeRefSet::build(const TopoDS_Shape& root)
 {
-    add(root, false);
+    add(root, nullptr, TopLoc_Location());
     // After the walk, because the walk is what fills the tables -- and before
     // anything asks for plan(), because what this settles is half of it.
     planGeometry();
+    if (!_belowFace || !_identityBroken) {
+        return;
+    }
+    // *** Something under a face was borrowed and the object its records are
+    // keyed on could not be named. Rather than write a file whose faces have
+    // edges with no 2D curve on them, this file is written again the way it
+    // would have been without borrowing below a face at all -- which is what
+    // ships, and is always available because nothing has been written yet.
+    //
+    // Whole shapes are still borrowed, and the geometry tables still name
+    // what they can: what is dropped is exactly what could not be keyed.
+    const int level = _belowFace;
+    Clear();
+    _belowFace = 0;
+    add(root, nullptr, TopLoc_Location());
+    // Back on for the passes below and for publish(): what the fallback drops
+    // is the borrowing, not the sharing of geometry by object.
+    _belowFace = level;
+    planGeometry();
+}
+
+const void* ShapeRefSet::entryHandle(int table, int index) const
+{
+    switch (table) {
+        case ShapeOwnerTable::Curve2dTable:
+            return Curves2d().Curve2d(index).get();
+        case ShapeOwnerTable::CurveTable:
+            return Curves().Curve(index).get();
+        default:
+            return Surfaces().Surface(index).get();
+    }
 }
 
 std::string ShapeRefSet::printGeometry(int table, int index) const
@@ -532,7 +639,16 @@ void ShapeRefSet::planGeometry()
     // to name and what to write out, and making the same decisions is what
     // leaves the two files identical -- so content addressing keeps one of
     // them, which is worth more than any entry the second could have named.
-    if (any) {
+    // *** What a preference says is correctness, and a replayed plan is a
+    // saving, so a file with preferences decides for itself. It costs that
+    // file nothing: it borrows a sub-shape, so its records name another
+    // file's shapes and no other file's bytes were going to match it anyway
+    // -- which is also why publish() offers no content plan for it.
+    bool pinned = false;
+    for (const auto& table : _prefer) {
+        pinned = pinned || !table.empty();
+    }
+    if (any && !pinned) {
         if (const ShapeOwnerTable::ContentPlan* plan = _owners->contentPlan(contentKey())) {
             bool fits = true;
             for (int table = 0; fits && table < ShapeOwnerTable::GeomTableCount; ++table) {
@@ -567,9 +683,46 @@ void ShapeRefSet::planGeometry()
         // a repeated object would land on the position it already has and
         // shift every entry after it.
         std::set<std::pair<int, int>> taken;
-        for (std::size_t i = 0; i < plan.size(); ++i) {
+        // The entries something borrowed is keyed on come first and are not
+        // a choice: this file's object has to be the object that file holds,
+        // and any other file writing the same bytes is a different object.
+        for (std::size_t i = 0; i < plan.size() && _belowFace; ++i) {
             GeomEntry& entry = plan[i];
             if (entry.digest.empty()) {
+                continue;
+            }
+            const void* handle = entryHandle(table, static_cast<int>(i) + 1);
+            // The file whose shapes this object is keyed on if any of them
+            // were borrowed under a shape carrying it, and otherwise
+            // wherever the object first went -- both of which are the same
+            // object, where the ordinary sharing put every copy on one.
+            auto wanted = _prefer[table].find(handle);
+            const ShapeRef* ref = wanted == _prefer[table].end()
+                ? _owners->findGeometryHandle(table, handle)
+                : _owners->findGeometryHandle(table, handle, wanted->second);
+            if (ref && taken.emplace(ref->file, ref->index).second) {
+                entry.ref = ShapeRef {slotFor(ref->file), ref->index};
+                continue;
+            }
+            // *** Identity could not be restored for this object, and there
+            // is no half of it: either it is the same object as the one the
+            // borrowed shapes are keyed on or it is not.
+            //
+            // It happens where this file holds two objects that another file
+            // holds as one: two entries cannot name one, because two written
+            // alike have to stay two. build() then writes this file the way
+            // it would have without borrowing below a face.
+            //
+            // No claim on the object at all is not that case and is not a
+            // failure: an object no other file holds is one no borrowed
+            // shape can be keyed on, so there is nothing to restore.
+            if (ref || wanted != _prefer[table].end()) {
+                _identityBroken = true;
+            }
+        }
+        for (std::size_t i = 0; i < plan.size(); ++i) {
+            GeomEntry& entry = plan[i];
+            if (entry.digest.empty() || entry.ref.file) {
                 continue;
             }
             const ShapeRef* ref = _owners->findGeometry(table, entry.digest);
@@ -627,7 +780,7 @@ int ShapeRefSet::geometryReferences() const
     return count + static_cast<int>(_geometryRead.size());
 }
 
-int ShapeRefSet::add(const TopoDS_Shape& shape, bool bound)
+int ShapeRefSet::add(const TopoDS_Shape& shape, Domain* domain, const TopLoc_Location& relative)
 {
     if (shape.IsNull()) {
         return 0;
@@ -643,31 +796,143 @@ int ShapeRefSet::add(const TopoDS_Shape& shape, bool bound)
     if (index) {
         return index;
     }
-    if (borrowed(base)) {
+    if (const ShapeRef* held = borrowed(base)) {
+        if (domain) {
+            domain->note(_borrowed[held->file - 1]);
+        }
         return 0;
     }
-    if (!bound && _owners) {
+    // *** Inside a face or an edge, only where this shape sits exactly where
+    // the file it came from has it. What keys a 2D curve to a face is the
+    // surface *and* the location of the edge relative to it, and a location
+    // is compared by the TopLoc_Datum3D objects it is built from -- two files
+    // parsed separately never share those. The identity is the one location
+    // every file does agree on, so it is the one this can cross.
+    //
+    // Every failure below a face on a real model was this, and not one of
+    // them was a missing 2D curve: the curve was there, against a location
+    // object this file did not have.
+    const bool placed = domain && domain->keyed && !relative.IsIdentity();
+    if (_owners && !placed && (!domain || domain->open())) {
         if (const ShapeRef* ref = _owners->find(base)) {
+            if (domain) {
+                domain->note(ref->file);
+            }
             borrow(base, *ref);
             return 0;
         }
     }
 
     AddGeometry(base);
-    // Nothing under a face, edge, wire or shell stored here is borrowed. The
-    // first two because the association *is* the identity of an object in
-    // this file's tables -- a face keys its edges' 2D curves on the surface
-    // it carries, an edge keys its vertices' parameters on its curve -- and
-    // the second two because they are sewn: a shell whose faces came half
-    // from here and half from another file has two edges everywhere the model
-    // has one, and is no longer a valid boundary.
+    // A face, an edge, a wire and a shell each bind what is under them,
+    // because the association between a shape and its geometry is keyed on
+    // the identity of an object in this file's tables -- a face keys its
+    // edges' 2D curves on the surface it carries, an edge keys its vertices'
+    // parameters on its curve -- and because a wire and a shell are sewn.
+    // Without cross-file geometry there is no way to say "that object", so
+    // nothing under them is borrowed at all; with it, one file's objects can
+    // be named, so what is under them is borrowed from one file (sec 12.15).
     const TopAbs_ShapeEnum type = base.ShapeType();
-    const bool binds = bound || type == TopAbs_FACE || type == TopAbs_EDGE || type == TopAbs_WIRE
-        || type == TopAbs_SHELL;
+    const bool binding = borrowBit(type) != 0;
+    // One of its own for each of them, so that what a face learns is what its
+    // own edges did and not what a neighbour's did; it is handed up
+    // afterwards, because a wire carries no geometry and the face around it
+    // is what the edges under it are keyed on.
+    Domain own;
+    Domain* below = domain;
+    if (binding) {
+        own.file =
+            (!(_belowFace & borrowBit(type)) || (domain && !domain->open())) ? -1 : 0;
+        own.keyed = type == TopAbs_FACE || type == TopAbs_EDGE
+            || (type == TopAbs_WIRE && domain && domain->keyed);
+        below = &own;
+    }
     for (TopoDS_Iterator it(base, false, false); it.More(); it.Next()) {
-        add(it.Value(), binds);
+        // Where the child sits relative to the shape its geometry is keyed
+        // on: its own location under a face or an edge, and one step further
+        // along under a wire, which carries no geometry of its own.
+        add(it.Value(),
+            below,
+            type == TopAbs_WIRE ? relative * it.Value().Location() : it.Value().Location());
+    }
+    // Something under this shape came out of another file, so what this one
+    // is keyed on has to be that file's object and not merely the same bytes.
+    if (binding && own.file > 0) {
+        preferGeometry(base);
+        if (domain) {
+            domain->note(own.file);
+        }
     }
     return _shapes.Add(base);
+}
+
+void ShapeRefSet::preferGeometry(const TopoDS_Shape& shape)
+{
+    if (!_shareGeometry) {
+        return;
+    }
+    // *** Only the associations that are really there. A face's edges hold
+    // their 2D curve against the surface the face carries, and a vertex holds
+    // its parameter against the curve of the edge it sits on -- but neither
+    // is always written down: a 2D curve on a plane is recomputed on reading
+    // rather than stored, and a vertex often carries no parameter at all. So
+    // this asks, rather than assuming, and what it finds is a requirement:
+    // build() gives up the borrowing rather than write a file where the
+    // object cannot be named.
+    if (shape.ShapeType() == TopAbs_FACE) {
+        const TopoDS_Face& face = TopoDS::Face(shape);
+        TopLoc_Location loc;
+        // The stored handle, not a located copy: identity is the point.
+        const void* surface = BRep_Tool::Surface(face, loc).get();
+        if (!surface) {
+            return;
+        }
+        for (TopExp_Explorer it(shape, TopAbs_EDGE); it.More(); it.Next()) {
+            const ShapeRef* ref = borrowed(it.Current().Located(TopLoc_Location()));
+            if (!ref) {
+                continue;
+            }
+            double first = 0.0;
+            double last = 0.0;
+            bool stored = false;
+            BRep_Tool::CurveOnSurface(TopoDS::Edge(it.Current()), face, first, last, &stored);
+            if (!stored) {
+                continue;
+            }
+            // First note wins, as every claim here does: two faces sharing
+            // one surface cannot each have it from a different file.
+            _prefer[ShapeOwnerTable::SurfaceTable].emplace(surface, _borrowed[ref->file - 1]);
+            return;
+        }
+        return;
+    }
+    if (shape.ShapeType() != TopAbs_EDGE) {
+        return;
+    }
+    TopLoc_Location loc;
+    double first = 0.0;
+    double last = 0.0;
+    const Handle(Geom_Curve)& curve = BRep_Tool::Curve(TopoDS::Edge(shape), loc, first, last);
+    if (curve.IsNull()) {
+        return;
+    }
+    for (TopoDS_Iterator it(shape, false, false); it.More(); it.Next()) {
+        const ShapeRef* ref = borrowed(it.Value().Located(TopLoc_Location()));
+        if (!ref) {
+            continue;
+        }
+        Handle(BRep_TVertex) vertex = Handle(BRep_TVertex)::DownCast(it.Value().TShape());
+        if (vertex.IsNull()) {
+            continue;
+        }
+        for (const Handle(BRep_PointRepresentation)& point : vertex->Points()) {
+            if (point->IsPointOnCurve() && point->Curve() == curve) {
+                _prefer[ShapeOwnerTable::CurveTable].emplace(curve.get(),
+                                                             _borrowed[ref->file - 1]);
+                return;
+            }
+        }
+    }
 }
 
 std::string ShapeRefSet::plan() const
@@ -746,9 +1011,23 @@ void ShapeRefSet::publish(int file, ShapeOwnerTable& owners) const
     for (int table = 0; table < ShapeOwnerTable::GeomTableCount; ++table) {
         const auto& plan = _geometry[table];
         for (std::size_t i = 0; i < plan.size(); ++i) {
+            const int index = static_cast<int>(i) + 1;
             if (!plan[i].ref.file) {
-                owners.claimGeometry(table, plan[i].digest, file, static_cast<int>(i) + 1);
+                owners.claimGeometry(table, plan[i].digest, file, index);
             }
+            // The handle index takes both, because what a later file needs
+            // from it is where this entry *ends up*: this file's own entry
+            // where it writes one out, and the entry it names where it does
+            // not -- naming that is what puts the two on one object. Only
+            // kept where something may be borrowed below a face, which is
+            // the only thing that asks the object rather than the bytes.
+            if (!_belowFace) {
+                continue;
+            }
+            const ShapeRef resolved =
+                plan[i].ref.file ? ShapeRef {_borrowed[plan[i].ref.file - 1], plan[i].ref.index}
+                                 : ShapeRef {file, index};
+            owners.claimGeometryHandle(table, entryHandle(table, index), file, resolved);
         }
     }
 
@@ -1060,6 +1339,8 @@ TopoDS_Shape ShapeRefSet::read(std::istream& in)
     _sources.clear();
     return root;
 }
+
+
 
 TopoDS_Shape ShapeRefSet::readShape(std::istream& in)
 {

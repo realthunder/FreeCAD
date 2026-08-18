@@ -479,7 +479,12 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
     refs.setOwners(owners);
     // Rides on the same table, and is off wherever that is: a geometry entry
     // names a file, and the table is what says which files there are.
-    refs.setGeometrySharing(owners && App::DocumentParams::getDedupCrossFileGeometry());
+    const bool geometry = owners && App::DocumentParams::getDedupCrossFileGeometry();
+    refs.setGeometrySharing(geometry);
+    // Below a face the association *is* the identity of a geometry object, so
+    // this is sound only while that object can be named across files: off
+    // wherever the geometry is not shared, whatever the setting says.
+    refs.setSubFaceBorrowing(geometry ? PartParams::getBorrowBelowFace() : 0);
     refs.build(root);
     const std::string plan = refs.plan();
 

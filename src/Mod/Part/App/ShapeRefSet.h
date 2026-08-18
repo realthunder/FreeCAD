@@ -32,6 +32,7 @@
 #include <vector>
 
 #include <BRepTools_ShapeSet.hxx>
+#include <TopLoc_Location.hxx>
 #include <NCollection_IndexedMap.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
 
@@ -62,6 +63,34 @@ struct ShapeRef
     int file {0};
     /// Forward index in that file's own shape table, 1-based.
     int index {0};
+};
+
+/** A geometry object as one named file holds it.
+ *
+ * The digest index beside it answers "who else writes these bytes"; this one
+ * answers the different question sub-face borrowing asks: *does this
+ * particular file hold this very object, and where*. Bytes are not enough
+ * there, because two entries written alike are still two objects once they
+ * are parsed, and an association keyed on one of them has to find the one
+ * (docs/SharedShapeStorage.md sec 12.15).
+ */
+struct GeomHandleKey
+{
+    const void* handle {nullptr};
+    int file {0};
+
+    bool operator==(const GeomHandleKey& other) const
+    {
+        return handle == other.handle && file == other.file;
+    }
+};
+
+struct GeomHandleHasher
+{
+    std::size_t operator()(const GeomHandleKey& key) const
+    {
+        return std::hash<const void*>()(key.handle) * 31 + static_cast<std::size_t>(key.file);
+    }
 };
 
 /** The sub-shapes a save has already stored, and which file each is in.
@@ -146,6 +175,26 @@ public:
     /// Which file already writes these bytes, and where, or null.
     const ShapeRef* findGeometry(int table, const std::string& digest) const;
 
+    /** Record that \a file's entry for the object \a handle resolves to
+     * \a resolved -- to its own entry where it writes one out, and to
+     * whatever it names where it does not.
+     *
+     * *** What is recorded is where the entry *ends up*, not where \a file
+     * put it. Two files naming one third file's entry read back as one
+     * object; a file naming another's does not become a place a third can
+     * point at. So a later file that has to share an object with \a file
+     * names what \a file resolved to, and the two land on one object.
+     */
+    void claimGeometryHandle(int table, const void* handle, int file, const ShapeRef& resolved);
+    /// Where \a file's entry for this object resolves, or null if it holds
+    /// no entry for it.
+    const ShapeRef* findGeometryHandle(int table, const void* handle, int file) const;
+    /// Where this object first went, whoever wrote it. Naming that is what
+    /// makes one object out of every file's copy of it -- which is more than
+    /// naming the same *bytes* buys, and it is what an association keyed on
+    /// the object needs.
+    const ShapeRef* findGeometryHandle(int table, const void* handle) const;
+
     /** @name Whole contents an earlier file already writes out in full.
      *
      * *** Two files that would hold the same bytes are one file, and content
@@ -187,6 +236,9 @@ private:
     std::vector<File> _files;
     std::unordered_map<std::string, int> _fileIndex;
     std::array<std::unordered_map<std::string, ShapeRef>, GeomTableCount> _geometry;
+    std::array<std::unordered_map<GeomHandleKey, ShapeRef, GeomHandleHasher>, GeomTableCount>
+        _geometryHandles;
+    std::array<std::unordered_map<const void*, ShapeRef>, GeomTableCount> _geometryFirst;
     std::unordered_map<std::string, ContentPlan> _contents;
 };
 
@@ -259,6 +311,22 @@ public:
      * whole sub-shapes.
      */
     void setGeometrySharing(bool enable);
+
+    /** Whether a sub-shape may be borrowed below a face, edge, wire or shell.
+     *
+     * Off, which is what build() documents below: those four bind everything
+     * under them to this file, because the association between a shape and
+     * its geometry is keyed on the identity of an object in this file's own
+     * tables. Cross-file geometry is what dissolves that -- a borrowed edge's
+     * pcurve and the local face's surface can name one entry in one identity
+     * domain -- so this needs setGeometrySharing() and is off wherever that
+     * is (docs/SharedShapeStorage.md sec 12.15).
+     *
+     * A level rather than a switch, because the three are separable and cost
+     * different things: 0 nowhere, 1 a face inside a shell, 2 an edge inside
+     * a face or a wire, 3 a vertex inside an edge.
+     */
+    void setSubFaceBorrowing(int level);
 
     /** Store a shape and its sub-shapes, stopping wherever one is borrowed.
      *
@@ -384,9 +452,60 @@ public:
     //@}
 
 private:
+    /** What a locally stored face, edge, wire or shell is enclosing.
+     *
+     * *** Not a restriction on which file may be borrowed from, which is the
+     * mistake the first cut of this made. Every TShape is stored by exactly
+     * one file -- claim() keeps the first, and a file that borrows a shape
+     * does not claim it -- so any two files that borrow one shape name the
+     * same file and read back the same object. Refusing a borrow is what
+     * splits an edge in two: a shell holding a borrowed face and a stored
+     * face is sewn through the edge between them, and that edge is one
+     * object only while both sides reference it.
+     *
+     * So what this carries is which file the shapes under it came out of,
+     * which is what says whose geometry objects they are keyed on. A file of
+     * -1 is the old rule, where nothing under one of these is borrowed.
+     */
+    struct Domain
+    {
+        int file {0};
+        /** Whether what is inside is keyed on this shape's geometry, which a
+         * face and an edge are and a wire and a shell are not. A wire takes
+         * it from the face around it: what its edges are keyed on is that
+         * face's surface, not the wire.
+         */
+        bool keyed {false};
+
+        bool open() const
+        {
+            return file != -1;
+        }
+        /// First one wins: it is the file the enclosing shape's geometry is
+        /// then named from, and one entry can only be named from one file.
+        void note(int candidate)
+        {
+            if (file == 0) {
+                file = candidate;
+            }
+        }
+    };
+
     /// One step of build(): store \a shape, borrowing where that is allowed.
-    /// \a bound says a locally stored face or edge encloses it.
-    int add(const TopoDS_Shape& shape, bool bound);
+    /// \a domain is the enclosing face, edge, wire or shell, or null out in
+    /// the open, where a whole part may be borrowed from any file.
+    int add(const TopoDS_Shape& shape, Domain* domain, const TopLoc_Location& relative);
+    /** Note which file's geometry \a shape's own has to be.
+     *
+     * Called for a locally stored shape that ended up with something
+     * borrowed under it. Where the borrowed shape really is keyed on this
+     * one's surface or curve -- which this asks rather than assumes -- that
+     * object must be the one the file it came from holds, and not merely
+     * whichever file writes the same bytes first.
+     */
+    void preferGeometry(const TopoDS_Shape& shape);
+    /// The object a table entry stands for, as an identity to key on.
+    const void* entryHandle(int table, int index) const;
     /// Note a borrowed sub-shape, assigning its file a slot on first use.
     void borrow(const TopoDS_Shape& shape, const ShapeRef& ref);
     /// This file's slot in the `Files` block for an owner table file index,
@@ -435,6 +554,15 @@ private:
         ShapeRef ref;
     };
     bool _shareGeometry {false};
+    int _belowFace {0};
+    /// Set when a geometry object a borrowed shape is keyed on could not be
+    /// named, which is what makes build() write the file without borrowing
+    /// below a face.
+    bool _identityBroken {false};
+    /// Objects whose entry must name a particular file's, by table. Filled by
+    /// the walk, read by planGeometry(); empty unless something was borrowed
+    /// below a face.
+    std::array<std::unordered_map<const void*, int>, ShapeOwnerTable::GeomTableCount> _prefer;
     std::array<std::vector<GeomEntry>, ShapeOwnerTable::GeomTableCount> _geometry;
 
     /// Read side: the resolver, the tables the `Files` block named and their

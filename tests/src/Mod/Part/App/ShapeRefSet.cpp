@@ -6,13 +6,17 @@
 
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
+#include <BRepCheck_Analyzer.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
+#include <Geom2d_Curve.hxx>
 #include <Geom_Surface.hxx>
 #include <TopoDS.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS_Compound.hxx>
+#include <TopLoc_Location.hxx>
 #include <gp_Trsf.hxx>
+#include <gp_Vec.hxx>
 
 #include <Mod/Part/App/ShapeRefSet.h>
 #include <Mod/Part/App/TopoShape.h>
@@ -52,6 +56,20 @@ writeShared(const TopoDS_Shape& shape, const Part::ShapeOwnerTable* owners, Part
 {
     set.setOwners(owners);
     set.setGeometrySharing(true);
+    set.build(shape);
+    std::ostringstream out;
+    set.write(shape, out);
+    return out.str();
+}
+
+/// Serialize a shape with sub-shapes allowed below a face, which needs the
+/// shared geometry tables that make their associations nameable.
+std::string
+writeBelow(const TopoDS_Shape& shape, const Part::ShapeOwnerTable* owners, Part::ShapeRefSet& set)
+{
+    set.setOwners(owners);
+    set.setGeometrySharing(true);
+    set.setSubFaceBorrowing(7);
     set.build(shape);
     std::ostringstream out;
     set.write(shape, out);
@@ -505,3 +523,145 @@ TEST(ShapeRefSet, GeometryOutOfRangeFailsTheRead)
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
+
+/** A cylinder read back with its seam edge's vertices borrowed still has a
+ * 2D curve for that edge on its own face.
+ *
+ * The case sub-face borrowing exists to make safe, and the one that breaks
+ * first: a face keys its edges' 2D curves on the surface object it carries,
+ * and a vertex keys its parameter on the curve of the edge it sits on, so
+ * both of those objects have to be the ones the file the shapes came from
+ * holds. Every failure the first cut of this produced on a real model was a
+ * cylinder, which is this.
+ */
+TEST(ShapeRefSet, SubFaceBorrowingKeepsTheAssociations)
+{
+    const TopoDS_Shape cylinder = BRepPrimAPI_MakeCylinder(3.0, 8.0).Shape();
+
+    // The first file holds the circular edges, so the second stores the
+    // cylindrical face and the seam edge itself while borrowing what they
+    // stand on -- the edges, and through them the seam's own vertices.
+    TopoDS_Compound edges;
+    BRep_Builder builder;
+    builder.MakeCompound(edges);
+    int taken = 0;
+    for (TopExp_Explorer it(cylinder, TopAbs_EDGE); it.More(); it.Next()) {
+        if (BRep_Tool::IsClosed(TopoDS::Edge(it.Current()))) {
+            continue;
+        }
+        builder.Add(edges, it.Current());
+        ++taken;
+    }
+    ASSERT_GT(taken, 0);
+
+    // Through an owner table, as every file in a save is: a file writing on
+    // its own publishes no geometry, and then there is nothing to name.
+    Part::ShapeOwnerTable owners;
+    Part::ShapeRefSet first;
+    const std::string firstText = writeBelow(edges, &owners, first);
+    publishAs(first, "first", owners);
+
+    Part::ShapeRefSet second;
+    const std::string secondText = writeBelow(cylinder, &owners, second);
+    EXPECT_TRUE(second.borrows());
+    EXPECT_GT(second.references(), 0);
+
+    std::istringstream firstIn(firstText);
+    Part::ShapeRefSet firstReader(builder);
+    const TopoDS_Shape firstRead = firstReader.read(firstIn);
+    ASSERT_FALSE(firstRead.IsNull());
+
+    std::istringstream secondIn(secondText);
+    Part::ShapeRefSet secondReader(builder);
+    secondReader.setResolver([&](const std::string& name) -> const Part::ShapeRefSet* {
+        return name == "first" ? &firstReader : nullptr;
+    });
+    const TopoDS_Shape read = secondReader.read(secondIn);
+    ASSERT_FALSE(read.IsNull());
+    EXPECT_EQ(countFaces(cylinder), countFaces(read));
+
+    // Every edge of every face has to have its 2D curve on that face, which
+    // is what anything projecting the shape asks for.
+    int missing = 0;
+    for (TopExp_Explorer face(read, TopAbs_FACE); face.More(); face.Next()) {
+        for (TopExp_Explorer edge(face.Current(), TopAbs_EDGE); edge.More(); edge.Next()) {
+            double first2d = 0.0;
+            double last2d = 0.0;
+            const Handle(Geom2d_Curve) pcurve =
+                BRep_Tool::CurveOnSurface(TopoDS::Edge(edge.Current()),
+                                          TopoDS::Face(face.Current()),
+                                          first2d,
+                                          last2d);
+            if (pcurve.IsNull()) {
+                ++missing;
+            }
+        }
+    }
+    EXPECT_EQ(0, missing);
+    EXPECT_TRUE(BRepCheck_Analyzer(read).IsValid());
+}
+
+/** And the same when the borrowing file uses the shape somewhere else.
+ *
+ * A 2D curve is keyed on its surface *and* on where the edge sits relative
+ * to the face, so a shape borrowed at another location asks the association
+ * a question the file it came from never wrote down. Whole parts have always
+ * been borrowed across a location -- that is what location canonicalization
+ * bought -- but below a face the location is part of the key.
+ */
+TEST(ShapeRefSet, SubFaceBorrowingAcrossALocation)
+{
+    const TopoDS_Shape cylinder = BRepPrimAPI_MakeCylinder(3.0, 8.0).Shape();
+
+    TopoDS_Compound edges;
+    BRep_Builder builder;
+    builder.MakeCompound(edges);
+    for (TopExp_Explorer it(cylinder, TopAbs_EDGE); it.More(); it.Next()) {
+        if (!BRep_Tool::IsClosed(TopoDS::Edge(it.Current()))) {
+            builder.Add(edges, it.Current());
+        }
+    }
+
+    Part::ShapeOwnerTable owners;
+    Part::ShapeRefSet first;
+    const std::string firstText = writeBelow(edges, &owners, first);
+    publishAs(first, "first", owners);
+
+    gp_Trsf move;
+    move.SetTranslation(gp_Vec(10.0, 20.0, 30.0));
+    const TopoDS_Shape moved = cylinder.Moved(TopLoc_Location(move));
+
+    Part::ShapeRefSet second;
+    const std::string secondText = writeBelow(moved, &owners, second);
+    EXPECT_TRUE(second.borrows());
+
+    std::istringstream firstIn(firstText);
+    Part::ShapeRefSet firstReader(builder);
+    const TopoDS_Shape firstRead = firstReader.read(firstIn);
+    ASSERT_FALSE(firstRead.IsNull());
+
+    std::istringstream secondIn(secondText);
+    Part::ShapeRefSet secondReader(builder);
+    secondReader.setResolver([&](const std::string& name) -> const Part::ShapeRefSet* {
+        return name == "first" ? &firstReader : nullptr;
+    });
+    const TopoDS_Shape read = secondReader.read(secondIn);
+    ASSERT_FALSE(read.IsNull());
+
+    int missing = 0;
+    for (TopExp_Explorer face(read, TopAbs_FACE); face.More(); face.Next()) {
+        for (TopExp_Explorer edge(face.Current(), TopAbs_EDGE); edge.More(); edge.Next()) {
+            double first2d = 0.0;
+            double last2d = 0.0;
+            if (BRep_Tool::CurveOnSurface(TopoDS::Edge(edge.Current()),
+                                          TopoDS::Face(face.Current()),
+                                          first2d,
+                                          last2d)
+                    .IsNull()) {
+                ++missing;
+            }
+        }
+    }
+    EXPECT_EQ(0, missing);
+    EXPECT_TRUE(BRepCheck_Analyzer(read).IsValid());
+}

@@ -59,6 +59,7 @@ public:
     bool AutoValidateShape;
     bool FixShape;
     bool ShareStoredSubShapes;
+    long BorrowBelowFace;
     unsigned long LoftMaxDegree;
     double MinimumDeviation;
     double MeshDeviation;
@@ -108,6 +109,8 @@ public:
         funcs["FixShape"] = &PartParamsP::updateFixShape;
         ShareStoredSubShapes = this->handle->GetBool("ShareStoredSubShapes", true);
         funcs["ShareStoredSubShapes"] = &PartParamsP::updateShareStoredSubShapes;
+        BorrowBelowFace = this->handle->GetInt("BorrowBelowFace", 0);
+        funcs["BorrowBelowFace"] = &PartParamsP::updateBorrowBelowFace;
         LoftMaxDegree = this->handle->GetUnsigned("LoftMaxDegree", 5);
         funcs["LoftMaxDegree"] = &PartParamsP::updateLoftMaxDegree;
         MinimumDeviation = this->handle->GetFloat("MinimumDeviation", 0.05);
@@ -213,6 +216,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateShareStoredSubShapes(PartParamsP *self) {
         self->ShareStoredSubShapes = self->handle->GetBool("ShareStoredSubShapes", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateBorrowBelowFace(PartParamsP *self) {
+        self->BorrowBelowFace = self->handle->GetInt("BorrowBelowFace", 0);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateLoftMaxDegree(PartParamsP *self) {
@@ -764,6 +771,40 @@ void PartParams::setShareStoredSubShapes(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void PartParams::removeShareStoredSubShapes() {
     instance()->handle->RemoveBool("ShareStoredSubShapes");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *PartParams::docBorrowBelowFace() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Which sub-shapes may be borrowed below a shell, as a sum\n"
+"(docs/SharedShapeStorage.md sec 12.15): 0 none, which is what ships,\n"
+"1 a face inside a shell, 2 an edge inside a face or a wire, 4 a vertex\n"
+"inside an edge. Each of those associations is keyed on the identity of\n"
+"a geometry object -- a face's edges hold their 2D curve against the\n"
+"surface the face carries -- so this is sound only where the geometry is\n"
+"shared too, and it is off wherever DedupCrossFileGeometry is.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & PartParams::getBorrowBelowFace() {
+    return instance()->BorrowBelowFace;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & PartParams::defaultBorrowBelowFace() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void PartParams::setBorrowBelowFace(const long &v) {
+    instance()->handle->SetInt("BorrowBelowFace",v);
+    instance()->BorrowBelowFace = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void PartParams::removeBorrowBelowFace() {
+    instance()->handle->RemoveInt("BorrowBelowFace");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
