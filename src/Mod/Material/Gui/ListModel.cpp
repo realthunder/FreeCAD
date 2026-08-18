@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,11 +21,8 @@
  *                                                                         *
  **************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
-#endif
-
 #include <QMetaType>
+
 
 #include <Base/Console.h>
 #include <Gui/MainWindow.h>
@@ -90,7 +89,7 @@ bool ListModel::setData(const QModelIndex& index, const QVariant& value, int rol
 {
     Q_UNUSED(role);
 
-    if (index.row() == _valuePtr->size()) {
+    if (newRow(index)) {
         insertRows(index.row(), 1);
     }
     (*_valuePtr)[index.row()] = value;
@@ -127,6 +126,8 @@ bool ListModel::removeRows(int row, int count, const QModelIndex& parent)
     while (count--) {
         _valuePtr->removeAt(row);
     }
+
+    endRemoveRows();
 
     return true;
 }

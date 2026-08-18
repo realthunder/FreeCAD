@@ -1,4 +1,6 @@
 ---
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *                                                                         *
 # *   Copyright (c) 2023 David Carter <dcarter@davidcarter.ca>              *
@@ -31,11 +33,19 @@ AppearanceModel:
     - BasicRendering:
       UUID: 'f006c7e4-35b7-43d5-bbf9-c5d572309e6e'
   TexturePath:
+    DisplayName: "Texture Path"
     Type: 'File'
     Units: ''
     URL: ''
-    Description: " "
+    Description: "Path to file containing a texture image. Only used if Texture Image is unpopulated"
+  TextureImage:
+    DisplayName: "Texture Image"
+    Type: 'Image'
+    Units: ''
+    URL: ''
+    Description: "Embedded texture image"
   TextureScaling:
+    DisplayName: "Texture Scaling"
     Type: 'Float'
     Units: ''
     URL: ''

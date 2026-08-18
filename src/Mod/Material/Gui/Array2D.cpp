@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,14 +21,14 @@
  *                                                                         *
  **************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
-#include <QMessageBox>
-#endif
-
 #include <QMenu>
+#include <QMessageBox>
 
+
+#include <Gui/Application.h>
+#include <Gui/Command.h>
 #include <Gui/MainWindow.h>
+#include <Gui/Tools.h>
 
 #include <Mod/Material/App/Exceptions.h>
 #include <Mod/Material/App/Materials.h>
@@ -57,12 +59,13 @@ Array2D::Array2D(const QString& propertyName,
         _property = material->getAppearanceProperty(propertyName);
     }
     else {
-        Base::Console().Log("Property '%s' not found\n", propertyName.toStdString().c_str());
+        Base::Console().log("Property '%s' not found\n", propertyName.toStdString().c_str());
         _property = nullptr;
     }
     if (_property) {
         _value =
-            std::static_pointer_cast<Materials::Material2DArray>(_property->getMaterialValue());
+            std::static_pointer_cast<Materials::Array2D>(_property->getMaterialValue());
+        setWindowTitle(_property->getDisplayName());
     }
     else {
         _value = nullptr;
@@ -73,23 +76,14 @@ Array2D::Array2D(const QString& propertyName,
     ui->tableView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->tableView, &QWidget::customContextMenuRequested, this, &Array2D::onContextMenu);
 
-    _deleteAction.setText(tr("Delete row"));
-    _deleteAction.setShortcut(Qt::Key_Delete);
+    _deleteAction.setText(tr("Delete Row"));
+    _deleteAction.setShortcut(Gui::QtTools::deleteKeySequence());
+
     connect(&_deleteAction, &QAction::triggered, this, &Array2D::onDelete);
     ui->tableView->addAction(&_deleteAction);
 
     connect(ui->standardButtons, &QDialogButtonBox::accepted, this, &Array2D::accept);
     connect(ui->standardButtons, &QDialogButtonBox::rejected, this, &Array2D::reject);
-}
-
-void Array2D::setHeaders(QStandardItemModel* model)
-{
-    QStringList headers;
-    auto columns = _property->getColumns();
-    for (auto column = columns.begin(); column != columns.end(); column++) {
-        headers.append(column->getName());
-    }
-    model->setHorizontalHeaderLabels(headers);
 }
 
 void Array2D::setColumnWidths(QTableView* table)
@@ -141,9 +135,7 @@ void Array2D::onDataChanged(const QModelIndex& topLeft,
 
 void Array2D::onContextMenu(const QPoint& pos)
 {
-    QModelIndex index = ui->tableView->indexAt(pos);
-
-    QMenu contextMenu(tr("Context menu"), this);
+    QMenu contextMenu(tr("Context Menu"), this);
 
     contextMenu.addAction(&_deleteAction);
 
@@ -177,7 +169,7 @@ int Array2D::confirmDelete()
     box.setIcon(QMessageBox::Question);
     box.setWindowTitle(QObject::tr("Confirm Delete"));
 
-    QString prompt = QObject::tr("Are you sure you want to delete the row?");
+    QString prompt = QObject::tr("Delete the row?");
     box.setText(prompt);
 
     box.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);

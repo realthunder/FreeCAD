@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 #***************************************************************************
 #*   Copyright (c) 2013 Juergen Riegel <FreeCAD@juergen-riegel.net>        *
 #*                                                                         *
@@ -45,3 +47,5 @@ class MaterialWorkbench(Gui.Workbench):
 
 
 Gui.addWorkbench(MaterialWorkbench())
+
+FreeCAD.__unit_test__ += [ "TestMaterialsGui" ]

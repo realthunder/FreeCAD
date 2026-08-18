@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -20,10 +22,6 @@
  **************************************************************************/
 
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
-#endif
-
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Base/PyObjectBase.h>
@@ -31,8 +29,16 @@
 #include <Gui/Language/Translator.h>
 #include <Gui/WidgetFactory.h>
 
+#include "DlgSettingsDefaultMaterial.h"
 #include "DlgSettingsMaterial.h"
 #include "Workbench.h"
+#include "WorkbenchManipulator.h"
+#include "MaterialTreeWidget.h"
+#include "MaterialTreeWidgetPy.h"
+
+#if defined(BUILD_MATERIAL_EXTERNAL)
+#include "DlgSettingsExternal.h"
+#endif
 
 // use a different name to CreateCommand()
 void CreateMaterialCommands();
@@ -77,7 +83,7 @@ PyMOD_INIT_FUNC(MatGui)
 
     // load needed modules
     try {
-        Base::Interpreter().runString("import Material");
+        Base::Interpreter().runString("import Materials");
     }
     catch (const Base::Exception& e) {
         PyErr_SetString(PyExc_ImportError, e.what());
@@ -86,9 +92,11 @@ PyMOD_INIT_FUNC(MatGui)
 
     PyObject* matGuiModule = MatGui::initModule();
 
-    Base::Console().Log("Loading GUI of Material module... done\n");
+    Base::Console().log("Loading GUI of Material module… done\n");
 
     MatGui::Workbench ::init();
+    auto manip = std::make_shared<MatGui::WorkbenchManipulator>();
+    Gui::WorkbenchManipulator::installManipulator(manip);
 
     // instantiating the commands
     CreateMaterialCommands();
@@ -97,12 +105,31 @@ PyMOD_INIT_FUNC(MatGui)
     // widget
     Gui::Dialog::DlgPreferencesImp::setGroupData("Material",
                                                  "Material",
-                                                 QObject::tr("Material workbench"));
+                                                 QObject::tr("Material Workbench"));
     new Gui::PrefPageProducer<MatGui::DlgSettingsMaterial>(
         QT_TRANSLATE_NOOP("QObject", "Material"));
+    new Gui::PrefPageProducer<MatGui::DlgSettingsDefaultMaterial>(
+        QT_TRANSLATE_NOOP("QObject", "Material"));
+#if defined(BUILD_MATERIAL_EXTERNAL)
+    new Gui::PrefPageProducer<MatGui::DlgSettingsExternal>(
+        QT_TRANSLATE_NOOP("QObject", "Material"));
+#endif
 
     // add resources and reloads the translators
     loadMaterialResource();
+
+    Base::Interpreter().addType(&MatGui::MaterialTreeWidgetPy::Type,
+                                matGuiModule,
+                                "MaterialTreeWidget");
+
+
+    // Initialize types
+
+    MatGui::MaterialTreeWidget::init();
+
+    // Add custom widgets
+    new Gui::WidgetProducer<MatGui::MaterialTreeWidget>;
+
 
     PyMOD_Return(matGuiModule);
 }

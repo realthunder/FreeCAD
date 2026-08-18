@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,28 +21,26 @@
  *                                                                         *
  **************************************************************************/
 
-#include "PreCompiled.h"
-#ifndef _PreComp_
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QString>
-#endif
-
-#include <memory>
-
 #include <QFile>
 #include <QIODevice>
 #include <QTextStream>
 #include <QUuid>
+#include <memory>
+#include <fstream>
+
+
 
 #include <App/Application.h>
 #include <Base/Interpreter.h>
-#include <fstream>
 
 
 #include "Exceptions.h"
 #include "MaterialConfigLoader.h"
 #include "MaterialLoader.h"
+#include "MaterialLibrary.h"
 #include "Model.h"
 #include "ModelUuids.h"
 
@@ -82,10 +82,9 @@ bool MaterialConfigLoader::readFile(const QString& path, QMap<QString, QString>&
     QFile infile(path);
     if (infile.open(QIODevice::ReadOnly)) {
         QTextStream in(&infile);
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+#if QT_VERSION < QT_VERSION_CHECK(6,0,0)
         in.setCodec("UTF-8");
 #endif
-
         QString line;
         QString prefix;
         while (!in.atEnd()) {
@@ -98,11 +97,11 @@ bool MaterialConfigLoader::readFile(const QString& path, QMap<QString, QString>&
                 // read prefix
                 auto end = line.indexOf(QLatin1Char(']'));
                 if (end > 1) {
-                    prefix = line.mid(1, end - 1) + QString::fromStdString("/");
+                    prefix = line.mid(1, end - 1) + QStringLiteral("/");
 
                     // Render WB uses both Render and Rendering
-                    if (prefix == QString::fromStdString("Rendering/")) {
-                        prefix = QString::fromStdString("Render/");
+                    if (prefix == QStringLiteral("Rendering/")) {
+                        prefix = QStringLiteral("Render/");
                     }
                 }
             }
@@ -154,9 +153,9 @@ void MaterialConfigLoader::splitTextureObject(const QString& value,
                                               QString* object)
 {
     splitTexture(value, texture, remain);
-    if (*remain == QString::fromStdString("Object")) {
+    if (*remain == QStringLiteral("Object")) {
         *remain = QString();  // Empty string
-        *object = QString::fromStdString("true");
+        *object = QStringLiteral("true");
     }
 }
 
@@ -281,17 +280,17 @@ void MaterialConfigLoader::addRendering(const QMap<QString, QString>& fcmat,
 
 QString MaterialConfigLoader::multiLineKey(QMap<QString, QString>& fcmat, const QString& prefix)
 {
-    // fcmat.beginGroup(QString::fromStdString("Render"));
+    // fcmat.beginGroup(QStringLiteral("Render"));
     QString multiLineString;
     auto keys = fcmat.keys();
     for (const auto& key : keys) {
-        if (key.startsWith(prefix) || key.startsWith(QString::fromStdString("Render/") + prefix)) {
+        if (key.startsWith(prefix) || key.startsWith(QStringLiteral("Render/") + prefix)) {
             QString string = value(fcmat, key.toStdString(), "");
             if (multiLineString.isEmpty()) {
                 multiLineString += string;
             }
             else {
-                multiLineString += QString::fromStdString("\n") + string;
+                multiLineString += QStringLiteral("\n") + string;
             }
         }
     }
@@ -303,7 +302,7 @@ QString MaterialConfigLoader::multiLineKey(QMap<QString, QString>& fcmat, const 
 void MaterialConfigLoader::addRenderAppleseed(QMap<QString, QString>& fcmat,
                                               const std::shared_ptr<Material>& finalModel)
 {
-    QString prefix = QString::fromStdString("Render.Appleseed");
+    QString prefix = QStringLiteral("Render.Appleseed");
     QString string = multiLineKey(fcmat, prefix);
 
     if (!string.isEmpty()) {
@@ -348,7 +347,7 @@ void MaterialConfigLoader::addRenderCarpaint(QMap<QString, QString>& fcmat,
 void MaterialConfigLoader::addRenderCycles(QMap<QString, QString>& fcmat,
                                            const std::shared_ptr<Material>& finalModel)
 {
-    QString prefix = QString::fromStdString("Render.Cycles");
+    QString prefix = QStringLiteral("Render.Cycles");
     QString string = multiLineKey(fcmat, prefix);
     if (!string.isEmpty()) {
         finalModel->addAppearance(ModelUUIDs::ModelUUID_Render_Cycles);
@@ -571,7 +570,7 @@ void MaterialConfigLoader::addRenderGlass(QMap<QString, QString>& fcmat,
 void MaterialConfigLoader::addRenderLuxcore(QMap<QString, QString>& fcmat,
                                             const std::shared_ptr<Material>& finalModel)
 {
-    QString prefix = QString::fromStdString("Render.Luxcore");
+    QString prefix = QStringLiteral("Render.Luxcore");
     QString string = multiLineKey(fcmat, prefix);
 
     if (!string.isEmpty()) {
@@ -585,7 +584,7 @@ void MaterialConfigLoader::addRenderLuxcore(QMap<QString, QString>& fcmat,
 void MaterialConfigLoader::addRenderLuxrender(QMap<QString, QString>& fcmat,
                                               const std::shared_ptr<Material>& finalModel)
 {
-    QString prefix = QString::fromStdString("Render.Luxrender");
+    QString prefix = QStringLiteral("Render.Luxrender");
     QString string = multiLineKey(fcmat, prefix);
 
     if (!string.isEmpty()) {
@@ -660,7 +659,7 @@ void MaterialConfigLoader::addRenderMixed(QMap<QString, QString>& fcmat,
 void MaterialConfigLoader::addRenderOspray(QMap<QString, QString>& fcmat,
                                            const std::shared_ptr<Material>& finalModel)
 {
-    QString prefix = QString::fromStdString("Render.Ospray");
+    QString prefix = QStringLiteral("Render.Ospray");
     QString string = multiLineKey(fcmat, prefix);
 
     if (!string.isEmpty()) {
@@ -674,7 +673,7 @@ void MaterialConfigLoader::addRenderOspray(QMap<QString, QString>& fcmat,
 void MaterialConfigLoader::addRenderPbrt(QMap<QString, QString>& fcmat,
                                          const std::shared_ptr<Material>& finalModel)
 {
-    QString prefix = QString::fromStdString("Render.Pbrt");
+    QString prefix = QStringLiteral("Render.Pbrt");
     QString string = multiLineKey(fcmat, prefix);
 
     if (!string.isEmpty()) {
@@ -688,7 +687,7 @@ void MaterialConfigLoader::addRenderPbrt(QMap<QString, QString>& fcmat,
 void MaterialConfigLoader::addRenderPovray(QMap<QString, QString>& fcmat,
                                            const std::shared_ptr<Material>& finalModel)
 {
-    QString prefix = QString::fromStdString("Render.Povray");
+    QString prefix = QStringLiteral("Render.Povray");
     QString string = multiLineKey(fcmat, prefix);
 
     if (!string.isEmpty()) {
@@ -769,24 +768,24 @@ void MaterialConfigLoader::addRenderTexture(QMap<QString, QString>& fcmat,
 
     auto keys = fcmat.keys();
     for (const auto& key : keys) {
-        if (key.startsWith(QString::fromStdString("Render/Render.Textures."))) {
+        if (key.startsWith(QStringLiteral("Render/Render.Textures."))) {
             QStringList list1 = key.split(QLatin1Char('.'));
             if (renderName.isEmpty()) {
                 renderName = list1[2];
             }
-            if (list1[3] == QString::fromStdString("Images")) {
+            if (list1[3] == QStringLiteral("Images")) {
                 renderImage->push_back(value(fcmat, key.toStdString(), ""));
             }
-            else if (list1[3] == QString::fromStdString("Scale")) {
+            else if (list1[3] == QStringLiteral("Scale")) {
                 renderScale = value(fcmat, key.toStdString(), "");
             }
-            else if (list1[3] == QString::fromStdString("Rotation")) {
+            else if (list1[3] == QStringLiteral("Rotation")) {
                 renderRotation = value(fcmat, key.toStdString(), "");
             }
-            else if (list1[3] == QString::fromStdString("TranslationU")) {
+            else if (list1[3] == QStringLiteral("TranslationU")) {
                 renderTranslationU = value(fcmat, key.toStdString(), "");
             }
-            else if (list1[3] == QString::fromStdString(" TranslationV")) {
+            else if (list1[3] == QStringLiteral(" TranslationV")) {
                 renderTranslationV = value(fcmat, key.toStdString(), "");
             }
         }
@@ -1019,15 +1018,31 @@ void MaterialConfigLoader::addMechanical(const QMap<QString, QString>& fcmat,
     setPhysicalValue(finalModel, "Stiffness", stiffness);
 }
 
+void MaterialConfigLoader::addLegacy(const QMap<QString, QString>& fcmat,
+                                     const std::shared_ptr<Material>& finalModel)
+{
+    for (auto const& legacy : fcmat.keys()) {
+        auto name = legacy;
+        int last = name.lastIndexOf(QStringLiteral("/"));
+        if (last > 0) {
+            name = name.mid(last + 1);
+        }
+
+        if (!finalModel->hasNonLegacyProperty(name)) {
+            setLegacyValue(finalModel, name.toStdString(), fcmat[legacy]);
+        }
+    }
+}
+
 std::shared_ptr<Material>
-MaterialConfigLoader::getMaterialFromPath(const std::shared_ptr<MaterialLibrary>& library,
+MaterialConfigLoader::getMaterialFromPath(const std::shared_ptr<MaterialLibraryLocal>& library,
                                           const QString& path)
 {
     QString author = getAuthorAndLicense(path);  // Place them both in the author field
 
     QMap<QString, QString> fcmat;
     if (!readFile(path, fcmat)) {
-        Base::Console().Log("Error reading '%s'\n", path.toStdString().c_str());
+        Base::Console().log("Error reading '%s'\n", path.toStdString().c_str());
         throw MaterialReadError();
     }
 
@@ -1035,14 +1050,16 @@ MaterialConfigLoader::getMaterialFromPath(const std::shared_ptr<MaterialLibrary>
     // QString name = value(fcmat, "Name", ""); - always get the name from the filename
     QFileInfo filepath(path);
     QString name =
-        filepath.fileName().remove(QString::fromStdString(".FCMat"), Qt::CaseInsensitive);
+        filepath.fileName().remove(QStringLiteral(".FCMat"), Qt::CaseInsensitive);
     QString uuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
 
     QString description = value(fcmat, "Description", "");
     QString sourceReference = value(fcmat, "ReferenceSource", "");
     QString sourceURL = value(fcmat, "SourceURL", "");
 
-    std::shared_ptr<Material> finalModel = std::make_shared<Material>(library, path, uuid, name);
+    auto baseLibrary = std::static_pointer_cast<Materials::MaterialLibrary>(library);
+    std::shared_ptr<Material> finalModel =
+        std::make_shared<Material>(baseLibrary, path, uuid, name);
     finalModel->setOldFormat(true);
 
     finalModel->setAuthor(author);
@@ -1083,6 +1100,7 @@ MaterialConfigLoader::getMaterialFromPath(const std::shared_ptr<MaterialLibrary>
     addRendering(fcmat, finalModel);
     addVectorRendering(fcmat, finalModel);
     addRenderWB(fcmat, finalModel);
+    addLegacy(fcmat, finalModel);
 
     return finalModel;
 }

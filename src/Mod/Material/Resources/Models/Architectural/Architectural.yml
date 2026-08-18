@@ -1,4 +1,6 @@
 ---
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *                                                                         *
 # *   Copyright (c) 2023 David Carter <dcarter@davidcarter.ca>              *
@@ -28,16 +30,19 @@ Model:
   Description: "default architectural model"
   DOI: ""
   EnvironmentalEfficiencyClass:
+    DisplayName: "Environmental Efficiency Class"
     Type: 'String'
     Units: ''
     URL: ''
     Description: " "
   ExecutionInstructions:
+    DisplayName: "Execution Instructions"
     Type: 'String'
     Units: ''
     URL: ''
     Description: " "
   FireResistanceClass:
+    DisplayName: "Fire Resistance Class"
     Type: 'String'
     Units: ''
     URL: ''
@@ -48,11 +53,13 @@ Model:
     URL: ''
     Description: " "
   SoundTransmissionClass:
+    DisplayName: "Sound Transmission Class"
     Type: 'String'
     Units: ''
     URL: ''
     Description: " "
   UnitsPerQuantity:
+    DisplayName: "Units Per Quantity"
     Type: 'Float'
     Units: ''
     URL: ''

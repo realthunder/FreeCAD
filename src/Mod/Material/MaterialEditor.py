@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 # ***************************************************************************
 # *   Copyright (c) 2013 Yorik van Havre <yorik@uncreated.net>              *
 # *   Copyright (c) 2019 Bernd Hahnebach <bernd@bimstatik.org>              *
@@ -27,7 +29,7 @@ __url__ = "https://www.freecad.org"
 import os
 from pathlib import PurePath
 import sys
-from PySide import QtCore, QtGui, QtSvg
+from PySide import QtCore, QtGui, QtSvgWidgets
 
 import FreeCAD
 import FreeCADGui
@@ -69,7 +71,7 @@ class MaterialEditor:
         self.iconPath = (filePath + "Resources" + os.sep + "icons" + os.sep)
 
         # load the UI file from the same directory as this script
-        self.widget = FreeCADGui.PySideUic.loadUi(filePath + "Resources" + os.sep + "ui" + os.sep + "materials-editor.ui")
+        self.widget = FreeCADGui.PySideUic.loadUi(":/ui/materials-editor.ui")
         # remove unused Help button
         self.widget.setWindowFlags(self.widget.windowFlags()
                                    & ~QtCore.Qt.WindowContextHelpButtonHint)
@@ -92,11 +94,11 @@ class MaterialEditor:
         treeView = widget.treeView
 
         # create preview svg slots
-        self.widget.PreviewRender = QtSvg.QSvgWidget(self.iconPath + "preview-rendered.svg")
+        self.widget.PreviewRender = QtSvgWidgets.QSvgWidget(self.iconPath + "preview-rendered.svg")
         self.widget.PreviewRender.setMaximumWidth(64)
         self.widget.PreviewRender.setMinimumHeight(64)
         self.widget.topLayout.addWidget(self.widget.PreviewRender)
-        self.widget.PreviewVector = QtSvg.QSvgWidget(self.iconPath + "preview-vector.svg")
+        self.widget.PreviewVector = QtSvgWidgets.QSvgWidget(self.iconPath + "preview-vector.svg")
         self.widget.PreviewVector.setMaximumWidth(64)
         self.widget.PreviewVector.setMinimumHeight(64)
         self.widget.topLayout.addWidget(self.widget.PreviewVector)
@@ -107,7 +109,7 @@ class MaterialEditor:
         standardButtons.button(QtGui.QDialogButtonBox.Ok).setAutoDefault(False)
         standardButtons.button(QtGui.QDialogButtonBox.Cancel).setAutoDefault(False)
         self.updateCardsInCombo()
-        # TODO allow to enter a custom property by pressing Enter in the lineedit
+        # TODO allow one to enter a custom property by pressing Enter in the lineedit
         # currently closes the dialog
 
         standardButtons.rejected.connect(self.reject)
@@ -262,7 +264,7 @@ class MaterialEditor:
         if self.edited:
             reply = QtGui.QMessageBox.question(self.widget, #FreeCADGui.getMainWindow(),
                                                 translate("Material","The document has been modified."),
-                                                translate("Material","Do you want to save your changes?"),
+                                                translate("Material","Save changes?"),
                                                 QtGui.QMessageBox.Save | QtGui.QMessageBox.Discard | QtGui.QMessageBox.Cancel,
                                                 QtGui.QMessageBox.Save)
 
@@ -298,8 +300,25 @@ class MaterialEditor:
                 card_name_list.append([a_name, a_path, self.icons[a_path]])
 
         card_name_list.insert(0, [None, "", ""])
+        self.widget.ComboMaterial.clear()
         for mat in card_name_list:
-            self.widget.ComboMaterial.addItem(QtGui.QIcon(mat[2]), mat[0], mat[1])
+            icon_data = mat[2]
+
+            if icon_data and isinstance(icon_data, bytes):
+                byte_array = QtCore.QByteArray(icon_data)
+                pixmap = QtGui.QPixmap()
+                if pixmap.loadFromData(byte_array):
+                    icon = QtGui.QIcon(pixmap)
+                else:
+                    icon = QtGui.QIcon()
+            elif isinstance(icon_data, str) and icon_data:
+                # if this is string type, then try to load directly
+                icon = QtGui.QIcon(icon_data)
+            else:
+                # fallback to not crash, empty icon
+                icon = QtGui.QIcon()
+
+            self.widget.ComboMaterial.addItem(icon, mat[0], mat[1])
 
     def openProductURL(self):
 
@@ -329,7 +348,7 @@ class MaterialEditor:
         if self.edited:
             reply = QtGui.QMessageBox.question(self.widget, #FreeCADGui.getMainWindow(),
                                                 translate("Material","The document has been modified."),
-                                                translate("Material","Do you want to save your changes?"),
+                                                translate("Material","Save changes?"),
                                                 QtGui.QMessageBox.Save | QtGui.QMessageBox.Discard | QtGui.QMessageBox.Cancel,
                                                 QtGui.QMessageBox.Save)
 
@@ -585,7 +604,7 @@ class MaterialEditor:
             self.card_path = directory
         filetuple = QtGui.QFileDialog.getOpenFileName(
             QtGui.QApplication.activeWindow(),
-            "Open FreeCAD Material file",
+            "Open FreeCAD material file",
             self.card_path,
             "*.FCMat"
         )
@@ -663,7 +682,7 @@ class MaterialEditor:
             name = "Material"
         filetuple = QtGui.QFileDialog.getSaveFileName(
             QtGui.QApplication.activeWindow(),
-            "Save FreeCAD Material file",
+            "Save FreeCAD material file",
             self.save_directory + "/" + name + ".FCMat",
             "*.FCMat"
         )
@@ -684,8 +703,15 @@ class MaterialEditor:
 
                 from importFCMat import write
                 write(filename, d)
+                import Materials
+                # Load the material
+                manager = Materials.MaterialManager()
+                manager.getMaterialByPath(filename)
                 self.edited = False
                 self.updateCardsInCombo()
+
+                # Ensure our card is selected
+                self.widget.ComboMaterial.setCurrentText(path.stem)
 
     def show(self):
         return self.widget.show()
@@ -936,13 +962,13 @@ def translate(context, text):
 def openEditor(obj=None, prop=None):
     """openEditor([obj,prop]): opens the editor, optionally with
     an object name and material property name to edit"""
-    param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Material/Cards")
-    legacy = param.GetBool("LegacyEditor", True)
-    if legacy:
-        editor = MaterialEditor(obj, prop)
-        editor.exec_()
-    else:
-        FreeCADGui.runCommand('Materials_Edit',0)
+    # param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Material/Cards")
+    # legacy = param.GetBool("LegacyEditor", True)
+    # if legacy:
+    #     editor = MaterialEditor(obj, prop)
+    #     editor.exec_()
+    # else:
+    FreeCADGui.runCommand('Material_Edit',0)
 
 
 def editMaterial(material=None, card_path=None, category="Solid"):
@@ -972,7 +998,7 @@ import MaterialEditor
 MaterialEditor.openEditor()
 
 doc = FreeCAD.open(
-    FreeCAD.ConfigGet("AppHomePath") + "data/examples/FemCalculixCantilever3D.FCStd"
+    FreeCAD.ConfigGet("AppHomePath") + "data/examples/FEMExample.FCStd"
 )
 import MaterialEditor
 MaterialEditor.openEditor("SolidMaterial", "Material")

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 David Carter <dcarter@david.carter.ca>             *
  *                                                                         *
@@ -19,8 +21,7 @@
  *                                                                         *
  **************************************************************************/
 
-#ifndef MATGUI_ARRAY2D_H
-#define MATGUI_ARRAY2D_H
+#pragma once
 
 #include <memory>
 
@@ -64,11 +65,10 @@ private:
     std::unique_ptr<Ui_Array2D> ui;
     std::shared_ptr<Materials::Material> _material;
     std::shared_ptr<Materials::MaterialProperty> _property;
-    std::shared_ptr<Materials::Material2DArray> _value;
+    std::shared_ptr<Materials::Array2D> _value;
 
     QAction _deleteAction;
 
-    void setHeaders(QStandardItemModel* model);
     void setColumnWidths(QTableView* table);
     void setColumnDelegates(QTableView* table);
     void setupArray();
@@ -79,5 +79,3 @@ private:
 };
 
 }  // namespace MatGui
-
-#endif  // MATGUI_ARRAY2D_H
