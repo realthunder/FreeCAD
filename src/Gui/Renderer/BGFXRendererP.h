@@ -752,6 +752,14 @@ struct ProxyGenTotals {
     /// every occupied cell whether or not a triangle survived on it.
     uint64_t proxyVertices = 0;
     uint64_t collapsedMembers = 0;
+    /// What it costs to carry the deleted members rather than lose
+    /// them, both ways round (11.1c): a box per collapsed member, or a
+    /// box per grid cell holding deleted content. Both are covers of
+    /// the same points, so the triangles are the price and the volume
+    /// is how loosely each one holds them.
+    Render::StandInStats perMember;
+    Render::StandInStats perCell;
+    double standInMs = 0.0;
     double sourceArea = 0.0;
     double proxyArea = 0.0;
     double ratioSum = 0.0;
@@ -759,6 +767,22 @@ struct ProxyGenTotals {
     float ratioMax = 0.0f;
     double ms = 0.0;
 };
+
+/// Sum one proxy's stand-in numbers into the totals for its grid.
+static void accumulate(Render::StandInStats &total,
+                       const Render::StandInStats &one)
+{
+    total.boxes += one.boxes;
+    total.triangles += one.triangles;
+    total.members += one.members;
+    total.named += one.named;
+    total.cells += one.cells;
+    total.sharedCells += one.sharedCells;
+    total.volume += one.volume;
+    total.area += one.area;
+    total.deletedArea += one.deletedArea;
+    total.ms += one.ms;
+}
 
 static void reportProxyGen(const Render::ProxyHierarchy &index,
                            const Render::DrawCallList &draws, const float *V,
@@ -895,6 +919,21 @@ static void reportProxyGen(const Render::ProxyHierarchy &index,
                 t.sourceArea += stats.sourceArea;
                 t.proxyArea += stats.proxyArea;
                 t.ms += stats.simplifyMs;
+                // What would stand in for the members this grid
+                // deleted, measured both ways on the same merge --
+                // which is the only way the two can be compared,
+                // since a different merge deletes a different set.
+                Render::SimplifiedMesh standIn;
+                Render::StandInStats perMember, perCell;
+                Render::buildStandIns(merged, proxy, params,
+                                      Render::StandInMode::PerMember, standIn,
+                                      &perMember);
+                Render::buildStandIns(merged, proxy, params,
+                                      Render::StandInMode::PerCell, standIn,
+                                      &perCell);
+                accumulate(t.perMember, perMember);
+                accumulate(t.perCell, perCell);
+                t.standInMs += perMember.ms + perCell.ms;
                 if (!made) {
                     ++t.refused;
                     continue;
@@ -975,6 +1014,27 @@ static void reportProxyGen(const Render::ProxyHierarchy &index,
                  (unsigned long long)t.members,
                  (unsigned long long)t.proxyVertices, t.proxies, t.refused,
                  t.ms);
+#ifdef FC_RENDERER_STANDALONE
+        std::printf("%s", buf);
+#else
+        Base::Console().Message("%s", buf);
+#endif
+        // The deleted mass, carried both ways. Volumes are directly
+        // comparable because both are covers of the same points, so
+        // the looser one is the one committing more space to hold
+        // them; the named counts say what a pick still resolves to.
+        snprintf(buf, sizeof(buf),
+                 "render standin 1/%u cell: per-member %u boxes %u tri "
+                 "vol %.4g area %.4g named %u/%u | per-cell %u boxes %u tri "
+                 "vol %.4g area %.4g named %u/%u over %u cells (%u shared) "
+                 "| deleted area %.4g vs proxy %.4g | %.1fms\n",
+                 kSubdivisions[g], t.perMember.boxes,
+                 t.perMember.triangles, t.perMember.volume,
+                 t.perMember.area, t.perMember.named, t.perMember.members,
+                 t.perCell.boxes, t.perCell.triangles,
+                 t.perCell.volume, t.perCell.area, t.perCell.named,
+                 t.perCell.members, t.perCell.cells, t.perCell.sharedCells,
+                 t.perMember.deletedArea, t.proxyArea, t.standInMs);
 #ifdef FC_RENDERER_STANDALONE
         std::printf("%s", buf);
 #else

@@ -22,6 +22,7 @@
 #include "MeshSimplify.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <map>
@@ -713,12 +714,14 @@ inline void memberRange(const ProxyMember &m, int &begin, int &end)
 
 /// Total triangle area of a mesh in owned form — what survived, in the
 /// only unit that notices geometry going missing rather than moving.
-double triangleArea(const std::vector<float> &positions,
-                    const std::vector<int32_t> &indices)
+double triangleAreaRange(const std::vector<float> &positions,
+                         const std::vector<int32_t> &indices, size_t start,
+                         size_t count)
 {
     double total = 0.0;
     const size_t verts = positions.size() / 3;
-    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+    const size_t end = std::min(indices.size(), start + count);
+    for (size_t i = start; i + 2 < end; i += 3) {
         const int32_t a = indices[i], b = indices[i + 1], c = indices[i + 2];
         if (a < 0 || b < 0 || c < 0 || size_t(a) >= verts || size_t(b) >= verts
                 || size_t(c) >= verts)
@@ -736,6 +739,12 @@ double triangleArea(const std::vector<float> &positions,
         total += 0.5 * std::sqrt(cx * cx + cy * cy + cz * cz);
     }
     return total;
+}
+
+double triangleArea(const std::vector<float> &positions,
+                    const std::vector<int32_t> &indices)
+{
+    return triangleAreaRange(positions, indices, 0, indices.size());
 }
 
 double millisSince(const std::chrono::steady_clock::time_point &start)
@@ -978,4 +987,269 @@ bool Render::buildProxyMesh(const std::vector<ProxyMember> &members,
         return false;
     }
     return true;
+}
+
+namespace {
+
+/// The eight corners of a box, numbered by bits: bit 0 is x, bit 1 is
+/// y, bit 2 is z, set meaning the high side.
+inline void boxCorner(const float *lo, const float *hi, int c, float *out)
+{
+    out[0] = (c & 1) ? hi[0] : lo[0];
+    out[1] = (c & 2) ? hi[1] : lo[1];
+    out[2] = (c & 4) ? hi[2] : lo[2];
+}
+
+/// Four corners per face, wound counter-clockwise seen from outside, so
+/// a stand-in faces the way every other surface in the merge does and
+/// back-face culling treats it the same.
+const int kBoxFace[6][4] = {
+    {0, 4, 6, 2},  // -x
+    {1, 3, 7, 5},  // +x
+    {0, 1, 5, 4},  // -y
+    {2, 6, 7, 3},  // +y
+    {0, 2, 3, 1},  // -z
+    {4, 5, 7, 6},  // +z
+};
+const float kBoxNormal[6][3] = {{-1, 0, 0}, {1, 0, 0}, {0, -1, 0},
+                                {0, 1, 0},  {0, 0, -1}, {0, 0, 1}};
+
+/// Append one box to \a out: 24 vertices, because a shared corner
+/// cannot carry three face normals, and 12 triangles.
+void emitBox(SimplifiedMesh &out, const float *lo, const float *hi,
+             bool withNormals, bool withColors, const uint8_t *color)
+{
+    const int32_t base = int32_t(out.positions.size() / 3);
+    for (int f = 0; f < 6; ++f) {
+        for (int k = 0; k < 4; ++k) {
+            float p[3];
+            boxCorner(lo, hi, kBoxFace[f][k], p);
+            out.positions.insert(out.positions.end(), {p[0], p[1], p[2]});
+            if (withNormals)
+                out.normals.insert(out.normals.end(),
+                                   {kBoxNormal[f][0], kBoxNormal[f][1],
+                                    kBoxNormal[f][2]});
+            if (withColors)
+                out.colors.insert(out.colors.end(),
+                                  {color[0], color[1], color[2], color[3]});
+        }
+        const int32_t v = base + int32_t(f) * 4;
+        out.triangleIndices.insert(out.triangleIndices.end(),
+                                   {v, v + 1, v + 2, v, v + 2, v + 3});
+    }
+}
+
+/// A box under construction: the bounds of some deleted content, the
+/// average of its colours, and -- for a cell -- which member put it
+/// there, or none once a second one has.
+struct StandInBox {
+    float lo[3] {0, 0, 0};
+    float hi[3] {0, 0, 0};
+    bool empty = true;
+    uint32_t colorSum[4] {0, 0, 0, 0};
+    uint32_t colorCount = 0;
+    size_t member = 0;
+    bool shared = false;
+
+    void add(const float *p, const uint8_t *c)
+    {
+        if (empty) {
+            for (int k = 0; k < 3; ++k)
+                lo[k] = hi[k] = p[k];
+            empty = false;
+        }
+        else {
+            for (int k = 0; k < 3; ++k) {
+                lo[k] = std::min(lo[k], p[k]);
+                hi[k] = std::max(hi[k], p[k]);
+            }
+        }
+        if (c) {
+            for (int k = 0; k < 4; ++k)
+                colorSum[k] += c[k];
+            ++colorCount;
+        }
+    }
+
+    void color(uint8_t *out) const
+    {
+        for (int k = 0; k < 4; ++k)
+            out[k] = colorCount
+                ? uint8_t(colorSum[k] / colorCount)
+                : uint8_t(k == 3 ? 255 : 128);
+    }
+
+    double volume() const
+    {
+        return double(hi[0] - lo[0]) * double(hi[1] - lo[1])
+            * double(hi[2] - lo[2]);
+    }
+
+    double area() const
+    {
+        const double dx = hi[0] - lo[0], dy = hi[1] - lo[1],
+                     dz = hi[2] - lo[2];
+        return 2.0 * (dx * dy + dy * dz + dz * dx);
+    }
+};
+
+/// Visit every vertex of one member's run in the merged mesh.
+template<class F>
+void forEachMemberVertex(const SimplifiedMesh &merged,
+                         const std::pair<int, int> &part, F &&fn)
+{
+    const size_t verts = merged.positions.size() / 3;
+    const size_t end =
+        std::min(merged.triangleIndices.size(), size_t(part.first + part.second));
+    for (size_t i = size_t(part.first); i < end; ++i) {
+        const int32_t v = merged.triangleIndices[i];
+        if (v < 0 || size_t(v) >= verts)
+            continue;
+        fn(&merged.positions[size_t(v) * 3],
+           merged.colors.empty() ? nullptr
+                                 : &merged.colors[size_t(v) * 4]);
+    }
+}
+
+}  // namespace
+
+bool Render::buildStandIns(const SimplifiedMesh &merged,
+                           const SimplifiedMesh &proxy,
+                           const ProxyMeshParams &params, StandInMode mode,
+                           SimplifiedMesh &out, StandInStats *stats)
+{
+    out = SimplifiedMesh();
+    if (stats)
+        *stats = StandInStats();
+    if (mode == StandInMode::None)
+        return false;
+    const auto start = std::chrono::steady_clock::now();
+
+    // The part table is positional whatever gets built, so every member
+    // has a slot from the outset and an empty one means nothing stands
+    // in for that member rather than that the table ended early.
+    out.triangleParts.assign(merged.triangleParts.size(), {0, 0});
+
+    // A member is deleted when it carried triangles into the merge and
+    // came back with none -- which includes the refusal case, where the
+    // proxy has no table at all.
+    std::vector<size_t> collapsed;
+    double deletedArea = 0.0;
+    for (size_t i = 0; i < merged.triangleParts.size(); ++i) {
+        const std::pair<int, int> &part = merged.triangleParts[i];
+        if (part.second <= 0)
+            continue;
+        if (i < proxy.triangleParts.size() && proxy.triangleParts[i].second > 0)
+            continue;
+        collapsed.push_back(i);
+        deletedArea += triangleAreaRange(merged.positions,
+                                         merged.triangleIndices,
+                                         size_t(part.first),
+                                         size_t(part.second));
+    }
+    if (stats) {
+        stats->members = uint32_t(collapsed.size());
+        stats->deletedArea = deletedArea;
+        stats->ms = millisSince(start);
+    }
+    if (collapsed.empty())
+        return false;
+
+    const bool withNormals = !merged.normals.empty();
+    const bool withColors = !merged.colors.empty();
+    uint8_t color[4] = {128, 128, 128, 255};
+
+    if (mode == StandInMode::PerMember) {
+        for (size_t i : collapsed) {
+            StandInBox box;
+            forEachMemberVertex(merged, merged.triangleParts[i],
+                                [&box](const float *p, const uint8_t *c) {
+                                    box.add(p, c);
+                                });
+            if (box.empty)
+                continue;
+            const int begin = int(out.triangleIndices.size());
+            box.color(color);
+            emitBox(out, box.lo, box.hi, withNormals, withColors, color);
+            out.triangleParts[i] = {begin,
+                                    int(out.triangleIndices.size()) - begin};
+            if (stats) {
+                ++stats->boxes;
+                ++stats->named;
+                stats->volume += box.volume();
+                stats->area += box.area();
+            }
+        }
+    }
+    else {
+        if (!(params.cellSize > 0.0f))
+            return false;
+        // The same grid the decimation ran on, so a stand-in sits where
+        // the representative that failed to appear would have, and the
+        // levels nest for the same reason they do there.
+        const double cell = double(params.cellSize);
+        std::map<std::array<int64_t, 3>, StandInBox> cells;
+        for (size_t i : collapsed) {
+            forEachMemberVertex(
+                merged, merged.triangleParts[i],
+                [&](const float *p, const uint8_t *c) {
+                    std::array<int64_t, 3> key {};
+                    for (int k = 0; k < 3; ++k)
+                        key[size_t(k)] = int64_t(std::floor(
+                            (double(p[k]) - double(params.anchor[k])) / cell));
+                    auto it = cells.find(key);
+                    if (it == cells.end()) {
+                        StandInBox box;
+                        box.member = i;
+                        it = cells.emplace(key, box).first;
+                    }
+                    else if (it->second.member != i)
+                        it->second.shared = true;
+                    it->second.add(p, c);
+                });
+        }
+
+        // Boxes a single member owns are emitted in that member's slot
+        // and contiguously, because a part run is a range; a cell two
+        // members share can honestly name neither, so it is emitted
+        // after them all with no slot at all.
+        std::map<size_t, std::vector<const StandInBox *>> owned;
+        std::vector<const StandInBox *> sharedBoxes;
+        for (const auto &entry : cells) {
+            if (entry.second.shared)
+                sharedBoxes.push_back(&entry.second);
+            else
+                owned[entry.second.member].push_back(&entry.second);
+        }
+        const auto place = [&](const StandInBox &box) {
+            box.color(color);
+            emitBox(out, box.lo, box.hi, withNormals, withColors, color);
+            if (stats) {
+                ++stats->boxes;
+                stats->volume += box.volume();
+                stats->area += box.area();
+            }
+        };
+        for (const auto &entry : owned) {
+            const int begin = int(out.triangleIndices.size());
+            for (const StandInBox *box : entry.second)
+                place(*box);
+            out.triangleParts[entry.first] = {
+                begin, int(out.triangleIndices.size()) - begin};
+            if (stats)
+                ++stats->named;
+        }
+        for (const StandInBox *box : sharedBoxes)
+            place(*box);
+        if (stats) {
+            stats->cells = uint32_t(cells.size());
+            stats->sharedCells = uint32_t(sharedBoxes.size());
+        }
+    }
+
+    if (stats) {
+        stats->triangles = uint32_t(out.triangleIndices.size() / 3);
+        stats->ms = millisSince(start);
+    }
+    return !out.triangleIndices.empty();
 }

@@ -317,6 +317,87 @@ struct ProxyMeshStats {
     double simplifyMs = 0.0;
 };
 
+/// How the geometry a decimation deleted is carried rather than lost
+/// (docs/FarFieldProxies.md 11.1c).
+///
+/// Clustering does not shrink a member smaller than a cell, it removes
+/// it: every one of that member's triangles has three corners in one
+/// cell, so every one is degenerate and is dropped. A far field
+/// therefore loses its small parts as bodies while every displacement
+/// the run reports stays inside the tolerance. A stand-in is a box
+/// appended after the decimation -- no new shader and no new pass,
+/// which is what the renderer already draws for geometry that has not
+/// arrived (DrawCall::standIn).
+///
+/// Both modes are conservative covers of the same point set: every
+/// deleted vertex is inside a box either way. That is what makes them
+/// directly comparable -- the cost is triangles, the fidelity is the
+/// volume committed to holding those points, and the only question
+/// between them is which one over-covers where.
+enum class StandInMode {
+    None = 0,
+    /// One box per collapsed member, its own world bounding box.
+    /// Twelve triangles per member, and identity survives: the box
+    /// sits in that member's own part slot, so a pick into the proxy
+    /// still names the part it hit. Over-covers a member whose shape
+    /// is nothing like its box -- a long diagonal wire, a bent bracket
+    /// -- because one box has to hold all of it.
+    PerMember,
+    /// One box per grid cell holding deleted content, sized to the
+    /// content in that cell and not to the cell. Bounded by the grid
+    /// rather than by how many parts happen to be there, so a cell of
+    /// forty screws costs one box; the price is filling the gaps
+    /// between them, and losing identity in every cell that holds more
+    /// than one member.
+    PerCell,
+};
+
+/// What standing in for the deleted geometry cost, and what it
+/// committed -- the two numbers that choose between the modes.
+struct StandInStats {
+    uint32_t boxes = 0;
+    uint32_t triangles = 0;
+    /// Collapsed members represented, and of those, the ones a pick
+    /// can still name: PerMember names all of them, PerCell only the
+    /// ones alone in every cell they touch.
+    uint32_t members = 0;
+    uint32_t named = 0;
+    uint32_t cells = 0;        ///< cells holding deleted content
+    uint32_t sharedCells = 0;  ///< of those, cells holding several members
+    /// Total volume of the boxes: since both modes cover the same
+    /// points, the smaller total is the tighter cover. Flat content
+    /// contributes nothing to it, which is why the surface area is
+    /// reported beside it -- that is also what a rasterizer pays.
+    double volume = 0.0;
+    double area = 0.0;
+    /// Triangle area of the source geometry that went missing, so the
+    /// box area above can be read as a ratio rather than as a number.
+    double deletedArea = 0.0;
+    double ms = 0.0;
+};
+
+/// Build stand-ins for the members of \a merged that \a proxy dropped,
+/// on the same grid \a params decimated on, and write them to \a out as
+/// a mesh of their own.
+///
+/// A mesh of their own rather than an append, because the caller may
+/// want to draw them under a different material or not at all, and
+/// because keeping them separate is what lets one merge be measured
+/// both ways. The part table is positional exactly as everywhere else:
+/// entry i names the member entry i of \a merged named, with an empty
+/// range where nothing stands in for it -- so a pick may resolve to no
+/// object, never to the wrong one.
+///
+/// \a proxy may be the empty mesh a refused decimation leaves, in which
+/// case every member that carried triangles is collapsed.
+///
+/// False when nothing was deleted, which is the good case.
+RendererExport bool buildStandIns(const SimplifiedMesh &merged,
+                                  const SimplifiedMesh &proxy,
+                                  const ProxyMeshParams &params,
+                                  StandInMode mode, SimplifiedMesh &out,
+                                  StandInStats *stats = nullptr);
+
 /// Merge \a members into one world-space mesh, one triangle part per
 /// member — the first half of buildProxyMesh, separated because a node
 /// generating more than one rung merges once and decimates repeatedly,

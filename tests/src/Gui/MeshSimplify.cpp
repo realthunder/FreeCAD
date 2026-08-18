@@ -936,3 +936,227 @@ TEST(ProxyMesh, aDrawOfOneFaceContributesThatFaceAlone)
     EXPECT_EQ(stats.sourceTriangles, 4u);
     EXPECT_LE(stats.sourceVertices, 12u);
 }
+
+// ---------------------------------------------------------------------
+// Standing in for what the decimation deleted (docs/FarFieldProxies.md
+// 11.1c) -- the two representations, measured against each other.
+// ---------------------------------------------------------------------
+
+namespace
+{
+
+/// The boxes of a stand-in mesh, read back as bounds: 24 vertices each,
+/// in the order emitBox wrote them.
+std::vector<std::array<float, 6>> standInBoxes(const Render::SimplifiedMesh &m)
+{
+    std::vector<std::array<float, 6>> boxes;
+    for (size_t v = 0; v + 71 < m.positions.size(); v += 72) {
+        std::array<float, 6> b {m.positions[v], m.positions[v + 1],
+                                m.positions[v + 2], m.positions[v],
+                                m.positions[v + 1], m.positions[v + 2]};
+        for (size_t k = 0; k < 24; ++k)
+            for (size_t c = 0; c < 3; ++c) {
+                const float p = m.positions[v + k * 3 + c];
+                b[c] = std::min(b[c], p);
+                b[3 + c] = std::max(b[3 + c], p);
+            }
+        boxes.push_back(b);
+    }
+    return boxes;
+}
+
+/// Is \a p inside any of \a boxes, to within the tolerance a float
+/// round trip needs?
+bool covered(const std::vector<std::array<float, 6>> &boxes, const float *p)
+{
+    for (const auto &b : boxes) {
+        bool in = true;
+        for (int k = 0; k < 3; ++k)
+            in = in && p[k] >= b[size_t(k)] - 1e-4f
+                && p[k] <= b[size_t(3 + k)] + 1e-4f;
+        if (in)
+            return true;
+    }
+    return false;
+}
+
+/// A field of \a n members too small for the grid, spaced \a pitch
+/// apart along x and y -- the case the deletion finding is about.
+struct SmallField {
+    SoupGrid grid {2, 0.05f};
+    std::vector<std::array<float, 16>> models;
+    std::vector<Render::ProxyMember> members;
+    Render::MeshData mesh;
+
+    SmallField(size_t n, float pitch)
+        : models(n)
+    {
+        mesh = grid.mesh();
+        for (size_t i = 0; i < n; ++i) {
+            translation(models[i].data(), float(i % 4) * pitch,
+                        float(i / 4) * pitch, 0.0f);
+            members.push_back(memberAt(mesh, models[i].data(), uint64_t(i)));
+        }
+    }
+};
+
+}  // namespace
+
+TEST(ProxyStandIn, everyDeletedMemberGetsABoxAndEveryDeletedPointIsInside)
+{
+    // The contract that makes the two modes comparable at all: both are
+    // conservative covers, so nothing that was deleted ends up outside
+    // the geometry that stands in for it.
+    SmallField field(16, 1.0f);
+    Render::ProxyMeshParams params;
+    params.cellSize = 0.25f;  // five times the span of any member
+
+    Render::SimplifiedMesh merged, proxy;
+    ASSERT_TRUE(Render::mergeProxyMembers(field.members, merged));
+    // Refused: at this grid there is nothing left to draw at all.
+    EXPECT_FALSE(Render::decimateProxyMesh(merged, params, proxy));
+
+    for (Render::StandInMode mode :
+         {Render::StandInMode::PerMember, Render::StandInMode::PerCell}) {
+        Render::SimplifiedMesh out;
+        Render::StandInStats stats;
+        ASSERT_TRUE(
+            Render::buildStandIns(merged, proxy, params, mode, out, &stats));
+        EXPECT_EQ(stats.members, 16u);
+        EXPECT_EQ(stats.triangles, stats.boxes * 12);
+        EXPECT_GT(stats.deletedArea, 0.0);
+
+        const auto boxes = standInBoxes(out);
+        ASSERT_EQ(boxes.size(), stats.boxes);
+        for (size_t v = 0; v + 2 < merged.positions.size(); v += 3)
+            EXPECT_TRUE(covered(boxes, &merged.positions[v]))
+                << "vertex " << v / 3 << " of the merge is outside every box";
+    }
+}
+
+TEST(ProxyStandIn, perCellIsBoundedByTheGridAndPerMemberByTheMemberCount)
+{
+    // The choice itself: sixteen members inside one cell cost sixteen
+    // boxes one way and one box the other, and that ratio is the whole
+    // argument for standing in per cell.
+    SmallField field(16, 0.01f);  // every member inside one cell
+    Render::ProxyMeshParams params;
+    params.cellSize = 1.0f;
+
+    Render::SimplifiedMesh merged, proxy;
+    ASSERT_TRUE(Render::mergeProxyMembers(field.members, merged));
+    Render::decimateProxyMesh(merged, params, proxy);
+
+    Render::SimplifiedMesh perMember, perCell;
+    Render::StandInStats a, b;
+    ASSERT_TRUE(Render::buildStandIns(merged, proxy, params,
+                                      Render::StandInMode::PerMember,
+                                      perMember, &a));
+    ASSERT_TRUE(Render::buildStandIns(merged, proxy, params,
+                                      Render::StandInMode::PerCell, perCell,
+                                      &b));
+    EXPECT_EQ(a.boxes, 16u);
+    EXPECT_EQ(b.boxes, 1u);
+    EXPECT_EQ(b.cells, 1u);
+    // And the cost of that: the cell's box spans the gaps between the
+    // members, so it covers more than the sixteen tight ones together.
+    EXPECT_GT(b.area, a.area / 16.0);
+}
+
+TEST(ProxyStandIn, aStandInNamesItsOwnMemberOrNoneButNeverAnother)
+{
+    // Section 6's invariant, carried into the stand-ins: a per-member
+    // box sits in its member's slot, and a cell shared by several
+    // members names none of them rather than picking one.
+    Render::ProxyMeshParams params;
+    params.cellSize = 1.0f;
+
+    SmallField crowded(16, 0.01f);  // one cell, sixteen members
+    Render::SimplifiedMesh merged, proxy, out;
+    ASSERT_TRUE(Render::mergeProxyMembers(crowded.members, merged));
+    Render::decimateProxyMesh(merged, params, proxy);
+
+    Render::StandInStats named;
+    ASSERT_TRUE(Render::buildStandIns(merged, proxy, params,
+                                      Render::StandInMode::PerMember, out,
+                                      &named));
+    ASSERT_EQ(out.triangleParts.size(), 16u);
+    for (const auto &part : out.triangleParts)
+        EXPECT_EQ(part.second, 36);
+    EXPECT_EQ(named.named, 16u);
+
+    Render::StandInStats shared;
+    ASSERT_TRUE(Render::buildStandIns(merged, proxy, params,
+                                      Render::StandInMode::PerCell, out,
+                                      &shared));
+    EXPECT_EQ(shared.sharedCells, 1u);
+    EXPECT_EQ(shared.named, 0u);
+    ASSERT_EQ(out.triangleParts.size(), 16u);
+    for (const auto &part : out.triangleParts)
+        EXPECT_EQ(part.second, 0);
+
+    // Alone in its cell, a member is named again -- the ambiguity is
+    // the crowding, not the mode.
+    SmallField spread(16, 1.0f);
+    Render::ProxyMeshParams fine;
+    fine.cellSize = 0.25f;
+    Render::SimplifiedMesh spreadMerged, spreadProxy;
+    ASSERT_TRUE(Render::mergeProxyMembers(spread.members, spreadMerged));
+    Render::decimateProxyMesh(spreadMerged, fine, spreadProxy);
+    Render::StandInStats alone;
+    ASSERT_TRUE(Render::buildStandIns(spreadMerged, spreadProxy, fine,
+                                      Render::StandInMode::PerCell, out,
+                                      &alone));
+    EXPECT_EQ(alone.sharedCells, 0u);
+    EXPECT_EQ(alone.named, 16u);
+}
+
+TEST(ProxyStandIn, aGridFineEnoughToKeepTheMembersHasNothingToStandInFor)
+{
+    // The good case reports itself as one: no members deleted, no
+    // boxes, and a false return the caller can skip on.
+    SmallField field(16, 1.0f);
+    Render::ProxyMeshParams params;
+    params.cellSize = 0.02f;
+
+    Render::SimplifiedMesh merged, proxy, out;
+    ASSERT_TRUE(Render::mergeProxyMembers(field.members, merged));
+    ASSERT_TRUE(Render::decimateProxyMesh(merged, params, proxy));
+    Render::StandInStats stats;
+    EXPECT_FALSE(Render::buildStandIns(merged, proxy, params,
+                                       Render::StandInMode::PerMember, out,
+                                       &stats));
+    EXPECT_EQ(stats.members, 0u);
+    EXPECT_EQ(stats.boxes, 0u);
+    EXPECT_TRUE(out.triangleIndices.empty());
+}
+
+TEST(ProxyStandIn, standingInIsSkippedForTheMembersThatSurvived)
+{
+    // A proxy that kept some members and dropped others must stand in
+    // for exactly the ones it dropped, or the survivors are drawn
+    // twice -- once decimated and once as a box around them.
+    SoupGrid big(8, 1.0f);
+    const Render::MeshData bigMesh = big.mesh();
+    SmallField field(4, 1.0f);
+    std::vector<Render::ProxyMember> members = field.members;
+    float model[16];
+    translation(model, 0.0f, 0.0f, 0.0f);
+    members.push_back(memberAt(bigMesh, model, 99));
+
+    Render::ProxyMeshParams params;
+    params.cellSize = 0.25f;
+    Render::SimplifiedMesh merged, proxy, out;
+    ASSERT_TRUE(Render::mergeProxyMembers(members, merged));
+    ASSERT_TRUE(Render::decimateProxyMesh(merged, params, proxy));
+
+    Render::StandInStats stats;
+    ASSERT_TRUE(Render::buildStandIns(merged, proxy, params,
+                                      Render::StandInMode::PerMember, out,
+                                      &stats));
+    EXPECT_EQ(stats.members, 4u);
+    ASSERT_EQ(out.triangleParts.size(), members.size());
+    EXPECT_EQ(out.triangleParts.back().second, 0);  // the survivor
+    for (size_t i = 0; i < 4; ++i)
+        EXPECT_EQ(out.triangleParts[i].second, 36);
+}
