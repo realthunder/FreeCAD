@@ -24,7 +24,9 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <algorithm>
 #include <stack>
+#include <unordered_set>
 #endif
 
 #include <boost/functional/hash.hpp>
@@ -306,7 +308,41 @@ namespace {
 // allocation per push, and that is the whole difference at small sizes.
 // A hash set only overtakes past depth ~300; a sorted vector never does
 // here, because each insert lands in the middle and moves half the array.
-using RecursionStack = std::vector<const App::DocumentObject*>;
+// So the scan is what a sane stack pays. A pathological one should not pay
+// for that choice, though, so past LinearLimit entries an index is built
+// once and maintained, and the scan gives way to it.
+class RecursionStack {
+public:
+    bool contains(const App::DocumentObject *obj) const {
+        if(!index.empty())
+            return index.find(obj) != index.end();
+        return std::find(objs.begin(),objs.end(),obj) != objs.end();
+    }
+    void push(const App::DocumentObject *obj) {
+        objs.push_back(obj);
+        if(!index.empty())
+            index.insert(obj);
+        else if(objs.size() > LinearLimit)
+            index.insert(objs.begin(),objs.end());
+    }
+    void pop() {
+        if(!index.empty())
+            index.erase(objs.back());
+        objs.pop_back();
+        // the index is kept until the recursion unwinds completely, rather
+        // than dropped the moment the stack dips back under the limit, so
+        // that hovering around it cannot rebuild the thing over and over
+        if(objs.empty())
+            index.clear();
+    }
+
+private:
+    /// Measured crossover is around 300; stay well under it
+    static const std::size_t LinearLimit = 128;
+
+    std::vector<const App::DocumentObject*> objs;
+    std::unordered_set<const App::DocumentObject*> index;
+};
 
 thread_local RecursionStack expandingSubObjects;
 thread_local RecursionStack queryingMustExecute;
@@ -316,16 +352,16 @@ struct RecursionGuard {
     RecursionGuard(RecursionStack &stack, const App::DocumentObject *obj)
         : stack(stack)
     {
-        stack.push_back(obj);
+        stack.push(obj);
     }
     ~RecursionGuard() {
-        stack.pop_back();
+        stack.pop();
     }
     RecursionGuard(const RecursionGuard &) = delete;
     RecursionGuard &operator=(const RecursionGuard &) = delete;
 
     static bool contains(const RecursionStack &stack, const App::DocumentObject *obj) {
-        return std::find(stack.begin(),stack.end(),obj) != stack.end();
+        return stack.contains(obj);
     }
 
     RecursionStack &stack;
