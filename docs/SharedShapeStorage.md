@@ -2047,3 +2047,99 @@ area and volume once per shape and keep them beside the owner table rather than
 per candidate pair. And 5204 files against the 1446 distinct shapes sec 12.9
 counted says most of the remaining repeats are ordered differently, which the
 index-order correspondence refuses by design.
+
+### 12.13 Cross-file geometry, as built
+
+Sec 12.8 measured the ceiling and named what it would take: not the per-shape
+records, which only ever emit positions in the three tables, but a **table**
+writer, so that an entry can be either a definition or the name of another
+file's entry. That is what this is.
+
+```
+CASCADE Topology V1, (c) Matra-Datavision
+Files 1
+89987ecc1e35ca9da307a250f47dbd4c0a9fe1f8   <- as sec 12.4: the file named
+Locations 0
+Curves 12
+E1 1                                       <- new: curve 1 of file 1
+1 5 0 0 0 0 1                              <- as today: the curve, written out
+...
+```
+
+`ShapeRefSet` overrides `WriteGeometry`/`ReadGeometry` for the three tables and
+delegates everything else, including every per-shape record, to OCCT. A table
+nothing was borrowed into is written by `GeomTools_*Set::Write` itself, so a
+file that shares nothing is still byte for byte what it always was -- the same
+claim sec 12.4 makes for sub-shapes, and it is a test case.
+
+***What an entry is keyed on: the bytes it is written as.*** Not the handle. A
+surface two files share in memory is a shared sub-shape and never reaches this;
+what this catches is two files each holding their own object for the same
+plane, which sec 12.8 measured as about half of every table. So `build()` ends
+by printing each entry, hashing the text, and asking the save's owner table
+whether an earlier file already writes it. The text is kept and written out
+where no one does, so nothing is printed twice and what was offered to later
+files cannot drift from what was written.
+
+***One entry of another file may be named once only, and this is not an
+optimization.*** Two entries of one file that are written alike are two
+objects and have to stay two: a face keys its edges' 2D curves on the surface
+object it carries, so one surface reaching two faces makes exactly the lookup
+those keys exist to settle ambiguous -- the defect class that produced the HLR
+crash in sec 12.7's footnote. It is also what keeps the table positional: the
+reader adds what it is handed, and a repeated object lands on the position it
+already has and shifts every entry after it. The reader checks that anyway and
+inserts a copy if it ever happens, because a file this build did not write can
+say anything.
+
+***Measured on `scanner.FCStd`***, 606 objects, forced full recompute, saved
+to a directory in ASCII, against the same build with the setting off -- which
+is exactly what ships:
+
+| | off | on |
+|---|---|---|
+| shape files | 318 | 320 |
+| files naming another | 21 | **294** |
+| geometry entries named | 0 | **8683** of 36018 |
+| raw shape bytes | 16225469 | **13791271 (-15.0%)** |
+| deflated shape bytes | 3534418 | **2880309 (-18.5%)** |
+| whole archive | 4295291 | 3641599 |
+| save to directory | 1.24s | 1.36s |
+| reopen / full parse | 1.27s / 78.5s | 1.28s / 78.2s |
+| faces / missing a curve / invalid | 90686 / 0 / 4 | 90686 / 0 / 4 |
+
+The last row is the gate, and the last column of it is unchanged. **15.0%
+against the 15.6% sec 12.8 predicted for the cross-file half**, on a document
+whose sub-shape references are worth 2.1%; and it compresses better than it
+stores, because what is left after the duplicates are named is less like
+itself.
+
+There is no restore penalty, exactly as in sec 12.4 and for the same reason:
+the files pulled in transitively are the ones the document reads anyway, and
+the parse cache means each is parsed once. The 78s is the per-face pcurve walk
+the check does, not the parse.
+
+***Two files more, not fewer.*** Content addressing merges two objects whose
+bytes match. Two equal shapes now write different bytes -- the first defines
+its geometry, the second names it -- so a pair that used to be one file becomes
+two. It cost two files out of 318 here, and it is bounded in practice because
+congruent-instance dedup (sec 12.12) recognizes equal parts before either file
+is written and shares the file outright. With that setting off, this one gives
+a little of its saving back.
+
+***A bug this uncovered, and it was not in the new code.*** A restored
+property drops everything that describes its file -- the plan, and the motion
+sec 12.12 writes -- inside `setValue`, through `dropBlob`; only the handle was
+put back. A stale empty plan reads as *this file borrows nothing*, so a save
+that now has nothing to borrow left the file alone **with its references still
+in it**, naming a file that save did not write. It was invisible while every
+plan was non-empty: it only made a reopened document rewrite every borrowing
+file, which looks like nothing at all. `ShapeGeometryCases` has the case that
+catches it, and the motion is restored with the same fix -- a shared instance
+whose file is kept must write again the motion it was restored with.
+
+***Why it is off by default.*** A file now depends on another file for its
+*geometry* and not only for whole sub-shapes, so what one lost file costs is
+larger. Nothing dangles -- the plan check rewrites a file whose target this
+save does not write, which is the case above -- but the setting is what says
+whether a project wants that dependency at all.
