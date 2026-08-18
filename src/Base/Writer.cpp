@@ -273,6 +273,37 @@ std::vector<std::string> Writer::getErrors() const
     return Errors;
 }
 
+/** The entry name a save will actually use, component by component.
+ *
+ * An entry is named after whoever asked for it, and for an object or a
+ * property that is a name someone chose -- which is not bound to be a name a
+ * file system will take. A directory project writes every entry as a real
+ * file, so a name over the length limit, or one Windows reads as a device,
+ * loses the entry outright and quietly. Names that were already fine are
+ * unchanged, so a document's entries only move if they could not have been
+ * written.
+ *
+ * Split on '/' because a few entries are paths -- `thumbnails/Thumbnail.png`
+ * -- and the separator is the one character that must survive.
+ */
+static std::string portableEntryName(const char* name)
+{
+    std::string result;
+    const std::string text(name);
+    std::size_t at = 0;
+    while (at <= text.size()) {
+        const std::size_t slash = text.find('/', at);
+        const std::size_t end = slash == std::string::npos ? text.size() : slash;
+        result += Base::Tools::portableFileName(text.substr(at, end - at));
+        if (slash == std::string::npos) {
+            break;
+        }
+        result += '/';
+        at = slash + 1;
+    }
+    return result;
+}
+
 const std::string& Writer::addFile(const char* Name,const Base::Persistence *Object)
 {
     assert(Name);
@@ -280,11 +311,12 @@ const std::string& Writer::addFile(const char* Name,const Base::Persistence *Obj
     FileList.emplace_back();
     FileEntry &entry = FileList.back();
 
-    if(!FileNameSet.insert(Name).second) {
-        entry.FileName = getUniqueFileName(Name);
+    const std::string name = portableEntryName(Name);
+    if(!FileNameSet.insert(name).second) {
+        entry.FileName = getUniqueFileName(name.c_str());
         FileNameSet.insert(entry.FileName);
     } else
-        entry.FileName = Name;
+        entry.FileName = name;
 
     FileNames.push_back(entry.FileName);
 

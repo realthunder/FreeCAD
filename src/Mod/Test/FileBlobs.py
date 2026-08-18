@@ -875,6 +875,64 @@ class BlobNamingCases(BlobTestCase):
         doc.save()
         self.assertEqual(self.directoryBlobs(project), ["File1.File.txt"])
 
+    def testANameTheFileSystemRefusesIsMadeIntoOneItTakes(self):
+        """The names come from whoever made the object and the property, and
+        an object's name only has to be a Python identifier.
+
+        That admits any length -- and a directory project writes the name as a
+        real file, where ext4 and APFS stop at 255 bytes. A name past that lost
+        the file with nothing but a line in the report view. It admits the
+        Windows device names too: CON.File.txt is the console, not a file.
+        """
+        doc = self.newDocument()
+        self.fileObject(doc, "x" * 250, b"long", saveName="a.txt")
+        self.fileObject(doc, "CON", b"device", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+
+        names = self.directoryBlobs(project)
+        self.assertEqual(len(names), 2, names)
+        for name in names:
+            self.assertLessEqual(len(name.encode("utf-8")), 255, name)
+            self.assertTrue(name.endswith(".txt"), name)
+            self.assertNotIn(
+                name.split(".")[0].upper(), ("CON", "PRN", "AUX", "NUL"), name
+            )
+        # And every one of them is readable again, which is the point.
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("x" * 250), b"long")
+        self.assertContent(reopened.getObject("CON"), b"device")
+
+    def testTwoLongNamesStayTwoFiles(self):
+        """A name is cut to fit, so two names that agree up to the cut would
+        otherwise become one file -- and the second would take the first's
+        content. A digest of the whole name is what keeps them apart."""
+        doc = self.newDocument()
+        self.fileObject(doc, "y" * 240 + "aaa", b"first", saveName="a.txt")
+        self.fileObject(doc, "y" * 240 + "bbb", b"second", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(len(set(self.directoryBlobs(project))), 2)
+        FreeCAD.closeDocument(doc.Name)
+
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("y" * 240 + "aaa"), b"first")
+        self.assertContent(reopened.getObject("y" * 240 + "bbb"), b"second")
+
+    def testANonAsciiNameIsKeptAsItIs(self):
+        """Non-ASCII is legal on every platform this runs on, and a derived
+        name exists to be read -- so it is kept, not transliterated."""
+        # Escaped rather than written out, because the sources here are ASCII.
+        name = "\u30d1\u30fc\u30c4"
+        doc = self.newDocument()
+        self.fileObject(doc, name, b"part", saveName="a.txt")
+        project = self.directoryPath()
+        doc.saveAs(project)
+        self.assertEqual(self.directoryBlobs(project), [name + ".File.txt"])
+        FreeCAD.closeDocument(doc.Name)
+        self.assertContent(self.openDocument(project).getObject(name), b"part")
+
     def testStrayFileIsNotTouched(self):
         """Only names the previous index listed may be removed, so whatever a
         user put in the directory stays there."""

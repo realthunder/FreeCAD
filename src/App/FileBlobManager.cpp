@@ -38,6 +38,7 @@
 #include <Base/Console.h>
 #include <Base/Reader.h>
 #include <Base/Stream.h>
+#include <Base/Tools.h>
 #include <Base/Writer.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
@@ -451,6 +452,15 @@ FileBlobManager::planSave(const std::map<std::string, BlobIndexEntry>& previous)
             stem = blob->hash();
             ext.clear();
         }
+        // *** The stem is Object.Property, and both halves are named by
+        // whoever made them: an object's name only has to be a Python
+        // identifier, which admits any length and every script name Windows
+        // reads as a device, and a property's name admits the same. A
+        // directory project writes this as a real file, so a name the file
+        // system refuses loses the geometry with nothing but a line in the
+        // report view (docs/SharedShapeStorage.md sec 12.1). A name that was
+        // already fine is unchanged, so no existing project's files move.
+        stem = Base::Tools::portableFileName(stem, 120 - ext.size());
         stems.push_back(std::move(stem));
         exts.push_back(std::move(ext));
         entries.push_back(std::move(entry));

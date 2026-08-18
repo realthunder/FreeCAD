@@ -1732,6 +1732,8 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
         }
     }
 
+    // Rebuilt by the loop below, and read while this save writes its entries.
+    d->splitXmlEntries.clear();
     std::vector<DocumentObject*>::const_iterator it;
     for (it = obj.begin(); it != obj.end(); ++it) {
         writer.Stream() << writer.ind() << "<Object "
@@ -1759,8 +1761,15 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
             std::string name((*it)->getNameInDocument());
             if(name == "Document" || name == "GuiDocument")
                 name += "-Obj";
-            writer.Stream() << "file=\"" 
-                << writer.addFile(name+".xml",this) << "\" ";
+            // The entry the writer settled on, which is not always the name
+            // asked for: an object is named by whoever made it, and a file
+            // system takes neither any length nor every name. Remembered
+            // here because SaveDocFile is handed a file name and has to
+            // answer with the object it is for -- reading the name back out
+            // of it was what left a long-named object writing nothing.
+            const std::string& entry = writer.addFile(name+".xml",this);
+            d->splitXmlEntries[Base::FileInfo(entry).fileNamePure()] = *it;
+            writer.Stream() << "file=\"" << entry << "\" ";
         }
 
         writer.Stream() << "/>\n";
@@ -1856,8 +1865,16 @@ void Document::writeObject(Base::Writer &writer, DocumentObject *obj) const
 
 void Document::SaveDocFile(Base::Writer &writer) const {
     Base::FileInfo fi(writer.getCurrentFileName());
-    auto obj = getObject(fi.fileNamePure().c_str());
-    if(!obj) 
+    // What the Objects section recorded for this entry, and only then the
+    // name: the entry is a file name, which is a thing the save chose, while
+    // the object's name is a thing the user chose. They agree in the ordinary
+    // case and the lookup below still covers whoever writes an entry without
+    // going through the section above.
+    auto known = d->splitXmlEntries.find(fi.fileNamePure());
+    auto obj = known != d->splitXmlEntries.end()
+        ? known->second
+        : getObject(fi.fileNamePure().c_str());
+    if(!obj)
         FC_ERR("Cannot find object " << fi.fileNamePure());
     else {
         writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"

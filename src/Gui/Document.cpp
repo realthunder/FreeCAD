@@ -139,6 +139,13 @@ struct DocumentP
     /// List of all registered views
     std::list<Gui::BaseView*> passiveViews;
     std::map<const App::DocumentObject*,ViewProviderDocumentObject*> _ViewProviderMap;
+    /** Which object each split-XML entry of the save in progress is for.
+     *
+     * The entry used to be read back as `<object name>.Gui.xml`, which makes
+     * the file name an identity -- and a name a file system will take is not
+     * always the name an object has. See App::Document's own map.
+     */
+    std::map<std::string, const App::DocumentObject*> _splitXmlEntries;
     std::map<SoSeparator *,ViewProviderDocumentObject*> _CoinMap;
     std::map<std::string,ViewProvider*> _ViewProviderMapAnnotation;
     std::vector<const App::DocumentObject*> _redoObjects;
@@ -2276,8 +2283,16 @@ void Document::RestoreDocFile(Base::Reader &reader)
                     << "s), total " << Base::GetDuration(t).count() << 's');
             xmlReader.readEndElement("ViewProviderData");
         } else {
-            for(const auto &v : d->_ViewProviderMap)
-                xmlReader.addFile(std::string(v.first->getNameInDocument())+FC_XML_GUI_POSTFIX,this);
+            for(const auto &v : d->_ViewProviderMap) {
+                // The same transformation the writer applied, because this
+                // has to ask for the entry that was written: a name a file
+                // system would not take was made into one that it will, and
+                // the function answers with what it is given when there was
+                // nothing to change.
+                xmlReader.addFile(Base::Tools::portableFileName(
+                        std::string(v.first->getNameInDocument())+FC_XML_GUI_POSTFIX).c_str(),
+                        this);
+            }
         }
 
         // read camera settings
@@ -3024,11 +3039,17 @@ void Document::SaveDocFile (Base::Writer &writer) const
                     << " FreeCAD Document, see http://www.freecad.org for more information...\n"
                     << "-->\n";
 
-    if(boost::ends_with(writer.getCurrentFileName(),FC_XML_GUI_POSTFIX)) {
-        const std::string &name = writer.getCurrentFileName();
+    const std::string &name = writer.getCurrentFileName();
+    auto entry = d->_splitXmlEntries.find(name);
+    if(entry != d->_splitXmlEntries.end()
+            || boost::ends_with(name,FC_XML_GUI_POSTFIX)) {
         static const std::size_t plen = std::strlen(FC_XML_GUI_POSTFIX);
-        std::string objName = name.substr(0,name.size()-plen);
-        auto obj = getDocument()->getObject(objName.c_str());
+        std::string objName = entry != d->_splitXmlEntries.end()
+            ? std::string(entry->second->getNameInDocument())
+            : name.substr(0,name.size()-plen);
+        auto obj = entry != d->_splitXmlEntries.end()
+            ? entry->second
+            : getDocument()->getObject(objName.c_str());
         auto it = d->_ViewProviderMap.find(obj);
         if(it == d->_ViewProviderMap.end())
             FC_ERR("View object not found: " << getDocument()->getName() << '#' << objName);
@@ -3055,8 +3076,16 @@ void Document::SaveDocFile (Base::Writer &writer) const
         writer.Stream() << ">\n";
 
     if(writer.isSplitXML()) {
-        for(const auto &v : d->_ViewProviderMap)
-            writer.addFile(std::string(v.first->getNameInDocument())+FC_XML_GUI_POSTFIX,this);
+        d->_splitXmlEntries.clear();
+        for(const auto &v : d->_ViewProviderMap) {
+            // What the writer settled on, which is not always what was asked
+            // for: it makes the name one a file system will take. Remembered
+            // so that SaveDocFile answers with the object rather than reading
+            // the object's name back out of a file name.
+            const std::string& entry = writer.addFile(
+                    std::string(v.first->getNameInDocument())+FC_XML_GUI_POSTFIX,this);
+            d->_splitXmlEntries[entry] = v.first;
+        }
     } else {
         writer.incInd(); 
 
