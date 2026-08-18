@@ -7,6 +7,7 @@
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
 #include <Geom_Surface.hxx>
 #include <TopoDS.hxx>
 #include <TopExp_Explorer.hxx>
@@ -307,17 +308,29 @@ TEST(ShapeRefSet, SharedGeometryWithNoOwnerIsUnchanged)
     EXPECT_EQ(expected.str(), written);
 }
 
-/** Two boxes built apart are two TShapes and the same geometry.
+/** Two parts built apart are two TShapes and the same geometry.
  *
  * Nothing can be borrowed as a sub-shape -- the owner table is keyed on TShape
  * identity and these share none -- so what is left is the tables, which is
  * exactly the duplication sec 12.8 measured across a real project's files.
+ *
+ * The second file holds a shape of its own around that geometry, because two
+ * files that would hold the *same* bytes are a different case: they are one
+ * file already, and naming rather than writing is what would split them
+ * (see EqualContentStaysOneFile).
  */
 TEST(ShapeRefSet, EqualGeometryIsNamedInTheEarlierFile)
 {
     const TopoDS_Shape box = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
     const TopoDS_Shape twin = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+    const TopoDS_Shape rod = BRepPrimAPI_MakeCylinder(2.0, 5.0).Shape();
     ASSERT_FALSE(box.IsPartner(twin));
+
+    BRep_Builder builder;
+    TopoDS_Compound compound;
+    builder.MakeCompound(compound);
+    builder.Add(compound, twin);
+    builder.Add(compound, rod);
 
     Part::ShapeOwnerTable owners;
     Part::ShapeRefSet first;
@@ -325,15 +338,18 @@ TEST(ShapeRefSet, EqualGeometryIsNamedInTheEarlierFile)
     publishAs(first, "first", owners);
 
     Part::ShapeRefSet second;
-    const std::string secondText = writeShared(twin, &owners, second);
+    const std::string secondText = writeShared(compound, &owners, second);
 
-    // Every entry of all three tables is in the first file already.
+    // The same file with nothing to name, which is what it is worth against.
+    Part::ShapeOwnerTable none;
+    Part::ShapeRefSet alone;
+    const std::string aloneText = writeShared(compound, &none, alone);
+
     EXPECT_GT(second.geometryReferences(), 0);
     EXPECT_TRUE(second.borrows());
     EXPECT_NE(std::string::npos, secondText.find("\nFiles 1\nfirst\n"));
-    EXPECT_LT(secondText.size(), firstText.size());
+    EXPECT_LT(secondText.size(), aloneText.size());
 
-    BRep_Builder builder;
     std::istringstream firstIn(firstText);
     Part::ShapeRefSet firstReader(builder);
     const TopoDS_Shape firstRead = firstReader.read(firstIn);
@@ -347,18 +363,44 @@ TEST(ShapeRefSet, EqualGeometryIsNamedInTheEarlierFile)
     const TopoDS_Shape secondRead = secondReader.read(secondIn);
 
     ASSERT_FALSE(secondRead.IsNull());
-    EXPECT_EQ(TopAbs_SOLID, secondRead.ShapeType());
-    EXPECT_EQ(countFaces(box), countFaces(secondRead));
-    // Not the same shape -- it is its own solid -- but standing on the first
-    // file's surfaces, which is the sharing this buys in memory as well.
-    EXPECT_FALSE(secondRead.IsPartner(firstRead));
-    EXPECT_EQ(surfaceOf(firstRead), surfaceOf(secondRead));
+    EXPECT_EQ(countFaces(compound), countFaces(secondRead));
+    // Its box stands on the first file's surfaces, which is the sharing this
+    // buys in memory as well as in bytes.
+    TopoDS_Iterator children(secondRead);
+    ASSERT_TRUE(children.More());
+    EXPECT_EQ(surfaceOf(firstRead), surfaceOf(children.Value()));
 
     // Both sides state the same plan, which is what a save with nothing to do
     // rests on. The writer settles the tables in order, the reader meets them
     // in the file.
     EXPECT_EQ(second.plan(), secondReader.plan());
     EXPECT_NE(std::string::npos, second.plan().find('|'));
+}
+
+/** Two files that would hold the same bytes stay one file.
+ *
+ * Content addressing merges them, and it is worth more than naming the
+ * entries -- which would make the second file a handful of references, and so
+ * a second file. `MiSTer` went from 5204 files to 6841 before this rule.
+ */
+TEST(ShapeRefSet, EqualContentStaysOneFile)
+{
+    const TopoDS_Shape box = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+    const TopoDS_Shape twin = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+    ASSERT_FALSE(box.IsPartner(twin));
+
+    Part::ShapeOwnerTable owners;
+    Part::ShapeRefSet first;
+    const std::string firstText = writeShared(box, &owners, first);
+    publishAs(first, "first", owners);
+
+    Part::ShapeRefSet second;
+    const std::string secondText = writeShared(twin, &owners, second);
+
+    EXPECT_EQ(0, second.geometryReferences());
+    EXPECT_FALSE(second.borrows());
+    // The whole claim: identical bytes, so the store holds one of them.
+    EXPECT_EQ(firstText, secondText);
 }
 
 /** One entry of another file may be named once only.
@@ -432,14 +474,21 @@ TEST(ShapeRefSet, GeometryOutOfRangeFailsTheRead)
 {
     const TopoDS_Shape box = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
     const TopoDS_Shape twin = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+    const TopoDS_Shape rod = BRepPrimAPI_MakeCylinder(2.0, 5.0).Shape();
 
     Part::ShapeOwnerTable owners;
     Part::ShapeRefSet first;
     writeShared(box, &owners, first);
     publishAs(first, "first", owners);
 
+    BRep_Builder shapes;
+    TopoDS_Compound compound;
+    shapes.MakeCompound(compound);
+    shapes.Add(compound, twin);
+    shapes.Add(compound, rod);
+
     Part::ShapeRefSet second;
-    std::string text = writeShared(twin, &owners, second);
+    std::string text = writeShared(compound, &owners, second);
     const std::size_t at = text.find("\nE1 ");
     ASSERT_NE(std::string::npos, at);
     text.replace(at, 4, "\nE1 999 ");

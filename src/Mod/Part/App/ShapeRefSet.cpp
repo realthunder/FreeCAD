@@ -340,6 +340,18 @@ const ShapeRef* ShapeOwnerTable::findGeometry(int table, const std::string& dige
     return found == _geometry[table].end() ? nullptr : &found->second;
 }
 
+bool ShapeOwnerTable::writesContent(const std::string& key) const
+{
+    return !key.empty() && _contents.count(key) != 0;
+}
+
+void ShapeOwnerTable::claimContent(const std::string& key)
+{
+    if (!key.empty()) {
+        _contents.insert(key);
+    }
+}
+
 void ShapeOwnerTable::clear()
 {
     _refs.clear();
@@ -348,6 +360,7 @@ void ShapeOwnerTable::clear()
     for (auto& table : _geometry) {
         table.clear();
     }
+    _contents.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -478,6 +491,9 @@ void ShapeRefSet::planGeometry()
     if (!_shareGeometry || !_owners) {
         return;
     }
+    // First what every entry is, which is what both decisions below are made
+    // from: printing an entry is the expensive half and it is done once.
+    bool any = false;
     for (int table = 0; table < ShapeOwnerTable::GeomTableCount; ++table) {
         int count = 0;
         switch (table) {
@@ -493,15 +509,6 @@ void ShapeRefSet::planGeometry()
         }
         auto& plan = _geometry[table];
         plan.resize(static_cast<std::size_t>(count));
-        // *** One entry of another file may be named once only. Two entries
-        // of this file that are written alike are two objects, and they have
-        // to stay two: a face keys its edges' 2D curves on the surface object
-        // it carries, so a surface reaching two faces at once makes exactly
-        // the lookup those keys exist to settle ambiguous. It is also what
-        // keeps the table positional -- the reader adds what it is given, and
-        // a repeated object would land on the position it already has and
-        // shift every entry after it.
-        std::set<std::pair<int, int>> taken;
         for (int i = 1; i <= count; ++i) {
             GeomEntry& entry = plan[static_cast<std::size_t>(i) - 1];
             entry.text = printGeometry(table, i);
@@ -511,12 +518,61 @@ void ShapeRefSet::planGeometry()
                 continue;
             }
             entry.digest = geomDigest(entry.text);
+            any = true;
+        }
+    }
+
+    // *** An earlier file that writes this same geometry out in full is a
+    // reason to write it out in full too. The two files are then the same
+    // bytes, and content addressing makes them one file -- which is worth
+    // more than naming the entries, and is what naming them would destroy.
+    if (any && _owners->writesContent(contentKey())) {
+        return;
+    }
+
+    for (int table = 0; table < ShapeOwnerTable::GeomTableCount; ++table) {
+        auto& plan = _geometry[table];
+        // *** One entry of another file may be named once only. Two entries
+        // of this file that are written alike are two objects, and they have
+        // to stay two: a face keys its edges' 2D curves on the surface object
+        // it carries, so a surface reaching two faces at once makes exactly
+        // the lookup those keys exist to settle ambiguous. It is also what
+        // keeps the table positional -- the reader adds what it is given, and
+        // a repeated object would land on the position it already has and
+        // shift every entry after it.
+        std::set<std::pair<int, int>> taken;
+        for (std::size_t i = 0; i < plan.size(); ++i) {
+            GeomEntry& entry = plan[i];
+            if (entry.digest.empty()) {
+                continue;
+            }
             const ShapeRef* ref = _owners->findGeometry(table, entry.digest);
             if (ref && taken.emplace(ref->file, ref->index).second) {
                 entry.ref = ShapeRef {slotFor(ref->file), ref->index};
             }
         }
     }
+}
+
+std::string ShapeRefSet::contentKey() const
+{
+    std::string all;
+    for (const auto& plan : _geometry) {
+        for (const GeomEntry& entry : plan) {
+            all += entry.digest;
+            all += '.';
+        }
+        all += ';';
+    }
+    if (all.size() == ShapeOwnerTable::GeomTableCount) {
+        // Nothing but the separators: a file with no geometry of its own says
+        // nothing about its content, and every such file would say the same.
+        return {};
+    }
+    // The shape count with it, so that two shapes standing on one set of
+    // surfaces are not taken for one content on the strength of the surfaces.
+    all += std::to_string(_shapes.Extent());
+    return geomDigest(all);
 }
 
 bool ShapeRefSet::sharesGeometry() const
@@ -668,6 +724,12 @@ void ShapeRefSet::publish(int file, ShapeOwnerTable& owners) const
                 owners.claimGeometry(table, plan[i].digest, file, static_cast<int>(i) + 1);
             }
         }
+    }
+    // Only a file that named nothing offers its content: one that named an
+    // entry is not the bytes a later file would write out in full, so a later
+    // file matching it and writing in full would match nothing.
+    if (_shareGeometry && !sharesGeometry()) {
+        owners.claimContent(contentKey());
     }
 }
 
