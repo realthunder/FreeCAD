@@ -206,6 +206,18 @@ public:
     /// A deque, not a vector: generation holds pointers to a child's
     /// entries while it merges them into the parent's, and a growing
     /// vector would move the entries out from under those pointers.
+    /// What the cut has to read, indexed by node index of \a index
+    /// (section 3.3): the worst error ratio over a node's buckets, the
+    /// primitives all of them draw together, and how many draws that
+    /// is. A node with no entry keeps a negative ratio, which is what
+    /// tells the descent it cannot stop there.
+    ///
+    /// Worst rather than mean over the buckets because the cut's
+    /// decision covers a cell's buckets at once (section 3.3), so the
+    /// one that would look wrong is the one that decides.
+    void costs(const ProxyHierarchy &index,
+               std::vector<ProxyNodeCost> &out) const;
+
     const std::deque<ProxyEntry> &entries() const { return entrydata; }
     const ProxyStoreStats &stats() const { return statistics; }
     void clear();

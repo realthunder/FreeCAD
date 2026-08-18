@@ -325,6 +325,32 @@ struct ProxyNode {
     }
 };
 
+/// What generation found out about one node, for the cut to read --
+/// indexed by node index, parallel to nodes().
+///
+/// Phase 1 descended by a node's projected *extent* because nothing had
+/// been generated that could have an error, and 11.1c measured what
+/// that stand-in costs: the extent-to-error ratio is a distribution
+/// (0.084 mean against 0.34 worst at cell/8), so a single tolerance
+/// over extents stops far too early on some nodes and far too late on
+/// others. The ratio is a property of geometry and grid rather than of
+/// the camera, so it is measured once at generation and read here.
+struct ProxyNodeCost {
+    /// The node's committed error as a fraction of its extent, so that
+    /// the projected error is this times the projected extent and no
+    /// second projection is needed. Negative means no proxy exists for
+    /// this node, and a cut cannot stop where there is nothing to draw.
+    float errorRatio = -1.0f;
+    /// Primitives the node draws if the cut stops on it: the proxy and
+    /// the boxes standing in for what it deleted (11.1d). What makes
+    /// the saving honest -- phase 1 could only count what a proxy
+    /// replaces, never what it costs.
+    uint32_t prims = 0;
+    /// Draw calls it issues, one per material bucket actually built.
+    /// Zero falls back to the node's bucket count.
+    uint32_t draws = 0;
+};
+
 /// A frontier through the partition, and what it costs.
 ///
 /// Note what a node *above* the frontier still owes: its own residents.
@@ -350,6 +376,11 @@ struct ProxyCut {
     uint64_t exactPrims = 0;
     uint64_t coveredPrims = 0;
     uint64_t culledPrims = 0;
+    /// What the proxies themselves draw, when the cut was given
+    /// ProxyNodeCost to read. Zero without it, because an ungenerated
+    /// proxy has no cost to report -- and a saving quoted as
+    /// coveredPrims alone is the gross figure, not the net one.
+    uint64_t proxyPrims = 0;
 };
 
 /// The spatial index of §3.2: a loose octree over world bounds with
@@ -393,6 +424,20 @@ public:
                    float viewportHeightPx, float tolerancePx,
                    ProxyCut &out) const;
 
+    /// The same descent, reading each node's measured error instead of
+    /// standing its extent in for one (section 3.3).
+    ///
+    /// \a costs is indexed by node index and may be shorter than
+    /// nodes(); a node it does not cover, or covers with a negative
+    /// ratio, has no proxy and is descended past. A node stops the
+    /// frontier when `errorRatio * diagPx` is within \a tolerancePx --
+    /// the projected error rather than the projected size, which is
+    /// what 11.1c showed a single extent tolerance cannot stand in for.
+    void selectCut(const float *view, const float *proj,
+                   float viewportHeightPx, float tolerancePx,
+                   const std::vector<ProxyNodeCost> &costs,
+                   ProxyCut &out) const;
+
     /// §11.3, the invariant asserted before either ladder is coded:
     ///
     /// > Every instance belongs to exactly one cell per level, and for
@@ -423,6 +468,10 @@ public:
     Stats stats() const;
 
 private:
+    void selectCutImpl(const float *view, const float *proj,
+                       float viewportHeightPx, float tolerancePx,
+                       const std::vector<ProxyNodeCost> *costs,
+                       ProxyCut &out) const;
     int buildNode(uint32_t level, const uint32_t cell[3],
                   std::vector<uint32_t> items);
     void markSubtree(int node, std::vector<uint8_t> &mark,

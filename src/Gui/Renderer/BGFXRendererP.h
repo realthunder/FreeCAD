@@ -1160,6 +1160,85 @@ static void reportProxyStore(const Render::ProxyHierarchy &index,
 #endif
 }
 
+/// What a cut costs once the proxies it stops on are real: the same
+/// frontier chosen by a node's measured error instead of by its extent,
+/// and priced by what the proxies draw rather than only by what they
+/// replace (docs/FarFieldProxies.md sections 3.3 and 11.1b).
+///
+/// Phase 1 could report neither. It had no generated proxy to have an
+/// error, so it stood the node's extent in for one, and it had no
+/// proxy to have a triangle count, so its saving was gross rather than
+/// net. Both stand-ins were flagged where they were used; this is the
+/// readout that removes them.
+static void reportProxyCutPriced(const Render::ProxyHierarchy &index,
+                                 const Render::DrawCallList &draws,
+                                 const float *V, const float *P,
+                                 float viewportHeightPx)
+{
+    // Generating the whole model, once, because a cut is a property of
+    // the whole partition and a sampled subtree cannot be swept over
+    // tolerances. Budgeted all the same, and what the budget skipped is
+    // reported: a node without a proxy is descended past, so a run that
+    // quietly ran out would read as a deeper cut rather than as a
+    // missing one.
+    static const uint64_t kTriangleBudget = 24000000;
+    static const float kTolerances[] = {4.0f, 16.0f, 64.0f};
+
+    Render::ProxyStore store;
+    Render::ProxyGenOptions opts;
+    opts.triangleBudget = kTriangleBudget;
+    if (!store.generate(index, index.root(), draws, opts))
+        return;
+    std::vector<Render::ProxyNodeCost> costs;
+    store.costs(index, costs);
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "render proxypriced: store %u nodes / %u entries, merged "
+             "%.2fMtri in %.0fms (%.0f merge, %.0f decimate, %.0f standin) "
+             "| skipped budget:%u single:%u refused:%u | %llu proxy + %llu "
+             "standin tri held\n",
+             store.stats().nodes, store.stats().entries,
+             double(store.stats().mergedTriangles) / 1e6, store.stats().ms,
+             store.stats().mergeMs, store.stats().simplifyMs,
+             store.stats().standInMs, store.stats().overBudget,
+             store.stats().belowMinMerge, store.stats().refused,
+             (unsigned long long)store.stats().proxyTriangles,
+             (unsigned long long)store.stats().standInTriangles);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+
+    for (float tol : kTolerances) {
+        Render::ProxyCut byExtent, byError;
+        index.selectCut(V, P, viewportHeightPx, tol, byExtent);
+        index.selectCut(V, P, viewportHeightPx, tol, costs, byError);
+        // What the frame draws with no cut at all is everything the cut
+        // did not cull, which both cuts agree on -- so it is the
+        // denominator both rows are read against.
+        const uint64_t visible = byError.exactPrims + byError.coveredPrims;
+        const uint64_t drawn = byError.exactPrims + byError.proxyPrims;
+        snprintf(buf, sizeof(buf),
+                 "render proxypriced %gpx: extent draws %u (%u proxy) covers "
+                 "%llu prims | error draws %u (%u proxy) covers %llu, proxies "
+                 "cost %llu -> %llu of %llu prims drawn, %.2fx\n",
+                 double(tol), byExtent.drawCount, byExtent.proxyDraws,
+                 (unsigned long long)byExtent.coveredPrims, byError.drawCount,
+                 byError.proxyDraws,
+                 (unsigned long long)byError.coveredPrims,
+                 (unsigned long long)byError.proxyPrims,
+                 (unsigned long long)drawn, (unsigned long long)visible,
+                 drawn ? double(visible) / double(drawn) : 0.0);
+#ifdef FC_RENDERER_STANDALONE
+        std::printf("%s", buf);
+#else
+        Base::Console().Message("%s", buf);
+#endif
+    }
+}
+
 /// A user shader is animated when its source references the engine
 /// clock uniform u_fcTime — no declared flag anywhere, the reference
 /// itself is the opt-in (docs/RenderDebug.md §6).

@@ -11,6 +11,7 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "Gui/Renderer/ProxyStore.h"
@@ -131,6 +132,31 @@ struct Lattice {
         index.build(instances, params);
     }
 };
+
+/// GL-layout (column-major) perspective and a camera on +Z looking
+/// down -Z, the same pair the hierarchy's own tests project with.
+void perspective(float *P, float fovyDeg, float aspect, float znear,
+                 float zfar)
+{
+    for (int i = 0; i < 16; ++i)
+        P[i] = 0.0f;
+    const float f = 1.0f / std::tan(fovyDeg * 3.14159265358979f / 360.0f);
+    P[0] = f / aspect;
+    P[5] = f;
+    P[10] = (zfar + znear) / (znear - zfar);
+    P[11] = -1.0f;
+    P[14] = 2.0f * zfar * znear / (znear - zfar);
+}
+
+void viewAt(float *V, float dist)
+{
+    for (int i = 0; i < 16; ++i)
+        V[i] = 0.0f;
+    V[0] = V[5] = V[10] = V[15] = 1.0f;
+    V[12] = -4.0f;  // the lattice spans [0,8], so look at its middle
+    V[13] = -4.0f;
+    V[14] = -dist;
+}
 
 /// The node a generated entry belongs to, by id.
 int nodeOf(const ProxyHierarchy &index, uint64_t id)
@@ -361,4 +387,93 @@ TEST(ProxyStore, aLoneChildProxyStillCoarsensRatherThanBreakingTheChain)
         EXPECT_NE(bottomUp.find(entry.nodeId, entry.bucket), nullptr)
             << "level " << entry.level << " exists from source and not "
             << "from its children";
+}
+
+TEST(ProxyStore, theCutStopsOnAMeasuredErrorRatherThanOnSize)
+{
+    // Section 3.3, and the correction 11.1c forced on phase 1: a node
+    // committing 8% of its extent is resolvable at eight times the
+    // distance the extent tolerance would have allowed, so the same
+    // tolerance read as error stops the frontier higher up the tree.
+    Lattice scene(8);
+    ProxyStore store;
+    ASSERT_TRUE(store.generate(scene.index, scene.index.root(), scene.draws));
+    std::vector<ProxyNodeCost> costs;
+    store.costs(scene.index, costs);
+    ASSERT_EQ(costs.size(), scene.index.nodes().size());
+
+    float V[16], P[16];
+    viewAt(V, 40.0f);
+    perspective(P, 45.0f, 1.6f, 0.1f, 1000.0f);
+
+    ProxyCut byExtent, byError;
+    scene.index.selectCut(V, P, 1000.0f, 64.0f, byExtent);
+    scene.index.selectCut(V, P, 1000.0f, 64.0f, costs, byError);
+
+    ASSERT_FALSE(byError.proxyNodes.empty());
+    // The frontier moves up, and the count of proxy nodes is not how
+    // that shows: stopping higher can mean one node where the extent
+    // rule stopped on none at all, having descended to the leaves.
+    // What the claim is about is how much gets aggregated and how many
+    // draws come out.
+    EXPECT_GT(byError.coveredInstances, byExtent.coveredInstances);
+    EXPECT_LT(byError.drawCount, byExtent.drawCount);
+}
+
+TEST(ProxyStore, theCutPricesAProxyByWhatItDraws)
+{
+    // Phase 1 could only count what a proxy replaces. With generation
+    // measured, the cut reports what the proxies themselves draw, and
+    // the saving is the difference rather than the gross figure.
+    Lattice scene(8);
+    ProxyStore store;
+    ASSERT_TRUE(store.generate(scene.index, scene.index.root(), scene.draws));
+    std::vector<ProxyNodeCost> costs;
+    store.costs(scene.index, costs);
+
+    float V[16], P[16];
+    viewAt(V, 40.0f);
+    perspective(P, 45.0f, 1.6f, 0.1f, 1000.0f);
+    ProxyCut cut;
+    scene.index.selectCut(V, P, 1000.0f, 64.0f, costs, cut);
+
+    ASSERT_FALSE(cut.proxyNodes.empty());
+    EXPECT_GT(cut.proxyPrims, 0u);
+    EXPECT_LT(cut.proxyPrims, cut.coveredPrims) << "a proxy that costs as "
+        << "much as what it replaces has bought nothing";
+
+    // And it is exactly the sum over the nodes the cut chose.
+    uint64_t expected = 0;
+    for (int node : cut.proxyNodes)
+        expected += costs[size_t(node)].prims;
+    EXPECT_EQ(cut.proxyPrims, expected);
+}
+
+TEST(ProxyStore, aNodeWithNoGeneratedProxyIsDescendedPastNotDrawnEmpty)
+{
+    // The cut may only stop where something exists to draw. Phase 1
+    // could assume a proxy for every node because none of them were
+    // real; with a store the answer is sometimes "not generated", and
+    // descending is the only honest response to it.
+    Lattice scene(8);
+    ProxyStore store;
+    ASSERT_TRUE(store.generate(scene.index, scene.index.root(), scene.draws));
+    std::vector<ProxyNodeCost> costs;
+    store.costs(scene.index, costs);
+    for (ProxyNodeCost &cost : costs)
+        cost.errorRatio = -1.0f;
+
+    float V[16], P[16];
+    viewAt(V, 400.0f);  // far enough that every node is well inside
+    perspective(P, 45.0f, 1.6f, 0.1f, 5000.0f);
+    ProxyCut cut;
+    scene.index.selectCut(V, P, 1000.0f, 64.0f, costs, cut);
+
+    EXPECT_TRUE(cut.proxyNodes.empty());
+    EXPECT_EQ(cut.proxyPrims, 0u);
+    EXPECT_EQ(cut.exact.size() + cut.culledInstances,
+              scene.instances.size());
+
+    std::string why;
+    EXPECT_TRUE(scene.index.verifyCut(cut, &why)) << why;
 }

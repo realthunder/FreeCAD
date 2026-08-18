@@ -842,6 +842,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
                         index, scene,
                         reinterpret_cast<const float *>(viewMatrix),
                         reinterpret_cast<const float *>(projMatrix), h);
+                // And what the cut costs once those proxies are real,
+                // which needs the whole partition generated rather
+                // than a sample of it.
+                reportProxyCutPriced(
+                        index, scene,
+                        reinterpret_cast<const float *>(viewMatrix),
+                        reinterpret_cast<const float *>(projMatrix), h);
                 proxyGenReported();
             }
         }

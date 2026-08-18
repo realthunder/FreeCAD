@@ -631,6 +631,22 @@ void ProxyHierarchy::selectCut(const float *view, const float *proj,
                                float viewportHeightPx, float tolerancePx,
                                ProxyCut &out) const
 {
+    selectCutImpl(view, proj, viewportHeightPx, tolerancePx, nullptr, out);
+}
+
+void ProxyHierarchy::selectCut(const float *view, const float *proj,
+                               float viewportHeightPx, float tolerancePx,
+                               const std::vector<ProxyNodeCost> &costs,
+                               ProxyCut &out) const
+{
+    selectCutImpl(view, proj, viewportHeightPx, tolerancePx, &costs, out);
+}
+
+void ProxyHierarchy::selectCutImpl(const float *view, const float *proj,
+                                   float viewportHeightPx, float tolerancePx,
+                                   const std::vector<ProxyNodeCost> *costs,
+                                   ProxyCut &out) const
+{
     out.proxyNodes.clear();
     out.exact.clear();
     out.drawCount = 0;
@@ -640,6 +656,7 @@ void ProxyHierarchy::selectCut(const float *view, const float *proj,
     out.exactPrims = 0;
     out.coveredPrims = 0;
     out.culledPrims = 0;
+    out.proxyPrims = 0;
     if (rootnode == kNoProxyNode || !view || !proj || viewportHeightPx <= 0.0f)
         return;
 
@@ -657,16 +674,36 @@ void ProxyHierarchy::selectCut(const float *view, const float *proj,
             out.culledPrims += node.subtreePrims;
             continue;
         }
-        // A node draws a proxy when the camera cannot resolve it and
-        // there is something to merge. minMerge keeps a lone instance
-        // out: merging one object is a decimated object, which the
-        // per-object ladder already does better.
-        if (sight.what == BoxSight::Visible && sight.diagPx <= tolerancePx
+        // A node draws a proxy when the camera cannot resolve the
+        // difference and there is something to merge. minMerge keeps a
+        // lone instance out: merging one object is a decimated object,
+        // which the per-object ladder already does better.
+        //
+        // What "cannot resolve" means is the whole of section 3.3.
+        // Given generation's measurement it is the node's own error,
+        // projected -- errorRatio is a fraction of the extent, so the
+        // extent already projected times that ratio is the error in
+        // pixels, and no second projection is needed. Without it the
+        // extent stands in, which is phase 1's approximation and which
+        // 11.1c measured to be a distribution rather than a constant.
+        const ProxyNodeCost *cost =
+            costs && size_t(ni) < costs->size() ? &(*costs)[size_t(ni)]
+                                                : nullptr;
+        const bool judgeable =
+            !costs || (cost && cost->errorRatio >= 0.0f);
+        const float judged =
+            costs ? (cost ? cost->errorRatio * sight.diagPx : 0.0f)
+                  : sight.diagPx;
+        if (sight.what == BoxSight::Visible && judgeable
+            && judged <= tolerancePx
             && node.subtreeCount >= parameters.minMerge) {
             out.proxyNodes.push_back(ni);
-            out.proxyDraws += node.bucketCount;
+            out.proxyDraws +=
+                cost && cost->draws ? cost->draws : node.bucketCount;
             out.coveredInstances += node.subtreeCount;
             out.coveredPrims += node.subtreePrims;
+            if (cost)
+                out.proxyPrims += cost->prims;
             continue;
         }
         // Descended past: this node's own residents are covered by no

@@ -321,3 +321,21 @@ uint32_t ProxyStore::build(const ProxyHierarchy &index, int node,
     }
     return made;
 }
+
+void ProxyStore::costs(const ProxyHierarchy &index,
+                       std::vector<ProxyNodeCost> &out) const
+{
+    out.assign(index.nodes().size(), ProxyNodeCost());
+    for (const ProxyEntry &entry : entrydata) {
+        // The node index is a shortcut into the hierarchy that
+        // generated the entry, so it is only usable while that is the
+        // hierarchy being asked about -- checking the id says so.
+        if (entry.node == kNoProxyNode || size_t(entry.node) >= out.size()
+                || index.nodes()[size_t(entry.node)].id != entry.nodeId)
+            continue;
+        ProxyNodeCost &cost = out[size_t(entry.node)];
+        cost.errorRatio = std::max(cost.errorRatio, entry.errorRatio);
+        cost.prims += entry.drawnTriangles();
+        ++cost.draws;
+    }
+}
