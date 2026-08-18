@@ -226,7 +226,14 @@ void CreateMaterialCommands()
     Gui::CommandManager& rcCmdMgr = Gui::Application::Instance->commandManager();
 
     rcCmdMgr.addCommand(new CmdMaterialEdit());
-    rcCmdMgr.addCommand(new StdCmdSetAppearance());
+    // Std_SetAppearance is NOT registered here. This fork already owns that
+    // command (Gui/CommandView.cpp), and its dialog is the one carrying the
+    // fork's appearance work -- PBR mode, per-face materials, live editing
+    // with a snapshot restored on Cancel. Registering a second one only lost
+    // the race and logged "duplicate command Std_SetAppearance" on every
+    // load of this module. StdCmdSetAppearance and the DlgDisplayProperties
+    // it opens are kept as upstream wrote them, so a future sync still
+    // diffs cleanly.
     rcCmdMgr.addCommand(new StdCmdSetMaterial());
     rcCmdMgr.addCommand(new CmdInspectAppearance());
     rcCmdMgr.addCommand(new CmdInspectMaterial());
