@@ -58,6 +58,8 @@ public:
         signalParamChanged("InlineListSize");
         signalParamChanged("ArchiveRandomAccess");
         signalParamChanged("DeferShapeLoad");
+        signalParamChanged("DedupShapePCurves");
+        signalParamChanged("DedupCongruentShapes");
         signalParamChanged("AutoRemoveFile");
         signalParamChanged("AutoNameDynamicProperty");
         signalParamChanged("BackupPolicy");
@@ -99,6 +101,8 @@ public:
     long InlineListSize;
     bool ArchiveRandomAccess;
     bool DeferShapeLoad;
+    bool DedupShapePCurves;
+    bool DedupCongruentShapes;
     bool AutoRemoveFile;
     bool AutoNameDynamicProperty;
     bool BackupPolicy;
@@ -156,6 +160,10 @@ public:
         funcs["ArchiveRandomAccess"] = &DocumentParamsP::updateArchiveRandomAccess;
         DeferShapeLoad = this->handle->GetBool("DeferShapeLoad", true);
         funcs["DeferShapeLoad"] = &DocumentParamsP::updateDeferShapeLoad;
+        DedupShapePCurves = this->handle->GetBool("DedupShapePCurves", true);
+        funcs["DedupShapePCurves"] = &DocumentParamsP::updateDedupShapePCurves;
+        DedupCongruentShapes = this->handle->GetBool("DedupCongruentShapes", true);
+        funcs["DedupCongruentShapes"] = &DocumentParamsP::updateDedupCongruentShapes;
         AutoRemoveFile = this->handle->GetBool("AutoRemoveFile", true);
         funcs["AutoRemoveFile"] = &DocumentParamsP::updateAutoRemoveFile;
         AutoNameDynamicProperty = this->handle->GetBool("AutoNameDynamicProperty", false);
@@ -277,6 +285,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDeferShapeLoad(DocumentParamsP *self) {
         self->DeferShapeLoad = self->handle->GetBool("DeferShapeLoad", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDedupShapePCurves(DocumentParamsP *self) {
+        self->DedupShapePCurves = self->handle->GetBool("DedupShapePCurves", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDedupCongruentShapes(DocumentParamsP *self) {
+        self->DedupCongruentShapes = self->handle->GetBool("DedupCongruentShapes", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAutoRemoveFile(DocumentParamsP *self) {
@@ -775,6 +791,85 @@ void DocumentParams::setDeferShapeLoad(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removeDeferShapeLoad() {
     instance()->handle->RemoveBool("DeferShapeLoad");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docDedupShapePCurves() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Store each 2D curve of a shape once, and leave out the ones\n"
+"reading the file back computes again anyway.\n"
+"\n"
+"Two things, because they are the same bargain. A pcurve computed\n"
+"twice used to be written twice, which on a real project is the\n"
+"largest single duplication inside a shape file; and a pcurve on a\n"
+"planar face need not be stored at all, since the kernel projects\n"
+"the 3D curve onto the plane when it finds none. Neither changes\n"
+"the geometry that comes back: a merged pcurve is the identical\n"
+"curve, and a dropped one is checked against the projection that\n"
+"will replace it before it is dropped.\n"
+"\n"
+"Applies to shapes written as ASCII BRep. Turn off to write what\n"
+"the kernel holds, entry for entry.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & DocumentParams::getDedupShapePCurves() {
+    return instance()->DedupShapePCurves;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & DocumentParams::defaultDedupShapePCurves() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setDedupShapePCurves(const bool &v) {
+    instance()->handle->SetBool("DedupShapePCurves",v);
+    instance()->DedupShapePCurves = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeDedupShapePCurves() {
+    instance()->handle->RemoveBool("DedupShapePCurves");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docDedupCongruentShapes() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Store one file for parts that are the same shape in different\n"
+"places, and record the motion between them instead of writing the\n"
+"geometry again.\n"
+"\n"
+"Content addressing already shares parts whose bytes match, which\n"
+"an exporter that bakes each placement into the coordinates\n"
+"defeats: the same part at twenty positions is twenty distinct\n"
+"contents. Two instances are only merged once the rigid motion\n"
+"between them has been recovered and checked sub-shape by\n"
+"sub-shape, so a mirrored instance or a near-miss is written out\n"
+"in full rather than merged.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & DocumentParams::getDedupCongruentShapes() {
+    return instance()->DedupCongruentShapes;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & DocumentParams::defaultDedupCongruentShapes() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setDedupCongruentShapes(const bool &v) {
+    instance()->handle->SetBool("DedupCongruentShapes",v);
+    instance()->DedupCongruentShapes = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeDedupCongruentShapes() {
+    instance()->handle->RemoveBool("DedupCongruentShapes");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

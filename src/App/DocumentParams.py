@@ -72,6 +72,33 @@ Params = [
             'save -- so the value is never observably missing; the trade is\n'
             'that the document must not be rewritten externally while loads\n'
             'are pending. Off by default until gated on the large references.'),
+    ParamBool('DedupShapePCurves', True,
+        doc='Store each 2D curve of a shape once, and leave out the ones\n'
+            'reading the file back computes again anyway.\n'
+            '\n'
+            'Two things, because they are the same bargain. A pcurve computed\n'
+            'twice used to be written twice, which on a real project is the\n'
+            'largest single duplication inside a shape file; and a pcurve on a\n'
+            'planar face need not be stored at all, since the kernel projects\n'
+            'the 3D curve onto the plane when it finds none. Neither changes\n'
+            'the geometry that comes back: a merged pcurve is the identical\n'
+            'curve, and a dropped one is checked against the projection that\n'
+            'will replace it before it is dropped.\n'
+            '\n'
+            'Applies to shapes written as ASCII BRep. Turn off to write what\n'
+            'the kernel holds, entry for entry.'),
+    ParamBool('DedupCongruentShapes', True,
+        doc='Store one file for parts that are the same shape in different\n'
+            'places, and record the motion between them instead of writing the\n'
+            'geometry again.\n'
+            '\n'
+            'Content addressing already shares parts whose bytes match, which\n'
+            'an exporter that bakes each placement into the coordinates\n'
+            'defeats: the same part at twenty positions is twenty distinct\n'
+            'contents. Two instances are only merged once the rigid motion\n'
+            'between them has been recovered and checked sub-shape by\n'
+            'sub-shape, so a mirrored instance or a near-miss is written out\n'
+            'in full rather than merged.'),
     ParamBool('AutoRemoveFile', True),
     ParamBool('AutoNameDynamicProperty', False),
     ParamBool('BackupPolicy', True),

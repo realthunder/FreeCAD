@@ -435,6 +435,8 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
     // (docs/SharedShapeStorage.md sec 11.7).
     const TopoDS_Shape root = shapeForSave(writer);
     ShapeRefSet refs;
+    // Before build(), which is what fills the geometry tables.
+    TopoShape::applyStorageOptions(refs, true);
     refs.setOwners(owners);
     refs.build(root);
     const std::string plan = refs.plan();
@@ -491,7 +493,7 @@ void PropertyPartShape::storeBlob(Base::Writer& writer, ShapeRefSet* refs) const
             // writes one: an empty member is an error to whatever reads it.
             const TopoDS_Shape shape = shapeForSave(writer);
             if (!refs)
-                TopoShape(shape).exportBinary(out);
+                TopoShape(shape).exportBinary(out, true);
             else
                 refs->write(shape, out);
         }
@@ -1016,11 +1018,11 @@ void PropertyPartShape::Save (Base::Writer &writer) const
             << "\"/>\n";
     } else if(binary) {
         writer.Stream() << " binary=\"1\">\n";
-        TopoShape(shapeForSave(writer)).exportBinary(writer.beginBase64Stream());
+        TopoShape(shapeForSave(writer)).exportBinary(writer.beginBase64Stream(), true);
         writer.endCharStream() <<  writer.ind() << "</Part>\n";
     } else {
         writer.Stream() << " brep=\"1\">\n";
-        TopoShape(shapeForSave(writer)).exportBrep(writer.beginCharStream()<<'\n');
+        TopoShape(shapeForSave(writer)).exportBrep(writer.beginCharStream()<<'\n', true);
         writer.endCharStream() << '\n' << writer.ind() << "</Part>\n";
     }
 
@@ -1360,10 +1362,10 @@ void PropertyPartShape::SaveDocFile (Base::Writer &writer) const
     const TopoShape shape(shapeForSave(writer));
     Base::FileInfo finfo(writer.getCurrentFileName());
     if (finfo.hasExtension("bin")) {
-        shape.exportBinary(writer.Stream());
+        shape.exportBinary(writer.Stream(), true);
     }
     else {
-        shape.exportBrep(writer.Stream());
+        shape.exportBrep(writer.Stream(), true);
     }
 }
 

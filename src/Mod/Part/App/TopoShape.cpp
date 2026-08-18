@@ -161,6 +161,7 @@
 # include <boost/core/ignore_unused.hpp>
 #endif // _PreComp_
 
+#include <App/DocumentParams.h>
 #include <App/Material.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/BoundBox.h>
@@ -877,7 +878,32 @@ void TopoShape::exportBrep(const char *filename) const
 #endif
 }
 
-void TopoShape::exportBrep(std::ostream& out) const
+/** The savings a document save is allowed and an export to a file for someone
+ * else is not.
+ *
+ * Off unless asked for, and neither is assumed to be safe -- the pcurve drop
+ * checks each candidate against the projection that will replace it, see
+ * BRepTools::IsPCurveOmittable. Kept here so the property save path, the shape
+ * blobs and the reference format all decide the same way from the same
+ * parameter.
+ */
+void TopoShape::applyStorageOptions(BRepTools_ShapeSet& set, bool forStorage)
+{
+    const bool dedup = forStorage && App::DocumentParams::getDedupShapePCurves();
+    set.SetOmitPCurvesOnPlane(dedup);
+    // Merging equal 2D curves is what the kernel does by default, so this only
+    // ever has to turn it off.
+    set.ChangeCurves2d().SetMerging(dedup);
+}
+
+void TopoShape::applyStorageOptions(BinTools_ShapeSet& set, bool forStorage)
+{
+    // The binary 2D curve set has no merging to gate, so only the pcurve drop
+    // applies to this format.
+    set.SetOmitPCurvesOnPlane(forStorage && App::DocumentParams::getDedupShapePCurves());
+}
+
+void TopoShape::exportBrep(std::ostream& out, bool forStorage) const
 {
     // See TopTools_FormatVersion of OCCT 7.6
     enum {
@@ -887,12 +913,13 @@ void TopoShape::exportBrep(std::ostream& out) const
     };
     BRepTools_ShapeSet SS(Standard_False);
     SS.SetFormatNb(VERSION_1);
+    applyStorageOptions(SS, forStorage);
     SS.Add(this->_Shape);
     SS.Write(out);
     SS.Write(this->_Shape, out);
 }
 
-void TopoShape::exportBinary(std::ostream& out) const
+void TopoShape::exportBinary(std::ostream& out, bool forStorage) const
 {
     // See BinTools_FormatVersion of OCCT 7.6
     enum {
@@ -905,6 +932,7 @@ void TopoShape::exportBinary(std::ostream& out) const
     // An example how to use BinTools_ShapeSet can be found in BinMNaming_NamedShapeDriver.cxx
     BinTools_ShapeSet theShapeSet;
     theShapeSet.SetFormatNb(VERSION_3);
+    applyStorageOptions(theShapeSet, forStorage);
     if (this->_Shape.IsNull()) {
         theShapeSet.Add(this->_Shape);
         theShapeSet.Write(out);
