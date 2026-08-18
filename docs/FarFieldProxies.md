@@ -1128,7 +1128,7 @@ is worth more and this should wait.
 | phase | new/changed | note |
 |---|---|---|
 | 1 hierarchy | **new** `Gui/Renderer/ProxyHierarchy.{h,cpp}` | plain floats, no bgfx/Coin/OCCT — the discipline `SceneLadder.h` already keeps, so both tiers can share the policy. Input is the instance table of §3.1, projected from `DrawCallList` |
-| 2 generation | `Gui/Renderer/MeshSimplify.*`, refine pool | merge N transformed meshes per (cell, material), then decimate; bottom-up per §7.1 |
+| 2 generation | `Gui/Renderer/MeshSimplify.*`, **new** `Gui/Renderer/ProxyStore.{h,cpp}` | merge N transformed meshes per (cell, material), then decimate; bottom-up per sec 7.1, kept per node id -- built, see 11.1c-e |
 | 3 the cut | `Gui/Renderer/SceneLadder.cpp` | beside `planMeshRefines`, sharing `PlanBoxes` |
 | 4 drawing | `Gui/Inventor/SoFCRendererBridge.cpp`, `BGFXRenderer.cpp` | needs the per-child slices of `IncrementalPublish` phase 4 |
 | 5 picking/highlight | `ProxyHierarchy`, selection path, shaders | in-proxy tint is now a phase-4 requirement, not a phase-5 nicety — see §11.4 |
@@ -1611,6 +1611,71 @@ the coverage the boxes happen to have; a normal distribution per cell
 (SGGX, section 4.1) is the next refinement and it is orthogonal to which
 unit the stand-in is keyed on. And a box is not a voxel: this measures
 the cheap end of section 5(2), not Far Voxels itself.
+
+### 11.1e Built: generation bottom-up, and what it costs against from source
+
+`ProxyStore` (`Gui/Renderer/ProxyStore.{h,cpp}`) generates a subtree
+post-order and keeps the result keyed by ProxyNode::id. A node merges
+its own residents together with what its children already built --
+their proxies and the boxes standing in for what those children deleted
+-- and `ProxyGenOptions::fromSource` keeps the old behaviour as a
+control, because "bottom-up is cheaper" is a claim about this
+codebase's numbers rather than a citation. `RenderDebug_ProxyGen`
+reports both over the nodes a cut stops on.
+
+MiSTer Express, converged, camera A, four sampled cut nodes covering
+122 generated nodes over a six-level chain:
+
+| | merged | time | entries | drawn: proxy + stand-in | worst err/extent | area kept |
+|---|---|---|---|---|---|---|
+| bottom-up | 0.05 Mtri | 9 ms | 127 | 6004 + 2436 = 8440 | 0.151 | 59% |
+| from source | 0.11 Mtri | 18 ms | 129 | 6020 + 9060 = 15080 | 0.135 | 70% |
+
+**Generation halves**, which is section 7.1's claim and the shape it
+predicted: each level merges a decimation of the level below, so the
+total is a geometric series rather than the source counted once per
+level. Six levels deep it is 2.2x here rather than an order of
+magnitude, because most of the cost is the leaves either way -- the
+ratio grows with depth, and depth grows with model size.
+
+**It also halves what the node draws, which was not predicted.** The
+proxy triangles are the same to within a rounding (6004 against 6020 --
+the same merge, one level of decimation apart), and the whole
+difference is the stand-ins: **2436 against 9060, 3.7x fewer**. That is
+the nesting of 11.1d paying a second time. Built bottom-up, a child's
+boxes enter the parent's merge as geometry and re-aggregate onto the
+parent's coarser grid; generated from source, every level re-derives
+the same fine boxes from the same deleted members and carries all of
+them. So the representation that made the deleted mass affordable per
+level is also what stops it accumulating between levels.
+
+**What it costs is 12% more error**: 0.151 against 0.135 as a fraction
+of extent, from decimating a decimation. Against halving both the
+generation cost and the drawn triangles that is a good trade, and it
+is bounded by construction rather than by luck -- the stored error is
+the worst input plus this level's displacement, so it is a bound, and
+monotone up the tree (which is what section 8.1 needs for nodes to
+decide independently).
+
+The area kept falls too, 59% against 70%. Part of that is definitional:
+a coarser box holds less surface than the several boxes it replaces,
+which is what aggregation is. Part of it is real, and it is the reason
+the stored error has to be read beside the area rather than alone.
+
+!! **One gap, inherent to the rule.** A material bucket whose members
+are spread one per child never accumulates: each child refuses it as a
+single member, so the parent sees nothing to merge. Measured as 127
+entries against the control's 129. Nothing is lost visually -- those
+instances draw exactly, which is what the cut does with anything it has
+no proxy for -- but the aggregation is not available there. Passing a
+refused bucket's residents up to the parent would close it, and that is
+machinery for phase 3 rather than a defect in what is built.
+
+A related case did have to be fixed: a node whose bucket holds exactly
+one *child proxy* refused under the single-object rule (minMerge),
+which broke the chain wherever a subtree narrowed. Coarsening a lone
+child proxy onto this level's grid is exactly what a level is for, so
+the rule now applies to source members only.
 
 ### 11.2 What the code already gives us
 
