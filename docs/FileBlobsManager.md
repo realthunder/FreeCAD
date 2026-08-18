@@ -532,6 +532,21 @@ The derived name is `Property::getFileName()` -- `Object.Property` -- plus the
 extension. An object's internal `Name` is immutable (renaming in the tree
 changes `Label`), so a derived name never churns while the object lives.
 
+**Both halves of that stem are named by a person, so it is made portable before
+it becomes a file** (`Base::Tools::portableFileName`, added 2026-08-18). An
+object's name only has to be a Python identifier, which admits any length and
+every stem Windows still reads as a device; a property's name admits the same.
+A directory project writes the stem as a real file, so a name the file system
+refuses loses the geometry with nothing but a line in the report view -- and
+that is what it did: of three objects named 250 `x`, `CON`, and 90 CJK
+characters, two came back with a null shape and no properties. The transform
+replaces control, reserved and non-ASCII bytes with `_`, prefixes a reserved
+device name, and over a 120-byte budget truncates and appends a digest of the
+original so two long names stay distinct. The extension survives truncation, in
+up to two parts, because what says what a file is here is often two (`.Gui.xml`
+is dispatched on the whole of it). **A name that was already legal is returned
+unchanged**, so no existing project's files move.
+
 **A name belongs to its naming referrer**, defined as the live referrer with
 the lowest object id, not to the referrer set as a whole. If that referrer goes
 away the name is re-derived from the new lowest, which renames the file in the
