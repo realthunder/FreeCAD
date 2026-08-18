@@ -348,6 +348,10 @@ private:
 
 thread_local RecursionStack expandingSubObjects;
 thread_local RecursionStack queryingMustExecute;
+thread_local RecursionStack queryingChildElement;
+thread_local RecursionStack queryingElementVisible;
+thread_local RecursionStack queryingElementVisibleEx;
+thread_local RecursionStack settingElementVisible;
 
 /// Keeps a RecursionStack balanced even if the recursion throws
 struct RecursionGuard {
@@ -1412,6 +1416,14 @@ void App::DocumentObject::_addBackLink(DocumentObject* newObj)
 }
 
 int DocumentObject::setElementVisible(const char *element, bool visible) {
+    // a cyclic link makes the extension ask the linked object the same
+    // question, which asks back; this query threads no depth either
+    if(RecursionGuard::contains(settingElementVisible,this)) {
+        FC_ERR("Cyclic reference in " << getFullName() << ", cannot set element visibility");
+        return -1;
+    }
+    RecursionGuard guard(settingElementVisible,this);
+
     int res = -1;
     foreachExtension<DocumentObjectExtension>([&res,element,visible](DocumentObjectExtension *ext) {
         res = ext->extensionSetElementVisible(element,visible);
@@ -1421,6 +1433,14 @@ int DocumentObject::setElementVisible(const char *element, bool visible) {
 }
 
 int DocumentObject::isElementVisible(const char *element) const {
+    // a cyclic link makes the extension ask the linked object the same
+    // question, which asks back; this query threads no depth either
+    if(RecursionGuard::contains(queryingElementVisible,this)) {
+        FC_ERR("Cyclic reference in " << getFullName() << ", cannot tell whether an element is visible");
+        return -1;
+    }
+    RecursionGuard guard(queryingElementVisible,this);
+
     int res = -1;
     foreachExtension<DocumentObjectExtension>([&res,element](DocumentObjectExtension *ext) {
         res = ext->extensionIsElementVisible(element);
@@ -1430,6 +1450,14 @@ int DocumentObject::isElementVisible(const char *element) const {
 }
 
 int DocumentObject::isElementVisibleEx(const char *subname, int reason) const {
+    // a cyclic link makes the extension ask the linked object the same
+    // question, which asks back; this query threads no depth either
+    if(RecursionGuard::contains(queryingElementVisibleEx,this)) {
+        FC_ERR("Cyclic reference in " << getFullName() << ", cannot tell whether an element is visible");
+        return -1;
+    }
+    RecursionGuard guard(queryingElementVisibleEx,this);
+
     int res = -1;
     foreachExtension<DocumentObjectExtension>([&res,subname,reason](DocumentObjectExtension *ext) {
         res = ext->extensionIsElementVisibleEx(subname, reason);
@@ -1462,6 +1490,14 @@ int DocumentObject::isElementVisibleEx(const char *subname, int reason) const {
 }
 
 bool DocumentObject::hasChildElement() const {
+    // a cyclic link makes the extension ask the linked object the same
+    // question, which asks back; this query threads no depth either
+    if(RecursionGuard::contains(queryingChildElement,this)) {
+        FC_ERR("Cyclic reference in " << getFullName() << ", cannot tell whether it has child elements");
+        return false;
+    }
+    RecursionGuard guard(queryingChildElement,this);
+
     return queryExtension(&DocumentObjectExtension::extensionHasChildElement);
 }
 
