@@ -55,6 +55,20 @@ public:
         uint searchkey = (ke->modifiers() | ke->key()) & ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
         return ks == QKeySequence(searchkey);
     }
+    /*!
+     * The platform's conventional key for deleting. Upstream keeps this
+     * beside the other Qt-version helpers; note upstream's QtTools is a
+     * namespace of inline functions where ours is a class of statics, so
+     * this is a static member rather than a free function. Call sites
+     * spell it the same either way.
+     */
+    static QKeySequence::StandardKey deleteKeySequence() {
+#ifdef FC_OS_MACOSX
+        return QKeySequence::Backspace;
+#else
+        return QKeySequence::Delete;
+#endif
+    }
 };
 
 class ChildrenSignalBlocker

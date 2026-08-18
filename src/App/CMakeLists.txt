@@ -238,6 +238,7 @@ SET(Document_HPP_SRCS
     OriginFeature.h
     Range.h
     Transactions.h
+    TransactionDefs.h
     TransactionalObject.h
     VRMLObject.h
     MaterialObject.h
@@ -294,6 +295,7 @@ SET(FreeCADApp_CPP_SRCS
     ApplicationPy.cpp
     AutoTransaction.cpp
     Branding.cpp
+    CleanupProcess.cpp
     ColorModel.cpp
     MappedElement.cpp
     ComplexGeoData.cpp
@@ -319,6 +321,7 @@ SET(FreeCADApp_HPP_SRCS
     Application.h
     AutoTransaction.h
     Branding.h
+    CleanupProcess.h
     Color.h
     ColorModel.h
     MappedElement.h
