@@ -1677,6 +1677,60 @@ which broke the chain wherever a subtree narrowed. Coarsening a lone
 child proxy onto this level's grid is exactly what a level is for, so
 the rule now applies to source members only.
 
+### 11.1f Built and measured: the cut reads the error, and pays for the proxy
+
+Two stand-ins went into phase 1 because nothing had been generated yet,
+and both were flagged where they were used: the descent judged a node by
+its projected *extent* rather than by an error it did not have, and the
+saving was quoted as what a proxy replaces because nobody knew what one
+costs. `ProxyStore` removes both. `ProxyNodeCost` carries the measured
+error ratio and the drawn primitives per node, `selectCut` takes it, and
+`RenderDebug_ProxyGen` generates the whole partition and sweeps
+tolerances over both rules.
+
+MiSTer Express, converged, whole-assembly camera, 1863x1064. The store
+is 1802 nodes and 2259 entries, 1.95 Mtri merged in 292 ms, holding
+151 k proxy and 182 k stand-in triangles.
+
+| tol | extent: draws (proxy) | extent covers | error: draws (proxy) | error covers | proxies cost | drawn | net |
+|---|---|---|---|---|---|---|---|
+| 4px | 36717 (1188) | 31.8 k prims | 13071 (482) | 886 k | 76 k | 1.82 M of 2.63 M | **1.44x** |
+| 16px | 19290 (2914) | 761 k | 6600 (241) | 1.14 M | 49 k | 1.56 M of 2.66 M | **1.70x** |
+| 64px | 9581 (1490) | 983 k | 3444 (177) | 2.03 M | 40 k | 0.80 M of 2.79 M | **3.48x** |
+
+**The measured error is what makes a usable tolerance aggregate at
+all.** At 4 px -- an error a viewer has no way to see -- the extent rule
+aggregates 32 k primitives out of 2.6 M, which is 1.2% of the frame and
+is why 11.1b read as a weak case. The same tolerance read as *error*
+aggregates 886 k, and the frame drops by 1.44x. The rule did not change;
+what changed is that a node is now judged by what it commits rather than
+by how big it is, and 11.1c already showed those differ by a factor of
+five within one camera.
+
+**Draws fall by the same rule, not despite it**: 3444 against 9581 at
+64 px, 13071 against 36717 at 4 px. A frontier that stops higher issues
+fewer of both.
+
+**A proxy is cheap; what stays exact is not.** The proxies the error cut
+stops on cost 40-76 k primitives to stand for 0.9-2.0 M -- 4% at 64 px,
+9% at 4 px. So the ceiling on the win is set almost entirely by the
+geometry the cut still draws exactly, which is the near half of the
+model, and not by what aggregation costs. That is the opposite of the
+worry in 11.4, and it says where the next work is: it is not worth
+tuning the proxies, it is worth asking why 1.8 M primitives at 4 px are
+still exact.
+
+!! **Three things this table is not.** The denominator moves between
+rows: a cut that stops higher culls at node granularity, so a coarse
+stop keeps some off-screen members its finer counterpart would have
+dropped, and each row is read against its own visible total rather than
+against a fixed one. The units are mixed: `exactPrims` counts whatever
+a draw issues, so line segments and points are in it, while a proxy is
+triangles only -- lines and points stay exact by design (11.1c). And
+410 buckets were skipped as single-member, which is the gap of 11.1e at
+scale: those branches never aggregate, so the table understates what a
+complete generation would give.
+
 ### 11.2 What the code already gives us
 
 `simplifyMesh()` is a better starting point than §5.1 claims. It is a
