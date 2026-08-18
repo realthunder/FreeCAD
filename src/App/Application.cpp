@@ -2052,8 +2052,26 @@ void printBacktrace(size_t skip=0, const char* reason=nullptr)
 void segmentation_fault_handler(int sig)
 {
 #if defined(FC_OS_LINUX)
-    (void)sig;
-    printBacktrace(2, "Program received signal SIGSEGV, Segmentation fault.");
+    // Default the disposition first: this handler ends in abort(), which
+    // raises SIGABRT, and a handler still installed for it would recurse
+    // instead of dumping.
+    std::signal(sig, SIG_DFL);
+    const char *what = "Program received signal SIGSEGV, Segmentation fault.";
+    switch (sig) {
+        case SIGABRT:
+            what = "Program received signal SIGABRT, Abnormal termination.";
+            break;
+        case SIGTRAP:
+            // What a failed assertion in a vendored engine looks like:
+            // bx::debugBreak() traps rather than aborting, so that whole
+            // class -- every bgfx ASSERT, running out of a handle pool
+            // among them -- used to leave no crash log at all.
+            what = "Program received signal SIGTRAP, Trace/breakpoint trap.";
+            break;
+        default:
+            break;
+    }
+    printBacktrace(2, what);
 #if defined(FC_DEBUG)
     abort();
 #else
@@ -2159,6 +2177,13 @@ void Application::init(int argc, char ** argv)
            ::set_unexpected(unexpection_error_handler);
 #elif defined(FC_OS_LINUX)
         std::signal(SIGSEGV,segmentation_fault_handler);
+        // Not just SIGSEGV: an assertion inside a vendored engine ends the
+        // process without touching memory it may not. bgfx traps
+        // (bx::debugBreak) and the C library's assert() aborts, and neither
+        // wrote a crash log before this -- the shell reported "Trace/
+        // breakpoint trap (core dumped)" and that was the whole record.
+        std::signal(SIGABRT,segmentation_fault_handler);
+        std::signal(SIGTRAP,segmentation_fault_handler);
 #endif
 #if defined(FC_SE_TRANSLATOR)
         _set_se_translator(my_se_translator_filter);

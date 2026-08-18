@@ -486,10 +486,16 @@ restricted to a pre-declared set, because nothing in the stack requires it:
   (§3 hot-reload, §6.3 compile cache), declaring a uniform is just an edit
   to the shader source.
 - The C++ side is data-driven, not per-uniform code (implemented): the
-  bridge enumerates every `RenderDebug_*` view property beyond the fixed
-  knobs into `RenderDebugConfig::userParams` — the uniform name is
+  bridge enumerates every `RenderDebug_*` **and `RenderShadow_*`** view
+  property beyond the fixed knobs of its group into
+  `RenderDebugConfig::userParams` -- the uniform name is
   `"u_" + <Name>` (or `<Name>` verbatim when it already starts with
-  `u_`), so `RenderDebug_myKnob` feeds `uniform vec4 u_myKnob`.
+  `u_`), so `RenderDebug_myKnob` feeds `uniform vec4 u_myKnob`. The
+  fixed knobs of each group are excluded because the engine reads them
+  itself and each would otherwise upload a uniform nobody declares:
+  the `RenderDebug` switches listed above, and
+  `Gui::shadowRenderPropertyNames()` for the shadow map and its ground.
+  A new prefixed group joins the rule by adding its exclusion list.
   Supported property types: Bool/Integer/Enumeration/Float → the x
   lane; Color → rgba; Vector → xyz; Float/IntegerList → consecutive
   lanes, zero-padded to vec4 arrays. Unsupported types warn once and

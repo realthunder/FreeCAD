@@ -40,7 +40,11 @@ try:
     view.SetBool("NoSelFaceHighlightWithOutline", True)
     view.SetInt("ShadowSmoothBorder", int(os.environ.get("SHADOWSMOOTH", "40")))
     # Dim the directional scene light so the two bulbs carry the scene.
-    view.SetFloat("ShadowLightIntensity", float(os.environ.get("SUN", "0.15")))
+    # The light's own preference group is Render now (stage 4d); the
+    # View/Shadow* keys beside it are still the shadow map's and the
+    # ground's.
+    FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render") \
+        .SetFloat("LightIntensity", float(os.environ.get("SUN", "0.15")))
     # The floor slab is the scene's ground; the draw style's auto ground
     # plane would only blow up the view-fit bounds.
     view.SetBool("ShadowShowGround", False)
@@ -156,22 +160,26 @@ try:
 
     def enable_shadow():
         try:
-            FreeCADGui.runCommand("Std_DrawStyleShadow", 0)
+            # The scene light is a shading switch now, not a draw style
+            # (docs/CoinRetirement.md stage 4e): Render_Light puts the
+            # light in, Render_Shadow (default on) casts its map.
+            FreeCADGui.activeDocument().activeView().Render_Light = True
             note("SHADOW ON")
         except Exception:
             note(traceback.format_exc())
 
-    # The Shadow_* per-view properties materialize lazily at the first
-    # shadow render, so retry until the assignment sticks.
+    # The RenderShadow_*/Render_* per-view properties are materialized
+    # with the backend, but the view itself may not exist yet, so retry
+    # until the assignment sticks.
     def tune_shadow(tries=[0]):
         try:
             v = FreeCADGui.activeDocument().activeView()
-            v.Shadow_SmoothBorder = int(os.environ.get("SHADOWSMOOTH", "40"))
-            v.Shadow_LightIntensity = float(os.environ.get("SUN", "0.15"))
+            v.RenderShadow_SmoothBorder = int(os.environ.get("SHADOWSMOOTH", "40"))
+            v.Render_LightIntensity = float(os.environ.get("SUN", "0.15"))
             if "VOLDENSITY" in os.environ:
                 v.Render_VolumetricDensity = float(os.environ["VOLDENSITY"])
             FreeCADGui.SendMsgToActiveView("ViewFit")
-            note("SHADOW SMOOTH %s" % v.Shadow_SmoothBorder)
+            note("SHADOW SMOOTH %s" % v.RenderShadow_SmoothBorder)
         except Exception:
             tries[0] += 1
             if tries[0] < 20:

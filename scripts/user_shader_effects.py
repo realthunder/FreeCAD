@@ -121,7 +121,9 @@ def run():
         pump()
         view.viewIsometric()
         view.fitAll()
-        FreeCADGui.runCommand("Std_DrawStyleShadow", 0)
+        # The scene light is a shading switch now, not a draw style
+        # (docs/CoinRetirement.md stage 4e).
+        FreeCADGui.activeDocument().activeView().Render_Light = True
         view.Render_Volumetric = True
         # start with the global water toggle OFF: activate("water")'s
         # manifest viewProps must switch it on

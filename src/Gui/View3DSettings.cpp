@@ -119,117 +119,13 @@ void View3DSettings::applySettings()
 void View3DSettings::OnChange(ParameterGrp::SubjectType &rCaller,ParameterGrp::MessageType Reason)
 {
     const ParameterGrp& rGrp = static_cast<ParameterGrp&>(rCaller);
-    if (strcmp(Reason,"EnableHeadlight") == 0) {
-        bool enable = rGrp.GetBool("EnableHeadlight", true);
+    // The viewer's light rig can be overridden per view: a Light_* property
+    // on the view answers for the key instead, and the preference reaches
+    // only the views that have none
+    // (View3DInventorViewer::applyLightPreference).
+    if (View3DInventorViewer::isLightPreferenceKey(Reason)) {
         for (auto _viewer : _viewers) {
-            _viewer->setHeadlightEnabled(enable);
-        }
-    }
-    else if (strcmp(Reason,"HeadlightColor") == 0) {
-        unsigned long headlight = rGrp.GetUnsigned("HeadlightColor",ULONG_MAX); // default color (white)
-        float transparency;
-        SbColor headlightColor;
-        headlightColor.setPackedValue((uint32_t)headlight, transparency);
-        for (auto _viewer : _viewers) {
-            _viewer->getHeadlight()->color.setValue(headlightColor);
-        }
-    }
-    else if (strcmp(Reason,"HeadlightDirection") == 0) {
-        try {
-            std::string pos = rGrp.GetASCII("HeadlightDirection");
-            Base::Vector3f dir = Base::to_vector(pos);
-            for (auto _viewer : _viewers) {
-                _viewer->getHeadlight()->direction.setValue(dir.x, dir.y, dir.z);
-            }
-        }
-        catch (const std::exception&) {
-            // ignore exception
-        }
-    }
-    else if (strcmp(Reason,"HeadlightIntensity") == 0) {
-        long value = rGrp.GetInt("HeadlightIntensity", 100);
-        for (auto _viewer : _viewers) {
-            _viewer->getHeadlight()->intensity.setValue((float)value/100.0f);
-        }
-    }
-    else if (strcmp(Reason,"EnableBacklight") == 0) {
-        for (auto _viewer : _viewers) {
-            _viewer->setBacklightEnabled(rGrp.GetBool("EnableBacklight", false));
-        }
-    }
-    else if (strcmp(Reason,"BacklightColor") == 0) {
-        unsigned long backlight = rGrp.GetUnsigned("BacklightColor",ULONG_MAX); // default color (white)
-        float transparency;
-        SbColor backlightColor;
-        backlightColor.setPackedValue((uint32_t)backlight, transparency);
-        for (auto _viewer : _viewers) {
-            _viewer->getBacklight()->color.setValue(backlightColor);
-        }
-    }
-    else if (strcmp(Reason,"BacklightDirection") == 0) {
-        try {
-            std::string pos = rGrp.GetASCII("BacklightDirection");
-            Base::Vector3f dir = Base::to_vector(pos);
-            for (auto _viewer : _viewers) {
-                _viewer->getBacklight()->direction.setValue(dir.x, dir.y, dir.z);
-            }
-        }
-        catch (const std::exception&) {
-            // ignore exception
-        }
-    }
-    else if (strcmp(Reason,"BacklightIntensity") == 0) {
-        long value = rGrp.GetInt("BacklightIntensity", 100);
-        for (auto _viewer : _viewers) {
-            _viewer->getBacklight()->intensity.setValue((float)value/100.0f);
-        }
-    }
-    else if (strcmp(Reason,"EnableFillLight") == 0) {
-        for (auto _viewer : _viewers) {
-            _viewer->setFillLightEnabled(rGrp.GetBool("EnableFillLight", false));
-        }
-    }
-    else if (strcmp(Reason,"FillLightColor") == 0) {
-        unsigned long fillLight = rGrp.GetUnsigned("FillLightColor",0xE6FAFFFF); // default color (cool white)
-        float transparency;
-        SbColor fillLightColor;
-        fillLightColor.setPackedValue((uint32_t)fillLight, transparency);
-        for (auto _viewer : _viewers) {
-            _viewer->getFillLight()->color.setValue(fillLightColor);
-        }
-    }
-    else if (strcmp(Reason,"FillLightDirection") == 0) {
-        try {
-            std::string pos = rGrp.GetASCII("FillLightDirection");
-            Base::Vector3f dir = Base::to_vector(pos);
-            for (auto _viewer : _viewers) {
-                _viewer->getFillLight()->direction.setValue(dir.x, dir.y, dir.z);
-            }
-        }
-        catch (const std::exception&) {
-            // ignore exception
-        }
-    }
-    else if (strcmp(Reason,"FillLightIntensity") == 0) {
-        long value = rGrp.GetInt("FillLightIntensity", 60);
-        for (auto _viewer : _viewers) {
-            _viewer->getFillLight()->intensity.setValue((float)value/100.0f);
-        }
-    }
-    else if (strcmp(Reason,"AmbientLightColor") == 0) {
-        unsigned long color = rGrp.GetUnsigned("AmbientLightColor",ULONG_MAX); // default color (white)
-        float transparency;
-        SbColor ambientColor;
-        ambientColor.setPackedValue((uint32_t)color, transparency);
-        for (auto _viewer : _viewers) {
-            _viewer->getEnvironment()->ambientColor.setValue(ambientColor);
-        }
-    }
-    else if (strcmp(Reason,"AmbientLightIntensity") == 0) {
-        // Coin's own default for LIGHT_MODEL_AMBIENT is 0.2.
-        long value = rGrp.GetInt("AmbientLightIntensity", 20);
-        for (auto _viewer : _viewers) {
-            _viewer->getEnvironment()->ambientIntensity.setValue((float)value/100.0f);
+            _viewer->applyLightPreference(Reason);
         }
     }
     else if (strcmp(Reason,"EnablePreselection") == 0) {

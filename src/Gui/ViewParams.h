@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:551)
+// Auto generated code (Gui/ViewParams.py:568)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -124,6 +124,12 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter RenderCache
+    ///
+    /// Which render path draws a 3D view: 0 auto, 1 distributed,
+    /// 2 centralized Coin caching, 3 the render cache that feeds the
+    /// render engine. NOT a user setting -- the path is chosen at
+    /// startup (RenderParams::selectRenderPath), which overrides
+    /// whatever a config carries. Set it at runtime to compare paths.
     static const long & getRenderCache();
     static const long & defaultRenderCache();
     static void removeRenderCache();
@@ -2088,10 +2094,16 @@ public:
     // Auto generated code (Tools/params_utils.py:139)
     //@{
     /// Accessor for parameter BacklightIntensity
-    static const double & getBacklightIntensity();
-    static const double & defaultBacklightIntensity();
+    ///
+    /// Backlight intensity, as a percentage. An integer because that is the
+    /// slot everything else uses: the Clipping dialog's slider, the 3D view
+    /// preference page and the viewer, which divides it by a hundred. This
+    /// class used to read a Float fraction from the same name -- a second,
+    /// separate slot that nothing ever wrote; see ViewParams::migrate().
+    static const long & getBacklightIntensity();
+    static const long & defaultBacklightIntensity();
     static void removeBacklightIntensity();
-    static void setBacklightIntensity(const double &v);
+    static void setBacklightIntensity(const long &v);
     static const char *docBacklightIntensity();
     //@}
 
@@ -2185,10 +2197,13 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:557)
+    // Auto generated code (Gui/ViewParams.py:574)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
+
+    /// One-time migration of keys that changed type or name.
+    static void migrate();
 //[[[end]]]
 
     static bool highlightIndicesOnFullSelect() {
@@ -2213,7 +2228,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:567)
+// Auto generated code (Gui/ViewParams.py:587)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

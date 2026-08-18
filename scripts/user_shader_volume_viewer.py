@@ -168,7 +168,9 @@ def stage():
     doc.recompute()
     _shared["fire"] = fire
     v = view()
-    FreeCADGui.runCommand("Std_DrawStyleShadow", 0)
+    # The scene light is a shading switch now, not a draw style
+    # (docs/CoinRetirement.md stage 4e).
+    FreeCADGui.activeDocument().activeView().Render_Light = True
     v.Render_Volumetric = True
     v.RenderDebug_FreezeFrame = True
     v.viewIsometric()

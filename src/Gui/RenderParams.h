@@ -83,6 +83,65 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter MaxViewIds
+    ///
+    /// How many backend view ids the render engine may hand out, which
+    /// is what decides how many 3D views can draw on it at once: each
+    /// view takes a block for its pass sequence (about 13 ids for a
+    /// plain viewer, docs/RenderEngine.md #3.1), and a view that finds
+    /// no block left falls back to plain GL rather than failing. So the
+    /// default is roughly 64 viewers, and 0 asks for the build's own
+    /// ceiling instead, which is four times that.
+    /// 
+    /// It is worth having a limit below the ceiling because the backend
+    /// copies its whole view table once a frame and sizes its per-view
+    /// pools from this number, so ids nobody opens are still paid for
+    /// in every frame. Measured on a desktop GPU that cost is invisible
+    /// against a 16ms frame at this width - but at the ceiling, with
+    /// render stage timing on, it is not: the per-view GPU timer pools
+    /// take a 59fps session to 19. Raise it for many-viewer work, not
+    /// as a matter of course.
+    /// 
+    /// Read once, when the backend starts: a change needs a restart.
+    static const long & getMaxViewIds();
+    static const long & defaultMaxViewIds();
+    static void removeMaxViewIds();
+    static void setMaxViewIds(const long &v);
+    static const char *docMaxViewIds();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BackgroundReleaseDelay
+    ///
+    /// Milliseconds a 3D view may sit in the background before it gives
+    /// its render targets back, or 0 to let a hidden view keep them.
+    /// 
+    /// Targets are what a view mostly costs: 287MB was measured for one
+    /// 1644x653 view with every effect on, and until now it held them
+    /// whether or not anyone could see it -- so a session with several
+    /// documents open paid for all of their views to look at one. This
+    /// gives that back for the views nobody is looking at. What the view
+    /// keeps is everything a resize keeps: its programs, its uniforms
+    /// and its uploaded scene, so coming back is the resize path and not
+    /// a reload.
+    /// 
+    /// The delay is what stops it firing on a click through the tabs.
+    /// Coming back costs the one frame that rebuilds the targets (~68ms
+    /// on the view measured above) and gives a byte-identical picture --
+    /// the trade is a hitch on return against the memory in between,
+    /// never a difference in the image. Lower it to release sooner on a
+    /// machine short of VRAM; raise it if switching back and forth
+    /// hitches.
+    static const long & getBackgroundReleaseDelay();
+    static const long & defaultBackgroundReleaseDelay();
+    static void removeBackgroundReleaseDelay();
+    static void setBackgroundReleaseDelay(const long &v);
+    static const char *docBackgroundReleaseDelay();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter CoarseTessellation
     ///
     /// Ladder level shapes are tessellated at under coarse-first
@@ -2450,10 +2509,12 @@ public:
     //@{
     /// Accessor for parameter GroundReflection
     ///
-    /// Mirror the model in the shadow ground plane of the
-    /// experimental render engine: the opaque scene is re-rendered
-    /// with a reflected camera and blended onto the ground. Only
-    /// effective while the Shadow display style shows a ground plane.
+    /// Mirror the model in the ground plane of the experimental
+    /// render engine: the opaque scene is re-rendered with a reflected
+    /// camera and blended onto the ground. Brings the ground plane out
+    /// on its own -- neither the Shadow display style nor its ground
+    /// switch is needed -- and the ground keeps its own appearance
+    /// settings (color, size, texture) from the shadow group.
     static const bool & getGroundReflection();
     static const bool & defaultGroundReflection();
     static void removeGroundReflection();
@@ -2718,6 +2779,19 @@ public:
     /// Preferences/View group into this Preferences/View/Render group.
     /// Called once at Gui::Application startup.
     static void migrate();
+
+    /// Decide the render path this session draws with, overriding
+    /// whatever the configuration carries: render cache 3 and the
+    /// render engine's backend. Called once at Gui::Application startup,
+    /// before anything reads either.
+    ///
+    /// The path is a development switch rather than a setting. A stored
+    /// choice is ignored -- a machine that once wrote one keeps it out
+    /// of every later session, and a backend that no longer exists in
+    /// this build cannot leave a view pointing at it -- while a change
+    /// made at runtime (console, script) works exactly as before, for
+    /// as long as that session lasts.
+    static void selectRenderPath();
 
 /*[[[cog
 RenderParams.declare_end()

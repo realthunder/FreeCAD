@@ -45,6 +45,7 @@
 # include <Inventor/C/glue/gl.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <unordered_map>
 
@@ -63,6 +64,8 @@
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
+#include <Inventor/elements/SoViewingMatrixElement.h>
+#include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoTextureUnitElement.h>
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
@@ -89,6 +92,7 @@
 #include <Inventor/SbRotation.h>
 
 #include <Base/Console.h>
+#include "SoAutoZoomTranslation.h"
 #include "SoFCRenderer.h"
 #include "SoFCRenderCache.h"
 #include "SoFCRendererBridge.h"
@@ -297,6 +301,8 @@ public:
 
   void setupMatrix(SoGLRenderAction * action, const DrawEntry &draw_entry);
 
+  static void applyBillboard(SoState * state, const SoAutoZoomTranslation * zoom);
+
   void updateSelection();
 
   static std::size_t pushDrawEntry(SbFCVector<DrawEntry> & draw_entries,
@@ -404,6 +410,40 @@ public:
   bool showHiddenLine = false;
 
   HatchTexture *hatchtexture = nullptr;
+
+  // The owning 3D view object, for the Section_* style overrides below.
+  // Held whether or not a backend is attached, since the internal GL pass
+  // honors them too.
+  App::PropertyContainer *viewobject = nullptr;
+  // The section/clipping style of the frame being drawn, snapshotted once
+  // per render() from the view's Section_* overrides and the preferences
+  // behind them. Snapshotted because these are read per draw entry, deep
+  // inside the loops below.
+  struct SectionStyle {
+    bool fill = false;
+    bool fillInvert = false;
+    bool fillGroup = false;
+    bool concave = false;
+    bool hatch = false;
+    bool noOnTop = true;
+    double hatchScale = 1.0;
+  } section;
+  void updateSectionStyle();
+
+  /// The two style keys that decide whether an on-top draw is sectioned,
+  /// for the bridge to bake into the draw calls it translates. Resolved
+  /// afresh instead of read from the snapshot above: a feed runs before
+  /// the frame that follows it takes its snapshot (the cache manager
+  /// republishes into setScene(), then calls render()), so the snapshot
+  /// would answer with the style of the frame before the change. There is
+  /// one of these per feed, against one per draw entry for the snapshot.
+  RendererBridge::SectionOnTop sectionOnTop() const;
+
+  /// Translate everything this renderer holds into the attached backend:
+  /// the scene, every selection feed and the highlight. Used when a
+  /// backend is attached mid-session, and when something baked into the
+  /// translated draws has changed.
+  void feedExternal();
 
   // Optional external render backend mirroring the scene/selection feeds.
   Render::Renderer *external = nullptr;
@@ -618,8 +658,8 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
 
   auto clippers = next.clippers;
   if (this->shadowmapping
-      || ((ViewParams::getNoSectionOnTop()
-          || (ViewParams::getSectionConcave() && clippers.getNum() > 1))
+      || ((this->section.noOnTop
+          || (this->section.concave && clippers.getNum() > 1))
           && next.isOnTop()))
     clippers.clear();
 
@@ -871,7 +911,13 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
     this->material.emissive = emissive;
   }
 
-  if (next.type == Material::Line) {
+  // A triangle draw carrying SoDrawStyle::LINES is handed to
+  // glPolygonMode below and comes out as edges, so it wants the line
+  // width and pattern as much as a line draw does -- Coin sets both from
+  // the elements without asking what the shape is, and without this a
+  // dashed bounding box (PartGui's geometry check) drew solid.
+  if (next.type == Material::Line
+      || next.drawstyle == SoDrawStyleElement::LINES) {
     if (first || this->material.linewidth != linewidth) {
       glLineWidth(linewidth);
       FC_GLERROR_CHECK;
@@ -897,7 +943,9 @@ SoFCRendererP::applyMaterial(SoGLRenderAction * action,
       this->material.linepattern = linepattern;
       SoLinePatternElement::set(state, pattern, factor);
     }
-    if (!first)
+    // A line draw is done here; a triangle drawn as lines still needs the
+    // rest of the material, the polygon mode below most of all.
+    if (!first && next.type == Material::Line)
       return true;
   }
 
@@ -1033,34 +1081,65 @@ SoFCRenderer::setExternalRenderer(Render::Renderer * renderer,
     return;
   // Feed the current state so a backend attached mid-session (e.g. on a
   // preference change) does not have to wait for the next scene rebuild.
+  PRIVATE(this)->feedExternal();
+}
+
+void
+SoFCRendererP::feedExternal()
+{
   // Mirror the live feed paths' translate() context exactly: setScene()
   // resolves the object info map alongside the draws, and the selection /
   // highlight feeds carry their id / highlight flag — without them the
   // materials translate as plain scene draws (dimmed to TransparencyOnTop,
   // stippled, unthickened) and the replayed selection is near-invisible.
-  if (PRIVATE(this)->scene) {
-    auto & objinfo = PRIVATE(this)->objinfo;
+  if (this->scene) {
     auto draws = RendererBridge::translate(
-          PRIVATE(this)->scene->getVertexCaches(true), 0, false, false,
-          &objinfo);
-    renderer->setObjectInfo(Render::ObjectInfoMap(objinfo));
-    PRIVATE(this)->objinfodraws = draws.size();
-    PRIVATE(this)->objinfoSynced();
-    renderer->setScene(std::move(draws));
+          this->scene->getVertexCaches(true),
+          this->sectionOnTop(), 0, false, false,
+          &this->objinfo);
+    this->external->setObjectInfo(Render::ObjectInfoMap(this->objinfo));
+    this->objinfodraws = draws.size();
+    this->objinfoSynced();
+    this->external->setScene(std::move(draws));
   }
-  for (auto & sel : PRIVATE(this)->selections)
-    renderer->addSelection(sel.first,
-          RendererBridge::translate(*sel.second, sel.first));
-  for (auto & sel : PRIVATE(this)->selectionsontop)
-    renderer->addSelection(sel.first,
-          RendererBridge::translate(*sel.second, sel.first));
-  if (!PRIVATE(this)->highlightcaches.empty())
-    renderer->setHighlight(
-          RendererBridge::translate(PRIVATE(this)->highlightcaches, 0, true),
-          PRIVATE(this)->hlwholeontop);
-  if (auto hatch = PRIVATE(this)->hatchtexture)
-    renderer->setHatchImage(hatch->data.data(), hatch->nc,
-                            hatch->width, hatch->height);
+  for (auto & sel : this->selections)
+    this->external->addSelection(sel.first,
+          RendererBridge::translate(*sel.second, this->sectionOnTop(),
+                                    sel.first));
+  for (auto & sel : this->selectionsontop)
+    this->external->addSelection(sel.first,
+          RendererBridge::translate(*sel.second, this->sectionOnTop(),
+                                    sel.first));
+  if (!this->highlightcaches.empty())
+    this->external->setHighlight(
+          RendererBridge::translate(this->highlightcaches,
+                                    this->sectionOnTop(), 0, true),
+          this->hlwholeontop);
+  if (auto hatch = this->hatchtexture)
+    this->external->setHatchImage(hatch->data.data(), hatch->nc,
+                                  hatch->width, hatch->height);
+}
+
+void
+SoFCRenderer::refreshExternalFeed()
+{
+  auto self = PRIVATE(this);
+  if (!self->external)
+    return;
+  // Everything the backend holds was translated from caches this renderer
+  // still has, so a re-bake is a re-translation and nothing more: no
+  // traversal, and -- unlike dropping the caches -- the selection and
+  // highlight feeds come back with it rather than waiting for the user to
+  // select something again.
+  if (self->overlaymode) {
+    if (self->scene)
+      self->external->setOverlay(self->overlayid,
+          RendererBridge::translate(self->scene->getVertexCaches(true),
+                                    self->sectionOnTop(), 0, false, true),
+          self->overlayanchor);
+    return;
+  }
+  self->feedExternal();
 }
 
 void
@@ -1097,7 +1176,7 @@ SoFCRenderer::setExternalOverlay(Render::Renderer * renderer, int id,
   if (renderer && self->scene)
     renderer->setOverlay(id,
         RendererBridge::translate(self->scene->getVertexCaches(true),
-                                  0, false, true),
+                                  self->sectionOnTop(), 0, false, true),
         anchor);
 }
 
@@ -1336,7 +1415,8 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
   if (PRIVATE(this)->external) {
     if (PRIVATE(this)->overlaymode)
       PRIVATE(this)->external->setOverlay(PRIVATE(this)->overlayid,
-          RendererBridge::translate(caches, 0, false, true),
+          RendererBridge::translate(caches, PRIVATE(this)->sectionOnTop(),
+                                    0, false, true),
           PRIVATE(this)->overlayanchor);
     else {
       // Collect draw identities alongside the draws, against the map the
@@ -1362,7 +1442,9 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
         resident.clear();
       Render::ObjectInfoMap added;
       Gui::RenderTiming::Scope xlate(Gui::RenderTiming::Translate);
-      auto draws = RendererBridge::translate(caches, 0, false, false,
+      auto draws = RendererBridge::translate(caches,
+                                             PRIVATE(this)->sectionOnTop(),
+                                             0, false, false,
                                              &resident,
                                              restate ? nullptr : &added);
       PRIVATE(this)->objinfodraws = draws.size();
@@ -1453,7 +1535,8 @@ SoFCRenderer::setHighlight(VertexCacheMap && caches, bool wholeontop)
 
   if (PRIVATE(this)->external)
     PRIVATE(this)->external->setHighlight(
-          RendererBridge::translate(PRIVATE(this)->highlightcaches, 0, true),
+          RendererBridge::translate(PRIVATE(this)->highlightcaches,
+                                    PRIVATE(this)->sectionOnTop(), 0, true),
           wholeontop);
 }
 
@@ -1468,7 +1551,8 @@ SoFCRenderer::addSelection(int id, const VertexCacheMap & caches)
 
   if (PRIVATE(this)->external)
     PRIVATE(this)->external->addSelection(
-          id, RendererBridge::translate(caches, id));
+          id, RendererBridge::translate(caches, PRIVATE(this)->sectionOnTop(),
+                                        id));
 }
 
 void
@@ -1627,7 +1711,69 @@ SoFCRenderer::getBoundingBox(SbBox3f & bbox) const
     bbox.extendBy(PRIVATE(this)->selectionbbox);
 }
 
-void inline 
+// Screen-align a billboard autozoom, which the node itself cannot do:
+// SoAutoZoomTranslation::doAction is also what the CAPTURE traversal
+// runs, and a camera-dependent rotation and scale baked into a static
+// vertex cache is the very failure the capture companion exists to avoid
+// (the SoFCImageQuad note in SoFCRenderCacheManager.cpp). So the
+// per-frame math belongs to each render path: the external backend does
+// it in BGFXRendererP.h's setDrawTransform, this does it for the GL pass
+// here. Substitute the accumulated matrix's 3x3 with the camera basis
+// scaled to world units per screen pixel, keeping the accumulated
+// translation as the anchor -- geometry emitted in pixels (SoImage
+// capture companions, text glyph quads) then draws at its screen size
+// instead of being read as world units.
+void
+SoFCRendererP::applyBillboard(SoState * state, const SoAutoZoomTranslation * zoom)
+{
+  const SbViewportRegion & vp = SoViewportRegionElement::get(state);
+  float vpheight = static_cast<float>(vp.getViewportSizePixels()[1]);
+  if (vpheight < 1.0f)
+    return;
+
+  SbMatrix matrix = SoModelMatrixElement::get(state); // clazy:exclude=rule-of-two-soft
+  SbVec3f anchor(matrix[3][0], matrix[3][1], matrix[3][2]);
+
+  // The camera's world-space axes are the COLUMNS of the viewing matrix's
+  // 3x3 (Coin's row-vector layout: p_view = p_world * VM), and the model
+  // matrix's rows are the local axes in world space.
+  const SbMatrix & vm = SoViewingMatrixElement::get(state);
+
+  // World units per screen pixel at the anchor: a world length L at view
+  // depth d covers L*P[1][1]/d of the projection's height, which is 2
+  // wide, so one pixel is 2d/(P[1][1]*H) world units -- and the depth
+  // term drops out of an orthographic projection. This is the backend's
+  // expression, element for element (BGFXRendererP.h, setDrawTransform),
+  // so the two paths size a billboard by one piece of arithmetic.
+  // SbViewVolume::getWorldToScreenScale answers a nearby question -- the
+  // world radius of a SPHERE covering a given screen radius -- and its
+  // perspective form is a tangent construction that is only linear in
+  // the small and drifts off-axis: measured 8% small on a label in the
+  // corner of a perspective view.
+  const SbMatrix & pm = SoProjectionMatrixElement::get(state);
+  float p5 = std::abs(pm[1][1]) > 1e-8f ? pm[1][1] : 1.0f;
+  float scale = 2.0f / (p5 * vpheight);
+  if (std::abs(pm[3][3]) < 1e-6f) {  // perspective: w carries -z
+    float zview = anchor[0]*vm[0][2] + anchor[1]*vm[1][2]
+                + anchor[2]*vm[2][2] + vm[3][2];
+    float depth = -zview;            // in front of the camera => positive
+    scale *= depth > 1e-4f ? depth : 1e-4f;
+  }
+  float pixelscale = zoom->pixelScale.getValue();
+  scale *= pixelscale > 0.0f ? pixelscale
+                             : SoAutoZoomTranslation::DefaultPixelScale;
+
+  for (int i = 0; i < 3; ++i) {
+    matrix[0][i] = vm[i][0] * scale;   // local X -> screen right
+    matrix[1][i] = vm[i][1] * scale;   // local Y -> screen up
+    matrix[2][i] = vm[i][2] * scale;   // local Z -> toward the viewer
+  }
+  matrix[0][3] = matrix[1][3] = matrix[2][3] = 0.0f;
+  matrix[3][3] = 1.0f;
+  SoModelMatrixElement::set(state, NULL, matrix);
+}
+
+void inline
 SoFCRendererP::setupMatrix(SoGLRenderAction * action, const DrawEntry &draw_entry)
 {
   SoState *state = action->getState();
@@ -1646,7 +1792,11 @@ SoFCRendererP::setupMatrix(SoGLRenderAction * action, const DrawEntry &draw_entr
           SoModelMatrixElement::set(state, NULL, info.matrix);
       } else if (!info.identity)
         SoModelMatrixElement::mult(state, NULL, info.matrix);
-      info.node->GLRender(action);
+      auto zoom = info.cast<SoAutoZoomTranslation>();
+      if (zoom->billboard.getValue())
+        applyBillboard(state, zoom);
+      else
+        info.node->GLRender(action);
     }
   }
 
@@ -1951,12 +2101,12 @@ SoFCRendererP::renderSection(SoGLRenderAction *action,
   int curpass = pass++;
 
   int numclip = this->material.clippers.getNum();
-  bool concave = ViewParams::getSectionConcave() && numclip > 1;
+  bool concave = this->section.concave && numclip > 1;
 
   if (this->depthwriteonly
       || curpass >= numclip
       || draw_entry.ventry->partidx >= 0
-      || (!ViewParams::getSectionFill() && !concave))
+      || (!this->section.fill && !concave))
     return curpass == 0;
 
   if (draw_entry.material->type != Material::Triangle) {
@@ -1979,7 +2129,7 @@ SoFCRendererP::renderSection(SoGLRenderAction *action,
       && !draw_entry.ventry->cache->hasSolid())
     return curpass == 0;
 
-  if (!concave && ViewParams::getSectionFillGroup()) {
+  if (!concave && this->section.fillGroup) {
     if (curpass != 0)
       return false;
     if (transp)
@@ -2047,7 +2197,7 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
   }
 
   int numclip = this->material.clippers.getNum();
-  bool concave = ViewParams::getSectionConcave() && numclip > 1;
+  bool concave = this->section.concave && numclip > 1;
 
   if (curpass == 0 && concave) {
     if (this->material.depthfunc != SoDepthBuffer::LESS)
@@ -2162,7 +2312,7 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
     matrix.multVecMatrix(v4, v4);
   }
 
-  if (ViewParams::getSectionFillInvert()) {
+  if (this->section.fillInvert) {
     auto col = this->material.diffuse;
     unsigned char r = (col >> 24) & 0xff;
     unsigned char g = (col >> 16) & 0xff;
@@ -2176,10 +2326,10 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
     glColor4ub(r, g, b, a);
   }
 
-  float hatchscale = std::max(1e-4, 0.3 * ViewParams::getSectionHatchTextureScale());
+  float hatchscale = std::max(1e-4, 0.3 * this->section.hatchScale);
 
   auto hatch = this->hatchtexture;
-  if (!ViewParams::getSectionHatchTextureEnable())
+  if (!this->section.hatch)
     hatch = nullptr;
   if (hatch) {
     pauseShadowRender(action->getState(), true);
@@ -2239,7 +2389,7 @@ SoFCRendererP::_renderSection(SoGLRenderAction *action,
 
   glPopAttrib();
 
-  if (ViewParams::getSectionFillInvert()) {
+  if (this->section.fillInvert) {
     auto col = this->material.diffuse;
     unsigned char r = (col >> 24) & 0xff;
     unsigned char g = (col >> 16) & 0xff;
@@ -2287,7 +2437,7 @@ SoFCRendererP::renderOpaque(SoGLRenderAction * action,
     auto & draw_entry = draw_entries[idx];
     if (draw_entry.skip > 0
         && !this->shadowmapping
-        && ((!ViewParams::getSectionConcave() && !ViewParams::getNoSectionOnTop())
+        && ((!this->section.concave && !this->section.noOnTop)
             || !draw_entry.material->clippers.getNum()))
       continue;
 
@@ -2325,7 +2475,7 @@ SoFCRendererP::renderOpaque(SoGLRenderAction * action,
     int n = 0;
     bool pushed = false;
     while (renderSection(action, draw_entry, n, pushed, false)) {
-      if (!ViewParams::getSectionConcave()
+      if (!this->section.concave
           && this->material.clippers.getNum() > 0
           && isValidBBox(draw_entry.bbox)
           && SoCullElement::cullTest(state, draw_entry.bbox, FALSE))
@@ -2473,7 +2623,7 @@ SoFCRendererP::renderTransparency(SoGLRenderAction * action,
         bool pushed = false;
         int n = 0;
         while (renderSection(action, draw_entry, n, pushed, true)) {
-          if (!ViewParams::getSectionConcave()
+          if (!this->section.concave
               && this->material.clippers.getNum() > 0
               && isValidBBox(draw_entry.bbox)
               && SoCullElement::cullTest(state, draw_entry.bbox, FALSE))
@@ -2563,7 +2713,7 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
     PRIVATE(this)->external->setHiddenLineConfig(
         RendererBridge::translateHiddenLineConfig(state));
     PRIVATE(this)->external->setSectionConfig(
-        RendererBridge::translateSectionConfig());
+        RendererBridge::translateSectionConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setAOConfig(
         RendererBridge::translateAOConfig(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setCavityConfig(
@@ -2636,6 +2786,43 @@ SoFCRenderer::pushExternalConfigs(SoState * state)
 }
 
 void
+SoFCRendererP::updateSectionStyle()
+{
+  this->section.fill = Gui::sectionStyle(this->viewobject, "Fill",
+                                         ViewParams::getSectionFill());
+  this->section.fillInvert = Gui::sectionStyle(this->viewobject, "FillInvert",
+                                               ViewParams::getSectionFillInvert());
+  this->section.fillGroup = Gui::sectionStyle(this->viewobject, "FillGroup",
+                                              ViewParams::getSectionFillGroup());
+  this->section.concave = Gui::sectionStyle(this->viewobject, "Concave",
+                                            ViewParams::getSectionConcave());
+  this->section.hatch = Gui::sectionStyle(this->viewobject, "Hatch",
+                                          ViewParams::getSectionHatchTextureEnable());
+  this->section.hatchScale = Gui::sectionStyle(this->viewobject, "HatchScale",
+                                               ViewParams::getSectionHatchTextureScale());
+  this->section.noOnTop = Gui::sectionStyle(this->viewobject, "NoOnTop",
+                                            ViewParams::getNoSectionOnTop());
+}
+
+RendererBridge::SectionOnTop
+SoFCRendererP::sectionOnTop() const
+{
+  RendererBridge::SectionOnTop res;
+  res.noOnTop = Gui::sectionStyle(this->viewobject, "NoOnTop",
+                                  ViewParams::getNoSectionOnTop());
+  res.concave = Gui::sectionStyle(this->viewobject, "Concave",
+                                  ViewParams::getSectionConcave());
+  return res;
+}
+
+void
+SoFCRenderer::setViewObject(App::PropertyContainer * view)
+{
+  PRIVATE(this)->viewobject = view;
+  PRIVATE(this)->updateSectionStyle();
+}
+
+void
 SoFCRenderer::render(SoGLRenderAction * action)
 {
   // In overlay-capture mode this renderer only exists as a feed conduit:
@@ -2671,6 +2858,8 @@ SoFCRenderer::render(SoGLRenderAction * action)
   PRIVATE(this)->transpshadowmapping = PRIVATE(this)->shadowmapping && (shapestyleflags & 0x01000000);
 
   PRIVATE(this)->showHiddenLine = SoFCDisplayModeElement::showHiddenLines(state, &PRIVATE(this)->hiddenLineConfig);
+
+  PRIVATE(this)->updateSectionStyle();
 
   PRIVATE(this)->section_entries.clear();
   PRIVATE(this)->transp_section_entries.clear();

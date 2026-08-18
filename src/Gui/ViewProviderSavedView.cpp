@@ -34,6 +34,7 @@
 #include <App/GroupExtension.h>
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
+#include "Inventor/SoFCRenderCacheManager.h"
 #include "Clipping.h"
 #include "BitmapFactory.h"
 #include "Application.h"
@@ -124,6 +125,7 @@ void ViewProviderSavedView::prepareMenu(QMenu *menu)
     submenu->addAction(QObject::tr("Visibilities"), [this]() {capture(CaptureOption::Visibilities);});
     submenu->addAction(QObject::tr("Show on top"), [this]() {capture(CaptureOption::ShowOnTop);});
     submenu->addAction(QObject::tr("DrawStyle settings"), [this]() {capture(CaptureOption::DrawStyle);});
+    submenu->addAction(QObject::tr("Render settings"), [this]() {capture(CaptureOption::RenderSettings);});
 
     menu->addAction(QObject::tr("Capture all"), [this]() {capture(CaptureOption::All);});
 
@@ -137,6 +139,7 @@ void ViewProviderSavedView::prepareMenu(QMenu *menu)
     submenu->addAction(QObject::tr("Visibilities"), [this]() {apply(CaptureOption::Visibilities);});
     submenu->addAction(QObject::tr("Show on top"), [this]() {apply(CaptureOption::ShowOnTop);});
     submenu->addAction(QObject::tr("DrawStyle settings"), [this]() {apply(CaptureOption::DrawStyle);});
+    submenu->addAction(QObject::tr("Render settings"), [this]() {apply(CaptureOption::RenderSettings);});
 
     menu->addAction(QObject::tr("Restore all"), [this]() {apply(CaptureOption::All);});
 }
@@ -203,6 +206,86 @@ bool ViewProviderSavedView::setEdit(int ModNum)
     return inherited::setEdit(ModNum);
 }
 
+// The per-view render settings a saved view deals in: what the view
+// itself answers for, and nothing else. A Render_*/Light_*/Section_*
+// property exists on a view only because somebody chose it -- the
+// preference answers for every knob that has none -- so capturing exactly
+// these is the rule that keeps a saved view from carrying, and later
+// imposing, settings that were never part of this document.
+//
+// The machine-local ones are excluded at both ends. They are never saved
+// with a view either, so a saved view carrying one could only have come
+// from a file written before that, and applying it would hand this
+// installation another machine's budget.
+static bool isViewRenderProperty(const char *name)
+{
+    if (!name || Gui::isLocalRenderProperty(name))
+        return false;
+    return boost::starts_with(name, "Render_")
+        || boost::starts_with(name, "RenderShadow_")
+        || boost::starts_with(name, "Light_")
+        || boost::starts_with(name, "Section_");
+}
+
+static std::vector<App::Property*> viewRenderProperties(View3DInventor *view)
+{
+    std::vector<App::Property*> res;
+    std::vector<App::Property*> props;
+    view->getPropertyList(props);
+    for (auto prop : props) {
+        if (!isViewRenderProperty(prop->getName()))
+            continue;
+        // What the view does not persist, a document must not either.
+        if (prop->testStatus(App::Property::PropNoPersist))
+            continue;
+        res.push_back(prop);
+    }
+    return res;
+}
+
+// A document written before the settings became per-view states the
+// section style and the backlight as global preferences under the clipping
+// capture. Give them to the view as its own overrides rather than moving
+// the reader's defaults, which is what restoring one used to do.
+static void applyLegacyClipSettings(App::SavedView *obj, View3DInventor *view)
+{
+    struct Legacy {
+        const char *stored;      // what the old capture wrote
+        const char *property;    // the view property that answers for it now
+        Base::Type type;
+    };
+    const Legacy legacy[] = {
+        {"ClipFill", "Section_Fill", App::PropertyBool::getClassTypeId()},
+        {"ClipConcave", "Section_Concave", App::PropertyBool::getClassTypeId()},
+        {"ClipHatch", "Section_Hatch", App::PropertyBool::getClassTypeId()},
+        {"ClipHatchScale", "Section_HatchScale", App::PropertyFloat::getClassTypeId()},
+        {"ClipHatchTexture", "Section_HatchTexture", App::PropertyString::getClassTypeId()},
+        {"ClipGroup", "Section_FillGroup", App::PropertyBool::getClassTypeId()},
+        {"ClipShowPlane", "Section_ShowPlane", App::PropertyBool::getClassTypeId()},
+        {"ClipPlaneSize", "Section_PlaneSize", App::PropertyFloat::getClassTypeId()},
+        // Both spellings: capture wrote BackLight*, apply read BackFaceLight*,
+        // so the backlight has never actually been restored by a saved view.
+        {"BackLight", "Light_EnableBacklight", App::PropertyBool::getClassTypeId()},
+        {"BackFaceLight", "Light_EnableBacklight", App::PropertyBool::getClassTypeId()},
+        {"BackLightColor", "Light_BacklightColor", App::PropertyColor::getClassTypeId()},
+        {"BackFaceLightColor", "Light_BacklightColor", App::PropertyColor::getClassTypeId()},
+        {"BackLightIntensity", "Light_BacklightIntensity", App::PropertyFloat::getClassTypeId()},
+        {"BackFaceLightIntensity", "Light_BacklightIntensity", App::PropertyFloat::getClassTypeId()},
+    };
+    for (const auto &v : legacy) {
+        auto stored = obj->getPropertyByName(v.stored);
+        if (!stored || stored->getTypeId() != v.type)
+            continue;
+        auto p = view->getPropertyByName(v.property);
+        if (!p)
+            p = view->addDynamicProperty(v.type.getName(), v.property,
+                                         boost::starts_with(v.property, "Light_")
+                                             ? "Light" : "Section");
+        if (p && p->getTypeId() == v.type)
+            p->Paste(*stored);
+    }
+}
+
 void ViewProviderSavedView::apply(CaptureOptions options)
 {
     try {
@@ -218,28 +301,12 @@ void ViewProviderSavedView::apply(CaptureOptions options)
         checkOptions(obj, options);
 
         if (options & CaptureOption::Clippings) {
-            if (auto prop = obj->getClippingProperty<App::PropertyBool>("ClipFill"))
-                ViewParams::setSectionFill(prop->getValue());
-            if (auto prop = obj->getClippingProperty<App::PropertyBool>("ClipConcave"))
-                ViewParams::setSectionConcave(prop->getValue());
-            if (auto prop = obj->getClippingProperty<App::PropertyBool>("ClipHatch"))
-                ViewParams::setSectionHatchTextureEnable(prop->getValue());
-            if (auto prop = obj->getClippingProperty<App::PropertyFloat>("ClipHatchScale"))
-                ViewParams::setSectionHatchTextureScale(prop->getValue());
-            if (auto prop = obj->getClippingProperty<App::PropertyString>("ClipHatchTexture"))
-                ViewParams::setSectionHatchTexture(prop->getValue());
-            if (auto prop = obj->getClippingProperty<App::PropertyBool>("ClipGroup"))
-                ViewParams::setSectionFillGroup(prop->getValue());
-            if (auto prop = obj->getClippingProperty<App::PropertyBool>("ClipShowPlane"))
-                ViewParams::setShowClipPlane(prop->getValue());
-            if (auto prop = obj->getClippingProperty<App::PropertyFloat>("ClipPlaneSize"))
-                ViewParams::setClipPlaneSize(prop->getValue());
-            if (auto prop = obj->getClippingProperty<App::PropertyBool>("BackFaceLight"))
-                ViewParams::setEnableBacklight(prop->getValue());
-            if (auto prop = obj->getClippingProperty<App::PropertyColor>("BackFaceLightColor"))
-                ViewParams::setBacklightColor(prop->getValue().getPackedValue());
-            if (auto prop = obj->getClippingProperty<App::PropertyFloat>("BackFaceLightIntensity"))
-                ViewParams::setBacklightIntensity(prop->getValue());
+            // What a document written before the per-view settings still
+            // carries here: the section style and the backlight, captured
+            // then as global preferences. Restoring one used to move the
+            // reader's own defaults; it becomes an override on this view
+            // instead.
+            applyLegacyClipSettings(obj, view);
 
             Base::Vector3d posX, posY, posZ, pos;
             Base::Rotation rot;
@@ -297,6 +364,32 @@ void ViewProviderSavedView::apply(CaptureOptions options)
                 }
             }
         }
+
+        if (options & CaptureOption::RenderSettings) {
+            for (const auto &name : obj->getDynamicPropertyNames()) {
+                if (!isViewRenderProperty(name.c_str()))
+                    continue;
+                auto prop = obj->getPropertyByName(name.c_str());
+                if (!prop)
+                    continue;
+                auto p = view->getPropertyByName(name.c_str());
+                if (!p)
+                    p = view->addDynamicProperty(prop->getTypeId().getName(),
+                                                 name.c_str(),
+                                                 prop->getGroup(),
+                                                 prop->getDocumentation());
+                if (!p || p->getTypeId() != prop->getTypeId())
+                    continue;
+                p->Paste(*prop);
+            }
+        }
+
+        // A saved view captured before stage 4d hands the view a
+        // Shadow_* family and, if it captured the draw style, a
+        // "Shadow" enum value. Both were just pasted verbatim; put them
+        // where they are read now (docs/CoinRetirement.md 4d).
+        if (options & (CaptureOption::DrawStyle | CaptureOption::RenderSettings))
+            Gui::migrateShadowProperties(view);
 
         if (options & CaptureOption::Visibilities) {
             if (auto prop = obj->getVisibilityProperty<App::PropertyStringList>("Visibilities")) {
@@ -362,6 +455,8 @@ void ViewProviderSavedView::checkOptions(App::SavedView *obj, CaptureOptions &op
             options |= CaptureOption::DrawStyle;
         if (obj->SaveShowOnTop.getValue())
             options |= CaptureOption::ShowOnTop;
+        if (obj->SaveRenderSettings.getValue())
+            options |= CaptureOption::RenderSettings;
     }
 }
 
@@ -400,17 +495,6 @@ void ViewProviderSavedView::capture(CaptureOptions options)
             obj->getClippingProperty<App::PropertyVector>("ClipPositionZ", true)->setValue(posZ);
             obj->getClippingProperty<App::PropertyVector>("ClipPosition", true)->setValue(pla.getPosition());
             obj->getClippingProperty<App::PropertyRotation>("ClipRotation", true)->setValue(pla.getRotation());
-            obj->getClippingProperty<App::PropertyBool>("ClipFill", true)->setValue(ViewParams::getSectionFill());
-            obj->getClippingProperty<App::PropertyBool>("ClipConcave", true)->setValue(ViewParams::getSectionConcave());
-            obj->getClippingProperty<App::PropertyBool>("ClipHatch", true)->setValue(ViewParams::getSectionHatchTextureEnable());
-            obj->getClippingProperty<App::PropertyFloat>("ClipHatchScale", true)->setValue(ViewParams::getSectionHatchTextureScale());
-            obj->getClippingProperty<App::PropertyString>("ClipHatchTexture", true)->setValue(ViewParams::getSectionHatchTexture());
-            obj->getClippingProperty<App::PropertyBool>("ClipGroup", true)->setValue(ViewParams::getSectionFillGroup());
-            obj->getClippingProperty<App::PropertyBool>("ClipShowPlane", true)->setValue(ViewParams::getShowClipPlane());
-            obj->getClippingProperty<App::PropertyFloat>("ClipPlaneSize", true)->setValue(ViewParams::getClipPlaneSize());
-            obj->getClippingProperty<App::PropertyBool>("BackLight", true)->setValue(ViewParams::getEnableBacklight());
-            obj->getClippingProperty<App::PropertyColor>("BackLightColor", true)->setValue(ViewParams::getBacklightColor());
-            obj->getClippingProperty<App::PropertyFloat>("BackLightIntensity", true)->setValue(ViewParams::getBacklightIntensity());
         }
 
         if (options & CaptureOption::Camera) {
@@ -436,6 +520,15 @@ void ViewProviderSavedView::capture(CaptureOptions options)
                         && !boost::starts_with(prop->getName(), "HiddenLine_"))
                     continue;
                 auto p = obj->getProperty(prop->getTypeId(), prop->getName(), prop->getGroup(), true);
+                p->Paste(*prop);
+            }
+        }
+
+        if (options & CaptureOption::RenderSettings) {
+            obj->SaveRenderSettings.setValue(true);
+            for (auto prop : viewRenderProperties(view)) {
+                auto p = obj->getProperty(prop->getTypeId(), prop->getName(),
+                                          "RenderSettings", true);
                 p->Paste(*prop);
             }
         }
@@ -500,6 +593,12 @@ void ViewProviderSavedView::finishRestoring()
                     obj->getPropertyByName("DrawStyle"))) {
             prop->setEnums(Gui::drawStyleNames());
         }
+        // The names are not persisted with the enum, only its index --
+        // which is why they are re-supplied above, and why a captured
+        // "Shadow" has to be converted here rather than when it is
+        // applied: the index outlives the entry
+        // (docs/CoinRetirement.md 4d/4e).
+        Gui::migrateShadowProperties(obj);
     }
     inherited::finishRestoring();
 }

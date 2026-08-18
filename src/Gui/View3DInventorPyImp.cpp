@@ -754,7 +754,7 @@ static void writeRenderDumpSidecar(View3DInventor *view,
     // Every render-engine view property, so the capture carries its
     // full staging state (the harness re-applies these 1:1).
     static const char *prefixes[] = {
-        "Render_", "RenderDebug_", "Shadow_", "HiddenLine_"};
+        "Render_", "RenderShadow_", "RenderDebug_", "HiddenLine_"};
     QJsonObject props;
     std::map<std::string, App::Property*> propMap;
     view->getPropertyMap(propMap);
@@ -1061,6 +1061,22 @@ PyObject* View3DInventorPy::getRenderStats(PyObject *args)
         avg.setItem(1, Py::Float(stats.avgColor[1]));
         avg.setItem(2, Py::Float(stats.avgColor[2]));
         dict.setItem("avgColor", avg);
+        // Backend handle pools, process-wide (see Render::RenderStats):
+        // what is left across every open 3D view, not this one's share.
+        dict.setItem("frameBuffers", Py::Long(stats.numFrameBuffers));
+        dict.setItem("maxFrameBuffers", Py::Long(stats.maxFrameBuffers));
+        dict.setItem("textures", Py::Long(stats.numTextures));
+        dict.setItem("maxTextures", Py::Long(stats.maxTextures));
+        dict.setItem("views", Py::Long(stats.numViews));
+        dict.setItem("maxViews", Py::Long(stats.maxViews));
+        dict.setItem("textureMemory",
+                     Py::Long(long(stats.textureMemory)));
+        dict.setItem("renderTargetMemory",
+                     Py::Long(long(stats.renderTargetMemory)));
+        dict.setItem("gpuMemoryUsed",
+                     Py::Long(long(stats.gpuMemoryUsed)));
+        dict.setItem("gpuMemoryMax",
+                     Py::Long(long(stats.gpuMemoryMax)));
         return Py::new_reference_to(dict);
     } PY_CATCH
 }

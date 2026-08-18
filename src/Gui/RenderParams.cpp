@@ -27,6 +27,7 @@
 #include <Inventor/SoRenderManager.h>
 #include "Application.h"
 #include "Document.h"
+#include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
@@ -51,6 +52,8 @@ public:
     ParameterGrp::handle handle;
     std::unordered_map<const char *,void(*)(RenderParamsP*),App::CStringHasher,App::CStringHasher> funcs;
     std::string Type;
+    long MaxViewIds;
+    long BackgroundReleaseDelay;
     long CoarseTessellation;
     long CoarseDeferFaces;
     bool MeshSkipRedundant;
@@ -195,6 +198,10 @@ public:
 
         Type = this->handle->GetASCII("Type", "Default");
         funcs["Type"] = &RenderParamsP::updateType;
+        MaxViewIds = this->handle->GetInt("MaxViewIds", 1024);
+        funcs["MaxViewIds"] = &RenderParamsP::updateMaxViewIds;
+        BackgroundReleaseDelay = this->handle->GetInt("BackgroundReleaseDelay", 1000);
+        funcs["BackgroundReleaseDelay"] = &RenderParamsP::updateBackgroundReleaseDelay;
         CoarseTessellation = this->handle->GetInt("CoarseTessellation", 2);
         funcs["CoarseTessellation"] = &RenderParamsP::updateCoarseTessellation;
         CoarseDeferFaces = this->handle->GetInt("CoarseDeferFaces", 1000);
@@ -490,6 +497,14 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateType(RenderParamsP *self) {
         self->Type = self->handle->GetASCII("Type", "Default");
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateMaxViewIds(RenderParamsP *self) {
+        self->MaxViewIds = self->handle->GetInt("MaxViewIds", 1024);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateBackgroundReleaseDelay(RenderParamsP *self) {
+        self->BackgroundReleaseDelay = self->handle->GetInt("BackgroundReleaseDelay", 1000);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateCoarseTessellation(RenderParamsP *self) {
@@ -1077,6 +1092,97 @@ void RenderParams::setType(const std::string &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removeType() {
     instance()->handle->RemoveASCII("Type");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docMaxViewIds() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"How many backend view ids the render engine may hand out, which\n"
+"is what decides how many 3D views can draw on it at once: each\n"
+"view takes a block for its pass sequence (about 13 ids for a\n"
+"plain viewer, docs/RenderEngine.md #3.1), and a view that finds\n"
+"no block left falls back to plain GL rather than failing. So the\n"
+"default is roughly 64 viewers, and 0 asks for the build's own\n"
+"ceiling instead, which is four times that.\n"
+"\n"
+"It is worth having a limit below the ceiling because the backend\n"
+"copies its whole view table once a frame and sizes its per-view\n"
+"pools from this number, so ids nobody opens are still paid for\n"
+"in every frame. Measured on a desktop GPU that cost is invisible\n"
+"against a 16ms frame at this width - but at the ceiling, with\n"
+"render stage timing on, it is not: the per-view GPU timer pools\n"
+"take a 59fps session to 19. Raise it for many-viewer work, not\n"
+"as a matter of course.\n"
+"\n"
+"Read once, when the backend starts: a change needs a restart.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getMaxViewIds() {
+    return instance()->MaxViewIds;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultMaxViewIds() {
+    const static long def = 1024;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setMaxViewIds(const long &v) {
+    instance()->handle->SetInt("MaxViewIds",v);
+    instance()->MaxViewIds = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeMaxViewIds() {
+    instance()->handle->RemoveInt("MaxViewIds");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docBackgroundReleaseDelay() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Milliseconds a 3D view may sit in the background before it gives\n"
+"its render targets back, or 0 to let a hidden view keep them.\n"
+"\n"
+"Targets are what a view mostly costs: 287MB was measured for one\n"
+"1644x653 view with every effect on, and until now it held them\n"
+"whether or not anyone could see it -- so a session with several\n"
+"documents open paid for all of their views to look at one. This\n"
+"gives that back for the views nobody is looking at. What the view\n"
+"keeps is everything a resize keeps: its programs, its uniforms\n"
+"and its uploaded scene, so coming back is the resize path and not\n"
+"a reload.\n"
+"\n"
+"The delay is what stops it firing on a click through the tabs.\n"
+"Coming back costs the one frame that rebuilds the targets (~68ms\n"
+"on the view measured above) and gives a byte-identical picture --\n"
+"the trade is a hitch on return against the memory in between,\n"
+"never a difference in the image. Lower it to release sooner on a\n"
+"machine short of VRAM; raise it if switching back and forth\n"
+"hitches.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const long & RenderParams::getBackgroundReleaseDelay() {
+    return instance()->BackgroundReleaseDelay;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const long & RenderParams::defaultBackgroundReleaseDelay() {
+    const static long def = 1000;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setBackgroundReleaseDelay(const long &v) {
+    instance()->handle->SetInt("BackgroundReleaseDelay",v);
+    instance()->BackgroundReleaseDelay = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removeBackgroundReleaseDelay() {
+    instance()->handle->RemoveInt("BackgroundReleaseDelay");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
@@ -5421,10 +5527,12 @@ void RenderParams::removeSunDiscSize() {
 // Auto generated code (Tools/params_utils.py:372)
 const char *RenderParams::docGroundReflection() {
     return QT_TRANSLATE_NOOP("RenderParams",
-"Mirror the model in the shadow ground plane of the\n"
-"experimental render engine: the opaque scene is re-rendered\n"
-"with a reflected camera and blended onto the ground. Only\n"
-"effective while the Shadow display style shows a ground plane.");
+"Mirror the model in the ground plane of the experimental\n"
+"render engine: the opaque scene is re-rendered with a reflected\n"
+"camera and blended onto the ground. Brings the ground plane out\n"
+"on its own -- neither the Shadow display style nor its ground\n"
+"switch is needed -- and the ground keeps its own appearance\n"
+"settings (color, size, texture) from the shadow group.");
 }
 
 // Auto generated code (Tools/params_utils.py:380)
@@ -5920,6 +6028,15 @@ void RenderParams::onRenderParamChanged(const char *sReason)
         });
         return;
     }
+    if (boost::equals(sReason, "BackgroundReleaseDelay")) {
+        // Not a per-frame feed like the rest: it times a view that has
+        // stopped drawing, so the views already in the background are
+        // waiting on the old value and have to be re-armed here.
+        foreach3DViewer([](Gui::View3DInventorViewer *viewer) {
+            viewer->armBackgroundRelease();
+        });
+        return;
+    }
     if (boost::equals(sReason, "LevelThreads")) {
         // The renderer layer cannot read Gui parameters — push the cap
         // down (applies to level workers not yet spawned).
@@ -5931,6 +6048,38 @@ void RenderParams::onRenderParamChanged(const char *sReason)
     foreach3DViewer([](Gui::View3DInventorViewer *viewer) {
         viewer->getSoRenderManager()->scheduleRedraw();
     });
+}
+
+void RenderParams::selectRenderPath()
+{
+    // Render cache 3 is what feeds the render engine, so it is the path
+    // whether or not a backend comes up: with one, the backend draws;
+    // without one, the cache's own GL renderer does, and a failure at
+    // any stage below falls back to that by itself (a backend that
+    // cannot be created, a shader pack that will not load, and a frame
+    // that returns false all leave canSkipInternal() false).
+    if (ViewParams::getRenderCache() != 3)
+        ViewParams::setRenderCache(3);
+
+    // The backend: the engine's own where this build has it, and
+    // whatever else registered if not. Resolved against what is
+    // actually registered rather than named by a literal, so a build
+    // without the engine says "Default" instead of asking for a type
+    // nobody can create, and a stored name from another build cannot
+    // survive into this one.
+    std::string type;
+    for (const auto &t : Render::RendererFactory::types()) {
+        if (boost::starts_with(t, "bgfx")) {
+            type = t;
+            break;
+        }
+        if (type.empty())
+            type = t;
+    }
+    if (type.empty())
+        type = "Default";
+    if (getType() != type)
+        setType(type);
 }
 
 void RenderParams::migrate()

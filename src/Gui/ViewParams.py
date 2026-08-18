@@ -67,10 +67,17 @@ DrawStyles = (
     ("Shaded", "Display style, shading force on", "V,6"),
     ("Flat Lines", "Display style, show both wire frame and face with shading", "V,7"),
     ("Tessellation", "Display style, show tessellation wire frame", "V,8"),
-    ("Shadow", "Display style, drop shadows for the scene.\\n"
-               "Press the shortcut again while in shadow mode to toggle the\\n"
-               "light manipulator. The menu entry cannot do it: it is a radio\\n"
-               "button, and one already ticked emits nothing when clicked.", "V,9"),
+    # No "Shadow" entry: shadows are the renderer's scene light and its
+    # map (Render_Light / Render_Shadow, the Shading section of the
+    # display style drop-down), not a display style that swallows the
+    # one you were looking at. docs/CoinRetirement.md stage 4e.
+    #
+    # It was the LAST entry, which is the only reason removing it
+    # renumbers nothing: App::PropertyEnumeration persists as an index,
+    # so dropping any other name would silently restyle every saved
+    # document. Keep it that way -- add new styles at the end, and see
+    # kLegacyShadowDrawStyle in View3DInventorViewer.cpp, which asserts
+    # this list's length because a document may still hold index 8.
 )
 
 PreSelectionToolTipCorners = (
@@ -155,7 +162,12 @@ Params = [
     ParamBool('EnablePreselection', True,
         title='Enable preselection',
         doc='Enable preselection, highlighted with specified color'),
-    ParamInt('RenderCache', 0, on_change=True),
+    ParamInt('RenderCache', 3, on_change=True,
+        doc="Which render path draws a 3D view: 0 auto, 1 distributed,\n"
+        "2 centralized Coin caching, 3 the render cache that feeds the\n"
+        "render engine. NOT a user setting -- the path is chosen at\n"
+        "startup (RenderParams::selectRenderPath), which overrides\n"
+        "whatever a config carries. Set it at runtime to compare paths."),
     ParamBool('RandomColor', False),
     ParamHex('BoundingBoxColor', 0xffffffff),
     ParamHex('AnnotationTextColor', 0xffffffff),
@@ -528,7 +540,12 @@ Params = [
     ParamBool('EnableMenuBarCheckBox',  'FC_ENABLE_MENUBAR_CHECKBOX'),
     ParamBool('EnableBacklight',  False),
     ParamHex('BacklightColor',  0xffffffff),
-    ParamFloat('BacklightIntensity',  1.0),
+    ParamInt('BacklightIntensity',  100,
+        "Backlight intensity, as a percentage. An integer because that is the\n"
+        "slot everything else uses: the Clipping dialog's slider, the 3D view\n"
+        "preference page and the viewer, which divides it by a hundred. This\n"
+        "class used to read a Float fraction from the same name -- a second,\n"
+        "separate slot that nothing ever wrote; see ViewParams::migrate()."),
     ParamBool('OverrideSelectability',  False, "Override object selectability to enable selection"),
     ParamUInt('SelectionStackSize', 30, "Maximum selection history record size"),
     ParamInt('DefaultDrawStyle', 0, 'Default display style of a new document',
@@ -558,6 +575,9 @@ def declare_begin():
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
+
+    /// One-time migration of keys that changed type or name.
+    static void migrate();
 ''')
 
 def declare_end():

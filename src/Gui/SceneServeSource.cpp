@@ -272,6 +272,7 @@ SceneServeSource::SceneServeSource(Document *doc)
     // republish.
     initRenderProperties(&pimpl->renderProps);
     pimpl->renderProps.changed = [this]() { schedulePublish(); };
+    pimpl->root->setViewObject(&pimpl->renderProps);
     pimpl->root->setExternalRenderer(pimpl->renderer.get(),
                                      &pimpl->renderProps);
     pimpl->attachViewProviders();
@@ -591,7 +592,7 @@ bool SceneServeSource::publishNow()
 
     // The two feeds a viewer supplies from outside its scene graph.
     pimpl->renderer->setBackground(backgroundFromPreferences());
-    applySectionHatchTexture(*manager);
+    applySectionHatchTexture(*manager, &pimpl->renderProps);
 
     // What the objects on this wire are called. A no-op unless something
     // was renamed, added or removed since the last publish.

@@ -65,6 +65,15 @@ HiddenLineParams = ('Hidden Lines', [_ViewParams[name] for name in (
     'HiddenLine',
 )
 
+# No UpdateGround, DisplayMode, BoundBoxScale, MaxDistance or
+# TransparentShadow: those configured the Coin SoShadowGroup and its
+# light camera, which went with the Shadow draw style
+# (docs/CoinRetirement.md stage 4e). The keys stay in ViewParams --
+# ShadowDisplayMode is still what a pre-4d document's migration reads as
+# its default display style -- but a preference nothing acts on does not
+# belong on a page. The rest of this section is the renderer's defaults
+# for the RenderShadow_* view properties, and moves to the renderer's
+# own page when the global keys follow (the stage after 4e).
 ShadowParams = ('Shadow', [_ViewParams[name] for name in (
         'ShadowSync',
         'ShadowSpotLight',
@@ -79,17 +88,12 @@ ShadowParams = ('Shadow', [_ViewParams[name] for name in (
         'ShadowGroundTextureSize',
         'ShadowGroundBumpMap',
         'ShadowGroundShading',
-        'ShadowUpdateGround',
-        'ShadowDisplayMode',
         'ShadowPrecision',
         'ShadowSmoothBorder',
         'ShadowSpreadSize',
         'ShadowSpreadSampleSize',
         'ShadowEpsilon',
         'ShadowThreshold',
-        'ShadowBoundBoxScale',
-        'ShadowMaxDistance',
-        'ShadowTransparentShadow',
     )],
 
     'Shadow'

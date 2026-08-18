@@ -47,6 +47,46 @@ Params = [
     ParamString('Type', 'Default', title='Renderer type',
         doc="Type of the experimental render engine backend. 'Default' keeps\n"
         "the plain GL pipeline. Only effective with render cache mode 3."),
+    ParamInt('MaxViewIds',  1024, title='Backend view id budget',
+        doc="How many backend view ids the render engine may hand out, which\n"
+        "is what decides how many 3D views can draw on it at once: each\n"
+        "view takes a block for its pass sequence (about 13 ids for a\n"
+        "plain viewer, docs/RenderEngine.md #3.1), and a view that finds\n"
+        "no block left falls back to plain GL rather than failing. So the\n"
+        "default is roughly 64 viewers, and 0 asks for the build's own\n"
+        "ceiling instead, which is four times that.\n"
+        "\n"
+        "It is worth having a limit below the ceiling because the backend\n"
+        "copies its whole view table once a frame and sizes its per-view\n"
+        "pools from this number, so ids nobody opens are still paid for\n"
+        "in every frame. Measured on a desktop GPU that cost is invisible\n"
+        "against a 16ms frame at this width - but at the ceiling, with\n"
+        "render stage timing on, it is not: the per-view GPU timer pools\n"
+        "take a 59fps session to 19. Raise it for many-viewer work, not\n"
+        "as a matter of course.\n"
+        "\n"
+        "Read once, when the backend starts: a change needs a restart."),
+    ParamInt('BackgroundReleaseDelay',  1000,
+        title='Background view release delay',
+        doc="Milliseconds a 3D view may sit in the background before it gives\n"
+        "its render targets back, or 0 to let a hidden view keep them.\n"
+        "\n"
+        "Targets are what a view mostly costs: 287MB was measured for one\n"
+        "1644x653 view with every effect on, and until now it held them\n"
+        "whether or not anyone could see it -- so a session with several\n"
+        "documents open paid for all of their views to look at one. This\n"
+        "gives that back for the views nobody is looking at. What the view\n"
+        "keeps is everything a resize keeps: its programs, its uniforms\n"
+        "and its uploaded scene, so coming back is the resize path and not\n"
+        "a reload.\n"
+        "\n"
+        "The delay is what stops it firing on a click through the tabs.\n"
+        "Coming back costs the one frame that rebuilds the targets (~68ms\n"
+        "on the view measured above) and gives a byte-identical picture --\n"
+        "the trade is a hitch on return against the memory in between,\n"
+        "never a difference in the image. Lower it to release sooner on a\n"
+        "machine short of VRAM; raise it if switching back and forth\n"
+        "hitches."),
     ParamInt('CoarseTessellation',  2, title='Coarse tessellation level',
         doc="Ladder level shapes are tessellated at under coarse-first\n"
         "(docs/SceneStreaming.md #7): the display mesh is built at this\n"
@@ -1193,10 +1233,12 @@ Params = [
         doc="Angular radius of the sun disc in degrees (the real sun is\n"
         "about 0.27; larger reads better in a CAD scene)."),
     ParamBool('GroundReflection',  False, title='Ground reflection',
-        doc="Mirror the model in the shadow ground plane of the\n"
-        "experimental render engine: the opaque scene is re-rendered\n"
-        "with a reflected camera and blended onto the ground. Only\n"
-        "effective while the Shadow display style shows a ground plane."),
+        doc="Mirror the model in the ground plane of the experimental\n"
+        "render engine: the opaque scene is re-rendered with a reflected\n"
+        "camera and blended onto the ground. Brings the ground plane out\n"
+        "on its own -- neither the Shadow display style nor its ground\n"
+        "switch is needed -- and the ground keeps its own appearance\n"
+        "settings (color, size, texture) from the shadow group."),
     ParamFloat('GroundReflectionIntensity',  0.4, title='Reflection intensity',
         doc="Blend factor of the mirrored model on the ground plane."),
     ParamInt('DebugViewMode',  0, title='Debug view mode',

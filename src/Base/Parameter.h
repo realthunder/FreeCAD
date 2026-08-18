@@ -50,6 +50,7 @@ using PyObject = struct _object;
 #endif
 
 #include <map>
+#include <unordered_map>
 #include <vector>
 #include <boost_signals2.hpp>
 #include <xercesc/util/XercesDefs.hpp>
@@ -290,6 +291,28 @@ protected:
     void _SetAttribute(ParamType Type, const char* Name, const char* Value);
     void _Notify(ParamType Type, const char* Name, const char* Value);
 
+    /** @name child element index
+     *
+     * FindElement() is a linear walk of this group's DOM children that
+     * transcodes a name out of Xerces for every candidate it passes, so a
+     * group of k entries costs O(k) per named lookup and O(k^2) to fill --
+     * which is what made copyTo() of a whole parameter tree quadratic. These
+     * keep a (type, name) -> element map beside the DOM so a named lookup is
+     * a hash probe instead.
+     *
+     * The map is built lazily and dropped wholesale by the rarer structural
+     * edits (clear, remove or rename a group, re-attach, reset), which are
+     * not worth tracking precisely; the next lookup pays one O(k) rebuild.
+     */
+    //@{
+    static std::string _IndexKey(const char* Type, const char* Name);
+    void _BuildIndex() const;
+    void _IndexInsert(const char* Type, const char* Name,
+                      XERCES_CPP_NAMESPACE_QUALIFIER DOMElement* Elem) const;
+    void _IndexErase(const char* Type, const char* Name) const;
+    void _IndexInvalidate() const;
+    //@}
+
     XERCES_CPP_NAMESPACE_QUALIFIER DOMElement*
     FindNextElement(XERCES_CPP_NAMESPACE_QUALIFIER DOMNode* Prev, const char* Type) const;
 
@@ -330,6 +353,10 @@ protected:
     std::string _cName;
     /// map of already exported groups
     std::map<std::string, Base::Reference<ParameterGrp>> _GroupMap;
+    /// (type, name) -> child element of _pGroupNode; see _BuildIndex()
+    mutable std::unordered_map<std::string, XERCES_CPP_NAMESPACE_QUALIFIER DOMElement*> _Index;
+    /// whether _Index describes _pGroupNode's children as they are now
+    mutable bool _IndexValid = false;
     ParameterGrp* _Parent = nullptr;
     ParameterManager* _Manager = nullptr;
     /// Means this group xml element has not been added to its parent yet.

@@ -587,12 +587,21 @@ public:
     StdCmdClipPlaneDragger();
     virtual const char* className() const
     { return "StdCmdClipPlaneDragger"; }
-protected: 
+protected:
     virtual void setOption(bool checked) {
+        // Whether the dragger is shown is a property of the view that shows
+        // it, so that is where the choice lands. It is also the user's own
+        // choice, made here rather than in the Clipping panel, so their
+        // default follows it -- the same split the panel uses.
+        Dialog::Clipping::setShowPlane(activeView(), checked);
         ViewParams::setShowClipPlane(checked);
     }
     virtual bool getOption() const {
-        return ViewParams::getShowClipPlane();
+        return Dialog::Clipping::showPlane(activeView());
+    }
+    static View3DInventor *activeView() {
+        return Base::freecad_dynamic_cast<View3DInventor>(
+                Application::Instance->activeView());
     }
 };
 StdCmdClipPlaneDragger::StdCmdClipPlaneDragger()
@@ -688,19 +697,10 @@ protected:
     virtual void activated(int iMsg);
     virtual Gui::Action *createAction();
 
-private:
-    /// Flip the shadow light manipulator on every view this command
-    /// would apply a style to.
-    void toggleShadowManip();
-
-    /// Whether this is the Shadow entry, the one style that carries a
-    /// second action on a repeat press.
-    bool isShadow = false;
 };
 
 StdCmdDrawStyleBase::StdCmdDrawStyleBase(int idx, const char *title, const char *doc)
     :Command(cacheString("Std_DrawStyle", title))
-    ,isShadow(Base::streq(title, "Shadow"))
 {
     sGroup        = "Standard-View";
     sMenuText     = title;
@@ -746,39 +746,9 @@ void StdCmdDrawStyleBase::activated(int iMsg)
     doc->foreachView<View3DInventor>( [=](View3DInventor *view) {
         if(applyAll || view == activeView) {
             View3DInventorViewer *viewer = view->getViewer();
-            if (!viewer)
-                return;
-            if (!Base::streq(sMenuText, "Shadow")) {
-               viewer->setOverrideMode(sMenuText);
-                return;
-            }
-            if (viewer->getOverrideMode() == "Shadow")
-                viewer->toggleShadowLightManip();
-            else {
-                if (!doc->getDocument()->getPropertyByName("Shadow_ShowGround")) {
-                    // If it is the first time shadow is turned on, switch to isometric view
-                    viewer->setCameraOrientation(
-                            SbRotation(0.424708f, 0.17592f, 0.339851f, 0.820473f));
-                }
-                viewer->setOverrideMode("Shadow");
-            }
+            if (viewer)
+                viewer->setOverrideMode(sMenuText);
         }
-    });
-}
-
-void StdCmdDrawStyleBase::toggleShadowManip()
-{
-    Gui::Document *doc = this->getActiveGuiDocument();
-    if (!doc) return;
-    auto activeView = doc->getActiveView();
-    bool applyAll = !activeView || QApplication::queryKeyboardModifiers() == Qt::ControlModifier;
-
-    doc->foreachView<View3DInventor>( [=](View3DInventor *view) {
-        if (!applyAll && view != activeView)
-            return;
-        View3DInventorViewer *viewer = view->getViewer();
-        if (viewer && viewer->getOverrideMode() == "Shadow")
-            viewer->toggleShadowLightManip();
     });
 }
 
@@ -794,12 +764,6 @@ Gui::Action *StdCmdDrawStyleBase::createAction()
     // viewer is always in exactly one mode. So the tick has to be put
     // back here, or the entry would sit unticked in a style it is in.
     //
-    // For Shadow that repeat means more: it toggles the light
-    // manipulator, which used to be a second click on the entry until
-    // the entries became radio buttons -- one already ticked emits
-    // nothing when clicked (docs/HANDOFF_ShadingAndDrawStyle.md §4), so
-    // the shortcut is the affordance now and the tooltip says so.
-    //
     // Menu entries never arrive here: each carries its own widget action
     // (Gui::Action::addWidget) and only forwards toggled.
     QObject::connect(action->action(), &QAction::triggered, action, [this]() {
@@ -807,8 +771,6 @@ Gui::Action *StdCmdDrawStyleBase::createAction()
         if (!act || !act->action()->isCheckable() || act->isChecked())
             return;
         act->setChecked(true, true);
-        if (isShadow)
-            toggleShadowManip();
     });
     return action;
 }
@@ -846,8 +808,8 @@ public:
         }
         // Pressing the active style's shortcut has to reach the command.
         // Under the strict policy QAction::activate() drops that press
-        // before any signal, so Shadow's manipulator toggle -- and the
-        // tick repair after it -- would never run.
+        // before any signal, so the tick repair after it would never
+        // run.
         if (auto group = qobject_cast<Gui::ActionGroup*>(action))
             group->setExclusiveOptional(true);
         // The renderer's shading options ride under the style list as a

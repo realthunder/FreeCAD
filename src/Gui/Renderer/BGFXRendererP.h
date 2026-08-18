@@ -1139,6 +1139,11 @@ public:
             // thus honors the per-sampler anisotropic flags) when this reset
             // bit is set — otherwise the flags are silently ignored.
             init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY;
+            // 0 leaves bgfx at its build ceiling; a smaller number
+            // shortens the per-frame walk over the view table and the
+            // per-view pools sized from that ceiling.
+            init.limits.maxViews = uint32_t(
+                    std::max(0, RendererFactory::maxViewIds()));
             if (!bgfx::init(init)) {
                 currentType = RendererType::Noop;
                 RENDER_ERR("init failed");
@@ -1166,6 +1171,9 @@ public:
 
     bool prepare(QOpenGLWidget *widget, RendererType::Enum type)
     {
+        // A device this build's shaders cannot run on, already reported.
+        if (glUnsupported)
+            return false;
         QElapsedTimer _warmClock;
         _warmClock.start();
         msContext = msDevice = 0;
@@ -1216,6 +1224,28 @@ public:
 
             if (currentType == RendererType::OpenGL) {
                 makeCurrent();
+                // The stock shader pack is compiled at GLSL 1.40, which
+                // is OpenGL 3.1. Below that bgfx does not refuse the
+                // device -- it takes its GL21 path and crashes building
+                // the first program -- so this is where the line is
+                // drawn, and the caller falls back to the render
+                // cache's own GL renderer as it does for any other
+                // failure here (docs/CoinRetirement.md 3.7).
+                const QSurfaceFormat fmt = context->format();
+                if (fmt.majorVersion() < 3
+                        || (fmt.majorVersion() == 3 && fmt.minorVersion() < 1)) {
+                    RENDER_ERR("OpenGL " << fmt.majorVersion() << "."
+                               << fmt.minorVersion()
+                               << " is below the 3.1 this renderer's shaders"
+                                  " need; drawing through the render cache"
+                                  " instead");
+                    // Said once. The device is not going to grow a
+                    // version, and every frame asks again.
+                    glUnsupported = true;
+                    currentType = RendererType::Noop;
+                    widget->makeCurrent();
+                    return false;
+                }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #   if defined(FC_OS_LINUX)
                 if (auto *glx = context->nativeInterface<QNativeInterface::QGLXContext>())
@@ -1264,6 +1294,10 @@ public:
             // thus honors the per-sampler anisotropic flags) when this reset
             // bit is set — otherwise the flags are silently ignored.
             init.resolution.reset = BGFX_RESET_VSYNC | BGFX_RESET_MAXANISOTROPY;
+            // See the standalone path above: a startup option, because
+            // bgfx::init happens once per process.
+            init.limits.maxViews = uint32_t(
+                    std::max(0, RendererFactory::maxViewIds()));
             if (!bgfx::init(init)) {
                 widget->makeCurrent();
                 RENDER_ERR("init failed");
@@ -1560,6 +1594,10 @@ public:
 #endif
     };
     std::vector<std::string> types;
+    /// Set once when the GL device turns out to be older than the stock
+    /// shader pack needs: there is nothing to retry, and a frame asks
+    /// every time.
+    bool glUnsupported = false;
     RendererType::Enum currentType = RendererType::Noop;
     std::string name = "bgfx";
     std::set<BGFXRenderer::Private *> renderers;
@@ -1911,6 +1949,17 @@ struct GpuGeometry
     /// directly into instance ranges.
     bgfx::VertexBufferHandle triEdgeInst = BGFX_INVALID_HANDLE;
     bgfx::VertexBufferHandle triCornerInst = BGFX_INVALID_HANDLE;
+    /// triEdgeInst with the edges interior to a flat patch left out --
+    /// the polygon boundary of the tessellated surface, which is what a
+    /// wireframe draw style asks for (submitTessellation). Only built
+    /// when such a draw arrives, and only when there is something to
+    /// drop: a mesh whose every edge is a crease keeps using
+    /// triEdgeInst. creaseEdgeFirst[t] is the instance the triangle t's
+    /// kept edges start at, so a partial index range still maps onto an
+    /// instance range.
+    bgfx::VertexBufferHandle creaseEdgeInst = BGFX_INVALID_HANDLE;
+    std::vector<uint32_t> creaseEdgeFirst;
+    bool creaseEdgeBuilt = false;
     /// Texture-coordinate stream of textured draws, built lazily on
     /// first textured use.
     bgfx::VertexBufferHandle texcoord = BGFX_INVALID_HANDLE;
@@ -1940,7 +1989,11 @@ struct GpuGeometry
                 freed = true;
             }
         }
-        for (auto vb : {&vbh, &triEdgeInst, &triCornerInst, &texcoord}) {
+        creaseEdgeFirst.clear();
+        creaseEdgeFirst.shrink_to_fit();
+        creaseEdgeBuilt = false;
+        for (auto vb : {&vbh, &triEdgeInst, &triCornerInst, &creaseEdgeInst,
+                        &texcoord}) {
             if (bgfx::isValid(*vb)) {
                 bgfx::destroy(*vb);
                 *vb = BGFX_INVALID_HANDLE;
@@ -2086,6 +2139,133 @@ struct GpuGeometry
         triCornerInst = bgfx::createVertexBuffer(
             cmem, LineQuadVertex::ms_pointInstLayout);
         track(cmem->size);
+    }
+
+    /// The polygon boundary of the tessellated surface: triEdgeInst
+    /// minus the edges a flat patch was split along. An edge shared by
+    /// two triangles of the same plane is an artefact of triangulating
+    /// a polygon, and GL never draws it -- the shapes this path serves
+    /// (SoCube, SoFCBoundingBox: SoFCVertexCache's glrender shapes) are
+    /// replayed by Coin as their own polygons under glPolygonMode. Only
+    /// coplanar neighbours are dropped, so a tessellated curve keeps
+    /// every edge it had.
+    ///
+    /// Built once per mesh, on the first wireframe draw of it. Leaves
+    /// creaseEdgeInst invalid when nothing was dropped, so the common
+    /// mesh costs no second buffer and the caller falls back to
+    /// triEdgeInst.
+    void ensureCreaseEdges(const Render::MeshData &mesh)
+    {
+        if (creaseEdgeBuilt)
+            return;
+        creaseEdgeBuilt = true;
+        const int n = mesh.numTriangleIndices;
+        if (n < 3 || !(bgfx::getCaps()->supported & BGFX_CAPS_INSTANCING))
+            return;
+        LineQuadVertex::init();
+        const int numTri = n / 3;
+
+        auto normalOf = [&mesh](int t, float *out) {
+            const int32_t *ix = mesh.triangleIndices + t*3;
+            const float *p0 = mesh.positions + ix[0]*3;
+            const float *p1 = mesh.positions + ix[1]*3;
+            const float *p2 = mesh.positions + ix[2]*3;
+            const float ax = p1[0]-p0[0], ay = p1[1]-p0[1], az = p1[2]-p0[2];
+            const float bx = p2[0]-p0[0], by = p2[1]-p0[1], bz = p2[2]-p0[2];
+            float nx = ay*bz - az*by;
+            float ny = az*bx - ax*bz;
+            float nz = ax*by - ay*bx;
+            const float len = std::sqrt(nx*nx + ny*ny + nz*nz);
+            // A degenerate triangle has no plane to compare; a zero
+            // normal fails every coplanarity test, so its edges stay.
+            if (len > 1.0e-20f) {
+                nx /= len; ny /= len; nz /= len;
+            }
+            else {
+                nx = ny = nz = 0.0f;
+            }
+            out[0] = nx; out[1] = ny; out[2] = nz;
+        };
+
+        // Coplanar to within about a degree. Tight on purpose: this is
+        // meant to catch a polygon split into triangles, not to
+        // simplify a curved surface into feature lines.
+        constexpr float kCoplanarDot = 0.99985f;
+
+        std::vector<uint8_t> keep(size_t(n), 1);
+        // First index position each edge was seen at; -1 once it has
+        // been paired, so a third user of a non-manifold edge is kept
+        // rather than silently matched again.
+        std::unordered_map<uint64_t, int32_t> seen;
+        seen.reserve(size_t(n));
+        std::vector<float> normals(size_t(numTri) * 3);
+        for (int t = 0; t < numTri; ++t)
+            normalOf(t, &normals[size_t(t)*3]);
+
+        int dropped = 0;
+        for (int i = 0; i < n; ++i) {
+            const int t = i / 3, e = i % 3;
+            const int32_t ia = mesh.triangleIndices[i];
+            const int32_t ib = mesh.triangleIndices[t*3 + (e + 1) % 3];
+            const uint64_t lo = uint64_t(uint32_t(ia < ib ? ia : ib));
+            const uint64_t hi = uint64_t(uint32_t(ia < ib ? ib : ia));
+            const uint64_t key = (hi << 32) | lo;
+            auto it = seen.find(key);
+            if (it == seen.end()) {
+                seen.emplace(key, int32_t(i));
+                continue;
+            }
+            const int32_t j = it->second;
+            it->second = -1;
+            if (j < 0)
+                continue;
+            const float *na = &normals[size_t(t)*3];
+            const float *nb = &normals[size_t(j / 3)*3];
+            if (na[0]*nb[0] + na[1]*nb[1] + na[2]*nb[2] < kCoplanarDot)
+                continue;
+            keep[size_t(i)] = 0;
+            keep[size_t(j)] = 0;
+            dropped += 2;
+        }
+
+        // Nothing to drop, or nothing left to draw (a mesh that is one
+        // flat patch seen from both sides): triEdgeInst already says it.
+        if (dropped == 0 || dropped == n)
+            return;
+
+        creaseEdgeFirst.resize(size_t(numTri) + 1);
+        const bgfx::Memory *emem = bgfx::alloc(
+            uint32_t(n - dropped) * 16 * sizeof(float));
+        float *d = reinterpret_cast<float *>(emem->data);
+        uint32_t out = 0;
+        for (int t = 0; t < numTri; ++t) {
+            creaseEdgeFirst[size_t(t)] = out;
+            for (int e = 0; e < 3; ++e) {
+                const int i = t*3 + e;
+                if (!keep[size_t(i)])
+                    continue;
+                const int32_t ia = mesh.triangleIndices[i];
+                const int32_t ib = mesh.triangleIndices[t*3 + (e + 1) % 3];
+                d[0] = mesh.positions[ia*3];
+                d[1] = mesh.positions[ia*3 + 1];
+                d[2] = mesh.positions[ia*3 + 2];
+                // No stipple run: each edge starts its own pattern, the
+                // way glLineStipple restarts on every polygon edge.
+                d[3] = 0.0f;
+                d[4] = mesh.positions[ib*3];
+                d[5] = mesh.positions[ib*3 + 1];
+                d[6] = mesh.positions[ib*3 + 2];
+                d[7] = 0.0f;
+                for (int c = 8; c < 16; ++c)
+                    d[c] = 1.0f;
+                d += 16;
+                ++out;
+            }
+        }
+        creaseEdgeFirst[size_t(numTri)] = out;
+        creaseEdgeInst = bgfx::createVertexBuffer(
+            emem, LineQuadVertex::ms_instLayout);
+        track(emem->size);
     }
 };
 
@@ -2735,10 +2915,12 @@ public:
     /// Stateful particle emitters simulated per view, and the fixed
     /// simulation steps each may take in one frame
     /// (docs/RenderEngine.md §5.8). Both are view-id budget: a viewer
-    /// occupies NUM_VIEWS contiguous bgfx ids out of the 512 the build
-    /// configures (src/3rdParty/CMakeLists.txt), so these numbers are
-    /// part of what says how many viewers can be open at once --
-    /// NUM_VIEWS is 87 today, which fits five. Past the budget
+    /// occupies a block of contiguous bgfx ids, sized to the passes its
+    /// frames declare, out of the Render/MaxViewIds a session hands out
+    /// (default 1024, ceiling BGFX_CONFIG_MAX_VIEWS in
+    /// src/3rdParty/CMakeLists.txt), so these numbers are part of what
+    /// says how many viewers can be open at once -- they widen the
+    /// block, not the budget it comes from. Past the budget
     /// BGFXRendererLibP::getView refuses the viewer and it falls back
     /// to Coin rendering; it does not crash, and it does not silently
     /// share ids. A
@@ -3206,6 +3388,12 @@ public:
     //                GL JIT ~5 s for this set). A resize keeps them --
     //                init(keepShared) skips destroyPrograms() -- and only
     //                a shader-generation or MSAA change releases them.
+    //                ! Because a resize keeps them while re-running the
+    //                whole of init(), every one of them must be created
+    //                through ensureUniform()/ensureProgram() (or an
+    //                equivalent isValid guard): a plain re-creation is
+    //                deduped by bgfx, but by refcounting UP, so the
+    //                handle is never returned to the pool.
     enum HandleLife : uint8_t { LifeSized, LifeView, LifeProgram };
     template <typename Fn>
     void forEachHandle(Fn &&fn)
@@ -3321,7 +3509,7 @@ public:
         fn(m_progGtaoBlur, LifeProgram);
         fn(m_progGtaoDepth, LifeProgram);
         fn(m_progSsaoBlur, LifeProgram);
-        fn(m_progCavity, LifeSized);
+        fn(m_progCavity, LifeProgram);
         fn(m_progVol, LifeProgram);
         fn(m_progVolAccum, LifeProgram);
         fn(m_progReflMedia, LifeProgram);
@@ -3391,11 +3579,11 @@ public:
             fn(h, LifeProgram);
         fn(u_aoParams, LifeProgram);
         fn(u_aoParams2, LifeProgram);
-        fn(u_cavityParams, LifeSized);
+        fn(u_cavityParams, LifeProgram);
         fn(u_aoKernel, LifeProgram);
         fn(s_texEnv, LifeProgram);
         fn(u_pbrParams, LifeProgram);
-        fn(u_matcapParams, LifeSized);
+        fn(u_matcapParams, LifeProgram);
         fn(u_envSH, LifeProgram);
         fn(s_texBump, LifeProgram);
         fn(u_bumpParams, LifeProgram);
@@ -3457,12 +3645,12 @@ public:
         fn(u_ambient, LifeProgram);
         fn(u_envAmbient, LifeProgram);
         fn(u_params, LifeProgram);
-        fn(u_polyOffset, LifeSized);
+        fn(u_polyOffset, LifeProgram);
         fn(u_clipParams, LifeProgram);
         fn(u_clipPlanes, LifeProgram);
         fn(u_linePattern, LifeProgram);
 #ifdef FC_RENDERER_STANDALONE
-        fn(m_progPresent, LifeSized);
+        fn(m_progPresent, LifeProgram);
 #endif
         // Per-view-lifetime resources. The impact map is sized by the
         // map resolution, not by the window; the stateful-particle
@@ -3511,6 +3699,51 @@ public:
 
     bgfx::TextureHandle createTexture(bgfx::TextureFormat::Enum format, uint64_t flags = 0,
                                       bool sampled = false);
+
+    /// Target sets that are allocated only while something wants them,
+    /// rather than wherever the GPU merely permits them. Together they
+    /// are ~352MB of a ~554MB per-view footprint at 1080p, and a
+    /// default configuration draws none of them.
+    ///
+    /// ! The order must match the name table in updateEffect().
+    enum EffectGroup : uint8_t {
+        EffectVolumetric,  ///< raymarch pair + water/cloud/fire intervals
+        EffectBulbShadow,  ///< the fixed 2048^2 bulb shadow atlas
+        EffectReflection,  ///< the mirrored-camera re-render target
+        EffectBloom,       ///< quarter-res halo + blur ping
+        EffectSSAO,        ///< depth+normal prepass, AO chain, glass interval
+        EffectShadow,      ///< the scene light's shadow maps (moments,
+                           ///< blur ping, glass tint pair)
+        NumEffectGroups
+    };
+    /// Does this group's framebuffer set exist right now?
+    bool effectAllocated(EffectGroup g) const;
+    /// Build / release one group. Prefer updateEffect().
+    bool allocEffect(EffectGroup g);
+    void freeEffect(EffectGroup g);
+    /// Reconcile a group against demand, once per frame.
+    ///
+    /// ! \a want must be a pure CONFIGURATION predicate. Passing a
+    /// frame's *Active flag would fold in scene content ("a water body
+    /// is on screen this frame") and free the set across ordinary
+    /// editing, only to rebuild it moments later.
+    void updateEffect(EffectGroup g, bool want);
+    /// A group whose allocation failed: not retried until the pool has
+    /// a real chance again (a resize, or the config turning it off and
+    /// back on). Retrying every frame is what made a full pool spin.
+    bool effectFailed[NumEffectGroups] = {};
+    /// A glass body has been seen in this view's scene.
+    ///
+    /// The one consumer of the SSAO group that has no preference at all
+    /// -- glass is a material, so its demand is scene state, and the
+    /// rule above says scene state may add to a group's demand but
+    /// never take it away. Latching the sighting is how that demand
+    /// joins a predicate the configuration also drives: without it,
+    /// "config off, glass on screen" would free the group and rebuild
+    /// it in the same frame, every frame. Cleared with the targets it
+    /// speaks for (destroyTargets), so a resize is where a document
+    /// that no longer has glass gives the 98MB back.
+    bool glassSeen = false;
 
     void init(bool keepShared = false);
 
@@ -4051,7 +4284,10 @@ public:
     /// Tessellation draw style: the triangle edges as geometry, over a
     /// background-coloured fill that occludes what is behind. Stands in
     /// for glPolygonMode(GL_LINE) plus SoRenderManager::HIDDEN_LINE,
-    /// neither of which a modern API has.
+    /// neither of which a modern API has. The fill belongs to the
+    /// display MODE (Material::drawstyleoverride); a lone SoDrawStyle
+    /// node asking for a wireframe gets the edges alone, as it does
+    /// from Coin.
     void submitTessellation(const Render::DrawCall &draw,
                             const float *viewMatrix, uint16_t viewId);
 
@@ -4180,7 +4416,9 @@ public:
     /// curbs shimmer on razor-straight CAD edges.
     /// (Re)create the shadow map targets for the requested size
     /// (ShadowPrecision); the stored moments are lost, so the cached
-    /// map re-renders.
+    /// map re-renders. The EffectShadow group's builder -- go through
+    /// updateEffect(), which owns when the set exists at all and keeps
+    /// a failed allocation from being retried every frame.
     void ensureShadowTargets(uint16_t size);
 
     void submitShadowBlur(float smoothBorder);
@@ -5083,6 +5321,12 @@ public:
     // (re)created for the requested size by ensureShadowTargets.
     static constexpr uint16_t kShadowMaxSize = 2048;
     uint16_t shadowSize = 0;
+    /// The size the configuration asks for, resolved from
+    /// ShadowPrecision by the frame before it reconciles EffectShadow.
+    /// The one group whose extent is a setting rather than the
+    /// viewport, so allocEffect() reads it instead of width/height and
+    /// a change to it rebuilds the set (updateEffect).
+    uint16_t shadowSizeWanted = 0;
     bgfx::TextureFormat::Enum shadowFormat = bgfx::TextureFormat::RG32F;
     bool m_shadow = false;     // shadow resources exist (caps allow it)
     // The reduced RG16F moment path (float32 not linearly filterable) always
@@ -5461,6 +5705,14 @@ public:
     // one re-create per view and not one per streamed arrival. (Regression:
     // 6065ad06ed dropped the interaction-triggered rebuild that masked this.)
     int warmup = 0;
+    /// init() could not build the scene framebuffer -- the handle pool
+    /// is full. Latched so the frame path stops asking: a bailed frame
+    /// never reaches bgfx::frame(), and bgfx reclaims a destroyed
+    /// handle only at a frame boundary, so retrying every frame both
+    /// spins and eats the pool it is waiting on. Cleared by the next
+    /// size, scale or program change, which is when there is anything
+    /// new to try.
+    bool targetsFailed = false;
     bool ontop = false;   // route submits to the highlight pass
     bool selPass = false; // route opaque-view submits into ViewSelection
                           // (non-on-top selection draws follow the opaque

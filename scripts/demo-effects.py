@@ -74,7 +74,10 @@ def build():
 
         view = FreeCADGui.ActiveDocument.ActiveView
         pump()
-        FreeCADGui.runCommand("Std_DrawStyleShadow", 0)
+        # The scene light is a shading switch now, not a draw style
+        # (docs/CoinRetirement.md stage 4e): Render_Light puts the
+        # light in, Render_Shadow (default on) casts its map.
+        FreeCADGui.activeDocument().activeView().Render_Light = True
         view.Render_Volumetric = True
 
         # Water pool: demo box, top face = the water surface (z = 3);

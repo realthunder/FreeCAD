@@ -552,8 +552,59 @@ Two places could fix it, and the obvious one is the trap:
   the symmetric place: the bridge does it for the backend, this does it
   for glr, and nothing capture-side moves.
 
-Not done here. Recorded rather than half-landed, since it wants its own
-verification pass across the icon sites, not just this label.
+**Done 2026-08-16, the second way** (`SoFCRendererP::applyBillboard`).
+The replay loop asks each autozoom entry whether it is a billboard, and
+substitutes the camera basis scaled to world units per screen pixel,
+instead of calling the node's `GLRender`. `pixelScale` when set, the
+backend's glyph factor when not (`SoAutoZoomTranslation::DefaultPixelScale`,
+so the two paths read one number). Measured on the label of the table
+above: the delta a label adds to its frame went from **18042 pixels to
+459**, which is what the backend and cache 0 both read, to the pixel.
+
+The scale itself took two tries, and the first one is the trap.
+`SbViewVolume::getWorldToScreenScale` answers a *nearby* question -- the
+world radius of a SPHERE covering a given screen radius -- and its
+perspective form is a tangent construction, linear only in the small and
+drifting off-axis. Asked for the viewport width it made a corner label
+half again too large under a perspective camera; asked for one pixel it
+was still 8% small. An orthographic camera showed neither, which is why
+the first version passed. It now evaluates the backend's own expression
+element for element (`2d/(P[1][1]*H)`, the depth term dropped for an
+orthographic projection), so the two paths size a billboard by one piece
+of arithmetic rather than by two that agree in the middle of the view.
+
+### The backend's billboard is not oversized -- what that measurement was
+
+The same run read the backend's label at 1572 blue pixels against cache
+0's 1494 and glr's 1519, and that was carried forward as "the backend's
+billboard is ~5% large in area under a perspective camera". It is not.
+Measured again as an EXTENT rather than a count, with one camera pinned
+across all three legs:
+
+| | cache 0 | backend |
+|---|---|---|
+| font 12 | 98x29 | 99x30 |
+| font 48 | 361x84 | 362x85 |
+
+The box stays **one pixel** larger in each dimension while the label
+grows 3.7x, and it reads the same orthographic and perspective, centre
+of the view and corner. A 5% scale error would be 18 pixels at font 48.
+The blue-pixel excess meanwhile *falls* with size, 5.2% to 2.9% -- which
+is how a constant-width antialiased edge behaves (it scales with the
+perimeter) and the opposite of how a scale error behaves. So the
+backend's quad is the same size as Coin's blit and about half a pixel
+softer at its border, and the count that said otherwise was measuring
+the border.
+
+⚠️ Two harness lessons, both of which produced confident wrong numbers
+here. **A thresholded pixel count is not a size** -- it moves with edge
+filtering as readily as with scale, and squaring it into an "area"
+turns a one-pixel border into 5%. **Amplify before believing a few
+percent**: the same label at 4x the font separates a scale error, which
+grows with it, from a quantisation, which does not. And `fitAll` inside
+a leg frames the legs differently -- 40 pixels apart here -- which under
+a perspective camera changes the label's depth and therefore its size,
+so the camera must be captured once and re-pinned before every grab.
 
 **Two numbers per case, because the capture is not the frame.** Every
 row above is measured twice, `saveImage` and a screen grab, and one case
@@ -634,6 +685,127 @@ Still unvisited from 3.2 after this: **FEM** (`BUILD_FEM=OFF` in this
 tree, so it was not measurable here), large models, and VR /
 quad-buffer stereo.
 
+### 3.7 Can this default fail on a machine that only cache 0 would suit?
+
+Asked before making the path a default rather than a choice
+(2026-08-16). Two separate questions, because the default has two
+layers: the backend, and the render cache under it.
+
+**The backend layer is supposed to degrade to the cache's own GL
+renderer, and by construction it does:** `renderOk` is false at every
+frame entry and set true only by a frame that finished, so
+`canSkipInternal()` is false, `SoFCRenderer::render()` does not return
+early, and `renderScene()` clears and un-suppresses Coin's background
+whenever `render()` returned false. Nothing skips Coin on a claim the
+backend has not made good on.
+
+**Two failures were injected to check that, rather than read**, and
+between them they found one real defect and one that is still open:
+
+| what fails | how it was tested | what the user gets |
+| --- | --- | --- |
+| the shader pack cannot be loaded | `FC_BGFX_SHADER_DIR` at an empty directory | the screen is **correct** -- the cache's GL renderer draws it, gradient and axis cross included. Every **screenshot** came back black; fixed 2026-08-16, below |
+| the driver reports OpenGL 2.1 | `MESA_GL_VERSION_OVERRIDE=2.1` | was a **SIGSEGV** inside bgfx program creation (`Program create: GL23: GL21, GL22`); the device is refused up front now, and the cache's GL renderer draws |
+| no GL context / no native handle | code read only (`prepare()` returns false, the view is never created) | the cache's GL renderer draws |
+| `bgfx::init` refuses the device | code read only | the cache's GL renderer draws |
+| the build has no backend at all | `selectRenderPath()` resolves `Type` to `Default` | plain GL, no warnings |
+
+**The screenshot defect, and why it looked like a black window.**
+`QOpenGLWidget::makeCurrent()` binds the *widget's* framebuffer. The
+frame's success path knows this and restores the caller's binding before
+the blit; its bail paths called `makeCurrent()` and did not. So a frame
+that failed handed Coin the widget's framebuffer no matter what the
+caller had bound: on screen that is the right one, which is why the
+window looked perfect, and a screenshot's capture target was left empty
+-- black, through all three of `FramebufferObject`, `GrabFramebuffer`
+and `CoinOffscreenRenderer`. The binding is now read once at the top of
+the frame and restored by every bail as well as by the blit.
+
+⚠️ **Read the measurement, not the window.** This was first written up
+here as "a black viewport" because `saveImage` came back black and a
+screenshot is how these probes see. `QWidget::grab()` of the 3D view --
+which composites what is actually on screen -- showed the model the
+whole time. A capture path is not a witness to the screen when the
+capture path is the thing that is broken.
+
+**The OpenGL floor is 3.1, and it is checked now.** The desktop shader
+pack is compiled at GLSL 1.40 (`-p 140` in `BGFXShaders.cmake`), so a GL
+2.1 class driver -- pre-Sandy-Bridge Intel, indirect GLX over `ssh -X`,
+some RDP and VM stacks, ancient Mesa -- reaches bgfx's GL21 path with
+shaders it cannot compile. bgfx does not refuse such a device; it
+crashed building the first program, taking the session with it, and none
+of the fallbacks above were reached because nothing had failed *yet*.
+`prepare()` now compares the created context's version against 3.1 and
+refuses below it, once (a device does not grow a version, and every
+frame asks again), which lands on the same fallback as every other
+failure here.
+
+The leg that found it is an artificial cap -- the driver keeps every
+entry point and only reports an older version -- so it is not proof of
+what a genuine old GPU does. It is a fair proxy for the mechanism, and
+the guard is written against the reported version, which is what such a
+machine reports too.
+
+**The cache layer is the real exposure**, because it now applies to
+everyone including those machines, and it is not driver-dependent but
+behavioural. What is known to differ from cache 0:
+
+- ~~**`SoCube` with `SoDrawStyle::LINES` is not drawn** by the render
+  cache~~ -- **not true any more, measured 2026-08-16.** The cache's GL
+  renderer draws it; what it dropped was the **line pattern**, because
+  the width and stipple were applied only to draws typed
+  `Material::Line`, and a cube in `SoDrawStyle::LINES` is a *triangle*
+  draw handed to `glPolygonMode`. So the geometry check's dashed box
+  came out solid, not absent. Fixed, and the 2022 workaround in
+  `TaskCheckGeometry.cpp` (which omitted the box under render cache 3)
+  is gone with it -- the box is back on every path.
+  The **backend** was the one drawing it wrong, and worse: it took
+  every `SoDrawStyle::LINES` for the **Tessellation display mode** and
+  filled the faces in the background colour, so the box hid the shape it
+  was drawn around. The two are now told apart by whether the style
+  arrived as a scene-wide *override*, which is what the display mode is
+  and a lone `SoDrawStyle` node is not (`Material::drawstyleoverride`,
+  scene dump v57). Measured: the delta the box adds went 39437 -> 1566
+  pixels on the backend, against 463 on both other paths.
+  That last gap was the backend drawing the box's **triangulation**:
+  `submitTessellation` had one segment per triangle index position, so
+  every face carried a diagonal, and the pattern never reached it
+  because the bridge only put `linepattern` on a `Material::Line`. Both
+  fixed 2026-08-16. GL hands `LINES` to `glPolygonMode` and the shapes
+  that arrive this way are `SoFCVertexCache`'s **glrender** shapes
+  (`SoCube`, `SoText2`, `SoFCBoundingBox`) -- ones Coin replays as its
+  own polygons -- so a diagonal is an artefact of triangulating them and
+  GL never draws one. `GpuGeometry::ensureCreaseEdges` drops the edges
+  shared by two coplanar triangles and keeps everything else, so a
+  tessellated curve is unchanged, and its per-triangle offsets keep a
+  partial index range mapping onto an instance range. The display MODE
+  keeps every triangle edge: there the tessellation is the thing being
+  shown. Delta 1954 -> 859 against cache 0's 498; the rest is dash phase
+  and the quad line's antialiasing, and at a threshold that admits an
+  antialiased dash the two cover 999 and 898 pixels of the same lines.
+- ~~**`SoImage` capture companions** are drawn by the cache's GL
+  renderer at pixel coordinates read as world units (3.6)~~ -- **fixed
+  2026-08-16**, see the end of 3.6. The GL pass carries the backend's
+  per-frame billboard math now, and reads what cache 0 reads.
+- **Preselection highlight** outlines the face where cache 0 fills it
+  (3.3). By design, and configurable, but it is a visible difference.
+- **Anaglyph stereo** is blank -- on both legs, so not attributable to
+  this default, but it is not a reason to think cache 0 is safer.
+- **Not measured anywhere:** VR (`View3DInventorRiftViewer`),
+  quad-buffer stereo, FEM result meshes, large models on GPUs other
+  than the two tested.
+
+So the honest answer is that no machine is known where cache 0 works
+and cache 3 does not; what a machine can lose is the backend, and what
+it falls back to had two drawing defects of its own -- both fixed
+2026-08-16, on the reasoning that the fallback is no longer a path a
+user chose. Both were measured against cache 0 on the same frame rather
+than argued from the code, and the same measurement caught the backend
+being the wrong one of the three on the first of them -- twice over, as
+it turned out: the fill, and then the triangulation underneath it. The
+third thing that measurement appeared to catch, an oversized billboard
+on the backend, did not survive being measured a second way (3.6).
+
 ## 4. Plan
 
 Ordered so that nothing user-visible regresses at any step.
@@ -658,10 +830,11 @@ registered on top.
 **Stage 1c — the workbench scene graphs. DONE** (§3.6): Draft (wire,
 text, dimension, working-plane grid), `App::AnnotationLabel`, Mesh,
 Points and Assembly all draw on the backend, and cross-leg it agrees
-with glr on every one of them. The single disagreement indicts **glr**,
-not the backend: it draws `SoImage` capture companions at pixel
-coordinates read as world units, because `billboard`/`pixelScale` are
-consumed only by the bridge that feeds the backend. TechDraw turned out
+with glr on every one of them. The single disagreement indicted **glr**,
+not the backend: it drew `SoImage` capture companions at pixel
+coordinates read as world units, because `billboard`/`pixelScale` were
+consumed only by the bridge that feeds the backend (fixed 2026-08-16,
+end of 3.6). TechDraw turned out
 not to be a 3D path at all. Measured on llvmpipe **and** on the real GPU
 (Mesa d3d12, RTX 3070 Ti), which read the same. Still unvisited from
 §3.2: FEM (not built in this tree) and large models.
@@ -950,9 +1123,31 @@ zero in every case on both paths. Three findings are worth keeping:
   frame, the defect is three quarters of the difference and the dragger
   is lost inside it.
 
-**Stage 2 — flip the defaults.** `RenderCache` 3 and a real `Type` as
-shipped defaults, with a one-time migration for existing user configs.
-Keep both parameters working exactly as now.
+**Stage 2 — flip the defaults. DONE** (2026-08-16), and further than
+this line asked: the render path is not a persisted setting at all.
+`RenderParams::selectRenderPath()`, called once from
+`Gui::Application::initApplication` before anything reads either key,
+sets `RenderCache` to 3 and `Type` to the engine's backend, **overriding
+whatever the configuration carries**. So no migration is needed for
+existing configs, a machine that once wrote a bad choice does not keep
+it, and a `Type` naming a backend this build does not have cannot
+survive into it -- the type is resolved against
+`RendererFactory::types()`, falling back to `Default` when nothing is
+registered (a build without `BUILD_BGFX`), so it never asks for a
+backend nobody can create.
+
+Runtime changes work exactly as before: setting either parameter from
+the console or a script re-selects the path for that session, which is
+what an A/B comparison needs. Nothing in the tree selected it any other
+way -- every `scripts/demo-*.py` sets `RenderCache` at runtime, and
+`render-verify.sh`'s `--user-cfg` is an empty isolation config, not a
+path selector -- so no harness changed. ⚠️ What no longer works is
+selecting the path *from* a config file, since startup overrides it.
+
+The `View` preference-pack template carried `RenderCache` and `UseVBO`,
+which would have imposed the author's render path and driver switch on
+whoever applied the pack -- the travel rule of `docs/ViewSettings.md` 2,
+in a place that predates it. Both are out of the template.
 
 One prerequisite of this stage is already in: while the backend was
 opt-in, it was acceptable for it to be built by the first 3D view and
@@ -966,12 +1161,18 @@ defect that would have hit every user on this default: Qt 6.4+ recreates
 a top-level's native window on its first `QOpenGLWidget`, so the main
 window vanished and came back on the first document.
 
-**Stage 3 — hide the switches.** Remove render cache and renderer type
-from the preferences UI; keep the parameters as the debug/A-B route
-(`ViewParams`/`RenderParams` are still settable from the console and by
-`--user-cfg`, which is what `scripts/render-verify.sh` already uses).
-The Coin path stays fully functional and fully tested — it just stops
-being something a user can wander into.
+**Stage 3 — hide the switches. DONE** (2026-08-16). The render cache,
+renderer type, `UseVBO` and `TransparentObjectRenderType` are off the
+3D View preference page. The parameters remain the debug/A-B route,
+from the console or a script (not `--user-cfg` -- see stage 2). The
+Coin path stays fully functional and fully tested; it just stops being
+something a user can wander into.
+
+The one place the UI still moves the render cache is the Clipping
+panel's offer to switch to the renderer when the section fill needs it.
+Under this default it is unreachable in an ordinary session and only
+answers a developer who switched the path off at runtime, which is
+still coherent, so it stays.
 
 **Stage 4 — the scene light, then the draw style** (§3.4). Not a menu
 cleanup. `Shadow` is the only thing that puts a light in the graph the
@@ -1003,19 +1204,254 @@ one. In order:
 
   ⚠️ `Render_Shadow` defaults **on**, so a test that switches it on
   measures nothing. Switch it off to see the map.
-- **4b — the ground moves to the backend.** Partly there already
-  (`Render::LightConfig::ground`); the rest is the Coin geometry in
-  `pcShadowGroundGroup`, which today also has to carry its own
-  `SoPolygonOffset` to match the one every Part shape has.
-- **4c — decide the plain-Coin path.** `SoShadowGroup` is Coin's only
-  shadow implementation, so a cache-0 user loses shadows outright. Under
-  this document's premise that is acceptable — but it is a decision to
-  take deliberately, not a refactor to fall into.
-- **4d — map `Shadow_*` onto `Render_*` and migrate.** All three stores
-  in §3.4: the property, the camera blob, and `SavedView`. Follow the
-  `Shadow_FlatLines` precedent already in `activateShadow()`.
-- **4e — drop `Shadow` from `drawStyleNames()`.** Safe only because it
-  is the last index; assert that rather than assume it.
+- **4b -- the ground moves to the backend. DONE** (2026-08-16). The
+  Coin geometry in `pcShadowGroundGroup` is gone: the `SoFaceSet` and
+  its `SoCoordinate3`, the light model, the shape hints, the two
+  texture-coordinate nodes and the `SoPolygonOffset` that existed only
+  to match the one `PartGui::ViewProviderPartExt` puts on nearly every
+  shape. `Render::LightConfig` is the only ground now.
+
+  Two things the removal turned up, and neither was the geometry:
+
+  - **The port had never seen two of the ground's properties, and both
+    default on.** `ShadowGroundShading` and `ShadowGroundBackFaceCull`
+    are the ones Coin states as nodes *above* the quad -- an
+    `SoLightModel` and an `SoShapeHints` -- rather than on the quad
+    itself, so the bridge, which walks the ground's own properties,
+    never carried them. The backend's ground was lit and two-sided
+    whatever they said: a camera below the ground plane was shut out by
+    a grey slab where Coin let it look straight through. Both are in
+    `LightConfig` now (`groundShading`, `groundBackFaceCull`), read by
+    `translateLightConfig`, applied in `submitShadowGround` as the
+    lighting and two-sided bits of `u_params` plus a `BGFX_STATE_CULL_CW`
+    -- the `mat.ccw` case of every other cull site, since `groundQuad`
+    winds its corners counter-clockwise about +Z. Streamed at
+    `SceneDump` v58, so the browser tier gets them too.
+  - **Creating those properties is now a job of its own.** The bridge
+    only *reads* the view; `_shadowParam` is what brings a property into
+    being, and it was being called incidentally, while the Coin nodes
+    were configured. With the nodes gone the whole `Shadow_Ground*`
+    family would never have been created, and a per-view override could
+    not have been set at all -- assigning one from Python fails rather
+    than creating it -- while the global preference kept reaching the
+    backend and hid the hole. That is the same trap `Shadow_ShowGround`
+    fell into once already (sec 3.4). `materializeGroundParams()` is the
+    one place that creates them now, called from `activateShadow()`.
+
+  `fcad-probes/ground_backend_probe.py`, 15/15: the family
+  materializes; the quad draws in the ground colour property and
+  carries its shadow (stddev 33.7 of the green channel);
+  `GroundShading` off flattens it to the property colour outright (mean
+  203.6 against 0.8 x 255 = 204, stddev 10.1); from below,
+  `GroundBackFaceCull` on
+  leaves **0** ground pixels and shows the box behind it, off fills
+  12383 and hides it; explicit half extents resize it; transparency 1
+  removes it. `renderer_light_probe.py` 10/10 and
+  `clip_bounds_probe.py` 5/5 are unchanged by this.
+
+  What the Coin paths lose is the ground: glr and cache 0 draw the
+  scene and its shadow *map* with nothing to receive it. That is stage
+  4c's accepted cost arriving one stage early, and the probe asserts it
+  rather than leaving it to be discovered. Two consequences worth
+  writing down:
+
+  - `ground_parity_probe.py` is **retired** -- its whole method is a
+    bgfx-vs-glr comparison of two grounds, and there is one ground now.
+    Its header says so and points here.
+  - glr's clip planes still fit a ground it does not draw (measured:
+    `clip_bounds_probe.py`'s glr rows are unchanged). `onGetBoundingBox`
+    is gated on the renderer, so the number is a cached traversal
+    answering, not a live report -- the same caching separator sec 1c
+    documents. Harmless, and on a developer path: the planes are wider
+    than the drawn scene needs, never tighter.
+- **4c -- the plain-Coin path. DECIDED 2026-08-16: acceptable.**
+  `SoShadowGroup` is Coin's only shadow implementation, so a cache-0
+  user loses shadows outright, and that is the accepted cost. Taken
+  deliberately, which is all this stage asked for; it is not a refactor
+  to fall into, and it is not one to keep re-opening either. Nothing
+  else in stage 4 is gated on it now.
+
+  What the decision rests on is stages 2 and 3: the render path is no
+  longer a persisted setting and no longer reachable from the
+  preferences, so cache 0 is a developer's A-B route rather than
+  somewhere a user can end up. Losing shadows there costs a user
+  nothing, because no user is there.
+- **4d -- map `Shadow_*` onto the render properties, and migrate. DONE**
+  (2026-08-16). The draw style's per-view family is gone; what a
+  document carries now is what reads it.
+
+  **The map.** Two destinations, because the light already had one:
+
+  - The **light** goes to the `Render_Light*` properties stage 4a
+    built -- deliberately, "to match the `Shadow_*` shape a later stage
+    has to migrate from", defaults included, which is why this half is
+    a rename and not a translation. `Shadow_SpotLight` ->
+    `Render_LightSpot`, `SpotLightPosition` -> `LightPosition`,
+    `SpotLightCutOffAngle` -> `LightCutOffAngle` (degrees on both
+    sides), `SpotLightDropOffRate` -> `LightDropOffRate`, plus
+    direction, colour and intensity.
+  - The **shadow map and its ground** keep their names under a new
+    prefix: `RenderShadow_<Name>`, group **"Render Shadow"**. The
+    property editor drops a `<group without spaces>_` prefix from what
+    it shows (`PropertyModel.cpp` `setPropertyItemName`), so stating
+    the group is the whole of grouping -- `RenderShadow_Epsilon`
+    displays as "Epsilon" under a "Render Shadow" heading, and
+    `_containerProperty` now strips the spaces when it builds the name.
+    That is the pattern for splitting the rest of the `Render` group
+    later.
+
+  Three pairs have different property types -- the style constrained
+  its floats and stated its cone as an `App::PropertyAngle`, the
+  renderer's are plain floats of the same units -- so the migration
+  carries the *value*, not the property. Both sides of every numeric
+  pair derive from `PropertyFloat` or `PropertyInteger`, which makes
+  that two lines rather than a table of casts.
+
+  **The custom-parameter rule follows the prefix.** A `RenderDebug_`
+  property outside the fixed list is a shader uniform (sec 2.5 of
+  `docs/RenderDebug.md`); `RenderShadow_` now works the same way,
+  excluding the names `shadowRenderPropertyNames()` lists -- those are
+  settings the engine reads itself, and each would otherwise upload a
+  uniform nobody declares.
+
+  **All three stores of sec 3.4, plus a fourth.** `migrateShadowProperties`
+  runs on `View3DInventor::Restore` (the property), on
+  `ViewProviderSavedView::finishRestoring` (the saved view's own copy,
+  which has to be converted *there* because the enum persists as an
+  index and the index outlives the entry) and on `apply()` (what it
+  hands a view). The camera blob is the fourth: `setCamera` parses
+  `## overrideMode: Shadow` and used to assign it straight to
+  `DrawStyle`, which after 4e would name nothing -- it now calls
+  `applyLegacyShadowStyle` instead, the same "light on, map on" the
+  restore path uses, leaving the display style the view's own.
+
+  A `DrawStyle` of "Shadow" becomes **the display style it wrapped**
+  (`Shadow_DisplayMode`) with `Render_Light` and `Render_Shadow` on.
+
+  `fcad-probes/shadow_migrate_probe.py`, 22/22, on two legs. A
+  synthetic round trip -- write the old names with distinctive values,
+  save, reopen -- is the only way to check that a value survives, and
+  it covers all three type-converting pairs. The second leg is this
+  repository's own `data/examples/render/effects-showcase.FCStd`, which
+  really does carry `DrawStyle` index 8 and twenty `Shadow_*`
+  properties: it comes back with none of them, all twenty under their
+  new names, `DrawStyle` = "As Is" (its `Shadow_DisplayMode` was 2) and
+  the renderer's light on. A document that never used the style
+  restores untouched, light still off.
+
+  **What is deliberately left, and for whom.** The global `View/Shadow*`
+  preferences do not move: they are still the fallback defaults, and
+  their preference-page section is still the Draw styles one. That is a
+  stage of its own *after* 4e, since 4e is what makes the page section
+  obsolete. One consequence is already visible and is the reason to
+  schedule it: a machine whose config carries `View/ShadowLightIntensity`
+  no longer has it reach the light, because the light's default is
+  `Render/LightIntensity` now. Per-view and per-document values migrate;
+  a *global* preference does not. (Measured, not deduced: the ground
+  probe's lit means moved 217.3 -> 207.2 across this stage on a config
+  carrying 0.9 there, and the probe now states the light itself so its
+  numbers are reproducible.)
+
+  Also left until 4e, because `activateShadow()` still reads them:
+  `Shadow_DisplayMode` (spent by the migration, but the live style still
+  materializes it), `Shadow_BoundBoxScale`, `Shadow_MaxDistance` and
+  `Shadow_TransparentShadow` -- Coin light-camera and shadow-group
+  settings with no counterpart in the backend, which fits its own light
+  camera. They go with the style that reads them.
+
+  ! While this stage stands alone, picking "Shadow" from the menu no
+  longer survives a round trip: the document is converted on reopen.
+  That is the intent -- 4e removes the entry -- but it is a live
+  behaviour change, not only a file-format one.
+- **4e -- drop `Shadow` from `drawStyleNames()`. DONE** (2026-08-16),
+  and with it everything the entry was the only caller of: the
+  `SoShadowGroup`, both `SoFC*Light` nodes with their draggers,
+  `activateShadow`/`deactivateShadow`, the sub display mode, the
+  bounding-box-scale/max-distance/transparent-shadow knobs, the
+  shadow-cache redraw workaround with its timer and slot, and the
+  light manipulator with its repeat-press shortcut. `View3DInventorViewer`
+  loses about 380 lines.
+
+  **The index, asserted rather than assumed -- and then gated.**
+  `App::PropertyEnumeration` persists as an index, so a document
+  written before this holds `DrawStyle = 8`, one past the end of the
+  list this build has. Recognizing it is only sound while `Shadow` was
+  the last entry, so `migrateShadowProperties` counts
+  `drawStyleNames()` and treats index 8 as the legacy Shadow **only
+  while the list is exactly 8 long**. A gate rather than an assertion,
+  because the two failure modes are not symmetric: if a style is added
+  later, failing closed leaves an old document unmigrated, while
+  failing open would restyle a new one. `ViewParams.py` says so where
+  the list is written.
+
+  **The Shading panel's "Shadows" switch is the replacement, and it is
+  a better one.** It sets `Render_Light` (and `Render_Shadow` with it)
+  and leaves the display style alone -- the whole point of the move.
+  The old switch had to host the style you were in and hand it back on
+  the way out, because the draw style occupied the same slot as
+  "Flat Lines". Now shadows compose with whatever you are looking at,
+  the way the other shading switches do.
+
+  What goes with the style and is **not** replaced: the light
+  manipulator (a dragger on a Coin light node; the backend's light has
+  no scene-graph presence), and shadows on the plain Coin paths --
+  stage 4c, decided and accepted.
+
+  ! `Std_DrawStyleShadow` no longer exists as a command, so a
+  keyboard shortcut or toolbar customization naming it is dropped by
+  Qt's own "unknown command" path. `V,9` is free.
+
+  Five preference-page entries went with it -- `ShadowUpdateGround`,
+  `ShadowDisplayMode`, `ShadowBoundBoxScale`, `ShadowMaxDistance`,
+  `ShadowTransparentShadow` -- because they configured the Coin shadow
+  group and its light camera and now drive nothing. The *keys* stay in
+  `ViewParams` (`ShadowDisplayMode` is still what a pre-4d migration
+  reads as its default display style); it is the UI that goes, a
+  preference nobody can act on being worse than none. The rest of that
+  section is the renderer's defaults and moves with the deferred
+  preference stage.
+
+  **Three defects this stage's probes caught, all of them silent.**
+  Worth recording as a class: each was a *name or field that something
+  else keys on*, and each failed by doing nothing rather than by
+  breaking.
+
+  - !! **An enum index that no longer has a name reads back as -1,
+    not as itself.** `Enumeration::getInt()` answers -1 for any index
+    it cannot name, so the migration's `getValue() == 8` test never
+    fired once 4e removed the entry -- and the repository's own example
+    document restored holding an unnameable style (`DrawStyle` reads
+    `None` from Python) while every property around it migrated
+    correctly. What is observable is the *invalid state*: entries
+    present, no valid index. The same trap then bit one level down --
+    `Shadow_DisplayMode` restores with no names either, so it read as
+    -1 and every document would have migrated to the first sub mode
+    instead of its own (measured: "Flat Lines" where the file said
+    "As Is"). Supplying the names first is the fix, as
+    `ViewProviderSavedView::finishRestoring` already does for the draw
+    style; `Enumeration::setEnums` keeps a stored index when the old
+    list was empty.
+    ! A probe asserting "the style is no longer Shadow" **passed**
+    through both of those. `None` is not `"Shadow"`. Assert the value
+    it should BE.
+  - ! **`LightConfig::operator==` had not learned 4b's two new
+    fields**, so `BGFXRenderer::setLightConfig` saw no change and never
+    marked the scene dirty: `GroundShading` and `GroundBackFaceCull`
+    read correctly and changed nothing. It worked while the Shadow draw
+    style existed because a `Shadow_*` property change re-applied the
+    whole override, which dirtied the scene by another route -- so the
+    defect shipped inert in 4b and surfaced only when 4e removed that
+    path. A new `LightConfig` field belongs in three places, and the
+    struct now says so: the stream, the layout assert, and the
+    comparison.
+  - **Prefix tests do not match a longer prefix.**
+    `onViewPropertyChanged` keys on `Render_`, which
+    `RenderShadow_GroundShading` does not start with, so editing one of
+    the migrated properties scheduled no redraw. Same for the render
+    capture's sidecar property list (`View3DInventorPyImp`). Both now
+    name the new prefix -- the cost of a prefix taxonomy, and the
+    reason `shadowRenderPropertyNames()` exists as one list rather than
+    a scattering of string tests.
 
 Not in scope, and not close: Coin as scene graph, traversal and picking.
 Replacing that is a different project — the backend has no picking at all

@@ -78,6 +78,7 @@
 #include "../Document.h"
 #include "SoFCRendererBridge.h"
 #include "SoFCDisplayModeElement.h"
+#include "SoFCRenderCacheManager.h"
 #include "SoFCRenderer.h"
 #include "SoFCVertexCache.h"
 #include "../ViewParams.h"
@@ -717,7 +718,8 @@ useHighlightPass(const CoinMaterial & m, int selId, bool highlight)
 
 Render::Material
 translateMaterial(const CoinMaterial & m, int selId, bool highlight,
-                  TextureImageMap & texmap)
+                  TextureImageMap & texmap,
+                  const RendererBridge::SectionOnTop & sectionOnTop)
 {
     Render::Material res;
 
@@ -820,7 +822,11 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     // The Tessellation draw style rides in on this: SoFCUnifiedSelection
     // overrides SoDrawStyleElement to LINES and lets the shapes draw
     // their faces, which GL turns into a wireframe with glPolygonMode.
+    // A plain SoDrawStyle node in the scene graph (PartGui's geometry
+    // check box) arrives the same way but is only asking for a
+    // wireframe, so the backend is told which of the two it has.
     res.drawstyle = uint8_t(m.drawstyle);
+    res.drawstyleoverride = m.overrideflags.test(CoinMaterial::FLAG_DRAW_STYLE);
 
     // Depth-occluded parts of on-top lines/points are dimmed to this alpha
     // (SoFCRenderer's RenderPassLinePattern pass). The selection highlight
@@ -881,10 +887,16 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     // dimmed pass of on-top lines falls back to the user-configurable
     // selection pattern when the material has none (GL: applyMaterial
     // ~539 under RenderPassLinePattern).
-    if (res.type == Render::Material::Line) {
+    // A triangle draw carrying LINES comes out as edges too
+    // (submitTessellation, GL's glPolygonMode), so it wants the pattern
+    // as much as a line draw does -- without this a dashed bounding box
+    // (PartGui's geometry check) drew solid.
+    if (res.type == Render::Material::Line
+            || res.drawstyle == Render::Material::DrawLines) {
         res.linepattern = m.linepattern;
         res.hiddenlinepattern = m.linepattern;
-        if (res.ontop && !m.hasLinePattern()) {
+        if (res.type == Render::Material::Line
+                && res.ontop && !m.hasLinePattern()) {
             uint32_t sellinepattern =
                 uint32_t(ViewParams::getSelectionLinePattern()) & 0xffff;
             if (sellinepattern) {
@@ -1042,11 +1054,11 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
 
     // Clip planes (sections), as world-space plane equations. Same on-top
     // exception as SoFCRenderer::applyMaterial: on-top draws are not
-    // sectioned when NoSectionOnTop is set (default) or in concave mode.
+    // sectioned when the section does not reach them (the default) or in
+    // concave mode. Both come from the view being drawn.
     if (m.clippers.getNum()) {
-        bool concave =
-            ViewParams::getSectionConcave() && m.clippers.getNum() > 1;
-        if (!((ViewParams::getNoSectionOnTop() || concave) && res.ontop)) {
+        bool concave = sectionOnTop.concave && m.clippers.getNum() > 1;
+        if (!((sectionOnTop.noOnTop || concave) && res.ontop)) {
             for (const auto & info : m.clippers.getData()) {
                 const SoClipPlane * clipper = info.cast<SoClipPlane>();
                 if (!clipper->on.getValue() || clipper->on.isIgnored())
@@ -1071,6 +1083,7 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
 
 Render::DrawCallList
 RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
+                          const SectionOnTop & sectionOnTop,
                           int selId, bool highlight, bool sequentialOrder,
                           Render::ObjectInfoMap * objectInfo,
                           Render::ObjectInfoMap * addedInfo)
@@ -1091,7 +1104,7 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
             continue;
 
         Render::Material rmat =
-            translateMaterial(material, selId, highlight, textures);
+            translateMaterial(material, selId, highlight, textures, sectionOnTop);
 
         for (const VertexCacheEntry & ventry : v.second) {
             if (!ventry.cache)
@@ -1441,15 +1454,20 @@ RendererBridge::translateHiddenLineConfig(SoState * state)
 }
 
 Render::SectionConfig
-RendererBridge::translateSectionConfig()
+RendererBridge::translateSectionConfig(App::PropertyContainer * view)
 {
     Render::SectionConfig res;
-    res.fill = ViewParams::getSectionFill();
-    res.fillInvert = ViewParams::getSectionFillInvert();
-    res.fillGroup = ViewParams::getSectionFillGroup();
-    res.concave = ViewParams::getSectionConcave();
-    res.hatchEnable = ViewParams::getSectionHatchTextureEnable();
-    res.hatchScale = float(ViewParams::getSectionHatchTextureScale());
+    res.fill = Gui::sectionStyle(view, "Fill", ViewParams::getSectionFill());
+    res.fillInvert = Gui::sectionStyle(view, "FillInvert",
+                                       ViewParams::getSectionFillInvert());
+    res.fillGroup = Gui::sectionStyle(view, "FillGroup",
+                                      ViewParams::getSectionFillGroup());
+    res.concave = Gui::sectionStyle(view, "Concave",
+                                    ViewParams::getSectionConcave());
+    res.hatchEnable = Gui::sectionStyle(view, "Hatch",
+                                        ViewParams::getSectionHatchTextureEnable());
+    res.hatchScale = float(Gui::sectionStyle(view, "HatchScale",
+                                             ViewParams::getSectionHatchTextureScale()));
     return res;
 }
 
@@ -1651,32 +1669,56 @@ RendererBridge::translateRenderDebugConfig(App::PropertyContainer * view)
     res.cullBounds = RenderParams::getDebugCullBounds();
 
     // Dynamic named shader parameters (docs/RenderDebug.md §2.5): every
-    // further RenderDebug_* property becomes a like-named vec4(-array)
-    // uniform — RenderDebug_myKnob feeds "uniform vec4 u_myKnob"; list
-    // properties span multiple vec4 lanes (RenderDebug_userParams with
-    // 16 floats fills the stock shaders' u_userParams[4] fallback
-    // pool). The property map is name-ordered, keeping the vector
-    // deterministic for the config-change comparison.
+    // further RenderDebug_* or RenderShadow_* property becomes a
+    // like-named vec4(-array) uniform -- RenderDebug_myKnob feeds
+    // "uniform vec4 u_myKnob"; list properties span multiple vec4 lanes
+    // (RenderDebug_userParams with 16 floats fills the stock shaders'
+    // u_userParams[4] fallback pool). The property map is name-ordered,
+    // keeping the vector deterministic for the config-change comparison.
+    //
+    // Each prefixed group excludes the names the engine reads itself:
+    // those are settings, not shader inputs, and every one of them would
+    // otherwise upload a uniform nobody declares. Any name outside that
+    // list is the user's.
     if (view) {
-        static const char prefix[] = "RenderDebug_";
-        static const size_t prefixLen = sizeof(prefix) - 1;
+        static const char * const prefixes[] = {"RenderDebug_",
+                                                "RenderShadow_"};
         std::map<std::string, App::Property*> props;
         view->getPropertyMap(props);
         for (const auto &v : props) {
-            if (v.first.compare(0, prefixLen, prefix) != 0)
+            const char *prefix = nullptr;
+            for (const char *p : prefixes) {
+                if (v.first.compare(0, strlen(p), p) == 0) {
+                    prefix = p;
+                    break;
+                }
+            }
+            if (!prefix)
                 continue;
-            std::string name = v.first.substr(prefixLen);
-            if (name.empty() || name == "ViewMode" || name == "FreezeFrame"
-                    || name == "Label"      // the §4.3 burn-in toggle
-                    || name == "Timing"     // measurement switches, not
-                    || name == "Delta"      // shader inputs: each would
-                    || name == "Coverage"   // otherwise upload a vec4
-                    || name == "Occlusion"  // uniform nobody declares
-                    || name == "ProxyCut"
-                    || name == "ProxyGen"
-                    || name == "CullAudit"
-                    || name == "CullBounds")
+            std::string name = v.first.substr(strlen(prefix));
+            if (name.empty())
                 continue;
+            if (strcmp(prefix, "RenderDebug_") == 0) {  // its fixed set
+                if (name == "ViewMode" || name == "FreezeFrame"
+                        || name == "Label"      // the sec 4.3 burn-in toggle
+                        || name == "Timing"     // measurement switches, not
+                        || name == "Delta"      // shader inputs: each would
+                        || name == "Coverage"   // otherwise upload a vec4
+                        || name == "Occlusion"  // uniform nobody declares
+                        || name == "ProxyCut"
+                        || name == "ProxyGen"
+                        || name == "CullAudit"
+                        || name == "CullBounds")
+                    continue;
+            }
+            else {                          // RenderShadow's fixed set
+                bool known = false;
+                for (const char * const *k = Gui::shadowRenderPropertyNames();
+                     *k && !known; ++k)
+                    known = (v.first == *k);
+                if (known)
+                    continue;
+            }
             Render::RenderDebugConfig::UserParam param;
             param.name = name.compare(0, 2, "u_") == 0 ? name : "u_" + name;
             App::Property *prop = v.second;
@@ -1991,13 +2033,13 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         // blur; the Shadow draw style materializes Shadow_SmoothBorder
         // (0..100) with the ViewParams default.
         res.smoothBorder = float(viewParamOverride<App::PropertyInteger>(
-                view, "Shadow", "SmoothBorder",
+                view, "RenderShadow", "SmoothBorder",
                 ViewParams::getShadowSmoothBorder()));
         // Coin VsmLookup parameters of the plain-VSM (SmoothBorder 0)
         // path; the Shadow draw style materializes Shadow_Epsilon /
         // Shadow_Threshold like the rest.
         res.epsilon = float(viewParamOverride<App::PropertyFloat>(
-                view, "Shadow", "Epsilon",
+                view, "RenderShadow", "Epsilon",
                 ViewParams::getShadowEpsilon()));
         // A zero (or too-small) epsilon collapses the VSM variance floor,
         // so the Chebyshev bound flips per pixel on the self-shadowed
@@ -2009,44 +2051,42 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         if (res.epsilon < epsMin)
             res.epsilon = epsMin;
         res.threshold = float(viewParamOverride<App::PropertyFloat>(
-                view, "Shadow", "Threshold",
+                view, "RenderShadow", "Threshold",
                 ViewParams::getShadowThreshold()));
         // Coin's N-tap receiver spread kernel (the Shadow draw style's
         // SpreadSize/SpreadSampleSize properties, packed into the Coin
         // smoothBorder field by the viewer; the backend consumes the
         // raw values).
         res.spreadSize = float(viewParamOverride<App::PropertyInteger>(
-                view, "Shadow", "SpreadSize",
+                view, "RenderShadow", "SpreadSize",
                 ViewParams::getShadowSpreadSize()));
         res.spreadSampleSize = float(viewParamOverride<App::PropertyInteger>(
-                view, "Shadow", "SpreadSampleSize",
+                view, "RenderShadow", "SpreadSampleSize",
                 ViewParams::getShadowSpreadSampleSize()));
         res.precision = float(viewParamOverride<App::PropertyFloat>(
-                view, "Shadow", "Precision",
+                view, "RenderShadow", "Precision",
                 ViewParams::getShadowPrecision()));
-        // The ground receiver settings honor the per-view Shadow_*
-        // dynamic properties (created by the Shadow draw style, which is
-        // the only way a shadow light gets here) with ViewParams
-        // fallback. The light itself is per-view already: it comes from
-        // the Shadow style's Coin light node built from the same
-        // properties.
+        // The ground receiver settings honor the per-view RenderShadow_*
+        // dynamic properties (Gui::materializeShadowRenderParams, which
+        // creates them wherever the render properties are created) with
+        // ViewParams fallback. Stage 4d moved them there from the Shadow
+        // draw style's own Shadow_* family; the fallbacks are still the
+        // ViewParams Shadow* preferences, which have not moved.
         res.ground = viewParamOverride<App::PropertyBool>(
-                view, "Shadow", "ShowGround", ViewParams::getShadowShowGround());
+                view, "RenderShadow", "ShowGround", ViewParams::getShadowShowGround());
         res.groundScale = float(viewParamOverride<App::PropertyFloat>(
-                view, "Shadow", "GroundSizeScale", ViewParams::getShadowGroundScale()));
-        // Sizing and placement, the same four properties the Coin quad
-        // reads (View3DInventorViewer::Private::updateShadowGround). The
-        // defaults here have to match the ones _shadowParam materializes
-        // there, because a view that has never shown the Coin ground
-        // carries none of these properties yet.
+                view, "RenderShadow", "GroundSizeScale", ViewParams::getShadowGroundScale()));
+        // Sizing and placement. The defaults here have to match the ones
+        // materializeShadowRenderParams uses, because a container that
+        // has no render properties at all carries none of these.
         res.groundAuto = viewParamOverride<App::PropertyBool>(
-                view, "Shadow", "GroundSizeAuto", true);
+                view, "RenderShadow", "GroundSizeAuto", true);
         res.groundSizeX = float(viewParamOverride<App::PropertyLength>(
-                view, "Shadow", "GroundSizeX", 100.0));
+                view, "RenderShadow", "GroundSizeX", 100.0));
         res.groundSizeY = float(viewParamOverride<App::PropertyLength>(
-                view, "Shadow", "GroundSizeY", 100.0));
+                view, "RenderShadow", "GroundSizeY", 100.0));
         res.groundAutoPos = viewParamOverride<App::PropertyBool>(
-                view, "Shadow", "GroundAutoPosition", true);
+                view, "RenderShadow", "GroundAutoPosition", true);
         // Coin reads one placement and uses it two ways: as the outright
         // position when GroundAutoPosition is off (and then applies no
         // transform), and as an additional offset -- rotation included --
@@ -2054,7 +2094,7 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         // the rule.
         Base::Placement pla;
         if (auto prop = viewPropOverride<App::PropertyPlacement>(
-                    view, "Shadow", "GroundPlacement"))
+                    view, "RenderShadow", "GroundPlacement"))
             pla = prop->getValue();
         if (res.groundAutoPos) {
             res.groundPos[0] = res.groundPos[1] = res.groundPos[2] = 0.0f;
@@ -2075,7 +2115,18 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
                                                0, 0, 1, 0, 0, 0, 0, 1};
             std::copy(identity, identity + 16, res.groundMatrix);
         }
-        if (auto prop = viewPropOverride<App::PropertyColor>(view, "Shadow", "GroundColor"))
+        // The two knobs Coin spent on scene-graph nodes rather than on
+        // the quad itself -- an SoLightModel and an SoShapeHints ahead of
+        // it -- and which the backend therefore has to be told about
+        // separately. Both default on, so a ported ground that ignored
+        // them differed from Coin's out of the box.
+        res.groundShading = viewParamOverride<App::PropertyBool>(
+                view, "RenderShadow", "GroundShading",
+                ViewParams::getShadowGroundShading());
+        res.groundBackFaceCull = viewParamOverride<App::PropertyBool>(
+                view, "RenderShadow", "GroundBackFaceCull",
+                ViewParams::getShadowGroundBackFaceCull());
+        if (auto prop = viewPropOverride<App::PropertyColor>(view, "RenderShadow", "GroundColor"))
             res.groundColor = prop->getValue().getPackedValue();
         else
             res.groundColor = uint32_t(ViewParams::getShadowGroundColor());
@@ -2084,7 +2135,7 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         // GPU uploads on the stable textureId.
         std::string texpath;
         if (auto prop = viewPropOverride<App::PropertyFileIncluded>(
-                    view, "Shadow", "GroundTexture")) {
+                    view, "RenderShadow", "GroundTexture")) {
             if (prop->getValue())
                 texpath = prop->getValue();
         }
@@ -2095,7 +2146,7 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         if (res.groundTexture) {
             res.groundTextureSize =
                 float(viewParamOverride<App::PropertyFloat>(
-                    view, "Shadow", "GroundTextureSize",
+                    view, "RenderShadow", "GroundTextureSize",
                     ViewParams::getShadowGroundTextureSize()));
         }
 
@@ -2103,7 +2154,7 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
         // Shadow_GroundBumpMap; the Shadow draw style materializes the
         // constrained float, so accept both float property types).
         if (auto prop = viewPropOverride<App::PropertyFloat>(
-                    view, "Shadow", "GroundTransparency"))
+                    view, "RenderShadow", "GroundTransparency"))
             res.groundTransparency = float(prop->getValue());
         else
             res.groundTransparency =
@@ -2112,7 +2163,7 @@ RendererBridge::translateLightConfig(SoState * state, App::PropertyContainer * v
             std::min(1.0f, std::max(0.0f, res.groundTransparency));
         std::string bumppath;
         if (auto prop = viewPropOverride<App::PropertyFileIncluded>(
-                    view, "Shadow", "GroundBumpMap")) {
+                    view, "RenderShadow", "GroundBumpMap")) {
             if (prop->getValue())
                 bumppath = prop->getValue();
         }

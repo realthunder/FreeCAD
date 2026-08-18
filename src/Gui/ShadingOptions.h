@@ -74,7 +74,6 @@ public:
 
 private:
     App::PropertyContainer *activeView() const;
-    View3DInventorViewer *activeViewer() const;
     void setModel(bool pbr, bool matcap);
     /// Grey the radius row unless the cavity pass is on and available.
     void updateCavityRadiusEnabled();

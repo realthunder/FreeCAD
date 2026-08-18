@@ -172,6 +172,26 @@ bool BGFXRenderer::frameDumpPending() const
 bool BGFXRenderer::getRenderStats(RenderStats &stats) const
 {
     stats = pimpl->lastStats;
+    // Pool occupancy is read live rather than carried on lastStats:
+    // the readback is per view and per captured frame, while these
+    // are one process-wide set that every view contributes to. Taken
+    // here they describe the pools as of the frame the caller just
+    // pumped, which is what a caller asking "how much headroom is
+    // left" means.
+    if (const bgfx::Stats *s = bgfx::getStats()) {
+        stats.numFrameBuffers = s->numFrameBuffers;
+        stats.numTextures = s->numTextures;
+        stats.numViews = s->numViews;
+        stats.textureMemory = s->textureMemoryUsed;
+        stats.renderTargetMemory = s->rtMemoryUsed;
+        stats.gpuMemoryUsed = s->gpuMemoryUsed;
+        stats.gpuMemoryMax = s->gpuMemoryMax;
+    }
+    if (const bgfx::Caps *c = bgfx::getCaps()) {
+        stats.maxFrameBuffers = int(c->limits.maxFrameBuffers);
+        stats.maxTextures = int(c->limits.maxTextures);
+        stats.maxViews = int(c->limits.maxViews);
+    }
     return stats.valid;
 }
 
@@ -182,6 +202,48 @@ bool BGFXRenderer::reloadShaders()
     // idle skip.
     ++_BGFXLib.shaderGeneration;
     pimpl->sceneDirty = true;
+    return true;
+}
+
+bool BGFXRenderer::releaseTargets()
+{
+    // A publish-only renderer never asked for a view, and asking would
+    // be the one call that brings a graphics device into a process that
+    // has none (Private::deinit says the same about removeView).
+    if (pimpl->publishOnly)
+        return false;
+    auto it = _BGFXLib.views.find(pimpl->widget);
+    if (it == _BGFXLib.views.end() || !it->second)
+        return false;
+    BGFXView *view = it->second.get();
+    // Nothing built yet, or already given back: the rebuild condition
+    // at the top of the next frame is exactly this test, so releasing
+    // again would only queue a second round of destroys.
+    if (!bgfx::isValid(view->bgfxFbo))
+        return false;
+    view->destroyTargets();
+
+    // Execute the destroys rather than leaving them queued. bgfx::destroy
+    // only writes a command; the memory comes back when a frame executes
+    // the buffer -- and the whole point of this call is that this view is
+    // about to stop producing frames. With one 3D view open and the user
+    // on a spreadsheet tab there is no other frame to ride on either, so
+    // an undrained release would give back nothing at all until the view
+    // came back. Same context dance a frame uses, and the failed-init
+    // drain above it: hand the widget's context back first, since
+    // QOpenGLWidget::makeCurrent() binds its own framebuffer.
+#ifdef FC_RENDERER_STANDALONE
+    bgfx::frame();
+#else
+    pimpl->widget->doneCurrent();
+    // makeCurrent() also flushes the GL framebuffer ids destroyTargets()
+    // just handed to pendingRemoves.
+    _BGFXLib.makeCurrent();
+    bgfx::frame();
+    // Not inside a paint: leave no context current rather than the
+    // caller's, which there is none of here.
+    _BGFXLib.doneCurrent();
+#endif
     return true;
 }
 

@@ -86,6 +86,13 @@ class Renderer;
 
 namespace Gui {
 
+/// Whether a render property states what the machine can afford rather
+/// than what the model should look like - the sampling and budget dials
+/// and the debug instrumentation. Those are never saved with a document,
+/// and a saved view must not carry them either: it would hand its reader
+/// somebody else's hardware.
+GuiExport bool isLocalRenderProperty(const char *name);
+
 class ViewProvider;
 class SoFCBackgroundGradient;
 class NavigationStyle;
@@ -97,8 +104,6 @@ class SoHighlightElementAction;
 class SoFCSelectionAction;
 class SoFCHighlightAction;
 class SoFCPathAnnotation;
-class SoFCDirectionalLight;
-class SoFCSpotLight;
 class Document;
 class GLGraphicsItem;
 class SoShapeScale;
@@ -547,6 +552,21 @@ public:
     /// view needs to change its multisampled context. Returns false (no-op)
     /// when there is no external renderer.
     bool applyRendererAntiAliasing();
+    /// Hand the backend's render targets back now, without waiting out the
+    /// grace period. They come back with the next frame this view draws.
+    void releaseRenderTargets();
+    /// Start (or cancel) the wait after which a view nobody is looking at
+    /// releases its render targets, according to what
+    /// View3DInventor::isBackgroundView() says right now. Called from
+    /// every signal that could have changed that answer -- the MDI
+    /// window state, a hide or show, and a change to
+    /// Render_BackgroundReleaseDelay itself, since a view already in the
+    /// background is then waiting out a stale deadline.
+    void armBackgroundRelease();
+    /// The grace period in milliseconds: the per-view override where the
+    /// view carries one, the Render/BackgroundReleaseDelay preference
+    /// otherwise. 0 keeps the targets for as long as the view lives.
+    int backgroundReleaseDelay() const;
     /// Materialize the per-view Render_* dynamic properties on the view
     /// object (RenderParams defaults), called when a renderer backend is
     /// selected.
@@ -577,13 +597,22 @@ public:
     bool getSceneBoundBox(SbBox3f &box) const;
     bool getSceneBoundBox(Base::BoundBox3d &box) const;
 
-    void toggleShadowLightManip(int toggle = -1);
-
     void setTransparencyOnTop(float t);
 
     void onGetBoundingBox(SoGetBoundingBoxAction *);
 
     void onViewPropertyChanged(const App::Property &);
+
+    /// Whether a View preference key belongs to the viewer's light rig,
+    /// which a Light_* view property can override.
+    static bool isLightPreferenceKey(const char *key);
+    /// Light this view from the effective value of one rig key: its
+    /// Light_* property if it has one, and the preference otherwise.
+    /// Returns false for a key that is not part of the rig.
+    bool applyLightPreference(const char *key);
+    /// The same for the whole rig. Done after a restore, so that the
+    /// overrides the document carried reach the light nodes.
+    void syncLightProperties();
 
     const SoPathList *getLatePickPaths() const;
 
@@ -622,6 +651,12 @@ protected:
     void dragEnterEvent (QDragEnterEvent * ev) override;
     void dragMoveEvent(QDragMoveEvent* ev) override;
     void dragLeaveEvent(QDragLeaveEvent* ev) override;
+    /// Two of the signals that can change whether anyone is looking at
+    /// this view; the MDI one arrives as View3DInventor::
+    /// windowStateChanged instead. None of them can be noticed from the
+    /// frame path, which a view nobody is looking at never reaches.
+    void hideEvent(QHideEvent * ev) override;
+    void showEvent(QShowEvent * ev) override;
     bool processSoEventBase(const SoEvent * const ev);
     void printDimension() const;
     void selectAll();
@@ -636,6 +671,9 @@ private:
     static void interactionLoggerCB(void * ud, SoAction* action);
 
 private:
+    /// Push one Light_* property into the Coin light or environment node
+    /// it stands for.
+    void applyLightProperty(const App::Property &prop);
     static void selectCB(void * viewer, SoPath * path);
     static void deselectCB(void * viewer, SoPath * path);
     static SoPath * pickFilterCB(void * viewer, const SoPickedPoint * pp);
@@ -646,9 +684,6 @@ private:
     void setCursorRepresentation(int mode);
     void aboutToDestroyGLContext() override;
     void createStandardCursors(double);
-
-private Q_SLOTS:
-    void redrawShadow();
 
 private:
     NaviCube* naviCube;

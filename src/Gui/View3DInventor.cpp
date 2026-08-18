@@ -72,6 +72,7 @@
 #include "NaviCube.h"
 #include "NavigationStyle.h"
 #include "SoFCDB.h"
+#include "Inventor/SoFCRenderCacheManager.h"
 #include "SoFCSelectionAction.h"
 #include "Inventor/SoFCRenderCacheManager.h"
 #include "SoFCVectorizeSVGAction.h"
@@ -721,7 +722,16 @@ bool View3DInventor::setCamera(const char* pCamera, int animateDuration)
         size_t end = start;
         for(;pos[end] && pos[end]!='\n'; ++end);
         for(;end!=start && std::isspace(static_cast<unsigned char>(pos[end-1]));--end);
-        DrawStyle.setValue(std::string(pos+start, pos+end).c_str());
+        std::string mode(pos+start, pos+end);
+        // A camera saved with the Shadow draw style asks for something
+        // that is no longer a style (docs/CoinRetirement.md 4d): the
+        // renderer's light and map go on, and the display style stays
+        // the view's own -- the migration has already put the one the
+        // Shadow style wrapped there.
+        if (mode == "Shadow")
+            applyLegacyShadowStyle(this);
+        else
+            DrawStyle.setValue(mode.c_str());
     }
 
     return true;
@@ -1057,6 +1067,45 @@ void View3DInventor::windowStateChanged(QWidget* view)
         // If this view may be visible again we can stop the timer
         stopSpinTimer->stop();
     }
+
+    // The same news answers a second question -- whether this view still
+    // has anyone looking at it -- and the render engine gives its targets
+    // back when the answer is no. Deliberately re-asked as a question
+    // rather than derived from this event: a tab switch changes the state
+    // of two views and emits for each, so which emission arrives last is
+    // not something to depend on.
+    if (_viewer)
+        _viewer->armBackgroundRelease();
+}
+
+bool View3DInventor::isBackgroundView() const
+{
+    // Genuinely hidden, or minimized: nobody is looking, either way.
+    if (!isVisible() || isMinimized())
+        return true;
+    // A view in a window of its own answers for itself, and isVisible()
+    // above was the whole of that answer. A maximized sibling on the
+    // other screen hides nothing.
+    if (isWindow())
+        return false;
+    // Inside the MDI area "hidden" is not a visibility. A tabbed MDI
+    // keeps every child visible and stacks the current one, maximized,
+    // over the rest -- switching tabs even delivers a hide immediately
+    // followed by a show to the view being left, which is why this is
+    // not a question the Qt visibility flags can answer. What being in
+    // the background means there is that somebody else is maximized
+    // over me; in the tiled modes nobody is maximized, and no view is
+    // in the background because they are all on screen at once.
+    if (isMaximized())
+        return false;
+    auto mw = getMainWindow();
+    if (!mw)
+        return false;
+    for (auto w : mw->windows()) {
+        if (w != this && !w->isWindow() && w->isMaximized())
+            return true;
+    }
+    return false;
 }
 
 void View3DInventor::stopAnimating()
@@ -1213,6 +1262,11 @@ void View3DInventor::Restore(Base::XMLReader &reader)
 {
     Base::StateLocker guard(_restoring);
     MDIView::Restore(reader);
+    // A Light_* property exists only where the author overrode the rig, so
+    // whatever the document carried has to reach the light nodes now. The
+    // keys it did not carry keep following this installation's preference.
+    if (_viewer)
+        _viewer->syncLightProperties();
     // Old documents saved per-view copies of render properties that have
     // since been retired to global RenderParams (debug switches, ladder
     // tuning, the GPU budget). They restore fine as dynamic properties,
@@ -1220,6 +1274,12 @@ void View3DInventor::Restore(Base::XMLReader &reader)
     // globals -- strip them so the dead surface does not linger or get
     // re-saved.
     stripLegacyRenderProperties(this);
+    reseedLocalRenderProperties(this);
+    // A document written before the Shadow draw style became the
+    // renderer's light, map and ground (docs/CoinRetirement.md 4d)
+    // carries its settings as Shadow_* and its style as an enum value
+    // that is on its way out; move both onto what reads them now.
+    migrateShadowProperties(this);
 }
 
 void View3DInventor::onChanged(const App::Property *prop)

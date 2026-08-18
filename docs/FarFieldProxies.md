@@ -3376,3 +3376,79 @@ an occlusion-culled draw already stops advancing `lastUsed`, so with
 shadows off its GPU buffers are collected after 2 frames TODAY,
 unmanaged, with re-upload churn as the failure mode -- the feed is the
 governed replacement for that accident.
+
+### 12.21 measured: the injected-failure audit, and what a user can reach
+
+Sections 12.4-12.20 measure the mechanism working. This asks the other
+question, the one a default-off feature needs answered before anyone
+turns it on: what does a **broken** part of it do to the picture?
+`scripts/occlusion_inject_probe.py`, which needs neither the rack model
+nor a GPU -- a wall, 64 boxes behind it that no correct frame shows, and
+four green marker boxes that every correct frame shows, three of them
+standing against the background with nothing in front of them. Losing
+green is deleted geometry, and nothing else in the scene can make it.
+
+Headless llvmpipe, 1024x768, one grab per row, `Render_Occlusion` on for
+every row but the first. **Drift 0 px**, and the reference re-grabbed at
+the end is identical to the first.
+
+| injected | changed px | green | culled |
+|---|---|---|---|
+| (reference, occlusion off) | -- | 718 | -- |
+| nothing -- defaults | **0** | 718 | 192 hidden of 207 |
+| `OcclusionResolution` 4 | **0** | 718 | 168 hidden |
+| `OcclusionOccluderTris` 1 | **0** | 718 | **0 hidden** |
+| `OcclusionSimd` off | **0** | 718 | 192 hidden |
+| `OcclusionThreads` 1 | **0** | 718 | 192 hidden |
+| `OcclusionCoarse` on | **0** | 718 | 192 hidden |
+| `OcclusionPerInstance` off | **0** | 718 | 174 hidden |
+| `OcclusionSoftware` off | 587 | **171** | 0 hidden (see below) |
+| clip plane, occlusion on | **0** | 718 | 0 hidden |
+
+Read the right-hand column first: a row that culled nothing proves
+nothing, and one did. **`OcclusionOccluderTris` 1 hides 0 of 207** --
+which is the documented behaviour (an occluder that was not rasterized
+hides nothing) and is why that row's 0 changed pixels is not evidence of
+correctness, only of the failure being in the safe direction. Every
+other software row culls 168-192 instances of 207 and changes **not one
+pixel**, which is the claim 12.12 makes, reproduced at a scale anyone
+can run.
+
+The **clip-plane row is the 12.20 guard, working**: with the wall cut
+away the grid behind it is in plain view (1448 magenta px), occlusion on
+leaves it there, and the culling drops to 0 hidden because the clipped
+solid is refused as an occluder outright.
+
+#### the one row that deletes geometry, and it is a knob a user can flip
+
+`Render_OcclusionSoftware` off -- the hardware-query oracle 12.6-12.11
+refuted, kept selectable for measurement -- lost **547 of 718** marker
+pixels: three boxes standing against the background, nothing in front of
+them, gone.
+
+The stats line for that frame said `instances hidden 0`, which is not
+the contradiction it looks like. One grab per row cannot see a verdict
+that **flaps**, so the probe's second half grabs a run of consecutive
+frames:
+
+| oracle | green, ten consecutive frames |
+|---|---|
+| occlusion off | 718 718 718 718 718 718 718 718 718 718 |
+| software | 718 718 718 718 718 718 718 718 718 718 |
+| **hardware** | 718 718 **171 171 367 536** 718 718 718 718 |
+| hardware, `OcclusionConfirm` 6 | 718 718 718 718 718 718 718 718 718 718 |
+
+That is 12.6's oscillation on a five-object scene, and the "hidden 0"
+line was simply logged on one of the frames the mask was empty -- a
+second run of the same script caught the other phase, `hidden 27 drawn
+180`, which is the mask and nothing else doing this. The confirmations
+row is the same dilution 12.7 measured, not a fix: ten frames is a
+window it survived, not a proof it holds.
+
+**So the exposure of turning this on is:** the shipping configuration
+deletes nothing here under seven separate injections, and the one
+setting that deletes geometry is the one whose own documentation says it
+is kept for measurement. Nothing found argues for changing the default,
+in either direction -- but `Render_OcclusionSoftware` is a plain boolean
+in the render parameters, and a user who flips it gets flickering holes
+rather than a slower frame.

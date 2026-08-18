@@ -94,6 +94,12 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     // reproduced here rather than left out, because a tessellation
     // wireframe with every back face showing through is unreadable on
     // anything with more than one closed solid in it.
+    //
+    // But only for the display MODE, which is what that render mode is
+    // switched on for. A lone SoDrawStyle node asking for a wireframe
+    // (PartGui's geometry-check bounding box) gets no such pass from
+    // Coin, and giving it one filled the box with the background colour
+    // and hid the shape it was drawn around.
     if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
         return;
     GpuMesh *gpu = getMesh(*draw.mesh);
@@ -110,35 +116,73 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     // Pass 1: the faces, in the background colour, depth only as far as
     // the eye is concerned — they exist to occlude, not to be seen.
     // Unlit and untextured for the same reason.
-    float fill[4];
-    unpackColor(bgFillColor, fill);
-    fill[3] = 1.0f;
-    float fillParams[4] = {0.0f, 0.0f, 1.0f, polygonOffsetBias(mat)};
-    bgfx::setUniform(u_matColor, fill);
-    bgfx::setUniform(u_matEmissive, zero);
-    bgfx::setUniform(u_matSpecular, zero);
-    bgfx::setUniform(u_params, fillParams);
-    setPolygonOffsetUniform(&mat);
-    setTriangleFrameState(mat, PassNormal, false, false);
-    if (clipped)
-        setClipUniforms(mat);
-    setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
-                     (float)height);
-    setMeshVertexBuffers(gpu, *draw.mesh);
-    if (draw.indexCount > 0)
-        bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
-                             uint32_t(draw.indexCount));
-    else
-        bgfx::setIndexBuffer(gpu->geom->tri);
-    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-                   | BGFX_STATE_WRITE_Z | BGFX_STATE_MSAA
-                   | BGFX_STATE_DEPTH_TEST_LESS);
-    bgfx::submit(vid(viewId), clipped ? m_progMeshClip : m_progMesh);
-    ++drawcount;
+    if (mat.drawstyleoverride) {
+        float fill[4];
+        unpackColor(bgFillColor, fill);
+        fill[3] = 1.0f;
+        float fillParams[4] = {0.0f, 0.0f, 1.0f, polygonOffsetBias(mat)};
+        bgfx::setUniform(u_matColor, fill);
+        bgfx::setUniform(u_matEmissive, zero);
+        bgfx::setUniform(u_matSpecular, zero);
+        bgfx::setUniform(u_params, fillParams);
+        setPolygonOffsetUniform(&mat);
+        setTriangleFrameState(mat, PassNormal, false, false);
+        if (clipped)
+            setClipUniforms(mat);
+        setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
+                         (float)height);
+        setMeshVertexBuffers(gpu, *draw.mesh);
+        if (draw.indexCount > 0)
+            bgfx::setIndexBuffer(gpu->geom->tri, uint32_t(draw.indexStart),
+                                 uint32_t(draw.indexCount));
+        else
+            bgfx::setIndexBuffer(gpu->geom->tri);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                       | BGFX_STATE_WRITE_Z | BGFX_STATE_MSAA
+                       | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(vid(viewId), clipped ? m_progMeshClip : m_progMesh);
+        ++drawcount;
+    }
 
-    // Pass 2: every triangle edge, in the material's own colour. The
-    // instance range is the index range: the buffer holds one segment
-    // per triangle index position.
+    // Pass 2: the edges, in the material's own colour.
+    //
+    // Which edges depends on the same distinction pass 1 makes. The
+    // display MODE is showing the tessellation, so it draws every
+    // triangle edge -- the instance range is the index range, the
+    // buffer holding one segment per triangle index position. A lone
+    // SoDrawStyle asking for a wireframe is not: GL replays the shape
+    // itself under glPolygonMode, and the shapes that reach here that
+    // way (SoCube, SoFCBoundingBox) are polygons, so the diagonals the
+    // triangulation introduced are edges GL never draws. Those come off
+    // in ensureCreaseEdges, whose per-triangle offsets keep a partial
+    // index range mapping onto an instance range.
+    bgfx::VertexBufferHandle edgeInst = gpu->geom->triEdgeInst;
+    uint32_t start = draw.indexCount > 0 ? uint32_t(draw.indexStart) : 0;
+    uint32_t count = draw.indexCount > 0
+        ? uint32_t(draw.indexCount)
+        : uint32_t(draw.mesh->numTriangleIndices);
+    if (!mat.drawstyleoverride) {
+        gpu->geom->ensureCreaseEdges(*draw.mesh);
+        const auto &first = gpu->geom->creaseEdgeFirst;
+        if (bgfx::isValid(gpu->geom->creaseEdgeInst) && !first.empty()) {
+            const size_t from = size_t(start) / 3;
+            const size_t to = size_t(start + count) / 3;
+            if (to < first.size()) {
+                edgeInst = gpu->geom->creaseEdgeInst;
+                start = first[from];
+                count = first[to] - start;
+            }
+        }
+    }
+    if (count == 0)
+        return;
+
+    // The pattern of a dashed wireframe (PartGui's geometry check asks
+    // for one) lives in the quad fragment shader, as it does for any
+    // other patterned line.
+    const uint32_t linepattern = mat.linepattern;
+    const bool patterned = (linepattern & 0xffff) != 0xffff;
+
     float color[4];
     unpackColor(mat.linecolor ? mat.linecolor : mat.diffuse, color);
     color[3] = 1.0f;
@@ -149,6 +193,14 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     bgfx::setUniform(u_matEmissive, zero);
     bgfx::setUniform(u_matSpecular, zero);
     bgfx::setUniform(u_params, lineParams);
+    if (patterned) {
+        // glLineStipple clamps the repeat factor to [1, 256].
+        uint32_t factor = linepattern >> 16;
+        factor = factor < 1 ? 1 : factor > 256 ? 256 : factor;
+        float patParams[4] = {float(linepattern & 0xffff),
+                              float(factor), 0.0f, 0.0f};
+        bgfx::setUniform(u_linePattern, patParams);
+    }
     if (clipped)
         setClipUniforms(mat);
     setDrawTransform(draw, autozoomScale, viewMatrix, projMatrix,
@@ -156,15 +208,13 @@ void BGFXView::submitTessellation(const Render::DrawCall &draw,
     LineQuadVertex::init();
     bgfx::setVertexBuffer(0, m_lineQuadVb);
     bgfx::setIndexBuffer(m_lineQuadIb);
-    const uint32_t start = draw.indexCount > 0 ? uint32_t(draw.indexStart) : 0;
-    const uint32_t count = draw.indexCount > 0
-        ? uint32_t(draw.indexCount)
-        : uint32_t(draw.mesh->numTriangleIndices);
-    bgfx::setInstanceDataBuffer(gpu->geom->triEdgeInst, start, count);
+    bgfx::setInstanceDataBuffer(edgeInst, start, count);
     bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                    | BGFX_STATE_WRITE_Z | BGFX_STATE_MSAA
                    | BGFX_STATE_DEPTH_TEST_LEQUAL);
-    bgfx::submit(vid(viewId), clipped ? m_progLineClip : m_progLine);
+    bgfx::submit(vid(viewId),
+                 patterned ? (clipped ? m_progLinePatClip : m_progLinePat)
+                           : (clipped ? m_progLineClip : m_progLine));
     ++drawcount;
 }
 

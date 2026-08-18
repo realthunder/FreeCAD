@@ -870,6 +870,29 @@ struct RenderStats {
     /// Average color of the geometry pixels, 0-255 per channel;
     /// -1 when no geometry pixel exists.
     float avgColor[3] = {-1.0f, -1.0f, -1.0f};
+
+    /// Backend handle-pool occupancy at the last completed frame, each
+    /// beside the pool it is measured against (-1 where the backend
+    /// does not report it).
+    ///
+    /// These are PROCESS-WIDE, not per view: every 3D view, and the
+    /// scene server's own view, draw from the same pools. That is the
+    /// number worth watching -- running out is not a graceful
+    /// degradation by default, it is what a view falls back to Coin
+    /// over, and the fallback only exists because exhausting a pool
+    /// used to assert inside the engine.
+    int numFrameBuffers = -1;
+    int maxFrameBuffers = -1;
+    int numTextures = -1;
+    int maxTextures = -1;
+    int numViews = -1;
+    int maxViews = -1;
+    /// Backend estimates of texture and render-target bytes, and the
+    /// driver's own figure for the process where it reports one.
+    long long textureMemory = -1;
+    long long renderTargetMemory = -1;
+    long long gpuMemoryUsed = -1;
+    long long gpuMemoryMax = -1;
     bool valid = false;
 };
 
@@ -968,6 +991,16 @@ struct LightConfig {
     float groundPos[3] = {0.0f, 0.0f, 0.0f};
     float groundMatrix[16] = {1, 0, 0, 0, 0, 1, 0, 0,
                               0, 0, 1, 0, 0, 0, 0, 1};
+    /// Ground shading (ShadowGroundShading): off draws the quad in its
+    /// flat color, ignoring the light -- Coin's SoLightModel BASE_COLOR
+    /// on the ground group. The shadow still darkens it; what goes away
+    /// is the diffuse falloff across the quad.
+    bool groundShading = true;
+    /// Ground back-face culling (ShadowGroundBackFaceCull): the quad is
+    /// one-sided, so a camera below the ground plane sees through it
+    /// instead of being shut out by a grey slab -- Coin's SoShapeHints
+    /// SOLID + COUNTERCLOCKWISE on the ground group.
+    bool groundBackFaceCull = true;
     uint32_t groundColor = 0x7d7d7dff;
     /// Ground texture (ShadowGroundTexture), modulated by the ground
     /// color and tiled every groundTextureSize world units
@@ -1007,10 +1040,19 @@ struct LightConfig {
     /// \a halfOut, when given, receives the two half extents — the
     /// texture spans need them separately, and they stop being equal as
     /// soon as the size is set explicitly.
+    ///
+    /// The reflection implies the receiver: a mirror in the ground plane
+    /// is blended onto the ground quad, so Render_GroundReflection with
+    /// no ground would ask for a reflection and then have nothing to
+    /// show it on. Requiring the user to find RenderShadow_ShowGround as
+    /// well is a coupling nobody can guess from either name, and it is
+    /// asked for here rather than at each consumer so the scene bounds
+    /// (camera auto-clipping) grow to cover the quad too.
     bool groundQuad(const float *bmin, const float *bmax,
                     float corners[4][3], float *halfOut = nullptr) const
     {
-        if (!valid || !ground || groundTransparency >= 1.0f)
+        if (!valid || !(ground || groundReflection)
+                || groundTransparency >= 1.0f)
             return false;
         float hx, hy;
         if (groundAuto) {
@@ -1060,6 +1102,14 @@ struct LightConfig {
         return true;
     }
 
+    /// ! A new field of this struct belongs in THREE places, and each
+    /// omission fails silently in its own way: the SceneDump stream (or
+    /// the browser tier keeps the default forever -- the layout assert
+    /// there is what catches it), and this comparison, which is what
+    /// marks the scene dirty. A field left out here reads correctly and
+    /// changes nothing on screen until something else about the light
+    /// happens to move, which is how groundShading and groundBackFaceCull
+    /// shipped inert for two stages.
     bool operator==(const LightConfig &o) const {
         return valid == o.valid && shadow == o.shadow && spot == o.spot
             && direction[0] == o.direction[0]
@@ -1077,6 +1127,8 @@ struct LightConfig {
             && spreadSampleSize == o.spreadSampleSize
             && precision == o.precision
             && ground == o.ground && groundScale == o.groundScale
+            && groundShading == o.groundShading
+            && groundBackFaceCull == o.groundBackFaceCull
             && groundColor == o.groundColor
             && groundTexture == o.groundTexture
             && groundTextureSize == o.groundTextureSize
@@ -1549,11 +1601,21 @@ struct Material {
     /// that state, so the backend draws the primitives instead — see
     /// BGFXView::submitTessellation. This is how the Tessellation draw
     /// style arrives (SoFCUnifiedSelection overrides the element to
-    /// LINES for it), which is the only thing that sets it today.
+    /// LINES for it), and also how a plain SoDrawStyle node in the scene
+    /// graph asks for a wireframe -- which drawstyleoverride tells apart.
     enum DrawStyle : uint8_t {
         DrawFilled = 0, DrawLines = 1, DrawPoints = 2, DrawInvisible = 3
     };
     uint8_t drawstyle = DrawFilled;
+    /// The draw style above arrived as a scene-wide OVERRIDE, which is
+    /// what the Tessellation display mode is -- SoFCUnifiedSelection sets
+    /// SoOverrideElement's DRAW_STYLE for it, the only place in the tree
+    /// that does. That mode wants the faces filled in the background
+    /// colour to occlude what is behind them (Coin gets the same from
+    /// SoRenderManager::HIDDEN_LINE); a lone SoDrawStyle node asks for a
+    /// wireframe and nothing more, and filling it hides whatever it was
+    /// drawn around.
+    bool drawstyleoverride = false;
     uint32_t diffuse = 0xCCCCCCFF;
     uint32_t emissive = 0;
     uint32_t specular = 0;
@@ -2315,6 +2377,23 @@ public:
     /// True when this backend has rendered the current scene and the
     /// internal fixed-function GL pass can be skipped.
     virtual bool canSkipInternal() const { return false; }
+    /// Give back every render target this view holds, because nobody is
+    /// looking at it (docs/RenderEngine.md #3.3). A view's targets are
+    /// its dominant cost -- measured at 287MB for a 1644x653 view with
+    /// all effects on -- and they are held whether or not the view is
+    /// on screen, so a session with several documents open pays for all
+    /// of them to show one. The scene, the programs and the uniforms
+    /// stay: this is the resize path's release, and the next frame
+    /// rebuilds the targets exactly as a resize does.
+    ///
+    /// Costs the frame that rebuilds them (~68ms measured on the same
+    /// view), so the caller is expected to be sure the view is going to
+    /// stay in the background rather than release on every tab click --
+    /// hence Render/BackgroundReleaseDelay. The picture that comes back
+    /// is byte-identical; what this trades is a hitch, never an image.
+    ///
+    /// Returns false when the backend holds no releasable targets.
+    virtual bool releaseTargets() { return false; }
     //@}
 
 protected:
@@ -2480,6 +2559,22 @@ public:
     static void registerLib(RendererLib *);
     static void setResourcePath(const std::string &path);
     static const std::string &resourcePath();
+
+    /// Highest number of view ids the backend should hand out, or 0 for
+    /// the backend's own maximum.
+    ///
+    /// Every 3D view holds a block of ids for its pass sequence, so this
+    /// is what decides how many viewers a session can drive on the
+    /// backend at once. It is a STARTUP option: backend startup is
+    /// one-time per process (RendererLib::warmup), so the value in force
+    /// is whichever was set before the first create()/warmup() and a
+    /// change needs a restart to take effect.
+    ///
+    /// The renderer library cannot read a preference itself, so the host
+    /// seeds it -- the same arrangement as setResourcePath and the
+    /// scene-stream thread cap.
+    static void setMaxViewIds(int count);
+    static int maxViewIds();
 };
 
 } // namespace Render

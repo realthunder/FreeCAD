@@ -66,9 +66,35 @@ bool BGFXRenderer::Private::render(const QColor &col,
     if (_deinit)
         return false;
 
+#ifndef FC_RENDERER_STANDALONE
+    // Whatever framebuffer the caller asked for this frame: the widget's
+    // own on screen, a capture target for a screenshot. Every exit that
+    // touches the context has to leave that one bound, because
+    // QOpenGLWidget::makeCurrent() binds the WIDGET's instead -- and
+    // then the Coin traversal that a failed frame falls back to draws to
+    // the screen while the capture it was asked for stays empty. That is
+    // what made every screenshot black while the window looked right,
+    // whenever the backend was attached but could not draw.
+    GLint hostFbo = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &hostFbo);
+    auto bailToHost = [this, hostFbo]() {
+        widget->makeCurrent();
+        if (auto *ctx = QOpenGLContext::currentContext())
+            ctx->extraFunctions()->glBindFramebuffer(GL_FRAMEBUFFER,
+                                                     GLuint(hostFbo));
+        return false;
+    };
+#endif
+
+    // getView() prepares the device, and its own failures can leave the
+    // backend's context current rather than the caller's.
     auto view = _BGFXLib.getView(widget, type);
     if (!view)
+#ifndef FC_RENDERER_STANDALONE
+        return bailToHost();
+#else
         return false;
+#endif
 
     // A shader pack that could not supply a core program keeps the
     // view down: without this the torn-down view (no framebuffer)
@@ -93,10 +119,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
         }
 #ifndef FC_RENDERER_STANDALONE
         // Hand the context back the way the fb-invalid bail does, so
-        // Coin draws the frame on Qt's context.
-        widget->makeCurrent();
-#endif
+        // Coin draws the frame on Qt's context -- and into the
+        // framebuffer the caller asked for.
+        return bailToHost();
+#else
         return false;
+#endif
     }
 
 #ifdef FC_RENDERER_STANDALONE
@@ -160,18 +188,20 @@ bool BGFXRenderer::Private::render(const QColor &col,
         _BGFXLib.shaderGeneration != view->shaderGen
         || (_BGFXLib.desktopSamples >= 0
             && _BGFXLib.desktopSamples != view->msaaSamples);
+    // The lost-framebuffer case rebuilds once, not every frame:
+    // view->targetsFailed says the last attempt found the handle pool
+    // full, and a bailed frame never reaches bgfx::frame(), which is
+    // the only place bgfx reclaims what the attempt destroyed.
     if (progChanged
             || _BGFXLib.viewWidth(widget) != int(view->width)
             || _BGFXLib.viewHeight(widget) != int(view->height)
-            || !bgfx::isValid(view->bgfxFbo)
+            || (!bgfx::isValid(view->bgfxFbo) && !view->targetsFailed)
             || _BGFXLib.effectResolution != view->effectScale
             || _BGFXLib.ssaoResolution != view->ssaoScale)
         view->init(!progChanged);
 
-    if (!bgfx::isValid(view->bgfxFbo)) {
-        widget->makeCurrent();
-        return false;
-    }
+    if (!bgfx::isValid(view->bgfxFbo))
+        return bailToHost();
 #endif
 
     uint16_t width = view->width;
@@ -855,6 +885,95 @@ bool BGFXRenderer::Private::render(const QColor &col,
         return true;
     }
 
+    // Reconcile the demand-allocated target groups against the
+    // configuration, before anything reads their handles. Each
+    // predicate below is configuration ONLY -- no scene content, no
+    // this-frame *Active flag -- so an effect's targets appear when it
+    // is switched on and go away when it is switched off, and survive
+    // everything in between. (BGFXView::updateEffect.)
+    //
+    // The volumetric group carries the water, cloud and fire interval
+    // targets as well: every one of those passes is gated on volActive
+    // downstream, so Render_Volumetric is the single switch that owns
+    // the whole ~166MB set.
+    // m_vol here so a GPU that cannot do it at all is never asked, and
+    // so never reports a failure it was always going to have.
+    view->updateEffect(BGFXView::EffectVolumetric,
+                       view->m_vol && volconf.enabled);
+    view->updateEffect(BGFXView::EffectBloom, bloomconf.enabled);
+    // The scene light's shadow maps, ~117MB at ShadowPrecision 1.0:
+    // the 2048^2 moments and their depth, the blur ping and the glass
+    // tint pair. Wanted whenever a scene light is fed and Render_Shadow
+    // is on -- both configuration, the light being the Shadow draw
+    // style's (or Render_Light's), not scene content. Deliberately not
+    // the frame's shadowActive, which folds in the scene bound and so
+    // would free the set for every document that momentarily has no
+    // geometry.
+    //
+    // The ground receiver and the bulb tiles read as shadow settings
+    // but pay for neither: the ground quad draws unshadowed without a
+    // map (submitShadowGround), and the bulb atlas is its own group.
+    {
+        // Coin's sizing: the next power of two of precision * the cap.
+        float prec = bx::clamp(lightconf.precision, 0.01f, 1.0f);
+        uint16_t desired = 1;
+        uint16_t want = uint16_t(prec * BGFXView::kShadowMaxSize);
+        while (desired < want)
+            desired = uint16_t(desired << 1);
+        view->shadowSizeWanted = desired;
+    }
+    view->updateEffect(BGFXView::EffectShadow,
+                       view->m_shadow && lightconf.valid
+                           && lightconf.shadow);
+    // One shared mirror target, wanted by either consumer.
+    view->updateEffect(BGFXView::EffectReflection,
+                       lightconf.groundReflection
+                           || (waterconf.enabled
+                               && waterconf.reflection
+                               && waterconf.planarReflection));
+    // The AO/prepass set: the full-res depth+normal prepass, the AO
+    // resolve chain and the glass absorption interval, ~98MB at 1080p.
+    // Five consumers read it and each one is its own switch, so the
+    // predicate is their union:
+    //   - SSAO (Render_SSAO) and cavity shading, which share the chain;
+    //   - the volumetric raymarch, whose ray ends are the prepass depth;
+    //   - the water surface, which rejects refraction samples by it;
+    //   - the debug buffer views that visualize the prepass or the AO.
+    // Only the volumetric one is a target group of its own, so this
+    // cannot be folded into any of them.
+    //
+    // The fifth consumer is glass, which has no preference anywhere --
+    // it is a material. A glass body can therefore only ADD to the
+    // demand (view->glassSeen), never take it away.
+    //
+    // Glass bodies (Material::glass): the draws leave the ordinary
+    // path and re-render in the glass surface pass -- screen-space
+    // refraction, thickness absorption from the glass front/back
+    // interval, environment reflection. Needs the scene copy, this
+    // resource set and the environment; hidden-line mode disables it
+    // like the other shading effects. Unlike water the body's
+    // edge/vertex draws keep rendering (a glass part keeps its CAD
+    // feature lines).
+    bool hasGlassBody = false;
+    for (const auto &draw : scene) {
+        const auto &mat = draw.material;
+        if (mat.glass && !mat.ontop && mat.numclipplanes == 0
+                && mat.type == Render::Material::Triangle) {
+            hasGlassBody = true;
+            break;
+        }
+    }
+    if (hasGlassBody)
+        view->glassSeen = true;
+    view->updateEffect(BGFXView::EffectSSAO,
+                       view->m_ssao
+                           && (aoconf.enabled || cavityconf.enabled
+                               || volconf.enabled || waterconf.enabled
+                               || (debugconf.viewMode >= 1
+                                   && debugconf.viewMode <= 5)
+                               || debugconf.viewMode == 7
+                               || view->glassSeen));
+
     // WBOIT runs when the resources exist and the scene has any
     // transparent (non-on-top) triangles this frame; otherwise the
     // transparent view stays a bbox-sorted alpha blend into the
@@ -883,10 +1002,14 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // hidden-line technical view, and it needs opaque triangles to state
     // the curvature of. Zero strengths mean the multiply would be a
     // no-op, so the pass is not worth a target switch.
+    // isValid(aoPrepassFbo): the set is demand-allocated, so "the config
+    // wants AO" and "the targets exist" are no longer the same statement
+    // -- a pool with nothing left leaves the group unbuilt and every
+    // pass that reads it simply does not run (as for the volumetric).
     const bool ssaoWanted = view->m_ssao && aoconf.enabled
-        && !hlconfig.show;
+        && !hlconfig.show && bgfx::isValid(view->aoPrepassFbo);
     const bool cavityWanted = view->m_ssao && cavityconf.enabled
-        && !hlconfig.show
+        && !hlconfig.show && bgfx::isValid(view->aoPrepassFbo)
         && (cavityconf.valley > 0.0f || cavityconf.ridge > 0.0f)
         && bgfx::isValid(view->m_progCavity);
     bool hasOpaqueTri = false;
@@ -926,6 +1049,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // it too (mode 4 previously relied on another prepass consumer
     // being active).
     if (!ssaoActive && view->m_ssao
+            && bgfx::isValid(view->aoPrepassFbo)
             && ((debugconf.viewMode >= 1 && debugconf.viewMode <= 5)
                 || debugconf.viewMode == 7)) {
         for (const auto &draw : scene) {
@@ -1203,19 +1327,15 @@ bool BGFXRenderer::Private::render(const QColor &col,
             }
         }
     }
-    view->shadowFrame = shadowActive;
-    // Shadow map size from ShadowPrecision (Coin: the next power of
-    // two of precision * the 2048 cap); recreating the targets
-    // resets the cached-map hash.
-    if (shadowActive) {
-        float prec = bx::clamp(lightconf.precision, 0.01f, 1.0f);
-        uint16_t desired = 1;
-        uint16_t want = uint16_t(prec * BGFXView::kShadowMaxSize);
-        while (desired < want)
-            desired = uint16_t(desired << 1);
-        view->ensureShadowTargets(desired);
+    // The targets themselves were reconciled with the rest of the
+    // demand-allocated groups (EffectShadow) before anything read a
+    // handle; a frame that wants a shadow but found no room for the
+    // maps simply has none. shadowFrame follows that outcome rather
+    // than the intent, so no consumer is told there is a map when the
+    // allocation did not land.
+    if (shadowActive)
         shadowActive = bgfx::isValid(view->shadowFbo);
-    }
+    view->shadowFrame = shadowActive;
     // On RG32F the map stores plain (z, z^2) moments and the
     // receivers run Coin's exact VsmLookup — the GL Shadow style's
     // soft penumbra — at every SmoothBorder setting.
@@ -1340,8 +1460,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // shading effects. The medium is a sphere around the scene
     // bounds — bounding it keeps the camera's stand-off distance
     // out of the optical depth.
+    // isValid(volFbo): the targets are demand-allocated, so "the
+    // config wants volumetrics" and "the targets exist" are no longer
+    // the same statement -- a pool that had nothing left leaves the
+    // group unbuilt and every volumetric pass simply does not run.
     bool volActive = view->m_vol && volconf.enabled && shadowActive
-        && !hlconfig.show;
+        && !hlconfig.show && bgfx::isValid(view->volFbo)
+        && bgfx::isValid(view->aoPrepassFbo);
     float volDensity = volconf.density;
     float volMaxDist = 0.0f;
     float volMedium[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -1472,24 +1597,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
         if (!bgfx::isValid(view->m_envTex))
             waterSurfActive = bgfx::isValid(view->m_dummyEnvTex);
     }
-    // Glass bodies (Material::glass): the draws leave the ordinary
-    // path and re-render in the glass surface pass — screen-space
-    // refraction, thickness absorption from the glass front/back
-    // interval, environment reflection. Needs the scene copy, the
-    // SSAO resource set (the interval targets and the prepass
-    // depth-reject live there) and the environment; hidden-line
-    // mode disables it like the other shading effects. Unlike
-    // water the body's edge/vertex draws keep rendering (a glass
-    // part keeps its CAD feature lines).
-    bool hasGlassBody = false;
-    for (const auto &draw : scene) {
-        const auto &mat = draw.material;
-        if (mat.glass && !mat.ontop && mat.numclipplanes == 0
-                && mat.type == Render::Material::Triangle) {
-            hasGlassBody = true;
-            break;
-        }
-    }
+    // Glass bodies: found with the SSAO group's demand above, since
+    // that is what a glass body asks for when nothing else does.
     bool glassActive = hasGlassBody && !hlconfig.show
         && view->m_ssao
         && bgfx::isValid(view->m_progGlass)
@@ -2077,7 +2186,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
             view->localLightView[BGFXView::kMediumSlots + slot][3]
                 = 0.0f;
     }
-    bool bloomActive = bloomconf.enabled;
+    // Demand-allocated, like the volumetric set: an unbuilt chain
+    // leaves the passes out of the frame rather than binding nothing.
+    bool bloomActive = bloomconf.enabled
+        && bgfx::isValid(view->bloomFbo);
     float waterWaveStrength = waterconf.waveStrength;
     float waterWaveScale = waterconf.waveScale;
     if (waterWaveScale <= 0.0f)
@@ -2179,6 +2291,30 @@ bool BGFXRenderer::Private::render(const QColor &col,
     bool bulbShadowRender[BGFXView::kBulbShadowTiles] = {};
     bool anyBulbShadow = false;
     {
+        // The 50MB atlas is built by the first frame that has a
+        // shadow-casting bulb to put in it.
+        //
+        // ! Allocate-only, deliberately. Unlike the volumetric, bloom
+        // and reflection groups, this demand is SCENE state -- a light
+        // object carrying Material::lightshadow -- not configuration,
+        // and updateEffect's contract is that only configuration may
+        // release. Freeing on "no bulb in this frame's scene" would
+        // drop and rebuild 50MB across a document switch, whose
+        // intermediate feeds are legitimately empty. It goes away with
+        // the view's programs instead.
+        bool wantBulbAtlas = false;
+        if (shadowActive) {
+            for (int sl = 0; sl < kBulbSlots; ++sl) {
+                if (sl < bulbCount && bulbWantShadow[sl]
+                        && bulbRangeW[sl] > 0.0f) {
+                    wantBulbAtlas = true;
+                    break;
+                }
+            }
+        }
+        if (wantBulbAtlas)
+            view->updateEffect(BGFXView::EffectBulbShadow, true);
+
         uint64_t casterH = 0;
         const auto *caps = bgfx::getCaps();
         // Camera view -> world rotation for the shader's cube-face
@@ -2307,7 +2443,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     static const bool noWaterReject =
         (getenv("FC_BGFX_NO_WATER_REJECT") != nullptr);
     bool waterSurfReject = waterSurfActive && view->m_ssao
-        && !noWaterReject;
+        && !noWaterReject && bgfx::isValid(view->aoPrepassFbo);
     bool glassReject = glassActive && !noWaterReject;
     bool prepassActive = ssaoActive || volActive || waterSurfReject
         || glassReject || cavityActive;
@@ -2448,16 +2584,27 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // shadow lookup of the mirrored draws needs the shadow matrix
     // rebased from the mirrored view space (mirrored-view -> world
     // -> original-view -> shadow uv).
-    bool groundReflActive = shadowActive && lightconf.ground
-        && lightconf.groundReflection && bboxValid && !hlconfig.show
+    //
+    // What it needs is a ground quad to blend onto, which groundQuad()
+    // answers for -- it takes the reflection as its own reason to exist,
+    // so RenderShadow_ShowGround need not also be found and switched on.
+    // What it does NOT need is a shadow map: the mirrored re-render and
+    // the overlay are the same with or without one, and a reflection
+    // that could only be seen under the Shadow draw style was the
+    // coupling this had until now.
+    float groundCorners[4][3];
+    const bool groundQuadOk = bboxValid
+        && lightconf.groundQuad(bboxMin, bboxMax, groundCorners);
+    bool groundReflActive = groundQuadOk && lightconf.groundReflection
+        && !hlconfig.show
         && bgfx::isValid(view->m_progGroundRefl)
         && bgfx::isValid(view->reflFbo);
     if (getenv("FC_BGFX_DEBUG_FEED"))
         fprintf(stderr,
-                "bgfx ground refl: conf=%d ground=%d shadow=%d"
+                "bgfx ground refl: conf=%d ground=%d quad=%d shadow=%d"
                 " active=%d intensity=%g\n",
                 lightconf.groundReflection, lightconf.ground,
-                shadowActive, groundReflActive,
+                int(groundQuadOk), shadowActive, groundReflActive,
                 lightconf.groundReflectionIntensity);
     float reflViewMtx[16], reflShadowMtx[16];
     if (groundReflActive) {
@@ -4705,7 +4852,13 @@ bool BGFXRenderer::Private::render(const QColor &col,
         cpuMarkT = bx::getHPCounter();
     if (view->passLive(V::ViewShadowBlurH))
         view->submitShadowBlur(lightconf.smoothBorder);
-    if (shadowActive && lightconf.ground && bboxValid) {
+    // The ground receiver. Its historical reason is the shadow -- the
+    // Shadow draw style draws the plane its scene casts onto, which is
+    // why RenderShadow_ShowGround alone still draws nothing -- and its
+    // second is the reflection, which needs the quad whether or not a
+    // shadow map exists. groundQuad() decides whether there is a quad at
+    // all (either switch, and not fully transparent).
+    if ((shadowActive || lightconf.groundReflection) && groundQuadOk) {
         view->submitShadowGround(bboxMin, bboxMax, lightconf,
                                  volActive && aoRender);
     }
@@ -5325,10 +5478,9 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // bound when it asked for it: the widget's own for an on-screen
     // frame, a capture target for a screenshot (renderOffscreen).
     // QOpenGLWidget::makeCurrent() binds its own framebuffer, so the
-    // caller's has to be remembered here and restored before the blit,
-    // which transfers into whatever is bound.
-    GLint hostFbo = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &hostFbo);
+    // caller's -- remembered at the top of this frame, where every bail
+    // reads it too -- is restored before the blit, which transfers into
+    // whatever is bound.
     widget->doneCurrent();
     cpuMark(CpuCtxDone);
     _BGFXLib.makeCurrent();

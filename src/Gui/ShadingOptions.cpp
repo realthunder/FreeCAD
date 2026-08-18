@@ -75,13 +75,6 @@ PropT *renderProp(App::PropertyContainer *view, const char *name)
     return viewProp<PropT>(view, "Render", name);
 }
 
-/// Shadow_DisplayMode: which draw style the Shadow mode hosts. Absent
-/// until the Shadow draw style has been entered once.
-App::PropertyEnumeration *shadowStyleProp(App::PropertyContainer *view)
-{
-    return viewProp<App::PropertyEnumeration>(view, "Shadow", "DisplayMode");
-}
-
 bool renderFlag(App::PropertyContainer *view, const char *name, bool def)
 {
     if (auto prop = renderProp<App::PropertyBool>(view, name))
@@ -176,11 +169,11 @@ ShadingOptionsWidget::ShadingOptionsWidget(QWidget *parent)
     shadowCheck->setToolTip(
         tr("Light the scene with a directional light that casts shadows.\n"
            "\n"
-           "This is the Shadow draw style: it is what puts a scene light in "
-           "the graph at all,\nso it is a shading switch rather than a style, "
-           "and it hosts the style you\nare in rather than replacing it. "
-           "Its light, ground plane and shadow quality\nare the Shadow_* "
-           "properties of the view."));
+           "The renderer's own scene light and the shadow map it casts: a "
+           "shading\nswitch beside the others, leaving the display style "
+           "alone. Its direction,\ncolour and spot form are the view's "
+           "Render_Light* properties, its ground\nplane and map quality "
+           "the RenderShadow_* ones."));
     bloomCheck = new QCheckBox(tr("Bloom"), this);
     bloomCheck->setToolTip(doc(RenderParams::docBloom()));
     flags->addWidget(cavityCheck, 0, 0);
@@ -276,63 +269,24 @@ App::PropertyContainer *ShadingOptionsWidget::activeView() const
     return qobject_cast<View3DInventor*>(Application::Instance->activeView());
 }
 
-View3DInventorViewer *ShadingOptionsWidget::activeViewer() const
-{
-    auto view = qobject_cast<View3DInventor*>(Application::Instance->activeView());
-    return view ? view->getViewer() : nullptr;
-}
-
-namespace {
-
-// The four styles the Shadow draw style can host, in Shadow_DisplayMode
-// order (View3DInventorViewer::Private::activateShadow).
-const char * const _shadowStyles[] = {"Flat Lines", "Shaded", "As Is",
-                                      "Hidden Line"};
-constexpr int kShadowStyleAsIs = 2;
-
-int shadowStyleIndex(const std::string &mode)
-{
-    for (int i = 0; i < 4; ++i) {
-        if (mode == _shadowStyles[i])
-            return i;
-    }
-    // Points, Wireframe, No Shading and Tessellation have no shadow-mode
-    // equivalent; they come back as As Is.
-    return kShadowStyleAsIs;
-}
-
-} // namespace
-
+// The Shadow draw style is gone (docs/CoinRetirement.md stage 4e); what
+// this switch drives is what that style stood for -- the renderer's own
+// scene light and the map it casts. The display style is left alone,
+// which is the point of the move: shadows compose with the style the
+// user is looking at instead of hosting it.
 void ShadingOptionsWidget::setShadow(bool on)
 {
-    auto viewer = activeViewer();
-    if (!viewer)
+    auto view = activeView();
+    if (!view)
         return;
-    const bool active = viewer->getOverrideMode() == "Shadow";
-    if (on == active)
-        return;
-
+    if (auto prop = renderProp<App::PropertyBool>(view, "Light"))
+        prop->setValue(on);
+    // The map follows the light on, and is left alone otherwise:
+    // Render_Shadow drops the map while keeping the scene lit, which is
+    // a state worth being able to hold.
     if (on) {
-        // Carry the style the user is looking at into shadow mode, so the
-        // scene keeps its appearance and only gains the light.
-        const int index = shadowStyleIndex(viewer->getOverrideMode());
-        viewer->setOverrideMode("Shadow");
-        // Shadow_DisplayMode is materialized by entering the mode, so it
-        // can only be set afterwards; the property change re-applies the
-        // override (View3DInventorViewer::onViewPropertyChanged).
-        if (auto prop = shadowStyleProp(activeView()))
-            prop->setValue(long(index));
-        if (auto prop = renderProp<App::PropertyBool>(activeView(), "Shadow"))
+        if (auto prop = renderProp<App::PropertyBool>(view, "Shadow"))
             prop->setValue(true);
-    }
-    else {
-        // Hand the hosted style back as the plain draw style.
-        int index = kShadowStyleAsIs;
-        if (auto prop = shadowStyleProp(activeView()))
-            index = int(prop->getValue());
-        if (index < 0 || index > 3)
-            index = kShadowStyleAsIs;
-        viewer->setOverrideMode(_shadowStyles[index]);
     }
 }
 
@@ -411,11 +365,10 @@ void ShadingOptionsWidget::refresh()
     // so the readout is set here rather than left to the signal.
     cavityRadiusValue->setText(tr("%1 px").arg(cavityRadiusSlider->value()));
     aoCheck->setChecked(renderFlag(view, "AO", false));
-    // Shadows follow the draw style, not Render_Shadow: without the style
-    // there is no scene light to cast one, and Render_Shadow only drops
-    // the map of a light the style already provides.
-    auto viewer = activeViewer();
-    shadowCheck->setChecked(viewer && viewer->getOverrideMode() == "Shadow");
+    // Shadows are the renderer's scene light: Render_Shadow only drops
+    // the map of a light Render_Light provides, so the switch follows
+    // the light.
+    shadowCheck->setChecked(renderFlag(view, "Light", false));
     bloomCheck->setChecked(renderFlag(view, "Bloom", false));
 
     defaultRadio->setEnabled(available);
@@ -427,9 +380,7 @@ void ShadingOptionsWidget::refresh()
     cavityCheck->setEnabled(available);
     updateCavityRadiusEnabled();
     aoCheck->setEnabled(available);
-    // The one control here that is not renderer-only: the Shadow draw
-    // style predates the backend and works on the plain Coin path too.
-    shadowCheck->setEnabled(viewer != nullptr);
+    shadowCheck->setEnabled(available);
     bloomCheck->setEnabled(available);
     hint->setVisible(!available);
 }

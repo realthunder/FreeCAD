@@ -39,7 +39,7 @@ try:
     view.SetBool("NoPreSelFaceHighlightWithOutline", True)
     view.SetBool("NoSelFaceHighlightWithOutline", True)
     # Global default for the Shadow draw style's SmoothBorder: the style
-    # materializes its Shadow_SmoothBorder view property from this, so it
+    # materializes its RenderShadow_SmoothBorder view property from this, so it
     # is soft from the first shadow frame (tune_shadow below then drives
     # the view property directly).
     view.SetInt("ShadowSmoothBorder", int(os.environ.get("SHADOWSMOOTH", "40")))
@@ -220,25 +220,29 @@ try:
 
     def enable_shadow():
         try:
-            FreeCADGui.runCommand("Std_DrawStyleShadow", 0)
+            # The scene light is a shading switch now, not a draw style
+            # (docs/CoinRetirement.md stage 4e): Render_Light puts the
+            # light in, Render_Shadow (default on) casts its map.
+            FreeCADGui.activeDocument().activeView().Render_Light = True
             note("SHADOW ON")
         except Exception:
             note(traceback.format_exc())
 
     # Soft shadow border via the Shadow draw style's per-view property
     # (0..100 gaussian over the shadow moments; SHADOWSMOOTH=0 keeps hard
-    # borders). The Shadow_* properties materialize on the view lazily at
-    # the first shadow render, so retry until the assignment sticks.
+    # borders). The RenderShadow_* properties are materialized with the
+    # backend, but the view may not exist yet, so retry until the
+    # assignment sticks.
     def tune_shadow(tries=[0]):
         try:
             v = FreeCADGui.activeDocument().activeView()
-            v.Shadow_SmoothBorder = int(os.environ.get("SHADOWSMOOTH", "40"))
+            v.RenderShadow_SmoothBorder = int(os.environ.get("SHADOWSMOOTH", "40"))
             # Per-view override of the air haze density (the Render group
             # global set above is only the default the property
             # materializes from).
             if "VOLDENSITY" in os.environ:
                 v.Render_VolumetricDensity = float(os.environ["VOLDENSITY"])
-            note("SHADOW SMOOTH %s" % v.Shadow_SmoothBorder)
+            note("SHADOW SMOOTH %s" % v.RenderShadow_SmoothBorder)
         except Exception:
             tries[0] += 1
             if tries[0] < 20:

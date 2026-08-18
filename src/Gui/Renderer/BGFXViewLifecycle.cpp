@@ -22,6 +22,40 @@
 
 #include "BGFXRendererP.h"
 
+namespace
+{
+
+// Every uniform and program init() builds is LifeProgram: only
+// destroyPrograms() releases them, and a keepShared init deliberately
+// does not run it -- so the resize path re-executes the whole of init()
+// with that entire set still live. bgfx does dedupe a re-creation
+// (createUniform by name, createProgram by its shader pair), but it
+// dedupes by refcounting UP and hands back the same handle; the single
+// destroy at teardown decrements once, so every resize permanently
+// consumes nothing while the process runs and leaks one reference per
+// handle at the end. A shutdown leak report reading "s_texVol (count
+// 3)" is exactly a view that was resized twice.
+//
+// So creation goes through these two: they are the guard the five
+// LifeProgram *texture* sites already carry, applied to the uniforms
+// and programs beside them.
+
+void ensureUniform(bgfx::UniformHandle &h, const char *name,
+                   bgfx::UniformType::Enum type, uint16_t num = 1)
+{
+    if (!bgfx::isValid(h))
+        h = bgfx::createUniform(name, type, num);
+}
+
+void ensureProgram(bgfx::ProgramHandle &h, const char *vsName,
+                   const char *fsName)
+{
+    if (!bgfx::isValid(h))
+        h = fcLoadProgram(vsName, fsName, _BGFXLib.shaderPath().c_str());
+}
+
+}  // namespace
+
 BGFXView::~BGFXView()
 {
     destroy();
@@ -82,6 +116,9 @@ void BGFXView::destroyTargets()
     // hash resets with it (same for the AO/prepass cache and the
     // bulb shadow tiles).
     shadowMapHash = 0;
+    // The sweep below takes the shadow set with the rest of the sized
+    // handles, so the size it was built at is gone with it.
+    shadowSize = 0;
     aoMapHash = 0;
     camFrameHash = 0;
     for (int t = 0; t < kBulbShadowTiles; ++t) {
@@ -94,6 +131,18 @@ void BGFXView::destroyTargets()
     // destroyTextures): the sweep released them with it.
     sinkColor = BGFX_INVALID_HANDLE;
     sinkDepth = BGFX_INVALID_HANDLE;
+    // Every demand-allocated group just lost its framebuffer to the
+    // sweep, so each is "not allocated" again and the next frame that
+    // wants one rebuilds it at the new size. The failure latches clear
+    // with them: a group that could not fit at the old size is owed a
+    // fresh try at the new one, which is usually smaller.
+    for (int g = 0; g < NumEffectGroups; ++g)
+        effectFailed[g] = false;
+    // The glass sighting speaks for targets that no longer exist, and
+    // a resize is the one moment a document that has moved on from
+    // glass can stop paying for it: the next frame that still has a
+    // glass body sets it again.
+    glassSeen = false;
 #ifndef FC_RENDERER_STANDALONE
     if (hasFBO) {
         _BGFXLib.freeFBO(fbo);
@@ -103,6 +152,478 @@ void BGFXView::destroyTargets()
         hasFBO = false;
     }
 #endif
+}
+
+// ---------------------------------------------------------------------
+// Demand-allocated effect groups.
+//
+// A view's render targets used to be decided by what the GPU *can* do:
+// m_shadow / m_oit / m_ssao / m_vol are capability tests, so a session
+// with volumetrics, water, bloom and reflections all switched off still
+// paid for every one of them. At 1080p that was ~352MB of a ~554MB
+// per-view target footprint, on every open 3D view, for passes that
+// never ran. (The shadow maps were the one set that at least waited
+// for a first use -- and then kept their 117MB for the life of the
+// view, however long ago the light was switched off.)
+//
+// Capability still gates absolutely -- a group whose m_* flag is false
+// is never allocated whatever the configuration asks for. On top of it
+// each group below is built by the first frame that wants it and
+// released when the configuration that wanted it goes away.
+//
+// ! Release is driven by CONFIGURATION, never by scene content. The
+// frame's *Active flags fold in things like "this frame's scene has a
+// water body" or "the shadow pass ran"; releasing on those would free
+// and rebuild across ordinary editing -- the same churn collectMeshes()
+// had to be taught out of, where a two-frame TTL re-uploaded 198 draws
+// every fourth frame. updateEffect() is therefore called with the
+// config predicate alone, and the one scene-derived group (the bulb
+// atlas) is only ever asked to allocate.
+
+bool BGFXView::effectAllocated(EffectGroup g) const
+{
+    switch (g) {
+    case EffectVolumetric: return bgfx::isValid(volFbo);
+    case EffectBulbShadow: return bgfx::isValid(bulbShadowFbo);
+    case EffectReflection: return bgfx::isValid(reflFbo);
+    case EffectBloom:      return bgfx::isValid(bloomFbo);
+    case EffectSSAO:       return bgfx::isValid(aoPrepassFbo);
+    case EffectShadow:     return bgfx::isValid(shadowFbo);
+    default:               return false;
+    }
+}
+
+/// Build one group's sized targets. Returns false if any handle came
+/// back invalid -- the pools are shared with every other view, so this
+/// is an ordinary outcome, not an error.
+bool BGFXView::allocEffect(EffectGroup g)
+{
+    switch (g) {
+    case EffectVolumetric: {
+        if (!m_vol)
+            return false;
+        const uint16_t hw = std::max<uint16_t>(1, width / 2);
+        const uint16_t hh = std::max<uint16_t>(1, height / 2);
+        // Half-res raymarch target + the front-of-water inscatter
+        // segment (rgb) and its transmittance (a). The main apply does
+        // its own bilateral upsample from point taps; the front apply
+        // reads linearly, hence the two sampler flag sets.
+        const uint64_t pointFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        const uint64_t linearFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        volTex = bgfx::createTexture2D(hw, hh, false, 1,
+            bgfx::TextureFormat::RGBA16F, pointFlags);
+        volFrontTex = bgfx::createTexture2D(hw, hh, false, 1,
+            bgfx::TextureFormat::RGBA16F, linearFlags);
+        // History pair for the temporal accumulation; sampling flags
+        // mirror the current-frame targets.
+        volHistTex = bgfx::createTexture2D(hw, hh, false, 1,
+            bgfx::TextureFormat::RGBA16F, pointFlags);
+        volHistFrontTex = bgfx::createTexture2D(hw, hh, false, 1,
+            bgfx::TextureFormat::RGBA16F, linearFlags);
+        if (!bgfx::isValid(volTex) || !bgfx::isValid(volFrontTex)
+                || !bgfx::isValid(volHistTex)
+                || !bgfx::isValid(volHistFrontTex))
+            return false;
+        bgfx::TextureHandle volAtt[2] = {volTex, volFrontTex};
+        volFbo = bgfx::createFrameBuffer(2, volAtt, false);
+        bgfx::TextureHandle volHistAtt[2] = {volHistTex,
+                                             volHistFrontTex};
+        volHistFbo = bgfx::createFrameBuffer(2, volHistAtt, false);
+
+        // The three medium interval pairs: full-res front/back depths
+        // of water, cloud and fire body draws, written by the prepass
+        // programs (only .z viewZ and .w validity are consumed). Each
+        // medium kind gets its own pair -- the per-medium-kind slot
+        // scheme -- so they stand or fall together with the raymarch.
+        const uint64_t medFlags = pointFlags;
+        struct MediumTargets {
+            bgfx::TextureHandle *frontTex, *backTex;
+            bgfx::TextureHandle *frontDepth, *backDepth;
+            bgfx::FrameBufferHandle *frontFbo, *backFbo;
+        } media[3] = {
+            {&waterFrontTex, &waterBackTex, &waterFrontDepth,
+             &waterBackDepth, &waterFrontFbo, &waterBackFbo},
+            {&cloudFrontTex, &cloudBackTex, &cloudFrontDepth,
+             &cloudBackDepth, &cloudFrontFbo, &cloudBackFbo},
+            {&fireFrontTex, &fireBackTex, &fireFrontDepth,
+             &fireBackDepth, &fireFrontFbo, &fireBackFbo},
+        };
+        for (auto &m : media) {
+            *m.frontTex = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::RGBA16F, medFlags);
+            *m.backTex = bgfx::createTexture2D(width, height, false, 1,
+                bgfx::TextureFormat::RGBA16F, medFlags);
+            *m.frontDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                medFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            *m.backDepth = bgfx::createTexture2D(width, height, false,
+                1, bgfx::TextureFormat::D24S8,
+                medFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+            if (!bgfx::isValid(*m.frontTex) || !bgfx::isValid(*m.backTex)
+                    || !bgfx::isValid(*m.frontDepth)
+                    || !bgfx::isValid(*m.backDepth))
+                return false;
+            bgfx::TextureHandle fatt[2] = {*m.frontTex, *m.frontDepth};
+            *m.frontFbo = bgfx::createFrameBuffer(2, fatt, false);
+            bgfx::TextureHandle batt[2] = {*m.backTex, *m.backDepth};
+            *m.backFbo = bgfx::createFrameBuffer(2, batt, false);
+            if (!bgfx::isValid(*m.frontFbo) || !bgfx::isValid(*m.backFbo))
+                return false;
+        }
+        return bgfx::isValid(volFbo) && bgfx::isValid(volHistFbo);
+    }
+    case EffectBulbShadow: {
+        if (!m_shadow)
+            return false;
+        // A fixed 2048x2048 atlas: it does not follow the viewport,
+        // which is why the two textures are LifeProgram and survive
+        // destroyTargets(). Both creations stay guarded -- unguarded,
+        // every keepShared init (i.e. every resize) overwrote handles
+        // whose textures were still live, orphaning RG32F+D24S8 at
+        // 2048^2, 50MB a resize for the life of the process. After a
+        // resize only bulbShadowFbo is gone and only it is rebuilt.
+        const uint16_t side =
+            uint16_t(kBulbShadowGrid * kBulbShadowTileSize);
+        if (!bgfx::isValid(bulbShadowTex))
+            bulbShadowTex = bgfx::createTexture2D(side, side, false, 1,
+                shadowFormat,
+                BGFX_TEXTURE_RT
+                | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        if (!bgfx::isValid(bulbShadowDepth))
+            bulbShadowDepth = bgfx::createTexture2D(side, side, false, 1,
+                bgfx::TextureFormat::D24S8,
+                BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
+        if (!bgfx::isValid(bulbShadowTex)
+                || !bgfx::isValid(bulbShadowDepth))
+            return false;
+        bgfx::TextureHandle bsAtt[2] = {bulbShadowTex, bulbShadowDepth};
+        bulbShadowFbo = bgfx::createFrameBuffer(2, bsAtt, false);
+        return bgfx::isValid(bulbShadowFbo);
+    }
+    case EffectReflection: {
+        // The mirrored-camera scene re-render target. This full opaque
+        // re-render is the priciest effect on a large window, so it
+        // scales to effW/effH (Render_EffectResolution); LINEAR
+        // sampling upscales it smoothly onto the full-res consumers
+        // (ground overlay, water surface), which read normalized UV.
+        reflTex = bgfx::createTexture2D(effW, effH, false, 1,
+            bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        reflDepth = bgfx::createTexture2D(effW, effH, false, 1,
+            bgfx::TextureFormat::D24S8,
+            BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        if (!bgfx::isValid(reflTex) || !bgfx::isValid(reflDepth))
+            return false;
+        bgfx::TextureHandle ratt[2] = {reflTex, reflDepth};
+        reflFbo = bgfx::createFrameBuffer(2, ratt, false);
+        return bgfx::isValid(reflFbo);
+    }
+    case EffectSSAO: {
+        if (!m_ssao)
+            return false;
+        const auto *caps = bgfx::getCaps();
+        const uint64_t aoFlags = 0
+            | BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT
+            | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP
+            | BGFX_SAMPLER_V_CLAMP;
+        // The geometry prepass (aoNormalZ/aoDepth) stays full-res and
+        // POINT-sampled: refraction/glass reject, volumetric ray-ends and
+        // water span all read its exact eye-space depth, which bilinear
+        // upscaling would corrupt at silhouettes. The AO resolve targets
+        // (aoTex raw, aoBlurTex blurred) scale to ssaoW/ssaoH -- their OWN
+        // Render_SSAOResolution, independent of the reflection scale
+        // (effW/effH) -- and sample LINEAR, so a reduced-res AO upsamples
+        // smoothly. SSAO is resolution-sensitive (contact/crevice detail),
+        // so it defaults to full-res rather than sharing effectResolution,
+        // whose reduction produced visibly blocky occlusion.
+        // Full-float normal+depth when available: fp16 viewZ (~10-bit
+        // mantissa) quantizes zoomed-in depths so hard that the GTAO
+        // horizon estimate bands along iso-depth contours (ripples on
+        // curved faces, stair strips on oblique flat ones near
+        // contacts). Point-sampled, so fp32 is safe on WebGL2/mobile
+        // (their float32 restriction is LINEAR filtering).
+        aoNormalZFp16 = !(caps->formats[bgfx::TextureFormat::RGBA32F]
+                          & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        aoNormalZ = bgfx::createTexture2D(width, height, false, 1,
+            aoNormalZFp16 ? bgfx::TextureFormat::RGBA16F
+                          : bgfx::TextureFormat::RGBA32F, aoFlags);
+        aoDepth = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::D24S8,
+            aoFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+        const uint64_t aoResFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;  // linear
+        aoTex = bgfx::createTexture2D(ssaoW, ssaoH, false, 1,
+            bgfx::TextureFormat::R8, aoResFlags);
+        aoBlurTex = bgfx::createTexture2D(ssaoW, ssaoH, false, 1,
+            bgfx::TextureFormat::R8, aoResFlags);
+        if (!bgfx::isValid(aoNormalZ) || !bgfx::isValid(aoDepth)
+                || !bgfx::isValid(aoTex) || !bgfx::isValid(aoBlurTex))
+            return false;
+        bgfx::TextureHandle preatt[2] = {aoNormalZ, aoDepth};
+        aoPrepassFbo = bgfx::createFrameBuffer(2, preatt, false);
+        aoGenFbo = bgfx::createFrameBuffer(1, &aoTex, false);
+        aoBlurFbo = bgfx::createFrameBuffer(1, &aoBlurTex, false);
+        if (!bgfx::isValid(aoPrepassFbo) || !bgfx::isValid(aoGenFbo)
+                || !bgfx::isValid(aoBlurFbo))
+            return false;
+
+        // 4x4 tiled random rotation vectors (xy packed *0.5+0.5),
+        // fixed values so frames are deterministic. The .z channel packs a
+        // 4x4 Bayer dither (0..255): the gen pass uses it to jitter the
+        // per-pixel sample radius, so neighbouring pixels sample at
+        // different distances and the 4x4 blur (one Bayer tile) averages
+        // all 16 sub-radii -- decorrelating the RADIAL occlusion banding
+        // that the azimuthal-only rotation leaves behind.
+        static const uint8_t noise[64] = {
+            0xa2, 0x05, 0x00, 0xff, 0x11, 0xc0, 0x88, 0xff,
+            0xee, 0xc0, 0x22, 0xff, 0x25, 0xd9, 0xaa, 0xff,
+            0x27, 0x23, 0xcc, 0xff, 0x63, 0x03, 0x44, 0xff,
+            0x20, 0xd4, 0xee, 0xff, 0x2a, 0xde, 0x66, 0xff,
+            0x90, 0xfe, 0x33, 0xff, 0x9b, 0xfc, 0xbb, 0xff,
+            0xae, 0x09, 0x11, 0xff, 0xef, 0xbe, 0x99, 0xff,
+            0xd8, 0x23, 0xff, 0xff, 0x3a, 0x15, 0x77, 0xff,
+            0x00, 0x87, 0xdd, 0xff, 0xe8, 0xc9, 0x55, 0xff,
+        };
+        aoNoiseTex = bgfx::createTexture2D(4, 4, false, 1,
+            bgfx::TextureFormat::RGBA8,
+            BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT,
+            bgfx::copy(noise, sizeof(noise)));
+        if (!bgfx::isValid(aoNoiseTex))
+            return false;
+
+        // GTAO depth pyramid: single-channel viewZ, POINT-sampled
+        // (the gen pass picks a discrete level per tap). R32F when
+        // renderable, else R16F -- coarse levels only serve FAR taps,
+        // whose coplanarity guard already tolerates fp16 steps; the
+        // near taps keep reading the full-precision prepass.
+        //
+        // The pyramid is the one part that degrades on its own: with no
+        // levels the GTAO gen reads the prepass at every tap, so a
+        // failure here costs quality, not the group.
+        const bool mipR32 = 0 != (caps->formats[bgfx::TextureFormat::R32F]
+                                  & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        const bool mipR16 = 0 != (caps->formats[bgfx::TextureFormat::R16F]
+                                  & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+        aoMipCount = (mipR32 || mipR16)
+                && bgfx::isValid(m_progGtaoDepth) ? kAOMipLevels : 0;
+        for (int m = 0; m < aoMipCount; ++m) {
+            const uint16_t mw = uint16_t(std::max(1, width >> (m + 1)));
+            const uint16_t mh = uint16_t(std::max(1, height >> (m + 1)));
+            aoMipTex[m] = bgfx::createTexture2D(mw, mh, false, 1,
+                mipR32 ? bgfx::TextureFormat::R32F
+                       : bgfx::TextureFormat::R16F, aoFlags);
+            if (bgfx::isValid(aoMipTex[m]))
+                aoMipFbo[m] = bgfx::createFrameBuffer(1, &aoMipTex[m],
+                                                      false);
+            if (!bgfx::isValid(aoMipFbo[m])) {
+                // Keep the levels that did land; the gen pass reads
+                // aoMipCount, so the tail simply is not there.
+                aoMipCount = m;
+                break;
+            }
+        }
+
+        // Glass body absorption interval: full-res front/back
+        // depths of glass draws, written by the prepass programs
+        // like the water medium interval (only .z viewZ and .w
+        // validity are consumed). In this group because the depth
+        // writer is the prepass shader family -- and because a glass
+        // body is what asks for the prepass in the first place when
+        // nothing else does.
+        const uint64_t glassFlags = 0
+            | BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
+            | BGFX_SAMPLER_MIP_POINT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        glassFrontTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA16F, glassFlags);
+        glassBackTex = bgfx::createTexture2D(width, height, false, 1,
+            bgfx::TextureFormat::RGBA16F, glassFlags);
+        glassFrontDepth = bgfx::createTexture2D(width, height, false,
+            1, bgfx::TextureFormat::D24S8,
+            glassFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+        glassBackDepth = bgfx::createTexture2D(width, height, false,
+            1, bgfx::TextureFormat::D24S8,
+            glassFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
+        if (!bgfx::isValid(glassFrontTex) || !bgfx::isValid(glassBackTex)
+                || !bgfx::isValid(glassFrontDepth)
+                || !bgfx::isValid(glassBackDepth))
+            return false;
+        bgfx::TextureHandle gfatt[2] = {glassFrontTex, glassFrontDepth};
+        glassFrontFbo = bgfx::createFrameBuffer(2, gfatt, false);
+        bgfx::TextureHandle gbatt[2] = {glassBackTex, glassBackDepth};
+        glassBackFbo = bgfx::createFrameBuffer(2, gbatt, false);
+        return bgfx::isValid(glassFrontFbo) && bgfx::isValid(glassBackFbo);
+    }
+    case EffectBloom: {
+        // Quarter-res RGBA16F halo source + blur ping target.
+        const uint16_t qw = uint16_t(std::max(1, int(width) / 4));
+        const uint16_t qh = uint16_t(std::max(1, int(height) / 4));
+        const uint64_t bloomFlags = BGFX_TEXTURE_RT
+            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        bloomTex = bgfx::createTexture2D(qw, qh, false, 1,
+            bgfx::TextureFormat::RGBA16F, bloomFlags);
+        bloomBlurTex = bgfx::createTexture2D(qw, qh, false, 1,
+            bgfx::TextureFormat::RGBA16F, bloomFlags);
+        if (!bgfx::isValid(bloomTex) || !bgfx::isValid(bloomBlurTex))
+            return false;
+        bloomFbo = bgfx::createFrameBuffer(1, &bloomTex, false);
+        bloomBlurFbo = bgfx::createFrameBuffer(1, &bloomBlurTex, false);
+        return bgfx::isValid(bloomFbo) && bgfx::isValid(bloomBlurFbo);
+    }
+    case EffectShadow: {
+        if (!m_shadow)
+            return false;
+        // The one group sized by a setting, not by the viewport:
+        // ensureShadowTargets() builds the whole set (moments + depth,
+        // the blur ping and its write-back, the glass tint pair) at
+        // the extent ShadowPrecision asked for, and is also what a
+        // later precision change comes back through.
+        ensureShadowTargets(shadowSizeWanted);
+        return bgfx::isValid(shadowFbo);
+    }
+    default:
+        return false;
+    }
+}
+
+/// Release one group's handles. Framebuffers strictly before the
+/// textures they reference, like forEachHandle's order.
+void BGFXView::freeEffect(EffectGroup g)
+{
+    auto drop = [](auto &h) {
+        if (bgfx::isValid(h)) {
+            bgfx::destroy(h);
+            h = BGFX_INVALID_HANDLE;
+        }
+    };
+    switch (g) {
+    case EffectVolumetric:
+        for (auto *h : {&volFbo, &volHistFbo, &waterFrontFbo,
+                        &waterBackFbo, &cloudFrontFbo, &cloudBackFbo,
+                        &fireFrontFbo, &fireBackFbo})
+            drop(*h);
+        for (auto *h : {&volTex, &volFrontTex, &volHistTex,
+                        &volHistFrontTex, &waterFrontTex, &waterBackTex,
+                        &waterFrontDepth, &waterBackDepth,
+                        &cloudFrontTex, &cloudBackTex, &cloudFrontDepth,
+                        &cloudBackDepth, &fireFrontTex, &fireBackTex,
+                        &fireFrontDepth, &fireBackDepth})
+            drop(*h);
+        break;
+    case EffectBulbShadow:
+        drop(bulbShadowFbo);
+        drop(bulbShadowTex);
+        drop(bulbShadowDepth);
+        // The tiles cached in the released atlas are gone with it.
+        for (int t = 0; t < kBulbShadowTiles; ++t) {
+            bulbShadowValid[t] = false;
+            bulbShadowHash[t] = 0;
+        }
+        break;
+    case EffectReflection:
+        drop(reflFbo);
+        drop(reflTex);
+        drop(reflDepth);
+        break;
+    case EffectBloom:
+        drop(bloomFbo);
+        drop(bloomBlurFbo);
+        drop(bloomTex);
+        drop(bloomBlurTex);
+        break;
+    case EffectSSAO:
+        drop(aoPrepassFbo);
+        drop(aoGenFbo);
+        drop(aoBlurFbo);
+        for (auto &h : aoMipFbo)
+            drop(h);
+        drop(glassFrontFbo);
+        drop(glassBackFbo);
+        drop(aoNormalZ);
+        drop(aoDepth);
+        drop(aoTex);
+        drop(aoBlurTex);
+        drop(aoNoiseTex);
+        for (auto &h : aoMipTex)
+            drop(h);
+        drop(glassFrontTex);
+        drop(glassBackTex);
+        drop(glassFrontDepth);
+        drop(glassBackDepth);
+        // The pyramid is gone, and so is the cached prepass the AO
+        // chain would otherwise be told to reuse.
+        aoMipCount = 0;
+        aoMapHash = 0;
+        break;
+    case EffectShadow:
+        for (auto *h : {&shadowFbo, &shadowBlurFbo, &shadowBlurBackFbo,
+                        &shadowTintFbo, &shadowTintBlurFbo,
+                        &shadowTintBlurBackFbo})
+            drop(*h);
+        for (auto *h : {&shadowTex, &shadowDepth, &shadowBlurTex,
+                        &shadowTintTex, &shadowTintBlurTex})
+            drop(*h);
+        // No map, no size and no cached moments: the next allocation
+        // is a first build again, at whatever precision then asks for.
+        shadowSize = 0;
+        shadowMapHash = 0;
+        break;
+    default:
+        break;
+    }
+}
+
+/// Reconcile one group against this frame's demand. \a want must be a
+/// pure configuration predicate -- see the note above.
+void BGFXView::updateEffect(EffectGroup g, bool want)
+{
+    if (want) {
+        // A group is normally either there or not, but the shadow set
+        // also has an extent of its own (ShadowPrecision). Changing it
+        // is a configuration change like switching the group off and on
+        // again, so the old set goes back -- including its failure
+        // latch, since a smaller map is a real chance to fit where the
+        // previous one did not.
+        if (g == EffectShadow && shadowSize != shadowSizeWanted
+                && effectAllocated(g)) {
+            freeEffect(g);
+            effectFailed[g] = false;
+        }
+        if (effectAllocated(g) || effectFailed[g])
+            return;
+        if (!allocEffect(g)) {
+            // ! Latch it. A failed allocation must not be retried every
+            // frame: the retry is what turned a full pool into a spin
+            // last time -- a bailed frame never reaches bgfx::frame(),
+            // which is the only place bgfx reclaims, so the view sat
+            // waiting on handles it was itself preventing from coming
+            // back. The latch clears on a resize (destroyTargets) and
+            // whenever the configuration turns the group off and on
+            // again, both of which are real chances to succeed.
+            effectFailed[g] = true;
+            freeEffect(g);   // drop whatever part of the set did land
+            static const char *const kNames[NumEffectGroups] = {
+                "volumetric", "bulb shadow", "reflection", "bloom",
+                "AO prepass", "shadow map"};
+            std::printf("bgfx: no render target handles for the %s "
+                        "effect -- it stays off in this view\n",
+                        kNames[g]);
+        }
+    } else if (effectAllocated(g)) {
+        freeEffect(g);
+        effectFailed[g] = false;
+    }
 }
 
 /// Shader programs, uniforms and the stand-in textures. Linking them is
@@ -230,7 +751,29 @@ void BGFXView::init(bool keepShared)
     // (BGFX_RESOLVE_AUTO_GEN_MIPS) is also rejected for depth attachments.
     attachment[0].init(bgfxColor, bgfx::Access::Write, 0, 1, 0, BGFX_RESOLVE_NONE);
     attachment[1].init(bgfxDepth, bgfx::Access::Write, 0, 1, 0, BGFX_RESOLVE_NONE);
-    bgfxFbo = bgfx::createFrameBuffer(2, attachment, true);
+    // ! An exhausted handle pool must not be a crash. bgfx returns an
+    // invalid handle from createTexture, and createFrameBuffer ASSERTS
+    // on an invalid attachment ("Invalid texture attachment"), which in
+    // a debug build is a SIGTRAP -- so running out of framebuffers took
+    // the application down rather than costing a frame. Leaving the
+    // scene framebuffer invalid is the outcome the frame path already
+    // knows how to read: it bails to the host and Coin draws.
+    if (bgfx::isValid(bgfxColor) && bgfx::isValid(bgfxDepth))
+        bgfxFbo = bgfx::createFrameBuffer(2, attachment, true);
+    else
+        bgfxFbo = BGFX_INVALID_HANDLE;
+    // Either pool can be the one that ran dry -- an invalid attachment
+    // (textures) or an invalid framebuffer -- and both end here, so the
+    // latch is read off the result rather than off which call failed.
+    targetsFailed = !bgfx::isValid(bgfxFbo);
+    if (targetsFailed) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            std::printf("bgfx: out of render target handles -- this view "
+                        "falls back to Coin rendering\n");
+        }
+    }
 
     // The scene framebuffer is bound per view id per frame (the pass
     // map moves ids between passes from one frame to the next), so
@@ -253,84 +796,46 @@ void BGFXView::init(bool keepShared)
         sinkFbo = bgfx::createFrameBuffer(2, sinkAtt, true);
     }
 
-    // Bloom (glow) chain: quarter-res RGBA16F halo source + blur
-    // ping target (small enough to keep unconditionally; the passes
-    // only run while the bloom config is enabled).
+    // Bloom (glow) chain. The quarter-res halo/blur pair is
+    // demand-allocated by ensureEffect(EffectBloom); only the programs
+    // and uniforms are built here, because bgfx shares those across
+    // every view and relinking them is the expensive part.
     {
-        uint16_t qw = uint16_t(std::max(1, int(width) / 4));
-        uint16_t qh = uint16_t(std::max(1, int(height) / 4));
-        const uint64_t bloomFlags = BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
-        bloomTex = bgfx::createTexture2D(qw, qh, false, 1,
-            bgfx::TextureFormat::RGBA16F, bloomFlags);
-        bloomBlurTex = bgfx::createTexture2D(qw, qh, false, 1,
-            bgfx::TextureFormat::RGBA16F, bloomFlags);
-        bloomFbo = bgfx::createFrameBuffer(1, &bloomTex, false);
-        bloomBlurFbo = bgfx::createFrameBuffer(1, &bloomBlurTex,
-                                               false);
-        m_progBloomBright = fcLoadProgram("vs_fc_comp",
-                                          "fs_fc_bloom_bright",
-                                          _BGFXLib.shaderPath().c_str());
-        m_progBloomEmit = fcLoadProgram("vs_fc_mesh",
-                                        "fs_fc_bloom_emit",
-                                        _BGFXLib.shaderPath().c_str());
-        m_progBloomBlur = fcLoadProgram("vs_fc_comp",
-                                        "fs_fc_bloom_blur",
-                                        _BGFXLib.shaderPath().c_str());
-        m_progBloomApply = fcLoadProgram("vs_fc_comp",
-                                         "fs_fc_bloom_apply",
-                                         _BGFXLib.shaderPath().c_str());
-        s_texBloom = bgfx::createUniform("s_texBloom",
-                                         bgfx::UniformType::Sampler);
-        u_bloomParams = bgfx::createUniform(
-            "u_bloomParams", bgfx::UniformType::Vec4);
-        u_bloomTexel = bgfx::createUniform(
-            "u_bloomTexel", bgfx::UniformType::Vec4);
-        u_bloomBlur = bgfx::createUniform(
-            "u_bloomBlur", bgfx::UniformType::Vec4);
+        ensureProgram(m_progBloomBright, "vs_fc_comp", "fs_fc_bloom_bright");
+        ensureProgram(m_progBloomEmit, "vs_fc_mesh", "fs_fc_bloom_emit");
+        ensureProgram(m_progBloomBlur, "vs_fc_comp", "fs_fc_bloom_blur");
+        ensureProgram(m_progBloomApply, "vs_fc_comp", "fs_fc_bloom_apply");
+        ensureUniform(s_texBloom, "s_texBloom", bgfx::UniformType::Sampler);
+        ensureUniform(u_bloomParams, "u_bloomParams", bgfx::UniformType::Vec4);
+        ensureUniform(u_bloomTexel, "u_bloomTexel", bgfx::UniformType::Vec4);
+        ensureUniform(u_bloomBlur, "u_bloomBlur", bgfx::UniformType::Vec4);
     }
 
     // Visible sun disc along the directional scene light.
-    m_progSun = fcLoadProgram("vs_fc_comp", "fs_fc_sun",
-                              _BGFXLib.shaderPath().c_str());
-    u_sunParams = bgfx::createUniform("u_sunParams",
-                                      bgfx::UniformType::Vec4);
+    ensureProgram(m_progSun, "vs_fc_comp", "fs_fc_sun");
+    ensureUniform(u_sunParams, "u_sunParams", bgfx::UniformType::Vec4);
 
     // PBR environment drawn as the visible background.
-    m_progEnvBg = fcLoadProgram("vs_fc_comp", "fs_fc_env",
-                                _BGFXLib.shaderPath().c_str());
+    ensureProgram(m_progEnvBg, "vs_fc_comp", "fs_fc_env");
 
 #ifdef FC_RENDERER_STANDALONE
     // The standalone present pass copies the scene color onto the
     // default backbuffer (no Qt framebuffer to GL-blit into).
-    m_progPresent = fcLoadProgram("vs_fc_comp", "fs_fc_copy",
-                                  _BGFXLib.shaderPath().c_str());
-    if (!bgfx::isValid(s_texScene))
-        s_texScene = bgfx::createUniform("s_texScene",
-                                         bgfx::UniformType::Sampler);
+    ensureProgram(m_progPresent, "vs_fc_comp", "fs_fc_copy");
+    ensureUniform(s_texScene, "s_texScene", bgfx::UniformType::Sampler);
 #endif
 
-    m_progMesh = fcLoadProgram("vs_fc_mesh", "fs_fc_mesh",
-                               _BGFXLib.shaderPath().c_str());
-    m_progFlat = fcLoadProgram("vs_fc_flat", "fs_fc_flat",
-                               _BGFXLib.shaderPath().c_str());
-    m_progMeshClip = fcLoadProgram("vs_fc_mesh_clip", "fs_fc_mesh_clip",
-                                   _BGFXLib.shaderPath().c_str());
-    m_progFlatClip = fcLoadProgram("vs_fc_flat_clip", "fs_fc_flat_clip",
-                                   _BGFXLib.shaderPath().c_str());
-    m_progMeshTex = fcLoadProgram("vs_fc_mesh_tex", "fs_fc_mesh_tex",
-                                  _BGFXLib.shaderPath().c_str());
-    m_progMeshTexClip = fcLoadProgram("vs_fc_mesh_tex_clip",
-                                      "fs_fc_mesh_tex_clip",
-                                      _BGFXLib.shaderPath().c_str());
-    s_texColor = bgfx::createUniform("s_texColor",
-                                     bgfx::UniformType::Sampler);
-    u_texMatrix = bgfx::createUniform("u_texMatrix",
-                                      bgfx::UniformType::Mat4);
-    u_texParams = bgfx::createUniform("u_texParams",
-                                      bgfx::UniformType::Vec4);
-    u_texBlendColor = bgfx::createUniform("u_texBlendColor",
-                                          bgfx::UniformType::Vec4);
+    ensureProgram(m_progMesh, "vs_fc_mesh", "fs_fc_mesh");
+    ensureProgram(m_progFlat, "vs_fc_flat", "fs_fc_flat");
+    ensureProgram(m_progMeshClip, "vs_fc_mesh_clip", "fs_fc_mesh_clip");
+    ensureProgram(m_progFlatClip, "vs_fc_flat_clip", "fs_fc_flat_clip");
+    ensureProgram(m_progMeshTex, "vs_fc_mesh_tex", "fs_fc_mesh_tex");
+    ensureProgram(m_progMeshTexClip, "vs_fc_mesh_tex_clip",
+                  "fs_fc_mesh_tex_clip");
+    ensureUniform(s_texColor, "s_texColor", bgfx::UniformType::Sampler);
+    ensureUniform(u_texMatrix, "u_texMatrix", bgfx::UniformType::Mat4);
+    ensureUniform(u_texParams, "u_texParams", bgfx::UniformType::Vec4);
+    ensureUniform(u_texBlendColor, "u_texBlendColor", bgfx::UniformType::Vec4);
 
     // Thick lines: instanced screen-space quad expansion (there is no
     // fixed-function line width in modern APIs). Without instancing
@@ -345,27 +850,17 @@ void BGFXView::init(bool keepShared)
         // geometry cache (Link arrays) collapse into a single
         // instanced submit carrying {model matrix, diffuse} per
         // instance.
-        m_progMeshInst = fcLoadProgram("vs_fc_mesh_inst", "fs_fc_mesh",
-                                       _BGFXLib.shaderPath().c_str());
-        m_progMeshInstTex = fcLoadProgram("vs_fc_mesh_tex_inst",
-                                          "fs_fc_mesh_tex",
-                                          _BGFXLib.shaderPath().c_str());
-        u_instParams = bgfx::createUniform("u_instParams",
-                                           bgfx::UniformType::Vec4);
-        m_progLine = fcLoadProgram("vs_fc_line", "fs_fc_flat",
-                                   _BGFXLib.shaderPath().c_str());
-        m_progLineClip = fcLoadProgram("vs_fc_line_clip", "fs_fc_flat_clip",
-                                       _BGFXLib.shaderPath().c_str());
-        m_progLinePat = fcLoadProgram("vs_fc_line_pat", "fs_fc_line_pat",
-                                      _BGFXLib.shaderPath().c_str());
-        m_progLinePatClip = fcLoadProgram("vs_fc_line_pat_clip",
-                                          "fs_fc_line_pat_clip",
-                                          _BGFXLib.shaderPath().c_str());
-        m_progPoint = fcLoadProgram("vs_fc_point", "fs_fc_flat",
-                                    _BGFXLib.shaderPath().c_str());
-        m_progPointClip = fcLoadProgram("vs_fc_point_clip",
-                                        "fs_fc_flat_clip",
-                                        _BGFXLib.shaderPath().c_str());
+        ensureProgram(m_progMeshInst, "vs_fc_mesh_inst", "fs_fc_mesh");
+        ensureProgram(m_progMeshInstTex, "vs_fc_mesh_tex_inst",
+                      "fs_fc_mesh_tex");
+        ensureUniform(u_instParams, "u_instParams", bgfx::UniformType::Vec4);
+        ensureProgram(m_progLine, "vs_fc_line", "fs_fc_flat");
+        ensureProgram(m_progLineClip, "vs_fc_line_clip", "fs_fc_flat_clip");
+        ensureProgram(m_progLinePat, "vs_fc_line_pat", "fs_fc_line_pat");
+        ensureProgram(m_progLinePatClip, "vs_fc_line_pat_clip",
+                      "fs_fc_line_pat_clip");
+        ensureProgram(m_progPoint, "vs_fc_point", "fs_fc_flat");
+        ensureProgram(m_progPointClip, "vs_fc_point_clip", "fs_fc_flat_clip");
         LineQuadVertex::init();
         static const LineQuadVertex quad[4] = {
             {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f, 0.0f},
@@ -381,111 +876,96 @@ void BGFXView::init(bool keepShared)
 
     // Section caps: the cap quad fill with hatch texture modulation.
     // The stencil mark and cleanup passes reuse the flat programs.
-    m_progCap = fcLoadProgram("vs_fc_cap", "fs_fc_cap",
-                              _BGFXLib.shaderPath().c_str());
-    m_progCapClip = fcLoadProgram("vs_fc_cap_clip", "fs_fc_cap_clip",
-                                  _BGFXLib.shaderPath().c_str());
-    s_texHatch = bgfx::createUniform("s_texHatch",
-                                     bgfx::UniformType::Sampler);
+    ensureProgram(m_progCap, "vs_fc_cap", "fs_fc_cap");
+    ensureProgram(m_progCapClip, "vs_fc_cap_clip", "fs_fc_cap_clip");
+    ensureUniform(s_texHatch, "s_texHatch", bgfx::UniformType::Sampler);
     // 1x1 white stand-in so the cap program samples neutrally when
     // hatching is disabled (and for the stencil cleanup pass).
+    //
+    // ! Guarded, like every LifeProgram creation on this path must be.
+    // A keepShared init runs only destroyTargets(), which sweeps
+    // LifeSized and leaves LifeProgram handles live -- so an
+    // unguarded create here overwrites a handle that still owns its
+    // texture, and the old one is orphaned for the life of the
+    // process. Cheap at 1x1; the same omission cost 50MB a resize on
+    // the bulb shadow atlas below.
     static const uint32_t white = 0xffffffff;
-    m_whiteTex = bgfx::createTexture2D(1, 1, false, 1,
-        bgfx::TextureFormat::RGBA8, 0,
-        bgfx::copy(&white, sizeof(white)));
+    if (!bgfx::isValid(m_whiteTex))
+        m_whiteTex = bgfx::createTexture2D(1, 1, false, 1,
+            bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(&white, sizeof(white)));
     // 1x1 fully transparent black: a stand-in whose *coverage* is
     // zero, for debug binds where the white texture would read as a
     // target full of opaque white (RenderDebug mode 9).
     static const uint32_t black = 0x00000000;
-    m_blackTex = bgfx::createTexture2D(1, 1, false, 1,
-        bgfx::TextureFormat::RGBA8, 0,
-        bgfx::copy(&black, sizeof(black)));
+    if (!bgfx::isValid(m_blackTex))
+        m_blackTex = bgfx::createTexture2D(1, 1, false, 1,
+            bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(&black, sizeof(black)));
     CapVertex::init();
 
     // PBR: the mesh programs always carry the environment sampler
     // (the branch is uniform-selected); a 1x1 black cube stands in
     // while PBR is off or unavailable. The real environment is built
     // on demand (ensureEnvironment).
-    s_texEnv = bgfx::createUniform("s_texEnv",
-                                   bgfx::UniformType::Sampler);
-    u_pbrParams = bgfx::createUniform("u_pbrParams",
-                                      bgfx::UniformType::Vec4);
-    u_matcapParams = bgfx::createUniform("u_matcapParams",
-                                         bgfx::UniformType::Vec4);
-    u_envSH = bgfx::createUniform("u_envSH",
-                                  bgfx::UniformType::Vec4, kEnvSH);
+    ensureUniform(s_texEnv, "s_texEnv", bgfx::UniformType::Sampler);
+    ensureUniform(u_pbrParams, "u_pbrParams", bgfx::UniformType::Vec4);
+    ensureUniform(u_matcapParams, "u_matcapParams", bgfx::UniformType::Vec4);
+    ensureUniform(u_envSH, "u_envSH", bgfx::UniformType::Vec4, kEnvSH);
     // Bump mapping of the textured mesh programs (unit 2; the 1x1
     // white cap texture stands in when a draw has no bump map).
-    s_texBump = bgfx::createUniform("s_texBump",
-                                    bgfx::UniformType::Sampler);
-    u_bumpParams = bgfx::createUniform("u_bumpParams",
-                                       bgfx::UniformType::Vec4);
+    ensureUniform(s_texBump, "s_texBump", bgfx::UniformType::Sampler);
+    ensureUniform(u_bumpParams, "u_bumpParams", bgfx::UniformType::Vec4);
     // Machined surface finish of the mesh programs (all of them, not
     // just the textured ones: the pattern is procedural over object
     // space and needs no texture coordinates).
     // An array: entry 0 is the draw's own finish, and a per-face-finished
     // draw fills the rest with its palette (Render::MaxFinishPalette
     // must match the shader's FC_FINISH_PALETTE).
-    u_finishParams = bgfx::createUniform("u_finishParams",
-                                         bgfx::UniformType::Vec4,
-                                         Render::MaxFinishPalette);
+    ensureUniform(u_finishParams, "u_finishParams", bgfx::UniformType::Vec4,
+                  Render::MaxFinishPalette);
     // The projection frames that finish is laid out in: three vec4 per
     // frame, entry 0 the draw's own. Kind 0 is the unframed frame --
     // the triplanar projection that predates these -- so a zero upload
     // reads as the old behaviour. Render::MaxFramePalette must match
     // the shader's FC_FRAME_PALETTE.
-    u_frameParams = bgfx::createUniform("u_frameParams",
-                                        bgfx::UniformType::Vec4,
-                                        Render::MaxFramePalette * 3);
+    ensureUniform(u_frameParams, "u_frameParams", bgfx::UniformType::Vec4,
+                  Render::MaxFramePalette * 3);
     // Emissive/occlusion material maps of the textured mesh programs
     // (units 4/5; u_texParams.zw flag their presence, the white
     // stand-in is never sampled).
-    s_texEmissive = bgfx::createUniform("s_texEmissive",
-                                        bgfx::UniformType::Sampler);
-    s_texOcclusion = bgfx::createUniform("s_texOcclusion",
-                                         bgfx::UniformType::Sampler);
+    ensureUniform(s_texEmissive, "s_texEmissive", bgfx::UniformType::Sampler);
+    ensureUniform(s_texOcclusion, "s_texOcclusion",
+                  bgfx::UniformType::Sampler);
     // Metallic-roughness map at unit 6; u_pbrParams.x = 2 flags it.
-    s_texMetallicRoughness =
-        bgfx::createUniform("s_texMetallicRoughness",
-                            bgfx::UniformType::Sampler);
+    ensureUniform(s_texMetallicRoughness, "s_texMetallicRoughness",
+                  bgfx::UniformType::Sampler);
 
     // Shadows: variance moments rendered from the scene light of the
     // Shadow draw style (unit 3 of the mesh programs; the white
     // stand-in reads as fully lit). Needs a renderable two-channel
     // float format.
-    s_texShadow = bgfx::createUniform("s_texShadow",
-                                      bgfx::UniformType::Sampler);
+    ensureUniform(s_texShadow, "s_texShadow", bgfx::UniformType::Sampler);
     // Screen-space AO at unit 9 of the mesh programs: the AO chain
     // result, multiplied into their ambient/headlight/IBL terms
     // only (the white stand-in reads as unoccluded).
-    s_texAOScreen = bgfx::createUniform("s_texAOScreen",
-                                        bgfx::UniformType::Sampler);
-    u_shadowParams = bgfx::createUniform("u_shadowParams",
-                                         bgfx::UniformType::Vec4);
-    u_lightDir = bgfx::createUniform("u_lightDir",
-                                     bgfx::UniformType::Vec4);
-    u_lightPos = bgfx::createUniform("u_lightPos",
-                                     bgfx::UniformType::Vec4);
-    u_lightColor = bgfx::createUniform("u_lightColor",
-                                       bgfx::UniformType::Vec4);
-    u_shadowMatrix = bgfx::createUniform("u_shadowMatrix",
-                                         bgfx::UniformType::Mat4);
-    u_evsm = bgfx::createUniform("u_evsm", bgfx::UniformType::Vec4);
-    u_localLight = bgfx::createUniform("u_localLight",
-                                      bgfx::UniformType::Vec4,
-                                      kLocalLights);
-    u_localLightColor = bgfx::createUniform("u_localLightColor",
-                                           bgfx::UniformType::Vec4,
-                                           kLocalLights);
-    u_viewLight = bgfx::createUniform("u_viewLight",
-                                      bgfx::UniformType::Vec4,
-                                      kViewLights);
-    u_viewLightColor = bgfx::createUniform("u_viewLightColor",
-                                           bgfx::UniformType::Vec4,
-                                           kViewLights);
-    u_viewLightAtt = bgfx::createUniform("u_viewLightAtt",
-                                         bgfx::UniformType::Vec4,
-                                         kViewLights);
+    ensureUniform(s_texAOScreen, "s_texAOScreen", bgfx::UniformType::Sampler);
+    ensureUniform(u_shadowParams, "u_shadowParams", bgfx::UniformType::Vec4);
+    ensureUniform(u_lightDir, "u_lightDir", bgfx::UniformType::Vec4);
+    ensureUniform(u_lightPos, "u_lightPos", bgfx::UniformType::Vec4);
+    ensureUniform(u_lightColor, "u_lightColor", bgfx::UniformType::Vec4);
+    ensureUniform(u_shadowMatrix, "u_shadowMatrix", bgfx::UniformType::Mat4);
+    ensureUniform(u_evsm, "u_evsm", bgfx::UniformType::Vec4);
+    ensureUniform(u_localLight, "u_localLight", bgfx::UniformType::Vec4,
+                  kLocalLights);
+    ensureUniform(u_localLightColor, "u_localLightColor",
+                  bgfx::UniformType::Vec4, kLocalLights);
+    ensureUniform(u_viewLight, "u_viewLight", bgfx::UniformType::Vec4,
+                  kViewLights);
+    ensureUniform(u_viewLightColor, "u_viewLightColor",
+                  bgfx::UniformType::Vec4, kViewLights);
+    ensureUniform(u_viewLightAtt, "u_viewLightAtt", bgfx::UniformType::Vec4,
+                  kViewLights);
     // EVSM: the moments store an exponential warp of the light
     // window depth (exp(c z), exp(c z)^2), which curbs VSM's light
     // bleeding at overlapping occluders. RG32F carries the classic
@@ -515,20 +995,14 @@ void BGFXView::init(bool keepShared)
     if (m_shadow) {
         this->shadowFormat = shadowFormat;
         shadowSize = 0;  // targets created on first use
-        m_progShadow = fcLoadProgram("vs_fc_shadow", "fs_fc_shadow",
-                                     _BGFXLib.shaderPath().c_str());
-        m_progShadowClip = fcLoadProgram("vs_fc_shadow_clip",
-                                         "fs_fc_shadow_clip",
-                                         _BGFXLib.shaderPath().c_str());
+        ensureProgram(m_progShadow, "vs_fc_shadow", "fs_fc_shadow");
+        ensureProgram(m_progShadowClip, "vs_fc_shadow_clip",
+                      "fs_fc_shadow_clip");
         if (m_instancing)
-            m_progShadowInst = fcLoadProgram("vs_fc_shadow_inst",
-                                             "fs_fc_shadow",
-                                             _BGFXLib.shaderPath().c_str());
-        m_progShadowBlur = fcLoadProgram("vs_fc_comp",
-                                         "fs_fc_shadow_blur",
-                                         _BGFXLib.shaderPath().c_str());
-        u_shadowBlur = bgfx::createUniform("u_shadowBlur",
-                                           bgfx::UniformType::Vec4);
+            ensureProgram(m_progShadowInst, "vs_fc_shadow_inst",
+                          "fs_fc_shadow");
+        ensureProgram(m_progShadowBlur, "vs_fc_comp", "fs_fc_shadow_blur");
+        ensureUniform(u_shadowBlur, "u_shadowBlur", bgfx::UniformType::Vec4);
         // Glass shadow tint: glass casters render their light
         // transmittance into a color map beside the moments
         // (multiplicative; receivers sample it at unit 7).
@@ -541,54 +1015,39 @@ void BGFXView::init(bool keepShared)
         // every contact terminator. The RG16F fallback (mobile
         // WebGL without float32-linear) compensates with a raised
         // variance floor (bulbShadowConf.w).
-        bulbShadowTex = bgfx::createTexture2D(
-            uint16_t(kBulbShadowGrid * kBulbShadowTileSize),
-            uint16_t(kBulbShadowGrid * kBulbShadowTileSize), false, 1,
-            shadowFormat,
-            BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        bulbShadowDepth = bgfx::createTexture2D(
-            uint16_t(kBulbShadowGrid * kBulbShadowTileSize),
-            uint16_t(kBulbShadowGrid * kBulbShadowTileSize), false, 1,
-            bgfx::TextureFormat::D24S8,
-            BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
-        bgfx::TextureHandle bsAtt[2] = {bulbShadowTex,
-                                        bulbShadowDepth};
-        bulbShadowFbo = bgfx::createFrameBuffer(2, bsAtt, false);
-        s_texBulbShadow = bgfx::createUniform(
-            "s_texBulbShadow", bgfx::UniformType::Sampler);
-        u_bulbShadowMtx = bgfx::createUniform(
-            "u_bulbShadowMtx", bgfx::UniformType::Mat4,
-            kBulbShadowTiles);
-        u_bulbShadowConf = bgfx::createUniform(
-            "u_bulbShadowConf", bgfx::UniformType::Vec4,
-            kLocalLights - kMediumSlots);
-        u_bulbShadowRot = bgfx::createUniform(
-            "u_bulbShadowRot", bgfx::UniformType::Mat4);
-        m_progShadowTint = fcLoadProgram("vs_fc_shadow",
-                                         "fs_fc_shadow_tint",
-                                         _BGFXLib.shaderPath().c_str());
-        s_texShadowTint = bgfx::createUniform(
-            "s_texShadowTint", bgfx::UniformType::Sampler);
+        //
+        // The atlas itself is demand-allocated by
+        // ensureEffect(EffectBulbShadow) -- 50MB of a fixed 2048x2048
+        // that a scene with no shadow-casting bulb never touches.
+        ensureUniform(s_texBulbShadow, "s_texBulbShadow",
+                      bgfx::UniformType::Sampler);
+        ensureUniform(u_bulbShadowMtx, "u_bulbShadowMtx",
+                      bgfx::UniformType::Mat4, kBulbShadowTiles);
+        ensureUniform(u_bulbShadowConf, "u_bulbShadowConf",
+                      bgfx::UniformType::Vec4, kLocalLights - kMediumSlots);
+        ensureUniform(u_bulbShadowRot, "u_bulbShadowRot",
+                      bgfx::UniformType::Mat4);
+        ensureProgram(m_progShadowTint, "vs_fc_shadow", "fs_fc_shadow_tint");
+        ensureUniform(s_texShadowTint, "s_texShadowTint",
+                      bgfx::UniformType::Sampler);
     }
     static const uint32_t blackCube[6] = {0, 0, 0, 0, 0, 0};
-    m_dummyEnvTex = bgfx::createTextureCube(1, false, 1,
-        bgfx::TextureFormat::RGBA8, 0,
-        bgfx::copy(blackCube, sizeof(blackCube)));
+    if (!bgfx::isValid(m_dummyEnvTex))
+        m_dummyEnvTex = bgfx::createTextureCube(1, false, 1,
+            bgfx::TextureFormat::RGBA8, 0,
+            bgfx::copy(blackCube, sizeof(blackCube)));
 
-    u_matColor = bgfx::createUniform("u_matColor", bgfx::UniformType::Vec4);
-    u_matEmissive = bgfx::createUniform("u_matEmissive", bgfx::UniformType::Vec4);
-    u_matSpecular = bgfx::createUniform("u_matSpecular", bgfx::UniformType::Vec4);
-    u_ambient = bgfx::createUniform("u_ambient", bgfx::UniformType::Vec4);
-    u_envAmbient = bgfx::createUniform("u_envAmbient",
-                                       bgfx::UniformType::Vec4);
-    u_params = bgfx::createUniform("u_params", bgfx::UniformType::Vec4);
-    u_polyOffset = bgfx::createUniform("u_polyOffset",
-                                       bgfx::UniformType::Vec4);
-    u_clipParams = bgfx::createUniform("u_clipParams", bgfx::UniformType::Vec4);
-    u_clipPlanes = bgfx::createUniform("u_clipPlanes", bgfx::UniformType::Vec4,
-                                       Render::Material::MaxClipPlanes);
-    u_linePattern = bgfx::createUniform("u_linePattern", bgfx::UniformType::Vec4);
+    ensureUniform(u_matColor, "u_matColor", bgfx::UniformType::Vec4);
+    ensureUniform(u_matEmissive, "u_matEmissive", bgfx::UniformType::Vec4);
+    ensureUniform(u_matSpecular, "u_matSpecular", bgfx::UniformType::Vec4);
+    ensureUniform(u_ambient, "u_ambient", bgfx::UniformType::Vec4);
+    ensureUniform(u_envAmbient, "u_envAmbient", bgfx::UniformType::Vec4);
+    ensureUniform(u_params, "u_params", bgfx::UniformType::Vec4);
+    ensureUniform(u_polyOffset, "u_polyOffset", bgfx::UniformType::Vec4);
+    ensureUniform(u_clipParams, "u_clipParams", bgfx::UniformType::Vec4);
+    ensureUniform(u_clipPlanes, "u_clipPlanes", bgfx::UniformType::Vec4,
+                  Render::Material::MaxClipPlanes);
+    ensureUniform(u_linePattern, "u_linePattern", bgfx::UniformType::Vec4);
 
     // Weighted-blended OIT for the transparent bucket. Needs
     // independent per-target blending and half-float render targets
@@ -634,49 +1093,35 @@ void BGFXView::init(bool keepShared)
         att[2].init(bgfxDepth, bgfx::Access::Write, 0, 1, 0,
                     BGFX_RESOLVE_NONE);
         oitFbo = bgfx::createFrameBuffer(3, att, false);
-        m_progMeshOit = fcLoadProgram("vs_fc_mesh", "fs_fc_mesh_oit",
-                                      _BGFXLib.shaderPath().c_str());
-        m_progMeshOitClip = fcLoadProgram("vs_fc_mesh_clip",
-                                          "fs_fc_mesh_oit_clip",
-                                          _BGFXLib.shaderPath().c_str());
-        m_progMeshOitTex = fcLoadProgram("vs_fc_mesh_tex",
-                                         "fs_fc_mesh_oit_tex",
-                                         _BGFXLib.shaderPath().c_str());
-        m_progMeshOitTexClip = fcLoadProgram("vs_fc_mesh_tex_clip",
-                                             "fs_fc_mesh_oit_tex_clip",
-                                             _BGFXLib.shaderPath().c_str());
+        ensureProgram(m_progMeshOit, "vs_fc_mesh", "fs_fc_mesh_oit");
+        ensureProgram(m_progMeshOitClip, "vs_fc_mesh_clip",
+                      "fs_fc_mesh_oit_clip");
+        ensureProgram(m_progMeshOitTex, "vs_fc_mesh_tex",
+                      "fs_fc_mesh_oit_tex");
+        ensureProgram(m_progMeshOitTexClip, "vs_fc_mesh_tex_clip",
+                      "fs_fc_mesh_oit_tex_clip");
         if (m_instancing) {
             // WBOIT accumulation is order-independent, so transparent
             // instance groups are legal — but only while OIT runs
             // (the sorted fallback needs per-draw depth keys).
-            m_progMeshInstOit = fcLoadProgram("vs_fc_mesh_inst",
-                                              "fs_fc_mesh_oit",
-                                              _BGFXLib.shaderPath().c_str());
-            m_progMeshInstOitTex = fcLoadProgram("vs_fc_mesh_tex_inst",
-                                                 "fs_fc_mesh_oit_tex",
-                                                 _BGFXLib.shaderPath().c_str());
+            ensureProgram(m_progMeshInstOit, "vs_fc_mesh_inst",
+                          "fs_fc_mesh_oit");
+            ensureProgram(m_progMeshInstOitTex, "vs_fc_mesh_tex_inst",
+                          "fs_fc_mesh_oit_tex");
         }
-        m_progComp = fcLoadProgram("vs_fc_comp", "fs_fc_comp",
-                                   _BGFXLib.shaderPath().c_str());
-        s_texAccum = bgfx::createUniform("s_texAccum",
-                                         bgfx::UniformType::Sampler);
-        s_texReveal = bgfx::createUniform("s_texReveal",
-                                          bgfx::UniformType::Sampler);
+        ensureProgram(m_progComp, "vs_fc_comp", "fs_fc_comp");
+        ensureUniform(s_texAccum, "s_texAccum", bgfx::UniformType::Sampler);
+        ensureUniform(s_texReveal, "s_texReveal", bgfx::UniformType::Sampler);
     }
 
     // Render debugging buffer visualization (docs/RenderDebug.md).
-    m_progDebug = fcLoadProgram("vs_fc_comp", "fs_fc_debug",
-                                _BGFXLib.shaderPath().c_str());
-    u_debugParams = bgfx::createUniform("u_debugParams",
-                                        bgfx::UniformType::Vec4);
-    m_progDebugScene = fcLoadProgram("vs_fc_debug_scene",
-                                     "fs_fc_debug_scene",
-                                     _BGFXLib.shaderPath().c_str());
-    m_progDebugSceneClip = fcLoadProgram("vs_fc_debug_scene_clip",
-                                         "fs_fc_debug_scene_clip",
-                                         _BGFXLib.shaderPath().c_str());
-    s_texDebugScene = bgfx::createUniform("s_texDebugScene",
-                                          bgfx::UniformType::Sampler);
+    ensureProgram(m_progDebug, "vs_fc_comp", "fs_fc_debug");
+    ensureUniform(u_debugParams, "u_debugParams", bgfx::UniformType::Vec4);
+    ensureProgram(m_progDebugScene, "vs_fc_debug_scene", "fs_fc_debug_scene");
+    ensureProgram(m_progDebugSceneClip, "vs_fc_debug_scene_clip",
+                  "fs_fc_debug_scene_clip");
+    ensureUniform(s_texDebugScene, "s_texDebugScene",
+                  bgfx::UniformType::Sampler);
 
     // SSAO: depth+normal prepass + AO generation/blur targets, all
     // non-MSAA at viewport size (the multiply pass samples at pixel
@@ -687,175 +1132,49 @@ void BGFXView::init(bool keepShared)
         && (caps->formats[bgfx::TextureFormat::R8]
                 & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
     if (m_ssao) {
-        const uint64_t aoFlags = 0
-            | BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT
-            | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
-            | BGFX_SAMPLER_U_CLAMP
-            | BGFX_SAMPLER_V_CLAMP;
-        // The geometry prepass (aoNormalZ/aoDepth) stays full-res and
-        // POINT-sampled: refraction/glass reject, volumetric ray-ends and
-        // water span all read its exact eye-space depth, which bilinear
-        // upscaling would corrupt at silhouettes. The AO resolve targets
-        // (aoTex raw, aoBlurTex blurred) scale to ssaoW/ssaoH — their OWN
-        // Render_SSAOResolution, independent of the reflection scale
-        // (effW/effH) — and sample LINEAR, so a reduced-res AO upsamples
-        // smoothly. SSAO is resolution-sensitive (contact/crevice detail),
-        // so it defaults to full-res rather than sharing effectResolution,
-        // whose reduction produced visibly blocky occlusion.
-        // Full-float normal+depth when available: fp16 viewZ (~10-bit
-        // mantissa) quantizes zoomed-in depths so hard that the GTAO
-        // horizon estimate bands along iso-depth contours (ripples on
-        // curved faces, stair strips on oblique flat ones near
-        // contacts). Point-sampled, so fp32 is safe on WebGL2/mobile
-        // (their float32 restriction is LINEAR filtering).
-        aoNormalZFp16 = !(caps->formats[bgfx::TextureFormat::RGBA32F]
-                          & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
-        aoNormalZ = bgfx::createTexture2D(width, height, false, 1,
-            aoNormalZFp16 ? bgfx::TextureFormat::RGBA16F
-                          : bgfx::TextureFormat::RGBA32F, aoFlags);
-        aoDepth = bgfx::createTexture2D(width, height, false, 1,
-            bgfx::TextureFormat::D24S8,
-            aoFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        const uint64_t aoResFlags = BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;  // linear
-        aoTex = bgfx::createTexture2D(ssaoW, ssaoH, false, 1,
-            bgfx::TextureFormat::R8, aoResFlags);
-        aoBlurTex = bgfx::createTexture2D(ssaoW, ssaoH, false, 1,
-            bgfx::TextureFormat::R8, aoResFlags);
-        bgfx::TextureHandle preatt[2] = {aoNormalZ, aoDepth};
-        aoPrepassFbo = bgfx::createFrameBuffer(2, preatt, false);
-        aoGenFbo = bgfx::createFrameBuffer(1, &aoTex, false);
-        aoBlurFbo = bgfx::createFrameBuffer(1, &aoBlurTex, false);
-
-        // GTAO depth pyramid: single-channel viewZ, POINT-sampled
-        // (the gen pass picks a discrete level per tap). R32F when
-        // renderable, else R16F — coarse levels only serve FAR taps,
-        // whose coplanarity guard already tolerates fp16 steps; the
-        // near taps keep reading the full-precision prepass.
-        const bool mipR32 = 0 != (caps->formats[bgfx::TextureFormat::R32F]
-                                  & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
-        const bool mipR16 = 0 != (caps->formats[bgfx::TextureFormat::R16F]
-                                  & BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
-        aoMipCount = (mipR32 || mipR16) ? kAOMipLevels : 0;
-        for (int m = 0; m < aoMipCount; ++m) {
-            const uint16_t mw = uint16_t(std::max(1, width >> (m + 1)));
-            const uint16_t mh = uint16_t(std::max(1, height >> (m + 1)));
-            aoMipTex[m] = bgfx::createTexture2D(mw, mh, false, 1,
-                mipR32 ? bgfx::TextureFormat::R32F
-                       : bgfx::TextureFormat::R16F, aoFlags);
-            aoMipFbo[m] = bgfx::createFrameBuffer(1, &aoMipTex[m],
-                                                  false);
-        }
-        if (aoMipCount) {
-            m_progGtaoDepth = fcLoadProgram("vs_fc_comp",
-                                            "fs_fc_gtao_depths",
-                                            _BGFXLib.shaderPath().c_str());
-            if (!bgfx::isValid(m_progGtaoDepth))
-                aoMipCount = 0;
-        }
+        // The targets themselves -- the prepass pair, the AO chain, the
+        // GTAO pyramid and the glass interval, ~98MB at 1080p -- are
+        // demand-allocated by updateEffect(EffectSSAO). Only the
+        // programs and uniforms are built here, as everywhere else.
+        ensureProgram(m_progGtaoDepth, "vs_fc_comp", "fs_fc_gtao_depths");
         static const char *const mipSamplerNames[kAOMipLevels] = {
             "s_texAOMip1", "s_texAOMip2", "s_texAOMip3",
             "s_texAOMip4", "s_texAOMip5", "s_texAOMip6"};
         for (int m = 0; m < kAOMipLevels; ++m)
-            s_texAOMip[m] = bgfx::createUniform(
-                mipSamplerNames[m], bgfx::UniformType::Sampler);
+            ensureUniform(s_texAOMip[m], mipSamplerNames[m],
+                          bgfx::UniformType::Sampler);
 
-        m_progPrepass = fcLoadProgram("vs_fc_prepass", "fs_fc_prepass",
-                                      _BGFXLib.shaderPath().c_str());
-        m_progPrepassClip = fcLoadProgram("vs_fc_prepass_clip",
-                                          "fs_fc_prepass_clip",
-                                          _BGFXLib.shaderPath().c_str());
+        ensureProgram(m_progPrepass, "vs_fc_prepass", "fs_fc_prepass");
+        ensureProgram(m_progPrepassClip, "vs_fc_prepass_clip",
+                      "fs_fc_prepass_clip");
         // Medium interval depth writers: prepass layout with the
         // body's appearance slot in .x.
-        m_progMedDepth = fcLoadProgram("vs_fc_prepass",
-                                       "fs_fc_meddepth",
-                                       _BGFXLib.shaderPath().c_str());
-        m_progMedDepthClip = fcLoadProgram("vs_fc_prepass_clip",
-                                           "fs_fc_meddepth_clip",
-                                           _BGFXLib.shaderPath().c_str());
-        u_mediumSlot = bgfx::createUniform("u_mediumSlot",
-                                           bgfx::UniformType::Vec4);
+        ensureProgram(m_progMedDepth, "vs_fc_prepass", "fs_fc_meddepth");
+        ensureProgram(m_progMedDepthClip, "vs_fc_prepass_clip",
+                      "fs_fc_meddepth_clip");
+        ensureUniform(u_mediumSlot, "u_mediumSlot", bgfx::UniformType::Vec4);
         if (m_instancing)
-            m_progPrepassInst = fcLoadProgram("vs_fc_prepass_inst",
-                                              "fs_fc_prepass",
-                                              _BGFXLib.shaderPath().c_str());
-        m_progSsao = fcLoadProgram("vs_fc_comp", "fs_fc_ssao",
-                                   _BGFXLib.shaderPath().c_str());
-        m_progGtao = fcLoadProgram("vs_fc_comp", "fs_fc_gtao",
-                                   _BGFXLib.shaderPath().c_str());
-        m_progGtaoBlur = fcLoadProgram("vs_fc_comp", "fs_fc_gtao_blur",
-                                       _BGFXLib.shaderPath().c_str());
-        m_progSsaoBlur = fcLoadProgram("vs_fc_comp", "fs_fc_ssao_blur",
-                                       _BGFXLib.shaderPath().c_str());
+            ensureProgram(m_progPrepassInst, "vs_fc_prepass_inst",
+                          "fs_fc_prepass");
+        ensureProgram(m_progSsao, "vs_fc_comp", "fs_fc_ssao");
+        ensureProgram(m_progGtao, "vs_fc_comp", "fs_fc_gtao");
+        ensureProgram(m_progGtaoBlur, "vs_fc_comp", "fs_fc_gtao_blur");
+        ensureProgram(m_progSsaoBlur, "vs_fc_comp", "fs_fc_ssao_blur");
         // Cavity shares the prepass resources, so it is built with them
         // (m_ssao gates the whole block); the pass itself is gated by
         // its own config in render().
-        m_progCavity = fcLoadProgram("vs_fc_comp", "fs_fc_cavity",
-                                     _BGFXLib.shaderPath().c_str());
-        u_cavityParams = bgfx::createUniform("u_cavityParams",
-                                             bgfx::UniformType::Vec4);
-        s_texNormalZ = bgfx::createUniform("s_texNormalZ",
-                                           bgfx::UniformType::Sampler);
-        s_texAONoise = bgfx::createUniform("s_texAONoise",
-                                           bgfx::UniformType::Sampler);
-        s_texAO = bgfx::createUniform("s_texAO",
-                                      bgfx::UniformType::Sampler);
-        u_aoParams = bgfx::createUniform("u_aoParams",
-                                         bgfx::UniformType::Vec4);
-        u_aoParams2 = bgfx::createUniform("u_aoParams2",
-                                          bgfx::UniformType::Vec4);
-        u_aoKernel = bgfx::createUniform("u_aoKernel",
-                                         bgfx::UniformType::Vec4,
-                                         kAOSamples);
-        // 4x4 tiled random rotation vectors (xy packed *0.5+0.5),
-        // fixed values so frames are deterministic. The .z channel packs a
-        // 4x4 Bayer dither (0..255): the gen pass uses it to jitter the
-        // per-pixel sample radius, so neighbouring pixels sample at
-        // different distances and the 4x4 blur (one Bayer tile) averages
-        // all 16 sub-radii — decorrelating the RADIAL occlusion banding
-        // that the azimuthal-only rotation leaves behind.
-        static const uint8_t noise[64] = {
-            0xa2, 0x05, 0x00, 0xff, 0x11, 0xc0, 0x88, 0xff,
-            0xee, 0xc0, 0x22, 0xff, 0x25, 0xd9, 0xaa, 0xff,
-            0x27, 0x23, 0xcc, 0xff, 0x63, 0x03, 0x44, 0xff,
-            0x20, 0xd4, 0xee, 0xff, 0x2a, 0xde, 0x66, 0xff,
-            0x90, 0xfe, 0x33, 0xff, 0x9b, 0xfc, 0xbb, 0xff,
-            0xae, 0x09, 0x11, 0xff, 0xef, 0xbe, 0x99, 0xff,
-            0xd8, 0x23, 0xff, 0xff, 0x3a, 0x15, 0x77, 0xff,
-            0x00, 0x87, 0xdd, 0xff, 0xe8, 0xc9, 0x55, 0xff,
-        };
-        aoNoiseTex = bgfx::createTexture2D(4, 4, false, 1,
-            bgfx::TextureFormat::RGBA8,
-            BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT,
-            bgfx::copy(noise, sizeof(noise)));
-
-        // Glass body absorption interval: full-res front/back
-        // depths of glass draws, written by the prepass programs
-        // like the water medium interval (only .z viewZ and .w
-        // validity are consumed). In the SSAO resource set because
-        // the depth writer is the prepass shader family.
-        const uint64_t glassFlags = 0
-            | BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
-        glassFrontTex = bgfx::createTexture2D(width, height, false, 1,
-            bgfx::TextureFormat::RGBA16F, glassFlags);
-        glassBackTex = bgfx::createTexture2D(width, height, false, 1,
-            bgfx::TextureFormat::RGBA16F, glassFlags);
-        glassFrontDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            glassFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        glassBackDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            glassFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        bgfx::TextureHandle gfatt[2] = {glassFrontTex, glassFrontDepth};
-        glassFrontFbo = bgfx::createFrameBuffer(2, gfatt, false);
-        bgfx::TextureHandle gbatt[2] = {glassBackTex, glassBackDepth};
-        glassBackFbo = bgfx::createFrameBuffer(2, gbatt, false);
+        ensureProgram(m_progCavity, "vs_fc_comp", "fs_fc_cavity");
+        ensureUniform(u_cavityParams, "u_cavityParams",
+                      bgfx::UniformType::Vec4);
+        ensureUniform(s_texNormalZ, "s_texNormalZ",
+                      bgfx::UniformType::Sampler);
+        ensureUniform(s_texAONoise, "s_texAONoise",
+                      bgfx::UniformType::Sampler);
+        ensureUniform(s_texAO, "s_texAO", bgfx::UniformType::Sampler);
+        ensureUniform(u_aoParams, "u_aoParams", bgfx::UniformType::Vec4);
+        ensureUniform(u_aoParams2, "u_aoParams2", bgfx::UniformType::Vec4);
+        ensureUniform(u_aoKernel, "u_aoKernel", bgfx::UniformType::Vec4,
+                      kAOSamples);
     }
 
     // Volumetric light shafts: the half-res raymarch reads the SSAO
@@ -864,157 +1183,54 @@ void BGFXView::init(bool keepShared)
     // the apply pass does its own bilateral 4-tap upsample.
     m_vol = m_ssao && m_shadow;
     if (m_vol) {
-        uint16_t hw = std::max<uint16_t>(1, width / 2);
-        uint16_t hh = std::max<uint16_t>(1, height / 2);
-        volTex = bgfx::createTexture2D(hw, hh, false, 1,
-            bgfx::TextureFormat::RGBA16F,
-            BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        // Second attachment: the front-of-water inscatter segment
-        // (rgb) + its transmittance (a), linearly filtered for the
-        // full-res front apply.
-        volFrontTex = bgfx::createTexture2D(hw, hh, false, 1,
-            bgfx::TextureFormat::RGBA16F,
-            BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        bgfx::TextureHandle volAtt[2] = {volTex, volFrontTex};
-        volFbo = bgfx::createFrameBuffer(2, volAtt, false);
-        // History pair for the temporal accumulation; sampling
-        // flags mirror the current-frame targets (the main apply
-        // does its own bilateral upsample from point taps, the
-        // front apply reads linearly).
-        volHistTex = bgfx::createTexture2D(hw, hh, false, 1,
-            bgfx::TextureFormat::RGBA16F,
-            BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        volHistFrontTex = bgfx::createTexture2D(hw, hh, false, 1,
-            bgfx::TextureFormat::RGBA16F,
-            BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        bgfx::TextureHandle volHistAtt[2] = {volHistTex,
-                                             volHistFrontTex};
-        volHistFbo = bgfx::createFrameBuffer(2, volHistAtt, false);
-        m_progVol = fcLoadProgram("vs_fc_comp", "fs_fc_volume",
-                                  _BGFXLib.shaderPath().c_str());
-        m_progVolAccum = fcLoadProgram("vs_fc_comp",
-                                       "fs_fc_volume_accum",
-                                       _BGFXLib.shaderPath().c_str());
-        s_texVolFront = bgfx::createUniform(
-            "s_texVolFront", bgfx::UniformType::Sampler);
-        m_progVolApply = fcLoadProgram("vs_fc_comp",
-                                       "fs_fc_volume_apply",
-                                       _BGFXLib.shaderPath().c_str());
-        s_texVol = bgfx::createUniform("s_texVol",
-                                       bgfx::UniformType::Sampler);
-        u_volParams = bgfx::createUniform("u_volParams",
-                                          bgfx::UniformType::Vec4);
-        u_volMedium = bgfx::createUniform("u_volMedium",
-                                          bgfx::UniformType::Vec4);
-        u_volTexel = bgfx::createUniform("u_volTexel",
-                                         bgfx::UniformType::Vec4);
+        // The raymarch pair, its history pair and the water/cloud/fire
+        // interval targets are demand-allocated together by
+        // ensureEffect(EffectVolumetric) -- they are the single
+        // largest block a view owns (~166MB at 1080p) and none of it
+        // is touched while Render_Volumetric is off. Programs and
+        // uniforms are built here as usual.
+        ensureProgram(m_progVol, "vs_fc_comp", "fs_fc_volume");
+        ensureProgram(m_progVolAccum, "vs_fc_comp", "fs_fc_volume_accum");
+        ensureUniform(s_texVolFront, "s_texVolFront",
+                      bgfx::UniformType::Sampler);
+        ensureProgram(m_progVolApply, "vs_fc_comp", "fs_fc_volume_apply");
+        ensureUniform(s_texVol, "s_texVol", bgfx::UniformType::Sampler);
+        ensureUniform(u_volParams, "u_volParams", bgfx::UniformType::Vec4);
+        ensureUniform(u_volMedium, "u_volMedium", bgfx::UniformType::Vec4);
+        ensureUniform(u_volTexel, "u_volTexel", bgfx::UniformType::Vec4);
 
-        // Water medium: full-res front/back depths of water body
-        // draws, written by the prepass programs (only .z viewZ and
-        // .w validity are consumed).
-        const uint64_t waterFlags = 0
-            | BGFX_TEXTURE_RT
-            | BGFX_SAMPLER_MIN_POINT | BGFX_SAMPLER_MAG_POINT
-            | BGFX_SAMPLER_MIP_POINT
-            | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
-        waterFrontTex = bgfx::createTexture2D(width, height, false, 1,
-            bgfx::TextureFormat::RGBA16F, waterFlags);
-        waterBackTex = bgfx::createTexture2D(width, height, false, 1,
-            bgfx::TextureFormat::RGBA16F, waterFlags);
-        waterFrontDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        waterBackDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        bgfx::TextureHandle fatt[2] = {waterFrontTex, waterFrontDepth};
-        waterFrontFbo = bgfx::createFrameBuffer(2, fatt, false);
-        bgfx::TextureHandle batt[2] = {waterBackTex, waterBackDepth};
-        waterBackFbo = bgfx::createFrameBuffer(2, batt, false);
-        m_progVolExt = fcLoadProgram("vs_fc_comp", "fs_fc_volume_ext",
-                                     _BGFXLib.shaderPath().c_str());
-        s_texWaterFront = bgfx::createUniform(
-            "s_texWaterFront", bgfx::UniformType::Sampler);
-        s_texWaterBack = bgfx::createUniform(
-            "s_texWaterBack", bgfx::UniformType::Sampler);
-        u_waterSigma = bgfx::createUniform("u_waterSigma",
-                                           bgfx::UniformType::Vec4,
-                                           kMediumSlots);
+        ensureProgram(m_progVolExt, "vs_fc_comp", "fs_fc_volume_ext");
+        ensureUniform(s_texWaterFront, "s_texWaterFront",
+                      bgfx::UniformType::Sampler);
+        ensureUniform(s_texWaterBack, "s_texWaterBack",
+                      bgfx::UniformType::Sampler);
+        ensureUniform(u_waterSigma, "u_waterSigma", bgfx::UniformType::Vec4,
+                      kMediumSlots);
         // Water caustics: a fullscreen light-space pattern splat
         // over the prepass surfaces inside the water interval.
-        m_progCaustics = fcLoadProgram("vs_fc_comp", "fs_fc_caustics",
-                                       _BGFXLib.shaderPath().c_str());
-        u_causticParams = bgfx::createUniform(
-            "u_causticParams", bgfx::UniformType::Vec4,
-            kMediumSlots);
-        // Cloud body medium: its own front/back interval pair (the
-        // per-medium-kind slot scheme), FBM density in the
-        // raymarch.
-        cloudFrontTex = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::RGBA16F, waterFlags);
-        cloudBackTex = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::RGBA16F, waterFlags);
-        cloudFrontDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        cloudBackDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        bgfx::TextureHandle cfatt[2] = {cloudFrontTex, cloudFrontDepth};
-        cloudFrontFbo = bgfx::createFrameBuffer(2, cfatt, false);
-        bgfx::TextureHandle cbatt[2] = {cloudBackTex, cloudBackDepth};
-        cloudBackFbo = bgfx::createFrameBuffer(2, cbatt, false);
-        s_texCloudFront = bgfx::createUniform(
-            "s_texCloudFront", bgfx::UniformType::Sampler);
-        s_texCloudBack = bgfx::createUniform(
-            "s_texCloudBack", bgfx::UniformType::Sampler);
-        u_cloudParams = bgfx::createUniform("u_cloudParams",
-                                            bgfx::UniformType::Vec4,
-                                            kMediumSlots);
-        // Fire body medium: its own front/back interval pair (the
-        // per-medium-kind slot scheme), emissive FBM flame in the
-        // raymarch.
-        fireFrontTex = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::RGBA16F, waterFlags);
-        fireBackTex = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::RGBA16F, waterFlags);
-        fireFrontDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        fireBackDepth = bgfx::createTexture2D(width, height, false,
-            1, bgfx::TextureFormat::D24S8,
-            waterFlags | BGFX_TEXTURE_RT_WRITE_ONLY);
-        bgfx::TextureHandle ffatt[2] = {fireFrontTex, fireFrontDepth};
-        fireFrontFbo = bgfx::createFrameBuffer(2, ffatt, false);
-        bgfx::TextureHandle fbatt[2] = {fireBackTex, fireBackDepth};
-        fireBackFbo = bgfx::createFrameBuffer(2, fbatt, false);
-        s_texFireFront = bgfx::createUniform(
-            "s_texFireFront", bgfx::UniformType::Sampler);
-        s_texFireBack = bgfx::createUniform(
-            "s_texFireBack", bgfx::UniformType::Sampler);
-        u_fireParams = bgfx::createUniform("u_fireParams",
-                                           bgfx::UniformType::Vec4,
-                                           kMediumSlots);
-        u_fireParams2 = bgfx::createUniform("u_fireParams2",
-                                            bgfx::UniformType::Vec4,
-                                            kMediumSlots);
-        u_fireFrame = bgfx::createUniform("u_fireFrame",
-                                          bgfx::UniformType::Mat4,
-                                          kMediumSlots);
-        u_fountainParams = bgfx::createUniform(
-            "u_fountainParams", bgfx::UniformType::Vec4,
-            kMediumSlots);
-        u_fountainFrame = bgfx::createUniform(
-            "u_fountainFrame", bgfx::UniformType::Mat4,
-            kMediumSlots);
+        ensureProgram(m_progCaustics, "vs_fc_comp", "fs_fc_caustics");
+        ensureUniform(u_causticParams, "u_causticParams",
+                      bgfx::UniformType::Vec4, kMediumSlots);
+        ensureUniform(s_texCloudFront, "s_texCloudFront",
+                      bgfx::UniformType::Sampler);
+        ensureUniform(s_texCloudBack, "s_texCloudBack",
+                      bgfx::UniformType::Sampler);
+        ensureUniform(u_cloudParams, "u_cloudParams", bgfx::UniformType::Vec4,
+                      kMediumSlots);
+        ensureUniform(s_texFireFront, "s_texFireFront",
+                      bgfx::UniformType::Sampler);
+        ensureUniform(s_texFireBack, "s_texFireBack",
+                      bgfx::UniformType::Sampler);
+        ensureUniform(u_fireParams, "u_fireParams", bgfx::UniformType::Vec4,
+                      kMediumSlots);
+        ensureUniform(u_fireParams2, "u_fireParams2", bgfx::UniformType::Vec4,
+                      kMediumSlots);
+        ensureUniform(u_fireFrame, "u_fireFrame", bgfx::UniformType::Mat4,
+                      kMediumSlots);
+        ensureUniform(u_fountainParams, "u_fountainParams",
+                      bgfx::UniformType::Vec4, kMediumSlots);
+        ensureUniform(u_fountainFrame, "u_fountainFrame",
+                      bgfx::UniformType::Mat4, kMediumSlots);
     }
 
     // Water surface refraction: the scene color copies into a
@@ -1026,83 +1242,48 @@ void BGFXView::init(bool keepShared)
         | BGFX_SAMPLER_MIP_POINT
         | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
     sceneCopyFbo = bgfx::createFrameBuffer(1, &sceneCopyTex, false);
-    m_progWaterCopy = fcLoadProgram("vs_fc_comp", "fs_fc_copy",
-                                    _BGFXLib.shaderPath().c_str());
-    m_progWater = fcLoadProgram("vs_fc_mesh", "fs_fc_water",
-                                _BGFXLib.shaderPath().c_str());
-    s_texScene = bgfx::createUniform("s_texScene",
-                                     bgfx::UniformType::Sampler);
-    s_texRefl = bgfx::createUniform("s_texRefl",
-                                    bgfx::UniformType::Sampler);
-    u_waterSurf = bgfx::createUniform("u_waterSurf",
-                                      bgfx::UniformType::Vec4);
-    u_waterAbsorb = bgfx::createUniform("u_waterAbsorb",
-                                        bgfx::UniformType::Vec4);
-    u_waterRipple = bgfx::createUniform("u_waterRipple",
-                                        bgfx::UniformType::Vec4);
-    u_waterSplash = bgfx::createUniform("u_waterSplash",
-                                        bgfx::UniformType::Vec4,
-                                        kMediumSlots);
+    ensureProgram(m_progWaterCopy, "vs_fc_comp", "fs_fc_copy");
+    ensureProgram(m_progWater, "vs_fc_mesh", "fs_fc_water");
+    ensureUniform(s_texScene, "s_texScene", bgfx::UniformType::Sampler);
+    ensureUniform(s_texRefl, "s_texRefl", bgfx::UniformType::Sampler);
+    ensureUniform(u_waterSurf, "u_waterSurf", bgfx::UniformType::Vec4);
+    ensureUniform(u_waterAbsorb, "u_waterAbsorb", bgfx::UniformType::Vec4);
+    ensureUniform(u_waterRipple, "u_waterRipple", bgfx::UniformType::Vec4);
+    ensureUniform(u_waterSplash, "u_waterSplash", bgfx::UniformType::Vec4,
+                  kMediumSlots);
     // The surface shader's refraction depth reject samples the SSAO
     // prepass; without those resources the sampler uniform still
     // has to exist for the (disabled) stage binding.
-    if (!bgfx::isValid(s_texNormalZ))
-        s_texNormalZ = bgfx::createUniform("s_texNormalZ",
-                                           bgfx::UniformType::Sampler);
+    ensureUniform(s_texNormalZ, "s_texNormalZ", bgfx::UniformType::Sampler);
 
     // Glass surface: refraction from the same scene copy, plus the
     // absorption interval targets of the SSAO resource set (the
     // glass pass is gated on both).
-    m_progGlass = fcLoadProgram("vs_fc_mesh", "fs_fc_glass",
-                                _BGFXLib.shaderPath().c_str());
-    s_texGlassFront = bgfx::createUniform("s_texGlassFront",
-                                          bgfx::UniformType::Sampler);
-    s_texGlassBack = bgfx::createUniform("s_texGlassBack",
-                                         bgfx::UniformType::Sampler);
-    u_glassParams = bgfx::createUniform("u_glassParams",
-                                        bgfx::UniformType::Vec4);
+    ensureProgram(m_progGlass, "vs_fc_mesh", "fs_fc_glass");
+    ensureUniform(s_texGlassFront, "s_texGlassFront",
+                  bgfx::UniformType::Sampler);
+    ensureUniform(s_texGlassBack, "s_texGlassBack",
+                  bgfx::UniformType::Sampler);
+    ensureUniform(u_glassParams, "u_glassParams", bgfx::UniformType::Vec4);
 
-    // Ground/planar reflection: the mirrored-camera scene re-render
-    // target. This full opaque-scene re-render is the priciest effect on
-    // a large window, so it scales to effW/effH (Render_EffectResolution);
-    // LINEAR sampling upscales it smoothly onto the full-res consumers
-    // (ground overlay, water surface), which read it at normalized UV.
-    reflTex = bgfx::createTexture2D(effW, effH, false, 1,
-        bgfx::TextureFormat::RGBA8,
-        BGFX_TEXTURE_RT
-        | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-    reflDepth = bgfx::createTexture2D(effW, effH, false, 1,
-        bgfx::TextureFormat::D24S8,
-        BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY
-        | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-    bgfx::TextureHandle ratt[2] = {reflTex, reflDepth};
-    reflFbo = bgfx::createFrameBuffer(2, ratt, false);
-    if (!bgfx::isValid(m_progReflMedia))
-        m_progReflMedia = fcLoadProgram("vs_fc_comp",
-                                        "fs_fc_refl_media",
-                                        _BGFXLib.shaderPath().c_str());
-    m_progGroundRefl = fcLoadProgram("vs_fc_mesh", "fs_fc_groundrefl",
-                                     _BGFXLib.shaderPath().c_str());
-    u_reflParams = bgfx::createUniform("u_reflParams",
-                                       bgfx::UniformType::Vec4);
+    // Ground/planar reflection. The mirrored-camera re-render target is
+    // demand-allocated by ensureEffect(EffectReflection); the programs
+    // and uniforms are built here.
+    ensureProgram(m_progReflMedia, "vs_fc_comp", "fs_fc_refl_media");
+    ensureProgram(m_progGroundRefl, "vs_fc_mesh", "fs_fc_groundrefl");
+    ensureUniform(u_reflParams, "u_reflParams", bgfx::UniformType::Vec4);
 
     // Stateful particle resources (docs/RenderEngine.md §5.8).
     // Size-independent, so they are created once and kept across
     // the resize-driven rebuilds around them — hence the validity
     // guards rather than plain assignment.
     if (!bgfx::isValid(m_progPSimInit)) {
-        m_progPSimInit = fcLoadProgram("vs_fc_comp", "fs_fc_psim_init",
-                                       _BGFXLib.shaderPath().c_str());
-        s_pstate0 = bgfx::createUniform("s_pstate0",
-                                        bgfx::UniformType::Sampler);
-        s_pstate1 = bgfx::createUniform("s_pstate1",
-                                        bgfx::UniformType::Sampler);
-        u_pgrid = bgfx::createUniform("u_pgrid",
-                                      bgfx::UniformType::Vec4);
-        u_pboxMin = bgfx::createUniform("u_pboxMin",
-                                        bgfx::UniformType::Vec4);
-        u_pboxMax = bgfx::createUniform("u_pboxMax",
-                                        bgfx::UniformType::Vec4);
+        ensureProgram(m_progPSimInit, "vs_fc_comp", "fs_fc_psim_init");
+        ensureUniform(s_pstate0, "s_pstate0", bgfx::UniformType::Sampler);
+        ensureUniform(s_pstate1, "s_pstate1", bgfx::UniformType::Sampler);
+        ensureUniform(u_pgrid, "u_pgrid", bgfx::UniformType::Vec4);
+        ensureUniform(u_pboxMin, "u_pboxMin", bgfx::UniformType::Vec4);
+        ensureUniform(u_pboxMax, "u_pboxMax", bgfx::UniformType::Vec4);
         const uint16_t fmtCaps = bgfx::getCaps()->formats[
             bgfx::TextureFormat::RGBA32F];
         particleStateOk = bgfx::isValid(m_progPSimInit)
@@ -1110,20 +1291,14 @@ void BGFXView::init(bool keepShared)
         if (!particleStateOk)
             std::printf("bgfx: no RGBA32F render target — stateful "
                         "particle emitters fall back to stateless\n");
-        m_progPImpact = fcLoadProgram("vs_fc_pimpact", "fs_fc_pimpact",
-                                      _BGFXLib.shaderPath().c_str());
-        s_pimpsrc = bgfx::createUniform("s_pimpsrc",
-                                        bgfx::UniformType::Sampler);
-        u_impactFrame = bgfx::createUniform("u_impactFrame",
-                                            bgfx::UniformType::Vec4);
-        u_impactNow = bgfx::createUniform("u_impactNow",
-                                          bgfx::UniformType::Vec4);
-        s_texImpact = bgfx::createUniform("s_texImpact",
-                                          bgfx::UniformType::Sampler);
-        u_waterImpact = bgfx::createUniform("u_waterImpact",
-                                            bgfx::UniformType::Vec4);
-        u_waterImpactCfg = bgfx::createUniform(
-            "u_waterImpactCfg", bgfx::UniformType::Vec4);
+        ensureProgram(m_progPImpact, "vs_fc_pimpact", "fs_fc_pimpact");
+        ensureUniform(s_pimpsrc, "s_pimpsrc", bgfx::UniformType::Sampler);
+        ensureUniform(u_impactFrame, "u_impactFrame", bgfx::UniformType::Vec4);
+        ensureUniform(u_impactNow, "u_impactNow", bgfx::UniformType::Vec4);
+        ensureUniform(s_texImpact, "s_texImpact", bgfx::UniformType::Sampler);
+        ensureUniform(u_waterImpact, "u_waterImpact", bgfx::UniformType::Vec4);
+        ensureUniform(u_waterImpactCfg, "u_waterImpactCfg",
+                      bgfx::UniformType::Vec4);
     }
 
     // The programs without which this view cannot draw the scene at

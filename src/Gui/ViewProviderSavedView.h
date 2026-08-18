@@ -53,8 +53,10 @@ public:
         Visibilities    = 0x04,
         DrawStyle       = 0x08,
         ShowOnTop       = 0x10,
+        RenderSettings  = 0x20,
         Default         = 0x80,
-        All             = Clippings | Camera | Visibilities | ShowOnTop | DrawStyle,
+        All             = Clippings | Camera | Visibilities | ShowOnTop | DrawStyle
+                          | RenderSettings,
     };
     Q_DECLARE_FLAGS(CaptureOptions, CaptureOption);
 

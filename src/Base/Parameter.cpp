@@ -437,6 +437,9 @@ ParameterGrp::CreateElement(XERCES_CPP_NAMESPACE_QUALIFIER DOMElement* Start,
     auto pcElem = pDocument->createElement(XStr(Type).unicodeForm());
     pcElem->setAttribute(XStr("Name").unicodeForm(), XStr(Name).unicodeForm());
     Start->appendChild(pcElem);
+    if (Start == _pGroupNode) {
+        _IndexInsert(Type, Name, pcElem);
+    }
 
     return pcElem;
 }
@@ -473,6 +476,7 @@ Base::Reference<ParameterGrp> ParameterGrp::_GetGroup(const char* Name)
     }
     else if (!pcTemp) {
         _pGroupNode->appendChild(rParamGrp->_pGroupNode);
+        _IndexInvalidate();// a child arrived without going through CreateElement
         rParamGrp->_Detached = false;
         if (this->_Detached && this->_Parent) {
             // Re-attach the group. Note that this may fail if the parent is
@@ -1182,6 +1186,7 @@ void ParameterGrp::RemoveASCII(const char* Name)
         return;
     }
 
+    _IndexErase("FCText", Name);
     DOMNode* node = _pGroupNode->removeChild(pcElem);
     node->release();
 
@@ -1203,6 +1208,7 @@ void ParameterGrp::RemoveBool(const char* Name)
         return;
     }
 
+    _IndexErase("FCBool", Name);
     DOMNode* node = _pGroupNode->removeChild(pcElem);
     node->release();
 
@@ -1225,6 +1231,7 @@ void ParameterGrp::RemoveFloat(const char* Name)
         return;
     }
 
+    _IndexErase("FCFloat", Name);
     DOMNode* node = _pGroupNode->removeChild(pcElem);
     node->release();
 
@@ -1246,6 +1253,7 @@ void ParameterGrp::RemoveInt(const char* Name)
         return;
     }
 
+    _IndexErase("FCInt", Name);
     DOMNode* node = _pGroupNode->removeChild(pcElem);
     node->release();
 
@@ -1267,6 +1275,7 @@ void ParameterGrp::RemoveUnsigned(const char* Name)
         return;
     }
 
+    _IndexErase("FCUInt", Name);
     DOMNode* node = _pGroupNode->removeChild(pcElem);
     node->release();
 
@@ -1294,6 +1303,7 @@ void ParameterGrp::RemoveGrp(const char* Name)
     it->second->Clear(false);
     if (!it->second->_Detached) {
         it->second->_Detached = true;
+        _IndexErase("FCParamGroup", Name);
         _pGroupNode->removeChild(it->second->_pGroupNode);
     }
     if (it->second->ShouldRemove()) {
@@ -1330,6 +1340,8 @@ bool ParameterGrp::RenameGrp(const char* OldName, const char* NewName)
     DOMElement* pcElem = FindElement(_pGroupNode, "FCParamGroup", OldName);
     if (pcElem) {
         pcElem->setAttribute(XStr("Name").unicodeForm(), XStr(NewName).unicodeForm());
+        _IndexErase("FCParamGroup", OldName);
+        _IndexInsert("FCParamGroup", NewName, pcElem);
     }
 
     _Notify(ParamType::FCGroup, NewName, OldName);
@@ -1338,6 +1350,7 @@ bool ParameterGrp::RenameGrp(const char* OldName, const char* NewName)
 
 void ParameterGrp::Clear(bool notify)
 {
+    _IndexInvalidate();
     if (!_pGroupNode) {
         return;
     }
@@ -1412,6 +1425,57 @@ bool ParameterGrp::ShouldRemove() const
     });
 }
 
+std::string ParameterGrp::_IndexKey(const char* Type, const char* Name)
+{
+    std::string key(Type);
+    key += '\0';// a separator no element type or parameter name can contain
+    key += Name;
+    return key;
+}
+
+void ParameterGrp::_BuildIndex() const
+{
+    _Index.clear();
+    _IndexValid = true;
+    if (!_pGroupNode) {
+        return;
+    }
+    for (DOMNode* child = _pGroupNode->getFirstChild(); child; child = child->getNextSibling()) {
+        if (child->getNodeType() != DOMNode::ELEMENT_NODE) {
+            continue;
+        }
+        DOMNode* attr = FindAttribute(child, "Name");
+        if (!attr) {
+            continue;
+        }
+        // A malformed file may name the same entry twice; FindElement() answers
+        // with the first, so emplace (which keeps the first) has to be used.
+        _Index.emplace(_IndexKey(StrX(child->getNodeName()).c_str(),
+                                 StrX(attr->getNodeValue()).c_str()),
+                       static_cast<DOMElement*>(child));
+    }
+}
+
+void ParameterGrp::_IndexInsert(const char* Type, const char* Name, DOMElement* Elem) const
+{
+    if (_IndexValid) {
+        _Index.emplace(_IndexKey(Type, Name), Elem);
+    }
+}
+
+void ParameterGrp::_IndexErase(const char* Type, const char* Name) const
+{
+    if (_IndexValid) {
+        _Index.erase(_IndexKey(Type, Name));
+    }
+}
+
+void ParameterGrp::_IndexInvalidate() const
+{
+    _IndexValid = false;
+    _Index.clear();
+}
+
 XERCES_CPP_NAMESPACE_QUALIFIER DOMElement*
 ParameterGrp::FindElement(XERCES_CPP_NAMESPACE_QUALIFIER DOMElement* Start,
                           const char* Type,
@@ -1426,6 +1490,17 @@ ParameterGrp::FindElement(XERCES_CPP_NAMESPACE_QUALIFIER DOMElement* Start,
                                 Type);
         return nullptr;
     }
+    // A named lookup of our own children is the hot one, and the only one the
+    // index describes: Name == nullptr means "the first element of this type",
+    // which is an order question a hash map cannot answer.
+    if (Name && Start == _pGroupNode) {
+        if (!_IndexValid) {
+            _BuildIndex();
+        }
+        auto it = _Index.find(_IndexKey(Type, Name));
+        return it == _Index.end() ? nullptr : it->second;
+    }
+
     for (DOMNode* clChild = Start->getFirstChild(); clChild != nullptr;
          clChild = clChild->getNextSibling()) {
         if (clChild->getNodeType() == DOMNode::ELEMENT_NODE) {
@@ -1562,6 +1637,7 @@ void ParameterGrp::NotifyAll()
 
 void ParameterGrp::_Reset()
 {
+    _IndexInvalidate();
     _pGroupNode = nullptr;
     for (auto& v : _GroupMap) {
         v.second->_Reset();

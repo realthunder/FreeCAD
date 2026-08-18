@@ -91,6 +91,16 @@ public:
   void setExternalRenderer(Render::Renderer *renderer,
                            App::PropertyContainer *view = nullptr);
 
+  /// The owning 3D view object, whose Section_* properties override the
+  /// section and clipping style. Told to the renderer whether or not a
+  /// backend is attached, since the internal GL pass honors them too.
+  void setViewObject(App::PropertyContainer *view);
+
+  /// Re-translate what the attached backend already holds, for a change
+  /// that is baked into a translated draw instead of read per frame (see
+  /// SoFCRenderer::refreshExternalFeed).
+  void refreshExternalFeed();
+
   /// Route the scene feed to the backend's overlay feed instead (see
   /// SoFCRenderer::setExternalOverlay()): this manager then captures an
   /// overlay root (foreground superimposition, corner axis cross) and
@@ -211,7 +221,8 @@ namespace Gui
 /// property of how the document is drawn, not of a view: a publisher
 /// with no 3D view has to put the same image in its snapshot
 /// (docs/HeadlessServe.md §3.3).
-GuiExport void applySectionHatchTexture(SoFCRenderCacheManager &manager);
+GuiExport void applySectionHatchTexture(SoFCRenderCacheManager &manager,
+                                       App::PropertyContainer *view = nullptr);
 
 /// Materialize the Render_* dynamic properties that the per-frame config
 /// push reads as a per-container override of the global RenderParams
@@ -222,6 +233,47 @@ GuiExport void applySectionHatchTexture(SoFCRenderCacheManager &manager);
 /// control channel still has somewhere to put an edit
 /// (docs/HeadlessServe.md §3.3).
 GuiExport void initRenderProperties(App::PropertyContainer *view);
+
+/// What a Coin SoShadowGroup still has to be told, out of the shadow
+/// map's own settings. The rest of the family -- the ground receiver --
+/// has no consumer on this side at all: the backend reads it through
+/// the bridge.
+struct ShadowRenderParams {
+    double precision = 1.0;
+    double epsilon = 1.0e-5;
+    double threshold = 0.0;
+    long smoothBorder = 0;
+    long spreadSize = 0;
+    long spreadSampleSize = 0;
+};
+
+/// Materialize the shadow map and ground receiver settings as
+/// RenderShadow_* properties (group "Render Shadow"), and return the few
+/// a Coin shadow group consumes. Called wherever the render properties
+/// are created, so the surface exists whether or not a draw style ever
+/// asks for it -- the bridge that feeds the backend only reads
+/// (docs/CoinRetirement.md stage 4d).
+GuiExport ShadowRenderParams materializeShadowRenderParams(
+        App::PropertyContainer *view);
+
+/// The RenderShadow_* names the engine itself consumes: a
+/// null-terminated list, and the exclusion list of the custom shader
+/// parameter rule (docs/RenderDebug.md sec 2.5) -- any OTHER RenderShadow_
+/// property is a user uniform.
+GuiExport const char * const *shadowRenderPropertyNames();
+
+/// Turn on what the Shadow draw style stood for -- the renderer's scene
+/// light and its shadow map -- for a container that asked for that style
+/// by name (a restored DrawStyle, or a saved camera's overrideMode).
+GuiExport void applyLegacyShadowStyle(App::PropertyContainer *view);
+
+/// Rename a document's Shadow_* view properties onto their RenderShadow_
+/// (and Render_Light*) equivalents, and convert a DrawStyle of "Shadow"
+/// into the display style it wrapped plus Render_Light / Render_Shadow.
+/// Called on view restore and when a saved view is applied, so a file
+/// written before stage 4d keeps its look and stops carrying a surface
+/// nothing reads.
+GuiExport void migrateShadowProperties(App::PropertyContainer *view);
 
 /// The per-container render property names that were retired to global
 /// RenderParams (debug/measurement switches, ladder tuning, occlusion
@@ -234,6 +286,30 @@ GuiExport const char * const *legacyRenderPropertyNames();
 /// saved properties, so old documents load compatibly and the dead
 /// override surface does not linger.
 GuiExport void stripLegacyRenderProperties(App::PropertyContainer *view);
+
+/// Drop the render properties that describe the machine rather than the
+/// model and materialize them again from this installation's preferences.
+/// The ones origin retired to global RenderParams are handled by
+/// stripLegacyRenderProperties above; these are the ones that stay
+/// per-view -- the AO and effect resolutions, the tessellation and level
+/// knobs -- and carry Prop_NoPersist so they are never written. A file
+/// written before that still carries them, which is what this is for: a
+/// view calls it once it has restored itself. (The attribute cannot be
+/// added afterwards: Property::setStatusValue masks that bit out, so the
+/// only way to get it is to create the property again.)
+GuiExport void reseedLocalRenderProperties(App::PropertyContainer *view);
+
+/// The effective value of one section/clipping style key for \a view: its
+/// Section_* property if it has one, and the ViewParams preference
+/// otherwise. How a section is capped, hatched and filled is part of how a
+/// clipped model is meant to be read, so a view - and the saved view that
+/// restores it - can answer for it instead of moving everybody's default.
+/// A property here IS the override: it exists only where somebody chose
+/// one, which is also what makes it worth saving.
+GuiExport bool sectionStyle(App::PropertyContainer *view, const char *name, bool def);
+GuiExport double sectionStyle(App::PropertyContainer *view, const char *name, double def);
+GuiExport std::string sectionStyle(App::PropertyContainer *view, const char *name,
+                                   const std::string &def);
 }
 
 #endif // GUI_SOFCRENDERCACHEMANAGER_H

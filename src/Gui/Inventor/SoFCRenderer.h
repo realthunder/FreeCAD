@@ -64,6 +64,23 @@ public:
   void setExternalRenderer(Render::Renderer * renderer,
                            App::PropertyContainer * view = nullptr);
 
+  /// The owning 3D view object, whose Section_* properties can override
+  /// the section and clipping style this renderer draws with. Set
+  /// independently of any backend, since the internal GL pass honors the
+  /// same overrides. The style is snapshotted once per frame: it is read
+  /// deep inside the draw loops, where a property lookup per draw entry
+  /// would cost more than the setting is worth.
+  void setViewObject(App::PropertyContainer * view);
+
+  /// Re-translate everything already fed to the attached backend (the
+  /// scene, the selections, the highlight). For the two section style
+  /// keys that are baked into a translated draw rather than read per
+  /// frame -- whether an on-top draw is sectioned, and whether the
+  /// section is concave -- since nothing else would republish a scene
+  /// that has not otherwise changed. Cheap and lossless next to dropping
+  /// the caches: no traversal, and the selection feeds survive.
+  void refreshExternalFeed();
+
   /// Route this renderer's scene feed to an external backend's overlay
   /// feed instead of the main scene feed: setScene() translates the
   /// caches into Renderer::setOverlay(\a id, draws, \a anchor), while

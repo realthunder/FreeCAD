@@ -34,13 +34,47 @@ if (BUILD_BGFX)
     # BGFXView::NUM_VIEWS ids for its pass sequence, and that sequence has
     # grown (particle simulation steps, bulb shadow tiles, water/glass,
     # nine overlay slots) to the point where bgfx's default 256 fits only
-    # two viewers. Doubling it fits five. The cost is bgfx's fixed
-    # per-view tables -- a couple of hundred bytes per id, twice over for
-    # the submit/render frame pair -- and one more bit of the 64-bit draw
-    # sort key for the view field, which has room: the tightest key
-    # variant packs 55 bits at the old width. Must stay a power of two
-    # (static_assert in bgfx's config.h).
-    set(BGFX_CONFIG_MAX_VIEWS "512" CACHE STRING "" FORCE)
+    # two viewers. The per-frame pass map since cut a plain viewer to 13
+    # ids (a 16-id block at the 8-id granule), so this is ~256 viewers.
+    #
+    # This is now only the CEILING -- what the build can address. What a
+    # session actually uses and walks is Render/MaxViewIds, a runtime
+    # limit clamped to this (bgfx's Init::Limits::maxViews), default 1024.
+    # The split matters because the two used to be one number: raising
+    # the constant for capacity also made every frame pay for slots no
+    # view would ever use.
+    #
+    # What the ceiling itself costs at this width, measured rather than
+    # reasoned (desktop GL, trivial scene, limit at 1024):
+    #  - Host RAM: nothing you can find. The per-view tables are static
+    #    arrays, so the pages past the limit are never touched and never
+    #    fault in -- resident memory came out the same as a 1024 build.
+    #  - One more bit of the 64-bit draw sort key for the view field.
+    #    There is room: the tightest key variant packs view bits + 47,
+    #    so 59 of 64 here, and BlitKey needs the field under 16 bits.
+    #  - The per-frame terms -- Context::swap()'s copy of the view table,
+    #    Frame::sort()'s rect/scissor fixup, and the per-view pools the
+    #    GPU profiler drives -- follow the runtime limit, not this.
+    # Raising the LIMIT to this ceiling is what is not free: with render
+    # stage timing on it took a 59fps session to 19 with resident memory
+    # climbing 95MB in thirty seconds. Capacity is cheap, use is not.
+    # Must stay a power of two (static_assert in bgfx's config.h).
+    set(BGFX_CONFIG_MAX_VIEWS "4096" CACHE STRING "" FORCE)
+    # The same story one pool over, and it bites sooner: a view's render
+    # targets are ~41 framebuffers (the sized set of forEachHandle, the
+    # six-level AO depth pyramid and the particle ping-pong), against a
+    # bgfx default of 128. That is one viewer -- because bgfx frees a
+    # handle at the END of the frame that destroyed it, so a re-init
+    # (any resize) transiently holds both the old set and the new, ~82,
+    # and a second 3D view then has nowhere to go.
+    #
+    # What that looked like: "Failed to allocate frame buffer handle",
+    # then createFrameBuffer asserting on an invalid attachment, i.e. a
+    # SIGTRAP on opening a second view or resizing one a few times.
+    # 512 fits five viewers with a re-init in flight, matching the view
+    # id budget above; the cost is bgfx's FrameBufferRef table, tens of
+    # bytes a slot.
+    set(BGFX_CONFIG_MAX_FRAME_BUFFERS "512" CACHE STRING "" FORCE)
     add_subdirectory(bgfx)
     # ⚠️⚠️ A bgfx occlusion query handle is an object's identity, not a
     # slot to rent: createOcclusionQuery() is the only place bgfx writes

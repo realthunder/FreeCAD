@@ -2119,6 +2119,10 @@ void Application::initApplication()
         // Move the pre-split render engine parameter keys into
         // Preferences/View/Render before anything reads them.
         RenderParams::migrate();
+        ViewParams::migrate();
+        // Which render path this session draws with, decided here rather
+        // than read from the configuration.
+        RenderParams::selectRenderPath();
         new Base::ScriptProducer( "FreeCADGuiInit", FreeCADGuiInit );
         init_resources();
         setCategoryFilterRules();
@@ -2683,6 +2687,11 @@ void postMainWindowSetup(MainWindow &mw)
         // the backend's own context can be built from.
         auto glw = mw.findChild<QOpenGLWidget*>(
                 QStringLiteral("GLSurfaceWarmup"));
+        // Seeded before the backend comes up, because the view id budget
+        // is a startup option: this warm-up IS the startup for a session
+        // that has one, so a value pushed later would never be read.
+        Render::RendererFactory::setMaxViewIds(
+                int(RenderParams::getMaxViewIds()));
         Render::RendererLib::WarmupTiming t;
         if (glw && Render::RendererFactory::warmup(rtype, glw, &t)) {
             Base::Console().Log(

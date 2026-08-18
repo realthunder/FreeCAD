@@ -76,7 +76,7 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     layoutRow->addWidget(DefaultDrawStyle);
     DefaultDrawStyle->setEntryName("DefaultDrawStyle");
     DefaultDrawStyle->setParamGrpPath("View");
-    for (int i=0; i<9; ++i) // Auto generated code (Tools/params_utils.py:1141)
+    for (int i=0; i<8; ++i) // Auto generated code (Tools/params_utils.py:1141)
         DefaultDrawStyle->addItem(QString());
     DefaultDrawStyle->setCurrentIndex(Gui::ViewParams::defaultDefaultDrawStyle());
 
@@ -631,32 +631,6 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
 
     // Auto generated code (Tools/params_utils.py:467)
     layoutShadow->addLayout(layoutRow);
-    ShadowUpdateGround = new Gui::PrefCheckBox(this);
-    layoutRow->addWidget(ShadowUpdateGround);
-    ShadowUpdateGround->setChecked(Gui::ViewParams::defaultShadowUpdateGround());
-    ShadowUpdateGround->setEntryName("ShadowUpdateGround");
-    ShadowUpdateGround->setParamGrpPath("View");
-
-    // Auto generated code (Tools/params_utils.py:461)
-    layoutRow = new QHBoxLayout();
-
-    // Auto generated code (Tools/params_utils.py:467)
-    layoutShadow->addLayout(layoutRow);
-    labelShadowDisplayMode = new QLabel(this);
-    layoutRow->addWidget(labelShadowDisplayMode);
-    ShadowDisplayMode = new Gui::PrefComboBox(this);
-    layoutRow->addWidget(ShadowDisplayMode);
-    ShadowDisplayMode->setEntryName("ShadowDisplayMode");
-    ShadowDisplayMode->setParamGrpPath("View");
-    for (int i=0; i<3; ++i) // Auto generated code (Tools/params_utils.py:1141)
-        ShadowDisplayMode->addItem(QString());
-    ShadowDisplayMode->setCurrentIndex(Gui::ViewParams::defaultShadowDisplayMode());
-
-    // Auto generated code (Tools/params_utils.py:461)
-    layoutRow = new QHBoxLayout();
-
-    // Auto generated code (Tools/params_utils.py:467)
-    layoutShadow->addLayout(layoutRow);
     labelShadowPrecision = new QLabel(this);
     layoutRow->addWidget(labelShadowPrecision);
     ShadowPrecision = new Gui::PrefDoubleSpinBox(this);
@@ -746,51 +720,6 @@ DlgSettingsDrawStyles::DlgSettingsDrawStyles(QWidget* parent)
     ShadowThreshold->setMinimum(0.0);
     ShadowThreshold->setMaximum(1.0);
     ShadowThreshold->setSingleStep(0.1);
-
-    // Auto generated code (Tools/params_utils.py:461)
-    layoutRow = new QHBoxLayout();
-
-    // Auto generated code (Tools/params_utils.py:467)
-    layoutShadow->addLayout(layoutRow);
-    labelShadowBoundBoxScale = new QLabel(this);
-    layoutRow->addWidget(labelShadowBoundBoxScale);
-    ShadowBoundBoxScale = new Gui::PrefDoubleSpinBox(this);
-    layoutRow->addWidget(ShadowBoundBoxScale);
-    ShadowBoundBoxScale->setValue(Gui::ViewParams::defaultShadowBoundBoxScale());
-    ShadowBoundBoxScale->setEntryName("ShadowBoundBoxScale");
-    ShadowBoundBoxScale->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
-    ShadowBoundBoxScale->setMinimum(0.0);
-    ShadowBoundBoxScale->setMaximum(10000000.0);
-    ShadowBoundBoxScale->setSingleStep(0.5);
-
-    // Auto generated code (Tools/params_utils.py:461)
-    layoutRow = new QHBoxLayout();
-
-    // Auto generated code (Tools/params_utils.py:467)
-    layoutShadow->addLayout(layoutRow);
-    labelShadowMaxDistance = new QLabel(this);
-    layoutRow->addWidget(labelShadowMaxDistance);
-    ShadowMaxDistance = new Gui::PrefDoubleSpinBox(this);
-    layoutRow->addWidget(ShadowMaxDistance);
-    ShadowMaxDistance->setValue(Gui::ViewParams::defaultShadowMaxDistance());
-    ShadowMaxDistance->setEntryName("ShadowMaxDistance");
-    ShadowMaxDistance->setParamGrpPath("View");
-    // Auto generated code (Tools/params_utils.py:1240)
-    ShadowMaxDistance->setMinimum(0.0);
-    ShadowMaxDistance->setMaximum(10000000.0);
-    ShadowMaxDistance->setSingleStep(0.5);
-
-    // Auto generated code (Tools/params_utils.py:461)
-    layoutRow = new QHBoxLayout();
-
-    // Auto generated code (Tools/params_utils.py:467)
-    layoutShadow->addLayout(layoutRow);
-    ShadowTransparentShadow = new Gui::PrefCheckBox(this);
-    layoutRow->addWidget(ShadowTransparentShadow);
-    ShadowTransparentShadow->setChecked(Gui::ViewParams::defaultShadowTransparentShadow());
-    ShadowTransparentShadow->setEntryName("ShadowTransparentShadow");
-    ShadowTransparentShadow->setParamGrpPath("View");
     layout->addItem(new QSpacerItem(40, 20, QSizePolicy::Fixed, QSizePolicy::Expanding));
     retranslateUi();
     // Auto generated code (Tools/params_utils.py:645)
@@ -850,17 +779,12 @@ void DlgSettingsDrawStyles::saveSettings()
     ShadowGroundTextureSize->onSave();
     ShadowGroundBumpMap->onSave();
     ShadowGroundShading->onSave();
-    ShadowUpdateGround->onSave();
-    ShadowDisplayMode->onSave();
     ShadowPrecision->onSave();
     ShadowSmoothBorder->onSave();
     ShadowSpreadSize->onSave();
     ShadowSpreadSampleSize->onSave();
     ShadowEpsilon->onSave();
     ShadowThreshold->onSave();
-    ShadowBoundBoxScale->onSave();
-    ShadowMaxDistance->onSave();
-    ShadowTransparentShadow->onSave();
 }
 
 // Auto generated code (Tools/params_utils.py:670)
@@ -910,17 +834,12 @@ void DlgSettingsDrawStyles::loadSettings()
     ShadowGroundTextureSize->onRestore();
     ShadowGroundBumpMap->onRestore();
     ShadowGroundShading->onRestore();
-    ShadowUpdateGround->onRestore();
-    ShadowDisplayMode->onRestore();
     ShadowPrecision->onRestore();
     ShadowSmoothBorder->onRestore();
     ShadowSpreadSize->onRestore();
     ShadowSpreadSampleSize->onRestore();
     ShadowEpsilon->onRestore();
     ShadowThreshold->onRestore();
-    ShadowBoundBoxScale->onRestore();
-    ShadowMaxDistance->onRestore();
-    ShadowTransparentShadow->onRestore();
 }
 
 // Auto generated code (Tools/params_utils.py:679)
@@ -948,8 +867,6 @@ void DlgSettingsDrawStyles::retranslateUi()
     DefaultDrawStyle->setItemData(6, QObject::tr("Display style, show both wire frame and face with shading"), Qt::ToolTipRole);
     DefaultDrawStyle->setItemText(7, QObject::tr("Tessellation"));
     DefaultDrawStyle->setItemData(7, QObject::tr("Display style, show tessellation wire frame"), Qt::ToolTipRole);
-    DefaultDrawStyle->setItemText(8, QObject::tr("Shadow"));
-    DefaultDrawStyle->setItemData(8, QObject::tr("Display style, drop shadows for the scene.\nClick this button while in shadow mode to toggle light manipulator"), Qt::ToolTipRole);
     ForceSolidSingleSideLighting->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docForceSolidSingleSideLighting()));
     ForceSolidSingleSideLighting->setText(QObject::tr("Force single side lighting on solid"));
     groupSelection->setTitle(QObject::tr("Selection"));
@@ -1073,15 +990,6 @@ void DlgSettingsDrawStyles::retranslateUi()
     labelShadowGroundBumpMap->setToolTip(ShadowGroundBumpMap->toolTip());
     ShadowGroundShading->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowGroundShading()));
     ShadowGroundShading->setText(QObject::tr("Ground shading"));
-    ShadowUpdateGround->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowUpdateGround()));
-    ShadowUpdateGround->setText(QObject::tr("Update ground on scene change"));
-    ShadowDisplayMode->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowDisplayMode()));
-    labelShadowDisplayMode->setText(QObject::tr("Override display mode"));
-    labelShadowDisplayMode->setToolTip(ShadowDisplayMode->toolTip());
-    // Auto generated code (Tools/params_utils.py:1166)
-    ShadowDisplayMode->setItemText(0, QObject::tr("Flat Lines"));
-    ShadowDisplayMode->setItemText(1, QObject::tr("Shaded"));
-    ShadowDisplayMode->setItemText(2, QObject::tr("As Is"));
     ShadowPrecision->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowPrecision()));
     labelShadowPrecision->setText(QObject::tr("Precision"));
     labelShadowPrecision->setToolTip(ShadowPrecision->toolTip());
@@ -1100,14 +1008,6 @@ void DlgSettingsDrawStyles::retranslateUi()
     ShadowThreshold->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowThreshold()));
     labelShadowThreshold->setText(QObject::tr("Threshold"));
     labelShadowThreshold->setToolTip(ShadowThreshold->toolTip());
-    ShadowBoundBoxScale->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowBoundBoxScale()));
-    labelShadowBoundBoxScale->setText(QObject::tr("Bounding box scale"));
-    labelShadowBoundBoxScale->setToolTip(ShadowBoundBoxScale->toolTip());
-    ShadowMaxDistance->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowMaxDistance()));
-    labelShadowMaxDistance->setText(QObject::tr("Maximum distance"));
-    labelShadowMaxDistance->setToolTip(ShadowMaxDistance->toolTip());
-    ShadowTransparentShadow->setToolTip(QApplication::translate("ViewParams", Gui::ViewParams::docShadowTransparentShadow()));
-    ShadowTransparentShadow->setText(QObject::tr("Transparent shadow"));
 }
 
 // Auto generated code (Tools/params_utils.py:697)
@@ -1122,7 +1022,7 @@ void DlgSettingsDrawStyles::changeEvent(QEvent *e)
 // Auto generated code (Tools/params_utils.py:710)
 #include "moc_DlgSettingsDrawStyles.cpp"
 
-// Auto generated code (Gui/PreferencePages/DlgSettingsDrawStyles.py:129)
+// Auto generated code (Gui/PreferencePages/DlgSettingsDrawStyles.py:133)
 bool DlgSettingsDrawStyles::Active;
 //[[[end]]]
 
@@ -1180,7 +1080,7 @@ import DlgSettingsDrawStyles
 DlgSettingsDrawStyles.define_end()
 ]]]*/
 
-// Auto generated code (Gui/PreferencePages/DlgSettingsDrawStyles.py:135)
+// Auto generated code (Gui/PreferencePages/DlgSettingsDrawStyles.py:139)
 void DlgSettingsDrawStyles::onParamChanged(const char *sReason)
 {
     if (!Active)
@@ -1375,20 +1275,6 @@ void DlgSettingsDrawStyles::onParamChanged(const char *sReason)
             if (!passThrough)
                 return;
         }
-        if (passThrough || boost::equals(sReason+6, "UpdateGround")) {
-            setViewProperty<App::PropertyBool>(ViewParams::getShadowSync(),
-                                                  "Shadow_UpdateGround",
-                                                  ViewParams::getShadowUpdateGround());
-            if (!passThrough)
-                return;
-        }
-        if (passThrough || boost::equals(sReason+6, "DisplayMode")) {
-            setViewProperty<App::PropertyEnumeration>(ViewParams::getShadowSync(),
-                                                  "Shadow_DisplayMode",
-                                                  ViewParams::getShadowDisplayMode());
-            if (!passThrough)
-                return;
-        }
         if (passThrough || boost::equals(sReason+6, "Precision")) {
             setViewProperty<App::PropertyFloat>(ViewParams::getShadowSync(),
                                                   "Shadow_Precision",
@@ -1428,27 +1314,6 @@ void DlgSettingsDrawStyles::onParamChanged(const char *sReason)
             setViewProperty<App::PropertyFloat>(ViewParams::getShadowSync(),
                                                   "Shadow_Threshold",
                                                   ViewParams::getShadowThreshold());
-            if (!passThrough)
-                return;
-        }
-        if (passThrough || boost::equals(sReason+6, "BoundBoxScale")) {
-            setViewProperty<App::PropertyFloat>(ViewParams::getShadowSync(),
-                                                  "Shadow_BoundBoxScale",
-                                                  ViewParams::getShadowBoundBoxScale());
-            if (!passThrough)
-                return;
-        }
-        if (passThrough || boost::equals(sReason+6, "MaxDistance")) {
-            setViewProperty<App::PropertyFloat>(ViewParams::getShadowSync(),
-                                                  "Shadow_MaxDistance",
-                                                  ViewParams::getShadowMaxDistance());
-            if (!passThrough)
-                return;
-        }
-        if (passThrough || boost::equals(sReason+6, "TransparentShadow")) {
-            setViewProperty<App::PropertyBool>(ViewParams::getShadowSync(),
-                                                  "Shadow_TransparentShadow",
-                                                  ViewParams::getShadowTransparentShadow());
             if (!passThrough)
                 return;
         }

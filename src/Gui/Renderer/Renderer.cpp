@@ -204,3 +204,15 @@ const std::string &RendererFactory::resourcePath()
 {
     return _ResourcePath;
 }
+
+static int _MaxViewIds = 0;
+
+void RendererFactory::setMaxViewIds(int count)
+{
+    _MaxViewIds = count > 0 ? count : 0;
+}
+
+int RendererFactory::maxViewIds()
+{
+    return _MaxViewIds;
+}

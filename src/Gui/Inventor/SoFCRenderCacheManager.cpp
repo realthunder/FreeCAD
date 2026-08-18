@@ -587,7 +587,17 @@ public:
   bool obeysrules;
   RenderCachePtr highlightcache;
   CoinPtr<SoPath> highlightpath;
+  // Whether on-top draws escape the section, as this view answers for it
+  // (Section_NoOnTop, the preference behind it otherwise). The highlight
+  // caches below are built with it baked in, so they are dropped whenever
+  // it moves.
   bool nosectionontop = false;
+  // The owning 3D view object, for that override.
+  App::PropertyContainer *viewobject = nullptr;
+  bool sectionNoOnTop() const {
+    return Gui::sectionStyle(viewobject, "NoOnTop",
+                             ViewParams::getNoSectionOnTop());
+  }
   bool override_selectstyle = false;
 
   SoCallbackAction *action;
@@ -886,6 +896,19 @@ SoFCRenderCacheManager::setExternalRenderer(Render::Renderer *renderer,
 }
 
 void
+SoFCRenderCacheManager::setViewObject(App::PropertyContainer *view)
+{
+  PRIVATE(this)->viewobject = view;
+  PRIVATE(this)->renderer->setViewObject(view);
+}
+
+void
+SoFCRenderCacheManager::refreshExternalFeed()
+{
+  PRIVATE(this)->renderer->refreshExternalFeed();
+}
+
+void
 SoFCRenderCacheManager::setExternalOverlay(Render::Renderer *renderer,
                                            int id,
                                            const Render::OverlayAnchor &anchor)
@@ -970,8 +993,8 @@ SoFCRenderCacheManager::setHighlight(SoPath * path,
   PRIVATE(this)->highlightpath = path;
 
   RenderCachePtr cache;
-  if (PRIVATE(this)->nosectionontop != ViewParams::getNoSectionOnTop()) {
-    PRIVATE(this)->nosectionontop = ViewParams::getNoSectionOnTop();
+  if (PRIVATE(this)->nosectionontop != PRIVATE(this)->sectionNoOnTop()) {
+    PRIVATE(this)->nosectionontop = PRIVATE(this)->sectionNoOnTop();
     PRIVATE(this)->pathcachetable.clear();
   }
   auto it = PRIVATE(this)->pathcachetable.find(path);

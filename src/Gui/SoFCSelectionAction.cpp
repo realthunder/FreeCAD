@@ -1619,12 +1619,17 @@ void SoFCRayPickAction::setResetClipPlane(bool enable)
     resetclipplane = enable;
 }
 
+void SoFCRayPickAction::setSectionConcave(bool enable)
+{
+    sectionconcave = enable;
+}
+
 void SoFCRayPickAction::doPick(SoNode *node)
 {
     SoState *state = getState();
     bool pushed = false;
     bool pickall = isPickAll();
-    if (resetclipplane || ViewParams::getSectionConcave()) {
+    if (resetclipplane || sectionconcave) {
         auto element = static_cast<SoClipPlaneElement*>(
                 state->getElementNoPush(SoClipPlaneElement::getClassStackIndex()));
         if (element && element->getNum()) {
@@ -1657,13 +1662,17 @@ void SoFCRayPickAction::doPick(SoNode *node)
         tempList.reset(new SoPickedPointList);
     else
         tempList->truncate(0);
+    // The pick above ran with the clip planes off, so this keeps what a
+    // concave section draws: the union of the half spaces, i.e. a point
+    // any one plane keeps. (A plane keeps what is on its normal side,
+    // distance >= 0.) Everything the planes agree to cut is dropped.
     const auto &pps = getPickedPointList();
     for (int i=0,c=pps.getLength();i<c;++i) {
         int j = 0;
         SbVec3f pt = pps[i]->getPoint();
         for (int c=element->getNum(); j<c; ++j) {
             float d = element->get(j).getDistance(pt);
-            if (d < 0.0)
+            if (d >= 0.0)
                 break;
         }
         if (j != element->getNum())

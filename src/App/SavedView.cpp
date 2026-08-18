@@ -34,6 +34,7 @@ SavedView::SavedView()
     ADD_PROPERTY_TYPE(SaveCamera, (true), "CameraSettings", App::Prop_None, "Enable saving camera settings");
     ADD_PROPERTY_TYPE(SaveClippings, (true), "ClipSettings", App::Prop_None, "Enable saving clipping planes");
     ADD_PROPERTY_TYPE(SaveDrawStyleSettings, (true), "DrawStyleSettings", App::Prop_None, "Enable saving drawstyle settings");
+    ADD_PROPERTY_TYPE(SaveRenderSettings, (true), "RenderSettings", App::Prop_None, "Enable saving the view's own render settings (Render_*, Light_*, Section_*)");
 }
 
 SavedView::~SavedView()
