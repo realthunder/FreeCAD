@@ -6105,6 +6105,13 @@ void RenderParams::selectRenderPath()
     if (ViewParams::getRenderCache() != 3)
         ViewParams::setRenderCache(3);
 
+    const std::string type = preferredType();
+    if (getType() != type)
+        setType(type);
+}
+
+std::string RenderParams::preferredType()
+{
     // The backend: the engine's own where this build has it, and
     // whatever else registered if not. Resolved against what is
     // actually registered rather than named by a literal, so a build
@@ -6114,16 +6121,14 @@ void RenderParams::selectRenderPath()
     std::string type;
     for (const auto &t : Render::RendererFactory::types()) {
         if (boost::starts_with(t, "bgfx")) {
-            type = t;
-            break;
+            return t;
         }
         if (type.empty())
             type = t;
     }
     if (type.empty())
         type = "Default";
-    if (getType() != type)
-        setType(type);
+    return type;
 }
 
 void RenderParams::migrate()

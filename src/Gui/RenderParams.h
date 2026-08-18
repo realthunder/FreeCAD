@@ -2813,6 +2813,15 @@ public:
     /// made at runtime (console, script) works exactly as before, for
     /// as long as that session lasts.
     static void selectRenderPath();
+    /** The backend type to use, without stating it as a preference
+     *
+     * What selectRenderPath() would settle on: the engine's own backend
+     * where this build registered one, whatever else registered if not,
+     * and "Default" -- meaning plain GL -- where nothing did. Separate
+     * from getType() because a caller may need the engine for a reason
+     * of its own without touching what the user chose for their views.
+     */
+    static std::string preferredType();
 
 /*[[[cog
 RenderParams.declare_end()
