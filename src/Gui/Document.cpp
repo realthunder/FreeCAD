@@ -1997,6 +1997,16 @@ void Document::readObject(Base::XMLReader &xmlReader) {
 static const int FC_GUI_SCHEMA_VER = 1;
 static const char *FC_XML_GUI_POSTFIX = ".Gui.xml";
 static const char *FC_ATTR_SPLIT_XML = "Split";
+/** Whether this file lists the entry each view provider was written to.
+ *
+ * *** The reader must never re-derive a file name. A name is chosen by the
+ * writer -- it has to be one the file system will take, which the name an
+ * object carries need not be (Base::Tools::portableFileName) -- and a reader
+ * that computes it again only works while both sides compute alike. Change
+ * the rule, or the limit, and every file written before the change stops
+ * loading. So the name is written down, and this says it was.
+ */
+static const char *FC_ATTR_SPLIT_FILES = "SplitFiles";
 static const char *FC_ATTR_TREE_EXPANSION = "HasExpansion";
 
 namespace {
@@ -2187,6 +2197,7 @@ void Document::RestoreDocFile(Base::Reader &reader)
     }
 
     bool split = !!xmlReader.getAttributeAsInteger(FC_ATTR_SPLIT_XML,"0");
+    bool splitFiles = !!xmlReader.getAttributeAsInteger(FC_ATTR_SPLIT_FILES,"0");
 
     d->_hasExpansion = !!xmlReader.getAttributeAsInteger(FC_ATTR_TREE_EXPANSION,"0");
     if(d->_hasExpansion)
@@ -2282,17 +2293,24 @@ void Document::RestoreDocFile(Base::Reader &reader)
                     << stats.total.count() << "s (value " << stats.value.count()
                     << "s), total " << Base::GetDuration(t).count() << 's');
             xmlReader.readEndElement("ViewProviderData");
-        } else {
-            for(const auto &v : d->_ViewProviderMap) {
-                // The same transformation the writer applied, because this
-                // has to ask for the entry that was written: a name a file
-                // system would not take was made into one that it will, and
-                // the function answers with what it is given when there was
-                // nothing to change.
-                xmlReader.addFile(Base::Tools::portableFileName(
-                        std::string(v.first->getNameInDocument())+FC_XML_GUI_POSTFIX).c_str(),
-                        this);
+        } else if (splitFiles) {
+            // The entries as the writer recorded them. Read, never re-derived:
+            // the writer is free to change how it makes a name into one the
+            // file system will take, and a file written before it changed has
+            // to go on loading.
+            xmlReader.readElement("ViewProviderFiles");
+            const int count = xmlReader.getAttributeAsInteger("Count");
+            for (int i = 0; i < count; ++i) {
+                xmlReader.readElement("File");
+                xmlReader.addFile(xmlReader.getAttribute("name"),this);
             }
+            xmlReader.readEndElement("ViewProviderFiles");
+        } else {
+            // Written before the entries were recorded, when the name was the
+            // object's name and the postfix -- which is what those files hold,
+            // whatever the writer does now.
+            for(const auto &v : d->_ViewProviderMap)
+                xmlReader.addFile(std::string(v.first->getNameInDocument())+FC_XML_GUI_POSTFIX,this);
         }
 
         // read camera settings
@@ -3071,21 +3089,35 @@ void Document::SaveDocFile (Base::Writer &writer) const
     writer.Stream() << "<Document SchemaVersion=\"" << FC_GUI_SCHEMA_VER 
         << "\" FileVersion=\"" << writer.getFileVersion() << "\" "
         << FC_ATTR_SPLIT_XML << "=\"" << (writer.isSplitXML()?1:0) << "\"";
+    if (writer.isSplitXML())
+        writer.Stream() << ' ' << FC_ATTR_SPLIT_FILES << "=\"1\"";
 
     if (!TreeWidget::saveDocumentItem(this, writer, FC_ATTR_TREE_EXPANSION))
         writer.Stream() << ">\n";
 
     if(writer.isSplitXML()) {
         d->_splitXmlEntries.clear();
+        writer.incInd();
+        writer.Stream() << writer.ind() << "<ViewProviderFiles Count=\""
+                        << d->_ViewProviderMap.size() << "\">\n";
+        writer.incInd();
         for(const auto &v : d->_ViewProviderMap) {
             // What the writer settled on, which is not always what was asked
-            // for: it makes the name one a file system will take. Remembered
-            // so that SaveDocFile answers with the object rather than reading
-            // the object's name back out of a file name.
+            // for: it makes the name one a file system will take. Written
+            // down, because the reader must take the name from here rather
+            // than work it out again -- and kept, so that SaveDocFile answers
+            // with the object rather than reading its name back out of a file
+            // name.
             const std::string& entry = writer.addFile(
                     std::string(v.first->getNameInDocument())+FC_XML_GUI_POSTFIX,this);
             d->_splitXmlEntries[entry] = v.first;
+            writer.Stream() << writer.ind() << "<File obj=\""
+                            << encodeAttribute(v.first->getNameInDocument())
+                            << "\" name=\"" << encodeAttribute(entry) << "\"/>\n";
         }
+        writer.decInd();
+        writer.Stream() << writer.ind() << "</ViewProviderFiles>\n";
+        writer.decInd();
     } else {
         writer.incInd(); 
 
