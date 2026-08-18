@@ -179,7 +179,16 @@ bool locationFromString(const std::string& text, TopLoc_Location& loc)
 struct ParsedShape
 {
     TopoDS_Shape root;
-    ShapeIndexMap shapes;
+    /** The set the file was parsed into, kept whole rather than as a copy of
+     * its shape table.
+     *
+     * Another file addresses this one by position, and with cross-file
+     * geometry on it addresses the surface and curve tables that way too --
+     * so what has to survive the parse is the set, not one map out of it.
+     * Shared rather than owned: what the resolver hands out lives as long as
+     * the cache entry, and the entry lives as long as the file.
+     */
+    std::shared_ptr<ShapeRefSet> tables;
     std::string plan;
 };
 
@@ -263,10 +272,15 @@ const ParsedShape* parseBlob(App::FileBlobManager& manager,
         return nullptr;
     if (const ParsedShape* cached = ShapeParseCache::instance().get(blob))
         return cached;
-    if (depth > 64) {
+    if (depth > 1024) {
         // The writer only ever borrows from files written before this one, so
         // the graph is a DAG by construction. A file that says otherwise was
         // not written by this build.
+        // *** Deep, because a chain here is files and not sub-shapes: with
+        // cross-file geometry a file names whichever earlier file first wrote
+        // each entry, and that file may name an earlier one still. The guard
+        // is against a cycle a foreign writer could produce, not against the
+        // depth a real project reaches.
         FC_ERR("Geometry file " << blob->path() << " is nested past any depth a save writes");
         return nullptr;
     }
@@ -290,19 +304,22 @@ const ParsedShape* parseBlob(App::FileBlobManager& manager,
         }
         else {
             BRep_Builder builder;
-            ShapeRefSet set(builder);
-            set.setResolver([&](const std::string& hash) -> const ShapeIndexMap* {
+            auto set = std::make_shared<ShapeRefSet>(builder);
+            set->setResolver([&](const std::string& hash) -> const ShapeRefSet* {
                 App::FileBlobHandle source = manager.find(hash);
                 if (!source) {
                     return nullptr;
                 }
                 sources.push_back(source);
                 const ParsedShape* borrowed = parseBlob(manager, source, depth + 1);
-                return borrowed ? &borrowed->shapes : nullptr;
+                return borrowed ? borrowed->tables.get() : nullptr;
             });
-            parsed.root = set.read(in);
-            parsed.shapes = set.shapes();
-            parsed.plan = set.plan();
+            parsed.root = set->read(in);
+            parsed.plan = set->plan();
+            // The resolver closes over this frame, so it does not outlive it.
+            // read() has already dropped what it borrowed from.
+            set->setResolver(nullptr);
+            parsed.tables = std::move(set);
         }
     }
     catch (const Standard_Failure& e) {
@@ -460,6 +477,9 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
     // Before build(), which is what fills the geometry tables.
     TopoShape::applyStorageOptions(refs, true);
     refs.setOwners(owners);
+    // Rides on the same table, and is off wherever that is: a geometry entry
+    // names a file, and the table is what says which files there are.
+    refs.setGeometrySharing(owners && App::DocumentParams::getDedupCrossFileGeometry());
     refs.build(root);
     const std::string plan = refs.plan();
 
@@ -620,7 +640,14 @@ void PropertyPartShape::serveFromBlob()
     // What the file says it borrows, taken from the file itself. Without this
     // a reopened document could not tell whether its own files are still what
     // the next save would write, and would rewrite all of them.
-    _blobPlan = parsed ? parsed->plan : std::string();
+    //
+    // *** Kept aside rather than assigned here, because the setValue() below
+    // goes through dropBlob(), which drops everything that describes the file
+    // -- the plan and the motion along with the handle. Only the handle used
+    // to be put back, and a stale empty plan is not a harmless one: it reads
+    // as "this file borrows nothing", so a save that now has nothing to
+    // borrow leaves the file alone with its references still in it.
+    const std::string plan = parsed ? parsed->plan : std::string();
 
     const bool wasTouched = owner && owner->isTouched();
     {
@@ -645,6 +672,12 @@ void PropertyPartShape::serveFromBlob()
         _Ver = ver;
     }
     _blob = blob;
+    _blobPlan = plan;
+    // The three together are what says the file on disk is this value: the
+    // shape held now is that file's geometry moved by the motion it was
+    // restored with, so that is the motion a save keeping the file must
+    // write again.
+    _blobMotion = _RestoreMotion;
     if (owner && !wasTouched)
         owner->purgeTouched();
 }

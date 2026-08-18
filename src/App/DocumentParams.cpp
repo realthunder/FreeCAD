@@ -60,6 +60,7 @@ public:
         signalParamChanged("DeferShapeLoad");
         signalParamChanged("DedupShapePCurves");
         signalParamChanged("DedupCongruentShapes");
+        signalParamChanged("DedupCrossFileGeometry");
         signalParamChanged("AutoRemoveFile");
         signalParamChanged("AutoNameDynamicProperty");
         signalParamChanged("BackupPolicy");
@@ -103,6 +104,7 @@ public:
     bool DeferShapeLoad;
     bool DedupShapePCurves;
     bool DedupCongruentShapes;
+    bool DedupCrossFileGeometry;
     bool AutoRemoveFile;
     bool AutoNameDynamicProperty;
     bool BackupPolicy;
@@ -164,6 +166,8 @@ public:
         funcs["DedupShapePCurves"] = &DocumentParamsP::updateDedupShapePCurves;
         DedupCongruentShapes = this->handle->GetBool("DedupCongruentShapes", true);
         funcs["DedupCongruentShapes"] = &DocumentParamsP::updateDedupCongruentShapes;
+        DedupCrossFileGeometry = this->handle->GetBool("DedupCrossFileGeometry", false);
+        funcs["DedupCrossFileGeometry"] = &DocumentParamsP::updateDedupCrossFileGeometry;
         AutoRemoveFile = this->handle->GetBool("AutoRemoveFile", true);
         funcs["AutoRemoveFile"] = &DocumentParamsP::updateAutoRemoveFile;
         AutoNameDynamicProperty = this->handle->GetBool("AutoNameDynamicProperty", false);
@@ -293,6 +297,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updateDedupCongruentShapes(DocumentParamsP *self) {
         self->DedupCongruentShapes = self->handle->GetBool("DedupCongruentShapes", true);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updateDedupCrossFileGeometry(DocumentParamsP *self) {
+        self->DedupCrossFileGeometry = self->handle->GetBool("DedupCrossFileGeometry", false);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updateAutoRemoveFile(DocumentParamsP *self) {
@@ -870,6 +878,47 @@ void DocumentParams::setDedupCongruentShapes(const bool &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void DocumentParams::removeDedupCongruentShapes() {
     instance()->handle->RemoveBool("DedupCongruentShapes");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *DocumentParams::docDedupCrossFileGeometry() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Let a shape file name the surfaces and curves another shape file\n"
+"already holds instead of writing its own copy of them.\n"
+"\n"
+"Each shape file carries its own table of surfaces, 3D curves and\n"
+"2D curves, so a face two parts have in common is written once per\n"
+"part. On a real project those tables are most of the bytes and\n"
+"about half of what they hold repeats between files. An entry may\n"
+"instead name a file and a position in its table, and the reader\n"
+"then puts the entry it parsed there into this file.\n"
+"\n"
+"Off by default: it makes a shape file depend on another one for\n"
+"its geometry, not only for whole sub-shapes, so a file that goes\n"
+"missing costs more than it did. Applies to shapes written as\n"
+"ASCII BRep inside a document; an exported file names nothing.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & DocumentParams::getDedupCrossFileGeometry() {
+    return instance()->DedupCrossFileGeometry;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & DocumentParams::defaultDedupCrossFileGeometry() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void DocumentParams::setDedupCrossFileGeometry(const bool &v) {
+    instance()->handle->SetBool("DedupCrossFileGeometry",v);
+    instance()->DedupCrossFileGeometry = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void DocumentParams::removeDedupCrossFileGeometry() {
+    instance()->handle->RemoveBool("DedupCrossFileGeometry");
 }
 
 // Auto generated code (Tools/params_utils.py:372)

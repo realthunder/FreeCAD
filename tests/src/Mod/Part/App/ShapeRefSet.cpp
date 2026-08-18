@@ -5,7 +5,10 @@
 #include <sstream>
 
 #include <BRep_Builder.hxx>
+#include <BRep_Tool.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <Geom_Surface.hxx>
+#include <TopoDS.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS_Compound.hxx>
 #include <gp_Trsf.hxx>
@@ -40,6 +43,26 @@ int publishAs(const Part::ShapeRefSet& set, const char* hash, Part::ShapeOwnerTa
     const int index = owners.addFile(entry);
     set.publish(index, owners);
     return index;
+}
+
+/// Serialize a shape with the geometry tables allowed to name another file's.
+std::string
+writeShared(const TopoDS_Shape& shape, const Part::ShapeOwnerTable* owners, Part::ShapeRefSet& set)
+{
+    set.setOwners(owners);
+    set.setGeometrySharing(true);
+    set.build(shape);
+    std::ostringstream out;
+    set.write(shape, out);
+    return out.str();
+}
+
+/// The surface object under a shape's first face, which is what says whether
+/// two shapes came back standing on one surface or on two equal ones.
+Handle(Geom_Surface) surfaceOf(const TopoDS_Shape& shape)
+{
+    TopExp_Explorer it(shape, TopAbs_FACE);
+    return it.More() ? BRep_Tool::Surface(TopoDS::Face(it.Current())) : nullptr;
 }
 
 int countFaces(const TopoDS_Shape& shape)
@@ -132,8 +155,8 @@ TEST(ShapeRefSet, BorrowedSubShapeIsShared)
 
     std::istringstream secondIn(secondText);
     Part::ShapeRefSet secondReader(builder);
-    secondReader.setResolver([&](const std::string& name) -> const Part::ShapeIndexMap* {
-        return name == "first" ? &firstReader.shapes() : nullptr;
+    secondReader.setResolver([&](const std::string& name) -> const Part::ShapeRefSet* {
+        return name == "first" ? &firstReader : nullptr;
     });
     const TopoDS_Shape secondRead = secondReader.read(secondIn);
 
@@ -177,8 +200,8 @@ TEST(ShapeRefSet, BorrowedRootLeavesAnEmptyTable)
 
     std::istringstream secondIn(secondText);
     Part::ShapeRefSet secondReader(builder);
-    secondReader.setResolver([&](const std::string& name) -> const Part::ShapeIndexMap* {
-        return name == "first" ? &firstReader.shapes() : nullptr;
+    secondReader.setResolver([&](const std::string& name) -> const Part::ShapeRefSet* {
+        return name == "first" ? &firstReader : nullptr;
     });
     const TopoDS_Shape secondRead = secondReader.read(secondIn);
 
@@ -224,8 +247,8 @@ TEST(ShapeRefSet, BorrowedShapeKeepsItsOwnLocation)
 
     std::istringstream secondIn(secondText);
     Part::ShapeRefSet secondReader(builder);
-    secondReader.setResolver([&](const std::string& name) -> const Part::ShapeIndexMap* {
-        return name == "first" ? &firstReader.shapes() : nullptr;
+    secondReader.setResolver([&](const std::string& name) -> const Part::ShapeRefSet* {
+        return name == "first" ? &firstReader : nullptr;
     });
     const TopoDS_Shape secondRead = secondReader.read(secondIn);
 
@@ -257,8 +280,177 @@ TEST(ShapeRefSet, UnresolvableFileFailsTheRead)
     std::istringstream in(writeSet(compound, &owners, second));
 
     Part::ShapeRefSet reader(builder);
-    reader.setResolver([](const std::string&) -> const Part::ShapeIndexMap* {
+    reader.setResolver([](const std::string&) -> const Part::ShapeRefSet* {
         return nullptr;
+    });
+    EXPECT_TRUE(reader.read(in).IsNull());
+}
+
+/** Sharing on, but nothing to share with: still plain BRep.
+ *
+ * The same claim the first case makes about sub-shapes, for the tables -- a
+ * table nothing was borrowed into is written by OCCT itself.
+ */
+TEST(ShapeRefSet, SharedGeometryWithNoOwnerIsUnchanged)
+{
+    const TopoDS_Shape box = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+
+    std::ostringstream expected;
+    Part::TopoShape(box).exportBrep(expected);
+
+    Part::ShapeOwnerTable owners;
+    Part::ShapeRefSet set;
+    const std::string written = writeShared(box, &owners, set);
+
+    EXPECT_FALSE(set.borrows());
+    EXPECT_EQ(0, set.geometryReferences());
+    EXPECT_EQ(expected.str(), written);
+}
+
+/** Two boxes built apart are two TShapes and the same geometry.
+ *
+ * Nothing can be borrowed as a sub-shape -- the owner table is keyed on TShape
+ * identity and these share none -- so what is left is the tables, which is
+ * exactly the duplication sec 12.8 measured across a real project's files.
+ */
+TEST(ShapeRefSet, EqualGeometryIsNamedInTheEarlierFile)
+{
+    const TopoDS_Shape box = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+    const TopoDS_Shape twin = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+    ASSERT_FALSE(box.IsPartner(twin));
+
+    Part::ShapeOwnerTable owners;
+    Part::ShapeRefSet first;
+    const std::string firstText = writeShared(box, &owners, first);
+    publishAs(first, "first", owners);
+
+    Part::ShapeRefSet second;
+    const std::string secondText = writeShared(twin, &owners, second);
+
+    // Every entry of all three tables is in the first file already.
+    EXPECT_GT(second.geometryReferences(), 0);
+    EXPECT_TRUE(second.borrows());
+    EXPECT_NE(std::string::npos, secondText.find("\nFiles 1\nfirst\n"));
+    EXPECT_LT(secondText.size(), firstText.size());
+
+    BRep_Builder builder;
+    std::istringstream firstIn(firstText);
+    Part::ShapeRefSet firstReader(builder);
+    const TopoDS_Shape firstRead = firstReader.read(firstIn);
+    ASSERT_FALSE(firstRead.IsNull());
+
+    std::istringstream secondIn(secondText);
+    Part::ShapeRefSet secondReader(builder);
+    secondReader.setResolver([&](const std::string& name) -> const Part::ShapeRefSet* {
+        return name == "first" ? &firstReader : nullptr;
+    });
+    const TopoDS_Shape secondRead = secondReader.read(secondIn);
+
+    ASSERT_FALSE(secondRead.IsNull());
+    EXPECT_EQ(TopAbs_SOLID, secondRead.ShapeType());
+    EXPECT_EQ(countFaces(box), countFaces(secondRead));
+    // Not the same shape -- it is its own solid -- but standing on the first
+    // file's surfaces, which is the sharing this buys in memory as well.
+    EXPECT_FALSE(secondRead.IsPartner(firstRead));
+    EXPECT_EQ(surfaceOf(firstRead), surfaceOf(secondRead));
+
+    // Both sides state the same plan, which is what a save with nothing to do
+    // rests on. The writer settles the tables in order, the reader meets them
+    // in the file.
+    EXPECT_EQ(second.plan(), secondReader.plan());
+    EXPECT_NE(std::string::npos, second.plan().find('|'));
+}
+
+/** One entry of another file may be named once only.
+ *
+ * A compound of two equal boxes holds each plane twice, as two objects. Only
+ * one of the two may name the earlier file's: a surface reaching two faces at
+ * once would make the pcurve lookups those faces key on it ambiguous, and on
+ * the read side it would land on a position the table already has and shift
+ * every entry after it.
+ */
+TEST(ShapeRefSet, AnEntryIsNamedOnceWithinAFile)
+{
+    const TopoDS_Shape box = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+    const TopoDS_Shape twin = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+    const TopoDS_Shape third = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+
+    Part::ShapeOwnerTable owners;
+    Part::ShapeRefSet first;
+    const std::string firstText = writeShared(box, &owners, first);
+    publishAs(first, "first", owners);
+
+    // Two solids of its own, neither of them the one the first file holds, so
+    // nothing is borrowed as a sub-shape and both want the same entries.
+    TopoDS_Compound compound;
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+    builder.Add(compound, twin);
+    builder.Add(compound, third);
+
+    Part::ShapeRefSet second;
+    const std::string secondText = writeShared(compound, &owners, second);
+    const int named = second.geometryReferences();
+    EXPECT_GT(named, 0);
+
+    std::istringstream firstIn(firstText);
+    Part::ShapeRefSet firstReader(builder);
+    const TopoDS_Shape firstRead = firstReader.read(firstIn);
+    ASSERT_FALSE(firstRead.IsNull());
+
+    std::istringstream secondIn(secondText);
+    Part::ShapeRefSet secondReader(builder);
+    secondReader.setResolver([&](const std::string& name) -> const Part::ShapeRefSet* {
+        return name == "first" ? &firstReader : nullptr;
+    });
+    const TopoDS_Shape secondRead = secondReader.read(secondIn);
+
+    ASSERT_FALSE(secondRead.IsNull());
+    EXPECT_EQ(2 * countFaces(box), countFaces(secondRead));
+    EXPECT_EQ(named, secondReader.geometryReferences());
+    EXPECT_EQ(second.plan(), secondReader.plan());
+
+    // The rule itself: the first solid stands on the earlier file's surface,
+    // the second on its own copy. Equal geometry, and deliberately not one
+    // object -- each face has to key its own edges' 2D curves on it.
+    TopoDS_Iterator children(secondRead);
+    ASSERT_TRUE(children.More());
+    const TopoDS_Shape one = children.Value();
+    children.Next();
+    ASSERT_TRUE(children.More());
+    const TopoDS_Shape two = children.Value();
+    EXPECT_EQ(surfaceOf(firstRead), surfaceOf(one));
+    EXPECT_NE(surfaceOf(one), surfaceOf(two));
+}
+
+/** A geometry entry naming a position the file does not hold fails the read.
+ *
+ * The same rule as an unresolvable file: a shape quietly missing the surface
+ * it stands on is worse than no shape.
+ */
+TEST(ShapeRefSet, GeometryOutOfRangeFailsTheRead)
+{
+    const TopoDS_Shape box = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+    const TopoDS_Shape twin = BRepPrimAPI_MakeBox(4.0, 5.0, 6.0).Shape();
+
+    Part::ShapeOwnerTable owners;
+    Part::ShapeRefSet first;
+    writeShared(box, &owners, first);
+    publishAs(first, "first", owners);
+
+    Part::ShapeRefSet second;
+    std::string text = writeShared(twin, &owners, second);
+    const std::size_t at = text.find("\nE1 ");
+    ASSERT_NE(std::string::npos, at);
+    text.replace(at, 4, "\nE1 999 ");
+
+    // An empty file to resolve against: it names positions nothing holds.
+    BRep_Builder builder;
+    Part::ShapeRefSet empty(builder);
+    std::istringstream in(text);
+    Part::ShapeRefSet reader(builder);
+    reader.setResolver([&](const std::string&) -> const Part::ShapeRefSet* {
+        return &empty;
     });
     EXPECT_TRUE(reader.read(in).IsNull());
 }

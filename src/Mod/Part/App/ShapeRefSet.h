@@ -23,6 +23,7 @@
 #ifndef PART_SHAPEREFSET_H
 #define PART_SHAPEREFSET_H
 
+#include <array>
 #include <functional>
 #include <iosfwd>
 #include <set>
@@ -84,6 +85,19 @@ struct ShapeRef
 class PartExport ShapeOwnerTable
 {
 public:
+    /** The geometry tables a shape file carries, in the order they are
+     * written. The names are OCCT's own: 2D curves are what an edge lies on
+     * in a face's parameter space, curves are 3D, surfaces are what a face
+     * lies on.
+     */
+    enum GeomTable
+    {
+        Curve2dTable,
+        CurveTable,
+        SurfaceTable,
+        GeomTableCount
+    };
+
     /// A file the save has already written, as later files need to know it.
     struct File
     {
@@ -119,6 +133,19 @@ public:
     /// Where this shape is stored, or null if no file holds it yet.
     const ShapeRef* find(const TopoDS_Shape& shape) const;
 
+    /** Record that \a file writes \a digest as entry \a index of \a table.
+     *
+     * *** Keyed on what the entry is written as, not on the handle a shape
+     * happens to hold. A surface two files share in memory is already a
+     * shared sub-shape and never reaches this; what this catches is the far
+     * more common case of two files each holding their own object for the
+     * same plane, which is the bulk of what a geometry table repeats
+     * (docs/SharedShapeStorage.md sec 12.8).
+     */
+    void claimGeometry(int table, const std::string& digest, int file, int index);
+    /// Which file already writes these bytes, and where, or null.
+    const ShapeRef* findGeometry(int table, const std::string& digest) const;
+
     bool empty() const
     {
         return _refs.empty();
@@ -133,6 +160,7 @@ private:
     std::unordered_map<const TopoDS_TShape*, ShapeRef> _refs;
     std::vector<File> _files;
     std::unordered_map<std::string, int> _fileIndex;
+    std::array<std::unordered_map<std::string, ShapeRef>, GeomTableCount> _geometry;
 };
 
 /** An ASCII BRep shape table that may borrow sub-shapes from other files.
@@ -147,6 +175,9 @@ private:
  *     a30b...
  *     Locations 3
  *     ...
+ *     Surfaces 2
+ *     1 0 0 0 ...              <- as today: the surface, written out
+ *     E1 7                     <- new: surface 7 of file 1, when sharing
  *     TShapes 17
  *     ...
  *     +12 3                    <- as today: shape 12 of this file, location 3
@@ -187,6 +218,21 @@ public:
      */
     void setOwners(const ShapeOwnerTable* owners);
 
+    /** Whether a geometry table entry may name another file's entry.
+     *
+     * The tables are most of a shape file, and about half of what they hold
+     * is written again by some other file: two parts machined from the same
+     * stock each carry their own copy of the plane they were cut from. With
+     * this on, build() settles which of this file's entries another file
+     * already writes, and those are stored as a file and a position instead
+     * of as geometry (docs/SharedShapeStorage.md sec 12.13).
+     *
+     * Needs setOwners(). Off by default, which is the format that ships: it
+     * makes a file depend on another one for its geometry and not only for
+     * whole sub-shapes.
+     */
+    void setGeometrySharing(bool enable);
+
     /** Store a shape and its sub-shapes, stopping wherever one is borrowed.
      *
      * *** Two things a sub-shape may not be borrowed across, both of them the
@@ -225,6 +271,10 @@ public:
     {
         return !_borrowed.empty();
     }
+    /// Geometry table entries this file names in another file, all three
+    /// tables counted together.
+    int geometryReferences() const;
+
     /** Distinct sub-shapes this file borrows.
      *
      * One per sub-shape the walk stopped at, not per token written -- a
@@ -263,11 +313,17 @@ public:
 
     /** @name Reading */
     //@{
-    /** How a borrowed file is obtained: its shape table, in its own forward
+    /** How a borrowed file is obtained: the set it was parsed into, whose
+     * shape table and geometry tables are both in their own forward
      * numbering. Returning null fails the read -- the geometry is genuinely
      * not there, and a silently short shape is worse than none.
+     *
+     * The set is only read while read() runs, and nothing this file keeps
+     * points into it afterwards: a borrowed shape is added to this file's own
+     * table and a borrowed geometry entry to its own, so what survives the
+     * read is handles, which hold what they name.
      */
-    using Resolver = std::function<const ShapeIndexMap*(const std::string&)>;
+    using Resolver = std::function<const ShapeRefSet*(const std::string&)>;
     void setResolver(Resolver resolver);
 
     /// Read the tables and the root token. Null shape when the file is not
@@ -281,12 +337,46 @@ public:
         return _shapes;
     }
 
+    /** @name The geometry tables, written and read entry by entry.
+     *
+     * Overridden rather than delegated only because an entry may now name
+     * another file's; a table nothing was borrowed into is still written by
+     * OCCT itself, so it comes out byte for byte as it always has.
+     */
+    //@{
+    /// The per-shape pair of the same names, which overriding the table pair
+    /// would otherwise hide. They are OCCT's and stay OCCT's: a shape record
+    /// only ever emits positions in the tables.
+    using BRepTools_ShapeSet::ReadGeometry;
+    using BRepTools_ShapeSet::WriteGeometry;
+
+    void WriteGeometry(Standard_OStream& out,
+                       const Message_ProgressRange& progress = Message_ProgressRange()) override;
+    void ReadGeometry(Standard_IStream& in,
+                      const Message_ProgressRange& progress = Message_ProgressRange()) override;
+    //@}
+
 private:
     /// One step of build(): store \a shape, borrowing where that is allowed.
     /// \a bound says a locally stored face or edge encloses it.
     int add(const TopoDS_Shape& shape, bool bound);
     /// Note a borrowed sub-shape, assigning its file a slot on first use.
     void borrow(const TopoDS_Shape& shape, const ShapeRef& ref);
+    /// This file's slot in the `Files` block for an owner table file index,
+    /// assigned on first use.
+    int slotFor(int file);
+    /// Settle which geometry entries another file already writes. After the
+    /// tables are full, i.e. at the end of build().
+    void planGeometry();
+    /// Whether any table entry ended up naming another file's.
+    bool sharesGeometry() const;
+    /// One table entry as it would be written, which is what it is keyed on.
+    std::string printGeometry(int table, int index) const;
+    void writeGeometry(int table, std::ostream& out) const;
+    bool readGeometry(int table, std::istream& in);
+    /// The whole of read(), so that read() itself is what drops the pointers
+    /// into the sets this one borrowed from.
+    TopoDS_Shape readShape(std::istream& in);
     /// The slot and forward index of a borrowed sub-shape, or null.
     const ShapeRef* borrowed(const TopoDS_Shape& shape) const;
     /// Write one sub-shape token, ordinary or borrowed.
@@ -305,13 +395,29 @@ private:
     /// Owner-table file indices, in `Files` block order. Slot n is [n-1].
     std::vector<int> _borrowed;
 
+    /// Write side: what becomes of one geometry table entry.
+    struct GeomEntry
+    {
+        /// What the entry is written as, and what it is keyed on. Kept so the
+        /// write does not print it a second time; dropped with the set.
+        std::string text;
+        std::string digest;
+        /// The `Files` slot and position it names, or file 0 to write it out.
+        ShapeRef ref;
+    };
+    bool _shareGeometry {false};
+    std::array<std::vector<GeomEntry>, ShapeOwnerTable::GeomTableCount> _geometry;
+
     /// Read side: the resolver, the tables the `Files` block named and their
     /// identities, and every (slot, index) a token actually asked for -- which
     /// is this file's plan as the file itself states it.
     Resolver _resolve;
-    std::vector<const ShapeIndexMap*> _sources;
+    std::vector<const ShapeRefSet*> _sources;
     std::vector<std::string> _sourceNames;
     mutable std::set<std::pair<int, int>> _borrowedRead;
+    /// Every (table, slot, index) a geometry entry asked for, which is the
+    /// geometry half of this file's plan as the file itself states it.
+    std::set<std::array<int, 3>> _geometryRead;
 };
 
 }  // namespace Part

@@ -873,3 +873,138 @@ class ShapeCongruenceCases(ShapeTestCase):
                 volumes[i],
                 delta=abs(volumes[i]) * 1e-12,
             )
+
+
+@unittest.skipUnless(HAS_PART, "Part module not available")
+class ShapeGeometryCases(ShapeTestCase):
+    """A surface or curve another file already writes is named, not written.
+
+    Sub-shape sharing needs the two files to hold one TShape. Two parts that
+    were built apart share none, and still stand on the same planes and the
+    same circles -- which each file writes out in full. That repetition is
+    about half of what a project's geometry tables hold, and it is what this
+    names instead (docs/SharedShapeStorage.md sec 12.13).
+    """
+
+    def savedWith(self, sharing, name):
+        group = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        previous = group.GetBool("DedupCrossFileGeometry", False)
+        group.SetBool("DedupCrossFileGeometry", sharing)
+        try:
+            doc = self.newDocument(name)
+            plain = doc.addObject("Part::Feature", "Plain")
+            plain.Shape = Part.makeBox(10, 20, 30)
+            # A different content, so the two are not one file, and a
+            # different TShape, so nothing can be borrowed as a sub-shape --
+            # and the same box geometry, entry for entry.
+            twin = doc.addObject("Part::Feature", "Twin")
+            twin.Shape = Part.Compound(
+                [Part.makeBox(10, 20, 30), Part.makeCylinder(2, 5)]
+            )
+            doc.recompute()
+            volumes = [plain.Shape.Volume, twin.Shape.Volume]
+            project = self.directoryPath(name + "_dir")
+            doc.saveAs(project)
+            FreeCAD.closeDocument(doc.Name)
+            self.docs.remove(name)
+            return project, volumes
+        finally:
+            group.SetBool("DedupCrossFileGeometry", previous)
+
+    def testSwitchedOffNoFileNamesAnother(self):
+        """Off is the format that ships, so this is the baseline everything
+        else is measured against."""
+        project, _ = self.savedWith(False, "GeomOff")
+        for name in self.blobNames(project):
+            self.assertNotIn(b"\nFiles ", self.blobBytes(project, name))
+
+    def testEqualGeometryIsNamedInTheEarlierFile(self):
+        plain, _ = self.savedWith(False, "GeomPlain")
+        shared, _ = self.savedWith(True, "GeomShared")
+        before = self.blobBytes(plain, "Twin.Shape.brp")
+        after = self.blobBytes(shared, "Twin.Shape.brp")
+        self.assertIn(b"\nFiles 1\n", after)
+        self.assertIn(b"\nE1 ", after)
+        self.assertLess(len(after), len(before), "no geometry was left out")
+        # The file it names is untouched: what is written first owns what it
+        # holds, and pays nothing for being named.
+        self.assertEqual(
+            self.blobBytes(plain, "Plain.Shape.brp"),
+            self.blobBytes(shared, "Plain.Shape.brp"),
+        )
+
+    def testSharedGeometryComesBackWhole(self):
+        """Byte counts cannot gate a format change.
+
+        The first cut of the pcurve dedup reported smaller files, the same
+        file count and the same reference count -- and had emptied 25443 face
+        pcurves. So every storage change is checked by reopening it: the
+        shapes are valid, every face still has a curve on each of its edges,
+        and the volumes are the ones that were saved.
+        """
+        project, volumes = self.savedWith(True, "GeomBack")
+        doc = self.openDocument(project)
+        for index, name in enumerate(("Plain", "Twin")):
+            shape = doc.getObject(name).Shape
+            self.assertTrue(shape.isValid(), "%s came back invalid" % name)
+            self.assertAlmostEqual(
+                shape.Volume,
+                volumes[index],
+                delta=abs(volumes[index]) * 1e-9,
+                msg="%s came back as a different shape" % name,
+            )
+            for face in shape.Faces:
+                for edge in face.Edges:
+                    self.assertIsNotNone(
+                        face.curveOnSurface(edge),
+                        "%s has a face with an edge carrying no curve" % name,
+                    )
+
+    def testResaveOfASharingProjectChangesNothing(self):
+        """A file's bytes are its geometry and what the save decided to name,
+        so the plan a reopened file states has to cover the geometry too --
+        otherwise every save rewrites every file."""
+        group = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        previous = group.GetBool("DedupCrossFileGeometry", False)
+        group.SetBool("DedupCrossFileGeometry", True)
+        try:
+            project, _ = self.savedWith(True, "GeomResave")
+            before = {n: self.blobBytes(project, n) for n in self.blobNames(project)}
+            reopened = self.openDocument(project)
+            reopened.save()
+            self.assertEqual(
+                {n: self.blobBytes(project, n) for n in self.blobNames(project)},
+                before,
+            )
+        finally:
+            group.SetBool("DedupCrossFileGeometry", previous)
+
+    def testTheNamedFileGoingAwayRewritesTheOther(self):
+        """The cost of the format, and the reason it is off by default: one
+        file's geometry now depends on another file being there. What keeps
+        that from dangling is the same plan check a borrowed sub-shape rests
+        on, and this is the case that exercises it."""
+        group = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        previous = group.GetBool("DedupCrossFileGeometry", False)
+        group.SetBool("DedupCrossFileGeometry", True)
+        try:
+            project, volumes = self.savedWith(True, "GeomGone")
+            doc = self.openDocument(project)
+            doc.removeObject("Plain")
+            doc.recompute()
+            doc.save()
+            self.assertNotIn(
+                b"\nFiles ",
+                self.blobBytes(project, "Twin.Shape.brp"),
+                "the surviving file still names one that is gone",
+            )
+            FreeCAD.closeDocument(doc.Name)
+
+            reopened = self.openDocument(project)
+            shape = reopened.getObject("Twin").Shape
+            self.assertTrue(shape.isValid())
+            self.assertAlmostEqual(
+                shape.Volume, volumes[1], delta=abs(volumes[1]) * 1e-9
+            )
+        finally:
+            group.SetBool("DedupCrossFileGeometry", previous)

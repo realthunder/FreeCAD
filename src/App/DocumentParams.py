@@ -99,6 +99,21 @@ Params = [
             'between them has been recovered and checked sub-shape by\n'
             'sub-shape, so a mirrored instance or a near-miss is written out\n'
             'in full rather than merged.'),
+    ParamBool('DedupCrossFileGeometry', False,
+        doc='Let a shape file name the surfaces and curves another shape file\n'
+            'already holds instead of writing its own copy of them.\n'
+            '\n'
+            'Each shape file carries its own table of surfaces, 3D curves and\n'
+            '2D curves, so a face two parts have in common is written once per\n'
+            'part. On a real project those tables are most of the bytes and\n'
+            'about half of what they hold repeats between files. An entry may\n'
+            'instead name a file and a position in its table, and the reader\n'
+            'then puts the entry it parsed there into this file.\n'
+            '\n'
+            'Off by default: it makes a shape file depend on another one for\n'
+            'its geometry, not only for whole sub-shapes, so a file that goes\n'
+            'missing costs more than it did. Applies to shapes written as\n'
+            'ASCII BRep inside a document; an exported file names nothing.'),
     ParamBool('AutoRemoveFile', True),
     ParamBool('AutoNameDynamicProperty', False),
     ParamBool('BackupPolicy', True),

@@ -275,6 +275,31 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter DedupCrossFileGeometry
+    ///
+    /// Let a shape file name the surfaces and curves another shape file
+    /// already holds instead of writing its own copy of them.
+    /// 
+    /// Each shape file carries its own table of surfaces, 3D curves and
+    /// 2D curves, so a face two parts have in common is written once per
+    /// part. On a real project those tables are most of the bytes and
+    /// about half of what they hold repeats between files. An entry may
+    /// instead name a file and a position in its table, and the reader
+    /// then puts the entry it parsed there into this file.
+    /// 
+    /// Off by default: it makes a shape file depend on another one for
+    /// its geometry, not only for whole sub-shapes, so a file that goes
+    /// missing costs more than it did. Applies to shapes written as
+    /// ASCII BRep inside a document; an exported file names nothing.
+    static const bool & getDedupCrossFileGeometry();
+    static const bool & defaultDedupCrossFileGeometry();
+    static void removeDedupCrossFileGeometry();
+    static void setDedupCrossFileGeometry(const bool &v);
+    static const char *docDedupCrossFileGeometry();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter AutoRemoveFile
     static const bool & getAutoRemoveFile();
     static const bool & defaultAutoRemoveFile();

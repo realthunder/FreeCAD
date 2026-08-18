@@ -23,13 +23,22 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
 #include <iostream>
 #include <locale>
+#include <sstream>
+#include <QCryptographicHash>
 #include <BRep_Builder.hxx>
+#include <Geom_Curve.hxx>
+#include <Geom_Surface.hxx>
+#include <Geom2d_Curve.hxx>
+#include <GeomTools_Curve2dSet.hxx>
+#include <GeomTools_CurveSet.hxx>
+#include <GeomTools_SurfaceSet.hxx>
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopTools_LocationSet.hxx>
@@ -152,6 +161,103 @@ void applyOrientation(TopoDS_Shape& shape, char code)
     }
 }
 
+/// The header OCCT writes a geometry table under, which is what identifies it.
+const char* geomTableName(int table)
+{
+    switch (table) {
+        case ShapeOwnerTable::Curve2dTable:
+            return "Curve2ds";
+        case ShapeOwnerTable::CurveTable:
+            return "Curves";
+        default:
+            return "Surfaces";
+    }
+}
+
+/// How a geometry entry is told from a sub-shape, and from another table, in
+/// the plan text -- which is compared, so the three must not collide.
+char geomTableTag(int table)
+{
+    switch (table) {
+        case ShapeOwnerTable::Curve2dTable:
+            return 'p';
+        case ShapeOwnerTable::CurveTable:
+            return 'c';
+        default:
+            return 's';
+    }
+}
+
+/** What an entry is keyed on: a digest of the bytes it is written as.
+ *
+ * The same function the blob manager identifies a whole file by, and it is
+ * trusted here for the same reason: two entries that hash alike are held to
+ * be the same geometry, and the table holds no text to check that against.
+ */
+std::string geomDigest(const std::string& text)
+{
+    QCryptographicHash hash(QCryptographicHash::Sha1);
+    hash.addData(QByteArrayView(reinterpret_cast<const char*>(text.data()),
+                                static_cast<qsizetype>(text.size())));
+    const QByteArray result = hash.result();
+    return std::string(result.constData(), static_cast<std::size_t>(result.size()));
+}
+
+/// Entry \a index of one of \a set's three geometry tables, or null when the
+/// file being read named a position that file does not have.
+Handle(Standard_Transient) geomEntry(const BRepTools_ShapeSet& set, int table, int index)
+{
+    if (index < 1) {
+        return {};
+    }
+    switch (table) {
+        case ShapeOwnerTable::Curve2dTable:
+            return index <= set.Curves2d().Extent() ? set.Curves2d().Curve2d(index) : nullptr;
+        case ShapeOwnerTable::CurveTable:
+            return index <= set.Curves().Extent() ? set.Curves().Curve(index) : nullptr;
+        default:
+            return index <= set.Surfaces().Extent() ? set.Surfaces().Surface(index) : nullptr;
+    }
+}
+
+/// One entry read in OCCT's own encoding.
+Handle(Standard_Transient) readGeomEntry(int table, std::istream& in)
+{
+    switch (table) {
+        case ShapeOwnerTable::Curve2dTable:
+            return GeomTools_Curve2dSet::ReadCurve2d(in);
+        case ShapeOwnerTable::CurveTable:
+            return GeomTools_CurveSet::ReadCurve(in);
+        default:
+            return GeomTools_SurfaceSet::ReadSurface(in);
+    }
+}
+
+/// Add an entry to a set's table, answering the position it landed at.
+int addGeomEntry(BRepTools_ShapeSet& set, int table, const Handle(Standard_Transient)& value)
+{
+    switch (table) {
+        case ShapeOwnerTable::Curve2dTable:
+            return set.ChangeCurves2d().Add(Handle(Geom2d_Curve)::DownCast(value));
+        case ShapeOwnerTable::CurveTable:
+            return set.ChangeCurves().Add(Handle(Geom_Curve)::DownCast(value));
+        default:
+            return set.ChangeSurfaces().Add(Handle(Geom_Surface)::DownCast(value));
+    }
+}
+
+/// A distinct object holding the same geometry, for the one case a borrowed
+/// entry would otherwise land on top of an entry this file already has.
+Handle(Standard_Transient) copyGeomEntry(int table, const Handle(Standard_Transient)& value)
+{
+    if (table == ShapeOwnerTable::Curve2dTable) {
+        Handle(Geom2d_Curve) curve = Handle(Geom2d_Curve)::DownCast(value);
+        return curve.IsNull() ? nullptr : curve->Copy();
+    }
+    Handle(Geom_Geometry) geometry = Handle(Geom_Geometry)::DownCast(value);
+    return geometry.IsNull() ? nullptr : geometry->Copy();
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -215,11 +321,33 @@ const ShapeRef* ShapeOwnerTable::find(const TopoDS_Shape& shape) const
     return found == _refs.end() ? nullptr : &found->second;
 }
 
+void ShapeOwnerTable::claimGeometry(int table, const std::string& digest, int file, int index)
+{
+    if (table < 0 || table >= GeomTableCount || digest.empty()) {
+        return;
+    }
+    // First claim again, and for the same reason: the earliest file in the
+    // walk owns what it holds, so the assignment is a function of the walk.
+    _geometry[table].emplace(digest, ShapeRef {file, index});
+}
+
+const ShapeRef* ShapeOwnerTable::findGeometry(int table, const std::string& digest) const
+{
+    if (table < 0 || table >= GeomTableCount) {
+        return nullptr;
+    }
+    auto found = _geometry[table].find(digest);
+    return found == _geometry[table].end() ? nullptr : &found->second;
+}
+
 void ShapeOwnerTable::clear()
 {
     _refs.clear();
     _files.clear();
     _fileIndex.clear();
+    for (auto& table : _geometry) {
+        table.clear();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,12 +360,22 @@ ShapeRefSet::ShapeRefSet()
     // The version TopoShape::exportBrep() writes, so a file that borrows
     // nothing comes out byte for byte as it does today.
     SetFormatNb(TopTools_FormatVersion_VERSION_1);
+    // And what it sets: merging equal 2D curves is on in the kernel by
+    // default, and every path that wants it goes through
+    // TopoShape::applyStorageOptions, which is where the document says so.
+    ChangeCurves2d().SetMerging(false);
 }
 
 ShapeRefSet::ShapeRefSet(const BRep_Builder& builder)
     : BRepTools_ShapeSet(builder, false)
 {
     SetFormatNb(TopTools_FormatVersion_VERSION_1);
+    // *** A read never merges. The tables are positional and a file's records
+    // name positions in them, so an entry that came back equal to one already
+    // read must still be its own entry -- merging it would shift every
+    // position after it. OCCT's own reader adds to the map directly and so
+    // never had to say this; this one adds through Add(), which does merge.
+    ChangeCurves2d().SetMerging(false);
 }
 
 ShapeRefSet::~ShapeRefSet() = default;
@@ -252,6 +390,10 @@ void ShapeRefSet::Clear()
     _sources.clear();
     _sourceNames.clear();
     _borrowedRead.clear();
+    for (auto& table : _geometry) {
+        table.clear();
+    }
+    _geometryRead.clear();
 }
 
 void ShapeRefSet::setOwners(const ShapeOwnerTable* owners)
@@ -259,31 +401,36 @@ void ShapeRefSet::setOwners(const ShapeOwnerTable* owners)
     _owners = owners;
 }
 
+void ShapeRefSet::setGeometrySharing(bool enable)
+{
+    _shareGeometry = enable;
+}
+
 void ShapeRefSet::setResolver(Resolver resolver)
 {
     _resolve = std::move(resolver);
+}
+
+int ShapeRefSet::slotFor(int file)
+{
+    // First use of this file in this one: give it a slot in the `Files`
+    // block. The block is per file, so the numbers stay small and stable
+    // even though the owner table's are neither.
+    for (std::size_t i = 0; i < _borrowed.size(); ++i) {
+        if (_borrowed[i] == file) {
+            return static_cast<int>(i) + 1;
+        }
+    }
+    _borrowed.push_back(file);
+    return static_cast<int>(_borrowed.size());
 }
 
 void ShapeRefSet::borrow(const TopoDS_Shape& shape, const ShapeRef& ref)
 {
     const int slot = _borrowedShapes.Add(shape);
     if (slot > static_cast<int>(_borrowedRefs.size())) {
-        // First use of this file in this one: give it a slot in the `Files`
-        // block. The block is per file, so the numbers stay small and stable
-        // even though the owner table's are neither.
-        int local = 0;
-        for (std::size_t i = 0; i < _borrowed.size(); ++i) {
-            if (_borrowed[i] == ref.file) {
-                local = static_cast<int>(i) + 1;
-                break;
-            }
-        }
-        if (!local) {
-            _borrowed.push_back(ref.file);
-            local = static_cast<int>(_borrowed.size());
-        }
         _borrowedRefs.resize(slot);
-        _borrowedRefs[slot - 1] = ShapeRef {local, ref.index};
+        _borrowedRefs[slot - 1] = ShapeRef {slotFor(ref.file), ref.index};
     }
 }
 
@@ -299,6 +446,103 @@ const ShapeRef* ShapeRefSet::borrowed(const TopoDS_Shape& shape) const
 void ShapeRefSet::build(const TopoDS_Shape& root)
 {
     add(root, false);
+    // After the walk, because the walk is what fills the tables -- and before
+    // anything asks for plan(), because what this settles is half of it.
+    planGeometry();
+}
+
+std::string ShapeRefSet::printGeometry(int table, int index) const
+{
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    // The precision each table's own writer sets, so what is hashed here is
+    // the text that would be written -- and what is written instead of a
+    // reference is this same text, printed once.
+    out.precision(17);
+    switch (table) {
+        case ShapeOwnerTable::Curve2dTable:
+            GeomTools_Curve2dSet::PrintCurve2d(Curves2d().Curve2d(index), out, true);
+            break;
+        case ShapeOwnerTable::CurveTable:
+            GeomTools_CurveSet::PrintCurve(Curves().Curve(index), out, true);
+            break;
+        default:
+            GeomTools_SurfaceSet::PrintSurface(Surfaces().Surface(index), out, true);
+            break;
+    }
+    return out.str();
+}
+
+void ShapeRefSet::planGeometry()
+{
+    if (!_shareGeometry || !_owners) {
+        return;
+    }
+    for (int table = 0; table < ShapeOwnerTable::GeomTableCount; ++table) {
+        int count = 0;
+        switch (table) {
+            case ShapeOwnerTable::Curve2dTable:
+                count = Curves2d().Extent();
+                break;
+            case ShapeOwnerTable::CurveTable:
+                count = Curves().Extent();
+                break;
+            default:
+                count = Surfaces().Extent();
+                break;
+        }
+        auto& plan = _geometry[table];
+        plan.resize(static_cast<std::size_t>(count));
+        // *** One entry of another file may be named once only. Two entries
+        // of this file that are written alike are two objects, and they have
+        // to stay two: a face keys its edges' 2D curves on the surface object
+        // it carries, so a surface reaching two faces at once makes exactly
+        // the lookup those keys exist to settle ambiguous. It is also what
+        // keeps the table positional -- the reader adds what it is given, and
+        // a repeated object would land on the position it already has and
+        // shift every entry after it.
+        std::set<std::pair<int, int>> taken;
+        for (int i = 1; i <= count; ++i) {
+            GeomEntry& entry = plan[static_cast<std::size_t>(i) - 1];
+            entry.text = printGeometry(table, i);
+            if (entry.text.empty()) {
+                // A table holding something this build cannot write is left
+                // where it is rather than named, since nothing can check it.
+                continue;
+            }
+            entry.digest = geomDigest(entry.text);
+            const ShapeRef* ref = _owners->findGeometry(table, entry.digest);
+            if (ref && taken.emplace(ref->file, ref->index).second) {
+                entry.ref = ShapeRef {slotFor(ref->file), ref->index};
+            }
+        }
+    }
+}
+
+bool ShapeRefSet::sharesGeometry() const
+{
+    for (const auto& plan : _geometry) {
+        for (const GeomEntry& entry : plan) {
+            if (entry.ref.file) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+int ShapeRefSet::geometryReferences() const
+{
+    int count = 0;
+    for (const auto& plan : _geometry) {
+        for (const GeomEntry& entry : plan) {
+            if (entry.ref.file) {
+                ++count;
+            }
+        }
+    }
+    // A set is either written or read, so the two never both count.
+    return count + static_cast<int>(_geometryRead.size());
 }
 
 int ShapeRefSet::add(const TopoDS_Shape& shape, bool bound)
@@ -360,6 +604,27 @@ std::string ShapeRefSet::plan() const
         borrowed[_sourceNames[token.first - 1]].insert(token.second);
     }
 
+    // The geometry half, kept in its own section so a file that borrows no
+    // geometry states its plan exactly as it did before there was any.
+    std::map<std::string, std::set<std::string>> geometry;
+    for (int table = 0; table < ShapeOwnerTable::GeomTableCount; ++table) {
+        if (!_owners) {
+            break;
+        }
+        for (const GeomEntry& entry : _geometry[table]) {
+            if (!entry.ref.file) {
+                continue;
+            }
+            const int owner = _borrowed[entry.ref.file - 1];
+            geometry[_owners->file(owner).hash].insert(geomTableTag(table)
+                                                       + std::to_string(entry.ref.index));
+        }
+    }
+    for (const auto& token : _geometryRead) {
+        geometry[_sourceNames[static_cast<std::size_t>(token[1]) - 1]].insert(
+            geomTableTag(token[0]) + std::to_string(token[2]));
+    }
+
     std::string plan;
     for (const auto& file : borrowed) {
         plan += file.first;
@@ -371,6 +636,19 @@ std::string ShapeRefSet::plan() const
         }
         plan += ';';
     }
+    if (!geometry.empty()) {
+        plan += '|';
+        for (const auto& file : geometry) {
+            plan += file.first;
+            char separator = ':';
+            for (const std::string& token : file.second) {
+                plan += separator;
+                plan += token;
+                separator = ',';
+            }
+            plan += ';';
+        }
+    }
     return plan;
 }
 
@@ -379,6 +657,17 @@ void ShapeRefSet::publish(int file, ShapeOwnerTable& owners) const
     const int count = _shapes.Extent();
     for (int i = 1; i <= count; ++i) {
         owners.claim(_shapes(i), file, i);
+    }
+    // Only what this file writes out is offered: an entry that names another
+    // file's is already in the table under that file, and pointing a third
+    // file at this one instead would make a chain out of what is one step.
+    for (int table = 0; table < ShapeOwnerTable::GeomTableCount; ++table) {
+        const auto& plan = _geometry[table];
+        for (std::size_t i = 0; i < plan.size(); ++i) {
+            if (!plan[i].ref.file) {
+                owners.claimGeometry(table, plan[i].digest, file, static_cast<int>(i) + 1);
+            }
+        }
     }
 }
 
@@ -411,6 +700,138 @@ void ShapeRefSet::writeToken(const TopoDS_Shape& shape, std::ostream& out) const
         out << ref->index;
     }
     out << " " << Locations().Index(shape.Location()) << " ";
+}
+
+void ShapeRefSet::WriteGeometry(Standard_OStream& out, const Message_ProgressRange& progress)
+{
+    if (!sharesGeometry()) {
+        // Nothing was borrowed into any table, so OCCT writes all six of them
+        // and the file is what it has always been, byte for byte.
+        BRepTools_ShapeSet::WriteGeometry(out, progress);
+        return;
+    }
+    // The order is OCCT's, and it has to be: the reader is OCCT's wherever
+    // this build is not the one reading.
+    writeGeometry(ShapeOwnerTable::Curve2dTable, out);
+    writeGeometry(ShapeOwnerTable::CurveTable, out);
+    WritePolygon3D(out, true);
+    WritePolygonOnTriangulation(out, true);
+    writeGeometry(ShapeOwnerTable::SurfaceTable, out);
+    WriteTriangulation(out, true);
+}
+
+void ShapeRefSet::writeGeometry(int table, std::ostream& out) const
+{
+    const auto& plan = _geometry[table];
+    const bool borrows = std::any_of(plan.begin(), plan.end(), [](const GeomEntry& entry) {
+        return entry.ref.file != 0;
+    });
+    if (!borrows) {
+        // Written by OCCT itself, so a table that shares nothing stays byte
+        // for byte what it was even in a file whose other tables do share.
+        switch (table) {
+            case ShapeOwnerTable::Curve2dTable:
+                Curves2d().Write(out);
+                break;
+            case ShapeOwnerTable::CurveTable:
+                Curves().Write(out);
+                break;
+            default:
+                Surfaces().Write(out);
+                break;
+        }
+        return;
+    }
+
+    std::streamsize prec = out.precision(17);
+    out << geomTableName(table) << " " << plan.size() << "\n";
+    for (const GeomEntry& entry : plan) {
+        if (entry.ref.file) {
+            out << 'E' << entry.ref.file << " " << entry.ref.index << "\n";
+        }
+        else {
+            // Printed when the plan was settled, and printed once: this is
+            // the text that was hashed, so what is written and what was
+            // offered to later files cannot drift apart.
+            out << entry.text;
+        }
+    }
+    out.precision(prec);
+}
+
+void ShapeRefSet::ReadGeometry(Standard_IStream& in, const Message_ProgressRange& progress)
+{
+    if (_sources.empty()) {
+        // No `Files` block, so no entry can name another file's and the
+        // tables are ordinary ones. Read by OCCT, as they always were.
+        BRepTools_ShapeSet::ReadGeometry(in, progress);
+        return;
+    }
+    if (!readGeometry(ShapeOwnerTable::Curve2dTable, in)
+        || !readGeometry(ShapeOwnerTable::CurveTable, in)) {
+        return;
+    }
+    ReadPolygon3D(in);
+    ReadPolygonOnTriangulation(in);
+    if (!readGeometry(ShapeOwnerTable::SurfaceTable, in)) {
+        return;
+    }
+    ReadTriangulation(in);
+}
+
+bool ShapeRefSet::readGeometry(int table, std::istream& in)
+{
+    char keyword[255] = {};
+    in >> keyword;
+    if (std::strcmp(keyword, geomTableName(table)) != 0) {
+        FC_ERR("Not a " << geomTableName(table) << " table");
+        return false;
+    }
+
+    int count = 0;
+    in >> count;
+    for (int i = 1; i <= count; ++i) {
+        Handle(Standard_Transient) value;
+        in >> std::ws;
+        if (in.peek() == 'E') {
+            in.get();
+            int slot = 0;
+            int index = 0;
+            in >> slot >> index;
+            if (slot < 1 || slot > static_cast<int>(_sources.size())) {
+                FC_ERR("A geometry entry names file " << slot << ", which this file does not");
+                return false;
+            }
+            value = geomEntry(*_sources[static_cast<std::size_t>(slot) - 1], table, index);
+            if (value.IsNull()) {
+                FC_ERR("A geometry entry names position " << index << " of '"
+                       << _sourceNames[static_cast<std::size_t>(slot) - 1]
+                       << "', which that file does not hold");
+                return false;
+            }
+            _geometryRead.insert({table, slot, index});
+        }
+        else {
+            value = readGeomEntry(table, in);
+        }
+
+        const int landed = addGeomEntry(*this, table, value);
+        if (landed != i) {
+            // *** The table is positional and the records name positions in
+            // it, so an entry that landed anywhere but where it was written
+            // has moved every entry after it. It can only be an object this
+            // file already holds -- which the writer's own rule forbids, so
+            // this is a file some other writer made. A copy is a distinct
+            // object and lands at the end, which keeps the numbering.
+            FC_WARN("A geometry entry of a shape file repeats one it already holds");
+            const int copied = addGeomEntry(*this, table, copyGeomEntry(table, value));
+            if (copied != i) {
+                FC_ERR("Shape file geometry table entries collided at " << i);
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 void ShapeRefSet::write(const TopoDS_Shape& root, std::ostream& out)
@@ -490,7 +911,7 @@ bool ShapeRefSet::readToken(TopoDS_Shape& shape, std::istream& in, int count) co
             FC_ERR("Shape reference to file " << slot << ", which this file does not name");
             return false;
         }
-        source = _sources[slot - 1];
+        source = &_sources[slot - 1]->shapes();
         in >> buffer;
     }
 
@@ -525,6 +946,19 @@ bool ShapeRefSet::readToken(TopoDS_Shape& shape, std::istream& in, int count) co
 }
 
 TopoDS_Shape ShapeRefSet::read(std::istream& in)
+{
+    const TopoDS_Shape root = readShape(in);
+    // *** Nothing this set keeps points into another parse once the read is
+    // over: a borrowed sub-shape was added to this file's own shape table and
+    // a borrowed geometry entry to its own geometry table, and both hold what
+    // they name. Dropping the pointers here is what makes that a rule rather
+    // than an observation -- the sets they addressed are cache entries, and a
+    // cache entry goes when nothing holds its file any more.
+    _sources.clear();
+    return root;
+}
+
+TopoDS_Shape ShapeRefSet::readShape(std::istream& in)
 {
     std::locale oldLocale = in.imbue(std::locale::classic());
     Clear();
@@ -569,7 +1003,7 @@ TopoDS_Shape ShapeRefSet::read(std::istream& in)
         for (int i = 0; i < files; ++i) {
             std::string name;
             in >> name;
-            const ShapeIndexMap* source = _resolve ? _resolve(name) : nullptr;
+            const ShapeRefSet* source = _resolve ? _resolve(name) : nullptr;
             if (!source) {
                 FC_ERR("Cannot resolve '" << name << "', which this shape is stored against");
                 in.imbue(oldLocale);
