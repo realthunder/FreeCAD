@@ -111,9 +111,12 @@ private:
      */
     struct Invariants
     {
+        double length = 0.;
         double area = 0.;
         double volume = 0.;
-        bool known = false;
+        bool lengthKnown = false;
+        bool areaKnown = false;
+        bool volumeKnown = false;
     };
 
     struct Entry
@@ -123,10 +126,40 @@ private:
         mutable Invariants invariants;
     };
 
-    static const Invariants& invariantsOf(const TopoDS_Shape& shape, Invariants& cache);
+    /** The two invariants, each computed on the first question that needs it.
+     *
+     * Separately, because the volume is only ever asked for once the area has
+     * already matched, and on the assembly of sec 12.12 the area alone settles
+     * most of it: computing both together spent 9.4s answering questions
+     * nobody asked. Each is still computed at most once per shape.
+     */
+    static double lengthOf(const TopoDS_Shape& shape, Invariants& cache);
+    static double areaOf(const TopoDS_Shape& shape, Invariants& cache);
+    static double volumeOf(const TopoDS_Shape& shape, Invariants& cache);
+
+    /** What a save spent here, reported when the index is dropped.
+     *
+     * This costs a document's save real time -- 17s of it on the assembly of
+     * sec 12.12 -- and the three parts of it answer to different fixes, so
+     * the breakdown is worth carrying rather than re-deriving with a profiler
+     * every time the question comes up. Written at log level `Congruence`.
+     */
+    struct Cost
+    {
+        std::size_t keys = 0;
+        std::size_t finds = 0;
+        std::size_t candidates = 0;
+        std::size_t motions = 0;
+        std::size_t matches = 0;
+        double keySeconds = 0.;
+        double invariantSeconds = 0.;
+        double motionSeconds = 0.;
+    };
+    void report() const;
 
     std::unordered_map<std::size_t, std::vector<Entry>> _buckets;
     std::size_t _count = 0;
+    mutable Cost _cost;
 };
 
 /** The rigid motion taking \a from onto \a to, if there is one.

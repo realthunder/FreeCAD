@@ -40,16 +40,53 @@
 #include <gp_Ax3.hxx>
 #include <gp_Pnt.hxx>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #endif
 
+#include <Base/Console.h>
+
 #include "ShapeCongruence.h"
+
+FC_LOG_LEVEL_INIT("Congruence", true, true);
 
 namespace Part
 {
 
 namespace
 {
+
+/// Adds its lifetime to a running total. What this measures is what a save
+/// waits for, so it is wall clock and not CPU.
+class Stopwatch
+{
+public:
+    explicit Stopwatch(double& into)
+        : _into(into)
+        , _start(std::chrono::steady_clock::now())
+    {}
+    ~Stopwatch()
+    {
+        _into += std::chrono::duration<double>(std::chrono::steady_clock::now() - _start).count();
+    }
+
+private:
+    double& _into;
+    std::chrono::steady_clock::time_point _start;
+};
+
+/// What invariantsOf() spent, which is a static and so cannot reach the
+/// index's own counters. Folded into them by report().
+struct GPropCost
+{
+    std::size_t computed = 0;
+    std::size_t lengths = 0;
+    std::size_t volumes = 0;
+    double lengthSeconds = 0.;
+    double areaSeconds = 0.;
+    double volumeSeconds = 0.;
+};
+GPropCost theCost;
 
 //! Every vertex of a shape, in the order TopExp gives them -- which is the
 //! order the correspondence relies on.
@@ -402,55 +439,113 @@ std::size_t shapeCongruenceKey(const TopoDS_Shape& shape)
     return key ? key : 1;
 }
 
-const CongruenceIndex::Invariants& CongruenceIndex::invariantsOf(const TopoDS_Shape& shape,
-                                                                 Invariants& cache)
+double CongruenceIndex::lengthOf(const TopoDS_Shape& shape, Invariants& cache)
 {
-    if (!cache.known) {
-        cache.known = true;
+    if (!cache.lengthKnown) {
+        cache.lengthKnown = true;
+        ++theCost.lengths;
+        Stopwatch watch(theCost.lengthSeconds);
+        try {
+            GProp_GProps linear;
+            BRepGProp::LinearProperties(shape, linear);
+            cache.length = linear.Mass();
+        }
+        catch (const Standard_Failure&) {
+            cache.length = 0.;
+        }
+    }
+    return cache.length;
+}
+
+double CongruenceIndex::areaOf(const TopoDS_Shape& shape, Invariants& cache)
+{
+    if (!cache.areaKnown) {
+        cache.areaKnown = true;
+        ++theCost.computed;
+        Stopwatch watch(theCost.areaSeconds);
         try {
             GProp_GProps surface;
             BRepGProp::SurfaceProperties(shape, surface);
             cache.area = surface.Mass();
+        }
+        catch (const Standard_Failure&) {
+            cache.area = 0.;
+        }
+    }
+    return cache.area;
+}
+
+double CongruenceIndex::volumeOf(const TopoDS_Shape& shape, Invariants& cache)
+{
+    if (!cache.volumeKnown) {
+        cache.volumeKnown = true;
+        ++theCost.volumes;
+        Stopwatch watch(theCost.volumeSeconds);
+        try {
             GProp_GProps volume;
             BRepGProp::VolumeProperties(shape, volume);
             cache.volume = volume.Mass();
         }
         catch (const Standard_Failure&) {
-            cache.area = 0.;
             cache.volume = 0.;
         }
     }
-    return cache;
+    return cache.volume;
 }
 
 bool CongruenceIndex::find(const TopoDS_Shape& shape, Match& match) const
 {
-    const std::size_t key = shapeCongruenceKey(shape);
+    ++_cost.finds;
+    std::size_t key = 0;
+    {
+        Stopwatch watch(_cost.keySeconds);
+        ++_cost.keys;
+        key = shapeCongruenceKey(shape);
+    }
     if (!key)
         return false;
     const auto it = _buckets.find(key);
     if (it == _buckets.end())
         return false;
 
-    // Only now, and only once: a bucket that proposes nothing costs nothing.
+    // Only now, and only when a bucket actually proposes something: the area
+    // below is the expensive part of this, and a bucket that proposes nothing
+    // must not pay for it.
     Invariants own;
-    invariantsOf(shape, own);
 
     for (const Entry& entry : it->second) {
-        const Invariants& theirs = invariantsOf(entry.shape, entry.invariants);
+        ++_cost.candidates;
+        Stopwatch theirWatch(_cost.invariantSeconds);
         // Relative, because these are areas and volumes of parts whose size is
         // not known in advance. Two instances of one part agree here to about
         // 1e-12; a part and an approximation of it disagree by a part in a
         // thousand, which is the case this is here for.
-        const double areaScale = std::max(std::abs(own.area), std::abs(theirs.area));
-        const double volumeScale = std::max(std::abs(own.volume), std::abs(theirs.volume));
-        if (std::abs(own.area - theirs.area) > 1e-7 * std::max(areaScale, 1.))
+        // Length first: a rigid motion preserves it exactly as it preserves
+        // the other two, and integrating along the edges is an order cheaper
+        // than integrating over the faces.
+        const double ownLength = lengthOf(shape, own);
+        const double theirLength = lengthOf(entry.shape, entry.invariants);
+        const double lengthScale = std::max(std::abs(ownLength), std::abs(theirLength));
+        if (std::abs(ownLength - theirLength) > 1e-7 * std::max(lengthScale, 1.))
             continue;
-        if (std::abs(own.volume - theirs.volume) > 1e-7 * std::max(volumeScale, 1.))
+        const double ownArea = areaOf(shape, own);
+        const double theirArea = areaOf(entry.shape, entry.invariants);
+        const double areaScale = std::max(std::abs(ownArea), std::abs(theirArea));
+        if (std::abs(ownArea - theirArea) > 1e-7 * std::max(areaScale, 1.))
+            continue;
+        // Reached only once the areas already agree, which is what makes
+        // computing it lazily worth the second flag.
+        const double ownVolume = volumeOf(shape, own);
+        const double theirVolume = volumeOf(entry.shape, entry.invariants);
+        const double volumeScale = std::max(std::abs(ownVolume), std::abs(theirVolume));
+        if (std::abs(ownVolume - theirVolume) > 1e-7 * std::max(volumeScale, 1.))
             continue;
 
         gp_Trsf motion;
+        ++_cost.motions;
+        Stopwatch motionWatch(_cost.motionSeconds);
         if (recoverShapeMotion(entry.shape, shape, motion)) {
+            ++_cost.matches;
             match.slot = entry.slot;
             // Snapped, so that two equal parts share a file *and* the one
             // TShape that reading it once gives, as they always have.
@@ -464,17 +559,41 @@ bool CongruenceIndex::find(const TopoDS_Shape& shape, Match& match) const
 
 void CongruenceIndex::add(const TopoDS_Shape& shape, int slot)
 {
-    const std::size_t key = shapeCongruenceKey(shape);
+    std::size_t key = 0;
+    {
+        Stopwatch watch(_cost.keySeconds);
+        ++_cost.keys;
+        key = shapeCongruenceKey(shape);
+    }
     if (!key)
         return;
     _buckets[key].push_back(Entry {shape, slot});
     ++_count;
 }
 
+void CongruenceIndex::report() const
+{
+    if (!_cost.finds && !_cost.keys)
+        return;
+    FC_LOG("congruence: " << _cost.finds << " asked, " << _count << " stored, "
+           << _cost.candidates << " candidates, " << _cost.motions << " motions, "
+           << _cost.matches << " matched; keys " << _cost.keySeconds << "s, invariants "
+           << _cost.invariantSeconds << "s over " << theCost.lengths << " lengths ("
+           << theCost.lengthSeconds << "s), " << theCost.computed << " areas ("
+           << theCost.areaSeconds << "s) and " << theCost.volumes << " volumes ("
+           << theCost.volumeSeconds << "s), motions "
+           << _cost.motionSeconds << "s");
+    theCost = GPropCost();
+}
+
 void CongruenceIndex::clear()
 {
+    // Before the counts go with it: an index is cleared when the save it was
+    // built for is over, which is exactly when what it cost is worth saying.
+    report();
     _buckets.clear();
     _count = 0;
+    _cost = Cost();
 }
 
 CongruenceIndex* CongruenceIndex::forSave(std::uint64_t generation)
