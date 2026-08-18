@@ -1754,3 +1754,111 @@ about 1e-13. The same part was written twice with its pcurves recomputed
 independently. No transform is involved, and a tolerant comparison alone would
 collapse it -- which makes that fifth of the prize much cheaper to take than the
 other four.
+
+### 12.10 Can the pcurves simply be dropped and recomputed?
+
+A pcurve *can* be computed on demand, and OCCT already does it -- for planes
+only. `BRep_Tool::CurveOnSurface` walks the edge's representations, and when it
+finds none it falls through to `CurveOnPlane`, which projects the 3D curve onto
+the plane and returns the result. For any other surface it returns null. That
+null is not a hypothetical: it is what produced the HLR segfault fixed in occt
+`da16badbb5`.
+
+***The plane half of the prize is already taken.*** Measured over the 687 shape
+files inside `scanner.FCStd`:
+
+| | |
+|---|---|
+| edge-on-face pairs | 95255 |
+| pcurve stored in the file | 27023 (28.4%) |
+| computed on demand, planar | **68232 (71.6%)** |
+| no pcurve at all | 0 |
+
+Seven of every ten incidences already store nothing. What is left is the curved
+faces, and those have no on-demand path in OCCT at all.
+
+***What the remaining pcurves cost to store.*** The `Curve2ds` table is
+**4668449 bytes, 16.6% of all shape bytes** and 39.4% of the three geometry
+tables. Removing the pcurves removes their per-edge records too, so a part
+written without them is smaller than the table alone suggests -- over the 20
+largest shapes in the model, **16669351 bytes fall to 11928360, -28.4%**.
+
+***What they cost to do without.*** Three things, measured by stripping every
+pcurve from those 20 parts and asking OCCT to put them back
+(`ShapeBuild_Edge::RemovePCurve`, then `ShapeFix_Edge::FixAddPCurve`, which
+projects the 3D curve):
+
+| | |
+|---|---|
+| pcurves projected back | 11024 |
+| time to project | 0.85s, **77 us each** |
+| worst deviation from the 3D curve, as stored | 1.371e-03 |
+| worst deviation, recomputed | **9.335e-03** |
+| pairs whose recomputed pcurve exceeds the edge tolerance | **430** |
+| parts `BRepCheck_Analyzer` rejects, before / after | 0 / **14 of 20** |
+| triangles meshed: stored / stripped / recomputed | 130903 / **43069** / 123242 |
+
+The triangle row is the one that decides it for a viewer. **A shape with no
+pcurves does not mesh** -- a third of the triangles survive, and a helix drops
+from 8260 to 20. FreeCAD tessellates every shape it opens, so on-demand here
+means on-load, for everything, not for what an algorithm happens to touch.
+
+Handing the whole part to `ShapeFix_Shape` afterwards recovers the mesh
+(131555 triangles) and takes 14 of the 20 rejected parts down to 6 -- for
+**14.36s over 20 parts**, against 0.85s for the projection itself. That is the
+real price: a projected pcurve is not the stored one, and healing the difference
+costs about 0.7s per part while still leaving parts broken.
+
+***And two kinds of pcurve can never be recomputed at all.***
+
+- **A degenerate edge has no 3D curve** -- its pcurve is its only geometry.
+  There are 251 in this model, and nothing can project them back.
+- **A seam carries two pcurves on one surface**, and one projection cannot say
+  which is which. OCCT's own healer does not try: the seam branch of
+  `FixAddPCurve` copies the projected curve, translates it by the period, and
+  says so in the source -- *"On ne sait pas laquelle est Forward. Au PIF."*
+  1704 pairs in this model are seams.
+
+***The bytes sit exactly where the recomputation is worst.*** By kind of curve,
+the pcurve table is:
+
+| | entries | bytes |
+|---|---|---|
+| `Geom2d_BSplineCurve` | 3696 | **3368235 (72.1%)** |
+| `Geom2d_Line` | 23177 | 740499 (15.9%) |
+| `Geom2d_TrimmedCurve` | 2932 | 451870 (9.7%) |
+| `Geom2d_Circle` + `Geom2d_Ellipse` | 1525 | 107063 (2.3%) |
+
+72% of the weight is BSpline pcurves -- the ones that exist only because a
+projection was approximated once already. The analytic pcurves, which projection
+does reproduce, are nearly free to store. Sec 12.9 saw the same thing from the
+other side: one part stored twice at the same place, differing only in the
+trailing digits of its `Curve2ds` coefficients, because the two copies had their
+pcurves computed independently.
+
+**Verdict: not taken.** 16.6% of shape bytes, in exchange for a load path that
+either meshes wrong or pays 77 us per pcurve plus healing, and a geometry that
+no longer round-trips. The dedup of sec 12.8 gets a share of the same bytes with
+none of that, because a merged pcurve is the identical curve rather than a
+recomputed one.
+
+***Why the duplicates were there to be merged.*** Not by design.
+`GeomTools_Curve2dSet` keys its map on the handle, so a curve computed twice is
+written twice; OCCT never compares geometry by value anywhere on write. Nothing
+in the kernel reads meaning into the identity of a pcurve object:
+
+- No code compares pcurve handles to decide anything -- a pcurve is found
+  through the **surface** an edge's representation names.
+- OCCT itself puts one `Geom2d_Curve` into both pcurves of a seam
+  (`LocOpe_WiresOnShape.cxx`, `c2dff = C2d; c2dfr = C2d;`), so a shared pcurve
+  object is a state the kernel produces on its own.
+- Sites that shift a pcurve copy first -- `c2d->Copy()` in `ShapeFix_Edge`,
+  `Translated()` rather than `Translate()` in `LocOpe` -- and the in-place
+  `Translate()` calls operate on curves freshly projected, which no edge holds
+  yet.
+- The file format has always permitted two records to name one table index, and
+  `Read()` fills the map directly from the table.
+
+The risk in merging was never the sharing. It was `Index()`, which is asked for
+a curve that is no longer in the map -- the defect measured in sec 12.8, where
+25443 face pcurves were silently emptied.
