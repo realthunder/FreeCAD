@@ -360,6 +360,15 @@ syntax census) ever sees the bottom.
   vintage, and upstream's moved another 32 files / +1589 lines in the six
   days since. This was named the single biggest hidden cost, and none of
   it has been paid.
+  **DONE 2026-08-18.** The module was replaced wholesale with upstream's
+  at `4b9ce0146e` and now builds and loads: `import Materials` works, the
+  manager reports 215 materials and 55 models, and `MaterialFilter` -- the
+  one type the fork lacked -- constructs and takes `RequiredModels`. It
+  was an unusually safe replacement because nothing in this tree consumed
+  the module: no C++ outside it included a Material header, no CMakeLists
+  linked `Materials` or `MatGui`, no Python imported either. Cost was four
+  additive core APIs and six module-side adaptations, not a second
+  module-sized port.
   WARNING **Superseded 2026-08-18** -- see the measurement in section 5.1.
   The module's divergence is real, but FEM needs eight names from it and
   the fork has six. "A second module of comparable size" measures the

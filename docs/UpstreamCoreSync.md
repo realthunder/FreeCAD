@@ -838,7 +838,16 @@ FEM's 37 sites to them, or take the widening? Adapting FEM is much the
 cheaper side, and per-face *colour* already covers the common cases; per-face
 specular is rare in practice.
 
-### 5.2 The Materials module
+### 5.2 The Materials module -- PORTED 2026-08-18
+
+**No longer a consult item.** `src/Mod/Material` was replaced wholesale
+with upstream's tree and builds and loads here. What made it safe was that
+nothing in this tree consumed it -- an island, so the blast radius was the
+module itself. The core side cost four additive APIs
+(`App::CleanupProcess`, `App/TransactionDefs.h`,
+`Base::Color::get/setPackedRGB`, `Gui::QtTools::deleteKeySequence`) plus a
+`TaskDialog::addTaskBox` overload; the rest was six module-side
+adaptations to this fork's APIs. The original text follows.
 
 Upstream FEM does `import Materials` in 13 files. Our `src/Mod/Material` is
 the December-2023 vintage: python module named `Material`, `.xml` bindings.
