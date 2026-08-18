@@ -64,6 +64,12 @@ public:
     };
 
     virtual void setProperty(int idx, Property *prop);
+    /** Throw if 'prop' cannot serve the slot 'idx'
+     *
+     * Changes nothing, so a caller can validate a whole configuration before
+     * applying any of it. A null 'prop' clears the slot and is always allowed.
+     */
+    void checkProperty(int idx, const Property *prop) const;
     Property *getProperty(int idx);
     Property *getProperty(const char *);
 
