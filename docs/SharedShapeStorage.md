@@ -627,7 +627,7 @@ that already works.
 The whole mechanism end to end with the store as a single chunk. No
 component analysis, no packing, no parallelism.
 
-- `PropertyPartShape::Save` at schema >= 6 writes through a
+- `PropertyPartShape::Save` at schema >= 5 writes through a
   document-level store writer and records its logical position;
   the XML entry becomes `<Part store="Shapes0" pos="N" .../>`.
 - Below schema 5 nothing changes -- same code path, same bytes.
