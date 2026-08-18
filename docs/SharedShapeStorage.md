@@ -1174,6 +1174,32 @@ Four steps plus an optional fifth. Each is separately shippable, each has a
 gate with a number already measured to compare against, and the order puts the
 infrastructure first so the format change lands on something that works.
 
+**How it ended (2026-08-18).** Steps 1-4 shipped, and so did four savings the
+build order did not foresee: pcurve dedup with the planar drop (sec 12.10),
+congruent-instance dedup (sec 12.12), cross-file geometry tables (sec 12.13)
+and borrowing below a face at the identity location (sec 12.15). Each is a
+preference of its own, so each can be measured and turned off alone. The two
+that change only what a file holds default **on** -- `DedupShapePCurves`,
+`DedupCongruentShapes`; the two that let one file depend on another default
+**off** -- `DedupCrossFileGeometry`, `BorrowBelowFace`. Every off arm is
+byte-identical to the format before that step.
+
+The arc **closes here**: the one piece left, a cross-file location table, was
+priced on an assembly before being written and measured at **zero** (sec
+12.16). What the three largest steps are worth, on the two models they were
+measured on:
+
+| | scanner (PartDesign) | MiSTer (assembly) |
+|---|---|---|
+| congruent-instance dedup | not measured | -25.1% |
+| cross-file geometry | -15.0% | -16.4% |
+| borrowing below a face | -0.7% | 0.0% |
+
+Each figure is raw shape bytes against the same document saved without that one
+preference, so they **do not add**: sec 12.14 shows congruent dedup and
+cross-file geometry taking the same duplication from two directions, and what
+12.8 predicted for the second was measured before the first existed.
+
 ### 12.1 Step 1: the blob manager's content index and stable names -- DONE
 
 **Shipped 2026-08-17.** `docs/FileBlobsManager.md` sec 13 is the specification
@@ -1514,7 +1540,13 @@ shape type rather than delegating to them, which is where all of OCCT's curve
 representations, regularity, tolerances and triangulation live. Sec 11.8's
 1.70x is the prize for it.
 
-### 12.5 Step 5, optional: unifying restored duplicates
+### 12.5 Step 5, optional: unifying restored duplicates -- HALF BUILT
+
+**The parse cache half exists**, and arrived for another reason: a file that
+borrows has to be read through the file it borrows from, so `parseBlob()` keeps
+a `ShapeParseCache` keyed by blob handle and one parse already serves every
+referrer. The **in-memory pass for legacy files and recompute results** below
+was never built, and is what remains of this step.
 
 Mostly free after steps 1-3: equal solids are equal files, so a
 `hash -> TopoShape` parse cache makes one parse serve every referrer. The
@@ -1535,6 +1567,11 @@ modified.
   done and now never will be.
 - **The per-component store**, which sec 11 reached before external references
   and which introduced partial referring, is dropped.
+- **A cross-file location table**, the fourth identity domain sec 12.15 found
+  the remaining 6% blocked on. Priced before being written, as sec 12.8 priced
+  the geometry tables, and it came back at **zero on an assembly** -- see sec
+  12.16, which is also why the sub-shape borrowing it would serve is now known
+  to be a PartDesign mechanism rather than an assembly one.
 - **A random-access ASCII format.** Positional addressing existed to pull one
   shape out of a monolith; with one file per object there is no monolith. The
   three obstacles in `TopTools_ShapeSet` stop mattering rather than needing to
@@ -2324,6 +2361,10 @@ names entries by object, and where an object it must be cannot be named (two
 of this file's objects against one of the other's, which two entries may not
 both name), `build()` writes the file again with nothing borrowed below a face
 rather than write one whose faces have edges with no 2D curve.
+
+***What became of the 6%.*** The location table above is not built: sec 12.16
+priced whole-face borrowing on an assembly before writing it, and it was worth
+nothing there. The 6% is real, but it is real on PartDesign documents only.
 
 ### 12.16 What borrowing below a face is worth at assembly scale: nothing
 
