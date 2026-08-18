@@ -66,6 +66,8 @@ SET(MatGui_SRCS
     ${MatGui_UIC_HDRS}
     AppearancePreview.h
     AppearancePreview.cpp
+    MaterialIcons.h
+    MaterialIcons.cpp
     AppMatGui.cpp
     Array2D.cpp
     Array2D.h

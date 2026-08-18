@@ -40,6 +40,7 @@
 #include <Mod/Material/App/MaterialFilterPy.h>
 #include <Mod/Material/App/ModelUuids.h>
 
+#include "MaterialIcons.h"
 #include "MaterialTreeWidget.h"
 #include "MaterialsEditor.h"
 #include "ui_MaterialsEditor.h"
@@ -93,6 +94,11 @@ void MaterialTreeWidget::setup()
 
     createLayout();
     createMaterialTree();
+
+    // Icons render a few per event loop turn, so the tree is painted long
+    // before they land; each one restates its own card as it arrives.
+    connect(&MaterialIcons::instance(), &MaterialIcons::iconReady,
+            this, &MaterialTreeWidget::refreshIcon);
 }
 
 /**
@@ -635,6 +641,59 @@ void MaterialTreeWidget::addFavorites(QStandardItem* parent)
         }
     }
 }
+QIcon MaterialTreeWidget::cardIcon(const QString& uuid, const QIcon& fallback)
+{
+    // A card that states no appearance has nothing to render -- every one
+    // of them would come back the same default grey sphere, which says
+    // less than the library icon it would replace.
+    try {
+        auto material = getMaterialManager().getMaterial(uuid);
+        if (!material || !material->hasAppearanceProperties()) {
+            return fallback;
+        }
+        QIcon icon = MaterialIcons::instance().icon(uuid,
+                                                    material->getMaterialAppearance());
+        if (!icon.isNull()) {
+            return icon;
+        }
+    }
+    catch (const Materials::MaterialNotFound&) {
+    }
+    // Not rendered yet: the library icon stands in until iconReady() says
+    // otherwise, so the tree paints immediately either way.
+    return fallback;
+}
+
+void MaterialTreeWidget::refreshIcon(const QString& uuid)
+{
+    auto* model = static_cast<QStandardItemModel*>(m_materialTree->model());
+    if (!model) {
+        return;
+    }
+    std::function<void(QStandardItem*)> walk = [&](QStandardItem* item) {
+        for (int row = 0; row < item->rowCount(); ++row) {
+            QStandardItem* child = item->child(row);
+            if (!child) {
+                continue;
+            }
+            if (child->data(Qt::UserRole).toString() == uuid) {
+                child->setIcon(MaterialIcons::instance().icon(
+                    uuid, getMaterialManager().getMaterial(uuid)->getMaterialAppearance()));
+            }
+            walk(child);
+        }
+    };
+    for (int row = 0; row < model->rowCount(); ++row) {
+        if (QStandardItem* item = model->item(row)) {
+            if (item->data(Qt::UserRole).toString() == uuid) {
+                item->setIcon(MaterialIcons::instance().icon(
+                    uuid, getMaterialManager().getMaterial(uuid)->getMaterialAppearance()));
+            }
+            walk(item);
+        }
+    }
+}
+
 void MaterialTreeWidget::addMaterials(
     QStandardItem& parent,
     const std::shared_ptr<std::map<QString, std::shared_ptr<Materials::MaterialTreeNode>>>&
@@ -649,7 +708,7 @@ void MaterialTreeWidget::addMaterials(
         if (nodePtr->getType() == Materials::MaterialTreeNode::NodeType::DataNode) {
             QString uuid = nodePtr->getUUID();
 
-            auto card = new QStandardItem(icon, mat.first);
+            auto card = new QStandardItem(cardIcon(uuid, icon), mat.first);
             card->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
             card->setData(QVariant(uuid), Qt::UserRole);
 

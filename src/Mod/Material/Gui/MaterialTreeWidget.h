@@ -249,6 +249,11 @@ protected:
                      const Base::Reference<ParameterGrp>& param);
     void addRecents(QStandardItem* parent);
     void addFavorites(QStandardItem* parent);
+    /// The icon a card shows: its own rendered appearance where it has
+    /// one and the render has landed, else \a fallback (the library icon).
+    QIcon cardIcon(const QString& uuid, const QIcon& fallback);
+    /// Restate one card's icon after its render finished.
+    void refreshIcon(const QString& uuid);
     void addMaterials(
         QStandardItem& parent,
         const std::shared_ptr<std::map<QString, std::shared_ptr<Materials::MaterialTreeNode>>>&
