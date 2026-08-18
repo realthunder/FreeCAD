@@ -891,13 +891,48 @@ Two defects found and fixed:
 
 - The module registered a second `Std_SetAppearance`. The fork already
   owns that command, the first registration wins, and the module's copy
-  only logged "duplicate command Std_SetAppearance" on every load. Not
-  registered any more; `MatGui::TaskDisplayProperties` and the module's
-  `DlgDisplayPropertiesImp` are therefore unreachable by design, and are
-  kept verbatim so a future sync still diffs cleanly.
+  only logged "duplicate command Std_SetAppearance" on every load. That
+  was first fixed by not registering it, and then settled properly by
+  taking upstream's migration -- see 5.2.2.
 - `PrefMaterialTreeWidget` never opted into the fork's auto-apply default
   the way every other preference widget does from its constructor, so the
   Default Material page alone deferred its write to the OK button.
+
+### 5.2.2 The appearance dialog migration, taken 2026-08-18
+
+The duplicate command was the visible half of a move this fork had never
+taken. Upstream deleted `src/Gui/DlgDisplayProperties*` and the Gui-side
+`Std_SetAppearance` when it moved that dialog into the Material module;
+only `DlgMaterialProperties` stayed in Gui. Reaching the rest of the
+application from inside a module is done with a `WorkbenchManipulator`
+that injects `Std_SetMaterial` and `Std_SetAppearance` into the menus,
+and `PartGui` does `import MatGui` so the module is loaded in an ordinary
+session.
+
+The fork now mirrors that. Gui lost the dialog, the command, its two
+hard-coded menu entries and its build entries. The surviving dialog is
+upstream's, with the fork's controls grafted back on -- material preset
+list, shape colour button, the four colour-mapping check boxes, the
+recompute preference, fractional point size and line width -- keeping
+upstream's material-library picker beside them, so an appearance can come
+from a material card as well as from the preset list or the editor. The
+dockable variant was dropped: its call site had been `#if 0` for as long
+as the fork has had it, and upstream's dialog has no such mode.
+
+One fork-side adaptation was needed. Upstream's context-menu anchors do
+not exist in this fork's menus (no `Std_RandomColor`, and
+`Std_TreeSelection` sits inside the Selection submenu), so both context
+recipients now anchor in front of `Std_RenderSettings`, which is what
+followed `Std_SetAppearance` before the move. The menu bar keeps
+upstream's `Std_ToggleNavigation` anchor, which lands in the same place
+here.
+
+Verified in a running GUI: the command exists at startup, every grafted
+control drives its property on all selected objects, the library picker
+sets `ShapeAppearance`, the custom appearance editor still edits live and
+reverts on Cancel, and the View menu reads ToggleNavigation, SetMaterial,
+SetAppearance, RenderSettings. The context-menu injection follows the
+same helper but was not triggered from the harness.
 
 Left standing on purpose:
 
