@@ -1779,11 +1779,37 @@ files inside `scanner.FCStd`:
 Seven of every ten incidences already store nothing. What is left is the curved
 faces, and those have no on-demand path in OCCT at all.
 
+***Except that the file does still carry some planar pcurves, and those are
+free.*** Of the 27023 stored, **6353 sit on a planar face** -- geometry the
+kernel would have projected itself. They are 5879 table entries, **540958 bytes,
+1.9% of all shape bytes**. Dropping only those, over the same 20 parts:
+
+| | before | after |
+|---|---|---|
+| bytes | 12172161 | **11941495 (-1.9%)** |
+| triangles | 130903 | **130903, identical** |
+| parts `BRepCheck_Analyzer` rejects | 0 | **0** |
+| worst deviation from the 3D curve | 1.371e-03 | **1.371e-03, unchanged** |
+
+Nothing is rebuilt, because nothing needs to be: `CurveOnPlane` answers for them
+at 1.1 us a call. This is the one part of the idea that survives -- exact, safe,
+no format change -- and it is worth 1.9%, not 16.6%. It is also model-shaped:
+`MiSTer` stores **zero** planar pcurves, so an imported assembly gains nothing.
+
 ***What the remaining pcurves cost to store.*** The `Curve2ds` table is
 **4668449 bytes, 16.6% of all shape bytes** and 39.4% of the three geometry
 tables. Removing the pcurves removes their per-edge records too, so a part
 written without them is smaller than the table alone suggests -- over the 20
-largest shapes in the model, **16669351 bytes fall to 11928360, -28.4%**.
+largest shapes in the model, **12172161 bytes fall to 9754099, -19.9%**.
+
+! **That figure was first published as -28.4%, measured against a shape that
+was not the file.** The two arms need independent `TShape`s, and the obvious way
+to get them -- `BRepBuilderAPI_Copy` -- **materialises pcurves the file never
+held**: over six parts, 1912 stored pcurves become 8479 and the written size
+grows 25.1%. Both arms were then measured against that inflated baseline.
+Reading the file a second time is the only faithful way to get an independent
+shape, and every number in this section is from that. The correctness results
+below are unaffected, being about geometry rather than bytes.
 
 ***What they cost to do without.*** Three things, measured by stripping every
 pcurve from those 20 parts and asking OCCT to put them back
@@ -1896,20 +1922,35 @@ and 3393707 bytes:
   independently computed BSpline pcurves can describe the same curve with
   different poles and knots, so the encodings are not even the same shape of
   object.
-- The differing values are not trailing digits. Near-zero terms **flip sign**
-  (`-1.195e-14` against `1.151e-14`), which is a relative difference of 100%
-  that no rounding can absorb, and real coefficients differ at **1.7e-8**
-  relative (`5.377016415e-06` against `5.377016322e-06`).
+- Near-zero terms **flip sign** (`-1.195e-14` against `1.151e-14`), which is a
+  relative difference of 100% that no rounding can absorb -- however small the
+  numbers are, and they are noise around zero.
 
-Sec 12.9's 1e-13 was a line-level reading of the diff, not the relative
-difference between the numbers. So there is **one job here, not two**: every
+***But relative difference is the wrong yardstick, and it overstated the
+disagreement.*** OCCT judges in absolute model units: `Precision::Confusion` is
+**1e-7**, `Precision::PConfusion` **1e-9**, `Precision::Angular` **1e-12**.
+Measured that way over the 719 differing lines of that pair, the worst absolute
+difference is **5.0e-12**, on a parameter near pi
+(`3.14159278256479` against `3.14159278256979`). That is four to five orders
+*inside* linear confusion, inside parametric confusion too, and about 5x the
+angular tolerance on one value. ***The two files are the same shape by OCCT's
+own measure***, which is what sec 12.9's transform recovery already said at
+1e-12 to 1e-16, and it is the ground on which merging them is sound.
+
+What defeats a rounded key is therefore not disagreement about the geometry. It
+is that **the encodings are not comparable at all**: different pole and knot
+counts, and noise around zero that no digit count can normalise.
+
+Sec 12.9's 1e-13 was right about the size of the disagreement and wrong about
+what could be done with it. So there is **one job here, not two**: every
 congruent group, moved or not, has to be settled by comparing geometry within a
 tolerance -- which is what the invariants plus a recovered motion already do,
 deviations 1e-12 to 1e-16 -- and never by comparing what was written. That also
 settles a design question the split had left open: the instance that borrows a
-stored shape receives geometry that differs from its own recompute by up to
-about 1e-8 in the coefficients while being the same curve to 1e-12. Nothing
-downstream reads those digits, but the storage cannot pretend they match.
+stored shape receives geometry that differs from its own recompute by at most
+5.0e-12 in absolute terms, which is inside every tolerance OCCT applies to it
+bar the angular one. The storage is entitled to call them the same shape; it is
+not entitled to call the files equal.
 
 ***The planar pcurve costs 1.1 us, so caching it is not worth building.*** Sec
 12.10 noted that `CurveOnPlane` re-projects on every call and caches nothing,
