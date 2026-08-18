@@ -628,9 +628,35 @@ merit, but it verifies the fork's FEM, not the port, and not this table.
 
 ## 5. Consult -- cannot be done while keeping fork behaviour
 
-These three are why this document ends with questions rather than steps.
+These are why this document ends with questions rather than steps. 5.1
+has since been decided and is kept for its record; 5.4 was added
+2026-08-18 and is the live one.
 
-### 5.1 ShapeAppearance
+### 5.1 ShapeAppearance -- DECIDED 2026-08-13, adopted
+
+WARNING WARNING **This section is kept for its research, but it is no
+longer an open question and its tables below describe a tree that no
+longer exists.** The fork adopted the consolidation on 2026-08-13 (the
+per-face appearance workstream). `Gui::ViewProviderGeometryObject` today
+declares exactly three properties -- `Transparency` (line 147),
+`ShapeAppearance` (154) and `BoundingBox` (157). `ShapeColor` and
+`ShapeMaterial` are gone as properties; `ShapeColor` survives as a facade
+whose storage *is* `ShapeAppearance` (see the comment at line 43). So the
+"ours" column of the table below, and the "Why it is still a consult item
+here" paragraph, argue against a change that has since been made. Read
+the rest as the record of why it was made, not as a pending decision.
+
+** **`ShapeMaterial` names two different things, and it is easy to
+conflate them.** Everything in this section is about the **rendering**
+material -- `App::Material`, ambient/diffuse/specular/shininess, living
+on the **view provider**. The fork's removed `ShapeMaterial` was an
+`App::PropertyMaterial`, that same rendering type. Upstream *also* has a
+`ShapeMaterial`, but it is `Materials::PropertyMaterial` holding a
+`Materials::Material` -- the **physical** material card (density,
+Young's modulus, thermal conductivity), declared on **`Part::Feature`**
+at `PartFeature.h:77`. Same identifier, different type, different
+concept, different layer. Section 5.4 is about that one; this section is
+not.
 
 **Scope correction.** An earlier draft of this section described this as
 Part's `DiffuseColor` being renamed. It is considerably larger. The property
@@ -832,6 +858,51 @@ Section 1d adapts FEM's two sites and needs nothing. But if the fork wants
 upstream's datum model itself (App-level datum elements, local coordinate
 systems), that is a feature port touching PartDesign, and it should be
 decided on its own merits rather than as FEM collateral.
+
+### 5.4 A physical material on Part::Feature -- the question this document never asked
+
+Added 2026-08-18. Sections 5.1 and 5.2 between them discuss the *rendering*
+material and the Materials *module*, and neither asks the question that
+actually decides whether the module matters to this fork: **should a
+`Part::Feature` carry a physical material?**
+
+Upstream says yes. `PartFeature.h:29` includes
+`<Mod/Material/App/PropertyMaterial.h>` and line 77 declares
+`Materials::PropertyMaterial ShapeMaterial` -- a `Materials::Material`
+card (density, Young's modulus, thermal conductivity) on the **data
+object**. This fork has no equivalent: `Part::Feature` carries no material
+property, and neither `Mod/Part/App` nor `Mod/Part/Gui` links `Materials`
+or `MatGui`.
+
+X **This is not section 5.1 and does not collide with it.** Upstream's
+`ShapeAppearance` sits on `Gui::ViewProviderGeometryObject` exactly where
+ours does, with the comment `// May be different from material` marking
+the two as deliberately independent. Rendering appearance and physical
+material are orthogonal; upstream carries both. What we lack is the
+physical one -- a missing feature, not a design conflict. (The one place
+they touch is `Materials::PropertyMaterial::setValue(const App::Material&)`:
+a material card can also carry appearance models, so assigning one can
+drive the rendering appearance. That is what upstream's comment hedges.)
+
+**What makes it a consult item rather than a step:**
+- It is a **feature decision, not an API alignment.** Nothing on the
+  roadmap (`docs/RoadMap.md`) asks for physical materials -- the roadmap
+  is renderer, headless engine, WASM tier, AI-native interface.
+- It is a **document-format change to user data**: a new property on every
+  `Part::Feature`.
+- It makes the **geometry module depend on the material module at header
+  level**. Every consumer of `PartFeature.h` inherits it.
+- It is the **only reason this fork would need upstream's Materials
+  divergence at all.** FEM's dependency is eight Python names, six of
+  which we already have (`FemPortEvaluation.md` section 5.1). Part's is a
+  compile-time coupling. Counted across all of upstream, Part is the *only*
+  module outside Material that includes a Material header or links the
+  libraries; CAM is the only other consumer of any kind (2 Python files).
+
+So the ordering implied by the measurements is the reverse of the one in
+`FemPortEvaluation.md`: the Materials module is not a prerequisite dragged
+in by FEM, it is a prerequisite of *this* feature. Decide the feature
+first; the module port follows from it or is not needed.
 
 ## 6. What this buys beyond FEM
 

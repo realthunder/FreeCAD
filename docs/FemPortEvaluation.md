@@ -152,6 +152,45 @@ fork has the December-2023 vintage of that module: python module named
 So porting FEM drags in porting a second module of comparable size. This is
 the single biggest hidden cost in the "just copy `src/Mod/Fem`" framing.
 
+WARNING WARNING **Measured 2026-08-18, and this paragraph is wrong.**
+Materials really has diverged 346 files / +25515 lines, but FEM's
+*dependency on that divergence* is eight Python names, and this fork
+already has six of them. The whole surface, enumerated from upstream's
+sources:
+
+| what upstream FEM calls | this fork |
+|---|---|
+| `Materials.MaterialManager()`, `.Materials`, `.getMaterial(uuid)` | have (`MaterialManagerPy.xml`) |
+| `Material.Properties` | have (`MaterialPy.xml`) |
+| `Materials.ModelManager().Models` | have (`ModelManagerPy.xml`) |
+| `Materials.UUIDs()`, `.Fluid` | have (`UUIDsPy.xml`) |
+| `Materials.MaterialFilter()`, `.RequiredModels` | MISSING |
+| `MatGui.MaterialTreeWidget` + 4 attributes | MISSING |
+
+Three further facts shrink it. **The dependency is Python-only** -- no
+upstream FEM source includes any Material header and FEM's CMakeLists
+links neither library. **The module rename is one line** --
+`SET_PYTHON_PREFIX_SUFFIX(Material)` here versus `(Materials)` upstream;
+our C++ namespace is already `Materials` and our Gui module is already
+`MatGui`. And **the two missing pieces are small** -- `MaterialFilter`
+plus `MaterialFilterOptions` is about 490 lines including bindings, and
+`MaterialTreeWidget` is one widget. Of the 14 importing files, 11 are
+`femexamples/` scripts; only three are load-bearing.
+
+* **Where the real Materials coupling lives is not FEM -- it is Part.**
+Counted across all of upstream: Part is the *only* module outside
+Material that includes a Material header, and the only one that links
+the libraries (`Mod/Part/App` -> `Materials`, `Mod/Part/Gui` ->
+`MatGui`). `PartFeature.h:29` includes `PropertyMaterial.h` to declare
+`Materials::PropertyMaterial ShapeMaterial` at line 77, so every consumer
+of that header inherits the dependency. FEM's 14 files are all Python and
+all shallow; Part's three are a compile-time coupling. CAM is the only
+other consumer at all (2 files, Python).
+
+! **The six matches above are name-level.** The attributes and methods
+exist; return shapes, key types and semantics are unchecked, and that is
+where drift would hide.
+
 Python also wants `vtkmodules` (39 uses across 15 files), which needs
 `BUILD_FEM_VTK_PYTHON` and the VTK python wrappers.
 
@@ -321,6 +360,10 @@ syntax census) ever sees the bottom.
   vintage, and upstream's moved another 32 files / +1589 lines in the six
   days since. This was named the single biggest hidden cost, and none of
   it has been paid.
+  WARNING **Superseded 2026-08-18** -- see the measurement in section 5.1.
+  The module's divergence is real, but FEM needs eight names from it and
+  the fork has six. "A second module of comparable size" measures the
+  module, not the dependency.
 
 ### 10.5 The target moved too
 
@@ -354,6 +397,11 @@ believing any Gui number, check which bucket it is in.
 - **Do not start the FEM port.** The decisive cost has not moved at all:
   `Materials` is untouched, and it is a second module of comparable size.
   FEM remains off the roadmap and the fork still has no FEM investment.
+  WARNING **The stated reason is wrong, measured 2026-08-18** (section
+  5.1): FEM's dependency on `Materials` is eight Python names, six of
+  which the fork already has. The recommendation may still hold -- FEM is
+  off the roadmap and upstream's FEM is 1018 files -- but it can no longer
+  rest on the Materials coupling, which is the cheap part.
 - If it is ever wanted, the sequence the measurements imply is: finish
   the mechanical core rows -> settle the two fork divergences
   (`getElementTypes`, `isSame`) -> port `Materials` -> then, and only
