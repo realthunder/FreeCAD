@@ -176,6 +176,11 @@ endif(FREECAD_USE_PCH)
 target_include_directories(
     MatGui
     PRIVATE
+    # This fork does not propagate the Python include dirs through the core
+    # targets the way upstream's build does, so the generated *PyImp.cpp
+    # translation units cannot find Python.h without naming them here.
+    ${PYTHON_INCLUDE_DIRS}
+    ${COIN3D_INCLUDE_DIRS}
     ${CMAKE_BINARY_DIR}
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_BINARY_DIR}/src
