@@ -409,14 +409,23 @@ void Material::setType(const MaterialType MatType)
 
 float Material::shininessToRoughness(float shininess)
 {
+    // The classical Blinn-Phong to microfacet match is on the GGX/Beckmann
+    // WIDTH: alpha = sqrt(2 / (n + 2)) for a Phong exponent n. Roughness is
+    // the square root of that width -- every consumer squares it to get
+    // alpha back (the shader's `a = rough * rough`, which is the glTF
+    // convention) -- so the fit has to be taken to the fourth root, not the
+    // second. Handing the alpha itself over as a roughness squared it a
+    // second time and made every ordinary Phong appearance shade as a
+    // mirror: FreeCAD's default shininess 0.2 arrived at alpha 0.073 where
+    // the match says 0.269.
     const float exponent = std::max(shininess, 0.0f) * 128.0f;
-    return std::min(std::sqrt(2.0f / (exponent + 2.0f)), 1.0f);
+    return std::min(std::pow(2.0f / (exponent + 2.0f), 0.25f), 1.0f);
 }
 
 float Material::roughnessToShininess(float roughness)
 {
-    const float squared = std::max(roughness * roughness, 1e-6f);
-    const float exponent = 2.0f / squared - 2.0f;
+    const float alpha = std::max(roughness * roughness, 1e-3f);
+    const float exponent = 2.0f / (alpha * alpha) - 2.0f;
     return std::clamp(exponent / 128.0f, 0.0f, 1.0f);
 }
 

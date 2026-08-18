@@ -152,10 +152,17 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
         if (rough <= 0.0f) {
             // Derive from the material shininess (Coin's 0..1
             // convention maps to a GL exponent of s * 128) with
-            // the usual Blinn-Phong-to-GGX conversion.
+            // the usual Blinn-Phong-to-GGX conversion. That match
+            // is on the GGX WIDTH -- alpha = sqrt(2 / (n + 2)) --
+            // and the shader squares this value to get the width
+            // back, so the fourth root is what belongs here. The
+            // square root handed the shader an alpha to square a
+            // second time, which is why every Phong appearance
+            // read as a mirror (shininess 0.2, FreeCAD's default,
+            // arrived at alpha 0.073 instead of 0.269).
             float exponent =
                 std::max(mat.shininess, 0.0f) * 128.0f;
-            rough = std::sqrt(2.0f / (exponent + 2.0f));
+            rough = std::pow(2.0f / (exponent + 2.0f), 0.25f);
         }
         pbrParams[2] = bx::clamp(rough, 0.02f, 1.0f);
         pbrParams[3] = std::max(pbrEnvIntensity, 0.0f);

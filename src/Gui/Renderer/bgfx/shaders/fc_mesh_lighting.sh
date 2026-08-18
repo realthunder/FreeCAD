@@ -179,6 +179,27 @@ bool fcViewLight(int i, vec3 vpos, out vec3 l, out vec3 lcol)
 	return true;
 }
 
+/* Blinn-Phong exponent <-> GGX roughness, the one fit the whole engine
+ * uses (App::Material::shininessToRoughness holds the C++ copy, and
+ * BGFXView::setTriangleFrameState derives a draw's roughness with it).
+ *
+ * Coin states shininess in 0..1 and GL's exponent is n = s * 128. The
+ * classical microfacet match is on the GGX WIDTH, alpha = sqrt(2/(n+2));
+ * roughness is the square root of the width, because every consumer
+ * squares it back (`a = rough * rough` below). Hence the fourth root
+ * one way and the fourth power the other.
+ */
+float fcRoughFromShininess(float shininess)
+{
+	return pow(2.0 / (max(shininess, 0.0) * 128.0 + 2.0), 0.25);
+}
+
+float fcShininessFromRough(float rough)
+{
+	float a = max(rough * rough, 1.0e-3);
+	return clamp((2.0 / (a * a) - 2.0) / 128.0, 0.0, 1.0);
+}
+
 /* One light's contribution to the metallic/roughness branch: GGX with
  * Karis' fast Smith-joint visibility and Schlick Fresnel. `l` points
  * from the surface toward the light, view space; the view vector is

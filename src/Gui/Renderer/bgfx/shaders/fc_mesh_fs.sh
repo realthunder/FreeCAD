@@ -204,9 +204,8 @@ void main()
 			// give it the shininess the roughness means (the
 			// Blinn-Phong-to-GGX fit, inverted -- what the
 			// stored material's Phong derivation would hold).
-			float r = max(v_color2.a, 0.02);
-			matSpec.w = clamp((2.0 / (r * r) - 2.0) / 128.0,
-			                  0.0, 1.0);
+			matSpec.w = fcShininessFromRough(
+				max(v_color2.a, 0.02));
 		}
 	}
 #ifdef TEXTURE
@@ -235,14 +234,12 @@ void main()
 		// back the same way, so a finish coarsens a Phong highlight
 		// exactly as it coarsens a PBR one.
 		bool phong = u_pbrParams.x < 0.5;
-		float frough = phong
-			? sqrt(2.0 / (max(matSpec.w, 0.0) * 128.0 + 2.0))
-			: rough;
+		float frough = phong ? fcRoughFromShininess(matSpec.w)
+		                     : rough;
 		fcApplyFinish(v_opos, v_onrm, v_vpos, finishParams,
 		              finishSlot.y, n, frough);
 		if (phong)
-			matSpec.w = clamp((2.0 / (frough * frough) - 2.0)
-			                      / 128.0, 0.0, 1.0);
+			matSpec.w = fcShininessFromRough(frough);
 		else
 			rough = frough;
 	}
