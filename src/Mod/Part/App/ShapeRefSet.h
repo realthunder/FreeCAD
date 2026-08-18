@@ -151,10 +151,11 @@ public:
      * *** Two files that would hold the same bytes are one file, and content
      * addressing gets that right on its own -- until one of them names the
      * other's geometry instead of writing it, and they are two files again.
-     * On `MiSTer` that turned 5204 files into 6841. So a file that writes its
-     * geometry out in full says so, and a later file that would write the
-     * same thing writes it out in full too rather than naming it, which is
-     * what leaves the two identical and lets them merge.
+     * On `MiSTer` that turned 5204 files into 6841. So a file records what it
+     * decided about its geometry, and a later file with the same geometry
+     * makes the same decisions instead of its own -- which leaves the two
+     * identical, whether that means both writing everything out or both
+     * naming the same earlier entries.
      *
      * The key is the file's geometry as it would be written -- every entry's
      * digest in table order, and how many shapes stand on them. Two shapes
@@ -162,8 +163,13 @@ public:
      * do not merge, so a false match costs the sharing and never the shape.
      */
     //@{
-    bool writesContent(const std::string& key) const;
-    void claimContent(const std::string& key);
+    /// What a file decided about each of its geometry entries: the owner
+    /// table's file index and the entry named there, or file 0 to write it
+    /// out. Indexed by table, then by entry position.
+    using ContentPlan = std::array<std::vector<ShapeRef>, GeomTableCount>;
+
+    const ContentPlan* contentPlan(const std::string& key) const;
+    void claimContent(const std::string& key, ContentPlan plan);
     //@}
 
     bool empty() const
@@ -181,7 +187,7 @@ private:
     std::vector<File> _files;
     std::unordered_map<std::string, int> _fileIndex;
     std::array<std::unordered_map<std::string, ShapeRef>, GeomTableCount> _geometry;
-    std::set<std::string> _contents;
+    std::unordered_map<std::string, ContentPlan> _contents;
 };
 
 /** An ASCII BRep shape table that may borrow sub-shapes from other files.

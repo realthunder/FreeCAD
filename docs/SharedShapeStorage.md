@@ -2153,15 +2153,15 @@ ASCII, congruent-instance dedup on in both:
 
 | | off | on |
 |---|---|---|
-| shape files | 5204 | 5205 |
-| files naming another | 0 | 2533 |
-| geometry entries named | 0 | **69252** |
-| raw shape bytes | 85347161 | **71348929 (-16.4%)** |
-| deflated shape bytes | 15923269 | **13369001 (-16.0%)** |
-| whole archive | 17789824 | 15235582 |
-| save to directory | 26.5s | 28.1s |
-| reopen / full parse | 1.7s / 310.3s | 1.7s / 310.1s |
-| faces / missing a curve / invalid | 1127011 / 0 / 23 | 1127012 / 0 / 23 |
+| shape files | 5204 | 5204 |
+| files naming another | 0 | 2532 |
+| geometry entries named | 0 | **69250** |
+| raw shape bytes | 85347161 | **71348218 (-16.4%)** |
+| deflated shape bytes | 15923269 | **13368648 (-16.0%)** |
+| whole archive | 17789824 | 15235075 |
+| save to directory | 26.5s | 27.3s |
+| reopen / full parse | 1.7s / 310.3s | 1.7s / 310.8s |
+| faces / missing a curve / invalid | 1127011 / 0 / 23 | 1127011 / 0 / 23 |
 
 ***16.4%, not the 28.1% sec 12.8 predicted, and the difference is not a
 disappointment.*** That measurement predates congruent-instance dedup, which
@@ -2174,32 +2174,39 @@ overlap; they do not add.
 **6841 files** against the 5204 the setting-off arm writes -- because content
 addressing merges two objects whose bytes match, and two equal parts stop
 having matching bytes as soon as the first defines its geometry and the second
-names it. A file that writes its geometry out in full now says so, keyed on
-that geometry as it would be written, and a later file that would write the
-same thing writes it out in full too. That took 6841 back to 5205 and took the
-raw bytes down with it, from 72040089 to 71348929: the pair costs one file
-where it used to cost two, which is worth more than the entries the second one
-would have named. On `scanner.FCStd` the rule changes nothing at all -- 318
+names it. So a file now records what it *decided* about its geometry, keyed on
+that geometry as it would be written, and a later file holding the same
+geometry makes the same decisions rather than its own. Both writing everything
+out and both naming the same earlier entries leave the two identical; either
+way the store keeps one of them, which is worth more than any entry the second
+could have named. 6841 files back to 5204, and the raw bytes with them, from
+72040089 to 71348218.
+
+The first version of the rule was narrower -- a file that named nothing said
+so, and a later file with that geometry wrote everything out -- and it left one
+pair unmerged, the pair where the *first* file already named something. That
+is why it records decisions rather than a fact about them. On `scanner.FCStd` the rule changes nothing at all -- 318
 files to 320 either way, byte for byte -- because a PartDesign model's equal
 parts are already one file before the geometry is looked at. This is an
 assembly's problem.
 
-***The one file it still costs.*** A file that itself names another's entries
-cannot offer its content, because it is not the bytes a later file writing in
-full would produce. On `MiSTer` exactly one pair falls in that hole:
-`Shell892` names one file, its twin `Shell6303` names two, so the two differ
-and the store keeps both where it used to keep one. Closing it means a later
-file reproducing an earlier one's references rather than deciding its own,
-which is a larger change than the file it saves.
+***What a file may not offer.*** Its decisions, if it borrowed a *sub-shape*:
+its records name another file's shapes, which a later file made of its own
+TShapes cannot reproduce, so those two differ whatever their tables agree on.
+That case is left alone rather than reasoned about.
 
-***What the reopen says, object by object.*** The totals differ by one face,
-and a total that moves is exactly what sec 12.10's lesson says not to accept.
-Dumped per object in both arms -- 18085 shapes, faces, edges and validity --
-the two agree everywhere except the top-level compound, which has one more face
-and two more edges with sharing on. That is the extra file: `Shell6303` is a
-one-face shell, and where the two arms share a file the compound sees one
-TShape instead of two. No shape is null, none throws, and the invalid count is
-23 in both arms, as it is with the setting off.
+***What the reopen says, object by object.*** Every count in that table now
+matches the setting-off arm and only the bytes differ -- but it did not start
+there, and how the last difference was run down is the part worth keeping.
+The face totals differed by **one**, and a total that moves is exactly what
+sec 12.10's lesson says not to accept. Dumped per object in both arms -- 18085
+shapes, faces, edges and validity -- the two agreed everywhere except the
+top-level compound, which had one more face and two more edges. That was the
+one unmerged pair: `Shell6303` is a one-face shell sharing a file with
+`Shell892`, and where the two arms share a file the compound sees one TShape
+instead of two. No shape was null, none threw, and the invalid count was 23 in
+both arms throughout. Recording decisions rather than a fact about them merged
+the pair, and the face count came back to 1127011 with it.
 
 ! **Under an address-space cap, running out looks like a crash.** The first of
 these runs was capped at 12GB and died with SIGSEGV in the middle of the

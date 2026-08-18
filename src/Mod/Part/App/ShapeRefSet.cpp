@@ -340,15 +340,21 @@ const ShapeRef* ShapeOwnerTable::findGeometry(int table, const std::string& dige
     return found == _geometry[table].end() ? nullptr : &found->second;
 }
 
-bool ShapeOwnerTable::writesContent(const std::string& key) const
+const ShapeOwnerTable::ContentPlan* ShapeOwnerTable::contentPlan(const std::string& key) const
 {
-    return !key.empty() && _contents.count(key) != 0;
+    if (key.empty()) {
+        return nullptr;
+    }
+    auto found = _contents.find(key);
+    return found == _contents.end() ? nullptr : &found->second;
 }
 
-void ShapeOwnerTable::claimContent(const std::string& key)
+void ShapeOwnerTable::claimContent(const std::string& key, ContentPlan plan)
 {
     if (!key.empty()) {
-        _contents.insert(key);
+        // First claim again: the earliest file decides, and every later file
+        // with this geometry follows it.
+        _contents.emplace(key, std::move(plan));
     }
 }
 
@@ -522,12 +528,32 @@ void ShapeRefSet::planGeometry()
         }
     }
 
-    // *** An earlier file that writes this same geometry out in full is a
-    // reason to write it out in full too. The two files are then the same
-    // bytes, and content addressing makes them one file -- which is worth
-    // more than naming the entries, and is what naming them would destroy.
-    if (any && _owners->writesContent(contentKey())) {
-        return;
+    // *** An earlier file holding this same geometry has already decided what
+    // to name and what to write out, and making the same decisions is what
+    // leaves the two files identical -- so content addressing keeps one of
+    // them, which is worth more than any entry the second could have named.
+    if (any) {
+        if (const ShapeOwnerTable::ContentPlan* plan = _owners->contentPlan(contentKey())) {
+            bool fits = true;
+            for (int table = 0; fits && table < ShapeOwnerTable::GeomTableCount; ++table) {
+                fits = (*plan)[table].size() == _geometry[table].size();
+            }
+            if (fits) {
+                for (int table = 0; table < ShapeOwnerTable::GeomTableCount; ++table) {
+                    for (std::size_t i = 0; i < _geometry[table].size(); ++i) {
+                        const ShapeRef& decided = (*plan)[table][i];
+                        if (decided.file) {
+                            _geometry[table][i].ref =
+                                ShapeRef {slotFor(decided.file), decided.index};
+                        }
+                    }
+                }
+                return;
+            }
+            // Sizes that disagree mean two different shapes hashed alike,
+            // which costs the sharing and nothing else: decide for ourselves.
+            FC_WARN("Two shapes with different geometry tables share a content key");
+        }
     }
 
     for (int table = 0; table < ShapeOwnerTable::GeomTableCount; ++table) {
@@ -725,11 +751,26 @@ void ShapeRefSet::publish(int file, ShapeOwnerTable& owners) const
             }
         }
     }
-    // Only a file that named nothing offers its content: one that named an
-    // entry is not the bytes a later file would write out in full, so a later
-    // file matching it and writing in full would match nothing.
-    if (_shareGeometry && !sharesGeometry()) {
-        owners.claimContent(contentKey());
+
+    // And what it decided, so that a later file holding the same geometry can
+    // decide the same way and come out as the same bytes.
+    //
+    // *** Not offered by a file that borrowed a sub-shape: its records name
+    // another file's shapes, which a later file made of its own TShapes
+    // cannot reproduce, so the two would differ whatever their tables say.
+    if (_shareGeometry && _borrowedShapes.Extent() == 0) {
+        ShapeOwnerTable::ContentPlan decided;
+        for (int table = 0; table < ShapeOwnerTable::GeomTableCount; ++table) {
+            decided[table].reserve(_geometry[table].size());
+            for (const GeomEntry& entry : _geometry[table]) {
+                // In the owner table's terms, not this file's slots, because
+                // the file reading it back has slots of its own.
+                decided[table].push_back(
+                    entry.ref.file ? ShapeRef {_borrowed[entry.ref.file - 1], entry.ref.index}
+                                   : ShapeRef {});
+            }
+        }
+        owners.claimContent(contentKey(), std::move(decided));
     }
 }
 
