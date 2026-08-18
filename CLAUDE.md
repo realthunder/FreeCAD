@@ -103,8 +103,12 @@ This applies to CLAUDE.md and the docs too: the existing text stays as it is.
 
 Enforcement is `scripts/strip-nonascii.py`, installed as a `post-commit` hook by
 `scripts/install-hooks.sh` (run it once per clone, and for the sibling coin/occt
-repos). It transliterates the non-ASCII on lines the commit added, fixes the commit
-message, and amends the commit. It stands down during rebase/merge/cherry-pick, skips
+repos). It transliterates the non-ASCII on lines the commit added -- and only where
+that text was not already in the file -- fixes the commit message, and amends
+the commit. The pre-image check matters because "added" is git's answer, not
+yours: flatten a CRLF file with an editor that writes LF, reindent, or move a
+block, and git calls every line added, at which point the hook would rewrite
+upstream author names it is meant to preserve. It stands down during rebase/merge/cherry-pick, skips
 merge commits, skips files edited since the commit, and skips translations. A line
 containing `nonascii-ok` is left alone; `NO_STRIP_NONASCII=1` skips a commit. Use
 `python3 scripts/strip-nonascii.py --check` to see what it would rewrite.

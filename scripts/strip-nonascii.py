@@ -6,9 +6,16 @@ the commit that was just made, transliterates every non-ASCII character on the
 lines that commit *added* -- plus the commit message itself -- and amends the
 commit in place.
 
-Only added lines are touched.  Over a thousand tracked files carry non-ASCII
-from upstream FreeCAD (author names in copyright headers, Qt translations); a
+Only added lines are touched, and only those carrying text that was not
+already in the file.  Over a thousand tracked files carry non-ASCII from
+upstream FreeCAD (author names in copyright headers, Qt translations); a
 whole-file pass would bury every real change under unrelated churn.
+
+The second condition matters because "added" is git's answer, not the
+author's: rewrite a CRLF file with a tool that emits LF, reindent, or move a
+block, and git reports every line as added.  Without the pre-image check the
+hook would then rewrite upstream author names it is meant to preserve, which
+is exactly what happened before it was added.
 
 Escape hatches:
   * a line containing the token ``nonascii-ok`` is left alone;
@@ -251,7 +258,23 @@ def added_lines_of_head():
     return result
 
 
-def clean_file(path, linenos=None, write=True):
+def preimage_bodies(path):
+    """Line bodies of `path` as of HEAD's parent, ignoring line endings.
+
+    A commit that rewrites a whole file -- a CRLF/LF flip, a reindent, a move --
+    makes git report every line as added, and the hook would then transliterate
+    pre-existing upstream content it is supposed to leave alone.  Matching an
+    added line against this set tells new text apart from old text that merely
+    reappeared.
+    """
+    try:
+        blob = git("show", "HEAD^:" + path)
+    except RuntimeError:
+        return set()  # new file, or root commit: everything in it really is new
+    return set(line[:-1] if line.endswith("\r") else line for line in blob.split("\n"))
+
+
+def clean_file(path, linenos=None, write=True, preexisting=None):
     """Rewrite `path` in place. Returns (changed, [(lineno, dropped_chars)])."""
     with open(path, "rb") as fh:
         data = fh.read()
@@ -269,6 +292,8 @@ def clean_file(path, linenos=None, write=True):
             continue
         crlf = line.endswith("\r")
         body = line[:-1] if crlf else line
+        if preexisting is not None and body in preexisting:
+            continue  # not local change: this exact text was already in the file
         new, dropped = transliterate(body)
         if new != body:
             lines[idx] = new + "\r" if crlf else new
@@ -328,7 +353,9 @@ def hook_main(check_only):
         if path in dirty:
             skipped.append(path)
             continue
-        changed, warnings = clean_file(path, linenos, write=not check_only)
+        changed, warnings = clean_file(
+            path, linenos, write=not check_only, preexisting=preimage_bodies(path)
+        )
         if changed:
             touched.append(path)
         for lineno, dropped in warnings:
