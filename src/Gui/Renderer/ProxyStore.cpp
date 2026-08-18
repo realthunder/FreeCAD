@@ -201,7 +201,17 @@ uint32_t ProxyStore::build(const ProxyHierarchy &index, int node,
     uint32_t made = 0;
     for (auto &bucket : byBucket) {
         std::vector<MemberSource> &sources = bucket.second;
-        if (sources.size() < index.params().minMerge) {
+        // minMerge is about not proxying a single *object*: merging one
+        // gives a decimated object, which the per-object ladder already
+        // does better. A single child proxy is not that case -- coarsening
+        // it onto this level's grid is exactly what this level is for,
+        // and refusing would break the chain wherever a subtree narrows
+        // to one bucket, leaving the cut nothing to stop on.
+        bool onlyNodes = true;
+        for (const MemberSource &src : sources)
+            onlyNodes = onlyNodes && src.isNode;
+        const size_t needed = onlyNodes ? 1u : index.params().minMerge;
+        if (sources.size() < needed) {
             ++statistics.belowMinMerge;
             continue;
         }

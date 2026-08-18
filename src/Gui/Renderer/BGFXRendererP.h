@@ -33,6 +33,7 @@
 #include "MeshSource.h"
 #include "SceneLadder.h"
 #include "ProxyHierarchy.h"
+#include "ProxyStore.h"
 #include "CullBenefit.h"
 #include "MaskedOcclusion.h"
 #include "Simd4.h"
@@ -1041,6 +1042,122 @@ static void reportProxyGen(const Render::ProxyHierarchy &index,
         Base::Console().Message("%s", buf);
 #endif
     }
+}
+
+/// What building the proxies bottom-up costs against building each node
+/// from source, measured on the nodes a cut actually stops on
+/// (docs/FarFieldProxies.md section 7.1).
+///
+/// Both passes generate the same set of nodes and differ only in what
+/// each merge is fed, so the difference between them is the geometric
+/// series the bottom-up rule is supposed to buy -- and the error and
+/// area columns say what it costs in fidelity to merge a decimation of
+/// a decimation rather than the geometry itself.
+static void reportProxyStore(const Render::ProxyHierarchy &index,
+                             const Render::DrawCallList &draws, const float *V,
+                             const float *P, float viewportHeightPx)
+{
+    static const float kTolerancePx = 64.0f;
+    // A generation pass over a node is that node's whole subtree, so a
+    // handful of them is a large fraction of the model. Both bounds are
+    // reported: a measurement that silently drops most of its work
+    // reads as coverage it did not have.
+    static const uint32_t kMaxNodes = 4;
+    static const uint64_t kTriangleBudget = 3000000;
+
+    Render::ProxyCut cut;
+    index.selectCut(V, P, viewportHeightPx, kTolerancePx, cut);
+    if (cut.proxyNodes.empty())
+        return;
+
+    Render::ProxyStoreStats up, src;
+    double upperror = 0.0, srcerror = 0.0;
+    double upkept = 0.0, srckept = 0.0;
+    double uparea = 0.0, srcarea = 0.0;
+    uint32_t sampled = 0;
+    const uint32_t stride =
+        std::max<uint32_t>(1, uint32_t(cut.proxyNodes.size()) / kMaxNodes);
+    const auto accumulate = [](Render::ProxyStoreStats &total,
+                               const Render::ProxyStoreStats &one) {
+        total.nodes += one.nodes;
+        total.entries += one.entries;
+        total.refused += one.refused;
+        total.overBudget += one.overBudget;
+        total.mergedTriangles += one.mergedTriangles;
+        total.sourceTriangles += one.sourceTriangles;
+        total.proxyTriangles += one.proxyTriangles;
+        total.standInTriangles += one.standInTriangles;
+        total.maxLevelSpan = std::max(total.maxLevelSpan, one.maxLevelSpan);
+        total.ms += one.ms;
+    };
+    // The top entries of a pass are what the cut would draw at that
+    // node, so they are where the accumulated error and the area still
+    // represented are read.
+    const auto top = [](const Render::ProxyStore &store, double &error,
+                        double &kept, double &area) {
+        uint32_t level = 0xffffffffu;
+        for (const Render::ProxyEntry &entry : store.entries())
+            level = std::min(level, entry.level);
+        for (const Render::ProxyEntry &entry : store.entries()) {
+            if (entry.level != level)
+                continue;
+            error = std::max(error, double(entry.errorRatio));
+            kept += entry.keptArea;
+            area += entry.sourceArea;
+        }
+    };
+
+    for (size_t i = 0;
+         i < cut.proxyNodes.size() && sampled < kMaxNodes; i += stride) {
+        const int node = cut.proxyNodes[i];
+        ++sampled;
+        Render::ProxyStore bottomUp;
+        Render::ProxyGenOptions opts;
+        opts.triangleBudget = kTriangleBudget;
+        if (bottomUp.generate(index, node, draws, opts)) {
+            accumulate(up, bottomUp.stats());
+            top(bottomUp, upperror, upkept, uparea);
+        }
+        Render::ProxyStore fromSource;
+        Render::ProxyGenOptions control = opts;
+        control.fromSource = true;
+        if (fromSource.generate(index, node, draws, control)) {
+            accumulate(src, fromSource.stats());
+            top(fromSource, srcerror, srckept, srcarea);
+        }
+    }
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+             "render proxystore: tol %gpx nodes:%u/%u | bottom-up merged "
+             "%.2fMtri over %u nodes / %u entries in %.0fms, depth %u "
+             "| from source %.2fMtri over %u nodes / %u entries in %.0fms "
+             "| skipped budget:%u/%u refused:%u/%u\n",
+             double(kTolerancePx), sampled, unsigned(cut.proxyNodes.size()),
+             double(up.mergedTriangles) / 1e6, up.nodes, up.entries, up.ms,
+             up.maxLevelSpan, double(src.mergedTriangles) / 1e6, src.nodes,
+             src.entries, src.ms, up.overBudget, src.overBudget, up.refused,
+             src.refused);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
+    snprintf(buf, sizeof(buf),
+             "render proxystore drawn: bottom-up %llu proxy + %llu standin "
+             "tri, worst err/extent %.4f, area kept %.0f%% | from source "
+             "%llu + %llu tri, worst err/extent %.4f, area kept %.0f%%\n",
+             (unsigned long long)up.proxyTriangles,
+             (unsigned long long)up.standInTriangles, upperror,
+             uparea > 0.0 ? 100.0 * upkept / uparea : 0.0,
+             (unsigned long long)src.proxyTriangles,
+             (unsigned long long)src.standInTriangles, srcerror,
+             srcarea > 0.0 ? 100.0 * srckept / srcarea : 0.0);
+#ifdef FC_RENDERER_STANDALONE
+    std::printf("%s", buf);
+#else
+    Base::Console().Message("%s", buf);
+#endif
 }
 
 /// A user shader is animated when its source references the engine

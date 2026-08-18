@@ -338,3 +338,27 @@ TEST(ProxyStore, aBudgetStopsGenerationAndSaysHowMuchItSkipped)
     EXPECT_GT(capped.stats().overBudget, 0u);
     EXPECT_LT(capped.stats().entries, full.stats().entries);
 }
+
+TEST(ProxyStore, aLoneChildProxyStillCoarsensRatherThanBreakingTheChain)
+{
+    // Where a subtree narrows to one bucket with one child in it, the
+    // parent has a single member. Refusing there -- which the
+    // single-object rule would do -- leaves the cut nothing to stop on
+    // above that point, and generating from source would not have
+    // refused, so the two modes would disagree about which nodes exist.
+    Lattice scene(8);
+    ProxyStore bottomUp, fromSource;
+    ProxyStore::Options control;
+    control.fromSource = true;
+    ASSERT_TRUE(bottomUp.generate(scene.index, scene.index.root(),
+                                  scene.draws));
+    ASSERT_TRUE(fromSource.generate(scene.index, scene.index.root(),
+                                    scene.draws, control));
+
+    // Every node the from-source pass produced a bucket for, the
+    // bottom-up pass produced one for too.
+    for (const ProxyEntry &entry : fromSource.entries())
+        EXPECT_NE(bottomUp.find(entry.nodeId, entry.bucket), nullptr)
+            << "level " << entry.level << " exists from source and not "
+            << "from its children";
+}
