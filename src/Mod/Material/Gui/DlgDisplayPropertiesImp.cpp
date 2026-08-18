@@ -30,6 +30,7 @@
 #include <Gui/Application.h>
 #include <Gui/DlgMaterialPropertiesImp.h>
 #include <Gui/DockWindowManager.h>
+#include <Gui/PrefWidgets.h>
 #include <Gui/Document.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/ViewProviderGeometryObject.h>
@@ -96,19 +97,37 @@ public:
 
     static void setDrawStyle(const std::vector<Gui::ViewProvider*>& views,
                              const char* property,
-                             QSpinBox* spinbox)
+                             QDoubleSpinBox* spinbox)
     {
         bool hasDrawStyle = false;
         for (const auto& view : views) {
             if (auto* prop = dynamic_cast<App::PropertyFloat*>(view->getPropertyByName(property))) {
                 QSignalBlocker block(spinbox);
-                spinbox->setValue(int(prop->getValue()));
+                spinbox->setValue(prop->getValue());
                 hasDrawStyle = true;
                 break;
             }
         }
 
         spinbox->setEnabled(hasDrawStyle);
+    }
+
+    static void setPropertyBool(const std::vector<Gui::ViewProvider*>& views,
+                                const char* name,
+                                QCheckBox* checkbox)
+    {
+        bool enable = false;
+        for (const auto& view : views) {
+            if (auto prop =
+                    Base::freecad_dynamic_cast<App::PropertyBool>(view->getPropertyByName(name))) {
+                QSignalBlocker guard(checkbox);
+                checkbox->setChecked(prop->getValue());
+                enable = true;
+                break;
+            }
+        }
+
+        checkbox->setEnabled(enable);
     }
 
     static void setTransparency(const std::vector<Gui::ViewProvider*>& views,
@@ -146,6 +165,10 @@ DlgDisplayPropertiesImp::DlgDisplayPropertiesImp(QWidget* parent, Qt::WindowFlag
     d->ui.changePlot->hide();
     d->ui.buttonLineColor->setModal(false);
     d->ui.buttonPointColor->setModal(false);
+    d->ui.buttonColor->setModal(false);
+
+    d->ui.checkBoxColorRecompute->initAutoSave();
+    fillupMaterials();
 
     // Create a filter to only include current format materials
     // that contain the basic render model.
@@ -211,10 +234,18 @@ void DlgDisplayPropertiesImp::setupConnections()
             qOverload<int>(&QSpinBox::valueChanged),
             this,
             &DlgDisplayPropertiesImp::onSpinTransparencyValueChanged);
+    connect(d->ui.changeMaterial,
+            qOverload<int>(&QComboBox::activated),
+            this,
+            &DlgDisplayPropertiesImp::onChangeMaterialActivated);
     connect(d->ui.spinPointSize,
-            qOverload<int>(&QSpinBox::valueChanged),
+            qOverload<double>(&QDoubleSpinBox::valueChanged),
             this,
             &DlgDisplayPropertiesImp::onSpinPointSizeValueChanged);
+    connect(d->ui.buttonColor,
+            &Gui::ColorButton::changed,
+            this,
+            &DlgDisplayPropertiesImp::onButtonColorChanged);
     connect(d->ui.buttonLineColor,
             &Gui::ColorButton::changed,
             this,
@@ -224,7 +255,7 @@ void DlgDisplayPropertiesImp::setupConnections()
             this,
             &DlgDisplayPropertiesImp::onButtonPointColorChanged);
     connect(d->ui.spinLineWidth,
-            qOverload<int>(&QSpinBox::valueChanged),
+            qOverload<double>(&QDoubleSpinBox::valueChanged),
             this,
             &DlgDisplayPropertiesImp::onSpinLineWidthValueChanged);
     connect(d->ui.spinLineTransparency,
@@ -243,6 +274,22 @@ void DlgDisplayPropertiesImp::setupConnections()
             &MaterialTreeWidget::materialSelected,
             this,
             &DlgDisplayPropertiesImp::onMaterialSelected);
+    connect(d->ui.checkBoxMapFaceColor,
+            &QCheckBox::toggled,
+            this,
+            &DlgDisplayPropertiesImp::onMapFaceColorChanged);
+    connect(d->ui.checkBoxMapLineColor,
+            &QCheckBox::toggled,
+            this,
+            &DlgDisplayPropertiesImp::onMapLineColorChanged);
+    connect(d->ui.checkBoxMapPointColor,
+            &QCheckBox::toggled,
+            this,
+            &DlgDisplayPropertiesImp::onMapPointColorChanged);
+    connect(d->ui.checkBoxMapTransparency,
+            &QCheckBox::toggled,
+            this,
+            &DlgDisplayPropertiesImp::onMapTransparencyChanged);
 }
 
 void DlgDisplayPropertiesImp::changeEvent(QEvent* e)
@@ -259,12 +306,18 @@ void DlgDisplayPropertiesImp::setPropertiesFromSelection()
     setDisplayModes(views);
     setColorPlot(views);
     setShapeAppearance(views);
+    setMaterial(views);
+    setShapeColor(views);
     setLineColor(views);
     setPointColor(views);
     setPointSize(views);
     setLineWidth(views);
     setTransparency(views);
     setLineTransparency(views);
+    setMapFaceColor(views);
+    setMapEdgeColor(views);
+    setMapVertexColor(views);
+    setMapTransparency(views);
 }
 
 /// @cond DOXERR
@@ -300,7 +353,12 @@ void DlgDisplayPropertiesImp::slotChangedObject(const Gui::ViewProvider& obj,
         std::string prop_name = name;
         if (prop.is<App::PropertyColor>()) {
             Base::Color value = static_cast<const App::PropertyColor&>(prop).getValue();
-            if (prop_name == "LineColor") {
+            if (prop_name == "ShapeColor") {
+                bool blocked = d->ui.buttonColor->blockSignals(true);
+                d->ui.buttonColor->setColor(value.asValue<QColor>());
+                d->ui.buttonColor->blockSignals(blocked);
+            }
+            else if (prop_name == "LineColor") {
                 bool blocked = d->ui.buttonLineColor->blockSignals(true);
                 d->ui.buttonLineColor->setColor(value.asValue<QColor>());
                 d->ui.buttonLineColor->blockSignals(blocked);
@@ -345,12 +403,12 @@ void DlgDisplayPropertiesImp::slotChangedObject(const Gui::ViewProvider& obj,
             double value = static_cast<const App::PropertyFloat&>(prop).getValue();
             if (prop_name == "PointSize") {
                 bool blocked = d->ui.spinPointSize->blockSignals(true);
-                d->ui.spinPointSize->setValue((int)value);
+                d->ui.spinPointSize->setValue(value);
                 d->ui.spinPointSize->blockSignals(blocked);
             }
             else if (prop_name == "LineWidth") {
                 bool blocked = d->ui.spinLineWidth->blockSignals(true);
-                d->ui.spinLineWidth->setValue((int)value);
+                d->ui.spinLineWidth->setValue(value);
                 d->ui.spinLineWidth->blockSignals(blocked);
             }
         }
@@ -374,7 +432,11 @@ void DlgDisplayPropertiesImp::onButtonCustomAppearanceClicked()
     std::vector<Gui::ViewProvider*> Provider = getSelection();
     Gui::Dialog::DlgMaterialPropertiesImp dlg("ShapeAppearance", this);
     dlg.setViewProviders(Provider);
-    dlg.exec();
+    // Cancel restores the appearance itself, and the ShapeColor mirror's
+    // change event has already resynced the button by then
+    if (dlg.exec() == QDialog::Accepted) {
+        d->ui.buttonColor->setColor(dlg.diffuseColor());
+    }
 }
 
 /**
@@ -391,6 +453,28 @@ void DlgDisplayPropertiesImp::onButtonColorPlotClicked()
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setViewProviders(Provider);
     dlg->show();
+}
+
+/**
+ * Sets the 'ShapeAppearance' property of all selected view providers.
+ */
+void DlgDisplayPropertiesImp::onChangeMaterialActivated(int index)
+{
+    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    auto matType =
+        static_cast<App::Material::MaterialType>(d->ui.changeMaterial->itemData(index).toInt());
+    App::Material mat(matType);
+    d->ui.buttonColor->setColor(mat.diffuseColor.asValue<QColor>());
+
+    for (auto it : Provider) {
+        if (auto* prop =
+                dynamic_cast<App::PropertyMaterialList*>(it->getPropertyByName("ShapeAppearance"))) {
+            // The presets are Phong definitions and say so, so this puts a
+            // PBR appearance back into Phong mode rather than leaving it to
+            // read the preset's slots its own way
+            prop->setValue(mat);
+        }
+    }
 }
 
 /**
@@ -430,12 +514,27 @@ void DlgDisplayPropertiesImp::onSpinTransparencyValueChanged(int transparency)
 /**
  * Sets the 'PointSize' property of all selected view providers.
  */
-void DlgDisplayPropertiesImp::onSpinPointSizeValueChanged(int pointsize)
+void DlgDisplayPropertiesImp::onSpinPointSizeValueChanged(double pointsize)
 {
     std::vector<Gui::ViewProvider*> Provider = getSelection();
     for (auto it : Provider) {
         if (auto* prop = dynamic_cast<App::PropertyFloat*>(it->getPropertyByName("PointSize"))) {
-            prop->setValue(static_cast<double>(pointsize));
+            prop->setValue(pointsize);
+        }
+    }
+}
+
+/**
+ * Sets the 'ShapeColor' property of all selected view providers.
+ */
+void DlgDisplayPropertiesImp::onButtonColorChanged()
+{
+    std::vector<Gui::ViewProvider*> Provider = getSelection();
+    Base::Color c {};
+    c.setValue<QColor>(d->ui.buttonColor->color());
+    for (auto it : Provider) {
+        if (auto* prop = dynamic_cast<App::PropertyColor*>(it->getPropertyByName("ShapeColor"))) {
+            prop->setValue(c);
         }
     }
 }
@@ -443,12 +542,12 @@ void DlgDisplayPropertiesImp::onSpinPointSizeValueChanged(int pointsize)
 /**
  * Sets the 'LineWidth' property of all selected view providers.
  */
-void DlgDisplayPropertiesImp::onSpinLineWidthValueChanged(int linewidth)
+void DlgDisplayPropertiesImp::onSpinLineWidthValueChanged(double linewidth)
 {
     std::vector<Gui::ViewProvider*> Provider = getSelection();
     for (auto it : Provider) {
         if (auto* prop = dynamic_cast<App::PropertyFloat*>(it->getPropertyByName("LineWidth"))) {
-            prop->setValue(static_cast<double>(linewidth));
+            prop->setValue(linewidth);
         }
     }
 }
@@ -488,6 +587,35 @@ void DlgDisplayPropertiesImp::onSpinLineTransparencyValueChanged(int transparenc
             prop->setValue(transparency);
         }
     }
+}
+
+void DlgDisplayPropertiesImp::onPropertyBoolChanged(const char* name, bool checked)
+{
+    for (auto vp : getSelection()) {
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyBool>(vp->getPropertyByName(name))) {
+            prop->setValue(checked);
+        }
+    }
+}
+
+void DlgDisplayPropertiesImp::onMapFaceColorChanged(bool checked)
+{
+    onPropertyBoolChanged("MapFaceColor", checked);
+}
+
+void DlgDisplayPropertiesImp::onMapLineColorChanged(bool checked)
+{
+    onPropertyBoolChanged("MapEdgeColor", checked);
+}
+
+void DlgDisplayPropertiesImp::onMapPointColorChanged(bool checked)
+{
+    onPropertyBoolChanged("MapVertexColor", checked);
+}
+
+void DlgDisplayPropertiesImp::onMapTransparencyChanged(bool checked)
+{
+    onPropertyBoolChanged("MapTransparency", checked);
 }
 
 void DlgDisplayPropertiesImp::setDisplayModes(const std::vector<Gui::ViewProvider*>& views)
@@ -571,9 +699,80 @@ void DlgDisplayPropertiesImp::setShapeAppearance(const std::vector<Gui::ViewProv
     d->ui.buttonCustomAppearance->setEnabled(material);
 }
 
+void DlgDisplayPropertiesImp::setMaterial(const std::vector<Gui::ViewProvider*>& views)
+{
+    bool material = false;
+    App::Material::MaterialType matType = App::Material::DEFAULT;
+    for (auto view : views) {
+        if (auto* prop =
+                dynamic_cast<App::PropertyMaterialList*>(view->getPropertyByName("ShapeAppearance"))) {
+            material = true;
+            matType = prop->getType(0);
+            break;
+        }
+    }
+
+    int index = d->ui.changeMaterial->findData(matType);
+    if (index >= 0) {
+        d->ui.changeMaterial->setCurrentIndex(index);
+    }
+    d->ui.changeMaterial->setEnabled(material);
+}
+
+void DlgDisplayPropertiesImp::fillupMaterials()
+{
+    d->ui.changeMaterial->addItem(tr("Default"), App::Material::DEFAULT);
+    d->ui.changeMaterial->addItem(tr("Aluminium"), App::Material::ALUMINIUM);
+    d->ui.changeMaterial->addItem(tr("Brass"), App::Material::BRASS);
+    d->ui.changeMaterial->addItem(tr("Bronze"), App::Material::BRONZE);
+    d->ui.changeMaterial->addItem(tr("Copper"), App::Material::COPPER);
+    d->ui.changeMaterial->addItem(tr("Chrome"), App::Material::CHROME);
+    d->ui.changeMaterial->addItem(tr("Emerald"), App::Material::EMERALD);
+    d->ui.changeMaterial->addItem(tr("Gold"), App::Material::GOLD);
+    d->ui.changeMaterial->addItem(tr("Jade"), App::Material::JADE);
+    d->ui.changeMaterial->addItem(tr("Metalized"), App::Material::METALIZED);
+    d->ui.changeMaterial->addItem(tr("Neon GNC"), App::Material::NEON_GNC);
+    d->ui.changeMaterial->addItem(tr("Neon PHC"), App::Material::NEON_PHC);
+    d->ui.changeMaterial->addItem(tr("Obsidian"), App::Material::OBSIDIAN);
+    d->ui.changeMaterial->addItem(tr("Pewter"), App::Material::PEWTER);
+    d->ui.changeMaterial->addItem(tr("Plaster"), App::Material::PLASTER);
+    d->ui.changeMaterial->addItem(tr("Plastic"), App::Material::PLASTIC);
+    d->ui.changeMaterial->addItem(tr("Ruby"), App::Material::RUBY);
+    d->ui.changeMaterial->addItem(tr("Satin"), App::Material::SATIN);
+    d->ui.changeMaterial->addItem(tr("Shiny plastic"), App::Material::SHINY_PLASTIC);
+    d->ui.changeMaterial->addItem(tr("Silver"), App::Material::SILVER);
+    d->ui.changeMaterial->addItem(tr("Steel"), App::Material::STEEL);
+    d->ui.changeMaterial->addItem(tr("Stone"), App::Material::STONE);
+}
+
+void DlgDisplayPropertiesImp::setShapeColor(const std::vector<Gui::ViewProvider*>& views)
+{
+    Private::setElementColor(views, "ShapeColor", d->ui.buttonColor);
+}
+
 void DlgDisplayPropertiesImp::setLineColor(const std::vector<Gui::ViewProvider*>& views)
 {
     Private::setElementColor(views, "LineColor", d->ui.buttonLineColor);
+}
+
+void DlgDisplayPropertiesImp::setMapFaceColor(const std::vector<Gui::ViewProvider*>& views)
+{
+    Private::setPropertyBool(views, "MapFaceColor", d->ui.checkBoxMapFaceColor);
+}
+
+void DlgDisplayPropertiesImp::setMapEdgeColor(const std::vector<Gui::ViewProvider*>& views)
+{
+    Private::setPropertyBool(views, "MapEdgeColor", d->ui.checkBoxMapLineColor);
+}
+
+void DlgDisplayPropertiesImp::setMapVertexColor(const std::vector<Gui::ViewProvider*>& views)
+{
+    Private::setPropertyBool(views, "MapVertexColor", d->ui.checkBoxMapPointColor);
+}
+
+void DlgDisplayPropertiesImp::setMapTransparency(const std::vector<Gui::ViewProvider*>& views)
+{
+    Private::setPropertyBool(views, "MapTransparency", d->ui.checkBoxMapTransparency);
 }
 
 void DlgDisplayPropertiesImp::setPointColor(const std::vector<Gui::ViewProvider*>& views)

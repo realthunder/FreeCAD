@@ -75,7 +75,6 @@
 #include "Clipping.h"
 #include "DemoMode.h"
 #include "DlgIconBrowser.h"
-#include "DlgDisplayPropertiesImp.h"
 #include "DlgSettingsImageImp.h"
 #include "Document.h"
 #include "FileDialog.h"
@@ -1474,49 +1473,6 @@ void StdCmdSelectDependentsRecursive::activated(int iMsg)
 bool StdCmdSelectDependentsRecursive::isActive()
 {
     return Gui::Selection().hasSelection();
-}
-
-//===========================================================================
-// Std_SetAppearance
-//===========================================================================
-DEF_STD_CMD_A(StdCmdSetAppearance)
-
-StdCmdSetAppearance::StdCmdSetAppearance()
-  : Command("Std_SetAppearance")
-{
-    sGroup        = "Standard-View";
-    sMenuText     = QT_TR_NOOP("Appearance...");
-    sToolTipText  = QT_TR_NOOP("Sets the display properties of the selected object");
-    sWhatsThis    = "Std_SetAppearance";
-    sStatusTip    = QT_TR_NOOP("Sets the display properties of the selected object");
-    sPixmap       = "Std_SetAppearance";
-    sAccel        = "Ctrl+D";
-    eType         = Alter3DView;
-}
-
-void StdCmdSetAppearance::activated(int iMsg)
-{
-    Q_UNUSED(iMsg);
-#if 0
-    static QPointer<QDialog> dlg = 0;
-    if (!dlg)
-        dlg = new Gui::Dialog::DlgDisplayPropertiesImp(true, getMainWindow());
-    dlg->setModal(false);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->show();
-#else
-    Gui::Control().showDialog(new Gui::Dialog::TaskDisplayProperties());
-#endif
-}
-
-bool StdCmdSetAppearance::isActive()
-{
-#if 0
-    return Gui::Selection().size() != 0;
-#else
-    return (Gui::Control().activeDialog() == nullptr) &&
-           (Gui::Selection().size() != 0);
-#endif
 }
 
 //===========================================================================
@@ -5236,7 +5192,6 @@ void CreateViewStdCommands()
     rcCmdMgr.addCommand(new StdCmdSaveView());
     rcCmdMgr.addCommand(new StdMainFullscreen());
     rcCmdMgr.addCommand(new StdViewDockUndockFullscreen());
-    rcCmdMgr.addCommand(new StdCmdSetAppearance());
     rcCmdMgr.addCommand(new StdCmdRenderSettings());
     rcCmdMgr.addCommand(new StdCmdToggleVisibility());
     rcCmdMgr.addCommand(new StdCmdToggleGroupVisibility());

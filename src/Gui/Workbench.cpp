@@ -602,7 +602,6 @@ void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
         edit->setCommand("Copy && Paste");
         *edit << "Std_Cut" << "Std_Copy" << "Std_Paste" << "Std_Delete";
         *item << visu << sel << edit << "Separator"
-              << "Std_SetAppearance"
               << "Std_RenderSettings"
               << "Std_GroupRandomColor"
               << "Std_SendToPythonConsole"
@@ -727,7 +726,6 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Separator" << visu
           << "Std_ToolTipDisable"
           << "Std_ToggleNavigation"
-          << "Std_SetAppearance"
           << "Std_RenderSettings"
           << "Std_GroupRandomColor"
           << "Separator"

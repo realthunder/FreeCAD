@@ -123,6 +123,9 @@ PyMOD_INIT_FUNC(PartGui)
     // load needed modules
     try {
         Base::Interpreter().runString("import Part");
+        // Std_SetAppearance and Std_SetMaterial live in the Material
+        // module now, so pull it in the way upstream does
+        Base::Interpreter().runString("import MatGui");
     }
     catch(const Base::Exception& e) {
         PyErr_SetString(PyExc_ImportError, e.what());

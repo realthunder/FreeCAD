@@ -312,7 +312,6 @@ SET(Gui_UIC_SRCS
     DlgChooseIcon.ui
     DlgCreateNewPreferencePack.ui
     DlgCustomizeSpNavSettings.ui
-    DlgDisplayProperties.ui
     DlgInputDialog.ui
     DlgKeyboard.ui
     DlgMacroExecute.ui
@@ -425,7 +424,6 @@ SET(Dialog_CPP_SRCS
     DlgActivateWindowImp.cpp
     DlgCreateNewPreferencePackImp.cpp
     DlgUnitsCalculatorImp.cpp
-    DlgDisplayPropertiesImp.cpp
     DlgInputDialogImp.cpp
     DlgMacroExecuteImp.cpp
     DlgRunExternal.cpp
@@ -467,7 +465,6 @@ SET(Dialog_HPP_SRCS
     DlgActivateWindowImp.h
     DlgCreateNewPreferencePackImp.h
     DlgUnitsCalculatorImp.h
-    DlgDisplayPropertiesImp.h
     DlgInputDialogImp.h
     DlgMacroExecuteImp.h
     DlgRunExternal.h
@@ -512,7 +509,6 @@ SET(Dialog_SRCS
     DlgActivateWindow.ui
     DlgUnitsCalculator.ui
     DlgAuthorization.ui
-    DlgDisplayProperties.ui
     DlgInputDialog.ui
     DlgAddProperty.ui
     DlgLocationAngle.ui

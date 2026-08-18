@@ -69,15 +69,21 @@ public:
 private Q_SLOTS:
     void onChangeModeActivated(const QString&);
     void onChangePlotActivated(const QString&);
+    void onChangeMaterialActivated(int);
     void onSpinTransparencyValueChanged(int);
-    void onSpinPointSizeValueChanged(int);
+    void onSpinPointSizeValueChanged(double);
+    void onButtonColorChanged();
     void onButtonLineColorChanged();
     void onButtonPointColorChanged();
-    void onSpinLineWidthValueChanged(int);
+    void onSpinLineWidthValueChanged(double);
     void onSpinLineTransparencyValueChanged(int);
     void onButtonCustomAppearanceClicked();
     void onButtonColorPlotClicked();
     void onMaterialSelected(const std::shared_ptr<Materials::Material>& material);
+    void onMapFaceColorChanged(bool);
+    void onMapLineColorChanged(bool);
+    void onMapPointColorChanged(bool);
+    void onMapTransparencyChanged(bool);
 
 protected:
     void changeEvent(QEvent* e) override;
@@ -89,12 +95,20 @@ private:
     void setDisplayModes(const std::vector<Gui::ViewProvider*>&);
     void setColorPlot(const std::vector<Gui::ViewProvider*>&);
     void setShapeAppearance(const std::vector<Gui::ViewProvider*>&);
+    void setMaterial(const std::vector<Gui::ViewProvider*>&);
+    void fillupMaterials();
+    void setShapeColor(const std::vector<Gui::ViewProvider*>&);
     void setLineColor(const std::vector<Gui::ViewProvider*>&);
     void setPointColor(const std::vector<Gui::ViewProvider*>&);
     void setPointSize(const std::vector<Gui::ViewProvider*>&);
     void setLineWidth(const std::vector<Gui::ViewProvider*>&);
     void setTransparency(const std::vector<Gui::ViewProvider*>&);
     void setLineTransparency(const std::vector<Gui::ViewProvider*>&);
+    void setMapFaceColor(const std::vector<Gui::ViewProvider*>&);
+    void setMapEdgeColor(const std::vector<Gui::ViewProvider*>&);
+    void setMapVertexColor(const std::vector<Gui::ViewProvider*>&);
+    void setMapTransparency(const std::vector<Gui::ViewProvider*>&);
+    void onPropertyBoolChanged(const char* name, bool checked);
     std::vector<Gui::ViewProvider*> getSelection() const;
     void setPropertiesFromSelection();
 

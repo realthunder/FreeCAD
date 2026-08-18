@@ -162,15 +162,18 @@
          </spacer>
         </item>
         <item>
-         <widget class="QSpinBox" name="spinPointSize">
-          <property name="minimum">
+         <widget class="QDoubleSpinBox" name="spinPointSize">
+          <property name="decimals">
            <number>1</number>
           </property>
+          <property name="minimum">
+           <double>1.000000000000000</double>
+          </property>
           <property name="maximum">
-           <number>64</number>
+           <double>64.000000000000000</double>
           </property>
           <property name="value">
-           <number>2</number>
+           <double>2.000000000000000</double>
           </property>
          </widget>
         </item>
@@ -217,15 +220,18 @@
          </spacer>
         </item>
         <item>
-         <widget class="QSpinBox" name="spinLineWidth">
-          <property name="minimum">
+         <widget class="QDoubleSpinBox" name="spinLineWidth">
+          <property name="decimals">
            <number>1</number>
           </property>
+          <property name="minimum">
+           <double>1.000000000000000</double>
+          </property>
           <property name="maximum">
-           <number>64</number>
+           <double>64.000000000000000</double>
           </property>
           <property name="value">
-           <number>2</number>
+           <double>2.000000000000000</double>
           </property>
          </widget>
         </item>
@@ -355,6 +361,9 @@
         <property name="bottomMargin">
          <number>0</number>
         </property>
+        <item>
+         <widget class="QComboBox" name="changeMaterial"/>
+        </item>
        </layout>
       </item>
       <item row="2" column="0">
@@ -407,10 +416,97 @@
           </property>
          </widget>
         </item>
+        <item row="4" column="0">
+         <widget class="QLabel" name="label_2">
+          <property name="text">
+           <string>Shape color</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="1">
+         <widget class="Gui::ColorButton" name="buttonColor">
+          <property name="text">
+           <string/>
+          </property>
+         </widget>
+        </item>
        </layout>
       </item>
       <item row="0" column="0">
        <widget class="MatGui::MaterialTreeWidget" name="widgetMaterial" native="true"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item row="3" column="0">
+    <widget class="Gui::PrefCheckBox" name="checkBoxColorRecompute">
+     <property name="text">
+      <string>Touch object for recompute on color change</string>
+     </property>
+     <property name="prefPath" stdset="0">
+      <cstring>View</cstring>
+     </property>
+     <property name="prefEntry" stdset="0">
+      <cstring>ColorRecompute</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QGroupBox" name="groupBox">
+     <property name="toolTip">
+      <string>Specifies how to map color from child objects to parent</string>
+     </property>
+     <property name="title">
+      <string>Color Mapping</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_5">
+      <item row="0" column="0">
+       <widget class="QCheckBox" name="checkBoxMapFaceColor">
+        <property name="toolTip">
+         <string>Mapping face color from derived shape if possible.
+You may want to disable this if you want to set a
+uniform color for all faces.</string>
+        </property>
+        <property name="text">
+         <string>Map face colors</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QCheckBox" name="checkBoxMapLineColor">
+        <property name="toolTip">
+         <string>Mapping edge color from base shape if possible.
+You may want to disable this if you want to set a
+uniform color for all edges.</string>
+        </property>
+        <property name="text">
+         <string>Map edge colors</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QCheckBox" name="checkBoxMapTransparency">
+        <property name="toolTip">
+         <string>Mapping face transparency from derived shape if possible.
+You may want to disable this if you want to set a uniform
+transparency for all faces.</string>
+        </property>
+        <property name="text">
+         <string>Map transparencies</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QCheckBox" name="checkBoxMapPointColor">
+        <property name="toolTip">
+         <string>Mapping vertex color from derived shape if possible.
+You may want to disable this if you want to set a
+uniform color for all vertices.</string>
+        </property>
+        <property name="text">
+         <string>Map vertex colors</string>
+        </property>
+       </widget>
       </item>
      </layout>
     </widget>
@@ -425,6 +521,11 @@
    <header>Gui/Widgets.h</header>
   </customwidget>
   <customwidget>
+   <class>Gui::PrefCheckBox</class>
+   <extends>QCheckBox</extends>
+   <header>Gui/PrefWidgets.h</header>
+  </customwidget>
+  <customwidget>
    <class>MatGui::MaterialTreeWidget</class>
    <extends>QWidget</extends>
    <header>Mod/Material/Gui/MaterialTreeWidget.h</header>
@@ -434,6 +535,9 @@
  <tabstops>
   <tabstop>changeMode</tabstop>
   <tabstop>changePlot</tabstop>
+  <tabstop>changeMaterial</tabstop>
+  <tabstop>buttonCustomAppearance</tabstop>
+  <tabstop>buttonColor</tabstop>
   <tabstop>buttonLineColor</tabstop>
   <tabstop>spinPointSize</tabstop>
   <tabstop>spinLineWidth</tabstop>
