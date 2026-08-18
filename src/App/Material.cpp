@@ -227,43 +227,43 @@ void Material::setType(const MaterialType MatType)
     switch (MatType)
     {
     case BRASS:
-        ambientColor .set(0.3294f,0.2235f,0.0275f);
-        diffuseColor .set(0.7804f,0.5686f,0.1137f);
-        specularColor.set(0.9922f,0.9412f,0.8078f);
+        ambientColor .set(0.0910f,0.0778f,0.0423f);
+        diffuseColor .set(0.2275f,0.1945f,0.1057f);
+        specularColor.set(0.9100f,0.7780f,0.4230f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.2179f;
+        shininess    = 0.7500f;
         transparency = 0.0000f;
         break;
     case BRONZE:
-        ambientColor .set(0.2125f,0.1275f,0.0540f);
-        diffuseColor .set(0.7140f,0.4284f,0.1814f);
-        specularColor.set(0.3935f,0.2719f,0.1667f);
+        ambientColor .set(0.0910f,0.0700f,0.0450f);
+        diffuseColor .set(0.2275f,0.1750f,0.1125f);
+        specularColor.set(0.9100f,0.7000f,0.4500f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.2000f;
+        shininess    = 0.4500f;
         transparency = 0.0000f;
         break;
     case COPPER:
-        ambientColor .set(0.3300f,0.2600f,0.2300f);
-        diffuseColor .set(0.5000f,0.1100f,0.0000f);
-        specularColor.set(0.9500f,0.7300f,0.0000f);
+        ambientColor .set(0.0955f,0.0638f,0.0538f);
+        diffuseColor .set(0.2387f,0.1595f,0.1345f);
+        specularColor.set(0.9550f,0.6380f,0.5380f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.9300f;
+        shininess    = 0.8500f;
         transparency = 0.0000f;
         break;
     case GOLD:
-        ambientColor .set(0.3000f,0.2306f,0.0953f);
-        diffuseColor .set(0.4000f,0.2760f,0.0000f);
-        specularColor.set(0.9000f,0.8820f,0.7020f);
+        ambientColor .set(0.1000f,0.0766f,0.0336f);
+        diffuseColor .set(0.2500f,0.1915f,0.0840f);
+        specularColor.set(1.0000f,0.7660f,0.3360f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.0625f;
+        shininess    = 0.9000f;
         transparency = 0.0000f;
         break;
     case PEWTER:
-        ambientColor .set(0.1059f,0.0588f,0.1137f);
-        diffuseColor .set(0.4275f,0.4706f,0.5412f);
-        specularColor.set(0.3333f,0.3333f,0.5216f);
+        ambientColor .set(0.0797f,0.0789f,0.0775f);
+        diffuseColor .set(0.1993f,0.1973f,0.1938f);
+        specularColor.set(0.7970f,0.7890f,0.7750f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.0769f;
+        shininess    = 0.3000f;
         transparency = 0.0000f;
         break;
     case PLASTER:
@@ -283,19 +283,19 @@ void Material::setType(const MaterialType MatType)
         transparency = 0.0000f;
         break;
     case SILVER:
-        ambientColor .set(0.1922f,0.1922f,0.1922f);
-        diffuseColor .set(0.5075f,0.5075f,0.5075f);
-        specularColor.set(0.5083f,0.5083f,0.5083f);
+        ambientColor .set(0.0972f,0.0960f,0.0915f);
+        diffuseColor .set(0.2430f,0.2400f,0.2288f);
+        specularColor.set(0.9720f,0.9600f,0.9150f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.2000f;
+        shininess    = 0.9500f;
         transparency = 0.0000f;
         break;
     case STEEL:
-        ambientColor .set(0.0020f,0.0020f,0.0020f);
-        diffuseColor .set(0.0000f,0.0000f,0.0000f);
-        specularColor.set(0.9800f,0.9800f,0.9800f);
+        ambientColor .set(0.0562f,0.0565f,0.0578f);
+        diffuseColor .set(0.1405f,0.1412f,0.1445f);
+        specularColor.set(0.5620f,0.5650f,0.5780f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.0600f;
+        shininess    = 0.6000f;
         transparency = 0.0000f;
         break;
     case STONE:
@@ -339,19 +339,19 @@ void Material::setType(const MaterialType MatType)
         transparency = 0.0000f;
         break;
     case CHROME:
-        ambientColor .set(0.3500f,0.3500f,0.3500f);
-        diffuseColor .set(0.9176f,0.9176f,0.9176f);
-        specularColor.set(0.9746f,0.9746f,0.9746f);
+        ambientColor .set(0.0550f,0.0556f,0.0554f);
+        diffuseColor .set(0.1375f,0.1390f,0.1385f);
+        specularColor.set(0.5500f,0.5560f,0.5540f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.1000f;
+        shininess    = 1.0000f;
         transparency = 0.0000f;
         break;
     case ALUMINIUM:
-        ambientColor .set(0.3000f,0.3000f,0.3000f);
-        diffuseColor .set(0.3000f,0.3000f,0.3000f);
-        specularColor.set(0.7000f,0.7000f,0.8000f);
+        ambientColor .set(0.0913f,0.0922f,0.0924f);
+        diffuseColor .set(0.2283f,0.2305f,0.2310f);
+        specularColor.set(0.9130f,0.9220f,0.9240f);
         emissiveColor.set(0.0000f,0.0000f,0.0000f);
-        shininess    = 0.0900f;
+        shininess    = 0.5500f;
         transparency = 0.0000f;
         break;
     case OBSIDIAN:
