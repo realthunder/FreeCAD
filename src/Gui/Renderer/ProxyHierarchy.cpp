@@ -272,12 +272,19 @@ namespace
 /// interleave half of a Morton code.
 uint64_t part1By2(uint64_t x)
 {
+    // Three coordinates interleave, so bit i has to land at bit 3i and
+    // the masks are the base-8 ones. The base-4 masks of a
+    // two-dimensional Morton code (0x5555...) look almost right and are
+    // not: they spread bit i to bit 2i, so the three shifted halves
+    // overlap and cells collide -- (0,0,1) and (2,0,0) both came out as
+    // 4, which gave two nodes of one level the same id. Sixteen bits in,
+    // forty-eight out, which is what leaves the level its room above.
     x &= 0xffffULL;
-    x = (x | (x << 16)) & 0x0000ffff0000ffffULL;
-    x = (x | (x << 8))  & 0x00ff00ff00ff00ffULL;
-    x = (x | (x << 4))  & 0x0f0f0f0f0f0f0f0fULL;
-    x = (x | (x << 2))  & 0x3333333333333333ULL;
-    x = (x | (x << 1))  & 0x5555555555555555ULL;
+    x = (x | (x << 32)) & 0x001f00000000ffffULL;
+    x = (x | (x << 16)) & 0x001f0000ff0000ffULL;
+    x = (x | (x << 8))  & 0x100f00f00f00f00fULL;
+    x = (x | (x << 4))  & 0x10c30c30c30c30c3ULL;
+    x = (x | (x << 2))  & 0x1249249249249249ULL;
     return x;
 }
 

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <random>
 #include <set>
 #include <string>
@@ -582,4 +583,37 @@ TEST(BoxNearPlane, degenerateInputIsNotAnswerable)
     const float mx[3] = {-1.0f, -1.0f, -1.0f};
     EXPECT_TRUE(boxReachesNearPlane(mn, mx, V, P, true));
     EXPECT_TRUE(boxReachesNearPlane(nullptr, mx, V, P, true));
+}
+
+TEST(ProxyHierarchy, aNodeIdNamesOneNodeAndOnlyOne)
+{
+    // The id is what a generation cache is keyed by (section 7), so two
+    // nodes sharing one is not a cosmetic fault: it serves one node's
+    // proxy for another node's geometry. It happened -- the Morton
+    // spread used the masks of a two-dimensional code, which puts bit i
+    // at bit 2i, so the three interleaved halves overlapped and
+    // (0,0,1) collided with (2,0,0).
+    ProxyHierarchy h;
+    ProxyParams params;
+    params.maxPerCell = 8;
+    h.build(flatAssembly(16), params);
+    ASSERT_GT(h.nodes().size(), 8u);
+
+    std::map<uint64_t, size_t> seen;
+    for (size_t i = 0; i < h.nodes().size(); ++i) {
+        const ProxyNode &node = h.nodes()[i];
+        const auto it = seen.find(node.id);
+        ASSERT_EQ(it, seen.end())
+            << "nodes " << it->second << " and " << i << " share id "
+            << node.id;
+        seen[node.id] = i;
+    }
+
+    // And it is positional: the same id comes back for the same level
+    // and cell, which is what lets the cache outlive the session.
+    ProxyHierarchy again;
+    again.build(flatAssembly(16), params);
+    ASSERT_EQ(again.nodes().size(), h.nodes().size());
+    for (size_t i = 0; i < h.nodes().size(); ++i)
+        EXPECT_EQ(again.nodes()[i].id, h.nodes()[i].id);
 }
