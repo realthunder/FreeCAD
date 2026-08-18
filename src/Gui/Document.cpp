@@ -26,6 +26,7 @@
 #ifndef _PreComp_
 # include <mutex>
 # include <QApplication>
+# include <QCheckBox>
 # include <QFileInfo>
 # include <QLabel>
 # include <QMessageBox>
@@ -45,6 +46,7 @@
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/DocumentParams.h>
 #include <App/DocumentObjectGroup.h>
 #include <App/FileBlobManager.h>
 #include <App/GeoFeatureGroupExtension.h>
@@ -1568,7 +1570,21 @@ namespace {
 class DocumentFormatOption : public QWidget
 {
 public:
-    DocumentFormatOption(bool compact, bool *result)
+    /** What the dialog decides, in one place.
+     *
+     * The format choice belongs to the document and is written to its
+     * SaveSchemaVersion. The two storage choices do not: they are preferences
+     * that apply to every save from here on, shown here because this is where
+     * someone is already thinking about how the file will be written.
+     */
+    struct Choices
+    {
+        bool compact = false;
+        bool dedupPCurves = true;
+        bool dedupCongruent = true;
+    };
+
+    DocumentFormatOption(bool compact, Choices *result)
         : result(result)
     {
         auto layout = new QVBoxLayout(this);
@@ -1598,22 +1614,62 @@ public:
 
         compactBtn->setChecked(compact);
         standard->setChecked(!compact);
+
+        // Separate, and deliberately not under the warning: neither of these
+        // costs compatibility. A file missing a pcurve a plane can rebuild, or
+        // naming one table entry from two records, is ordinary BRep that every
+        // FreeCAD has always read.
+        auto storage = new QLabel(QObject::tr("Shape storage"), this);
+        storage->setStyleSheet(QStringLiteral("font-weight:bold;"));
+        layout->addSpacing(6);
+        layout->addWidget(storage);
+
+        dedupPCurves = new QCheckBox(QObject::tr(
+                    "Store each 2D curve once, and leave out the ones reading "
+                    "the file computes again"), this);
+        dedupPCurves->setToolTip(QObject::tr(
+                    "A curve computed twice used to be written twice, and a "
+                    "curve on a flat face need not be written at all because "
+                    "the kernel projects it back. Neither changes the shape "
+                    "that comes back, and the file still opens anywhere."));
+        dedupCongruent = new QCheckBox(QObject::tr(
+                    "Store one copy of parts that are the same shape in "
+                    "different places"), this);
+        dedupCongruent->setToolTip(QObject::tr(
+                    "Parts repeated at different positions are stored once "
+                    "with the motion between them recorded, which sharing by "
+                    "content alone cannot do when the position is baked into "
+                    "the coordinates. Two parts are only ever merged once the "
+                    "motion has been recovered and checked."));
+        dedupPCurves->setChecked(App::DocumentParams::getDedupShapePCurves());
+        dedupCongruent->setChecked(App::DocumentParams::getDedupCongruentShapes());
+        layout->addWidget(dedupPCurves);
+        layout->addWidget(dedupCongruent);
+
         apply();
         QObject::connect(compactBtn, &QRadioButton::toggled,
+                         [this](bool) { apply(); });
+        QObject::connect(dedupPCurves, &QCheckBox::toggled,
+                         [this](bool) { apply(); });
+        QObject::connect(dedupCongruent, &QCheckBox::toggled,
                          [this](bool) { apply(); });
     }
 
 private:
     void apply()
     {
-        *result = compactBtn->isChecked();
+        result->compact = compactBtn->isChecked();
+        result->dedupPCurves = dedupPCurves->isChecked();
+        result->dedupCongruent = dedupCongruent->isChecked();
         warning->setVisible(compactBtn->isChecked());
     }
 
-    bool *result;
+    Choices *result;
     QLabel *warning;
     QRadioButton *standard;
     QRadioButton *compactBtn;
+    QCheckBox *dedupPCurves;
+    QCheckBox *dedupCongruent;
 };
 } // anonymous namespace
 
@@ -1632,14 +1688,17 @@ bool Document::saveAs()
     bool compact = (curFile && curFile[0])
             ? getDocument()->getSaveSchemaVersion() >= 5
             : hGrp->GetBool("PreferCompactFormat", false);
-    bool chosenCompact = compact;
+    DocumentFormatOption::Choices chosen;
+    chosen.compact = compact;
+    chosen.dedupPCurves = App::DocumentParams::getDedupShapePCurves();
+    chosen.dedupCongruent = App::DocumentParams::getDedupCongruentShapes();
 
     QString exe = qApp->applicationName();
     QString fn = FileDialog::getSaveFileName(getMainWindow(), QObject::tr("Save %1 Document").arg(exe),
         QString::fromUtf8(getDocument()->FileName.getValue()),
         QStringLiteral("%1 %2 (*.FCStd)").arg(exe).arg(QObject::tr("Document")),
         nullptr, QFileDialog::Options(), QFileDialog::AnyFile,
-        new DocumentFormatOption(compact, &chosenCompact));
+        new DocumentFormatOption(compact, &chosen));
 
     if (!fn.isEmpty()) {
         QFileInfo fi;
@@ -1650,11 +1709,18 @@ bool Document::saveAs()
         // save as new file name
         try {
             Gui::WaitCursor wc;
-            hGrp->SetBool("PreferCompactFormat", chosenCompact);
-            if (chosenCompact != (getDocument()->getSaveSchemaVersion() >= 5))
+            hGrp->SetBool("PreferCompactFormat", chosen.compact);
+            // Preferences, so they are set before the save runs and stay set
+            // for the next one. Written only when changed, to leave the
+            // parameter file alone otherwise.
+            if (chosen.dedupPCurves != App::DocumentParams::getDedupShapePCurves())
+                App::DocumentParams::setDedupShapePCurves(chosen.dedupPCurves);
+            if (chosen.dedupCongruent != App::DocumentParams::getDedupCongruentShapes())
+                App::DocumentParams::setDedupCongruentShapes(chosen.dedupCongruent);
+            if (chosen.compact != (getDocument()->getSaveSchemaVersion() >= 5))
                 Command::doCommand(Command::Doc,
                         "App.getDocument(\"%s\").SaveSchemaVersion = %d", DocName,
-                        chosenCompact ? (int)App::Document::getCurrentSchemaVersion() : 4);
+                        chosen.compact ? (int)App::Document::getCurrentSchemaVersion() : 4);
             std::string literal = Base::Tools::pythonLiteral(fn);
             Command::doCommand(Command::Doc,"App.getDocument(\"%s\").saveAs(%s)"
                                            , DocName, literal.c_str());
