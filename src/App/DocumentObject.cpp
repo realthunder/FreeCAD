@@ -337,8 +337,10 @@ public:
     }
 
 private:
-    /// Measured crossover is around 300; stay well under it
-    static const std::size_t LinearLimit = 128;
+    /// The scan and the index cost about the same around 300 entries, so
+    /// hand over just below that: the scan keeps every depth where it is
+    /// the cheaper of the two, and nothing is ever much worse than either
+    static const std::size_t LinearLimit = 256;
 
     std::vector<const App::DocumentObject*> objs;
     std::unordered_set<const App::DocumentObject*> index;
