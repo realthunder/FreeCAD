@@ -177,7 +177,7 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     layoutRow->addWidget(AOMethod);
     AOMethod->setEntryName("AOMethod");
     AOMethod->setParamGrpPath("View/Render");
-    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1127)
+    for (int i=0; i<2; ++i) // Auto generated code (Tools/params_utils.py:1141)
         AOMethod->addItem(QString());
     AOMethod->setCurrentIndex(Gui::RenderParams::defaultAOMethod());
 
@@ -278,6 +278,17 @@ DlgSettingsRender::DlgSettingsRender(QWidget* parent)
     PBRRoughness->setValue(Gui::RenderParams::defaultPBRRoughness());
     PBRRoughness->setEntryName("PBRRoughness");
     PBRRoughness->setParamGrpPath("View/Render");
+
+    // Auto generated code (Tools/params_utils.py:461)
+    layoutRow = new QHBoxLayout();
+
+    // Auto generated code (Tools/params_utils.py:467)
+    layoutPhysicallybasedshading->addLayout(layoutRow);
+    PBRFromSpecular = new Gui::PrefCheckBox(this);
+    layoutRow->addWidget(PBRFromSpecular);
+    PBRFromSpecular->setChecked(Gui::RenderParams::defaultPBRFromSpecular());
+    PBRFromSpecular->setEntryName("PBRFromSpecular");
+    PBRFromSpecular->setParamGrpPath("View/Render");
 
     // Auto generated code (Tools/params_utils.py:461)
     layoutRow = new QHBoxLayout();
@@ -635,6 +646,7 @@ void DlgSettingsRender::saveSettings()
     PBR->onSave();
     PBRMetallic->onSave();
     PBRRoughness->onSave();
+    PBRFromSpecular->onSave();
     PBREnvIntensity->onSave();
     BumpScale->onSave();
     Parallax->onSave();
@@ -678,6 +690,7 @@ void DlgSettingsRender::loadSettings()
     PBR->onRestore();
     PBRMetallic->onRestore();
     PBRRoughness->onRestore();
+    PBRFromSpecular->onRestore();
     PBREnvIntensity->onRestore();
     BumpScale->onRestore();
     Parallax->onRestore();
@@ -732,7 +745,7 @@ void DlgSettingsRender::retranslateUi()
     AOMethod->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOMethod()));
     labelAOMethod->setText(QObject::tr("AO method"));
     labelAOMethod->setToolTip(AOMethod->toolTip());
-    // Auto generated code (Tools/params_utils.py:1152)
+    // Auto generated code (Tools/params_utils.py:1166)
     AOMethod->setItemText(0, QObject::tr("SSAO (hemisphere)"));
     AOMethod->setItemText(1, QObject::tr("GTAO (horizon)"));
     AOSlices->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docAOSlices()));
@@ -756,6 +769,8 @@ void DlgSettingsRender::retranslateUi()
     PBRRoughness->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBRRoughness()));
     labelPBRRoughness->setText(QObject::tr("Roughness"));
     labelPBRRoughness->setToolTip(PBRRoughness->toolTip());
+    PBRFromSpecular->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBRFromSpecular()));
+    PBRFromSpecular->setText(QObject::tr("Specular to metallic"));
     PBREnvIntensity->setToolTip(QApplication::translate("RenderParams", Gui::RenderParams::docPBREnvIntensity()));
     labelPBREnvIntensity->setText(QObject::tr("Environment brightness"));
     labelPBREnvIntensity->setToolTip(PBREnvIntensity->toolTip());

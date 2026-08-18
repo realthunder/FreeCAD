@@ -4391,6 +4391,9 @@ void Gui::initRenderProperties(App::PropertyContainer *view)
     _renderParam<App::PropertyFloatConstraint>(view, "PBRRoughness",
             RenderParams::docPBRRoughness(), RenderParams::getPBRRoughness(),
             applyUnitConstraint);
+    _renderParam<App::PropertyBool>(view, "PBRFromSpecular",
+            RenderParams::docPBRFromSpecular(),
+            RenderParams::getPBRFromSpecular());
     _renderParam<App::PropertyFloat>(view, "PBREnvIntensity",
             RenderParams::docPBREnvIntensity(), RenderParams::getPBREnvIntensity());
     // The environment image is a plain path; Render_PBREnvEmbed

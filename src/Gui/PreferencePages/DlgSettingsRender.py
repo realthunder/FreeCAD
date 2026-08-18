@@ -66,6 +66,7 @@ ParamGroup = (
         'PBR',
         'PBRMetallic',
         'PBRRoughness',
+        'PBRFromSpecular',
         'PBREnvIntensity',
     )]),
 

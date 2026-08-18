@@ -147,6 +147,16 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
         float metal = mat.metallic >= 0.0f ? mat.metallic
                                            : pbrMetallic;
         pbrParams[1] = bx::clamp(metal, 0.0f, 1.0f);
+        // Nothing states a metalness -- not the material, not the frame,
+        // and no metallic-roughness map states one per texel either. Ask
+        // the shader to read the Phong specular colour as material data
+        // instead of dropping it (fcBaseFromSpecular); a NEGATIVE
+        // metalness is that request, and it is the only way the question
+        // can be asked per fragment, which is what a per-vertex or
+        // per-face colour needs.
+        if (pbrFromSpecular && mat.metallic < 0.0f && pbrMetallic <= 0.0f
+                && pbrParams[0] < 1.5f)
+            pbrParams[1] = -1.0f;
         float rough = mat.roughness >= 0.0f ? mat.roughness
                                             : pbrRoughness;
         if (rough <= 0.0f) {

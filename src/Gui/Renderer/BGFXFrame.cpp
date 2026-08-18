@@ -1065,6 +1065,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     }
     view->pbrFrame = pbrActive;
     view->pbrMetallic = pbrconf.metallic;
+    view->pbrFromSpecular = pbrconf.fromSpecular;
     view->pbrRoughness = pbrconf.roughness;
     view->pbrEnvIntensity = pbrconf.envIntensity;
     // Matcap replaces the lit shading outright, so it does not care

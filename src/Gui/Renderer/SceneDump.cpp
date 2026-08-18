@@ -240,7 +240,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     draws the lit two-sided quad it always did; a snapshot older
 //     than this reads as both knobs on, which is what the properties
 //     it was written from defaulted to.
-const uint32_t kVersion = 58;
+// 59: PBRConfig says whether a Phong specular colour is read as PBR
+//     material data where nothing states a metalness (PBRFromSpecular).
+//     A snapshot older than this was written by a build that always
+//     dropped that colour, so it reads as off and renders as it did.
+const uint32_t kVersion = 59;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -3064,6 +3068,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
     w.f(snap.pbrconf.envIntensity);
     w.b(snap.pbrconf.envBackground);
     refs.tex(w, snap.pbrconf.envImage);
+    w.b(snap.pbrconf.fromSpecular);
 
     w.f(snap.bumpconf.scale);
     w.b(snap.bumpconf.parallax);
@@ -3484,6 +3489,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
     snap.pbrconf.envBackground = version >= 25 ? r.b() : false;
     if (version >= 25)
         refs.tex(r, snap.pbrconf.envImage);
+    snap.pbrconf.fromSpecular = version >= 59 ? r.b() : false;
 
     snap.bumpconf.scale = r.f();
     snap.bumpconf.parallax = r.b();

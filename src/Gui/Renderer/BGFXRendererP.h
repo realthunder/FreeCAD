@@ -5287,6 +5287,9 @@ public:
     int matcapPreset = 0;
     float matcapTint = 0.0f;
     float pbrMetallic = 0.0f;
+    // Read the Phong specular colour as PBR material data where nothing
+    // states a metalness (PBRConfig::fromSpecular).
+    bool pbrFromSpecular = false;
     float pbrRoughness = 0.0f; // <= 0: derive from the material shininess
     float pbrEnvIntensity = 1.0f;
     bgfx::UniformHandle s_texBump = BGFX_INVALID_HANDLE;

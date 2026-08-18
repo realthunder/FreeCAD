@@ -107,6 +107,7 @@ private:
     Gui::PrefDoubleSpinBox *PBRMetallic = nullptr;
     QLabel *labelPBRRoughness = nullptr;
     Gui::PrefDoubleSpinBox *PBRRoughness = nullptr;
+    Gui::PrefCheckBox *PBRFromSpecular = nullptr;
     QLabel *labelPBREnvIntensity = nullptr;
     Gui::PrefDoubleSpinBox *PBREnvIntensity = nullptr;
 

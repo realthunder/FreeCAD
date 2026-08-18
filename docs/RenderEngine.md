@@ -684,6 +684,39 @@ uniform-selected branch that costs nothing on a scene that states none.
   is stated in physical units and not as a normalised amplitude. In the
   Phong path the same quantity travels through the shininess slot.
 
+### Reading a Phong appearance as PBR material data
+
+Almost nothing in a FreeCAD document is authored as metallic/roughness.
+What the branch is handed is an ordinary Blinn-Phong appearance -- a
+diffuse colour, a specular colour and a shininess -- and how those three
+are read decides what every existing model looks like under Realistic
+shading. Two readings, both per draw, neither touching anything that was
+authored (a stated metalness or roughness, a PBR-mode appearance, a
+metallic-roughness map):
+
+- **Shininess to roughness** is the classical microfacet match on the
+  GGX *width*, `alpha = sqrt(2 / (n + 2))` for a Phong exponent
+  `n = shininess * 128`. Roughness is the square root of the width
+  because the BRDF squares it back (`a = rough * rough`, the glTF
+  convention), so the conversion is the FOURTH root of that ratio --
+  `fcRoughFromShininess`, with `fcShininessFromRough` as its inverse and
+  `App::Material::shininessToRoughness` as the C++ copy. Handing the
+  alpha over directly instead squares it twice and shades every ordinary
+  surface as a mirror.
+- **Specular colour to base colour and metalness** (`Render_PBRFromSpecular`,
+  on by default) recovers what the branch has no slot for. Its
+  reflectance is `f0`, built from the base colour and the metalness, so
+  the specular colour is otherwise dropped -- and a classic Gold, whose
+  gold-ness lives entirely in that colour, shades as yellow-brown
+  plastic, while the presets built from a BLACK diffuse over a bright
+  specular (Steel, Satin, Metalized, Shiny plastic) shade as black
+  spheres. `fcBaseFromSpecular` is Khronos' specular-glossiness to
+  metallic-roughness solve: the metalness for which the dielectric f0 of
+  0.04 and some base colour reproduce the diffuse/specular pair, then the
+  base colour recombined from both readings. It runs in the SHADER, not
+  at translation time, because the base colour can arrive per vertex or
+  per face; the engine asks for it by passing a negative metalness.
+
 ### Environment (image based lighting)
 
 PBR shading (`Render_PBR`) is lit by a prefiltered environment cubemap

@@ -1868,6 +1868,27 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter PBRFromSpecular
+    ///
+    /// Read an ordinary Phong appearance's specular COLOUR as
+    /// physically based material data, where nothing states a
+    /// metalness of its own. The metallic/roughness model has no
+    /// specular slot -- its reflectance follows from the base colour
+    /// and the metalness -- so a classic Gold, whose gold-ness lives
+    /// entirely in that colour, otherwise shades as yellow-brown
+    /// plastic, and the presets built from a black diffuse and a
+    /// bright specular (Steel, Satin, Metalized) shade as nearly
+    /// black. Anything authored stands: a stated metalness, a PBR
+    /// appearance, a metallic-roughness map.
+    static const bool & getPBRFromSpecular();
+    static const bool & defaultPBRFromSpecular();
+    static void removePBRFromSpecular();
+    static void setPBRFromSpecular(const bool &v);
+    static const char *docPBRFromSpecular();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter PBREnvIntensity
     ///
     /// Brightness of the image based lighting environment.

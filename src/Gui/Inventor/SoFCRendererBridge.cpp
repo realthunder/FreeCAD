@@ -2484,6 +2484,9 @@ RendererBridge::translatePBRConfig(App::PropertyContainer * view)
     res.envBackground = viewParamOverride<App::PropertyBool>(
             view, "Render", "PBREnvBackground",
             RenderParams::getPBREnvBackground());
+    res.fromSpecular = viewParamOverride<App::PropertyBool>(
+            view, "Render", "PBRFromSpecular",
+            RenderParams::getPBRFromSpecular());
     // User environment image. With no explicit path, fall back to the
     // image the Texture mapping dialog (Std_TextureMapping) holds — its
     // Environment mode sphere-maps that same file over the scene

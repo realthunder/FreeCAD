@@ -1424,6 +1424,18 @@ struct PBRConfig {
     /// Draw the environment itself as the visible background (replaces
     /// the background gradient while PBR is active).
     bool envBackground = false;
+    /// Read an ordinary Phong appearance's SPECULAR COLOUR as material
+    /// data where nothing states a metalness. The metallic/roughness
+    /// BRDF has no specular slot -- its reflectance is f0, built from the
+    /// base colour and the metalness -- so a Phong gold, whose gold-ness
+    /// lives entirely in that colour, otherwise shades as yellow-brown
+    /// plastic, and the several presets with a BLACK diffuse and a bright
+    /// specular (Steel, Satin, Metalized ...) shade as nearly black. On,
+    /// the shader solves the pair back into a base colour and a metalness
+    /// (Khronos' spec-gloss conversion). Never applied over anything
+    /// authored: a material or frame metalness, a PBR-mode appearance or
+    /// a metallic-roughness map all stand.
+    bool fromSpecular = true;
     /// User environment image replacing the built-in procedural studio
     /// environment; null = procedural. A 2:1 image is read as
     /// equirectangular (lat-long), anything squarer as a GL sphere map
@@ -1435,7 +1447,8 @@ struct PBRConfig {
     bool operator==(const PBRConfig &o) const {
         return enabled == o.enabled && metallic == o.metallic
             && roughness == o.roughness && envIntensity == o.envIntensity
-            && envBackground == o.envBackground && envImage == o.envImage;
+            && envBackground == o.envBackground && envImage == o.envImage
+            && fromSpecular == o.fromSpecular;
     }
     bool operator!=(const PBRConfig &o) const { return !(*this == o); }
 };

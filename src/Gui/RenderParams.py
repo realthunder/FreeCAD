@@ -1045,6 +1045,17 @@ Params = [
     ParamFloat('PBRRoughness',  0.0, title='Roughness',
         doc="Roughness of physically based shaded surfaces, 0 to 1.\n"
         "Zero means automatic (derived from each material's shininess)."),
+    ParamBool('PBRFromSpecular',  True, title='Specular to metallic',
+        doc="Read an ordinary Phong appearance's specular COLOUR as\n"
+        "physically based material data, where nothing states a\n"
+        "metalness of its own. The metallic/roughness model has no\n"
+        "specular slot -- its reflectance follows from the base colour\n"
+        "and the metalness -- so a classic Gold, whose gold-ness lives\n"
+        "entirely in that colour, otherwise shades as yellow-brown\n"
+        "plastic, and the presets built from a black diffuse and a\n"
+        "bright specular (Steel, Satin, Metalized) shade as nearly\n"
+        "black. Anything authored stands: a stated metalness, a PBR\n"
+        "appearance, a metallic-roughness map."),
     ParamFloat('PBREnvIntensity',  1.0, title='Environment brightness',
         doc="Brightness of the image based lighting environment."),
     ParamString('PBREnvImage', '', title='Environment image',

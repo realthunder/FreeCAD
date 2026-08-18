@@ -131,6 +131,7 @@ public:
     bool PBR;
     double PBRMetallic;
     double PBRRoughness;
+    bool PBRFromSpecular;
     double PBREnvIntensity;
     std::string PBREnvImage;
     bool PBREnvEmbed;
@@ -356,6 +357,8 @@ public:
         funcs["PBRMetallic"] = &RenderParamsP::updatePBRMetallic;
         PBRRoughness = this->handle->GetFloat("PBRRoughness", 0.0);
         funcs["PBRRoughness"] = &RenderParamsP::updatePBRRoughness;
+        PBRFromSpecular = this->handle->GetBool("PBRFromSpecular", true);
+        funcs["PBRFromSpecular"] = &RenderParamsP::updatePBRFromSpecular;
         PBREnvIntensity = this->handle->GetFloat("PBREnvIntensity", 1.0);
         funcs["PBREnvIntensity"] = &RenderParamsP::updatePBREnvIntensity;
         PBREnvImage = this->handle->GetASCII("PBREnvImage", "");
@@ -813,6 +816,10 @@ public:
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBRRoughness(RenderParamsP *self) {
         self->PBRRoughness = self->handle->GetFloat("PBRRoughness", 0.0);
+    }
+    // Auto generated code (Tools/params_utils.py:310)
+    static void updatePBRFromSpecular(RenderParamsP *self) {
+        self->PBRFromSpecular = self->handle->GetBool("PBRFromSpecular", true);
     }
     // Auto generated code (Tools/params_utils.py:310)
     static void updatePBREnvIntensity(RenderParamsP *self) {
@@ -4141,6 +4148,43 @@ void RenderParams::setPBRRoughness(const double &v) {
 // Auto generated code (Tools/params_utils.py:406)
 void RenderParams::removePBRRoughness() {
     instance()->handle->RemoveFloat("PBRRoughness");
+}
+
+// Auto generated code (Tools/params_utils.py:372)
+const char *RenderParams::docPBRFromSpecular() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"Read an ordinary Phong appearance's specular COLOUR as\n"
+"physically based material data, where nothing states a\n"
+"metalness of its own. The metallic/roughness model has no\n"
+"specular slot -- its reflectance follows from the base colour\n"
+"and the metalness -- so a classic Gold, whose gold-ness lives\n"
+"entirely in that colour, otherwise shades as yellow-brown\n"
+"plastic, and the presets built from a black diffuse and a\n"
+"bright specular (Steel, Satin, Metalized) shade as nearly\n"
+"black. Anything authored stands: a stated metalness, a PBR\n"
+"appearance, a metallic-roughness map.");
+}
+
+// Auto generated code (Tools/params_utils.py:380)
+const bool & RenderParams::getPBRFromSpecular() {
+    return instance()->PBRFromSpecular;
+}
+
+// Auto generated code (Tools/params_utils.py:388)
+const bool & RenderParams::defaultPBRFromSpecular() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+void RenderParams::setPBRFromSpecular(const bool &v) {
+    instance()->handle->SetBool("PBRFromSpecular",v);
+    instance()->PBRFromSpecular = v;
+}
+
+// Auto generated code (Tools/params_utils.py:406)
+void RenderParams::removePBRFromSpecular() {
+    instance()->handle->RemoveBool("PBRFromSpecular");
 }
 
 // Auto generated code (Tools/params_utils.py:372)
