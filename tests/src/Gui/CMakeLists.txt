@@ -69,6 +69,11 @@ if(TARGET FreeCADRenderer)
     target_link_libraries(ProxyHierarchy_tests_run gtest_main FreeCADRenderer)
     add_test(NAME ProxyHierarchy_tests_run COMMAND ProxyHierarchy_tests_run)
 
+    add_executable(ProxyStore_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/ProxyStore.cpp)
+    target_link_libraries(ProxyStore_tests_run gtest_main FreeCADRenderer)
+    add_test(NAME ProxyStore_tests_run COMMAND ProxyStore_tests_run)
+
     add_executable(OcclusionCull_tests_run
                    ${CMAKE_CURRENT_SOURCE_DIR}/OcclusionCull.cpp)
     target_link_libraries(OcclusionCull_tests_run gtest_main FreeCADRenderer)
