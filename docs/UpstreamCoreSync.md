@@ -606,13 +606,25 @@ satisfied** -- so stage 3 has no edit to make until upstream's FEM lands.
 | `signalHighlightObject` on `Application` | `Gui/ActiveAnalysisObserver.cpp:78` already calls it through `Gui::Application::Instance` |
 | `acceptReorderingObjects` | absent from the fork's FEM entirely; the fork's own hook is `ViewProvider::canReorderObject` (`Gui/ViewProvider.h:418`), which no FEM view provider overrides |
 
-WARNING **This is an inspection, not a compile.** `BUILD_FEM=OFF` in all
-four user presets, so none of these four interfaces has been compiled
-against the current core -- the two `isSame` stubs in particular are
-written without `override`, which is exactly the spelling that would let a
-future base-signature change break them silently. Compiling the in-tree FEM
-(the standing "Option B" in [FemPortEvaluation.md](./FemPortEvaluation.md))
-is what would turn this table into a measurement.
+WARNING WARNING **This table is not evidence that stage 3 is discharged.**
+The FEM in this tree is the Dec-2023 fork FEM -- merge base `a662fbb2ff`,
+our delta since 50 files / +253 -294, upstream's 1018 files / +414859
+-164906. The four items above are adaptations *upstream's* `FemMesh`,
+`PropertyPostDataObject` and `ViewProviderFemPostPipeline` will need, and
+none of those sources are here. That our own older versions happen to
+satisfy the same four constraints shows what the adaptation looks like; it
+does not do the adaptation. **All four remain real work whenever the port
+happens.** The only claim section 4.1 supports is the narrow one: there is
+no edit to make in *this* tree today.
+
+NOTE Separately, and for a different reason: `BUILD_FEM=OFF` in all four
+user presets, so the fork's own FEM has not been compiled against the core
+that stage 2's four renames moved under it -- and 2c's runtime-string trap
+landed in `Mod/Fem/App/FemAnalysis.cpp` specifically. FEM *ships* (the
+feedstock builds `BUILD_FEM=ON`), so that is a live regression hole in a
+released module. It is the standing "Option B" of
+[FemPortEvaluation.md](./FemPortEvaluation.md) -- worth doing on its own
+merit, but it verifies the fork's FEM, not the port, and not this table.
 
 ## 5. Consult -- cannot be done while keeping fork behaviour
 
