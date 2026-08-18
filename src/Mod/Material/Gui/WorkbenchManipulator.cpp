@@ -21,7 +21,6 @@
  *                                                                         *
  **************************************************************************/
 
-
 #include "WorkbenchManipulator.h"
 #include <Gui/MenuManager.h>
 #include <Gui/ToolBarManager.h>
@@ -35,20 +34,24 @@ void WorkbenchManipulator::modifyMenuBar([[maybe_unused]] Gui::MenuItem* menuBar
 
 void WorkbenchManipulator::modifyContextMenu(const char* recipient, Gui::MenuItem* menuBar)
 {
-    if (strcmp(recipient, "View") == 0) {
-        addCommands(menuBar, "Std_TreeSelection");
-    }
-    else if (strcmp(recipient, "Tree") == 0) {
-        addCommandsToTree(menuBar);
+    // This fork's context menus (Gui/Workbench.cpp) are built differently from
+    // upstream's: there is no Std_RandomColor, and Std_TreeSelection sits inside
+    // the Selection submenu, so upstream's anchors would either miss or bury the
+    // commands. Std_RenderSettings is what followed Std_SetAppearance in both
+    // recipients, so going in front of it puts them back where they always were.
+    if (strcmp(recipient, "View") == 0 || strcmp(recipient, "Tree") == 0) {
+        addCommands(menuBar, "Std_RenderSettings", true);
     }
 }
 
-void WorkbenchManipulator::addCommands(Gui::MenuItem* menuBar, const char* reference)
+void WorkbenchManipulator::addCommands(Gui::MenuItem* menuBar, const char* reference, bool before)
 {
     auto par = menuBar->findParentOf(reference);
     if (par) {
         auto item = par->findItem(reference);
-        item = par->afterItem(item);
+        if (!before) {
+            item = par->afterItem(item);
+        }
 
         auto cmd1 = new Gui::MenuItem();
         cmd1->setCommand("Std_SetMaterial");
@@ -59,18 +62,3 @@ void WorkbenchManipulator::addCommands(Gui::MenuItem* menuBar, const char* refer
     }
 }
 
-void WorkbenchManipulator::addCommandsToTree(Gui::MenuItem* menuBar)
-{
-    const char* randomColor = "Std_RandomColor";
-    auto par = menuBar->findParentOf(randomColor);
-    if (par) {
-        auto item = par->findItem(randomColor);
-
-        auto cmd1 = new Gui::MenuItem();
-        cmd1->setCommand("Std_SetMaterial");
-        par->insertItem(item, cmd1);
-        auto cmd2 = new Gui::MenuItem();
-        cmd2->setCommand("Std_SetAppearance");
-        par->insertItem(item, cmd2);
-    }
-}

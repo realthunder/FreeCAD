@@ -43,8 +43,7 @@ protected:
     void modifyContextMenu(const char* recipient, Gui::MenuItem* menuBar) override;
 
 private:
-    static void addCommands(Gui::MenuItem* menuBar, const char* reference);
-    static void addCommandsToTree(Gui::MenuItem* menuBar);
+    static void addCommands(Gui::MenuItem* menuBar, const char* reference, bool before = false);
 };
 
 } // namespace MatGui
