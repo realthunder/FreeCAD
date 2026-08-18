@@ -298,13 +298,14 @@ namespace {
 // object reachable from itself must not.
 //
 // Linear search over a vector, which is the fastest option at the depths
-// this actually sees. Measured, ns per node visit for test+push+pop: at
-// depth 8, vector 2.3 against 9.4 for a sorted vector, 24 for a hash set
-// and 27 for the vector-plus-hash-set that SoFCSelectionRoot::Stack uses.
-// A warm vector allocates nothing, while every node based container pays an
-// allocation per push, which is the whole difference at small sizes. A
-// sorted vector only overtakes past depth ~150 and a hash set past ~260,
-// and the model would have to nest that deep for it to matter.
+// this actually sees. Measured with the objects in arbitrary order, as real
+// addresses are, ns per node visit for test+push+pop: at depth 8, vector
+// 2.2 against 12.1 for a sorted vector, 23.2 for a hash set and 25.5 for
+// the vector-plus-hash-set that SoFCSelectionRoot::Stack uses. A warm
+// vector allocates nothing, while every node based container pays an
+// allocation per push, and that is the whole difference at small sizes.
+// A hash set only overtakes past depth ~300; a sorted vector never does
+// here, because each insert lands in the middle and moves half the array.
 using RecursionStack = std::vector<const App::DocumentObject*>;
 
 thread_local RecursionStack expandingSubObjects;
